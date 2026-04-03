@@ -1,4 +1,4 @@
-package com.myname.mymodid;
+package com.miaokatze.gtswn;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,7 +16,7 @@ public class MyMod {
     public static final String MODID = "mymodid";
     public static final Logger LOG = LogManager.getLogger(MODID);
 
-    @SidedProxy(clientSide = "com.myname.mymodid.ClientProxy", serverSide = "com.myname.mymodid.CommonProxy")
+    @SidedProxy(clientSide = "com.miaokatze.gtswn.ClientProxy", serverSide = "com.miaokatze.gtswn.CommonProxy")
     public static CommonProxy proxy;
 
     @Mod.EventHandler
