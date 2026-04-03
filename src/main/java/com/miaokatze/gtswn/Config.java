@@ -1,4 +1,4 @@
-package com.myname.mymodid;
+package com.miaokatze.gtswn;
 
 import java.io.File;
 

@@ -1,4 +1,4 @@
-package com.myname.mymodid;
+package com.miaokatze.gtswn;
 
 public class ClientProxy extends CommonProxy {
 

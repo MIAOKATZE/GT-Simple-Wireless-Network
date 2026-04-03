@@ -10,10 +10,10 @@ import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 
-@Mod(modid = MyMod.MODID, version = Tags.VERSION, name = "MyMod", acceptedMinecraftVersions = "[1.7.10]")
-public class MyMod {
+@Mod(modid = GTSimpleWirelessNetwork.MODID, version = Tags.VERSION, name = "GTSimpleWirelessNetwork", acceptedMinecraftVersions = "[1.7.10]")
+public class GTSimpleWirelessNetwork {
 
-    public static final String MODID = "mymodid";
+    public static final String MODID = "gtswn";
     public static final Logger LOG = LogManager.getLogger(MODID);
 
     @SidedProxy(clientSide = "com.miaokatze.gtswn.ClientProxy", serverSide = "com.miaokatze.gtswn.CommonProxy")
