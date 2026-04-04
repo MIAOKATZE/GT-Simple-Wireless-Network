@@ -1,0 +1,29 @@
+﻿tile.gtswn.mtetest.name=测试太阳能机
+gtswn.tooltip.mtetest.info=白天且上方可见天空时产生能量，雨天降低效率。
+
+# MTETest tier names
+wts.mtetest.tier.EV=初级测试太阳机 (EV)
+wts.mtetest.tier.IV=中级测试太阳机 (IV)
+wts.mtetest.tier.LuV=高级测试太阳机 (LuV)
+wts.mtetest.tier.ZPM=史诗测试太阳机 (ZPM)
+wts.mtetest.tier.UV=传奇测试太阳机 (UV)
+wts.mtetest.tier.UHV=神圣测试太阳机 (UHV)
+wts.mtetest.tier.UEV=星辉测试太阳机 (UEV)
+wts.mtetest.tier.UIV=永恒测试太阳机 (UIV)
+wts.mtetest.tier.UMV=寰宇测试太阳机 (UMV)
+wts.mtetest.tier.UXV=奇点测试太阳机 (UXV)
+wts.mtetest.tier.MAX=究极测试太阳机 (MAX)
+
+# GregTech style keys used by CommonMetaTileEntity
+gt.blockmachines.gtswn.mtetest.ev.name=测试太阳能机 EV
+gt.blockmachines.gtswn.mtetest.iv.name=测试太阳能机 IV
+gt.blockmachines.gtswn.mtetest.luv.name=测试太阳能机 LuV
+gt.blockmachines.gtswn.mtetest.zpm.name=测试太阳能机 ZPM
+gt.blockmachines.gtswn.mtetest.uv.name=测试太阳能机 UV
+gt.blockmachines.gtswn.mtetest.uhv.name=测试太阳能机 UHV
+gt.blockmachines.gtswn.mtetest.uev.name=测试太阳能机 UEV
+gt.blockmachines.gtswn.mtetest.uiv.name=测试太阳能机 UIV
+gt.blockmachines.gtswn.mtetest.umv.name=测试太阳能机 UMV
+gt.blockmachines.gtswn.mtetest.uxv.name=测试太阳能机 UXV
+gt.blockmachines.gtswn.mtetest.max.name=测试太阳能机 MAX
+

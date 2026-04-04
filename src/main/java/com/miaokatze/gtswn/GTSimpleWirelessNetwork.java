@@ -9,8 +9,13 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
+import cpw.mods.fml.common.event.FMLLoadCompleteEvent;
 
-@Mod(modid = GTSimpleWirelessNetwork.MODID, version = Tags.VERSION, name = "GTSimpleWirelessNetwork", acceptedMinecraftVersions = "[1.7.10]")
+@Mod(
+    modid = GTSimpleWirelessNetwork.MODID,
+    version = Tags.VERSION,
+    name = "GTSimpleWirelessNetwork",
+    acceptedMinecraftVersions = "[1.7.10]")
 public class GTSimpleWirelessNetwork {
 
     public static final String MODID = "gtswn";
@@ -42,5 +47,17 @@ public class GTSimpleWirelessNetwork {
     // register server commands in this event handler (Remove if not needed)
     public void serverStarting(FMLServerStartingEvent event) {
         proxy.serverStarting(event);
+    }
+
+    @Mod.EventHandler
+    // called after all mods have been loaded
+    public void loadComplete(FMLLoadCompleteEvent event) {
+        if (proxy != null) {
+            try {
+                proxy.loadComplete(event);
+            } catch (Throwable t) {
+                LOG.error("Error during loadComplete proxy call", t);
+            }
+        }
     }
 }

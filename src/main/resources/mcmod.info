@@ -1,11 +1,11 @@
 {
 	"modListVersion": 2,
 	"modList": [{
-		"modid": "${gtswn}",
-		"name": "${GTSimpleWirelessNetwork}",
+		"modid": "gtswn",
+		"name": "GTSimpleWirelessNetwork",
 		"description": "An example mod for Minecraft 1.7.10 with Forge focused on a stable setup.",
-		"version": "${0.0.0}",
-		"mcversion": "${1.7.10}",
+		"version": "0.0.0",
+		"mcversion": "1.7.10",
 		"url": "https://github.com/MIAOKATZE/GT-Simple-Wireless-Network",
 		"updateUrl": "",
 		"authorList": ["miaokatze"],
