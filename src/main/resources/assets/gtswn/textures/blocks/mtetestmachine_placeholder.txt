@@ -1,4 +1,0 @@
-﻿这是一个占位文件。请用实际的 PNG 纹理替换为：
-assets/gtswn/textures/blocks/mtetestmachine.png
-和可选的 mtetestmachine_active.png
-建议尺寸：16x16 或 32x32。

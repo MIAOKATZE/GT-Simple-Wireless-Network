@@ -1,4 +1,4 @@
-package com.miaokatze.gtswn;
+package com.miaokatze.gtswn.main;
 
 public class ClientProxy extends CommonProxy {
 

@@ -1,14 +1,6 @@
 ﻿tile.gtswn.mtetest.ev.name=MTETest EV
 tile.gtswn.mtetest.iv.name=MTETest IV
 tile.gtswn.mtetest.luv.name=MTETest LuV
-tile.gtswn.mtetest.zpm.name=MTETest ZPM
-tile.gtswn.mtetest.uv.name=MTETest UV
-tile.gtswn.mtetest.uhv.name=MTETest UHV
-tile.gtswn.mtetest.uev.name=MTETest UEV
-tile.gtswn.mtetest.uiv.name=MTETest UIV
-tile.gtswn.mtetest.umv.name=MTETest UMV
-tile.gtswn.mtetest.uxv.name=MTETest UXV
-tile.gtswn.mtetest.max.name=MTETest MAX
 
 # existing keys
 tile.gtswn.mtetest.name=MTETest Machine
@@ -18,24 +10,8 @@ gtswn.tooltip.mtetest.info=Generates energy like a solar generator during daytim
 wts.mtetest.tier.EV=MTETest EV
 wts.mtetest.tier.IV=MTETest IV
 wts.mtetest.tier.LuV=MTETest LuV
-wts.mtetest.tier.ZPM=MTETest ZPM
-wts.mtetest.tier.UV=MTETest UV
-wts.mtetest.tier.UHV=MTETest UHV
-wts.mtetest.tier.UEV=MTETest UEV
-wts.mtetest.tier.UIV=MTETest UIV
-wts.mtetest.tier.UMV=MTETest UMV
-wts.mtetest.tier.UXV=MTETest UXV
-wts.mtetest.tier.MAX=MTETest MAX
 
 # GregTech style keys used by CommonMetaTileEntity
 gt.blockmachines.gtswn.mtetest.ev.name=MTETest EV
 gt.blockmachines.gtswn.mtetest.iv.name=MTETest IV
 gt.blockmachines.gtswn.mtetest.luv.name=MTETest LuV
-gt.blockmachines.gtswn.mtetest.zpm.name=MTETest ZPM
-gt.blockmachines.gtswn.mtetest.uv.name=MTETest UV
-gt.blockmachines.gtswn.mtetest.uhv.name=MTETest UHV
-gt.blockmachines.gtswn.mtetest.uev.name=MTETest UEV
-gt.blockmachines.gtswn.mtetest.uiv.name=MTETest UIV
-gt.blockmachines.gtswn.mtetest.umv.name=MTETest UMV
-gt.blockmachines.gtswn.mtetest.uxv.name=MTETest UXV
-gt.blockmachines.gtswn.mtetest.max.name=MTETest MAX

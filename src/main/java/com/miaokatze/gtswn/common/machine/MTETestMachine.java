@@ -1,4 +1,4 @@
-package com.miaokatze.gtswn.machine;
+package com.miaokatze.gtswn.common.machine;
 
 import static gregtech.api.enums.GTValues.V;
 
@@ -6,7 +6,6 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.world.World;
 
-import gregtech.api.enums.Textures;
 import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
@@ -14,23 +13,27 @@ import gregtech.api.metatileentity.implementations.MTEBasicGenerator;
 import gregtech.api.recipe.RecipeMap;
 import gregtech.api.render.TextureFactory;
 
-/**
- * MTETestMachine - 一个用于测试的太阳能等效发电机（示例实现）
- */
 public class MTETestMachine extends MTEBasicGenerator {
 
-    // 构造（用于直接按 ID 注册）
+    public static final gregtech.api.interfaces.IIconContainer TEX_EV = new gregtech.api.enums.Textures.BlockIcons.CustomIcon(
+        "gtswn:MTETEST_1");
+    public static final gregtech.api.interfaces.IIconContainer TEX_IV = new gregtech.api.enums.Textures.BlockIcons.CustomIcon(
+        "gtswn:MTETEST_2");
+    public static final gregtech.api.interfaces.IIconContainer TEX_LuV = new gregtech.api.enums.Textures.BlockIcons.CustomIcon(
+        "gtswn:MTETEST_3");
+
+    // Constructor (for direct ID registration)
     @SuppressWarnings("unused")
     public MTETestMachine(int aID, String aName, int aTier) {
         super(aID, aName, aName, aTier, new String[] { "A simple test solar-like generator." });
     }
 
-    // 构造：允许传入区域化显示名（regional name）
+    // Constructor: allows passing regional name
     public MTETestMachine(int aID, String aName, String aNameRegional, int aTier) {
         super(aID, aName, aNameRegional, aTier, new String[] { "A simple test solar-like generator." });
     }
 
-    // 复制/工厂构造
+    // Copy/factory constructor
     public MTETestMachine(String aName, int aTier, String[] aDescription,
         gregtech.api.interfaces.ITexture[][][] aTextures) {
         super(aName, aTier, aDescription, aTextures);
@@ -65,7 +68,7 @@ public class MTETestMachine extends MTEBasicGenerator {
 
         if (!tmte.isServerSide()) return;
 
-        // 每 20 tick（大约 1 秒）更新一次
+        // Update every 20 ticks (approximately 1 second)
         if (aTick % 20L != 0L) return;
 
         World world = tmte.getWorld();
@@ -86,8 +89,8 @@ public class MTETestMachine extends MTEBasicGenerator {
 
         long producedEU = calculateSolarEU(world, weatherFactor);
 
-        // 由于 MTEBasicGenerator 的 onPostTick 可能每 10 tick 调用一次，
-        // 这里按每 20 tick 增加 producedEU。
+        // Since MTEBasicGenerator's onPostTick may be called every 10 ticks,
+        // here we add producedEU per 20 ticks
         if (producedEU > 0) {
             tmte.increaseStoredEnergyUnits(producedEU, true);
         }
@@ -103,12 +106,12 @@ public class MTETestMachine extends MTEBasicGenerator {
     }
 
     protected long calculateSolarEU(World world, float weatherFactor) {
-        // 基于 tier 的电压与安培数输出。
+        // Voltage and amperage output based on tier
         long baseVoltage = V[mTier];
-        long amperes = 1L; // 默认 1A，可做配置
+        long amperes = 1L; // Default 1A, can be configured
         long euPerTick = baseVoltage * amperes;
 
-        // 如果希望按光照强度平滑产电，可使用 world.getSunBrightness(1.0F)
+        // If you want smooth power generation based on light intensity, you can use world.getSunBrightness(1.0F)
         float sunBr = 1.0f;
         try {
             sunBr = world.getSunBrightness(1.0F);
@@ -117,7 +120,7 @@ public class MTETestMachine extends MTEBasicGenerator {
         }
 
         long eu = (long) (euPerTick * weatherFactor * sunBr);
-        // 这里返回每 20 tick 应增加的 EU，故乘以 20
+        // Return EU to be added per 20 ticks, so multiply by 20
         return eu * 20L;
     }
 
@@ -194,22 +197,11 @@ public class MTETestMachine extends MTEBasicGenerator {
         return getSides(aColor);
     }
 
-    private Textures.BlockIcons getSolarIconByTier() {
-        // Map mTier to a suitable SOLARPANEL_* icon. Use a simple if/else chain to avoid
-        // static analysis warnings about switch expressions while keeping broad compatibility.
-        if (mTier == 1) return Textures.BlockIcons.SOLARPANEL_8V;
-        if (mTier == 2) return Textures.BlockIcons.SOLARPANEL_LV;
-        if (mTier == 3) return Textures.BlockIcons.SOLARPANEL_MV;
-        if (mTier == 4) return Textures.BlockIcons.SOLARPANEL_HV;
-        if (mTier == 5) return Textures.BlockIcons.SOLARPANEL_EV;
-        if (mTier == 6) return Textures.BlockIcons.SOLARPANEL_IV;
-        if (mTier == 7) return Textures.BlockIcons.SOLARPANEL_LuV;
-        if (mTier == 8) return Textures.BlockIcons.SOLARPANEL_ZPM;
-        if (mTier == 9) return Textures.BlockIcons.SOLARPANEL_UV;
-        if (mTier == 10) return Textures.BlockIcons.SOLARPANEL_UHV;
-        if (mTier == 11) return Textures.BlockIcons.SOLARPANEL_UEV;
-        if (mTier == 12) return Textures.BlockIcons.SOLARPANEL_UIV;
-        return Textures.BlockIcons.SOLARPANEL;
+    private gregtech.api.interfaces.IIconContainer getSolarIconByTier() {
+        if (mTier == 4) return TEX_EV;
+        if (mTier == 5) return TEX_IV;
+        if (mTier == 6) return TEX_LuV;
+        return TEX_EV;
     }
     // endregion
 }

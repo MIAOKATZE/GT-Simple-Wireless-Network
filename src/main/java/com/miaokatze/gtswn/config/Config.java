@@ -1,4 +1,4 @@
-package com.miaokatze.gtswn;
+package com.miaokatze.gtswn.config;
 
 import java.io.File;
 

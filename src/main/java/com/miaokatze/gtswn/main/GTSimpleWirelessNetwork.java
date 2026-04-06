@@ -1,15 +1,17 @@
-package com.miaokatze.gtswn;
+package com.miaokatze.gtswn.main;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.miaokatze.gtswn.Tags;
+
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
+import cpw.mods.fml.common.event.FMLLoadCompleteEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
-import cpw.mods.fml.common.event.FMLLoadCompleteEvent;
 
 @Mod(
     modid = GTSimpleWirelessNetwork.MODID,
@@ -21,7 +23,9 @@ public class GTSimpleWirelessNetwork {
     public static final String MODID = "gtswn";
     public static final Logger LOG = LogManager.getLogger(MODID);
 
-    @SidedProxy(clientSide = "com.miaokatze.gtswn.ClientProxy", serverSide = "com.miaokatze.gtswn.CommonProxy")
+    @SidedProxy(
+        clientSide = "com.miaokatze.gtswn.main.ClientProxy",
+        serverSide = "com.miaokatze.gtswn.main.CommonProxy")
     public static CommonProxy proxy;
 
     @Mod.EventHandler

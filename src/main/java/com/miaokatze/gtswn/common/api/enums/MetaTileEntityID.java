@@ -1,6 +1,6 @@
 package com.miaokatze.gtswn.common.api.enums;
 
-import com.miaokatze.gtswn.Config;
+import com.miaokatze.gtswn.config.Config;
 
 /**
  * Enum of MetaTileEntity IDs mirroring NH-Utilities style.
@@ -8,17 +8,10 @@ import com.miaokatze.gtswn.Config;
  */
 public enum MetaTileEntityID {
 
+    // Reduced to three MTETest variants: EV, IV, LuV
     MTETEST_EV(0),
     MTETEST_IV(1),
     MTETEST_LuV(2),
-    MTETEST_ZPM(3),
-    MTETEST_UV(4),
-    MTETEST_UHV(5),
-    MTETEST_UEV(6),
-    MTETEST_UIV(7),
-    MTETEST_UMV(8),
-    MTETEST_UXV(9),
-    MTETEST_MAX(10),
 
     ;
 
