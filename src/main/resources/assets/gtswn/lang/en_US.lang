@@ -1,4 +1,4 @@
-﻿tile.gtswn.mtetest.ev.name=MTETest EV
+tile.gtswn.mtetest.ev.name=MTETest EV
 tile.gtswn.mtetest.iv.name=MTETest IV
 tile.gtswn.mtetest.luv.name=MTETest LuV
 
@@ -6,10 +6,10 @@ tile.gtswn.mtetest.luv.name=MTETest LuV
 tile.gtswn.mtetest.name=MTETest Machine
 gtswn.tooltip.mtetest.info=Generates energy like a solar generator during daytime when sky is visible.
 
-# MTETest tier names (wts prefix used by earlier code)
-wts.mtetest.tier.EV=MTETest EV
-wts.mtetest.tier.IV=MTETest IV
-wts.mtetest.tier.LuV=MTETest LuV
+# MTETest tier names (updated to gtswn prefix)
+gtswn.machine.test.ev=Test Machine EV
+gtswn.machine.test.iv=Test Machine IV
+gtswn.machine.test.luv=Test Machine LuV
 
 # GregTech style keys used by CommonMetaTileEntity
 gt.blockmachines.gtswn.mtetest.ev.name=MTETest EV

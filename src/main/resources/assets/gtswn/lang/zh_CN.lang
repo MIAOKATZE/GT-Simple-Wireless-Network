@@ -1,10 +1,10 @@
-﻿tile.gtswn.mtetest.name=测试太阳能机
+tile.gtswn.mtetest.name=测试太阳能机
 gtswn.tooltip.mtetest.info=白天且上方可见天空时产生能量，雨天降低效率。
 
-# MTETest tier names
-wts.mtetest.tier.EV=初级测试太阳机 (EV)
-wts.mtetest.tier.IV=中级测试太阳机 (IV)
-wts.mtetest.tier.LuV=高级测试太阳机 (LuV)
+# MTETest tier names (updated to gtswn prefix)
+gtswn.machine.test.ev=测试无线输电终端 (EV)
+gtswn.machine.test.iv=测试无线输电终端 (IV)
+gtswn.machine.test.luv=测试无线输电终端 (LuV)
 
 # GregTech style keys used by CommonMetaTileEntity
 gt.blockmachines.gtswn.mtetest.ev.name=测试太阳能机 EV

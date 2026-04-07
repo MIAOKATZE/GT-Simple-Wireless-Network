@@ -4,25 +4,25 @@ import java.io.File;
 
 import net.minecraftforge.common.config.Configuration;
 
+/**
+ * 模组配置管理类
+ * 负责读取和保存模组的配置文件 (config/gtswn.cfg)
+ */
 public class Config {
 
-    public static String greeting = "Hello World";
-    // Preferred base index for allocating MetaTileEntity indices. Default to 25000 (common GT machine base).
-    public static int preferredMetaBase = 60100;
-    // Offset to add to meta ID base (mirrors NH-Utilities metaIdOffset)
+    // GregTech 元机器实体 (MTE) ID 分配的偏移量。
+    // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
+    // 此配置仅用于在基准值基础上进行微调。
     public static int metaIdOffset = 0;
 
+    /**
+     * 同步配置文件
+     * 从磁盘读取配置并更新静态变量，如果配置有变动则自动保存
+     * 
+     * @param configFile 配置文件对象
+     */
     public static void synchronizeConfiguration(File configFile) {
         Configuration configuration = new Configuration(configFile);
-
-        greeting = configuration.getString("greeting", Configuration.CATEGORY_GENERAL, greeting, "How shall I greet?");
-        preferredMetaBase = configuration.getInt(
-            "preferredMetaBase",
-            Configuration.CATEGORY_GENERAL,
-            preferredMetaBase,
-            1,
-            Integer.MAX_VALUE,
-            "Preferred base index for GregTech METATILEENTITIES allocation (e.g. 25000)");
 
         metaIdOffset = configuration.getInt(
             "metaIdOffset",
@@ -30,7 +30,7 @@ public class Config {
             metaIdOffset,
             -5000,
             5000,
-            "Offset to apply to meta id base (used to reserve id ranges similar to NH-Utilities)");
+            "应用于 MTE ID 基准值的偏移量 (用于预留 ID 区间)");
 
         if (configuration.hasChanged()) {
             configuration.save();

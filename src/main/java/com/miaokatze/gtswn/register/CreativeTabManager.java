@@ -11,14 +11,21 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 /**
  * 创造模式物品栏管理器
+ * 负责管理模组专属的创造模式标签页，包括图标设置、名称显示以及物品列表的维护。
  */
 public class CreativeTabManager {
 
+    /**
+     * 模组专属的创造模式标签页实例
+     */
     public static final CreativeTabs CREATIVE_TAB = new CreativeTabs("gtswn") {
 
+        /**
+         * 获取标签页的图标物品
+         * 优先返回已注册列表中的第一个物品，若列表为空则返回钻石作为兜底，防止崩溃
+         */
         @Override
         public Item getTabIconItem() {
-            // 返回第一个物品作为图标，如果没有物品则返回空气
             List<ItemStack> items = getItemsToAdd();
             if (items != null && !items.isEmpty()) {
                 return items.get(0)
@@ -28,11 +35,18 @@ public class CreativeTabManager {
             return net.minecraft.init.Items.diamond;
         }
 
+        /**
+         * 获取标签页的显示名称（未本地化）
+         */
         @Override
         public String getTranslatedTabLabel() {
             return "GT Simple Wireless Network";
         }
 
+        /**
+         * 向标签页中添加所有相关物品
+         * 注意：Minecraft 1.7.10 中该方法名拼写为 displayAllReleventItems
+         */
         @Override
         @SuppressWarnings({ "rawtypes", "unchecked" })
         public void displayAllReleventItems(List list) {
@@ -45,10 +59,13 @@ public class CreativeTabManager {
         }
     };
 
+    // 存储待添加到创造模式标签页的物品列表
     private static final List<ItemStack> itemsToAdd = new ArrayList<>();
 
     /**
      * 添加物品到创造模式物品栏
+     * 
+     * @param itemStack 要添加的物品堆栈
      */
     public static void addItemToTab(ItemStack itemStack) {
         if (itemStack != null) {
@@ -57,15 +74,18 @@ public class CreativeTabManager {
     }
 
     /**
-     * 初始化创造模式物品栏 - 在物品注册后调用
+     * 初始化创造模式物品栏
+     * 建议在物品注册完成后调用此方法
      */
     public static void initCreativeTab() {
-        GTSimpleWirelessNetwork.LOG.info("Initializing creative tab with " + itemsToAdd.size() + " items");
+        GTSimpleWirelessNetwork.LOG.info("正在初始化创造模式物品栏，当前包含 " + itemsToAdd.size() + " 个物品");
         // 这里可以在需要时添加额外的初始化逻辑
     }
 
     /**
-     * 获取所有要添加到创造模式物品栏的物品
+     * 获取所有要添加到创造模式物品栏的物品列表
+     * 
+     * @return 物品堆栈列表
      */
     public static List<ItemStack> getItemsToAdd() {
         return itemsToAdd;
