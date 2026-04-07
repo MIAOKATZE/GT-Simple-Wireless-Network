@@ -1,5 +1,6 @@
 .gradle
 .settings
+/plan/
 /.idea/
 /.vscode/
 /run/
