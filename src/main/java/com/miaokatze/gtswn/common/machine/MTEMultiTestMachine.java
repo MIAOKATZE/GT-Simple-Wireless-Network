@@ -34,7 +34,7 @@ import gregtech.api.util.MultiblockTooltipBuilder;
  * 测试用多方块机器 (HV)
  * <p>
  * 该机器用于验证多方块机器的注册流程、结构检测逻辑以及专属配方系统的集成。
- * 它采用 3x3x3 的空心不锈钢结构，并支持标准的 GregTech 仓室（能源、维护、输入/输出总线等）。
+ * 它采用 3x3x3 的空心钨钢结构，并支持标准的 GregTech 仓室（能源、维护、输入/输出总线等）。
  */
 public class MTEMultiTestMachine extends MTEEnhancedMultiBlockBase<MTEMultiTestMachine>
     implements IConstructable, ISurvivalConstructable {
@@ -42,14 +42,14 @@ public class MTEMultiTestMachine extends MTEEnhancedMultiBlockBase<MTEMultiTestM
     /** 结构定义的唯一标识符，用于在 StructureLib 中索引特定的结构片段 */
     private static final String STRUCTURE_PIECE_MAIN = "main";
 
-    /** 记录结构中成功匹配的不锈钢外壳数量，用于完整性校验 */
+    /** 记录结构中成功匹配的钨钢外壳数量，用于完整性校验 */
     private int mCasingAmount = 0;
 
     /**
      * 3x3x3 空心结构定义矩阵。
      * <ul>
      * <li>{@code ~}: 控制器位置（位于底层中心）</li>
-     * <li>{@code h}: 机器外壳或仓室位置（支持不锈钢方块及各类仓室）</li>
+     * <li>{@code h}: 机器外壳或仓室位置（支持钨钢方块及各类仓室）</li>
      * <li>{@code -}: 空气或任意方块（此处定义为中层中心的空气）</li>
      * </ul>
      */
@@ -234,8 +234,8 @@ public class MTEMultiTestMachine extends MTEEnhancedMultiBlockBase<MTEMultiTestM
             .beginStructureBlock(3, 3, 3, true)
             .addController("底层中心")
             .addCasingInfoMin("钨钢机器方块", 8, false)
-            .addEnergyHatch("任意不锈钢方块", 1)
-            .addMaintenanceHatch("任意不锈钢方块", 1);
+            .addEnergyHatch("任意钨钢方块", 1)
+            .addMaintenanceHatch("任意钨钢方块", 1);
         return tt;
     }
 }
