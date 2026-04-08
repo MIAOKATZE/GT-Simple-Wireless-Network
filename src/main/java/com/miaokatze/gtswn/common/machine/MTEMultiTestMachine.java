@@ -76,7 +76,7 @@ public class MTEMultiTestMachine extends MTEEnhancedMultiBlockBase<MTEMultiTestM
                 .adder(MTEMultiTestMachine::addToMachineList)
                 // 在游戏内使用软锤查看结构时，该位置的提示点编号
                 .dot(1)
-                // 设置外壳方块的材质纹理索引（不锈钢机器方块）
+                // 设置外壳方块的材质纹理索引（钨钢机器方块）
                 .casingIndex(GTUtility.getCasingTextureIndex(GregTechAPI.sBlockCasings4, 0))
                 // 如果不是仓室，则检查是否为指定的外壳方块，并在匹配成功时触发 onCasingAdded 计数
                 .buildAndChain(
@@ -182,7 +182,7 @@ public class MTEMultiTestMachine extends MTEEnhancedMultiBlockBase<MTEMultiTestM
 
     @Override
     public String[] getStructureDescription(ItemStack stackSize) {
-        return new String[] { EnumChatFormatting.AQUA + "结构说明:", "1. 使用不锈钢机器方块搭建 3x3x3 空心结构", "2. 控制器位于底层中心",
+        return new String[] { EnumChatFormatting.AQUA + "结构说明:", "1. 使用钨钢机器方块搭建 3x3x3 空心结构", "2. 控制器位于底层中心",
             "3. 需要安装至少一个能源仓和维护仓", "4. 可以安装输入/输出仓、输入/输出总线" };
     }
 
@@ -228,12 +228,12 @@ public class MTEMultiTestMachine extends MTEEnhancedMultiBlockBase<MTEMultiTestM
         tt.addMachineType("测试多方块机器")
             .addInfo("用于验证多方块机器的注册流程、结构检测及配方系统。")
             .addInfo(EnumChatFormatting.AQUA + "结构说明:")
-            .addInfo("1. 使用不锈钢机器方块搭建 3x3x3 空心结构")
+            .addInfo("1. 使用钨钢机器方块搭建 3x3x3 空心结构")
             .addInfo("2. 控制器位于底层中心")
             .addInfo("3. 需要安装至少一个能源仓和维护仓")
             .beginStructureBlock(3, 3, 3, true)
             .addController("底层中心")
-            .addCasingInfoMin("不锈钢机器方块", 8, false)
+            .addCasingInfoMin("钨钢机器方块", 8, false)
             .addEnergyHatch("任意不锈钢方块", 1)
             .addMaintenanceHatch("任意不锈钢方块", 1);
         return tt;
