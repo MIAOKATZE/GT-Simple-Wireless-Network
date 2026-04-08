@@ -4,9 +4,12 @@ import net.minecraft.block.Block;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
+import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.IItemContainer;
 
+import cpw.mods.fml.common.registry.GameRegistry;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
+import gregtech.api.util.GTLog;
 
 /**
  * 模组物品统一索引枚举
@@ -18,15 +21,28 @@ public enum GTSWNItemList implements IItemContainer {
     // 测试机器：EV, IV, LuV 等级
     Test_Machine_EV,
     Test_Machine_IV,
-    Test_Machine_LuV;
+    Test_Machine_LuV,
+
+    // 测试用多方块机器 (HV)
+    Test_Multiblock_HV,
+
+    // 测试物品
+    TestCoin;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;
     // 标记该条目是否已经被初始化赋值
     private boolean mHasNotBeenSet = true;
+    // 警告标志，防止重复输出警告
+    private boolean mWarned = false;
 
     /**
      * 通过 Item 对象设置当前枚举对应的物品
+     * <p>
+     * 该方法会创建一个数量为 1、元数据为 0 的标准物品堆栈，并标记该枚举项已初始化。
+     *
+     * @param aItem 要绑定的 Minecraft Item 对象
+     * @return 当前枚举实例，支持链式调用
      */
     @Override
     public IItemContainer set(Item aItem) {
@@ -39,6 +55,11 @@ public enum GTSWNItemList implements IItemContainer {
 
     /**
      * 通过 ItemStack 对象设置当前枚举对应的物品
+     * <p>
+     * 直接引用给定的物品堆栈，通常用于需要保留特定 NBT 或元数据的场景。
+     *
+     * @param aStack 要绑定的物品堆栈
+     * @return 当前枚举实例，支持链式调用
      */
     @Override
     public IItemContainer set(ItemStack aStack) {
@@ -49,7 +70,11 @@ public enum GTSWNItemList implements IItemContainer {
 
     /**
      * 通过元机器实体 (MTE) 设置当前枚举对应的物品
-     * 这是 GregTech 机器注册时最常用的方式
+     * <p>
+     * 这是 GregTech 机器注册时最常用的方式。它会调用 MTE 的 `getStackForm` 方法获取带有正确显示名称和 Lore 的物品堆栈。
+     *
+     * @param aMetaTileEntity 要绑定的机器实体实例
+     * @return 当前枚举实例，支持链式调用
      */
     @Override
     public IItemContainer set(IMetaTileEntity aMetaTileEntity) {
@@ -99,6 +124,30 @@ public enum GTSWNItemList implements IItemContainer {
     @Override
     public final boolean hasBeenSet() {
         return !mHasNotBeenSet;
+    }
+
+    @Override
+    public IItemContainer setAndRegister(Item item, String registerName, boolean shouldRegister) {
+        if (!shouldRegister || item == null) return this;
+        // 注册物品
+        if (registerName == null) {
+            registerName = item.getUnlocalizedName()
+                .replace("item.", "");
+        }
+        GameRegistry.registerItem(item, registerName);
+        // 设置物品索引
+        set(item);
+        // 添加到创造模式标签页
+        CreativeTabManager.addItemToTab(get(1));
+        return this;
+    }
+
+    @Override
+    public void sanityCheck() {
+        if (mHasNotBeenSet && !mWarned) {
+            GTLog.err.println("Warning: Item '" + name() + "' has not been set!");
+            mWarned = true;
+        }
     }
 
     /**

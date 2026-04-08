@@ -47,8 +47,14 @@ dependencies {
     api("com.github.GTNewHorizons:ModularUI2:2.3.45-1.7.10:dev") { transitive = false }
     api("com.github.GTNewHorizons:GTNHLib:0.9.41:dev") { transitive = false }
 
-    // UniMixins is required by dependencies like GTNHLib and ModularUI2 to start the game.
-    runtimeOnlyNonPublishable("com.github.GTNewHorizons:UniMixins:0.4.19")
+    // StructureLib is required for multiblock machine structure definitions and building.
+    api("com.github.GTNewHorizons:StructureLib:1.4.20:dev") { transitive = false }
+
+    // NEI (Not Enough Items) is required for HandlerInfo used in RecipeMapBuilder.neiHandlerInfo()
+    compileOnlyApi("com.github.GTNewHorizons:NotEnoughItems:2.7.89-GTNH:dev") { transitive = false }
+
+    // UniMixins is automatically included by the GTNH build script because usesMixins = true in gradle.properties.
+    // No need to declare it manually.
 
     // If you need to run the mod in the dev environment (runClient/runServer),
     // you can uncomment the following line to include GregTech at runtime without publishing it.
@@ -57,3 +63,5 @@ dependencies {
     // Add test dependencies here if you plan to run unit tests locally.
     // (Optional) testImplementation(platform('org.junit:junit-bom:5.14.1'))
 }
+
+

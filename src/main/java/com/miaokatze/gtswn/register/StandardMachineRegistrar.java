@@ -12,10 +12,10 @@ import net.minecraft.util.StatCollector;
 import com.miaokatze.gtswn.common.machine.MTETestMachine;
 
 /**
- * 测试机器注册器
- * 继承自 MachineRegistrar，负责具体定义并注册 EV、IV 和 LuV 等级的测试机器。
+ * 标准机器注册器
+ * 继承自 MachineRegistrar，负责具体定义并注册 EV、IV 和 LuV 等级的单方块测试机器。
  */
-public class TestMachineRegistrar extends MachineRegistrar {
+public class StandardMachineRegistrar extends MachineRegistrar {
 
     /**
      * 设置测试机器的注册项

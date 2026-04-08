@@ -2,7 +2,9 @@ package com.miaokatze.gtswn.main;
 
 import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
+import com.miaokatze.gtswn.loader.TestMachineRecipeLoader;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
@@ -25,6 +27,15 @@ public class CommonProxy {
         Config.synchronizeConfiguration(event.getSuggestedConfigurationFile());
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
+
+        // 注册物品
+        GTSimpleWirelessNetwork.LOG.info("[0/3] 开始注册物品...");
+        try {
+            ItemLoader.initItems();
+            GTSimpleWirelessNetwork.LOG.info("[0/3] 物品注册完成。");
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.error("[0/3] 物品注册过程中发生严重错误，请检查日志", t);
+        }
 
         // 定义机器注册任务
         Runnable registerRunnable = () -> {
@@ -71,10 +82,18 @@ public class CommonProxy {
 
     /**
      * 后初始化阶段 (PostInit)
-     * 处理与其他模组的交互或完成最终设置。
+     * 处理与其他模组的交互或完成最终设置，如注册测试配方。
      */
     @SuppressWarnings({ "unused" })
-    public void postInit(FMLPostInitializationEvent event) {}
+    public void postInit(FMLPostInitializationEvent event) {
+        GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册测试配方...");
+        try {
+            TestMachineRecipeLoader.initRecipes();
+            GTSimpleWirelessNetwork.LOG.info("[3/3] 测试配方注册完成。");
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.error("[3/3] 测试配方注册过程中发生错误", t);
+        }
+    }
 
     /**
      * 服务器启动阶段

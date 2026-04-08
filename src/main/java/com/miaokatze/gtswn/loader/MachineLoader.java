@@ -1,7 +1,8 @@
 package com.miaokatze.gtswn.loader;
 
+import com.miaokatze.gtswn.register.MultiblockMachineRegistrar;
 import com.miaokatze.gtswn.register.RegistrationManager;
-import com.miaokatze.gtswn.register.TestMachineRegistrar;
+import com.miaokatze.gtswn.register.StandardMachineRegistrar;
 
 /**
  * 机器加载器
@@ -17,11 +18,13 @@ public class MachineLoader {
     public static void initMachines() {
         RegistrationManager manager = RegistrationManager.getInstance();
 
-        // 创建测试机器的注册器实例
-        TestMachineRegistrar testMachineRegistrar = new TestMachineRegistrar();
+        // 创建单方块机器的注册器实例
+        StandardMachineRegistrar standardMachineRegistrar = new StandardMachineRegistrar();
+        manager.addRegistrar(standardMachineRegistrar::registerAll);
 
-        // 将注册任务添加到管理器中
-        manager.addRegistrar(testMachineRegistrar::registerAll);
+        // 创建多方块机器的注册器实例
+        MultiblockMachineRegistrar multiblockMachineRegistrar = new MultiblockMachineRegistrar();
+        manager.addRegistrar(multiblockMachineRegistrar::registerAll);
 
         // 统一执行所有已添加的注册任务
         manager.registerAll();
