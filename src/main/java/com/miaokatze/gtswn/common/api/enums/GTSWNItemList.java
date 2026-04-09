@@ -27,7 +27,9 @@ public enum GTSWNItemList implements IItemContainer {
     Test_Multiblock_HV,
 
     // 测试物品
-    TestCoin;
+    TestCoin,
+    // 电子测试硬币 (现在由 GTSWNMetaItem01 管理)
+    TestCoinE;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;

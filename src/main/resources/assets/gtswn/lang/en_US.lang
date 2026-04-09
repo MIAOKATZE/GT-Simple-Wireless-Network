@@ -21,3 +21,4 @@ gtswn.recipe.multitest=Test Multiblock Machine
 
 # Items
 item.TestCoin_GTswn.name=Test Coin
+item.TestCoin_GTswn_E.name=Electronic Test Coin

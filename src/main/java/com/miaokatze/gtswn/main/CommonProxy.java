@@ -4,7 +4,7 @@ import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
-import com.miaokatze.gtswn.loader.TestMachineRecipeLoader;
+import com.miaokatze.gtswn.recipe.TestMachineRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
@@ -88,7 +88,7 @@ public class CommonProxy {
     public void postInit(FMLPostInitializationEvent event) {
         GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册测试配方...");
         try {
-            TestMachineRecipeLoader.initRecipes();
+            TestMachineRecipes.init();
             GTSimpleWirelessNetwork.LOG.info("[3/3] 测试配方注册完成。");
         } catch (Throwable t) {
             GTSimpleWirelessNetwork.LOG.error("[3/3] 测试配方注册过程中发生错误", t);

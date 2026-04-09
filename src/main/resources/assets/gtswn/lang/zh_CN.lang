@@ -16,3 +16,4 @@ gtswn.recipe.multitest=测试多方块机器
 
 # Items
 item.TestCoin_GTswn.name=测试硬币
+item.TestCoin_GTswn_E.name=电子测试硬币
