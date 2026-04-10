@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.register;
 
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoinE;
 
@@ -18,6 +19,7 @@ public class ItemRegistrar {
         GTSimpleWirelessNetwork.LOG.info("开始通过 ItemRegistrar 注册物品...");
         registerTestCoin();
         registerTestCoinE();
+        registerPortableWirelessNetworkMonitor();
         GTSimpleWirelessNetwork.LOG.info("物品注册完成。");
     }
 
@@ -33,5 +35,13 @@ public class ItemRegistrar {
      */
     private static void registerTestCoinE() {
         TestCoinE.setAndRegister(com.miaokatze.gtswn.common.items.TestCoinE::new);
+    }
+
+    /**
+     * 注册便携式无线网络监测终端
+     */
+    private static void registerPortableWirelessNetworkMonitor() {
+        Portable_Wireless_Network_Monitor
+            .setAndRegister(com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor::new);
     }
 }

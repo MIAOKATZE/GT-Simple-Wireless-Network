@@ -29,7 +29,9 @@ public enum GTSWNItemList implements IItemContainer {
     // 测试物品
     TestCoin,
     // 电子测试硬币 (现在由 GTSWNMetaItem01 管理)
-    TestCoinE;
+    TestCoinE,
+    // 便携式无线网络监测终端
+    Portable_Wireless_Network_Monitor;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;

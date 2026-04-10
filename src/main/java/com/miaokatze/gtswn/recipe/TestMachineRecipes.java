@@ -2,7 +2,6 @@ package com.miaokatze.gtswn.recipe;
 
 import static gregtech.api.enums.GTValues.RA;
 
-import com.miaokatze.gtswn.api.recipe.GTSWNRecipeMaps;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 
 /**

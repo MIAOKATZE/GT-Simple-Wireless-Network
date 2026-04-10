@@ -22,3 +22,26 @@ gtswn.recipe.multitest=Test Multiblock Machine
 # Items
 item.TestCoin_GTswn.name=Test Coin
 item.TestCoin_GTswn_E.name=Electronic Test Coin
+item.PortableWirelessNetworkMonitor_GTswn.name=Portable Wireless Network Monitor
+
+# HUD Text
+gtswn.hud.grid.status=Grid Status
+gtswn.hud.grid.no.change=No Change/Calculating
+gtswn.hud.wireless.network=Wireless Grid
+gtswn.hud.eu.unit=EU
+gtswn.hud.eut.unit=EU/t
+
+# Item Tooltip
+gtswn.tooltip.monitor.hud.mode.off=§cHUD: Off
+gtswn.tooltip.monitor.hud.mode.normal=§bHUD: Normal
+gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: Scientific
+gtswn.tooltip.monitor.usage=§7Right-click to toggle HUD mode
+
+# Chat Messages
+gtswn.chat.monitor.bound=§a[Portable Monitor] Bound to owner: %s
+gtswn.chat.monitor.bound.hint=§7Tip: Right-click to toggle HUD mode, Shift + Right-click to rebind
+gtswn.chat.monitor.rebound=§e[Portable Monitor] Owner changed to: %s
+gtswn.chat.monitor.mode.switch=§a[Portable Monitor] HUD mode switched to: %s
+gtswn.chat.monitor.mode.off=§cOff
+gtswn.chat.monitor.mode.normal=§bNormal
+gtswn.chat.monitor.mode.scientific=§eScientific

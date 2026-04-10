@@ -17,3 +17,26 @@ gtswn.recipe.multitest=测试多方块机器
 # Items
 item.TestCoin_GTswn.name=测试硬币
 item.TestCoin_GTswn_E.name=电子测试硬币
+item.PortableWirelessNetworkMonitor_GTswn.name=便携式无线网络监测终端
+
+# HUD Text
+gtswn.hud.grid.status=电网状态
+gtswn.hud.grid.no.change=暂无变化/计算中
+gtswn.hud.wireless.network=无线电网
+gtswn.hud.eu.unit=EU
+gtswn.hud.eut.unit=EU/t
+
+# Item Tooltip
+gtswn.tooltip.monitor.hud.mode.off=§cHUD: 关闭
+gtswn.tooltip.monitor.hud.mode.normal=§bHUD: 常规计数
+gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: 科学计数
+gtswn.tooltip.monitor.usage=§7右键切换 HUD 模式
+
+# Chat Messages
+gtswn.chat.monitor.bound=§a[便携监测终端] 已绑定拥有者: %s
+gtswn.chat.monitor.bound.hint=§7提示: 再次右击可切换 HUD 显示模式，Shift + 右击可重新绑定
+gtswn.chat.monitor.rebound=§e[便携监测终端] 拥有者已覆盖为: %s
+gtswn.chat.monitor.mode.switch=§a[便携监测终端] HUD 模式已切换为: %s
+gtswn.chat.monitor.mode.off=§c关闭
+gtswn.chat.monitor.mode.normal=§b常规计数
+gtswn.chat.monitor.mode.scientific=§e科学计数

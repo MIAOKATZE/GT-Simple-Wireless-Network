@@ -4,6 +4,7 @@ import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
+import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.recipe.TestMachineRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
@@ -66,7 +67,7 @@ public class CommonProxy {
 
     /**
      * 初始化阶段 (Init)
-     * 在此阶段完成创造模式物品栏的初始化。
+     * 在此阶段完成创造模式物品栏的初始化，并注册服务端 Tick 事件处理器。
      */
     @SuppressWarnings({ "unused" })
     public void init(FMLInitializationEvent event) {
@@ -89,6 +90,7 @@ public class CommonProxy {
         GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册测试配方...");
         try {
             TestMachineRecipes.init();
+            CraftingRecipes.init();
             GTSimpleWirelessNetwork.LOG.info("[3/3] 测试配方注册完成。");
         } catch (Throwable t) {
             GTSimpleWirelessNetwork.LOG.error("[3/3] 测试配方注册过程中发生错误", t);

@@ -14,7 +14,7 @@ import com.gtnewhorizon.structurelib.alignment.constructable.IConstructable;
 import com.gtnewhorizon.structurelib.alignment.constructable.ISurvivalConstructable;
 import com.gtnewhorizon.structurelib.structure.IStructureDefinition;
 import com.gtnewhorizon.structurelib.structure.ISurvivalBuildEnvironment;
-import com.miaokatze.gtswn.api.recipe.GTSWNRecipeMaps;
+import com.miaokatze.gtswn.recipe.GTSWNRecipeMaps;
 
 import gregtech.api.GregTechAPI;
 import gregtech.api.enums.Textures;

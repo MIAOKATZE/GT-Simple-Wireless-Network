@@ -1,4 +1,4 @@
-package com.miaokatze.gtswn.api.recipe;
+package com.miaokatze.gtswn.recipe;
 
 import static gregtech.api.recipe.RecipeMapBuilder.*;
 
