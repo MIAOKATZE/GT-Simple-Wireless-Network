@@ -1,7 +1,6 @@
 .gradle
 .settings
 /plan/
-/images/
 /.idea/
 /.vscode/
 /run/
