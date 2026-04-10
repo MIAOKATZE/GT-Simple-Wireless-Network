@@ -3,7 +3,7 @@
 
 | 说明 | Description |
 | --- | --- |
-该工程目前处于基础架构验证阶段，已完成测试用多方块机器 (MTEMultiTestMachine) 的开发与专属配方系统集成。适配版本 GTNH 2.8.x。 | This project is currently in the infrastructure verification stage. Development of the test multiblock machine (MTEMultiTestMachine) and integration of the exclusive recipe system have been completed. Target compatibility: GTNH 2.8.x. |
+| 目前增加了便携无线监测终端。适配版本 GTNH 2.8.x。 | Portable Wireless Network Monitor added. Target compatibility: GTNH 2.8.x. |
 
 ## 功能介绍  Features
 
