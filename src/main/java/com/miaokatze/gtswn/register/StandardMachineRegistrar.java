@@ -3,13 +3,16 @@ package com.miaokatze.gtswn.register;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Test_Machine_EV;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Test_Machine_IV;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Test_Machine_LuV;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.MTETEST_EV;
 import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.MTETEST_IV;
 import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.MTETEST_LuV;
+import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.WIRELESS_ENERGY_MONITOR;
 
 import net.minecraft.util.StatCollector;
 
 import com.miaokatze.gtswn.common.machine.MTETestMachine;
+import com.miaokatze.gtswn.common.machine.MTEWirelessEnergyMonitor;
 
 /**
  * 标准机器注册器
@@ -49,5 +52,13 @@ public class StandardMachineRegistrar extends MachineRegistrar {
                 StatCollector.translateToLocal("gtswn.machine.test.luv"),
                 6),
             Test_Machine_LuV);
+
+        // 注册 LV 等级无线能量监视器 (Tier 1)
+        registerMachine(
+            () -> new MTEWirelessEnergyMonitor(
+                WIRELESS_ENERGY_MONITOR.ID,
+                "gtswn.wireless_energy_monitor",
+                StatCollector.translateToLocal("gtswn.machine.wireless_monitor")),
+            Wireless_Energy_Monitor);
     }
 }

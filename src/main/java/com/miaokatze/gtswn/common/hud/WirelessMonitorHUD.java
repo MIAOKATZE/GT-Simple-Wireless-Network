@@ -49,7 +49,7 @@ public class WirelessMonitorHUD extends Gui {
     /** 连续无变化的检测次数 */
     private static int unchangedCount = 0;
 
-    /** 最大无变化检测次数（超过此值显示“暂无变化”） */
+    /** 最大无变化检测次数（超过此值显示"暂无变化"） */
     private static final int MAX_UNCHANGED_COUNT = 60;
 
     /** HUD 更新间隔（ticks），每 200 ticks（10 秒）更新一次 */
@@ -66,6 +66,9 @@ public class WirelessMonitorHUD extends Gui {
 
     /** 缓存的无线电网能量值 */
     private static String cachedEUText = "无线电网: 0 EU";
+
+    /** 是否已初始化（用于进退客户端时恢复状态） */
+    private static boolean initialized = false;
 
     /**
      * 设置 HUD 显示状态
@@ -113,11 +116,6 @@ public class WirelessMonitorHUD extends Gui {
 
         Minecraft mc = Minecraft.getMinecraft();
 
-        // 检查 HUD 是否启用
-        if (!hudEnabled) {
-            return;
-        }
-
         // 确保游戏正常运行且有玩家
         if (mc.theWorld == null || mc.thePlayer == null) {
             return;
@@ -128,10 +126,50 @@ public class WirelessMonitorHUD extends Gui {
         // 获取世界时间
         long currentTick = mc.theWorld.getTotalWorldTime();
 
-        // 每 INVENTORY_CHECK_INTERVAL ticks 检查一次背包
+        // 每 INVENTORY_CHECK_INTERVAL ticks 检查一次背包（在 hudEnabled 检查之前执行）
         if (currentTick - lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
-            cachedOwnerUUID = findMonitorInInventory(player);
+            String newOwnerUUID = findMonitorInInventory(player);
+
+            // 如果找到了监测终端，从 NBT 读取 HUD 模式并初始化
+            if (newOwnerUUID != null && !newOwnerUUID.isEmpty()) {
+                // 获取物品的 HUD 模式
+                int hudMode = getHUDModeFromInventory(player);
+
+                // 如果 HUD 模式或拥有者发生变化，更新缓存
+                if (!newOwnerUUID.equals(cachedOwnerUUID) || displayMode != hudMode) {
+                    cachedOwnerUUID = newOwnerUUID;
+                    displayMode = hudMode;
+                    hudEnabled = hudMode > 0;
+
+                    // 如果 HUD 开启，重置更新时间和历史，强制立即更新
+                    if (hudEnabled) {
+                        lastUpdateTick = 0;
+                        measurementHistory.clear();
+                        unchangedCount = 0;
+
+                        // 立即更新一次缓存
+                        try {
+                            updateCache(currentTick, UUID.fromString(newOwnerUUID));
+                        } catch (Exception e) {
+                            // UUID 解析失败，忽略
+                        }
+                    }
+                }
+            } else {
+                // 没找到监测终端，关闭 HUD
+                if (hudEnabled) {
+                    hudEnabled = false;
+                    cachedOwnerUUID = null;
+                    displayMode = 0;
+                }
+            }
+
             lastInventoryCheckTick = currentTick;
+        }
+
+        // 检查 HUD 是否启用（在背包检查之后）
+        if (!hudEnabled) {
+            return;
         }
 
         // 如果找不到监测终端，不显示 HUD
@@ -149,30 +187,7 @@ public class WirelessMonitorHUD extends Gui {
 
         // 每 UPDATE_INTERVAL ticks 更新一次缓存
         if (currentTick - lastUpdateTick >= UPDATE_INTERVAL) {
-            // 调用 GT5U 的 WirelessNetworkManager 获取无线电网能量
-            BigInteger wirelessEU = WirelessNetworkManager.getUserEU(uuid);
-
-            // 根据显示模式格式化能量值
-            String euFormatted;
-            if (displayMode == 2) {
-                // 科学计数法
-                euFormatted = formatScientific(wirelessEU);
-            } else {
-                // 常规计数（带逗号分隔）
-                euFormatted = formatNormal(wirelessEU);
-            }
-
-            cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
-                + ": §f"
-                + euFormatted
-                + " §b"
-                + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-
-            // 记录测量历史并计算 EU/t
-            recordMeasurement(currentTick, wirelessEU);
-            cachedEUTText = calculateEUT(currentTick);
-
-            lastUpdateTick = currentTick;
+            updateCache(currentTick, uuid);
         }
 
         // 计算 HUD 位置（饱食度上方）
@@ -261,6 +276,61 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
+     * 从背包中获取监测终端的 HUD 模式
+     */
+    private int getHUDModeFromInventory(EntityPlayer player) {
+        // 检查主手
+        ItemStack heldItem = player.getHeldItem();
+        if (heldItem != null && heldItem.getItem() instanceof PortableWirelessNetworkMonitor) {
+            if (heldItem.stackTagCompound != null) {
+                return heldItem.stackTagCompound.getInteger("HUDMode");
+            }
+        }
+
+        // 遍历背包槽位
+        for (int i = 0; i < player.inventory.mainInventory.length; i++) {
+            ItemStack stack = player.inventory.mainInventory[i];
+            if (stack != null && stack.getItem() instanceof PortableWirelessNetworkMonitor) {
+                if (stack.stackTagCompound != null) {
+                    return stack.stackTagCompound.getInteger("HUDMode");
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    /**
+     * 更新 HUD 缓存数据
+     */
+    private void updateCache(long currentTick, UUID uuid) {
+        // 调用 GT5U 的 WirelessNetworkManager 获取无线电网能量
+        BigInteger wirelessEU = WirelessNetworkManager.getUserEU(uuid);
+
+        // 根据显示模式格式化能量值
+        String euFormatted;
+        if (displayMode == 2) {
+            // 科学计数法
+            euFormatted = formatScientific(wirelessEU);
+        } else {
+            // 常规计数（带逗号分隔）
+            euFormatted = formatNormal(wirelessEU);
+        }
+
+        cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
+            + ": §f"
+            + euFormatted
+            + " §b"
+            + StatCollector.translateToLocal("gtswn.hud.eu.unit");
+
+        // 记录测量历史并计算 EU/t
+        recordMeasurement(currentTick, wirelessEU);
+        cachedEUTText = calculateEUT(currentTick);
+
+        lastUpdateTick = currentTick;
+    }
+
+    /**
      * 记录测量历史（只记录发生变化的点）
      */
     private static void recordMeasurement(long tick, BigInteger value) {
@@ -341,13 +411,16 @@ public class WirelessMonitorHUD extends Gui {
 
         // 转换为 GT 的电流+电压等级格式
         String gtPowerText = formatGTPower(euPerTick);
+        int gtTier = getGTTier(euPerTick); // 获取电压等级用于括号颜色
 
         // 判断是增加还是减少
         String status;
+        String bracketColor = TIER_COLORS[gtTier]; // 使用电压等级颜色用于括号
         if (euPerTick > 0) {
             status = "§a↑ +" + euPerTickStr
                 + " "
                 + StatCollector.translateToLocal("gtswn.hud.eut.unit")
+                + bracketColor
                 + " ("
                 + gtPowerText
                 + ")";
@@ -355,6 +428,7 @@ public class WirelessMonitorHUD extends Gui {
             status = "§c↓ " + euPerTickStr
                 + " "
                 + StatCollector.translateToLocal("gtswn.hud.eut.unit")
+                + bracketColor
                 + " ("
                 + gtPowerText
                 + ")";
@@ -426,57 +500,55 @@ public class WirelessMonitorHUD extends Gui {
     };
 
     /**
+     * 获取 EU/t 对应的 GT 电压等级
+     */
+    private static int getGTTier(double euPerTick) {
+        double absEU = Math.abs(euPerTick);
+        int tier = 0;
+        for (int i = 0; i < VOLTAGES.length; i++) {
+            if (absEU < VOLTAGES[i] * 5) {
+                tier = i;
+                break;
+            }
+            if (i == VOLTAGES.length - 1) {
+                tier = i;
+            }
+        }
+
+        int amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
+        if (amperage > 4 && tier < VOLTAGES.length - 1) {
+            tier++;
+            amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
+            while (amperage > 4 && tier < VOLTAGES.length - 1) {
+                tier++;
+                amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
+            }
+        }
+        return tier;
+    }
+
+    /**
      * 将 EU/t 转换为 GT 的电流+电压等级格式
      * 
      * @param euPerTick 每秒能量变化率
      * @return 格式化后的字符串（例如：2A HV）
      */
     private static String formatGTPower(double euPerTick) {
-        double absEU = Math.abs(euPerTick);
-
-        // 找到对应的电压等级
-        int tier = 0;
-        for (int i = 0; i < VOLTAGES.length; i++) {
-            if (absEU < VOLTAGES[i] * 5) { // 最多 4A，所以用 5 倍作为上限
-                tier = i;
-                break;
-            }
-            if (i == VOLTAGES.length - 1) {
-                tier = i; // MAX
-            }
-        }
-
-        // 计算电流
+        int tier = getGTTier(euPerTick);
         long voltage = VOLTAGES[tier];
+        double absEU = Math.abs(euPerTick);
         int amperage = (int) Math.ceil(absEU / voltage);
 
-        // 如果电流超过 4A 且不是 MAX 等级，自动升级到下一等级
         boolean isOverloaded = false;
-        if (amperage > 4 && tier < VOLTAGES.length - 1) {
-            // 升级到下一等级
-            tier++;
-            voltage = VOLTAGES[tier];
-            amperage = (int) Math.ceil(absEU / voltage);
-
-            // 如果升级后还是超过 4A，继续检查是否需要再次升级
-            while (amperage > 4 && tier < VOLTAGES.length - 1) {
-                tier++;
-                voltage = VOLTAGES[tier];
-                amperage = (int) Math.ceil(absEU / voltage);
-            }
-
-            // 如果已经是 MAX 等级且超过 4A，标记为过载
-            if (tier == VOLTAGES.length - 1 && amperage > 4) {
-                isOverloaded = true;
-                amperage = 4;
-            }
+        if (amperage > 4 && tier == VOLTAGES.length - 1) {
+            isOverloaded = true;
+            amperage = 4;
         } else if (amperage > 4) {
-            // MAX 等级超过 4A
+            // 已经被 getGTTier 处理过，不应再超过 4A
             isOverloaded = true;
             amperage = 4;
         }
 
-        // 格式化输出
         String color = TIER_COLORS[tier];
         String tierName = TIER_NAMES[tier];
 

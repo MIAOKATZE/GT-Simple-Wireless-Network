@@ -24,10 +24,51 @@ item.TestCoin_GTswn.name=Test Coin
 item.TestCoin_GTswn_E.name=Electronic Test Coin
 item.PortableWirelessNetworkMonitor_GTswn.name=Portable Wireless Network Monitor
 
+# Machines
+gtswn.machine.wireless_monitor=Wireless Energy Monitor
+gt.blockmachines.gtswn.wireless_energy_monitor.name=Wireless Energy Monitor
+
+# Wireless Energy Monitor UI
+gtswn.ui.title=Wireless Energy Monitor
+gtswn.ui.mode.normal=§bMode: §fNormal
+gtswn.ui.mode.scientific=§eMode: §fScientific
+gtswn.ui.wireless.energy=§bWireless Network: §f%s §bEU
+gtswn.ui.wireless.energy.scientific=§bWireless Grid: §f%s §bEU
+gtswn.ui.grid.status.up=§bGrid Status: §a↑ +%s §bEU/t (§f%s§b)
+gtswn.ui.grid.status.down=§bGrid Status: §c↓ -%s §bEU/t (§f%s§b)
+gtswn.ui.grid.status.nochange=§bGrid Status: §fNo Change/Calculating
+gtswn.ui.redstone.mode=§bRedstone Mode: §f%s
+gtswn.ui.redstone.mode.off=Off
+gtswn.ui.redstone.mode.high=High Level
+gtswn.ui.redstone.mode.low=Low Level
+gtswn.ui.redstone.mode.high.lag=High Level (Hysteresis)
+gtswn.ui.redstone.mode.low.lag=Low Level (Hysteresis)
+gtswn.ui.redstone.output.on=§bRedstone Output: §aON
+gtswn.ui.redstone.output.off=§bRedstone Output: §cOFF
+gtswn.ui.redstone.desc.off=§fOff: §eNo redstone signal output
+gtswn.ui.redstone.desc.high=§fHigh Level: §eOutput when energy > Param1
+gtswn.ui.redstone.desc.low=§fLow Level: §eOutput when energy < Param1
+gtswn.ui.redstone.desc.high.lag=§fHigh (Hysteresis): §eOutput >Param1, Cancel <Param2
+gtswn.ui.redstone.desc.low.lag=§fLow (Hysteresis): §eCancel >Param1, Output <Param2
+gtswn.ui.param1=§bParam1: §f%s
+gtswn.ui.param2=§bParam2: §f%s
+gtswn.ui.tooltip.toggle.mode=Toggle counting mode
+gtswn.ui.tooltip.toggle.redstone=Toggle redstone mode
+gtswn.ui.tooltip.param1.minus=Param1 -Highest digit
+gtswn.ui.tooltip.param1.plus=Param1 +Highest digit
+gtswn.ui.tooltip.param1.mul10=Param1 ×10
+gtswn.ui.tooltip.param1.div10=Param1 ÷10
+gtswn.ui.tooltip.param1.reset=Param1 Reset
+gtswn.ui.tooltip.param2.minus=Param2 -Highest digit
+gtswn.ui.tooltip.param2.plus=Param2 +Highest digit
+gtswn.ui.tooltip.param2.mul10=Param2 ×10
+gtswn.ui.tooltip.param2.div10=Param2 ÷10
+gtswn.ui.tooltip.param2.reset=Param2 Reset
+
 # HUD Text
-gtswn.hud.grid.status=Grid Status
+gtswn.hud.grid.status=Network Status
 gtswn.hud.grid.no.change=No Change/Calculating
-gtswn.hud.wireless.network=Wireless Grid
+gtswn.hud.wireless.network=Wireless Network
 gtswn.hud.eu.unit=EU
 gtswn.hud.eut.unit=EU/t
 

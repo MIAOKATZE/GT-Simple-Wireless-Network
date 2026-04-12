@@ -20,6 +20,10 @@ public enum MetaTileEntityID {
     /** LuV 等级测试发电机 (Tier 6) */
     MTETEST_LuV(2),
 
+    // --- 无线电网监控机器 ---
+    /** LV 等级无线能量监视器 (Tier 1) */
+    WIRELESS_ENERGY_MONITOR(20),
+
     // --- 多方块测试机器 ---
     /** HV 等级测试多方块机器 (Tier 5) */
     MTETEST_MULTIBLOCK_HV(10),

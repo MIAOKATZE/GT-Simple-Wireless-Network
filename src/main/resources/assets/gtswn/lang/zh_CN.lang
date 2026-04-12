@@ -19,6 +19,49 @@ item.TestCoin_GTswn.name=测试硬币
 item.TestCoin_GTswn_E.name=电子测试硬币
 item.PortableWirelessNetworkMonitor_GTswn.name=便携式无线网络监测终端
 
+# Machines
+gtswn.machine.wireless_monitor=无线能量监视器
+gt.blockmachines.gtswn.wireless_energy_monitor.name=无线能量监视器
+
+# Wireless Energy Monitor UI
+gtswn.ui.title=无线能量监视器
+gtswn.ui.mode.normal=§b模式: §f常规计数
+gtswn.ui.mode.scientific=§e模式: §f科学计数
+gtswn.ui.wireless.energy=§b无线电网能量: §f%s §bEU
+gtswn.ui.wireless.energy.scientific=§b无线电网能量: §f%s §bEU
+gtswn.ui.grid.status.up=§b电网状态: §a↑ +%s §bEU/t (§f%s§b)
+gtswn.ui.grid.status.down=§b电网状态: §c↓ -%s §bEU/t (§f%s§b)
+gtswn.ui.grid.status.nochange=§b电网状态: §f暂无变化/计算中
+gtswn.ui.redstone.mode=§b红石模式: §f%s
+gtswn.ui.redstone.mode.off=关闭
+gtswn.ui.redstone.mode.high=高电平
+gtswn.ui.redstone.mode.low=低电平
+gtswn.ui.redstone.mode.high.lag=高电平滞后
+gtswn.ui.redstone.mode.low.lag=低电平滞后
+gtswn.ui.redstone.mode.unknown=未知
+gtswn.ui.redstone.output.on=§b红石输出: §a开启
+gtswn.ui.redstone.output.off=§b红石输出: §c关闭
+gtswn.ui.redstone.desc.off=§f关闭: §e不输出红石信号
+gtswn.ui.redstone.desc.high=§f高电平: §e电量 > 参数1 时输出
+gtswn.ui.redstone.desc.low=§f低电平: §e电量 < 参数1 时输出
+gtswn.ui.redstone.desc.high.lag=§f高电平滞后: §e>参数1输出, <参数2取消
+gtswn.ui.redstone.desc.low.lag=§f低电平滞后: §e>参数1取消, <参数2输出
+gtswn.ui.redstone.desc.unknown=§f未知模式
+gtswn.ui.param1=§b参数1: §f%s
+gtswn.ui.param2=§b参数2: §f%s
+gtswn.ui.tooltip.toggle.mode=改变计数模式
+gtswn.ui.tooltip.toggle.redstone=切换红石模式
+gtswn.ui.tooltip.param1.minus=参数1 -最高位
+gtswn.ui.tooltip.param1.plus=参数1 +最高位
+gtswn.ui.tooltip.param1.mul10=参数1 ×10
+gtswn.ui.tooltip.param1.div10=参数1 ÷10
+gtswn.ui.tooltip.param1.reset=参数1 清零
+gtswn.ui.tooltip.param2.minus=参数2 -最高位
+gtswn.ui.tooltip.param2.plus=参数2 +最高位
+gtswn.ui.tooltip.param2.mul10=参数2 ×10
+gtswn.ui.tooltip.param2.div10=参数2 ÷10
+gtswn.ui.tooltip.param2.reset=参数2 清零
+
 # HUD Text
 gtswn.hud.grid.status=电网状态
 gtswn.hud.grid.no.change=暂无变化/计算中

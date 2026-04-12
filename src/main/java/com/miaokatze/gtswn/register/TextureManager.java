@@ -24,6 +24,14 @@ public class TextureManager {
     /** LuV 等级测试机器顶部材质 */
     public static final IIconContainer TEX_TEST_LUV = new Textures.BlockIcons.CustomIcon("gtswn:MTETEST_3");
 
+    // --- 无线能量监视器材质图标 ---
+    /** 无线能量监视器正面材质（红石信号关闭） */
+    public static final IIconContainer TEX_WIRELESS_MONITOR_OFF = new Textures.BlockIcons.CustomIcon(
+        "gtswn:Wireless_Energy_Monitor_OFF");
+    /** 无线能量监视器正面材质（红石信号开启） */
+    public static final IIconContainer TEX_WIRELESS_MONITOR_ON = new Textures.BlockIcons.CustomIcon(
+        "gtswn:Wireless_Energy_Monitor_ON");
+
     // 材质缓存表，用于存储已创建的 ITexture 实例以提高性能
     private static final Map<String, ITexture> textureCache = new HashMap<>();
 
