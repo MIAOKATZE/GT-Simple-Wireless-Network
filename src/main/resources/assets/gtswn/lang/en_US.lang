@@ -28,6 +28,11 @@ item.PortableWirelessNetworkMonitor_GTswn.name=Portable Wireless Network Monitor
 gtswn.machine.wireless_monitor=Wireless Energy Monitor
 gt.blockmachines.gtswn.wireless_energy_monitor.name=Wireless Energy Monitor
 
+# Wireless Energy Monitor Description
+gtswn.desc.wireless_monitor.line1=§bMonitor wireless network, smart power calculation
+gtswn.desc.wireless_monitor.line2=§bSmart redstone output, multiple modes
+gtswn.desc.wireless_monitor.line3=§9From MOD: GTSimpleWirelessNetwork
+
 # Wireless Energy Monitor UI
 gtswn.ui.title=Wireless Energy Monitor
 gtswn.ui.mode.normal=§bMode: §fNormal

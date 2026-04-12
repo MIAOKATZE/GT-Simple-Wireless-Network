@@ -73,7 +73,9 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
             aName,
             aNameRegional,
             1,
-            new String[] { "§b用于监测无线网络，智能计算网络功率", "§b智能输出红石信号，可切换多模式", "§9来源MOD：GTSimpleWirelessNetwork" });
+            new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
+                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
+                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3") });
     }
 
     // 拷贝构造函数
@@ -103,8 +105,10 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
 
     @Override
     public String[] getDescription() {
-        // 返回空描述数组，避免显示燃料效率等信息
-        return new String[0];
+        // 返回构造函数中传入的描述数组，不包含燃料效率等信息
+        return new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
+            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
+            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3") };
     }
 
     @Override

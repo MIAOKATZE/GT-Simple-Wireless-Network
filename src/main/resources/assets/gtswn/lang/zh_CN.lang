@@ -23,6 +23,11 @@ item.PortableWirelessNetworkMonitor_GTswn.name=便携式无线网络监测终端
 gtswn.machine.wireless_monitor=无线能量监视器
 gt.blockmachines.gtswn.wireless_energy_monitor.name=无线能量监视器
 
+# Wireless Energy Monitor Description
+gtswn.desc.wireless_monitor.line1=§b用于监测无线网络，智能计算网络功率
+gtswn.desc.wireless_monitor.line2=§b智能输出红石信号，可切换多模式
+gtswn.desc.wireless_monitor.line3=§9来源MOD：GTSimpleWirelessNetwork
+
 # Wireless Energy Monitor UI
 gtswn.ui.title=无线能量监视器
 gtswn.ui.mode.normal=§b模式: §f常规计数

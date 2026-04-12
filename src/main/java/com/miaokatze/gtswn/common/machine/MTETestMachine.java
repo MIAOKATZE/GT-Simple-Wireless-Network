@@ -129,7 +129,7 @@ public class MTETestMachine extends MTEBasicGenerator {
 
     /**
      * 计算太阳能发电量
-     * 
+     *
      * @param world         世界对象
      * @param weatherFactor 天气系数（晴天 1.0，雨天 0.5）
      * @return 本次计算产生的 EU 总量
