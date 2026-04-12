@@ -29,9 +29,9 @@ gtswn.ui.mode.normal=§b模式: §f常规计数
 gtswn.ui.mode.scientific=§e模式: §f科学计数
 gtswn.ui.wireless.energy=§b无线电网能量: §f%s §bEU
 gtswn.ui.wireless.energy.scientific=§b无线电网能量: §f%s §bEU
-gtswn.ui.grid.status.up=§b电网状态: §a↑ +%s §bEU/t (§f%s§b)
-gtswn.ui.grid.status.down=§b电网状态: §c↓ -%s §bEU/t (§f%s§b)
-gtswn.ui.grid.status.nochange=§b电网状态: §f暂无变化/计算中
+gtswn.ui.network.status.up=§b电网状态: §a↑ +%s §bEU/t (§f%s§b)
+gtswn.ui.network.status.down=§b电网状态: §c↓ -%s §bEU/t (§f%s§b)
+gtswn.ui.network.status.nochange=§b电网状态: §f暂无变化/计算中
 gtswn.ui.redstone.mode=§b红石模式: §f%s
 gtswn.ui.redstone.mode.off=关闭
 gtswn.ui.redstone.mode.high=高电平
@@ -63,8 +63,8 @@ gtswn.ui.tooltip.param2.div10=参数2 ÷10
 gtswn.ui.tooltip.param2.reset=参数2 清零
 
 # HUD Text
-gtswn.hud.grid.status=电网状态
-gtswn.hud.grid.no.change=暂无变化/计算中
+gtswn.hud.network.status=电网状态
+gtswn.hud.network.no.change=暂无变化/计算中
 gtswn.hud.wireless.network=无线电网
 gtswn.hud.eu.unit=EU
 gtswn.hud.eut.unit=EU/t

@@ -204,10 +204,12 @@ public class PortableWirelessNetworkMonitor extends Item {
         String euFormatted = formatBigInteger(wirelessEU);
 
         // 发送聊天消息
-        aPlayer.addChatMessage(new ChatComponentText("§b[便携监测终端] 拥有者的无线电网能量: §f" + euFormatted + " §bEU"));
+        String energyMsg = StatCollector.translateToLocalFormatted("gtswn.chat.monitor.energy", euFormatted);
+        aPlayer.addChatMessage(new ChatComponentText(energyMsg));
 
         // 额外提示：如何更新拥有者
-        aPlayer.addChatMessage(new ChatComponentText("§7提示: Shift + 右击可更新拥有者"));
+        String hintMsg = StatCollector.translateToLocal("gtswn.chat.monitor.rebind.hint");
+        aPlayer.addChatMessage(new ChatComponentText(hintMsg));
     }
 
     /**

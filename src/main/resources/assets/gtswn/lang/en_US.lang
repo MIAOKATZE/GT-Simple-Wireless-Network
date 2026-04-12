@@ -33,10 +33,10 @@ gtswn.ui.title=Wireless Energy Monitor
 gtswn.ui.mode.normal=§bMode: §fNormal
 gtswn.ui.mode.scientific=§eMode: §fScientific
 gtswn.ui.wireless.energy=§bWireless Network: §f%s §bEU
-gtswn.ui.wireless.energy.scientific=§bWireless Grid: §f%s §bEU
-gtswn.ui.grid.status.up=§bGrid Status: §a↑ +%s §bEU/t (§f%s§b)
-gtswn.ui.grid.status.down=§bGrid Status: §c↓ -%s §bEU/t (§f%s§b)
-gtswn.ui.grid.status.nochange=§bGrid Status: §fNo Change/Calculating
+gtswn.ui.wireless.energy.scientific=§bWireless Network: §f%s §bEU
+gtswn.ui.network.status.up=§bNetwork Status: §a↑ +%s §bEU/t (§f%s§b)
+gtswn.ui.network.status.down=§bNetwork Status: §c↓ -%s §bEU/t (§f%s§b)
+gtswn.ui.network.status.nochange=§bNetwork Status: §fNo Change/Calculating
 gtswn.ui.redstone.mode=§bRedstone Mode: §f%s
 gtswn.ui.redstone.mode.off=Off
 gtswn.ui.redstone.mode.high=High Level
@@ -66,8 +66,8 @@ gtswn.ui.tooltip.param2.div10=Param2 ÷10
 gtswn.ui.tooltip.param2.reset=Param2 Reset
 
 # HUD Text
-gtswn.hud.grid.status=Network Status
-gtswn.hud.grid.no.change=No Change/Calculating
+gtswn.hud.network.status=Network Status
+gtswn.hud.network.no.change=No Change/Calculating
 gtswn.hud.wireless.network=Wireless Network
 gtswn.hud.eu.unit=EU
 gtswn.hud.eut.unit=EU/t

@@ -3,7 +3,7 @@
 
 | 说明 | Description |
 | --- | --- |
-| 目前增加了便携无线监测终端。适配版本 GTNH 2.8.x。 | Portable Wireless Network Monitor added. Target compatibility: GTNH 2.8.x. |
+| 添加了便携与机器版的无线监测终端，均可在LV阶段合成，具有电网智能记录分析与红石逻辑信号输出功能。适配版本 GTNH 2.8.x。 | Added portable and machine versions of wireless network monitors, both craftable at LV tier, featuring intelligent grid analysis and redstone logic signal output. Target compatibility: GTNH 2.8.x. |
 
 ## 功能介绍  Features
 

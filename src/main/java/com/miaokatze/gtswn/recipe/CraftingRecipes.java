@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.recipe;
 
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
@@ -36,6 +37,8 @@ public class CraftingRecipes {
     private static void registerAllRecipes() {
         // 便携无线监测终端
         addPortableMonitorRecipe();
+        // 无线能量监视器（工作台版）
+        addWirelessEnergyMonitorRecipe();
     }
 
     /**
@@ -76,5 +79,45 @@ public class CraftingRecipes {
             .add(recipe);
 
         GTSimpleWirelessNetwork.LOG.info("已添加便携无线监测终端合成配方");
+    }
+
+    /**
+     * 添加无线能量监视器的合成配方
+     * <p>
+     * 合成表（与便携版类似，但中间改为 LV 机械外壳）：
+     * LV发射器 | 钢外壳 | LV接收器
+     * LV发射器 | LV机械外壳 | LV接收器
+     * 钢螺丝 | 钢外壳 | 钢螺丝
+     */
+    private static void addWirelessEnergyMonitorRecipe() {
+        // 获取原材料
+        ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
+        ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
+        ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
+        ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1); // 钢螺丝
+        ItemStack lvHull = ItemList.Hull_LV.get(1); // LV机械外壳
+
+        // 使用 Forge 的 ShapedOreRecipe 添加合成配方
+        net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
+            Wireless_Energy_Monitor.get(1),
+            "ABC",
+            "ADC",
+            "EBE",
+            'A',
+            lvEmitter,
+            'B',
+            steelPlate,
+            'C',
+            lvReceiver,
+            'D',
+            lvHull,
+            'E',
+            steelScrew);
+
+        CraftingManager.getInstance()
+            .getRecipeList()
+            .add(recipe);
+
+        GTSimpleWirelessNetwork.LOG.info("已添加无线能量监视器合成配方");
     }
 }

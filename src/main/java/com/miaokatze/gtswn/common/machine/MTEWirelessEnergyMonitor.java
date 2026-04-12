@@ -68,7 +68,12 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
 
     // 构造函数:用于注册
     public MTEWirelessEnergyMonitor(int aID, String aName, String aNameRegional) {
-        super(aID, aName, aNameRegional, 1, new String[0]);
+        super(
+            aID,
+            aName,
+            aNameRegional,
+            1,
+            new String[] { "§b用于监测无线网络，智能计算网络功率", "§b智能输出红石信号，可切换多模式", "§9来源MOD：GTSimpleWirelessNetwork" });
     }
 
     // 拷贝构造函数
@@ -131,7 +136,7 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
             cachedModeText = displayMode == 0 ? translate("gtswn.ui.mode.normal")
                 : translate("gtswn.ui.mode.scientific");
             cachedEUText = getWirelessEUText();
-            cachedStatusText = getGridStatusText();
+            cachedStatusText = getnetworkStatusText();
             cachedRedstoneModeText = getRedstoneModeText();
             cachedRedstoneOutputText = redstoneOutput ? translate("gtswn.ui.redstone.output.on")
                 : translate("gtswn.ui.redstone.output.off");
@@ -318,17 +323,17 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
     }
 
     // 获取电网状态文本（与 HUD 保持一致）
-    private String getGridStatusText() {
+    private String getnetworkStatusText() {
         if (euPerTick > 0.01) {
             String euPerTickStr = formatEUtValue(euPerTick);
             String gtPowerText = formatGTPower(euPerTick);
-            return translate("gtswn.ui.grid.status.up", euPerTickStr, gtPowerText);
+            return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText);
         } else if (euPerTick < -0.01) {
             String euPerTickStr = formatEUtValue(Math.abs(euPerTick));
             String gtPowerText = formatGTPower(Math.abs(euPerTick));
-            return translate("gtswn.ui.grid.status.down", euPerTickStr, gtPowerText);
+            return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
         } else {
-            return translate("gtswn.ui.grid.status.nochange");
+            return translate("gtswn.ui.network.status.nochange");
         }
     }
 

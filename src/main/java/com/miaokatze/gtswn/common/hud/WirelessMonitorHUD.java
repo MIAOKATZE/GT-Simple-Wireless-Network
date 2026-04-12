@@ -65,14 +65,16 @@ public class WirelessMonitorHUD extends Gui {
     private static long lastInventoryCheckTick = 0;
 
     /** 缓存的无线电网能量值 */
-    private static String cachedEUText = "无线电网: 0 EU";
+    private static String cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
+        + ": §f0 §b"
+        + StatCollector.translateToLocal("gtswn.hud.eu.unit");
 
     /** 是否已初始化（用于进退客户端时恢复状态） */
     private static boolean initialized = false;
 
     /**
      * 设置 HUD 显示状态
-     * 
+     *
      * @param enabled   是否启用 HUD
      * @param ownerUUID 拥有者 UUID（可选）
      */
@@ -85,7 +87,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /**
      * 设置 HUD 显示模式
-     * 
+     *
      * @param mode 显示模式（0=关闭，1=常规计数，2=科学计数）
      */
     public static void setDisplayMode(int mode) {
@@ -96,7 +98,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /**
      * 获取 HUD 全局开关状态
-     * 
+     *
      * @return 当前 HUD 是否启用
      */
     public static boolean isEnabled() {
@@ -230,7 +232,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /**
      * 遍历玩家背包查找便携监测终端
-     * 
+     *
      * @param player 玩家实体
      * @return 拥有者 UUID，如果未找到则返回 null
      */
@@ -264,7 +266,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /**
      * 检查监测终端是否已绑定
-     * 
+     *
      * @param stack 物品堆栈
      * @return 是否已绑定
      */
@@ -365,15 +367,15 @@ public class WirelessMonitorHUD extends Gui {
     private static String calculateEUT(long currentTick) {
         // 如果连续无变化次数超过阈值，显示“暂无变化”
         if (unchangedCount >= MAX_UNCHANGED_COUNT) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.grid.status")
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
                 + ": §f"
-                + StatCollector.translateToLocal("gtswn.hud.grid.no.change");
+                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
         }
 
         if (measurementHistory.size() < 2) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.grid.status")
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
                 + ": §f"
-                + StatCollector.translateToLocal("gtswn.hud.grid.no.change");
+                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
         }
 
         // 获取最新的两个变化点
@@ -436,7 +438,7 @@ public class WirelessMonitorHUD extends Gui {
             status = "§f= 0.00 " + StatCollector.translateToLocal("gtswn.hud.eut.unit");
         }
 
-        return "§b" + StatCollector.translateToLocal("gtswn.hud.grid.status") + ": " + status;
+        return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status;
     }
 
     /**
@@ -529,7 +531,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /**
      * 将 EU/t 转换为 GT 的电流+电压等级格式
-     * 
+     *
      * @param euPerTick 每秒能量变化率
      * @return 格式化后的字符串（例如：2A HV）
      */
@@ -561,7 +563,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /**
      * 格式化为常规计数（带逗号分隔）
-     * 
+     *
      * @param value 要格式化的 BigInteger 值
      * @return 格式化后的字符串（例如：269,835,880）
      */
@@ -586,7 +588,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /**
      * 格式化 double 为常规计数（带逗号分隔，保留两位小数）
-     * 
+     *
      * @param value 要格式化的 double 值
      * @return 格式化后的字符串（例如：1,234.56）
      */
@@ -624,7 +626,7 @@ public class WirelessMonitorHUD extends Gui {
     /**
      * 格式化为科学计数法字符串
      * 保留三位有效数字，使用 10^幂 格式
-     * 
+     *
      * @param value 要格式化的 BigInteger 值
      * @return 格式化后的字符串（例如：2.70×10^8）
      */
