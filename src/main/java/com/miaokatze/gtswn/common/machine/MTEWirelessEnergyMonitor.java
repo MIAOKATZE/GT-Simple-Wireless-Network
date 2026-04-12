@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.common.machine;
 import java.math.BigInteger;
 import java.util.UUID;
 
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.common.util.ForgeDirection;
 
@@ -11,23 +12,30 @@ import com.gtnewhorizons.modularui.api.screen.UIBuildContext;
 import com.gtnewhorizons.modularui.common.widget.ButtonWidget;
 import com.gtnewhorizons.modularui.common.widget.FakeSyncWidget;
 import com.gtnewhorizons.modularui.common.widget.TextWidget;
+import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 
+import gregtech.api.enums.Textures;
 import gregtech.api.gui.modularui.GTUITextures;
 import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
-import gregtech.api.metatileentity.implementations.MTEBasicGenerator;
 import gregtech.common.misc.WirelessNetworkManager;
 
 /**
  * 无线能量监视器 (LV)
+ * <p>
  * 用于实时监控玩家所属团队的无线电网能量状态。
  * 此机器不消耗也不产生能量，只是一个信息显示设备。
+ * <p>
+ * 功能特性：
+ * <ul>
+ * <li>显示无线电网总能量（支持常规/科学计数）</li>
+ * <li>智能计算 EU/t 变化率（带 GT 电压等级显示）</li>
+ * <li>5 种红石控制模式（关闭/正向/反向/正向滞后/反向滞后）</li>
+ * <li>动态贴图切换（根据红石输出状态）</li>
+ * </ul>
  */
-public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
-
-    private UUID ownerUUID;
-    private int displayMode; // 0=常规计数, 1=科学计数
+public class MTEWirelessEnergyMonitor extends MTEMonitor {
 
     // EU/t 计算相关
     private BigInteger lastEU = BigInteger.ZERO;
@@ -66,62 +74,39 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
     private BigInteger param2Value = BigInteger.ZERO; // 参数2数值
     private boolean redstoneOutput = false; // 红石输出状态
 
-    // 构造函数:用于注册
+    // 构造函数：用于注册
     public MTEWirelessEnergyMonitor(int aID, String aName, String aNameRegional) {
         super(
             aID,
             aName,
             aNameRegional,
-            1,
             new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
                 net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
                 net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3") });
     }
 
     // 拷贝构造函数
-    public MTEWirelessEnergyMonitor(String aName, int aTier, String[] aDescription, ITexture[][][] aTextures) {
-        super(aName, aTier, aDescription, aTextures);
+    public MTEWirelessEnergyMonitor(String aName, String[] aDescription) {
+        super(aName, aDescription);
     }
 
     @Override
     public IMetaTileEntity newMetaEntity(IGregTechTileEntity aTileEntity) {
-        return new MTEWirelessEnergyMonitor(mName, mTier, mDescriptionArray, mTextures);
+        return new MTEWirelessEnergyMonitor(mName, mDescriptionArray);
+    }
+
+    // getDescription() 已由 MTEMonitor 基类提供，无需重复实现
+
+    @Override
+    public boolean allowPullStack(IGregTechTileEntity aBaseMetaTileEntity, int aIndex, ForgeDirection side,
+        ItemStack aStack) {
+        return false; // 监视器不允许抽出物品
     }
 
     @Override
-    public int getPollution() {
-        return 0;
-    }
-
-    @Override
-    public int getCapacity() {
-        return 0;
-    }
-
-    @Override
-    public int getEfficiency() {
-        return 0;
-    }
-
-    @Override
-    public String[] getDescription() {
-        // 返回构造函数中传入的描述数组，不包含燃料效率等信息
-        return new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
-            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
-            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3") };
-    }
-
-    @Override
-    public gregtech.api.recipe.RecipeMap<?> getRecipeMap() {
-        return null;
-    }
-
-    @Override
-    public void onFirstTick(IGregTechTileEntity aBaseMetaTileEntity) {
-        super.onFirstTick(aBaseMetaTileEntity);
-        if (ownerUUID == null) {
-            ownerUUID = aBaseMetaTileEntity.getOwnerUuid();
-        }
+    public boolean allowPutStack(IGregTechTileEntity aBaseMetaTileEntity, int aIndex, ForgeDirection side,
+        ItemStack aStack) {
+        return false; // 监视器不允许放入物品
     }
 
     @Override
@@ -159,7 +144,8 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
     /**
      * 获取通用红石信号强度
      */
-    public byte getGeneralRS(net.minecraftforge.common.util.ForgeDirection side) {
+    @Override
+    public byte getGeneralRS(ForgeDirection side) {
         if (!emitsRedstoneSignal()) {
             return 0;
         }
@@ -482,19 +468,14 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
     }
 
     /**
-     * 根据红石输出状态切换贴图（叠加在基础材质上）
+     * 根据红石输出状态切换贴图
      */
     @Override
     public ITexture[] getTexture(IGregTechTileEntity baseMetaTileEntity, ForgeDirection side,
         ForgeDirection facingDirection, int colorIndex, boolean active, boolean redstoneLevel) {
-        // 先获取基础机器的默认材质
-        ITexture[] baseTextures = super.getTexture(
-            baseMetaTileEntity,
-            side,
-            facingDirection,
-            colorIndex,
-            active,
-            redstoneLevel);
+
+        // 获取基础机器外壳贴图（LV 级别）
+        ITexture baseTexture = Textures.BlockIcons.MACHINE_CASINGS[1][colorIndex + 1];
 
         // 只有正面（facingDirection）叠加自定义贴图
         if (side == facingDirection) {
@@ -503,15 +484,12 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
                 ? com.miaokatze.gtswn.register.TextureManager.TEX_WIRELESS_MONITOR_ON
                 : com.miaokatze.gtswn.register.TextureManager.TEX_WIRELESS_MONITOR_OFF;
 
-            // 创建新数组：基础材质 + 自定义贴图（叠加在上层）
-            ITexture[] result = new ITexture[baseTextures.length + 1];
-            System.arraycopy(baseTextures, 0, result, 0, baseTextures.length);
-            result[baseTextures.length] = gregtech.api.render.TextureFactory.of(icon);
-            return result;
+            // 返回两层贴图：基础外壳 + 自定义图标
+            return new ITexture[] { baseTexture, gregtech.api.render.TextureFactory.of(icon) };
         }
 
-        // 其他面只返回基础材质
-        return baseTextures;
+        // 其他面只返回基础外壳
+        return new ITexture[] { baseTexture };
     }
 
     @Override
@@ -974,26 +952,5 @@ public class MTEWirelessEnergyMonitor extends MTEBasicGenerator {
         if (getBaseMetaTileEntity() != null) {
             getBaseMetaTileEntity().issueTextureUpdate();
         }
-    }
-
-    // 此机器不消耗能量
-    @Override
-    public long maxEUStore() {
-        return 0;
-    }
-
-    @Override
-    public long maxEUInput() {
-        return 0;
-    }
-
-    @Override
-    public long maxEUOutput() {
-        return 0;
-    }
-
-    @Override
-    public int getLightOpacity() {
-        return 0;
     }
 }

@@ -49,7 +49,7 @@ public class WirelessMonitorHUD extends Gui {
     /** 连续无变化的检测次数 */
     private static int unchangedCount = 0;
 
-    /** 最大无变化检测次数（超过此值显示"暂无变化"） */
+    /** 最大无变化检测次数（超过此值显示“暂无变化”） */
     private static final int MAX_UNCHANGED_COUNT = 60;
 
     /** HUD 更新间隔（ticks），每 200 ticks（10 秒）更新一次 */
@@ -71,6 +71,9 @@ public class WirelessMonitorHUD extends Gui {
 
     /** 是否已初始化（用于进退客户端时恢复状态） */
     private static boolean initialized = false;
+
+    /** 当前世界 ID（用于检测世界切换） */
+    private static int currentWorldId = -1;
 
     /**
      * 设置 HUD 显示状态
@@ -106,6 +109,24 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
+     * 清空所有缓存数据（用于世界切换或关闭 HUD 时）
+     */
+    private static void clearCache() {
+        cachedOwnerUUID = null;
+        cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
+            + ": §f0 §b"
+            + StatCollector.translateToLocal("gtswn.hud.eu.unit");
+        cachedEUTText = "";
+        lastCalculatedEUT = 0.0;
+        measurementHistory.clear();
+        unchangedCount = 0;
+        lastUpdateTick = 0;
+        lastInventoryCheckTick = 0;
+        hudEnabled = false;
+        displayMode = 0;
+    }
+
+    /**
      * 渲染游戏覆盖层事件处理器
      * 在饱食度上方绘制无线电网能量信息
      */
@@ -121,6 +142,13 @@ public class WirelessMonitorHUD extends Gui {
         // 确保游戏正常运行且有玩家
         if (mc.theWorld == null || mc.thePlayer == null) {
             return;
+        }
+
+        // 检测世界切换，清空缓存
+        int worldId = mc.theWorld.provider.dimensionId;
+        if (worldId != currentWorldId) {
+            clearCache();
+            currentWorldId = worldId;
         }
 
         EntityPlayer player = mc.thePlayer;
@@ -163,6 +191,8 @@ public class WirelessMonitorHUD extends Gui {
                     hudEnabled = false;
                     cachedOwnerUUID = null;
                     displayMode = 0;
+                    // 清空缓存，避免跨存档污染
+                    clearCache();
                 }
             }
 
