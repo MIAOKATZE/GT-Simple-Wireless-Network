@@ -23,15 +23,3 @@
 | <span style="color:gray">0.0.2</span> | <span style="color:gray">架构重构与功能完善<br>• 添加创造模式物品栏支持<br>• 采用 GregTech 队列注册方式，实现集中注册<br>• 批量导入自定义材质系统<br>• 清理冗余配置，优化项目结构</span> | <span style="color:gray">Architecture Refactoring & Feature Enhancement<br>• Added creative mode tab support<br>• Adopted GregTech queue registration for centralized machine registration<br>• Implemented batch custom texture import system<br>• Cleaned up redundant configurations and optimized project structure</span> |
 | <span style="color:gray">0.0.1</span> | <span style="color:gray">• 添加 MTETestMachine 作为测试机器</span> | <span style="color:gray">• Add MTETestMachine as the testing machine</span> |
 
-
-
----
-
-
-
-## 致谢  Acknowledgements
-
-感谢 **通义灵码（Tongyi Lingma）** 在本项目开发过程中提供的智能代码辅助和技术支持。
-
-Special thanks to **Tongyi Lingma** for providing intelligent code assistance and technical support during the development of this project.
-
