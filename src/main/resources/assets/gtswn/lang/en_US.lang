@@ -93,14 +93,24 @@ gtswn.chat.monitor.mode.normal=§bNormal
 gtswn.chat.monitor.mode.scientific=§eScientific
 
 # Wireless Energy Tap
-item.wireless_energy_tap.name=Wireless Energy Tap
-item.wireless_energy_tap.desc=Connect energy containers to GT wireless network
+item.wirelessEnergyTap.name=Wireless Network Link Terminal
+item.wirelessEnergyTap.desc=Connect energy containers to GT wireless network
 tooltip.wireless_energy_tap.tier=Voltage Tier: %s
 tooltip.wireless_energy_tap.mode=Current Mode: %s
 tooltip.wireless_energy_tap.mode.input=Energy Link (Input)
 tooltip.wireless_energy_tap.mode.output=Power Link (Output)
+gtswn.tooltip.tap.mode.input=Current Mode: Energy Link (Input)
+gtswn.tooltip.tap.mode.output=Current Mode: Power Link (Output)
 chat.wireless_energy_tap.no_container=Not an energy container
 chat.wireless_energy_tap.no_capacity=No EU capacity, cannot connect
 chat.wireless_energy_tap.no_voltage=No voltage tier detected, cannot connect
 chat.wireless_energy_tap.default_amperage=No amperage detected, defaulting to 2A
 chat.wireless_energy_tap.success=Connection successful!
+gtswn.chat.tap.mode.input=§a[Link Terminal] Switched to Energy Link mode
+gtswn.chat.tap.mode.output=§a[Link Terminal] Switched to Power Link mode
+gtswn.chat.tap.not_energy_container=§c[Link Terminal] Not an energy container
+gtswn.chat.tap.no_capacity=§c[Link Terminal] No EU capacity, cannot connect
+gtswn.chat.tap.no_voltage=§c[Link Terminal] No voltage tier detected, cannot connect
+gtswn.chat.tap.default_amperage=§e[Link Terminal] No amperage detected, defaulting to 2A
+gtswn.chat.tap.mode_switch=§b[Link Terminal] Mode switch feature pending
+gtswn.chat.tap.connection_success=§a[Link Terminal] Connection successful!

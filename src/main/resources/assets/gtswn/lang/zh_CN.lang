@@ -90,14 +90,24 @@ gtswn.chat.monitor.mode.normal=§b常规计数
 gtswn.chat.monitor.mode.scientific=§e科学计数
 
 # Wireless Energy Tap
-item.wireless_energy_tap.name=无线能量分接器
-item.wireless_energy_tap.desc=连接能量容器到GT无线电网
+item.wirelessEnergyTap.name=无线网络链路终端
+item.wirelessEnergyTap.desc=连接能量容器到GT无线电网
 tooltip.wireless_energy_tap.tier=电压等级: %s
 tooltip.wireless_energy_tap.mode=当前模式: %s
 tooltip.wireless_energy_tap.mode.input=能源链接（从电网获取）
 tooltip.wireless_energy_tap.mode.output=动力链接（向电网输出）
+gtswn.tooltip.tap.mode.input=当前模式: 能源链接（从电网获取）
+gtswn.tooltip.tap.mode.output=当前模式: 动力链接（向电网输出）
 chat.wireless_energy_tap.no_container=不是能量容器
 chat.wireless_energy_tap.no_capacity=无电容方块，无法链接
 chat.wireless_energy_tap.no_voltage=无电压设置，无法链接
 chat.wireless_energy_tap.default_amperage=无电流等级，默认链接为2A
 chat.wireless_energy_tap.success=链接成功
+gtswn.chat.tap.mode.input=§a[链路终端] 已切换为能源链接模式
+gtswn.chat.tap.mode.output=§a[链路终端] 已切换为动力链接模式
+gtswn.chat.tap.not_energy_container=§c[链路终端] 不是能量容器
+gtswn.chat.tap.no_capacity=§c[链路终端] 无电容方块，无法链接
+gtswn.chat.tap.no_voltage=§c[链路终端] 无电压设置，无法链接
+gtswn.chat.tap.default_amperage=§e[链路终端] 无电流等级，默认链接为2A
+gtswn.chat.tap.mode_switch=§b[链路终端] 模式切换功能待实现
+gtswn.chat.tap.connection_success=§a[链路终端] 链接成功
