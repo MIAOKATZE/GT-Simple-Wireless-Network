@@ -91,3 +91,16 @@ gtswn.chat.monitor.mode.switch=§a[Portable Monitor] HUD mode switched to: %s
 gtswn.chat.monitor.mode.off=§cOff
 gtswn.chat.monitor.mode.normal=§bNormal
 gtswn.chat.monitor.mode.scientific=§eScientific
+
+# Wireless Energy Tap
+item.wireless_energy_tap.name=Wireless Energy Tap
+item.wireless_energy_tap.desc=Connect energy containers to GT wireless network
+tooltip.wireless_energy_tap.tier=Voltage Tier: %s
+tooltip.wireless_energy_tap.mode=Current Mode: %s
+tooltip.wireless_energy_tap.mode.input=Energy Link (Input)
+tooltip.wireless_energy_tap.mode.output=Power Link (Output)
+chat.wireless_energy_tap.no_container=Not an energy container
+chat.wireless_energy_tap.no_capacity=No EU capacity, cannot connect
+chat.wireless_energy_tap.no_voltage=No voltage tier detected, cannot connect
+chat.wireless_energy_tap.default_amperage=No amperage detected, defaulting to 2A
+chat.wireless_energy_tap.success=Connection successful!

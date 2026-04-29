@@ -1,5 +1,6 @@
 .gradle
 .settings
+.hippo
 /plan/
 /.idea/
 /.vscode/
@@ -36,3 +37,7 @@ addon.local.gradle.kts
 addon.late.local.gradle
 addon.late.local.gradle.kts
 layout.json
+/.trae/
+/.hyperthym/
+/New_Project.md
+/GUIDE.md

@@ -98,6 +98,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
     // getDescription() 已由 MTEMonitor 基类提供，无需重复实现
 
     @Override
+    public String[] getDescription() {
+        // 每次都创建新的数组实例，避免与其他机器共享引用导致缓存污染
+        return new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
+            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
+            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3") };
+    }
+
+    @Override
     public boolean allowPullStack(IGregTechTileEntity aBaseMetaTileEntity, int aIndex, ForgeDirection side,
         ItemStack aStack) {
         return false; // 监视器不允许抽出物品

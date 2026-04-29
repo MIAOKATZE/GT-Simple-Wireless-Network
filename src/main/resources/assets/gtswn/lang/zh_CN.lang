@@ -88,3 +88,16 @@ gtswn.chat.monitor.mode.switch=§a[便携监测终端] HUD 模式已切换为: %
 gtswn.chat.monitor.mode.off=§c关闭
 gtswn.chat.monitor.mode.normal=§b常规计数
 gtswn.chat.monitor.mode.scientific=§e科学计数
+
+# Wireless Energy Tap
+item.wireless_energy_tap.name=无线能量分接器
+item.wireless_energy_tap.desc=连接能量容器到GT无线电网
+tooltip.wireless_energy_tap.tier=电压等级: %s
+tooltip.wireless_energy_tap.mode=当前模式: %s
+tooltip.wireless_energy_tap.mode.input=能源链接（从电网获取）
+tooltip.wireless_energy_tap.mode.output=动力链接（向电网输出）
+chat.wireless_energy_tap.no_container=不是能量容器
+chat.wireless_energy_tap.no_capacity=无电容方块，无法链接
+chat.wireless_energy_tap.no_voltage=无电压设置，无法链接
+chat.wireless_energy_tap.default_amperage=无电流等级，默认链接为2A
+chat.wireless_energy_tap.success=链接成功
