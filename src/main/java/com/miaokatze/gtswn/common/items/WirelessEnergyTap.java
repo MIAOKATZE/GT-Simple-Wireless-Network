@@ -11,8 +11,13 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
+import net.minecraftforge.common.util.ForgeDirection;
 
+import gregtech.api.covers.CoverPlacer;
+import gregtech.api.covers.CoverRegistry;
+import gregtech.api.enums.ItemList;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
+import gregtech.api.interfaces.tileentity.ICoverable;
 
 /**
  * 无线能量分接器
@@ -101,7 +106,8 @@ public class WirelessEnergyTap extends Item {
     /**
      * 处理机器交互的逻辑（共享方法）
      */
-    private void handleMachineInteraction(ItemStack stack, EntityPlayer player, World world, int x, int y, int z) {
+    private void handleMachineInteraction(ItemStack stack, EntityPlayer player, World world, int x, int y, int z,
+        int side) {
         TileEntity te = world.getTileEntity(x, y, z);
         if (!(te instanceof IBasicEnergyContainer)) {
             player.addChatMessage(
@@ -111,14 +117,15 @@ public class WirelessEnergyTap extends Item {
 
         IBasicEnergyContainer container = (IBasicEnergyContainer) te;
 
-        // 检查是否有容量
+        // === 阶段1：实现电压等级自动检测和频率计算 ===
+        // 1. 检查是否有容量
         long capacity = container.getEUCapacity();
         if (capacity <= 0) {
             player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_capacity")));
             return;
         }
 
-        // 获取电压
+        // 2. 获取电压
         long voltage = container.getInputVoltage();
         if (voltage <= 0) {
             // 尝试获取输出电压作为备选
@@ -130,7 +137,7 @@ public class WirelessEnergyTap extends Item {
             return;
         }
 
-        // 获取安培，默认2A
+        // 3. 获取安培，默认2A
         long amperage = container.getInputAmperage();
         if (amperage <= 0) {
             amperage = 2;
@@ -138,14 +145,13 @@ public class WirelessEnergyTap extends Item {
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.default_amperage")));
         }
 
-        // === 阶段1：实现电压等级自动检测和频率计算 ===
-        // 1. 输出检测信息到聊天
+        // 4. 输出检测信息到聊天
         player.addChatMessage(new ChatComponentText("§a[链路终端] 检测到机器："));
         player.addChatMessage(new ChatComponentText("§7 电容: " + capacity + " EU"));
         player.addChatMessage(new ChatComponentText("§7 电压: " + voltage + " EU/t"));
         player.addChatMessage(new ChatComponentText("§7 电流: " + amperage + " A"));
 
-        // 2. 计算最低交互频率（需要电容和电压）
+        // 5. 计算最低交互频率（需要电容和电压）
         double minFrequencyTicks = Double.MAX_VALUE;
         boolean canCalculate = false;
         if (capacity > 0 && voltage > 0 && amperage > 0) {
@@ -157,15 +163,65 @@ public class WirelessEnergyTap extends Item {
             player.addChatMessage(new ChatComponentText("§c 无法计算最低交互频率：缺少必要参数"));
         }
 
-        // 3. 选择实际交互频率（20的倍数，取前面那个倍数）
+        // 6. 选择实际交互频率（20的倍数，取前面那个倍数）
         if (canCalculate) {
             int actualFrequencyTicks = ((int) (minFrequencyTicks / 20)) * 20;
             if (actualFrequencyTicks < 20) actualFrequencyTicks = 20; // 至少20tick
             player.addChatMessage(new ChatComponentText("§b 实际交互频率: " + actualFrequencyTicks + " tick（20的倍数）"));
         }
 
-        // 占位符提示
-        player.addChatMessage(new ChatComponentText("§e[链路终端] 链接成功，拟定链接对应电压等级覆盖板（占位符）"));
+        // === 阶段1.5：验证覆盖板附着/移除功能（泵覆盖板测试） ===
+        if (te instanceof ICoverable) {
+            ICoverable coverable = (ICoverable) te;
+            ForgeDirection targetSide = ForgeDirection.getOrientation(side);
+
+            // 检查所有面是否有覆盖板
+            boolean hasOurCover = false;
+            ForgeDirection coverSide = null;
+            for (ForgeDirection dir : ForgeDirection.VALID_DIRECTIONS) {
+                ItemStack coverItem = coverable.getCoverItemAtSide(dir);
+                if (coverItem != null && coverItem.getItem() != null) {
+                    // 先简化检查：是否有任何覆盖板
+                    hasOurCover = true;
+                    coverSide = dir;
+                    break;
+                }
+            }
+
+            if (hasOurCover) {
+                // 移除覆盖板
+                ItemStack removed = coverable.detachCover(coverSide);
+                player.addChatMessage(new ChatComponentText("§a[链路终端] 移除覆盖板成功！"));
+                if (removed != null) {
+                    player.addChatMessage(new ChatComponentText("§7 覆盖板: " + removed.getDisplayName()));
+                }
+            } else {
+                // 附着屏幕覆盖板（使用CoverPlacer真正附着！）
+                ItemStack coverStack = ItemList.Cover_Screen.get(1);
+                if (coverStack != null) {
+                    // 1. 获取CoverPlacer
+                    CoverPlacer placer = CoverRegistry.getCoverPlacer(coverStack);
+
+                    // 2. 检查是否可以放置
+                    if (!placer.isCoverPlaceable(targetSide, coverStack, coverable)) {
+                        player.addChatMessage(new ChatComponentText("§c[链路终端] 无法在此面放置覆盖板！"));
+                        return;
+                    }
+
+                    // 3. 使用CoverPlacer放置！
+                    player.addChatMessage(new ChatComponentText("§e[链路终端] 正在附着屏幕覆盖板..."));
+                    placer.placeCover(player, coverStack, coverable, targetSide);
+
+                    // 4. 提示成功
+                    player.addChatMessage(new ChatComponentText("§a[链路终端] 附着成功！"));
+                    player.addChatMessage(new ChatComponentText("§7 覆盖板: " + coverStack.getDisplayName()));
+                } else {
+                    player.addChatMessage(new ChatComponentText("§c[链路终端] 无法获取覆盖板"));
+                }
+            }
+        } else {
+            player.addChatMessage(new ChatComponentText("§c[链路终端] 机器不支持覆盖板"));
+        }
     }
 
     /**
@@ -211,7 +267,7 @@ public class WirelessEnergyTap extends Item {
         }
 
         // 普通右键：与机器交互
-        handleMachineInteraction(stack, player, world, x, y, z);
+        handleMachineInteraction(stack, player, world, x, y, z, side);
         return true; // 返回true阻止继续处理
     }
 
