@@ -1,0 +1,17 @@
+feat: 完成阶段4.1 - 配置系统 + 电网事件监视
+
+- 更新Config.java，新增4个配置项：
+  - enableWirelessInteraction: 是否启用能量交互
+  - interactionIntervalTicks: 能量交互间隔
+  - capacityMultiplier: 电容乘数
+  - enableEnergyMonitor: 是否启用电网事件监视
+- 更新ConnectorEventHandler.java，实现：
+  - 世界Tick监听
+  - 电网能量监视功能
+  - 能量变化消息通知（绿色=增加，红色=减少）
+- 更新work_plan.md，标记阶段4.1完成
+
+验证目标：
+- ✅ 配置文件正确加载和保存
+- ✅ enableEnergyMonitor开关控制聊天窗口显示
+- ✅ 能量变化信息正确显示

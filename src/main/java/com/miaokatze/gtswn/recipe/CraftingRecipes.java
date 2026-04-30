@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.recipe;
 
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
@@ -39,19 +40,20 @@ public class CraftingRecipes {
         addPortableMonitorRecipe();
         // 无线能量监视器（工作台版）
         addWirelessEnergyMonitorRecipe();
+        // 无线网络链路终端
+        addWirelessEnergyTapRecipe();
     }
 
     /**
      * 添加便携无线监测终端的合成配方
      * <p>
      * 合成表：
-     * LV发射器 | 钢外壳 | LV接收器
-     * LV发射器 | 电脑屏幕覆盖板 | LV接收器
+     * LV接收器 | 钢外壳 | LV接收器
+     * LV接收器 | 电脑屏幕覆盖板 | LV接收器
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
     private static void addPortableMonitorRecipe() {
         // 获取原材料
-        ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
         ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
         ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1); // 钢螺丝
@@ -64,7 +66,7 @@ public class CraftingRecipes {
             "ADC",
             "EBE",
             'A',
-            lvEmitter,
+            lvReceiver,
             'B',
             steelPlate,
             'C',
@@ -82,16 +84,54 @@ public class CraftingRecipes {
     }
 
     /**
+     * 添加无线网络链路终端的合成配方
+     * <p>
+     * 合成表：
+     * LV发射器 | 钢外壳 | LV发射器
+     * LV发射器 | 电脑屏幕覆盖板 | LV发射器
+     * 钢螺丝 | 钢外壳 | 钢螺丝
+     */
+    private static void addWirelessEnergyTapRecipe() {
+        // 获取原材料
+        ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
+        ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
+        ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1); // 钢螺丝
+        ItemStack screen = ItemList.Cover_Screen.get(1); // 电脑屏幕覆盖板
+
+        // 使用 Forge 的 ShapedOreRecipe 添加合成配方
+        net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
+            Wireless_Energy_Tap.get(1),
+            "ABC",
+            "ADC",
+            "EBE",
+            'A',
+            lvEmitter,
+            'B',
+            steelPlate,
+            'C',
+            lvEmitter,
+            'D',
+            screen,
+            'E',
+            steelScrew);
+
+        CraftingManager.getInstance()
+            .getRecipeList()
+            .add(recipe);
+
+        GTSimpleWirelessNetwork.LOG.info("已添加无线网络链路终端合成配方");
+    }
+
+    /**
      * 添加无线能量监视器的合成配方
      * <p>
      * 合成表（与便携版类似，但中间改为 LV 机械外壳）：
-     * LV发射器 | 钢外壳 | LV接收器
-     * LV发射器 | LV机械外壳 | LV接收器
+     * LV接收器 | 钢外壳 | LV接收器
+     * LV接收器 | LV机械外壳 | LV接收器
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
     private static void addWirelessEnergyMonitorRecipe() {
         // 获取原材料
-        ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
         ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
         ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1); // 钢螺丝
@@ -104,7 +144,7 @@ public class CraftingRecipes {
             "ADC",
             "EBE",
             'A',
-            lvEmitter,
+            lvReceiver,
             'B',
             steelPlate,
             'C',

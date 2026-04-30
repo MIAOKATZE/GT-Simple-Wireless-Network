@@ -32,6 +32,14 @@ public class TextureManager {
     public static final IIconContainer TEX_WIRELESS_MONITOR_ON = new Textures.BlockIcons.CustomIcon(
         "gtswn:Wireless_Energy_Monitor_ON");
 
+    // --- 无线覆盖板材质图标 ---
+    /** 无线能量输入覆盖板材质 */
+    public static final IIconContainer TEX_WIRELESS_CONNECTOR_INPUT = new Textures.BlockIcons.CustomIcon(
+        "gtswn:covers/wireless_connector_input");
+    /** 无线能量输出覆盖板材质 */
+    public static final IIconContainer TEX_WIRELESS_CONNECTOR_OUTPUT = new Textures.BlockIcons.CustomIcon(
+        "gtswn:covers/wireless_connector_output");
+
     // 材质缓存表，用于存储已创建的 ITexture 实例以提高性能
     private static final Map<String, ITexture> textureCache = new HashMap<>();
 

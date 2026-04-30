@@ -1,3 +1,4 @@
+
 package com.miaokatze.gtswn.common.items;
 
 import java.util.List;
@@ -13,31 +14,35 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
+import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
+import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+
 import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
-import gregtech.api.enums.ItemList;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.ICoverable;
+import gregtech.common.covers.Cover;
 
 /**
- * 无线能量分接器
+ * 无线网络链路终端
  * <p>
- * 一个便携式的无线电网分接设备，允许玩家将任意能量容器连接到GT无线电网。
+ * 一个便携式的无线网络分接设备，允许玩家将任意能量容器连接到GT无线网络。
  * 功能特性：
- * - 右击空气：切换手持模式（能源/动力），更新材质
- * - 右击能量容器：赋予或取消无线连接状态
- * - Shift + 右击能量容器：切换输入/输出模式
+ * - 右键空气：切换手持模式（能源/动力），更新材质
+ * - 右键能量容器：赋予或取消无线连接状态
+ * - Shift + 右键能量容器：切换输入/输出模式
  * - 自动读取目标能量容器的电压等级
  */
 public class WirelessEnergyTap extends Item {
 
-    /** NBT 键名：存储当前输出模式 (true=动力, false=能源) */
+    /** NBT 键名：存储当前输出模式(true=动力, false=能源) */
     private static final String NBT_OUTPUT_MODE = "OutputMode";
 
-    /** NBT 键名：上次触发的时间戳，防止短时间内重复触发 */
+    /** NBT 键名：上一次触发的时间戳，防止短时间内重复触发 */
     private static final String NBT_LAST_USE_TIME = "LastUseTime";
 
-    /** 防重复触发的间隔（毫秒） */
+    /** 防止重复触发的间隔（毫秒） */
     private static final long INTERVAL_MILLIS = 200L;
 
     /** 两个材质图标 */
@@ -104,7 +109,18 @@ public class WirelessEnergyTap extends Item {
     }
 
     /**
-     * 处理机器交互的逻辑（共享方法）
+     * 检查指定的覆盖板是否是我们的GTswn覆盖板
+     */
+    private boolean isOurGTswnCover(ItemStack coverStack) {
+        if (coverStack == null || coverStack.getItem() == null) {
+            return false;
+        }
+        Item item = coverStack.getItem();
+        return item instanceof GTSwnCoverEnergyWireless || item instanceof GTSwnCoverDynamoWireless;
+    }
+
+    /**
+     * 处理机器交互的逻辑（公共方法）
      */
     private void handleMachineInteraction(ItemStack stack, EntityPlayer player, World world, int x, int y, int z,
         int side) {
@@ -117,110 +133,184 @@ public class WirelessEnergyTap extends Item {
 
         IBasicEnergyContainer container = (IBasicEnergyContainer) te;
 
-        // === 阶段1：实现电压等级自动检测和频率计算 ===
-        // 1. 检查是否有容量
-        long capacity = container.getEUCapacity();
-        if (capacity <= 0) {
-            player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_capacity")));
-            return;
-        }
-
-        // 2. 获取电压
-        long voltage = container.getInputVoltage();
-        if (voltage <= 0) {
-            // 尝试获取输出电压作为备选
-            voltage = container.getOutputVoltage();
-        }
-
-        if (voltage <= 0) {
-            player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_voltage")));
-            return;
-        }
-
-        // 3. 获取安培，默认2A
-        long amperage = container.getInputAmperage();
-        if (amperage <= 0) {
-            amperage = 2;
-            player.addChatMessage(
-                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.default_amperage")));
-        }
-
-        // 4. 输出检测信息到聊天
-        player.addChatMessage(new ChatComponentText("§a[链路终端] 检测到机器："));
-        player.addChatMessage(new ChatComponentText("§7 电容: " + capacity + " EU"));
-        player.addChatMessage(new ChatComponentText("§7 电压: " + voltage + " EU/t"));
-        player.addChatMessage(new ChatComponentText("§7 电流: " + amperage + " A"));
-
-        // 5. 计算最低交互频率（需要电容和电压）
-        double minFrequencyTicks = Double.MAX_VALUE;
-        boolean canCalculate = false;
-        if (capacity > 0 && voltage > 0 && amperage > 0) {
-            minFrequencyTicks = (double) capacity / (double) (amperage * voltage);
-            canCalculate = true;
-            player.addChatMessage(
-                new ChatComponentText("§a 最低交互频率: " + String.format("%.1f", minFrequencyTicks) + " tick"));
-        } else {
-            player.addChatMessage(new ChatComponentText("§c 无法计算最低交互频率：缺少必要参数"));
-        }
-
-        // 6. 选择实际交互频率（20的倍数，取前面那个倍数）
-        if (canCalculate) {
-            int actualFrequencyTicks = ((int) (minFrequencyTicks / 20)) * 20;
-            if (actualFrequencyTicks < 20) actualFrequencyTicks = 20; // 至少20tick
-            player.addChatMessage(new ChatComponentText("§b 实际交互频率: " + actualFrequencyTicks + " tick（20的倍数）"));
-        }
-
-        // === 阶段1.5：验证覆盖板附着/移除功能（泵覆盖板测试） ===
+        // === 首先检查：整个机器是否有我们的GTswn覆盖板 ===
         if (te instanceof ICoverable) {
             ICoverable coverable = (ICoverable) te;
             ForgeDirection targetSide = ForgeDirection.getOrientation(side);
 
-            // 检查所有面是否有覆盖板
+            // 检查所有面是否有我们的覆盖板
             boolean hasOurCover = false;
             ForgeDirection coverSide = null;
+            ItemStack foundCover = null;
             for (ForgeDirection dir : ForgeDirection.VALID_DIRECTIONS) {
                 ItemStack coverItem = coverable.getCoverItemAtSide(dir);
-                if (coverItem != null && coverItem.getItem() != null) {
-                    // 先简化检查：是否有任何覆盖板
+                if (isOurGTswnCover(coverItem)) {
                     hasOurCover = true;
                     coverSide = dir;
+                    foundCover = coverItem;
                     break;
                 }
             }
 
+            // === 如果有我们的覆盖板，移除它 ===
             if (hasOurCover) {
-                // 移除覆盖板
                 ItemStack removed = coverable.detachCover(coverSide);
-                player.addChatMessage(new ChatComponentText("§a[链路终端] 移除覆盖板成功！"));
+                player.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.unlink_success")));
                 if (removed != null) {
-                    player.addChatMessage(new ChatComponentText("§7 覆盖板: " + removed.getDisplayName()));
+                    player.addChatMessage(
+                        new ChatComponentText(
+                            StatCollector.translateToLocal("gtswn.chat.tap.cover_item") + removed.getDisplayName()));
                 }
-            } else {
-                // 附着屏幕覆盖板（使用CoverPlacer真正附着！）
-                ItemStack coverStack = ItemList.Cover_Screen.get(1);
-                if (coverStack != null) {
-                    // 1. 获取CoverPlacer
-                    CoverPlacer placer = CoverRegistry.getCoverPlacer(coverStack);
+                return;
+            }
 
-                    // 2. 检查是否可以放置
-                    if (!placer.isCoverPlaceable(targetSide, coverStack, coverable)) {
-                        player.addChatMessage(new ChatComponentText("§c[链路终端] 无法在此面放置覆盖板！"));
-                        return;
-                    }
+            // === 如果没有我们的覆盖板，继续检测参数，然后附着 ===
 
-                    // 3. 使用CoverPlacer放置！
-                    player.addChatMessage(new ChatComponentText("§e[链路终端] 正在附着屏幕覆盖板..."));
-                    placer.placeCover(player, coverStack, coverable, targetSide);
+            // 1. 检查是否有电容
+            long capacity = container.getEUCapacity();
+            if (capacity <= 0) {
+                player.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_capacity")));
+                return;
+            }
 
-                    // 4. 提示成功
-                    player.addChatMessage(new ChatComponentText("§a[链路终端] 附着成功！"));
-                    player.addChatMessage(new ChatComponentText("§7 覆盖板: " + coverStack.getDisplayName()));
+            // 2. 获取电压
+            long voltage = container.getInputVoltage();
+            if (voltage <= 0) {
+                // 尝试获取输出电压作为备份
+                voltage = container.getOutputVoltage();
+            }
+
+            if (voltage <= 0) {
+                player
+                    .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_voltage")));
+                return;
+            }
+
+            // 3. 获取安培，默认2A，不低于2A
+            long amperage = container.getInputAmperage();
+            if (amperage <= 1) {
+                amperage = 2;
+            }
+
+            // 4. 计算理论最长间隔（minFrequencyTicks）= capacity / (amperage * voltage)
+            double minFrequencyTicks = Double.MAX_VALUE;
+            boolean canCalculate = false;
+            if (capacity > 0 && voltage > 0 && amperage > 0) {
+                minFrequencyTicks = (double) capacity / (double) (amperage * voltage);
+                canCalculate = true;
+            }
+
+            // 5. 计算实际交互间隔：
+            // 如果 <5，取2 tick
+            // 如果5-10，取5 tick
+            // 如果≥10，取最近10的倍数减10，最小10 tick
+            int actualFrequencyTicks = 10;
+            if (canCalculate) {
+                if (minFrequencyTicks < 5) {
+                    actualFrequencyTicks = 2;
+                } else if (minFrequencyTicks < 10) {
+                    actualFrequencyTicks = 5;
                 } else {
-                    player.addChatMessage(new ChatComponentText("§c[链路终端] 无法获取覆盖板"));
+                    // 先取最近的10的整数倍
+                    int roundedTo10 = ((int) (minFrequencyTicks / 10)) * 10;
+                    // 再减10
+                    actualFrequencyTicks = roundedTo10 - 10;
+                    // 确保不低于10
+                    if (actualFrequencyTicks < 10) {
+                        actualFrequencyTicks = 10;
+                    }
                 }
             }
+
+            // 6. 计算单次传输能量 = 实际间隔 × 电压 × 电流 × 1.1
+            long singleTransferEnergy = (long) (actualFrequencyTicks * voltage * amperage * 1.1);
+
+            // 7. 输出检测信息到聊天
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.machine_detected")));
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.capacity") + capacity + " EU"));
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.voltage") + voltage + " EU/t"));
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.amperage") + amperage + " A"));
+            player.addChatMessage(
+                new ChatComponentText(
+                    StatCollector.translateToLocal("gtswn.chat.tap.theoretical_interval") + (long) minFrequencyTicks
+                        + " tick"));
+            player.addChatMessage(
+                new ChatComponentText(
+                    StatCollector.translateToLocal("gtswn.chat.tap.actual_interval") + actualFrequencyTicks + " tick"));
+            player.addChatMessage(
+                new ChatComponentText(
+                    StatCollector.translateToLocal("gtswn.chat.tap.single_transfer") + singleTransferEnergy
+                        + " EU (1.1倍过冲)"));
+
+            // === 准备附着我们的覆盖板 ===
+            boolean outputMode = getOutputMode(stack);
+            ItemStack coverStack = outputMode ? GTSWNItemList.GTswn_Cover_Dynamo_Wireless.get(1)
+                : GTSWNItemList.GTswn_Cover_Energy_Wireless.get(1);
+
+            if (coverStack != null) {
+                // 1. 获取CoverPlacer
+                CoverPlacer placer = CoverRegistry.getCoverPlacer(coverStack);
+
+                // 2. 检查是否可以放置
+                if (!placer.isCoverPlaceable(targetSide, coverStack, coverable)) {
+                    player.addChatMessage(
+                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
+                    return;
+                }
+
+                // 3. 使用CoverPlacer放置
+                String modeText = outputMode ? StatCollector.translateToLocal("gtswn.chat.tap.mode_power")
+                    : StatCollector.translateToLocal("gtswn.chat.tap.mode_energy");
+                player.addChatMessage(
+                    new ChatComponentText(
+                        StatCollector.translateToLocal("gtswn.chat.tap.attaching") + modeText
+                            + StatCollector.translateToLocal("gtswn.chat.tap.attaching_suffix")));
+                placer.placeCover(player, coverStack, coverable, targetSide);
+
+                // 4. 找到刚附着的覆盖板并配置它
+                Cover placedCover = coverable.getCoverAtSide(targetSide);
+                if (placedCover != null) {
+                    if (outputMode && placedCover instanceof GTswn_Cover_DynamoWireless) {
+                        ((GTswn_Cover_DynamoWireless) placedCover)
+                            .configure((int) voltage, (int) amperage, actualFrequencyTicks, singleTransferEnergy);
+                    } else if (!outputMode && placedCover instanceof GTswn_Cover_EnergyWireless) {
+                        ((GTswn_Cover_EnergyWireless) placedCover)
+                            .configure((int) voltage, (int) amperage, actualFrequencyTicks, singleTransferEnergy);
+                    }
+                }
+
+                // 5. 提示成功
+                player.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
+                player.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
+                player.addChatMessage(
+                    new ChatComponentText(
+                        StatCollector.translateToLocal("gtswn.chat.tap.voltage_tier") + voltage + " EU/t"));
+                player.addChatMessage(
+                    new ChatComponentText(
+                        StatCollector.translateToLocal("gtswn.chat.tap.amperage_tier") + amperage + " A"));
+                player.addChatMessage(
+                    new ChatComponentText(
+                        StatCollector.translateToLocal("gtswn.chat.tap.actual_interval_text") + actualFrequencyTicks
+                            + " tick"));
+                player.addChatMessage(
+                    new ChatComponentText(
+                        StatCollector.translateToLocal("gtswn.chat.tap.single_transfer_text") + singleTransferEnergy
+                            + " EU"));
+            } else {
+                player.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
+            }
         } else {
-            player.addChatMessage(new ChatComponentText("§c[链路终端] 机器不支持覆盖板"));
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_cover_support")));
         }
     }
 
@@ -241,7 +331,7 @@ public class WirelessEnergyTap extends Item {
     }
 
     /**
-     * 处理右击方块事件（阻止打开GUI）
+     * 处理右键方块事件（阻止打开GUI）
      */
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
@@ -272,7 +362,7 @@ public class WirelessEnergyTap extends Item {
     }
 
     /**
-     * 处理右击空气事件
+     * 处理右键空气事件
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {

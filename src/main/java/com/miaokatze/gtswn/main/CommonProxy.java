@@ -4,6 +4,7 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dyn
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 
 import com.miaokatze.gtswn.Tags;
+import com.miaokatze.gtswn.common.WirelessNetworkMonitorEventHandler;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
@@ -12,16 +13,16 @@ import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.recipe.TestMachineRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
+import com.miaokatze.gtswn.register.TextureManager;
 
-import gregtech.api.covers.CoverRegistry;
-import gregtech.api.enums.Textures;
-import gregtech.api.util.GTUtility;
-
+import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import gregtech.api.GregTechAPI;
+import gregtech.api.covers.CoverRegistry;
+import gregtech.api.render.TextureFactory;
 
 /**
  * 通用代理类
@@ -37,6 +38,13 @@ public class CommonProxy {
         Config.synchronizeConfiguration(event.getSuggestedConfigurationFile());
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
+
+        // 注册无线网络监测事件
+        GTSimpleWirelessNetwork.LOG.info("注册无线网络监测事件...");
+        FMLCommonHandler.instance()
+            .bus()
+            .register(new WirelessNetworkMonitorEventHandler());
+        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new WirelessNetworkMonitorEventHandler());
 
         // 注册物品
         GTSimpleWirelessNetwork.LOG.info("[0/3] 开始注册物品...");
@@ -108,17 +116,17 @@ public class CommonProxy {
         // 注册GTswn覆盖板
         GTSimpleWirelessNetwork.LOG.info("[PostInit] 开始注册GTswn覆盖板...");
         try {
-            // 注册无线能量覆盖板（输入）
+            // 注册无线能量覆盖板（输入）-用我们自己的纹理！
             CoverRegistry.registerCover(
                 GTswn_Cover_Energy_Wireless.get(1),
-                Textures.BlockIcons.SCREEN[0],
+                TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_INPUT),
                 context -> new GTswn_Cover_EnergyWireless(context),
                 CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
 
-            // 注册无线动力覆盖板（输出）
+            // 注册无线动力覆盖板（输出）-用我们自己的纹理！
             CoverRegistry.registerCover(
                 GTswn_Cover_Dynamo_Wireless.get(1),
-                Textures.BlockIcons.SCREEN[0],
+                TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_OUTPUT),
                 context -> new GTswn_Cover_DynamoWireless(context),
                 CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
 

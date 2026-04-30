@@ -111,3 +111,40 @@ gtswn.chat.tap.no_voltage=§c[链路终端] 无电压设置，无法链接
 gtswn.chat.tap.default_amperage=§e[链路终端] 无电流等级，默认链接为2A
 gtswn.chat.tap.mode_switch=§b[链路终端] 模式切换功能待实现
 gtswn.chat.tap.connection_success=§a[链路终端] 链接成功
+
+# Wireless Covers
+item.GTswn_Cover_Energy_Wireless.name=链路锚点（能源）
+item.GTswn_Cover_Dynamo_Wireless.name=链路锚点（动力）
+
+# Wireless Energy Tap Additional Chat Messages
+gtswn.chat.tap.unlink_success=§a[链路终端] 取消链接成功！
+gtswn.chat.tap.cover_item=§7 覆盖板: 
+gtswn.chat.tap.machine_detected=§a[链路终端] 检测到机器：
+gtswn.chat.tap.capacity=§7 电容: 
+gtswn.chat.tap.voltage=§7 电压: 
+gtswn.chat.tap.amperage=§7 电流: 
+gtswn.chat.tap.theoretical_interval=§7 理论最长间隔: 
+gtswn.chat.tap.actual_interval=§b 实际交互间隔: 
+gtswn.chat.tap.single_transfer=§e 单次传输能量: 
+gtswn.chat.tap.cannot_place_cover=§c[链路终端] 无法在此面放置覆盖板！
+gtswn.chat.tap.attaching=§e[链路终端] 正在附着
+gtswn.chat.tap.mode_power=§e动力
+gtswn.chat.tap.mode_energy=§a能源
+gtswn.chat.tap.attaching_suffix=§e模式覆盖板...
+gtswn.chat.tap.link_success=§a[链路终端] 链接成功！
+gtswn.chat.tap.mode_text=§7 模式: 
+gtswn.chat.tap.voltage_tier=§7 电压等级: 
+gtswn.chat.tap.amperage_tier=§7 电流等级: 
+gtswn.chat.tap.actual_interval_text=§7 实际交互间隔: 
+gtswn.chat.tap.single_transfer_text=§7 单次传输能量: 
+gtswn.chat.tap.cannot_get_cover=§c[链路终端] 无法获取覆盖板！
+gtswn.chat.tap.no_cover_support=§c[链路终端] 机器不支持覆盖板
+
+# Wireless Cover Right-Click Config
+gtswn.chat.cover.energy_config=GTswn链路锚点（能源）配置：
+gtswn.chat.cover.dynamo_config=GTswn链路锚点（动力）配置：
+gtswn.chat.cover.voltage_tier=电压等级: 
+gtswn.chat.cover.amperage_tier=电流等级: 
+gtswn.chat.cover.interval=交互间隔: 
+gtswn.chat.cover.single_transfer=单次传输能量: 
+gtswn.chat.cover.not_configured=尚未配置！

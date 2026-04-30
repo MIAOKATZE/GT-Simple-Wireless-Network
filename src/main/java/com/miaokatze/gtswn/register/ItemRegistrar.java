@@ -62,13 +62,13 @@ public class ItemRegistrar {
      * 注册GTswn无线能量覆盖板
      */
     private static void registerGTswnCoverEnergyWireless() {
-        GTswn_Cover_Energy_Wireless.set(com.miaokatze.gtswn.common.items.GTSwnCoverEnergyWireless::new);
+        GTswn_Cover_Energy_Wireless.setAndRegister(com.miaokatze.gtswn.common.items.GTSwnCoverEnergyWireless::new);
     }
 
     /**
      * 注册GTswn无线动力覆盖板
      */
     private static void registerGTswnCoverDynamoWireless() {
-        GTswn_Cover_Dynamo_Wireless.set(com.miaokatze.gtswn.common.items.GTSwnCoverDynamoWireless::new);
+        GTswn_Cover_Dynamo_Wireless.setAndRegister(com.miaokatze.gtswn.common.items.GTSwnCoverDynamoWireless::new);
     }
 }

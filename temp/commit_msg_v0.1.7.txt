@@ -1,0 +1,12 @@
+feat: 完成阶段1.5 - 覆盖板附着/移除功能
+
+- 更新 WirelessEnergyTap:
+  - 添加 CoverPlacer 和 CoverRegistry 导入
+  - 实现真正的覆盖板附着功能：使用 CoverPlacer.placeCover()
+  - 实现覆盖板检查和移除功能：遍历6个面查找覆盖板
+  - 添加 ForgeDirection.getOrientation() 获取点击面
+  - 测试使用 GT 自带的 Cover_Screen（屏幕覆盖板）
+- 更新 work_plan.md:
+  - 添加 GT5 覆盖板附着/移除关键源码分析
+  - 添加实现附着/移除的步骤说明
+  - 更新阶段1.5任务清单

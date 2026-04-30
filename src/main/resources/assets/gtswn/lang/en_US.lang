@@ -114,3 +114,40 @@ gtswn.chat.tap.no_voltage=§c[Link Terminal] No voltage tier detected, cannot co
 gtswn.chat.tap.default_amperage=§e[Link Terminal] No amperage detected, defaulting to 2A
 gtswn.chat.tap.mode_switch=§b[Link Terminal] Mode switch feature pending
 gtswn.chat.tap.connection_success=§a[Link Terminal] Connection successful!
+
+# Wireless Covers
+item.GTswn_Cover_Energy_Wireless.name=Link Anchor (Energy)
+item.GTswn_Cover_Dynamo_Wireless.name=Link Anchor (Power)
+
+# Wireless Energy Tap Additional Chat Messages
+gtswn.chat.tap.unlink_success=§a[Link Terminal] Link removed successfully!
+gtswn.chat.tap.cover_item=§7 Cover: 
+gtswn.chat.tap.machine_detected=§a[Link Terminal] Machine detected:
+gtswn.chat.tap.capacity=§7 Capacity: 
+gtswn.chat.tap.voltage=§7 Voltage: 
+gtswn.chat.tap.amperage=§7 Amperage: 
+gtswn.chat.tap.theoretical_interval=§7 Theoretical interval: 
+gtswn.chat.tap.actual_interval=§b Actual interval: 
+gtswn.chat.tap.single_transfer=§e Single transfer: 
+gtswn.chat.tap.cannot_place_cover=§c[Link Terminal] Cannot place cover on this side!
+gtswn.chat.tap.attaching=§e[Link Terminal] Attaching 
+gtswn.chat.tap.mode_power=§ePower
+gtswn.chat.tap.mode_energy=§aEnergy
+gtswn.chat.tap.attaching_suffix=§e mode cover...
+gtswn.chat.tap.link_success=§a[Link Terminal] Linked successfully!
+gtswn.chat.tap.mode_text=§7 Mode: 
+gtswn.chat.tap.voltage_tier=§7 Voltage tier: 
+gtswn.chat.tap.amperage_tier=§7 Amperage tier: 
+gtswn.chat.tap.actual_interval_text=§7 Actual interval: 
+gtswn.chat.tap.single_transfer_text=§7 Single transfer: 
+gtswn.chat.tap.cannot_get_cover=§c[Link Terminal] Cannot get cover item!
+gtswn.chat.tap.no_cover_support=§c[Link Terminal] Machine doesn't support covers
+
+# Wireless Cover Right-Click Config
+gtswn.chat.cover.energy_config=GTswn Link Anchor (Energy) Config:
+gtswn.chat.cover.dynamo_config=GTswn Link Anchor (Power) Config:
+gtswn.chat.cover.voltage_tier=Voltage tier: 
+gtswn.chat.cover.amperage_tier=Amperage tier: 
+gtswn.chat.cover.interval=Interval: 
+gtswn.chat.cover.single_transfer=Single transfer: 
+gtswn.chat.cover.not_configured=Not configured yet!
