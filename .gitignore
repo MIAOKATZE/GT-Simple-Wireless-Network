@@ -1,6 +1,7 @@
 .gradle
 .settings
 .hippo
+/temp/
 /plan/
 /.idea/
 /.vscode/
