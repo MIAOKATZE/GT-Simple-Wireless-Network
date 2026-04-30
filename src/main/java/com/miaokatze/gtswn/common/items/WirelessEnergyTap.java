@@ -130,7 +130,7 @@ public class WirelessEnergyTap extends Item {
             return;
         }
 
-        // 获取安培，默认 2A
+        // 获取安培，默认2A
         long amperage = container.getInputAmperage();
         if (amperage <= 0) {
             amperage = 2;
@@ -138,9 +138,34 @@ public class WirelessEnergyTap extends Item {
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.default_amperage")));
         }
 
-        // 普通右键，链接成功提示
-        player
-            .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.connection_success")));
+        // === 阶段1：实现电压等级自动检测和频率计算 ===
+        // 1. 输出检测信息到聊天
+        player.addChatMessage(new ChatComponentText("§a[链路终端] 检测到机器："));
+        player.addChatMessage(new ChatComponentText("§7 电容: " + capacity + " EU"));
+        player.addChatMessage(new ChatComponentText("§7 电压: " + voltage + " EU/t"));
+        player.addChatMessage(new ChatComponentText("§7 电流: " + amperage + " A"));
+
+        // 2. 计算最低交互频率（需要电容和电压）
+        double minFrequencyTicks = Double.MAX_VALUE;
+        boolean canCalculate = false;
+        if (capacity > 0 && voltage > 0 && amperage > 0) {
+            minFrequencyTicks = (double) capacity / (double) (amperage * voltage);
+            canCalculate = true;
+            player.addChatMessage(
+                new ChatComponentText("§a 最低交互频率: " + String.format("%.1f", minFrequencyTicks) + " tick"));
+        } else {
+            player.addChatMessage(new ChatComponentText("§c 无法计算最低交互频率：缺少必要参数"));
+        }
+
+        // 3. 选择实际交互频率（20的倍数，取前面那个倍数）
+        if (canCalculate) {
+            int actualFrequencyTicks = ((int) (minFrequencyTicks / 20)) * 20;
+            if (actualFrequencyTicks < 20) actualFrequencyTicks = 20; // 至少20tick
+            player.addChatMessage(new ChatComponentText("§b 实际交互频率: " + actualFrequencyTicks + " tick（20的倍数）"));
+        }
+
+        // 占位符提示
+        player.addChatMessage(new ChatComponentText("§e[链路终端] 链接成功，拟定链接对应电压等级覆盖板（占位符）"));
     }
 
     /**
