@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.register;
 
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dynamo_Wireless;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoinE;
@@ -22,6 +24,8 @@ public class ItemRegistrar {
         registerTestCoinE();
         registerPortableWirelessNetworkMonitor();
         registerWirelessEnergyTap();
+        registerGTswnCoverEnergyWireless();
+        registerGTswnCoverDynamoWireless();
         GTSimpleWirelessNetwork.LOG.info("物品注册完成。");
     }
 
@@ -52,5 +56,19 @@ public class ItemRegistrar {
      */
     private static void registerWirelessEnergyTap() {
         Wireless_Energy_Tap.setAndRegister(com.miaokatze.gtswn.common.items.WirelessEnergyTap::new);
+    }
+
+    /**
+     * 注册GTswn无线能量覆盖板
+     */
+    private static void registerGTswnCoverEnergyWireless() {
+        GTswn_Cover_Energy_Wireless.set(com.miaokatze.gtswn.common.items.GTSwnCoverEnergyWireless::new);
+    }
+
+    /**
+     * 注册GTswn无线动力覆盖板
+     */
+    private static void registerGTswnCoverDynamoWireless() {
+        GTswn_Cover_Dynamo_Wireless.set(com.miaokatze.gtswn.common.items.GTSwnCoverDynamoWireless::new);
     }
 }

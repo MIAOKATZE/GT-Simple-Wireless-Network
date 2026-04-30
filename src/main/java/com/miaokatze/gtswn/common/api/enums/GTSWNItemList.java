@@ -35,7 +35,11 @@ public enum GTSWNItemList implements IItemContainer {
     // 无线能量监视器
     Wireless_Energy_Monitor,
     // 无线能量分接器
-    Wireless_Energy_Tap;
+    Wireless_Energy_Tap,
+    // 无线能量覆盖板（输入）
+    GTswn_Cover_Energy_Wireless,
+    // 无线动力覆盖板（输出）
+    GTswn_Cover_Dynamo_Wireless;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;

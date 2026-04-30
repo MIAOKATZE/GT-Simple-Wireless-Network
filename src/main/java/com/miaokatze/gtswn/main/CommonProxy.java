@@ -1,12 +1,21 @@
 package com.miaokatze.gtswn.main;
 
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dynamo_Wireless;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
+
 import com.miaokatze.gtswn.Tags;
+import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
+import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.recipe.TestMachineRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
+
+import gregtech.api.covers.CoverRegistry;
+import gregtech.api.enums.Textures;
+import gregtech.api.util.GTUtility;
 
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
@@ -94,6 +103,28 @@ public class CommonProxy {
             GTSimpleWirelessNetwork.LOG.info("[3/3] 测试配方注册完成。");
         } catch (Throwable t) {
             GTSimpleWirelessNetwork.LOG.error("[3/3] 测试配方注册过程中发生错误", t);
+        }
+
+        // 注册GTswn覆盖板
+        GTSimpleWirelessNetwork.LOG.info("[PostInit] 开始注册GTswn覆盖板...");
+        try {
+            // 注册无线能量覆盖板（输入）
+            CoverRegistry.registerCover(
+                GTswn_Cover_Energy_Wireless.get(1),
+                Textures.BlockIcons.SCREEN[0],
+                context -> new GTswn_Cover_EnergyWireless(context),
+                CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
+
+            // 注册无线动力覆盖板（输出）
+            CoverRegistry.registerCover(
+                GTswn_Cover_Dynamo_Wireless.get(1),
+                Textures.BlockIcons.SCREEN[0],
+                context -> new GTswn_Cover_DynamoWireless(context),
+                CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
+
+            GTSimpleWirelessNetwork.LOG.info("[PostInit] GTswn覆盖板注册成功！");
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.error("[PostInit] GTswn覆盖板注册失败", t);
         }
     }
 
