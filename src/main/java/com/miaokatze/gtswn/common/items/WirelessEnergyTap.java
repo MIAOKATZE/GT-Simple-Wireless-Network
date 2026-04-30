@@ -29,6 +29,12 @@ public class WirelessEnergyTap extends Item {
     /** NBT 键名：存储当前输出模式 (true=动力, false=能源) */
     private static final String NBT_OUTPUT_MODE = "OutputMode";
 
+    /** NBT 键名：上次触发的时间戳，防止短时间内重复触发 */
+    private static final String NBT_LAST_USE_TIME = "LastUseTime";
+
+    /** 防重复触发的间隔（毫秒） */
+    private static final long INTERVAL_MILLIS = 200L;
+
     /** 两个材质图标 */
     private net.minecraft.util.IIcon[] icons = new net.minecraft.util.IIcon[2];
 
@@ -59,6 +65,21 @@ public class WirelessEnergyTap extends Item {
     }
 
     /**
+     * 检查是否可以触发（防止短时间内重复触发）
+     */
+    private boolean canTrigger(ItemStack aStack) {
+        ensureNBT(aStack);
+        long now = System.currentTimeMillis();
+        long lastTime = aStack.stackTagCompound.getLong(NBT_LAST_USE_TIME);
+        if (now - lastTime < INTERVAL_MILLIS) {
+            return false;
+        }
+        // 更新最后使用时间
+        aStack.stackTagCompound.setLong(NBT_LAST_USE_TIME, now);
+        return true;
+    }
+
+    /**
      * 获取当前输出模式
      */
     private boolean getOutputMode(ItemStack aStack) {
@@ -78,6 +99,51 @@ public class WirelessEnergyTap extends Item {
     }
 
     /**
+     * 处理机器交互的逻辑（共享方法）
+     */
+    private void handleMachineInteraction(ItemStack stack, EntityPlayer player, World world, int x, int y, int z) {
+        TileEntity te = world.getTileEntity(x, y, z);
+        if (!(te instanceof IBasicEnergyContainer)) {
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.not_energy_container")));
+            return;
+        }
+
+        IBasicEnergyContainer container = (IBasicEnergyContainer) te;
+
+        // 检查是否有容量
+        long capacity = container.getEUCapacity();
+        if (capacity <= 0) {
+            player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_capacity")));
+            return;
+        }
+
+        // 获取电压
+        long voltage = container.getInputVoltage();
+        if (voltage <= 0) {
+            // 尝试获取输出电压作为备选
+            voltage = container.getOutputVoltage();
+        }
+
+        if (voltage <= 0) {
+            player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_voltage")));
+            return;
+        }
+
+        // 获取安培，默认 2A
+        long amperage = container.getInputAmperage();
+        if (amperage <= 0) {
+            amperage = 2;
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.default_amperage")));
+        }
+
+        // 普通右键，链接成功提示
+        player
+            .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.connection_success")));
+    }
+
+    /**
      * 获取未本地化名称
      */
     @Override
@@ -94,21 +160,60 @@ public class WirelessEnergyTap extends Item {
     }
 
     /**
+     * 处理右击方块事件（阻止打开GUI）
+     */
+    @Override
+    public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
+        float hitX, float hitY, float hitZ) {
+        // 只在服务端处理
+        if (world.isRemote) {
+            return false;
+        }
+
+        // 检查是否可以触发（防止短时间内重复触发）
+        if (!canTrigger(stack)) {
+            return true; // 返回true阻止继续处理
+        }
+
+        // Shift+右键：切换模式，不与机器交互
+        if (player.isSneaking()) {
+            boolean newMode = toggleOutputMode(stack);
+            stack.setItemDamage(newMode ? 1 : 0);
+            String modeKey = newMode ? "gtswn.chat.tap.mode.output" : "gtswn.chat.tap.mode.input";
+            String msg = StatCollector.translateToLocal(modeKey);
+            player.addChatMessage(new ChatComponentText(msg));
+            return true; // 返回true阻止继续处理
+        }
+
+        // 普通右键：与机器交互
+        handleMachineInteraction(stack, player, world, x, y, z);
+        return true; // 返回true阻止继续处理
+    }
+
+    /**
      * 处理右击空气事件
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
-        // 只有 shift+右键才切换模式
+        // 只在服务端处理
+        if (world.isRemote) {
+            return stack;
+        }
+
+        // 检查是否可以触发（防止短时间内重复触发）
+        if (!canTrigger(stack)) {
+            return stack;
+        }
+
+        // 只有 shift+右键才切换模式（对着空气）
         if (player.isSneaking()) {
-            // 切换模式
             boolean newMode = toggleOutputMode(stack);
-            // 更新 Item 的 damage 值，用于材质切换
             stack.setItemDamage(newMode ? 1 : 0);
-            // 发送提示信息
             String modeKey = newMode ? "gtswn.chat.tap.mode.output" : "gtswn.chat.tap.mode.input";
             String msg = StatCollector.translateToLocal(modeKey);
             player.addChatMessage(new ChatComponentText(msg));
         }
+
         return stack;
     }
 
@@ -144,67 +249,6 @@ public class WirelessEnergyTap extends Item {
     public net.minecraft.util.IIcon getIcon(ItemStack aStack, int aPass) {
         // 优先从 ItemStack 的 damage 值获取
         return this.getIconFromDamage(aStack.getItemDamage());
-    }
-
-    /**
-     * 处理右击方块事件
-     */
-    @Override
-    public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
-        float hitX, float hitY, float hitZ) {
-        // 只在服务端处理
-        if (world.isRemote) {
-            return false;
-        }
-
-        // 检查方块是否是 IBasicEnergyContainer
-        TileEntity te = world.getTileEntity(x, y, z);
-        if (!(te instanceof IBasicEnergyContainer)) {
-            player.addChatMessage(
-                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.not_energy_container")));
-            return true;
-        }
-
-        IBasicEnergyContainer container = (IBasicEnergyContainer) te;
-
-        // 检查是否有容量
-        long capacity = container.getEUCapacity();
-        if (capacity <= 0) {
-            player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_capacity")));
-            return true;
-        }
-
-        // 获取电压
-        long voltage = container.getInputVoltage();
-        if (voltage <= 0) {
-            // 尝试获取输出电压作为备选
-            voltage = container.getOutputVoltage();
-        }
-
-        if (voltage <= 0) {
-            player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_voltage")));
-            return true;
-        }
-
-        // 获取安培，默认 2A
-        long amperage = container.getInputAmperage();
-        if (amperage <= 0) {
-            amperage = 2;
-            player.addChatMessage(
-                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.default_amperage")));
-        } else {
-            // 如果是 Shift 右键，这里先只给一个提示
-            if (player.isSneaking()) {
-                player.addChatMessage(
-                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_switch")));
-            } else {
-                // 普通右键，链接成功提示
-                player.addChatMessage(
-                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.connection_success")));
-            }
-        }
-
-        return true;
     }
 
     /**
