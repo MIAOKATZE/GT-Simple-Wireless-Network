@@ -4,7 +4,6 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dyn
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
-import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoinE;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -21,7 +20,7 @@ public class ItemRegistrar {
     public static void init() {
         GTSimpleWirelessNetwork.LOG.info("开始通过 ItemRegistrar 注册物品...");
         registerTestCoin();
-        registerTestCoinE();
+        // registerTestCoinE(); // 取消测试物品注册，源码保留
         registerPortableWirelessNetworkMonitor();
         registerWirelessEnergyTap();
         registerGTswnCoverEnergyWireless();
@@ -40,7 +39,7 @@ public class ItemRegistrar {
      * 注册电子测试硬币
      */
     private static void registerTestCoinE() {
-        TestCoinE.setAndRegister(com.miaokatze.gtswn.common.items.TestCoinE::new);
+        // TestCoinE.setAndRegister(com.miaokatze.gtswn.common.items.TestCoinE::new); // 取消测试物品注册，源码保留
     }
 
     /**

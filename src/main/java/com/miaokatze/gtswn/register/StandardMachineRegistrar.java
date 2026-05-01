@@ -1,17 +1,10 @@
 package com.miaokatze.gtswn.register;
 
-import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Test_Machine_EV;
-import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Test_Machine_IV;
-import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Test_Machine_LuV;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
-import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.MTETEST_EV;
-import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.MTETEST_IV;
-import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.MTETEST_LuV;
 import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.WIRELESS_ENERGY_MONITOR;
 
 import net.minecraft.util.StatCollector;
 
-import com.miaokatze.gtswn.common.machine.MTETestMachine;
 import com.miaokatze.gtswn.common.machine.MTEWirelessEnergyMonitor;
 
 /**
@@ -27,31 +20,31 @@ public class StandardMachineRegistrar extends MachineRegistrar {
     @Override
     protected void setupRegistrations() {
         // 注册 EV 等级测试机器 (Tier 4)
-        registerMachine(
-            () -> new MTETestMachine(
-                MTETEST_EV.ID,
-                "gtswn.mtetest.ev",
-                StatCollector.translateToLocal("gtswn.machine.test.ev"),
-                4),
-            Test_Machine_EV);
+        // registerMachine(
+        // () -> new MTETestMachine(
+        // MTETEST_EV.ID,
+        // "gtswn.mtetest.ev",
+        // StatCollector.translateToLocal("gtswn.machine.test.ev"),
+        // 4),
+        // Test_Machine_EV);
 
         // 注册 IV 等级测试机器 (Tier 5)
-        registerMachine(
-            () -> new MTETestMachine(
-                MTETEST_IV.ID,
-                "gtswn.mtetest.iv",
-                StatCollector.translateToLocal("gtswn.machine.test.iv"),
-                5),
-            Test_Machine_IV);
+        // registerMachine(
+        // () -> new MTETestMachine(
+        // MTETEST_IV.ID,
+        // "gtswn.mtetest.iv",
+        // StatCollector.translateToLocal("gtswn.machine.test.iv"),
+        // 5),
+        // Test_Machine_IV);
 
         // 注册 LuV 等级测试机器 (Tier 6)
-        registerMachine(
-            () -> new MTETestMachine(
-                MTETEST_LuV.ID,
-                "gtswn.mtetest.luv",
-                StatCollector.translateToLocal("gtswn.machine.test.luv"),
-                6),
-            Test_Machine_LuV);
+        // registerMachine(
+        // () -> new MTETestMachine(
+        // MTETEST_LuV.ID,
+        // "gtswn.mtetest.luv",
+        // StatCollector.translateToLocal("gtswn.machine.test.luv"),
+        // 6),
+        // Test_Machine_LuV);
 
         // 注册 LV 等级无线能量监视器 (Tier 1)
         registerMachine(

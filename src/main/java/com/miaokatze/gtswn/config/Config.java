@@ -16,7 +16,7 @@ public class Config {
     public static int metaIdOffset = 0;
 
     // 无线网络监测开关，默认开启
-    public static boolean wirelessNetworkMonitor = true;
+    public static boolean wirelessNetworkMonitor = false;
 
     /**
      * 同步配置文件

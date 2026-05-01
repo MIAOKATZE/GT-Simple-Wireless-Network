@@ -22,7 +22,7 @@ public enum MetaTileEntityID {
 
     // --- 无线电网监控机器 ---
     /** LV 等级无线能量监视器 (Tier 1) */
-    WIRELESS_ENERGY_MONITOR(20),
+    WIRELESS_ENERGY_MONITOR(0),
 
     // --- 多方块测试机器 ---
     /** HV 等级测试多方块机器 (Tier 5) */

@@ -22,14 +22,13 @@ public class CreativeTabManager {
 
         /**
          * 获取标签页的图标物品
-         * 优先返回已注册列表中的第一个物品，若列表为空则返回钻石作为兜底，防止崩溃
+         * 使用便携式无线网络监测终端作为图标
          */
         @Override
         public Item getTabIconItem() {
-            List<ItemStack> items = getItemsToAdd();
-            if (items != null && !items.isEmpty()) {
-                return items.get(0)
-                    .getItem();
+            // 使用便携式无线网络监测终端作为图标
+            if (com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor.hasBeenSet()) {
+                return com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor.getItem();
             }
             // 兜底：返回一个安全的物品（防止崩溃）
             return net.minecraft.init.Items.diamond;
