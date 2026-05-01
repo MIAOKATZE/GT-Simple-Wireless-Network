@@ -15,9 +15,6 @@ public class Config {
     // 此配置仅用于在基准值基础上进行微调。
     public static int metaIdOffset = 0;
 
-    // 无线网络监测开关，默认开启
-    public static boolean wirelessNetworkMonitor = false;
-
     /**
      * 同步配置文件
      * 从磁盘读取配置并更新静态变量，如果配置有变动则自动保存
@@ -34,12 +31,6 @@ public class Config {
             -5000,
             5000,
             "应用于 MTE ID 基准值的偏移量 (用于预留 ID 区间)");
-
-        wirelessNetworkMonitor = configuration.getBoolean(
-            "wirelessNetworkMonitor",
-            Configuration.CATEGORY_GENERAL,
-            wirelessNetworkMonitor,
-            "是否开启无线网络监测，开启后会在聊天窗口输出电网能量变化 (默认 true)");
 
         if (configuration.hasChanged()) {
             configuration.save();

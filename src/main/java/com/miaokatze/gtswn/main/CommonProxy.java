@@ -4,7 +4,6 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dyn
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 
 import com.miaokatze.gtswn.Tags;
-import com.miaokatze.gtswn.common.WirelessNetworkMonitorEventHandler;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
@@ -15,7 +14,6 @@ import com.miaokatze.gtswn.recipe.TestMachineRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
 
-import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
@@ -39,12 +37,12 @@ public class CommonProxy {
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
 
-        // 注册无线网络监测事件
-        GTSimpleWirelessNetwork.LOG.info("注册无线网络监测事件...");
-        FMLCommonHandler.instance()
-            .bus()
-            .register(new WirelessNetworkMonitorEventHandler());
-        net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new WirelessNetworkMonitorEventHandler());
+        // 注册无线网络监测事件（已注释掉，不需要布尔值控制）
+        // GTSimpleWirelessNetwork.LOG.info("注册无线网络监测事件...");
+        // FMLCommonHandler.instance()
+        // .bus()
+        // .register(new WirelessNetworkMonitorEventHandler());
+        // net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new WirelessNetworkMonitorEventHandler());
 
         // 注册物品
         GTSimpleWirelessNetwork.LOG.info("[0/3] 开始注册物品...");
