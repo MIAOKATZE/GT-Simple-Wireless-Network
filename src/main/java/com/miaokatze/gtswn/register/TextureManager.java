@@ -18,27 +18,27 @@ public class TextureManager {
 
     // --- 测试机器专用材质图标 ---
     /** EV 等级测试机器顶部材质 */
-    public static final IIconContainer TEX_TEST_EV = new Textures.BlockIcons.CustomIcon("gtswn:MTETEST_1");
+    public static final IIconContainer TEX_TEST_EV = Textures.BlockIcons.custom("gtswn:MTETEST_1");
     /** IV 等级测试机器顶部材质 */
-    public static final IIconContainer TEX_TEST_IV = new Textures.BlockIcons.CustomIcon("gtswn:MTETEST_2");
+    public static final IIconContainer TEX_TEST_IV = Textures.BlockIcons.custom("gtswn:MTETEST_2");
     /** LuV 等级测试机器顶部材质 */
-    public static final IIconContainer TEX_TEST_LUV = new Textures.BlockIcons.CustomIcon("gtswn:MTETEST_3");
+    public static final IIconContainer TEX_TEST_LUV = Textures.BlockIcons.custom("gtswn:MTETEST_3");
 
     // --- 无线能量监视器材质图标 ---
     /** 无线能量监视器正面材质（红石信号关闭） */
-    public static final IIconContainer TEX_WIRELESS_MONITOR_OFF = new Textures.BlockIcons.CustomIcon(
-        "gtswn:Wireless_Energy_Monitor_OFF");
+    public static final IIconContainer TEX_WIRELESS_MONITOR_OFF = Textures.BlockIcons
+        .custom("gtswn:Wireless_Energy_Monitor_OFF");
     /** 无线能量监视器正面材质（红石信号开启） */
-    public static final IIconContainer TEX_WIRELESS_MONITOR_ON = new Textures.BlockIcons.CustomIcon(
-        "gtswn:Wireless_Energy_Monitor_ON");
+    public static final IIconContainer TEX_WIRELESS_MONITOR_ON = Textures.BlockIcons
+        .custom("gtswn:Wireless_Energy_Monitor_ON");
 
     // --- 无线覆盖板材质图标 ---
     /** 无线能量输入覆盖板材质 */
-    public static final IIconContainer TEX_WIRELESS_CONNECTOR_INPUT = new Textures.BlockIcons.CustomIcon(
-        "gtswn:covers/wireless_connector_input");
+    public static final IIconContainer TEX_WIRELESS_CONNECTOR_INPUT = Textures.BlockIcons
+        .custom("gtswn:covers/wireless_connector_input");
     /** 无线能量输出覆盖板材质 */
-    public static final IIconContainer TEX_WIRELESS_CONNECTOR_OUTPUT = new Textures.BlockIcons.CustomIcon(
-        "gtswn:covers/wireless_connector_output");
+    public static final IIconContainer TEX_WIRELESS_CONNECTOR_OUTPUT = Textures.BlockIcons
+        .custom("gtswn:covers/wireless_connector_output");
 
     // 材质缓存表，用于存储已创建的 ITexture 实例以提高性能
     private static final Map<String, ITexture> textureCache = new HashMap<>();
@@ -51,7 +51,7 @@ public class TextureManager {
      * @param icon GregTech 内置的方块图标枚举
      * @return 对应的 ITexture 实例
      */
-    public static ITexture getOrCreateTexture(String name, Textures.BlockIcons icon) {
+    public static ITexture getOrCreateTexture(String name, IIconContainer icon) {
         return textureCache.computeIfAbsent(name, k -> TextureFactory.of(icon));
     }
 

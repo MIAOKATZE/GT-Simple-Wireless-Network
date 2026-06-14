@@ -37,21 +37,21 @@ dependencies {
     // Minimal dependency set for current source usage.
     // Sources reference only GregTech API types (gregtech.api.*), so keep GT5-Unofficial.
     // User has an external hard backup of the original file, so this file is intentionally simplified.
-    api("com.github.GTNewHorizons:GT5-Unofficial:5.09.51.476") { transitive = false }
+    api("com.github.GTNewHorizons:GT5-Unofficial:5.09.52.594") { transitive = false }
 
     // Some GregTech base classes reference interfaces/types from other mods (AE2, ModularUI, GTNHLib)
     // that are only needed at compile-time to satisfy types. Add them as compileOnlyApi so they
     // do not become runtime/published transitive dependencies.
-    api("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-872-GTNH:dev") { transitive = false }
-    api("com.github.GTNewHorizons:ModularUI:1.3.1:dev") { transitive = false }
-    api("com.github.GTNewHorizons:ModularUI2:2.3.45-1.7.10:dev") { transitive = false }
-    api("com.github.GTNewHorizons:GTNHLib:0.9.41:dev") { transitive = false }
+    api("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-951-GTNH:dev")
+    api("com.github.GTNewHorizons:ModularUI:1.3.4:dev") { transitive = false }
+    api("com.github.GTNewHorizons:ModularUI2:2.3.70-1.7.10:dev") { transitive = false }
+    api("com.github.GTNewHorizons:GTNHLib:0.10.3:dev") { transitive = false }
 
     // StructureLib is required for multiblock machine structure definitions and building.
-    api("com.github.GTNewHorizons:StructureLib:1.4.20:dev") { transitive = false }
+    api("com.github.GTNewHorizons:StructureLib:1.4.37:dev") { transitive = false }
 
     // NEI (Not Enough Items) is required for HandlerInfo used in RecipeMapBuilder.neiHandlerInfo()
-    compileOnlyApi("com.github.GTNewHorizons:NotEnoughItems:2.7.89-GTNH:dev") { transitive = false }
+    compileOnlyApi("com.github.GTNewHorizons:NotEnoughItems:2.8.98-GTNH:dev") { transitive = false }
 
     // IC2 API is required for implementing IElectricItem to support charging stations.
     compileOnlyApi("net.industrial-craft:industrialcraft-2:2.2.828-experimental:api") { transitive = false }

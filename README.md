@@ -1,28 +1,117 @@
-模组说明  Mod Description
-=====================
+<h1 align="center">GT-Simple-Wireless-Network</h1>
+<p align="center"><strong><em>GTNH Wireless Energy Network Mod</em></strong><br><strong><em>GTNH 无线电网模组</em></strong></p>
 
-| 说明 | Description |
-| --- | --- |
-| 添加了便携与机器版的无线监测终端、无线网络链路终端与无线能量覆盖板，均可在LV阶段合成，具有电网智能记录分析与红石逻辑信号输出功能，可智能配置任意机器接入无线网络，实现无线能量传输。<br><br>为了平衡，链路节点从无线EU网络获取能量时，会造成15%的额外损耗。 | Added portable and machine versions of wireless network monitors, wireless energy tap terminal and wireless energy covers, all craftable at LV tier, featuring intelligent grid analysis and redstone logic signal output, and smart wireless energy transfer by connecting any machine to wireless network. Target compatibility: GTNH 2.8.x.<br><br>For balance, Energy Tap will cause 15% extra loss when drawing energy from wireless EU network. |
+A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, and redstone control** to the GTNH wireless EU network. It provides portable and block-based monitors, wireless energy tap terminals, and wireless energy covers — all craftable at LV tier — enabling intelligent grid analysis, redstone logic output, and seamless wireless energy transfer for any machine.
 
-## 功能介绍  Features
+一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和无线能量覆盖板——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
 
-| 功能 | Feature                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| --- |----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **无线网络链路终端**<br>• 通过向能量容器添加“链路节点”实现同无线网络的连接<br>• Shift+右键切换能源/动力模式<br>• 能源模式：从电网获取能量（扣除15%损耗）<br>• 动力模式：向电网输出能量（无损耗）<br>• 两种模式均有动态纹理<br><br>![链路终端](images/README-Portable_Wireless_Network_Tap.jpg)<br>*链路终端与覆盖板* | **Wireless Energy Tap**<br>• Connect machines to wireless network by attaching "Energy Tap"<br>• Shift+Right-click to switch Energy/Power modes<br>• Energy mode: Draw from network (15% loss)<br>• Power mode: Output to network (no loss)<br>• Dynamic textures for both modes<br><br>![Wireless Energy Tap](images/README-Portable_Wireless_Network_Tap.jpg)<br>*Wireless Energy Tap and Covers* |
-| **便携无线监测终端**<br>• 背包内自动显示 HUD<br>• 三种显示模式：关闭/常规计数/科学计数<br>• 实时显示电网状态和 EU/t 变化率<br>• GT 风格电流+电压等级显示<br>• 智能 dEU/dt 计算<br><br>![科学计数 - 充电](images/README-Portable_Wireless_Network_Monitor-CN1.png)<br>*科学计数模式 - 电网充电状态*<br><br>![科学计数 - 放电](images/README-Portable_Wireless_Network_Monitor-CN2.png)<br>*科学计数模式 - 电网放电状态* | **Portable Wireless Network Monitor**<br>• Automatic HUD display when in inventory<br>• Three display modes: Off/Normal/Scientific<br>• Real-time network status and EU/t change rate<br>• GT-style amperage + voltage tier display <br>• Smart dEU/dt calculation<br><br>![Scientific Notation - Charging](images/README-Portable_Wireless_Network_Monitor-EN1.png)<br>*Scientific mode - Network charging status*<br><br>![Scientific Notation - Discharging](images/README-Portable_Wireless_Network_Monitor-EN2.png)<br>*Scientific mode - Network discharging status* |
-| **无线能量监视器**<br>• 实时监控无线电网能量状态<br>• 红石信号输出控制（高电平/低电平/滞后模式）<br>• 参数化阈值设定<br>• 状态贴图动态切换<br><br>![无线能量监视器外观](images/Wireless_Energy_Monitor_AL.png)<br>*机器外观*<br><br>![中文 UI](images/Wireless_Energy_Monitor_CN.png)<br>*中文界面* | **Wireless Energy Monitor**<br>• Real-time wireless network energy monitoring<br>• Redstone signal output control (High/Low/Hysteresis modes)<br>• Parametric threshold settings<br>• Dynamic status texture switching<br><br>![Wireless Energy Monitor Appearance](images/Wireless_Energy_Monitor_AL.png)<br>*Machine appearance*<br><br>![English UI](images/Wireless_Energy_Monitor_EN.png)<br>*English interface* |
+> [!NOTE]
+> This is an unofficial mod. Please avoid discussing this mod in official GTNH forums.
+> 这是一个非官方模组，讨论此模组时请注意场合。
 
+## Downloads & Requirements / 下载与版本需求
 
-|       | 更新日志                                              | Update log                                                                                                    |
-|-------|---------------------------------------------------|---------------------------------------------------------------------------------------------------------------|
-| **0.2.0**<br>*(Main)* | • 添加无线网络链路终端<br>• 添加无线能量覆盖板（能源/动力模式）<br>• 添加覆盖板配方<br>• 添加电网损耗（能源模式扣除15%）<br>• 修复覆盖板材质显示问题<br>• 完善翻译支持<br>• 优化能量传输间隔计算 | • Added Wireless Energy Tap<br>• Added Wireless Energy Covers (Energy/Power modes)<br>• Added cover recipes<br>• Added network loss (15% deducted in Energy mode)<br>• Fixed cover texture display issues<br>• Improved translation support<br>• Optimized energy transfer interval calculation |
-| **0.1.2**<br>*(Fix)* | • 添加 MTEMonitor 基类<br>• 修复跨存档缓存遗留<br>• 修复 HUD 默认开启问题 |• Added MTEMonitor base class<br>• Fixed cross-save cache persistence<br>• Fixed HUD default enabled issue|
-| **0.1.1**<br>*(Main)* | • 添加无线能量监视器<br>• 红石控制功能（高/低/滞后模式）<br>• 状态贴图动态切换<br>• 参数退位优化<br>• 优化便携无线监测终端显示 |• Added Wireless Energy Monitor<br>• Redstone control (High/Low/Hysteresis)<br>• Dynamic status textures<br>• Parameter decrement optimization<br>• Optimized portable wireless monitor display|
-| **0.1.0**<br>*(Main)* | • 代码结构优化<br>• 添加便携无线监测终端 |• Code structure optimization<br>• Added portable wireless network monitor|
-| <span style="color:gray">0.0.5</span> | <span style="color:gray">• 添加 TestCoinE，消耗电量获取测试机器<br>• 实现物品电量管理和操作功能</span> | <span style="color:gray">• Added TestCoinE, consume electricity to obtain test machines<br>• Implemented item electricity management and operation</span>|
-| <span style="color:gray">0.0.4</span> | <span style="color:gray">• 添加 MTEMultiTestMachine<br>• 添加 TestCoin<br>• 添加新机器类型及配方<br>• 添加 NEI 适配</span> | <span style="color:gray">• Added MTEMultiTestMachine<br>• Added TestCoin<br>• Added new machine type and recipes<br>• Added NEI support</span>|
-| <span style="color:gray">0.0.3</span> | <span style="color:gray">• 清理冗余配置项，精简项目结构</span> | <span style="color:gray">• Removed redundant configurations and streamlined project structure</span>|
-| <span style="color:gray">0.0.2</span> | <span style="color:gray">架构重构与功能完善<br>• 添加创造模式物品栏支持<br>• 采用 GregTech 队列注册方式，实现集中注册<br>• 批量导入自定义材质系统<br>• 清理冗余配置，优化项目结构</span> | <span style="color:gray">Architecture Refactoring & Feature Enhancement<br>• Added creative mode tab support<br>• Adopted GregTech queue registration for centralized machine registration<br>• Implemented batch custom texture import system<br>• Cleaned up redundant configurations and optimized project structure</span> |
-| <span style="color:gray">0.0.1</span> | <span style="color:gray">• 添加 MTETestMachine 作为测试机器</span> | <span style="color:gray">• Add MTETestMachine as the testing machine</span> |
+| GTNH | GTSWN | Maintenance / 维护 |
+|------|------|:---:|
+| 2.9.0 beta-1 | 1.0.0+ | ✔️ |
+| 2.8.4 | 0.2.0 | ✔️ |
 
+---
+
+## Wireless Energy Monitor / 无线能量监视器
+
+<p align="center"><img src="images/Wireless_Energy_Monitor_AL.png" width="400"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
+
+**无线能量监视器 / Wireless Energy Monitor** — A single-block machine that displays real-time wireless network energy status with advanced redstone control. Supports 5 redstone modes (Off/High/Low/High-Hysteresis/Low-Hysteresis) with parametric threshold settings. Dynamic texture switching reflects redstone output state.
+
+无线能量监视器，单方块机器，实时显示无线电网能量状态，具备高级红石控制。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。
+
+- **Redstone Modes**: Off → High (signal when EU > threshold) → Low (signal when EU < threshold) → High-Hysteresis → Low-Hysteresis
+- **Display Modes**: Normal counting (1,234,567 EU) / Scientific notation (1.235×10^6 EU)
+- **Smart EU/t**: Real-time change rate with GT-style amperage + voltage tier display (e.g., "2A HV")
+
+<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" width="300"> <img src="images/Wireless_Energy_Monitor_EN.png" width="300"><br><em>中文界面 (left) & English interface (right)</em></p>
+
+---
+
+## Portable Wireless Network Monitor / 便携无线监测终端
+
+A handheld device that displays a HUD overlay when in inventory. Shows real-time wireless network energy, EU/t change rate, and GT-style power tier — all without placing any block.
+
+背包内自动显示 HUD 的手持设备。实时显示无线电网能量、EU/t 变化率和 GT 风格功率等级——无需放置任何方块。
+
+- **Three display modes**: Off / Normal counting / Scientific notation
+- **Smart dEU/dt**: Intelligent change rate calculation with automatic zero-detection timeout
+- **GT Power Display**: Amperage + voltage tier format (e.g., "§b2A HV")
+
+<p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" width="300"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" width="300"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
+
+---
+
+## Wireless Energy Tap & Covers / 无线网络链路终端与覆盖板
+
+<p align="center"><img src="images/README-Portable_Wireless_Network_Tap.jpg" width="400"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
+
+### Wireless Energy Tap / 无线网络链路终端
+
+A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, 15% loss) and Power mode (output to network, no loss). Dynamic texture reflects current mode.
+
+便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，15%损耗）和动力模式（向电网输出，无损耗）。动态纹理反映当前模式。
+
+### Wireless Energy Covers / 无线能量覆盖板
+
+Block-based versions of the Energy Tap, installed as covers on any GT machine:
+
+覆盖板版本的链路终端，安装在任何 GT 机器上：
+
+- **能源覆盖板 / Energy Cover**: Draws EU from wireless network into the machine (15% loss)
+- **动力覆盖板 / Dynamo Cover**: Outputs EU from the machine into wireless network (no loss)
+- Both support configurable voltage, amperage, interval, and single-transfer energy via right-click
+
+---
+
+## Redstone Control System / 红石控制系统
+
+The Wireless Energy Monitor features a 5-mode redstone control system:
+
+无线能量监视器具备5模式红石控制系统：
+
+| Mode | Behavior |
+|------|----------|
+| Off | No redstone output |
+| High | Output signal when EU > threshold |
+| Low | Output signal when EU < threshold |
+| High-Hysteresis | Output when EU > param1, cancel only when EU < param2 |
+| Low-Hysteresis | Output when EU < param2, cancel only when EU > param1 |
+
+| 模式 | 行为 |
+|------|------|
+| 关闭 | 不输出红石信号 |
+| 高电平 | 电量 > 阈值时输出信号 |
+| 低电平 | 电量 < 阈值时输出信号 |
+| 正向滞后 | >参数1时输出，必须<参数2才能取消 |
+| 反向滞后 | <参数2时输出，必须>参数1才能取消 |
+
+---
+
+## Changelog / 更新日志
+
+| Version | Changes |
+|---------|---------|
+| **1.0.0** | • GTNH 2.9.0 beta-1 compatibility (GT5U 5.09.52.594)<br>• Migrated to jvmDowngrader<br>• Adapted to new GT5U API: `checkMachine` signature, `CustomIcon`→`custom()`, `.dot()`→`.hint()` |
+| **0.2.0** | • Added Wireless Energy Tap<br>• Added Wireless Energy Covers (Energy/Power modes)<br>• Added cover recipes<br>• Added network loss (15% deducted in Energy mode)<br>• Fixed cover texture display issues |
+| **0.1.2** | • Added MTEMonitor base class<br>• Fixed cross-save cache persistence<br>• Fixed HUD default enabled issue |
+| **0.1.1** | • Added Wireless Energy Monitor<br>• Redstone control (High/Low/Hysteresis)<br>• Dynamic status textures |
+| **0.1.0** | • Code structure optimization<br>• Added portable wireless network monitor |
+
+---
+
+## Tech Stack / 技术栈
+
+- Java 17→8 (JVM Downgrader) / Minecraft 1.7.10 / Forge 10.13.4.1614
+- Dependencies: GT5-Unofficial, GTNHLib, StructureLib, ModularUI, ModularUI2, AE2
+
+## License / 许可证
+
+See LICENSE file.
+详见 LICENSE 文件。

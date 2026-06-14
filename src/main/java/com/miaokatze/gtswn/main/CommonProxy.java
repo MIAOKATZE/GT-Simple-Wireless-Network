@@ -10,7 +10,6 @@ import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
-import com.miaokatze.gtswn.recipe.TestMachineRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
 
@@ -104,7 +103,7 @@ public class CommonProxy {
     public void postInit(FMLPostInitializationEvent event) {
         GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册测试配方...");
         try {
-            TestMachineRecipes.init();
+            // TestMachineRecipes.init(); // TestCoinE未注册，暂时禁用测试配方
             CraftingRecipes.init();
             GTSimpleWirelessNetwork.LOG.info("[3/3] 测试配方注册完成。");
         } catch (Throwable t) {
