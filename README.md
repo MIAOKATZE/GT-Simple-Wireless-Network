@@ -5,18 +5,18 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和无线能量覆盖板——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
 
-> [!NOTE]
+> \[!NOTE]
 > This is an unofficial mod. Please avoid discussing this mod in official GTNH forums.
 > 这是一个非官方模组，讨论此模组时请注意场合。
 
 ## Downloads & Requirements / 下载与版本需求
 
-| GTNH | GTSWN | Maintenance / 维护 |
-|------|------|:---:|
-| 2.9.0 beta-1 | 1.0.0+ | ✔️ |
-| 2.8.4 | 0.2.0 | ✔️ |
+| GTNH         | GTSWN  | Maintenance / 维护 |
+| ------------ | ------ | :--------------: |
+| 2.9.0 beta-1 | 1.0.0+ |        ✔️        |
+| 2.8.4        | 0.2.0  |        cuo       |
 
----
+***
 
 ## Wireless Energy Monitor / 无线能量监视器
 
@@ -32,7 +32,7 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 <p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" width="300"> <img src="images/Wireless_Energy_Monitor_EN.png" width="300"><br><em>中文界面 (left) & English interface (right)</em></p>
 
----
+***
 
 ## Portable Wireless Network Monitor / 便携无线监测终端
 
@@ -46,7 +46,7 @@ A handheld device that displays a HUD overlay when in inventory. Shows real-time
 
 <p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" width="300"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" width="300"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
 
----
+***
 
 ## Wireless Energy Tap & Covers / 无线网络链路终端与覆盖板
 
@@ -68,7 +68,7 @@ Block-based versions of the Energy Tap, installed as covers on any GT machine:
 - **动力覆盖板 / Dynamo Cover**: Outputs EU from the machine into wireless network (no loss)
 - Both support configurable voltage, amperage, interval, and single-transfer energy via right-click
 
----
+***
 
 ## Redstone Control System / 红石控制系统
 
@@ -76,35 +76,35 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 
 无线能量监视器具备5模式红石控制系统：
 
-| Mode | Behavior |
-|------|----------|
-| Off | No redstone output |
-| High | Output signal when EU > threshold |
-| Low | Output signal when EU < threshold |
+| Mode            | Behavior                                              |
+| --------------- | ----------------------------------------------------- |
+| Off             | No redstone output                                    |
+| High            | Output signal when EU > threshold                     |
+| Low             | Output signal when EU < threshold                     |
 | High-Hysteresis | Output when EU > param1, cancel only when EU < param2 |
-| Low-Hysteresis | Output when EU < param2, cancel only when EU > param1 |
+| Low-Hysteresis  | Output when EU < param2, cancel only when EU > param1 |
 
-| 模式 | 行为 |
-|------|------|
-| 关闭 | 不输出红石信号 |
-| 高电平 | 电量 > 阈值时输出信号 |
-| 低电平 | 电量 < 阈值时输出信号 |
+| 模式   | 行为                 |
+| ---- | ------------------ |
+| 关闭   | 不输出红石信号            |
+| 高电平  | 电量 > 阈值时输出信号       |
+| 低电平  | 电量 < 阈值时输出信号       |
 | 正向滞后 | >参数1时输出，必须<参数2才能取消 |
 | 反向滞后 | <参数2时输出，必须>参数1才能取消 |
 
----
+***
 
 ## Changelog / 更新日志
 
-| Version | Changes |
-|---------|---------|
-| **1.0.0** | • GTNH 2.9.0 beta-1 compatibility (GT5U 5.09.52.594)<br>• Migrated to jvmDowngrader<br>• Adapted to new GT5U API: `checkMachine` signature, `CustomIcon`→`custom()`, `.dot()`→`.hint()` |
-| **0.2.0** | • Added Wireless Energy Tap<br>• Added Wireless Energy Covers (Energy/Power modes)<br>• Added cover recipes<br>• Added network loss (15% deducted in Energy mode)<br>• Fixed cover texture display issues |
-| **0.1.2** | • Added MTEMonitor base class<br>• Fixed cross-save cache persistence<br>• Fixed HUD default enabled issue |
-| **0.1.1** | • Added Wireless Energy Monitor<br>• Redstone control (High/Low/Hysteresis)<br>• Dynamic status textures |
-| **0.1.0** | • Code structure optimization<br>• Added portable wireless network monitor |
+| Version   | Changes                                                                                                                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.0.0** | • GTNH 2.9.0 beta-1 compatibility (GT5U 5.09.52.594)• Migrated to jvmDowngrader• Adapted to new GT5U API: `checkMachine` signature, `CustomIcon`→`custom()`, `.dot()`→`.hint()`           |
+| **0.2.0** | • Added Wireless Energy Tap• Added Wireless Energy Covers (Energy/Power modes)• Added cover recipes• Added network loss (15% deducted in Energy mode)• Fixed cover texture display issues |
+| **0.1.2** | • Added MTEMonitor base class• Fixed cross-save cache persistence• Fixed HUD default enabled issue                                                                                        |
+| **0.1.1** | • Added Wireless Energy Monitor• Redstone control (High/Low/Hysteresis)• Dynamic status textures                                                                                          |
+| **0.1.0** | • Code structure optimization• Added portable wireless network monitor                                                                                                                    |
 
----
+***
 
 ## Tech Stack / 技术栈
 
