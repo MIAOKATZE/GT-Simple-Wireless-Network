@@ -60,13 +60,13 @@ A portable item that connects any machine to the wireless EU network. Shift+righ
 
 ### Wireless Energy Covers / 无线能量覆盖板
 
-Block-based versions of the Energy Tap, installed as covers on any GT machine:
+When using the Wireless Energy Tap to connect a machine, the tap automatically detects the machine's type and applies the corresponding cover effect:
 
-覆盖板版本的链路终端，安装在任何 GT 机器上：
+当使用无线网络链路终端连接机器时，终端会自动检测机器类型并应用相应的覆盖板效果：
 
-- **能源覆盖板 / Energy Cover**: Draws EU from wireless network into the machine (15% loss)
-- **动力覆盖板 / Dynamo Cover**: Outputs EU from the machine into wireless network (no loss)
-- Both support configurable voltage, amperage, interval, and single-transfer energy via right-click
+- **能源覆盖板效果 / Energy Cover Effect**: For energy-consuming machines, automatically draws EU from wireless network (15% loss)
+- **动力覆盖板效果 / Dynamo Cover Effect**: For energy-producing machines, automatically outputs EU into wireless network (no loss)
+- Configure voltage, amperage, interval, and single-transfer energy via right-click on the Wireless Energy Tap
 
 ***
 
