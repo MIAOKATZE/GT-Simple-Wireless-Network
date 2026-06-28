@@ -175,6 +175,18 @@ public class WirelessEnergyTap extends Item {
                 return;
             }
 
+            // 获取当前输出模式
+            boolean outputMode = getOutputMode(stack);
+
+            if (outputMode) {
+                // === 动力模式：来着全收，不计算电压/安培/间隔 ===
+                // 动力覆盖板从机器取电送到电网，无需限制参数，机器有多少电就送多少
+                // Dynamo cover draws all EU from machine to network, no parameter limit needed
+                attachDynamoCoverForFullTake(player, coverable, targetSide);
+                return;
+            }
+
+            // === 能源模式：读取电压/安培/间隔，输出检测信息 ===
             // 2. 获取电压
             long voltage = container.getInputVoltage();
             if (voltage <= 0) {
@@ -248,10 +260,8 @@ public class WirelessEnergyTap extends Item {
                     StatCollector.translateToLocal("gtswn.chat.tap.single_transfer") + singleTransferEnergy
                         + " EU (1.1倍过冲)"));
 
-            // === 准备附着我们的覆盖板 ===
-            boolean outputMode = getOutputMode(stack);
-            ItemStack coverStack = outputMode ? GTSWNItemList.GTswn_Cover_Dynamo_Wireless.get(1)
-                : GTSWNItemList.GTswn_Cover_Energy_Wireless.get(1);
+            // === 准备附着我们的覆盖板（能源模式） ===
+            ItemStack coverStack = GTSWNItemList.GTswn_Cover_Energy_Wireless.get(1);
 
             if (coverStack != null) {
                 // 1. 获取CoverPlacer
@@ -265,8 +275,7 @@ public class WirelessEnergyTap extends Item {
                 }
 
                 // 3. 使用CoverPlacer放置
-                String modeText = outputMode ? StatCollector.translateToLocal("gtswn.chat.tap.mode_power")
-                    : StatCollector.translateToLocal("gtswn.chat.tap.mode_energy");
+                String modeText = StatCollector.translateToLocal("gtswn.chat.tap.mode_energy");
                 player.addChatMessage(
                     new ChatComponentText(
                         StatCollector.translateToLocal("gtswn.chat.tap.attaching") + modeText
@@ -275,14 +284,9 @@ public class WirelessEnergyTap extends Item {
 
                 // 4. 找到刚附着的覆盖板并配置它
                 Cover placedCover = coverable.getCoverAtSide(targetSide);
-                if (placedCover != null) {
-                    if (outputMode && placedCover instanceof GTswn_Cover_DynamoWireless) {
-                        ((GTswn_Cover_DynamoWireless) placedCover)
-                            .configure((int) voltage, (int) amperage, actualFrequencyTicks, singleTransferEnergy);
-                    } else if (!outputMode && placedCover instanceof GTswn_Cover_EnergyWireless) {
-                        ((GTswn_Cover_EnergyWireless) placedCover)
-                            .configure((int) voltage, (int) amperage, actualFrequencyTicks, singleTransferEnergy);
-                    }
+                if (placedCover instanceof GTswn_Cover_EnergyWireless) {
+                    ((GTswn_Cover_EnergyWireless) placedCover)
+                        .configure((int) voltage, (int) amperage, actualFrequencyTicks, singleTransferEnergy);
                 }
 
                 // 5. 提示成功
@@ -312,6 +316,55 @@ public class WirelessEnergyTap extends Item {
             player.addChatMessage(
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_cover_support")));
         }
+    }
+
+    /**
+     * 动力模式附着覆盖板（来着全收）
+     * <p>
+     * 动力覆盖板从机器取电送到无线电网，无需读取电压/安培/间隔。
+     * singleTransferEnergy 设为 Long.MAX_VALUE，机器有多少电就送多少。
+     * 不输出 chat 调试信息，只提示链接成功+模式。
+     *
+     * @param player     操作玩家
+     * @param coverable  目标机器
+     * @param targetSide 附着面
+     */
+    private void attachDynamoCoverForFullTake(EntityPlayer player, ICoverable coverable, ForgeDirection targetSide) {
+        ItemStack coverStack = GTSWNItemList.GTswn_Cover_Dynamo_Wireless.get(1);
+        if (coverStack == null) {
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
+            return;
+        }
+
+        CoverPlacer placer = CoverRegistry.getCoverPlacer(coverStack);
+        if (!placer.isCoverPlaceable(targetSide, coverStack, coverable)) {
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
+            return;
+        }
+
+        // 放置覆盖板
+        // 动力模式：来着全收，每 5 tick（0.25秒）检查一次，singleTransferEnergy 设为最大值
+        // Dynamo mode: take all EU, check every 5 ticks, singleTransferEnergy = MAX_VALUE
+        String modeText = StatCollector.translateToLocal("gtswn.chat.tap.mode_power");
+        player.addChatMessage(
+            new ChatComponentText(
+                StatCollector.translateToLocal("gtswn.chat.tap.attaching") + modeText
+                    + StatCollector.translateToLocal("gtswn.chat.tap.attaching_suffix")));
+        placer.placeCover(player, coverStack, coverable, targetSide);
+
+        // 配置覆盖板：来着全收
+        Cover placedCover = coverable.getCoverAtSide(targetSide);
+        if (placedCover instanceof GTswn_Cover_DynamoWireless) {
+            // voltage=0, amperage=0, intervalTicks=5, singleTransferEnergy=Long.MAX_VALUE
+            ((GTswn_Cover_DynamoWireless) placedCover).configure(0, 0, 5, Long.MAX_VALUE);
+        }
+
+        // 只输出简洁成功信息
+        player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
+        player.addChatMessage(
+            new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
     }
 
     /**

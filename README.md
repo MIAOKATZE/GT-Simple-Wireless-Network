@@ -54,9 +54,9 @@ A handheld device that displays a HUD overlay when in inventory. Shows real-time
 
 ### Wireless Energy Tap / 无线网络链路终端
 
-A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, 15% loss) and Power mode (output to network, no loss). Dynamic texture reflects current mode.
+A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, "take all" with no parameter limit). Dynamic texture reflects current mode.
 
-便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，15%损耗）和动力模式（向电网输出，无损耗）。动态纹理反映当前模式。
+便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，"来着全收"不限制参数）。动态纹理反映当前模式。
 
 ### Wireless Energy Covers / 无线能量覆盖板
 
@@ -64,9 +64,9 @@ When using the Wireless Energy Tap to connect a machine, the tap automatically d
 
 当使用无线网络链路终端连接机器时，终端会自动检测机器类型并应用相应的覆盖板效果：
 
-- **能源覆盖板效果 / Energy Cover Effect**: For energy-consuming machines, automatically draws EU from wireless network (15% loss)
-- **动力覆盖板效果 / Dynamo Cover Effect**: For energy-producing machines, automatically outputs EU into wireless network (no loss)
-- Configure voltage, amperage, interval, and single-transfer energy via right-click on the Wireless Energy Tap
+- **能源覆盖板效果 / Energy Cover Effect**: For energy-consuming machines, automatically detects voltage/amperage and configures transfer interval & single-transfer energy. The wireless network deducts EU at (1 + downlink loss) rate (default 15%, configurable)
+- **动力覆盖板效果 / Dynamo Cover Effect**: For energy-producing machines, "take all" — no parameter configuration needed, draws all EU from machine and uploads to network at (1 - uplink loss) rate (default 0% loss, configurable in [0, 1])
+- In Energy mode, the Tap reads the machine's voltage/amperage and outputs chat debug info; in Dynamo mode, the Tap skips parameter reading and only shows a simple link-success message
 
 ***
 
@@ -96,13 +96,15 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 
 ## Changelog / 更新日志
 
-| Version   | Changes                                                                                                                                                                                   |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1.0.0** | • GTNH 2.9.0 beta-1 compatibility (GT5U 5.09.52.594)• Migrated to jvmDowngrader• Adapted to new GT5U API: `checkMachine` signature, `CustomIcon`→`custom()`, `.dot()`→`.hint()`           |
-| **0.2.0** | • Added Wireless Energy Tap• Added Wireless Energy Covers (Energy/Power modes)• Added cover recipes• Added network loss (15% deducted in Energy mode)• Fixed cover texture display issues |
-| **0.1.2** | • Added MTEMonitor base class• Fixed cross-save cache persistence• Fixed HUD default enabled issue                                                                                        |
-| **0.1.1** | • Added Wireless Energy Monitor• Redstone control (High/Low/Hysteresis)• Dynamic status textures                                                                                          |
-| **0.1.0** | • Code structure optimization• Added portable wireless network monitor                                                                                                                    |
+| Version   | Changes                                                                                                                                                                                                                                                                                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.0.2** | • Dynamo mode "take all": no voltage/amperage/interval reading, no chat debug info, single transfer set to Long.MAX_VALUE, default 5-tick interval• Fixed: Multi-A dynamo hatches now work without manual amperage configuration• Note: Battery box double-A is GT5U's own design (`maxAmperesIn() = chargeableCount * 2`), not a bug• Updated README Changelog & Wireless Energy Covers section |
+| **1.0.1** | • Configurable loss coefficients: `DownlinkLossEU` (default 0.15, range [0, 2147483647]) and `UplinkLossEU` (default 0.0, closed interval [0, 1])• Split config files: `config/gtswn/gtswn.cfg` (metaIdOffset) and `config/gtswn/gtswn_network.cfg` (network loss)                                                                                                        |
+| **1.0.0** | • GTNH 2.9.0 beta-1 compatibility (GT5U 5.09.52.594)• Migrated to jvmDowngrader• Adapted to new GT5U API: `checkMachine` signature, `CustomIcon`→`custom()`, `.dot()`→`.hint()`                                                                                                                                                                                          |
+| **0.2.0** | • Added Wireless Energy Tap• Added Wireless Energy Covers (Energy/Power modes)• Added cover recipes• Added network loss (15% deducted in Energy mode)• Fixed cover texture display issues                                                                                                                                                                                |
+| **0.1.2** | • Added MTEMonitor base class• Fixed cross-save cache persistence• Fixed HUD default enabled issue                                                                                                                                                                                                                                                                      |
+| **0.1.1** | • Added Wireless Energy Monitor• Redstone control (High/Low/Hysteresis)• Dynamic status textures                                                                                                                                                                                                                                                                        |
+| **0.1.0** | • Code structure optimization• Added portable wireless network monitor                                                                                                                                                                                                                                                                                                  |
 
 ***
 
