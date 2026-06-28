@@ -73,7 +73,7 @@ Acts as a **virtual power source** — maintains an internal capacity buffer and
 - **Capacity / 电容量**: `V × A × 800` ticks (computed on configuration; immediately refilled to capacity)
 - **Per-tick behavior / 每 tick 行为**: Injects `min(V × A, machine_needed, storedEU)` EU per tick into the bound machine — behaves like a real cable
 - **Refill / 补满**: Every 600 ticks, deducts `(capacity − storedEU) × (1 + downlink loss)` EU from the wireless network to refill the buffer
-- **Minimum amperage / 最低安培**: Single-block machines enforce a minimum of 3A for universal compatibility (replaces previous arc-furnace-specific 4A override)
+- **Special case / 特例**: Single-block Arc Furnace is force-set to 4A (identified via recipe map `RecipeMaps.arcFurnaceRecipes`, not class name)
 - **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
 
 #### Link Terminal (Power) / 链路终端（动力）

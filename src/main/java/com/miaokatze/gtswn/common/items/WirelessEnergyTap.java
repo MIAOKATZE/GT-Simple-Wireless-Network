@@ -23,6 +23,8 @@ import gregtech.api.covers.CoverRegistry;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
+import gregtech.api.metatileentity.implementations.MTEBasicMachineWithRecipe;
+import gregtech.api.recipe.RecipeMaps;
 import gregtech.common.covers.Cover;
 
 /**
@@ -206,10 +208,13 @@ public class WirelessEnergyTap extends Item {
                 amperage = 2;
             }
 
-            // 4. 单方块机器最低 3A 普遍适配(替代电弧炉专用类名识别)
-            // Single-block machines: minimum 3A for universal compatibility (replaces arc furnace specific detection)
-            if (te instanceof BaseMetaTileEntity && amperage < 3) {
-                amperage = 3;
+            // 4. 检查是否为单方块电弧炉(通过配方表精确识别),如果是则强制 4A
+            // Check if machine is a single-block arc furnace (via recipe map), force 4A if so
+            if (te instanceof BaseMetaTileEntity bmte) {
+                if (bmte.getMetaTileEntity() instanceof MTEBasicMachineWithRecipe mte
+                    && mte.getRecipeMap() == RecipeMaps.arcFurnaceRecipes) {
+                    amperage = 4;
+                }
             }
 
             // 5. 计算电容量 = 电压 × 安培 × 800 tick
