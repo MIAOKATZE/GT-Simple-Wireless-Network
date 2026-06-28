@@ -73,7 +73,7 @@ Acts as a **virtual power source** — maintains an internal capacity buffer and
 - **Capacity / 电容量**: `V × A × 800` ticks (computed on configuration; immediately refilled to capacity)
 - **Per-tick behavior / 每 tick 行为**: Injects `min(V × A, machine_needed, storedEU)` EU per tick into the bound machine — behaves like a real cable
 - **Refill / 补满**: Every 600 ticks, deducts `(capacity − storedEU) × (1 + downlink loss)` EU from the wireless network to refill the buffer
-- **Special case / 特例**: Single-block Arc Furnace is force-set to 4A (regardless of detected amperage)
+- **Minimum amperage / 最低安培**: Single-block machines enforce a minimum of 3A for universal compatibility (replaces previous arc-furnace-specific 4A override)
 - **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
 
 #### Link Terminal (Power) / 链路终端（动力）
@@ -111,21 +111,6 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 | 低电平  | 电量 < 阈值时输出信号       |
 | 正向滞后 | >参数1时输出，必须<参数2才能取消 |
 | 反向滞后 | <参数2时输出，必须>参数1才能取消 |
-
-***
-
-## Changelog / 更新日志
-
-| Version   | Changes                                                                                                                                                                                                                                                                                                                                                                  |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1.1.0** | • Refactored Link Terminal (Energy): capacity buffer model (`capacity = V × A × 800`), per-tick `V×A` injection like a cable, 600-tick refill cycle (with downlink loss), immediate refill on configuration• Refactored Link Terminal (Power): capacity buffer model (`capacity = 2^63 − 1`), per-tick output V/A reading & drain, 600-tick upload cycle (with uplink loss), `letsEnergyOut = false` to prevent double consumption• Arc Furnace special case: force-set to 4A (was 2A)• Cover unload now returns remaining buffer to network (with uplink loss)• All NBT parameters persist across save/load• Renamed covers "Link Anchor" → "Link Terminal" (链路锚点 → 链路终端), documented as void covers |
-| **1.0.2** | • Dynamo mode "take all": no voltage/amperage/interval reading, no chat debug info, single transfer set to Long.MAX_VALUE, default 5-tick interval• Fixed: Multi-A dynamo hatches now work without manual amperage configuration• Note: Battery box double-A is GT5U's own design (`maxAmperesIn() = chargeableCount * 2`), not a bug• Updated README Changelog & Wireless Energy Covers section |
-| **1.0.1** | • Configurable loss coefficients: `DownlinkLossEU` (default 0.15, range [0, 2147483647]) and `UplinkLossEU` (default 0.0, closed interval [0, 1])• Split config files: `config/gtswn/gtswn.cfg` (metaIdOffset) and `config/gtswn/gtswn_network.cfg` (network loss)                                                                                                        |
-| **1.0.0** | • GTNH 2.9.0 beta-1 compatibility (GT5U 5.09.52.594)• Migrated to jvmDowngrader• Adapted to new GT5U API: `checkMachine` signature, `CustomIcon`→`custom()`, `.dot()`→`.hint()`                                                                                                                                                                                          |
-| **0.2.0** | • Added Wireless Energy Tap• Added Wireless Energy Covers (Energy/Power modes)• Added cover recipes• Added network loss (15% deducted in Energy mode)• Fixed cover texture display issues                                                                                                                                                                                |
-| **0.1.2** | • Added MTEMonitor base class• Fixed cross-save cache persistence• Fixed HUD default enabled issue                                                                                                                                                                                                                                                                      |
-| **0.1.1** | • Added Wireless Energy Monitor• Redstone control (High/Low/Hysteresis)• Dynamic status textures                                                                                                                                                                                                                                                                        |
-| **0.1.0** | • Code structure optimization• Added portable wireless network monitor                                                                                                                                                                                                                                                                                                  |
 
 ***
 

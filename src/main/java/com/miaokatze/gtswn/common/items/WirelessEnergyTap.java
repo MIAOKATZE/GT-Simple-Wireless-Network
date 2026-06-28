@@ -206,16 +206,10 @@ public class WirelessEnergyTap extends Item {
                 amperage = 2;
             }
 
-            // 4. 检查是否为单方块电弧炉,如果是则强制 4A
-            // Check if machine is a single-block arc furnace, force 4A if so
-            if (te instanceof BaseMetaTileEntity) {
-                BaseMetaTileEntity bmte = (BaseMetaTileEntity) te;
-                if (bmte.getMetaTileEntity() != null && bmte.getMetaTileEntity()
-                    .getClass()
-                    .getSimpleName()
-                    .contains("ArcFurnace")) {
-                    amperage = 4;
-                }
+            // 4. 单方块机器最低 3A 普遍适配(替代电弧炉专用类名识别)
+            // Single-block machines: minimum 3A for universal compatibility (replaces arc furnace specific detection)
+            if (te instanceof BaseMetaTileEntity && amperage < 3) {
+                amperage = 3;
             }
 
             // 5. 计算电容量 = 电压 × 安培 × 800 tick
