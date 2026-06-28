@@ -140,14 +140,17 @@ gtswn.chat.tap.voltage_tier=§7 Voltage tier:
 gtswn.chat.tap.amperage_tier=§7 Amperage tier: 
 gtswn.chat.tap.actual_interval_text=§7 Actual interval: 
 gtswn.chat.tap.single_transfer_text=§7 Single transfer: 
+gtswn.chat.tap.cover_capacity=§b Cover capacity: 
 gtswn.chat.tap.cannot_get_cover=§c[Link Terminal] Cannot get cover item!
 gtswn.chat.tap.no_cover_support=§c[Link Terminal] Machine doesn't support covers
 
 # Wireless Cover Right-Click Config
-gtswn.chat.cover.energy_config=GTswn Link Anchor (Energy) Config:
-gtswn.chat.cover.dynamo_config=GTswn Link Anchor (Power) Config:
+gtswn.chat.cover.energy_config=GTswn Link Terminal (Energy) Config:
+gtswn.chat.cover.dynamo_config=GTswn Link Terminal (Power) Config:
 gtswn.chat.cover.voltage_tier=Voltage tier: 
 gtswn.chat.cover.amperage_tier=Amperage tier: 
+gtswn.chat.cover.capacity=Capacity: 
+gtswn.chat.cover.stored_eu=Stored: 
 gtswn.chat.cover.interval=Interval: 
 gtswn.chat.cover.single_transfer=Single transfer: 
 gtswn.chat.cover.not_configured=Not configured yet!

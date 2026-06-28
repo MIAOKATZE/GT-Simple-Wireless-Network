@@ -141,10 +141,12 @@ gtswn.chat.tap.cannot_get_cover=§c[链路终端] 无法获取覆盖板！
 gtswn.chat.tap.no_cover_support=§c[链路终端] 机器不支持覆盖板
 
 # Wireless Cover Right-Click Config
-gtswn.chat.cover.energy_config=GTswn链路锚点（能源）配置：
-gtswn.chat.cover.dynamo_config=GTswn链路锚点（动力）配置：
+gtswn.chat.cover.energy_config=GTswn链路终端（能源）配置：
+gtswn.chat.cover.dynamo_config=GTswn链路终端（动力）配置：
 gtswn.chat.cover.voltage_tier=电压等级: 
 gtswn.chat.cover.amperage_tier=电流等级: 
+gtswn.chat.cover.capacity=电容量: 
+gtswn.chat.cover.stored_eu=当前缓存: 
 gtswn.chat.cover.interval=交互间隔: 
 gtswn.chat.cover.single_transfer=单次传输能量: 
 gtswn.chat.cover.not_configured=尚未配置！

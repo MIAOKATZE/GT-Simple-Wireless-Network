@@ -22,6 +22,7 @@ import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.ICoverable;
+import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.common.covers.Cover;
 
 /**
@@ -179,14 +180,13 @@ public class WirelessEnergyTap extends Item {
             boolean outputMode = getOutputMode(stack);
 
             if (outputMode) {
-                // === 动力模式：来着全收，不计算电压/安培/间隔 ===
-                // 动力覆盖板从机器取电送到电网，无需限制参数，机器有多少电就送多少
-                // Dynamo cover draws all EU from machine to network, no parameter limit needed
+                // === 动力模式:虚拟导线,读取机器输出 V/A 取电 ===
+                // Dynamo cover reads machine output V/A per tick, drains into capacity buffer
                 attachDynamoCoverForFullTake(player, coverable, targetSide);
                 return;
             }
 
-            // === 能源模式：读取电压/安培/间隔，输出检测信息 ===
+            // === 能源模式:读取电压/安培,输出检测信息 ===
             // 2. 获取电压
             long voltage = container.getInputVoltage();
             if (voltage <= 0) {
@@ -206,40 +206,23 @@ public class WirelessEnergyTap extends Item {
                 amperage = 2;
             }
 
-            // 4. 计算理论最长间隔（minFrequencyTicks）= capacity / (amperage * voltage)
-            double minFrequencyTicks = Double.MAX_VALUE;
-            boolean canCalculate = false;
-            if (capacity > 0 && voltage > 0 && amperage > 0) {
-                minFrequencyTicks = (double) capacity / (double) (amperage * voltage);
-                canCalculate = true;
-            }
-
-            // 5. 计算实际交互间隔：
-            // 如果 <5，取2 tick
-            // 如果5-10，取5 tick
-            // 如果≥10，取最近10的倍数减10，最小10 tick
-            int actualFrequencyTicks = 10;
-            if (canCalculate) {
-                if (minFrequencyTicks < 5) {
-                    actualFrequencyTicks = 2;
-                } else if (minFrequencyTicks < 10) {
-                    actualFrequencyTicks = 5;
-                } else {
-                    // 先取最近的10的整数倍
-                    int roundedTo10 = ((int) (minFrequencyTicks / 10)) * 10;
-                    // 再减10
-                    actualFrequencyTicks = roundedTo10 - 10;
-                    // 确保不低于10
-                    if (actualFrequencyTicks < 10) {
-                        actualFrequencyTicks = 10;
-                    }
+            // 4. 检查是否为单方块电弧炉,如果是则强制 4A
+            // Check if machine is a single-block arc furnace, force 4A if so
+            if (te instanceof BaseMetaTileEntity) {
+                BaseMetaTileEntity bmte = (BaseMetaTileEntity) te;
+                if (bmte.getMetaTileEntity() != null && bmte.getMetaTileEntity()
+                    .getClass()
+                    .getSimpleName()
+                    .contains("ArcFurnace")) {
+                    amperage = 4;
                 }
             }
 
-            // 6. 计算单次传输能量 = 实际间隔 × 电压 × 电流 × 1.1
-            long singleTransferEnergy = (long) (actualFrequencyTicks * voltage * amperage * 1.1);
+            // 5. 计算电容量 = 安培 × 800 tick
+            // Calculate cover capacity = amperage × 800 ticks
+            long coverCapacity = amperage * 800L;
 
-            // 7. 输出检测信息到聊天
+            // 6. 输出检测信息到聊天
             player.addChatMessage(
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.machine_detected")));
             player.addChatMessage(
@@ -250,15 +233,7 @@ public class WirelessEnergyTap extends Item {
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.amperage") + amperage + " A"));
             player.addChatMessage(
                 new ChatComponentText(
-                    StatCollector.translateToLocal("gtswn.chat.tap.theoretical_interval") + (long) minFrequencyTicks
-                        + " tick"));
-            player.addChatMessage(
-                new ChatComponentText(
-                    StatCollector.translateToLocal("gtswn.chat.tap.actual_interval") + actualFrequencyTicks + " tick"));
-            player.addChatMessage(
-                new ChatComponentText(
-                    StatCollector.translateToLocal("gtswn.chat.tap.single_transfer") + singleTransferEnergy
-                        + " EU (1.1倍过冲)"));
+                    StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
 
             // === 准备附着我们的覆盖板（能源模式） ===
             ItemStack coverStack = GTSWNItemList.GTswn_Cover_Energy_Wireless.get(1);
@@ -285,8 +260,7 @@ public class WirelessEnergyTap extends Item {
                 // 4. 找到刚附着的覆盖板并配置它
                 Cover placedCover = coverable.getCoverAtSide(targetSide);
                 if (placedCover instanceof GTswn_Cover_EnergyWireless) {
-                    ((GTswn_Cover_EnergyWireless) placedCover)
-                        .configure((int) voltage, (int) amperage, actualFrequencyTicks, singleTransferEnergy);
+                    ((GTswn_Cover_EnergyWireless) placedCover).configure((int) voltage, (int) amperage);
                 }
 
                 // 5. 提示成功
@@ -302,12 +276,7 @@ public class WirelessEnergyTap extends Item {
                         StatCollector.translateToLocal("gtswn.chat.tap.amperage_tier") + amperage + " A"));
                 player.addChatMessage(
                     new ChatComponentText(
-                        StatCollector.translateToLocal("gtswn.chat.tap.actual_interval_text") + actualFrequencyTicks
-                            + " tick"));
-                player.addChatMessage(
-                    new ChatComponentText(
-                        StatCollector.translateToLocal("gtswn.chat.tap.single_transfer_text") + singleTransferEnergy
-                            + " EU"));
+                        StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
             } else {
                 player.addChatMessage(
                     new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
@@ -321,9 +290,9 @@ public class WirelessEnergyTap extends Item {
     /**
      * 动力模式附着覆盖板（来着全收）
      * <p>
-     * 动力覆盖板从机器取电送到无线电网，无需读取电压/安培/间隔。
-     * singleTransferEnergy 设为 Long.MAX_VALUE，机器有多少电就送多少。
-     * 不输出 chat 调试信息，只提示链接成功+模式。
+     * 动力覆盖板每 tick 读取机器输出 V/A 并取电,存入电容量为 2^63-1 的内部缓冲池,每 600 tick 上送到电网。
+     * 无需读取电压/安培/间隔参数,configure() 不接受参数。
+     * 不输出 chat 调试信息,只提示链接成功+模式。
      *
      * @param player     操作玩家
      * @param coverable  目标机器
@@ -345,8 +314,8 @@ public class WirelessEnergyTap extends Item {
         }
 
         // 放置覆盖板
-        // 动力模式：来着全收，每 5 tick（0.25秒）检查一次，singleTransferEnergy 设为最大值
-        // Dynamo mode: take all EU, check every 5 ticks, singleTransferEnergy = MAX_VALUE
+        // 动力模式:虚拟导线,每 tick 读取机器输出 V/A 取电,每 600 tick 上送电网
+        // Dynamo mode: virtual cable, drains V×A per tick, uploads to network every 600 ticks
         String modeText = StatCollector.translateToLocal("gtswn.chat.tap.mode_power");
         player.addChatMessage(
             new ChatComponentText(
@@ -354,11 +323,10 @@ public class WirelessEnergyTap extends Item {
                     + StatCollector.translateToLocal("gtswn.chat.tap.attaching_suffix")));
         placer.placeCover(player, coverStack, coverable, targetSide);
 
-        // 配置覆盖板：来着全收
+        // 配置覆盖板:无需参数
         Cover placedCover = coverable.getCoverAtSide(targetSide);
         if (placedCover instanceof GTswn_Cover_DynamoWireless) {
-            // voltage=0, amperage=0, intervalTicks=5, singleTransferEnergy=Long.MAX_VALUE
-            ((GTswn_Cover_DynamoWireless) placedCover).configure(0, 0, 5, Long.MAX_VALUE);
+            ((GTswn_Cover_DynamoWireless) placedCover).configure();
         }
 
         // 只输出简洁成功信息
