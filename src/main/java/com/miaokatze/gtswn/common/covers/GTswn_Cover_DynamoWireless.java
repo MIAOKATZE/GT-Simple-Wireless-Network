@@ -11,6 +11,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ChatComponentText;
 
 import com.google.common.io.ByteArrayDataInput;
+import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverContext;
 import gregtech.api.interfaces.tileentity.ICoverable;
@@ -113,7 +114,11 @@ public class GTswn_Cover_DynamoWireless extends Cover {
             long currentEU = bmte.getStoredEUuncapped();
             if (currentEU <= 0) return; // nothing to send
             long euToTransfer = Math.min(currentEU, this.singleTransferEnergy);
-            if (!addEUToGlobalEnergyMap(getOwner(tileEntity), euToTransfer)) return;
+            // 计算上行损耗：电网实际增加量按 (1 - uplinkLossEU) 倍计算，机器扣减不变
+            // Calculate uplink loss: network receives (1 - uplinkLossEU) × euToTransfer, machine still deducts
+            // euToTransfer
+            long actualAdded = (long) (euToTransfer * (1.0 - Config.uplinkLossEU));
+            if (!addEUToGlobalEnergyMap(getOwner(tileEntity), actualAdded)) return;
             bmte.decreaseStoredEnergyUnits(euToTransfer, true);
         }
     }

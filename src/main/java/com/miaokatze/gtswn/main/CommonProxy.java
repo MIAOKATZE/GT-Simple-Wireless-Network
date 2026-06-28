@@ -3,6 +3,8 @@ package com.miaokatze.gtswn.main;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dynamo_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 
+import java.io.File;
+
 import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
@@ -32,7 +34,17 @@ public class CommonProxy {
      * 在此阶段读取配置文件，并将机器注册任务添加到 GregTech 的处理队列中。
      */
     public void preInit(FMLPreInitializationEvent event) {
-        Config.synchronizeConfiguration(event.getSuggestedConfigurationFile());
+        // 配置文件统一放在 config/gtswn/ 目录下
+        // Configurations are stored under config/gtswn/ directory
+        File suggestedConfigFile = event.getSuggestedConfigurationFile();
+        File configDir = new File(suggestedConfigFile.getParentFile(), "gtswn");
+        if (!configDir.exists() && !configDir.mkdirs()) {
+            GTSimpleWirelessNetwork.LOG.warn("无法创建配置目录: " + configDir.getAbsolutePath());
+        }
+        File mainConfigFile = new File(configDir, "gtswn.cfg");
+        File networkConfigFile = new File(configDir, "gtswn_network.cfg");
+        Config.synchronizeConfiguration(mainConfigFile);
+        Config.synchronizeNetworkConfiguration(networkConfigFile);
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
 
