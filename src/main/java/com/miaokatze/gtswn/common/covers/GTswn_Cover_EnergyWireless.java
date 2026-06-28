@@ -35,7 +35,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
 
     private int voltage = 0;
     private int amperage = 0;
-    private long capacity = 0L; // 电容量上限 = amperage × 800 / Capacity upper bound = amperage × 800
+    private long capacity = 0L; // 电容量上限 = V × A × 800 / Capacity upper bound = V × A × 800
     private long storedEU = 0L; // 当前缓冲池 EU / Current buffer EU
     private boolean configured = false;
 
@@ -225,7 +225,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
     public void configure(int voltage, int amperage) {
         this.voltage = voltage;
         this.amperage = amperage;
-        this.capacity = (long) amperage * 800L; // 电容量 = A × 800 tick / Capacity = A × 800 ticks
+        this.capacity = (long) voltage * amperage * 800L; // 电容量 = V × A × 800 tick / Capacity = V × A × 800 ticks
         this.configured = true;
         // 配置时立即从电网补满到电容量上限
         // Refill to capacity immediately upon configuration

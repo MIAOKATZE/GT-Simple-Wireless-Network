@@ -218,9 +218,9 @@ public class WirelessEnergyTap extends Item {
                 }
             }
 
-            // 5. 计算电容量 = 安培 × 800 tick
-            // Calculate cover capacity = amperage × 800 ticks
-            long coverCapacity = amperage * 800L;
+            // 5. 计算电容量 = 电压 × 安培 × 800 tick
+            // Calculate cover capacity = voltage × amperage × 800 ticks
+            long coverCapacity = voltage * amperage * 800L;
 
             // 6. 输出检测信息到聊天
             player.addChatMessage(

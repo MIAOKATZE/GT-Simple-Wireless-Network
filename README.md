@@ -54,19 +54,39 @@ A handheld device that displays a HUD overlay when in inventory. Shows real-time
 
 ### Wireless Energy Tap / 无线网络链路终端
 
-A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, "take all" with no parameter limit). Dynamic texture reflects current mode.
+A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode.
 
-便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，"来着全收"不限制参数）。动态纹理反映当前模式。
+便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。
 
-### Wireless Energy Covers / 无线能量覆盖板
+### Link Terminal (Energy/Power) / 链路终端（能源/动力）
 
-When using the Wireless Energy Tap to connect a machine, the tap automatically detects the machine's type and applies the corresponding cover effect:
+Both are **void covers** (虚空覆盖板) — they have no recipe and exist only as NBT-driven attachments placed by the Wireless Energy Tap. Their behavior is governed entirely by NBT parameters assigned on right-click; bare cover items without these parameters are inert. All NBT parameters persist across save/load.
 
-当使用无线网络链路终端连接机器时，终端会自动检测机器类型并应用相应的覆盖板效果：
+两种覆盖板均为**虚空覆盖板**——无合成配方，仅作为由无线网络链路终端右击附着的 NBT 驱动覆盖板存在。其行为完全由右击赋予的 NBT 参数决定；裸覆盖板无参数时无效。所有 NBT 参数跨存档/退出持久化。
 
-- **能源覆盖板效果 / Energy Cover Effect**: For energy-consuming machines, automatically detects voltage/amperage and configures transfer interval & single-transfer energy. The wireless network deducts EU at (1 + downlink loss) rate (default 15%, configurable)
-- **动力覆盖板效果 / Dynamo Cover Effect**: For energy-producing machines, "take all" — no parameter configuration needed, draws all EU from machine and uploads to network at (1 - uplink loss) rate (default 0% loss, configurable in [0, 1])
-- In Energy mode, the Tap reads the machine's voltage/amperage and outputs chat debug info; in Dynamo mode, the Tap skips parameter reading and only shows a simple link-success message
+#### Link Terminal (Energy) / 链路终端（能源）
+
+Acts as a **virtual power source** — maintains an internal capacity buffer and continuously injects EU into the bound machine like a real cable.
+
+作为一个**虚拟电源**——内部维护电容量缓冲池，像导线一样持续向被绑定机器输入 EU。
+
+- **Capacity / 电容量**: `V × A × 800` ticks (computed on configuration; immediately refilled to capacity)
+- **Per-tick behavior / 每 tick 行为**: Injects `min(V × A, machine_needed, storedEU)` EU per tick into the bound machine — behaves like a real cable
+- **Refill / 补满**: Every 600 ticks, deducts `(capacity − storedEU) × (1 + downlink loss)` EU from the wireless network to refill the buffer
+- **Special case / 特例**: Single-block Arc Furnace is force-set to 4A (regardless of detected amperage)
+- **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
+
+#### Link Terminal (Power) / 链路终端（动力）
+
+Acts as a **virtual cable** — drains the machine's output into an internal buffer and uploads to the wireless network periodically. Capacity is fixed at `2^63 − 1` (GT5U MAX Battery).
+
+作为一个**虚拟导线**——读取机器的输出存入内部缓冲池，并周期性上送到无线电网。电容量固定为 `2^63 − 1`（GT5U 太·终极电池）。
+
+- **Capacity / 电容量**: `Long.MAX_VALUE` (2^63 − 1)
+- **Per-tick behavior / 每 tick 行为**: Reads `getOutputVoltage()` / `getOutputAmperage()` from the machine; if V > 0, drains `min(available, V × A)` EU into the buffer (respecting `getMinimumStoredEU()`). Non-output machines (V = 0) are skipped to avoid draining energy from machines that don't produce any.
+- **Blocking / 阻断**: `letsEnergyOut() = false` blocks the machine from outputting to real cables on the cover's side, preventing double consumption
+- **Upload / 上送**: Every 600 ticks, the buffer is uploaded to the wireless network at `(1 − uplink loss)` rate
+- **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
 
 ***
 
@@ -98,6 +118,7 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 
 | Version   | Changes                                                                                                                                                                                                                                                                                                                                                                  |
 | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1.1.0** | • Refactored Link Terminal (Energy): capacity buffer model (`capacity = V × A × 800`), per-tick `V×A` injection like a cable, 600-tick refill cycle (with downlink loss), immediate refill on configuration• Refactored Link Terminal (Power): capacity buffer model (`capacity = 2^63 − 1`), per-tick output V/A reading & drain, 600-tick upload cycle (with uplink loss), `letsEnergyOut = false` to prevent double consumption• Arc Furnace special case: force-set to 4A (was 2A)• Cover unload now returns remaining buffer to network (with uplink loss)• All NBT parameters persist across save/load• Renamed covers "Link Anchor" → "Link Terminal" (链路锚点 → 链路终端), documented as void covers |
 | **1.0.2** | • Dynamo mode "take all": no voltage/amperage/interval reading, no chat debug info, single transfer set to Long.MAX_VALUE, default 5-tick interval• Fixed: Multi-A dynamo hatches now work without manual amperage configuration• Note: Battery box double-A is GT5U's own design (`maxAmperesIn() = chargeableCount * 2`), not a bug• Updated README Changelog & Wireless Energy Covers section |
 | **1.0.1** | • Configurable loss coefficients: `DownlinkLossEU` (default 0.15, range [0, 2147483647]) and `UplinkLossEU` (default 0.0, closed interval [0, 1])• Split config files: `config/gtswn/gtswn.cfg` (metaIdOffset) and `config/gtswn/gtswn_network.cfg` (network loss)                                                                                                        |
 | **1.0.0** | • GTNH 2.9.0 beta-1 compatibility (GT5U 5.09.52.594)• Migrated to jvmDowngrader• Adapted to new GT5U API: `checkMachine` signature, `CustomIcon`→`custom()`, `.dot()`→`.hint()`                                                                                                                                                                                          |
