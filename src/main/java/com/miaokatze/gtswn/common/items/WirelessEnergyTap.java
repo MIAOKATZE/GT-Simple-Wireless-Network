@@ -128,8 +128,7 @@ public class WirelessEnergyTap extends Item {
         int count = stack.stackTagCompound.getInteger(NBT_BIND_NOTIFY_COUNT);
         if (count >= MAX_BIND_NOTIFY) return;
         int remaining = MAX_BIND_NOTIFY - count;
-        String msg = StatCollector.translateToLocal("gtswn.chat.tap.bind_notify");
-        msg = msg.replace("%d", String.valueOf(remaining));
+        String msg = String.format(StatCollector.translateToLocal("gtswn.chat.tap.bind_notify"), remaining);
         player.addChatMessage(new ChatComponentText(msg));
         stack.stackTagCompound.setInteger(NBT_BIND_NOTIFY_COUNT, count + 1);
     }

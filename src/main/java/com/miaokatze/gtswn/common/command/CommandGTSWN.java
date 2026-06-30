@@ -9,21 +9,25 @@ import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.StatCollector;
 
 import gregtech.common.misc.WirelessNetworkManager;
+import gregtech.common.misc.spaceprojects.SpaceProjectManager;
 
 /**
  * GTSWN 模组命令
  * <p>
- * 用法: /gtswn global_energy_trans &lt;fromUUID&gt; &lt;toUUID&gt;
- * <p>
- * 将 fromUUID 网络的所有 EU 一次性转移到 toUUID 网络。
- * 用于玩家换账户(正版转第三方等)导致 UUID 变化后,把旧 UUID 网络的 EU 迁移到新 UUID 网络。
+ * 子命令:
+ * <ul>
+ * <li>/gtswn global_energy_trans &lt;fromUUID&gt; &lt;toUUID&gt; — EU 迁移</li>
+ * <li>/gtswn global_energy_join &lt;memberUUID&gt; &lt;leaderUUID&gt; — 加入无线网络</li>
+ * </ul>
  * 仅管理员(OP等级4)可用。
  */
 public class CommandGTSWN extends CommandBase {
 
     private static final String SUBCMD_TRANSFER = "global_energy_trans";
+    private static final String SUBCMD_JOIN = "global_energy_join";
 
     @Override
     public String getCommandName() {
@@ -32,7 +36,11 @@ public class CommandGTSWN extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/gtswn " + SUBCMD_TRANSFER + " <fromUUID> <toUUID>";
+        return "/gtswn " + SUBCMD_TRANSFER
+            + " <fromUUID> <toUUID>"
+            + " | /gtswn "
+            + SUBCMD_JOIN
+            + " <memberUUID> <leaderUUID>";
     }
 
     @Override
@@ -43,14 +51,27 @@ public class CommandGTSWN extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCMD_TRANSFER);
+            return getListOfStringsMatchingLastWord(args, SUBCMD_TRANSFER, SUBCMD_JOIN);
         }
         return null;
     }
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
-        if (args.length < 3 || !SUBCMD_TRANSFER.equals(args[0])) {
+        if (args.length < 1) {
+            throw new WrongUsageException(getCommandUsage(sender));
+        }
+        if (SUBCMD_TRANSFER.equals(args[0])) {
+            processTransfer(sender, args);
+        } else if (SUBCMD_JOIN.equals(args[0])) {
+            processJoin(sender, args);
+        } else {
+            throw new WrongUsageException(getCommandUsage(sender));
+        }
+    }
+
+    private void processTransfer(ICommandSender sender, String[] args) {
+        if (args.length < 3) {
             throw new WrongUsageException(getCommandUsage(sender));
         }
 
@@ -86,5 +107,75 @@ public class CommandGTSWN extends CommandBase {
         sender.addChatMessage(
             new ChatComponentText(
                 EnumChatFormatting.AQUA + "目标网络当前总量: " + WirelessNetworkManager.getUserEU(toUUID) + " EU"));
+    }
+
+    private void processJoin(ICommandSender sender, String[] args) {
+        if (args.length < 3) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.RED + StatCollector.translateToLocal("gtswn.command.join.usage")));
+            return;
+        }
+
+        UUID memberUUID;
+        UUID leaderUUID;
+        try {
+            memberUUID = UUID.fromString(args[1]);
+            leaderUUID = UUID.fromString(args[2]);
+        } catch (IllegalArgumentException e) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "UUID format error, please check parameters."));
+            return;
+        }
+
+        // 同一UUID检查
+        if (memberUUID.equals(leaderUUID)) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    String.format(StatCollector.translateToLocal("gtswn.command.join.same_uuid"), memberUUID)));
+            return;
+        }
+
+        // NPE防护: 调用 getLeader 内部会 checkOrCreateTeam，确保 leaderUUID 已注册
+        UUID leadersLeader = SpaceProjectManager.getLeader(leaderUUID);
+
+        // 循环检测: 如果 memberUUID 是 leaderUUID 的队长，形成循环，拒绝
+        if (leadersLeader.equals(memberUUID)) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    String.format(
+                        StatCollector.translateToLocal("gtswn.command.join.cycle_detect"),
+                        memberUUID,
+                        leaderUUID,
+                        memberUUID,
+                        leaderUUID)));
+            return;
+        }
+
+        // 级联提示: 如果 leaderUUID 自己也在别人的队里，提示实际加入的网络
+        if (!leadersLeader.equals(leaderUUID)) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    String.format(
+                        StatCollector.translateToLocal("gtswn.command.join.cascade_warn"),
+                        leaderUUID,
+                        leadersLeader,
+                        memberUUID,
+                        leadersLeader)));
+        }
+
+        // 执行加入
+        SpaceProjectManager.putInTeam(memberUUID, leaderUUID);
+
+        // 成功反馈
+        sender.addChatMessage(
+            new ChatComponentText(
+                String.format(StatCollector.translateToLocal("gtswn.command.join.success"), memberUUID, leaderUUID)));
+
+        // 显示目标网络EU余额
+        BigInteger targetEU = WirelessNetworkManager.getUserEU(leaderUUID);
+        sender.addChatMessage(
+            new ChatComponentText(
+                String.format(StatCollector.translateToLocal("gtswn.command.join.network_eu"), targetEU)));
     }
 }

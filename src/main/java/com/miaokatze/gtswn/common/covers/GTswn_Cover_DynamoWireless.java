@@ -40,6 +40,7 @@ public class GTswn_Cover_DynamoWireless extends Cover {
     private static final long CAPACITY = Long.MAX_VALUE;
 
     private long storedEU = 0L; // 当前缓冲池 EU / Current buffer EU
+    private long ticksSinceLastUpload = 0L; // 距上次上传网络的tick计数 / Ticks since last network upload
     private boolean configured = false;
 
     public GTswn_Cover_DynamoWireless(CoverContext context) {
@@ -51,6 +52,7 @@ public class GTswn_Cover_DynamoWireless extends Cover {
         if (nbt instanceof NBTTagCompound tag) {
             if (tag.hasKey("storedEU")) this.storedEU = tag.getLong("storedEU");
             if (tag.hasKey("configured")) this.configured = tag.getBoolean("configured");
+            if (tag.hasKey("ticksSinceLastUpload")) this.ticksSinceLastUpload = tag.getLong("ticksSinceLastUpload");
         }
     }
 
@@ -58,6 +60,7 @@ public class GTswn_Cover_DynamoWireless extends Cover {
     protected void readDataFromPacket(ByteArrayDataInput byteData) {
         storedEU = byteData.readLong();
         configured = byteData.readBoolean();
+        ticksSinceLastUpload = byteData.readLong();
     }
 
     @Override
@@ -65,6 +68,7 @@ public class GTswn_Cover_DynamoWireless extends Cover {
         NBTTagCompound tag = new NBTTagCompound();
         tag.setLong("storedEU", storedEU);
         tag.setBoolean("configured", configured);
+        tag.setLong("ticksSinceLastUpload", ticksSinceLastUpload);
         return tag;
     }
 
@@ -72,6 +76,7 @@ public class GTswn_Cover_DynamoWireless extends Cover {
     protected void writeDataToByteBuf(ByteBuf byteBuf) {
         byteBuf.writeLong(storedEU);
         byteBuf.writeBoolean(configured);
+        byteBuf.writeLong(ticksSinceLastUpload);
     }
 
     @Override
@@ -119,12 +124,16 @@ public class GTswn_Cover_DynamoWireless extends Cover {
 
         // 每 600 tick:把缓冲池累积的 EU 送到电网(计算上行损耗)
         // Every 600 ticks: upload buffer to network (with uplink loss)
-        if (aTimer % 600L == 0L && this.storedEU > 0) {
-            UUID owner = getOwner(bmte);
-            if (owner != null) {
-                long actualAdded = (long) (this.storedEU * (1.0 - Config.uplinkLossEU));
-                if (actualAdded > 0 && addEUToGlobalEnergyMap(owner, actualAdded)) {
-                    this.storedEU = 0;
+        ticksSinceLastUpload++;
+        if (ticksSinceLastUpload >= 600L) {
+            ticksSinceLastUpload = 0L;
+            if (this.storedEU > 0) {
+                UUID owner = getOwner(bmte);
+                if (owner != null) {
+                    long actualAdded = (long) (this.storedEU * (1.0 - Config.uplinkLossEU));
+                    if (actualAdded > 0 && addEUToGlobalEnergyMap(owner, actualAdded)) {
+                        this.storedEU = 0;
+                    }
                 }
             }
         }
@@ -191,6 +200,11 @@ public class GTswn_Cover_DynamoWireless extends Cover {
                 new ChatComponentText(
                     net.minecraft.util.StatCollector.translateToLocal("gtswn.chat.cover.stored_eu") + this.storedEU
                         + " EU"));
+            aPlayer.addChatMessage(
+                new ChatComponentText(
+                    net.minecraft.util.StatCollector.translateToLocal("gtswn.chat.cover.next_upload")
+                        + (600 - ticksSinceLastUpload)
+                        + " ticks"));
         } else {
             aPlayer.addChatMessage(
                 new ChatComponentText(

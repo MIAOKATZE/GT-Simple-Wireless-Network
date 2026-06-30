@@ -37,6 +37,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
     private int amperage = 0;
     private long capacity = 0L; // 电容量上限 = V × A × 800 / Capacity upper bound = V × A × 800
     private long storedEU = 0L; // 当前缓冲池 EU / Current buffer EU
+    private long ticksSinceLastRefill = 0L; // 距上次网络补满的tick计数 / Ticks since last network refill
     private boolean configured = false;
 
     public GTswn_Cover_EnergyWireless(CoverContext context) {
@@ -51,6 +52,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
             if (tag.hasKey("capacity")) this.capacity = tag.getLong("capacity");
             if (tag.hasKey("storedEU")) this.storedEU = tag.getLong("storedEU");
             if (tag.hasKey("configured")) this.configured = tag.getBoolean("configured");
+            if (tag.hasKey("ticksSinceLastRefill")) this.ticksSinceLastRefill = tag.getLong("ticksSinceLastRefill");
         }
     }
 
@@ -61,6 +63,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
         capacity = byteData.readLong();
         storedEU = byteData.readLong();
         configured = byteData.readBoolean();
+        ticksSinceLastRefill = byteData.readLong();
     }
 
     @Override
@@ -71,6 +74,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
         tag.setLong("capacity", capacity);
         tag.setLong("storedEU", storedEU);
         tag.setBoolean("configured", configured);
+        tag.setLong("ticksSinceLastRefill", ticksSinceLastRefill);
         return tag;
     }
 
@@ -81,6 +85,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
         byteBuf.writeLong(capacity);
         byteBuf.writeLong(storedEU);
         byteBuf.writeBoolean(configured);
+        byteBuf.writeLong(ticksSinceLastRefill);
     }
 
     @Override
@@ -121,7 +126,9 @@ public class GTswn_Cover_EnergyWireless extends Cover {
 
         // 每 600 tick:从电网补满到电容量上限
         // Every 600 ticks: refill buffer to capacity from network
-        if (aTimer % 600L == 0L) {
+        ticksSinceLastRefill++;
+        if (ticksSinceLastRefill >= 600L) {
+            ticksSinceLastRefill = 0L;
             refillFromNetwork(bmte);
         }
     }
@@ -207,6 +214,11 @@ public class GTswn_Cover_EnergyWireless extends Cover {
                 new ChatComponentText(
                     net.minecraft.util.StatCollector.translateToLocal("gtswn.chat.cover.stored_eu") + this.storedEU
                         + " EU"));
+            aPlayer.addChatMessage(
+                new ChatComponentText(
+                    net.minecraft.util.StatCollector.translateToLocal("gtswn.chat.cover.next_refill")
+                        + (600 - ticksSinceLastRefill)
+                        + " ticks"));
         } else {
             aPlayer.addChatMessage(
                 new ChatComponentText(

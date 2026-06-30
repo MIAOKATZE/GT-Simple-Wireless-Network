@@ -151,3 +151,15 @@ gtswn.chat.cover.stored_eu=当前缓存:
 gtswn.chat.cover.interval=交互间隔: 
 gtswn.chat.cover.single_transfer=单次传输能量: 
 gtswn.chat.cover.not_configured=尚未配置！
+
+# GTSWN Command - global_energy_join
+gtswn.command.join.success=§a加入成功: %s 已加入 %s 的无线网络
+gtswn.command.join.same_uuid=§e成员UUID与队长UUID相同，无需加入
+gtswn.command.join.cascade_warn=§e注意: %s 的队长为 %s，%s 将加入 %s 的网络
+gtswn.command.join.cycle_detect=§c循环检测: %s 是 %s 的队长，无法将 %s 加入 %s 的网络
+gtswn.command.join.network_eu=§b目标网络当前总量: %s EU
+gtswn.command.join.usage=用法: /gtswn global_energy_join <memberUUID> <leaderUUID>
+
+# Cover Timer
+gtswn.chat.cover.next_refill=§7 距下次补能: 
+gtswn.chat.cover.next_upload=§7 距下次上传: 

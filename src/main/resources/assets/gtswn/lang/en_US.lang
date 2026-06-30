@@ -155,3 +155,15 @@ gtswn.chat.cover.stored_eu=Stored:
 gtswn.chat.cover.interval=Interval: 
 gtswn.chat.cover.single_transfer=Single transfer: 
 gtswn.chat.cover.not_configured=Not configured yet!
+
+# GTSWN Command - global_energy_join
+gtswn.command.join.success=§aJoin successful: %s has joined %s's wireless network
+gtswn.command.join.same_uuid=§eMember UUID is the same as leader UUID, no action needed
+gtswn.command.join.cascade_warn=§eNote: %s's leader is %s, %s will join %s's network
+gtswn.command.join.cycle_detect=§cCycle detected: %s is %s's leader, cannot join %s to %s's network
+gtswn.command.join.network_eu=§bTarget network total: %s EU
+gtswn.command.join.usage=Usage: /gtswn global_energy_join <memberUUID> <leaderUUID>
+
+# Cover Timer
+gtswn.chat.cover.next_refill=§7 Next refill in: 
+gtswn.chat.cover.next_upload=§7 Next upload in: 
