@@ -48,6 +48,12 @@ public class WirelessEnergyTap extends Item {
     /** 防止重复触发的间隔（毫秒） */
     private static final long INTERVAL_MILLIS = 200L;
 
+    /** NBT 键名：绑定提示已显示次数(达到上限后不再提示) / Bind notify count (stops after reaching max) */
+    private static final String NBT_BIND_NOTIFY_COUNT = "BindNotifyCount";
+
+    /** 绑定提示最大显示次数 / Max bind notify times */
+    private static final int MAX_BIND_NOTIFY = 10;
+
     /** 两个材质图标 */
     private net.minecraft.util.IIcon[] icons = new net.minecraft.util.IIcon[2];
 
@@ -109,6 +115,23 @@ public class WirelessEnergyTap extends Item {
         boolean newMode = !current;
         aStack.stackTagCompound.setBoolean(NBT_OUTPUT_MODE, newMode);
         return newMode;
+    }
+
+    /**
+     * 绑定成功后提示玩家:覆盖板绑定的是机器拥有者的电网,请确认团队已共享电网。
+     * 前 MAX_BIND_NOTIFY 次显示,之后不再提示。计数写入链路终端 NBT。
+     * Notify player after successful bind: cover binds to machine owner's grid, confirm team shared grid.
+     * Shown first MAX_BIND_NOTIFY times, then suppressed. Count stored in tap NBT.
+     */
+    private void notifyBindOwner(ItemStack stack, EntityPlayer player) {
+        ensureNBT(stack);
+        int count = stack.stackTagCompound.getInteger(NBT_BIND_NOTIFY_COUNT);
+        if (count >= MAX_BIND_NOTIFY) return;
+        int remaining = MAX_BIND_NOTIFY - count;
+        String msg = StatCollector.translateToLocal("gtswn.chat.tap.bind_notify");
+        msg = msg.replace("%d", String.valueOf(remaining));
+        player.addChatMessage(new ChatComponentText(msg));
+        stack.stackTagCompound.setInteger(NBT_BIND_NOTIFY_COUNT, count + 1);
     }
 
     /**
@@ -184,7 +207,7 @@ public class WirelessEnergyTap extends Item {
             if (outputMode) {
                 // === 动力模式:虚拟导线,读取机器输出 V/A 取电 ===
                 // Dynamo cover reads machine output V/A per tick, drains into capacity buffer
-                attachDynamoCoverForFullTake(player, coverable, targetSide);
+                attachDynamoCoverForFullTake(stack, player, coverable, targetSide);
                 return;
             }
 
@@ -276,6 +299,8 @@ public class WirelessEnergyTap extends Item {
                 player.addChatMessage(
                     new ChatComponentText(
                         StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
+                // 6. 绑定提示(前 MAX_BIND_NOTIFY 次)
+                notifyBindOwner(stack, player);
             } else {
                 player.addChatMessage(
                     new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
@@ -293,11 +318,13 @@ public class WirelessEnergyTap extends Item {
      * 无需读取电压/安培/间隔参数,configure() 不接受参数。
      * 不输出 chat 调试信息,只提示链接成功+模式。
      *
+     * @param stack      链路终端物品栈(用于读写绑定提示计数NBT)
      * @param player     操作玩家
      * @param coverable  目标机器
      * @param targetSide 附着面
      */
-    private void attachDynamoCoverForFullTake(EntityPlayer player, ICoverable coverable, ForgeDirection targetSide) {
+    private void attachDynamoCoverForFullTake(ItemStack stack, EntityPlayer player, ICoverable coverable,
+        ForgeDirection targetSide) {
         ItemStack coverStack = GTSWNItemList.GTswn_Cover_Dynamo_Wireless.get(1);
         if (coverStack == null) {
             player.addChatMessage(
@@ -332,6 +359,8 @@ public class WirelessEnergyTap extends Item {
         player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
         player.addChatMessage(
             new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
+        // 绑定提示(前 MAX_BIND_NOTIFY 次)
+        notifyBindOwner(stack, player);
     }
 
     /**

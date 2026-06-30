@@ -139,6 +139,7 @@ gtswn.chat.tap.actual_interval_text=§7 实际交互间隔:
 gtswn.chat.tap.single_transfer_text=§7 单次传输能量: 
 gtswn.chat.tap.cannot_get_cover=§c[链路终端] 无法获取覆盖板！
 gtswn.chat.tap.no_cover_support=§c[链路终端] 机器不支持覆盖板
+gtswn.chat.tap.bind_notify=§e[链路终端] 绑定的是机器拥有者的电网，请确认团队已经共享了电网（该信息还会出现 %d 次）。
 
 # Wireless Cover Right-Click Config
 gtswn.chat.cover.energy_config=GTswn链路终端（能源）配置：

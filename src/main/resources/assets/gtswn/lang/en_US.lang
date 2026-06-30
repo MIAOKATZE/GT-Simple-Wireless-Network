@@ -143,6 +143,7 @@ gtswn.chat.tap.single_transfer_text=§7 Single transfer:
 gtswn.chat.tap.cover_capacity=§b Cover capacity: 
 gtswn.chat.tap.cannot_get_cover=§c[Link Terminal] Cannot get cover item!
 gtswn.chat.tap.no_cover_support=§c[Link Terminal] Machine doesn't support covers
+gtswn.chat.tap.bind_notify=§e[Link Terminal] Bound to the machine owner's power grid. Please confirm your team has shared the grid (this message will appear %d more times).
 
 # Wireless Cover Right-Click Config
 gtswn.chat.cover.energy_config=GTswn Link Terminal (Energy) Config:

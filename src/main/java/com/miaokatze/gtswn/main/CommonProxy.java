@@ -6,6 +6,7 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Ene
 import java.io.File;
 
 import com.miaokatze.gtswn.Tags;
+import com.miaokatze.gtswn.common.command.CommandGTSWN;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
@@ -150,7 +151,9 @@ public class CommonProxy {
      * 用于注册服务器端命令。
      */
     @SuppressWarnings({ "unused" })
-    public void serverStarting(FMLServerStartingEvent event) {}
+    public void serverStarting(FMLServerStartingEvent event) {
+        event.registerServerCommand(new CommandGTSWN());
+    }
 
     /**
      * 模组加载完成阶段
