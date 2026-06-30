@@ -114,6 +114,18 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 
 ***
 
+## Admin Commands / 管理员命令
+
+OP level 4 required. / 需要 OP 等级 4。
+
+- **`/gtswn global_energy_trans <fromUUID> <toUUID>`** — One-time transfer of all EU from one UUID's network to another. Use when a player's UUID changes (e.g., premium → third-party account). / 一次性将 fromUUID 网络的所有 EU 迁移到 toUUID 网络。用于玩家换账户（正版转第三方等）导致 UUID 变化后迁移 EU。
+
+- **`/gtswn global_energy_join <memberUUID> <leaderUUID>`** — Permanently join a player's network into another player's network via GT5U's team system (`SpaceProjectManager`). After joining, the member's wireless EU operations automatically resolve to the leader's network. / 通过 GT5U 团队系统将玩家的网络永久加入另一个玩家的网络。加入后，成员的无线 EU 操作自动解析到队长的网络。
+
+> **Multiplayer Note / 多人提示**: If playing on a multiplayer server, players should follow GTNH's guide to join a shared team power grid. The `global_energy_join` command uses the same team system, so covers and GT5U wireless hatches will share the same network. / 如果在多人服务器游玩，玩家应按照 GTNH 指引加入团队共享电网。`global_energy_join` 命令使用相同的团队系统，因此覆盖板和 GT5U 无线仓将共享同一网络。
+
+***
+
 ## Tech Stack / 技术栈
 
 - Java 17→8 (JVM Downgrader) / Minecraft 1.7.10 / Forge 10.13.4.1614
