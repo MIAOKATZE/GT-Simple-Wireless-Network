@@ -48,8 +48,10 @@ public class PacketResponseWirelessEU implements IMessage {
      * 而 HUD 渲染在客户端主线程读取 static 缓存，两者并发会竞争 static 字段。故必须用
      * {@link Minecraft#func_152344_a(Runnable)}（1.7.10 中 addScheduledTask 的 SRG 名）把写操作调度到主线程，
      * 避免渲染线程读到半更新状态。
+     * <p>
+     * 【注意】不要在此类上加 @SideOnly(Side.CLIENT)！registerMessage 需要在双端都传入 Handler 的 Class 对象，
+     * 加 @SideOnly 会导致服务端 SideTransformer 剥离该类，抛出 NoClassDefFoundError 崩服。
      */
-    @cpw.mods.fml.relauncher.SideOnly(cpw.mods.fml.relauncher.Side.CLIENT)
     public static class Handler implements IMessageHandler<PacketResponseWirelessEU, IMessage> {
 
         @Override
