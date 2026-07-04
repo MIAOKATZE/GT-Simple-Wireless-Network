@@ -65,6 +65,9 @@ dependencies {
 
     // Add test dependencies here if you plan to run unit tests locally.
     // (Optional) testImplementation(platform('org.junit:junit-bom:5.14.1'))
+
+    // Baubles-Expanded: compileOnly — 可选依赖，运行时由玩家自行安装 Baubles
+    compileOnly("com.github.GTNewHorizons:Baubles-Expanded:2.2.6-GTNH:dev") { transitive = false }
 }
 
 

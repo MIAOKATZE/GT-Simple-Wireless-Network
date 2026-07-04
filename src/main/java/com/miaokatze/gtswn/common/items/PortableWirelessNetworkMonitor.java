@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.creativetab.CreativeTabs;
+import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -15,6 +16,9 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 
+import baubles.api.BaubleType;
+import baubles.api.IBauble;
+import cpw.mods.fml.common.Optional;
 import gregtech.common.misc.WirelessNetworkManager;
 
 /**
@@ -26,7 +30,8 @@ import gregtech.common.misc.WirelessNetworkManager;
  * - 已绑定状态下右击显示拥有者的无线电网能量值
  * - Shift + 右击覆盖绑定为当前玩家（无论是否已绑定）
  */
-public class PortableWirelessNetworkMonitor extends Item {
+@Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles")
+public class PortableWirelessNetworkMonitor extends Item implements IBauble {
 
     /** NBT 键名：存储拥有者的 UUID 字符串 */
     private static final String NBT_OWNER_UUID = "OwnerUUID";
@@ -210,6 +215,46 @@ public class PortableWirelessNetworkMonitor extends Item {
         // 额外提示：如何更新拥有者
         String hintMsg = StatCollector.translateToLocal("gtswn.chat.monitor.rebind.hint");
         aPlayer.addChatMessage(new ChatComponentText(hintMsg));
+    }
+
+    // ========== Baubles 饰品接口实现 ==========
+
+    /** 饰品槽位类型：UNIVERSAL（可放入任意饰品槽） */
+    @Override
+    @Optional.Method(modid = "Baubles")
+    public BaubleType getBaubleType(ItemStack itemstack) {
+        return BaubleType.UNIVERSAL;
+    }
+
+    /** 装备时每 tick 调用，HUD 由 C→S→C 包驱动故空实现 */
+    @Override
+    @Optional.Method(modid = "Baubles")
+    public void onWornTick(ItemStack itemstack, EntityLivingBase player) {
+        // 空实现：HUD 数据由客户端 PacketRequestWirelessEU 驱动
+    }
+
+    @Override
+    @Optional.Method(modid = "Baubles")
+    public void onEquipped(ItemStack itemstack, EntityLivingBase player) {
+        // 无需特殊处理
+    }
+
+    @Override
+    @Optional.Method(modid = "Baubles")
+    public void onUnequipped(ItemStack itemstack, EntityLivingBase player) {
+        // 无需特殊处理
+    }
+
+    @Override
+    @Optional.Method(modid = "Baubles")
+    public boolean canEquip(ItemStack itemstack, EntityLivingBase player) {
+        return true;
+    }
+
+    @Override
+    @Optional.Method(modid = "Baubles")
+    public boolean canUnequip(ItemStack itemstack, EntityLivingBase player) {
+        return true;
     }
 
     /**

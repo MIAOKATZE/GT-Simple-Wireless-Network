@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
@@ -19,6 +20,7 @@ import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestWirelessEU;
 
+import baubles.api.BaublesApi;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /**
@@ -288,6 +290,23 @@ public class WirelessMonitorHUD extends Gui {
             }
         }
 
+        // --- 饰品栏扫描（Baubles 不存在时安全降级） ---
+        try {
+            IInventory baubles = BaublesApi.getBaubles(player);
+            if (baubles != null) {
+                for (int i = 0; i < baubles.getSizeInventory(); i++) {
+                    ItemStack baubleStack = baubles.getStackInSlot(i);
+                    if (baubleStack != null && baubleStack.getItem() instanceof PortableWirelessNetworkMonitor) {
+                        if (isMonitorBound(baubleStack)) {
+                            return baubleStack.stackTagCompound.getString("OwnerUUID");
+                        }
+                    }
+                }
+            }
+        } catch (NoClassDefFoundError ignored) {
+            // Baubles 未安装，跳过饰品栏扫描
+        }
+
         // 遍历背包槽位（0-35）
         for (int i = 0; i < player.inventory.mainInventory.length; i++) {
             ItemStack stack = player.inventory.mainInventory[i];
@@ -327,6 +346,23 @@ public class WirelessMonitorHUD extends Gui {
             if (heldItem.stackTagCompound != null) {
                 return heldItem.stackTagCompound.getInteger("HUDMode");
             }
+        }
+
+        // --- 饰品栏扫描（Baubles 不存在时安全降级） ---
+        try {
+            IInventory baublesInv = BaublesApi.getBaubles(player);
+            if (baublesInv != null) {
+                for (int i = 0; i < baublesInv.getSizeInventory(); i++) {
+                    ItemStack baubleStack = baublesInv.getStackInSlot(i);
+                    if (baubleStack != null && baubleStack.getItem() instanceof PortableWirelessNetworkMonitor) {
+                        if (baubleStack.stackTagCompound != null) {
+                            return baubleStack.stackTagCompound.getInteger("HUDMode");
+                        }
+                    }
+                }
+            }
+        } catch (NoClassDefFoundError ignored) {
+            // Baubles 未安装，跳过饰品栏扫描
         }
 
         // 遍历背包槽位
