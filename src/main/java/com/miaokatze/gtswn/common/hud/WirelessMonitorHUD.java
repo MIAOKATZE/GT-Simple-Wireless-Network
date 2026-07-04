@@ -16,9 +16,10 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketRequestWirelessEU;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
-import gregtech.common.misc.WirelessNetworkManager;
 
 /**
  * 便携式无线网络监测终端 HUD 渲染器
@@ -36,6 +37,12 @@ public class WirelessMonitorHUD extends Gui {
 
     /** 缓存的拥有者 UUID（用于 HUD 显示） */
     private static String cachedOwnerUUID = null;
+
+    /** 服务端同步过来的 EU 字符串（BigInteger.toString()），未收到响应前为 null（用于判断首次进入） */
+    private static String syncedEuStr = null;
+
+    /** 服务端同步过来的 EU BigInteger 缓存（供 updateCache 判断首次进入用，渲染实际读 cachedEUText） */
+    private static BigInteger syncedEu = BigInteger.ZERO;
 
     /** 历史测量记录列表（只记录发生变化的点） */
     private static List<Measurement> measurementHistory = new ArrayList<>();
@@ -113,6 +120,9 @@ public class WirelessMonitorHUD extends Gui {
      */
     private static void clearCache() {
         cachedOwnerUUID = null;
+        // 重置服务端同步缓存，避免跨存档/世界切换时残留旧值
+        syncedEuStr = null;
+        syncedEu = BigInteger.ZERO;
         cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
             + ": §f0 §b"
             + StatCollector.translateToLocal("gtswn.hud.eu.unit");
@@ -333,11 +343,33 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
-     * 更新 HUD 缓存数据
+     * 接收服务端同步过来的 EU 字符串（由 {@code PacketResponseWirelessEU.Handler} 通过
+     * {@code Minecraft.addScheduledTask} 调度到客户端主线程后调用）。
+     * <p>
+     * 承担原 {@code updateCache} 的格式化、记录测量、计算 EU/t 职责；运行在客户端主线程，可安全操作 static 字段。
+     *
+     * @param euStr 服务端传来的 {@code BigInteger.toString()} 字符串
      */
-    private void updateCache(long currentTick, UUID uuid) {
-        // 调用 GT5U 的 WirelessNetworkManager 获取无线电网能量
-        BigInteger wirelessEU = WirelessNetworkManager.getUserEU(uuid);
+    public static void receiveSyncedEU(String euStr) {
+        if (euStr == null || euStr.isEmpty()) {
+            return;
+        }
+
+        // 解析服务端传来的 EU 字符串（异常时设为 ZERO，避免渲染崩溃）
+        BigInteger wirelessEU;
+        try {
+            wirelessEU = new BigInteger(euStr);
+        } catch (NumberFormatException e) {
+            wirelessEU = BigInteger.ZERO;
+        }
+
+        // 更新同步缓存
+        syncedEuStr = euStr;
+        syncedEu = wirelessEU;
+
+        // 获取当前世界 tick（receiveSyncedEU 无 currentTick 入参，自行从客户端世界读取）
+        Minecraft mc = Minecraft.getMinecraft();
+        long currentTick = (mc.theWorld != null) ? mc.theWorld.getTotalWorldTime() : 0L;
 
         // 根据显示模式格式化能量值
         String euFormatted;
@@ -358,6 +390,32 @@ public class WirelessMonitorHUD extends Gui {
         // 记录测量历史并计算 EU/t
         recordMeasurement(currentTick, wirelessEU);
         cachedEUTText = calculateEUT(currentTick);
+    }
+
+    /**
+     * 更新 HUD 缓存数据。
+     * <p>
+     * [Bugfix] 不再在客户端直接调用 {@code WirelessNetworkManager.getUserEU}（GlobalEnergy 数据仅在服务端，
+     * 客户端恒返 0）。改为向服务端发送 {@link PacketRequestWirelessEU} 请求包，由服务端查询后回包，
+     * 实际的格式化与 EU/t 计算在 {@link #receiveSyncedEU} 中完成。
+     *
+     * @param currentTick 当前游戏 tick
+     * @param uuid        保留以兼容现有调用点；EU 数据已改为服务端同步，本方法不再直接使用此参数
+     */
+    private void updateCache(long currentTick, UUID uuid) {
+        // 向服务端发送 EU 请求包（仅当拥有者 UUID 有效时）
+        if (cachedOwnerUUID != null && !cachedOwnerUUID.isEmpty()) {
+            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestWirelessEU(cachedOwnerUUID));
+        }
+
+        // 首次进入（尚未收到服务端响应）时显示占位符，避免闪烁；
+        // 已有同步数据时 cachedEUText 由 receiveSyncedEU 维护，此处不覆盖
+        if (syncedEuStr == null) {
+            cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
+                + ": §f..."
+                + " §b"
+                + StatCollector.translateToLocal("gtswn.hud.eu.unit");
+        }
 
         lastUpdateTick = currentTick;
     }
@@ -597,7 +655,7 @@ public class WirelessMonitorHUD extends Gui {
      * @param value 要格式化的 BigInteger 值
      * @return 格式化后的字符串（例如：269,835,880）
      */
-    private String formatNormal(BigInteger value) {
+    private static String formatNormal(BigInteger value) {
         if (value == null) {
             return "0";
         }
@@ -660,7 +718,7 @@ public class WirelessMonitorHUD extends Gui {
      * @param value 要格式化的 BigInteger 值
      * @return 格式化后的字符串（例如：2.70×10^8）
      */
-    private String formatScientific(BigInteger value) {
+    private static String formatScientific(BigInteger value) {
         if (value == null || value.equals(BigInteger.ZERO)) {
             return "0";
         }

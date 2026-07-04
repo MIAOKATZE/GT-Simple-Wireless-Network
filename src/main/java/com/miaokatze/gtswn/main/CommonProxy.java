@@ -12,6 +12,7 @@ import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
+import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
@@ -90,6 +91,9 @@ public class CommonProxy {
         } catch (Throwable t) {
             GTSimpleWirelessNetwork.LOG.error("无法将注册任务添加到 GregTech 队列", t);
         }
+
+        // 注册网络包通道（便携监测终端 EU 同步：修复客户端恒显示 0EU 的 Bug）
+        GTSWNPacketHandler.register();
     }
 
     /**
