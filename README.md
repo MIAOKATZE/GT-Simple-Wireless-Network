@@ -36,13 +36,15 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 ## Portable Wireless Network Monitor / 便携无线监测终端
 
-A handheld device that displays a HUD overlay when in inventory. Shows real-time wireless network energy, EU/t change rate, and GT-style power tier — all without placing any block.
+A handheld device that displays a HUD overlay when in inventory (including any Baubles accessory slot). Shows real-time wireless network energy, EU/t change rate, and GT-style power tier — all without placing any block. Works correctly on both single-player and dedicated servers via C→S→C network packet synchronization.
 
-背包内自动显示 HUD 的手持设备。实时显示无线电网能量、EU/t 变化率和 GT 风格功率等级——无需放置任何方块。
+背包内（含任意 Baubles 饰品栏）自动显示 HUD 的手持设备。实时显示无线电网能量、EU/t 变化率和 GT 风格功率等级——无需放置任何方块。通过 C→S→C 网络包同步，在单人世界和专用服务器中均可正常使用。
 
 - **Three display modes**: Off / Normal counting / Scientific notation
 - **Smart dEU/dt**: Intelligent change rate calculation with automatic zero-detection timeout
 - **GT Power Display**: Amperage + voltage tier format (e.g., "§b2A HV")
+- **Baubles Support**: Can be placed in any Baubles accessory slot; HUD scans main hand → Baubles → inventory
+- **Server Compatible**: Correctly displays EU on dedicated servers via client-request / server-response network synchronization
 
 <p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" width="300"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" width="300"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
 
