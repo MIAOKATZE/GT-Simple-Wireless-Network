@@ -1,24 +1,36 @@
 package com.miaokatze.gtswn.common.machine;
 
 import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.StatCollector;
 import net.minecraftforge.common.util.ForgeDirection;
 
-import com.gtnewhorizons.modularui.api.screen.ModularWindow;
-import com.gtnewhorizons.modularui.api.screen.UIBuildContext;
-import com.gtnewhorizons.modularui.common.widget.ButtonWidget;
-import com.gtnewhorizons.modularui.common.widget.FakeSyncWidget;
-import com.gtnewhorizons.modularui.common.widget.TextWidget;
+import com.cleanroommc.modularui.api.drawable.IKey;
+import com.cleanroommc.modularui.factory.PosGuiData;
+import com.cleanroommc.modularui.screen.ModularPanel;
+import com.cleanroommc.modularui.screen.UISettings;
+import com.cleanroommc.modularui.value.sync.IntSyncValue;
+import com.cleanroommc.modularui.value.sync.LongSyncValue;
+import com.cleanroommc.modularui.value.sync.PanelSyncManager;
+import com.cleanroommc.modularui.value.sync.StringSyncValue;
+import com.cleanroommc.modularui.widgets.ButtonWidget;
+import com.cleanroommc.modularui.widgets.layout.Flow;
+import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 
 import gregtech.api.enums.Textures;
-import gregtech.api.gui.modularui.GTUITextures;
 import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
+import gregtech.api.interfaces.metatileentity.IMetricsExporter;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
+import gregtech.api.modularui2.GTGuiTextures;
+import gregtech.api.modularui2.GTGuis;
 import gregtech.common.misc.WirelessNetworkManager;
 
 /**
@@ -35,7 +47,7 @@ import gregtech.common.misc.WirelessNetworkManager;
  * <li>动态贴图切换（根据红石输出状态）</li>
  * </ul>
  */
-public class MTEWirelessEnergyMonitor extends MTEMonitor {
+public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExporter {
 
     // EU/t 计算相关
     private BigInteger lastEU = BigInteger.ZERO;
@@ -55,8 +67,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
     }
 
     private java.util.List<Measurement> measurementHistory = new java.util.ArrayList<>();
-    private int unchangedCount = 0;
-    private static final int MAX_UNCHANGED_COUNT = 1200; // 10分钟 = 1200次 * 0.5秒
+    /** EU/t 均值计算窗口（ticks），6000 ticks = 300 秒 */
+    private static final long WINDOW_TICKS = 6000L;
 
     // UI 同步字段
     private String cachedModeText = "模式: 常规计数";
@@ -121,8 +133,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
     public void onPostTick(IGregTechTileEntity aBaseMetaTileEntity, long aTick) {
         super.onPostTick(aBaseMetaTileEntity, aTick);
 
-        // 每 10 ticks (0.5秒) 更新一次 UI 显示
-        if (aTick % 10L == 0L) {
+        // 每 600 ticks (30秒) 更新一次 UI 显示与检测
+        // 注：红石判定周期同步改为 30s（与检测同周期，不拆分）
+        if (aTick % 600L == 0L) {
             // 服务端执行 EU/t 计算和红石逻辑
             if (aBaseMetaTileEntity.isServerSide()) {
                 calculateSmartEUT(aTick);
@@ -261,46 +274,62 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
         lastCheckTick = currentTick;
     }
 
-    // 记录测量历史（只记录发生变化的点）
+    /**
+     * 记录测量历史（每次检测都记录，不再判断是否变化）
+     * <p>
+     * 改动意图：保证 300 秒窗口内有足够样本支撑首末两点斜率算法。
+     * 每次记录后立即调用 purgeExpired 清理窗口外样本。
+     */
     private void recordMeasurement(long tick, BigInteger value) {
-        if (measurementHistory.isEmpty()) {
-            measurementHistory.add(new Measurement(tick, value));
-            unchangedCount = 0;
-            return;
-        }
+        if (value == null) return;
+        measurementHistory.add(new Measurement(tick, value));
+        // 老化：清理窗口外样本（tick < currentTick - WINDOW_TICKS）
+        purgeExpired(tick);
+    }
 
-        Measurement latest = measurementHistory.get(measurementHistory.size() - 1);
-
-        if (!latest.value.equals(value)) {
-            measurementHistory.add(new Measurement(tick, value));
-            unchangedCount = 0;
-
-            if (measurementHistory.size() > 10) {
-                measurementHistory.remove(0);
+    /**
+     * 老化过期样本：淘汰 tick &lt; currentTick - WINDOW_TICKS 的样本
+     * <p>
+     * 列表按时间顺序追加，遇到第一个未过期样本即可停止遍历。
+     */
+    private void purgeExpired(long currentTick) {
+        long cutoff = currentTick - WINDOW_TICKS;
+        java.util.Iterator<Measurement> it = measurementHistory.iterator();
+        while (it.hasNext()) {
+            if (it.next().tick < cutoff) {
+                it.remove();
+            } else {
+                break; // 列表按时间顺序，遇到第一个未过期即可停止
             }
-        } else {
-            unchangedCount++;
         }
     }
 
-    // 计算 EU/t
+    /**
+     * 计算 EU/t（300 秒窗口首末两点斜率法）
+     * <p>
+     * 算法：(lastValue - firstValue) / (lastTick - firstTick)
+     * 边界情况：
+     * <ul>
+     * <li>历史为空或仅 1 个点：返回 0.0</li>
+     * <li>首末 tick 相同（tickDiff &lt;= 0）：返回 0.0</li>
+     * <li>长期无变化：返回 0.0（显示 "0.00" EU/t）</li>
+     * </ul>
+     */
     private double calculateEUT(long currentTick) {
-        if (unchangedCount >= MAX_UNCHANGED_COUNT) {
-            return 0.0; // 超过阈值，返回 0
-        }
+        // 先清理窗口外样本
+        purgeExpired(currentTick);
 
         if (measurementHistory.size() < 2) {
             return 0.0;
         }
 
-        Measurement latest = measurementHistory.get(measurementHistory.size() - 1);
-        Measurement previous = measurementHistory.get(measurementHistory.size() - 2);
-
-        BigInteger diff = latest.value.subtract(previous.value);
-        long tickDiff = latest.tick - previous.tick;
-
-        if (tickDiff <= 0) return 0.0;
-
+        Measurement first = measurementHistory.get(0);
+        Measurement last = measurementHistory.get(measurementHistory.size() - 1);
+        long tickDiff = last.tick - first.tick;
+        if (tickDiff <= 0) {
+            return 0.0;
+        }
+        BigInteger diff = last.value.subtract(first.value);
         return diff.doubleValue() / tickDiff;
     }
 
@@ -321,18 +350,62 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
     }
 
     // 获取电网状态文本（与 HUD 保持一致）
+    // 改动：在 EU/t 显示文本后追加灰色 [300s avg] 标注，表明这是 300 秒窗口均值
     private String getnetworkStatusText() {
+        // 灰色标注，表明 EU/t 为 300 秒窗口均值
+        String avgTag = " §7[300s avg]";
         if (euPerTick > 0.01) {
             String euPerTickStr = formatEUtValue(euPerTick);
             String gtPowerText = formatGTPower(euPerTick);
-            return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText);
+            return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText) + avgTag;
         } else if (euPerTick < -0.01) {
             String euPerTickStr = formatEUtValue(Math.abs(euPerTick));
             String gtPowerText = formatGTPower(Math.abs(euPerTick));
-            return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
+            return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText) + avgTag;
         } else {
-            return translate("gtswn.ui.network.status.nochange");
+            return translate("gtswn.ui.network.status.nochange") + avgTag;
         }
+    }
+
+    // ==================== NC2 工业信息屏集成（方案A+B）====================
+    // 通过实现 IGregTechDeviceInformation（已由 MetaTileEntity 间接继承）+ IMetricsExporter，
+    // 让 GT 传感器套件右键本机器后能生成传感器卡，将信息显示到 NC2 工业信息屏。
+    // 方案A：isGivingInformation() + getInfoData() → 普通传感器卡，同维度监测
+    // 方案B：reportMetrics() → CoverMetricsTransmitter + 高级传感器卡，跨维度监测
+
+    /**
+     * 启用 GT 传感器套件识别（方案A入口）
+     * BehaviourSensorKit.onItemUseFirst 会检查此方法返回 true 才生成传感器卡
+     */
+    @Override
+    public boolean isGivingInformation() {
+        return true;
+    }
+
+    /**
+     * 返回显示在 NC2 工业信息屏上的信息字符串数组（最多8条）
+     * 玩家用 GT 传感器套件右键本机器后，传感器卡会通过 ItemSensorCard.update() 调用此方法
+     * 只传递电网容量和电网状态（用户需求）
+     */
+    @Override
+    public String[] getInfoData() {
+        return new String[] {
+            // 标题行：机器名称（蓝色）
+            EnumChatFormatting.BLUE + getLocalName() + EnumChatFormatting.RESET,
+            // 电网容量（复用 UI 的格式化文本，含"能量: xxx EU"）
+            StatCollector.translateToLocalFormatted("gtswn.info.energy", getWirelessEUText()),
+            // 电网状态（复用 UI 的格式化文本，含 EU/t、电压等级、[300s avg] 标注）
+            StatCollector.translateToLocalFormatted("gtswn.info.status", getnetworkStatusText()) };
+    }
+
+    /**
+     * 返回跨维度监测的 metrics 列表（方案B入口）
+     * CoverMetricsTransmitter.doCoverThings 会优先调用此方法（而非 getInfoData）
+     * 配合高级传感器卡实现跨维度信息传输
+     */
+    @Override
+    public List<String> reportMetrics() {
+        return Arrays.asList(getInfoData());
     }
 
     // 格式化 EU/t 数值（根据显示模式）
@@ -457,15 +530,18 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
         return String.format("%.3f×10^%d", mantissa, exp);
     }
 
-    // 右键打开 GUI - MTEBasicGenerator 已自动处理
+    // 右键打开 GUI - 由 MTEMonitor 基类的 onRightclick 处理
 
     /**
-     * 禁用玩家物品栏绑定
-     * 此机器不需要物品栏，禁用后可以自由调整窗口大小
+     * 启用 ModularUI 2
+     * <p>
+     * 此机器使用 MUI2 框架构建 GUI，保留 cover tabs 支持。
+     *
+     * @return 始终返回 true
      */
     @Override
-    public boolean doesBindPlayerInventory() {
-        return false;
+    protected boolean useMui2() {
+        return true;
     }
 
     /**
@@ -500,312 +576,359 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
         return new ITexture[] { baseTexture };
     }
 
+    /**
+     * 构建 ModularUI 2 主面板
+     * <p>
+     * 布局结构（236×150，禁用物品栏，禁用 GT Logo，保留 cover tabs）：
+     *
+     * <pre>
+     * ┌──────── GT 默认背景（无 Logo） ────────┐
+     * │ [切换模式按钮]   标题文本              │
+     * │ 模式: 常规计数                        │
+     * │ 无线电网能量: 1,234 EU                │
+     * │ 电网状态: +1.50 EU/t [300s avg]       │
+     * │ 红石模式: 关闭      [切换红石按钮]    │
+     * │ 红石输出: 关闭                        │
+     * │ 关闭: 不输出红石信号                  │
+     * │ 参数1: [输入框]                       │
+     * │ 参数2: [输入框]                       │
+     * └────────────────────────────────────────┘
+     * </pre>
+     *
+     * 同步值注册：
+     * <ul>
+     * <li>displayMode (IntSyncValue, C2S) - 显示模式</li>
+     * <li>redstoneMode (IntSyncValue, C2S) - 红石模式</li>
+     * <li>param1Value (LongSyncValue, C2S) - 参数1数值</li>
+     * <li>param2Value (LongSyncValue, C2S) - 参数2数值</li>
+     * <li>cachedModeText/euText/statusText/redstoneModeText/redstoneOutputText/modeDescText (StringSyncValue)
+     * - 6 个动态显示文本</li>
+     * </ul>
+     *
+     * @param guiData     GUI 位置数据
+     * @param syncManager 同步管理器
+     * @param uiSettings  UI 设置
+     * @return 主面板
+     */
     @Override
-    public void addUIWidgets(ModularWindow.Builder builder, UIBuildContext buildContext) {
-        // 设置窗口大小为 236x150（禁用物品栏后，足够容纳所有内容）
-        builder.setSize(236, 150);
+    public ModularPanel buildUI(PosGuiData guiData, PanelSyncManager syncManager, UISettings uiSettings) {
+        // === 同步值注册（先注册，再构建 UI 以便引用） ===
 
-        // 标题
-        builder.widget(
-            new TextWidget(translate("gtswn.ui.title")).setDefaultColor(COLOR_TEXT_WHITE.get())
-                .setPos(10, 6));
+        // 显示模式（客户端可写，允许玩家点击按钮切换）
+        IntSyncValue displayModeSync = new IntSyncValue(this::getDisplayMode, this::setDisplayMode).allowC2S();
+        syncManager.syncValue("displayMode", displayModeSync);
 
-        // 切换按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            displayMode = 1 - displayMode; // 切换模式
-            // 标记数据需要保存
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.toggle.mode"))
-            .setPos(192, 5)
-            .setSize(16, 16));
+        // 红石模式（客户端可写，允许玩家点击按钮循环切换）
+        IntSyncValue redstoneModeSync = new IntSyncValue(this::getRedstoneMode, this::setRedstoneMode).allowC2S();
+        syncManager.syncValue("redstoneMode", redstoneModeSync);
 
-        // 模式显示文字（动态更新）
-        builder.widget(
-            TextWidget.dynamicString(() -> cachedModeText)
-                .setDefaultColor(COLOR_TEXT_WHITE.get())
-                .setPos(10, 25));
+        // 参数1数值（LongSyncValue + 输入框，超 long 边界在 setter 中截断）
+        LongSyncValue param1Sync = new LongSyncValue(this::getParam1Value, this::setParam1Value).allowC2S();
+        syncManager.syncValue("param1Value", param1Sync);
 
-        // 无线电网能量显示（动态更新）
-        builder.widget(
-            TextWidget.dynamicString(() -> cachedEUText)
-                .setDefaultColor(COLOR_TEXT_WHITE.get())
-                .setPos(10, 38));
+        // 参数2数值（红石模式 0/1/2 下不禁用，保持可编辑）
+        LongSyncValue param2Sync = new LongSyncValue(this::getParam2Value, this::setParam2Value).allowC2S();
+        syncManager.syncValue("param2Value", param2Sync);
 
-        // 电网状态 EU/t（动态更新）
-        builder.widget(
-            TextWidget.dynamicString(() -> cachedStatusText)
-                .setDefaultColor(COLOR_TEXT_WHITE.get())
-                .setPos(10, 51));
+        // 6 个动态文本（服务端 onPostTick 更新，单向同步到客户端）
+        StringSyncValue modeTextSync = new StringSyncValue(this::getCachedModeText, this::setCachedModeText);
+        syncManager.syncValue("cachedModeText", modeTextSync);
 
-        // 红石控制区域
-        // 红石模式显示
-        builder.widget(
-            TextWidget.dynamicString(() -> cachedRedstoneModeText)
-                .setDefaultColor(COLOR_TEXT_WHITE.get())
-                .setPos(10, 68));
+        StringSyncValue euTextSync = new StringSyncValue(this::getCachedEUText, this::setCachedEUText);
+        syncManager.syncValue("cachedEUText", euTextSync);
 
-        // 切换红石模式按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            redstoneMode = (redstoneMode + 1) % 5; // 循环切换 0->1->2->3->4->0
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.toggle.redstone"))
-            .setPos(192, 67)
-            .setSize(16, 16));
+        StringSyncValue statusTextSync = new StringSyncValue(this::getCachedStatusText, this::setCachedStatusText);
+        syncManager.syncValue("cachedStatusText", statusTextSync);
 
-        // 红石输出状态显示
-        builder.widget(
-            TextWidget.dynamicString(() -> cachedRedstoneOutputText)
-                .setDefaultColor(COLOR_TEXT_WHITE.get())
-                .setPos(10, 82));
+        StringSyncValue redstoneModeTextSync = new StringSyncValue(
+            this::getCachedRedstoneModeText,
+            this::setCachedRedstoneModeText);
+        syncManager.syncValue("cachedRedstoneModeText", redstoneModeTextSync);
 
-        // 红石模式说明（动态更新）
-        builder.widget(
-            TextWidget.dynamicString(() -> cachedModeDescText)
-                .setDefaultColor(COLOR_TEXT_WHITE.get())
-                .setPos(10, 96));
+        StringSyncValue redstoneOutputTextSync = new StringSyncValue(
+            this::getCachedRedstoneOutputText,
+            this::setCachedRedstoneOutputText);
+        syncManager.syncValue("cachedRedstoneOutputText", redstoneOutputTextSync);
 
-        // 参数输入区域（使用按钮调整）
-        boolean paramsEnabled = redstoneMode > 0; // 关闭模式下禁用参数
-        boolean param2Enabled = paramsEnabled && (redstoneMode == 3 || redstoneMode == 4);
+        StringSyncValue modeDescTextSync = new StringSyncValue(
+            this::getCachedModeDescText,
+            this::setCachedModeDescText);
+        syncManager.syncValue("cachedModeDescText", modeDescTextSync);
 
-        // 参数1显示和调整
-        builder.widget(TextWidget.dynamicString(() -> {
-            String formattedValue = displayMode == 0 ? formatNormal(param1Value) : formatScientific(param1Value);
-            return translate("gtswn.ui.param1", formattedValue);
-        })
-            .setDefaultColor(paramsEnabled ? COLOR_TEXT_WHITE.get() : 0x808080)
-            .setPos(10, 110));
+        // === 构建主面板 ===
+        // 使用 GT 模板构建器：禁用物品栏、禁用 GT Logo、保留 cover tabs
+        ModularPanel panel = GTGuis.mteTemplatePanelBuilder(this, guiData, syncManager, uiSettings)
+            .setWidth(236)
+            .setHeight(150)
+            .doesBindPlayerInventory(false)
+            .doesAddGregTechLogo(false)
+            .build();
 
-        // 参数1控制按钮（始终添加，但根据模式启用/禁用）
-        int buttonY = 109;
-        int buttonStartX = 155;
-        int buttonSize = 8;
-        int buttonSpacing = 2;
+        // === 主内容列布局（padding 4px，子项间距 2px） ===
+        Flow column = Flow.column()
+            .full()
+            .padding(4)
+            .childPadding(2)
+            .crossAxisAlignment(com.cleanroommc.modularui.utils.Alignment.CrossAxis.START);
 
-        // - 按钮（减少最高位）
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            // 动态计算当前最高位的步长
-            long absParam1 = param1Value.abs()
-                .longValue();
-            long step = absParam1 > 0 ? (long) Math.pow(10, (int) Math.log10(absParam1)) : 1;
+        // 第 1 行：标题 + 切换模式按钮
+        column.child(
+            Flow.row()
+                .coverChildren()
+                .childPadding(4)
+                .child(
+                    IKey.lang("gtswn.ui.title")
+                        .asWidget())
+                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                    // 切换显示模式（0/1 之间切换）
+                    setDisplayMode(1 - getDisplayMode());
+                    return true;
+                })
+                    .background(GTGuiTextures.BUTTON_STANDARD)
+                    .size(16, 16)
+                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.mode")))));
 
-            // 特殊处理：当值为最高位本身时（如100、1000），退位到下一数量级
-            BigInteger newValue;
-            if (param1Value.equals(BigInteger.valueOf(step))) {
-                // 退位：100 -> 90, 1000 -> 900
-                long nextStep = step / 10;
-                if (nextStep < 1) nextStep = 1;
-                newValue = param1Value.subtract(BigInteger.valueOf(nextStep));
-            } else {
-                newValue = param1Value.subtract(BigInteger.valueOf(step));
-            }
+        // 第 2-7 行：6 个动态文本（模式/能量/状态/红石模式/红石输出/模式说明）
+        column.child(
+            IKey.dynamic(() -> cachedModeText)
+                .asWidget());
+        column.child(
+            IKey.dynamic(() -> cachedEUText)
+                .asWidget());
+        column.child(
+            IKey.dynamic(() -> cachedStatusText)
+                .asWidget());
 
-            if (newValue.compareTo(BigInteger.ZERO) >= 0) {
-                param1Value = newValue;
-                param1Text = param1Value.toString();
-                if (getBaseMetaTileEntity() != null) {
-                    getBaseMetaTileEntity().markDirty();
-                }
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param1.minus"))
-            .setPos(buttonStartX, buttonY)
-            .setSize(buttonSize, buttonSize));
+        // 红石模式行：文本 + 切换红石按钮
+        column.child(
+            Flow.row()
+                .coverChildren()
+                .childPadding(4)
+                .child(
+                    IKey.dynamic(() -> cachedRedstoneModeText)
+                        .asWidget())
+                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                    // 循环切换红石模式 0->1->2->3->4->0
+                    setRedstoneMode((getRedstoneMode() + 1) % 5);
+                    return true;
+                })
+                    .background(GTGuiTextures.BUTTON_STANDARD)
+                    .size(16, 16)
+                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.redstone")))));
 
-        // + 按钮（增加最高位）
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            // 动态计算当前最高位的步长
-            long absParam1 = param1Value.abs()
-                .longValue();
-            long step = absParam1 > 0 ? (long) Math.pow(10, (int) Math.log10(absParam1)) : 1;
+        column.child(
+            IKey.dynamic(() -> cachedRedstoneOutputText)
+                .asWidget());
+        column.child(
+            IKey.dynamic(() -> cachedModeDescText)
+                .asWidget());
 
-            param1Value = param1Value.add(BigInteger.valueOf(step));
-            param1Text = param1Value.toString();
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param1.plus"))
-            .setPos(buttonStartX + buttonSize + buttonSpacing, buttonY)
-            .setSize(buttonSize, buttonSize));
+        // 参数1行：标签 + 输入框（宽度 100px）
+        column.child(
+            Flow.row()
+                .coverChildren()
+                .childPadding(4)
+                .child(
+                    IKey.str(translate("gtswn.ui.param1", ""))
+                        .asWidget())
+                .child(
+                    new TextFieldWidget().formatAsInteger(true)
+                        .numbersLong(() -> 0L, () -> Long.MAX_VALUE)
+                        .size(100, 12)
+                        .value(param1Sync)));
 
-        // ×10 按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            param1Value = param1Value.multiply(BigInteger.TEN);
-            param1Text = param1Value.toString();
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param1.mul10"))
-            .setPos(buttonStartX + (buttonSize + buttonSpacing) * 2, buttonY)
-            .setSize(buttonSize, buttonSize));
+        // 参数2行：标签 + 输入框（宽度 100px，红石模式 0/1/2 下不禁用）
+        column.child(
+            Flow.row()
+                .coverChildren()
+                .childPadding(4)
+                .child(
+                    IKey.str(translate("gtswn.ui.param2", ""))
+                        .asWidget())
+                .child(
+                    new TextFieldWidget().formatAsInteger(true)
+                        .numbersLong(() -> 0L, () -> Long.MAX_VALUE)
+                        .size(100, 12)
+                        .value(param2Sync)));
 
-        // ÷10 按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            param1Value = param1Value.divide(BigInteger.TEN);
-            param1Text = param1Value.toString();
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param1.div10"))
-            .setPos(buttonStartX + (buttonSize + buttonSpacing) * 3, buttonY)
-            .setSize(buttonSize, buttonSize));
+        // 将列添加到面板
+        panel.child(column);
 
-        // 清零按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            param1Value = BigInteger.ZERO;
-            param1Text = "0";
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param1.reset"))
-            .setPos(buttonStartX + (buttonSize + buttonSpacing) * 4, buttonY)
-            .setSize(buttonSize, buttonSize));
+        return panel;
+    }
 
-        // 参数2显示和调整（仅在模式3和4时启用）
-        builder.widget(TextWidget.dynamicString(() -> {
-            String formattedValue = displayMode == 0 ? formatNormal(param2Value) : formatScientific(param2Value);
-            return translate("gtswn.ui.param2", formattedValue);
-        })
-            .setDefaultColor(param2Enabled ? COLOR_TEXT_WHITE.get() : 0x808080)
-            .setPos(10, 123));
+    // === UI 同步用的 getter/setter ===
 
-        // 参数2控制按钮（始终添加，但根据模式启用/禁用）
-        int buttonY2 = 122;
+    /**
+     * 获取显示模式（用于 IntSyncValue 同步）
+     */
+    public int getDisplayMode() {
+        return displayMode;
+    }
 
-        // - 按钮（减少最高位）
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            // 动态计算当前最高位的步长
-            long absParam2 = param2Value.abs()
-                .longValue();
-            long step = absParam2 > 0 ? (long) Math.pow(10, (int) Math.log10(absParam2)) : 1;
+    /**
+     * 设置显示模式（用于 IntSyncValue 同步）
+     */
+    public void setDisplayMode(int mode) {
+        this.displayMode = mode;
+        if (getBaseMetaTileEntity() != null) {
+            getBaseMetaTileEntity().markDirty();
+        }
+    }
 
-            // 特殊处理：当值为最高位本身时（如100、1000），退位到下一数量级
-            BigInteger newValue;
-            if (param2Value.equals(BigInteger.valueOf(step))) {
-                // 退位：100 -> 90, 1000 -> 900
-                long nextStep = step / 10;
-                if (nextStep < 1) nextStep = 1;
-                newValue = param2Value.subtract(BigInteger.valueOf(nextStep));
-            } else {
-                newValue = param2Value.subtract(BigInteger.valueOf(step));
-            }
+    /**
+     * 获取红石模式（用于 IntSyncValue 同步）
+     */
+    public int getRedstoneMode() {
+        return redstoneMode;
+    }
 
-            // 验证：参数2不能大于参数1，且不能小于0
-            if (newValue.compareTo(BigInteger.ZERO) >= 0 && newValue.compareTo(param1Value) <= 0) {
-                param2Value = newValue;
-                param2Text = param2Value.toString();
-                if (getBaseMetaTileEntity() != null) {
-                    getBaseMetaTileEntity().markDirty();
-                }
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param2.minus"))
-            .setPos(buttonStartX, buttonY2)
-            .setSize(buttonSize, buttonSize));
+    /**
+     * 设置红石模式（用于 IntSyncValue 同步）
+     */
+    public void setRedstoneMode(int mode) {
+        this.redstoneMode = mode;
+        if (getBaseMetaTileEntity() != null) {
+            getBaseMetaTileEntity().markDirty();
+        }
+    }
 
-        // + 按钮（增加最高位）
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            // 动态计算当前最高位的步长
-            long absParam2 = param2Value.abs()
-                .longValue();
-            long step = absParam2 > 0 ? (long) Math.pow(10, (int) Math.log10(absParam2)) : 1;
+    /**
+     * 获取参数1数值（用于 LongSyncValue 同步）
+     * <p>
+     * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，负数截断为 0。
+     */
+    public long getParam1Value() {
+        if (param1Value.compareTo(BigInteger.ZERO) < 0) {
+            return 0L;
+        }
+        return param1Value.min(BigInteger.valueOf(Long.MAX_VALUE))
+            .longValue();
+    }
 
-            BigInteger newValue = param2Value.add(BigInteger.valueOf(step));
-            // 验证：参数2不能大于参数1
-            if (newValue.compareTo(param1Value) <= 0) {
-                param2Value = newValue;
-                param2Text = param2Value.toString();
-                if (getBaseMetaTileEntity() != null) {
-                    getBaseMetaTileEntity().markDirty();
-                }
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param2.plus"))
-            .setPos(buttonStartX + buttonSize + buttonSpacing, buttonY2)
-            .setSize(buttonSize, buttonSize));
+    /**
+     * 设置参数1数值（用于 LongSyncValue 同步）
+     * <p>
+     * long 转 BigInteger：直接转换，并同步更新 param1Text。
+     */
+    public void setParam1Value(long val) {
+        if (val < 0) val = 0;
+        this.param1Value = BigInteger.valueOf(val);
+        this.param1Text = this.param1Value.toString();
+        if (getBaseMetaTileEntity() != null) {
+            getBaseMetaTileEntity().markDirty();
+        }
+    }
 
-        // ×10 按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            BigInteger newValue = param2Value.multiply(BigInteger.TEN);
-            // 验证：参数2不能大于参数1
-            if (newValue.compareTo(param1Value) <= 0) {
-                param2Value = newValue;
-                param2Text = param2Value.toString();
-                if (getBaseMetaTileEntity() != null) {
-                    getBaseMetaTileEntity().markDirty();
-                }
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param2.mul10"))
-            .setPos(buttonStartX + (buttonSize + buttonSpacing) * 2, buttonY2)
-            .setSize(buttonSize, buttonSize));
+    /**
+     * 获取参数2数值（用于 LongSyncValue 同步）
+     * <p>
+     * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，负数截断为 0。
+     */
+    public long getParam2Value() {
+        if (param2Value.compareTo(BigInteger.ZERO) < 0) {
+            return 0L;
+        }
+        return param2Value.min(BigInteger.valueOf(Long.MAX_VALUE))
+            .longValue();
+    }
 
-        // ÷10 按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            param2Value = param2Value.divide(BigInteger.TEN);
-            param2Text = param2Value.toString();
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param2.div10"))
-            .setPos(buttonStartX + (buttonSize + buttonSpacing) * 3, buttonY2)
-            .setSize(buttonSize, buttonSize));
+    /**
+     * 设置参数2数值（用于 LongSyncValue 同步）
+     * <p>
+     * long 转 BigInteger：直接转换，并同步更新 param2Text。
+     */
+    public void setParam2Value(long val) {
+        if (val < 0) val = 0;
+        this.param2Value = BigInteger.valueOf(val);
+        this.param2Text = this.param2Value.toString();
+        if (getBaseMetaTileEntity() != null) {
+            getBaseMetaTileEntity().markDirty();
+        }
+    }
 
-        // 清零按钮
-        builder.widget(new ButtonWidget().setOnClick((clickData, widget) -> {
-            param2Value = BigInteger.ZERO;
-            param2Text = "0";
-            if (getBaseMetaTileEntity() != null) {
-                getBaseMetaTileEntity().markDirty();
-            }
-        })
-            .setPlayClickSound(true)
-            .setBackground(GTUITextures.BUTTON_STANDARD)
-            .addTooltip(translate("gtswn.ui.tooltip.param2.reset"))
-            .setPos(buttonStartX + (buttonSize + buttonSpacing) * 4, buttonY2)
-            .setSize(buttonSize, buttonSize));
+    /**
+     * 获取模式文本（用于 StringSyncValue 同步）
+     */
+    public String getCachedModeText() {
+        return cachedModeText;
+    }
 
-        // 同步数据到客户端
-        builder.widget(new FakeSyncWidget.IntegerSyncer(() -> displayMode, val -> displayMode = val));
-        builder.widget(new FakeSyncWidget.StringSyncer(() -> cachedModeText, val -> cachedModeText = val));
-        builder.widget(new FakeSyncWidget.StringSyncer(() -> cachedEUText, val -> cachedEUText = val));
-        builder.widget(new FakeSyncWidget.StringSyncer(() -> cachedStatusText, val -> cachedStatusText = val));
-        builder.widget(new FakeSyncWidget.IntegerSyncer(() -> redstoneMode, val -> redstoneMode = val));
-        builder.widget(new FakeSyncWidget.StringSyncer(() -> param1Text, val -> param1Text = val));
-        builder.widget(new FakeSyncWidget.StringSyncer(() -> param2Text, val -> param2Text = val));
+    /**
+     * 设置模式文本（用于 StringSyncValue 同步）
+     */
+    public void setCachedModeText(String text) {
+        this.cachedModeText = text;
+    }
+
+    /**
+     * 获取能量文本（用于 StringSyncValue 同步）
+     */
+    public String getCachedEUText() {
+        return cachedEUText;
+    }
+
+    /**
+     * 设置能量文本（用于 StringSyncValue 同步）
+     */
+    public void setCachedEUText(String text) {
+        this.cachedEUText = text;
+    }
+
+    /**
+     * 获取状态文本（用于 StringSyncValue 同步）
+     */
+    public String getCachedStatusText() {
+        return cachedStatusText;
+    }
+
+    /**
+     * 设置状态文本（用于 StringSyncValue 同步）
+     */
+    public void setCachedStatusText(String text) {
+        this.cachedStatusText = text;
+    }
+
+    /**
+     * 获取红石模式文本（用于 StringSyncValue 同步）
+     */
+    public String getCachedRedstoneModeText() {
+        return cachedRedstoneModeText;
+    }
+
+    /**
+     * 设置红石模式文本（用于 StringSyncValue 同步）
+     */
+    public void setCachedRedstoneModeText(String text) {
+        this.cachedRedstoneModeText = text;
+    }
+
+    /**
+     * 获取红石输出文本（用于 StringSyncValue 同步）
+     */
+    public String getCachedRedstoneOutputText() {
+        return cachedRedstoneOutputText;
+    }
+
+    /**
+     * 设置红石输出文本（用于 StringSyncValue 同步）
+     */
+    public void setCachedRedstoneOutputText(String text) {
+        this.cachedRedstoneOutputText = text;
+    }
+
+    /**
+     * 获取模式说明文本（用于 StringSyncValue 同步）
+     */
+    public String getCachedModeDescText() {
+        return cachedModeDescText;
+    }
+
+    /**
+     * 设置模式说明文本（用于 StringSyncValue 同步）
+     */
+    public void setCachedModeDescText(String text) {
+        this.cachedModeDescText = text;
     }
 
     // 获取红石模式文本
@@ -862,8 +985,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
         }
         // 保存 EU/t 计算状态（用于红石功能）
         aNBT.setDouble("euPerTick", euPerTick);
-        aNBT.setInteger("unchangedCount", unchangedCount);
         // 保存测量历史（用于红石功能）
+        // 注：unchangedCount 已废弃（300s 窗口均值算法不再使用），不再持久化
         NBTTagCompound historyTag = new NBTTagCompound();
         for (int i = 0; i < measurementHistory.size(); i++) {
             Measurement m = measurementHistory.get(i);
@@ -903,7 +1026,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
         }
         // 加载 EU/t 计算状态（用于红石功能）
         euPerTick = aNBT.getDouble("euPerTick");
-        unchangedCount = aNBT.getInteger("unchangedCount");
+        // 注：unchangedCount 已废弃（300s 窗口均值算法不再使用），不再读取
         // 加载测量历史（用于红石功能）
         if (aNBT.hasKey("measurementHistory")) {
             NBTTagCompound historyTag = aNBT.getCompoundTag("measurementHistory");
@@ -915,6 +1038,13 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor {
                 BigInteger value = new BigInteger(measTag.getString("value"));
                 measurementHistory.add(new Measurement(tick, value));
             }
+        }
+        // 加载后立即清理过期样本（用户决策8：NBT兼容，加载后立即 purgeExpired 过滤窗口外样本）
+        // 若世界尚未初始化，则跳过，等首次 onPostTick 时由 calculateEUT 内部清理
+        if (getBaseMetaTileEntity() != null && getBaseMetaTileEntity().getWorld() != null) {
+            long currentTick = getBaseMetaTileEntity().getWorld()
+                .getTotalWorldTime();
+            purgeExpired(currentTick);
         }
         // 注意：lastWirelessEU 不需要保存，因为退出重进后会重新从 WirelessNetworkManager 获取
 

@@ -331,5 +331,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         aList.add("");
         // 操作提示
         aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.usage"));
+        // Baubles 饰品栏装备提示（Baubles 为可选依赖，文案中保留原名便于玩家识别）
+        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.baubles.equip"));
     }
 }

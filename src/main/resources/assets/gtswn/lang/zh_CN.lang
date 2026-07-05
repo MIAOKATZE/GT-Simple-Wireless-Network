@@ -79,6 +79,11 @@ gtswn.tooltip.monitor.hud.mode.off=§cHUD: 关闭
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: 常规计数
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: 科学计数
 gtswn.tooltip.monitor.usage=§7右键切换 HUD 模式
+gtswn.tooltip.monitor.baubles.equip=§7可在 Baubles 饰品栏任意槽位装备
+
+# NC2 工业信息屏信息（通过 GT 传感器套件）
+gtswn.info.energy=§7能量: %s
+gtswn.info.status=§7状态: %s
 
 # Chat Messages
 gtswn.chat.monitor.bound=§a[便携监测终端] 已绑定拥有者: %s

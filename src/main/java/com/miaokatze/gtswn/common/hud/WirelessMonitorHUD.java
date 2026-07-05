@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.hud;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 
@@ -46,7 +47,7 @@ public class WirelessMonitorHUD extends Gui {
     /** 服务端同步过来的 EU BigInteger 缓存（供 updateCache 判断首次进入用，渲染实际读 cachedEUText） */
     private static BigInteger syncedEu = BigInteger.ZERO;
 
-    /** 历史测量记录列表（只记录发生变化的点） */
+    /** 历史测量记录列表（每次检测都记录，保证窗口内足够样本） */
     private static List<Measurement> measurementHistory = new ArrayList<>();
 
     /** 缓存的 EU/t 文本 */
@@ -55,14 +56,11 @@ public class WirelessMonitorHUD extends Gui {
     /** 上次计算的 EU/t 值（用于保持稳定状态显示） */
     private static double lastCalculatedEUT = 0.0;
 
-    /** 连续无变化的检测次数 */
-    private static int unchangedCount = 0;
+    /** HUD 更新间隔（ticks），每 600 ticks（30 秒）更新一次 */
+    private static final int UPDATE_INTERVAL = 600;
 
-    /** 最大无变化检测次数（超过此值显示“暂无变化”） */
-    private static final int MAX_UNCHANGED_COUNT = 60;
-
-    /** HUD 更新间隔（ticks），每 200 ticks（10 秒）更新一次 */
-    private static final int UPDATE_INTERVAL = 200;
+    /** EU/t 均值计算窗口（ticks），6000 ticks = 300 秒 */
+    private static final long WINDOW_TICKS = 6000L;
 
     /** 背包遍历间隔（ticks），每 20 ticks（1 秒）检查一次 */
     private static final int INVENTORY_CHECK_INTERVAL = 20;
@@ -131,7 +129,6 @@ public class WirelessMonitorHUD extends Gui {
         cachedEUTText = "";
         lastCalculatedEUT = 0.0;
         measurementHistory.clear();
-        unchangedCount = 0;
         lastUpdateTick = 0;
         lastInventoryCheckTick = 0;
         hudEnabled = false;
@@ -187,7 +184,6 @@ public class WirelessMonitorHUD extends Gui {
                     if (hudEnabled) {
                         lastUpdateTick = 0;
                         measurementHistory.clear();
-                        unchangedCount = 0;
 
                         // 立即更新一次缓存
                         try {
@@ -457,61 +453,62 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
-     * 记录测量历史（只记录发生变化的点）
+     * 记录测量历史（每次检测都记录，不再判断是否变化）
+     * <p>
+     * 改动意图：保证 300 秒窗口内有足够样本支撑首末两点斜率算法。
+     * 每次记录后立即调用 purgeExpired 清理窗口外样本。
      */
     private static void recordMeasurement(long tick, BigInteger value) {
-        // 如果历史记录为空，直接添加
-        if (measurementHistory.isEmpty()) {
-            measurementHistory.add(new Measurement(tick, value));
-            unchangedCount = 0;
-            return;
-        }
+        if (value == null) return;
+        measurementHistory.add(new Measurement(tick, value));
+        // 老化：清理窗口外样本（tick < currentTick - WINDOW_TICKS）
+        purgeExpired(tick);
+    }
 
-        // 获取最新的测量值
-        Measurement latest = measurementHistory.get(measurementHistory.size() - 1);
-
-        // 只有当值发生变化时才记录
-        if (!latest.value.equals(value)) {
-            measurementHistory.add(new Measurement(tick, value));
-            unchangedCount = 0; // 重置计数器
-
-            // 保留最近 10 次变化记录（足够计算）
-            if (measurementHistory.size() > 10) {
-                measurementHistory.remove(0);
+    /**
+     * 老化过期样本：淘汰 tick &lt; currentTick - WINDOW_TICKS 的样本
+     * <p>
+     * 列表按时间顺序追加，遇到第一个未过期样本即可停止遍历。
+     */
+    private static void purgeExpired(long currentTick) {
+        long cutoff = currentTick - WINDOW_TICKS;
+        Iterator<Measurement> it = measurementHistory.iterator();
+        while (it.hasNext()) {
+            if (it.next().tick < cutoff) {
+                it.remove();
+            } else {
+                break; // 列表按时间顺序，遇到第一个未过期即可停止
             }
-        } else {
-            // 值没有变化，增加计数器
-            unchangedCount++;
         }
     }
 
     /**
-     * 计算 EU/t（每秒能量变化率，dEU/dt）
+     * 计算 EU/t（300 秒窗口首末两点斜率法）
+     * <p>
+     * 算法：(lastValue - firstValue) / (lastTick - firstTick)
+     * 边界情况：
+     * <ul>
+     * <li>历史为空或仅 1 个点：返回 0.0（显示 "0.00" EU/t）</li>
+     * <li>首末 tick 相同（tickDiff &lt;= 0）：返回 0.0</li>
+     * <li>长期无变化：显示 "0.00" EU/t（不再显示"暂无变化"）</li>
+     * </ul>
+     * 显示文本末尾追加灰色 [300s avg] 标注，表明这是 300 秒窗口均值。
      */
     private static String calculateEUT(long currentTick) {
-        // 如果连续无变化次数超过阈值，显示“暂无变化”
-        if (unchangedCount >= MAX_UNCHANGED_COUNT) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                + ": §f"
-                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
+        // 先清理窗口外样本
+        purgeExpired(currentTick);
+
+        // 计算 300 秒窗口首末两点斜率
+        double euPerTick = 0.0;
+        if (measurementHistory.size() >= 2) {
+            Measurement first = measurementHistory.get(0);
+            Measurement last = measurementHistory.get(measurementHistory.size() - 1);
+            long tickDiff = last.tick - first.tick;
+            if (tickDiff > 0) {
+                BigInteger diff = last.value.subtract(first.value);
+                euPerTick = diff.doubleValue() / tickDiff;
+            }
         }
-
-        if (measurementHistory.size() < 2) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                + ": §f"
-                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
-        }
-
-        // 获取最新的两个变化点
-        Measurement latest = measurementHistory.get(measurementHistory.size() - 1);
-        Measurement previous = measurementHistory.get(measurementHistory.size() - 2);
-
-        // 计算差值和时间间隔
-        BigInteger diff = latest.value.subtract(previous.value);
-        long tickDiff = latest.tick - previous.tick;
-
-        // 计算 EU/t（diff / tickDiff）
-        double euPerTick = diff.doubleValue() / tickDiff;
 
         // 更新上次计算的 EU/t 值
         lastCalculatedEUT = euPerTick;
@@ -520,9 +517,13 @@ public class WirelessMonitorHUD extends Gui {
         String euPerTickStr;
         if (displayMode == 2) {
             // 科学计数法（10^幂格式）
-            int exponent = (int) Math.floor(Math.log10(Math.abs(euPerTick)));
-            double coefficient = euPerTick / Math.pow(10, exponent);
-            euPerTickStr = String.format("%.2f×10^%d", coefficient, exponent);
+            if (Math.abs(euPerTick) < 0.01) {
+                euPerTickStr = "0.00";
+            } else {
+                int exponent = (int) Math.floor(Math.log10(Math.abs(euPerTick)));
+                double coefficient = euPerTick / Math.pow(10, exponent);
+                euPerTickStr = String.format("%.2f×10^%d", coefficient, exponent);
+            }
         } else {
             // 常规计数
             if (Math.abs(euPerTick) < 0.01) {
@@ -562,7 +563,10 @@ public class WirelessMonitorHUD extends Gui {
             status = "§f= 0.00 " + StatCollector.translateToLocal("gtswn.hud.eut.unit");
         }
 
-        return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status;
+        // 追加 [300s avg] 灰色标注，表明这是 300 秒窗口均值
+        String avgTag = " §7[300s avg]";
+
+        return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status + avgTag;
     }
 
     /**

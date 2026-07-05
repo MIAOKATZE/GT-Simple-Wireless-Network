@@ -7,11 +7,12 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.common.util.ForgeDirection;
 
-import com.gtnewhorizons.modularui.api.screen.ModularWindow;
-import com.gtnewhorizons.modularui.api.screen.UIBuildContext;
+import com.cleanroommc.modularui.factory.PosGuiData;
+import com.cleanroommc.modularui.screen.ModularPanel;
+import com.cleanroommc.modularui.screen.UISettings;
+import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
-import gregtech.api.interfaces.modularui.IAddUIWidgets;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.MetaTileEntity;
 
@@ -53,7 +54,7 @@ import gregtech.api.metatileentity.MetaTileEntity;
  * }
  * </pre>
  */
-public abstract class MTEMonitor extends MetaTileEntity implements IAddUIWidgets {
+public abstract class MTEMonitor extends MetaTileEntity {
 
     // === 核心字段 ===
 
@@ -237,15 +238,31 @@ public abstract class MTEMonitor extends MetaTileEntity implements IAddUIWidgets
     }
 
     /**
-     * 添加 UI 组件到 ModularUI 窗口
+     * 启用 ModularUI 2
      * <p>
-     * 子类可在此方法中添加文本、按钮、进度条等 Widget
+     * 监视器类机器默认使用 MUI2 框架（保留 cover tabs 支持），子类可覆盖此方法返回 false 以回退到 MUI1。
      *
-     * @param builder      UI 构建器
-     * @param buildContext UI 构建上下文
+     * @return 默认返回 true
      */
-    public void addUIWidgets(ModularWindow.Builder builder, UIBuildContext buildContext) {
-        // 默认空实现，子类按需添加 Widget
+    @Override
+    protected boolean useMui2() {
+        return true;
+    }
+
+    /**
+     * 构建 ModularUI 2 主面板
+     * <p>
+     * 子类按需覆盖此方法以构建自定义 GUI。基类返回 null，表示由子类负责具体实现。
+     *
+     * @param guiData     GUI 位置数据
+     * @param syncManager 同步管理器
+     * @param uiSettings  UI 设置
+     * @return 主面板，基类默认返回 null
+     */
+    @Override
+    public ModularPanel buildUI(PosGuiData guiData, PanelSyncManager syncManager, UISettings uiSettings) {
+        // 默认空实现，子类按需覆盖
+        return null;
     }
 
     // === 生命周期钩子 ===

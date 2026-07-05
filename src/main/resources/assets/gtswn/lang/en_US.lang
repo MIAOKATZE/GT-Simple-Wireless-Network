@@ -82,6 +82,11 @@ gtswn.tooltip.monitor.hud.mode.off=§cHUD: Off
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: Normal
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: Scientific
 gtswn.tooltip.monitor.usage=§7Right-click to toggle HUD mode
+gtswn.tooltip.monitor.baubles.equip=§7Can be equipped in any Baubles slot
+
+# NC2 Industrial Information Panel Info (via GT Sensor Kit)
+gtswn.info.energy=§7Energy: %s
+gtswn.info.status=§7Status: %s
 
 # Chat Messages
 gtswn.chat.monitor.bound=§a[Portable Monitor] Bound to owner: %s
