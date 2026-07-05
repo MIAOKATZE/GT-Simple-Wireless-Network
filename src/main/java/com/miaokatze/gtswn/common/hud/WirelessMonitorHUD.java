@@ -488,26 +488,30 @@ public class WirelessMonitorHUD extends Gui {
      * 算法：(lastValue - firstValue) / (lastTick - firstTick)
      * 边界情况：
      * <ul>
-     * <li>历史为空或仅 1 个点：返回 0.0（显示 "0.00" EU/t）</li>
+     * <li>历史为空或仅 1 个点：显示"无变化/计算中"</li>
      * <li>首末 tick 相同（tickDiff &lt;= 0）：返回 0.0</li>
-     * <li>长期无变化：显示 "0.00" EU/t（不再显示"暂无变化"）</li>
+     * <li>已记录但无变化：显示 "0.00" EU/t</li>
      * </ul>
-     * 显示文本末尾追加灰色 [300s avg] 标注，表明这是 300 秒窗口均值。
      */
     private static String calculateEUT(long currentTick) {
         // 先清理窗口外样本
         purgeExpired(currentTick);
 
+        // 未记录前（窗口内样本不足）显示"无变化/计算中"
+        if (measurementHistory.size() < 2) {
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
+                + ": §f"
+                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
+        }
+
         // 计算 300 秒窗口首末两点斜率
         double euPerTick = 0.0;
-        if (measurementHistory.size() >= 2) {
-            Measurement first = measurementHistory.get(0);
-            Measurement last = measurementHistory.get(measurementHistory.size() - 1);
-            long tickDiff = last.tick - first.tick;
-            if (tickDiff > 0) {
-                BigInteger diff = last.value.subtract(first.value);
-                euPerTick = diff.doubleValue() / tickDiff;
-            }
+        Measurement first = measurementHistory.get(0);
+        Measurement last = measurementHistory.get(measurementHistory.size() - 1);
+        long tickDiff = last.tick - first.tick;
+        if (tickDiff > 0) {
+            BigInteger diff = last.value.subtract(first.value);
+            euPerTick = diff.doubleValue() / tickDiff;
         }
 
         // 更新上次计算的 EU/t 值
@@ -563,10 +567,7 @@ public class WirelessMonitorHUD extends Gui {
             status = "§f= 0.00 " + StatCollector.translateToLocal("gtswn.hud.eut.unit");
         }
 
-        // 追加 [300s avg] 灰色标注，表明这是 300 秒窗口均值
-        String avgTag = " §7[300s avg]";
-
-        return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status + avgTag;
+        return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status;
     }
 
     /**
