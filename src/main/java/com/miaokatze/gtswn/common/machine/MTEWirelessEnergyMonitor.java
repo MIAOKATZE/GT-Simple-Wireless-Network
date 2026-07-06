@@ -337,10 +337,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * 与 HUD 版 {@code WirelessMonitorHUD.calculateEUT} 保持一致的显示逻辑：
      * <ul>
      * <li>历史为空或仅 1 个点（size &lt; 2）：显示"无变化/计算中"，euPerTick 设为 0</li>
-     * <li>首末 tick 相同（tickDiff &lt;= 0）：euPerTick 设为 0，显示"= 0.00 EU/t"</li>
+     * <li>首末 tick 相同（tickDiff &lt;= 0）：euPerTick 设为 0，显示"无变化/计算中"</li>
      * <li>euPerTick &gt; 0：显示"↑ +X EU/t（GT电压等级）"</li>
      * <li>euPerTick &lt; 0：显示"↓ X EU/t（GT电压等级）"</li>
-     * <li>euPerTick == 0 且 size &gt;= 2：显示"= 0.00 EU/t"（有数据但无变化）</li>
+     * <li>euPerTick == 0 且 size &gt;= 2：显示"无变化/计算中"（对齐 HUD 版逻辑，不再显示"= 0.00 EU/t"）</li>
      * </ul>
      * 同时更新 {@link #euPerTick} 字段（用于红石功能）。
      *
@@ -383,8 +383,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             gtPowerText = formatGTPower(Math.abs(eut));
             return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
         } else {
-            // euPerTick == 0：有数据但无变化，显示"= 0.00 EU/t"（对齐 HUD 版逻辑）
-            return translate("gtswn.ui.network.status.zero");
+            // euPerTick == 0：有数据但无变化，显示"暂无变化/计算中"（对齐 HUD 版逻辑，不再显示"= 0.00 EU/t"）
+            return translate("gtswn.ui.network.status.nochange");
         }
     }
 
@@ -721,16 +721,19 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             .build();
 
         // === 主内容列布局（padding: 上4 右4 下4 左14，左侧多10px让文字离UI框左边缘更远） ===
+        // v1.1.10 修复：childPadding 从 2 改为 0，消除行间额外间距（行高已由各 row 的 height() 显式控制）
         Flow column = Flow.column()
             .full()
             .padding(4, 4, 4, 14)
-            .childPadding(2)
+            .childPadding(0)
             .crossAxisAlignment(Alignment.CrossAxis.START);
 
         // 第 1 行：标题 + 切换模式按钮（SPACE_BETWEEN 让标题在左、按钮在右）
+        // v1.1.10 修复：显式 height(16) 紧贴按钮高度，避免行高被拉大
         column.child(
             Flow.row()
                 .widthRel(1f)
+                .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
@@ -755,9 +758,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .asWidget());
         // 电网容量行 + 锚定按钮1（点击设置 anchorMode=0：电网电量）
         // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
+        // v1.1.10 修复：显式 height(16) 紧贴按钮高度
         column.child(
             Flow.row()
                 .widthRel(1f)
+                .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
@@ -775,9 +780,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         // 电网状态行 + 锚定按钮2（点击设置 anchorMode=1：电网状态 EU/t）
         // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
+        // v1.1.10 修复：显式 height(16) 紧贴按钮高度
         column.child(
             Flow.row()
                 .widthRel(1f)
+                .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
@@ -794,9 +801,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
 
         // 红石模式行：文本 + 切换红石按钮
+        // v1.1.10 修复：显式 height(16) 紧贴按钮高度
         column.child(
             Flow.row()
                 .widthRel(1f)
+                .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
@@ -823,9 +832,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         // 参数1行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
         // 输入框加宽到 110px、加高到 17px
+        // v1.1.10 修复：显式 height(17) 对齐输入框高度
         column.child(
             Flow.row()
                 .widthRel(1f)
+                .height(17)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .child(
                     // 左组：标签 + 输入框
@@ -902,9 +913,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         // 参数2行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
         // 输入框加宽到 110px、加高到 17px
+        // v1.1.10 修复：显式 height(17) 对齐输入框高度
         column.child(
             Flow.row()
                 .widthRel(1f)
+                .height(17)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .child(
                     // 左组：标签 + 输入框
@@ -1255,6 +1268,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         aNBT.setInteger("redstoneMode", redstoneMode);
         // 保存红石检测时间戳（用于跨加载持续 0.1s 响应）
         aNBT.setLong("lastRedstoneCheckTick", lastRedstoneCheckTick);
+        // 保存 UI/EUt 检测时间戳（v1.1.10 修复：避免加载后 lastCheckTick=0 导致首次 onPostTick 立即触发，
+        // 用 NBT 旧样本与当前样本计算 eut，若两者值相同则 eut=0 显示"= 0.00 EU/t"）
+        aNBT.setLong("lastCheckTick", lastCheckTick);
         // 保存锚定参数模式（0=电网电量，1=电网状态）
         aNBT.setInteger("anchorMode", anchorMode);
         aNBT.setString("param1Text", param1Text);
@@ -1303,6 +1319,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         redstoneMode = aNBT.getInteger("redstoneMode");
         // 加载红石检测时间戳（用于跨加载持续 0.1s 响应）
         lastRedstoneCheckTick = aNBT.getLong("lastRedstoneCheckTick");
+        // 加载 UI/EUt 检测时间戳（v1.1.10 修复：避免加载后立即用 NBT 旧样本计算 eut）
+        // 旧存档无此键时 getLong 返回 0，回退到原行为（首次 onPostTick 立即触发），兼容性 OK
+        lastCheckTick = aNBT.getLong("lastCheckTick");
         // 加载锚定参数模式（0=电网电量，1=电网状态）
         anchorMode = aNBT.getInteger("anchorMode");
         param1Text = aNBT.getString("param1Text");

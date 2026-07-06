@@ -37,7 +37,6 @@ gtswn.ui.wireless.energy.scientific=§b无线电网能量: §f%s §bEU
 gtswn.ui.network.status.up=§b电网状态: §a↑ +%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.down=§b电网状态: §c↓ -%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.nochange=§b电网状态: §f暂无变化/计算中
-gtswn.ui.network.status.zero=§b电网状态: §f= 0.00 EU/t
 gtswn.ui.redstone.mode=§b红石模式: §f%s
 gtswn.ui.redstone.mode.off=关闭
 gtswn.ui.redstone.mode.high=高电平
