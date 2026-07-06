@@ -36,7 +36,7 @@ gtswn.desc.wireless_monitor.line3=§9From MOD: GTSimpleWirelessNetwork
 # Wireless Energy Monitor UI
 gtswn.ui.title=Wireless Energy Monitor
 gtswn.ui.mode.normal=§bMode: §fNormal
-gtswn.ui.mode.scientific=§eMode: §fScientific
+gtswn.ui.mode.scientific=§bMode: §fScientific
 gtswn.ui.wireless.energy=§bWireless Network: §f%s §bEU
 gtswn.ui.wireless.energy.scientific=§bWireless Network: §f%s §bEU
 gtswn.ui.network.status.up=§bNetwork Status: §a↑ +%s §bEU/t (§f%s§b)
@@ -59,6 +59,7 @@ gtswn.ui.param1=§bParam1: §f%s
 gtswn.ui.param2=§bParam2: §f%s
 gtswn.ui.tooltip.toggle.mode=Toggle counting mode
 gtswn.ui.tooltip.toggle.redstone=Toggle redstone mode
+gtswn.ui.tooltip.toggle.anchor=Toggle anchor parameter (Energy/Status)
 gtswn.ui.tooltip.param1.minus=Param1 -Highest digit
 gtswn.ui.tooltip.param1.plus=Param1 +Highest digit
 gtswn.ui.tooltip.param1.mul10=Param1 ×10

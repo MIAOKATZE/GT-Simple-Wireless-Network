@@ -12,6 +12,7 @@ import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
@@ -136,6 +137,60 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
+     * 将当前 measurementHistory 保存到物品 NBT
+     * <p>
+     * 在玩家退出世界、切维度或失去监视器时调用，确保历史不丢失。
+     * 格式参考机器版 MTEWirelessEnergyMonitor.saveNBTData：count + m{i}(tick + value 字符串)
+     *
+     * @param stack 便携式监视器物品栈（可为 null）
+     */
+    public static void saveHistoryToItemStack(ItemStack stack) {
+        // 物品栈为空或不是便携式监视器，直接返回
+        if (stack == null || !(stack.getItem() instanceof PortableWirelessNetworkMonitor)) return;
+        // 确保 NBT 已初始化
+        if (stack.stackTagCompound == null) stack.stackTagCompound = new NBTTagCompound();
+        // 构造历史记录 NBT
+        NBTTagCompound historyTag = new NBTTagCompound();
+        historyTag.setInteger("count", measurementHistory.size());
+        for (int i = 0; i < measurementHistory.size(); i++) {
+            Measurement m = measurementHistory.get(i);
+            NBTTagCompound measTag = new NBTTagCompound();
+            measTag.setLong("tick", m.tick);
+            // BigInteger 以字符串形式存储（避免符号位/字节数组兼容性问题）
+            measTag.setString("value", m.value.toString());
+            historyTag.setTag("m" + i, measTag);
+        }
+        stack.stackTagCompound.setTag("measurementHistory", historyTag);
+    }
+
+    /**
+     * 从物品 NBT 加载 measurementHistory（找到监视器后调用）
+     * <p>
+     * 加载后立即 purgeExpired 清理窗口外样本（参考机器版第1166-1170行）。
+     * 如果 NBT 中无 measurementHistory 键，不做任何操作（首次使用）。
+     *
+     * @param stack       便携式监视器物品栈（可为 null）
+     * @param currentTick 当前世界 tick（用于清理过期样本）
+     */
+    public static void loadHistoryFromItemStack(ItemStack stack, long currentTick) {
+        // 物品栈为空或不是便携式监视器，直接返回
+        if (stack == null || !(stack.getItem() instanceof PortableWirelessNetworkMonitor)) return;
+        // NBT 不存在或无历史记录键，直接返回（首次使用）
+        if (stack.stackTagCompound == null || !stack.stackTagCompound.hasKey("measurementHistory")) return;
+        NBTTagCompound historyTag = stack.stackTagCompound.getCompoundTag("measurementHistory");
+        int count = historyTag.getInteger("count");
+        measurementHistory.clear();
+        for (int i = 0; i < count; i++) {
+            NBTTagCompound measTag = historyTag.getCompoundTag("m" + i);
+            long tick = measTag.getLong("tick");
+            BigInteger value = new BigInteger(measTag.getString("value"));
+            measurementHistory.add(new Measurement(tick, value));
+        }
+        // 加载后清理过期样本
+        purgeExpired(currentTick);
+    }
+
+    /**
      * 渲染游戏覆盖层事件处理器
      * 在饱食度上方绘制无线电网能量信息
      */
@@ -153,14 +208,19 @@ public class WirelessMonitorHUD extends Gui {
             return;
         }
 
+        EntityPlayer player = mc.thePlayer;
+
         // 检测世界切换，清空缓存
         int worldId = mc.theWorld.provider.dimensionId;
         if (worldId != currentWorldId) {
+            // 切维度前保存历史到物品栈（断点续传）
+            ItemStack monitorStack = findMonitorStackInInventory(player);
+            if (monitorStack != null) {
+                saveHistoryToItemStack(monitorStack);
+            }
             clearCache();
             currentWorldId = worldId;
         }
-
-        EntityPlayer player = mc.thePlayer;
 
         // 获取世界时间
         long currentTick = mc.theWorld.getTotalWorldTime();
@@ -180,10 +240,16 @@ public class WirelessMonitorHUD extends Gui {
                     displayMode = hudMode;
                     hudEnabled = hudMode > 0;
 
-                    // 如果 HUD 开启，重置更新时间和历史，强制立即更新
+                    // 如果 HUD 开启，从物品 NBT 加载历史（断点续传），重置更新时间强制立即更新
                     if (hudEnabled) {
                         lastUpdateTick = 0;
-                        measurementHistory.clear();
+                        // 从物品栈加载历史测量数据（替代原来的 clear）
+                        ItemStack monitorStack = findMonitorStackInInventory(player);
+                        if (monitorStack != null) {
+                            loadHistoryFromItemStack(monitorStack, currentTick);
+                        } else {
+                            measurementHistory.clear();
+                        }
 
                         // 立即更新一次缓存
                         try {
@@ -196,6 +262,9 @@ public class WirelessMonitorHUD extends Gui {
             } else {
                 // 没找到监测终端，关闭 HUD
                 if (hudEnabled) {
+                    // 失去监视器前无法保存历史到物品栈（此时找不到栈），
+                    // 历史会随 clearCache 丢失。这是可接受的——
+                    // 玩家主动丢弃/放入箱子后历史无意义。
                     hudEnabled = false;
                     cachedOwnerUUID = null;
                     displayMode = 0;
@@ -312,6 +381,55 @@ public class WirelessMonitorHUD extends Gui {
                         String uuid = stack.stackTagCompound.getString("OwnerUUID");
                         return uuid;
                     }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 遍历玩家背包查找便携监测终端（返回物品栈版本）
+     * <p>
+     * 与 {@link #findMonitorInInventory(EntityPlayer)} 扫描顺序一致：
+     * 主手 → Baubles 饰品栏 → 背包槽位（0-35）。
+     * 用于 NBT 历史读写时需要操作具体物品栈的场景。
+     *
+     * @param player 玩家实体
+     * @return 已绑定的监视器物品栈，未找到返回 null
+     */
+    private ItemStack findMonitorStackInInventory(EntityPlayer player) {
+        // 检查主手
+        ItemStack heldItem = player.getHeldItem();
+        if (heldItem != null && heldItem.getItem() instanceof PortableWirelessNetworkMonitor) {
+            if (isMonitorBound(heldItem)) {
+                return heldItem;
+            }
+        }
+
+        // --- 饰品栏扫描（Baubles 不存在时安全降级） ---
+        try {
+            IInventory baubles = BaublesApi.getBaubles(player);
+            if (baubles != null) {
+                for (int i = 0; i < baubles.getSizeInventory(); i++) {
+                    ItemStack baubleStack = baubles.getStackInSlot(i);
+                    if (baubleStack != null && baubleStack.getItem() instanceof PortableWirelessNetworkMonitor) {
+                        if (isMonitorBound(baubleStack)) {
+                            return baubleStack;
+                        }
+                    }
+                }
+            }
+        } catch (NoClassDefFoundError ignored) {
+            // Baubles 未安装，跳过饰品栏扫描
+        }
+
+        // 遍历背包槽位（0-35）
+        for (int i = 0; i < player.inventory.mainInventory.length; i++) {
+            ItemStack stack = player.inventory.mainInventory[i];
+            if (stack != null && stack.getItem() instanceof PortableWirelessNetworkMonitor) {
+                if (isMonitorBound(stack)) {
+                    return stack;
                 }
             }
         }

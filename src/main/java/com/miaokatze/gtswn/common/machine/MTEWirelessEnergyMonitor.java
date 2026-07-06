@@ -54,6 +54,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private long lastCheckTick = 0;
     private double euPerTick = 0.0;
 
+    // 红石检测独立时间戳（与 UI 更新解耦，2 ticks 一次 = 0.1s，保证红石快速响应）
+    private long lastRedstoneCheckTick = 0;
+    /** 红石检测间隔（ticks），2 ticks = 0.1 秒 */
+    private static final long REDSTONE_CHECK_INTERVAL = 2L;
+
     // 智能 EU/t 计算相关（与 HUD 保持一致）
     private static class Measurement {
 
@@ -83,6 +88,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
     // 红石控制相关
     private int redstoneMode = 0; // 0=关闭, 1=正向, 2=反向, 3=正向区间, 4=反向区间
+    /** 锚定参数模式：0=电网电量（BigInteger），1=电网状态数值（EU/t，double→long 截断） */
+    private int anchorMode = 0;
     private String param1Text = ""; // 参数1文本
     private String param2Text = ""; // 参数2文本
     private BigInteger param1Value = BigInteger.ZERO; // 参数1数值
@@ -136,16 +143,24 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     public void onPostTick(IGregTechTileEntity aBaseMetaTileEntity, long aTick) {
         super.onPostTick(aBaseMetaTileEntity, aTick);
 
-        // 每 600 ticks (30秒) 更新一次 UI 显示与检测
-        // 注：红石判定周期同步改为 30s（与检测同周期，不拆分）
-        // 首次测量加速：measurementHistory 为空时立即记录第一个数据点（不等 30 秒）
-        if (aTick % 600L == 0L || (aBaseMetaTileEntity.isServerSide() && measurementHistory.isEmpty())) {
-            // 服务端执行 EU/t 计算、红石逻辑和缓存文本更新
-            // 客户端不执行：避免覆盖 StringSyncValue 同步过来的服务端真实值
-            // （客户端的 getWirelessEU() 返回 ZERO，会导致状态恒为"无变化"）
-            if (aBaseMetaTileEntity.isServerSide()) {
-                calculateSmartEUT(aTick);
+        if (aBaseMetaTileEntity.isServerSide()) {
+            // 红石检测：每 2 ticks（0.1s），独立于 UI 频率，保证红石快速响应
+            // 使用差值检查（与 HUD 一致），首次测量加速：measurementHistory 为空时立即执行
+            if (measurementHistory.isEmpty() || aTick - lastRedstoneCheckTick >= REDSTONE_CHECK_INTERVAL) {
                 updateRedstoneOutput();
+                lastRedstoneCheckTick = aTick;
+            }
+            // UI 更新 + EU/t 计算：每 100 ticks（5秒）
+            // 关键修复：使用差值检查（aTick - lastCheckTick >= 100）替代 modulo（aTick % 100 == 0）
+            // 原因：服务器卡顿跳过 100 倍数的 tick 时，modulo 检查会错过检测，
+            // 导致 measurementHistory 只有 1 个测量点，calculateEUT 返回 0.0，状态恒为"无变化"
+            // 差值检查更健壮，与 HUD 的 currentTick - lastUpdateTick >= UPDATE_INTERVAL 逻辑一致
+            // 首次测量加速：measurementHistory 为空时立即记录第一个数据点（不等 5 秒）
+            if (measurementHistory.isEmpty() || aTick - lastCheckTick >= 100L) {
+                // 服务端执行 EU/t 计算和缓存文本更新
+                // 客户端不执行：避免覆盖 StringSyncValue 同步过来的服务端真实值
+                // （客户端的 getWirelessEU() 返回 ZERO，会导致状态恒为"无变化"）
+                calculateSmartEUT(aTick);
                 // 更新缓存文本（仅服务端），由 StringSyncValue 自动 S2C 同步给客户端
                 cachedModeText = displayMode == 0 ? translate("gtswn.ui.mode.normal")
                     : translate("gtswn.ui.mode.scientific");
@@ -176,8 +191,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             return 0;
         }
 
-        // 根据当前电网能量和参数判断是否输出信号
-        BigInteger currentEU = getWirelessEU();
+        // 根据当前锚定值和参数判断是否输出信号（anchorMode 决定数据源）
+        BigInteger currentEU = getAnchorValue();
         if (currentEU == null) {
             return 0;
         }
@@ -207,7 +222,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
     // 更新红石输出状态
     private void updateRedstoneOutput() {
-        BigInteger currentEU = getWirelessEU();
+        // 锚定值：anchorMode=0 时为电网电量，anchorMode=1 时为 EU/t（long 截断）
+        BigInteger currentEU = getAnchorValue();
         boolean newOutput = false;
 
         switch (redstoneMode) {
@@ -342,6 +358,21 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private BigInteger getWirelessEU() {
         if (ownerUUID == null) return BigInteger.ZERO;
         return WirelessNetworkManager.getUserEU(ownerUUID);
+    }
+
+    /**
+     * 获取当前锚定比较值（统一为 BigInteger 形式）
+     * <p>
+     * anchorMode=0：返回电网电量（getWirelessEU）
+     * anchorMode=1：返回 (long)euPerTick 转 BigInteger
+     * 注：euPerTick 是 double，按 (long) 截断；
+     * 负值（电网下降）也保留，配合负参数可实现"下降速率超过阈值时输出"
+     */
+    private BigInteger getAnchorValue() {
+        if (anchorMode == 1) {
+            return BigInteger.valueOf((long) euPerTick);
+        }
+        return getWirelessEU();
     }
 
     // 格式化能量文本
@@ -625,6 +656,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         IntSyncValue redstoneModeSync = new IntSyncValue(this::getRedstoneMode, this::setRedstoneMode).allowC2S();
         syncManager.syncValue("redstoneMode", redstoneModeSync);
 
+        // 锚定参数模式（客户端可写，允许玩家点击按钮切换电网电量/电网状态）
+        IntSyncValue anchorModeSync = new IntSyncValue(this::getAnchorMode, this::setAnchorMode).allowC2S();
+        syncManager.syncValue("anchorMode", anchorModeSync);
+
         // 参数1数值（LongSyncValue + 输入框，超 long 边界在 setter 中截断）
         LongSyncValue param1Sync = new LongSyncValue(this::getParam1Value, this::setParam1Value).allowC2S();
         syncManager.syncValue("param1Value", param1Sync);
@@ -674,7 +709,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             .childPadding(2)
             .crossAxisAlignment(com.cleanroommc.modularui.utils.Alignment.CrossAxis.START);
 
-        // 第 1 行：标题 + 切换模式按钮
+        // 第 1 行：标题 + 切换模式按钮（SPACE_BETWEEN 让标题在左、按钮在右）
         column.child(
             Flow.row()
                 .coverChildren()
@@ -699,12 +734,43 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         column.child(
             IKey.dynamic(() -> cachedModeText)
                 .asWidget());
+        // 电网容量行 + 锚定按钮1（点击设置 anchorMode=0：电网电量）
+        // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
         column.child(
-            IKey.dynamic(() -> cachedEUText)
-                .asWidget());
+            Flow.row()
+                .coverChildren()
+                .childPadding(4)
+                .child(
+                    IKey.dynamic(() -> cachedEUText)
+                        .asWidget())
+                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                    // 切换锚定参数为电网电量模式
+                    anchorModeSync.setValue(0);
+                    return true;
+                })
+                    .background(GTGuiTextures.BUTTON_STANDARD)
+                    .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 0 ? "=" : "<"))
+                    .size(16, 16)
+                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
+
+        // 电网状态行 + 锚定按钮2（点击设置 anchorMode=1：电网状态 EU/t）
+        // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
         column.child(
-            IKey.dynamic(() -> cachedStatusText)
-                .asWidget());
+            Flow.row()
+                .coverChildren()
+                .childPadding(4)
+                .child(
+                    IKey.dynamic(() -> cachedStatusText)
+                        .asWidget())
+                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                    // 切换锚定参数为电网状态模式
+                    anchorModeSync.setValue(1);
+                    return true;
+                })
+                    .background(GTGuiTextures.BUTTON_STANDARD)
+                    .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 1 ? "=" : "<"))
+                    .size(16, 16)
+                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
 
         // 红石模式行：文本 + 切换红石按钮
         column.child(
@@ -734,6 +800,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .asWidget());
 
         // 参数1行：标签 + 输入框 + 4个位数调整按钮（-, +, ×10, ÷10）
+        // 输入框加宽到 90px（接近右边按钮组）、加高到 17px（+5px）
         column.child(
             Flow.row()
                 .coverChildren()
@@ -743,8 +810,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .asWidget())
                 .child(
                     new TextFieldWidget().formatAsInteger(true)
-                        .numbersLong(() -> 0L, () -> Long.MAX_VALUE)
-                        .size(60, 12)
+                        .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
+                        .size(90, 17)
                         .value(param1Sync))
                 // - 按钮（减少最高位）
                 .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
@@ -760,7 +827,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     } else {
                         newValue = currentValue - step;
                     }
-                    if (newValue < 0) newValue = 0;
+                    // 支持负数：不再截断为 0
                     param1Sync.setValue(newValue);
                     return true;
                 })
@@ -800,6 +867,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.div10")))));
 
         // 参数2行：标签 + 输入框 + 4个位数调整按钮（-, +, ×10, ÷10）
+        // 输入框加宽到 90px（接近右边按钮组）、加高到 17px（+5px）
         column.child(
             Flow.row()
                 .coverChildren()
@@ -809,8 +877,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .asWidget())
                 .child(
                     new TextFieldWidget().formatAsInteger(true)
-                        .numbersLong(() -> 0L, () -> Long.MAX_VALUE)
-                        .size(60, 12)
+                        .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
+                        .size(90, 17)
                         .value(param2Sync))
                 // - 按钮（减少最高位）
                 .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
@@ -825,7 +893,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     } else {
                         newValue = currentValue - step;
                     }
-                    if (newValue < 0) newValue = 0;
+                    // 支持负数：不再截断为 0
                     param2Sync.setValue(newValue);
                     return true;
                 })
@@ -913,14 +981,30 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     }
 
     /**
+     * 获取锚定参数模式（用于 IntSyncValue 同步）
+     * 0=电网电量，1=电网状态(EU/t)
+     */
+    public int getAnchorMode() {
+        return anchorMode;
+    }
+
+    /**
+     * 设置锚定参数模式（用于 IntSyncValue 同步）
+     */
+    public void setAnchorMode(int mode) {
+        this.anchorMode = mode;
+        if (getBaseMetaTileEntity() != null) {
+            getBaseMetaTileEntity().markDirty();
+        }
+    }
+
+    /**
      * 获取参数1数值（用于 LongSyncValue 同步）
      * <p>
-     * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，负数截断为 0。
+     * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，支持负数。
      */
     public long getParam1Value() {
-        if (param1Value.compareTo(BigInteger.ZERO) < 0) {
-            return 0L;
-        }
+        // 支持负数：不再截断为 0，仅截断超过 long 范围的上界
         return param1Value.min(BigInteger.valueOf(Long.MAX_VALUE))
             .longValue();
     }
@@ -931,7 +1015,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * long 转 BigInteger：直接转换，并同步更新 param1Text。
      */
     public void setParam1Value(long val) {
-        if (val < 0) val = 0;
+        // 支持负数：不再截断为 0
         this.param1Value = BigInteger.valueOf(val);
         this.param1Text = this.param1Value.toString();
         if (getBaseMetaTileEntity() != null) {
@@ -942,12 +1026,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     /**
      * 获取参数2数值（用于 LongSyncValue 同步）
      * <p>
-     * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，负数截断为 0。
+     * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，支持负数。
      */
     public long getParam2Value() {
-        if (param2Value.compareTo(BigInteger.ZERO) < 0) {
-            return 0L;
-        }
+        // 支持负数：不再截断为 0，仅截断超过 long 范围的上界
         return param2Value.min(BigInteger.valueOf(Long.MAX_VALUE))
             .longValue();
     }
@@ -958,7 +1040,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * long 转 BigInteger：直接转换，并同步更新 param2Text。
      */
     public void setParam2Value(long val) {
-        if (val < 0) val = 0;
+        // 支持负数：不再截断为 0
         this.param2Value = BigInteger.valueOf(val);
         this.param2Text = this.param2Value.toString();
         if (getBaseMetaTileEntity() != null) {
@@ -1125,6 +1207,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         // 保存红石控制状态
         aNBT.setInteger("redstoneMode", redstoneMode);
+        // 保存红石检测时间戳（用于跨加载持续 0.1s 响应）
+        aNBT.setLong("lastRedstoneCheckTick", lastRedstoneCheckTick);
+        // 保存锚定参数模式（0=电网电量，1=电网状态）
+        aNBT.setInteger("anchorMode", anchorMode);
         aNBT.setString("param1Text", param1Text);
         aNBT.setString("param2Text", param2Text);
         aNBT.setString("param1Value", param1Value.toString());
@@ -1169,6 +1255,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         // 加载红石控制状态
         redstoneMode = aNBT.getInteger("redstoneMode");
+        // 加载红石检测时间戳（用于跨加载持续 0.1s 响应）
+        lastRedstoneCheckTick = aNBT.getLong("lastRedstoneCheckTick");
+        // 加载锚定参数模式（0=电网电量，1=电网状态）
+        anchorMode = aNBT.getInteger("anchorMode");
         param1Text = aNBT.getString("param1Text");
         param2Text = aNBT.getString("param2Text");
         if (aNBT.hasKey("param1Value")) {
@@ -1180,8 +1270,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 加载保存的红石输出状态
         boolean savedRedstoneOutput = aNBT.getBoolean("redstoneOutput");
 
-        // 重新计算当前的红石输出状态（基于加载的参数和当前电网能量）
-        BigInteger currentEU = getWirelessEU();
+        // 重新计算当前的红石输出状态（基于加载的参数和当前锚定值）
+        BigInteger currentEU = getAnchorValue();
         if (currentEU != null && redstoneMode > 0) {
             // 根据红石模式和参数重新判断是否应该输出
             switch (redstoneMode) {
