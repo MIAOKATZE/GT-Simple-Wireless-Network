@@ -15,14 +15,15 @@ import com.cleanroommc.modularui.api.drawable.IKey;
 import com.cleanroommc.modularui.factory.PosGuiData;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.UISettings;
+import com.cleanroommc.modularui.utils.Alignment;
 import com.cleanroommc.modularui.value.sync.IntSyncValue;
 import com.cleanroommc.modularui.value.sync.LongSyncValue;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 import com.cleanroommc.modularui.value.sync.StringSyncValue;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.layout.Flow;
-import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
+import com.miaokatze.gtswn.common.machine.widgets.ScientificTextFieldWidget;
 
 import gregtech.api.enums.Textures;
 import gregtech.api.interfaces.ITexture;
@@ -160,12 +161,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 // 服务端执行 EU/t 计算和缓存文本更新
                 // 客户端不执行：避免覆盖 StringSyncValue 同步过来的服务端真实值
                 // （客户端的 getWirelessEU() 返回 ZERO，会导致状态恒为"无变化"）
-                calculateSmartEUT(aTick);
+                // calculateSmartEUT 返回电网状态文本（calculateEUT 内部已格式化，含 size<2/eut==0 分支）
+                cachedStatusText = calculateSmartEUT(aTick);
                 // 更新缓存文本（仅服务端），由 StringSyncValue 自动 S2C 同步给客户端
                 cachedModeText = displayMode == 0 ? translate("gtswn.ui.mode.normal")
                     : translate("gtswn.ui.mode.scientific");
                 cachedEUText = getWirelessEUText();
-                cachedStatusText = getnetworkStatusText();
                 cachedRedstoneModeText = getRedstoneModeText();
                 cachedRedstoneOutputText = redstoneOutput ? translate("gtswn.ui.redstone.output.on")
                     : translate("gtswn.ui.redstone.output.off");
@@ -282,17 +283,20 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     }
 
     // 智能 EU/t 计算（与 HUD 逻辑一致）
-    private void calculateSmartEUT(long currentTick) {
+    // 返回值：电网状态显示文本（由 calculateEUT 格式化，含 size<2/eut==0 分支）
+    // 副作用：更新 euPerTick（用于红石）、measurementHistory、lastEU、lastCheckTick
+    private String calculateSmartEUT(long currentTick) {
         BigInteger currentEU = getWirelessEU();
 
         // 记录测量历史
         recordMeasurement(currentTick, currentEU);
 
-        // 计算 EU/t
-        euPerTick = calculateEUT(currentTick);
+        // 计算 EU/t：calculateEUT 内部更新 euPerTick 字段，并返回格式化显示文本
+        String statusText = calculateEUT(currentTick);
 
         lastEU = currentEU;
         lastCheckTick = currentTick;
+        return statusText;
     }
 
     /**
@@ -326,32 +330,62 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     }
 
     /**
-     * 计算 EU/t（300 秒窗口首末两点斜率法）
+     * 计算 EU/t 并返回格式化显示文本（300 秒窗口首末两点斜率法，对齐 HUD 版逻辑）
      * <p>
      * 算法：(lastValue - firstValue) / (lastTick - firstTick)
-     * 边界情况：
+     * <p>
+     * 与 HUD 版 {@code WirelessMonitorHUD.calculateEUT} 保持一致的显示逻辑：
      * <ul>
-     * <li>历史为空或仅 1 个点：返回 0.0</li>
-     * <li>首末 tick 相同（tickDiff &lt;= 0）：返回 0.0</li>
-     * <li>长期无变化：返回 0.0（显示 "0.00" EU/t）</li>
+     * <li>历史为空或仅 1 个点（size &lt; 2）：显示"无变化/计算中"，euPerTick 设为 0</li>
+     * <li>首末 tick 相同（tickDiff &lt;= 0）：euPerTick 设为 0，显示"= 0.00 EU/t"</li>
+     * <li>euPerTick &gt; 0：显示"↑ +X EU/t（GT电压等级）"</li>
+     * <li>euPerTick &lt; 0：显示"↓ X EU/t（GT电压等级）"</li>
+     * <li>euPerTick == 0 且 size &gt;= 2：显示"= 0.00 EU/t"（有数据但无变化）</li>
      * </ul>
+     * 同时更新 {@link #euPerTick} 字段（用于红石功能）。
+     *
+     * @param currentTick 当前游戏 tick
+     * @return 格式化后的电网状态文本（带 § 颜色代码）
      */
-    private double calculateEUT(long currentTick) {
+    private String calculateEUT(long currentTick) {
         // 先清理窗口外样本
         purgeExpired(currentTick);
 
+        // 未记录前（窗口内样本不足）显示"无变化/计算中"
         if (measurementHistory.size() < 2) {
-            return 0.0;
+            euPerTick = 0.0;
+            return translate("gtswn.ui.network.status.nochange");
         }
 
+        // 计算 300 秒窗口首末两点斜率
+        double eut = 0.0;
         Measurement first = measurementHistory.get(0);
         Measurement last = measurementHistory.get(measurementHistory.size() - 1);
         long tickDiff = last.tick - first.tick;
-        if (tickDiff <= 0) {
-            return 0.0;
+        if (tickDiff > 0) {
+            BigInteger diff = last.value.subtract(first.value);
+            eut = diff.doubleValue() / tickDiff;
         }
-        BigInteger diff = last.value.subtract(first.value);
-        return diff.doubleValue() / tickDiff;
+
+        // 更新 euPerTick（用于红石功能）
+        euPerTick = eut;
+
+        // 格式化 EU/t（根据显示模式）
+        String euPerTickStr;
+        String gtPowerText;
+        if (eut > 0.0) {
+            euPerTickStr = formatEUtValue(eut);
+            gtPowerText = formatGTPower(eut);
+            return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText);
+        } else if (eut < 0.0) {
+            // 负数取绝对值格式化（down 模板自带"-"号）
+            euPerTickStr = formatEUtValue(Math.abs(eut));
+            gtPowerText = formatGTPower(Math.abs(eut));
+            return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
+        } else {
+            // euPerTick == 0：有数据但无变化，显示"= 0.00 EU/t"（对齐 HUD 版逻辑）
+            return translate("gtswn.ui.network.status.zero");
+        }
     }
 
     // 获取无线电网能量
@@ -385,22 +419,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
     }
 
-    // 获取电网状态文本（与 HUD 保持一致）
-    private String getnetworkStatusText() {
-        // 阈值从 0.01 降为 0.0：任何非零变化都显示（避免小变化被吞掉）
-        if (euPerTick > 0.0) {
-            String euPerTickStr = formatEUtValue(euPerTick);
-            String gtPowerText = formatGTPower(euPerTick);
-            return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText);
-        } else if (euPerTick < 0.0) {
-            String euPerTickStr = formatEUtValue(Math.abs(euPerTick));
-            String gtPowerText = formatGTPower(Math.abs(euPerTick));
-            return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
-        } else {
-            return translate("gtswn.ui.network.status.nochange");
-        }
-    }
-
     // ==================== NC2 工业信息屏集成（方案A+B）====================
     // 通过实现 IGregTechDeviceInformation（已由 MetaTileEntity 间接继承）+ IMetricsExporter，
     // 让 GT 传感器套件右键本机器后能生成传感器卡，将信息显示到 NC2 工业信息屏。
@@ -429,7 +447,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             // 电网容量（复用 UI 的格式化文本，含"能量: xxx EU"）
             StatCollector.translateToLocalFormatted("gtswn.info.energy", getWirelessEUText()),
             // 电网状态（复用 UI 的格式化文本，含 EU/t、电压等级）
-            StatCollector.translateToLocalFormatted("gtswn.info.status", getnetworkStatusText()) };
+            StatCollector.translateToLocalFormatted("gtswn.info.status", cachedStatusText) };
     }
 
     /**
@@ -707,12 +725,13 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             .full()
             .padding(4, 4, 4, 14)
             .childPadding(2)
-            .crossAxisAlignment(com.cleanroommc.modularui.utils.Alignment.CrossAxis.START);
+            .crossAxisAlignment(Alignment.CrossAxis.START);
 
         // 第 1 行：标题 + 切换模式按钮（SPACE_BETWEEN 让标题在左、按钮在右）
         column.child(
             Flow.row()
-                .coverChildren()
+                .widthRel(1f)
+                .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
                     IKey.lang("gtswn.ui.title")
@@ -738,7 +757,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
         column.child(
             Flow.row()
-                .coverChildren()
+                .widthRel(1f)
+                .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
                     IKey.dynamic(() -> cachedEUText)
@@ -757,7 +777,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
         column.child(
             Flow.row()
-                .coverChildren()
+                .widthRel(1f)
+                .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
                     IKey.dynamic(() -> cachedStatusText)
@@ -775,7 +796,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 红石模式行：文本 + 切换红石按钮
         column.child(
             Flow.row()
-                .coverChildren()
+                .widthRel(1f)
+                .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .childPadding(4)
                 .child(
                     IKey.dynamic(() -> cachedRedstoneModeText)
@@ -799,138 +821,162 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             IKey.dynamic(() -> cachedModeDescText)
                 .asWidget());
 
-        // 参数1行：标签 + 输入框 + 4个位数调整按钮（-, +, ×10, ÷10）
-        // 输入框加宽到 90px（接近右边按钮组）、加高到 17px（+5px）
+        // 参数1行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
+        // 输入框加宽到 110px、加高到 17px
         column.child(
             Flow.row()
-                .coverChildren()
-                .childPadding(2)
+                .widthRel(1f)
+                .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .child(
-                    IKey.str(translate("gtswn.ui.param1", ""))
-                        .asWidget())
+                    // 左组：标签 + 输入框
+                    Flow.row()
+                        .coverChildren()
+                        .childPadding(2)
+                        .child(
+                            IKey.str(translate("gtswn.ui.param1", ""))
+                                .asWidget())
+                        .child(
+                            // 科学计数法输入框：displayMode==1 时失焦后格式化为 1.5E6 形式
+                            new ScientificTextFieldWidget().displayMode(() -> displayMode)
+                                .formatAsInteger(true)
+                                .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
+                                .size(110, 17)
+                                .value(param1Sync)))
                 .child(
-                    new TextFieldWidget().formatAsInteger(true)
-                        .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
-                        .size(90, 17)
-                        .value(param1Sync))
-                // - 按钮（减少最高位）
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    long currentValue = param1Sync.getLongValue();
-                    long absValue = Math.abs(currentValue);
-                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                    // 退位处理：100 -> 90, 1000 -> 900
-                    long newValue;
-                    if (currentValue == step) {
-                        long nextStep = step / 10;
-                        if (nextStep < 1) nextStep = 1;
-                        newValue = currentValue - nextStep;
-                    } else {
-                        newValue = currentValue - step;
-                    }
-                    // 支持负数：不再截断为 0
-                    param1Sync.setValue(newValue);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("-"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.minus"))))
-                // + 按钮（增加最高位）
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    long currentValue = param1Sync.getLongValue();
-                    long absValue = Math.abs(currentValue);
-                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                    param1Sync.setValue(currentValue + step);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("+"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.plus"))))
-                // ×10 按钮
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    param1Sync.setValue(param1Sync.getLongValue() * 10);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("\u00D7"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.mul10"))))
-                // ÷10 按钮
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    param1Sync.setValue(param1Sync.getLongValue() / 10);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("\u00F7"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.div10")))));
+                    // 右组：4 个位数调整按钮（-, +, ×10, ÷10）
+                    Flow.row()
+                        .coverChildren()
+                        .childPadding(2)
+                        // - 按钮（减少最高位）
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            long currentValue = param1Sync.getLongValue();
+                            long absValue = Math.abs(currentValue);
+                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                            // 退位处理：100 -> 90, 1000 -> 900
+                            long newValue;
+                            if (currentValue == step) {
+                                long nextStep = step / 10;
+                                if (nextStep < 1) nextStep = 1;
+                                newValue = currentValue - nextStep;
+                            } else {
+                                newValue = currentValue - step;
+                            }
+                            // 支持负数：不再截断为 0
+                            param1Sync.setValue(newValue);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("-"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.minus"))))
+                        // + 按钮（增加最高位）
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            long currentValue = param1Sync.getLongValue();
+                            long absValue = Math.abs(currentValue);
+                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                            param1Sync.setValue(currentValue + step);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("+"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.plus"))))
+                        // ×10 按钮
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            param1Sync.setValue(param1Sync.getLongValue() * 10);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("\u00D7"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.mul10"))))
+                        // ÷10 按钮
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            param1Sync.setValue(param1Sync.getLongValue() / 10);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("\u00F7"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.div10"))))));
 
-        // 参数2行：标签 + 输入框 + 4个位数调整按钮（-, +, ×10, ÷10）
-        // 输入框加宽到 90px（接近右边按钮组）、加高到 17px（+5px）
+        // 参数2行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
+        // 输入框加宽到 110px、加高到 17px
         column.child(
             Flow.row()
-                .coverChildren()
-                .childPadding(2)
+                .widthRel(1f)
+                .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .child(
-                    IKey.str(translate("gtswn.ui.param2", ""))
-                        .asWidget())
+                    // 左组：标签 + 输入框
+                    Flow.row()
+                        .coverChildren()
+                        .childPadding(2)
+                        .child(
+                            IKey.str(translate("gtswn.ui.param2", ""))
+                                .asWidget())
+                        .child(
+                            // 科学计数法输入框：displayMode==1 时失焦后格式化为 1.5E6 形式
+                            new ScientificTextFieldWidget().displayMode(() -> displayMode)
+                                .formatAsInteger(true)
+                                .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
+                                .size(110, 17)
+                                .value(param2Sync)))
                 .child(
-                    new TextFieldWidget().formatAsInteger(true)
-                        .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
-                        .size(90, 17)
-                        .value(param2Sync))
-                // - 按钮（减少最高位）
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    long currentValue = param2Sync.getLongValue();
-                    long absValue = Math.abs(currentValue);
-                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                    long newValue;
-                    if (currentValue == step) {
-                        long nextStep = step / 10;
-                        if (nextStep < 1) nextStep = 1;
-                        newValue = currentValue - nextStep;
-                    } else {
-                        newValue = currentValue - step;
-                    }
-                    // 支持负数：不再截断为 0
-                    param2Sync.setValue(newValue);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("-"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.minus"))))
-                // + 按钮（增加最高位）
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    long currentValue = param2Sync.getLongValue();
-                    long absValue = Math.abs(currentValue);
-                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                    param2Sync.setValue(currentValue + step);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("+"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.plus"))))
-                // ×10 按钮
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    param2Sync.setValue(param2Sync.getLongValue() * 10);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("\u00D7"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.mul10"))))
-                // ÷10 按钮
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    param2Sync.setValue(param2Sync.getLongValue() / 10);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.str("\u00F7"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.div10")))));
+                    // 右组：4 个位数调整按钮（-, +, ×10, ÷10）
+                    Flow.row()
+                        .coverChildren()
+                        .childPadding(2)
+                        // - 按钮（减少最高位）
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            long currentValue = param2Sync.getLongValue();
+                            long absValue = Math.abs(currentValue);
+                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                            long newValue;
+                            if (currentValue == step) {
+                                long nextStep = step / 10;
+                                if (nextStep < 1) nextStep = 1;
+                                newValue = currentValue - nextStep;
+                            } else {
+                                newValue = currentValue - step;
+                            }
+                            // 支持负数：不再截断为 0
+                            param2Sync.setValue(newValue);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("-"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.minus"))))
+                        // + 按钮（增加最高位）
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            long currentValue = param2Sync.getLongValue();
+                            long absValue = Math.abs(currentValue);
+                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                            param2Sync.setValue(currentValue + step);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("+"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.plus"))))
+                        // ×10 按钮
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            param2Sync.setValue(param2Sync.getLongValue() * 10);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("\u00D7"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.mul10"))))
+                        // ÷10 按钮
+                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                            param2Sync.setValue(param2Sync.getLongValue() / 10);
+                            return true;
+                        })
+                            .background(GTGuiTextures.BUTTON_STANDARD)
+                            .overlay(IKey.str("\u00F7"))
+                            .size(16, 16)
+                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.div10"))))));
 
         // 将列添加到面板
         panel.child(column);
