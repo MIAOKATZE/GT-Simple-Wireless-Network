@@ -641,7 +641,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     /**
      * 构建 ModularUI 2 主面板
      * <p>
-     * 布局结构（236×150，禁用物品栏，禁用 GT Logo，保留 cover tabs）：
+     * 布局结构（346×165，禁用物品栏，禁用 GT Logo，保留 cover tabs）：
      *
      * <pre>
      * ┌──────── GT 默认背景（无 Logo） ────────┐
@@ -732,14 +732,15 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             .doesAddGregTechLogo(false)
             .build();
 
-        // === 主内容列布局（padding: 上2 右4 下17 左24） ===
+        // === 主内容列布局（padding: 上6 右4 下13 左24） ===
         // v1.1.10 修复：childPadding 从 2 改为 0，消除行间额外间距（行高已由各 row 的 height() 显式控制）
         // v1.1.11 修复：padding 上下从 4 改为 2，配合 9 行统一行高(7*16+2*17=146) 让总高 146+4=150 严丝合缝
         // v1.1.12 调整：下padding 从 2 改为 7（+5），配合 panel 高度 155，内容区 146+9=155 严丝合缝
         // v1.1.13 调整：下padding 7→17（+10 延伸下边缘），左padding 14→24（+10 延伸左边缘），内容区右边界不变
+        // v1.1.14 调整：padding 改为 (6,4,13,24)，使上下边距更均衡；所有文本/行添加居中对齐
         Flow column = Flow.column()
             .full()
-            .padding(2, 4, 17, 24)
+            .padding(6, 4, 13, 24)
             .childPadding(0)
             .crossAxisAlignment(Alignment.CrossAxis.START);
 
@@ -751,10 +752,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .widthRel(1f)
                 .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .childPadding(4)
                 .child(
                     IKey.lang("gtswn.ui.title")
-                        .asWidget())
+                        .asWidget()
+                        .alignment(Alignment.CenterLeft))
                 .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
                     // 切换显示模式（0/1 之间切换）
                     // 关键：通过 IntSyncValue.setValue 触发 C2S 同步，让服务端也更新
@@ -773,7 +776,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         column.child(
             IKey.dynamic(() -> cachedModeText)
                 .asWidget()
-                .height(16));
+                .height(16)
+                .alignment(Alignment.CenterLeft));
         // 电网容量行 + 锚定按钮1（点击设置 anchorMode=0：电网电量）
         // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
         // v1.1.10 修复：显式 height(16) 紧贴按钮高度
@@ -783,10 +787,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .widthRel(1f)
                 .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .childPadding(4)
                 .child(
                     IKey.dynamic(() -> cachedEUText)
-                        .asWidget())
+                        .asWidget()
+                        .alignment(Alignment.CenterLeft))
                 .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
                     // 切换锚定参数为电网电量模式
                     anchorModeSync.setValue(0);
@@ -806,10 +812,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .widthRel(1f)
                 .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .childPadding(4)
                 .child(
                     IKey.dynamic(() -> cachedStatusText)
-                        .asWidget())
+                        .asWidget()
+                        .alignment(Alignment.CenterLeft))
                 .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
                     // 切换锚定参数为电网状态模式
                     anchorModeSync.setValue(1);
@@ -828,10 +836,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .widthRel(1f)
                 .height(16)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .childPadding(4)
                 .child(
                     IKey.dynamic(() -> cachedRedstoneModeText)
-                        .asWidget())
+                        .asWidget()
+                        .alignment(Alignment.CenterLeft))
                 .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
                     // 循环切换红石模式 0->1->2->3->4->0
                     // 关键：通过 IntSyncValue.setValue 触发 C2S 同步，让服务端也更新
@@ -848,12 +858,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         column.child(
             IKey.dynamic(() -> cachedRedstoneOutputText)
                 .asWidget()
-                .height(16));
+                .height(16)
+                .alignment(Alignment.CenterLeft));
         // v1.1.11 修复：无按钮行也显式 height(16)
         column.child(
             IKey.dynamic(() -> cachedModeDescText)
                 .asWidget()
-                .height(16));
+                .height(16)
+                .alignment(Alignment.CenterLeft));
 
         // 参数1行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
         // v1.1.10 修复：显式 height(17) 对齐输入框高度
@@ -864,15 +876,18 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .widthRel(1f)
                 .height(17)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .padding(0, 5, 0, 0)
                 .child(
                     // 左组：标签 + 输入框
                     Flow.row()
                         .coverChildren()
                         .childPadding(2)
+                        .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                         .child(
                             IKey.str(translate("gtswn.ui.param1", ""))
-                                .asWidget())
+                                .asWidget()
+                                .alignment(Alignment.CenterLeft))
                         .child(
                             // 科学计数法输入框：displayMode==1 时失焦后格式化为 1.5E6 形式
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
@@ -885,6 +900,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     Flow.row()
                         .coverChildren()
                         .childPadding(2)
+                        .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                         // - 按钮（减少最高位）
                         .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
                             long currentValue = param1Sync.getLongValue();
@@ -948,15 +964,18 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .widthRel(1f)
                 .height(17)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .padding(0, 5, 0, 0)
                 .child(
                     // 左组：标签 + 输入框
                     Flow.row()
                         .coverChildren()
                         .childPadding(2)
+                        .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                         .child(
                             IKey.str(translate("gtswn.ui.param2", ""))
-                                .asWidget())
+                                .asWidget()
+                                .alignment(Alignment.CenterLeft))
                         .child(
                             // 科学计数法输入框：displayMode==1 时失焦后格式化为 1.5E6 形式
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
@@ -969,6 +988,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     Flow.row()
                         .coverChildren()
                         .childPadding(2)
+                        .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                         // - 按钮（减少最高位）
                         .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
                             long currentValue = param2Sync.getLongValue();
