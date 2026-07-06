@@ -20,17 +20,17 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 ## Wireless Energy Monitor / 无线能量监视器
 
-<p align="center"><img src="images/Wireless_Energy_Monitor_AL.png" width="400"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
+<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" width="700"><br><img src="images/Wireless_Energy_Monitor_EU.png" width="700"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
 
-**无线能量监视器 / Wireless Energy Monitor** — A single-block machine that displays real-time wireless network energy status with advanced redstone control. Supports 5 redstone modes (Off/High/Low/High-Hysteresis/Low-Hysteresis) with parametric threshold settings. Dynamic texture switching reflects redstone output state.
+**无线能量监视器 / Wireless Energy Monitor** — A single-block machine that displays real-time (per 5 seconds) wireless network energy status with advanced redstone control (can be measured by the wireless capacity or the wireless status.). Supports 5 redstone modes (Off/High/Low/High-Hysteresis/Low-Hysteresis) with parametric threshold settings. Dynamic texture switching reflects redstone output state. It can also be connected to the Industrial Information Panel.
 
-无线能量监视器，单方块机器，实时显示无线电网能量状态，具备高级红石控制。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。
+无线能量监视器，单方块机器，实时显示无线电网能量状态 （每五秒），具备高级红石控制（可以以电网容量或者电网状态为指标）。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。其还可以连接工业信息屏。
 
 - **Redstone Modes**: Off → High (signal when EU > threshold) → Low (signal when EU < threshold) → High-Hysteresis → Low-Hysteresis
 - **Display Modes**: Normal counting (1,234,567 EU) / Scientific notation (1.235×10^6 EU)
 - **Smart EU/t**: Real-time change rate with GT-style amperage + voltage tier display (e.g., "2A HV")
 
-<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" width="300"> <img src="images/Wireless_Energy_Monitor_EN.png" width="300"><br><em>中文界面 (left) & English interface (right)</em></p>
+<p align="center"><img src="images/Wireless_Energy_Monitor_UI_CN.png" width="400"><br><img src="images/Wireless_Energy_Monitor_UI_EN.png" width="400"><br><em>中文界面 (up) & English interface (down)</em></p>
 
 ***
 
