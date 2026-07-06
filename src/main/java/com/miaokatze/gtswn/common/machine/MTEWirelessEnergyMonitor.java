@@ -24,7 +24,6 @@ import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 import com.miaokatze.gtswn.common.machine.widgets.ScientificTextFieldWidget;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import gregtech.api.enums.Textures;
 import gregtech.api.interfaces.ITexture;
@@ -153,14 +152,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             // getTotalWorldTime() 持久化于 WorldInfo，重启后继续累计，时间轴一致。
             long worldTick = aBaseMetaTileEntity.getWorld()
                 .getTotalWorldTime();
-
-            // 临时日志（v1.1.11）：验证时间轴修复是否生效，v1.1.12 移除
-            GTSimpleWirelessNetwork.LOG.info(
-                "[Monitor] onPostTick: worldTick={}, lastCheckTick={}, diff={}, histSize={}",
-                worldTick,
-                lastCheckTick,
-                worldTick - lastCheckTick,
-                measurementHistory.size());
 
             // 红石检测：每 2 ticks（0.1s），独立于 UI 频率，保证红石快速响应
             // 使用差值检查（与 HUD 一致），首次测量加速：measurementHistory 为空时立即执行
@@ -306,13 +297,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private String calculateSmartEUT(long currentTick) {
         BigInteger currentEU = getWirelessEU();
 
-        // 临时日志（v1.1.11）：验证 calculateSmartEUT 是否被调用及数据流，v1.1.12 移除
-        GTSimpleWirelessNetwork.LOG.info(
-            "[Monitor] calculateSmartEUT: tick={}, currentEU={}, histSizeBefore={}",
-            currentTick,
-            currentEU,
-            measurementHistory.size());
-
         // 记录测量历史
         recordMeasurement(currentTick, currentEU);
 
@@ -321,13 +305,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         lastEU = currentEU;
         lastCheckTick = currentTick;
-
-        // 临时日志（v1.1.11）：验证计算结果，v1.1.12 移除
-        GTSimpleWirelessNetwork.LOG.info(
-            "[Monitor] calculateSmartEUT result: statusText={}, euPerTick={}, histSizeAfter={}",
-            statusText,
-            euPerTick,
-            measurementHistory.size());
 
         return statusText;
     }
@@ -384,25 +361,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 先清理窗口外样本
         purgeExpired(currentTick);
 
-        // 临时日志（v1.1.11）：验证 calculateEUT 入口数据，v1.1.12 移除
-        int histSize = measurementHistory.size();
-        long firstTick = histSize > 0 ? measurementHistory.get(0).tick : -1;
-        long lastTick = histSize > 1 ? measurementHistory.get(histSize - 1).tick : -1;
-        BigInteger firstValue = histSize > 0 ? measurementHistory.get(0).value : BigInteger.ZERO;
-        BigInteger lastValue = histSize > 1 ? measurementHistory.get(histSize - 1).value : BigInteger.ZERO;
-        GTSimpleWirelessNetwork.LOG.info(
-            "[Monitor] calculateEUT: size={}, firstTick={}, lastTick={}, tickDiff={}, firstVal={}, lastVal={}",
-            histSize,
-            firstTick,
-            lastTick,
-            lastTick - firstTick,
-            firstValue,
-            lastValue);
-
         // 未记录前（窗口内样本不足）显示"无变化/计算中"
         if (measurementHistory.size() < 2) {
             euPerTick = 0.0;
-            GTSimpleWirelessNetwork.LOG.info("[Monitor] calculateEUT branch: size<2 -> nochange");
             return translate("gtswn.ui.network.status.nochange");
         }
 
@@ -419,26 +380,20 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 更新 euPerTick（用于红石功能）
         euPerTick = eut;
 
-        // 临时日志（v1.1.11）：验证 eut 计算结果，v1.1.12 移除
-        GTSimpleWirelessNetwork.LOG.info("[Monitor] calculateEUT computed: tickDiff={}, eut={}", tickDiff, eut);
-
         // 格式化 EU/t（根据显示模式）
         String euPerTickStr;
         String gtPowerText;
         if (eut > 0.0) {
             euPerTickStr = formatEUtValue(eut);
             gtPowerText = formatGTPower(eut);
-            GTSimpleWirelessNetwork.LOG.info("[Monitor] calculateEUT branch: eut>0 -> up");
             return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText);
         } else if (eut < 0.0) {
             // 负数取绝对值格式化（down 模板自带"-"号）
             euPerTickStr = formatEUtValue(Math.abs(eut));
             gtPowerText = formatGTPower(Math.abs(eut));
-            GTSimpleWirelessNetwork.LOG.info("[Monitor] calculateEUT branch: eut<0 -> down");
             return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
         } else {
             // euPerTick == 0：有数据但无变化，显示"暂无变化/计算中"（对齐 HUD 版逻辑，不再显示"= 0.00 EU/t"）
-            GTSimpleWirelessNetwork.LOG.info("[Monitor] calculateEUT branch: eut==0 -> nochange");
             return translate("gtswn.ui.network.status.nochange");
         }
     }
@@ -768,19 +723,21 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         // === 构建主面板 ===
         // 使用 GT 模板构建器：禁用物品栏、禁用 GT Logo、保留 cover tabs
+        // v1.1.12 调整：宽度 236→336（+100），高度 150→155（+5，全给下padding）
         ModularPanel panel = GTGuis.mteTemplatePanelBuilder(this, guiData, syncManager, uiSettings)
-            .setWidth(236)
-            .setHeight(150)
+            .setWidth(336)
+            .setHeight(155)
             .doesBindPlayerInventory(false)
             .doesAddGregTechLogo(false)
             .build();
 
-        // === 主内容列布局（padding: 上2 右4 下2 左14，左侧多10px让文字离UI框左边缘更远） ===
+        // === 主内容列布局（padding: 上2 右4 下7 左14，左侧多10px让文字离UI框左边缘更远） ===
         // v1.1.10 修复：childPadding 从 2 改为 0，消除行间额外间距（行高已由各 row 的 height() 显式控制）
         // v1.1.11 修复：padding 上下从 4 改为 2，配合 9 行统一行高(7*16+2*17=146) 让总高 146+4=150 严丝合缝
+        // v1.1.12 调整：下padding 从 2 改为 7（+5），配合 panel 高度 155，内容区 146+9=155 严丝合缝
         Flow column = Flow.column()
             .full()
-            .padding(2, 4, 2, 14)
+            .padding(2, 4, 7, 14)
             .childPadding(0)
             .crossAxisAlignment(Alignment.CrossAxis.START);
 
@@ -897,13 +854,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .height(16));
 
         // 参数1行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
-        // 输入框加宽到 110px、加高到 17px
         // v1.1.10 修复：显式 height(17) 对齐输入框高度
+        // v1.1.12 调整：输入框 110→220（+110），外层 row 加 right padding 5 让按钮组右移95px（其余按钮右移100px）
         column.child(
             Flow.row()
                 .widthRel(1f)
                 .height(17)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .padding(0, 5, 0, 0)
                 .child(
                     // 左组：标签 + 输入框
                     Flow.row()
@@ -917,7 +875,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
                                 .formatAsInteger(true)
                                 .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
-                                .size(110, 17)
+                                .size(220, 17)
                                 .value(param1Sync)))
                 .child(
                     // 右组：4 个位数调整按钮（-, +, ×10, ÷10）
@@ -978,14 +936,15 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.div10"))))));
 
         // 参数2行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
-        // 输入框加宽到 110px、加高到 17px
         // v1.1.10 修复：显式 height(17) 对齐输入框高度
-        // v1.1.11 修复：保留 height(17) 与输入框 size(110,17) 一致，其他行统一 16
+        // v1.1.11 修复：保留 height(17) 与输入框 size 一致，其他行统一 16
+        // v1.1.12 调整：输入框 110→220（+110），外层 row 加 right padding 5 让按钮组右移95px
         column.child(
             Flow.row()
                 .widthRel(1f)
                 .height(17)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .padding(0, 5, 0, 0)
                 .child(
                     // 左组：标签 + 输入框
                     Flow.row()
@@ -999,7 +958,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
                                 .formatAsInteger(true)
                                 .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
-                                .size(110, 17)
+                                .size(220, 17)
                                 .value(param2Sync)))
                 .child(
                     // 右组：4 个位数调整按钮（-, +, ×10, ÷10）
@@ -1389,14 +1348,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 加载 UI/EUt 检测时间戳（v1.1.10 修复：避免加载后立即用 NBT 旧样本计算 eut）
         // 旧存档无此键时 getLong 返回 0，回退到原行为（首次 onPostTick 立即触发），兼容性 OK
         lastCheckTick = aNBT.getLong("lastCheckTick");
-
-        // 临时日志（v1.1.11）：验证 NBT 加载的时间戳值，v1.1.12 移除
-        GTSimpleWirelessNetwork.LOG.info(
-            "[Monitor] loadNBTData: lastCheckTick={}, lastRedstoneCheckTick={}, histSize={}, worldNull={}",
-            lastCheckTick,
-            lastRedstoneCheckTick,
-            measurementHistory.size(),
-            getBaseMetaTileEntity() == null || getBaseMetaTileEntity().getWorld() == null);
         // 加载锚定参数模式（0=电网电量，1=电网状态）
         anchorMode = aNBT.getInteger("anchorMode");
         param1Text = aNBT.getString("param1Text");
