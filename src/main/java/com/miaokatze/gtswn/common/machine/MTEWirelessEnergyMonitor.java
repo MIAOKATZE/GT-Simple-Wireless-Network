@@ -724,20 +724,22 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // === 构建主面板 ===
         // 使用 GT 模板构建器：禁用物品栏、禁用 GT Logo、保留 cover tabs
         // v1.1.12 调整：宽度 236→336（+100），高度 150→155（+5，全给下padding）
+        // v1.1.13 调整：宽度 336→346（+10 延伸左边缘），高度 155→165（+10 延伸下边缘）
         ModularPanel panel = GTGuis.mteTemplatePanelBuilder(this, guiData, syncManager, uiSettings)
-            .setWidth(336)
-            .setHeight(155)
+            .setWidth(346)
+            .setHeight(165)
             .doesBindPlayerInventory(false)
             .doesAddGregTechLogo(false)
             .build();
 
-        // === 主内容列布局（padding: 上2 右4 下7 左14，左侧多10px让文字离UI框左边缘更远） ===
+        // === 主内容列布局（padding: 上2 右4 下17 左24） ===
         // v1.1.10 修复：childPadding 从 2 改为 0，消除行间额外间距（行高已由各 row 的 height() 显式控制）
         // v1.1.11 修复：padding 上下从 4 改为 2，配合 9 行统一行高(7*16+2*17=146) 让总高 146+4=150 严丝合缝
         // v1.1.12 调整：下padding 从 2 改为 7（+5），配合 panel 高度 155，内容区 146+9=155 严丝合缝
+        // v1.1.13 调整：下padding 7→17（+10 延伸下边缘），左padding 14→24（+10 延伸左边缘），内容区右边界不变
         Flow column = Flow.column()
             .full()
-            .padding(2, 4, 7, 14)
+            .padding(2, 4, 17, 24)
             .childPadding(0)
             .crossAxisAlignment(Alignment.CrossAxis.START);
 
@@ -856,6 +858,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 参数1行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
         // v1.1.10 修复：显式 height(17) 对齐输入框高度
         // v1.1.12 调整：输入框 110→220（+110），外层 row 加 right padding 5 让按钮组右移95px（其余按钮右移100px）
+        // v1.1.13 调整：输入框 220→200（-20）
         column.child(
             Flow.row()
                 .widthRel(1f)
@@ -875,7 +878,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
                                 .formatAsInteger(true)
                                 .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
-                                .size(220, 17)
+                                .size(200, 17)
                                 .value(param1Sync)))
                 .child(
                     // 右组：4 个位数调整按钮（-, +, ×10, ÷10）
@@ -939,6 +942,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // v1.1.10 修复：显式 height(17) 对齐输入框高度
         // v1.1.11 修复：保留 height(17) 与输入框 size 一致，其他行统一 16
         // v1.1.12 调整：输入框 110→220（+110），外层 row 加 right padding 5 让按钮组右移95px
+        // v1.1.13 调整：输入框 220→200（-20）
         column.child(
             Flow.row()
                 .widthRel(1f)
@@ -958,7 +962,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
                                 .formatAsInteger(true)
                                 .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
-                                .size(220, 17)
+                                .size(200, 17)
                                 .value(param2Sync)))
                 .child(
                     // 右组：4 个位数调整按钮（-, +, ×10, ÷10）
