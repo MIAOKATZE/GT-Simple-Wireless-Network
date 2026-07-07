@@ -1,8 +1,6 @@
 package com.miaokatze.gtswn.common.hud;
 
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
@@ -11,15 +9,14 @@ import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
-import com.miaokatze.gtswn.common.util.FormatUtil.Measurement;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestWirelessEU;
@@ -47,16 +44,22 @@ public class WirelessMonitorHUD extends Gui {
     /** 服务端同步过来的 EU 字符串（BigInteger.toString()），未收到响应前为 null（用于判断首次进入） */
     private static String syncedEuStr = null;
 
-    /** 历史测量记录列表（每次检测都记录，保证窗口内足够样本） */
-    private static List<Measurement> measurementHistory = new ArrayList<>();
+    /**
+     * EU 测量数据集（替代原 measurementHistory 列表）。
+     * <p>
+     * 容量 61（0s 首检 + 60 次 100t 检测 = 300s），FIFO 老化，
+     * 内部使用 BigDecimal 精确计算 EU/t 斜率。static 单例：HUD 全局唯一。
+     */
+    private static final EUDataSet dataSet = new EUDataSet();
 
     /** 缓存的 EU/t 文本 */
     private static String cachedEUTText = "";
 
-    /** HUD 更新间隔（ticks），每 600 ticks（30 秒）更新一次 */
-    private static final int UPDATE_INTERVAL = 600;
+    /** HUD 更新间隔（ticks），每 100 ticks（5 秒）更新一次（与 MTE 统一） */
+    private static final int UPDATE_INTERVAL = 100;
 
-    // 窗口常量已迁移至 FormatUtil（T4 公共工具类提取）
+    /** 上次更新的真实时间戳（毫秒），用于登出/重进期间的 gap 检测（getTotalWorldTime 登出不推进） */
+    private static long lastUpdateRealTimeMs = 0L;
 
     /** 背包遍历间隔（ticks），每 20 ticks（1 秒）检查一次 */
     private static final int INVENTORY_CHECK_INTERVAL = 20;
@@ -109,7 +112,10 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
-     * 清空所有缓存数据（用于世界切换或关闭 HUD 时）
+     * 清空所有缓存数据（用于玩家失去监视器、HUD 关闭等场景）。
+     * <p>
+     * 注意：世界切换不再调用此方法（见 {@link #onRenderOverlay} 中的世界切换处理），
+     * 用户确认世界切换时保留数据集以维持 EU/t 连续性。
      */
     private static void clearCache() {
         cachedOwnerUUID = null;
@@ -119,65 +125,12 @@ public class WirelessMonitorHUD extends Gui {
             + ": §f0 §b"
             + StatCollector.translateToLocal("gtswn.hud.eu.unit");
         cachedEUTText = "";
-        measurementHistory.clear();
-        lastUpdateTick = 0;
+        dataSet.clear(); // 清空数据集
+        lastUpdateTick = 0; // 强制首次检测
+        lastUpdateRealTimeMs = 0; // 重置真实时间戳
         lastInventoryCheckTick = 0;
         hudEnabled = false;
         displayMode = 0;
-    }
-
-    /**
-     * 将当前 measurementHistory 保存到物品 NBT
-     * <p>
-     * 在玩家退出世界、切维度或失去监视器时调用，确保历史不丢失。
-     * 格式参考机器版 MTEWirelessEnergyMonitor.saveNBTData：count + m{i}(tick + value 字符串)
-     *
-     * @param stack 便携式监视器物品栈（可为 null）
-     */
-    public static void saveHistoryToItemStack(ItemStack stack) {
-        // 物品栈为空或不是便携式监视器，直接返回
-        if (stack == null || !(stack.getItem() instanceof PortableWirelessNetworkMonitor)) return;
-        // 确保 NBT 已初始化
-        if (stack.stackTagCompound == null) stack.stackTagCompound = new NBTTagCompound();
-        // 构造历史记录 NBT
-        NBTTagCompound historyTag = new NBTTagCompound();
-        historyTag.setInteger("count", measurementHistory.size());
-        for (int i = 0; i < measurementHistory.size(); i++) {
-            Measurement m = measurementHistory.get(i);
-            NBTTagCompound measTag = new NBTTagCompound();
-            measTag.setLong("tick", m.tick);
-            // BigInteger 以字符串形式存储（避免符号位/字节数组兼容性问题）
-            measTag.setString("value", m.value.toString());
-            historyTag.setTag("m" + i, measTag);
-        }
-        stack.stackTagCompound.setTag("measurementHistory", historyTag);
-    }
-
-    /**
-     * 从物品 NBT 加载 measurementHistory（找到监视器后调用）
-     * <p>
-     * 加载后立即 purgeExpired 清理窗口外样本（参考机器版第1166-1170行）。
-     * 如果 NBT 中无 measurementHistory 键，不做任何操作（首次使用）。
-     *
-     * @param stack       便携式监视器物品栈（可为 null）
-     * @param currentTick 当前世界 tick（用于清理过期样本）
-     */
-    public static void loadHistoryFromItemStack(ItemStack stack, long currentTick) {
-        // 物品栈为空或不是便携式监视器，直接返回
-        if (stack == null || !(stack.getItem() instanceof PortableWirelessNetworkMonitor)) return;
-        // NBT 不存在或无历史记录键，直接返回（首次使用）
-        if (stack.stackTagCompound == null || !stack.stackTagCompound.hasKey("measurementHistory")) return;
-        NBTTagCompound historyTag = stack.stackTagCompound.getCompoundTag("measurementHistory");
-        int count = historyTag.getInteger("count");
-        measurementHistory.clear();
-        for (int i = 0; i < count; i++) {
-            NBTTagCompound measTag = historyTag.getCompoundTag("m" + i);
-            long tick = measTag.getLong("tick");
-            BigInteger value = new BigInteger(measTag.getString("value"));
-            measurementHistory.add(new Measurement(tick, value));
-        }
-        // 加载后清理过期样本（FormatUtil 静态方法）
-        FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
     }
 
     /**
@@ -200,16 +153,19 @@ public class WirelessMonitorHUD extends Gui {
 
         EntityPlayer player = mc.thePlayer;
 
-        // 检测世界切换，清空缓存
+        // 检测世界切换：用户确认世界切换时保留数据集（维持 EU/t 连续性）
+        // 仅重置 UI 状态（syncedEuStr、cachedEUText、cachedEUTText、lastUpdateTick），不清空 dataSet
         int worldId = mc.theWorld.provider.dimensionId;
         if (worldId != currentWorldId) {
-            // 切维度前保存历史到物品栈（断点续传）
-            ItemStack monitorStack = findMonitorStackInInventory(player);
-            if (monitorStack != null) {
-                saveHistoryToItemStack(monitorStack);
-            }
-            clearCache();
             currentWorldId = worldId;
+            // 保留 dataSet（用户确认），只重置 UI 状态
+            syncedEuStr = null;
+            cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
+                + ": §f... §b"
+                + StatCollector.translateToLocal("gtswn.hud.eu.unit");
+            cachedEUTText = "";
+            lastUpdateTick = 0; // 强制下次更新
+            // 不清空 dataSet
         }
 
         // 获取世界时间
@@ -230,16 +186,11 @@ public class WirelessMonitorHUD extends Gui {
                     displayMode = hudMode;
                     hudEnabled = hudMode > 0;
 
-                    // 如果 HUD 开启，从物品 NBT 加载历史（断点续传），重置更新时间强制立即更新
+                    // 如果 HUD 开启，重置更新时间强制立即更新
+                    // 注：便携式随退出登录重置（用户确认），不再从物品 NBT 加载历史，
+                    // 靠 gap 检测和首次检测重建数据集
                     if (hudEnabled) {
                         lastUpdateTick = 0;
-                        // 从物品栈加载历史测量数据（替代原来的 clear）
-                        ItemStack monitorStack = findMonitorStackInInventory(player);
-                        if (monitorStack != null) {
-                            loadHistoryFromItemStack(monitorStack, currentTick);
-                        } else {
-                            measurementHistory.clear();
-                        }
 
                         // 立即更新一次缓存
                         try {
@@ -252,13 +203,10 @@ public class WirelessMonitorHUD extends Gui {
             } else {
                 // 没找到监测终端，关闭 HUD
                 if (hudEnabled) {
-                    // 失去监视器前无法保存历史到物品栈（此时找不到栈），
-                    // 历史会随 clearCache 丢失。这是可接受的——
-                    // 玩家主动丢弃/放入箱子后历史无意义。
+                    // 失去监视器：清空所有缓存（含 dataSet），避免跨存档污染
                     hudEnabled = false;
                     cachedOwnerUUID = null;
                     displayMode = 0;
-                    // 清空缓存，避免跨存档污染
                     clearCache();
                 }
             }
@@ -283,6 +231,19 @@ public class WirelessMonitorHUD extends Gui {
         } catch (Exception e) {
             return;
         }
+
+        // 真实时间 gap 检测（登出期间 tick 不推进，用真实时间检测）
+        // 说明：getTotalWorldTime() 登出期间不推进，无法检测登出时长；
+        // System.currentTimeMillis() 真实时间，登出期间持续推进；
+        // 阈值 10000ms = 10秒，与 MTE 的 200L ticks = 10s 对齐；
+        // 短时卡顿（<10s）豁免，保留数据集
+        long currentRealTimeMs = System.currentTimeMillis();
+        if (lastUpdateRealTimeMs > 0 && currentRealTimeMs - lastUpdateRealTimeMs > 10000L) {
+            // 长时重载/退出重进（>10秒真实时间）：清空数据集，强制首次检测
+            dataSet.clear();
+            lastUpdateTick = 0; // 强制首次检测
+        }
+        lastUpdateRealTimeMs = currentRealTimeMs;
 
         // 每 UPDATE_INTERVAL ticks 更新一次缓存
         if (currentTick - lastUpdateTick >= UPDATE_INTERVAL) {
@@ -526,9 +487,10 @@ public class WirelessMonitorHUD extends Gui {
             + " §b"
             + StatCollector.translateToLocal("gtswn.hud.eu.unit");
 
-        // 记录测量历史并计算 EU/t（FormatUtil 静态方法）
-        FormatUtil.recordMeasurement(measurementHistory, wirelessEU, currentTick, FormatUtil.WINDOW_TICKS);
-        cachedEUTText = calculateEUT(currentTick);
+        // 记录到数据集（替代 FormatUtil.recordMeasurement，EUDataSet 内部自动 FIFO 老化）
+        dataSet.add(wirelessEU, currentTick);
+        // 格式化 HUD 电网状态文本
+        cachedEUTText = formatHUDStatus();
     }
 
     /**
@@ -559,95 +521,75 @@ public class WirelessMonitorHUD extends Gui {
         lastUpdateTick = currentTick;
     }
 
-    // 记录/清理方法已迁移至 FormatUtil（T4 公共工具类提取）
+    // 记录/清理方法已迁移至 EUDataSet（T4 公共工具类提取）
 
     /**
-     * 计算 EU/t（300 秒窗口首末两点斜率法）
+     * 根据数据集格式化 HUD 电网状态文本。
      * <p>
-     * 算法：(lastValue - firstValue) / (lastTick - firstTick)
-     * 边界情况：
+     * 便携式特殊：前 5 次检测（size &lt; 6）显示"计算中..."（橙黄色），数据仍记录。
+     * 显示逻辑（与 MTE 统一）：
      * <ul>
-     * <li>历史为空或仅 1 个点：显示"无变化/计算中"</li>
-     * <li>首末 tick 相同（tickDiff &lt;= 0）：返回 0.0</li>
-     * <li>已记录但无变化：显示"暂无变化/计算中"</li>
+     * <li>size &lt; 6：计算中...（橙黄色）—— 便携式需要 5 次检测才稳定显示</li>
+     * <li>eut == 0：0 (静默) —— 绝对无变化</li>
+     * <li>0 &lt; |eut| &lt; 1：0 (&lt;1EU) —— 近似无变化</li>
+     * <li>|eut| &gt;= 1：正常显示（数值 + 电压等级）</li>
      * </ul>
+     *
+     * @return 格式化后的 HUD 电网状态文本（带 § 颜色代码）
      */
-    private static String calculateEUT(long currentTick) {
-        // 先清理窗口外样本（FormatUtil 静态方法）
-        FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
-
-        // 未记录前（窗口内样本不足）显示"无变化/计算中"
-        if (measurementHistory.size() < 2) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                + ": §f"
-                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
+    private static String formatHUDStatus() {
+        // 便携式特殊：前 5 次检测（size < 6）显示"计算中..."（橙黄色 §6），数据仍记录
+        // 原因：便携式每次检测间隔 100t（5s），前 5 次需要 25s 才能形成稳定窗口
+        if (dataSet.size() < 6) {
+            return "§6" + StatCollector.translateToLocal("gtswn.hud.network.status.calculating");
         }
 
-        // 计算 300 秒窗口首末两点斜率
-        double euPerTick = 0.0;
-        Measurement first = measurementHistory.get(0);
-        Measurement last = measurementHistory.get(measurementHistory.size() - 1);
-        long tickDiff = last.tick - first.tick;
-        if (tickDiff > 0) {
-            BigInteger diff = last.value.subtract(first.value);
-            euPerTick = diff.doubleValue() / tickDiff;
+        // 由 EUDataSet 计算 EU/t 斜率（BigDecimal 精确除法）
+        double eut = dataSet.calculateEUT();
+
+        // 绝对无变化（首末两点 EU 完全相等）
+        if (eut == 0.0) {
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": §f0 §bEU/t (§7静默§b)";
         }
 
-        // 格式化 EU/t（根据显示模式）
-        String euPerTickStr;
-        if (displayMode == 2) {
-            // 科学计数法（10^幂格式）
-            if (Math.abs(euPerTick) < 0.01) {
-                euPerTickStr = "0.00";
-            } else {
-                int exponent = (int) Math.floor(Math.log10(Math.abs(euPerTick)));
-                double coefficient = euPerTick / Math.pow(10, exponent);
-                euPerTickStr = String.format("%.2f×10^%d", coefficient, exponent);
-            }
-        } else {
-            // 常规计数
-            if (Math.abs(euPerTick) < 0.01) {
-                euPerTickStr = "0.00";
-            } else if (Math.abs(euPerTick) < 1000) {
-                euPerTickStr = String.format("%.2f", euPerTick);
-            } else {
-                // 大数值使用逗号分隔
-                euPerTickStr = FormatUtil.formatNormalDouble(euPerTick);
-            }
+        double absEut = Math.abs(eut);
+
+        // 小于 1 EU/t：变化过小，近似无变化
+        if (absEut < 1.0) {
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": §f0 §bEU/t (§7<1EU§b)";
         }
 
-        // 转换为 GT 的电流+电压等级格式
-        String gtPowerText = GTTierUtil.formatGTPower(euPerTick);
-        int gtTier = GTTierUtil.getGTTier(euPerTick); // 获取电压等级用于括号颜色
+        // 正常显示：数值 + GT 电压等级
+        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        String gtPowerText = GTTierUtil.formatGTPower(eut);
+        int gtTier = GTTierUtil.getGTTier(eut);
+        String bracketColor = GTTierUtil.TIER_COLORS[gtTier];
+        String statusLabel = StatCollector.translateToLocal("gtswn.hud.network.status");
+        String eutUnit = StatCollector.translateToLocal("gtswn.hud.eut.unit");
 
-        // 判断是增加还是减少
-        String status;
-        String bracketColor = GTTierUtil.TIER_COLORS[gtTier]; // 使用电压等级颜色用于括号
-        if (euPerTick > 0) {
-            status = "§a↑ +" + euPerTickStr
+        if (eut > 0) {
+            return "§b" + statusLabel
+                + ": §a↑ +"
+                + euPerTickStr
+                + " §b"
+                + eutUnit
                 + " "
-                + StatCollector.translateToLocal("gtswn.hud.eut.unit")
                 + bracketColor
-                + " ("
-                + gtPowerText
-                + ")";
-        } else if (euPerTick < 0) {
-            status = "§c↓ " + euPerTickStr
-                + " "
-                + StatCollector.translateToLocal("gtswn.hud.eut.unit")
-                + bracketColor
-                + " ("
+                + "("
                 + gtPowerText
                 + ")";
         } else {
-            // euPerTick == 0：有数据但无变化，显示"暂无变化/计算中"
-            // （对齐 MTE 版 MTEWirelessEnergyMonitor.calculateEUT 的 else 分支逻辑，不再显示"= 0.00 EU/t"）
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                + ": §f"
-                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
+            return "§b" + statusLabel
+                + ": §c↓ "
+                + euPerTickStr
+                + " §b"
+                + eutUnit
+                + " "
+                + bracketColor
+                + "("
+                + gtPowerText
+                + ")";
         }
-
-        return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status;
     }
 
     // 测量记录类、电压等级数组、格式化方法已迁移至 FormatUtil 与 GTTierUtil（T4 公共工具类提取）

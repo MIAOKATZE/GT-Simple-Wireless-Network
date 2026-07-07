@@ -24,8 +24,8 @@ import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 import com.miaokatze.gtswn.common.machine.widgets.ScientificTextFieldWidget;
+import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
-import com.miaokatze.gtswn.common.util.FormatUtil.Measurement;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 
 import gregtech.api.enums.Textures;
@@ -63,8 +63,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private static final long REDSTONE_CHECK_INTERVAL = 2L;
 
     // 智能 EU/t 计算相关（与 HUD 保持一致）
-    // 测量记录类、窗口常量、记录/清理方法已迁移至 FormatUtil（T4 公共工具类提取）
-    private java.util.List<Measurement> measurementHistory = new java.util.ArrayList<>();
+    // 测量历史管理（容量 61、FIFO 老化、NBT 序列化）已迁移至 EUDataSet（T4 公共工具类提取）
+    private final EUDataSet dataSet = new EUDataSet();
 
     // UI 同步字段
     // 初始值使用本地化文本（带 § 颜色代码），避免机器刚放置、onPostTick 未执行时打开 GUI 显示无颜色文本
@@ -140,14 +140,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             long worldTick = aBaseMetaTileEntity.getWorld()
                 .getTotalWorldTime();
 
-            // v1.2.4：gap 检测前置（必须在 measurementHistory.isEmpty() 短路之前执行）
+            // v1.2.4：gap 检测前置（必须在 dataSet.isEmpty() 短路之前执行）
             // 检测长时卸载重载：lastCheckTick > 0 排除首次放置，gap > 200L = 10秒
-            // - 长时卸载（>10秒）：清空历史（避免跨卸载斜率错误），触发30秒红石延迟
+            // - 长时卸载（>10秒）：清空数据集（避免跨卸载斜率错误），触发30秒红石延迟
             // - 短时卸载（≤10秒）：保留旧样本，直接续传（斜率误差 ≤3.3%，可接受）
             if (lastCheckTick > 0) {
                 long gap = worldTick - lastCheckTick;
                 if (gap > 200L) {
-                    measurementHistory.clear();
+                    dataSet.clear();
                     redstoneReloadDelay = 600; // 30秒 = 600 ticks
                 }
             }
@@ -160,20 +160,29 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             // 当 anchorMode=1 时，红石基于陈旧的 euPerTick 值判断，最多有 5 秒延迟，属可接受行为
             if (redstoneReloadDelay > 0) {
                 redstoneReloadDelay--;
-            } else if (measurementHistory.isEmpty() || worldTick - lastRedstoneCheckTick >= REDSTONE_CHECK_INTERVAL) {
+            } else if (dataSet.isEmpty() || worldTick - lastRedstoneCheckTick >= REDSTONE_CHECK_INTERVAL) {
                 updateRedstoneOutput();
                 lastRedstoneCheckTick = worldTick;
             }
             // UI 更新 + EU/t 计算：每 100 ticks（5秒）
             // 关键修复：使用差值检查（worldTick - lastCheckTick >= 100）替代 modulo
             // 原因：服务器卡顿跳过 100 倍数的 tick 时，modulo 检查会错过检测
-            // 首次测量加速：measurementHistory 为空时立即记录第一个数据点
-            if (measurementHistory.isEmpty() || worldTick - lastCheckTick >= 100L) {
+            // 首次测量加速：dataSet 为空时立即记录第一个数据点
+            if (dataSet.isEmpty() || worldTick - lastCheckTick >= 100L) {
                 // 服务端执行 EU/t 计算和缓存文本更新
                 // 客户端不执行：避免覆盖 StringSyncValue 同步过来的服务端真实值
                 // （客户端的 getWirelessEU() 返回 ZERO，会导致状态恒为"无变化"）
-                // calculateSmartEUT 返回电网状态文本（calculateEUT 内部已格式化，含 size<2/eut==0 分支）
-                cachedStatusText = calculateSmartEUT(worldTick);
+                // calculateSmartEUT 返回电网状态文本（formatEUTStatus 内部已格式化，含 size<2/eut==0 分支）
+                String calculatedStatus = calculateSmartEUT(worldTick);
+
+                // 显示优先级：重载延迟 > 正常计算
+                // 重载期间红石逻辑维持不变（避免误切换），UI 显示"重载计算中"提示用户
+                if (redstoneReloadDelay > 0) {
+                    cachedStatusText = StatCollector.translateToLocal("gtswn.ui.network.status.reload");
+                } else {
+                    cachedStatusText = calculatedStatus;
+                }
+
                 // 更新缓存文本（仅服务端），由 StringSyncValue 自动 S2C 同步给客户端
                 cachedModeText = displayMode == 0 ? translate("gtswn.ui.mode.normal")
                     : translate("gtswn.ui.mode.scientific");
@@ -308,16 +317,16 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     }
 
     // 智能 EU/t 计算（与 HUD 逻辑一致）
-    // 返回值：电网状态显示文本（由 calculateEUT 格式化，含 size<2/eut==0 分支）
-    // 副作用：更新 euPerTick（用于红石）、measurementHistory、lastCheckTick
+    // 返回值：电网状态显示文本（由 formatEUTStatus 格式化，含 size<2/eut==0/|eut|<1 分支）
+    // 副作用：更新 euPerTick（用于红石）、dataSet、lastCheckTick
     private String calculateSmartEUT(long currentTick) {
         BigInteger currentEU = getWirelessEU();
 
-        // 记录测量历史（FormatUtil 静态方法，传入 measurementHistory 与窗口大小）
-        FormatUtil.recordMeasurement(measurementHistory, currentEU, currentTick, FormatUtil.WINDOW_TICKS);
+        // 记录到数据集（替代 FormatUtil.recordMeasurement，EUDataSet 内部自动 FIFO 老化）
+        dataSet.add(currentEU, currentTick);
 
-        // 计算 EU/t：calculateEUT 内部更新 euPerTick 字段，并返回格式化显示文本
-        String statusText = calculateEUT(currentTick);
+        // 计算并格式化：formatEUTStatus 内部更新 euPerTick 字段
+        String statusText = formatEUTStatus();
 
         lastCheckTick = currentTick;
 
@@ -325,63 +334,53 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     }
 
     /**
-     * 计算 EU/t 并返回格式化显示文本（300 秒窗口首末两点斜率法，对齐 HUD 版逻辑）
+     * 根据数据集计算 EU/t 并格式化显示文本。
      * <p>
-     * 算法：(lastValue - firstValue) / (lastTick - firstTick)
-     * <p>
-     * 与 HUD 版 {@code WirelessMonitorHUD.calculateEUT} 保持一致的显示逻辑：
+     * 显示逻辑（与 HUD 统一）：
      * <ul>
-     * <li>历史为空或仅 1 个点（size &lt; 2）：显示"无变化/计算中"，euPerTick 设为 0</li>
-     * <li>首末 tick 相同（tickDiff &lt;= 0）：euPerTick 设为 0，显示"无变化/计算中"</li>
-     * <li>euPerTick &gt; 0：显示"↑ +X EU/t（GT电压等级）"</li>
-     * <li>euPerTick &lt; 0：显示"↓ X EU/t（GT电压等级）"</li>
-     * <li>euPerTick == 0 且 size &gt;= 2：显示"无变化/计算中"（对齐 HUD 版逻辑，不再显示"= 0.00 EU/t"）</li>
+     * <li>size &lt; 2：暂无变化/计算中（数据不足）</li>
+     * <li>eut == 0：0 (静默) —— 绝对无变化</li>
+     * <li>0 &lt; |eut| &lt; 1：0 (&lt;1EU) —— 近似无变化</li>
+     * <li>|eut| &gt;= 1：正常显示（数值 + 电压等级）</li>
      * </ul>
-     * 同时更新 {@link #euPerTick} 字段（用于红石功能）。
+     * 副作用：更新 {@link #euPerTick} 字段（用于红石锚定）。
      *
-     * @param currentTick 当前游戏 tick
      * @return 格式化后的电网状态文本（带 § 颜色代码）
      */
-    private String calculateEUT(long currentTick) {
-        // 先清理窗口外样本（FormatUtil 静态方法）
-        FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
-
-        // 未记录前（窗口内样本不足）显示"无变化/计算中"
-        if (measurementHistory.size() < 2) {
+    private String formatEUTStatus() {
+        // 数据不足（仅 0 或 1 个采样点），无法计算斜率
+        if (dataSet.size() < 2) {
             euPerTick = 0.0;
-            return translate("gtswn.ui.network.status.nochange");
+            return StatCollector.translateToLocal("gtswn.ui.network.status.nochange");
         }
 
-        // 计算 300 秒窗口首末两点斜率
-        double eut = 0.0;
-        Measurement first = measurementHistory.get(0);
-        Measurement last = measurementHistory.get(measurementHistory.size() - 1);
-        long tickDiff = last.tick - first.tick;
-        if (tickDiff > 0) {
-            BigInteger diff = last.value.subtract(first.value);
-            // 注：diff 为窗口首末两点差值，远小于 2^53，doubleValue() 精度足够
-            // 若未来电网规模极大导致 diff 超 2^53，可改用 BigDecimal 计算
-            eut = diff.doubleValue() / tickDiff;
-        }
-
-        // 更新 euPerTick（用于红石功能）
+        // 由 EUDataSet 计算 EU/t 斜率（BigDecimal 精确除法）
+        double eut = dataSet.calculateEUT();
         euPerTick = eut;
 
-        // 格式化 EU/t（根据显示模式）
-        String euPerTickStr;
-        String gtPowerText;
-        if (eut > 0.0) {
-            euPerTickStr = formatEUtValue(eut);
-            gtPowerText = GTTierUtil.formatGTPower(eut);
-            return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText);
-        } else if (eut < 0.0) {
-            // 负数取绝对值格式化（down 模板自带"-"号）
-            euPerTickStr = formatEUtValue(Math.abs(eut));
-            gtPowerText = GTTierUtil.formatGTPower(Math.abs(eut));
-            return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
+        // 绝对无变化（首末两点 EU 完全相等）
+        if (eut == 0.0) {
+            return StatCollector.translateToLocal("gtswn.ui.network.status.silent");
+        }
+
+        double absEut = Math.abs(eut);
+
+        // 小于 1 EU/t：变化过小，近似无变化
+        if (absEut < 1.0) {
+            return StatCollector.translateToLocal("gtswn.ui.network.status.lessthan1");
+        }
+
+        // 正常显示：数值 + GT 电压等级
+        // 上升：gtswn.ui.network.status.up = "§b电网状态: §a↑ +%s §bEU/t (§f%s§b)"
+        // 下降：gtswn.ui.network.status.down = "§b电网状态: §c↓ -%s §bEU/t (§f%s§b)"
+        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        String gtPowerText = GTTierUtil.formatGTPower(eut);
+        if (eut > 0) {
+            return String
+                .format(StatCollector.translateToLocal("gtswn.ui.network.status.up"), euPerTickStr, gtPowerText);
         } else {
-            // euPerTick == 0：有数据但无变化，显示"暂无变化/计算中"（对齐 HUD 版逻辑，不再显示"= 0.00 EU/t"）
-            return translate("gtswn.ui.network.status.nochange");
+            return String
+                .format(StatCollector.translateToLocal("gtswn.ui.network.status.down"), euPerTickStr, gtPowerText);
         }
     }
 
@@ -457,27 +456,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     @Override
     public List<String> reportMetrics() {
         return Arrays.asList(getInfoData());
-    }
-
-    // 格式化 EU/t 数值（根据显示模式）
-    private String formatEUtValue(double value) {
-        if (Math.abs(value) < 0.01) {
-            return "0.00";
-        }
-
-        if (displayMode == 0) {
-            // 常规计数
-            if (Math.abs(value) < 1000) {
-                return String.format("%.2f", value);
-            } else {
-                return FormatUtil.formatNormalDouble(value);
-            }
-        } else {
-            // 科学计数法
-            int exponent = (int) Math.floor(Math.log10(Math.abs(value)));
-            double coefficient = value / Math.pow(10, exponent);
-            return String.format("%.2f×10^%d", coefficient, exponent);
-        }
     }
 
     // 上述格式化与电压等级相关方法已迁移至 FormatUtil 与 GTTierUtil（T4 公共工具类提取）
@@ -1189,18 +1167,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
         // 保存 EU/t 计算状态（用于红石功能）
         aNBT.setDouble("euPerTick", euPerTick);
-        // v1.2.4：重新持久化 measurementHistory（用于短时卸载直接续传）
+        // v1.2.4：重新持久化测量历史（用于短时卸载直接续传）
         // 短时卸载（≤10秒）保留旧样本立即恢复变化率；长时卸载（>10秒）由 onPostTick 的 gap 检测清空
-        NBTTagCompound historyTag = new NBTTagCompound();
-        historyTag.setInteger("count", measurementHistory.size());
-        for (int i = 0; i < measurementHistory.size(); i++) {
-            Measurement m = measurementHistory.get(i);
-            NBTTagCompound measTag = new NBTTagCompound();
-            measTag.setLong("tick", m.tick);
-            measTag.setString("value", m.value.toString());
-            historyTag.setTag("m" + i, measTag);
-        }
-        aNBT.setTag("measurementHistory", historyTag);
+        // 由 EUDataSet 统一序列化（兼容旧 measurementHistory 格式）
+        dataSet.saveToNBT(aNBT, "measurementHistory");
 
         // v1.2.1 修复：移除 lastWirelessEU 死代码
         // 原因：loadNBTData 从不读取 lastWirelessEU，写入只是浪费 NBT 空间和性能
@@ -1233,23 +1203,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 加载 EU/t 计算状态（用于红石功能）
         euPerTick = aNBT.getDouble("euPerTick");
         // 注：unchangedCount 已废弃（300s 窗口均值算法不再使用），不再读取
-        // v1.2.4：恢复 measurementHistory（用于短时卸载直接续传）
-        // 兼容性：v1.2.3 存档无此键，hasKey 检查跳过；v1.2.2 之前存档有此键，正常恢复
-        if (aNBT.hasKey("measurementHistory")) {
-            NBTTagCompound historyTag = aNBT.getCompoundTag("measurementHistory");
-            int count = historyTag.getInteger("count");
-            measurementHistory.clear();
-            for (int i = 0; i < count; i++) {
-                NBTTagCompound measTag = historyTag.getCompoundTag("m" + i);
-                long tick = measTag.getLong("tick");
-                try {
-                    BigInteger value = new BigInteger(measTag.getString("value"));
-                    measurementHistory.add(new Measurement(tick, value));
-                } catch (NumberFormatException e) {
-                    // 跳过损坏的记录
-                }
-            }
-        }
+        // v1.2.4：恢复测量历史（用于短时卸载直接续传）
+        // 兼容性：v1.2.3 存档无此键时 loadFromNBT 内部 hasKey 检查跳过；
+        // v1.2.2 之前存档有此键，正常恢复；EUDataSet 已处理 count>CAPACITY 情况
+        dataSet.loadFromNBT(aNBT, "measurementHistory");
         // 注意：lastWirelessEU 不需要保存，因为退出重进后会重新从 WirelessNetworkManager 获取
 
         // 加载红石控制状态

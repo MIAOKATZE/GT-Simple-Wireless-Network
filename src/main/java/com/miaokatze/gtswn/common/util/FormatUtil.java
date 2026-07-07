@@ -1,27 +1,26 @@
 package com.miaokatze.gtswn.common.util;
 
 import java.math.BigInteger;
-import java.util.Iterator;
-import java.util.List;
 
 /**
  * 公共格式化工具类
  * <p>
- * 提供无线电网监视器（MTE / HUD / 便携物品）共用的数值格式化与测量历史管理方法。
+ * 提供无线电网监视器（MTE / HUD / 便携物品）共用的数值格式化方法与测量记录类。
  * 仅依赖 JDK，不引用本模组业务类，避免循环依赖。
+ * <p>
+ * 测量历史管理（窗口老化、EU/t 斜率计算、NBT 序列化）已迁移至 {@link EUDataSet}，
+ * 本类仅保留 {@link Measurement} 数据结构与一组纯格式化静态方法。
  * <p>
  * 来源：合并自 {@code MTEWirelessEnergyMonitor} 与 {@code WirelessMonitorHUD} 的重复实现，
  * 以及 {@code PortableWirelessNetworkMonitor#formatBigInteger}。
  */
 public class FormatUtil {
 
-    /** EU/t 均值计算窗口（ticks），6000 ticks = 300 秒。MTE 与 HUD 原值一致，统一迁移至此。 */
-    public static final long WINDOW_TICKS = 6000L;
-
     /**
      * 测量记录类（MTE 与 HUD 共用）
      * <p>
-     * 字段为 public 以兼容原 MTE/HUD 中直接访问 {@code m.tick} / {@code m.value} 的 NBT 持久化代码。
+     * 字段为 public 以兼容原 MTE/HUD 中直接访问 {@code m.tick} / {@code m.value} 的 NBT 持久化代码，
+     * 以及 {@link EUDataSet} 内部直接构造与读取。
      */
     public static class Measurement {
 
@@ -40,45 +39,6 @@ public class FormatUtil {
         public Measurement(long tick, BigInteger value) {
             this.tick = tick;
             this.value = value;
-        }
-    }
-
-    /**
-     * 记录测量历史（每次检测都记录，不再判断是否变化）
-     * <p>
-     * 保证窗口内有足够样本支撑首末两点斜率算法。每次记录后立即调用
-     * {@link #purgeExpired(List, long, long)} 清理窗口外样本。
-     *
-     * @param history     测量历史列表（调用方持有，方法会就地修改）
-     * @param value       当前测量值
-     * @param tick        当前游戏 tick
-     * @param windowTicks 窗口大小（ticks），通常传 {@link #WINDOW_TICKS}
-     */
-    public static void recordMeasurement(List<Measurement> history, BigInteger value, long tick, long windowTicks) {
-        if (value == null) return;
-        history.add(new Measurement(tick, value));
-        // 老化：清理窗口外样本（tick < currentTick - windowTicks）
-        purgeExpired(history, tick, windowTicks);
-    }
-
-    /**
-     * 老化过期样本：淘汰 tick &lt; currentTick - windowTicks 的样本
-     * <p>
-     * 列表按时间顺序追加，遇到第一个未过期样本即可停止遍历。
-     *
-     * @param history     测量历史列表
-     * @param currentTick 当前游戏 tick
-     * @param windowTicks 窗口大小（ticks）
-     */
-    public static void purgeExpired(List<Measurement> history, long currentTick, long windowTicks) {
-        long cutoff = currentTick - windowTicks;
-        Iterator<Measurement> it = history.iterator();
-        while (it.hasNext()) {
-            if (it.next().tick < cutoff) {
-                it.remove();
-            } else {
-                break; // 列表按时间顺序，遇到第一个未过期即可停止
-            }
         }
     }
 

@@ -22,6 +22,10 @@ gtswn.ui.wireless.energy.scientific=§bWireless Network: §f%s §bEU
 gtswn.ui.network.status.up=§bNetwork Status: §a↑ +%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.down=§bNetwork Status: §c↓ -%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.nochange=§bNetwork Status: §fNo Change/Calculating
+# Silent/<1EU/Reloading special status display (from MTEWirelessEnergyMonitor / WirelessMonitorHUD boundary handling)
+gtswn.ui.network.status.silent=§bNetwork Status: §f0 §bEU/t (§7Silent§b)
+gtswn.ui.network.status.lessthan1=§bNetwork Status: §f0 §bEU/t (§7<1EU§b)
+gtswn.ui.network.status.reload=§bNetwork Status: §cReload Calculating - Redstone Logic Maintained
 gtswn.ui.redstone.mode=§bRedstone Mode: §f%s
 gtswn.ui.redstone.mode.off=Off
 gtswn.ui.redstone.mode.high=High Level
@@ -56,6 +60,8 @@ gtswn.ui.tooltip.param2.reset=Param2 Reset
 # HUD Text
 gtswn.hud.network.status=Network Status
 gtswn.hud.network.no.change=No Change/Calculating
+# HUD reload transition placeholder text (before first sync received)
+gtswn.hud.network.status.calculating=Calculating...
 gtswn.hud.wireless.network=Wireless Network
 gtswn.hud.eu.unit=EU
 gtswn.hud.eut.unit=EU/t

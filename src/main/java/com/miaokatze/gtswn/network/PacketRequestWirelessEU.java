@@ -16,7 +16,7 @@ import io.netty.buffer.ByteBuf;
  * 客户端→服务端 请求包：请求指定玩家 UUID 的无线电网 EU 余额。
  * <p>
  * 背景：GlobalEnergy 数据仅存在于服务端，客户端直接调用 {@code WirelessNetworkManager.getUserEU} 恒返 0。
- * 故由客户端（HUD 每 200 ticks）发送此请求包，服务端查询后通过 {@link PacketResponseWirelessEU} 回包。
+ * 故由客户端（HUD 每 100 ticks，即 5 秒）发送此请求包，服务端查询后通过 {@link PacketResponseWirelessEU} 回包。
  * <p>
  * discriminator = 0（见 {@link GTSWNPacketHandler#register()}）。
  */
