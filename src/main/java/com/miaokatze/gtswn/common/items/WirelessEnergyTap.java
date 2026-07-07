@@ -87,6 +87,12 @@ public class WirelessEnergyTap extends Item {
      * <p>
      * v1.2.1 改进：改用 {@code world.getTotalWorldTime()} 替代 {@code System.currentTimeMillis()}，
      * 与游戏时间同步，避免服务端卡顿时 TPS 波动导致时间判断失真，且更符合 Minecraft 惯例。
+     * <p>
+     * v1.2.2 修复：兼容 v1.2.1 之前用 {@code System.currentTimeMillis()} 存储的老 NBT。
+     * 老存档中已使用过的链路终端物品 NBT 里 {@code LastUseTime} 存的是毫秒时间戳（约 1.7×10^12），
+     * 而新代码 {@code now} 是 game tick（通常 &lt; 10^8），{@code now - lastTime} 会是巨大负数 &lt; {@code INTERVAL_TICKS}，
+     * 导致 canTrigger 永远返回 false，链路终端完全失效（无法附着覆盖板、无法切换模式）。
+     * 修复：检测 lastTime 是否超过 game tick 合理上限（10^10），若超过视为老数据重置为 0。
      *
      * @param aStack 物品栈
      * @param world  当前世界（用于获取世界 tick）
@@ -96,6 +102,11 @@ public class WirelessEnergyTap extends Item {
         ensureNBT(aStack);
         long now = world.getTotalWorldTime();
         long lastTime = aStack.stackTagCompound.getLong(NBT_LAST_USE_TIME);
+        // v1.2.2 兼容性修复：老 NBT 存的是毫秒时间戳（~1.7×10^12），新代码用 game tick（~10^7）
+        // 超过 10^10 视为老数据，重置为 0 避免负数差值导致 canTrigger 永远返回 false
+        if (lastTime > 10_000_000_000L) {
+            lastTime = 0;
+        }
         if (now - lastTime < INTERVAL_TICKS) {
             return false;
         }

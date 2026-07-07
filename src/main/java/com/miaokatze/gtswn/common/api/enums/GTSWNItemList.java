@@ -27,7 +27,9 @@ public enum GTSWNItemList implements IItemContainer {
     // 无线能量覆盖板（输入）
     GTswn_Cover_Energy_Wireless,
     // 无线动力覆盖板（输出）
-    GTswn_Cover_Dynamo_Wireless;
+    GTswn_Cover_Dynamo_Wireless,
+    // 测试硬币（测试环境道具：右键 +100万 EU，Shift+右键 -100万 EU）
+    TestCoin;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;

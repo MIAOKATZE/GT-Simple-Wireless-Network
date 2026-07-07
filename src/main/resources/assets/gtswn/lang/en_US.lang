@@ -1,5 +1,6 @@
 # Items
 item.PortableWirelessNetworkMonitor_GTswn.name=Portable Wireless Network Monitor
+item.TestCoin_GTswn.name=Test Coin
 
 # Machines
 gtswn.machine.wireless_monitor=Wireless Energy Monitor

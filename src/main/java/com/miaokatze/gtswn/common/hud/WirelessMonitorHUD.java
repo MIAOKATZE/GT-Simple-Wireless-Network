@@ -569,7 +569,7 @@ public class WirelessMonitorHUD extends Gui {
      * <ul>
      * <li>历史为空或仅 1 个点：显示"无变化/计算中"</li>
      * <li>首末 tick 相同（tickDiff &lt;= 0）：返回 0.0</li>
-     * <li>已记录但无变化：显示 "0.00" EU/t</li>
+     * <li>已记录但无变化：显示"暂无变化/计算中"</li>
      * </ul>
      */
     private static String calculateEUT(long currentTick) {
@@ -640,7 +640,11 @@ public class WirelessMonitorHUD extends Gui {
                 + gtPowerText
                 + ")";
         } else {
-            status = "§f= 0.00 " + StatCollector.translateToLocal("gtswn.hud.eut.unit");
+            // euPerTick == 0：有数据但无变化，显示"暂无变化/计算中"
+            // （对齐 MTE 版 MTEWirelessEnergyMonitor.calculateEUT 的 else 分支逻辑，不再显示"= 0.00 EU/t"）
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
+                + ": §f"
+                + StatCollector.translateToLocal("gtswn.hud.network.no.change");
         }
 
         return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status;

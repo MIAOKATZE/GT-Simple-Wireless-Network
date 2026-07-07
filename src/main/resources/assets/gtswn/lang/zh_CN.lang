@@ -1,5 +1,6 @@
 # Items
 item.PortableWirelessNetworkMonitor_GTswn.name=便携式无线网络监测终端
+item.TestCoin_GTswn.name=测试硬币
 
 # Machines
 gtswn.machine.wireless_monitor=无线能量监视器
