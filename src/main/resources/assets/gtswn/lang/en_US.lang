@@ -7,13 +7,13 @@ gtswn.machine.wireless_monitor=Wireless Energy Monitor
 gt.blockmachines.gtswn.wireless_energy_monitor.name=Wireless Energy Monitor
 
 # Wireless Energy Monitor Description
-gtswn.desc.wireless_monitor.line1=§bMonitor wireless network, smart power calculation
-gtswn.desc.wireless_monitor.line2=§bSmart redstone output, multiple modes
-gtswn.desc.wireless_monitor.line3=§9From MOD: GTSimpleWirelessNetwork
-gtswn.desc.wireless_monitor.line4=§eRecommend keeping the machine's chunk loaded
-gtswn.desc.wireless_monitor.line5=§7Short reload(≤10s) auto-resumes, long reload(>10s) enables 30s redstone buffer
-gtswn.desc.wireless_monitor.line6=§7Status: 5s interval, 300s window avg, with silent/long-term-silent(≥300s) detection
-gtswn.desc.wireless_monitor.line7=§7Reload/rejoin triggers cold start; dataset<61 means cold-start calculation
+gtswn.desc.wireless_monitor.line1=§bMonitor wireless network, §asmart power calculation
+gtswn.desc.wireless_monitor.line2=§bSmart redstone output, §emultiple modes
+gtswn.desc.wireless_monitor.line3=§9From MOD: §fGTSimpleWirelessNetwork
+gtswn.desc.wireless_monitor.line4=§eRecommend keeping the machine's chunk §cloaded
+gtswn.desc.wireless_monitor.line5=§bReload: §fShort(≤§e10s§f)§aauto-resumes§f, Long(>§e10s§f)§6enables 30s redstone buffer
+gtswn.desc.wireless_monitor.line6=§bStatus: §fevery §e5s§f, §a300s§f window avg, with §7silent§f/§8long-term-silent§f(≥§a300s§f) detection
+gtswn.desc.wireless_monitor.line7=§bCold Start: §fReload/rejoin triggers, §edataset<61 means cold-start calculation
 
 # Wireless Energy Monitor UI
 gtswn.ui.title=Wireless Energy Monitor
@@ -73,12 +73,12 @@ gtswn.hud.eut.unit=EU/t
 gtswn.tooltip.monitor.hud.mode.off=§cHUD: Off
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: Normal
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: Scientific
-gtswn.tooltip.monitor.usage=§7Right-click to toggle HUD mode
-gtswn.tooltip.monitor.baubles.equip=§7Can be equipped in any Baubles slot
+gtswn.tooltip.monitor.usage=§eRight-click§f to toggle HUD mode
+gtswn.tooltip.monitor.baubles.equip=§fCan be equipped in any §bBaubles slot§f
 # Portable mechanism description (v1.3.0, 3-line brief form)
-gtswn.tooltip.monitor.mechanism.line1=§7Status: 5s interval, 300s window average
-gtswn.tooltip.monitor.mechanism.line2=§7First 30s shows "Calculating...", with silent/long-term-silent detection
-gtswn.tooltip.monitor.mechanism.line3=§7Rejoin triggers cold start; dataset resets on logout
+gtswn.tooltip.monitor.mechanism.line1=§bStatus: §fevery §e5s§f, §a300s§f window average
+gtswn.tooltip.monitor.mechanism.line2=§bSilent: §fwith §7silent§f/§8long-term-silent§f(≥§a300s§f) detection
+gtswn.tooltip.monitor.mechanism.line3=§bCold Start: §fRejoin triggers, §edataset resets on logout
 
 # NC2 Industrial Information Panel Info (via GT Sensor Kit)
 gtswn.info.energy=§7Energy: %s

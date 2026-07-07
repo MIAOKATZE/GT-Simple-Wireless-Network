@@ -526,10 +526,9 @@ public class WirelessMonitorHUD extends Gui {
     /**
      * 根据数据集格式化 HUD 电网状态文本。
      * <p>
-     * 便携式特殊：前 5 次检测（size &lt; 6）显示"计算中..."（橙黄色），数据仍记录。
      * 显示逻辑（与 MTE 统一）：
      * <ul>
-     * <li>size &lt; 6：计算中...（橙黄色）—— 便携式需要 5 次检测才稳定显示</li>
+     * <li>size &lt; 2：网络状态：计算中...（标题青色 + 计算中橙黄）—— 首检未完成</li>
      * <li>eut == 0：0 (静默) —— 绝对无变化</li>
      * <li>0 &lt; |eut| &lt; 1：0 (&lt;1EU) —— 近似无变化</li>
      * <li>|eut| &gt;= 1：正常显示（数值 + 电压等级）</li>
@@ -538,10 +537,14 @@ public class WirelessMonitorHUD extends Gui {
      * @return 格式化后的 HUD 电网状态文本（带 § 颜色代码）
      */
     private static String formatHUDStatus() {
-        // 便携式特殊：前 5 次检测（size < 6）显示"计算中..."（橙黄色 §6），数据仍记录
-        // 原因：便携式每次检测间隔 100t（5s），前 5 次需要 25s 才能形成稳定窗口
-        if (dataSet.size() < 6) {
-            return "§6" + StatCollector.translateToLocal("gtswn.hud.network.status.calculating");
+        // 便携式冷启动：size < 2 时无法计算斜率，显示"网络状态：计算中..."
+        // v1.3.2 修正：原阈值 size < 6 为 v1.3.0 前 600t 间隔的过时逻辑，
+        // 现检测间隔 100t 且静默压缩后 size 恒为 2，故与 MTE formatEUTStatus 统一为 size < 2
+        // 颜色：标题青色 §b（与其他状态行一致），"计算中"橙黄 §6 警示
+        if (dataSet.size() < 2) {
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
+                + ": §6"
+                + StatCollector.translateToLocal("gtswn.hud.network.status.calculating");
         }
 
         // 由 EUDataSet 计算 EU/t 斜率（BigDecimal 精确除法）

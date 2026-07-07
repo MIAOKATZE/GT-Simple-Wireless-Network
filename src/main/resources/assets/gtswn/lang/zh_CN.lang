@@ -7,13 +7,13 @@ gtswn.machine.wireless_monitor=无线能量监视器
 gt.blockmachines.gtswn.wireless_energy_monitor.name=无线能量监视器
 
 # Wireless Energy Monitor Description
-gtswn.desc.wireless_monitor.line1=§b用于监测无线网络，智能计算网络功率
-gtswn.desc.wireless_monitor.line2=§b智能输出红石信号，可切换多模式
-gtswn.desc.wireless_monitor.line3=§9来源MOD：GTSimpleWirelessNetwork
-gtswn.desc.wireless_monitor.line4=§e建议对机器所在区块进行常态加载
-gtswn.desc.wireless_monitor.line5=§7短时重载(≤10秒)自动续传，长时重载(>10秒)启用30秒红石缓冲
-gtswn.desc.wireless_monitor.line6=§7电网状态: 每5秒检测，300秒窗口均值，含静默/长期静默(≥300秒)判定
-gtswn.desc.wireless_monitor.line7=§7重载/重进触发冷启动，数据集<61即冷启动计算
+gtswn.desc.wireless_monitor.line1=§b用于监测无线网络，§a智能计算网络功率
+gtswn.desc.wireless_monitor.line2=§b智能输出红石信号，§e可切换多模式
+gtswn.desc.wireless_monitor.line3=§9来源MOD：§fGTSimpleWirelessNetwork
+gtswn.desc.wireless_monitor.line4=§e建议对机器所在区块进行§c常态加载
+gtswn.desc.wireless_monitor.line5=§b重载策略: §f短时(≤§e10秒§f)§a自动续传§f，长时(>§e10秒§f)§6启用30秒红石缓冲
+gtswn.desc.wireless_monitor.line6=§b电网状态: §f每§e5秒§f检测，§a300秒§f窗口均值，含§7静默§f/§8长期静默§f(≥§a300秒§f)判定
+gtswn.desc.wireless_monitor.line7=§b冷启动: §f重载/重进触发，§e数据集<61即冷启动计算
 
 # Wireless Energy Monitor UI
 gtswn.ui.title=无线能量监视器
@@ -73,12 +73,12 @@ gtswn.hud.eut.unit=EU/t
 gtswn.tooltip.monitor.hud.mode.off=§cHUD: 关闭
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: 常规计数
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: 科学计数
-gtswn.tooltip.monitor.usage=§7右键切换 HUD 模式
-gtswn.tooltip.monitor.baubles.equip=§7可在 Baubles 饰品栏任意槽位装备
+gtswn.tooltip.monitor.usage=§e右键§f切换 HUD 模式
+gtswn.tooltip.monitor.baubles.equip=§f可在 §bBaubles 饰品栏§f任意槽位装备
 # 便携式机制说明（v1.3.0 新增，3 行简略形式）
-gtswn.tooltip.monitor.mechanism.line1=§7电网状态: 每5秒检测，300秒窗口均值
-gtswn.tooltip.monitor.mechanism.line2=§7前30秒显示"计算中..."，含静默/长期静默判定
-gtswn.tooltip.monitor.mechanism.line3=§7退出重进触发冷启动，数据集随退出重置
+gtswn.tooltip.monitor.mechanism.line1=§b电网状态: §f每§e5秒§f检测，§a300秒§f窗口均值
+gtswn.tooltip.monitor.mechanism.line2=§b静默判定: §f含§7静默§f/§8长期静默§f(≥§a300秒§f)判定
+gtswn.tooltip.monitor.mechanism.line3=§b冷启动: §f退出重进触发，§e数据集随退出重置
 
 # NC2 工业信息屏信息（通过 GT 传感器套件）
 gtswn.info.energy=§7能量: %s

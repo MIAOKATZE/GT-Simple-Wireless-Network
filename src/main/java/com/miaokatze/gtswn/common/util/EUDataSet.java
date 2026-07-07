@@ -79,9 +79,15 @@ public class EUDataSet {
                 // 新值相同：更新末位 tick，保持 2 个数据点
                 data.set(1, new Measurement(tick, value));
             } else {
-                // 新值不同：退出长期静默，清空数据集冷启动
+                // 新值不同：退出长期静默
+                // v1.3.2 修正：保留 last 点作为新数据集起点，避免 size 回到 1 触发冷启动
+                // 旧逻辑 clear()+add(newPoint) 导致 size=1，MTE 显示"暂无变化/计算中"，
+                // 且若后续值短暂稳定会陷入"静默↔暂无变化"循环，无法积累正确 eut
+                // 新逻辑：data = [last, newPoint]，size=2，立即可计算 eut = (newValue-lastValue)/(newTick-lastTick)
+                Measurement prev = last; // last 已在第 77 行获取，clear 前持有引用
                 data.clear();
                 longTermSilent = false;
+                data.add(prev);
                 data.add(new Measurement(tick, value));
             }
             return;
@@ -102,8 +108,12 @@ public class EUDataSet {
                     longTermSilent = true;
                 }
             } else {
-                // 新值不同：清空数据集，冷启动
+                // 新值不同：脱离静默
+                // v1.3.2 修正：保留 last 点作为新数据集起点，避免 size=1 冷启动（同修改点 A）
+                // data = [last, newPoint]，size=2，立即可计算 eut
+                Measurement prev = last; // last 已在第 92 行获取，clear 前持有引用
                 data.clear();
+                data.add(prev);
                 data.add(new Measurement(tick, value));
             }
             return;
