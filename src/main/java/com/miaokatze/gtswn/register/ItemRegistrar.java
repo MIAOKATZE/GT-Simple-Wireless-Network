@@ -3,7 +3,6 @@ package com.miaokatze.gtswn.register;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dynamo_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
-import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -19,27 +18,11 @@ public class ItemRegistrar {
      */
     public static void init() {
         GTSimpleWirelessNetwork.LOG.info("开始通过 ItemRegistrar 注册物品...");
-        registerTestCoin();
-        // registerTestCoinE(); // 取消测试物品注册，源码保留
         registerPortableWirelessNetworkMonitor();
         registerWirelessEnergyTap();
         registerGTswnCoverEnergyWireless();
         registerGTswnCoverDynamoWireless();
         GTSimpleWirelessNetwork.LOG.info("物品注册完成。");
-    }
-
-    /**
-     * 注册测试硬币
-     */
-    private static void registerTestCoin() {
-        TestCoin.setAndRegister(com.miaokatze.gtswn.common.items.TestCoin::new);
-    }
-
-    /**
-     * 注册电子测试硬币
-     */
-    private static void registerTestCoinE() {
-        // TestCoinE.setAndRegister(com.miaokatze.gtswn.common.items.TestCoinE::new); // 取消测试物品注册，源码保留
     }
 
     /**

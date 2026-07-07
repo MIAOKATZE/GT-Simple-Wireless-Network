@@ -18,18 +18,6 @@ import gregtech.api.util.GTLog;
  */
 public enum GTSWNItemList implements IItemContainer {
 
-    // 测试机器：EV, IV, LuV 等级
-    Test_Machine_EV,
-    Test_Machine_IV,
-    Test_Machine_LuV,
-
-    // 测试用多方块机器 (HV)
-    Test_Multiblock_HV,
-
-    // 测试物品
-    TestCoin,
-    // 电子测试硬币 (现在由 GTSWNMetaItem01 管理)
-    TestCoinE,
     // 便携式无线网络监测终端
     Portable_Wireless_Network_Monitor,
     // 无线能量监视器

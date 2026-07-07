@@ -24,6 +24,9 @@ import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 import com.miaokatze.gtswn.common.machine.widgets.ScientificTextFieldWidget;
+import com.miaokatze.gtswn.common.util.FormatUtil;
+import com.miaokatze.gtswn.common.util.FormatUtil.Measurement;
+import com.miaokatze.gtswn.common.util.GTTierUtil;
 
 import gregtech.api.enums.Textures;
 import gregtech.api.interfaces.ITexture;
@@ -51,7 +54,6 @@ import gregtech.common.misc.WirelessNetworkManager;
 public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExporter {
 
     // EU/t 计算相关
-    private BigInteger lastEU = BigInteger.ZERO;
     private long lastCheckTick = 0;
     private double euPerTick = 0.0;
 
@@ -61,20 +63,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private static final long REDSTONE_CHECK_INTERVAL = 2L;
 
     // 智能 EU/t 计算相关（与 HUD 保持一致）
-    private static class Measurement {
-
-        long tick;
-        BigInteger value;
-
-        Measurement(long tick, BigInteger value) {
-            this.tick = tick;
-            this.value = value;
-        }
-    }
-
+    // 测量记录类、窗口常量、记录/清理方法已迁移至 FormatUtil（T4 公共工具类提取）
     private java.util.List<Measurement> measurementHistory = new java.util.ArrayList<>();
-    /** EU/t 均值计算窗口（ticks），6000 ticks = 300 秒 */
-    private static final long WINDOW_TICKS = 6000L;
 
     // UI 同步字段
     // 初始值使用本地化文本（带 § 颜色代码），避免机器刚放置、onPostTick 未执行时打开 GUI 显示无颜色文本
@@ -91,8 +81,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private int redstoneMode = 0; // 0=关闭, 1=正向, 2=反向, 3=正向区间, 4=反向区间
     /** 锚定参数模式：0=电网电量（BigInteger），1=电网状态数值（EU/t，double→long 截断） */
     private int anchorMode = 0;
-    private String param1Text = ""; // 参数1文本
-    private String param2Text = ""; // 参数2文本
     private BigInteger param1Value = BigInteger.ZERO; // 参数1数值
     private BigInteger param2Value = BigInteger.ZERO; // 参数2数值
     private boolean redstoneOutput = false; // 红石输出状态
@@ -121,14 +109,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     // getDescription() 已由 MTEMonitor 基类提供，无需重复实现
 
     @Override
-    public String[] getDescription() {
-        // 每次都创建新的数组实例，避免与其他机器共享引用导致缓存污染
-        return new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
-            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
-            net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3") };
-    }
-
-    @Override
     public boolean allowPullStack(IGregTechTileEntity aBaseMetaTileEntity, int aIndex, ForgeDirection side,
         ItemStack aStack) {
         return false; // 监视器不允许抽出物品
@@ -155,6 +135,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
             // 红石检测：每 2 ticks（0.1s），独立于 UI 频率，保证红石快速响应
             // 使用差值检查（与 HUD 一致），首次测量加速：measurementHistory 为空时立即执行
+            // 设计说明：红石检测频率(2 ticks)高于 EU/t 刷新频率(100 ticks)是有意为之
+            // - 红石需要快速响应（0.1秒），避免漏检临界值
+            // - EU/t 均值需要长窗口稳定（5秒），避免瞬时波动误判
+            // 当 anchorMode=1 时，红石基于陈旧的 euPerTick 值判断，最多有 5 秒延迟，属可接受行为
             if (measurementHistory.isEmpty() || worldTick - lastRedstoneCheckTick >= REDSTONE_CHECK_INTERVAL) {
                 updateRedstoneOutput();
                 lastRedstoneCheckTick = worldTick;
@@ -216,11 +200,25 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             case 2: // 反向：电量 < 参数1 时输出
                 shouldOutput = currentEU.compareTo(param1Value) < 0;
                 break;
-            case 3: // 正向区间：>参数1输出, <参数2取消
-                shouldOutput = currentEU.compareTo(param1Value) > 0 && currentEU.compareTo(param2Value) >= 0;
+            case 3: // 正向区间：>参数1输出, <参数2取消（滞后）
+                // v1.2.1 修复：与 updateRedstoneOutput 保持一致的滞后状态机
+                if (!redstoneOutput) {
+                    // 当前未输出，检查是否大于参数1（开启阈值）
+                    shouldOutput = currentEU.compareTo(param1Value) > 0;
+                } else {
+                    // 当前已输出，检查是否仍 >= 参数2（保持条件，低于参数2才取消）
+                    shouldOutput = currentEU.compareTo(param2Value) >= 0;
+                }
                 break;
-            case 4: // 反向区间：>参数1取消, <参数2输出
-                shouldOutput = currentEU.compareTo(param1Value) <= 0 && currentEU.compareTo(param2Value) < 0;
+            case 4: // 反向区间：>参数1取消, <参数2输出（滞后）
+                // v1.2.1 修复：与 updateRedstoneOutput 保持一致的滞后状态机
+                if (!redstoneOutput) {
+                    // 当前未输出，检查是否小于参数2（开启阈值）
+                    shouldOutput = currentEU.compareTo(param2Value) < 0;
+                } else {
+                    // 当前已输出，检查是否仍 <= 参数1（保持条件，高于参数1才取消）
+                    shouldOutput = currentEU.compareTo(param1Value) <= 0;
+                }
                 break;
             default:
                 shouldOutput = false;
@@ -293,50 +291,19 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
     // 智能 EU/t 计算（与 HUD 逻辑一致）
     // 返回值：电网状态显示文本（由 calculateEUT 格式化，含 size<2/eut==0 分支）
-    // 副作用：更新 euPerTick（用于红石）、measurementHistory、lastEU、lastCheckTick
+    // 副作用：更新 euPerTick（用于红石）、measurementHistory、lastCheckTick
     private String calculateSmartEUT(long currentTick) {
         BigInteger currentEU = getWirelessEU();
 
-        // 记录测量历史
-        recordMeasurement(currentTick, currentEU);
+        // 记录测量历史（FormatUtil 静态方法，传入 measurementHistory 与窗口大小）
+        FormatUtil.recordMeasurement(measurementHistory, currentEU, currentTick, FormatUtil.WINDOW_TICKS);
 
         // 计算 EU/t：calculateEUT 内部更新 euPerTick 字段，并返回格式化显示文本
         String statusText = calculateEUT(currentTick);
 
-        lastEU = currentEU;
         lastCheckTick = currentTick;
 
         return statusText;
-    }
-
-    /**
-     * 记录测量历史（每次检测都记录，不再判断是否变化）
-     * <p>
-     * 改动意图：保证 300 秒窗口内有足够样本支撑首末两点斜率算法。
-     * 每次记录后立即调用 purgeExpired 清理窗口外样本。
-     */
-    private void recordMeasurement(long tick, BigInteger value) {
-        if (value == null) return;
-        measurementHistory.add(new Measurement(tick, value));
-        // 老化：清理窗口外样本（tick < currentTick - WINDOW_TICKS）
-        purgeExpired(tick);
-    }
-
-    /**
-     * 老化过期样本：淘汰 tick &lt; currentTick - WINDOW_TICKS 的样本
-     * <p>
-     * 列表按时间顺序追加，遇到第一个未过期样本即可停止遍历。
-     */
-    private void purgeExpired(long currentTick) {
-        long cutoff = currentTick - WINDOW_TICKS;
-        java.util.Iterator<Measurement> it = measurementHistory.iterator();
-        while (it.hasNext()) {
-            if (it.next().tick < cutoff) {
-                it.remove();
-            } else {
-                break; // 列表按时间顺序，遇到第一个未过期即可停止
-            }
-        }
     }
 
     /**
@@ -358,8 +325,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * @return 格式化后的电网状态文本（带 § 颜色代码）
      */
     private String calculateEUT(long currentTick) {
-        // 先清理窗口外样本
-        purgeExpired(currentTick);
+        // 先清理窗口外样本（FormatUtil 静态方法）
+        FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
 
         // 未记录前（窗口内样本不足）显示"无变化/计算中"
         if (measurementHistory.size() < 2) {
@@ -374,6 +341,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         long tickDiff = last.tick - first.tick;
         if (tickDiff > 0) {
             BigInteger diff = last.value.subtract(first.value);
+            // 注：diff 为窗口首末两点差值，远小于 2^53，doubleValue() 精度足够
+            // 若未来电网规模极大导致 diff 超 2^53，可改用 BigDecimal 计算
             eut = diff.doubleValue() / tickDiff;
         }
 
@@ -385,12 +354,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         String gtPowerText;
         if (eut > 0.0) {
             euPerTickStr = formatEUtValue(eut);
-            gtPowerText = formatGTPower(eut);
+            gtPowerText = GTTierUtil.formatGTPower(eut);
             return translate("gtswn.ui.network.status.up", euPerTickStr, gtPowerText);
         } else if (eut < 0.0) {
             // 负数取绝对值格式化（down 模板自带"-"号）
             euPerTickStr = formatEUtValue(Math.abs(eut));
-            gtPowerText = formatGTPower(Math.abs(eut));
+            gtPowerText = GTTierUtil.formatGTPower(Math.abs(eut));
             return translate("gtswn.ui.network.status.down", euPerTickStr, gtPowerText);
         } else {
             // euPerTick == 0：有数据但无变化，显示"暂无变化/计算中"（对齐 HUD 版逻辑，不再显示"= 0.00 EU/t"）
@@ -408,13 +377,15 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * 获取当前锚定比较值（统一为 BigInteger 形式）
      * <p>
      * anchorMode=0：返回电网电量（getWirelessEU）
-     * anchorMode=1：返回 (long)euPerTick 转 BigInteger
-     * 注：euPerTick 是 double，按 (long) 截断；
-     * 负值（电网下降）也保留，配合负参数可实现"下降速率超过阈值时输出"
+     * anchorMode=1：返回 Math.round(euPerTick) 转 BigInteger
+     * 注：euPerTick 是 double，v1.2.1 修复：使用 Math.round 替代 (long) 强转，
+     * 避免 1234.56 截为 1234 这类小数丢失；负值（电网下降）也保留，
+     * 配合负参数可实现"下降速率超过阈值时输出"
      */
     private BigInteger getAnchorValue() {
         if (anchorMode == 1) {
-            return BigInteger.valueOf((long) euPerTick);
+            // v1.2.1 修复：使用 Math.round 替代 (long) 强转，避免小数截断丢失
+            return BigInteger.valueOf(Math.round(euPerTick));
         }
         return getWirelessEU();
     }
@@ -423,9 +394,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private String getWirelessEUText() {
         BigInteger eu = getWirelessEU();
         if (displayMode == 0) {
-            return translate("gtswn.ui.wireless.energy", formatNormal(eu));
+            return translate("gtswn.ui.wireless.energy", FormatUtil.formatNormal(eu));
         } else {
-            return translate("gtswn.ui.wireless.energy.scientific", formatScientific(eu));
+            return translate("gtswn.ui.wireless.energy.scientific", FormatUtil.formatScientific(eu));
         }
     }
 
@@ -481,7 +452,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             if (Math.abs(value) < 1000) {
                 return String.format("%.2f", value);
             } else {
-                return formatNormalDouble(value);
+                return FormatUtil.formatNormalDouble(value);
             }
         } else {
             // 科学计数法
@@ -491,106 +462,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
     }
 
-    // 格式化 double 为常规计数（带逗号分隔）
-    private String formatNormalDouble(double value) {
-        String formatted = String.format("%.2f", Math.abs(value));
-        String[] parts = formatted.split("\\.");
-        String integerPart = parts[0];
-        String decimalPart = parts.length > 1 ? parts[1] : "00";
-
-        StringBuilder result = new StringBuilder();
-        int length = integerPart.length();
-        for (int i = 0; i < length; i++) {
-            if (i > 0 && (length - i) % 3 == 0) {
-                result.append(",");
-            }
-            result.append(integerPart.charAt(i));
-        }
-
-        String finalResult = result.toString() + "." + decimalPart;
-        if (value < 0) {
-            finalResult = "-" + finalResult;
-        }
-        return finalResult;
-    }
-
-    // GT 电压等级定义
-    private static final long[] VOLTAGES = { 8L, 32L, 128L, 512L, 2048L, 8192L, 32768L, 131072L, 524288L, 2097152L,
-        8388608L, 33554432L, 134217728L, 536870912L, 2147483647L };
-    private static final String[] TIER_NAMES = { "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV",
-        "UIV", "UMV", "UXV", "MAX" };
-    private static final String[] TIER_COLORS = { "§7", "§7", "§b", "§9", "§3", "§3", "§a", "§e", "§e", "§6", "§6",
-        "§c", "§c", "§4", "§4" };
-
-    // 将 EU/t 转换为 GT 的电流+电压等级格式
-    private String formatGTPower(double euPerTick) {
-        double absEU = Math.abs(euPerTick);
-        int tier = 0;
-        for (int i = 0; i < VOLTAGES.length; i++) {
-            if (absEU < VOLTAGES[i] * 5) {
-                tier = i;
-                break;
-            }
-            if (i == VOLTAGES.length - 1) {
-                tier = i;
-            }
-        }
-
-        long voltage = VOLTAGES[tier];
-        int amperage = (int) Math.ceil(absEU / voltage);
-
-        boolean isOverloaded = false;
-        if (amperage > 4 && tier < VOLTAGES.length - 1) {
-            tier++;
-            voltage = VOLTAGES[tier];
-            amperage = (int) Math.ceil(absEU / voltage);
-            while (amperage > 4 && tier < VOLTAGES.length - 1) {
-                tier++;
-                voltage = VOLTAGES[tier];
-                amperage = (int) Math.ceil(absEU / voltage);
-            }
-            if (tier == VOLTAGES.length - 1 && amperage > 4) {
-                isOverloaded = true;
-                amperage = 4;
-            }
-        } else if (amperage > 4) {
-            isOverloaded = true;
-            amperage = 4;
-        }
-
-        String color = TIER_COLORS[tier];
-        String tierName = TIER_NAMES[tier];
-        if (isOverloaded) {
-            return color + amperage + "A " + tierName + "+";
-        } else {
-            return color + amperage + "A " + tierName;
-        }
-    }
-
-    // 常规计数
-    private String formatNormal(BigInteger value) {
-        if (value == null) return "0";
-        String str = value.toString();
-        StringBuilder result = new StringBuilder();
-        int length = str.length();
-        for (int i = 0; i < length; i++) {
-            if (i > 0 && (length - i) % 3 == 0) {
-                result.append(",");
-            }
-            result.append(str.charAt(i));
-        }
-        return result.toString();
-    }
-
-    // 科学计数法 (使用 10^ 指数格式)
-    private String formatScientific(BigInteger value) {
-        if (value == null) return "0";
-        double d = value.doubleValue();
-        if (d == 0) return "0";
-        int exp = (int) Math.floor(Math.log10(Math.abs(d)));
-        double mantissa = d / Math.pow(10, exp);
-        return String.format("%.3f×10^%d", mantissa, exp);
-    }
+    // 上述格式化与电压等级相关方法已迁移至 FormatUtil 与 GTTierUtil（T4 公共工具类提取）
 
     // 右键打开 GUI - 由 MTEMonitor 基类的 onRightclick 处理
 
@@ -1113,20 +985,22 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，支持负数。
      */
     public long getParam1Value() {
-        // 支持负数：不再截断为 0，仅截断超过 long 范围的上界
-        return param1Value.min(BigInteger.valueOf(Long.MAX_VALUE))
-            .longValue();
+        // v1.2.1 修复：同时截断上下界，避免 BigInteger 超出 long 范围时 longValue() 返回错误值
+        // 原代码仅截断上界，BigInteger 小于 Long.MIN_VALUE 时 longValue() 会返回低 64 位的错误值
+        // 支持负数：截断到 [Long.MIN_VALUE, Long.MAX_VALUE]
+        BigInteger truncated = param1Value.max(BigInteger.valueOf(Long.MIN_VALUE))
+            .min(BigInteger.valueOf(Long.MAX_VALUE));
+        return truncated.longValue();
     }
 
     /**
      * 设置参数1数值（用于 LongSyncValue 同步）
      * <p>
-     * long 转 BigInteger：直接转换，并同步更新 param1Text。
+     * long 转 BigInteger：直接转换。
      */
     public void setParam1Value(long val) {
         // 支持负数：不再截断为 0
         this.param1Value = BigInteger.valueOf(val);
-        this.param1Text = this.param1Value.toString();
         if (getBaseMetaTileEntity() != null) {
             getBaseMetaTileEntity().markDirty();
         }
@@ -1138,20 +1012,22 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * BigInteger 转 long：超过 Long.MAX_VALUE 时截断为 Long.MAX_VALUE，支持负数。
      */
     public long getParam2Value() {
-        // 支持负数：不再截断为 0，仅截断超过 long 范围的上界
-        return param2Value.min(BigInteger.valueOf(Long.MAX_VALUE))
-            .longValue();
+        // v1.2.1 修复：同时截断上下界，避免 BigInteger 超出 long 范围时 longValue() 返回错误值
+        // 原代码仅截断上界，BigInteger 小于 Long.MIN_VALUE 时 longValue() 会返回低 64 位的错误值
+        // 支持负数：截断到 [Long.MIN_VALUE, Long.MAX_VALUE]
+        BigInteger truncated = param2Value.max(BigInteger.valueOf(Long.MIN_VALUE))
+            .min(BigInteger.valueOf(Long.MAX_VALUE));
+        return truncated.longValue();
     }
 
     /**
      * 设置参数2数值（用于 LongSyncValue 同步）
      * <p>
-     * long 转 BigInteger：直接转换，并同步更新 param2Text。
+     * long 转 BigInteger：直接转换。
      */
     public void setParam2Value(long val) {
         // 支持负数：不再截断为 0
         this.param2Value = BigInteger.valueOf(val);
-        this.param2Text = this.param2Value.toString();
         if (getBaseMetaTileEntity() != null) {
             getBaseMetaTileEntity().markDirty();
         }
@@ -1308,11 +1184,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         historyTag.setInteger("count", measurementHistory.size());
         aNBT.setTag("measurementHistory", historyTag);
 
-        // 保存当前无线电网能量值（用于红石功能）
-        BigInteger currentEU = getWirelessEU();
-        if (currentEU != null) {
-            aNBT.setString("lastWirelessEU", currentEU.toString());
-        }
+        // v1.2.1 修复：移除 lastWirelessEU 死代码
+        // 原因：loadNBTData 从不读取 lastWirelessEU，写入只是浪费 NBT 空间和性能
+        // 退出重进后会重新从 WirelessNetworkManager 获取，无需持久化
 
         // 保存红石控制状态
         aNBT.setInteger("redstoneMode", redstoneMode);
@@ -1323,8 +1197,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         aNBT.setLong("lastCheckTick", lastCheckTick);
         // 保存锚定参数模式（0=电网电量，1=电网状态）
         aNBT.setInteger("anchorMode", anchorMode);
-        aNBT.setString("param1Text", param1Text);
-        aNBT.setString("param2Text", param2Text);
         aNBT.setString("param1Value", param1Value.toString());
         aNBT.setString("param2Value", param2Value.toString());
         aNBT.setBoolean("redstoneOutput", redstoneOutput);
@@ -1352,8 +1224,15 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             for (int i = 0; i < count; i++) {
                 NBTTagCompound measTag = historyTag.getCompoundTag("m" + i);
                 long tick = measTag.getLong("tick");
-                BigInteger value = new BigInteger(measTag.getString("value"));
-                measurementHistory.add(new Measurement(tick, value));
+                // v1.2.1 修复：包裹 try-catch，避免存档损坏导致 NumberFormatException 中断整个 NBT 加载
+                try {
+                    BigInteger value = new BigInteger(measTag.getString("value"));
+                    measurementHistory.add(new Measurement(tick, value));
+                } catch (NumberFormatException e) {
+                    // 跳过损坏的测量记录，避免中断整个 NBT 加载
+                    com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG
+                        .warn("Failed to parse measurement value at index " + i + ": " + measTag.getString("value"), e);
+                }
             }
         }
         // 加载后立即清理过期样本（用户决策8：NBT兼容，加载后立即 purgeExpired 过滤窗口外样本）
@@ -1361,7 +1240,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         if (getBaseMetaTileEntity() != null && getBaseMetaTileEntity().getWorld() != null) {
             long currentTick = getBaseMetaTileEntity().getWorld()
                 .getTotalWorldTime();
-            purgeExpired(currentTick);
+            FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
         }
         // 注意：lastWirelessEU 不需要保存，因为退出重进后会重新从 WirelessNetworkManager 获取
 
@@ -1374,8 +1253,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         lastCheckTick = aNBT.getLong("lastCheckTick");
         // 加载锚定参数模式（0=电网电量，1=电网状态）
         anchorMode = aNBT.getInteger("anchorMode");
-        param1Text = aNBT.getString("param1Text");
-        param2Text = aNBT.getString("param2Text");
         if (aNBT.hasKey("param1Value")) {
             param1Value = new BigInteger(aNBT.getString("param1Value"));
         }
@@ -1386,6 +1263,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         boolean savedRedstoneOutput = aNBT.getBoolean("redstoneOutput");
 
         // 重新计算当前的红石输出状态（基于加载的参数和当前锚定值）
+        // v1.2.1 修复：模式3/4 改为与 updateRedstoneOutput 一致的滞后逻辑（加载时 redstoneOutput 默认 false，即"未输出"状态）
         BigInteger currentEU = getAnchorValue();
         if (currentEU != null && redstoneMode > 0) {
             // 根据红石模式和参数重新判断是否应该输出
@@ -1396,11 +1274,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 case 2: // 反向：电量 < 参数1
                     redstoneOutput = currentEU.compareTo(param1Value) < 0;
                     break;
-                case 3: // 正向区间
-                    redstoneOutput = currentEU.compareTo(param1Value) > 0 && currentEU.compareTo(param2Value) >= 0;
+                case 3: // 正向区间：使用滞后逻辑（加载时视为未输出状态）
+                    redstoneOutput = currentEU.compareTo(param1Value) > 0;
                     break;
-                case 4: // 反向区间
-                    redstoneOutput = currentEU.compareTo(param1Value) <= 0 && currentEU.compareTo(param2Value) < 0;
+                case 4: // 反向区间：使用滞后逻辑（加载时视为未输出状态）
+                    redstoneOutput = currentEU.compareTo(param2Value) < 0;
                     break;
                 default:
                     redstoneOutput = false;

@@ -17,7 +17,6 @@ import gregtech.api.covers.CoverContext;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.MetaTileEntity;
-import gregtech.common.covers.Cover;
 import io.netty.buffer.ByteBuf;
 
 /**
@@ -34,22 +33,21 @@ import io.netty.buffer.ByteBuf;
  * Uploads buffer to wireless network every 600 ticks (with uplink loss).
  * Returns remaining buffer to network on removal (with uplink loss).
  */
-public class GTswn_Cover_DynamoWireless extends Cover {
+public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
 
     /** 电容量上限 = 太·终极电池容量 = 2^63-1 / Capacity = Long.MAX_VALUE (MAX Battery) */
     private static final long CAPACITY = Long.MAX_VALUE;
 
-    private long storedEU = 0L; // 当前缓冲池 EU / Current buffer EU
     private long ticksSinceLastUpload = 0L; // 距上次上传网络的tick计数 / Ticks since last network upload
-    private boolean configured = false;
 
     public GTswn_Cover_DynamoWireless(CoverContext context) {
-        super(context, null);
+        super(context);
     }
 
     @Override
     protected void readDataFromNbt(NBTBase nbt) {
         if (nbt instanceof NBTTagCompound tag) {
+            // storedEU / configured 已由基类字段持有，这里直接读写（NBT 顺序无关）
             if (tag.hasKey("storedEU")) this.storedEU = tag.getLong("storedEU");
             if (tag.hasKey("configured")) this.configured = tag.getBoolean("configured");
             if (tag.hasKey("ticksSinceLastUpload")) this.ticksSinceLastUpload = tag.getLong("ticksSinceLastUpload");
@@ -58,6 +56,7 @@ public class GTswn_Cover_DynamoWireless extends Cover {
 
     @Override
     protected void readDataFromPacket(ByteArrayDataInput byteData) {
+        // 顺序必须与 writeDataToByteBuf 一致：storedEU, configured, ticksSinceLastUpload
         storedEU = byteData.readLong();
         configured = byteData.readBoolean();
         ticksSinceLastUpload = byteData.readLong();
@@ -74,24 +73,10 @@ public class GTswn_Cover_DynamoWireless extends Cover {
 
     @Override
     protected void writeDataToByteBuf(ByteBuf byteBuf) {
+        // 顺序必须与 readDataFromPacket 一致
         byteBuf.writeLong(storedEU);
         byteBuf.writeBoolean(configured);
         byteBuf.writeLong(ticksSinceLastUpload);
-    }
-
-    @Override
-    public boolean isRedstoneSensitive(long aTimer) {
-        return false;
-    }
-
-    @Override
-    public boolean allowsCopyPasteTool() {
-        return false;
-    }
-
-    @Override
-    public boolean allowsTickRateAddition() {
-        return false;
     }
 
     @Override
@@ -139,31 +124,6 @@ public class GTswn_Cover_DynamoWireless extends Cover {
         }
     }
 
-    private static UUID getOwner(Object te) {
-        if (te instanceof BaseMetaTileEntity igte) {
-            return igte.getOwnerUuid();
-        } else {
-            return null;
-        }
-    }
-
-    @Override
-    public void onCoverRemoval() {
-        // 卸载时:将缓冲池剩余 EU 发回网络(计算上行损耗)
-        // On removal: return remaining buffer to network (with uplink loss)
-        if (this.storedEU > 0) {
-            ICoverable tileEntity = coveredTile.get();
-            UUID owner = getOwner(tileEntity);
-            if (owner != null) {
-                long actualAdded = (long) (this.storedEU * (1.0 - Config.uplinkLossEU));
-                if (actualAdded > 0) {
-                    addEUToGlobalEnergyMap(owner, actualAdded);
-                }
-            }
-            this.storedEU = 0;
-        }
-    }
-
     /**
      * 阻止机器向覆盖板所在面输出到真导线,避免双重消耗
      * Block machine from outputting to real cables on this side, preventing double consumption
@@ -171,21 +131,6 @@ public class GTswn_Cover_DynamoWireless extends Cover {
     @Override
     public boolean letsEnergyOut() {
         return false;
-    }
-
-    @Override
-    public boolean alwaysLookConnected() {
-        return true;
-    }
-
-    @Override
-    public int getMinimumTickRate() {
-        return 1; // 每 tick 执行 / Run every tick
-    }
-
-    @Override
-    public boolean hasCoverGUI() {
-        return true;
     }
 
     @Override

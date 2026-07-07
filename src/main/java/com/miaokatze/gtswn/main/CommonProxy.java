@@ -50,13 +50,6 @@ public class CommonProxy {
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
 
-        // 注册无线网络监测事件（已注释掉，不需要布尔值控制）
-        // GTSimpleWirelessNetwork.LOG.info("注册无线网络监测事件...");
-        // FMLCommonHandler.instance()
-        // .bus()
-        // .register(new WirelessNetworkMonitorEventHandler());
-        // net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(new WirelessNetworkMonitorEventHandler());
-
         // 注册物品
         GTSimpleWirelessNetwork.LOG.info("[0/3] 开始注册物品...");
         try {
@@ -114,17 +107,16 @@ public class CommonProxy {
 
     /**
      * 后初始化阶段 (PostInit)
-     * 处理与其他模组的交互或完成最终设置，如注册测试配方。
+     * 处理与其他模组的交互或完成最终设置，如注册合成配方。
      */
     @SuppressWarnings({ "unused" })
     public void postInit(FMLPostInitializationEvent event) {
-        GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册测试配方...");
+        GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册合成配方...");
         try {
-            // TestMachineRecipes.init(); // TestCoinE未注册，暂时禁用测试配方
             CraftingRecipes.init();
-            GTSimpleWirelessNetwork.LOG.info("[3/3] 测试配方注册完成。");
+            GTSimpleWirelessNetwork.LOG.info("[3/3] 合成配方注册完成。");
         } catch (Throwable t) {
-            GTSimpleWirelessNetwork.LOG.error("[3/3] 测试配方注册过程中发生错误", t);
+            GTSimpleWirelessNetwork.LOG.error("[3/3] 合成配方注册过程中发生错误", t);
         }
 
         // 注册GTswn覆盖板

@@ -16,14 +16,6 @@ import gregtech.api.render.TextureFactory;
  */
 public class TextureManager {
 
-    // --- 测试机器专用材质图标 ---
-    /** EV 等级测试机器顶部材质 */
-    public static final IIconContainer TEX_TEST_EV = Textures.BlockIcons.custom("gtswn:MTETEST_1");
-    /** IV 等级测试机器顶部材质 */
-    public static final IIconContainer TEX_TEST_IV = Textures.BlockIcons.custom("gtswn:MTETEST_2");
-    /** LuV 等级测试机器顶部材质 */
-    public static final IIconContainer TEX_TEST_LUV = Textures.BlockIcons.custom("gtswn:MTETEST_3");
-
     // --- 无线能量监视器材质图标 ---
     /** 无线能量监视器正面材质（红石信号关闭） */
     public static final IIconContainer TEX_WIRELESS_MONITOR_OFF = Textures.BlockIcons

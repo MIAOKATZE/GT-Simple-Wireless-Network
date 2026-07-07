@@ -97,9 +97,17 @@ public class CommandGTSWN extends CommandBase {
             return;
         }
 
-        BigInteger existing = WirelessNetworkManager.getUserEU(toUUID);
-        WirelessNetworkManager.setUserEU(toUUID, existing.add(eu));
-        WirelessNetworkManager.setUserEU(fromUUID, BigInteger.ZERO);
+        // v1.2.1 修复：先扣除源，再增加目标，避免非原子性导致 EU 凭空增加
+        // 原代码先增加目标、再清零源，若第二步失败 EU 会凭空增加；现改为先扣除源（验证足够），再增加目标
+        // 若第一步失败 EU 仅损失（优于凭空增加）。重新读取源当前 EU 以防上面读取后被其他操作改变
+        BigInteger sourceEU = WirelessNetworkManager.getUserEU(fromUUID);
+        if (sourceEU.compareTo(eu) < 0) {
+            // 源不足（可能在上面读取后被消耗），转全部当前余额
+            eu = sourceEU;
+        }
+        WirelessNetworkManager.setUserEU(fromUUID, sourceEU.subtract(eu));
+        BigInteger targetEU = WirelessNetworkManager.getUserEU(toUUID);
+        WirelessNetworkManager.setUserEU(toUUID, targetEU.add(eu));
 
         sender.addChatMessage(new ChatComponentText(EnumChatFormatting.GREEN + "迁移成功: " + eu + " EU"));
         sender.addChatMessage(new ChatComponentText(EnumChatFormatting.GREEN + "从: " + fromUUID));

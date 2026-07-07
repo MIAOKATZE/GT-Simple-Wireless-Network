@@ -16,7 +16,6 @@ import com.miaokatze.gtswn.config.Config;
 import gregtech.api.covers.CoverContext;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
-import gregtech.common.covers.Cover;
 import io.netty.buffer.ByteBuf;
 
 /**
@@ -31,22 +30,21 @@ import io.netty.buffer.ByteBuf;
  * Refills from wireless network every 600 ticks (with downlink loss).
  * Returns remaining buffer to network on removal (with uplink loss).
  */
-public class GTswn_Cover_EnergyWireless extends Cover {
+public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
 
     private int voltage = 0;
     private int amperage = 0;
     private long capacity = 0L; // 电容量上限 = V × A × 800 / Capacity upper bound = V × A × 800
-    private long storedEU = 0L; // 当前缓冲池 EU / Current buffer EU
     private long ticksSinceLastRefill = 0L; // 距上次网络补满的tick计数 / Ticks since last network refill
-    private boolean configured = false;
 
     public GTswn_Cover_EnergyWireless(CoverContext context) {
-        super(context, null);
+        super(context);
     }
 
     @Override
     protected void readDataFromNbt(NBTBase nbt) {
         if (nbt instanceof NBTTagCompound tag) {
+            // storedEU / configured 已由基类字段持有，这里直接读写（NBT 顺序无关）
             if (tag.hasKey("voltage")) this.voltage = tag.getInteger("voltage");
             if (tag.hasKey("amperage")) this.amperage = tag.getInteger("amperage");
             if (tag.hasKey("capacity")) this.capacity = tag.getLong("capacity");
@@ -58,6 +56,7 @@ public class GTswn_Cover_EnergyWireless extends Cover {
 
     @Override
     protected void readDataFromPacket(ByteArrayDataInput byteData) {
+        // 顺序必须与 writeDataToByteBuf 一致：voltage, amperage, capacity, storedEU, configured, ticksSinceLastRefill
         voltage = byteData.readInt();
         amperage = byteData.readInt();
         capacity = byteData.readLong();
@@ -80,27 +79,13 @@ public class GTswn_Cover_EnergyWireless extends Cover {
 
     @Override
     protected void writeDataToByteBuf(ByteBuf byteBuf) {
+        // 顺序必须与 readDataFromPacket 一致
         byteBuf.writeInt(voltage);
         byteBuf.writeInt(amperage);
         byteBuf.writeLong(capacity);
         byteBuf.writeLong(storedEU);
         byteBuf.writeBoolean(configured);
         byteBuf.writeLong(ticksSinceLastRefill);
-    }
-
-    @Override
-    public boolean isRedstoneSensitive(long aTimer) {
-        return false;
-    }
-
-    @Override
-    public boolean allowsCopyPasteTool() {
-        return false;
-    }
-
-    @Override
-    public boolean allowsTickRateAddition() {
-        return false;
     }
 
     @Override
@@ -151,46 +136,6 @@ public class GTswn_Cover_EnergyWireless extends Cover {
         if (addEUToGlobalEnergyMap(owner, -totalDeducted)) {
             this.storedEU = this.capacity;
         }
-    }
-
-    private static UUID getOwner(Object te) {
-        if (te instanceof BaseMetaTileEntity igte) {
-            return igte.getOwnerUuid();
-        } else {
-            return null;
-        }
-    }
-
-    @Override
-    public void onCoverRemoval() {
-        // 卸载时:将缓冲池剩余 EU 发回网络(计算上行损耗)
-        // On removal: return remaining buffer to network (with uplink loss)
-        if (this.storedEU > 0) {
-            ICoverable tileEntity = coveredTile.get();
-            UUID owner = getOwner(tileEntity);
-            if (owner != null) {
-                long actualAdded = (long) (this.storedEU * (1.0 - Config.uplinkLossEU));
-                if (actualAdded > 0) {
-                    addEUToGlobalEnergyMap(owner, actualAdded);
-                }
-            }
-            this.storedEU = 0;
-        }
-    }
-
-    @Override
-    public boolean alwaysLookConnected() {
-        return true;
-    }
-
-    @Override
-    public int getMinimumTickRate() {
-        return 1; // 每 tick 执行,像导线一样 / Run every tick, like a cable
-    }
-
-    @Override
-    public boolean hasCoverGUI() {
-        return true;
     }
 
     @Override

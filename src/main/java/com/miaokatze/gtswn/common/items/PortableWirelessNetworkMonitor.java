@@ -1,6 +1,5 @@
 package com.miaokatze.gtswn.common.items;
 
-import java.math.BigInteger;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,7 +18,6 @@ import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 import baubles.api.BaubleType;
 import baubles.api.IBauble;
 import cpw.mods.fml.common.Optional;
-import gregtech.common.misc.WirelessNetworkManager;
 
 /**
  * 便携式无线网络监测终端
@@ -58,8 +56,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         setCreativeTab(CreativeTabs.tabMisc);
         // 设置最大堆叠数量为 1（便携式设备通常不可堆叠）
         setMaxStackSize(1);
-        // 允许显示 tooltip
-        setHasSubtypes(true);
+        // v1.2.1 移除 setHasSubtypes(true)：本物品无子类型（damage 仅用于材质切换，不需要 NBT 子类型分支）
     }
 
     /**
@@ -187,36 +184,6 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         }
     }
 
-    /**
-     * 显示拥有者的无线电网能量值（仅在已绑定状态下调用）
-     */
-    private void displayWirelessEnergy(ItemStack aStack, EntityPlayer aPlayer) {
-        // 读取拥有者 UUID（此时必定存在）
-        UUID ownerUUID;
-        try {
-            String uuidString = aStack.stackTagCompound.getString(NBT_OWNER_UUID);
-            ownerUUID = UUID.fromString(uuidString);
-        } catch (Exception e) {
-            // 理论上不会到达这里，因为 isBound() 已检查
-            aPlayer.addChatMessage(new ChatComponentText("§c[便携监测终端] 数据异常！请 Shift + 右击重新绑定。"));
-            return;
-        }
-
-        // 调用 GT5U 的 WirelessNetworkManager 获取无线电网能量
-        BigInteger wirelessEU = WirelessNetworkManager.getUserEU(ownerUUID);
-
-        // 格式化能量值（使用标准数字格式）
-        String euFormatted = formatBigInteger(wirelessEU);
-
-        // 发送聊天消息
-        String energyMsg = StatCollector.translateToLocalFormatted("gtswn.chat.monitor.energy", euFormatted);
-        aPlayer.addChatMessage(new ChatComponentText(energyMsg));
-
-        // 额外提示：如何更新拥有者
-        String hintMsg = StatCollector.translateToLocal("gtswn.chat.monitor.rebind.hint");
-        aPlayer.addChatMessage(new ChatComponentText(hintMsg));
-    }
-
     // ========== Baubles 饰品接口实现 ==========
 
     /** 饰品槽位类型：UNIVERSAL（可放入任意饰品槽） */
@@ -257,34 +224,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         return true;
     }
 
-    /**
-     * 格式化 BigInteger 为易读字符串
-     * 对于超大数值使用逗号分隔
-     */
-    private String formatBigInteger(BigInteger value) {
-        if (value == null) {
-            return "0";
-        }
-
-        // 如果数值较小，直接显示
-        if (value.compareTo(BigInteger.valueOf(1_000_000L)) < 0) {
-            return value.toString();
-        }
-
-        // 对于大数值，使用逗号分隔
-        String str = value.toString();
-        StringBuilder result = new StringBuilder();
-        int length = str.length();
-
-        for (int i = 0; i < length; i++) {
-            if (i > 0 && (length - i) % 3 == 0) {
-                result.append(",");
-            }
-            result.append(str.charAt(i));
-        }
-
-        return result.toString();
-    }
+    // formatBigInteger 已迁移至 FormatUtil（T4 公共工具类提取）
 
     /**
      * 添加物品的额外信息（Tooltip）

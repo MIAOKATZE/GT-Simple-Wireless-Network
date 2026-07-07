@@ -1,27 +1,4 @@
-tile.gtswn.mtetest.ev.name=MTETest EV
-tile.gtswn.mtetest.iv.name=MTETest IV
-tile.gtswn.mtetest.luv.name=MTETest LuV
-
-# existing keys
-tile.gtswn.mtetest.name=MTETest Machine
-gtswn.tooltip.mtetest.info=Generates energy like a solar generator during daytime when sky is visible.
-
-# MTETest tier names (updated to gtswn prefix)
-gtswn.machine.test.ev=Test Machine EV
-gtswn.machine.test.iv=Test Machine IV
-gtswn.machine.test.luv=Test Machine (LuV)
-gtswn.machine.multitest.hv=Test Multiblock Machine (HV)
-
-# GregTech style keys used by CommonMetaTileEntity
-gt.blockmachines.gtswn.mtetest.ev.name=MTETest EV
-gt.blockmachines.gtswn.mtetest.iv.name=MTETest IV
-gt.blockmachines.gtswn.mtetest.luv.name=MTETest LuV
-gt.blockmachines.gtswn.multitest.hv.name=Test Multiblock Machine (HV)
-gtswn.recipe.multitest=Test Multiblock Machine
-
 # Items
-item.TestCoin_GTswn.name=Test Coin
-item.TestCoin_GTswn_E.name=Electronic Test Coin
 item.PortableWirelessNetworkMonitor_GTswn.name=Portable Wireless Network Monitor
 
 # Machines
@@ -48,6 +25,7 @@ gtswn.ui.redstone.mode.high=High Level
 gtswn.ui.redstone.mode.low=Low Level
 gtswn.ui.redstone.mode.high.lag=High Level (Hysteresis)
 gtswn.ui.redstone.mode.low.lag=Low Level (Hysteresis)
+gtswn.ui.redstone.mode.unknown=Unknown
 gtswn.ui.redstone.output.on=§bRedstone Output: §aON
 gtswn.ui.redstone.output.off=§bRedstone Output: §cOFF
 gtswn.ui.redstone.desc.off=§fOff: §eNo redstone signal output
@@ -55,6 +33,7 @@ gtswn.ui.redstone.desc.high=§fHigh Level: §eOutput when energy > Param1
 gtswn.ui.redstone.desc.low=§fLow Level: §eOutput when energy < Param1
 gtswn.ui.redstone.desc.high.lag=§fHigh (Hysteresis): §eOutput >Param1, Cancel <Param2
 gtswn.ui.redstone.desc.low.lag=§fLow (Hysteresis): §eCancel >Param1, Output <Param2
+gtswn.ui.redstone.desc.unknown=§fUnknown Mode
 gtswn.ui.param1=§bParam1: §f%s
 gtswn.ui.param2=§bParam2: §f%s
 gtswn.ui.tooltip.toggle.mode=Toggle counting mode

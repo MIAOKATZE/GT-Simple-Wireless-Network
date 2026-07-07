@@ -2,7 +2,6 @@ package com.miaokatze.gtswn.common.hud;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,6 +18,9 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.util.FormatUtil;
+import com.miaokatze.gtswn.common.util.FormatUtil.Measurement;
+import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestWirelessEU;
 
@@ -45,23 +47,16 @@ public class WirelessMonitorHUD extends Gui {
     /** 服务端同步过来的 EU 字符串（BigInteger.toString()），未收到响应前为 null（用于判断首次进入） */
     private static String syncedEuStr = null;
 
-    /** 服务端同步过来的 EU BigInteger 缓存（供 updateCache 判断首次进入用，渲染实际读 cachedEUText） */
-    private static BigInteger syncedEu = BigInteger.ZERO;
-
     /** 历史测量记录列表（每次检测都记录，保证窗口内足够样本） */
     private static List<Measurement> measurementHistory = new ArrayList<>();
 
     /** 缓存的 EU/t 文本 */
     private static String cachedEUTText = "";
 
-    /** 上次计算的 EU/t 值（用于保持稳定状态显示） */
-    private static double lastCalculatedEUT = 0.0;
-
     /** HUD 更新间隔（ticks），每 600 ticks（30 秒）更新一次 */
     private static final int UPDATE_INTERVAL = 600;
 
-    /** EU/t 均值计算窗口（ticks），6000 ticks = 300 秒 */
-    private static final long WINDOW_TICKS = 6000L;
+    // 窗口常量已迁移至 FormatUtil（T4 公共工具类提取）
 
     /** 背包遍历间隔（ticks），每 20 ticks（1 秒）检查一次 */
     private static final int INVENTORY_CHECK_INTERVAL = 20;
@@ -76,9 +71,6 @@ public class WirelessMonitorHUD extends Gui {
     private static String cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
         + ": §f0 §b"
         + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-
-    /** 是否已初始化（用于进退客户端时恢复状态） */
-    private static boolean initialized = false;
 
     /** 当前世界 ID（用于检测世界切换） */
     private static int currentWorldId = -1;
@@ -123,12 +115,10 @@ public class WirelessMonitorHUD extends Gui {
         cachedOwnerUUID = null;
         // 重置服务端同步缓存，避免跨存档/世界切换时残留旧值
         syncedEuStr = null;
-        syncedEu = BigInteger.ZERO;
         cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
             + ": §f0 §b"
             + StatCollector.translateToLocal("gtswn.hud.eu.unit");
         cachedEUTText = "";
-        lastCalculatedEUT = 0.0;
         measurementHistory.clear();
         lastUpdateTick = 0;
         lastInventoryCheckTick = 0;
@@ -186,8 +176,8 @@ public class WirelessMonitorHUD extends Gui {
             BigInteger value = new BigInteger(measTag.getString("value"));
             measurementHistory.add(new Measurement(tick, value));
         }
-        // 加载后清理过期样本
-        purgeExpired(currentTick);
+        // 加载后清理过期样本（FormatUtil 静态方法）
+        FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
     }
 
     /**
@@ -515,7 +505,6 @@ public class WirelessMonitorHUD extends Gui {
 
         // 更新同步缓存
         syncedEuStr = euStr;
-        syncedEu = wirelessEU;
 
         // 获取当前世界 tick（receiveSyncedEU 无 currentTick 入参，自行从客户端世界读取）
         Minecraft mc = Minecraft.getMinecraft();
@@ -525,10 +514,10 @@ public class WirelessMonitorHUD extends Gui {
         String euFormatted;
         if (displayMode == 2) {
             // 科学计数法
-            euFormatted = formatScientific(wirelessEU);
+            euFormatted = FormatUtil.formatScientific(wirelessEU);
         } else {
             // 常规计数（带逗号分隔）
-            euFormatted = formatNormal(wirelessEU);
+            euFormatted = FormatUtil.formatNormal(wirelessEU);
         }
 
         cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
@@ -537,8 +526,8 @@ public class WirelessMonitorHUD extends Gui {
             + " §b"
             + StatCollector.translateToLocal("gtswn.hud.eu.unit");
 
-        // 记录测量历史并计算 EU/t
-        recordMeasurement(currentTick, wirelessEU);
+        // 记录测量历史并计算 EU/t（FormatUtil 静态方法）
+        FormatUtil.recordMeasurement(measurementHistory, wirelessEU, currentTick, FormatUtil.WINDOW_TICKS);
         cachedEUTText = calculateEUT(currentTick);
     }
 
@@ -570,35 +559,7 @@ public class WirelessMonitorHUD extends Gui {
         lastUpdateTick = currentTick;
     }
 
-    /**
-     * 记录测量历史（每次检测都记录，不再判断是否变化）
-     * <p>
-     * 改动意图：保证 300 秒窗口内有足够样本支撑首末两点斜率算法。
-     * 每次记录后立即调用 purgeExpired 清理窗口外样本。
-     */
-    private static void recordMeasurement(long tick, BigInteger value) {
-        if (value == null) return;
-        measurementHistory.add(new Measurement(tick, value));
-        // 老化：清理窗口外样本（tick < currentTick - WINDOW_TICKS）
-        purgeExpired(tick);
-    }
-
-    /**
-     * 老化过期样本：淘汰 tick &lt; currentTick - WINDOW_TICKS 的样本
-     * <p>
-     * 列表按时间顺序追加，遇到第一个未过期样本即可停止遍历。
-     */
-    private static void purgeExpired(long currentTick) {
-        long cutoff = currentTick - WINDOW_TICKS;
-        Iterator<Measurement> it = measurementHistory.iterator();
-        while (it.hasNext()) {
-            if (it.next().tick < cutoff) {
-                it.remove();
-            } else {
-                break; // 列表按时间顺序，遇到第一个未过期即可停止
-            }
-        }
-    }
+    // 记录/清理方法已迁移至 FormatUtil（T4 公共工具类提取）
 
     /**
      * 计算 EU/t（300 秒窗口首末两点斜率法）
@@ -612,8 +573,8 @@ public class WirelessMonitorHUD extends Gui {
      * </ul>
      */
     private static String calculateEUT(long currentTick) {
-        // 先清理窗口外样本
-        purgeExpired(currentTick);
+        // 先清理窗口外样本（FormatUtil 静态方法）
+        FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
 
         // 未记录前（窗口内样本不足）显示"无变化/计算中"
         if (measurementHistory.size() < 2) {
@@ -631,9 +592,6 @@ public class WirelessMonitorHUD extends Gui {
             BigInteger diff = last.value.subtract(first.value);
             euPerTick = diff.doubleValue() / tickDiff;
         }
-
-        // 更新上次计算的 EU/t 值
-        lastCalculatedEUT = euPerTick;
 
         // 格式化 EU/t（根据显示模式）
         String euPerTickStr;
@@ -654,17 +612,17 @@ public class WirelessMonitorHUD extends Gui {
                 euPerTickStr = String.format("%.2f", euPerTick);
             } else {
                 // 大数值使用逗号分隔
-                euPerTickStr = formatNormalDouble(euPerTick);
+                euPerTickStr = FormatUtil.formatNormalDouble(euPerTick);
             }
         }
 
         // 转换为 GT 的电流+电压等级格式
-        String gtPowerText = formatGTPower(euPerTick);
-        int gtTier = getGTTier(euPerTick); // 获取电压等级用于括号颜色
+        String gtPowerText = GTTierUtil.formatGTPower(euPerTick);
+        int gtTier = GTTierUtil.getGTTier(euPerTick); // 获取电压等级用于括号颜色
 
         // 判断是增加还是减少
         String status;
-        String bracketColor = TIER_COLORS[gtTier]; // 使用电压等级颜色用于括号
+        String bracketColor = GTTierUtil.TIER_COLORS[gtTier]; // 使用电压等级颜色用于括号
         if (euPerTick > 0) {
             status = "§a↑ +" + euPerTickStr
                 + " "
@@ -688,210 +646,5 @@ public class WirelessMonitorHUD extends Gui {
         return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": " + status;
     }
 
-    /**
-     * 测量记录类
-     */
-    private static class Measurement {
-
-        long tick;
-        BigInteger value;
-
-        Measurement(long tick, BigInteger value) {
-            this.tick = tick;
-            this.value = value;
-        }
-    }
-
-    /**
-     * GT 电压等级定义（每安培的 EU/t）
-     */
-    private static final long[] VOLTAGES = { 8L, // ULV
-        32L, // LV
-        128L, // MV
-        512L, // HV
-        2048L, // EV
-        8192L, // IV
-        32768L, // LuV
-        131072L, // ZPM
-        524288L, // UV
-        2097152L, // UHV
-        8388608L, // UEV
-        33554432L, // UIV
-        134217728L, // UMV
-        536870912L, // UXV
-        2147483647L // MAX
-    };
-
-    /**
-     * GT 电压等级名称
-     */
-    private static final String[] TIER_NAMES = { "ULV", "LV", "MV", "HV", "EV", "IV", "LuV", "ZPM", "UV", "UHV", "UEV",
-        "UIV", "UMV", "UXV", "MAX" };
-
-    /**
-     * GT 电压等级颜色代码（使用 Minecraft 原生 16 色）
-     */
-    private static final String[] TIER_COLORS = { "§7", // ULV - 灰色
-        "§7", // LV - 灰色
-        "§b", // MV - 亮蓝色
-        "§9", // HV - 蓝色
-        "§3", // EV - 青色
-        "§3", // IV - 青色
-        "§a", // LuV - 绿色
-        "§e", // ZPM - 黄色
-        "§e", // UV - 黄色
-        "§6", // UHV - 金色
-        "§6", // UEV - 金色
-        "§c", // UIV - 红色
-        "§c", // UMV - 红色
-        "§4", // UXV - 深红色
-        "§4" // MAX - 深红色
-    };
-
-    /**
-     * 获取 EU/t 对应的 GT 电压等级
-     */
-    private static int getGTTier(double euPerTick) {
-        double absEU = Math.abs(euPerTick);
-        int tier = 0;
-        for (int i = 0; i < VOLTAGES.length; i++) {
-            if (absEU < VOLTAGES[i] * 5) {
-                tier = i;
-                break;
-            }
-            if (i == VOLTAGES.length - 1) {
-                tier = i;
-            }
-        }
-
-        int amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
-        if (amperage > 4 && tier < VOLTAGES.length - 1) {
-            tier++;
-            amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
-            while (amperage > 4 && tier < VOLTAGES.length - 1) {
-                tier++;
-                amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
-            }
-        }
-        return tier;
-    }
-
-    /**
-     * 将 EU/t 转换为 GT 的电流+电压等级格式
-     *
-     * @param euPerTick 每秒能量变化率
-     * @return 格式化后的字符串（例如：2A HV）
-     */
-    private static String formatGTPower(double euPerTick) {
-        int tier = getGTTier(euPerTick);
-        long voltage = VOLTAGES[tier];
-        double absEU = Math.abs(euPerTick);
-        int amperage = (int) Math.ceil(absEU / voltage);
-
-        boolean isOverloaded = false;
-        if (amperage > 4 && tier == VOLTAGES.length - 1) {
-            isOverloaded = true;
-            amperage = 4;
-        } else if (amperage > 4) {
-            // 已经被 getGTTier 处理过，不应再超过 4A
-            isOverloaded = true;
-            amperage = 4;
-        }
-
-        String color = TIER_COLORS[tier];
-        String tierName = TIER_NAMES[tier];
-
-        if (isOverloaded) {
-            return color + amperage + "A " + tierName + "+";
-        } else {
-            return color + amperage + "A " + tierName;
-        }
-    }
-
-    /**
-     * 格式化为常规计数（带逗号分隔）
-     *
-     * @param value 要格式化的 BigInteger 值
-     * @return 格式化后的字符串（例如：269,835,880）
-     */
-    private static String formatNormal(BigInteger value) {
-        if (value == null) {
-            return "0";
-        }
-
-        String str = value.toString();
-        StringBuilder result = new StringBuilder();
-        int length = str.length();
-
-        for (int i = 0; i < length; i++) {
-            if (i > 0 && (length - i) % 3 == 0) {
-                result.append(",");
-            }
-            result.append(str.charAt(i));
-        }
-
-        return result.toString();
-    }
-
-    /**
-     * 格式化 double 为常规计数（带逗号分隔，保留两位小数）
-     *
-     * @param value 要格式化的 double 值
-     * @return 格式化后的字符串（例如：1,234.56）
-     */
-    private static String formatNormalDouble(double value) {
-        // 先格式化为两位小数
-        String formatted = String.format("%.2f", Math.abs(value));
-
-        // 分离整数部分和小数部分
-        String[] parts = formatted.split("\\.");
-        String integerPart = parts[0];
-        String decimalPart = parts.length > 1 ? parts[1] : "00";
-
-        // 为整数部分添加逗号分隔
-        StringBuilder result = new StringBuilder();
-        int length = integerPart.length();
-
-        for (int i = 0; i < length; i++) {
-            if (i > 0 && (length - i) % 3 == 0) {
-                result.append(",");
-            }
-            result.append(integerPart.charAt(i));
-        }
-
-        // 组合结果
-        String finalResult = result.toString() + "." + decimalPart;
-
-        // 如果是负数，添加负号
-        if (value < 0) {
-            finalResult = "-" + finalResult;
-        }
-
-        return finalResult;
-    }
-
-    /**
-     * 格式化为科学计数法字符串
-     * 保留三位有效数字，使用 10^幂 格式
-     *
-     * @param value 要格式化的 BigInteger 值
-     * @return 格式化后的字符串（例如：2.70×10^8）
-     */
-    private static String formatScientific(BigInteger value) {
-        if (value == null || value.equals(BigInteger.ZERO)) {
-            return "0";
-        }
-
-        // 转换为 double 进行科学计数法格式化
-        double doubleValue = value.doubleValue();
-
-        // 获取指数部分
-        int exponent = (int) Math.floor(Math.log10(Math.abs(doubleValue)));
-
-        // 计算系数（保留两位小数，即三位有效数字）
-        double coefficient = doubleValue / Math.pow(10, exponent);
-
-        // 格式化为 "系数×10^指数" 的形式
-        return String.format("%.2f×10^%d", coefficient, exponent);
-    }
+    // 测量记录类、电压等级数组、格式化方法已迁移至 FormatUtil 与 GTTierUtil（T4 公共工具类提取）
 }

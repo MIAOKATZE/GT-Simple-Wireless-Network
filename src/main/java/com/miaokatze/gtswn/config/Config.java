@@ -78,10 +78,10 @@ public class Config {
             Configuration.CATEGORY_GENERAL,
             downlinkLossEU,
             0.0f,
-            2147483647.0f,
+            10.0f,
             "下行损耗系数 / Downlink loss ratio\n" + "能源覆盖板从无线网络取电时，机器收到的 EU 不变，电网按 (1 + 此值) 倍率扣除。\n"
                 + "When energy cover draws EU from wireless network, machine receives full amount; network deducts (1 + this value) × EU.\n"
-                + "默认 0.15 = 电网扣 1.15 倍 / Default 0.15 = network deducts 1.15×");
+                + "范围 0.0-10.0，默认 0.15 = 电网扣 1.15 倍 / Range 0.0-10.0, Default 0.15 = network deducts 1.15×");
 
         // 上行损耗系数 / Uplink loss ratio
         // 动力覆盖板向无线网络送电时，机器扣减的 EU 不变，电网实际增加量按 (1 - 此值) 倍率计算。

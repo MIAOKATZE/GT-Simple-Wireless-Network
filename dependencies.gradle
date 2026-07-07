@@ -56,7 +56,7 @@ dependencies {
     // IC2 API is required for implementing IElectricItem to support charging stations.
     compileOnlyApi("net.industrial-craft:industrialcraft-2:2.2.828-experimental:api") { transitive = false }
 
-    // UniMixins is automatically included by the GTNH build script because usesMixins = true in gradle.properties.
+    // UniMixins is not included because usesMixins = false in gradle.properties (this mod doesn't use mixins).
     // No need to declare it manually.
 
     // If you need to run the mod in the dev environment (runClient/runServer),

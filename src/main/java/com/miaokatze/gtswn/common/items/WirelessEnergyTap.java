@@ -42,11 +42,11 @@ public class WirelessEnergyTap extends Item {
     /** NBT 键名：存储当前输出模式(true=动力, false=能源) */
     private static final String NBT_OUTPUT_MODE = "OutputMode";
 
-    /** NBT 键名：上一次触发的时间戳，防止短时间内重复触发 */
+    /** NBT 键名：上一次触发的时间戳（v1.2.1 起改为世界 tick），防止短时间内重复触发 */
     private static final String NBT_LAST_USE_TIME = "LastUseTime";
 
-    /** 防止重复触发的间隔（毫秒） */
-    private static final long INTERVAL_MILLIS = 200L;
+    /** 防止重复触发的间隔（tick，4 tick ≈ 200ms @ 20TPS）/ Anti-repeat interval (ticks) */
+    private static final long INTERVAL_TICKS = 4L;
 
     /** NBT 键名：绑定提示已显示次数(达到上限后不再提示) / Bind notify count (stops after reaching max) */
     private static final String NBT_BIND_NOTIFY_COUNT = "BindNotifyCount";
@@ -64,8 +64,7 @@ public class WirelessEnergyTap extends Item {
         super();
         // 设置未本地化名称 (Unlocalized Name)，用于关联语言文件
         setUnlocalizedName("wirelessEnergyTap");
-        // 默认材质在下面的 getIconFromDamage 中处理，先随便设一个
-        setTextureName("gtswn:wireless_energy_tap_input");
+        // 默认材质由 registerIcons + getIconFromDamage 处理，无需在此 setTextureName（v1.2.1 移除冗余调用）
         // 设置创造模式标签页
         setCreativeTab(CreativeTabs.tabMisc);
         // 设置最大堆叠数量为 1
@@ -85,12 +84,19 @@ public class WirelessEnergyTap extends Item {
 
     /**
      * 检查是否可以触发（防止短时间内重复触发）
+     * <p>
+     * v1.2.1 改进：改用 {@code world.getTotalWorldTime()} 替代 {@code System.currentTimeMillis()}，
+     * 与游戏时间同步，避免服务端卡顿时 TPS 波动导致时间判断失真，且更符合 Minecraft 惯例。
+     *
+     * @param aStack 物品栈
+     * @param world  当前世界（用于获取世界 tick）
+     * @return 允许触发返回 true，仍在冷却中返回 false
      */
-    private boolean canTrigger(ItemStack aStack) {
+    private boolean canTrigger(ItemStack aStack, World world) {
         ensureNBT(aStack);
-        long now = System.currentTimeMillis();
+        long now = world.getTotalWorldTime();
         long lastTime = aStack.stackTagCompound.getLong(NBT_LAST_USE_TIME);
-        if (now - lastTime < INTERVAL_MILLIS) {
+        if (now - lastTime < INTERVAL_TICKS) {
             return false;
         }
         // 更新最后使用时间
@@ -281,7 +287,10 @@ public class WirelessEnergyTap extends Item {
                 // 4. 找到刚附着的覆盖板并配置它
                 Cover placedCover = coverable.getCoverAtSide(targetSide);
                 if (placedCover instanceof GTswn_Cover_EnergyWireless) {
-                    ((GTswn_Cover_EnergyWireless) placedCover).configure((int) voltage, (int) amperage);
+                    // v1.2.1 改进：使用 Math.toIntExact 替代 (int) 强转，溢出时抛出异常暴露问题而非静默截断
+                    // GT 电压/安培实际不会超出 int 范围（MAX 级约 2^30），此处 toIntExact 安全
+                    ((GTswn_Cover_EnergyWireless) placedCover)
+                        .configure(Math.toIntExact(voltage), Math.toIntExact(amperage));
                 }
 
                 // 5. 提示成功
@@ -390,7 +399,7 @@ public class WirelessEnergyTap extends Item {
         }
 
         // 检查是否可以触发（防止短时间内重复触发）
-        if (!canTrigger(stack)) {
+        if (!canTrigger(stack, world)) {
             return true; // 返回true阻止继续处理
         }
 
@@ -420,7 +429,7 @@ public class WirelessEnergyTap extends Item {
         }
 
         // 检查是否可以触发（防止短时间内重复触发）
-        if (!canTrigger(stack)) {
+        if (!canTrigger(stack, world)) {
             return stack;
         }
 

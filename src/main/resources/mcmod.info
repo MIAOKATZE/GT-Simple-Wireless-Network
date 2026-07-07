@@ -3,7 +3,7 @@
 	"modList": [{
 		"modid": "gtswn",
 		"name": "GTSimpleWirelessNetwork",
-		"description": "An example mod for Minecraft 1.7.10 with Forge focused on a stable setup.",
+		"description": "A GregTech New Horizons mod that adds wireless energy monitoring, transfer, and redstone control to the GTNH wireless EU network.",
 		"version": "0.0.0",
 		"mcversion": "1.7.10",
 		"url": "https://github.com/MIAOKATZE/GT-Simple-Wireless-Network",
@@ -14,8 +14,8 @@
 		"screenshots": [],
 		"parent": "",
 		"requiredMods": [],
-		"dependencies": [],
+		"dependencies": ["gregtech"],
 		"dependants": [],
-		"useDependencyInformation": false
+		"useDependencyInformation": true
 	}]
 }
