@@ -50,48 +50,6 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 ***
 
-## Wireless Energy Tap & Covers / 无线网络链路终端与覆盖板
-
-<p align="center"><img src="images/README-Portable_Wireless_Network_Tap.jpg" width="400"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
-
-### Wireless Energy Tap / 无线网络链路终端
-
-A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode.
-
-便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。
-
-### Link Terminal (Energy/Power) / 链路终端（能源/动力）
-
-Both are **void covers** (虚空覆盖板) — they have no recipe and exist only as NBT-driven attachments placed by the Wireless Energy Tap. Their behavior is governed entirely by NBT parameters assigned on right-click; bare cover items without these parameters are inert. All NBT parameters persist across save/load.
-
-两种覆盖板均为**虚空覆盖板**——无合成配方，仅作为由无线网络链路终端右击附着的 NBT 驱动覆盖板存在。其行为完全由右击赋予的 NBT 参数决定；裸覆盖板无参数时无效。所有 NBT 参数跨存档/退出持久化。
-
-#### Link Terminal (Energy) / 链路终端（能源）
-
-Acts as a **virtual power source** — maintains an internal capacity buffer and continuously injects EU into the bound machine like a real cable.
-
-作为一个**虚拟电源**——内部维护电容量缓冲池，像导线一样持续向被绑定机器输入 EU。
-
-- **Capacity / 电容量**: `V × A × 800` ticks (computed on configuration; immediately refilled to capacity)
-- **Per-tick behavior / 每 tick 行为**: Injects `min(V × A, machine_needed, storedEU)` EU per tick into the bound machine — behaves like a real cable
-- **Refill / 补满**: Every 600 ticks, deducts `(capacity − storedEU) × (1 + downlink loss)` EU from the wireless network to refill the buffer
-- **Special case / 特例**: Single-block Arc Furnace is force-set to 4A (identified via recipe map `RecipeMaps.arcFurnaceRecipes`, not class name)
-- **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
-
-#### Link Terminal (Power) / 链路终端（动力）
-
-Acts as a **virtual cable** — drains the machine's output into an internal buffer and uploads to the wireless network periodically. Capacity is fixed at `2^63 − 1` (GT5U MAX Battery).
-
-作为一个**虚拟导线**——读取机器的输出存入内部缓冲池，并周期性上送到无线电网。电容量固定为 `2^63 − 1`（GT5U 太·终极电池）。
-
-- **Capacity / 电容量**: `Long.MAX_VALUE` (2^63 − 1)
-- **Per-tick behavior / 每 tick 行为**: Reads `getOutputVoltage()` / `getOutputAmperage()` from the machine; if V > 0, drains `min(available, V × A)` EU into the buffer (respecting `getMinimumStoredEU()`). Non-output machines (V = 0) are skipped to avoid draining energy from machines that don't produce any.
-- **Blocking / 阻断**: `letsEnergyOut() = false` blocks the machine from outputting to real cables on the cover's side, preventing double consumption
-- **Upload / 上送**: Every 600 ticks, the buffer is uploaded to the wireless network at `(1 − uplink loss)` rate
-- **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
-
-***
-
 ## Redstone Control System / 红石控制系统
 
 The Wireless Energy Monitor features a 5-mode redstone control system:
@@ -147,16 +105,21 @@ When the EU/t change rate is zero or near-zero, special labels are shown instead
 | `eut == 0` (all values identical) | `0 (Silent)` | Gray / 灰 |
 | Silent ≥ 300s (long-term silent) | `0 (Long-Term Silent)` | Dark Gray / 深灰 |
 | MTE reload delay (redstone buffer) | `Reload Calculating - Redstone Logic Maintained` | Red / 红 |
-| HUD first 5 checks (size < 6) | `Calculating...` | Orange / 橙 |
+| HUD cold start (size < 2) | `网络状态：计算中... / Calculating...` | Cyan title + Orange value / 青+橙 |
 
 ### Long-Term Silent Mechanism / 长期静默机制
 
 When the network stays silent (all sampled EU values identical) for ≥ 300s:
 1. The status label switches from `Silent` to `Long-Term Silent`.
 2. The dataset is compacted to only 2 data points (oldest + newest), saving memory.
-3. On the next sample, if the value differs, the dataset is cleared and cold-start calculation begins anew.
+3. On the next sample, if the value differs, **the last point is kept as the new dataset's starting point** (size=2, immediately calculable). If the value remains the same, only the newest sample's tick is updated.
 
-This avoids unbounded dataset growth during idle periods while preserving accurate cold-start recovery when activity resumes.
+当电网静默（所有采样值完全一致）持续 ≥ 300 秒时：
+1. 状态标签从 `静默` 切换为 `长期静默`。
+2. 数据集压缩为 2 个数据点（首末），节省内存。
+3. 下次采样若数值不同，**保留末位点作为新数据集起点**（size=2，立即可计算 eut）。若数值仍相同，仅更新末位点的 tick。
+
+This avoids unbounded dataset growth during idle periods while preserving accurate recovery when activity resumes.
 
 ### Reload & Rejoin Handling / 重载与重进处理
 
@@ -164,12 +127,47 @@ This avoids unbounded dataset growth during idle periods while preserving accura
 - **Long reload (>10s)**: Dataset cleared, cold-start triggered. MTE enables a 30-second redstone buffer (`redstoneReloadDelay=600t`) to maintain redstone output while the dataset rebuilds.
 - **Player rejoin (HUD)**: Dataset resets (portable devices don't persist data across sessions). Real-time gap detection (`System.currentTimeMillis()`, 10000ms threshold) handles logout detection since `getTotalWorldTime()` doesn't advance during logout.
 
-### Future Extensibility / 未来扩展
+***
 
-The dataset-based design (`EUDataSet` with FIFO aging and NBT serialization) lays the groundwork for future features like:
-- In-window network energy curve visualization
-- Historical trend analysis
-- Cross-session dataset persistence (currently HUD-only reset on logout)
+## Wireless Energy Tap & Covers / 无线网络链路终端与覆盖板
+
+<p align="center"><img src="images/README-Portable_Wireless_Network_Tap.jpg" width="400"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
+
+### Wireless Energy Tap / 无线网络链路终端
+
+A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode.
+
+便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。
+
+### Link Terminal (Energy/Power) / 链路终端（能源/动力）
+
+Both are **void covers** (虚空覆盖板) — they have no recipe and exist only as NBT-driven attachments placed by the Wireless Energy Tap. Their behavior is governed entirely by NBT parameters assigned on right-click; bare cover items without these parameters are inert. All NBT parameters persist across save/load.
+
+两种覆盖板均为**虚空覆盖板**——无合成配方，仅作为由无线网络链路终端右击附着的 NBT 驱动覆盖板存在。其行为完全由右击赋予的 NBT 参数决定；裸覆盖板无参数时无效。所有 NBT 参数跨存档/退出持久化。
+
+#### Link Terminal (Energy) / 链路终端（能源）
+
+Acts as a **virtual power source** — maintains an internal capacity buffer and continuously injects EU into the bound machine like a real cable.
+
+作为一个**虚拟电源**——内部维护电容量缓冲池，像导线一样持续向被绑定机器输入 EU。
+
+- **Capacity / 电容量**: `V × A × 800` ticks (computed on configuration; immediately refilled to capacity)
+- **Per-tick behavior / 每 tick 行为**: Injects `min(V × A, machine_needed, storedEU)` EU per tick into the bound machine — behaves like a real cable
+- **Refill / 补满**: Every 600 ticks, deducts `(capacity − storedEU) × (1 + downlink loss)` EU from the wireless network to refill the buffer
+- **Special case / 特例**: Single-block Arc Furnace is force-set to 4A (identified via recipe map `RecipeMaps.arcFurnaceRecipes`, not class name)
+- **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
+
+#### Link Terminal (Power) / 链路终端（动力）
+
+Acts as a **virtual cable** — drains the machine's output into an internal buffer and uploads to the wireless network periodically. Capacity is fixed at `2^63 − 1` (GT5U MAX Battery).
+
+作为一个**虚拟导线**——读取机器的输出存入内部缓冲池，并周期性上送到无线电网。电容量固定为 `2^63 − 1`（GT5U 太·终极电池）。
+
+- **Capacity / 电容量**: `Long.MAX_VALUE` (2^63 − 1)
+- **Per-tick behavior / 每 tick 行为**: Reads `getOutputVoltage()` / `getOutputAmperage()` from the machine; if V > 0, drains `min(available, V × A)` EU into the buffer (respecting `getMinimumStoredEU()`). Non-output machines (V = 0) are skipped to avoid draining energy from machines that don't produce any.
+- **Blocking / 阻断**: `letsEnergyOut() = false` blocks the machine from outputting to real cables on the cover's side, preventing double consumption
+- **Upload / 上送**: Every 600 ticks, the buffer is uploaded to the wireless network at `(1 − uplink loss)` rate
+- **Unload / 卸载**: On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
 
 ***
 
@@ -185,8 +183,8 @@ OP level 4 required. / 需要 OP 等级 4。
 
 ## Tech Stack / 技术栈
 
-- Java 17→8 (JVM Downgrader) / Minecraft 1.7.10 / Forge 10.13.4.1614
-- Dependencies: GT5-Unofficial, GTNHLib, StructureLib, ModularUI, ModularUI2, AE2
+- Java 25→8 (JVM Downgrader) / Minecraft 1.7.10 / Forge 10.13.4.1614
+- Dependencies: GT5-Unofficial, GTNHLib, StructureLib, ModularUI, ModularUI2
 
 ## License / 许可证
 
