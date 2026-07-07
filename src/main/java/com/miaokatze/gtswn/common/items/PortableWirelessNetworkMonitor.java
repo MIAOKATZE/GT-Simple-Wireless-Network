@@ -267,6 +267,11 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
             }
         }
 
+        // 机制说明（3 行简略形式，v1.3.0 新增）
+        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.mechanism.line1"));
+        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.mechanism.line2"));
+        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.mechanism.line3"));
+
         // 添加空行
         aList.add("");
         // 操作提示

@@ -12,6 +12,8 @@ gtswn.desc.wireless_monitor.line2=§bSmart redstone output, multiple modes
 gtswn.desc.wireless_monitor.line3=§9From MOD: GTSimpleWirelessNetwork
 gtswn.desc.wireless_monitor.line4=§eRecommend keeping the machine's chunk loaded
 gtswn.desc.wireless_monitor.line5=§7Short reload(≤10s) auto-resumes, long reload(>10s) enables 30s redstone buffer
+gtswn.desc.wireless_monitor.line6=§7Status: 5s interval, 300s window avg, with silent/long-term-silent(≥300s) detection
+gtswn.desc.wireless_monitor.line7=§7Reload/rejoin triggers cold start; dataset<61 means cold-start calculation
 
 # Wireless Energy Monitor UI
 gtswn.ui.title=Wireless Energy Monitor
@@ -22,8 +24,9 @@ gtswn.ui.wireless.energy.scientific=§bWireless Network: §f%s §bEU
 gtswn.ui.network.status.up=§bNetwork Status: §a↑ +%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.down=§bNetwork Status: §c↓ -%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.nochange=§bNetwork Status: §fNo Change/Calculating
-# Silent/<1EU/Reloading special status display (from MTEWirelessEnergyMonitor / WirelessMonitorHUD boundary handling)
+# Silent/<1EU/Reloading/LongTermSilent special status display (from MTEWirelessEnergyMonitor / WirelessMonitorHUD boundary handling)
 gtswn.ui.network.status.silent=§bNetwork Status: §f0 §bEU/t (§7Silent§b)
+gtswn.ui.network.status.longtermsilent=§bNetwork Status: §f0 §bEU/t (§8Long-Term Silent§b)
 gtswn.ui.network.status.lessthan1=§bNetwork Status: §f0 §bEU/t (§7<1EU§b)
 gtswn.ui.network.status.reload=§bNetwork Status: §cReload Calculating - Redstone Logic Maintained
 gtswn.ui.redstone.mode=§bRedstone Mode: §f%s
@@ -72,6 +75,10 @@ gtswn.tooltip.monitor.hud.mode.normal=§bHUD: Normal
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: Scientific
 gtswn.tooltip.monitor.usage=§7Right-click to toggle HUD mode
 gtswn.tooltip.monitor.baubles.equip=§7Can be equipped in any Baubles slot
+# Portable mechanism description (v1.3.0, 3-line brief form)
+gtswn.tooltip.monitor.mechanism.line1=§7Status: 5s interval, 300s window average
+gtswn.tooltip.monitor.mechanism.line2=§7First 30s shows "Calculating...", with silent/long-term-silent detection
+gtswn.tooltip.monitor.mechanism.line3=§7Rejoin triggers cold start; dataset resets on logout
 
 # NC2 Industrial Information Panel Info (via GT Sensor Kit)
 gtswn.info.energy=§7Energy: %s

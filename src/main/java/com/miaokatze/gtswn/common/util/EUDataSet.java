@@ -33,11 +33,35 @@ public class EUDataSet {
     /** 数据集固定容量（61 个采样点 = 0s 首检 + 60 次 100t 检测 = 300s） */
     public static final int CAPACITY = 61;
 
+    /** 长期静默阈值（tick 差值）：300s = 6000 ticks，与满载容量等价 */
+    public static final long LONG_SILENT_THRESHOLD_TICKS = 6000L;
+
     /** 内部存储：index 0 = 最旧，index size-1 = 最新 */
     private final List<Measurement> data = new ArrayList<>(CAPACITY);
 
     /**
-     * 添加新测量值（最新）。满载时自动淘汰最旧数据（index 0）。
+     * 长期静默状态标志。
+     * <p>
+     * 触发条件：静默模式（所有 value 相同）持续 ≥ 300s（tickDiff ≥ 6000）。
+     * <p>
+     * 进入长期静默后，数据集只保留首末两个数据点，每次 add 更新末位 tick。
+     * 当新值与旧值不同时，清空数据集冷启动，重置此标志。
+     * <p>
+     * MTE 持久化此字段；HUD（便携式）不持久化（随退出重置）。
+     */
+    private boolean longTermSilent = false;
+
+    /**
+     * 添加新测量值（最新）。
+     * <p>
+     * 三种模式：
+     * <ol>
+     * <li>长期静默模式：数据集只保留 2 个数据点（首末），新值相同则更新末位 tick，
+     * 新值不同则清空冷启动。</li>
+     * <li>静默模式（未达长期）：所有 value 相同时只保留首末 2 个数据点；
+     * 当 tickDiff ≥ 6000 时进入长期静默。</li>
+     * <li>正常模式：满载时淘汰最旧数据（FIFO 老化），保持窗口恒定。</li>
+     * </ol>
      *
      * @param value 当前 EU 测量值（BigInteger，不可为 null）
      * @param tick  当前游戏 tick
@@ -47,11 +71,81 @@ public class EUDataSet {
             // null 值不记录，与原 recordMeasurement 行为一致
             return;
         }
-        // 满载时淘汰最旧数据（FIFO 老化），保持窗口恒定
+
+        // === 长期静默模式：数据集只有 2 个数据点 ===
+        if (longTermSilent) {
+            Measurement last = data.get(data.size() - 1);
+            if (value.equals(last.value)) {
+                // 新值相同：更新末位 tick，保持 2 个数据点
+                data.set(1, new Measurement(tick, value));
+            } else {
+                // 新值不同：退出长期静默，清空数据集冷启动
+                data.clear();
+                longTermSilent = false;
+                data.add(new Measurement(tick, value));
+            }
+            return;
+        }
+
+        // === 静默模式检测（所有 value 相同且 size >= 2） ===
+        if (data.size() >= 2 && isAllSameValue()) {
+            Measurement last = data.get(data.size() - 1);
+            if (value.equals(last.value)) {
+                // 新值相同：压缩为 2 个数据点（首位保留最早的，末位更新为当前）
+                Measurement oldest = data.get(0);
+                data.clear();
+                data.add(oldest);
+                data.add(new Measurement(tick, value));
+
+                // 检查是否达到长期静默阈值（300s = 6000 ticks）
+                if (tick - oldest.tick >= LONG_SILENT_THRESHOLD_TICKS) {
+                    longTermSilent = true;
+                }
+            } else {
+                // 新值不同：清空数据集，冷启动
+                data.clear();
+                data.add(new Measurement(tick, value));
+            }
+            return;
+        }
+
+        // === 正常模式：满载时淘汰最旧数据（FIFO 老化） ===
         if (data.size() >= CAPACITY) {
             data.remove(0);
         }
         data.add(new Measurement(tick, value));
+    }
+
+    /**
+     * 检测数据集所有 value 是否完全一致。
+     * <p>
+     * 用于判断是否进入静默模式。size &lt; 2 时返回 false。
+     *
+     * @return 所有 value 相同返回 true；否则 false
+     */
+    public boolean isAllSameValue() {
+        if (data.size() < 2) {
+            return false;
+        }
+        BigInteger first = data.get(0).value;
+        for (int i = 1; i < data.size(); i++) {
+            if (!data.get(i).value.equals(first)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 是否处于长期静默状态。
+     * <p>
+     * 长期静默 = 静默模式持续 ≥ 300s。此时数据集只保留 2 个数据点，
+     * 显示标签从"静默"切换为"长期静默"。
+     *
+     * @return 长期静默返回 true；否则 false
+     */
+    public boolean isLongTermSilent() {
+        return longTermSilent;
     }
 
     /**
@@ -106,10 +200,13 @@ public class EUDataSet {
     }
 
     /**
-     * 清空所有数据。
+     * 清空所有数据，并重置长期静默标志。
+     * <p>
+     * 用于 gap 检测清空、退出长期静默冷启动等场景。
      */
     public void clear() {
         data.clear();
+        longTermSilent = false;
     }
 
     /**
@@ -187,6 +284,10 @@ public class EUDataSet {
             historyTag.setTag("m" + i, mTag);
         }
 
+        // 持久化长期静默标志（v1.3.0 新增）
+        // 旧存档无此键，加载时默认 false，兼容性 OK
+        historyTag.setBoolean("longTermSilent", longTermSilent);
+
         // 挂到父标签
         parent.setTag(key, historyTag);
     }
@@ -206,8 +307,9 @@ public class EUDataSet {
      * @param key    存储键名（通常为 "measurementHistory"）
      */
     public void loadFromNBT(NBTTagCompound parent, String key) {
-        // 先清空现有数据
+        // 先清空现有数据（含 longTermSilent 标志）
         data.clear();
+        longTermSilent = false;
 
         // 检查键是否存在
         if (!parent.hasKey(key)) {
@@ -252,5 +354,9 @@ public class EUDataSet {
             // 直接 add，无需触发 FIFO 老化逻辑（加载时已限制 count <= CAPACITY）
             data.add(new Measurement(tick, value));
         }
+
+        // 读取长期静默标志（v1.3.0 新增）
+        // 旧存档无此键时 getBoolean 返回 false，兼容性 OK
+        longTermSilent = historyTag.getBoolean("longTermSilent");
     }
 }

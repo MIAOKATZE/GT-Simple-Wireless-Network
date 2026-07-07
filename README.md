@@ -116,6 +116,63 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 
 ***
 
+## Network Status Calculation Mechanism / 电网状态计算机制
+
+Both the **Wireless Energy Monitor** (block) and **Portable Wireless Network Monitor** (item) share a unified network status calculation mechanism (v1.3.0+). This section describes how EU/t change rate is computed and displayed.
+
+**无线能量监视器**（方块）与**便携式无线网络监测终端**（物品）共享统一的电网状态计算机制（v1.3.0+）。本节说明 EU/t 变化率的计算与显示逻辑。
+
+### Sampling & Window / 采样与窗口
+
+- **Interval / 检测间隔**: 100 ticks (5 seconds) — synchronized for both MTE and HUD
+- **Window / 窗口**: 300 seconds (61 samples: 1 initial + 60 interval checks)
+- **Dataset / 数据集**: Fixed-capacity FIFO (`EUDataSet`, capacity=61). New samples push out the oldest, maintaining a rolling 300s window. BigDecimal precision division avoids double precision loss for large EU values.
+
+### Two Logic Phases / 两类逻辑群
+
+| Phase / 阶段 | Trigger / 触发条件 | Formula / 公式 |
+| --- | --- | --- |
+| Cold Start / 冷启动 | Dataset size < 61 (after reload/rejoin) | `(newest - oldest) / ((size-1) × 100t)` |
+| Working / 工作态 | Dataset full (size == 61) | `(newest - oldest) / 6000t` (equivalent rolling window) |
+
+Both formulas are mathematically equivalent: `(newest.value - oldest.value) / (newest.tick - oldest.tick)`.
+
+### Special Status Display / 特殊状态显示
+
+When the EU/t change rate is zero or near-zero, special labels are shown instead of numeric values:
+
+| Condition / 条件 | Label / 标签 | Color / 颜色 |
+| --- | --- | --- |
+| `|eut| < 1` | `0 (<1EU)` | Gray / 灰 |
+| `eut == 0` (all values identical) | `0 (Silent)` | Gray / 灰 |
+| Silent ≥ 300s (long-term silent) | `0 (Long-Term Silent)` | Dark Gray / 深灰 |
+| MTE reload delay (redstone buffer) | `Reload Calculating - Redstone Logic Maintained` | Red / 红 |
+| HUD first 5 checks (size < 6) | `Calculating...` | Orange / 橙 |
+
+### Long-Term Silent Mechanism / 长期静默机制
+
+When the network stays silent (all sampled EU values identical) for ≥ 300s:
+1. The status label switches from `Silent` to `Long-Term Silent`.
+2. The dataset is compacted to only 2 data points (oldest + newest), saving memory.
+3. On the next sample, if the value differs, the dataset is cleared and cold-start calculation begins anew.
+
+This avoids unbounded dataset growth during idle periods while preserving accurate cold-start recovery when activity resumes.
+
+### Reload & Rejoin Handling / 重载与重进处理
+
+- **Short reload (≤10s)**: Dataset preserved, calculation resumes directly (≤3.3% slope error, acceptable).
+- **Long reload (>10s)**: Dataset cleared, cold-start triggered. MTE enables a 30-second redstone buffer (`redstoneReloadDelay=600t`) to maintain redstone output while the dataset rebuilds.
+- **Player rejoin (HUD)**: Dataset resets (portable devices don't persist data across sessions). Real-time gap detection (`System.currentTimeMillis()`, 10000ms threshold) handles logout detection since `getTotalWorldTime()` doesn't advance during logout.
+
+### Future Extensibility / 未来扩展
+
+The dataset-based design (`EUDataSet` with FIFO aging and NBT serialization) lays the groundwork for future features like:
+- In-window network energy curve visualization
+- Historical trend analysis
+- Cross-session dataset persistence (currently HUD-only reset on logout)
+
+***
+
 ## Admin Commands / 管理员命令
 
 OP level 4 required. / 需要 OP 等级 4。

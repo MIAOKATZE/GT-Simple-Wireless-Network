@@ -549,6 +549,10 @@ public class WirelessMonitorHUD extends Gui {
 
         // 绝对无变化（首末两点 EU 完全相等）
         if (eut == 0.0) {
+            // 长期静默：静默模式持续 ≥ 300s（数据集压缩为 2 个数据点）
+            if (dataSet.isLongTermSilent()) {
+                return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": §f0 §bEU/t (§7长期静默§b)";
+            }
             return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": §f0 §bEU/t (§7静默§b)";
         }
 
