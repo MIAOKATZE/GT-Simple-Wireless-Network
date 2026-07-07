@@ -5,10 +5,14 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Ene
 
 import java.io.File;
 
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.world.World;
+
 import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.common.command.CommandGTSWN;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
@@ -21,6 +25,7 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
+import cpw.mods.fml.common.network.NetworkRegistry;
 import gregtech.api.GregTechAPI;
 import gregtech.api.covers.CoverRegistry;
 import gregtech.api.render.TextureFactory;
@@ -87,6 +92,7 @@ public class CommonProxy {
 
         // 注册网络包通道（便携监测终端 EU 同步：修复客户端恒显示 0EU 的 Bug）
         GTSWNPacketHandler.register();
+        NetworkRegistry.INSTANCE.registerGuiHandler(GTSimpleWirelessNetwork.instance, new GTSWNGuiHandler());
     }
 
     /**
@@ -156,4 +162,8 @@ public class CommonProxy {
      * 如果之前注册失败，可以在此处进行最后的补救尝试。
      */
     public void loadComplete(cpw.mods.fml.common.event.FMLLoadCompleteEvent event) {}
+
+    public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
+        return null;
+    }
 }

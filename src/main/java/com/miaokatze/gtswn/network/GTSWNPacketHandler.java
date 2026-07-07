@@ -32,5 +32,10 @@ public class GTSWNPacketHandler {
         NETWORK.registerMessage(PacketRequestWirelessEU.Handler.class, PacketRequestWirelessEU.class, 0, Side.SERVER);
         // 1: 服务端→客户端 响应 EU
         NETWORK.registerMessage(PacketResponseWirelessEU.Handler.class, PacketResponseWirelessEU.class, 1, Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketUpdateNetworkInfoPanelConfig.Handler.class,
+            PacketUpdateNetworkInfoPanelConfig.class,
+            2,
+            Side.SERVER);
     }
 }

@@ -168,3 +168,9 @@ gtswn.command.join.usage=Usage: /gtswn global_energy_join <memberUUID> <leaderUU
 # Cover Timer
 gtswn.chat.cover.next_refill=§7 Next refill in: 
 gtswn.chat.cover.next_upload=§7 Next upload in: 
+
+# Network Info Panel
+tile.NetworkInfoPanel_GTswn.name=Network Info Panel
+tile.NetworkInfoPanelExtender_GTswn.name=Network Info Extender Panel
+gtswn.network_info.owner=Owner: %s
+gtswn.network_info.history=History retained

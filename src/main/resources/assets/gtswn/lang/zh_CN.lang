@@ -167,3 +167,9 @@ gtswn.command.join.usage=用法: /gtswn global_energy_join <memberUUID> <leaderU
 # Cover Timer
 gtswn.chat.cover.next_refill=§7 距下次补能: 
 gtswn.chat.cover.next_upload=§7 距下次上传: 
+
+# Network Info Panel
+tile.NetworkInfoPanel_GTswn.name=网络信息屏
+tile.NetworkInfoPanelExtender_GTswn.name=网络信息拓展屏
+gtswn.network_info.owner=拥有者: %s
+gtswn.network_info.history=历史数据已保留

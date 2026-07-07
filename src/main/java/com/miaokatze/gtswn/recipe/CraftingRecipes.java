@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.recipe;
 
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel_Extender;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
@@ -42,6 +44,8 @@ public class CraftingRecipes {
         addWirelessEnergyMonitorRecipe();
         // 无线网络链路终端
         addWirelessEnergyTapRecipe();
+        addNetworkInfoPanelRecipe();
+        addNetworkInfoPanelExtenderRecipe();
     }
 
     /**
@@ -159,5 +163,54 @@ public class CraftingRecipes {
             .add(recipe);
 
         GTSimpleWirelessNetwork.LOG.info("已添加无线能量监视器合成配方");
+    }
+
+    private static void addNetworkInfoPanelRecipe() {
+        ItemStack lvReceiver = ItemList.Sensor_LV.get(1);
+        ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1);
+        ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1);
+        ItemStack screen = ItemList.Cover_Screen.get(1);
+
+        net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
+            Network_Info_Panel.get(1),
+            "ABA",
+            "CDC",
+            "EBE",
+            'A',
+            lvReceiver,
+            'B',
+            steelPlate,
+            'C',
+            screen,
+            'D',
+            Portable_Wireless_Network_Monitor.get(1),
+            'E',
+            steelScrew);
+
+        CraftingManager.getInstance()
+            .getRecipeList()
+            .add(recipe);
+    }
+
+    private static void addNetworkInfoPanelExtenderRecipe() {
+        ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1);
+        ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1);
+        ItemStack screen = ItemList.Cover_Screen.get(1);
+
+        net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
+            Network_Info_Panel_Extender.get(2),
+            "ABA",
+            "BCB",
+            "ABA",
+            'A',
+            steelScrew,
+            'B',
+            steelPlate,
+            'C',
+            screen);
+
+        CraftingManager.getInstance()
+            .getRecipeList()
+            .add(recipe);
     }
 }

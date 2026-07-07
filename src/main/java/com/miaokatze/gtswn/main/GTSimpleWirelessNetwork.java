@@ -27,6 +27,10 @@ public class GTSimpleWirelessNetwork {
 
     // 模组唯一标识符 (Mod ID)
     public static final String MODID = "gtswn";
+    public static final int GUI_NETWORK_INFO_PANEL = 1;
+
+    @Mod.Instance(MODID)
+    public static GTSimpleWirelessNetwork instance;
 
     // 日志记录器，用于输出模组运行信息
     public static final Logger LOG = LogManager.getLogger(MODID);

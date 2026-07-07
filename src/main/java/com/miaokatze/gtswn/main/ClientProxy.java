@@ -1,9 +1,16 @@
 package com.miaokatze.gtswn.main;
 
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 
+import com.miaokatze.gtswn.client.gui.GuiNetworkInfoPanel;
+import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 
+import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 
 /**
@@ -26,6 +33,7 @@ public class ClientProxy extends CommonProxy {
         // 注意：RenderGameOverlayEvent 是 Forge 事件，必须注册到 MinecraftForge.EVENT_BUS
         GTSimpleWirelessNetwork.LOG.info("[2/2] 注册客户端 HUD 渲染器...");
         MinecraftForge.EVENT_BUS.register(new WirelessMonitorHUD());
+        ClientRegistry.bindTileEntitySpecialRenderer(TileEntityNetworkInfoPanel.class, new RenderNetworkInfoPanel());
 
         // 注：原 PlayerLoggedOutEvent 监听器用于保存便携式 HUD 历史到物品 NBT，
         // 已随 WirelessMonitorHUD.saveHistoryToItemStack 删除而移除（用户确认便携式随退出登录重置）。
@@ -34,4 +42,14 @@ public class ClientProxy extends CommonProxy {
         // - 有监视器 → 重新初始化，靠 gap 检测和首次检测重建数据集
     }
 
+    @Override
+    public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
+        if (id == GTSimpleWirelessNetwork.GUI_NETWORK_INFO_PANEL) {
+            TileEntity tile = world.getTileEntity(x, y, z);
+            if (tile instanceof TileEntityNetworkInfoPanel) {
+                return new GuiNetworkInfoPanel((TileEntityNetworkInfoPanel) tile);
+            }
+        }
+        return null;
+    }
 }

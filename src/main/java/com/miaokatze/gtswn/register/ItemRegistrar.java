@@ -19,6 +19,7 @@ public class ItemRegistrar {
      */
     public static void init() {
         GTSimpleWirelessNetwork.LOG.info("开始通过 ItemRegistrar 注册物品...");
+        BlockRegistrar.init();
         registerTestCoin();
         registerPortableWirelessNetworkMonitor();
         registerWirelessEnergyTap();
