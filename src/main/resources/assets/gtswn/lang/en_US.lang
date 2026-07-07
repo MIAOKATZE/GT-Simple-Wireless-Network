@@ -10,6 +10,8 @@ gt.blockmachines.gtswn.wireless_energy_monitor.name=Wireless Energy Monitor
 gtswn.desc.wireless_monitor.line1=§bMonitor wireless network, smart power calculation
 gtswn.desc.wireless_monitor.line2=§bSmart redstone output, multiple modes
 gtswn.desc.wireless_monitor.line3=§9From MOD: GTSimpleWirelessNetwork
+gtswn.desc.wireless_monitor.line4=§eRecommend keeping the machine's chunk loaded
+gtswn.desc.wireless_monitor.line5=§7Short reload(≤10s) auto-resumes, long reload(>10s) enables 30s redstone buffer
 
 # Wireless Energy Monitor UI
 gtswn.ui.title=Wireless Energy Monitor

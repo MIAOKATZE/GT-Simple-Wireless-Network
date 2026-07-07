@@ -85,6 +85,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private BigInteger param2Value = BigInteger.ZERO; // 参数2数值
     private boolean redstoneOutput = false; // 红石输出状态
 
+    // v1.2.4：长时卸载重载后的红石延迟计数器（ticks）
+    // >0 时跳过 updateRedstoneOutput，保持 mSidedRedstone[] 缓存的红石信号
+    // 不需要持久化：重载时由 gap 检测重新设置
+    private int redstoneReloadDelay = 0;
+
     // 构造函数：用于注册
     public MTEWirelessEnergyMonitor(int aID, String aName, String aNameRegional) {
         super(
@@ -93,7 +98,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             aNameRegional,
             new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
                 net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
-                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3") });
+                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3"),
+                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line4"),
+                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line5") });
     }
 
     // 拷贝构造函数
@@ -133,23 +140,34 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             long worldTick = aBaseMetaTileEntity.getWorld()
                 .getTotalWorldTime();
 
-            // 红石检测：每 2 ticks（0.1s），独立于 UI 频率，保证红石快速响应
-            // 使用差值检查（与 HUD 一致），首次测量加速：measurementHistory 为空时立即执行
+            // v1.2.4：gap 检测前置（必须在 measurementHistory.isEmpty() 短路之前执行）
+            // 检测长时卸载重载：lastCheckTick > 0 排除首次放置，gap > 200L = 10秒
+            // - 长时卸载（>10秒）：清空历史（避免跨卸载斜率错误），触发30秒红石延迟
+            // - 短时卸载（≤10秒）：保留旧样本，直接续传（斜率误差 ≤3.3%，可接受）
+            if (lastCheckTick > 0) {
+                long gap = worldTick - lastCheckTick;
+                if (gap > 200L) {
+                    measurementHistory.clear();
+                    redstoneReloadDelay = 600; // 30秒 = 600 ticks
+                }
+            }
+
+            // 红石检测：如果处于红石延迟期，跳过更新（保持 mSidedRedstone[] 缓存的红石信号）；
+            // 否则每 2 ticks（0.1s）检测一次
             // 设计说明：红石检测频率(2 ticks)高于 EU/t 刷新频率(100 ticks)是有意为之
             // - 红石需要快速响应（0.1秒），避免漏检临界值
             // - EU/t 均值需要长窗口稳定（5秒），避免瞬时波动误判
             // 当 anchorMode=1 时，红石基于陈旧的 euPerTick 值判断，最多有 5 秒延迟，属可接受行为
-            if (measurementHistory.isEmpty() || worldTick - lastRedstoneCheckTick >= REDSTONE_CHECK_INTERVAL) {
+            if (redstoneReloadDelay > 0) {
+                redstoneReloadDelay--;
+            } else if (measurementHistory.isEmpty() || worldTick - lastRedstoneCheckTick >= REDSTONE_CHECK_INTERVAL) {
                 updateRedstoneOutput();
                 lastRedstoneCheckTick = worldTick;
             }
             // UI 更新 + EU/t 计算：每 100 ticks（5秒）
-            // 关键修复：使用差值检查（aTick - lastCheckTick >= 100）替代 modulo（aTick % 100 == 0）
-            // 原因：服务器卡顿跳过 100 倍数的 tick 时，modulo 检查会错过检测，
-            // 导致 measurementHistory 只有 1 个测量点，calculateEUT 返回 0.0，状态恒为"无变化"
-            // 差值检查更健壮，与 HUD 的 currentTick - lastUpdateTick >= UPDATE_INTERVAL 逻辑一致
-            // 首次测量加速：measurementHistory 为空时立即记录第一个数据点（不等 5 秒）
-            // v1.1.11：差值计算改用 worldTick（持久化）替代 aTick（不持久化），修复重启后分支永不触发的根因
+            // 关键修复：使用差值检查（worldTick - lastCheckTick >= 100）替代 modulo
+            // 原因：服务器卡顿跳过 100 倍数的 tick 时，modulo 检查会错过检测
+            // 首次测量加速：measurementHistory 为空时立即记录第一个数据点
             if (measurementHistory.isEmpty() || worldTick - lastCheckTick >= 100L) {
                 // 服务端执行 EU/t 计算和缓存文本更新
                 // 客户端不执行：避免覆盖 StringSyncValue 同步过来的服务端真实值
@@ -1171,9 +1189,18 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
         // 保存 EU/t 计算状态（用于红石功能）
         aNBT.setDouble("euPerTick", euPerTick);
-        // v1.2.2 修复：不再持久化 measurementHistory
-        // 原因：区块卸载重载后，跨卸载期间的首末样本会导致变化率计算包含卸载期间的能量增长，
-        // 显示"非常非常大"的错误值。重载后从零开始积累，5秒后恢复有效变化率。
+        // v1.2.4：重新持久化 measurementHistory（用于短时卸载直接续传）
+        // 短时卸载（≤10秒）保留旧样本立即恢复变化率；长时卸载（>10秒）由 onPostTick 的 gap 检测清空
+        NBTTagCompound historyTag = new NBTTagCompound();
+        historyTag.setInteger("count", measurementHistory.size());
+        for (int i = 0; i < measurementHistory.size(); i++) {
+            Measurement m = measurementHistory.get(i);
+            NBTTagCompound measTag = new NBTTagCompound();
+            measTag.setLong("tick", m.tick);
+            measTag.setString("value", m.value.toString());
+            historyTag.setTag("m" + i, measTag);
+        }
+        aNBT.setTag("measurementHistory", historyTag);
 
         // v1.2.1 修复：移除 lastWirelessEU 死代码
         // 原因：loadNBTData 从不读取 lastWirelessEU，写入只是浪费 NBT 空间和性能
@@ -1183,7 +1210,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         aNBT.setInteger("redstoneMode", redstoneMode);
         // 保存红石检测时间戳（用于跨加载持续 0.1s 响应）
         aNBT.setLong("lastRedstoneCheckTick", lastRedstoneCheckTick);
-        // 保存 UI/EUt 检测时间戳（v1.2.2：measurementHistory 不再持久化，lastCheckTick 仅用于红石检测连续性）
+        // 保存 UI/EUt 检测时间戳（v1.2.4：用于 onPostTick 的 gap 检测，判断长时/短时卸载）
         aNBT.setLong("lastCheckTick", lastCheckTick);
         // 保存锚定参数模式（0=电网电量，1=电网状态）
         aNBT.setInteger("anchorMode", anchorMode);
@@ -1206,18 +1233,30 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 加载 EU/t 计算状态（用于红石功能）
         euPerTick = aNBT.getDouble("euPerTick");
         // 注：unchangedCount 已废弃（300s 窗口均值算法不再使用），不再读取
-        // v1.2.2 修复：不再恢复 measurementHistory
-        // 原因：跨区块卸载的旧样本会导致重载后变化率计算包含卸载期间能量增长，显示错误的大值。
-        // 重载后 measurementHistory 保持为空（字段初始化为 new ArrayList<>()），
-        // 首次 onPostTick 时添加当前样本，5秒后（100 ticks）恢复有效变化率。
-        // 老 NBT 中的 measurementHistory 键被忽略，无兼容性问题。
+        // v1.2.4：恢复 measurementHistory（用于短时卸载直接续传）
+        // 兼容性：v1.2.3 存档无此键，hasKey 检查跳过；v1.2.2 之前存档有此键，正常恢复
+        if (aNBT.hasKey("measurementHistory")) {
+            NBTTagCompound historyTag = aNBT.getCompoundTag("measurementHistory");
+            int count = historyTag.getInteger("count");
+            measurementHistory.clear();
+            for (int i = 0; i < count; i++) {
+                NBTTagCompound measTag = historyTag.getCompoundTag("m" + i);
+                long tick = measTag.getLong("tick");
+                try {
+                    BigInteger value = new BigInteger(measTag.getString("value"));
+                    measurementHistory.add(new Measurement(tick, value));
+                } catch (NumberFormatException e) {
+                    // 跳过损坏的记录
+                }
+            }
+        }
         // 注意：lastWirelessEU 不需要保存，因为退出重进后会重新从 WirelessNetworkManager 获取
 
         // 加载红石控制状态
         redstoneMode = aNBT.getInteger("redstoneMode");
         // 加载红石检测时间戳（用于跨加载持续 0.1s 响应）
         lastRedstoneCheckTick = aNBT.getLong("lastRedstoneCheckTick");
-        // 加载 UI/EUt 检测时间戳（v1.2.2：measurementHistory 不再持久化，重载后从零开始积累样本）
+        // 加载 UI/EUt 检测时间戳（v1.2.4：用于 onPostTick 的 gap 检测，判断长时/短时卸载）
         // 旧存档无此键时 getLong 返回 0，首次 onPostTick 立即触发，兼容性 OK
         lastCheckTick = aNBT.getLong("lastCheckTick");
         // 加载锚定参数模式（0=电网电量，1=电网状态）
