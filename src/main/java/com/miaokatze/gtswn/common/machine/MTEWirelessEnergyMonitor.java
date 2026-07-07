@@ -1171,18 +1171,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
         // 保存 EU/t 计算状态（用于红石功能）
         aNBT.setDouble("euPerTick", euPerTick);
-        // 保存测量历史（用于红石功能）
-        // 注：unchangedCount 已废弃（300s 窗口均值算法不再使用），不再持久化
-        NBTTagCompound historyTag = new NBTTagCompound();
-        for (int i = 0; i < measurementHistory.size(); i++) {
-            Measurement m = measurementHistory.get(i);
-            NBTTagCompound measTag = new NBTTagCompound();
-            measTag.setLong("tick", m.tick);
-            measTag.setString("value", m.value.toString());
-            historyTag.setTag("m" + i, measTag);
-        }
-        historyTag.setInteger("count", measurementHistory.size());
-        aNBT.setTag("measurementHistory", historyTag);
+        // v1.2.2 修复：不再持久化 measurementHistory
+        // 原因：区块卸载重载后，跨卸载期间的首末样本会导致变化率计算包含卸载期间的能量增长，
+        // 显示"非常非常大"的错误值。重载后从零开始积累，5秒后恢复有效变化率。
 
         // v1.2.1 修复：移除 lastWirelessEU 死代码
         // 原因：loadNBTData 从不读取 lastWirelessEU，写入只是浪费 NBT 空间和性能
@@ -1192,8 +1183,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         aNBT.setInteger("redstoneMode", redstoneMode);
         // 保存红石检测时间戳（用于跨加载持续 0.1s 响应）
         aNBT.setLong("lastRedstoneCheckTick", lastRedstoneCheckTick);
-        // 保存 UI/EUt 检测时间戳（v1.1.10 修复：避免加载后 lastCheckTick=0 导致首次 onPostTick 立即触发，
-        // 用 NBT 旧样本与当前样本计算 eut，若两者值相同则 eut=0 显示"= 0.00 EU/t"）
+        // 保存 UI/EUt 检测时间戳（v1.2.2：measurementHistory 不再持久化，lastCheckTick 仅用于红石检测连续性）
         aNBT.setLong("lastCheckTick", lastCheckTick);
         // 保存锚定参数模式（0=电网电量，1=电网状态）
         aNBT.setInteger("anchorMode", anchorMode);
@@ -1216,40 +1206,19 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 加载 EU/t 计算状态（用于红石功能）
         euPerTick = aNBT.getDouble("euPerTick");
         // 注：unchangedCount 已废弃（300s 窗口均值算法不再使用），不再读取
-        // 加载测量历史（用于红石功能）
-        if (aNBT.hasKey("measurementHistory")) {
-            NBTTagCompound historyTag = aNBT.getCompoundTag("measurementHistory");
-            int count = historyTag.getInteger("count");
-            measurementHistory.clear();
-            for (int i = 0; i < count; i++) {
-                NBTTagCompound measTag = historyTag.getCompoundTag("m" + i);
-                long tick = measTag.getLong("tick");
-                // v1.2.1 修复：包裹 try-catch，避免存档损坏导致 NumberFormatException 中断整个 NBT 加载
-                try {
-                    BigInteger value = new BigInteger(measTag.getString("value"));
-                    measurementHistory.add(new Measurement(tick, value));
-                } catch (NumberFormatException e) {
-                    // 跳过损坏的测量记录，避免中断整个 NBT 加载
-                    com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG
-                        .warn("Failed to parse measurement value at index " + i + ": " + measTag.getString("value"), e);
-                }
-            }
-        }
-        // 加载后立即清理过期样本（用户决策8：NBT兼容，加载后立即 purgeExpired 过滤窗口外样本）
-        // 若世界尚未初始化，则跳过，等首次 onPostTick 时由 calculateEUT 内部清理
-        if (getBaseMetaTileEntity() != null && getBaseMetaTileEntity().getWorld() != null) {
-            long currentTick = getBaseMetaTileEntity().getWorld()
-                .getTotalWorldTime();
-            FormatUtil.purgeExpired(measurementHistory, currentTick, FormatUtil.WINDOW_TICKS);
-        }
+        // v1.2.2 修复：不再恢复 measurementHistory
+        // 原因：跨区块卸载的旧样本会导致重载后变化率计算包含卸载期间能量增长，显示错误的大值。
+        // 重载后 measurementHistory 保持为空（字段初始化为 new ArrayList<>()），
+        // 首次 onPostTick 时添加当前样本，5秒后（100 ticks）恢复有效变化率。
+        // 老 NBT 中的 measurementHistory 键被忽略，无兼容性问题。
         // 注意：lastWirelessEU 不需要保存，因为退出重进后会重新从 WirelessNetworkManager 获取
 
         // 加载红石控制状态
         redstoneMode = aNBT.getInteger("redstoneMode");
         // 加载红石检测时间戳（用于跨加载持续 0.1s 响应）
         lastRedstoneCheckTick = aNBT.getLong("lastRedstoneCheckTick");
-        // 加载 UI/EUt 检测时间戳（v1.1.10 修复：避免加载后立即用 NBT 旧样本计算 eut）
-        // 旧存档无此键时 getLong 返回 0，回退到原行为（首次 onPostTick 立即触发），兼容性 OK
+        // 加载 UI/EUt 检测时间戳（v1.2.2：measurementHistory 不再持久化，重载后从零开始积累样本）
+        // 旧存档无此键时 getLong 返回 0，首次 onPostTick 立即触发，兼容性 OK
         lastCheckTick = aNBT.getLong("lastCheckTick");
         // 加载锚定参数模式（0=电网电量，1=电网状态）
         anchorMode = aNBT.getInteger("anchorMode");
