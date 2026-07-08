@@ -126,6 +126,10 @@ public class BlockNetworkInfoPanel extends BlockContainer {
             ((TileEntityNetworkInfoPanel) tile).detachScreen();
         }
         super.breakBlock(world, x, y, z, block, meta);
+        // v1.4.6：主屏破坏后通知附近主屏重建，避免旧 screen 状态残留（与 Extender.breakBlock 行为一致）
+        if (!world.isRemote) {
+            TileEntityNetworkInfoPanel.rebuildNearbyScreens(world, x, y, z);
+        }
     }
 
     private static int getHorizontalFacingFromEntity(EntityLivingBase entity) {

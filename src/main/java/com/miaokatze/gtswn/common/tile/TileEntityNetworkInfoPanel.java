@@ -416,6 +416,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         }
 
         Set<String> visited = new HashSet<>();
+        // v1.4.6：新增 screenParts 只记录兼容的屏幕方块（主屏+Extender），用于后续矩形识别与 Extender 遍历
+        // 修复 bug：原 BFS 把空气方块也加入 visited，污染 findLargestFilledRect 的 occupied 集合，
+        // 导致算法返回包含空气行的更大矩形（如 3x3 错误扩展为 5x3）
+        Set<String> screenParts = new HashSet<>();
         Queue<int[]> queue = new ArrayDeque<>();
         queue.add(new int[] { xCoord, yCoord, zCoord });
         int minX = xCoord;
@@ -435,6 +439,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             if (!isCompatibleScreenPart(tile, facing)) {
                 continue;
             }
+            screenParts.add(key); // v1.4.6：仅兼容方块才记录到 screenParts，避免空气方块污染矩形识别
             minX = Math.min(minX, pos[0]);
             maxX = Math.max(maxX, pos[0]);
             minY = Math.min(minY, pos[1]);
@@ -445,8 +450,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         }
 
         // v1.4.5：改为识别"完全填满的子矩形"，而非整个包围盒
-        // 在 visited 连通块中找出包含 core 位置的最大填满子矩形
-        int[] rect = findLargestFilledRect(visited, facing, xCoord, yCoord, zCoord);
+        // v1.4.6：在 screenParts（仅兼容方块）中找出包含 core 位置的最大填满子矩形
+        int[] rect = findLargestFilledRect(screenParts, facing, xCoord, yCoord, zCoord); // v1.4.6：传 screenParts 而非
+                                                                                         // visited，确保只识别真实屏幕方块
         NetworkScreen next = new NetworkScreen();
         next.minX = rect[0];
         next.minY = rect[1];
@@ -460,8 +466,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         next.facing = facing;
         screen = next;
 
-        // 遍历所有连通的方块：子矩形内的 Extender 附着到 core，子矩形外的 Extender 解除附着
-        for (String key : visited) {
+        // 遍历所有兼容的屏幕方块：子矩形内的 Extender 附着到 core，子矩形外的 Extender 解除附着
+        // v1.4.6：用 screenParts 替代 visited，避免遍历到空气等不兼容方块
+        for (String key : screenParts) {
             int[] pos = parseKey(key);
             TileEntity tile = worldObj.getTileEntity(pos[0], pos[1], pos[2]);
             if (tile instanceof TileEntityNetworkInfoPanelExtender) {
@@ -499,14 +506,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
      * <p>
      * 复杂度 O(rows² × cols)，屏幕规模小（通常 ≤16×16）完全可行。
      *
-     * @param visited 已连通的屏幕方块坐标集合（key 格式 "x,y,z"）
-     * @param facing  朝向（2/3 为 X 方向展开，4/5 为 Z 方向展开）
-     * @param coreX   主屏 X 坐标
-     * @param coreY   主屏 Y 坐标
-     * @param coreZ   主屏 Z 坐标
+     * @param screenParts 已连通且兼容的屏幕方块坐标集合（不含空气等不兼容方块，key 格式 "x,y,z"）
+     * @param facing      朝向（2/3 为 X 方向展开，4/5 为 Z 方向展开）
+     * @param coreX       主屏 X 坐标
+     * @param coreY       主屏 Y 坐标
+     * @param coreZ       主屏 Z 坐标
      * @return int[6] = {minX, minY, minZ, maxX, maxY, maxZ} 最大填满子矩形的 3D 边界
      */
-    private static int[] findLargestFilledRect(Set<String> visited, int facing, int coreX, int coreY, int coreZ) {
+    private static int[] findLargestFilledRect(Set<String> screenParts, int facing, int coreX, int coreY, int coreZ) {
         // 确定投影轴：facing 2/3 时水平轴=X，facing 4/5 时水平轴=Z；垂直轴始终=Y
         boolean xAxis = (facing == 2 || facing == 3);
         int coreH = xAxis ? coreX : coreZ;
@@ -515,7 +522,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         // 收集所有已占用方块的 2D 坐标，并求包围范围
         java.util.Set<Long> occupied = new java.util.HashSet<>();
         int hMin = coreH, hMax = coreH, vMin = coreV, vMax = coreV;
-        for (String key : visited) {
+        for (String key : screenParts) {
             int[] pos = parseKey(key);
             int h = xAxis ? pos[0] : pos[2];
             int v = pos[1];
