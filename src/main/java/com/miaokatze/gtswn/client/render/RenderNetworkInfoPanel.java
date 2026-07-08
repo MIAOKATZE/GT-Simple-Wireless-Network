@@ -32,13 +32,34 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         setupFaceTransform(panel.getBlockMetadata(), x, y, z);
         float scale = 1.0F / 128.0F;
         GL11.glScalef(scale, -scale, scale);
-        GL11.glTranslatef(-64.0F, -64.0F, 0.0F);
+        GL11.glTranslatef(
+            -64.0F - getCoreHorizontalOffset(panel, screen) * 128.0F,
+            -64.0F - getCoreVerticalOffset(panel, screen) * 128.0F,
+            0.0F);
 
         int pixelWidth = widthBlocks * 128;
         int pixelHeight = heightBlocks * 128;
         drawPanel(panel, pixelWidth, pixelHeight);
 
         GL11.glPopMatrix();
+    }
+
+    private int getCoreHorizontalOffset(TileEntityNetworkInfoPanel panel, NetworkScreen screen) {
+        if (screen == null) {
+            return 0;
+        }
+        int facing = screen.facing;
+        if (facing == 2 || facing == 3) {
+            return panel.xCoord - screen.minX;
+        }
+        return panel.zCoord - screen.minZ;
+    }
+
+    private int getCoreVerticalOffset(TileEntityNetworkInfoPanel panel, NetworkScreen screen) {
+        if (screen == null) {
+            return 0;
+        }
+        return screen.maxY - panel.yCoord;
     }
 
     private void setupFaceTransform(int facing, double x, double y, double z) {

@@ -82,6 +82,10 @@ public class BlockNetworkInfoPanel extends BlockContainer {
         if (world.isRemote) {
             return true;
         }
+        TileEntity tile = world.getTileEntity(x, y, z);
+        if (tile instanceof TileEntityNetworkInfoPanel) {
+            world.markBlockForUpdate(x, y, z);
+        }
         player
             .openGui(GTSimpleWirelessNetwork.instance, GTSimpleWirelessNetwork.GUI_NETWORK_INFO_PANEL, world, x, y, z);
         return true;

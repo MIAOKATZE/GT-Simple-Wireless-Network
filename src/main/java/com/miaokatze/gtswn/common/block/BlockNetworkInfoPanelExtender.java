@@ -55,7 +55,7 @@ public class BlockNetworkInfoPanelExtender extends BlockContainer {
 
     @Override
     public void onBlockPlacedBy(World world, int x, int y, int z, EntityLivingBase placer, ItemStack stack) {
-        int facing = getHorizontalFacingFromEntity(placer);
+        int facing = findNeighborFacing(world, x, y, z, getHorizontalFacingFromEntity(placer));
         world.setBlockMetadataWithNotify(x, y, z, facing, 2);
         if (!world.isRemote) {
             TileEntityNetworkInfoPanel.rebuildNearbyScreens(world, x, y, z);
@@ -95,6 +95,21 @@ public class BlockNetworkInfoPanelExtender extends BlockContainer {
             return meta;
         }
         return 3;
+    }
+
+    private static int findNeighborFacing(World world, int x, int y, int z, int fallback) {
+        int[][] offsets = new int[][] { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 },
+            { 0, 0, -1 } };
+        for (int[] offset : offsets) {
+            TileEntity tile = world.getTileEntity(x + offset[0], y + offset[1], z + offset[2]);
+            if (tile instanceof TileEntityNetworkInfoPanel || tile instanceof TileEntityNetworkInfoPanelExtender) {
+                int facing = normalizeFacing(tile.getBlockMetadata());
+                if (facing >= 2 && facing <= 5) {
+                    return facing;
+                }
+            }
+        }
+        return fallback;
     }
 
     private static int opposite(int side) {

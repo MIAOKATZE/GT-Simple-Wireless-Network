@@ -15,6 +15,7 @@ import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.Constants;
@@ -190,6 +191,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         if (tag.hasKey("OwnerName")) {
             ownerName = tag.getString("OwnerName");
         }
+        if (tag.hasKey("lastSampleTick")) {
+            lastSampleTick = tag.getLong("lastSampleTick");
+        }
+        eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
     }
 
     public void writePlacementData(NBTTagCompound tag) {
@@ -198,6 +203,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             tag.setString("OwnerUUID", ownerUUID.toString());
         }
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
+        tag.setLong("lastSampleTick", lastSampleTick);
+        eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
     }
 
     private void sampleNetwork(long tick) {
@@ -326,9 +333,26 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             if (tile instanceof TileEntityNetworkInfoPanelExtender) {
                 ((TileEntityNetworkInfoPanelExtender) tile).attachToCore(this, next);
             }
+            worldObj.markBlockForUpdate(pos[0], pos[1], pos[2]);
         }
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
+    @Override
+    public AxisAlignedBB getRenderBoundingBox() {
+        if (screen == null) {
+            return AxisAlignedBB.getBoundingBox(xCoord, yCoord, zCoord, xCoord + 1.0D, yCoord + 1.0D, zCoord + 1.0D);
+        }
+        return AxisAlignedBB
+            .getBoundingBox(
+                screen.minX,
+                screen.minY,
+                screen.minZ,
+                screen.maxX + 1.0D,
+                screen.maxY + 1.0D,
+                screen.maxZ + 1.0D)
+            .expand(0.25D, 0.25D, 0.25D);
     }
 
     public void detachScreen() {
