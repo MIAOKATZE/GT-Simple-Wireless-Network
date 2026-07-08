@@ -5,6 +5,7 @@ import java.util.Locale;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.StatCollector;
@@ -102,10 +103,16 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glDisable(GL11.GL_FOG);
         GL11.glDisable(GL11.GL_CULL_FACE);
 
+        // v1.4.5：将光照贴图设为全亮(240,240)，避免环境光照导致 TESR 渲染颜色偏淡
+        // 保存当前 lightmap 坐标以便渲染结束后恢复
+        float prevLightmapX = OpenGlHelper.lastBrightnessX;
+        float prevLightmapY = OpenGlHelper.lastBrightnessY;
+        OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240.0F, 240.0F);
+
         if (panel.hasScreenBackgroundColor()) {
             fillRect(0, 0, width, height, panel.getScreenBackgroundColor());
         }
-        drawOuterFrame(width, height, edge);
+        // v1.4.5：移除额外外边框渲染，由方块本身承担边界
         drawBrief(panel, font, safe, width - safe * 2, safe, briefHeight);
 
         int chartTop = safe + briefHeight + 12;
@@ -124,6 +131,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         } else {
             GL11.glDisable(GL11.GL_FOG);
         }
+        // 恢复光照贴图坐标，避免影响后续方块/实体渲染
+        OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, prevLightmapX, prevLightmapY);
         GL11.glEnable(GL11.GL_LIGHTING);
         if (cullEnabled) {
             GL11.glEnable(GL11.GL_CULL_FACE);
@@ -131,17 +140,6 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             GL11.glDisable(GL11.GL_CULL_FACE);
         }
         GL11.glColor4f(1F, 1F, 1F, 1F);
-    }
-
-    private void drawOuterFrame(int width, int height, int edge) {
-        fillRect(0, 0, width, edge, 0x7D8790);
-        fillRect(0, height - edge, width, edge, 0x7D8790);
-        fillRect(0, 0, edge, height, 0x7D8790);
-        fillRect(width - edge, 0, edge, height, 0x7D8790);
-        fillRect(edge, edge, width - edge * 2, 2, 0xC7CDD2);
-        fillRect(edge, height - edge - 2, width - edge * 2, 2, 0xAAB3BB);
-        fillRect(edge, edge, 2, height - edge * 2, 0xC7CDD2);
-        fillRect(width - edge - 2, edge, 2, height - edge * 2, 0xAAB3BB);
     }
 
     private void drawBrief(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int w, int y, int h) {

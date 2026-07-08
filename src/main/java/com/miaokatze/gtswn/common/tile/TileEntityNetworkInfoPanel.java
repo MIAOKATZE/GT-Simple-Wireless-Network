@@ -55,7 +55,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     private String chartBackgroundColor = "";
     private int trendLineThickness = 3;
     private int trendLineSmoothing = 0;
-    private String screenBackgroundColor = "DDE1E4";
+    private String screenBackgroundColor = ""; // 默认无背景色，TESR 不绘制背景填充
 
     private long lastSampleTick = -1L;
     private BigInteger cachedEu = BigInteger.ZERO;
@@ -218,7 +218,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
 
     public int getScreenBackgroundColor() {
         Integer color = parseOptionalColor(screenBackgroundColor);
-        return color == null ? 0xDDE1E4 : color.intValue();
+        return color == null ? 0xDDE1E4 : color.intValue(); // 防御性兜底：hasScreenBackgroundColor() 为 false 时渲染路径不调用此方法
     }
 
     public void applyConfigAction(int action) {
@@ -444,29 +444,144 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             addPlaneNeighbors(queue, pos[0], pos[1], pos[2], facing);
         }
 
+        // v1.4.5：改为识别"完全填满的子矩形"，而非整个包围盒
+        // 在 visited 连通块中找出包含 core 位置的最大填满子矩形
+        int[] rect = findLargestFilledRect(visited, facing, xCoord, yCoord, zCoord);
         NetworkScreen next = new NetworkScreen();
-        next.minX = minX;
-        next.maxX = maxX;
-        next.minY = minY;
-        next.maxY = maxY;
-        next.minZ = minZ;
-        next.maxZ = maxZ;
+        next.minX = rect[0];
+        next.minY = rect[1];
+        next.minZ = rect[2];
+        next.maxX = rect[3];
+        next.maxY = rect[4];
+        next.maxZ = rect[5];
         next.coreX = xCoord;
         next.coreY = yCoord;
         next.coreZ = zCoord;
         next.facing = facing;
         screen = next;
 
+        // 遍历所有连通的方块：子矩形内的 Extender 附着到 core，子矩形外的 Extender 解除附着
         for (String key : visited) {
             int[] pos = parseKey(key);
             TileEntity tile = worldObj.getTileEntity(pos[0], pos[1], pos[2]);
             if (tile instanceof TileEntityNetworkInfoPanelExtender) {
-                ((TileEntityNetworkInfoPanelExtender) tile).attachToCore(this, next);
+                TileEntityNetworkInfoPanelExtender extender = (TileEntityNetworkInfoPanelExtender) tile;
+                // 判断该 Extender 是否落在最终子矩形内
+                boolean inRect = pos[0] >= next.minX && pos[0] <= next.maxX
+                    && pos[1] >= next.minY
+                    && pos[1] <= next.maxY
+                    && pos[2] >= next.minZ
+                    && pos[2] <= next.maxZ;
+                if (inRect) {
+                    extender.attachToCore(this, next);
+                } else {
+                    // 连通但在子矩形外的 Extender，解除附着避免残留 partOfScreen 状态
+                    extender.detachFromCore();
+                }
             }
             worldObj.markBlockForUpdate(pos[0], pos[1], pos[2]);
         }
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
+    /**
+     * 在已连通的屏幕方块集合中，找出包含 core 位置的、完全被填满的最大子矩形。
+     * <p>
+     * 算法思路：
+     * <ol>
+     * <li>将 3D 方块坐标投影到 2D 平面（facing 2/3 时水平轴=X，facing 4/5 时水平轴=Z，垂直轴=Y）</li>
+     * <li>枚举垂直行区间 [top, bottom]，增量维护每列是否在该行区间内全部被占用</li>
+     * <li>约束：core 的垂直坐标必须在 [top, bottom] 内，且 core 的水平列必须被占用</li>
+     * <li>从 core 水平坐标向左右扩展连续被占用的最远边界，计算面积</li>
+     * <li>取面积最大的子矩形作为结果</li>
+     * </ol>
+     * <p>
+     * 复杂度 O(rows² × cols)，屏幕规模小（通常 ≤16×16）完全可行。
+     *
+     * @param visited 已连通的屏幕方块坐标集合（key 格式 "x,y,z"）
+     * @param facing  朝向（2/3 为 X 方向展开，4/5 为 Z 方向展开）
+     * @param coreX   主屏 X 坐标
+     * @param coreY   主屏 Y 坐标
+     * @param coreZ   主屏 Z 坐标
+     * @return int[6] = {minX, minY, minZ, maxX, maxY, maxZ} 最大填满子矩形的 3D 边界
+     */
+    private static int[] findLargestFilledRect(Set<String> visited, int facing, int coreX, int coreY, int coreZ) {
+        // 确定投影轴：facing 2/3 时水平轴=X，facing 4/5 时水平轴=Z；垂直轴始终=Y
+        boolean xAxis = (facing == 2 || facing == 3);
+        int coreH = xAxis ? coreX : coreZ;
+        int coreV = coreY;
+
+        // 收集所有已占用方块的 2D 坐标，并求包围范围
+        java.util.Set<Long> occupied = new java.util.HashSet<>();
+        int hMin = coreH, hMax = coreH, vMin = coreV, vMax = coreV;
+        for (String key : visited) {
+            int[] pos = parseKey(key);
+            int h = xAxis ? pos[0] : pos[2];
+            int v = pos[1];
+            // 用 (long)h << 32 | (v & 0xFFFFFFFFL) 编码 2D 坐标，避免 Long.signum 问题
+            occupied.add(((long) h << 32) | (v & 0xFFFFFFFFL));
+            hMin = Math.min(hMin, h);
+            hMax = Math.max(hMax, h);
+            vMin = Math.min(vMin, v);
+            vMax = Math.max(vMax, v);
+        }
+
+        int cols = hMax - hMin + 1;
+        boolean[] colOk = new boolean[cols];
+
+        int bestArea = 1;
+        int bestLeft = coreH, bestRight = coreH, bestTop = coreV, bestBottom = coreV;
+
+        // 枚举行(垂直)区间 [top, bottom]
+        for (int top = vMin; top <= vMax; top++) {
+            // 每个 top 起始重置列占用状态
+            java.util.Arrays.fill(colOk, true);
+            for (int bottom = top; bottom <= vMax; bottom++) {
+                // 增量更新：bottom 行加入后，列 c 仍为 true 当且仅当 (c, bottom) 被占用
+                for (int c = hMin; c <= hMax; c++) {
+                    int idx = c - hMin;
+                    if (colOk[idx]) {
+                        long code = ((long) c << 32) | (bottom & 0xFFFFFFFFL);
+                        if (!occupied.contains(code)) {
+                            colOk[idx] = false;
+                        }
+                    }
+                }
+                // 约束：core 的垂直坐标必须在 [top, bottom] 内
+                if (coreV < top || coreV > bottom) {
+                    continue;
+                }
+                // 约束：core 的水平列必须被占用
+                if (!colOk[coreH - hMin]) {
+                    continue;
+                }
+                // 从 coreH 向左右扩展连续 true 的最远边界
+                int left = coreH;
+                while (left - 1 >= hMin && colOk[left - 1 - hMin]) {
+                    left--;
+                }
+                int right = coreH;
+                while (right + 1 <= hMax && colOk[right + 1 - hMin]) {
+                    right++;
+                }
+                int area = (bottom - top + 1) * (right - left + 1);
+                if (area > bestArea) {
+                    bestArea = area;
+                    bestLeft = left;
+                    bestRight = right;
+                    bestTop = top;
+                    bestBottom = bottom;
+                }
+            }
+        }
+
+        // 映射回 3D 边界
+        if (xAxis) {
+            return new int[] { bestLeft, bestTop, coreZ, bestRight, bestBottom, coreZ };
+        } else {
+            return new int[] { coreX, bestTop, bestLeft, coreX, bestBottom, bestRight };
+        }
     }
 
     @Override
@@ -674,7 +789,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             : 0;
         screenBackgroundColor = tag.hasKey("screenBackgroundColor")
             ? cleanColorText(tag.getString("screenBackgroundColor"))
-            : "DDE1E4";
+            : ""; // 旧存档无此字段时默认空（不绘制背景）
     }
 
     private static Double parseOptionalDouble(String value) {

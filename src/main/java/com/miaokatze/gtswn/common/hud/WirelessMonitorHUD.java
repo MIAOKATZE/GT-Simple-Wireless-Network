@@ -625,7 +625,7 @@ public class WirelessMonitorHUD extends Gui {
 
         double eut = dataSet.calculateRecentEUT();
         if (eut == 0.0) {
-            return "\u00A7b" + statusLabel + ": \u00A7f0 \u00A7b" + eutUnit + " (\u00A77Silent\u00A7b)";
+            return "\u00A7b" + statusLabel + ": \u00A7f0 \u00A7b" + eutUnit + " (\u00A77静默\u00A7b)";
         }
 
         double absEut = Math.abs(eut);
