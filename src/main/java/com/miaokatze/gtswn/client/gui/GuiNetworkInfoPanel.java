@@ -1,10 +1,12 @@
 package com.miaokatze.gtswn.client.gui;
 
 import java.util.List;
+import java.util.Locale;
 
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.StatCollector;
 
 import org.lwjgl.opengl.GL11;
 
@@ -19,8 +21,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private final TileEntityNetworkInfoPanel panel;
     private int left;
     private int top;
-    private final int xSize = 300;
-    private final int ySize = 210;
+    private final int xSize = 390;
+    private final int ySize = 273;
 
     public GuiNetworkInfoPanel(TileEntityNetworkInfoPanel panel) {
         this.panel = panel;
@@ -32,16 +34,59 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         buttonList.clear();
         left = (width - xSize) / 2;
         top = (height - ySize) / 2;
-        buttonList.add(new GuiButton(0, left + 12, top + 38, 118, 20, bool("Brief EU", panel.isShowBriefEnergy())));
-        buttonList
-            .add(new GuiButton(1, left + 138, top + 38, 130, 20, bool("Brief Status", panel.isShowBriefStatus())));
-        buttonList.add(new GuiButton(2, left + 12, top + 64, 118, 20, bool("Chart EU", panel.isShowChartEnergy())));
-        buttonList.add(new GuiButton(3, left + 138, top + 64, 130, 20, bool("Chart EU/t", panel.isShowChartStatus())));
-        buttonList.add(new GuiButton(4, left + 12, top + 90, 118, 20, "Window: " + panel.getWindowName()));
-        buttonList.add(new GuiButton(5, left + 138, top + 90, 40, 20, "-"));
-        buttonList.add(new GuiButton(6, left + 182, top + 90, 40, 20, "+"));
-        buttonList
-            .add(new GuiButton(7, left + 226, top + 90, 42, 20, panel.getChartLayoutMode() == 0 ? "Split" : "Overlay"));
+        int y1 = top + 38;
+        int y2 = top + 58;
+        buttonList.add(
+            new GuiButton(
+                0,
+                left + 12,
+                y1,
+                84,
+                16,
+                bool(tr("gtswn.network_info.gui.brief.eu"), panel.isShowBriefEnergy())));
+        buttonList.add(
+            new GuiButton(
+                1,
+                left + 100,
+                y1,
+                84,
+                16,
+                bool(tr("gtswn.network_info.gui.brief.status"), panel.isShowBriefStatus())));
+        buttonList.add(
+            new GuiButton(
+                2,
+                left + 188,
+                y1,
+                84,
+                16,
+                bool(tr("gtswn.network_info.gui.chart.eu"), panel.isShowChartEnergy())));
+        buttonList.add(
+            new GuiButton(
+                3,
+                left + 276,
+                y1,
+                96,
+                16,
+                bool(tr("gtswn.network_info.gui.chart.eut"), panel.isShowChartStatus())));
+        buttonList.add(
+            new GuiButton(
+                4,
+                left + 12,
+                y2,
+                104,
+                16,
+                tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName()));
+        buttonList.add(new GuiButton(5, left + 122, y2, 24, 16, "-"));
+        buttonList.add(new GuiButton(6, left + 150, y2, 24, 16, "+"));
+        buttonList.add(
+            new GuiButton(
+                7,
+                left + 180,
+                y2,
+                74,
+                16,
+                panel.getChartLayoutMode() == 0 ? tr("gtswn.network_info.gui.split")
+                    : tr("gtswn.network_info.gui.overlay")));
     }
 
     @Override
@@ -56,22 +101,23 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             GuiButton button = (GuiButton) object;
             switch (button.id) {
                 case 0:
-                    button.displayString = bool("Brief EU", panel.isShowBriefEnergy());
+                    button.displayString = bool(tr("gtswn.network_info.gui.brief.eu"), panel.isShowBriefEnergy());
                     break;
                 case 1:
-                    button.displayString = bool("Brief Status", panel.isShowBriefStatus());
+                    button.displayString = bool(tr("gtswn.network_info.gui.brief.status"), panel.isShowBriefStatus());
                     break;
                 case 2:
-                    button.displayString = bool("Chart EU", panel.isShowChartEnergy());
+                    button.displayString = bool(tr("gtswn.network_info.gui.chart.eu"), panel.isShowChartEnergy());
                     break;
                 case 3:
-                    button.displayString = bool("Chart EU/t", panel.isShowChartStatus());
+                    button.displayString = bool(tr("gtswn.network_info.gui.chart.eut"), panel.isShowChartStatus());
                     break;
                 case 4:
-                    button.displayString = "Window: " + panel.getWindowName();
+                    button.displayString = tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName();
                     break;
                 case 7:
-                    button.displayString = panel.getChartLayoutMode() == 0 ? "Split" : "Overlay";
+                    button.displayString = panel.getChartLayoutMode() == 0 ? tr("gtswn.network_info.gui.split")
+                        : tr("gtswn.network_info.gui.overlay");
                     break;
                 default:
                     break;
@@ -83,17 +129,31 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         drawPanelBackground();
-        fontRendererObj.drawString(EnumChatFormatting.BOLD + "Network Info Panel", left + 12, top + 12, 0x28313A);
-        fontRendererObj.drawString("Wireless EU Network", left + 12, top + 24, 0x286080);
-        fontRendererObj.drawString("Owner: " + safe(panel.getOwnerName()), left + 12, top + 120, 0x2F3640);
+        fontRendererObj
+            .drawString(EnumChatFormatting.BOLD + tr("gtswn.network_info.gui.title"), left + 12, top + 12, 0x28313A);
+        fontRendererObj.drawString(tr("gtswn.network_info.gui.tab.wireless_eu"), left + 12, top + 24, 0x286080);
         fontRendererObj.drawString(
-            "Energy: " + FormatUtil.formatNormal(panel.getCachedEu()) + " EU",
+            StatCollector.translateToLocalFormatted("gtswn.network_info.owner", safe(panel.getOwnerName())),
             left + 12,
-            top + 134,
+            top + 88,
             0x2F3640);
-        fontRendererObj.drawString("Status: " + panel.getCachedStatus(), left + 12, top + 148, 0x2F3640);
-        fontRendererObj.drawString("Brief ratio: " + panel.getBriefRatio() + "%", left + 12, top + 104, 0x2F3640);
-        drawMiniChart(left + 12, top + 164, 256, 34);
+        fontRendererObj.drawString(
+            StatCollector
+                .translateToLocalFormatted("gtswn.network_info.energy", FormatUtil.formatNormal(panel.getCachedEu())),
+            left + 12,
+            top + 102,
+            0x2F3640);
+        fontRendererObj.drawString(
+            StatCollector.translateToLocalFormatted("gtswn.network_info.status", panel.getCachedStatus()),
+            left + 12,
+            top + 116,
+            0x2F3640);
+        fontRendererObj.drawString(
+            StatCollector.translateToLocalFormatted("gtswn.network_info.gui.brief_ratio", panel.getBriefRatio()),
+            left + 262,
+            top + 62,
+            0x2F3640);
+        drawMiniChart(left + 12, top + 136, xSize - 24, 118);
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
@@ -109,7 +169,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         drawRect(left, top, left + 1, top + ySize, 0xFF607080);
         drawRect(left + xSize - 1, top, left + xSize, top + ySize, 0xFF607080);
         drawRect(left + 8, top + 32, left + xSize - 8, top + 33, 0xFFB8C0C8);
-        drawRect(left + 8, top + 116, left + xSize - 8, top + 117, 0xFFB8C0C8);
+        drawRect(left + 8, top + 82, left + xSize - 8, top + 83, 0xFFB8C0C8);
+        drawRect(left + 8, top + 130, left + xSize - 8, top + 131, 0xFFB8C0C8);
     }
 
     private void drawMiniChart(int x, int y, int w, int h) {
@@ -118,10 +179,42 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         drawRect(x, y, x + 1, y + h, 0xFF8C98A4);
         List<NetworkInfoSample> samples = panel.getCachedSamples();
         if (samples.size() < 2) {
-            fontRendererObj.drawString("Waiting for samples...", x + 8, y + 12, 0x777777);
+            fontRendererObj.drawString(
+                StatCollector.translateToLocalFormatted("gtswn.network_info.gui.waiting", samples.size()),
+                x + 8,
+                y + h / 2 - 4,
+                0x777777);
             return;
         }
-        drawSeries(samples, x + 4, y + 4, w - 8, h - 8, panel.isShowChartEnergy(), panel.isShowChartStatus());
+        int plotX = x + 38;
+        int plotY = y + 12;
+        int plotW = w - 54;
+        int plotH = h - 30;
+        drawChartAxes(samples, x, y, w, h, plotX, plotY, plotW, plotH);
+        drawSeries(samples, plotX, plotY, plotW, plotH, panel.isShowChartEnergy(), panel.isShowChartStatus());
+    }
+
+    private void drawChartAxes(List<NetworkInfoSample> samples, int x, int y, int w, int h, int plotX, int plotY,
+        int plotW, int plotH) {
+        drawRect(plotX, plotY + plotH, plotX + plotW, plotY + plotH + 1, 0xFF8C98A4);
+        drawRect(plotX, plotY, plotX + 1, plotY + plotH, 0xFF8C98A4);
+        drawRect(plotX + plotW, plotY, plotX + plotW + 1, plotY + plotH, 0xFFCFD5DC);
+
+        if (panel.isShowChartEnergy()) {
+            double[] range = rangeEnergy(samples);
+            fontRendererObj.drawString(sci(range[1]), x + 5, plotY, 0x2F80ED);
+            fontRendererObj.drawString(sci(range[0]), x + 5, plotY + plotH - 8, 0x2F80ED);
+            fontRendererObj.drawString("EU", x + 5, y + h - 12, 0x2F80ED);
+        }
+        if (panel.isShowChartStatus()) {
+            double[] range = rangeEut(samples);
+            int right = x + w - 32;
+            fontRendererObj.drawString(sci(range[1]), right, plotY, 0xE07A2F);
+            fontRendererObj.drawString(sci(range[0]), right, plotY + plotH - 8, 0xE07A2F);
+            fontRendererObj.drawString("EU/t", right - 4, y + h - 12, 0xE07A2F);
+        }
+        fontRendererObj.drawString("-" + panel.getWindowName(), plotX, y + h - 12, 0x606A74);
+        fontRendererObj.drawString("Now", plotX + plotW - 18, y + h - 12, 0x606A74);
     }
 
     private void drawSeries(List<NetworkInfoSample> samples, int x, int y, int w, int h, boolean eu, boolean eut) {
@@ -165,11 +258,54 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         GL11.glColor4f(1F, 1F, 1F, 1F);
     }
 
+    private static double[] rangeEnergy(List<NetworkInfoSample> samples) {
+        double min = samples.get(0).eu.doubleValue();
+        double max = min;
+        for (NetworkInfoSample sample : samples) {
+            double value = sample.eu.doubleValue();
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+        }
+        return normalizeRange(min, max);
+    }
+
+    private static double[] rangeEut(List<NetworkInfoSample> samples) {
+        double min = samples.get(0).eut;
+        double max = min;
+        for (NetworkInfoSample sample : samples) {
+            min = Math.min(min, sample.eut);
+            max = Math.max(max, sample.eut);
+        }
+        return normalizeRange(min, max);
+    }
+
+    private static double[] normalizeRange(double min, double max) {
+        if (Math.abs(max - min) < 0.000001D) {
+            max = min + 1.0D;
+        }
+        return new double[] { min, max };
+    }
+
+    private static String sci(double value) {
+        if (Math.abs(value) < 0.000001D) {
+            return "0";
+        }
+        double abs = Math.abs(value);
+        int exp = (int) Math.floor(Math.log10(abs));
+        double mantissa = abs / Math.pow(10.0D, exp);
+        String sign = value < 0.0D ? "-" : "";
+        return sign + String.format(Locale.ROOT, "%.1fE%d", mantissa, exp);
+    }
+
     private static String bool(String label, boolean value) {
-        return label + ": " + (value ? "ON" : "OFF");
+        return label + " " + (value ? tr("gtswn.network_info.gui.on") : tr("gtswn.network_info.gui.off"));
     }
 
     private static String safe(String value) {
-        return value == null || value.isEmpty() ? "Unknown" : value;
+        return value == null || value.isEmpty() ? tr("gtswn.network_info.unknown") : value;
+    }
+
+    private static String tr(String key) {
+        return StatCollector.translateToLocal(key);
     }
 }

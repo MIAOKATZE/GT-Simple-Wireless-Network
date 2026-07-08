@@ -26,8 +26,16 @@ public class NetworkInfoDataSet {
     private long lastSeenMs;
 
     public void add(BigInteger eu, long tick, long timeMs) {
+        add(eu, tick, timeMs, Long.MAX_VALUE);
+    }
+
+    public void add(BigInteger eu, long tick, long timeMs, long maxContinuousGapTicks) {
         NetworkInfoSample previous = samples.isEmpty() ? null : samples.get(samples.size() - 1);
-        double eut = calculateEut(previous, eu, tick);
+        double eut = calculateEut(previous, eu, tick, maxContinuousGapTicks);
+        add(eu, tick, timeMs, eut);
+    }
+
+    public void add(BigInteger eu, long tick, long timeMs, double eut) {
         samples.add(new NetworkInfoSample(timeMs, tick, eu, eut));
         lastSeenMs = timeMs;
         compress(timeMs);
@@ -56,21 +64,29 @@ public class NetworkInfoDataSet {
         return lastSeenMs;
     }
 
+    public int size() {
+        return samples.size();
+    }
+
+    public void clear() {
+        samples.clear();
+    }
+
     private void compress(long nowMs) {
         List<NetworkInfoSample> compressed = new ArrayList<>();
-        appendBucketed(compressed, nowMs - FIVE_MIN_MS, nowMs, 5L * 1000L);
-        appendBucketed(compressed, nowMs - ONE_HOUR_MS, nowMs - FIVE_MIN_MS, 30L * 1000L);
-        appendBucketed(compressed, nowMs - EIGHT_HOUR_MS, nowMs - ONE_HOUR_MS, 5L * 60L * 1000L);
         appendBucketed(compressed, nowMs - DAY_MS, nowMs - EIGHT_HOUR_MS, 15L * 60L * 1000L);
+        appendBucketed(compressed, nowMs - EIGHT_HOUR_MS, nowMs - ONE_HOUR_MS, 5L * 60L * 1000L);
+        appendBucketed(compressed, nowMs - ONE_HOUR_MS, nowMs - FIVE_MIN_MS, 30L * 1000L);
+        appendBucketed(compressed, nowMs - FIVE_MIN_MS, nowMs, 5L * 1000L);
         samples.clear();
         samples.addAll(compressed);
     }
 
-    private void appendBucketed(List<NetworkInfoSample> target, long fromInclusive, long toExclusive, long bucketMs) {
+    private void appendBucketed(List<NetworkInfoSample> target, long fromInclusive, long toInclusive, long bucketMs) {
         NetworkInfoSample currentBucketLast = null;
         long currentBucket = Long.MIN_VALUE;
         for (NetworkInfoSample sample : samples) {
-            if (sample.timeMs < fromInclusive || sample.timeMs >= toExclusive) {
+            if (sample.timeMs < fromInclusive || sample.timeMs > toInclusive) {
                 continue;
             }
             long bucket = (sample.timeMs - fromInclusive) / bucketMs;
@@ -93,12 +109,13 @@ public class NetworkInfoDataSet {
         }
     }
 
-    private static double calculateEut(NetworkInfoSample previous, BigInteger eu, long tick) {
+    private static double calculateEut(NetworkInfoSample previous, BigInteger eu, long tick,
+        long maxContinuousGapTicks) {
         if (previous == null || eu == null) {
             return 0.0D;
         }
         long tickDiff = tick - previous.tick;
-        if (tickDiff <= 0L) {
+        if (tickDiff <= 0L || tickDiff > maxContinuousGapTicks) {
             return 0.0D;
         }
         BigInteger diff = eu.subtract(previous.eu);

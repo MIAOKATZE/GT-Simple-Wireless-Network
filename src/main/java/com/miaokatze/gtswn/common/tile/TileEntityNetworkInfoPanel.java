@@ -15,6 +15,7 @@ import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.Constants;
 
@@ -22,6 +23,7 @@ import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
+import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 
@@ -30,6 +32,7 @@ import gregtech.common.misc.WirelessNetworkManager;
 public class TileEntityNetworkInfoPanel extends TileEntity {
 
     private static final long SAMPLE_INTERVAL_TICKS = 100L;
+    private static final long MAX_CONTINUOUS_GAP_TICKS = 200L;
 
     private UUID ownerUUID;
     private String ownerName = "";
@@ -41,13 +44,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     private boolean showChartEnergy = true;
     private boolean showChartStatus = true;
     private int trackingWindow = NetworkInfoDataSet.WINDOW_5_MIN;
-    private int briefRatio = 35;
+    private int briefRatio = 28;
     private int chartLayoutMode = 0;
 
     private long lastSampleTick = -1L;
     private BigInteger cachedEu = BigInteger.ZERO;
     private double cachedEut = 0.0D;
     private String cachedStatus = "No data";
+    private final EUDataSet eutDataSet = new EUDataSet();
     private final List<NetworkInfoSample> cachedSamples = new ArrayList<>();
     private NetworkScreen screen;
     private boolean screenInitialized = false;
@@ -200,12 +204,17 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         BigInteger eu = WirelessNetworkManager.getUserEU(ownerUUID);
         NetworkInfoDataStore store = NetworkInfoDataStore.get(worldObj);
         NetworkInfoDataSet dataSet = store.getOrCreate(datasetId);
-        dataSet.add(eu, tick, System.currentTimeMillis());
-        store.markDirty();
+        boolean coldStarting = eutDataSet.isEmpty();
+        if (lastSampleTick > 0L && tick - lastSampleTick > MAX_CONTINUOUS_GAP_TICKS) {
+            eutDataSet.clear();
+            coldStarting = true;
+        }
         cachedEu = eu == null ? BigInteger.ZERO : eu;
-        NetworkInfoSample newest = dataSet.newest();
-        cachedEut = newest == null ? 0.0D : newest.eut;
-        cachedStatus = formatStatus(cachedEut);
+        eutDataSet.add(cachedEu, tick);
+        cachedEut = eutDataSet.calculateEUT();
+        dataSet.add(cachedEu, tick, System.currentTimeMillis(), cachedEut);
+        store.markDirty();
+        cachedStatus = formatStatus(cachedEut, coldStarting || eutDataSet.size() < 2, eutDataSet.isLongTermSilent());
         refreshCachedSamples(dataSet);
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
@@ -225,16 +234,28 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         cachedSamples.addAll(dataSet.query(trackingWindow));
     }
 
-    private String formatStatus(double eut) {
-        if (Math.abs(eut) < 0.000001D) {
-            return "0 EU/t (Silent)";
+    private String formatStatus(double eut, boolean coldStarting, boolean longTermSilent) {
+        if (coldStarting) {
+            return tr("gtswn.network_info.status.cold");
         }
-        String sign = eut > 0 ? "+" : "-";
-        return sign + FormatUtil.formatNormalDouble(Math.abs(eut))
-            + " EU/t ("
-            + GTTierUtil.formatGTPower(eut)
-                .replace("\u00a7", "")
-            + ")";
+        if (longTermSilent) {
+            return tr("gtswn.network_info.status.longtermsilent");
+        }
+        if (Math.abs(eut) < 0.000001D) {
+            return tr("gtswn.network_info.status.silent");
+        }
+        if (Math.abs(eut) < 1.0D) {
+            return tr("gtswn.network_info.status.lessthan1");
+        }
+        String key = eut > 0 ? "gtswn.network_info.status.up" : "gtswn.network_info.status.down";
+        return StatCollector.translateToLocalFormatted(
+            key,
+            FormatUtil.formatNormalDouble(Math.abs(eut)),
+            GTTierUtil.formatGTPower(eut));
+    }
+
+    private static String tr(String key) {
+        return StatCollector.translateToLocal(key);
     }
 
     public String getWindowName() {
@@ -367,9 +388,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         showChartEnergy = !tag.hasKey("showChartEnergy") || tag.getBoolean("showChartEnergy");
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
-        briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 35;
+        briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         chartLayoutMode = tag.getInteger("chartLayoutMode");
         lastSampleTick = tag.getLong("lastSampleTick");
+        eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
         }
@@ -388,6 +410,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         tag.setInteger("briefRatio", briefRatio);
         tag.setInteger("chartLayoutMode", chartLayoutMode);
         tag.setLong("lastSampleTick", lastSampleTick);
+        eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
         if (screen != null) {
             tag.setTag("screen", screen.toNBT());
         }
@@ -452,7 +475,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         showChartEnergy = !tag.hasKey("showChartEnergy") || tag.getBoolean("showChartEnergy");
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
-        briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 35;
+        briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         chartLayoutMode = tag.getInteger("chartLayoutMode");
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
