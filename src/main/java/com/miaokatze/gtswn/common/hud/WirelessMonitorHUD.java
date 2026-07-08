@@ -54,6 +54,7 @@ public class WirelessMonitorHUD extends Gui {
 
     /** 缓存的 EU/t 文本 */
     private static String cachedEUTText = "";
+    private static String cachedRealtimeEUTText = "";
 
     /** HUD 更新间隔（ticks），每 100 ticks（5 秒）更新一次（与 MTE 统一） */
     private static final int UPDATE_INTERVAL = 100;
@@ -125,6 +126,7 @@ public class WirelessMonitorHUD extends Gui {
             + ": §f0 §b"
             + StatCollector.translateToLocal("gtswn.hud.eu.unit");
         cachedEUTText = "";
+        cachedRealtimeEUTText = "";
         dataSet.clear(); // 清空数据集
         lastUpdateTick = 0; // 强制首次检测
         lastUpdateRealTimeMs = 0; // 重置真实时间戳
@@ -164,6 +166,7 @@ public class WirelessMonitorHUD extends Gui {
                 + ": §f... §b"
                 + StatCollector.translateToLocal("gtswn.hud.eu.unit");
             cachedEUTText = "";
+            cachedRealtimeEUTText = "";
             lastUpdateTick = 0; // 强制下次更新
             // 不清空 dataSet
         }
@@ -282,6 +285,16 @@ public class WirelessMonitorHUD extends Gui {
         int eutTextWidth = mc.fontRenderer.getStringWidth(cachedEUTText);
         drawRect(hudX - 2, eutY - 2, hudX + Math.max(textWidth, eutTextWidth) + 2, eutY + 10, 0x80000000);
         mc.fontRenderer.drawStringWithShadow(cachedEUTText, hudX, eutY, 0xFFFFFF);
+
+        int realtimeY = hudY - 24;
+        int realtimeTextWidth = mc.fontRenderer.getStringWidth(cachedRealtimeEUTText);
+        drawRect(
+            hudX - 2,
+            realtimeY - 2,
+            hudX + Math.max(Math.max(textWidth, eutTextWidth), realtimeTextWidth) + 2,
+            realtimeY + 10,
+            0x80000000);
+        mc.fontRenderer.drawStringWithShadow(cachedRealtimeEUTText, hudX, realtimeY, 0xFFFFFF);
 
         // 恢复 OpenGL 状态
         GL11.glPopMatrix();
@@ -491,6 +504,7 @@ public class WirelessMonitorHUD extends Gui {
         dataSet.add(wirelessEU, currentTick);
         // 格式化 HUD 电网状态文本
         cachedEUTText = formatHUDStatus();
+        cachedRealtimeEUTText = formatHUDRealtimeStatus();
     }
 
     /**
@@ -600,4 +614,51 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     // 测量记录类、电压等级数组、格式化方法已迁移至 FormatUtil 与 GTTierUtil（T4 公共工具类提取）
+    private static String formatHUDRealtimeStatus() {
+        String statusLabel = StatCollector.translateToLocal("gtswn.hud.network.realtime_status");
+        String eutUnit = StatCollector.translateToLocal("gtswn.hud.eut.unit");
+        if (dataSet.size() < 2) {
+            return "\u00A7b" + statusLabel
+                + ": \u00A76"
+                + StatCollector.translateToLocal("gtswn.hud.network.status.calculating");
+        }
+
+        double eut = dataSet.calculateRecentEUT();
+        if (eut == 0.0) {
+            return "\u00A7b" + statusLabel + ": \u00A7f0 \u00A7b" + eutUnit + " (\u00A77Silent\u00A7b)";
+        }
+
+        double absEut = Math.abs(eut);
+        if (absEut < 1.0) {
+            return "\u00A7b" + statusLabel + ": \u00A7f0 \u00A7b" + eutUnit + " (\u00A77<1EU\u00A7b)";
+        }
+
+        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        String gtPowerText = GTTierUtil.formatGTPower(eut);
+        int gtTier = GTTierUtil.getGTTier(eut);
+        String bracketColor = GTTierUtil.TIER_COLORS[gtTier];
+
+        if (eut > 0) {
+            return "\u00A7b" + statusLabel
+                + ": \u00A7a+"
+                + euPerTickStr
+                + " \u00A7b"
+                + eutUnit
+                + " "
+                + bracketColor
+                + "("
+                + gtPowerText
+                + ")";
+        }
+        return "\u00A7b" + statusLabel
+            + ": \u00A7c-"
+            + euPerTickStr
+            + " \u00A7b"
+            + eutUnit
+            + " "
+            + bracketColor
+            + "("
+            + gtPowerText
+            + ")";
+    }
 }

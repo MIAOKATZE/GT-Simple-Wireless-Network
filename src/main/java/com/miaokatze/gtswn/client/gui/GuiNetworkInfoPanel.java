@@ -19,8 +19,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private final TileEntityNetworkInfoPanel panel;
     private int left;
     private int top;
-    private final int xSize = 390;
-    private final int ySize = 273;
+    private final int xSize = 430;
+    private final int ySize = 285;
     private final List<GuiTextField> textFields = new ArrayList<>();
     private GuiTextField energyMinField;
     private GuiTextField energyMaxField;
@@ -50,31 +50,31 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 0,
                 left + 12,
                 y1,
-                84,
+                94,
                 16,
                 bool(tr("gtswn.network_info.gui.brief.eu"), panel.isShowBriefEnergy())));
         buttonList.add(
             new GuiButton(
                 1,
-                left + 100,
+                left + 110,
                 y1,
-                84,
+                94,
                 16,
                 bool(tr("gtswn.network_info.gui.brief.status"), panel.isShowBriefStatus())));
         buttonList.add(
             new GuiButton(
                 2,
-                left + 188,
+                left + 208,
                 y1,
-                84,
+                94,
                 16,
                 bool(tr("gtswn.network_info.gui.chart.eu"), panel.isShowChartEnergy())));
         buttonList.add(
             new GuiButton(
                 3,
-                left + 276,
+                left + 306,
                 y1,
-                96,
+                112,
                 16,
                 bool(tr("gtswn.network_info.gui.chart.eut"), panel.isShowChartStatus())));
         buttonList.add(
@@ -82,34 +82,34 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 4,
                 left + 12,
                 y2,
-                104,
+                112,
                 16,
                 tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName()));
-        buttonList.add(new GuiButton(5, left + 122, y2, 24, 16, "-"));
-        buttonList.add(new GuiButton(6, left + 150, y2, 24, 16, "+"));
+        buttonList.add(new GuiButton(5, left + 130, y2, 24, 16, "-"));
+        buttonList.add(new GuiButton(6, left + 158, y2, 24, 16, "+"));
         buttonList.add(
             new GuiButton(
                 7,
-                left + 180,
+                left + 188,
                 y2,
                 74,
                 16,
                 panel.getChartLayoutMode() == 0 ? tr("gtswn.network_info.gui.split")
                     : tr("gtswn.network_info.gui.overlay")));
-        buttonList.add(new GuiButton(8, left + 298, y2, 74, 16, tr("gtswn.network_info.gui.apply")));
+        buttonList.add(new GuiButton(8, left + 344, y2, 74, 16, tr("gtswn.network_info.gui.apply")));
         int fieldY = top + 151;
-        energyMinField = addField(left + 92, fieldY, 66, panel.getEnergyAxisMinText());
-        energyMaxField = addField(left + 214, fieldY, 66, panel.getEnergyAxisMaxText());
+        energyMinField = addField(left + 104, fieldY, 66, panel.getEnergyAxisMinText());
+        energyMaxField = addField(left + 250, fieldY, 66, panel.getEnergyAxisMaxText());
         fieldY += 22;
-        eutMinField = addField(left + 92, fieldY, 66, panel.getEutAxisMinText());
-        eutMaxField = addField(left + 214, fieldY, 66, panel.getEutAxisMaxText());
+        eutMinField = addField(left + 104, fieldY, 66, panel.getEutAxisMinText());
+        eutMaxField = addField(left + 250, fieldY, 66, panel.getEutAxisMaxText());
         fieldY += 22;
-        borderField = addField(left + 92, fieldY, 46, String.valueOf(panel.getChartBorderThickness()));
-        lineField = addField(left + 214, fieldY, 46, String.valueOf(panel.getTrendLineThickness()));
-        smoothingField = addField(left + 326, fieldY, 46, String.valueOf(panel.getTrendLineSmoothing()));
+        borderField = addField(left + 104, fieldY, 46, String.valueOf(panel.getChartBorderThickness()));
+        lineField = addField(left + 250, fieldY, 46, String.valueOf(panel.getTrendLineThickness()));
+        smoothingField = addField(left + 372, fieldY, 46, String.valueOf(panel.getTrendLineSmoothing()));
         fieldY += 22;
-        chartBgField = addField(left + 92, fieldY, 66, panel.getChartBackgroundColorText());
-        screenColorField = addField(left + 214, fieldY, 66, panel.getScreenBackgroundColorText());
+        chartBgField = addField(left + 104, fieldY, 66, panel.getChartBackgroundColorText());
+        screenColorField = addField(left + 250, fieldY, 66, panel.getScreenBackgroundColorText());
     }
 
     @Override
@@ -181,7 +181,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             0x2F3640);
         fontRendererObj.drawString(
             StatCollector.translateToLocalFormatted("gtswn.network_info.gui.brief_ratio", panel.getBriefRatio()),
-            left + 262,
+            left + 272,
             top + 62,
             0x2F3640);
         drawChartSettings();
@@ -244,18 +244,18 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             .drawString(EnumChatFormatting.BOLD + tr("gtswn.network_info.gui.chart_settings"), x, y, 0x2F3640);
         y += 16;
         drawFieldLabel(tr("gtswn.network_info.gui.energy_y_min"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.energy_y_max"), left + 166, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.energy_y_max"), left + 180, y + 4);
         y += 22;
         drawFieldLabel(tr("gtswn.network_info.gui.eut_y_min"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.eut_y_max"), left + 166, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.eut_y_max"), left + 180, y + 4);
         y += 22;
         drawFieldLabel(tr("gtswn.network_info.gui.border_width"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.line_width"), left + 166, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.smoothing"), left + 276, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.line_width"), left + 180, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.smoothing"), left + 326, y + 4);
         y += 22;
         drawFieldLabel(tr("gtswn.network_info.gui.chart_bg"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.screen_bg"), left + 166, y + 4);
-        fontRendererObj.drawString(tr("gtswn.network_info.gui.blank_auto"), left + 286, y + 4, 0x6B7680);
+        drawFieldLabel(tr("gtswn.network_info.gui.screen_bg"), left + 180, y + 4);
+        fontRendererObj.drawString(tr("gtswn.network_info.gui.blank_auto"), left + 326, y + 4, 0x6B7680);
     }
 
     private void drawFieldLabel(String label, int x, int y) {

@@ -148,6 +148,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         return briefRatio;
     }
 
+    public float getBriefFontScale() {
+        return Math.max(10, Math.min(80, briefRatio)) / 20.0F;
+    }
+
     public int getChartLayoutMode() {
         return chartLayoutMode;
     }
@@ -208,6 +212,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         return parseOptionalColor(chartBackgroundColor);
     }
 
+    public boolean hasScreenBackgroundColor() {
+        return parseOptionalColor(screenBackgroundColor) != null;
+    }
+
     public int getScreenBackgroundColor() {
         Integer color = parseOptionalColor(screenBackgroundColor);
         return color == null ? 0xDDE1E4 : color.intValue();
@@ -228,14 +236,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
                 showChartStatus = !showChartStatus;
                 break;
             case 4:
-                trackingWindow = (trackingWindow + 1) % 4;
+                trackingWindow = nextTrackingWindow(trackingWindow);
                 refreshCachedSamples();
                 break;
             case 5:
-                briefRatio = Math.max(20, briefRatio - 5);
+                briefRatio = Math.max(10, briefRatio - 5);
                 break;
             case 6:
-                briefRatio = Math.min(60, briefRatio + 5);
+                briefRatio = Math.min(80, briefRatio + 5);
                 break;
             case 7:
                 chartLayoutMode = (chartLayoutMode + 1) % 2;
@@ -276,8 +284,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             } else if ("smoothing".equals(key)) {
                 trendLineSmoothing = clampInt(value, trendLineSmoothing, 0, 12);
             } else if ("screenColor".equals(key)) {
-                String color = cleanColorText(value);
-                screenBackgroundColor = color.isEmpty() ? "DDE1E4" : color;
+                screenBackgroundColor = cleanColorText(value);
             }
         }
         markDirty();
@@ -327,10 +334,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         }
         cachedEu = eu == null ? BigInteger.ZERO : eu;
         eutDataSet.add(cachedEu, tick);
-        cachedEut = eutDataSet.calculateEUT();
+        cachedEut = eutDataSet.calculateRecentEUT();
         dataSet.add(cachedEu, tick, System.currentTimeMillis(), cachedEut);
         store.markDirty();
-        cachedStatus = formatStatus(cachedEut, coldStarting || eutDataSet.size() < 2, eutDataSet.isLongTermSilent());
+        cachedStatus = formatStatus(cachedEut, coldStarting || eutDataSet.size() < 2, false);
         refreshCachedSamples(dataSet);
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
@@ -385,6 +392,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             case NetworkInfoDataSet.WINDOW_5_MIN:
             default:
                 return "5m";
+        }
+    }
+
+    private static int nextTrackingWindow(int window) {
+        switch (window) {
+            case NetworkInfoDataSet.WINDOW_5_MIN:
+                return NetworkInfoDataSet.WINDOW_1_HOUR;
+            case NetworkInfoDataSet.WINDOW_1_HOUR:
+                return NetworkInfoDataSet.WINDOW_8_HOUR;
+            case NetworkInfoDataSet.WINDOW_8_HOUR:
+                return NetworkInfoDataSet.WINDOW_24_HOUR;
+            case NetworkInfoDataSet.WINDOW_24_HOUR:
+            default:
+                return NetworkInfoDataSet.WINDOW_5_MIN;
         }
     }
 
@@ -654,9 +675,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         screenBackgroundColor = tag.hasKey("screenBackgroundColor")
             ? cleanColorText(tag.getString("screenBackgroundColor"))
             : "DDE1E4";
-        if (screenBackgroundColor.isEmpty()) {
-            screenBackgroundColor = "DDE1E4";
-        }
     }
 
     private static Double parseOptionalDouble(String value) {

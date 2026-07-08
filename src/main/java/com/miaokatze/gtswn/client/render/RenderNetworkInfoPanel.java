@@ -92,14 +92,19 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         FontRenderer font = Minecraft.getMinecraft().fontRenderer;
         int edge = Math.max(8, Math.min(16, Math.min(width, height) / 18));
         int safe = edge + 10;
-        int briefHeight = Math.max(34, height * panel.getBriefRatio() / 100);
+        int briefHeight = Math.max(34, height * 15 / 100);
         briefHeight = Math.min(briefHeight, height - safe * 2 - 50);
         boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+        boolean depthEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+        boolean fogEnabled = GL11.glIsEnabled(GL11.GL_FOG);
         GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_FOG);
         GL11.glDisable(GL11.GL_CULL_FACE);
 
-        fillRect(0, 0, width, height, panel.getScreenBackgroundColor());
+        if (panel.hasScreenBackgroundColor()) {
+            fillRect(0, 0, width, height, panel.getScreenBackgroundColor());
+        }
         drawOuterFrame(width, height, edge);
         drawBrief(panel, font, safe, width - safe * 2, safe, briefHeight);
 
@@ -109,7 +114,16 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             drawChart(panel, safe, chartTop, width - safe * 2, chartBottom - chartTop);
         }
 
-        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        if (depthEnabled) {
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
+        } else {
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+        }
+        if (fogEnabled) {
+            GL11.glEnable(GL11.GL_FOG);
+        } else {
+            GL11.glDisable(GL11.GL_FOG);
+        }
         GL11.glEnable(GL11.GL_LIGHTING);
         if (cullEnabled) {
             GL11.glEnable(GL11.GL_CULL_FACE);
@@ -131,11 +145,14 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     }
 
     private void drawBrief(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int w, int y, int h) {
-        int lineY = y + Math.max(0, (h - 30) / 2);
-        drawCentered(font, tr("gtswn.network_info.screen.title"), x, w, lineY, 0x26323D);
-        lineY += 12;
+        float scale = panel.getBriefFontScale();
+        int lineCount = 1 + (panel.isShowBriefEnergy() ? 1 : 0) + (panel.isShowBriefStatus() ? 1 : 0);
+        int lineStep = Math.max(10, Math.round(10.0F * scale));
+        int lineY = y + Math.max(0, (h - lineCount * lineStep) / 2);
+        drawScaledCentered(font, tr("gtswn.network_info.screen.title"), x, w, lineY, 0x26323D, scale);
+        lineY += lineStep;
         if (panel.isShowBriefEnergy()) {
-            drawCentered(
+            drawScaledCentered(
                 font,
                 StatCollector.translateToLocalFormatted(
                     "gtswn.network_info.screen.energy",
@@ -143,17 +160,19 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 x,
                 w,
                 lineY,
-                ENERGY_COLOR);
-            lineY += 10;
+                ENERGY_COLOR,
+                scale);
+            lineY += lineStep;
         }
         if (panel.isShowBriefStatus()) {
-            drawCentered(
+            drawScaledCentered(
                 font,
                 StatCollector.translateToLocalFormatted("gtswn.network_info.screen.status", panel.getCachedStatus()),
                 x,
                 w,
                 lineY,
-                EUT_COLOR);
+                EUT_COLOR,
+                scale);
         }
     }
 
@@ -368,8 +387,10 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             return;
         }
         boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+        boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_BLEND);
         setColor(color);
         GL11.glBegin(GL11.GL_QUADS);
         GL11.glVertex3d(x, y, 0.0D);
@@ -377,6 +398,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glVertex3d(x + w, y + h, 0.0D);
         GL11.glVertex3d(x, y + h, 0.0D);
         GL11.glEnd();
+        if (blendEnabled) {
+            GL11.glEnable(GL11.GL_BLEND);
+        } else {
+            GL11.glDisable(GL11.GL_BLEND);
+        }
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         if (cullEnabled) {
             GL11.glEnable(GL11.GL_CULL_FACE);
@@ -388,6 +414,15 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     private void drawCentered(FontRenderer font, String text, int x, int w, int y, int color) {
         font.drawString(text, x + (w - font.getStringWidth(text)) / 2, y, color);
+    }
+
+    private void drawScaledCentered(FontRenderer font, String text, int x, int w, int y, int color, float scale) {
+        GL11.glPushMatrix();
+        float centerX = x + w / 2.0F;
+        GL11.glTranslatef(centerX, y, 0.0F);
+        GL11.glScalef(scale, scale, 1.0F);
+        font.drawString(text, -font.getStringWidth(text) / 2, 0, color);
+        GL11.glPopMatrix();
     }
 
     private void drawRotated(FontRenderer font, String text, int x, int y, int color) {

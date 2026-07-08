@@ -239,9 +239,17 @@ public class EUDataSet {
             return 0.0;
         }
 
-        Measurement oldest = data.get(0);
-        Measurement newest = data.get(data.size() - 1);
+        return calculateSlope(data.get(0), data.get(data.size() - 1));
+    }
 
+    public double calculateRecentEUT() {
+        if (data.size() < 2) {
+            return 0.0;
+        }
+        return calculateSlope(data.get(data.size() - 2), data.get(data.size() - 1));
+    }
+
+    private static double calculateSlope(Measurement oldest, Measurement newest) {
         // tick 差值（long 直接相减，无精度问题）
         long tickDiff = newest.tick - oldest.tick;
         if (tickDiff <= 0) {

@@ -56,6 +56,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     // EU/t 计算相关
     private long lastCheckTick = 0;
     private double euPerTick = 0.0;
+    private double realtimeEuPerTick = 0.0;
 
     // 红石检测独立时间戳（与 UI 更新解耦，2 ticks 一次 = 0.1s，保证红石快速响应）
     private long lastRedstoneCheckTick = 0;
@@ -71,6 +72,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private String cachedModeText = StatCollector.translateToLocal("gtswn.ui.mode.normal");
     private String cachedEUText = StatCollector.translateToLocalFormatted("gtswn.ui.wireless.energy", "0");
     private String cachedStatusText = StatCollector.translateToLocal("gtswn.ui.network.status.nochange");
+    private String cachedRealtimeStatusText = StatCollector
+        .translateToLocal("gtswn.ui.network.realtime_status.nochange");
     private String cachedRedstoneModeText = StatCollector.translateToLocalFormatted(
         "gtswn.ui.redstone.mode",
         StatCollector.translateToLocal("gtswn.ui.redstone.mode.off"));
@@ -181,8 +184,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 // 重载期间红石逻辑维持不变（避免误切换），UI 显示"重载计算中"提示用户
                 if (redstoneReloadDelay > 0) {
                     cachedStatusText = StatCollector.translateToLocal("gtswn.ui.network.status.reload");
+                    cachedRealtimeStatusText = StatCollector
+                        .translateToLocal("gtswn.ui.network.realtime_status.reload");
                 } else {
                     cachedStatusText = calculatedStatus;
+                    cachedRealtimeStatusText = formatRealtimeEUTStatus();
                 }
 
                 // 更新缓存文本（仅服务端），由 StringSyncValue 自动 S2C 同步给客户端
@@ -390,6 +396,29 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
     }
 
+    private String formatRealtimeEUTStatus() {
+        if (dataSet.size() < 2) {
+            realtimeEuPerTick = 0.0;
+            return StatCollector.translateToLocal("gtswn.ui.network.realtime_status.nochange");
+        }
+
+        double eut = dataSet.calculateRecentEUT();
+        realtimeEuPerTick = eut;
+        if (eut == 0.0) {
+            return StatCollector.translateToLocal("gtswn.ui.network.realtime_status.silent");
+        }
+
+        double absEut = Math.abs(eut);
+        if (absEut < 1.0) {
+            return StatCollector.translateToLocal("gtswn.ui.network.realtime_status.lessthan1");
+        }
+
+        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        String gtPowerText = GTTierUtil.formatGTPower(eut);
+        String key = eut > 0 ? "gtswn.ui.network.realtime_status.up" : "gtswn.ui.network.realtime_status.down";
+        return String.format(StatCollector.translateToLocal(key), euPerTickStr, gtPowerText);
+    }
+
     // 获取无线电网能量
     private BigInteger getWirelessEU() {
         if (ownerUUID == null) return BigInteger.ZERO;
@@ -409,6 +438,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         if (anchorMode == 1) {
             // v1.2.1 修复：使用 Math.round 替代 (long) 强转，避免小数截断丢失
             return BigInteger.valueOf(Math.round(euPerTick));
+        }
+        if (anchorMode == 2) {
+            return BigInteger.valueOf(Math.round(realtimeEuPerTick));
         }
         return getWirelessEU();
     }
@@ -450,8 +482,8 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             EnumChatFormatting.BLUE + getLocalName() + EnumChatFormatting.RESET,
             // 电网容量（复用 UI 的格式化文本，含"能量: xxx EU"）
             StatCollector.translateToLocalFormatted("gtswn.info.energy", getWirelessEUText()),
-            // 电网状态（复用 UI 的格式化文本，含 EU/t、电压等级）
-            StatCollector.translateToLocalFormatted("gtswn.info.status", cachedStatusText) };
+            StatCollector.translateToLocalFormatted("gtswn.info.average_status", cachedStatusText),
+            StatCollector.translateToLocalFormatted("gtswn.info.realtime_status", cachedRealtimeStatusText) };
     }
 
     /**
@@ -580,6 +612,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         StringSyncValue statusTextSync = new StringSyncValue(this::getCachedStatusText, this::setCachedStatusText);
         syncManager.syncValue("cachedStatusText", statusTextSync);
 
+        StringSyncValue realtimeStatusTextSync = new StringSyncValue(
+            this::getCachedRealtimeStatusText,
+            this::setCachedRealtimeStatusText);
+        syncManager.syncValue("cachedRealtimeStatusText", realtimeStatusTextSync);
+
         StringSyncValue redstoneModeTextSync = new StringSyncValue(
             this::getCachedRedstoneModeText,
             this::setCachedRedstoneModeText);
@@ -601,7 +638,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // v1.1.13 调整：宽度 336→346（+10 延伸左边缘），高度 155→165（+10 延伸下边缘）
         ModularPanel panel = GTGuis.mteTemplatePanelBuilder(this, guiData, syncManager, uiSettings)
             .setWidth(346)
-            .setHeight(165)
+            .setHeight(181)
             .doesBindPlayerInventory(false)
             .doesAddGregTechLogo(false)
             .build();
@@ -699,6 +736,26 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 })
                     .background(GTGuiTextures.BUTTON_STANDARD)
                     .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 1 ? "=" : "<"))
+                    .size(16, 16)
+                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
+
+        column.child(
+            Flow.row()
+                .widthRel(1f)
+                .height(16)
+                .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
+                .crossAxisAlignment(Alignment.CrossAxis.CENTER)
+                .childPadding(4)
+                .child(
+                    IKey.dynamic(() -> cachedRealtimeStatusText)
+                        .asWidget()
+                        .alignment(Alignment.CenterLeft))
+                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
+                    anchorModeSync.setValue(2);
+                    return true;
+                })
+                    .background(GTGuiTextures.BUTTON_STANDARD)
+                    .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 2 ? "=" : "<"))
                     .size(16, 16)
                     .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
 
@@ -975,7 +1032,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * 设置锚定参数模式（用于 IntSyncValue 同步）
      */
     public void setAnchorMode(int mode) {
-        this.anchorMode = mode;
+        this.anchorMode = Math.max(0, Math.min(2, mode));
         if (getBaseMetaTileEntity() != null) {
             getBaseMetaTileEntity().markDirty();
         }
@@ -1077,6 +1134,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         this.cachedStatusText = text;
     }
 
+    public String getCachedRealtimeStatusText() {
+        return cachedRealtimeStatusText;
+    }
+
+    public void setCachedRealtimeStatusText(String text) {
+        this.cachedRealtimeStatusText = text;
+    }
+
     /**
      * 获取红石模式文本（用于 StringSyncValue 同步）
      */
@@ -1173,6 +1238,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
         // 保存 EU/t 计算状态（用于红石功能）
         aNBT.setDouble("euPerTick", euPerTick);
+        aNBT.setDouble("realtimeEuPerTick", realtimeEuPerTick);
         // v1.2.4：重新持久化测量历史（用于短时卸载直接续传）
         // 短时卸载（≤10秒）保留旧样本立即恢复变化率；长时卸载（>10秒）由 onPostTick 的 gap 检测清空
         // 由 EUDataSet 统一序列化（兼容旧 measurementHistory 格式）
@@ -1208,6 +1274,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         }
         // 加载 EU/t 计算状态（用于红石功能）
         euPerTick = aNBT.getDouble("euPerTick");
+        realtimeEuPerTick = aNBT.getDouble("realtimeEuPerTick");
         // 注：unchangedCount 已废弃（300s 窗口均值算法不再使用），不再读取
         // v1.2.4：恢复测量历史（用于短时卸载直接续传）
         // 兼容性：v1.2.3 存档无此键时 loadFromNBT 内部 hasKey 检查跳过；
@@ -1224,6 +1291,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         lastCheckTick = aNBT.getLong("lastCheckTick");
         // 加载锚定参数模式（0=电网电量，1=电网状态）
         anchorMode = aNBT.getInteger("anchorMode");
+        anchorMode = Math.max(0, Math.min(2, anchorMode));
         if (aNBT.hasKey("param1Value")) {
             param1Value = new BigInteger(aNBT.getString("param1Value"));
         }
