@@ -6,6 +6,7 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 
+import cpw.mods.fml.common.network.ByteBufUtils;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
 import cpw.mods.fml.common.network.simpleimpl.MessageContext;
@@ -17,6 +18,7 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
     private int y;
     private int z;
     private int action;
+    private String chartConfig = "";
 
     public PacketUpdateNetworkInfoPanelConfig() {}
 
@@ -27,12 +29,21 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
         this.action = action;
     }
 
+    public PacketUpdateNetworkInfoPanelConfig(int x, int y, int z, String chartConfig) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.action = -1;
+        this.chartConfig = chartConfig == null ? "" : chartConfig;
+    }
+
     @Override
     public void fromBytes(ByteBuf buf) {
         x = buf.readInt();
         y = buf.readInt();
         z = buf.readInt();
         action = buf.readInt();
+        chartConfig = buf.readableBytes() > 0 ? ByteBufUtils.readUTF8String(buf) : "";
     }
 
     @Override
@@ -41,6 +52,7 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
         buf.writeInt(y);
         buf.writeInt(z);
         buf.writeInt(action);
+        ByteBufUtils.writeUTF8String(buf, chartConfig == null ? "" : chartConfig);
     }
 
     public static class Handler implements IMessageHandler<PacketUpdateNetworkInfoPanelConfig, IMessage> {
@@ -62,7 +74,12 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
             }
             TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
             if (tile instanceof TileEntityNetworkInfoPanel) {
-                ((TileEntityNetworkInfoPanel) tile).applyConfigAction(message.action);
+                TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
+                if (message.action >= 0) {
+                    panel.applyConfigAction(message.action);
+                } else {
+                    panel.applyChartConfig(message.chartConfig);
+                }
             }
         }
     }

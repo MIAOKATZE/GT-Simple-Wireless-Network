@@ -47,6 +47,15 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     private int trackingWindow = NetworkInfoDataSet.WINDOW_5_MIN;
     private int briefRatio = 28;
     private int chartLayoutMode = 0;
+    private String energyAxisMin = "";
+    private String energyAxisMax = "";
+    private String eutAxisMin = "";
+    private String eutAxisMax = "";
+    private int chartBorderThickness = 3;
+    private String chartBackgroundColor = "";
+    private int trendLineThickness = 3;
+    private int trendLineSmoothing = 0;
+    private String screenBackgroundColor = "DDE1E4";
 
     private long lastSampleTick = -1L;
     private BigInteger cachedEu = BigInteger.ZERO;
@@ -143,6 +152,67 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         return chartLayoutMode;
     }
 
+    public String getEnergyAxisMinText() {
+        return energyAxisMin;
+    }
+
+    public String getEnergyAxisMaxText() {
+        return energyAxisMax;
+    }
+
+    public String getEutAxisMinText() {
+        return eutAxisMin;
+    }
+
+    public String getEutAxisMaxText() {
+        return eutAxisMax;
+    }
+
+    public int getChartBorderThickness() {
+        return chartBorderThickness;
+    }
+
+    public String getChartBackgroundColorText() {
+        return chartBackgroundColor;
+    }
+
+    public int getTrendLineThickness() {
+        return trendLineThickness;
+    }
+
+    public int getTrendLineSmoothing() {
+        return trendLineSmoothing;
+    }
+
+    public String getScreenBackgroundColorText() {
+        return screenBackgroundColor;
+    }
+
+    public Double getEnergyAxisMin() {
+        return parseOptionalDouble(energyAxisMin);
+    }
+
+    public Double getEnergyAxisMax() {
+        return parseOptionalDouble(energyAxisMax);
+    }
+
+    public Double getEutAxisMin() {
+        return parseOptionalDouble(eutAxisMin);
+    }
+
+    public Double getEutAxisMax() {
+        return parseOptionalDouble(eutAxisMax);
+    }
+
+    public Integer getChartBackgroundColor() {
+        return parseOptionalColor(chartBackgroundColor);
+    }
+
+    public int getScreenBackgroundColor() {
+        Integer color = parseOptionalColor(screenBackgroundColor);
+        return color == null ? 0xDDE1E4 : color.intValue();
+    }
+
     public void applyConfigAction(int action) {
         switch (action) {
             case 0:
@@ -177,6 +247,43 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
 
+    public void applyChartConfig(String payload) {
+        if (payload == null) {
+            return;
+        }
+        String[] lines = payload.split("\n", -1);
+        for (String line : lines) {
+            int index = line.indexOf('=');
+            if (index <= 0) {
+                continue;
+            }
+            String key = line.substring(0, index);
+            String value = cleanText(line.substring(index + 1));
+            if ("energyMin".equals(key)) {
+                energyAxisMin = value;
+            } else if ("energyMax".equals(key)) {
+                energyAxisMax = value;
+            } else if ("eutMin".equals(key)) {
+                eutAxisMin = value;
+            } else if ("eutMax".equals(key)) {
+                eutAxisMax = value;
+            } else if ("border".equals(key)) {
+                chartBorderThickness = clampInt(value, chartBorderThickness, 1, 8);
+            } else if ("chartBg".equals(key)) {
+                chartBackgroundColor = cleanColorText(value);
+            } else if ("line".equals(key)) {
+                trendLineThickness = clampInt(value, trendLineThickness, 1, 8);
+            } else if ("smoothing".equals(key)) {
+                trendLineSmoothing = clampInt(value, trendLineSmoothing, 0, 12);
+            } else if ("screenColor".equals(key)) {
+                String color = cleanColorText(value);
+                screenBackgroundColor = color.isEmpty() ? "DDE1E4" : color;
+            }
+        }
+        markDirty();
+        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
     public void readPlacementData(NBTTagCompound tag) {
         if (tag.hasKey("DatasetId")) {
             datasetId = tag.getString("DatasetId");
@@ -195,6 +302,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             lastSampleTick = tag.getLong("lastSampleTick");
         }
         eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
+        readChartConfig(tag);
     }
 
     public void writePlacementData(NBTTagCompound tag) {
@@ -205,6 +313,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
         tag.setLong("lastSampleTick", lastSampleTick);
         eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
+        writeChartConfig(tag);
     }
 
     private void sampleNetwork(long tick) {
@@ -414,6 +523,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         chartLayoutMode = tag.getInteger("chartLayoutMode");
+        readChartConfig(tag);
         lastSampleTick = tag.getLong("lastSampleTick");
         eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
         if (tag.hasKey("screen")) {
@@ -433,6 +543,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         tag.setInteger("trackingWindow", trackingWindow);
         tag.setInteger("briefRatio", briefRatio);
         tag.setInteger("chartLayoutMode", chartLayoutMode);
+        writeChartConfig(tag);
         tag.setLong("lastSampleTick", lastSampleTick);
         eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
         if (screen != null) {
@@ -466,6 +577,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         tag.setInteger("trackingWindow", trackingWindow);
         tag.setInteger("briefRatio", briefRatio);
         tag.setInteger("chartLayoutMode", chartLayoutMode);
+        writeChartConfig(tag);
         if (screen != null) {
             tag.setTag("screen", screen.toNBT());
         }
@@ -501,6 +613,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         chartLayoutMode = tag.getInteger("chartLayoutMode");
+        readChartConfig(tag);
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
         }
@@ -509,6 +622,101 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         for (int i = 0; i < list.tagCount(); i++) {
             cachedSamples.add(NetworkInfoSample.fromNBT(list.getCompoundTagAt(i)));
         }
+    }
+
+    private void writeChartConfig(NBTTagCompound tag) {
+        tag.setString("energyAxisMin", energyAxisMin);
+        tag.setString("energyAxisMax", energyAxisMax);
+        tag.setString("eutAxisMin", eutAxisMin);
+        tag.setString("eutAxisMax", eutAxisMax);
+        tag.setInteger("chartBorderThickness", chartBorderThickness);
+        tag.setString("chartBackgroundColor", chartBackgroundColor);
+        tag.setInteger("trendLineThickness", trendLineThickness);
+        tag.setInteger("trendLineSmoothing", trendLineSmoothing);
+        tag.setString("screenBackgroundColor", screenBackgroundColor);
+    }
+
+    private void readChartConfig(NBTTagCompound tag) {
+        energyAxisMin = tag.hasKey("energyAxisMin") ? tag.getString("energyAxisMin") : "";
+        energyAxisMax = tag.hasKey("energyAxisMax") ? tag.getString("energyAxisMax") : "";
+        eutAxisMin = tag.hasKey("eutAxisMin") ? tag.getString("eutAxisMin") : "";
+        eutAxisMax = tag.hasKey("eutAxisMax") ? tag.getString("eutAxisMax") : "";
+        chartBorderThickness = tag.hasKey("chartBorderThickness")
+            ? clampInt(tag.getInteger("chartBorderThickness"), 1, 8)
+            : 3;
+        chartBackgroundColor = tag.hasKey("chartBackgroundColor")
+            ? cleanColorText(tag.getString("chartBackgroundColor"))
+            : "";
+        trendLineThickness = tag.hasKey("trendLineThickness") ? clampInt(tag.getInteger("trendLineThickness"), 1, 8)
+            : 3;
+        trendLineSmoothing = tag.hasKey("trendLineSmoothing") ? clampInt(tag.getInteger("trendLineSmoothing"), 0, 12)
+            : 0;
+        screenBackgroundColor = tag.hasKey("screenBackgroundColor")
+            ? cleanColorText(tag.getString("screenBackgroundColor"))
+            : "DDE1E4";
+        if (screenBackgroundColor.isEmpty()) {
+            screenBackgroundColor = "DDE1E4";
+        }
+    }
+
+    private static Double parseOptionalDouble(String value) {
+        if (value == null || value.trim()
+            .isEmpty()) {
+            return null;
+        }
+        try {
+            return Double.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static Integer parseOptionalColor(String value) {
+        String clean = cleanColorText(value);
+        if (clean.isEmpty()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf((int) Long.parseLong(clean, 16));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static String cleanText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim()
+            .replace('\r', ' ')
+            .replace('\n', ' ');
+    }
+
+    private static String cleanColorText(String value) {
+        String clean = cleanText(value).replace("#", "");
+        if (clean.length() > 6) {
+            clean = clean.substring(0, 6);
+        }
+        for (int i = 0; i < clean.length(); i++) {
+            char c = clean.charAt(i);
+            boolean hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            if (!hex) {
+                return "";
+            }
+        }
+        return clean.toUpperCase();
+    }
+
+    private static int clampInt(String value, int fallback, int min, int max) {
+        try {
+            return clampInt(Integer.parseInt(value), min, max);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private static String key(int x, int y, int z) {

@@ -18,6 +18,11 @@ import com.miaokatze.gtswn.common.util.FormatUtil;
 
 public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
+    private static final int ENERGY_COLOR = 0x1F6FFF;
+    private static final int EUT_COLOR = 0xFF7A18;
+    private static final int AXIS_COLOR = 0x4E5964;
+    private static final int TICK_COLOR = 0x6A7680;
+
     @Override
     public void renderTileEntityAt(TileEntity tile, double x, double y, double z, float partialTicks) {
         if (!(tile instanceof TileEntityNetworkInfoPanel)) {
@@ -85,124 +90,215 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     private void drawPanel(TileEntityNetworkInfoPanel panel, int width, int height) {
         FontRenderer font = Minecraft.getMinecraft().fontRenderer;
-        int padding = 8;
-        int briefHeight = Math.max(30, height * panel.getBriefRatio() / 100);
+        int edge = Math.max(8, Math.min(16, Math.min(width, height) / 18));
+        int safe = edge + 10;
+        int briefHeight = Math.max(34, height * panel.getBriefRatio() / 100);
+        briefHeight = Math.min(briefHeight, height - safe * 2 - 50);
+        boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_LIGHTING);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_CULL_FACE);
 
-        font.drawString(tr("gtswn.network_info.screen.title"), padding, padding, 0x26323D);
-        int lineY = padding + 12;
-        if (panel.isShowBriefEnergy()) {
-            font.drawString(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.network_info.screen.energy",
-                    FormatUtil.formatBigInteger(panel.getCachedEu())),
-                padding,
-                lineY,
-                0x2F80ED);
-            lineY += 10;
+        fillRect(0, 0, width, height, panel.getScreenBackgroundColor());
+        drawOuterFrame(width, height, edge);
+        drawBrief(panel, font, safe, width - safe * 2, safe, briefHeight);
+
+        int chartTop = safe + briefHeight + 12;
+        int chartBottom = height - safe;
+        if (chartBottom - chartTop > 42) {
+            drawChart(panel, safe, chartTop, width - safe * 2, chartBottom - chartTop);
         }
-        if (panel.isShowBriefStatus()) {
-            font.drawString(
-                StatCollector.translateToLocalFormatted("gtswn.network_info.screen.status", panel.getCachedStatus()),
-                padding,
-                lineY,
-                0xE07A2F);
-        }
-        drawChart(panel, padding, briefHeight, width - padding * 2, height - briefHeight - padding);
 
         GL11.glEnable(GL11.GL_DEPTH_TEST);
         GL11.glEnable(GL11.GL_LIGHTING);
+        if (cullEnabled) {
+            GL11.glEnable(GL11.GL_CULL_FACE);
+        } else {
+            GL11.glDisable(GL11.GL_CULL_FACE);
+        }
         GL11.glColor4f(1F, 1F, 1F, 1F);
     }
 
+    private void drawOuterFrame(int width, int height, int edge) {
+        fillRect(0, 0, width, edge, 0x7D8790);
+        fillRect(0, height - edge, width, edge, 0x7D8790);
+        fillRect(0, 0, edge, height, 0x7D8790);
+        fillRect(width - edge, 0, edge, height, 0x7D8790);
+        fillRect(edge, edge, width - edge * 2, 2, 0xC7CDD2);
+        fillRect(edge, height - edge - 2, width - edge * 2, 2, 0xAAB3BB);
+        fillRect(edge, edge, 2, height - edge * 2, 0xC7CDD2);
+        fillRect(width - edge - 2, edge, 2, height - edge * 2, 0xAAB3BB);
+    }
+
+    private void drawBrief(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int w, int y, int h) {
+        int lineY = y + Math.max(0, (h - 30) / 2);
+        drawCentered(font, tr("gtswn.network_info.screen.title"), x, w, lineY, 0x26323D);
+        lineY += 12;
+        if (panel.isShowBriefEnergy()) {
+            drawCentered(
+                font,
+                StatCollector.translateToLocalFormatted(
+                    "gtswn.network_info.screen.energy",
+                    FormatUtil.formatBigInteger(panel.getCachedEu())),
+                x,
+                w,
+                lineY,
+                ENERGY_COLOR);
+            lineY += 10;
+        }
+        if (panel.isShowBriefStatus()) {
+            drawCentered(
+                font,
+                StatCollector.translateToLocalFormatted("gtswn.network_info.screen.status", panel.getCachedStatus()),
+                x,
+                w,
+                lineY,
+                EUT_COLOR);
+        }
+    }
+
     private void drawChart(TileEntityNetworkInfoPanel panel, int x, int y, int w, int h) {
-        if (w <= 20 || h <= 20 || (!panel.isShowChartEnergy() && !panel.isShowChartStatus())) {
+        if (w <= 70 || h <= 55 || (!panel.isShowChartEnergy() && !panel.isShowChartStatus())) {
             return;
         }
-        drawLine(x, y + h, x + w, y + h, 0x667684);
-        drawLine(x, y, x, y + h, 0x667684);
-        Minecraft.getMinecraft().fontRenderer.drawString(
-            StatCollector.translateToLocalFormatted("gtswn.network_info.screen.history", panel.getWindowName()),
-            x + 3,
-            y + 3,
-            0x34404A);
+        FontRenderer font = Minecraft.getMinecraft().fontRenderer;
+        String title = StatCollector
+            .translateToLocalFormatted("gtswn.network_info.screen.history", panel.getWindowName());
+        drawCentered(font, title, x, w, y, 0x34404A);
+
+        int plotX = x + 54;
+        int plotY = y + 22;
+        int plotW = w - 108;
+        int plotH = h - 52;
+        if (plotW <= 20 || plotH <= 16) {
+            return;
+        }
+        Integer chartBg = panel.getChartBackgroundColor();
+        if (chartBg != null) {
+            fillRect(plotX, plotY, plotW, plotH, chartBg.intValue());
+        }
+
         List<NetworkInfoSample> samples = panel.getCachedSamples();
         if (samples.size() < 2) {
-            Minecraft.getMinecraft().fontRenderer.drawString(
+            drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null);
+            drawCentered(
+                font,
                 StatCollector.translateToLocalFormatted("gtswn.network_info.screen.collecting", samples.size()),
-                x + 8,
-                y + h / 2,
+                plotX,
+                plotW,
+                plotY + plotH / 2 - 4,
                 0x777777);
             return;
         }
-        drawChartLabels(panel, samples, x, y, w, h);
+
+        double[] energyValues = panel.isShowChartEnergy() ? energyValues(samples) : null;
+        double[] eutValues = panel.isShowChartStatus() ? eutValues(samples) : null;
+        double[] energyRange = energyValues == null ? null
+            : range(energyValues, panel.getEnergyAxisMin(), panel.getEnergyAxisMax());
+        double[] eutRange = eutValues == null ? null : range(eutValues, panel.getEutAxisMin(), panel.getEutAxisMax());
+        drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, energyRange, eutRange);
         if (panel.getChartLayoutMode() == 0 && panel.isShowChartEnergy() && panel.isShowChartStatus()) {
-            drawEnergySeries(samples, x + 18, y + 18, w - 28, h / 2 - 22, 0x2F80ED);
-            drawEutSeries(samples, x + 18, y + h / 2 + 10, w - 28, h / 2 - 18, 0xE07A2F);
+            int upperH = Math.max(8, plotH / 2 - 7);
+            int lowerY = plotY + plotH / 2 + 7;
+            int lowerH = Math.max(8, plotH - (lowerY - plotY));
+            drawSeries(
+                smooth(energyValues, panel.getTrendLineSmoothing()),
+                energyRange,
+                plotX,
+                plotY,
+                plotW,
+                upperH,
+                ENERGY_COLOR,
+                panel.getTrendLineThickness());
+            drawSeries(
+                smooth(eutValues, panel.getTrendLineSmoothing()),
+                eutRange,
+                plotX,
+                lowerY,
+                plotW,
+                lowerH,
+                EUT_COLOR,
+                panel.getTrendLineThickness());
         } else {
-            if (panel.isShowChartEnergy()) {
-                drawEnergySeries(samples, x + 18, y + 18, w - 28, h - 28, 0x2F80ED);
+            if (energyValues != null) {
+                drawSeries(
+                    smooth(energyValues, panel.getTrendLineSmoothing()),
+                    energyRange,
+                    plotX,
+                    plotY,
+                    plotW,
+                    plotH,
+                    ENERGY_COLOR,
+                    panel.getTrendLineThickness());
             }
-            if (panel.isShowChartStatus()) {
-                drawEutSeries(samples, x + 18, y + 18, w - 28, h - 28, 0xE07A2F);
+            if (eutValues != null) {
+                drawSeries(
+                    smooth(eutValues, panel.getTrendLineSmoothing()),
+                    eutRange,
+                    plotX,
+                    plotY,
+                    plotW,
+                    plotH,
+                    EUT_COLOR,
+                    panel.getTrendLineThickness());
             }
         }
     }
 
-    private void drawChartLabels(TileEntityNetworkInfoPanel panel, List<NetworkInfoSample> samples, int x, int y, int w,
-        int h) {
-        FontRenderer font = Minecraft.getMinecraft().fontRenderer;
-        if (panel.isShowChartEnergy()) {
-            double[] range = rangeEnergy(samples);
-            font.drawString(sci(range[1]), x + 2, y + 14, 0x2F80ED);
-            font.drawString("EU", x + 2, y + h - 8, 0x2F80ED);
+    private void drawAcademicAxes(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int y, int w, int h,
+        double[] energyRange, double[] eutRange) {
+        int thickness = panel.getChartBorderThickness();
+        fillRect(x, y, w + thickness, thickness, AXIS_COLOR);
+        fillRect(x, y + h, w + thickness, thickness, AXIS_COLOR);
+        fillRect(x, y, thickness, h + thickness, AXIS_COLOR);
+        fillRect(x + w, y, thickness, h + thickness, AXIS_COLOR);
+
+        for (int i = 0; i < 5; i++) {
+            int ty = y + h - i * h / 4;
+            fillRect(x - 4, ty, 4, Math.max(1, thickness), TICK_COLOR);
+            fillRect(x + w, ty, 4, Math.max(1, thickness), TICK_COLOR);
+            if (energyRange != null) {
+                double value = energyRange[0] + (energyRange[1] - energyRange[0]) * i / 4.0D;
+                String label = sci(value);
+                font.drawString(label, x - 8 - font.getStringWidth(label), ty - 4, ENERGY_COLOR);
+            }
+            if (eutRange != null) {
+                double value = eutRange[0] + (eutRange[1] - eutRange[0]) * i / 4.0D;
+                font.drawString(sci(value), x + w + 8, ty - 4, EUT_COLOR);
+            }
         }
-        if (panel.isShowChartStatus()) {
-            double[] range = rangeEut(samples);
-            font.drawString(sci(range[1]), x + w - 34, y + 14, 0xE07A2F);
-            font.drawString("EU/t", x + w - 26, y + h - 8, 0xE07A2F);
+        for (int i = 0; i < 5; i++) {
+            int tx = x + i * w / 4;
+            fillRect(tx, y + h, Math.max(1, thickness), 4, TICK_COLOR);
+            String label = i == 0 ? "-" + panel.getWindowName() : i == 4 ? tr("gtswn.network_info.screen.now") : "";
+            if (!label.isEmpty()) {
+                font.drawString(label, tx - font.getStringWidth(label) / 2, y + h + 8, 0x4E5964);
+            }
         }
-        font.drawString("0", x + 18, y + h - 8, 0x606A74);
-        font.drawString(panel.getWindowName(), x + w - 28, y + h - 8, 0x606A74);
+        drawCentered(font, tr("gtswn.network_info.screen.time_axis"), x, w, y + h + 20, 0x4E5964);
+        if (energyRange != null) {
+            drawRotated(font, tr("gtswn.network_info.screen.energy_axis"), x - 56, y + h / 2 + 42, ENERGY_COLOR);
+        }
+        if (eutRange != null) {
+            drawRotated(font, tr("gtswn.network_info.screen.eut_axis"), x + w + 48, y + h / 2 + 38, EUT_COLOR);
+        }
     }
 
-    private void drawEnergySeries(List<NetworkInfoSample> samples, int x, int y, int w, int h, int color) {
-        double[] values = new double[samples.size()];
-        for (int i = 0; i < samples.size(); i++) {
-            values[i] = samples.get(i).eu.doubleValue();
-        }
-        drawSeries(values, x, y, w, h, color);
-    }
-
-    private void drawEutSeries(List<NetworkInfoSample> samples, int x, int y, int w, int h, int color) {
-        double[] values = new double[samples.size()];
-        for (int i = 0; i < samples.size(); i++) {
-            values[i] = samples.get(i).eut;
-        }
-        drawSeries(values, x, y, w, h, color);
-    }
-
-    private void drawSeries(double[] values, int x, int y, int w, int h, int color) {
-        if (h <= 2) {
+    private void drawSeries(double[] values, double[] range, int x, int y, int w, int h, int color, int thickness) {
+        if (values == null || values.length < 2 || h <= 2 || range == null) {
             return;
         }
-        double min = values[0];
-        double max = values[0];
-        for (double value : values) {
-            min = Math.min(min, value);
-            max = Math.max(max, value);
-        }
-        if (Math.abs(max - min) < 0.000001D) {
-            max = min + 1.0D;
-        }
+        double min = range[0];
+        double max = range[1];
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glLineWidth(2.0F);
+        GL11.glLineWidth(thickness);
         setColor(color);
         GL11.glBegin(GL11.GL_LINE_STRIP);
         for (int i = 0; i < values.length; i++) {
-            double px = x + (values.length == 1 ? 0.0D : (double) i / (values.length - 1) * w);
-            double py = y + h - (values[i] - min) / (max - min) * h;
+            double normalized = (values[i] - min) / (max - min);
+            normalized = Math.max(0.0D, Math.min(1.0D, normalized));
+            double px = x + (double) i / (values.length - 1) * w;
+            double py = y + h - normalized * h;
             GL11.glVertex3d(px, py, 0.0D);
         }
         GL11.glEnd();
@@ -210,16 +306,96 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glColor4f(1F, 1F, 1F, 1F);
     }
 
-    private void drawLine(int x1, int y1, int x2, int y2, int color) {
+    private static double[] energyValues(List<NetworkInfoSample> samples) {
+        double[] values = new double[samples.size()];
+        for (int i = 0; i < samples.size(); i++) {
+            values[i] = samples.get(i).eu.doubleValue();
+        }
+        return values;
+    }
+
+    private static double[] eutValues(List<NetworkInfoSample> samples) {
+        double[] values = new double[samples.size()];
+        for (int i = 0; i < samples.size(); i++) {
+            values[i] = samples.get(i).eut;
+        }
+        return values;
+    }
+
+    private static double[] range(double[] values, Double customMin, Double customMax) {
+        double min = values[0];
+        double max = values[0];
+        for (double value : values) {
+            min = Math.min(min, value);
+            max = Math.max(max, value);
+        }
+        if (customMin != null) {
+            min = customMin.doubleValue();
+        }
+        if (customMax != null) {
+            max = customMax.doubleValue();
+        }
+        if (Math.abs(max - min) < 0.000001D || max < min) {
+            double center = (max + min) / 2.0D;
+            min = center - 0.5D;
+            max = center + 0.5D;
+        }
+        return new double[] { min, max };
+    }
+
+    private static double[] smooth(double[] values, int strength) {
+        int radius = Math.max(0, Math.min(12, strength));
+        if (radius == 0 || values.length < 3) {
+            return values;
+        }
+        double[] result = new double[values.length];
+        for (int i = 0; i < values.length; i++) {
+            int from = Math.max(0, i - radius);
+            int to = Math.min(values.length - 1, i + radius);
+            double sum = 0.0D;
+            int count = 0;
+            for (int j = from; j <= to; j++) {
+                sum += values[j];
+                count++;
+            }
+            result[i] = sum / count;
+        }
+        return result;
+    }
+
+    private void fillRect(int x, int y, int w, int h, int color) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glLineWidth(1.0F);
+        GL11.glDisable(GL11.GL_CULL_FACE);
         setColor(color);
-        GL11.glBegin(GL11.GL_LINES);
-        GL11.glVertex3d(x1, y1, 0.0D);
-        GL11.glVertex3d(x2, y2, 0.0D);
+        GL11.glBegin(GL11.GL_QUADS);
+        GL11.glVertex3d(x, y, 0.0D);
+        GL11.glVertex3d(x + w, y, 0.0D);
+        GL11.glVertex3d(x + w, y + h, 0.0D);
+        GL11.glVertex3d(x, y + h, 0.0D);
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
+        if (cullEnabled) {
+            GL11.glEnable(GL11.GL_CULL_FACE);
+        } else {
+            GL11.glDisable(GL11.GL_CULL_FACE);
+        }
         GL11.glColor4f(1F, 1F, 1F, 1F);
+    }
+
+    private void drawCentered(FontRenderer font, String text, int x, int w, int y, int color) {
+        font.drawString(text, x + (w - font.getStringWidth(text)) / 2, y, color);
+    }
+
+    private void drawRotated(FontRenderer font, String text, int x, int y, int color) {
+        GL11.glPushMatrix();
+        GL11.glTranslatef(x, y, 0.0F);
+        GL11.glRotatef(-90.0F, 0.0F, 0.0F, 1.0F);
+        font.drawString(text, 0, 0, color);
+        GL11.glPopMatrix();
     }
 
     private void setColor(int color) {
@@ -227,27 +403,6 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         float g = ((color >> 8) & 255) / 255.0F;
         float b = (color & 255) / 255.0F;
         GL11.glColor4f(r, g, b, 1.0F);
-    }
-
-    private static double[] rangeEnergy(List<NetworkInfoSample> samples) {
-        double min = samples.get(0).eu.doubleValue();
-        double max = min;
-        for (NetworkInfoSample sample : samples) {
-            double value = sample.eu.doubleValue();
-            min = Math.min(min, value);
-            max = Math.max(max, value);
-        }
-        return new double[] { min, max };
-    }
-
-    private static double[] rangeEut(List<NetworkInfoSample> samples) {
-        double min = samples.get(0).eut;
-        double max = min;
-        for (NetworkInfoSample sample : samples) {
-            min = Math.min(min, sample.eut);
-            max = Math.max(max, sample.eut);
-        }
-        return new double[] { min, max };
     }
 
     private static String sci(double value) {

@@ -12,6 +12,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.IIcon;
 import net.minecraft.util.MathHelper;
+import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
@@ -21,6 +22,7 @@ import com.miaokatze.gtswn.register.CreativeTabManager;
 public class BlockNetworkInfoPanel extends BlockContainer {
 
     private IIcon screenIcon;
+    private final IIcon[] connectedScreenIcons = new IIcon[16];
     private IIcon backIcon;
     private IIcon sideIcon;
 
@@ -41,6 +43,9 @@ public class BlockNetworkInfoPanel extends BlockContainer {
     @Override
     public void registerBlockIcons(IIconRegister register) {
         screenIcon = register.registerIcon("gtswn:network_info_panel/screen");
+        for (int i = 0; i < connectedScreenIcons.length; i++) {
+            connectedScreenIcons[i] = register.registerIcon("gtswn:network_info_panel/screen_connected_" + i);
+        }
         backIcon = register.registerIcon("gtswn:network_info_panel/panelBack");
         sideIcon = register.registerIcon("gtswn:network_info_panel/panelSide");
     }
@@ -55,6 +60,15 @@ public class BlockNetworkInfoPanel extends BlockContainer {
             return backIcon;
         }
         return sideIcon;
+    }
+
+    @Override
+    public IIcon getIcon(IBlockAccess world, int x, int y, int z, int side) {
+        int facing = normalizeFacing(world.getBlockMetadata(x, y, z));
+        if (side == facing) {
+            return connectedScreenIcons[getEdgeMask(world, x, y, z, facing)];
+        }
+        return getIcon(side, facing);
     }
 
     @Override
@@ -135,6 +149,39 @@ public class BlockNetworkInfoPanel extends BlockContainer {
             return meta;
         }
         return 3;
+    }
+
+    private static int getEdgeMask(IBlockAccess world, int x, int y, int z, int facing) {
+        int mask = 0;
+        if (!isCompatibleScreenPart(world, x, y + 1, z, facing)) {
+            mask |= 1;
+        }
+        if (!isCompatibleScreenPart(world, x, y - 1, z, facing)) {
+            mask |= 2;
+        }
+        if (facing == 2 || facing == 3) {
+            if (!isCompatibleScreenPart(world, x - 1, y, z, facing)) {
+                mask |= 4;
+            }
+            if (!isCompatibleScreenPart(world, x + 1, y, z, facing)) {
+                mask |= 8;
+            }
+        } else {
+            if (!isCompatibleScreenPart(world, x, y, z - 1, facing)) {
+                mask |= 4;
+            }
+            if (!isCompatibleScreenPart(world, x, y, z + 1, facing)) {
+                mask |= 8;
+            }
+        }
+        return mask;
+    }
+
+    private static boolean isCompatibleScreenPart(IBlockAccess world, int x, int y, int z, int facing) {
+        TileEntity tile = world.getTileEntity(x, y, z);
+        return (tile instanceof TileEntityNetworkInfoPanel
+            || tile instanceof com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender)
+            && normalizeFacing(tile.getBlockMetadata()) == facing;
     }
 
     private static int opposite(int side) {
