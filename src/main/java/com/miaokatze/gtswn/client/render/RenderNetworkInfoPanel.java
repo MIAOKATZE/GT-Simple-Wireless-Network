@@ -219,45 +219,49 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             int lowerY = plotY + plotH / 2 + 7;
             int lowerH = Math.max(8, plotH - (lowerY - plotY));
             drawSeries(
-                smooth(energyValues, panel.getTrendLineSmoothing()),
+                energyValues,
                 energyRange,
                 plotX,
                 plotY,
                 plotW,
                 upperH,
                 ENERGY_COLOR,
-                panel.getTrendLineThickness());
+                panel.getTrendLineThickness(),
+                panel.getTrendLineSmoothing());
             drawSeries(
-                smooth(eutValues, panel.getTrendLineSmoothing()),
+                eutValues,
                 eutRange,
                 plotX,
                 lowerY,
                 plotW,
                 lowerH,
                 EUT_COLOR,
-                panel.getTrendLineThickness());
+                panel.getTrendLineThickness(),
+                panel.getTrendLineSmoothing());
         } else {
             if (energyValues != null) {
                 drawSeries(
-                    smooth(energyValues, panel.getTrendLineSmoothing()),
+                    energyValues,
                     energyRange,
                     plotX,
                     plotY,
                     plotW,
                     plotH,
                     ENERGY_COLOR,
-                    panel.getTrendLineThickness());
+                    panel.getTrendLineThickness(),
+                    panel.getTrendLineSmoothing());
             }
             if (eutValues != null) {
                 drawSeries(
-                    smooth(eutValues, panel.getTrendLineSmoothing()),
+                    eutValues,
                     eutRange,
                     plotX,
                     plotY,
                     plotW,
                     plotH,
                     EUT_COLOR,
-                    panel.getTrendLineThickness());
+                    panel.getTrendLineThickness(),
+                    panel.getTrendLineSmoothing());
             }
         }
     }
@@ -301,20 +305,27 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         }
     }
 
-    private void drawSeries(double[] values, double[] range, int x, int y, int w, int h, int color, int thickness) {
+    private void drawSeries(double[] values, double[] range, int x, int y, int w, int h, int color, int thickness,
+        int smoothing) {
         if (values == null || values.length < 2 || h <= 2 || range == null) {
             return;
         }
         double min = range[0];
         double max = range[1];
+        // smoothing 配置映射为样条分段数：0=线性(1段)，1..12 → 4..26 段
+        int segments = smoothing <= 0 ? 1 : smoothing * 2 + 2;
+        double[][] path = catmullRomPath(values, segments);
+
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glLineWidth(thickness);
         setColor(color);
         GL11.glBegin(GL11.GL_LINE_STRIP);
-        for (int i = 0; i < values.length; i++) {
-            double normalized = (values[i] - min) / (max - min);
+        double denom = values.length - 1;
+        for (int i = 0; i < path.length; i++) {
+            double normalized = (path[i][1] - min) / (max - min);
+            // clamp 到 [0,1] 防止样条过冲溢出图表区
             normalized = Math.max(0.0D, Math.min(1.0D, normalized));
-            double px = x + (double) i / (values.length - 1) * w;
+            double px = x + path[i][0] / denom * w;
             double py = y + h - normalized * h;
             GL11.glVertex3d(px, py, 0.0D);
         }
@@ -360,24 +371,53 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         return new double[] { min, max };
     }
 
-    private static double[] smooth(double[] values, int strength) {
-        int radius = Math.max(0, Math.min(12, strength));
-        if (radius == 0 || values.length < 3) {
-            return values;
-        }
-        double[] result = new double[values.length];
-        for (int i = 0; i < values.length; i++) {
-            int from = Math.max(0, i - radius);
-            int to = Math.min(values.length - 1, i + radius);
-            double sum = 0.0D;
-            int count = 0;
-            for (int j = from; j <= to; j++) {
-                sum += values[j];
-                count++;
+    /**
+     * 用 Catmull-Rom 样条曲线在样品点之间生成密集顶点路径。
+     * 样条经过每个样品点（p1、p2 为段端点）；两端用线性外推虚拟点处理边界。
+     * X 等间距索引映射：path[i][0] = 索引坐标（浮点），path[i][1] = 值。
+     *
+     * @param values          样品值数组（已按时间索引化，X 等间距）
+     * @param segmentsPerSpan 每相邻两点间的插值段数（≥1；1 = 线性）
+     * @return 密集顶点路径，长度 = (values.length - 1) * segmentsPerSpan + 1
+     */
+    private static double[][] catmullRomPath(double[] values, int segmentsPerSpan) {
+        int n = values.length;
+        if (n < 2 || segmentsPerSpan < 1) {
+            // 退化情况：直接返回原始点
+            double[][] path = new double[n][2];
+            for (int i = 0; i < n; i++) {
+                path[i][0] = i;
+                path[i][1] = values[i];
             }
-            result[i] = sum / count;
+            return path;
         }
-        return result;
+        int total = (n - 1) * segmentsPerSpan + 1;
+        double[][] path = new double[total][2];
+        path[0][0] = 0D;
+        path[0][1] = values[0];
+
+        int idx = 1;
+        for (int i = 0; i < n - 1; i++) {
+            // 4 控制点：p1=段起点, p2=段终点, p0/p3=相邻点（首尾线性外推）
+            double p0 = (i == 0) ? 2 * values[0] - values[1] : values[i - 1];
+            double p1 = values[i];
+            double p2 = values[i + 1];
+            double p3 = (i + 2 >= n) ? 2 * values[n - 1] - values[n - 2] : values[i + 2];
+
+            for (int s = 1; s <= segmentsPerSpan; s++) {
+                double t = (double) s / segmentsPerSpan;
+                double t2 = t * t;
+                double t3 = t2 * t;
+                // 标准 Catmull-Rom 基矩阵（张力 0.5）
+                double y = 0.5D * (2 * p1 + (-p0 + p2) * t
+                    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
+                    + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+                path[idx][0] = i + t;
+                path[idx][1] = y;
+                idx++;
+            }
+        }
+        return path;
     }
 
     private void fillRect(int x, int y, int w, int h, int color) {

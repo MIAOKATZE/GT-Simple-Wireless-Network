@@ -14,6 +14,13 @@ public class NetworkInfoDataStore extends WorldSavedData {
 
     private static final String DATA_NAME = "gtswn_network_info_data";
 
+    /**
+     * 数据集映射表。
+     * <p>
+     * key 语义变更：早期版本为每屏独立的 datasetId（UUID 字符串），
+     * 现改为玩家 ownerUUID.toString()，同一玩家的所有网络信息屏共享同一份数据集。
+     * 旧 datasetId-keyed 数据无法适配新机制 → 反序列化时直接丢弃（readFromNBT 内未匹配新格式则空集）。
+     */
     private final Map<String, NetworkInfoDataSet> dataSets = new HashMap<>();
 
     public NetworkInfoDataStore(String name) {
@@ -30,6 +37,15 @@ public class NetworkInfoDataStore extends WorldSavedData {
         return data;
     }
 
+    /**
+     * 取或创建数据集。
+     * <p>
+     * 注意：传入的 id 应为玩家 ownerUUID.toString()（不再是旧的 datasetId）。
+     * 同一玩家的所有信息屏共享同一份 {@link NetworkInfoDataSet}，从而实现多屏数据一致。
+     *
+     * @param id 玩家 ownerUUID 字符串
+     * @return 对应的数据集（不存在则新建）
+     */
     public NetworkInfoDataSet getOrCreate(String id) {
         NetworkInfoDataSet set = dataSets.get(id);
         if (set == null) {

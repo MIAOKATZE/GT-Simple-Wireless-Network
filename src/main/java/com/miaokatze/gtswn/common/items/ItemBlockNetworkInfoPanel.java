@@ -22,10 +22,13 @@ public class ItemBlockNetworkInfoPanel extends ItemBlock {
         if (stack != null && stack.hasTagCompound()) {
             NBTTagCompound tag = stack.getTagCompound();
             if (tag.hasKey("OwnerName")) {
-                lines.add(EnumChatFormatting.AQUA + "Owner: " + EnumChatFormatting.WHITE + tag.getString("OwnerName"));
-            }
-            if (tag.hasKey("DatasetId")) {
-                lines.add(EnumChatFormatting.GRAY + "History retained");
+                // 多屏共享：同一玩家的所有信息屏共享同一份数据集（key=ownerUUID）
+                // 掉落物 tooltip 显示归属玩家，提示数据将共享
+                String name = tag.getString("OwnerName");
+                if (name != null && !name.isEmpty()) {
+                    lines.add(EnumChatFormatting.AQUA + "Owner: " + EnumChatFormatting.WHITE + name);
+                    lines.add(EnumChatFormatting.GRAY + "Shared network: " + name);
+                }
             }
         }
     }

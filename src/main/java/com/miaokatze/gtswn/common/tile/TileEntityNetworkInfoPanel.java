@@ -37,8 +37,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
 
     private UUID ownerUUID;
     private String ownerName = "";
-    private String datasetId = UUID.randomUUID()
-        .toString();
 
     private boolean showBriefEnergy = true;
     private boolean showBriefStatus = true;
@@ -98,10 +96,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
 
     public String getOwnerName() {
         return ownerName;
-    }
-
-    public String getDatasetId() {
-        return datasetId;
     }
 
     public BigInteger getCachedEu() {
@@ -292,9 +286,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     }
 
     public void readPlacementData(NBTTagCompound tag) {
-        if (tag.hasKey("DatasetId")) {
-            datasetId = tag.getString("DatasetId");
-        }
+        // 旧版本曾有 "DatasetId" 键（每屏独立数据集），现改为按 ownerUUID 共享数据集，
+        // 旧数据无法适配新机制 → 直接丢弃，不再读取
         if (tag.hasKey("OwnerUUID")) {
             try {
                 ownerUUID = UUID.fromString(tag.getString("OwnerUUID"));
@@ -313,7 +306,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     }
 
     public void writePlacementData(NBTTagCompound tag) {
-        tag.setString("DatasetId", datasetId);
         if (ownerUUID != null) {
             tag.setString("OwnerUUID", ownerUUID.toString());
         }
@@ -324,32 +316,61 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     }
 
     private void sampleNetwork(long tick) {
-        BigInteger eu = WirelessNetworkManager.getUserEU(ownerUUID);
+        if (ownerUUID == null) {
+            return;
+        }
         NetworkInfoDataStore store = NetworkInfoDataStore.get(worldObj);
-        NetworkInfoDataSet dataSet = store.getOrCreate(datasetId);
+        // 数据集 key 从 datasetId 改为 ownerUUID.toString()，同一玩家的所有信息屏共享同一份数据
+        NetworkInfoDataSet dataSet = store.getOrCreate(ownerUUID.toString());
+
+        // 全局采样锁：多屏共享时，距离上次采样 < 100 ticks 则跳过本屏采样
+        if (!dataSet.tryAcquireSampleLock(tick)) {
+            // 即使跳过采样，也要用数据集最新点反写 cachedEu/cachedEut，保证多屏显示一致
+            NetworkInfoSample newest = dataSet.newest();
+            if (newest != null) {
+                cachedEu = newest.eu;
+                cachedEut = newest.eut;
+            }
+            return;
+        }
+
+        BigInteger eu = WirelessNetworkManager.getUserEU(ownerUUID);
+        cachedEu = eu == null ? BigInteger.ZERO : eu;
+
+        // eutDataSet 仍每屏独立（实时 EU/t 显示用，不变）
         boolean coldStarting = eutDataSet.isEmpty();
         if (lastSampleTick > 0L && tick - lastSampleTick > MAX_CONTINUOUS_GAP_TICKS) {
             eutDataSet.clear();
             coldStarting = true;
         }
-        cachedEu = eu == null ? BigInteger.ZERO : eu;
         eutDataSet.add(cachedEu, tick);
         cachedEut = eutDataSet.calculateRecentEUT();
-        dataSet.add(cachedEu, tick, System.currentTimeMillis(), cachedEut);
+
+        long nowMs = System.currentTimeMillis();
+        dataSet.addSample(cachedEu, tick, nowMs, cachedEut);
         store.markDirty();
+
+        // 反写 newest() 确保多屏一致（用数据集实际存储的值，而非本屏局部计算值）
+        NetworkInfoSample newest = dataSet.newest();
+        if (newest != null) {
+            cachedEu = newest.eu;
+            cachedEut = newest.eut;
+        }
+
         cachedStatus = formatStatus(cachedEut, coldStarting || eutDataSet.size() < 2, false);
+        lastSampleTick = tick; // 保留：用于本 TE 的 gap 检测
         refreshCachedSamples(dataSet);
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
 
     private void refreshCachedSamples() {
-        if (worldObj == null || worldObj.isRemote) {
+        if (worldObj == null || worldObj.isRemote || ownerUUID == null) {
             return;
         }
         refreshCachedSamples(
             NetworkInfoDataStore.get(worldObj)
-                .getOrCreate(datasetId));
+                .getOrCreate(ownerUUID.toString()));
     }
 
     private void refreshCachedSamples(NetworkInfoDataSet dataSet) {
@@ -709,7 +730,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
 
     private void writeSyncData(NBTTagCompound tag) {
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
-        tag.setString("DatasetId", datasetId);
         tag.setString("cachedEu", cachedEu == null ? "0" : cachedEu.toString());
         tag.setDouble("cachedEut", cachedEut);
         tag.setString("cachedStatus", cachedStatus == null ? "" : cachedStatus);
@@ -734,9 +754,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     private void readSyncData(NBTTagCompound tag) {
         if (tag.hasKey("OwnerName")) {
             ownerName = tag.getString("OwnerName");
-        }
-        if (tag.hasKey("DatasetId")) {
-            datasetId = tag.getString("DatasetId");
         }
         if (tag.hasKey("cachedEu")) {
             try {

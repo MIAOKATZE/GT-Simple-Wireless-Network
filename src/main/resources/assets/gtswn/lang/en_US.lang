@@ -209,7 +209,7 @@ gtswn.network_info.gui.eut_y_min=EU/t Y min
 gtswn.network_info.gui.eut_y_max=EU/t Y max
 gtswn.network_info.gui.border_width=Border
 gtswn.network_info.gui.line_width=Line
-gtswn.network_info.gui.smoothing=Smooth
+gtswn.network_info.gui.smoothing=Spline Density
 gtswn.network_info.gui.chart_bg=Chart BG
 gtswn.network_info.gui.screen_bg=Screen BG
 gtswn.network_info.gui.blank_auto=blank = auto/none
