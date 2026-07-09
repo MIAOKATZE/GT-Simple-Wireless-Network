@@ -353,20 +353,32 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     private static double[] range(double[] values, Double customMin, Double customMax) {
         double min = values[0];
         double max = values[0];
+        // 扫描样品求真实数据范围
         for (double value : values) {
             min = Math.min(min, value);
             max = Math.max(max, value);
         }
+        // 用户自定义覆盖对应边界（null 表示该端走自动模式）
         if (customMin != null) {
             min = customMin.doubleValue();
         }
         if (customMax != null) {
             max = customMax.doubleValue();
         }
+        // 退化兜底：跨度近乎 0 或反转时，用 center ± 0.5 作为可视范围
+        // 合成范围不再追加冗余，保持与旧版一致的退化行为
         if (Math.abs(max - min) < 0.000001D || max < min) {
             double center = (max + min) / 2.0D;
             min = center - 0.5D;
             max = center + 0.5D;
+            return new double[] { min, max };
+        }
+        // 自动模式（两端均未自定义）应用上下 10% 冗余，避免曲线贴边
+        // 冗余基于数据跨度计算：newMin = min - span*0.1，newMax = max + span*0.1
+        if (customMin == null && customMax == null) {
+            double span = max - min;
+            min = min - span * 0.1D;
+            max = max + span * 0.1D;
         }
         return new double[] { min, max };
     }
