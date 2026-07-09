@@ -48,6 +48,25 @@ public class NetworkInfoWindowSeries {
     }
 
     /**
+     * 返回最后 N 个采样点的副本列表（从旧到新顺序），不影响内部 FIFO。
+     * <p>
+     * 用于"均值录入"：1h/8h/24h 集触发时，取上一级窗口最近 N 个点计算 EU/t 均值。
+     *
+     * @param n 要取的点数
+     * @return 从旧到新的 N 个点副本；n <= 0 返回空列表；n >= size 返回全部点副本（等价于 copy()）
+     */
+    public List<NetworkInfoSample> getLastN(int n) {
+        int size = data.size();
+        if (n <= 0) {
+            return new ArrayList<>();
+        }
+        if (n >= size) {
+            return new ArrayList<>(data);
+        }
+        return new ArrayList<>(data.subList(size - n, size));
+    }
+
+    /**
      * 取最新采样点。
      *
      * @return 最新点；空集返回 null

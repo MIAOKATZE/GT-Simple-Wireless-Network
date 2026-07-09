@@ -9,12 +9,12 @@ import net.minecraft.nbt.NBTTagCompound;
  * 网络信息屏数据集（每玩家一份，4 窗口 × 61 点 FIFO）。
  * <p>
  * 4 个独立 {@link NetworkInfoWindowSeries} 分别承载 5m / 1h / 8h / 24h 时间窗口，
- * 每个窗口固定保留 61 个采样点。原始采样点按"流入计数链"分发到各级窗口：
+ * 每个窗口固定保留 61 个采样点。原始采样点按"流入计数链"分发到各级窗口（均值录入）：
  * <ul>
- * <li>5m 集：每接收 1 个采样点都进入 5m 集</li>
- * <li>1h 集：每 12 个 5m 采样的第 12 个点同时进入 1h 集</li>
- * <li>8h 集：每 8 个 1h 采样的第 8 个点同时进入 8h 集</li>
- * <li>24h 集：每 3 个 8h 采样的第 3 个点同时进入 24h 集</li>
+ * <li>5m 集：每接收 1 个采样点都以瞬时值录入 5m 集</li>
+ * <li>1h 集：每 12 个 5m 采样触发一次，eut 取最近 12 个 5m 点的算术均值，eu/timeMs/tick 用触发点瞬时值</li>
+ * <li>8h 集：每 8 个 1h 采样触发一次，eut 取最近 8 个 1h 点的算术均值（嵌套均值），eu/timeMs/tick 用触发点 1h 瞬时值</li>
+ * <li>24h 集：每 3 个 8h 采样触发一次，eut 取最近 3 个 8h 点的算术均值（嵌套均值），eu/timeMs/tick 用触发点 8h 瞬时值</li>
  * </ul>
  * 多屏共享：同一玩家的所有信息屏共享同一份数据集（key=ownerUUID 字符串）。
  */
@@ -46,10 +46,10 @@ public class NetworkInfoDataSet {
     private long lastSampleTick = -1L;
 
     /**
-     * 主入口：接收一个原始采样点（每 5s 一次），按流入计数链分发到各级窗口。
+     * 主入口：接收一个原始采样点（每 5s 一次），按流入计数链分发到各级窗口（均值录入）。
      * <p>
-     * 计数链规则（用户确认）：第 N 个 5m 采样的"第 12 个"同时进入 5m 集和 1h 集（5m 集不跳过此点）；
-     * 同理 1h→8h 每 8 个、8h→24h 每 3 个。
+     * 计数链规则（均值录入）：5m 集始终以瞬时值录入；每 12 个 5m 点触发 1h 录入——eut 取最近 12 个 5m 点均值，
+     * eu/timeMs/tick 用当前触发点瞬时值；同理 1h→8h 每 8 个（eut 取最近 8 个 1h 点均值）、8h→24h 每 3 个（eut 取最近 3 个 8h 点均值）。
      *
      * @param eu     当前 EU 总量
      * @param tick   世界 tick
@@ -57,23 +57,67 @@ public class NetworkInfoDataSet {
      * @param eut    当前 EU/t 斜率
      */
     public void addSample(BigInteger eu, long tick, long timeMs, double eut) {
+        // 5m 集始终以瞬时值录入（行为不变）
         NetworkInfoSample sample = new NetworkInfoSample(timeMs, tick, eu, eut);
-        series5m.add(sample); // 始终进入 5m 集
+        series5m.add(sample);
         counter5m++;
-        if (counter5m >= 12) { // 第 12 个 5m 采样同时进入 1h 集
-            series1h.add(sample);
+
+        if (counter5m >= 12) {
+            // 触发 1h 集：eut 取最近 12 个 5m 点的均值
             counter5m = 0;
+            double avgEut1h = averageEut(series5m.getLastN(12));
+            // eu/timeMs/tick 用当前触发点瞬时值，eut 用均值
+            NetworkInfoSample sample1h = new NetworkInfoSample(sample.timeMs, sample.tick, sample.eu, avgEut1h);
+            series1h.add(sample1h);
             counter1h++;
-            if (counter1h >= 8) { // 第 8 个 1h 采样同时进入 8h 集
-                series8h.add(sample);
+
+            if (counter1h >= 8) {
+                // 触发 8h 集：eut 取最近 8 个 1h 点的均值（嵌套均值）
                 counter1h = 0;
+                double avgEut8h = averageEut(series1h.getLastN(8));
+                // eu/timeMs/tick 用 sample1h 瞬时值，eut 用均值
+                NetworkInfoSample sample8h = new NetworkInfoSample(
+                    sample1h.timeMs,
+                    sample1h.tick,
+                    sample1h.eu,
+                    avgEut8h);
+                series8h.add(sample8h);
                 counter8h++;
-                if (counter8h >= 3) { // 第 3 个 8h 采样同时进入 24h 集
-                    series24h.add(sample);
+
+                if (counter8h >= 3) {
+                    // 触发 24h 集：eut 取最近 3 个 8h 点的均值（嵌套均值）
                     counter8h = 0;
+                    double avgEut24h = averageEut(series8h.getLastN(3));
+                    // eu/timeMs/tick 用 sample8h 瞬时值，eut 用均值
+                    NetworkInfoSample sample24h = new NetworkInfoSample(
+                        sample8h.timeMs,
+                        sample8h.tick,
+                        sample8h.eu,
+                        avgEut24h);
+                    series24h.add(sample24h);
                 }
             }
         }
+    }
+
+    /**
+     * 计算列表中各 sample 的 eut 字段算术平均。
+     * <p>
+     * 用于"均值录入"：1h/8h/24h 集触发时，对上一级窗口最近 N 个点求 EU/t 均值。
+     * 采用普通 for 循环累加（不使用 Stream API，与现有代码风格一致）。
+     *
+     * @param samples 采样点列表
+     * @return eut 算术平均；samples 为 null 或空时返回 0.0（除零保护）
+     */
+    private double averageEut(List<NetworkInfoSample> samples) {
+        if (samples == null || samples.isEmpty()) {
+            return 0.0;
+        }
+        double sum = 0.0;
+        for (NetworkInfoSample s : samples) {
+            sum += s.eut;
+        }
+        return sum / samples.size();
     }
 
     /**
