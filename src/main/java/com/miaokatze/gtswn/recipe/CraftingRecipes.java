@@ -6,6 +6,7 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wirele
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
 
@@ -165,52 +166,72 @@ public class CraftingRecipes {
         GTSimpleWirelessNetwork.LOG.info("已添加无线能量监视器合成配方");
     }
 
+    /**
+     * 添加网络信息屏的合成配方
+     * <p>
+     * 合成表（四角=LV传感器，十字=玻璃块，中心=便携监测终端）：
+     * LV传感器 | 玻璃块 | LV传感器
+     * 玻璃块 | 便携监测终端 | 玻璃块
+     * LV传感器 | 玻璃块 | LV传感器
+     */
     private static void addNetworkInfoPanelRecipe() {
-        ItemStack lvReceiver = ItemList.Sensor_LV.get(1);
-        ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1);
-        ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1);
-        ItemStack screen = ItemList.Cover_Screen.get(1);
+        ItemStack lvSensor = ItemList.Sensor_LV.get(1); // LV传感器（接收器）
+        // 原版玻璃块：通配符meta(32767=WILDCARD_VALUE)接受普通玻璃+染色玻璃
+        // 不用 GTOreDictUnificator.get(OrePrefixes.glass, Materials.Glass, 1)，因 glass 是 selfReferencing 自引用前缀会返回 null
+        ItemStack glass = new ItemStack(Blocks.glass, 1, 32767);
 
         net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
             Network_Info_Panel.get(1),
-            "ABA",
-            "CDC",
-            "EBE",
-            'A',
-            lvReceiver,
-            'B',
-            steelPlate,
-            'C',
-            screen,
+            "SGS",
+            "GDG",
+            "SGS",
+            'S',
+            lvSensor,
+            'G',
+            glass,
             'D',
-            Portable_Wireless_Network_Monitor.get(1),
-            'E',
-            steelScrew);
+            Portable_Wireless_Network_Monitor.get(1));
 
         CraftingManager.getInstance()
             .getRecipeList()
             .add(recipe);
+
+        GTSimpleWirelessNetwork.LOG.info("已添加网络信息屏合成配方");
     }
 
+    /**
+     * 添加网络信息拓展屏的合成配方
+     * <p>
+     * 合成表（四角=LV接收器，十字=玻璃块，中心=电脑屏幕覆盖板）：
+     * LV接收器 | 玻璃块 | LV接收器
+     * 玻璃块 | 电脑屏幕覆盖板 | 玻璃块
+     * LV接收器 | 玻璃块 | LV接收器
+     * <p>
+     * 输出 2 个拓展屏
+     */
     private static void addNetworkInfoPanelExtenderRecipe() {
-        ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1);
-        ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1);
-        ItemStack screen = ItemList.Cover_Screen.get(1);
+        ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
+        // 原版玻璃块：通配符meta(32767=WILDCARD_VALUE)接受普通玻璃+染色玻璃
+        // 不用 GTOreDictUnificator.get(OrePrefixes.glass, Materials.Glass, 1)，因 glass 是 selfReferencing 自引用前缀会返回 null
+        ItemStack glass = new ItemStack(Blocks.glass, 1, 32767);
+        ItemStack screen = ItemList.Cover_Screen.get(1); // 电脑屏幕覆盖板
 
         net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
             Network_Info_Panel_Extender.get(2),
-            "ABA",
-            "BCB",
-            "ABA",
-            'A',
-            steelScrew,
-            'B',
-            steelPlate,
-            'C',
+            "RGR",
+            "GSG",
+            "RGR",
+            'R',
+            lvReceiver,
+            'G',
+            glass,
+            'S',
             screen);
 
         CraftingManager.getInstance()
             .getRecipeList()
             .add(recipe);
+
+        GTSimpleWirelessNetwork.LOG.info("已添加网络信息拓展屏合成配方");
     }
 }

@@ -125,6 +125,22 @@ public class WirelessEnergyTap extends Item {
     }
 
     /**
+     * 静态方法：获取物品的输出模式（供客户端渲染器等外部调用）
+     * <p>
+     * 返回 true = 动力模式（紫色辅助线），false = 能源模式（黄色辅助线）。
+     * 不修改 NBT，仅读取。
+     *
+     * @param stack 物品栈
+     * @return 是否为动力模式
+     */
+    public static boolean getOutputModeStatic(ItemStack stack) {
+        if (stack == null || stack.stackTagCompound == null) {
+            return false; // 默认能源模式
+        }
+        return stack.stackTagCompound.getBoolean("OutputMode");
+    }
+
+    /**
      * 切换输出模式
      */
     private boolean toggleOutputMode(ItemStack aStack) {
