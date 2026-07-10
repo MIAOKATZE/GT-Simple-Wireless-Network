@@ -169,9 +169,9 @@ public class CraftingRecipes {
     /**
      * 添加网络信息屏的合成配方
      * <p>
-     * 合成表（四角=LV传感器，十字=玻璃块，中心=便携监测终端）：
+     * 合成表（四角=LV传感器，十字=玻璃块，中心=无线能量监视器(MTE)）：
      * LV传感器 | 玻璃块 | LV传感器
-     * 玻璃块 | 便携监测终端 | 玻璃块
+     * 玻璃块 | 无线能量监视器(MTE) | 玻璃块
      * LV传感器 | 玻璃块 | LV传感器
      */
     private static void addNetworkInfoPanelRecipe() {
@@ -190,7 +190,7 @@ public class CraftingRecipes {
             'G',
             glass,
             'D',
-            Portable_Wireless_Network_Monitor.get(1));
+            Wireless_Energy_Monitor.get(1)); // 中心材料：无线能量监视器(MTE)
 
         CraftingManager.getInstance()
             .getRecipeList()

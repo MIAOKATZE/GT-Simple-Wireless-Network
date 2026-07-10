@@ -94,8 +94,9 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 y2,
                 74,
                 16,
-                panel.getChartLayoutMode() == 0 ? tr("gtswn.network_info.gui.split")
-                    : tr("gtswn.network_info.gui.overlay")));
+                // id=7 按钮改为显示模式切换：常规计数(0) ↔ 科学计数(1)
+                panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
+                    : tr("gtswn.network_info.gui.mode.scientific")));
         buttonList.add(new GuiButton(8, left + 344, y2, 74, 16, tr("gtswn.network_info.gui.apply")));
         int fieldY = top + 151;
         energyMinField = addField(left + 104, fieldY, 66, panel.getEnergyAxisMinText());
@@ -144,8 +145,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     button.displayString = tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName();
                     break;
                 case 7:
-                    button.displayString = panel.getChartLayoutMode() == 0 ? tr("gtswn.network_info.gui.split")
-                        : tr("gtswn.network_info.gui.overlay");
+                    button.displayString = panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
+                        : tr("gtswn.network_info.gui.mode.scientific");
                     break;
                 default:
                     break;
@@ -169,8 +170,11 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             top + 88,
             0x2F3640);
         fontRendererObj.drawString(
-            StatCollector
-                .translateToLocalFormatted("gtswn.network_info.energy", FormatUtil.formatNormal(panel.getCachedEu())),
+            StatCollector.translateToLocalFormatted(
+                "gtswn.network_info.energy",
+                // GUI 内 EU 文本也跟随 displayMode 切换常规/科学计数
+                panel.getDisplayMode() == 0 ? FormatUtil.formatNormal(panel.getCachedEu())
+                    : FormatUtil.formatScientific(panel.getCachedEu())),
             left + 12,
             top + 102,
             0x2F3640);

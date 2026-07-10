@@ -21,14 +21,6 @@ gtswn.ui.mode.normal=§bMode: §fNormal
 gtswn.ui.mode.scientific=§bMode: §fScientific
 gtswn.ui.wireless.energy=§bWireless Network: §f%s §bEU
 gtswn.ui.wireless.energy.scientific=§bWireless Network: §f%s §bEU
-gtswn.ui.network.status.up=§bNetwork Status: §a↑ +%s §bEU/t (§f%s§b)
-gtswn.ui.network.status.down=§bNetwork Status: §c↓ -%s §bEU/t (§f%s§b)
-gtswn.ui.network.status.nochange=§bNetwork Status: §fNo Change/Calculating
-# Silent/<1EU/Reloading/LongTermSilent special status display (from MTEWirelessEnergyMonitor / WirelessMonitorHUD boundary handling)
-gtswn.ui.network.status.silent=§bNetwork Status: §f0 §bEU/t (§7Silent§b)
-gtswn.ui.network.status.longtermsilent=§bNetwork Status: §f0 §bEU/t (§8Long-Term Silent§b)
-gtswn.ui.network.status.lessthan1=§bNetwork Status: §f0 §bEU/t (§7<1EU§b)
-gtswn.ui.network.status.reload=§bNetwork Status: §cReload Calculating - Redstone Logic Maintained
 gtswn.ui.redstone.mode=§bRedstone Mode: §f%s
 gtswn.ui.redstone.mode.off=Off
 gtswn.ui.redstone.mode.high=High Level
@@ -61,8 +53,6 @@ gtswn.ui.tooltip.param2.div10=Param2 ÷10
 gtswn.ui.tooltip.param2.reset=Param2 Reset
 
 # HUD Text
-gtswn.hud.network.status=Network Status
-gtswn.hud.network.no.change=No Change/Calculating
 # HUD reload transition placeholder text (before first sync received)
 gtswn.hud.network.status.calculating=Calculating...
 gtswn.hud.wireless.network=Wireless Network
@@ -82,7 +72,6 @@ gtswn.tooltip.monitor.mechanism.line3=§bCold Start: §fRejoin triggers, §edata
 
 # NC2 Industrial Information Panel Info (via GT Sensor Kit)
 gtswn.info.energy=§7Energy: %s
-gtswn.info.status=§7Status: %s
 
 # Chat Messages
 gtswn.chat.monitor.bound=§a[Portable Monitor] Bound to owner: %s
@@ -96,25 +85,13 @@ gtswn.chat.monitor.mode.scientific=§eScientific
 # Wireless Energy Tap
 item.wirelessEnergyTap.name=Wireless Network Link Terminal
 item.wirelessEnergyTap.desc=Connect energy containers to GT wireless network
-tooltip.wireless_energy_tap.tier=Voltage Tier: %s
-tooltip.wireless_energy_tap.mode=Current Mode: %s
-tooltip.wireless_energy_tap.mode.input=Energy Link (Input)
-tooltip.wireless_energy_tap.mode.output=Power Link (Output)
 gtswn.tooltip.tap.mode.input=Current Mode: Energy Link (Input)
 gtswn.tooltip.tap.mode.output=Current Mode: Power Link (Output)
-chat.wireless_energy_tap.no_container=Not an energy container
-chat.wireless_energy_tap.no_capacity=No EU capacity, cannot connect
-chat.wireless_energy_tap.no_voltage=No voltage tier detected, cannot connect
-chat.wireless_energy_tap.default_amperage=No amperage detected, defaulting to 2A
-chat.wireless_energy_tap.success=Connection successful!
 gtswn.chat.tap.mode.input=§a[Link Terminal] Switched to Energy Link mode
 gtswn.chat.tap.mode.output=§a[Link Terminal] Switched to Power Link mode
 gtswn.chat.tap.not_energy_container=§c[Link Terminal] Not an energy container
 gtswn.chat.tap.no_capacity=§c[Link Terminal] No EU capacity, cannot connect
 gtswn.chat.tap.no_voltage=§c[Link Terminal] No voltage tier detected, cannot connect
-gtswn.chat.tap.default_amperage=§e[Link Terminal] No amperage detected, defaulting to 2A
-gtswn.chat.tap.mode_switch=§b[Link Terminal] Mode switch feature pending
-gtswn.chat.tap.connection_success=§a[Link Terminal] Connection successful!
 
 # Wireless Covers
 item.GTswn_Cover_Energy_Wireless.name=Link Anchor (Energy)
@@ -127,9 +104,6 @@ gtswn.chat.tap.machine_detected=§a[Link Terminal] Machine detected:
 gtswn.chat.tap.capacity=§7 Capacity: 
 gtswn.chat.tap.voltage=§7 Voltage: 
 gtswn.chat.tap.amperage=§7 Amperage: 
-gtswn.chat.tap.theoretical_interval=§7 Theoretical interval: 
-gtswn.chat.tap.actual_interval=§b Actual interval: 
-gtswn.chat.tap.single_transfer=§e Single transfer: 
 gtswn.chat.tap.cannot_place_cover=§c[Link Terminal] Cannot place cover on this side!
 gtswn.chat.tap.attaching=§e[Link Terminal] Attaching 
 gtswn.chat.tap.mode_power=§ePower
@@ -139,8 +113,6 @@ gtswn.chat.tap.link_success=§a[Link Terminal] Linked successfully!
 gtswn.chat.tap.mode_text=§7 Mode: 
 gtswn.chat.tap.voltage_tier=§7 Voltage tier: 
 gtswn.chat.tap.amperage_tier=§7 Amperage tier: 
-gtswn.chat.tap.actual_interval_text=§7 Actual interval: 
-gtswn.chat.tap.single_transfer_text=§7 Single transfer: 
 gtswn.chat.tap.cover_capacity=§b Cover capacity: 
 gtswn.chat.tap.cannot_get_cover=§c[Link Terminal] Cannot get cover item!
 gtswn.chat.tap.no_cover_support=§c[Link Terminal] Machine doesn't support covers
@@ -153,8 +125,6 @@ gtswn.chat.cover.voltage_tier=Voltage tier:
 gtswn.chat.cover.amperage_tier=Amperage tier: 
 gtswn.chat.cover.capacity=Capacity: 
 gtswn.chat.cover.stored_eu=Stored: 
-gtswn.chat.cover.interval=Interval: 
-gtswn.chat.cover.single_transfer=Single transfer: 
 gtswn.chat.cover.not_configured=Not configured yet!
 
 # GTSWN Command - global_energy_join
@@ -173,9 +143,7 @@ gtswn.chat.cover.next_upload=§7 Next upload in:
 tile.NetworkInfoPanel_GTswn.name=Network Info Panel
 tile.NetworkInfoPanelExtender_GTswn.name=Network Info Extender Panel
 gtswn.network_info.owner=Owner: %s
-gtswn.network_info.history=History retained
 gtswn.network_info.energy=Energy: %s EU
-gtswn.network_info.status=Status: %s
 gtswn.network_info.unknown=Unknown
 gtswn.network_info.status.cold=Cold starting...
 gtswn.network_info.status.silent=0 EU/t (Silent)
@@ -186,19 +154,15 @@ gtswn.network_info.status.down=-%s EU/t (%s)
 gtswn.network_info.gui.title=Network Info Panel
 gtswn.network_info.gui.tab.wireless_eu=Wireless EU Network
 gtswn.network_info.gui.brief.eu=Brief EU
-gtswn.network_info.gui.brief.status=Brief Status
 gtswn.network_info.gui.chart.eu=Chart EU
-gtswn.network_info.gui.chart.eut=Chart EU/t
 gtswn.network_info.gui.window=Window
-gtswn.network_info.gui.split=Split
-gtswn.network_info.gui.overlay=Overlay
 gtswn.network_info.gui.on=ON
 gtswn.network_info.gui.off=OFF
-gtswn.network_info.gui.brief_ratio=Brief: %d%%
-gtswn.network_info.gui.waiting=Waiting for samples... %d/2
+# Panel display mode buttons (target 3)
+gtswn.network_info.gui.mode.normal=Normal
+gtswn.network_info.gui.mode.scientific=Scientific
 gtswn.network_info.screen.title=Wireless EU Network
 gtswn.network_info.screen.energy=Grid Capacity: %s
-gtswn.network_info.screen.status=Grid Status: %s
 gtswn.network_info.screen.history=History %s
 gtswn.network_info.screen.collecting=Collecting... %d/2
 gtswn.network_info.gui.apply=Apply
@@ -216,9 +180,9 @@ gtswn.network_info.gui.blank_auto=blank = auto/none
 gtswn.network_info.screen.now=Now
 gtswn.network_info.screen.time_axis=Time
 gtswn.network_info.screen.energy_axis=Grid Capacity (EU)
-gtswn.network_info.screen.eut_axis=Grid Status (EU/t)
 
 # 1.4.4 status wording and realtime EU/t
+# Silent/<1EU/Reloading/LongTermSilent special status display (from MTEWirelessEnergyMonitor / WirelessMonitorHUD boundary handling)
 gtswn.ui.network.status.up=§bAverage Grid Status: §a+%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.down=§bAverage Grid Status: §c-%s §bEU/t (§f%s§b)
 gtswn.ui.network.status.nochange=§bAverage Grid Status: §fNo Change/Calculating

@@ -154,7 +154,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 font,
                 StatCollector.translateToLocalFormatted(
                     "gtswn.network_info.screen.energy",
-                    FormatUtil.formatBigInteger(panel.getCachedEu())),
+                    // EU 根据 displayMode 切换常规/科学计数
+                    panel.getDisplayMode() == 0 ? FormatUtil.formatBigInteger(panel.getCachedEu())
+                        : FormatUtil.formatScientific(panel.getCachedEu())),
                 x,
                 w,
                 lineY,
@@ -214,55 +216,30 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             : range(energyValues, panel.getEnergyAxisMin(), panel.getEnergyAxisMax());
         double[] eutRange = eutValues == null ? null : range(eutValues, panel.getEutAxisMin(), panel.getEutAxisMax());
         drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, energyRange, eutRange);
-        if (panel.getChartLayoutMode() == 0 && panel.isShowChartEnergy() && panel.isShowChartStatus()) {
-            int upperH = Math.max(8, plotH / 2 - 7);
-            int lowerY = plotY + plotH / 2 + 7;
-            int lowerH = Math.max(8, plotH - (lowerY - plotY));
+        // chart 固定 overlay 布局：EU 与 EU/t 叠加在同一绘图区
+        if (energyValues != null) {
             drawSeries(
                 energyValues,
                 energyRange,
                 plotX,
                 plotY,
                 plotW,
-                upperH,
+                plotH,
                 ENERGY_COLOR,
                 panel.getTrendLineThickness(),
                 panel.getTrendLineSmoothing());
+        }
+        if (eutValues != null) {
             drawSeries(
                 eutValues,
                 eutRange,
                 plotX,
-                lowerY,
+                plotY,
                 plotW,
-                lowerH,
+                plotH,
                 EUT_COLOR,
                 panel.getTrendLineThickness(),
                 panel.getTrendLineSmoothing());
-        } else {
-            if (energyValues != null) {
-                drawSeries(
-                    energyValues,
-                    energyRange,
-                    plotX,
-                    plotY,
-                    plotW,
-                    plotH,
-                    ENERGY_COLOR,
-                    panel.getTrendLineThickness(),
-                    panel.getTrendLineSmoothing());
-            }
-            if (eutValues != null) {
-                drawSeries(
-                    eutValues,
-                    eutRange,
-                    plotX,
-                    plotY,
-                    plotW,
-                    plotH,
-                    EUT_COLOR,
-                    panel.getTrendLineThickness(),
-                    panel.getTrendLineSmoothing());
-            }
         }
     }
 

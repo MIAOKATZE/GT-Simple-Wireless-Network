@@ -133,6 +133,44 @@ public class FormatUtil {
     }
 
     /**
+     * 格式化 double 为科学计数法字符串
+     * <p>
+     * 与 {@link #formatScientific(BigInteger)} 对应，用于 EU/t（变化率，double 类型）的科学计数显示。
+     * 处理负数（保留负号）、零值、NaN/Infinity（兜底返回 "0"）。
+     * <p>
+     * 业务前提：调用方已通过 {@code absEut < 1.0} 分支拦截近似零值，故本方法输入 |value| >= 1.0，
+     * 不会出现极小值 log10 精度问题；但仍做零值/NaN 防御以保证方法通用性。
+     *
+     * @param value 要格式化的 double 值（可正可负）
+     * @return 格式化后的字符串（例如：2.70×10^8 或 -1.50×10^3），零值/NaN/Infinity 返回 "0"
+     */
+    public static String formatScientificDouble(double value) {
+        // 零值、NaN、Infinity 兜底（与 formatScientific(BigInteger) 的零值处理一致）
+        if (value == 0.0 || Double.isNaN(value) || Double.isInfinite(value)) {
+            return "0";
+        }
+
+        // 取绝对值计算指数（负号最后补，与 formatNormalDouble 的负数处理方式一致）
+        double absValue = Math.abs(value);
+
+        // 获取指数部分（floor 保证系数在 [1, 10) 区间）
+        int exponent = (int) Math.floor(Math.log10(absValue));
+
+        // 计算系数（保留两位小数，即三位有效数字，与 formatScientific(BigInteger) 一致）
+        double coefficient = absValue / Math.pow(10, exponent);
+
+        // 格式化为 "系数×10^指数"
+        String result = String.format("%.2f×10^%d", coefficient, exponent);
+
+        // 负数补负号
+        if (value < 0) {
+            result = "-" + result;
+        }
+
+        return result;
+    }
+
+    /**
      * 格式化 BigInteger 为易读字符串
      * <p>
      * 来自 {@code PortableWirelessNetworkMonitor#formatBigInteger}。

@@ -385,7 +385,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 正常显示：数值 + GT 电压等级
         // 上升：gtswn.ui.network.status.up = "§b电网状态: §a↑ +%s §bEU/t (§f%s§b)"
         // 下降：gtswn.ui.network.status.down = "§b电网状态: §c↓ -%s §bEU/t (§f%s§b)"
-        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        // displayMode==1 科学计数（与 EU 总量判断一致），否则常规计数
+        String euPerTickStr = (displayMode == 1) ? FormatUtil.formatScientificDouble(absEut)
+            : FormatUtil.formatNormalDouble(absEut);
         String gtPowerText = GTTierUtil.formatGTPower(eut);
         if (eut > 0) {
             return String
@@ -413,7 +415,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             return StatCollector.translateToLocal("gtswn.ui.network.realtime_status.lessthan1");
         }
 
-        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        // displayMode==1 科学计数（与 EU 总量判断一致），否则常规计数
+        String euPerTickStr = (displayMode == 1) ? FormatUtil.formatScientificDouble(absEut)
+            : FormatUtil.formatNormalDouble(absEut);
         String gtPowerText = GTTierUtil.formatGTPower(eut);
         String key = eut > 0 ? "gtswn.ui.network.realtime_status.up" : "gtswn.ui.network.realtime_status.down";
         return String.format(StatCollector.translateToLocal(key), euPerTickStr, gtPowerText);
@@ -992,10 +996,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      */
     public void setDisplayMode(int mode) {
         this.displayMode = mode;
-        // 立即更新缓存文本，实现实时 UI 响应（无需等 30 秒 onPostTick）
+        // 立即更新缓存文本，实现实时 UI 响应（无需等 5 秒 onPostTick）
         cachedModeText = mode == 0 ? translate("gtswn.ui.mode.normal") : translate("gtswn.ui.mode.scientific");
         cachedEUText = getWirelessEUText();
-        if (getBaseMetaTileEntity() != null) {
+        // 服务端重算 EU/t 状态文本格式（常规/科学），通过 StringSyncValue S2C 同步给客户端
+        // 客户端不重算：dataSet 数据仅在服务端，客户端重算会返回"无变化"覆盖真实状态导致闪烁
+        if (getBaseMetaTileEntity() != null && getBaseMetaTileEntity().isServerSide()) {
+            cachedStatusText = formatEUTStatus();
+            cachedRealtimeStatusText = formatRealtimeEUTStatus();
             getBaseMetaTileEntity().markDirty();
         }
     }

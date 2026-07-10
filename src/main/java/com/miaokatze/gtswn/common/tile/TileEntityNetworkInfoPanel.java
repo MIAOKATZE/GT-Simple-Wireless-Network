@@ -44,7 +44,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     private boolean showChartStatus = true;
     private int trackingWindow = NetworkInfoDataSet.WINDOW_5_MIN;
     private int briefRatio = 28;
-    private int chartLayoutMode = 0;
+    // 显示模式：0=常规计数，1=科学计数（EU 与 EU/t 均跟随此模式）
+    private int displayMode = 0;
     private String energyAxisMin = "";
     private String energyAxisMax = "";
     private String eutAxisMin = "";
@@ -146,8 +147,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         return Math.max(10, Math.min(80, briefRatio)) / 20.0F;
     }
 
-    public int getChartLayoutMode() {
-        return chartLayoutMode;
+    public int getDisplayMode() {
+        return displayMode;
+    }
+
+    public void setDisplayMode(int mode) {
+        this.displayMode = (mode == 1) ? 1 : 0;
     }
 
     public String getEnergyAxisMinText() {
@@ -240,7 +245,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
                 briefRatio = Math.min(80, briefRatio + 5);
                 break;
             case 7:
-                chartLayoutMode = (chartLayoutMode + 1) % 2;
+                // 切换显示模式：常规计数(0) ↔ 科学计数(1)，影响 EU 与 EU/t 的格式化
+                displayMode = (displayMode == 0) ? 1 : 0;
+                // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
+                cachedStatus = formatStatus(cachedEut, eutDataSet.size() < 2, false);
                 break;
             default:
                 return;
@@ -392,10 +400,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             return tr("gtswn.network_info.status.lessthan1");
         }
         String key = eut > 0 ? "gtswn.network_info.status.up" : "gtswn.network_info.status.down";
-        return StatCollector.translateToLocalFormatted(
-            key,
-            FormatUtil.formatNormalDouble(Math.abs(eut)),
-            GTTierUtil.formatGTPower(eut));
+        // EU/t 数值根据 displayMode 切换常规/科学计数
+        String eutText = displayMode == 0 ? FormatUtil.formatNormalDouble(Math.abs(eut))
+            : FormatUtil.formatScientificDouble(Math.abs(eut));
+        return StatCollector.translateToLocalFormatted(key, eutText, GTTierUtil.formatGTPower(eut));
     }
 
     private static String tr(String key) {
@@ -686,7 +694,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        chartLayoutMode = tag.getInteger("chartLayoutMode");
+        displayMode = tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0;
         readChartConfig(tag);
         lastSampleTick = tag.getLong("lastSampleTick");
         eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
@@ -706,7 +714,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         tag.setBoolean("showChartStatus", showChartStatus);
         tag.setInteger("trackingWindow", trackingWindow);
         tag.setInteger("briefRatio", briefRatio);
-        tag.setInteger("chartLayoutMode", chartLayoutMode);
+        tag.setInteger("displayMode", displayMode);
         writeChartConfig(tag);
         tag.setLong("lastSampleTick", lastSampleTick);
         eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
@@ -739,7 +747,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         tag.setBoolean("showChartStatus", showChartStatus);
         tag.setInteger("trackingWindow", trackingWindow);
         tag.setInteger("briefRatio", briefRatio);
-        tag.setInteger("chartLayoutMode", chartLayoutMode);
+        tag.setInteger("displayMode", displayMode);
         writeChartConfig(tag);
         if (screen != null) {
             tag.setTag("screen", screen.toNBT());
@@ -772,7 +780,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        chartLayoutMode = tag.getInteger("chartLayoutMode");
+        displayMode = tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0;
         readChartConfig(tag);
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));

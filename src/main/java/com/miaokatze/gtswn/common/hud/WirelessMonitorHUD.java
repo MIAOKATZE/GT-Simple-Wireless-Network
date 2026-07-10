@@ -596,16 +596,20 @@ public class WirelessMonitorHUD extends Gui {
         }
 
         // 正常显示：数值 + GT 电压等级
-        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        // displayMode==2 科学计数（与 EU 总量判断一致），否则常规计数
+        String euPerTickStr = (displayMode == 2) ? FormatUtil.formatScientificDouble(absEut)
+            : FormatUtil.formatNormalDouble(absEut);
         String gtPowerText = GTTierUtil.formatGTPower(eut);
         int gtTier = GTTierUtil.getGTTier(eut);
         String bracketColor = GTTierUtil.TIER_COLORS[gtTier];
         String statusLabel = StatCollector.translateToLocal("gtswn.hud.network.status");
         String eutUnit = StatCollector.translateToLocal("gtswn.hud.eut.unit");
 
+        // v1.4.14 修正：去除 ↑↓ 箭头，增加用 +，减少用 -（与实时状态行格式统一）
+        // 注意：euPerTickStr 基于 absEut 计算，减少时通过 "-" 前缀补负号
         if (eut > 0) {
             return "§b" + statusLabel
-                + ": §a↑ +"
+                + ": §a+"
                 + euPerTickStr
                 + " §b"
                 + eutUnit
@@ -616,7 +620,7 @@ public class WirelessMonitorHUD extends Gui {
                 + ")";
         } else {
             return "§b" + statusLabel
-                + ": §c↓ "
+                + ": §c-"
                 + euPerTickStr
                 + " §b"
                 + eutUnit
@@ -648,7 +652,9 @@ public class WirelessMonitorHUD extends Gui {
             return "\u00A7b" + statusLabel + ": \u00A7f0 \u00A7b" + eutUnit + " (\u00A77<1EU\u00A7b)";
         }
 
-        String euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+        // displayMode==2 科学计数（与 EU 总量判断一致），否则常规计数
+        String euPerTickStr = (displayMode == 2) ? FormatUtil.formatScientificDouble(absEut)
+            : FormatUtil.formatNormalDouble(absEut);
         String gtPowerText = GTTierUtil.formatGTPower(eut);
         int gtTier = GTTierUtil.getGTTier(eut);
         String bracketColor = GTTierUtil.TIER_COLORS[gtTier];
