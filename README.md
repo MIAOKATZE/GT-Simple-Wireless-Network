@@ -20,15 +20,15 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 ## Wireless Energy Monitor / 无线能量监视器
 
-<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" width="700"><br><img src="images/Wireless_Energy_Monitor_EU.png" width="700"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
+<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" width="700"><br><img src="images/Wireless_Energy_Monitor_EN.png" width="700"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
 
 **无线能量监视器 / Wireless Energy Monitor** — A single-block machine that displays real-time (per 5 seconds) wireless network energy status with advanced redstone control (can be measured by the wireless capacity or the wireless status.). Supports 5 redstone modes (Off/High/Low/High-Hysteresis/Low-Hysteresis) with parametric threshold settings. Dynamic texture switching reflects redstone output state. It can also be connected to the Industrial Information Panel.
 
 无线能量监视器，单方块机器，实时显示无线电网能量状态 （每五秒），具备高级红石控制（可以以电网容量或者电网状态为指标）。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。其还可以连接工业信息屏。
 
-- **Redstone Modes**: Off → High (signal when EU > threshold) → Low (signal when EU < threshold) → High-Hysteresis → Low-Hysteresis
-- **Display Modes**: Normal counting (1,234,567 EU) / Scientific notation (1.235×10^6 EU)
-- **Smart EU/t**: Real-time change rate with GT-style amperage + voltage tier display (e.g., "2A HV")
+- **Redstone Modes / 红石模式**: Off → High (signal when EU > threshold) → Low (signal when EU < threshold) → High-Hysteresis → Low-Hysteresis
+- **Display Modes / 显示模式**: Normal counting (1,234,567 EU) / Scientific notation (1.235×10^6 EU)
+- **Smart EU/t / 智能EU/t**: Real-time change rate with GT-style amperage + voltage tier display (e.g., "2A HV")
 
 <p align="center"><img src="images/Wireless_Energy_Monitor_UI_CN.png" width="400"><br><img src="images/Wireless_Energy_Monitor_UI_EN.png" width="400"><br><em>中文界面 (up) & English interface (down)</em></p>
 
@@ -40,11 +40,8 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 背包内（含任意 Baubles 饰品栏）自动显示 HUD 的手持设备。实时显示无线电网能量、EU/t 变化率和 GT 风格功率等级——无需放置任何方块。通过 C→S→C 网络包同步，在单人世界和专用服务器中均可正常使用。
 
-- **Three display modes**: Off / Normal counting / Scientific notation
-- **Smart dEU/dt**: Intelligent change rate calculation with automatic zero-detection timeout
-- **GT Power Display**: Amperage + voltage tier format (e.g., "§b2A HV")
-- **Baubles Support**: Can be placed in any Baubles accessory slot; HUD scans main hand → Baubles → inventory
-- **Server Compatible**: Correctly displays EU on dedicated servers via client-request / server-response network synchronization
+- **Baubles Support / 支持饰品**: Can be placed in any Baubles accessory slot; HUD scans main hand → Baubles → inventory
+- **Server Compatible / 服务器兼容**: Correctly displays EU on dedicated servers via client-request / server-response network synchronization
 
 <p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" width="300"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" width="300"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
 
@@ -52,22 +49,19 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 ## Network Info Panel & Extender / 网络信息屏与拓展屏
 
-**网络信息屏 / Network Info Panel** — A multi-block display panel that visualizes wireless network energy trends over multiple time windows (5m/1h/8h/24h). Composed of a main panel and extender panels, it forms a contiguous screen of arbitrary rectangular size. Uses Catmull-Rom spline curves for smooth trend rendering and supports per-player data sharing across multiple screens.
+**Network Info Panel / 网络信息屏** — A multi-block display panel that visualizes wireless network energy trends over multiple time windows (5m/1h/8h/24h). Composed of a main panel and extender panels, it forms a contiguous screen of arbitrary rectangular size. Uses Catmull-Rom spline curves for smooth trend rendering and supports per-player data sharing across multiple screens.
 
 网络信息屏，多方块显示面板，可视化无线电网能量趋势（5分钟/1小时/8小时/24小时多时间窗口）。由主屏和拓展屏组成，可拼接成任意矩形尺寸的连续屏幕。采用 Catmull-Rom 样条曲线平滑渲染趋势，支持多屏间按玩家 UUID 共享数据。
+
+<p align="center"><img src="images/Network Info Panel_CN.png" width="200"><img src="images/Network Info Panel_EN.png" width="200"><br><img src="images/Network Info Panel_L_CN.png" width="200"><img src="images/Network Info Panel_L_EN.png" width="200"><br><em>网络全天候检测示意图 / Network All-Weather Monitoring</em></p>
+
 
 - **Multi-block Screen / 多方块屏幕**: Main panel + extender panels form a contiguous filled rectangle; extender screens automatically attach to adjacent main screens
 - **4 Time Windows / 4 时间窗口**: 5-minute (real-time) / 1-hour / 8-hour / 24-hour datasets, with nested mean-value recording (1h←5m means, 8h←1h means, 24h←8h means)
 - **Spline Curves / 样条曲线**: Catmull-Rom spline (tension 0.5) with configurable smoothing (0-12 → 4-26 segments)
 - **Per-Player Sharing / 玩家共享**: Datasets bound to player UUID; multiple screens display the same data
 - **Configurable Background / 可配置背景**: Customizable screen background color; clear to disable TESR fill
-- **Crafting / 合成**:
-  - Network Info Panel: LV Sensors (corners) + Glass (cross) + Portable Monitor (center)
-  - Extender Panel: LV Receivers (corners) + Glass (cross) + Cover Screen (center) → outputs 2
-  - 网络信息屏：四角 LV 传感器 + 十字 玻璃块 + 中心 便携监测终端
-  - 拓展屏：四角 LV 接收器 + 十字 玻璃块 + 中心 电脑屏幕覆盖板（产出 2 个）
 
-<p align="center"><img src="images/Network_Info_Panel_AllWeather.png" width="700"><br><em>网络全天候检测示意图 / Network All-Weather Monitoring（待补充）</em></p>
 
 ***
 
@@ -162,7 +156,7 @@ A portable item that connects any machine to the wireless EU network. Shift+righ
 
 - **Grid Highlight / 九宫格辅助线**: When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines. / 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。
 
-<p align="center"><img src="images/Wireless_Tap_Highlight.png" width="400"><br><em>九宫格辅助线 / Grid Highlight（待补充）</em></p>
+<p align="center"><img src="images/Portable_Wireless_Network_Tap_E.png" width="200"><img src="images/Portable_Wireless_Network_Tap_P.png" width="200"><br><em>九宫格辅助线 / Grid Highlight</em></p>
 
 ### Link Terminal (Energy/Power) / 链路终端（能源/动力）
 
@@ -186,7 +180,7 @@ Acts as a **virtual power source** — maintains an internal capacity buffer and
 
 Acts as a **virtual cable** — drains the machine's output into an internal buffer and uploads to the wireless network periodically. Capacity is fixed at `2^63 − 1` (GT5U MAX Battery).
 
-作为一个**虚拟导线**——读取机器的输出存入内部缓冲池，并周期性上送到无线电网。电容量固定为 `2^63 − 1`（GT5U 太·终极电池）。
+作为一个**虚拟导线**——读取机器的输出存入内部缓冲池，并周期性上送到无线电网。电容量固定为 `2^63 − 1`。
 
 - **Capacity / 电容量**: `Long.MAX_VALUE` (2^63 − 1)
 - **Per-tick behavior / 每 tick 行为**: Reads `getOutputVoltage()` / `getOutputAmperage()` from the machine; if V > 0, drains `min(available, V × A)` EU into the buffer (respecting `getMinimumStoredEU()`). Non-output machines (V = 0) are skipped to avoid draining energy from machines that don't produce any.
