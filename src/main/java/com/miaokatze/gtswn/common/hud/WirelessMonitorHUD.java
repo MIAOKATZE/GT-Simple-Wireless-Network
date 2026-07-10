@@ -18,6 +18,7 @@ import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
+import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestWirelessEU;
 
@@ -260,12 +261,26 @@ public class WirelessMonitorHUD extends Gui {
 
         // 饱食度图标位置：x = screenWidth / 2 + 91, y = screenHeight - 39
         // HUD 显示在饱食度上方 15 像素处
-        int hudX = screenWidth / 2 + 91;
-        int hudY = screenHeight - 54;
+        // 应用配置的偏移：X 正=右（直接加），Y 正=上（减去偏移以反转屏幕坐标——屏幕 Y 向下为正）
+        // Apply configured offsets: X positive = right (add directly);
+        // Y positive = up (subtract to invert screen coords — screen Y points downward)
+        int hudX = screenWidth / 2 + 91 + Config.hudXOffset;
+        int hudY = screenHeight - 54 - Config.hudYOffset;
 
         // 保存 OpenGL 状态
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
+
+        // 应用缩放变换：以 (hudX, hudY) 为缩放原点，避免缩放后 HUD 位置漂移。
+        // Apply scale transform: use (hudX, hudY) as scale origin to prevent HUD drift after scaling.
+        // 流程：先平移到原点 → 缩放 → 平移回原位置，使 HUD 基准点保持不变。
+        // Pipeline: translate to origin → scale → translate back, keeping HUD base point fixed.
+        float scale = Config.hudScale;
+        if (scale != 1.0f) {
+            GL11.glTranslatef(hudX, hudY, 0);
+            GL11.glScalef(scale, scale, 1.0f);
+            GL11.glTranslatef(-hudX, -hudY, 0);
+        }
 
         // 禁用深度测试和光照，确保 HUD 始终在最上层
         GL11.glDisable(GL11.GL_DEPTH_TEST);

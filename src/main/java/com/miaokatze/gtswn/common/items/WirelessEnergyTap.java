@@ -25,6 +25,7 @@ import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.implementations.MTEBasicMachineWithRecipe;
 import gregtech.api.recipe.RecipeMaps;
+import gregtech.api.util.GTUtility;
 import gregtech.common.covers.Cover;
 
 /**
@@ -165,7 +166,7 @@ public class WirelessEnergyTap extends Item {
      * 处理机器交互的逻辑（公共方法）
      */
     private void handleMachineInteraction(ItemStack stack, EntityPlayer player, World world, int x, int y, int z,
-        int side) {
+        int side, float hitX, float hitY, float hitZ) {
         TileEntity te = world.getTileEntity(x, y, z);
         if (!(te instanceof IBasicEnergyContainer)) {
             player.addChatMessage(
@@ -178,7 +179,10 @@ public class WirelessEnergyTap extends Item {
         // === 首先检查：整个机器是否有我们的GTswn覆盖板 ===
         if (te instanceof ICoverable) {
             ICoverable coverable = (ICoverable) te;
-            ForgeDirection targetSide = ForgeDirection.getOrientation(side);
+            // 使用 GT 工具同款九宫格换算：点击面中心=原面，边中=相邻面，角=对侧面
+            // 使链路终端支持像 GT 扳手/覆盖板工具一样通过方块边角向其他面放置覆盖板
+            ForgeDirection targetSide = GTUtility
+                .determineWrenchingSide(ForgeDirection.getOrientation(side), hitX, hitY, hitZ);
 
             // 检查所有面是否有我们的覆盖板
             boolean hasOurCover = false;
@@ -425,7 +429,7 @@ public class WirelessEnergyTap extends Item {
         }
 
         // 普通右键：与机器交互
-        handleMachineInteraction(stack, player, world, x, y, z, side);
+        handleMachineInteraction(stack, player, world, x, y, z, side, hitX, hitY, hitZ);
         return true; // 返回true阻止继续处理
     }
 
