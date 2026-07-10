@@ -5,6 +5,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 
+import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
 import com.miaokatze.gtswn.client.gui.GuiNetworkInfoPanel;
 import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
@@ -33,6 +34,8 @@ public class ClientProxy extends CommonProxy {
         // 注意：RenderGameOverlayEvent 是 Forge 事件，必须注册到 MinecraftForge.EVENT_BUS
         GTSimpleWirelessNetwork.LOG.info("[2/2] 注册客户端 HUD 渲染器...");
         MinecraftForge.EVENT_BUS.register(new WirelessMonitorHUD());
+        // 注册无线链路终端辅助线渲染器（DrawBlockHighlightEvent，与 GT 扳手/覆盖板工具相同机制）
+        MinecraftForge.EVENT_BUS.register(new WirelessTapHighlightRenderer());
         ClientRegistry.bindTileEntitySpecialRenderer(TileEntityNetworkInfoPanel.class, new RenderNetworkInfoPanel());
 
         // 注：原 PlayerLoggedOutEvent 监听器用于保存便携式 HUD 历史到物品 NBT，
