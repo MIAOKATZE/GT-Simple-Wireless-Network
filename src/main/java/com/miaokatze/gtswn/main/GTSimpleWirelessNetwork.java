@@ -22,7 +22,7 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
     version = Tags.VERSION,
     name = "GTSimpleWirelessNetwork",
     acceptedMinecraftVersions = "[1.7.10]",
-    dependencies = "required-after:gregtech;")
+    dependencies = "required-after:gregtech;required-after:appliedenergistics2;")
 public class GTSimpleWirelessNetwork {
 
     // 模组唯一标识符 (Mod ID)

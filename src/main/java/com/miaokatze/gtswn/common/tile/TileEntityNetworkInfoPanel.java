@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.common.tile;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Queue;
@@ -19,6 +20,8 @@ import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.Constants;
+import net.minecraftforge.common.util.ForgeDirection;
+import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
@@ -28,9 +31,21 @@ import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 
+import appeng.api.networking.GridFlags;
+import appeng.api.networking.IGridNode;
+import appeng.api.storage.IMEMonitor;
+import appeng.api.storage.data.IAEFluidStack;
+import appeng.api.storage.data.IAEItemStack;
+import appeng.api.util.AECableType;
+import appeng.api.util.DimensionalCoord;
+import appeng.me.GridAccessException;
+import appeng.me.helpers.AENetworkProxy;
+import appeng.me.helpers.IGridProxyable;
+import appeng.util.item.AEFluidStack;
+import appeng.util.item.AEItemStack;
 import gregtech.common.misc.WirelessNetworkManager;
 
-public class TileEntityNetworkInfoPanel extends TileEntity {
+public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxyable {
 
     private static final long SAMPLE_INTERVAL_TICKS = 100L;
     private static final long MAX_CONTINUOUS_GAP_TICKS = 200L;
@@ -65,12 +80,22 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
     private NetworkScreen screen;
     private boolean screenInitialized = false;
 
+    /** AE2 网络代理，懒加载，首次调用 getProxy() 时初始化 */
+    private AENetworkProxy gridProxy = null;
+
+    /** 标记 proxy 是否已就绪（onReady 已调用） */
+    private boolean aeProxyReady = false;
+
     @Override
     public void updateEntity() {
         if (worldObj == null) {
             return;
         }
         if (!worldObj.isRemote) {
+            if (!aeProxyReady) {
+                getProxy().onReady();
+                aeProxyReady = true;
+            }
             if (!screenInitialized) {
                 rebuildScreen();
                 screenInitialized = true;
@@ -80,6 +105,128 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
                 sampleNetwork(tick);
                 lastSampleTick = tick;
             }
+        }
+    }
+
+    // ==================== AE2 网络节点生命周期 ====================
+
+    @Override
+    public void validate() {
+        super.validate();
+        if (gridProxy != null) {
+            gridProxy.validate();
+        }
+    }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        if (gridProxy != null) {
+            gridProxy.invalidate();
+        }
+    }
+
+    @Override
+    public void onChunkUnload() {
+        super.onChunkUnload();
+        if (gridProxy != null) {
+            gridProxy.onChunkUnload();
+        }
+    }
+
+    // ==================== IGridProxyable 接口实现 ====================
+
+    @Override
+    public AENetworkProxy getProxy() {
+        if (gridProxy == null && !worldObj.isRemote) {
+            gridProxy = new AENetworkProxy(this, "proxy", null, true);
+            gridProxy.setFlags(GridFlags.REQUIRE_CHANNEL);
+            gridProxy.setValidSides(EnumSet.allOf(ForgeDirection.class));
+        }
+        return gridProxy;
+    }
+
+    @Override
+    public DimensionalCoord getLocation() {
+        return new DimensionalCoord(worldObj, xCoord, yCoord, zCoord);
+    }
+
+    @Override
+    public void gridChanged() {
+        // AE2 网络连接变化回调，不做复杂操作
+    }
+
+    @Override
+    public IGridNode getGridNode(ForgeDirection dir) {
+        if (worldObj == null || worldObj.isRemote) return null;
+        return getProxy().getNode();
+    }
+
+    @Override
+    public AECableType getCableConnectionType(ForgeDirection dir) {
+        return AECableType.SMART;
+    }
+
+    @Override
+    public void securityBreak() {
+        // AE2 安全系统回调，不做破坏
+    }
+
+    // ==================== AE2 存储读取辅助方法 ====================
+
+    /**
+     * 判断当前是否已连接到 AE2 网络且网络有电。
+     *
+     * @return true 表示已连接且通电
+     */
+    public boolean isAEConnected() {
+        if (worldObj == null || worldObj.isRemote || gridProxy == null) return false;
+        try {
+            IGridNode node = gridProxy.getNode();
+            if (node == null) return false;
+            return gridProxy.isPowered();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 查询 AE2 网络中指定物品的存储数量。
+     *
+     * @param itemStack 要查询的物品（非 null）
+     * @return 存储数量，未连接或未找到时返回 0
+     */
+    public long getAEItemAmount(net.minecraft.item.ItemStack itemStack) {
+        if (worldObj == null || worldObj.isRemote || gridProxy == null || itemStack == null) return 0;
+        try {
+            IMEMonitor<IAEItemStack> itemInv = gridProxy.getStorage()
+                .getItemInventory();
+            IAEItemStack request = AEItemStack.create(itemStack);
+            IAEItemStack stored = itemInv.getStorageList()
+                .findPrecise(request);
+            return stored != null ? stored.getStackSize() : 0;
+        } catch (GridAccessException e) {
+            return 0;
+        }
+    }
+
+    /**
+     * 查询 AE2 网络中指定流体的存储数量。
+     *
+     * @param fluidStack 要查询的流体（非 null）
+     * @return 存储数量，未连接或未找到时返回 0
+     */
+    public long getAEFluidAmount(FluidStack fluidStack) {
+        if (worldObj == null || worldObj.isRemote || gridProxy == null || fluidStack == null) return 0;
+        try {
+            IMEMonitor<IAEFluidStack> fluidInv = gridProxy.getStorage()
+                .getFluidInventory();
+            IAEFluidStack request = AEFluidStack.create(fluidStack);
+            IAEFluidStack stored = fluidInv.getStorageList()
+                .findPrecise(request);
+            return stored != null ? stored.getStackSize() : 0;
+        } catch (GridAccessException e) {
+            return 0;
         }
     }
 
@@ -702,6 +849,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
         }
         readSyncData(tag);
+        if (tag.hasKey("proxy") && !worldObj.isRemote) {
+            getProxy().readFromNBT(tag);
+        }
     }
 
     @Override
@@ -722,6 +872,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity {
             tag.setTag("screen", screen.toNBT());
         }
         writeSyncData(tag);
+        if (gridProxy != null) {
+            gridProxy.writeToNBT(tag);
+        }
     }
 
     @Override
