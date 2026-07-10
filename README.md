@@ -50,6 +50,27 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 ***
 
+## Network Info Panel & Extender / 网络信息屏与拓展屏
+
+**网络信息屏 / Network Info Panel** — A multi-block display panel that visualizes wireless network energy trends over multiple time windows (5m/1h/8h/24h). Composed of a main panel and extender panels, it forms a contiguous screen of arbitrary rectangular size. Uses Catmull-Rom spline curves for smooth trend rendering and supports per-player data sharing across multiple screens.
+
+网络信息屏，多方块显示面板，可视化无线电网能量趋势（5分钟/1小时/8小时/24小时多时间窗口）。由主屏和拓展屏组成，可拼接成任意矩形尺寸的连续屏幕。采用 Catmull-Rom 样条曲线平滑渲染趋势，支持多屏间按玩家 UUID 共享数据。
+
+- **Multi-block Screen / 多方块屏幕**: Main panel + extender panels form a contiguous filled rectangle; extender screens automatically attach to adjacent main screens
+- **4 Time Windows / 4 时间窗口**: 5-minute (real-time) / 1-hour / 8-hour / 24-hour datasets, with nested mean-value recording (1h←5m means, 8h←1h means, 24h←8h means)
+- **Spline Curves / 样条曲线**: Catmull-Rom spline (tension 0.5) with configurable smoothing (0-12 → 4-26 segments)
+- **Per-Player Sharing / 玩家共享**: Datasets bound to player UUID; multiple screens display the same data
+- **Configurable Background / 可配置背景**: Customizable screen background color; clear to disable TESR fill
+- **Crafting / 合成**:
+  - Network Info Panel: LV Sensors (corners) + Glass (cross) + Portable Monitor (center)
+  - Extender Panel: LV Receivers (corners) + Glass (cross) + Cover Screen (center) → outputs 2
+  - 网络信息屏：四角 LV 传感器 + 十字 玻璃块 + 中心 便携监测终端
+  - 拓展屏：四角 LV 接收器 + 十字 玻璃块 + 中心 电脑屏幕覆盖板（产出 2 个）
+
+<p align="center"><img src="images/Network_Info_Panel_AllWeather.png" width="700"><br><em>网络全天候检测示意图 / Network All-Weather Monitoring（待补充）</em></p>
+
+***
+
 ## Redstone Control System / 红石控制系统
 
 The Wireless Energy Monitor features a 5-mode redstone control system:
@@ -138,6 +159,10 @@ This avoids unbounded dataset growth during idle periods while preserving accura
 A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode.
 
 便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。
+
+- **Grid Highlight / 九宫格辅助线**: When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines. / 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。
+
+<p align="center"><img src="images/Wireless_Tap_Highlight.png" width="400"><br><em>九宫格辅助线 / Grid Highlight（待补充）</em></p>
 
 ### Link Terminal (Energy/Power) / 链路终端（能源/动力）
 

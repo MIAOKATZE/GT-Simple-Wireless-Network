@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.config;
 
 import java.io.File;
+import java.util.Arrays;
 
 import net.minecraftforge.common.config.Configuration;
 
@@ -10,10 +11,24 @@ import net.minecraftforge.common.config.Configuration;
  * 负责读取和保存模组的配置文件。配置统一放在 {@code config/gtswn/} 目录下：
  * <ul>
  * <li>{@code gtswn.cfg}：仅含 MTE ID 偏移等基础配置</li>
- * <li>{@code gtswn_network.cfg}：无线网络上下行损耗系数</li>
+ * <li>{@code gtswn_network.cfg}：无线网络上下行损耗系数 + HUD 显示参数</li>
  * </ul>
+ * <p>
+ * gtswn_network.cfg 结构：
+ * 
+ * <pre>
+ * general {
+ *     DownlinkLossEU / UplinkLossEU   // 上下行损耗
+ * }
+ * hud {
+ *     HudXOffset / HudYOffset / HudScale  // HUD 偏移与缩放
+ * }
+ * </pre>
  */
 public class Config {
+
+    /** gtswn_network.cfg 中 HUD 参数的独立类目名（与 general 平级） */
+    private static final String CATEGORY_HUD = "hud";
 
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
@@ -120,11 +135,16 @@ public class Config {
                 + "When dynamo cover outputs EU to wireless network, machine deducts full amount; network receives (1 - this value) × EU.\n"
                 + "默认 0.0 = 无损耗；1.0 = 电网净增加为 0（上传不了任何 EU） / Default 0.0 = no loss; 1.0 = network receives nothing");
 
+        // === HUD 显示参数类目（独立顶层 hud 类目，与 general 平级） ===
+        // 配置项：HudXOffset / HudYOffset / HudScale
+        // 设置类目注释，说明本类目用途
+        configuration.setCategoryComment(CATEGORY_HUD, "HUD 显示参数（偏移与缩放）\nHUD display parameters (offset & scale)");
+
         // HUD 水平偏移 / HUD horizontal offset
         // 正值 = HUD 向右移动，负值 = HUD 向左移动 / positive = shift right, negative = shift left
         hudXOffset = configuration.getInt(
             "HudXOffset",
-            Configuration.CATEGORY_GENERAL,
+            CATEGORY_HUD,
             hudXOffset,
             -500,
             500,
@@ -137,7 +157,7 @@ public class Config {
         // 注意：屏幕坐标 Y 向下为正，此处正值语义为"上移"，渲染时以减法反转（hudY = baseY - hudYOffset）。
         hudYOffset = configuration.getInt(
             "HudYOffset",
-            Configuration.CATEGORY_GENERAL,
+            CATEGORY_HUD,
             hudYOffset,
             -500,
             500,
@@ -151,7 +171,7 @@ public class Config {
         // 1.0 = 默认大小，>1.0 放大，<1.0 缩小 / 1.0 = default, >1.0 enlarge, <1.0 shrink
         hudScale = configuration.getFloat(
             "HudScale",
-            Configuration.CATEGORY_GENERAL,
+            CATEGORY_HUD,
             hudScale,
             0.2f,
             5.0f,
@@ -159,6 +179,9 @@ public class Config {
                 + "1.0 = 默认大小，>1.0 放大，<1.0 缩小 / 1.0 = default size, >1.0 enlarge, <1.0 shrink\n"
                 + "渲染时以 HUD 基准点为缩放原点，避免位置漂移 / Renderer uses HUD base point as scale origin to prevent drift\n"
                 + "范围 0.2-5.0，默认 1.0 / Range 0.2-5.0, Default 1.0");
+
+        // 控制 hud 类目内 key 的显示顺序：X偏移 → Y偏移 → 缩放
+        configuration.setCategoryPropertyOrder(CATEGORY_HUD, Arrays.asList("HudXOffset", "HudYOffset", "HudScale"));
 
         if (configuration.hasChanged()) {
             configuration.save();
