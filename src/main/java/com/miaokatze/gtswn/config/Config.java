@@ -30,6 +30,9 @@ public class Config {
     /** gtswn_network.cfg 中 HUD 参数的独立类目名（与 general 平级） */
     private static final String CATEGORY_HUD = "hud";
 
+    /** AE2 网络监视配置类目名 */
+    private static final String CATEGORY_AE2 = "ae2";
+
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
     // 此配置仅用于在基准值基础上进行微调。
@@ -70,6 +73,27 @@ public class Config {
     // Renderer uses HUD base point as scale origin to prevent position drift.
     // 默认 1.0 = 默认大小 / Default 1.0 = default size
     public static float hudScale = 1.0f;
+
+    // AE2 监控采样间隔（tick）/ AE2 monitor sample interval (ticks)
+    // 数值越小采样越频繁，但会增加服务器负担 / Smaller value = more frequent sampling, higher server load
+    // 默认 100 ticks = 5 秒 / Default 100 ticks = 5 seconds
+    public static int aeSampleInterval = 100;
+
+    // AE2 实时监控最大监视项数 / AE2 real-time monitor max items
+    // 限制单个信息屏可同时监视的物品与流体总数 / Limits total items + fluids per panel
+    // 默认 64 / Default 64
+    public static int aeMaxMonitoredItems = 64;
+
+    // AE2 走势图最大采样点数 / AE2 chart max sample points
+    // 决定 5 分钟窗口保留多少个点（受内部 FIFO 容量 61 限制） / Determines how many points the 5-min window keeps (capped by FIFO capacity
+    // 61)
+    // 默认 61 / Default 61
+    public static int aeMaxSamplePoints = 61;
+
+    // 是否启用 AE2 走势图 / Enable AE2 chart
+    // 关闭后不再采集 AE 监控数据 / Disables AE monitoring data sampling when false
+    // 默认 true / Default true
+    public static boolean aeChartEnabled = true;
 
     /**
      * 同步主配置文件 (gtswn.cfg)
@@ -182,6 +206,68 @@ public class Config {
 
         // 控制 hud 类目内 key 的显示顺序：X偏移 → Y偏移 → 缩放
         configuration.setCategoryPropertyOrder(CATEGORY_HUD, Arrays.asList("HudXOffset", "HudYOffset", "HudScale"));
+
+        if (configuration.hasChanged()) {
+            configuration.save();
+        }
+    }
+
+    /**
+     * 同步 AE2 网络监视配置文件
+     * <p>
+     * 处理 AE2 信息屏的采样间隔、最大监视项数、走势图采样点数与启用开关。
+     * 从传入的 {@link Configuration} 中读取 {@code [ae2]} 类目，更新静态变量；
+     * 如果配置有变动则自动保存。
+     *
+     * @param configuration 已打开的 AE2 配置 {@link Configuration} 对象
+     */
+    public static void synchronizeAEConfiguration(Configuration configuration) {
+        // 设置 [ae2] 类目注释 / Set [ae2] category comment
+        configuration.setCategoryComment(
+            CATEGORY_AE2,
+            "AE2 网络监视配置 / AE2 network monitoring configuration\n"
+                + "AE 信息屏采样与走势图参数 / AE panel sampling and chart parameters");
+
+        // AE2 监控采样间隔（tick）/ AE2 monitor sample interval (ticks)
+        aeSampleInterval = configuration.getInt(
+            "aeSampleInterval",
+            CATEGORY_AE2,
+            aeSampleInterval,
+            1,
+            6000,
+            "AE2 监控采样间隔（tick）/ AE2 monitor sample interval (ticks)\n"
+                + "数值越小采样越频繁，但会增加服务器负担 / Smaller value = more frequent sampling, higher server load\n"
+                + "默认 100 ticks = 5 秒 / Default 100 ticks = 5 seconds");
+
+        // AE2 实时监控最大监视项数 / AE2 real-time monitor max items
+        aeMaxMonitoredItems = configuration.getInt(
+            "aeMaxMonitoredItems",
+            CATEGORY_AE2,
+            aeMaxMonitoredItems,
+            1,
+            256,
+            "AE2 实时监控最大监视项数 / AE2 real-time monitor max items\n"
+                + "限制单个信息屏可同时监视的物品与流体总数 / Limits total items + fluids per panel\n"
+                + "默认 64 / Default 64");
+
+        // AE2 走势图最大采样点数 / AE2 chart max sample points
+        aeMaxSamplePoints = configuration.getInt(
+            "aeMaxSamplePoints",
+            CATEGORY_AE2,
+            aeMaxSamplePoints,
+            10,
+            120,
+            "AE2 走势图最大采样点数 / AE2 chart max sample points\n"
+                + "决定 5 分钟窗口保留多少个点（受内部 FIFO 容量 61 限制） / Determines how many points the 5-min window keeps (capped by FIFO capacity 61)\n"
+                + "默认 61 / Default 61");
+
+        // 是否启用 AE2 走势图 / Enable AE2 chart
+        aeChartEnabled = configuration.getBoolean(
+            "aeChartEnabled",
+            CATEGORY_AE2,
+            aeChartEnabled,
+            "是否启用 AE2 走势图 / Enable AE2 chart\n" + "关闭后不再采集 AE 监控数据 / Disables AE monitoring data sampling when false\n"
+                + "默认 true / Default true");
 
         if (configuration.hasChanged()) {
             configuration.save();

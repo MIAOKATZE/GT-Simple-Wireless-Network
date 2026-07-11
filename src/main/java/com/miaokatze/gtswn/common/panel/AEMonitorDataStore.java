@@ -17,7 +17,7 @@ public class AEMonitorDataStore extends WorldSavedData {
     /**
      * 数据集映射表。
      * <p>
-     * key 为 panelUUID.toString()，每个网络信息屏方块独立维护一份 AE 监视数据。
+     * key 为 {@code dimensionId:x:y:z} 格式的坐标字符串，每个网络信息屏方块独立维护一份 AE 监视数据。
      */
     private final Map<String, AEMonitorDataSet> dataSets = new HashMap<>();
 
@@ -38,17 +38,28 @@ public class AEMonitorDataStore extends WorldSavedData {
     /**
      * 取或创建数据集。
      *
-     * @param panelUUID 信息屏方块的 UUID 字符串
+     * @param coordinateKey 信息屏方块的坐标字符串（{@code dimensionId:x:y:z}）
      * @return 对应的数据集（不存在则新建）
      */
-    public AEMonitorDataSet getOrCreate(String panelUUID) {
-        AEMonitorDataSet set = dataSets.get(panelUUID);
+    public AEMonitorDataSet getOrCreate(String coordinateKey) {
+        AEMonitorDataSet set = dataSets.get(coordinateKey);
         if (set == null) {
             set = new AEMonitorDataSet();
-            dataSets.put(panelUUID, set);
+            dataSets.put(coordinateKey, set);
             markDirty();
         }
         return set;
+    }
+
+    /**
+     * 移除指定坐标 key 的数据集，方块破坏时调用以释放内存并避免脏数据残留。
+     *
+     * @param coordinateKey 信息屏方块的坐标字符串（{@code dimensionId:x:y:z}）
+     */
+    public void remove(String coordinateKey) {
+        if (dataSets.remove(coordinateKey) != null) {
+            markDirty();
+        }
     }
 
     @Override

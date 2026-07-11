@@ -38,6 +38,7 @@ import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
+import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 
@@ -68,7 +69,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private static final long MAX_CONTINUOUS_GAP_TICKS = 200L;
 
     private UUID ownerUUID;
-    private UUID panelUUID;
     private String ownerName = "";
 
     private boolean showBriefEnergy = true;
@@ -88,6 +88,16 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private int trendLineThickness = 3;
     private int trendLineSmoothing = 0;
     private String screenBackgroundColor = ""; // 默认无背景色，TESR 不绘制背景填充
+
+    // === AE 图表配置字段（v1.5.4）===
+    private int aeTrackingWindow = AEMonitorDataSet.WINDOW_5_MIN;
+    private int aeChartBorderThickness = 3;
+    private String aeChartBackgroundColor = "";
+    private int aeTrendLineThickness = 3;
+    private int aeTrendLineSmoothing = 0;
+    private String aeAxisMin = "";
+    private String aeAxisMax = "";
+    private String aeLineColor = "1F6FFF";
 
     private long lastSampleTick = -1L;
     private BigInteger cachedEu = BigInteger.ZERO;
@@ -126,9 +136,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** AE 实时监控的流体列表 */
     private final List<FluidStack> monitoredFluids = new ArrayList<>();
 
-    /** 监视列表上限（v1.5.3 改为 Config 配置） */
-    private static final int MAX_MONITORED = 64;
-
     /** 上次 AE 采样 tick，-1 表示尚未采样 */
     private long lastAESampleTick = -1L;
 
@@ -137,6 +144,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     /** 客户端 AE 实时监控列表最新值缓存（key → 最新样本） */
     private final Map<String, AEMonitorSample> aeMonitorLatest = new HashMap<>();
+
+    /** 客户端 AE 实时监控 300s 平均变化率缓存（key → 每分钟数量变化） */
+    private final Map<String, Double> aeMonitorAvg300s = new HashMap<>();
 
     // === IStackWatcher 框架（v1.5.1 引入，v1.5.2 填充采样）===
 
@@ -154,10 +164,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         long tick = worldObj.getTotalWorldTime();
         if (!worldObj.isRemote) {
-            // 旧存档兼容：panelUUID 为空时自动生成，保证 AE 采样与数据存储有合法 key
-            if (panelUUID == null) {
-                setPanelUUID(UUID.randomUUID());
-            }
             if (pendingProxyNBT != null) {
                 getProxy().readFromNBT(pendingProxyNBT);
                 pendingProxyNBT = null;
@@ -190,8 +196,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 sampleNetwork(tick);
                 lastSampleTick = tick;
             }
-            // 服务端每 SAMPLE_INTERVAL_TICKS 执行一次 AE 采样并推送给客户端
-            if (panelUUID != null && (lastAESampleTick < 0L || tick - lastAESampleTick >= SAMPLE_INTERVAL_TICKS)) {
+            // 服务端每 Config.aeSampleInterval ticks 执行一次 AE 采样并推送给客户端
+            if (Config.aeChartEnabled
+                && (lastAESampleTick < 0L || tick - lastAESampleTick >= Config.aeSampleInterval)) {
                 sampleAENetwork(tick);
                 lastAESampleTick = tick;
             }
@@ -321,29 +328,35 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     /**
-     * 从 PanelUUID NBT 恢复 panelUUID。
+     * 生成本方块在 AEMonitorDataStore 中使用的坐标主键。
+     * <p>
+     * 格式：{@code dimensionId:xCoord:yCoord:zCoord}。
+     * 该 key 随方块位置唯一确定，避免使用 panelUUID 带来的存档迁移与数据残留问题。
+     *
+     * @return 坐标字符串；world 不可用时返回 null
      */
-    private void readPanelUUID(NBTTagCompound tag) {
-        if (tag.hasKey("PanelUUID")) {
-            try {
-                panelUUID = UUID.fromString(tag.getString("PanelUUID"));
-            } catch (IllegalArgumentException e) {
-                panelUUID = null;
-            }
+    public String getAEMonitorDataKey() {
+        if (worldObj == null) {
+            return null;
         }
+        return worldObj.provider.dimensionId + ":" + xCoord + ":" + yCoord + ":" + zCoord;
     }
 
     /**
-     * 清空指定 key 在本屏 panelUUID 下的 AE 采样数据。
+     * 清空指定 key 在本屏坐标主键下的 AE 采样数据。
      * <p>
-     * 仅服务端执行；panelUUID 未初始化或 world 不可用时安全跳过。
+     * 仅服务端执行；坐标 key 未初始化或 world 不可用时安全跳过。
      */
     private void clearAEData(String key) {
-        if (key == null || worldObj == null || worldObj.isRemote || panelUUID == null) {
+        if (key == null || worldObj == null || worldObj.isRemote) {
+            return;
+        }
+        String dataKey = getAEMonitorDataKey();
+        if (dataKey == null) {
             return;
         }
         AEMonitorDataStore.get(worldObj)
-            .getOrCreate(getPanelUUIDString())
+            .getOrCreate(dataKey)
             .clear(key);
     }
 
@@ -376,19 +389,24 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @param tick 当前世界 tick
      */
     private void sampleAENetwork(long tick) {
-        if (panelUUID == null || !isAEConnected()) {
+        if (!isAEConnected()) {
+            return;
+        }
+
+        String dataKey = getAEMonitorDataKey();
+        if (dataKey == null) {
             return;
         }
 
         AEMonitorDataStore store = AEMonitorDataStore.get(worldObj);
-        AEMonitorDataSet dataSet = store.getOrCreate(panelUUID.toString());
+        AEMonitorDataSet dataSet = store.getOrCreate(dataKey);
         boolean wroteAny = false;
         long timeMs = System.currentTimeMillis();
 
         // 走势图物品
         if (chartItem != null) {
             String key = getAEKey(chartItem);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
                 long amount = getAEItemAmount(chartItem);
                 dataSet.addSample(key, amount, tick, timeMs);
                 wroteAny = true;
@@ -398,7 +416,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         // 走势图流体
         if (chartFluid != null) {
             String key = getAEKey(chartFluid);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
                 long amount = getAEFluidAmount(chartFluid);
                 dataSet.addSample(key, amount, tick, timeMs);
                 wroteAny = true;
@@ -408,7 +426,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         // 实时监控物品列表
         for (ItemStack stack : monitoredItems) {
             String key = getAEKey(stack);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
                 long amount = getAEItemAmount(stack);
                 dataSet.addSample(key, amount, tick, timeMs);
                 wroteAny = true;
@@ -418,7 +436,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         // 实时监控流体列表
         for (FluidStack fluid : monitoredFluids) {
             String key = getAEKey(fluid);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
                 long amount = getAEFluidAmount(fluid);
                 dataSet.addSample(key, amount, tick, timeMs);
                 wroteAny = true;
@@ -437,28 +455,34 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * 服务端将当前 AE 走势图样本与实时监控最新值推送给周围客户端。
      */
     private void sendAEMonitorDataToClients() {
-        if (worldObj == null || worldObj.isRemote || panelUUID == null) {
+        if (worldObj == null || worldObj.isRemote) {
+            return;
+        }
+
+        String dataKey = getAEMonitorDataKey();
+        if (dataKey == null) {
             return;
         }
 
         AEMonitorDataSet dataSet = AEMonitorDataStore.get(worldObj)
-            .getOrCreate(panelUUID.toString());
+            .getOrCreate(dataKey);
 
         String chartKey = null;
         List<AEMonitorSample> chartSamples = new ArrayList<>();
         if (chartItem != null) {
             chartKey = getAEKey(chartItem);
             if (chartKey != null) {
-                chartSamples = dataSet.query(chartKey, getTrackingWindow());
+                chartSamples = dataSet.query(chartKey, getAETrackingWindow());
             }
         } else if (chartFluid != null) {
             chartKey = getAEKey(chartFluid);
             if (chartKey != null) {
-                chartSamples = dataSet.query(chartKey, getTrackingWindow());
+                chartSamples = dataSet.query(chartKey, getAETrackingWindow());
             }
         }
 
         Map<String, AEMonitorSample> monitorLatest = new HashMap<>();
+        Map<String, Double> monitorAvg300s = new HashMap<>();
         for (ItemStack stack : monitoredItems) {
             String key = getAEKey(stack);
             if (key == null) continue;
@@ -466,6 +490,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             if (sample != null) {
                 monitorLatest.put(key, sample);
             }
+            monitorAvg300s.put(key, dataSet.averageRate300s(key));
         }
         for (FluidStack fluid : monitoredFluids) {
             String key = getAEKey(fluid);
@@ -474,10 +499,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             if (sample != null) {
                 monitorLatest.put(key, sample);
             }
+            monitorAvg300s.put(key, dataSet.averageRate300s(key));
         }
 
         GTSWNPacketHandler.NETWORK.sendToAllAround(
-            new PacketSyncAEMonitorData(xCoord, yCoord, zCoord, chartKey, chartSamples, monitorLatest),
+            new PacketSyncAEMonitorData(xCoord, yCoord, zCoord, chartKey, chartSamples, monitorLatest, monitorAvg300s),
             new NetworkRegistry.TargetPoint(
                 worldObj.provider.dimensionId,
                 xCoord + 0.5D,
@@ -593,7 +619,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 return false;
             }
         }
-        if (monitoredItems.size() < MAX_MONITORED) {
+        if (monitoredItems.size() < Config.aeMaxMonitoredItems) {
             monitoredItems.add(stack.copy());
             markDirty();
             configureStackWatcher();
@@ -618,7 +644,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 return false;
             }
         }
-        if (monitoredFluids.size() < MAX_MONITORED) {
+        if (monitoredFluids.size() < Config.aeMaxMonitoredItems) {
             monitoredFluids.add(fluid.copy());
             markDirty();
             configureStackWatcher();
@@ -657,10 +683,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /**
      * 客户端接收服务端推送的 AE 监控数据，深拷贝后写入本地缓存。
      *
-     * @param chartSamples  走势图样本列表
-     * @param monitorLatest 实时监控列表最新值
+     * @param chartSamples   走势图样本列表
+     * @param monitorLatest  实时监控列表最新值
+     * @param monitorAvg300s 实时监控 300s 平均变化率
      */
-    public void receiveAEMonitorData(List<AEMonitorSample> chartSamples, Map<String, AEMonitorSample> monitorLatest) {
+    public void receiveAEMonitorData(List<AEMonitorSample> chartSamples, Map<String, AEMonitorSample> monitorLatest,
+        Map<String, Double> monitorAvg300s) {
         aeChartSamples.clear();
         if (chartSamples != null) {
             aeChartSamples.addAll(chartSamples);
@@ -669,6 +697,19 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (monitorLatest != null) {
             aeMonitorLatest.putAll(monitorLatest);
         }
+        aeMonitorAvg300s.clear();
+        if (monitorAvg300s != null) {
+            aeMonitorAvg300s.putAll(monitorAvg300s);
+        }
+    }
+
+    /**
+     * 获取客户端 AE 实时监控 300s 平均变化率缓存（只读）。
+     *
+     * @return key → 平均变化率的不可修改映射
+     */
+    public Map<String, Double> getAEMonitorAvg300s() {
+        return Collections.unmodifiableMap(aeMonitorAvg300s);
     }
 
     // ==================== IStackWatcherHost 实现（v1.5.1 框架，v1.5.2 填充采样）====================
@@ -737,21 +778,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     public String getOwnerName() {
         return ownerName;
-    }
-
-    public UUID getPanelUUID() {
-        return panelUUID;
-    }
-
-    public void setPanelUUID(UUID uuid) {
-        if (uuid != null) {
-            this.panelUUID = uuid;
-            markDirty();
-        }
-    }
-
-    public String getPanelUUIDString() {
-        return panelUUID == null ? null : panelUUID.toString();
     }
 
     public BigInteger getCachedEu() {
@@ -875,6 +901,107 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return color == null ? 0xDDE1E4 : color.intValue(); // 防御性兜底：hasScreenBackgroundColor() 为 false 时渲染路径不调用此方法
     }
 
+    // ==================== AE 图表配置 Getter / Setter（v1.5.4）====================
+
+    public int getAETrackingWindow() {
+        return aeTrackingWindow;
+    }
+
+    public int getAEChartBorderThickness() {
+        return aeChartBorderThickness;
+    }
+
+    public String getAEChartBackgroundColorText() {
+        return aeChartBackgroundColor;
+    }
+
+    public Integer getAEChartBackgroundColor() {
+        return parseOptionalColor(aeChartBackgroundColor);
+    }
+
+    public int getAETrendLineThickness() {
+        return aeTrendLineThickness;
+    }
+
+    public int getAETrendLineSmoothing() {
+        return aeTrendLineSmoothing;
+    }
+
+    public String getAEAxisMinText() {
+        return aeAxisMin;
+    }
+
+    public String getAEAxisMaxText() {
+        return aeAxisMax;
+    }
+
+    public Double getAEAxisMin() {
+        return parseOptionalDouble(aeAxisMin);
+    }
+
+    public Double getAEAxisMax() {
+        return parseOptionalDouble(aeAxisMax);
+    }
+
+    public String getAELineColorText() {
+        return aeLineColor;
+    }
+
+    public Integer getAELineColor() {
+        return parseOptionalColor(aeLineColor);
+    }
+
+    public void setAETrackingWindow(int window) {
+        this.aeTrackingWindow = clampInt(window, AEMonitorDataSet.WINDOW_5_MIN, AEMonitorDataSet.WINDOW_24_HOUR);
+        markDirty();
+        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
+    /**
+     * 解析 AE 图表配置字符串，格式与 applyChartConfig 类似，每行 key=value。
+     * <p>
+     * 支持键：aeWindow, aeBorder, aeBg, aeLineW, aeSmoothing, aeMin, aeMax, aeLineColor。
+     *
+     * @param payload 配置文本
+     */
+    public void applyAEChartConfig(String payload) {
+        if (payload == null) {
+            return;
+        }
+        String[] lines = payload.split("\n", -1);
+        for (String line : lines) {
+            int index = line.indexOf('=');
+            if (index <= 0) {
+                continue;
+            }
+            String key = line.substring(0, index);
+            String value = cleanText(line.substring(index + 1));
+            if ("aeWindow".equals(key)) {
+                aeTrackingWindow = clampInt(
+                    value,
+                    aeTrackingWindow,
+                    AEMonitorDataSet.WINDOW_5_MIN,
+                    AEMonitorDataSet.WINDOW_24_HOUR);
+            } else if ("aeBorder".equals(key)) {
+                aeChartBorderThickness = clampInt(value, aeChartBorderThickness, 1, 8);
+            } else if ("aeBg".equals(key)) {
+                aeChartBackgroundColor = cleanColorText(value);
+            } else if ("aeLineW".equals(key)) {
+                aeTrendLineThickness = clampInt(value, aeTrendLineThickness, 1, 8);
+            } else if ("aeSmoothing".equals(key)) {
+                aeTrendLineSmoothing = clampInt(value, aeTrendLineSmoothing, 0, 12);
+            } else if ("aeMin".equals(key)) {
+                aeAxisMin = value;
+            } else if ("aeMax".equals(key)) {
+                aeAxisMax = value;
+            } else if ("aeLineColor".equals(key)) {
+                aeLineColor = cleanColorText(value);
+            }
+        }
+        markDirty();
+        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
     public void applyConfigAction(int action) {
         switch (action) {
             case 0:
@@ -961,7 +1088,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (tag.hasKey("OwnerName")) {
             ownerName = tag.getString("OwnerName");
         }
-        readPanelUUID(tag);
         if (tag.hasKey("lastSampleTick")) {
             lastSampleTick = tag.getLong("lastSampleTick");
         }
@@ -978,9 +1104,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             tag.setString("OwnerUUID", ownerUUID.toString());
         }
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
-        if (panelUUID != null) {
-            tag.setString("PanelUUID", panelUUID.toString());
-        }
         tag.setLong("lastSampleTick", lastSampleTick);
         tag.setLong("lastAESampleTick", lastAESampleTick);
         eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
@@ -1351,7 +1474,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
-        readPanelUUID(tag);
         readPlacementData(tag);
         showBriefEnergy = !tag.hasKey("showBriefEnergy") || tag.getBoolean("showBriefEnergy");
         showBriefStatus = !tag.hasKey("showBriefStatus") || tag.getBoolean("showBriefStatus");
@@ -1367,6 +1489,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
         }
         readSyncData(tag);
+        readAEChartConfig(tag);
         // === AE 标签页字段读取 ===
         currentTab = tag.hasKey("currentTab") ? tag.getInteger("currentTab") : 0;
         if (tag.hasKey("chartItem")) {
@@ -1422,6 +1545,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             tag.setTag("screen", screen.toNBT());
         }
         writeSyncData(tag);
+        writeAEChartConfig(tag);
         // === AE 标签页字段写入 ===
         tag.setInteger("currentTab", currentTab);
         if (chartItem != null) {
@@ -1470,6 +1594,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         tag.setInteger("briefRatio", briefRatio);
         tag.setInteger("displayMode", displayMode);
         writeChartConfig(tag);
+        writeAEChartConfig(tag);
         if (screen != null) {
             tag.setTag("screen", screen.toNBT());
         }
@@ -1521,6 +1646,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         displayMode = tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0;
         readChartConfig(tag);
+        readAEChartConfig(tag);
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
         }
@@ -1591,6 +1717,41 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         screenBackgroundColor = tag.hasKey("screenBackgroundColor")
             ? cleanColorText(tag.getString("screenBackgroundColor"))
             : ""; // 旧存档无此字段时默认空（不绘制背景）
+    }
+
+    private void writeAEChartConfig(NBTTagCompound tag) {
+        tag.setInteger("aeTrackingWindow", aeTrackingWindow);
+        tag.setInteger("aeChartBorderThickness", aeChartBorderThickness);
+        tag.setString("aeChartBackgroundColor", aeChartBackgroundColor);
+        tag.setInteger("aeTrendLineThickness", aeTrendLineThickness);
+        tag.setInteger("aeTrendLineSmoothing", aeTrendLineSmoothing);
+        tag.setString("aeAxisMin", aeAxisMin);
+        tag.setString("aeAxisMax", aeAxisMax);
+        tag.setString("aeLineColor", aeLineColor);
+    }
+
+    private void readAEChartConfig(NBTTagCompound tag) {
+        aeTrackingWindow = tag.hasKey("aeTrackingWindow")
+            ? clampInt(
+                tag.getInteger("aeTrackingWindow"),
+                AEMonitorDataSet.WINDOW_5_MIN,
+                AEMonitorDataSet.WINDOW_24_HOUR)
+            : AEMonitorDataSet.WINDOW_5_MIN;
+        aeChartBorderThickness = tag.hasKey("aeChartBorderThickness")
+            ? clampInt(tag.getInteger("aeChartBorderThickness"), 1, 8)
+            : 3;
+        aeChartBackgroundColor = tag.hasKey("aeChartBackgroundColor")
+            ? cleanColorText(tag.getString("aeChartBackgroundColor"))
+            : "";
+        aeTrendLineThickness = tag.hasKey("aeTrendLineThickness")
+            ? clampInt(tag.getInteger("aeTrendLineThickness"), 1, 8)
+            : 3;
+        aeTrendLineSmoothing = tag.hasKey("aeTrendLineSmoothing")
+            ? clampInt(tag.getInteger("aeTrendLineSmoothing"), 0, 12)
+            : 0;
+        aeAxisMin = tag.hasKey("aeAxisMin") ? cleanText(tag.getString("aeAxisMin")) : "";
+        aeAxisMax = tag.hasKey("aeAxisMax") ? cleanText(tag.getString("aeAxisMax")) : "";
+        aeLineColor = tag.hasKey("aeLineColor") ? cleanColorText(tag.getString("aeLineColor")) : "1F6FFF";
     }
 
     private static Double parseOptionalDouble(String value) {

@@ -50,8 +50,10 @@ public class CommonProxy {
         }
         File mainConfigFile = new File(configDir, "gtswn.cfg");
         File networkConfigFile = new File(configDir, "gtswn_network.cfg");
+        File aeConfigFile = new File(configDir, "gtswn_ae.cfg");
         Config.synchronizeConfiguration(mainConfigFile);
         Config.synchronizeNetworkConfiguration(networkConfigFile);
+        Config.synchronizeAEConfiguration(new net.minecraftforge.common.config.Configuration(aeConfigFile));
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
 

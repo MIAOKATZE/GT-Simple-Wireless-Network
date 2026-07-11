@@ -122,19 +122,46 @@ public class AEMonitorDataSet {
     }
 
     /**
-     * 采样锁：每个 key 独立。距离上次采样 ≥ 100 ticks 才允许触发新采样。
+     * 采样锁：每个 key 独立。距离上次采样 ≥ intervalTicks 才允许触发新采样。
      *
-     * @param key  被监视物品/流体的字符串标识
-     * @param tick 当前世界 tick
+     * @param key           被监视物品/流体的字符串标识
+     * @param tick          当前世界 tick
+     * @param intervalTicks 采样间隔（tick），小于等于 0 时按 100 ticks 兜底
      * @return true=获得锁并已更新 lastSampleTick；false=尚未到下一次采样时间
      */
-    public boolean tryAcquireSampleLock(String key, long tick) {
+    public boolean tryAcquireSampleLock(String key, long tick, int intervalTicks) {
+        long interval = intervalTicks > 0 ? intervalTicks : 100L;
         Long last = lastSampleTick.get(key);
-        if (last == null || tick - last.longValue() >= 100L) {
+        if (last == null || tick - last.longValue() >= interval) {
             lastSampleTick.put(key, tick);
             return true;
         }
         return false;
+    }
+
+    /**
+     * 计算指定 key 在 5 分钟窗口内的平均变化率（amount / minute）。
+     * <p>
+     * 使用 {@code series5m} 窗口的首尾两个采样点：
+     * {@code (last.amount - first.amount) / (last.tick - first.tick) * 1200.0}。
+     * 其中 1200 = 20 ticks/秒 × 60 秒/分钟，将 tick 差转换为分钟。
+     *
+     * @param key 被监视物品/流体的字符串标识
+     * @return 平均变化率（每分钟数量变化）；样本不足或 tick 差非正则返回 0.0
+     */
+    public double averageRate300s(String key) {
+        AEMonitorWindowSeries series = series5m.get(key);
+        if (series == null || series.size() < 2) {
+            return 0.0D;
+        }
+        List<AEMonitorSample> samples = series.copy();
+        AEMonitorSample first = samples.get(0);
+        AEMonitorSample last = samples.get(samples.size() - 1);
+        long tickDiff = last.tick - first.tick;
+        if (tickDiff <= 0L) {
+            return 0.0D;
+        }
+        return (last.amount - first.amount) / (double) tickDiff * 1200.0D;
     }
 
     /**

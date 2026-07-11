@@ -3,7 +3,6 @@ package com.miaokatze.gtswn.client.gui;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
@@ -11,13 +10,11 @@ import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.fluids.FluidStack;
 
-import org.lwjgl.opengl.GL11;
-
-import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
@@ -45,10 +42,30 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private GuiTextField lineField;
     private GuiTextField smoothingField;
     private GuiTextField screenColorField;
+
+    // AE 图表配置文本框（tab=1）
+    private GuiTextField aeAxisMinField;
+    private GuiTextField aeAxisMaxField;
+    private GuiTextField aeChartBorderField;
+    private GuiTextField aeTrendLineField;
+    private GuiTextField aeSmoothingField;
+    private GuiTextField aeBgField;
+    private GuiTextField aeLineColorField;
+
     /** 客户端上一次渲染时使用的标签页，用于检测服务端同步后重建控件 */
     private int lastKnownTab = -1;
     /** 用户点击切页后暂存的目标标签页，避免服务端回包前被旧值覆盖 */
     private int pendingTab = -1;
+
+    /** AE 监控列表当前渲染的条目（ItemStack 或 FluidStack），用于 actionPerformed 中定位移除目标 */
+    private Object[] monitoredEntries = new Object[0];
+
+    // AE 标签页控件 ID
+    private static final int AE_WINDOW_BUTTON = 10;
+    private static final int AE_APPLY_BUTTON = 11;
+    private static final int AE_DISPLAY_MODE_BUTTON = 12;
+    private static final int AE_CLEAR_ALL_BUTTON = 13;
+    private static final int AE_MONITOR_REMOVE_BASE = 200;
 
     public GuiNetworkInfoPanel(TileEntityNetworkInfoPanel panel) {
         this.panel = panel;
@@ -74,8 +91,13 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         if (activeTab == 0) {
             // EU 标签页：原有按钮 0-8 + textFields
             initEUTabControls();
+        } else if (activeTab == 1) {
+            // AE 走势图标签页：改为纯配置面板
+            initAEChartTabControls();
+        } else if (activeTab == 2) {
+            // AE 实时监控标签页：改为管理面板
+            initAEMonitorTabControls();
         }
-        // AE 标签页（1/2）暂无按钮控件，仅绘制占位
         lastKnownTab = activeTab;
     }
 
@@ -151,6 +173,87 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         screenColorField = addField(left + 250, fieldY, 66, panel.getScreenBackgroundColorText());
     }
 
+    /** 初始化 AE 走势图配置标签页控件（tab=1） */
+    private void initAEChartTabControls() {
+        int fieldY = top + 96;
+        aeAxisMinField = addField(left + 104, fieldY, 66, panel.getAEAxisMinText());
+        aeAxisMaxField = addField(left + 250, fieldY, 66, panel.getAEAxisMaxText());
+        fieldY += 22;
+        aeChartBorderField = addField(left + 104, fieldY, 46, String.valueOf(panel.getAEChartBorderThickness()));
+        aeTrendLineField = addField(left + 250, fieldY, 46, String.valueOf(panel.getAETrendLineThickness()));
+        aeSmoothingField = addField(left + 372, fieldY, 46, String.valueOf(panel.getAETrendLineSmoothing()));
+        fieldY += 22;
+        aeBgField = addField(left + 104, fieldY, 66, panel.getAEChartBackgroundColorText());
+        aeLineColorField = addField(left + 250, fieldY, 66, panel.getAELineColorText());
+
+        // 时长循环按钮与应用按钮
+        buttonList.add(
+            new GuiButton(
+                AE_WINDOW_BUTTON,
+                left + 12,
+                top + 52,
+                130,
+                16,
+                getAEWindowDisplay(panel.getAETrackingWindow())));
+        buttonList
+            .add(new GuiButton(AE_APPLY_BUTTON, left + 344, top + 52, 74, 16, tr("gtswn.network_info.gui.apply")));
+    }
+
+    /** 初始化 AE 实时监控管理标签页控件（tab=2） */
+    @SuppressWarnings("unchecked")
+    private void initAEMonitorTabControls() {
+        // 显示模式切换 + 全部清除
+        buttonList.add(
+            new GuiButton(
+                AE_DISPLAY_MODE_BUTTON,
+                left + 12,
+                top + 52,
+                112,
+                16,
+                panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
+                    : tr("gtswn.network_info.gui.mode.scientific")));
+        buttonList.add(
+            new GuiButton(
+                AE_CLEAR_ALL_BUTTON,
+                left + 318,
+                top + 52,
+                100,
+                16,
+                tr("gtswn.network_info.gui.ae.clear_all")));
+
+        // 构造当前监控条目数组，便于 actionPerformed 通过 ID 反查
+        List<ItemStack> items = panel.getMonitoredItems();
+        List<FluidStack> fluids = panel.getMonitoredFluids();
+        int total = items.size() + fluids.size();
+        monitoredEntries = new Object[total];
+        int idx = 0;
+        for (ItemStack stack : items) {
+            monitoredEntries[idx++] = stack;
+        }
+        for (FluidStack fluid : fluids) {
+            monitoredEntries[idx++] = fluid;
+        }
+
+        // 为每个监控条目添加移除按钮
+        int rowY = top + 96;
+        int rowHeight = 20;
+        int bottomLimit = top + ySize - 30;
+        for (int i = 0; i < monitoredEntries.length; i++) {
+            if (rowY + rowHeight > bottomLimit) {
+                break;
+            }
+            buttonList.add(
+                new GuiButton(
+                    AE_MONITOR_REMOVE_BASE + i,
+                    left + 344,
+                    rowY + 2,
+                    60,
+                    14,
+                    tr("gtswn.network_info.gui.ae.remove")));
+            rowY += rowHeight;
+        }
+    }
+
     @Override
     protected void actionPerformed(GuiButton button) {
         if (button.id == TAB_EU || button.id == TAB_AE_CHART || button.id == TAB_AE_MONITOR) {
@@ -164,11 +267,74 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             return;
         }
         if (button.id == 8) {
+            // EU 图表配置应用
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, buildChartConfig()));
+        } else if (button.id == AE_APPLY_BUTTON) {
+            // AE 图表配置应用
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                new PacketUpdateNetworkInfoPanelConfig(
+                    panel.xCoord,
+                    panel.yCoord,
+                    panel.zCoord,
+                    buildAEChartConfig(),
+                    true));
+        } else if (button.id == AE_WINDOW_BUTTON) {
+            // 循环切换 AE 时长窗口并立即发送
+            int next = (panel.getAETrackingWindow() + 1) % 4;
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                new PacketUpdateNetworkInfoPanelConfig(
+                    panel.xCoord,
+                    panel.yCoord,
+                    panel.zCoord,
+                    "aeWindow=" + next,
+                    true));
+        } else if (button.id == AE_DISPLAY_MODE_BUTTON) {
+            // AE 监控标签页的显示模式切换复用 EU 的 action 7
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, 7));
+        } else if (button.id == AE_CLEAR_ALL_BUTTON) {
+            // 移除当前所有监控项
+            sendClearAllMonitors();
+        } else if (isMonitorRemoveButton(button.id)) {
+            int idx = button.id - AE_MONITOR_REMOVE_BASE;
+            sendMonitorToggle(idx);
         } else {
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
+        }
+    }
+
+    /** 判断按钮 ID 是否对应当前监控列表中的移除按钮 */
+    private boolean isMonitorRemoveButton(int id) {
+        return id >= AE_MONITOR_REMOVE_BASE && id < AE_MONITOR_REMOVE_BASE + monitoredEntries.length;
+    }
+
+    /** 发送指定索引监控条目的移除包（action 3=物品，4=流体） */
+    private void sendMonitorToggle(int idx) {
+        if (idx < 0 || idx >= monitoredEntries.length) {
+            return;
+        }
+        Object entry = monitoredEntries[idx];
+        NBTTagCompound data = new NBTTagCompound();
+        byte action;
+        if (entry instanceof ItemStack) {
+            ((ItemStack) entry).writeToNBT(data);
+            action = 3;
+        } else if (entry instanceof FluidStack) {
+            ((FluidStack) entry).writeToNBT(data);
+            action = 4;
+        } else {
+            return;
+        }
+        GTSWNPacketHandler.NETWORK
+            .sendToServer(new PacketUpdateAETabState(panel.xCoord, panel.yCoord, panel.zCoord, action, 0, data));
+    }
+
+    /** 发送所有当前监控条目的移除包 */
+    private void sendClearAllMonitors() {
+        for (int i = 0; i < monitoredEntries.length; i++) {
+            sendMonitorToggle(i);
         }
     }
 
@@ -224,6 +390,13 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     button.displayString = panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
                         : tr("gtswn.network_info.gui.mode.scientific");
                     break;
+                case AE_WINDOW_BUTTON:
+                    button.displayString = getAEWindowDisplay(panel.getAETrackingWindow());
+                    break;
+                case AE_DISPLAY_MODE_BUTTON:
+                    button.displayString = panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
+                        : tr("gtswn.network_info.gui.mode.scientific");
+                    break;
                 default:
                     break;
             }
@@ -248,7 +421,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             drawAEMonitorTab();
         }
         super.drawScreen(mouseX, mouseY, partialTicks);
-        if (activeTab == 0) {
+        if (activeTab == 0 || activeTab == 1) {
             for (GuiTextField field : textFields) {
                 field.drawTextBox();
             }
@@ -283,7 +456,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         drawChartSettings();
     }
 
-    /** 绘制 AE 走势图标签页（v1.5.3） */
+    /** 绘制 AE 走势图配置标签页（v1.5.4 改为纯配置界面，数据展示由 TESR 负责） */
     private void drawAEChartTab() {
         ItemStack item = panel.getChartItem();
         FluidStack fluid = panel.getChartFluid();
@@ -295,7 +468,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             return;
         }
 
-        // 绑定图标
+        // 绑定图标与名称（只读）
         int iconX = left + 12;
         int iconY = top + 48;
         String name;
@@ -306,151 +479,49 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             drawFluidIcon(fluid, iconX, iconY);
             name = fluid.getLocalizedName();
         }
-
-        // 名称
         fontRendererObj.drawString(name, left + 34, top + 50, 0x2F3640);
 
-        // 当前存量与变化速率（取最新样本）
-        List<AEMonitorSample> samples = panel.getAEChartSamples();
-        AEMonitorSample newest = samples.isEmpty() ? null : samples.get(samples.size() - 1);
-        int displayMode = panel.getDisplayMode();
-        String amountText = newest == null ? tr("gtswn.network_info.gui.ae.chart.collecting")
-            : formatAEMonitorAmount(newest.amount, displayMode);
-        fontRendererObj.drawString(
-            StatCollector.translateToLocalFormatted("gtswn.network_info.gui.ae.chart.current", amountText),
-            left + 34,
-            top + 62,
-            0x2F3640);
-
-        String rateText = newest == null ? "-" : formatAEMonitorRate(newest.rate, displayMode);
-        String rateLabel = StatCollector.translateToLocalFormatted("gtswn.network_info.gui.ae.chart.rate", rateText);
-        int rateColor = newest == null ? 0x6B7680 : rateColor(newest.rate);
-        fontRendererObj.drawString(rateLabel, left + 34, top + 74, rateColor);
-
-        // 走势图区域
-        int chartX = left + 12;
-        int chartY = top + 92;
-        int chartW = xSize - 24;
-        int chartH = ySize - 110;
-        drawChartFrame(chartX, chartY, chartW, chartH);
-
-        if (samples.size() < 2) {
-            String collecting = StatCollector
-                .translateToLocalFormatted("gtswn.network_info.gui.ae.chart.collecting", samples.size());
-            fontRendererObj.drawString(
-                collecting,
-                chartX + (chartW - fontRendererObj.getStringWidth(collecting)) / 2,
-                chartY + chartH / 2 - 4,
-                0x777777);
-            return;
-        }
-
-        double[] amounts = new double[samples.size()];
-        for (int i = 0; i < samples.size(); i++) {
-            amounts[i] = samples.get(i).amount;
-        }
-        double[] range = range(amounts, null, null);
-        drawAESeries(amounts, range, chartX + 1, chartY + 1, chartW - 2, chartH - 2, 0x1F6FFF, 2, 4);
+        // 配置项标签
+        drawAEChartSettings();
     }
 
-    /** 绘制走势图矩形边框与背景 */
-    private void drawChartFrame(int x, int y, int w, int h) {
-        drawRect(x, y, x + w, y + h, 0xFFEEEEEE);
-        drawRect(x, y, x + w, y + 1, 0xFFB8C0C8);
-        drawRect(x, y + h - 1, x + w, y + h, 0xFFB8C0C8);
-        drawRect(x, y, x + 1, y + h, 0xFFB8C0C8);
-        drawRect(x + w - 1, y, x + w, y + h, 0xFFB8C0C8);
-    }
-
-    /** 绘制 AE 实时监控标签页（v1.5.3） */
+    /** 绘制 AE 实时监控管理标签页（v1.5.4 改为纯管理界面，数据展示由 TESR 负责） */
     private void drawAEMonitorTab() {
-        List<ItemStack> items = panel.getMonitoredItems();
-        List<FluidStack> fluids = panel.getMonitoredFluids();
-        int itemCount = items.size();
-        int fluidCount = fluids.size();
+        // 右键提示
+        fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.rightclick_hint"), left + 12, top + 80, 0x6B7680);
 
         // 空列表提示
-        if (itemCount == 0 && fluidCount == 0) {
-            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.empty"), left + 12, top + 64, 0x6B7680);
-            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.rightclick_hint"), left + 12, top + 84, 0x6B7680);
+        if (monitoredEntries.length == 0) {
+            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.empty"), left + 12, top + 100, 0x6B7680);
             return;
         }
 
         // 表头
-        int displayMode = panel.getDisplayMode();
-        int headerY = top + 52;
+        int headerY = top + 96;
         fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.header_icon"), left + 12, headerY, 0x4C5660);
         fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.header_name"), left + 36, headerY, 0x4C5660);
-        fontRendererObj
-            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_amount"), left + 230, headerY, 0x4C5660);
-        fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.header_rate"), left + 340, headerY, 0x4C5660);
 
-        Map<String, AEMonitorSample> latest = panel.getAEMonitorLatest();
-        int rowY = top + 68;
+        // 监控条目行（仅图标+名称，移除按钮在 initGui 中创建）
+        int rowY = top + 112;
         int rowHeight = 20;
         int bottomLimit = top + ySize - 30;
-
-        // 物品行
-        for (ItemStack stack : items) {
-            if (rowY + rowHeight > bottomLimit) break;
-            String key = TileEntityNetworkInfoPanel.getAEKey(stack);
-            AEMonitorSample sample = key == null ? null : latest.get(key);
-            drawMonitorRow(stack, null, sample, rowY, displayMode);
+        for (Object entry : monitoredEntries) {
+            if (rowY + rowHeight > bottomLimit) {
+                break;
+            }
+            if (entry instanceof ItemStack) {
+                ItemStack stack = (ItemStack) entry;
+                drawItemIcon(stack, left + 12, rowY);
+                String name = fontRendererObj.trimStringToWidth(stack.getDisplayName(), 220);
+                fontRendererObj.drawString(name, left + 36, rowY + 4, 0x2F3640);
+            } else if (entry instanceof FluidStack) {
+                FluidStack fluid = (FluidStack) entry;
+                drawFluidIcon(fluid, left + 12, rowY);
+                String name = fontRendererObj.trimStringToWidth(fluid.getLocalizedName(), 220);
+                fontRendererObj.drawString(name, left + 36, rowY + 4, 0x2F3640);
+            }
             rowY += rowHeight;
         }
-
-        // 流体行
-        for (FluidStack fluid : fluids) {
-            if (rowY + rowHeight > bottomLimit) break;
-            String key = TileEntityNetworkInfoPanel.getAEKey(fluid);
-            AEMonitorSample sample = key == null ? null : latest.get(key);
-            drawMonitorRow(null, fluid, sample, rowY, displayMode);
-            rowY += rowHeight;
-        }
-    }
-
-    /** 绘制实时监控列表中的一行 */
-    private void drawMonitorRow(ItemStack item, FluidStack fluid, AEMonitorSample sample, int rowY, int displayMode) {
-        int iconX = left + 12;
-        String name;
-        if (item != null) {
-            drawItemIcon(item, iconX, rowY);
-            name = item.getDisplayName();
-        } else {
-            drawFluidIcon(fluid, iconX, rowY);
-            name = fluid.getLocalizedName();
-        }
-
-        // 名称（截断以避免重叠）
-        int nameMaxWidth = 180;
-        String displayName = fontRendererObj.trimStringToWidth(name, nameMaxWidth);
-        fontRendererObj.drawString(displayName, left + 36, rowY + 4, 0x2F3640);
-
-        // 当前存量
-        String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, displayMode);
-        fontRendererObj.drawString(amountText, left + 230, rowY + 4, 0x2F3640);
-
-        // 变化速率
-        String rateText;
-        int color;
-        if (sample == null) {
-            rateText = "-";
-            color = 0x6B7680;
-        } else if (sample.rate > 0.0D) {
-            rateText = String.format(
-                StatCollector.translateToLocal("gtswn.network_info.gui.ae.rate.up"),
-                formatAEMonitorRate(sample.rate, displayMode));
-            color = 0x4CAF50;
-        } else if (sample.rate < 0.0D) {
-            rateText = String.format(
-                StatCollector.translateToLocal("gtswn.network_info.gui.ae.rate.down"),
-                formatAEMonitorRate(-sample.rate, displayMode));
-            color = 0xF44336;
-        } else {
-            rateText = StatCollector.translateToLocal("gtswn.network_info.gui.ae.rate.stable");
-            color = 0x6B7680;
-        }
-        fontRendererObj.drawString(rateText, left + 340, rowY + 4, color);
     }
 
     /** 在面板最左上角绘制统一的“网络信息屏”标题栏 */
@@ -539,6 +610,25 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fontRendererObj.drawString(tr("gtswn.network_info.gui.blank_auto"), left + 326, y + 4, 0x6B7680);
     }
 
+    /** 绘制 AE 走势图配置项标签（与 EU 的 drawChartSettings 布局对称） */
+    private void drawAEChartSettings() {
+        int x = left + 12;
+        int y = top + 76;
+        fontRendererObj
+            .drawString(EnumChatFormatting.BOLD + tr("gtswn.network_info.gui.ae.chart_settings"), x, y, 0x2F3640);
+        y += 16;
+        drawFieldLabel(tr("gtswn.network_info.gui.ae.y_min"), left + 12, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.ae.y_max"), left + 180, y + 4);
+        y += 22;
+        drawFieldLabel(tr("gtswn.network_info.gui.ae.border"), left + 12, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.ae.line_width"), left + 180, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.ae.smoothing"), left + 326, y + 4);
+        y += 22;
+        drawFieldLabel(tr("gtswn.network_info.gui.ae.bg"), left + 12, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.ae.line_color"), left + 180, y + 4);
+        fontRendererObj.drawString(tr("gtswn.network_info.gui.blank_auto"), left + 326, y + 4, 0x6B7680);
+    }
+
     private void drawFieldLabel(String label, int x, int y) {
         fontRendererObj.drawString(label, x, y, 0x4C5660);
     }
@@ -569,6 +659,50 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             + "\n"
             + "screenColor="
             + screenColorField.getText();
+    }
+
+    /** 打包 AE 图表配置为 TileEntity.applyAEChartConfig 可解析的字符串 */
+    private String buildAEChartConfig() {
+        return "aeMin=" + aeAxisMinField.getText()
+            + "\n"
+            + "aeMax="
+            + aeAxisMaxField.getText()
+            + "\n"
+            + "aeBorder="
+            + aeChartBorderField.getText()
+            + "\n"
+            + "aeLineW="
+            + aeTrendLineField.getText()
+            + "\n"
+            + "aeSmoothing="
+            + aeSmoothingField.getText()
+            + "\n"
+            + "aeBg="
+            + aeBgField.getText()
+            + "\n"
+            + "aeLineColor="
+            + aeLineColorField.getText();
+    }
+
+    /** 根据 AE 时长窗口常量生成按钮显示文本 */
+    private String getAEWindowDisplay(int window) {
+        String suffix;
+        switch (window) {
+            case 1:
+                suffix = tr("gtswn.network_info.gui.ae.window.1h");
+                break;
+            case 2:
+                suffix = tr("gtswn.network_info.gui.ae.window.8h");
+                break;
+            case 3:
+                suffix = tr("gtswn.network_info.gui.ae.window.24h");
+                break;
+            case 0:
+            default:
+                suffix = tr("gtswn.network_info.gui.ae.window.5min");
+                break;
+        }
+        return tr("gtswn.network_info.gui.ae.window") + ": " + suffix;
     }
 
     private static String bool(String label, boolean value) {
@@ -623,114 +757,4 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         return 0x6B7680;
     }
 
-    /** 绘制 AE 走势图单条数据线（参考 RenderNetworkInfoPanel.drawSeries） */
-    private static void drawAESeries(double[] values, double[] range, int x, int y, int w, int h, int color,
-        int thickness, int smoothing) {
-        if (values == null || values.length < 2 || h <= 2 || range == null) {
-            return;
-        }
-        double min = range[0];
-        double max = range[1];
-        // smoothing 配置映射为样条分段数：0=线性(1段)，1..12 → 4..26 段
-        int segments = smoothing <= 0 ? 1 : smoothing * 2 + 2;
-        double[][] path = catmullRomPath(values, segments);
-
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glLineWidth(thickness);
-        setGLColor(color);
-        GL11.glBegin(GL11.GL_LINE_STRIP);
-        double denom = values.length - 1;
-        for (int i = 0; i < path.length; i++) {
-            double normalized = (path[i][1] - min) / (max - min);
-            // clamp 到 [0,1] 防止样条过冲溢出图表区
-            normalized = Math.max(0.0D, Math.min(1.0D, normalized));
-            double px = x + path[i][0] / denom * w;
-            double py = y + h - normalized * h;
-            GL11.glVertex3d(px, py, 0.0D);
-        }
-        GL11.glEnd();
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-        GL11.glColor4f(1F, 1F, 1F, 1F);
-    }
-
-    /**
-     * 用 Catmull-Rom 样条曲线在样品点之间生成密集顶点路径。
-     * 样条经过每个样品点（p1、p2 为段端点）；两端用线性外推虚拟点处理边界。
-     *
-     * @param values          样品值数组（已按时间索引化，X 等间距）
-     * @param segmentsPerSpan 每相邻两点间的插值段数（≥1；1 = 线性）
-     * @return 密集顶点路径，长度 = (values.length - 1) * segmentsPerSpan + 1
-     */
-    private static double[][] catmullRomPath(double[] values, int segmentsPerSpan) {
-        int n = values.length;
-        if (n < 2 || segmentsPerSpan < 1) {
-            double[][] path = new double[n][2];
-            for (int i = 0; i < n; i++) {
-                path[i][0] = i;
-                path[i][1] = values[i];
-            }
-            return path;
-        }
-        int total = (n - 1) * segmentsPerSpan + 1;
-        double[][] path = new double[total][2];
-        path[0][0] = 0D;
-        path[0][1] = values[0];
-
-        int idx = 1;
-        for (int i = 0; i < n - 1; i++) {
-            double p0 = (i == 0) ? 2 * values[0] - values[1] : values[i - 1];
-            double p1 = values[i];
-            double p2 = values[i + 1];
-            double p3 = (i + 2 >= n) ? 2 * values[n - 1] - values[n - 2] : values[i + 2];
-
-            for (int s = 1; s <= segmentsPerSpan; s++) {
-                double t = (double) s / segmentsPerSpan;
-                double t2 = t * t;
-                double t3 = t2 * t;
-                double y = 0.5D * (2 * p1 + (-p0 + p2) * t
-                    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
-                    + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
-                path[idx][0] = i + t;
-                path[idx][1] = y;
-                idx++;
-            }
-        }
-        return path;
-    }
-
-    /** 计算数据范围，支持自定义最小/最大值，自动模式追加 10% 冗余 */
-    private static double[] range(double[] values, Double customMin, Double customMax) {
-        double min = values[0];
-        double max = values[0];
-        for (double value : values) {
-            min = Math.min(min, value);
-            max = Math.max(max, value);
-        }
-        if (customMin != null) {
-            min = customMin.doubleValue();
-        }
-        if (customMax != null) {
-            max = customMax.doubleValue();
-        }
-        if (Math.abs(max - min) < 0.000001D || max < min) {
-            double center = (max + min) / 2.0D;
-            min = center - 0.5D;
-            max = center + 0.5D;
-            return new double[] { min, max };
-        }
-        if (customMin == null && customMax == null) {
-            double span = max - min;
-            min = min - span * 0.1D;
-            max = max + span * 0.1D;
-        }
-        return new double[] { min, max };
-    }
-
-    /** 将 0xRRGGBB 颜色设置为当前 OpenGL 绘制颜色 */
-    private static void setGLColor(int color) {
-        float r = ((color >> 16) & 255) / 255.0F;
-        float g = ((color >> 8) & 255) / 255.0F;
-        float b = (color & 255) / 255.0F;
-        GL11.glColor4f(r, g, b, 1.0F);
-    }
 }

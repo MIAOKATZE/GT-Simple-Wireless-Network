@@ -14,6 +14,11 @@ import io.netty.buffer.ByteBuf;
 
 public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
 
+    /** 常规 EU 图表配置（对应 TileEntity.applyChartConfig） */
+    public static final int ACTION_CHART_CONFIG = -1;
+    /** AE 图表配置（对应 TileEntity.applyAEChartConfig） */
+    public static final int ACTION_AE_CHART_CONFIG = -2;
+
     private int x;
     private int y;
     private int z;
@@ -30,10 +35,14 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
     }
 
     public PacketUpdateNetworkInfoPanelConfig(int x, int y, int z, String chartConfig) {
+        this(x, y, z, chartConfig, false);
+    }
+
+    public PacketUpdateNetworkInfoPanelConfig(int x, int y, int z, String chartConfig, boolean aeConfig) {
         this.x = x;
         this.y = y;
         this.z = z;
-        this.action = -1;
+        this.action = aeConfig ? ACTION_AE_CHART_CONFIG : ACTION_CHART_CONFIG;
         this.chartConfig = chartConfig == null ? "" : chartConfig;
     }
 
@@ -75,10 +84,12 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
             TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
             if (tile instanceof TileEntityNetworkInfoPanel) {
                 TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
-                if (message.action >= 0) {
-                    panel.applyConfigAction(message.action);
-                } else {
+                if (message.action == ACTION_CHART_CONFIG) {
                     panel.applyChartConfig(message.chartConfig);
+                } else if (message.action == ACTION_AE_CHART_CONFIG) {
+                    panel.applyAEChartConfig(message.chartConfig);
+                } else if (message.action >= 0) {
+                    panel.applyConfigAction(message.action);
                 }
             }
         }

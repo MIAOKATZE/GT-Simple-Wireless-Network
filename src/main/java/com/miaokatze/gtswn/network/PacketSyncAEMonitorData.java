@@ -40,14 +40,23 @@ public class PacketSyncAEMonitorData implements IMessage {
     /** 实时监控列表各 key 的最新采样值 */
     private Map<String, AEMonitorSample> monitorLatest;
 
+    /** 实时监控列表各 key 的 300s 平均变化率 */
+    private Map<String, Double> monitorAvg300s;
+
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketSyncAEMonitorData() {
         this.chartSamples = new ArrayList<>();
         this.monitorLatest = new HashMap<>();
+        this.monitorAvg300s = new HashMap<>();
     }
 
     public PacketSyncAEMonitorData(int x, int y, int z, String chartKey, List<AEMonitorSample> chartSamples,
         Map<String, AEMonitorSample> monitorLatest) {
+        this(x, y, z, chartKey, chartSamples, monitorLatest, null);
+    }
+
+    public PacketSyncAEMonitorData(int x, int y, int z, String chartKey, List<AEMonitorSample> chartSamples,
+        Map<String, AEMonitorSample> monitorLatest, Map<String, Double> monitorAvg300s) {
         this.x = x;
         this.y = y;
         this.z = z;
@@ -55,6 +64,7 @@ public class PacketSyncAEMonitorData implements IMessage {
         // 深拷贝，避免外部修改包数据
         this.chartSamples = chartSamples == null ? new ArrayList<>() : new ArrayList<>(chartSamples);
         this.monitorLatest = monitorLatest == null ? new HashMap<>() : new HashMap<>(monitorLatest);
+        this.monitorAvg300s = monitorAvg300s == null ? new HashMap<>() : new HashMap<>(monitorAvg300s);
     }
 
     @Override
@@ -78,6 +88,12 @@ public class PacketSyncAEMonitorData implements IMessage {
             ByteBufUtils.writeUTF8String(buf, entry.getKey());
             writeSample(buf, entry.getValue());
         }
+
+        buf.writeInt(monitorAvg300s.size());
+        for (Map.Entry<String, Double> entry : monitorAvg300s.entrySet()) {
+            ByteBufUtils.writeUTF8String(buf, entry.getKey());
+            buf.writeDouble(entry.getValue());
+        }
     }
 
     @Override
@@ -88,6 +104,7 @@ public class PacketSyncAEMonitorData implements IMessage {
 
         chartSamples = new ArrayList<>();
         monitorLatest = new HashMap<>();
+        monitorAvg300s = new HashMap<>();
 
         boolean hasChart = buf.readBoolean();
         if (hasChart) {
@@ -105,6 +122,13 @@ public class PacketSyncAEMonitorData implements IMessage {
             String key = ByteBufUtils.readUTF8String(buf);
             AEMonitorSample sample = readSample(buf);
             monitorLatest.put(key, sample);
+        }
+
+        int avgCount = buf.readInt();
+        for (int i = 0; i < avgCount; i++) {
+            String key = ByteBufUtils.readUTF8String(buf);
+            double avg = buf.readDouble();
+            monitorAvg300s.put(key, avg);
         }
     }
 
@@ -161,7 +185,7 @@ public class PacketSyncAEMonitorData implements IMessage {
                     TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) world
                         .getTileEntity(msg.x, msg.y, msg.z);
                     if (panel != null) {
-                        panel.receiveAEMonitorData(msg.chartSamples, msg.monitorLatest);
+                        panel.receiveAEMonitorData(msg.chartSamples, msg.monitorLatest, msg.monitorAvg300s);
                     }
                 });
             return null;

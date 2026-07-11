@@ -1,7 +1,6 @@
 package com.miaokatze.gtswn.common.block;
 
 import java.util.ArrayList;
-import java.util.UUID;
 
 import net.minecraft.block.BlockContainer;
 import net.minecraft.block.material.Material;
@@ -19,6 +18,7 @@ import net.minecraft.world.World;
 import net.minecraftforge.fluids.FluidContainerRegistry;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.CreativeTabManager;
@@ -87,17 +87,10 @@ public class BlockNetworkInfoPanel extends BlockContainer {
                 EntityPlayer player = (EntityPlayer) placer;
                 panel.bindOwner(player.getUniqueID(), player.getCommandSenderName());
             }
-            if (stack != null && stack.hasTagCompound()
-                && stack.getTagCompound()
-                    .hasKey("PanelUUID")) {
-                // 来自掉落物或复制：恢复 PanelUUID 以及其它放置数据
+            if (stack != null && stack.hasTagCompound()) {
+                // 来自掉落物或复制：恢复放置数据（OwnerUUID、图表配置等）
+                // 旧版 PanelUUID 已不再使用，读取时会被忽略
                 panel.readPlacementData(stack.getTagCompound());
-            } else {
-                // 新放置或旧物品无 UUID：分配新的 panelUUID
-                panel.setPanelUUID(UUID.randomUUID());
-            }
-            if (panel.getPanelUUID() == null) {
-                panel.setPanelUUID(UUID.randomUUID());
             }
             panel.rebuildScreen();
         }
@@ -182,7 +175,16 @@ public class BlockNetworkInfoPanel extends BlockContainer {
     public void breakBlock(World world, int x, int y, int z, net.minecraft.block.Block block, int meta) {
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile instanceof TileEntityNetworkInfoPanel) {
-            ((TileEntityNetworkInfoPanel) tile).detachScreen();
+            TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
+            panel.detachScreen();
+            // 服务端清理该坐标在 AEMonitorDataStore 中的数据，防止破坏后残留 AE 监控数据
+            if (!world.isRemote) {
+                String dataKey = panel.getAEMonitorDataKey();
+                if (dataKey != null) {
+                    AEMonitorDataStore.get(world)
+                        .remove(dataKey);
+                }
+            }
         }
         super.breakBlock(world, x, y, z, block, meta);
         // v1.4.6：主屏破坏后通知附近主屏重建，避免旧 screen 状态残留（与 Extender.breakBlock 行为一致）
