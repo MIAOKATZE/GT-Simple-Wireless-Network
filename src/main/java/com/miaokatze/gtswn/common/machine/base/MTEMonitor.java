@@ -69,7 +69,7 @@ public abstract class MTEMonitor extends MetaTileEntity {
      * 显示模式
      * <ul>
      * <li>0 = 常规计数（带逗号分隔，如 1,234,567）</li>
-     * <li>1 = 科学计数法（如 1.235×10^6）</li>
+     * <li>1 = 科学计数法（如 1.23E6）</li>
      * </ul>
      */
     protected int displayMode = 0;

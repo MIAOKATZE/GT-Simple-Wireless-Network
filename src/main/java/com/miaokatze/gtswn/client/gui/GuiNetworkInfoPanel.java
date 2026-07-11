@@ -331,12 +331,12 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         buttonList.add(new GuiButton(AE_MONITOR_ICON_SIZE_MINUS, left + 96, row2Y, 24, 16, "-"));
         buttonList.add(new GuiButton(AE_MONITOR_ICON_SIZE_PLUS, left + 124, row2Y, 24, 16, "+"));
 
-        // 区域 3：全部清除按钮
+        // 区域 3：全部清除按钮（向下移动 10px，避免与简报区 top+100 贴边）
         buttonList.add(
             new GuiButton(
                 AE_CLEAR_ALL_BUTTON,
                 left + 318,
-                top + 102,
+                top + 112,
                 100,
                 16,
                 tr("gtswn.network_info.gui.ae.clear_all")));
@@ -650,18 +650,21 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             briefY,
             statusColor);
 
-        // 区域 4：表头（滚动列表内部绘制行内容：图标/名称/实时变化量/平均变化量/清除按钮）
-        int headerY = top + 146;
+        // 区域 4：表头（滚动列表内部绘制行内容：图标/名称/数量/实时变化量/平均变化量/清除按钮）
+        // headerY 上移 8px：原 top+146 与列表第一行图标 top+150 重叠 2-6px，现留出约 4px 间距
+        int headerY = top + 138;
         int listLeft = left + 8;
         int listRight = left + xSize - 8;
         fontRendererObj
             .drawString(tr("gtswn.network_info.gui.ae.monitor.header_icon"), listLeft + 4, headerY, 0x4C5660);
         fontRendererObj
-            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_name"), listLeft + 28, headerY, 0x4C5660);
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_name"), listLeft + 22, headerY, 0x4C5660);
         fontRendererObj
-            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_realtime"), listLeft + 150, headerY, 0x4C5660);
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_amount"), listLeft + 110, headerY, 0x4C5660);
         fontRendererObj
-            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_average"), listLeft + 230, headerY, 0x4C5660);
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_realtime"), listLeft + 170, headerY, 0x4C5660);
+        fontRendererObj
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_average"), listLeft + 260, headerY, 0x4C5660);
         fontRendererObj
             .drawString(tr("gtswn.network_info.gui.ae.monitor.header_remove"), listRight - 56, headerY, 0x4C5660);
 
@@ -993,7 +996,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
      * AE 实时监控自定义滚动列表。
      * <p>
      * 不再继承 {@link GuiSlot}，自行管理滚动偏移、滚动条拖拽、鼠标滚轮与条目绘制。
-     * 每行左侧显示图标与名称，中间显示实时变化量 / 平均变化量两列，右侧 60 像素为“清除”按钮区域。
+     * 每行左侧显示图标、名称与数量/存量，中间显示实时变化量 / 平均变化量两列，右侧 60 像素为“清除”按钮区域。
      * 点击非清除区域无动作；点击清除区域向服务端发送移除包。
      */
     private class GuiAEMonitorList {
@@ -1082,14 +1085,20 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 return;
             }
 
-            // 名称列：限制宽度，避免与目前情况列重叠
-            int nameMaxW = 120;
-            fontRendererObj.drawString(fontRendererObj.trimStringToWidth(name, nameMaxW), x + 22, y + 6, 0x2F3640);
-
-            // 实时变化量 / 平均变化量两列
+            // 提前获取采样数据，供数量列与变化量列共用
             AEMonitorSample sample = key == null ? null
                 : panel.getAEMonitorLatest()
                     .get(key);
+
+            // 名称列：限制宽度，避免与数量列重叠（数量列起始于 x+110）
+            int nameMaxW = 84;
+            fontRendererObj.drawString(fontRendererObj.trimStringToWidth(name, nameMaxW), x + 22, y + 6, 0x2F3640);
+
+            // 数量/存量列
+            String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, displayMode);
+            fontRendererObj.drawString(amountText, x + 110, y + 6, 0x2F3640);
+
+            // 实时变化量 / 平均变化量两列
             String realtimeText;
             int realtimeColor;
             String averageText;
@@ -1112,8 +1121,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     averageColor = rateColor(avgRate);
                 }
             }
-            fontRendererObj.drawString(realtimeText, x + 152, y + 6, realtimeColor);
-            fontRendererObj.drawString(averageText, x + 232, y + 6, averageColor);
+            fontRendererObj.drawString(realtimeText, x + 170, y + 6, realtimeColor);
+            fontRendererObj.drawString(averageText, x + 260, y + 6, averageColor);
 
             // 清除按钮区域（仅视觉提示，点击由 mouseClicked 处理）
             int btnX = listRight - 62;

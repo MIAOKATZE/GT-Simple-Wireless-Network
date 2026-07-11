@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.util;
 
 import java.math.BigInteger;
+import java.util.Locale;
 
 /**
  * 公共格式化工具类
@@ -109,10 +110,10 @@ public class FormatUtil {
      * 比 MTE 原版的 {@code d == 0}（double 比较）更稳健。
      * <p>
      * 格式差异说明：MTE 原版使用 {@code %.3f}（三位小数），HUD 原版使用 {@code %.2f}（两位小数）。
-     * 此处统一采用 {@code %.2f}（两位小数），与任务描述示例 {@code 1.23×10^6} 一致。
+     * 此处统一采用 {@code %.2f}（两位小数），与任务描述示例 {@code 1.23E6} 一致。
      *
      * @param value 要格式化的 BigInteger 值
-     * @return 格式化后的字符串（例如：2.70×10^8），零值或 null 返回 "0"
+     * @return 格式化后的字符串（例如：2.70E8），零值或 null 返回 "0"
      */
     public static String formatScientific(BigInteger value) {
         if (value == null || value.equals(BigInteger.ZERO)) {
@@ -128,8 +129,9 @@ public class FormatUtil {
         // 计算系数（保留两位小数，即三位有效数字）
         double coefficient = doubleValue / Math.pow(10, exponent);
 
-        // 格式化为 "系数×10^指数" 的形式
-        return String.format("%.2f×10^%d", coefficient, exponent);
+        // 使用 E 记法（Locale.ROOT 保证小数点与格式稳定）替代 ×10^，避免非 ASCII 字符显示异常，
+        // 并与国际通用科学计数法格式保持一致。
+        return String.format(Locale.ROOT, "%.2fE%d", coefficient, exponent);
     }
 
     /**
@@ -142,7 +144,7 @@ public class FormatUtil {
      * 不会出现极小值 log10 精度问题；但仍做零值/NaN 防御以保证方法通用性。
      *
      * @param value 要格式化的 double 值（可正可负）
-     * @return 格式化后的字符串（例如：2.70×10^8 或 -1.50×10^3），零值/NaN/Infinity 返回 "0"
+     * @return 格式化后的字符串（例如：2.70E8 或 -1.50E3），零值/NaN/Infinity 返回 "0"
      */
     public static String formatScientificDouble(double value) {
         // 零值、NaN、Infinity 兜底（与 formatScientific(BigInteger) 的零值处理一致）
@@ -159,8 +161,9 @@ public class FormatUtil {
         // 计算系数（保留两位小数，即三位有效数字，与 formatScientific(BigInteger) 一致）
         double coefficient = absValue / Math.pow(10, exponent);
 
-        // 格式化为 "系数×10^指数"
-        String result = String.format("%.2f×10^%d", coefficient, exponent);
+        // 使用 E 记法（Locale.ROOT 保证小数点与格式稳定）替代 ×10^，避免非 ASCII 字符显示异常，
+        // 并与国际通用科学计数法格式保持一致。
+        String result = String.format(Locale.ROOT, "%.2fE%d", coefficient, exponent);
 
         // 负数补负号
         if (value < 0) {

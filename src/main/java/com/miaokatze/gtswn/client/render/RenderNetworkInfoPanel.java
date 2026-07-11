@@ -2,7 +2,6 @@ package com.miaokatze.gtswn.client.render;
 
 import java.math.BigInteger;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import net.minecraft.client.Minecraft;
@@ -605,8 +604,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         // 列宽均分，避免右侧留白过多
         int columnWidth = panelWidth / columns;
 
-        // 每个格子高度：图标 + 两行文字（名称、存量）+ 间距
-        int cellHeight = actualIconSize + fontSize * 2 + 12;
+        // 每个格子高度：图标 + 四行文字（名称、存量、实时变化量、平均变化量）+ 间距
+        int cellHeight = actualIconSize + fontSize * 4 + 14;
         int totalItems = items.size() + fluids.size();
         int rows = (totalItems + columns - 1) / columns;
         int visibleRows = Math.max(0, availableHeight / cellHeight);
@@ -624,11 +623,13 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 ItemStack stack = items.get(index);
                 String key = TileEntityNetworkInfoPanel.getAEKey(stack);
                 AEMonitorSample sample = key == null ? null : latest.get(key);
+                Double avg = key == null ? null : avg300s.get(key);
                 drawAEMonitorCell(
                     font,
                     stack,
                     null,
                     sample,
+                    avg,
                     displayMode,
                     cellX,
                     cellY,
@@ -640,11 +641,13 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 FluidStack fluid = fluids.get(index - items.size());
                 String key = TileEntityNetworkInfoPanel.getAEKey(fluid);
                 AEMonitorSample sample = key == null ? null : latest.get(key);
+                Double avg = key == null ? null : avg300s.get(key);
                 drawAEMonitorCell(
                     font,
                     null,
                     fluid,
                     sample,
+                    avg,
                     displayMode,
                     cellX,
                     cellY,
@@ -672,7 +675,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     /** 绘制 AE 实时监控网格中的一个格子 */
     private void drawAEMonitorCell(FontRenderer font, ItemStack item, FluidStack fluid, AEMonitorSample sample,
-        int displayMode, int cellX, int cellY, int cellWidth, int iconSize, int fontSize, boolean bold) {
+        Double avg, int displayMode, int cellX, int cellY, int cellWidth, int iconSize, int fontSize, boolean bold) {
         String name;
         int actualIconSize = Math.min(iconSize, 32);
         int iconX = cellX + (cellWidth - actualIconSize) / 2;
@@ -694,11 +697,28 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         int nameY = iconY + actualIconSize + 2;
         drawScaledString(font, trimmedName, nameX, nameY, 0x2F3640, fontScale);
 
+        // 存量
         String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, displayMode);
         int amountW = font.getStringWidth(amountText);
         int amountX = cellX + (cellWidth - (int) (amountW * fontScale)) / 2;
         int amountY = nameY + fontSize + 2;
         drawScaledString(font, amountText, amountX, amountY, 0x2F3640, fontScale);
+
+        // 实时变化量
+        int rateY = amountY + fontSize + 2;
+        String rateText = sample == null ? "-" : formatAEMonitorRate(sample.rate, displayMode);
+        int rateW = font.getStringWidth(rateText);
+        int rateX = cellX + (cellWidth - (int) (rateW * fontScale)) / 2;
+        int rateColor = sample == null ? 0x6B7680 : rateColor(sample.rate);
+        drawScaledString(font, rateText, rateX, rateY, rateColor, fontScale);
+
+        // 平均变化量（300秒均值）
+        int avgY = rateY + fontSize + 2;
+        String avgText = avg == null ? "-" : formatAEMonitorRate(avg, displayMode);
+        int avgW = font.getStringWidth(avgText);
+        int avgX = cellX + (cellWidth - (int) (avgW * fontScale)) / 2;
+        int avgColor = avg == null ? 0x6B7680 : rateColor(avg);
+        drawScaledString(font, avgText, avgX, avgY, avgColor, fontScale);
     }
 
     /** 获取 AE 监控项名称的未缩放宽度，用于网格布局计算 */
@@ -988,8 +1008,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         double denom = values.length - 1;
         for (int i = 0; i < path.length; i++) {
             double normalized = (path[i][1] - min) / (max - min);
-            // clamp 到 [0,1] 防止样条过冲溢出图表区
-            normalized = Math.max(0.0D, Math.min(1.0D, normalized));
+            // 由 catmullRomPath 的局部包络限制保证插值点不超出样点范围，
+            // 配合 range() 自动模式预留的 10% 冗余，正常数据下曲线会落在绘图区内
             double px = x + path[i][0] / denom * w;
             double py = y + h - normalized * h;
             GL11.glVertex3d(px, py, 0.0D);
@@ -1051,6 +1071,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     /**
      * 用 Catmull-Rom 样条曲线在样品点之间生成密集顶点路径。
      * 样条经过每个样品点（p1、p2 为段端点）；首尾夹紧端点使端点切线趋于 0，避免曲线超出首末样点。
+     * 每个插值结果均被限制在局部四个控制点（p0、p1、p2、p3）的包络范围内，避免 Catmull-Rom
+     * 样条在内部控制点之间产生过冲而超出相邻样点。
      * X 等间距索引映射：path[i][0] = 索引坐标（浮点），path[i][1] = 值。
      *
      * @param values          样品值数组（已按时间索引化，X 等间距）
@@ -1089,6 +1111,10 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 double y = 0.5D * (2 * p1 + (-p0 + p2) * t
                     + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
                     + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+                // 将插值结果限制在局部四个控制点的包络内，防止内部过冲超出样点范围
+                double localMin = Math.min(Math.min(p0, p1), Math.min(p2, p3));
+                double localMax = Math.max(Math.max(p0, p1), Math.max(p2, p3));
+                y = Math.max(localMin, Math.min(localMax, y));
                 path[idx][0] = i + t;
                 path[idx][1] = y;
                 idx++;
@@ -1165,13 +1191,13 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     }
 
     private static String sci(double value) {
+        // 极小值视为 0，避免无意义的科学计数显示
         if (Math.abs(value) < 0.000001D) {
             return "0";
         }
-        double abs = Math.abs(value);
-        int exp = (int) Math.floor(Math.log10(abs));
-        double mantissa = abs / Math.pow(10.0D, exp);
-        return (value < 0.0D ? "-" : "") + String.format(Locale.ROOT, "%.1fE%d", mantissa, exp);
+        // 统一委托给 FormatUtil，使 HUD 渲染与 MTE 共用同一套 E 格式科学计数法，
+        // 避免 ×10^ 与 E 两种风格混用导致显示不一致。
+        return FormatUtil.formatScientificDouble(value);
     }
 
     private static String tr(String key) {
