@@ -152,7 +152,6 @@ gtswn.network_info.status.lessthan1=0 EU/t (<1EU)
 gtswn.network_info.status.up=+%s EU/t (%s)
 gtswn.network_info.status.down=-%s EU/t (%s)
 gtswn.network_info.gui.title=Network Info Panel
-gtswn.network_info.gui.tab.wireless_eu=Wireless EU Network
 gtswn.network_info.gui.brief.eu=Brief EU
 gtswn.network_info.gui.chart.eu=Chart EU
 gtswn.network_info.gui.window=Window

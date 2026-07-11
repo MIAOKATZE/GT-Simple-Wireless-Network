@@ -152,7 +152,6 @@ gtswn.network_info.status.lessthan1=0 EU/t（<1EU）
 gtswn.network_info.status.up=+%s EU/t（%s）
 gtswn.network_info.status.down=-%s EU/t（%s）
 gtswn.network_info.gui.title=网络信息屏
-gtswn.network_info.gui.tab.wireless_eu=无线 EU 网络
 gtswn.network_info.gui.brief.eu=简报 EU
 gtswn.network_info.gui.chart.eu=图表 EU
 gtswn.network_info.gui.window=时长

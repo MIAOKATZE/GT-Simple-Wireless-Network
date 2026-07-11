@@ -93,6 +93,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** 标记 proxy 是否已就绪（onReady 已调用） */
     private boolean aeProxyReady = false;
 
+    /** 区块加载时 worldObj 可能尚未设置，暂存 AE proxy NBT，待世界可用后再恢复 */
+    private NBTTagCompound pendingProxyNBT = null;
+    /** 标记是否需要从 NetworkInfoDataStore 刷新一次缓存（重载/放置后） */
+    private boolean needsDataRefresh = true;
+
     // === AE 标签页相关字段 ===
 
     /** 当前标签页：0=EU网络, 1=AE走势图, 2=AE实时监控 */
@@ -127,6 +132,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             return;
         }
         if (!worldObj.isRemote) {
+            if (pendingProxyNBT != null) {
+                getProxy().readFromNBT(pendingProxyNBT);
+                pendingProxyNBT = null;
+            }
             if (!aeProxyReady) {
                 getProxy().onReady();
                 aeProxyReady = true;
@@ -134,6 +143,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             if (!screenInitialized) {
                 rebuildScreen();
                 screenInitialized = true;
+            }
+            if (needsDataRefresh && ownerUUID != null) {
+                refreshCachedSamples();
+                NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(worldObj)
+                    .getOrCreate(ownerUUID.toString());
+                NetworkInfoSample newest = dataSet.newest();
+                if (newest != null) {
+                    cachedEu = newest.eu;
+                    cachedEut = newest.eut;
+                }
+                cachedStatus = formatStatus(cachedEut, eutDataSet.isEmpty() || eutDataSet.size() < 2, false);
+                markDirty();
+                worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+                needsDataRefresh = false;
             }
             long tick = worldObj.getTotalWorldTime();
             if (ownerUUID != null && (lastSampleTick < 0L || tick - lastSampleTick >= SAMPLE_INTERVAL_TICKS)) {
@@ -448,6 +471,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (uuid != null && ownerUUID == null) {
             ownerUUID = uuid;
             ownerName = name == null ? "" : name;
+            needsDataRefresh = true;
             markDirty();
         }
     }
@@ -672,6 +696,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
         readChartConfig(tag);
+        needsDataRefresh = true;
     }
 
     public void writePlacementData(NBTTagCompound tag) {
@@ -1087,8 +1112,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 if (f != null) monitoredFluids.add(f);
             }
         }
-        if (tag.hasKey("proxy") && !worldObj.isRemote) {
-            getProxy().readFromNBT(tag);
+        if (tag.hasKey("proxy")) {
+            if (worldObj != null && !worldObj.isRemote) {
+                getProxy().readFromNBT(tag);
+            } else {
+                pendingProxyNBT = tag.getCompoundTag("proxy");
+            }
         }
     }
 
