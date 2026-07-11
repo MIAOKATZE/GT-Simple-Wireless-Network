@@ -530,10 +530,9 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             return;
         }
 
-        // 绑定图标移到右上角，避免与左侧按钮行重叠
-        int iconSize = 28;
-        int iconX = left + xSize - 8 - iconSize;
-        int iconY = top + 48;
+        // 绑定后：在第三区域（top+96 ~ top+144）绘制图标与名称
+        int iconX = left + 12;
+        int iconY = top + 108;
         String name;
         if (item != null) {
             drawItemIcon(item, iconX, iconY);
@@ -542,8 +541,9 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             drawFluidIcon(fluid, iconX, iconY);
             name = fluid.getLocalizedName();
         }
-        int nameMaxW = iconX - (left + 12) - 8;
-        fontRendererObj.drawString(fontRendererObj.trimStringToWidth(name, nameMaxW), left + 12, top + 54, 0x2F3640);
+        // 名称最大宽度：从 left+32+8 到 left+xSize-8-8，约 382
+        int nameMaxW = left + xSize - 8 - 8 - (left + 32);
+        fontRendererObj.drawString(fontRendererObj.trimStringToWidth(name, nameMaxW), left + 32, top + 112, 0x2F3640);
 
         // 配置项标签
         drawAEChartSettings();

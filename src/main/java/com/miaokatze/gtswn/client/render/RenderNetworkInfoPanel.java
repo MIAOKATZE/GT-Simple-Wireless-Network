@@ -476,33 +476,28 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
      * @param size  图标边长（TESR 单位）
      */
     private void drawItemIconTESR(ItemStack stack, int x, int y, int size) {
-        if (stack == null) {
-            return;
-        }
-        // 防御性限制图标尺寸，避免过大的图标凸出屏幕或产生深度冲突
+        if (stack == null) return;
         int iconSize = Math.min(size, 32);
         Minecraft mc = Minecraft.getMinecraft();
         GL11.glPushMatrix();
-        // Z 偏移大幅减小，避免 3D 物品模型凸出信息屏表面
-        GL11.glTranslatef(x, y, 0.1F);
+        // 极小的正向 Z 偏移
+        GL11.glTranslatef(x, y, 0.001F);
         float localScale = iconSize / 16.0F;
         GL11.glScalef(localScale, localScale, localScale);
+        // 关键：把 3D 物品沿 Z 轴压扁，使其紧贴面板
+        GL11.glScalef(1.0F, 1.0F, 0.005F);
         boolean lightingEnabled = GL11.glIsEnabled(GL11.GL_LIGHTING);
-        // 临时禁用深度测试，避免 3D 物品 icon 与面板产生深度冲突而凸出
         boolean depthEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_DEPTH_TEST);
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         RenderHelper.enableGUIStandardItemLighting();
+        // 使用 2D inventory 渲染，不渲染附魔/光效层
         RenderItem.getInstance()
-            .renderItemAndEffectIntoGUI(mc.fontRenderer, mc.getTextureManager(), stack, 0, 0);
+            .renderItemIntoGUI(mc.fontRenderer, mc.getTextureManager(), stack, 0, 0, false);
         RenderHelper.disableStandardItemLighting();
-        if (depthEnabled) {
-            GL11.glEnable(GL11.GL_DEPTH_TEST);
-        }
-        if (lightingEnabled) {
-            GL11.glEnable(GL11.GL_LIGHTING);
-        } else {
-            GL11.glDisable(GL11.GL_LIGHTING);
-        }
+        if (depthEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
+        if (lightingEnabled) GL11.glEnable(GL11.GL_LIGHTING);
+        else GL11.glDisable(GL11.GL_LIGHTING);
         GL11.glPopMatrix();
     }
 
