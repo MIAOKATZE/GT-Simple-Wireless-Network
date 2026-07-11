@@ -86,7 +86,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private int chartBorderThickness = 3;
     private String chartBackgroundColor = "";
     private int trendLineThickness = 3;
-    private int trendLineSmoothing = 1;
+    private int trendLineSmoothing = 2;
     private String screenBackgroundColor = ""; // 默认无背景色，TESR 不绘制背景填充
 
     // === AE 图表配置字段（v1.5.4）===
@@ -94,7 +94,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private int aeChartBorderThickness = 3;
     private String aeChartBackgroundColor = "";
     private int aeTrendLineThickness = 3;
-    private int aeTrendLineSmoothing = 1;
+    private int aeTrendLineSmoothing = 2;
     private String aeAxisMin = "";
     private String aeAxisMax = "";
     private String aeLineColor = "1F6FFF";
@@ -1779,7 +1779,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         trendLineThickness = tag.hasKey("trendLineThickness") ? clampInt(tag.getInteger("trendLineThickness"), 1, 8)
             : 3;
         trendLineSmoothing = tag.hasKey("trendLineSmoothing") ? clampInt(tag.getInteger("trendLineSmoothing"), 0, 12)
-            : 1;
+            : 2;
         screenBackgroundColor = tag.hasKey("screenBackgroundColor")
             ? cleanColorText(tag.getString("screenBackgroundColor"))
             : ""; // 旧存档无此字段时默认空（不绘制背景）
@@ -1817,7 +1817,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             : 3;
         aeTrendLineSmoothing = tag.hasKey("aeTrendLineSmoothing")
             ? clampInt(tag.getInteger("aeTrendLineSmoothing"), 0, 12)
-            : 1;
+            : 2;
         aeAxisMin = tag.hasKey("aeAxisMin") ? cleanText(tag.getString("aeAxisMin")) : "";
         aeAxisMax = tag.hasKey("aeAxisMax") ? cleanText(tag.getString("aeAxisMax")) : "";
         aeLineColor = tag.hasKey("aeLineColor") ? cleanColorText(tag.getString("aeLineColor")) : "1F6FFF";

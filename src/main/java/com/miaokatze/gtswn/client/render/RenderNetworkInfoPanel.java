@@ -9,8 +9,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
+import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.entity.RenderItem;
+import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
+import net.minecraft.util.IIcon;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.StatCollector;
@@ -486,18 +489,17 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glScalef(localScale, localScale, localScale);
         // 关键：把 3D 物品沿 Z 轴压扁，使其紧贴面板
         GL11.glScalef(1.0F, 1.0F, 0.005F);
-        boolean lightingEnabled = GL11.glIsEnabled(GL11.GL_LIGHTING);
-        boolean depthEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+        // 保存 GL 属性：RenderItem 可能改变 blend/alpha test/cull/光照等状态
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT);
+        // 继续临时禁用深度测试，避免图标被面板表面裁剪
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         RenderHelper.enableGUIStandardItemLighting();
-        // 使用 2D inventory 渲染，不渲染附魔/光效层
+        // 使用 renderItemAndEffectIntoGUI 以触发 Forge IItemRenderer，从而渲染 GT 物品覆盖层
         RenderItem.getInstance()
-            .renderItemIntoGUI(mc.fontRenderer, mc.getTextureManager(), stack, 0, 0, false);
+            .renderItemAndEffectIntoGUI(mc.fontRenderer, mc.getTextureManager(), stack, 0, 0);
         RenderHelper.disableStandardItemLighting();
-        if (depthEnabled) GL11.glEnable(GL11.GL_DEPTH_TEST);
-        if (lightingEnabled) GL11.glEnable(GL11.GL_LIGHTING);
-        else GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glPopAttrib();
         GL11.glPopMatrix();
     }
 
@@ -515,9 +517,53 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         }
         // 流体图标同样做尺寸上限，避免简报区大图标凸出
         int iconSize = Math.min(size, 32);
-        int color = fluid.getFluid()
-            .getColor(fluid);
-        fillRect(x, y, iconSize, iconSize, 0xFF000000 | color);
+
+        // 取流体对应的 IIcon；流体自身未注册图标时回退到对应方块纹理
+        IIcon icon = fluid.getFluid().getIcon(fluid);
+        if (icon == null && fluid.getFluid().getBlock() != null) {
+            icon = fluid.getFluid().getBlock().getIcon(0, 0);
+        }
+        if (icon == null) {
+            return;
+        }
+
+        Minecraft mc = Minecraft.getMinecraft();
+        mc.getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
+
+        int color = 0xFF000000 | fluid.getFluid().getColor(fluid);
+        float r = ((color >> 16) & 255) / 255.0F;
+        float g = ((color >> 8) & 255) / 255.0F;
+        float b = (color & 255) / 255.0F;
+
+        boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
+        boolean alphaEnabled = GL11.glIsEnabled(GL11.GL_ALPHA_TEST);
+        boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glEnable(GL11.GL_ALPHA_TEST);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glColor4f(r, g, b, 1.0F);
+
+        Tessellator tess = Tessellator.instance;
+        tess.startDrawingQuads();
+        tess.addVertexWithUV(x, y + iconSize, 0.0D, icon.getMinU(), icon.getMaxV());
+        tess.addVertexWithUV(x + iconSize, y + iconSize, 0.0D, icon.getMaxU(), icon.getMaxV());
+        tess.addVertexWithUV(x + iconSize, y, 0.0D, icon.getMaxU(), icon.getMinV());
+        tess.addVertexWithUV(x, y, 0.0D, icon.getMinU(), icon.getMinV());
+        tess.draw();
+
+        if (!blendEnabled) {
+            GL11.glDisable(GL11.GL_BLEND);
+        }
+        if (!alphaEnabled) {
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
+        }
+        if (cullEnabled) {
+            GL11.glEnable(GL11.GL_CULL_FACE);
+        } else {
+            GL11.glDisable(GL11.GL_CULL_FACE);
+        }
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     /** 客户端没有 AE gridProxy，通过是否存在监控数据推断在线状态 */
@@ -748,7 +794,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     /**
      * 用 Catmull-Rom 样条曲线在样品点之间生成密集顶点路径。
-     * 样条经过每个样品点（p1、p2 为段端点）；两端用线性外推虚拟点处理边界。
+     * 样条经过每个样品点（p1、p2 为段端点）；首尾夹紧端点使端点切线趋于 0，避免曲线超出首末样点。
      * X 等间距索引映射：path[i][0] = 索引坐标（浮点），path[i][1] = 值。
      *
      * @param values          样品值数组（已按时间索引化，X 等间距）
@@ -773,11 +819,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
         int idx = 1;
         for (int i = 0; i < n - 1; i++) {
-            // 4 控制点：p1=段起点, p2=段终点, p0/p3=相邻点（首尾线性外推）
-            double p0 = (i == 0) ? 2 * values[0] - values[1] : values[i - 1];
+            // 4 控制点：p1=段起点, p2=段终点；首尾夹紧端点，避免走势线在端点外过冲
+            double p0 = (i == 0) ? values[0] : values[i - 1];
             double p1 = values[i];
             double p2 = values[i + 1];
-            double p3 = (i + 2 >= n) ? 2 * values[n - 1] - values[n - 2] : values[i + 2];
+            double p3 = (i + 2 >= n) ? values[n - 1] : values[i + 2];
 
             for (int s = 1; s <= segmentsPerSpan; s++) {
                 double t = (double) s / segmentsPerSpan;

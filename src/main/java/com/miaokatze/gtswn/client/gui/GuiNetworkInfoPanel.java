@@ -10,7 +10,10 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.RenderHelper;
+import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.entity.RenderItem;
+import net.minecraft.client.renderer.texture.TextureMap;
+import net.minecraft.util.IIcon;
 
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
@@ -818,14 +821,56 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         RenderHelper.disableStandardItemLighting();
     }
 
-    /** 绘制 16x16 流体颜色块 */
+    /** 绘制 16x16 流体图标（使用流体 IIcon 纹理而非纯色块） */
     private void drawFluidIcon(FluidStack fluid, int x, int y) {
         if (fluid == null || fluid.getFluid() == null) {
             return;
         }
-        int color = fluid.getFluid()
-            .getColor(fluid);
-        drawRect(x, y, x + 16, y + 16, 0xFF000000 | color);
+        // 取流体对应的 IIcon；流体自身未注册图标时回退到对应方块纹理
+        IIcon icon = fluid.getFluid().getIcon(fluid);
+        if (icon == null && fluid.getFluid().getBlock() != null) {
+            icon = fluid.getFluid().getBlock().getIcon(0, 0);
+        }
+        if (icon == null) {
+            return;
+        }
+
+        mc.getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
+
+        int color = 0xFF000000 | fluid.getFluid().getColor(fluid);
+        float r = ((color >> 16) & 255) / 255.0F;
+        float g = ((color >> 8) & 255) / 255.0F;
+        float b = (color & 255) / 255.0F;
+
+        boolean blendEnabled = GL11.glIsEnabled(GL11.GL_BLEND);
+        boolean alphaEnabled = GL11.glIsEnabled(GL11.GL_ALPHA_TEST);
+        boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
+
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glEnable(GL11.GL_ALPHA_TEST);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glColor4f(r, g, b, 1.0F);
+
+        Tessellator tess = Tessellator.instance;
+        tess.startDrawingQuads();
+        tess.addVertexWithUV(x, y + 16, 0.0D, icon.getMinU(), icon.getMaxV());
+        tess.addVertexWithUV(x + 16, y + 16, 0.0D, icon.getMaxU(), icon.getMaxV());
+        tess.addVertexWithUV(x + 16, y, 0.0D, icon.getMaxU(), icon.getMinV());
+        tess.addVertexWithUV(x, y, 0.0D, icon.getMinU(), icon.getMinV());
+        tess.draw();
+
+        if (!blendEnabled) {
+            GL11.glDisable(GL11.GL_BLEND);
+        }
+        if (!alphaEnabled) {
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
+        }
+        if (cullEnabled) {
+            GL11.glEnable(GL11.GL_CULL_FACE);
+        } else {
+            GL11.glDisable(GL11.GL_CULL_FACE);
+        }
+        GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
     /** 格式化 AE 监控存量（根据显示模式切换常规/科学计数） */
