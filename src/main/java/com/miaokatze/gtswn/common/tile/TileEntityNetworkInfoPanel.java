@@ -3,13 +3,17 @@ package com.miaokatze.gtswn.common.tile;
 import java.math.BigInteger;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -24,6 +28,9 @@ import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.common.panel.AEMonitorDataSet;
+import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
+import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
@@ -31,6 +38,8 @@ import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
+import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGridNode;
@@ -50,6 +59,7 @@ import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
+import cpw.mods.fml.common.network.NetworkRegistry;
 import gregtech.common.misc.WirelessNetworkManager;
 
 public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxyable, IStackWatcherHost {
@@ -58,6 +68,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private static final long MAX_CONTINUOUS_GAP_TICKS = 200L;
 
     private UUID ownerUUID;
+    private UUID panelUUID;
     private String ownerName = "";
 
     private boolean showBriefEnergy = true;
@@ -118,6 +129,15 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** 监视列表上限（v1.5.3 改为 Config 配置） */
     private static final int MAX_MONITORED = 64;
 
+    /** 上次 AE 采样 tick，-1 表示尚未采样 */
+    private long lastAESampleTick = -1L;
+
+    /** 客户端 AE 走势图样本缓存（由 PacketSyncAEMonitorData 推送） */
+    private final List<AEMonitorSample> aeChartSamples = new ArrayList<>();
+
+    /** 客户端 AE 实时监控列表最新值缓存（key → 最新样本） */
+    private final Map<String, AEMonitorSample> aeMonitorLatest = new HashMap<>();
+
     // === IStackWatcher 框架（v1.5.1 引入，v1.5.2 填充采样）===
 
     /** AE2 注入的栈监听器，grid 就绪后由 AE2 主动调用 updateWatcher 注入 */
@@ -128,10 +148,16 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     @Override
     public void updateEntity() {
+        super.updateEntity();
         if (worldObj == null) {
             return;
         }
+        long tick = worldObj.getTotalWorldTime();
         if (!worldObj.isRemote) {
+            // 旧存档兼容：panelUUID 为空时自动生成，保证 AE 采样与数据存储有合法 key
+            if (panelUUID == null) {
+                setPanelUUID(UUID.randomUUID());
+            }
             if (pendingProxyNBT != null) {
                 getProxy().readFromNBT(pendingProxyNBT);
                 pendingProxyNBT = null;
@@ -154,14 +180,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                     cachedEut = newest.eut;
                 }
                 cachedStatus = formatStatus(cachedEut, eutDataSet.isEmpty() || eutDataSet.size() < 2, false);
+                // 重置 lastSampleTick：让重进存档后尽快触发一次采样，避免恢复旧 tick 导致采样被跳过
+                lastSampleTick = tick < SAMPLE_INTERVAL_TICKS ? -1L : tick - SAMPLE_INTERVAL_TICKS;
                 markDirty();
                 worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
                 needsDataRefresh = false;
             }
-            long tick = worldObj.getTotalWorldTime();
             if (ownerUUID != null && (lastSampleTick < 0L || tick - lastSampleTick >= SAMPLE_INTERVAL_TICKS)) {
                 sampleNetwork(tick);
                 lastSampleTick = tick;
+            }
+            // 服务端每 SAMPLE_INTERVAL_TICKS 执行一次 AE 采样并推送给客户端
+            if (panelUUID != null && (lastAESampleTick < 0L || tick - lastAESampleTick >= SAMPLE_INTERVAL_TICKS)) {
+                sampleAENetwork(tick);
+                lastAESampleTick = tick;
             }
         }
     }
@@ -288,6 +320,172 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
     }
 
+    /**
+     * 从 PanelUUID NBT 恢复 panelUUID。
+     */
+    private void readPanelUUID(NBTTagCompound tag) {
+        if (tag.hasKey("PanelUUID")) {
+            try {
+                panelUUID = UUID.fromString(tag.getString("PanelUUID"));
+            } catch (IllegalArgumentException e) {
+                panelUUID = null;
+            }
+        }
+    }
+
+    /**
+     * 清空指定 key 在本屏 panelUUID 下的 AE 采样数据。
+     * <p>
+     * 仅服务端执行；panelUUID 未初始化或 world 不可用时安全跳过。
+     */
+    private void clearAEData(String key) {
+        if (key == null || worldObj == null || worldObj.isRemote || panelUUID == null) {
+            return;
+        }
+        AEMonitorDataStore.get(worldObj)
+            .getOrCreate(getPanelUUIDString())
+            .clear(key);
+    }
+
+    /**
+     * 生成 AE 走势图/实时监控的物品 key。
+     *
+     * @param stack 物品堆（null 或空返回 null）
+     * @return item:&lt;registryName&gt;:&lt;meta&gt;
+     */
+    public static String getAEKey(ItemStack stack) {
+        if (stack == null || stack.getItem() == null) return null;
+        return "item:" + Item.itemRegistry.getNameForObject(stack.getItem()) + ":" + stack.getItemDamage();
+    }
+
+    /**
+     * 生成 AE 走势图/实时监控的流体 key。
+     *
+     * @param fluid 流体堆（null 或空返回 null）
+     * @return fluid:&lt;fluidName&gt;
+     */
+    public static String getAEKey(FluidStack fluid) {
+        if (fluid == null || fluid.getFluid() == null) return null;
+        return "fluid:" + fluid.getFluid()
+            .getName();
+    }
+
+    /**
+     * 服务端执行 AE 网络采样：对走势图绑定与实时监控列表中的每个物品/流体查询 AE 存量并写入数据集。
+     *
+     * @param tick 当前世界 tick
+     */
+    private void sampleAENetwork(long tick) {
+        if (panelUUID == null || !isAEConnected()) {
+            return;
+        }
+
+        AEMonitorDataStore store = AEMonitorDataStore.get(worldObj);
+        AEMonitorDataSet dataSet = store.getOrCreate(panelUUID.toString());
+        boolean wroteAny = false;
+        long timeMs = System.currentTimeMillis();
+
+        // 走势图物品
+        if (chartItem != null) {
+            String key = getAEKey(chartItem);
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+                long amount = getAEItemAmount(chartItem);
+                dataSet.addSample(key, amount, tick, timeMs);
+                wroteAny = true;
+            }
+        }
+
+        // 走势图流体
+        if (chartFluid != null) {
+            String key = getAEKey(chartFluid);
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+                long amount = getAEFluidAmount(chartFluid);
+                dataSet.addSample(key, amount, tick, timeMs);
+                wroteAny = true;
+            }
+        }
+
+        // 实时监控物品列表
+        for (ItemStack stack : monitoredItems) {
+            String key = getAEKey(stack);
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+                long amount = getAEItemAmount(stack);
+                dataSet.addSample(key, amount, tick, timeMs);
+                wroteAny = true;
+            }
+        }
+
+        // 实时监控流体列表
+        for (FluidStack fluid : monitoredFluids) {
+            String key = getAEKey(fluid);
+            if (key != null && dataSet.tryAcquireSampleLock(key, tick)) {
+                long amount = getAEFluidAmount(fluid);
+                dataSet.addSample(key, amount, tick, timeMs);
+                wroteAny = true;
+            }
+        }
+
+        if (wroteAny) {
+            store.markDirty();
+        }
+
+        // 无论是否写入新采样，都推送一次最新数据给客户端，保证 GUI 状态及时
+        sendAEMonitorDataToClients();
+    }
+
+    /**
+     * 服务端将当前 AE 走势图样本与实时监控最新值推送给周围客户端。
+     */
+    private void sendAEMonitorDataToClients() {
+        if (worldObj == null || worldObj.isRemote || panelUUID == null) {
+            return;
+        }
+
+        AEMonitorDataSet dataSet = AEMonitorDataStore.get(worldObj)
+            .getOrCreate(panelUUID.toString());
+
+        String chartKey = null;
+        List<AEMonitorSample> chartSamples = new ArrayList<>();
+        if (chartItem != null) {
+            chartKey = getAEKey(chartItem);
+            if (chartKey != null) {
+                chartSamples = dataSet.query(chartKey, getTrackingWindow());
+            }
+        } else if (chartFluid != null) {
+            chartKey = getAEKey(chartFluid);
+            if (chartKey != null) {
+                chartSamples = dataSet.query(chartKey, getTrackingWindow());
+            }
+        }
+
+        Map<String, AEMonitorSample> monitorLatest = new HashMap<>();
+        for (ItemStack stack : monitoredItems) {
+            String key = getAEKey(stack);
+            if (key == null) continue;
+            AEMonitorSample sample = dataSet.newest(key);
+            if (sample != null) {
+                monitorLatest.put(key, sample);
+            }
+        }
+        for (FluidStack fluid : monitoredFluids) {
+            String key = getAEKey(fluid);
+            if (key == null) continue;
+            AEMonitorSample sample = dataSet.newest(key);
+            if (sample != null) {
+                monitorLatest.put(key, sample);
+            }
+        }
+
+        GTSWNPacketHandler.NETWORK.sendToAllAround(
+            new PacketSyncAEMonitorData(xCoord, yCoord, zCoord, chartKey, chartSamples, monitorLatest),
+            new NetworkRegistry.TargetPoint(
+                worldObj.provider.dimensionId,
+                xCoord + 0.5D,
+                yCoord + 0.5D,
+                zCoord + 0.5D,
+                64.0D));
+    }
+
     // ==================== AE 标签页与监视列表操作 ====================
 
     /** 切换当前标签页 */
@@ -308,11 +506,18 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      */
     public boolean setChartItem(ItemStack stack) {
         if (stack != null && chartItem != null && ItemStack.areItemStacksEqual(chartItem, stack)) {
+            clearAEData(getAEKey(chartItem));
             chartItem = null;
             markDirty();
             configureStackWatcher();
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
             return false;
+        }
+        if (chartItem != null) {
+            clearAEData(getAEKey(chartItem));
+        }
+        if (chartFluid != null) {
+            clearAEData(getAEKey(chartFluid));
         }
         chartItem = stack != null ? stack.copy() : null;
         chartFluid = null; // 物品与流体互斥
@@ -327,11 +532,18 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (fluid != null && chartFluid != null
             && fluid.getFluid()
                 .equals(chartFluid.getFluid())) {
+            clearAEData(getAEKey(chartFluid));
             chartFluid = null;
             markDirty();
             configureStackWatcher();
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
             return false;
+        }
+        if (chartFluid != null) {
+            clearAEData(getAEKey(chartFluid));
+        }
+        if (chartItem != null) {
+            clearAEData(getAEKey(chartItem));
         }
         chartFluid = fluid != null ? fluid.copy() : null;
         chartItem = null;
@@ -351,6 +563,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     /** 清除走势图所有绑定 */
     public void clearAEBinding() {
+        if (chartItem != null) {
+            clearAEData(getAEKey(chartItem));
+        }
+        if (chartFluid != null) {
+            clearAEData(getAEKey(chartFluid));
+        }
         chartItem = null;
         chartFluid = null;
         markDirty();
@@ -367,6 +585,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (stack == null) return false;
         for (int i = 0; i < monitoredItems.size(); i++) {
             if (ItemStack.areItemStacksEqual(monitoredItems.get(i), stack)) {
+                clearAEData(getAEKey(monitoredItems.get(i)));
                 monitoredItems.remove(i);
                 markDirty();
                 configureStackWatcher();
@@ -391,6 +610,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             if (monitoredFluids.get(i)
                 .getFluid()
                 .equals(fluid.getFluid())) {
+                clearAEData(getAEKey(monitoredFluids.get(i)));
                 monitoredFluids.remove(i);
                 markDirty();
                 configureStackWatcher();
@@ -414,6 +634,41 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     public List<FluidStack> getMonitoredFluids() {
         return monitoredFluids;
+    }
+
+    /**
+     * 获取客户端 AE 走势图样本缓存（只读）。
+     *
+     * @return 样本列表的不可读修改视图
+     */
+    public List<AEMonitorSample> getAEChartSamples() {
+        return Collections.unmodifiableList(aeChartSamples);
+    }
+
+    /**
+     * 获取客户端 AE 实时监控列表最新值缓存（只读）。
+     *
+     * @return key → 最新样本的不可修改映射
+     */
+    public Map<String, AEMonitorSample> getAEMonitorLatest() {
+        return Collections.unmodifiableMap(aeMonitorLatest);
+    }
+
+    /**
+     * 客户端接收服务端推送的 AE 监控数据，深拷贝后写入本地缓存。
+     *
+     * @param chartSamples  走势图样本列表
+     * @param monitorLatest 实时监控列表最新值
+     */
+    public void receiveAEMonitorData(List<AEMonitorSample> chartSamples, Map<String, AEMonitorSample> monitorLatest) {
+        aeChartSamples.clear();
+        if (chartSamples != null) {
+            aeChartSamples.addAll(chartSamples);
+        }
+        aeMonitorLatest.clear();
+        if (monitorLatest != null) {
+            aeMonitorLatest.putAll(monitorLatest);
+        }
     }
 
     // ==================== IStackWatcherHost 实现（v1.5.1 框架，v1.5.2 填充采样）====================
@@ -482,6 +737,21 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     public String getOwnerName() {
         return ownerName;
+    }
+
+    public UUID getPanelUUID() {
+        return panelUUID;
+    }
+
+    public void setPanelUUID(UUID uuid) {
+        if (uuid != null) {
+            this.panelUUID = uuid;
+            markDirty();
+        }
+    }
+
+    public String getPanelUUIDString() {
+        return panelUUID == null ? null : panelUUID.toString();
     }
 
     public BigInteger getCachedEu() {
@@ -691,8 +961,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (tag.hasKey("OwnerName")) {
             ownerName = tag.getString("OwnerName");
         }
+        readPanelUUID(tag);
         if (tag.hasKey("lastSampleTick")) {
             lastSampleTick = tag.getLong("lastSampleTick");
+        }
+        if (tag.hasKey("lastAESampleTick")) {
+            lastAESampleTick = tag.getLong("lastAESampleTick");
         }
         eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
         readChartConfig(tag);
@@ -704,7 +978,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             tag.setString("OwnerUUID", ownerUUID.toString());
         }
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
+        if (panelUUID != null) {
+            tag.setString("PanelUUID", panelUUID.toString());
+        }
         tag.setLong("lastSampleTick", lastSampleTick);
+        tag.setLong("lastAESampleTick", lastAESampleTick);
         eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
         writeChartConfig(tag);
     }
@@ -1073,6 +1351,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
+        readPanelUUID(tag);
         readPlacementData(tag);
         showBriefEnergy = !tag.hasKey("showBriefEnergy") || tag.getBoolean("showBriefEnergy");
         showBriefStatus = !tag.hasKey("showBriefStatus") || tag.getBoolean("showBriefStatus");
@@ -1092,9 +1371,13 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         currentTab = tag.hasKey("currentTab") ? tag.getInteger("currentTab") : 0;
         if (tag.hasKey("chartItem")) {
             chartItem = ItemStack.loadItemStackFromNBT(tag.getCompoundTag("chartItem"));
+        } else {
+            chartItem = null;
         }
         if (tag.hasKey("chartFluid")) {
             chartFluid = FluidStack.loadFluidStackFromNBT(tag.getCompoundTag("chartFluid"));
+        } else {
+            chartFluid = null;
         }
         monitoredItems.clear();
         if (tag.hasKey("monitoredItems")) {
@@ -1195,7 +1478,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             list.appendTag(sample.toNBT());
         }
         tag.setTag("samples", list);
-        // === AE 标签页状态同步（monitoredItems/Fluids 通过 PacketSyncAEMonitorData 同步，v1.5.2 实现）===
+        // === AE 标签页状态同步 ===
         tag.setInteger("currentTab", currentTab);
         if (chartItem != null) {
             tag.setTag("chartItem", chartItem.writeToNBT(new NBTTagCompound()));
@@ -1203,6 +1486,16 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (chartFluid != null) {
             tag.setTag("chartFluid", chartFluid.writeToNBT(new NBTTagCompound()));
         }
+        NBTTagList itemList = new NBTTagList();
+        for (ItemStack s : monitoredItems) {
+            itemList.appendTag(s.writeToNBT(new NBTTagCompound()));
+        }
+        tag.setTag("monitoredItems", itemList);
+        NBTTagList fluidList = new NBTTagList();
+        for (FluidStack f : monitoredFluids) {
+            fluidList.appendTag(f.writeToNBT(new NBTTagCompound()));
+        }
+        tag.setTag("monitoredFluids", fluidList);
     }
 
     private void readSyncData(NBTTagCompound tag) {
@@ -1242,9 +1535,29 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         if (tag.hasKey("chartItem")) {
             chartItem = ItemStack.loadItemStackFromNBT(tag.getCompoundTag("chartItem"));
+        } else {
+            chartItem = null;
         }
         if (tag.hasKey("chartFluid")) {
             chartFluid = FluidStack.loadFluidStackFromNBT(tag.getCompoundTag("chartFluid"));
+        } else {
+            chartFluid = null;
+        }
+        monitoredItems.clear();
+        if (tag.hasKey("monitoredItems")) {
+            NBTTagList itemList = tag.getTagList("monitoredItems", Constants.NBT.TAG_COMPOUND);
+            for (int i = 0; i < itemList.tagCount(); i++) {
+                ItemStack s = ItemStack.loadItemStackFromNBT(itemList.getCompoundTagAt(i));
+                if (s != null) monitoredItems.add(s);
+            }
+        }
+        monitoredFluids.clear();
+        if (tag.hasKey("monitoredFluids")) {
+            NBTTagList fluidList = tag.getTagList("monitoredFluids", Constants.NBT.TAG_COMPOUND);
+            for (int i = 0; i < fluidList.tagCount(); i++) {
+                FluidStack f = FluidStack.loadFluidStackFromNBT(fluidList.getCompoundTagAt(i));
+                if (f != null) monitoredFluids.add(f);
+            }
         }
     }
 

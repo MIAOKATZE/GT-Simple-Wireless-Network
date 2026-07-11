@@ -17,6 +17,7 @@ import cpw.mods.fml.relauncher.Side;
  * <li>1 = {@link PacketResponseWirelessEU}（S→C 响应 EU）</li>
  * <li>2 = {@link PacketUpdateNetworkInfoPanelConfig}（C→S 信息屏配置）</li>
  * <li>3 = {@link PacketUpdateAETabState}（C→S AE 标签页+监视列表）</li>
+ * <li>4 = {@link PacketSyncAEMonitorData}（S→C AE 监控数据同步）</li>
  * </ul>
  */
 public class GTSWNPacketHandler {
@@ -41,5 +42,7 @@ public class GTSWNPacketHandler {
             Side.SERVER);
         // 3: 客户端→服务端 AE 标签页切换+监视列表操作
         NETWORK.registerMessage(PacketUpdateAETabState.Handler.class, PacketUpdateAETabState.class, 3, Side.SERVER);
+        // 4: 服务端→客户端 AE 监控数据同步
+        NETWORK.registerMessage(PacketSyncAEMonitorData.Handler.class, PacketSyncAEMonitorData.class, 4, Side.CLIENT);
     }
 }

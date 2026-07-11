@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.block;
 
 import java.util.ArrayList;
+import java.util.UUID;
 
 import net.minecraft.block.BlockContainer;
 import net.minecraft.block.material.Material;
@@ -86,8 +87,17 @@ public class BlockNetworkInfoPanel extends BlockContainer {
                 EntityPlayer player = (EntityPlayer) placer;
                 panel.bindOwner(player.getUniqueID(), player.getCommandSenderName());
             }
-            if (stack != null && stack.hasTagCompound()) {
+            if (stack != null && stack.hasTagCompound()
+                && stack.getTagCompound()
+                    .hasKey("PanelUUID")) {
+                // 来自掉落物或复制：恢复 PanelUUID 以及其它放置数据
                 panel.readPlacementData(stack.getTagCompound());
+            } else {
+                // 新放置或旧物品无 UUID：分配新的 panelUUID
+                panel.setPanelUUID(UUID.randomUUID());
+            }
+            if (panel.getPanelUUID() == null) {
+                panel.setPanelUUID(UUID.randomUUID());
             }
             panel.rebuildScreen();
         }
