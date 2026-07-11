@@ -206,3 +206,21 @@ gtswn.network_info.gui.brief_ratio=简报字号：%d%%
 gtswn.network_info.gui.brief.status=简报实时状态
 gtswn.network_info.gui.chart.eut=图表实时EU/t
 gtswn.network_info.screen.eut_axis=实时电网状态（EU/t）
+
+# v1.5.1 AE 标签页
+gtswn.network_info.gui.tab.eu=无线 EU 网络
+gtswn.network_info.gui.tab.ae_chart=AE 走势图
+gtswn.network_info.gui.tab.ae_monitor=AE 实时监控
+gtswn.network_info.gui.ae.chart.bind_item=绑定物品：%s
+gtswn.network_info.gui.ae.chart.bind_fluid=绑定流体：%s
+gtswn.network_info.gui.ae.chart.empty=未绑定
+gtswn.network_info.gui.ae.monitor.list=监视：%d 物品，%d 流体
+gtswn.network_info.gui.ae.placeholder=走势数据将于 v1.5.2 填充
+gtswn.network_info.gui.ae.rightclick_hint=手持物品右键方块配置
+gtswn.network_info.chat.bind_item=已绑定走势图物品：%s
+gtswn.network_info.chat.bind_fluid=已绑定走势图流体：%s
+gtswn.network_info.chat.add_item=已添加监视：%s
+gtswn.network_info.chat.remove_item=已移除监视：%s
+gtswn.network_info.chat.add_fluid=已添加流体监视：%s
+gtswn.network_info.chat.remove_fluid=已移除流体监视：%s
+gtswn.network_info.chat.clear=已清除走势图绑定

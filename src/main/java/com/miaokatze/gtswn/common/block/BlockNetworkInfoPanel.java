@@ -10,10 +10,13 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.IIcon;
 import net.minecraft.util.MathHelper;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.fluids.FluidContainerRegistry;
+import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -97,9 +100,55 @@ public class BlockNetworkInfoPanel extends BlockContainer {
             return true;
         }
         TileEntity tile = world.getTileEntity(x, y, z);
-        if (tile instanceof TileEntityNetworkInfoPanel) {
-            world.markBlockForUpdate(x, y, z);
+        if (!(tile instanceof TileEntityNetworkInfoPanel)) {
+            return false;
         }
+        TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
+        ItemStack heldItem = player.getHeldItem();
+        int currentTab = panel.getCurrentTab();
+
+        // 仅当 AE 标签页激活且手持物品非空时，执行右键配置逻辑
+        if (heldItem != null && (currentTab == 1 || currentTab == 2)) {
+            // 尝试提取流体（含流体容器 → 流体通道；空容器/普通物品 → 物品通道）
+            FluidStack fluid = FluidContainerRegistry.getFluidForFilledItem(heldItem);
+
+            if (currentTab == 1) {
+                // AE 走势图标签页
+                if (fluid != null) {
+                    boolean added = panel.setChartFluid(fluid);
+                    player.addChatComponentMessage(
+                        new ChatComponentTranslation(
+                            added ? "gtswn.network_info.chat.bind_fluid" : "gtswn.network_info.chat.clear",
+                            fluid.getLocalizedName()));
+                } else {
+                    boolean added = panel.setChartItem(heldItem);
+                    player.addChatComponentMessage(
+                        new ChatComponentTranslation(
+                            added ? "gtswn.network_info.chat.bind_item" : "gtswn.network_info.chat.clear",
+                            heldItem.getDisplayName()));
+                }
+            } else {
+                // AE 实时监控标签页
+                if (fluid != null) {
+                    boolean added = panel.toggleFluidMonitor(fluid);
+                    player.addChatComponentMessage(
+                        new ChatComponentTranslation(
+                            added ? "gtswn.network_info.chat.add_fluid" : "gtswn.network_info.chat.remove_fluid",
+                            fluid.getLocalizedName()));
+                } else {
+                    boolean added = panel.toggleItemMonitor(heldItem);
+                    player.addChatComponentMessage(
+                        new ChatComponentTranslation(
+                            added ? "gtswn.network_info.chat.add_item" : "gtswn.network_info.chat.remove_item",
+                            heldItem.getDisplayName()));
+                }
+            }
+            world.markBlockForUpdate(x, y, z);
+            return true;
+        }
+
+        // 其他情况（EU 标签页或空手）打开 GUI（原逻辑）
+        world.markBlockForUpdate(x, y, z);
         player
             .openGui(GTSimpleWirelessNetwork.instance, GTSimpleWirelessNetwork.GUI_NETWORK_INFO_PANEL, world, x, y, z);
         return true;

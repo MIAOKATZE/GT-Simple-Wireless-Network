@@ -206,3 +206,21 @@ gtswn.network_info.gui.brief_ratio=Brief font: %d%%
 gtswn.network_info.gui.brief.status=Brief Realtime
 gtswn.network_info.gui.chart.eut=Chart Realtime EU/t
 gtswn.network_info.screen.eut_axis=Realtime Grid Status (EU/t)
+
+# v1.5.1 AE Tab Pages
+gtswn.network_info.gui.tab.eu=Wireless EU
+gtswn.network_info.gui.tab.ae_chart=AE Trend
+gtswn.network_info.gui.tab.ae_monitor=AE Monitor
+gtswn.network_info.gui.ae.chart.bind_item=Bound Item: %s
+gtswn.network_info.gui.ae.chart.bind_fluid=Bound Fluid: %s
+gtswn.network_info.gui.ae.chart.empty=Not bound
+gtswn.network_info.gui.ae.monitor.list=Monitored: %d items, %d fluids
+gtswn.network_info.gui.ae.placeholder=Trend data will be available in v1.5.2
+gtswn.network_info.gui.ae.rightclick_hint=Right-click block with item to configure
+gtswn.network_info.chat.bind_item=Bound chart item: %s
+gtswn.network_info.chat.bind_fluid=Bound chart fluid: %s
+gtswn.network_info.chat.add_item=Added monitor: %s
+gtswn.network_info.chat.remove_item=Removed monitor: %s
+gtswn.network_info.chat.add_fluid=Added fluid monitor: %s
+gtswn.network_info.chat.remove_fluid=Removed fluid monitor: %s
+gtswn.network_info.chat.clear=Cleared chart binding
