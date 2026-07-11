@@ -84,7 +84,8 @@ public class FormatUtil {
 
         // 取绝对值计算，负号最后补（与旧实现一致）
         double absValue = Math.abs(value);
-        String formatted = String.format(Locale.ROOT, "%.*f", decimals, absValue);
+        // decimals 已在方法入口校验非负，拼接为 Java 标准格式串（如 "%.2f"），Java 不支持 C 风格 %.*f
+        String formatted = String.format(Locale.ROOT, "%." + decimals + "f", absValue);
 
         if (decimals == 0) {
             // 无小数点，仅需千位分隔
@@ -150,7 +151,8 @@ public class FormatUtil {
 
         // 使用 E 记法（Locale.ROOT 保证小数点与格式稳定）替代 ×10^，避免非 ASCII 字符显示异常，
         // 并与国际通用科学计数法格式保持一致。
-        return String.format(Locale.ROOT, "%.*fE%d", decimals, coefficient, exponent);
+        // decimals 拼接为 Java 标准格式串（如 "%.2fE%d"），E 记法大写保持国际通用
+        return String.format(Locale.ROOT, "%." + decimals + "fE%d", coefficient, exponent);
     }
 
     /**
@@ -199,7 +201,8 @@ public class FormatUtil {
 
         // 使用 E 记法（Locale.ROOT 保证小数点与格式稳定）替代 ×10^，避免非 ASCII 字符显示异常，
         // 并与国际通用科学计数法格式保持一致。
-        String result = String.format(Locale.ROOT, "%.*fE%d", decimals, coefficient, exponent);
+        // decimals 拼接为 Java 标准格式串（如 "%.2fE%d"），E 记法大写保持国际通用
+        String result = String.format(Locale.ROOT, "%." + decimals + "fE%d", coefficient, exponent);
 
         // 负数补负号
         if (value < 0) {
