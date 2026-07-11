@@ -70,6 +70,7 @@ public abstract class MTEMonitor extends MetaTileEntity {
      * <ul>
      * <li>0 = 常规计数（带逗号分隔，如 1,234,567）</li>
      * <li>1 = 科学计数法（如 1.23E6）</li>
+     * <li>2 = 千位计数 K/M/G/T/P（如 1K / 2M / 3G）</li>
      * </ul>
      */
     protected int displayMode = 0;
@@ -411,7 +412,7 @@ public abstract class MTEMonitor extends MetaTileEntity {
     /**
      * 获取显示模式
      *
-     * @return 显示模式（0=常规计数，1=科学计数）
+     * @return 显示模式（0=常规计数，1=科学计数，2=千位计数）
      */
     protected int getDisplayMode() {
         return displayMode;
@@ -422,7 +423,7 @@ public abstract class MTEMonitor extends MetaTileEntity {
      * <p>
      * 调用此方法后应标记数据脏污以触发保存
      *
-     * @param mode 显示模式（0=常规计数，1=科学计数）
+     * @param mode 显示模式（0=常规计数，1=科学计数，2=千位计数）
      */
     protected void setDisplayMode(int mode) {
         this.displayMode = mode;

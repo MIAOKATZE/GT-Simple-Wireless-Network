@@ -180,15 +180,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName()));
         buttonList.add(new GuiButton(5, left + 130, y2, 24, 16, "-"));
         buttonList.add(new GuiButton(6, left + 158, y2, 24, 16, "+"));
-        buttonList.add(
-            new GuiButton(
-                7,
-                left + 188,
-                y2,
-                74,
-                16,
-                panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
-                    : tr("gtswn.network_info.gui.mode.scientific")));
+        buttonList.add(new GuiButton(7, left + 188, y2, 74, 16, getDisplayModeButtonText(panel.getDisplayMode())));
         buttonList.add(new GuiButton(8, left + 344, y2, 74, 16, tr("gtswn.network_info.gui.apply")));
 
         int fieldY = top + 165;
@@ -243,8 +235,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 row1Y,
                 112,
                 16,
-                panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
-                    : tr("gtswn.network_info.gui.mode.scientific")));
+                getDisplayModeButtonText(panel.getDisplayMode())));
 
         // 第二行：AE 时长显示 / - / + / 应用
         buttonList.add(
@@ -284,8 +275,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 row1Y,
                 100,
                 16,
-                panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
-                    : tr("gtswn.network_info.gui.mode.scientific")));
+                getDisplayModeButtonText(panel.getDisplayMode())));
         // 字号标签与 -/+
         buttonList.add(
             new GuiButton(
@@ -495,8 +485,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     button.displayString = tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName();
                     break;
                 case 7:
-                    button.displayString = panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
-                        : tr("gtswn.network_info.gui.mode.scientific");
+                    button.displayString = getDisplayModeButtonText(panel.getDisplayMode());
                     break;
                 case AE_BRIEF_BUTTON:
                     button.displayString = bool(tr("gtswn.network_info.gui.ae.brief"), panel.isShowAEBrief());
@@ -513,8 +502,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     button.displayString = getAEWindowDisplay(panel.getAETrackingWindow());
                     break;
                 case AE_DISPLAY_MODE_BUTTON:
-                    button.displayString = panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
-                        : tr("gtswn.network_info.gui.mode.scientific");
+                    button.displayString = getDisplayModeButtonText(panel.getDisplayMode());
                     break;
                 case AE_MONITOR_FONT_SIZE_LABEL:
                     button.displayString = tr("gtswn.network_info.gui.ae.monitor.font_size") + ": "
@@ -579,8 +567,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fontRendererObj.drawString(
             StatCollector.translateToLocalFormatted(
                 "gtswn.network_info.energy",
-                panel.getDisplayMode() == 0 ? FormatUtil.formatNormal(panel.getCachedEu())
-                    : FormatUtil.formatScientific(panel.getCachedEu())),
+                formatEU(panel.getCachedEu(), panel.getDisplayMode())),
             left + 12,
             top + 122,
             0x2F3640);
@@ -962,15 +949,57 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
     }
 
-    /** 格式化 AE 监控存量（根据显示模式切换常规/科学计数） */
+    /** 格式化 AE 监控存量（根据显示模式切换常规/科学/千位计数） */
     private String formatAEMonitorAmount(long amount, int displayMode) {
         BigInteger value = BigInteger.valueOf(amount);
-        return displayMode == 0 ? FormatUtil.formatNormal(value) : FormatUtil.formatScientific(value);
+        switch (displayMode) {
+            case 1:
+                return FormatUtil.formatScientific(value);
+            case 2:
+                return FormatUtil.formatMetric(value);
+            case 0:
+            default:
+                return FormatUtil.formatNormal(value);
+        }
     }
 
-    /** 格式化 AE 监控变化速率（根据显示模式切换常规/科学计数） */
+    /** 格式化 AE 监控变化速率（根据显示模式切换常规/科学/千位计数） */
     private String formatAEMonitorRate(double rate, int displayMode) {
-        return displayMode == 0 ? FormatUtil.formatNormalDouble(rate) : FormatUtil.formatScientificDouble(rate);
+        switch (displayMode) {
+            case 1:
+                return FormatUtil.formatScientificDouble(rate);
+            case 2:
+                return FormatUtil.formatMetricDouble(rate);
+            case 0:
+            default:
+                return FormatUtil.formatNormalDouble(rate);
+        }
+    }
+
+    /** 根据 displayMode 三态格式化 EU 总量（常规/科学/千位） */
+    private static String formatEU(BigInteger eu, int displayMode) {
+        switch (displayMode) {
+            case 1:
+                return FormatUtil.formatScientific(eu);
+            case 2:
+                return FormatUtil.formatMetric(eu);
+            case 0:
+            default:
+                return FormatUtil.formatNormal(eu);
+        }
+    }
+
+    /** 根据 displayMode 三态生成显示模式按钮文本 */
+    private static String getDisplayModeButtonText(int displayMode) {
+        switch (displayMode) {
+            case 1:
+                return tr("gtswn.network_info.gui.mode.scientific");
+            case 2:
+                return tr("gtswn.network_info.gui.mode.metric");
+            case 0:
+            default:
+                return tr("gtswn.network_info.gui.mode.normal");
+        }
     }
 
     /** 根据变化速率返回颜色：正绿、负红、零灰 */

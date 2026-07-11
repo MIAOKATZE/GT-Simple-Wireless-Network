@@ -211,7 +211,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
         textY += 12;
         String amountText = newest == null ? tr("gtswn.network_info.screen.collecting_value")
-            : formatAEMonitorAmount(newest.amount, displayMode);
+            : formatAEChartAmount(newest.amount, displayMode);
         font.drawString(
             StatCollector.translateToLocalFormatted("gtswn.network_info.screen.ae_chart_current", amountText),
             textX,
@@ -219,7 +219,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             0x34404A);
 
         textY += 12;
-        String rateText = newest == null ? "-" : formatAEMonitorRate(newest.rate, displayMode);
+        String rateText = newest == null ? "-" : formatAEChartRate(newest.rate, displayMode);
         String rateLabel = StatCollector.translateToLocalFormatted("gtswn.network_info.screen.ae_chart_rate", rateText);
         int rateColor = newest == null ? 0x6B7680 : rateColor(newest.rate);
         font.drawString(rateLabel, textX, textY, rateColor);
@@ -239,7 +239,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 }
 
                 if (samples.size() < 2) {
-                    drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null);
+                    drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null, displayMode);
                     drawCentered(
                         font,
                         StatCollector.translateToLocalFormatted("gtswn.network_info.screen.collecting", samples.size()),
@@ -261,7 +261,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
                     if (!showAmount && !showRate) {
                         // 两条走势线都被关闭时给出明确提示
-                        drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null);
+                        drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null, displayMode);
                         drawCentered(
                             font,
                             tr("gtswn.network_info.screen.ae_chart_no_line"),
@@ -274,7 +274,16 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                         double[] amountRange = showAmount ? range(amounts, panel.getAEAxisMin(), panel.getAEAxisMax())
                             : null;
                         double[] rateRange = showRate ? range(rates, panel.getAEAxisMin(), panel.getAEAxisMax()) : null;
-                        drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, amountRange, rateRange);
+                        drawAEAcademicAxes(
+                            panel,
+                            font,
+                            plotX,
+                            plotY,
+                            plotW,
+                            plotH,
+                            amountRange,
+                            rateRange,
+                            displayMode);
 
                         Integer lineColorObj = panel.getAELineColor();
                         int amountColor = lineColorObj == null ? AE_LINE_DEFAULT_COLOR : lineColorObj.intValue();
@@ -320,7 +329,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     /** 绘制 AE 走势图坐标轴（v1.5.5 支持左右双 Y 轴：左存量、右变化率） */
     private void drawAEAcademicAxes(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int y, int w, int h,
-        double[] amountRange, double[] rateRange) {
+        double[] amountRange, double[] rateRange, int displayMode) {
         int thickness = panel.getAEChartBorderThickness();
         fillRect(x, y, w + thickness, thickness, AXIS_COLOR);
         fillRect(x, y + h, w + thickness, thickness, AXIS_COLOR);
@@ -333,12 +342,12 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             fillRect(x + w, ty, 4, Math.max(1, thickness), TICK_COLOR);
             if (amountRange != null) {
                 double value = amountRange[0] + (amountRange[1] - amountRange[0]) * i / 4.0D;
-                String label = sci(value);
+                String label = formatAEChartAxis(value, displayMode);
                 font.drawString(label, x - 8 - font.getStringWidth(label), ty - 4, AXIS_COLOR);
             }
             if (rateRange != null) {
                 double value = rateRange[0] + (rateRange[1] - rateRange[0]) * i / 4.0D;
-                String label = sci(value);
+                String label = formatAEChartAxis(value, displayMode);
                 font.drawString(label, x + w + 8, ty - 4, 0x4CAF50);
             }
         }
@@ -697,27 +706,39 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         int nameY = iconY + actualIconSize + 2;
         drawScaledString(font, trimmedName, nameX, nameY, 0x2F3640, fontScale);
 
-        // 存量
-        String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, displayMode);
+        // 存量：科学计数模式下小值回退为常规显示
+        int amountMode = displayMode;
+        if (sample != null && displayMode == 1 && Math.abs((double) sample.amount) < 10000.0D) {
+            amountMode = 0;
+        }
+        String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, amountMode);
         int amountW = font.getStringWidth(amountText);
         int amountX = cellX + (cellWidth - (int) (amountW * fontScale)) / 2;
         int amountY = nameY + fontSize + 2;
         drawScaledString(font, amountText, amountX, amountY, 0x2F3640, fontScale);
 
-        // 实时变化量
+        // 实时变化量：科学计数模式下小值回退为常规显示
+        int rateMode = displayMode;
+        if (sample != null && displayMode == 1 && Math.abs(sample.rate) < 10000.0D) {
+            rateMode = 0;
+        }
         int rateY = amountY + fontSize + 2;
-        String rateText = sample == null ? "-" : formatAEMonitorRate(sample.rate, displayMode);
+        String rateText = sample == null ? "-" : formatAEMonitorRate(sample.rate, rateMode);
         int rateW = font.getStringWidth(rateText);
         int rateX = cellX + (cellWidth - (int) (rateW * fontScale)) / 2;
         int rateColor = sample == null ? 0x6B7680 : rateColor(sample.rate);
         drawScaledString(font, rateText, rateX, rateY, rateColor, fontScale);
 
-        // 平均变化量（300秒均值）
+        // 平均变化量（300秒均值）：科学计数模式下小值回退为常规显示
+        int avgMode = displayMode;
+        if (avg != null && displayMode == 1 && Math.abs(avg.doubleValue()) < 10000.0D) {
+            avgMode = 0;
+        }
         int avgY = rateY + fontSize + 2;
-        String avgText = avg == null ? "-" : formatAEMonitorRate(avg, displayMode);
+        String avgText = avg == null ? "-" : formatAEMonitorRate(avg.doubleValue(), avgMode);
         int avgW = font.getStringWidth(avgText);
         int avgX = cellX + (cellWidth - (int) (avgW * fontScale)) / 2;
-        int avgColor = avg == null ? 0x6B7680 : rateColor(avg);
+        int avgColor = avg == null ? 0x6B7680 : rateColor(avg.doubleValue());
         drawScaledString(font, avgText, avgX, avgY, avgColor, fontScale);
     }
 
@@ -906,8 +927,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         }
 
         List<NetworkInfoSample> samples = panel.getCachedSamples();
+        int displayMode = panel.getDisplayMode();
         if (samples.size() < 2) {
-            drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null);
+            drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null, displayMode);
             drawCentered(
                 font,
                 StatCollector.translateToLocalFormatted("gtswn.network_info.screen.collecting", samples.size()),
@@ -923,7 +945,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         double[] energyRange = energyValues == null ? null
             : range(energyValues, panel.getEnergyAxisMin(), panel.getEnergyAxisMax());
         double[] eutRange = eutValues == null ? null : range(eutValues, panel.getEutAxisMin(), panel.getEutAxisMax());
-        drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, energyRange, eutRange);
+        drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, energyRange, eutRange, displayMode);
         // chart 固定 overlay 布局：EU 与 EU/t 叠加在同一绘图区
         if (energyValues != null) {
             drawSeries(
@@ -952,7 +974,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     }
 
     private void drawAcademicAxes(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int y, int w, int h,
-        double[] energyRange, double[] eutRange) {
+        double[] energyRange, double[] eutRange, int displayMode) {
         int thickness = panel.getChartBorderThickness();
         fillRect(x, y, w + thickness, thickness, AXIS_COLOR);
         fillRect(x, y + h, w + thickness, thickness, AXIS_COLOR);
@@ -965,12 +987,12 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             fillRect(x + w, ty, 4, Math.max(1, thickness), TICK_COLOR);
             if (energyRange != null) {
                 double value = energyRange[0] + (energyRange[1] - energyRange[0]) * i / 4.0D;
-                String label = sci(value);
+                String label = formatAxisValue(value, displayMode);
                 font.drawString(label, x - 8 - font.getStringWidth(label), ty - 4, ENERGY_COLOR);
             }
             if (eutRange != null) {
                 double value = eutRange[0] + (eutRange[1] - eutRange[0]) * i / 4.0D;
-                font.drawString(sci(value), x + w + 8, ty - 4, EUT_COLOR);
+                font.drawString(formatAxisValue(value, displayMode), x + w + 8, ty - 4, EUT_COLOR);
             }
         }
         for (int i = 0; i < 5; i++) {
@@ -999,7 +1021,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         double max = range[1];
         // smoothing 配置映射为样条分段数：0=线性(1段)，1..12 → 4..26 段
         int segments = smoothing <= 0 ? 1 : smoothing * 2 + 2;
-        double[][] path = catmullRomPath(values, segments);
+        double[][] path = monotoneCubicPath(values, segments);
 
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glLineWidth(thickness);
@@ -1008,7 +1030,6 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         double denom = values.length - 1;
         for (int i = 0; i < path.length; i++) {
             double normalized = (path[i][1] - min) / (max - min);
-            // 由 catmullRomPath 的局部包络限制保证插值点不超出样点范围，
             // 配合 range() 自动模式预留的 10% 冗余，正常数据下曲线会落在绘图区内
             double px = x + path[i][0] / denom * w;
             double py = y + h - normalized * h;
@@ -1069,17 +1090,17 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     }
 
     /**
-     * 用 Catmull-Rom 样条曲线在样品点之间生成密集顶点路径。
-     * 样条经过每个样品点（p1、p2 为段端点）；首尾夹紧端点使端点切线趋于 0，避免曲线超出首末样点。
-     * 每个插值结果均被限制在局部四个控制点（p0、p1、p2、p3）的包络范围内，避免 Catmull-Rom
-     * 样条在内部控制点之间产生过冲而超出相邻样点。
+     * 用 Fritsch-Carlson 单调三次 Hermite 样条在样品点之间生成密集顶点路径。
+     * <p>
+     * 该样条保证在相邻样品点之间保持单调性，避免 Catmull-Rom 样条常见的过冲（overshoot）
+     * 问题，使走势线更贴合实际数据趋势。
      * X 等间距索引映射：path[i][0] = 索引坐标（浮点），path[i][1] = 值。
      *
      * @param values          样品值数组（已按时间索引化，X 等间距）
      * @param segmentsPerSpan 每相邻两点间的插值段数（≥1；1 = 线性）
      * @return 密集顶点路径，长度 = (values.length - 1) * segmentsPerSpan + 1
      */
-    private static double[][] catmullRomPath(double[] values, int segmentsPerSpan) {
+    private static double[][] monotoneCubicPath(double[] values, int segmentsPerSpan) {
         int n = values.length;
         if (n < 2 || segmentsPerSpan < 1) {
             // 退化情况：直接返回原始点
@@ -1090,31 +1111,66 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             }
             return path;
         }
+
+        // 1. 计算每段割线斜率 d[i] = values[i+1] - values[i]
+        double[] d = new double[n - 1];
+        for (int i = 0; i < n - 1; i++) {
+            d[i] = values[i + 1] - values[i];
+        }
+
+        // 2. 初始化节点导数 m[i]
+        // 内部点取相邻割线平均；端点取相邻割线；相邻割线符号相反或割线为 0 时导数置 0
+        double[] m = new double[n];
+        m[0] = d[0];
+        m[n - 1] = d[n - 2];
+        for (int i = 1; i < n - 1; i++) {
+            if (d[i - 1] * d[i] <= 0.0D) {
+                m[i] = 0.0D;
+            } else {
+                m[i] = (d[i - 1] + d[i]) / 2.0D;
+            }
+        }
+
+        // 3. Fritsch-Carlson 单调性修正
+        // 若某段割线为 0，则两端导数均为 0；否则根据 α、β 约束防止过冲
+        for (int i = 0; i < n - 1; i++) {
+            if (d[i] == 0.0D) {
+                m[i] = 0.0D;
+                m[i + 1] = 0.0D;
+                continue;
+            }
+            double alpha = m[i] / d[i];
+            double beta = m[i + 1] / d[i];
+            double sumSq = alpha * alpha + beta * beta;
+            if (sumSq > 9.0D) {
+                double tau = 3.0D / Math.sqrt(sumSq);
+                m[i] = tau * alpha * d[i];
+                m[i + 1] = tau * beta * d[i];
+            }
+        }
+
+        // 4. 分段三次 Hermite 插值求值
         int total = (n - 1) * segmentsPerSpan + 1;
         double[][] path = new double[total][2];
-        path[0][0] = 0D;
+        path[0][0] = 0.0D;
         path[0][1] = values[0];
 
         int idx = 1;
         for (int i = 0; i < n - 1; i++) {
-            // 4 控制点：p1=段起点, p2=段终点；首尾夹紧端点，避免走势线在端点外过冲
-            double p0 = (i == 0) ? values[0] : values[i - 1];
-            double p1 = values[i];
-            double p2 = values[i + 1];
-            double p3 = (i + 2 >= n) ? values[n - 1] : values[i + 2];
-
+            double y0 = values[i];
+            double y1 = values[i + 1];
+            double m0 = m[i];
+            double m1 = m[i + 1];
             for (int s = 1; s <= segmentsPerSpan; s++) {
                 double t = (double) s / segmentsPerSpan;
                 double t2 = t * t;
                 double t3 = t2 * t;
-                // 标准 Catmull-Rom 基矩阵（张力 0.5）
-                double y = 0.5D * (2 * p1 + (-p0 + p2) * t
-                    + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2
-                    + (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
-                // 将插值结果限制在局部四个控制点的包络内，防止内部过冲超出样点范围
-                double localMin = Math.min(Math.min(p0, p1), Math.min(p2, p3));
-                double localMax = Math.max(Math.max(p0, p1), Math.max(p2, p3));
-                y = Math.max(localMin, Math.min(localMax, y));
+                // 三次 Hermite 基函数
+                double h00 = 2.0D * t3 - 3.0D * t2 + 1.0D;
+                double h10 = t3 - 2.0D * t2 + t;
+                double h01 = -2.0D * t3 + 3.0D * t2;
+                double h11 = t3 - t2;
+                double y = h00 * y0 + h10 * m0 + h01 * y1 + h11 * m1;
                 path[idx][0] = i + t;
                 path[idx][1] = y;
                 idx++;
@@ -1204,15 +1260,68 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         return StatCollector.translateToLocal(key);
     }
 
-    /** 格式化 AE 监控存量（根据显示模式切换常规/科学计数） */
-    private static String formatAEMonitorAmount(long amount, int displayMode) {
+    /** 格式化 AE 走势图存量（支持常规/科学计数(0位)/千位模式） */
+    private static String formatAEChartAmount(long amount, int displayMode) {
         BigInteger value = BigInteger.valueOf(amount);
-        return displayMode == 0 ? FormatUtil.formatNormal(value) : FormatUtil.formatScientific(value);
+        switch (displayMode) {
+            case 1:
+                return FormatUtil.formatScientific(value, 0);
+            case 2:
+                return FormatUtil.formatMetric(value);
+            case 0:
+            default:
+                return FormatUtil.formatNormal(value);
+        }
     }
 
-    /** 格式化 AE 监控变化速率（根据显示模式切换常规/科学计数） */
+    /** 格式化 AE 走势图变化速率（支持常规/科学计数(0位)/千位模式，无小数） */
+    private static String formatAEChartRate(double rate, int displayMode) {
+        return formatAEChartAxis(rate, displayMode);
+    }
+
+    /** 格式化 AE 走势图坐标轴标签（支持常规/科学计数(0位)/千位模式，无小数） */
+    private static String formatAEChartAxis(double value, int displayMode) {
+        return formatAxisValue(value, displayMode);
+    }
+
+    /** 格式化坐标轴数值（支持常规/科学计数(0位)/千位模式，无小数） */
+    private static String formatAxisValue(double value, int displayMode) {
+        switch (displayMode) {
+            case 1:
+                return FormatUtil.formatScientificDouble(value, 0);
+            case 2:
+                return FormatUtil.formatMetricDouble(value);
+            case 0:
+            default:
+                return FormatUtil.formatNormalDouble(value, 0);
+        }
+    }
+
+    /** 格式化 AE 监控存量（根据显示模式切换常规/科学计数/千位模式） */
+    private static String formatAEMonitorAmount(long amount, int displayMode) {
+        BigInteger value = BigInteger.valueOf(amount);
+        switch (displayMode) {
+            case 1:
+                return FormatUtil.formatScientific(value);
+            case 2:
+                return FormatUtil.formatMetric(value);
+            case 0:
+            default:
+                return FormatUtil.formatNormal(value);
+        }
+    }
+
+    /** 格式化 AE 监控变化速率（根据显示模式切换常规/科学计数/千位模式） */
     private static String formatAEMonitorRate(double rate, int displayMode) {
-        return displayMode == 0 ? FormatUtil.formatNormalDouble(rate) : FormatUtil.formatScientificDouble(rate);
+        switch (displayMode) {
+            case 1:
+                return FormatUtil.formatScientificDouble(rate);
+            case 2:
+                return FormatUtil.formatMetricDouble(rate);
+            case 0:
+            default:
+                return FormatUtil.formatNormalDouble(rate);
+        }
     }
 
     /** 根据变化速率返回颜色：正绿、负红、零灰 */

@@ -19,6 +19,7 @@ gtswn.desc.wireless_monitor.line7=§bCold Start: §fReload/rejoin triggers, §ed
 gtswn.ui.title=Wireless Energy Monitor
 gtswn.ui.mode.normal=§bMode: §fNormal
 gtswn.ui.mode.scientific=§bMode: §fScientific
+gtswn.ui.mode.metric=§bMode: §fMetric
 gtswn.ui.wireless.energy=§bWireless Network: §f%s §bEU
 gtswn.ui.wireless.energy.scientific=§bWireless Network: §f%s §bEU
 gtswn.ui.redstone.mode=§bRedstone Mode: §f%s
@@ -160,6 +161,7 @@ gtswn.network_info.gui.off=OFF
 # Panel display mode buttons (target 3)
 gtswn.network_info.gui.mode.normal=Normal
 gtswn.network_info.gui.mode.scientific=Scientific
+gtswn.network_info.gui.mode.metric=Metric
 gtswn.network_info.screen.title=Wireless EU Network
 gtswn.network_info.screen.energy=Grid Capacity: %s
 gtswn.network_info.screen.history=History %s

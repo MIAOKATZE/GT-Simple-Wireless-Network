@@ -192,8 +192,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 }
 
                 // 更新缓存文本（仅服务端），由 StringSyncValue 自动 S2C 同步给客户端
-                cachedModeText = displayMode == 0 ? translate("gtswn.ui.mode.normal")
-                    : translate("gtswn.ui.mode.scientific");
+                cachedModeText = getModeTextForDisplayMode(displayMode);
                 cachedEUText = getWirelessEUText();
                 cachedRedstoneModeText = getRedstoneModeText();
                 cachedRedstoneOutputText = redstoneOutput ? translate("gtswn.ui.redstone.output.on")
@@ -385,9 +384,20 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 正常显示：数值 + GT 电压等级
         // 上升：gtswn.ui.network.status.up = "§b电网状态: §a↑ +%s §bEU/t (§f%s§b)"
         // 下降：gtswn.ui.network.status.down = "§b电网状态: §c↓ -%s §bEU/t (§f%s§b)"
-        // displayMode==1 科学计数（与 EU 总量判断一致），否则常规计数
-        String euPerTickStr = (displayMode == 1) ? FormatUtil.formatScientificDouble(absEut)
-            : FormatUtil.formatNormalDouble(absEut);
+        // displayMode: 0=常规, 1=科学, 2=千位
+        String euPerTickStr;
+        switch (displayMode) {
+            case 1:
+                euPerTickStr = FormatUtil.formatScientificDouble(absEut);
+                break;
+            case 2:
+                euPerTickStr = FormatUtil.formatMetricDouble(absEut);
+                break;
+            case 0:
+            default:
+                euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+                break;
+        }
         String gtPowerText = GTTierUtil.formatGTPower(eut);
         if (eut > 0) {
             return String
@@ -415,9 +425,20 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             return StatCollector.translateToLocal("gtswn.ui.network.realtime_status.lessthan1");
         }
 
-        // displayMode==1 科学计数（与 EU 总量判断一致），否则常规计数
-        String euPerTickStr = (displayMode == 1) ? FormatUtil.formatScientificDouble(absEut)
-            : FormatUtil.formatNormalDouble(absEut);
+        // displayMode: 0=常规, 1=科学, 2=千位
+        String euPerTickStr;
+        switch (displayMode) {
+            case 1:
+                euPerTickStr = FormatUtil.formatScientificDouble(absEut);
+                break;
+            case 2:
+                euPerTickStr = FormatUtil.formatMetricDouble(absEut);
+                break;
+            case 0:
+            default:
+                euPerTickStr = FormatUtil.formatNormalDouble(absEut);
+                break;
+        }
         String gtPowerText = GTTierUtil.formatGTPower(eut);
         String key = eut > 0 ? "gtswn.ui.network.realtime_status.up" : "gtswn.ui.network.realtime_status.down";
         return String.format(StatCollector.translateToLocal(key), euPerTickStr, gtPowerText);
@@ -452,10 +473,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     // 格式化能量文本
     private String getWirelessEUText() {
         BigInteger eu = getWirelessEU();
-        if (displayMode == 0) {
-            return translate("gtswn.ui.wireless.energy", FormatUtil.formatNormal(eu));
-        } else {
-            return translate("gtswn.ui.wireless.energy.scientific", FormatUtil.formatScientific(eu));
+        switch (displayMode) {
+            case 1:
+                return translate("gtswn.ui.wireless.energy.scientific", FormatUtil.formatScientific(eu));
+            case 2:
+                return translate("gtswn.ui.wireless.energy", FormatUtil.formatMetric(eu));
+            case 0:
+            default:
+                return translate("gtswn.ui.wireless.energy", FormatUtil.formatNormal(eu));
         }
     }
 
@@ -674,10 +699,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .asWidget()
                         .alignment(Alignment.CenterLeft))
                 .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    // 切换显示模式（0/1 之间切换）
+                    // 切换显示模式：0->1->2->0（常规/科学/千位）
                     // 关键：通过 IntSyncValue.setValue 触发 C2S 同步，让服务端也更新
                     // 直接调用 setDisplayMode 只会改客户端副本，服务端不会收到
-                    displayModeSync.setValue(1 - displayModeSync.getIntValue());
+                    displayModeSync.setValue((displayModeSync.getIntValue() + 1) % 3);
                     return true;
                 })
                     .background(GTGuiTextures.BUTTON_STANDARD)
@@ -995,11 +1020,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * 设置显示模式（用于 IntSyncValue 同步）
      */
     public void setDisplayMode(int mode) {
-        this.displayMode = mode;
+        // 钳制到 [0,2]，避免异常同步值破坏显示
+        this.displayMode = Math.max(0, Math.min(2, mode));
         // 立即更新缓存文本，实现实时 UI 响应（无需等 5 秒 onPostTick）
-        cachedModeText = mode == 0 ? translate("gtswn.ui.mode.normal") : translate("gtswn.ui.mode.scientific");
+        cachedModeText = getModeTextForDisplayMode(this.displayMode);
         cachedEUText = getWirelessEUText();
-        // 服务端重算 EU/t 状态文本格式（常规/科学），通过 StringSyncValue S2C 同步给客户端
+        // 服务端重算 EU/t 状态文本格式（常规/科学/千位），通过 StringSyncValue S2C 同步给客户端
         // 客户端不重算：dataSet 数据仅在服务端，客户端重算会返回"无变化"覆盖真实状态导致闪烁
         if (getBaseMetaTileEntity() != null && getBaseMetaTileEntity().isServerSide()) {
             cachedStatusText = formatEUTStatus();
@@ -1234,6 +1260,19 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 return translate("gtswn.ui.redstone.desc.low.lag");
             default:
                 return translate("gtswn.ui.redstone.desc.unknown");
+        }
+    }
+
+    /** 根据 displayMode 返回模式显示文本（0=常规，1=科学，2=千位） */
+    private String getModeTextForDisplayMode(int mode) {
+        switch (mode) {
+            case 1:
+                return translate("gtswn.ui.mode.scientific");
+            case 2:
+                return translate("gtswn.ui.mode.metric");
+            case 0:
+            default:
+                return translate("gtswn.ui.mode.normal");
         }
     }
 

@@ -77,7 +77,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private boolean showChartStatus = true;
     private int trackingWindow = NetworkInfoDataSet.WINDOW_5_MIN;
     private int briefRatio = 28;
-    // 显示模式：0=常规计数，1=科学计数（EU 与 EU/t 均跟随此模式）
+    // 显示模式：0=常规计数，1=科学计数，2=千位计数 K/M/G/T/P（EU 与 EU/t 均跟随此模式）
     private int displayMode = 0;
     private String energyAxisMin = "";
     private String energyAxisMax = "";
@@ -859,7 +859,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     public void setDisplayMode(int mode) {
-        this.displayMode = (mode == 1) ? 1 : 0;
+        // 钳制到 [0,2]，兼容旧存档或异常包中的越界值
+        this.displayMode = Math.max(0, Math.min(2, mode));
     }
 
     public String getEnergyAxisMinText() {
@@ -1082,8 +1083,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 briefRatio = Math.min(80, briefRatio + 5);
                 break;
             case 7:
-                // 切换显示模式：常规计数(0) ↔ 科学计数(1)，影响 EU 与 EU/t 的格式化
-                displayMode = (displayMode == 0) ? 1 : 0;
+                // 切换显示模式：0->1->2->0（常规/科学/千位），影响 EU 与 EU/t 的格式化
+                displayMode = (displayMode + 1) % 3;
                 // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
                 cachedStatus = formatStatus(cachedEut, eutDataSet.size() < 2, false);
                 break;
@@ -1286,9 +1287,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             return tr("gtswn.network_info.status.lessthan1");
         }
         String key = eut > 0 ? "gtswn.network_info.status.up" : "gtswn.network_info.status.down";
-        // EU/t 数值根据 displayMode 切换常规/科学计数
-        String eutText = displayMode == 0 ? FormatUtil.formatNormalDouble(Math.abs(eut))
-            : FormatUtil.formatScientificDouble(Math.abs(eut));
+        // EU/t 数值根据 displayMode 切换常规/科学/千位计数
+        String eutText;
+        switch (displayMode) {
+            case 1:
+                eutText = FormatUtil.formatScientificDouble(Math.abs(eut));
+                break;
+            case 2:
+                eutText = FormatUtil.formatMetricDouble(Math.abs(eut));
+                break;
+            case 0:
+            default:
+                eutText = FormatUtil.formatNormalDouble(Math.abs(eut));
+                break;
+        }
         return StatCollector.translateToLocalFormatted(key, eutText, GTTierUtil.formatGTPower(eut));
     }
 
@@ -1594,7 +1606,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        displayMode = tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0;
+        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0, 0, 2);
         readChartConfig(tag);
         lastSampleTick = tag.getLong("lastSampleTick");
         eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
@@ -1760,7 +1772,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        displayMode = tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0;
+        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0, 0, 2);
         readChartConfig(tag);
         readAEChartConfig(tag);
         readAEMonitorConfig(tag);
