@@ -192,10 +192,12 @@ gtswn.network_info.screen.ae_online=在线
 gtswn.network_info.screen.ae_offline=离线
 gtswn.network_info.screen.ae_offline_overlay=AE 网络离线
 gtswn.network_info.screen.ae_axis=AE 存量
+gtswn.network_info.screen.ae_rate_axis=AE 变化率
+gtswn.network_info.screen.ae_chart_no_line=未选择走势线
 gtswn.network_info.screen.ae_monitor_header_name=名称
 gtswn.network_info.screen.ae_monitor_header_amount=存量
-gtswn.network_info.screen.ae_monitor_header_rate=变化量/min
-gtswn.network_info.screen.ae_monitor_header_avg=平均/min
+gtswn.network_info.screen.ae_monitor_header_rate=实时变化量
+gtswn.network_info.screen.ae_monitor_header_avg=平均变化量
 
 # 1.4.4 状态命名与实时 EU/t
 # 静默/<1EU/重载中/长期静默 四种特殊状态显示（来自 MTEWirelessEnergyMonitor / WirelessMonitorHUD 的边界判定）
@@ -261,6 +263,13 @@ gtswn.network_info.gui.ae.window.8h=8小时
 gtswn.network_info.gui.ae.window.24h=24小时
 gtswn.network_info.gui.ae.remove=移除
 gtswn.network_info.gui.ae.clear_all=全部清除
+# v1.5.5 AE 走势图按钮与监控列表新增
+gtswn.network_info.gui.ae.brief=简报 AE
+gtswn.network_info.gui.ae.chart.amount=图表存量
+gtswn.network_info.gui.ae.chart.rate=图表变化率
+gtswn.network_info.gui.ae.monitor.brief=AE 状态：%s | 监控项：%d
+gtswn.network_info.gui.ae.monitor.header_current=目前情况
+gtswn.network_info.gui.ae.monitor.header_remove=清除
 gtswn.network_info.chat.bind_item=已绑定走势图物品：%s
 gtswn.network_info.chat.bind_fluid=已绑定走势图流体：%s
 gtswn.network_info.chat.add_item=已添加监视：%s

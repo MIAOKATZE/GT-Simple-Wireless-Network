@@ -4,17 +4,23 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.GuiTextField;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.entity.RenderItem;
+
+import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.GL11;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
@@ -65,7 +71,22 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private static final int AE_APPLY_BUTTON = 11;
     private static final int AE_DISPLAY_MODE_BUTTON = 12;
     private static final int AE_CLEAR_ALL_BUTTON = 13;
+    /** 仅显示当前 AE 时长，无动作 */
+    private static final int AE_WINDOW_LABEL_BUTTON = 24;
+    /** AE 时长 -（切换到上一个窗口） */
+    private static final int AE_WINDOW_PREV_BUTTON = 25;
+    /** AE 时长 +（切换到下一个窗口） */
+    private static final int AE_WINDOW_NEXT_BUTTON = 26;
+    /** AE 走势图简报开关 */
+    private static final int AE_BRIEF_BUTTON = 20;
+    /** AE 走势图存量曲线开关 */
+    private static final int AE_CHART_AMOUNT_BUTTON = 21;
+    /** AE 走势图变化率曲线开关 */
+    private static final int AE_CHART_RATE_BUTTON = 22;
     private static final int AE_MONITOR_REMOVE_BASE = 200;
+
+    /** AE 实时监控自定义滚动列表控件（不依赖 GuiSlot） */
+    private GuiAEMonitorList aeMonitorList;
 
     public GuiNetworkInfoPanel(TileEntityNetworkInfoPanel panel) {
         this.panel = panel;
@@ -173,9 +194,61 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         screenColorField = addField(left + 250, fieldY, 66, panel.getScreenBackgroundColorText());
     }
 
-    /** 初始化 AE 走势图配置标签页控件（tab=1） */
+    /** 初始化 AE 走势图配置标签页控件（tab=1），布局与 EU 标签页对称 */
     private void initAEChartTabControls() {
-        int fieldY = top + 96;
+        int row1Y = top + 52;
+        int row2Y = top + 74;
+
+        // 第一行：简报 / 存量 / 变化率 / 显示模式
+        buttonList.add(
+            new GuiButton(
+                AE_BRIEF_BUTTON,
+                left + 12,
+                row1Y,
+                94,
+                16,
+                bool(tr("gtswn.network_info.gui.ae.brief"), panel.isShowAEBrief())));
+        buttonList.add(
+            new GuiButton(
+                AE_CHART_AMOUNT_BUTTON,
+                left + 110,
+                row1Y,
+                94,
+                16,
+                bool(tr("gtswn.network_info.gui.ae.chart.amount"), panel.isShowAEChartAmount())));
+        buttonList.add(
+            new GuiButton(
+                AE_CHART_RATE_BUTTON,
+                left + 208,
+                row1Y,
+                94,
+                16,
+                bool(tr("gtswn.network_info.gui.ae.chart.rate"), panel.isShowAEChartRate())));
+        buttonList.add(
+            new GuiButton(
+                AE_DISPLAY_MODE_BUTTON,
+                left + 306,
+                row1Y,
+                112,
+                16,
+                panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
+                    : tr("gtswn.network_info.gui.mode.scientific")));
+
+        // 第二行：AE 时长显示 / - / + / 应用
+        buttonList.add(
+            new GuiButton(
+                AE_WINDOW_LABEL_BUTTON,
+                left + 12,
+                row2Y,
+                130,
+                16,
+                getAEWindowDisplay(panel.getAETrackingWindow())));
+        buttonList.add(new GuiButton(AE_WINDOW_PREV_BUTTON, left + 146, row2Y, 24, 16, "-"));
+        buttonList.add(new GuiButton(AE_WINDOW_NEXT_BUTTON, left + 174, row2Y, 24, 16, "+"));
+        buttonList.add(new GuiButton(AE_APPLY_BUTTON, left + 344, row2Y, 74, 16, tr("gtswn.network_info.gui.apply")));
+
+        // 配置文本框整体下移，避免与按钮行重叠
+        int fieldY = top + 148;
         aeAxisMinField = addField(left + 104, fieldY, 66, panel.getAEAxisMinText());
         aeAxisMaxField = addField(left + 250, fieldY, 66, panel.getAEAxisMaxText());
         fieldY += 22;
@@ -185,24 +258,12 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fieldY += 22;
         aeBgField = addField(left + 104, fieldY, 66, panel.getAEChartBackgroundColorText());
         aeLineColorField = addField(left + 250, fieldY, 66, panel.getAELineColorText());
-
-        // 时长循环按钮与应用按钮
-        buttonList.add(
-            new GuiButton(
-                AE_WINDOW_BUTTON,
-                left + 12,
-                top + 52,
-                130,
-                16,
-                getAEWindowDisplay(panel.getAETrackingWindow())));
-        buttonList
-            .add(new GuiButton(AE_APPLY_BUTTON, left + 344, top + 52, 74, 16, tr("gtswn.network_info.gui.apply")));
     }
 
     /** 初始化 AE 实时监控管理标签页控件（tab=2） */
     @SuppressWarnings("unchecked")
     private void initAEMonitorTabControls() {
-        // 显示模式切换 + 全部清除
+        // 区域 2：按钮配置区（显示模式、全部清除）
         buttonList.add(
             new GuiButton(
                 AE_DISPLAY_MODE_BUTTON,
@@ -221,7 +282,15 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 16,
                 tr("gtswn.network_info.gui.ae.clear_all")));
 
-        // 构造当前监控条目数组，便于 actionPerformed 通过 ID 反查
+        // 构造当前监控条目数组，供滚动列表使用
+        refreshMonitoredEntries();
+
+        // 区域 4：滚动列表区（top+112 到 top+255，行高 20）
+        aeMonitorList = new GuiAEMonitorList();
+    }
+
+    /** 从 panel 刷新监控条目数组 */
+    private void refreshMonitoredEntries() {
         List<ItemStack> items = panel.getMonitoredItems();
         List<FluidStack> fluids = panel.getMonitoredFluids();
         int total = items.size() + fluids.size();
@@ -232,25 +301,6 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         }
         for (FluidStack fluid : fluids) {
             monitoredEntries[idx++] = fluid;
-        }
-
-        // 为每个监控条目添加移除按钮
-        int rowY = top + 96;
-        int rowHeight = 20;
-        int bottomLimit = top + ySize - 30;
-        for (int i = 0; i < monitoredEntries.length; i++) {
-            if (rowY + rowHeight > bottomLimit) {
-                break;
-            }
-            buttonList.add(
-                new GuiButton(
-                    AE_MONITOR_REMOVE_BASE + i,
-                    left + 344,
-                    rowY + 2,
-                    60,
-                    14,
-                    tr("gtswn.network_info.gui.ae.remove")));
-            rowY += rowHeight;
         }
     }
 
@@ -279,35 +329,25 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     panel.zCoord,
                     buildAEChartConfig(),
                     true));
-        } else if (button.id == AE_WINDOW_BUTTON) {
-            // 循环切换 AE 时长窗口并立即发送
-            int next = (panel.getAETrackingWindow() + 1) % 4;
-            GTSWNPacketHandler.NETWORK.sendToServer(
-                new PacketUpdateNetworkInfoPanelConfig(
-                    panel.xCoord,
-                    panel.yCoord,
-                    panel.zCoord,
-                    "aeWindow=" + next,
-                    true));
         } else if (button.id == AE_DISPLAY_MODE_BUTTON) {
-            // AE 监控标签页的显示模式切换复用 EU 的 action 7
+            // AE 标签页的显示模式切换复用 EU 的 action 7
             GTSWNPacketHandler.NETWORK
                 .sendToServer(new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, 7));
         } else if (button.id == AE_CLEAR_ALL_BUTTON) {
-            // 移除当前所有监控项
-            sendClearAllMonitors();
-        } else if (isMonitorRemoveButton(button.id)) {
-            int idx = button.id - AE_MONITOR_REMOVE_BASE;
-            sendMonitorToggle(idx);
+            // 一键清除全部物品+流体监控
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(new PacketUpdateAETabState(panel.xCoord, panel.yCoord, panel.zCoord, (byte) 6, 0, null));
+        } else if (button.id == AE_WINDOW_LABEL_BUTTON || button.id == AE_WINDOW_BUTTON) {
+            // 时长标签与旧时长按钮仅作显示，无动作
+            return;
+        } else if (button.id == 20 || button.id == 21 || button.id == 22 || button.id == 25 || button.id == 26) {
+            // AE 走势图开关与时长 +/- 直接走通用 action 包
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
         } else {
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
         }
-    }
-
-    /** 判断按钮 ID 是否对应当前监控列表中的移除按钮 */
-    private boolean isMonitorRemoveButton(int id) {
-        return id >= AE_MONITOR_REMOVE_BASE && id < AE_MONITOR_REMOVE_BASE + monitoredEntries.length;
     }
 
     /** 发送指定索引监控条目的移除包（action 3=物品，4=流体） */
@@ -331,13 +371,6 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             .sendToServer(new PacketUpdateAETabState(panel.xCoord, panel.yCoord, panel.zCoord, action, 0, data));
     }
 
-    /** 发送所有当前监控条目的移除包 */
-    private void sendClearAllMonitors() {
-        for (int i = 0; i < monitoredEntries.length; i++) {
-            sendMonitorToggle(i);
-        }
-    }
-
     @Override
     public void updateScreen() {
         int serverTab = panel.getCurrentTab();
@@ -353,6 +386,17 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 lastKnownTab = serverTab;
                 initGui();
                 return;
+            }
+        }
+        // AE 监控标签页：监控列表长度变化时刷新滚动列表条目并校正滚动位置
+        if (lastKnownTab == 2 && aeMonitorList != null) {
+            int currentSize = panel.getMonitoredItems()
+                .size()
+                + panel.getMonitoredFluids()
+                    .size();
+            if (currentSize != monitoredEntries.length) {
+                refreshMonitoredEntries();
+                aeMonitorList.clampScroll();
             }
         }
         for (Object object : buttonList) {
@@ -390,7 +434,19 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     button.displayString = panel.getDisplayMode() == 0 ? tr("gtswn.network_info.gui.mode.normal")
                         : tr("gtswn.network_info.gui.mode.scientific");
                     break;
+                case AE_BRIEF_BUTTON:
+                    button.displayString = bool(tr("gtswn.network_info.gui.ae.brief"), panel.isShowAEBrief());
+                    break;
+                case AE_CHART_AMOUNT_BUTTON:
+                    button.displayString = bool(
+                        tr("gtswn.network_info.gui.ae.chart.amount"),
+                        panel.isShowAEChartAmount());
+                    break;
+                case AE_CHART_RATE_BUTTON:
+                    button.displayString = bool(tr("gtswn.network_info.gui.ae.chart.rate"), panel.isShowAEChartRate());
+                    break;
                 case AE_WINDOW_BUTTON:
+                case AE_WINDOW_LABEL_BUTTON:
                     button.displayString = getAEWindowDisplay(panel.getAETrackingWindow());
                     break;
                 case AE_DISPLAY_MODE_BUTTON:
@@ -426,6 +482,9 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 field.drawTextBox();
             }
         }
+        if (activeTab == 2 && aeMonitorList != null) {
+            aeMonitorList.draw(mouseX, mouseY, partialTicks);
+        }
     }
 
     /** 绘制 EU 标签页（原 drawScreen 主体内容，去掉 super.drawScreen 与 textField 绘制） */
@@ -456,20 +515,23 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         drawChartSettings();
     }
 
-    /** 绘制 AE 走势图配置标签页（v1.5.4 改为纯配置界面，数据展示由 TESR 负责） */
+    /** 绘制 AE 走势图配置标签页（v1.5.5 改为纯配置界面，数据展示由 TESR 负责） */
     private void drawAEChartTab() {
         ItemStack item = panel.getChartItem();
         FluidStack fluid = panel.getChartFluid();
 
         // 未绑定：显示空提示与右键配置提示
         if (item == null && fluid == null) {
-            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.chart.empty"), left + 12, top + 64, 0x6B7680);
-            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.rightclick_hint"), left + 12, top + 84, 0x6B7680);
+            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.chart.empty"), left + 12, top + 110, 0x6B7680);
+            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.rightclick_hint"), left + 12, top + 130, 0x6B7680);
+            // 即使未绑定也绘制配置项标签
+            drawAEChartSettings();
             return;
         }
 
-        // 绑定图标与名称（只读）
-        int iconX = left + 12;
+        // 绑定图标移到右上角，避免与左侧按钮行重叠
+        int iconSize = 28;
+        int iconX = left + xSize - 8 - iconSize;
         int iconY = top + 48;
         String name;
         if (item != null) {
@@ -479,48 +541,49 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             drawFluidIcon(fluid, iconX, iconY);
             name = fluid.getLocalizedName();
         }
-        fontRendererObj.drawString(name, left + 34, top + 50, 0x2F3640);
+        int nameMaxW = iconX - (left + 12) - 8;
+        fontRendererObj.drawString(fontRendererObj.trimStringToWidth(name, nameMaxW), left + 12, top + 54, 0x2F3640);
 
         // 配置项标签
         drawAEChartSettings();
     }
 
-    /** 绘制 AE 实时监控管理标签页（v1.5.4 改为纯管理界面，数据展示由 TESR 负责） */
+    /** 绘制 AE 实时监控管理标签页（v1.5.5 改为四区域布局） */
     private void drawAEMonitorTab() {
-        // 右键提示
-        fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.rightclick_hint"), left + 12, top + 80, 0x6B7680);
+        // 区域 1：标签页由 super.drawScreen 绘制
 
-        // 空列表提示
-        if (monitoredEntries.length == 0) {
-            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.empty"), left + 12, top + 100, 0x6B7680);
-            return;
-        }
+        // 区域 2：按钮配置区已在 initAEMonitorTabControls 创建
 
-        // 表头
+        // 区域 3：简报区（AE 在线状态、监控项总数），仅 GUI 显示，不进入 TESR
+        int briefY = top + 76;
+        boolean online = hasAEMonitorData(panel);
+        String statusKey = online ? "gtswn.network_info.screen.ae_online" : "gtswn.network_info.screen.ae_offline";
+        int statusColor = online ? 0x4CAF50 : 0xF44336;
+        fontRendererObj.drawString(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.network_info.gui.ae.monitor.brief",
+                tr(statusKey),
+                monitoredEntries.length),
+            left + 12,
+            briefY,
+            statusColor);
+
+        // 区域 4：表头（滚动列表内部绘制行内容：图标/名称/目前情况/清除按钮）
         int headerY = top + 96;
-        fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.header_icon"), left + 12, headerY, 0x4C5660);
-        fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.header_name"), left + 36, headerY, 0x4C5660);
+        int listLeft = left + 8;
+        int listRight = left + xSize - 8;
+        fontRendererObj
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_icon"), listLeft + 4, headerY, 0x4C5660);
+        fontRendererObj
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_name"), listLeft + 28, headerY, 0x4C5660);
+        fontRendererObj
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_current"), listLeft + 160, headerY, 0x4C5660);
+        fontRendererObj
+            .drawString(tr("gtswn.network_info.gui.ae.monitor.header_remove"), listRight - 56, headerY, 0x4C5660);
 
-        // 监控条目行（仅图标+名称，移除按钮在 initGui 中创建）
-        int rowY = top + 112;
-        int rowHeight = 20;
-        int bottomLimit = top + ySize - 30;
-        for (Object entry : monitoredEntries) {
-            if (rowY + rowHeight > bottomLimit) {
-                break;
-            }
-            if (entry instanceof ItemStack) {
-                ItemStack stack = (ItemStack) entry;
-                drawItemIcon(stack, left + 12, rowY);
-                String name = fontRendererObj.trimStringToWidth(stack.getDisplayName(), 220);
-                fontRendererObj.drawString(name, left + 36, rowY + 4, 0x2F3640);
-            } else if (entry instanceof FluidStack) {
-                FluidStack fluid = (FluidStack) entry;
-                drawFluidIcon(fluid, left + 12, rowY);
-                String name = fontRendererObj.trimStringToWidth(fluid.getLocalizedName(), 220);
-                fontRendererObj.drawString(name, left + 36, rowY + 4, 0x2F3640);
-            }
-            rowY += rowHeight;
+        // 空列表提示（覆盖在列表上方）
+        if (monitoredEntries.length == 0) {
+            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.empty"), left + 12, top + 120, 0x6B7680);
         }
     }
 
@@ -558,10 +621,38 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     }
 
     @Override
+    public void handleMouseInput() {
+        // AE 监控标签页优先由自定义列表消费滚轮事件
+        if (lastKnownTab == 2 && aeMonitorList != null && aeMonitorList.handleMouseInput()) {
+            return;
+        }
+        super.handleMouseInput();
+    }
+
+    @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
         super.mouseClicked(mouseX, mouseY, mouseButton);
+        if (lastKnownTab == 2 && aeMonitorList != null) {
+            aeMonitorList.mouseClicked(mouseX, mouseY, mouseButton);
+        }
         for (GuiTextField field : textFields) {
             field.mouseClicked(mouseX, mouseY, mouseButton);
+        }
+    }
+
+    @Override
+    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
+        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
+        if (lastKnownTab == 2 && aeMonitorList != null) {
+            aeMonitorList.mouseClickMove(mouseX, mouseY, clickedMouseButton);
+        }
+    }
+
+    @Override
+    protected void mouseMovedOrUp(int mouseX, int mouseY, int which) {
+        super.mouseMovedOrUp(mouseX, mouseY, which);
+        if (aeMonitorList != null) {
+            aeMonitorList.mouseReleased(mouseX, mouseY, which);
         }
     }
 
@@ -610,10 +701,10 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fontRendererObj.drawString(tr("gtswn.network_info.gui.blank_auto"), left + 326, y + 4, 0x6B7680);
     }
 
-    /** 绘制 AE 走势图配置项标签（与 EU 的 drawChartSettings 布局对称） */
+    /** 绘制 AE 走势图配置项标签（与 EU 的 drawChartSettings 布局对称，整体下移避免与按钮行重叠） */
     private void drawAEChartSettings() {
         int x = left + 12;
-        int y = top + 76;
+        int y = top + 128;
         fontRendererObj
             .drawString(EnumChatFormatting.BOLD + tr("gtswn.network_info.gui.ae.chart_settings"), x, y, 0x2F3640);
         y += 16;
@@ -755,6 +846,289 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             return 0xF44336;
         }
         return 0x6B7680;
+    }
+
+    /** 客户端没有 AE gridProxy，通过是否存在监控数据推断在线状态 */
+    private static boolean hasAEMonitorData(TileEntityNetworkInfoPanel panel) {
+        return !panel.getAEMonitorLatest()
+            .isEmpty()
+            || !panel.getAEChartSamples()
+                .isEmpty();
+    }
+
+    /**
+     * AE 实时监控自定义滚动列表。
+     * <p>
+     * 不再继承 {@link GuiSlot}，自行管理滚动偏移、滚动条拖拽、鼠标滚轮与条目绘制。
+     * 每行左侧显示图标与名称，中间显示目前情况（存量 + 变化率），右侧 60 像素为“清除”按钮区域。
+     * 点击非清除区域无动作；点击清除区域向服务端发送移除包。
+     */
+    private class GuiAEMonitorList {
+
+        // ==================== 几何常量 ====================
+        /** 列表左边界（面板内部左侧留 8px） */
+        private final int listLeft = GuiNetworkInfoPanel.this.left + 8;
+        /** 列表上边界（位于表头下方） */
+        private final int listTop = GuiNetworkInfoPanel.this.top + 112;
+        /** 列表右边界（面板内部右侧留 8px） */
+        private final int listRight = GuiNetworkInfoPanel.this.left + xSize - 8;
+        /** 列表内容宽度（430 - 16 = 414） */
+        private final int listWidth = xSize - 16;
+        /** 列表可视高度（255 - 112 = 143） */
+        private final int listHeight = 255 - 112;
+        /** 列表下边界（与原 GuiSlot 的 bottom 一致） */
+        private final int listBottom = listTop + listHeight;
+        /** 单行高度 */
+        private final int slotHeight = 20;
+        /** 滚动条宽度 */
+        private final int scrollbarWidth = 6;
+        /** 滚动条距离列表右边距 */
+        private final int scrollbarMarginRight = 2;
+
+        // ==================== 滚动状态 ====================
+        /** 当前顶部被滚掉的行数 */
+        private int scrollOffset = 0;
+        /** 是否正在拖拽滚动条 */
+        private boolean draggingScrollbar = false;
+
+        GuiAEMonitorList() {
+            // 无需额外初始化，几何常量已在声明时计算
+        }
+
+        // ==================== 外部绘制入口 ====================
+        /**
+         * 绘制整个列表，包括背景、可见行、滚动条。
+         *
+         * @param mouseX 鼠标 X（屏幕坐标）
+         * @param mouseY 鼠标 Y（屏幕坐标）
+         * @param partialTicks 部分刻
+         */
+        void draw(int mouseX, int mouseY, float partialTicks) {
+            clampScroll();
+            drawListBackground();
+            enableListScissor();
+            int firstRow = scrollOffset;
+            // 多渲染一行以覆盖可能部分显示的最底行
+            int lastRow = Math.min(monitoredEntries.length, firstRow + visibleRows() + 1);
+            for (int i = firstRow; i < lastRow; i++) {
+                int y = listTop + (i - firstRow) * slotHeight;
+                drawSlot(i, listLeft, y, mouseX, mouseY);
+            }
+            disableListScissor();
+            drawScrollbar();
+        }
+
+        // ==================== 条目绘制 ====================
+        /**
+         * 绘制单行内容：图标、名称、当前数量/变化率、清除按钮。
+         *
+         * @param index 条目索引
+         * @param x 行左上角 X
+         * @param y 行左上角 Y
+         * @param mouseX 鼠标 X
+         * @param mouseY 鼠标 Y
+         */
+        private void drawSlot(int index, int x, int y, int mouseX, int mouseY) {
+            Object entry = monitoredEntries[index];
+            int displayMode = panel.getDisplayMode();
+            int iconSize = 16;
+            int iconY = y + (slotHeight - iconSize) / 2;
+            String name;
+            String key;
+            if (entry instanceof ItemStack) {
+                ItemStack stack = (ItemStack) entry;
+                drawItemIcon(stack, x, iconY);
+                name = stack.getDisplayName();
+                key = TileEntityNetworkInfoPanel.getAEKey(stack);
+            } else if (entry instanceof FluidStack) {
+                FluidStack fluid = (FluidStack) entry;
+                drawFluidIcon(fluid, x, iconY);
+                name = fluid.getLocalizedName();
+                key = TileEntityNetworkInfoPanel.getAEKey(fluid);
+            } else {
+                return;
+            }
+
+            // 名称列：限制宽度，避免与目前情况列重叠
+            int nameMaxW = 120;
+            fontRendererObj.drawString(fontRendererObj.trimStringToWidth(name, nameMaxW), x + 22, y + 6, 0x2F3640);
+
+            // 目前情况：存量 + 变化率，格式参考 TESR 的 amount/rate 比例
+            AEMonitorSample sample = key == null ? null
+                : panel.getAEMonitorLatest()
+                    .get(key);
+            String currentText;
+            int currentColor;
+            if (sample == null) {
+                currentText = "-";
+                currentColor = 0x6B7680;
+            } else {
+                String amountText = formatAEMonitorAmount(sample.amount, displayMode);
+                String rateText = formatAEMonitorRate(sample.rate, displayMode);
+                currentText = amountText + " / " + rateText + "/min";
+                currentColor = rateColor(sample.rate);
+            }
+            fontRendererObj.drawString(currentText, x + 152, y + 6, currentColor);
+
+            // 清除按钮区域（仅视觉提示，点击由 mouseClicked 处理）
+            int btnX = listRight - 62;
+            int btnY = y + 4;
+            int btnW = 56;
+            int btnH = slotHeight - 8;
+            drawRect(btnX, btnY, btnX + btnW, btnY + btnH, 0xFFB8C0C8);
+            String removeText = tr("gtswn.network_info.gui.ae.remove");
+            int textW = fontRendererObj.getStringWidth(removeText);
+            fontRendererObj.drawString(removeText, btnX + (btnW - textW) / 2, btnY + 2, 0x2F3640);
+        }
+
+        // ==================== 背景与裁剪 ====================
+        /** 绘制列表背景色块（覆盖面板背景分隔线，避免列表区出现不需要的线条）。 */
+        private void drawListBackground() {
+            drawRect(listLeft, listTop, listRight, listBottom, 0xFFEDF1F5);
+        }
+
+        /**
+         * 启用剪刀测试，将后续绘制限制在列表可视区域内。
+         * <p>
+         * OpenGL 的 scissor 坐标以屏幕左下角为原点，单位是像素，因此需要按 GUI 缩放比例转换。
+         */
+        private void enableListScissor() {
+            ScaledResolution sr = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
+            int scale = sr.getScaleFactor();
+            int sx = listLeft * scale;
+            int sy = mc.displayHeight - listBottom * scale;
+            int sw = listWidth * scale;
+            int sh = listHeight * scale;
+            GL11.glEnable(GL11.GL_SCISSOR_TEST);
+            GL11.glScissor(sx, sy, sw, sh);
+        }
+
+        /** 关闭剪刀测试，恢复普通绘制。 */
+        private void disableListScissor() {
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        }
+
+        // ==================== 滚动条 ====================
+        /** 绘制滚动条轨道与滑块。 */
+        private void drawScrollbar() {
+            int trackX = listRight - scrollbarWidth - scrollbarMarginRight;
+            int maxScroll = getMaxScroll();
+            // 轨道
+            drawRect(trackX, listTop, trackX + scrollbarWidth, listBottom, 0xFFB8C0C8);
+            if (maxScroll > 0) {
+                int totalRows = Math.max(visibleRows(), monitoredEntries.length);
+                int thumbH = Math.max(10, listHeight * visibleRows() / totalRows);
+                int thumbY = listTop + scrollOffset * (listHeight - thumbH) / maxScroll;
+                drawRect(trackX, thumbY, trackX + scrollbarWidth, thumbY + thumbH, 0xFF6A7680);
+            }
+        }
+
+        // ==================== 滚动计算 ====================
+        /** 返回最大可滚动行数（总条目 - 可见行数，至少为 0）。 */
+        private int getMaxScroll() {
+            return Math.max(0, monitoredEntries.length - visibleRows());
+        }
+
+        /** 返回列表可视区域可容纳的完整行数。 */
+        private int visibleRows() {
+            return listHeight / slotHeight;
+        }
+
+        /** 将 scrollOffset 限制在合法范围内。 */
+        private void clampScroll() {
+            int max = getMaxScroll();
+            if (scrollOffset < 0) {
+                scrollOffset = 0;
+            }
+            if (scrollOffset > max) {
+                scrollOffset = max;
+            }
+        }
+
+        /** 按 delta 行滚动并限制范围。 */
+        private void scrollBy(int delta) {
+            scrollOffset += delta;
+            clampScroll();
+        }
+
+        // ==================== 鼠标事件 ====================
+        /**
+         * 处理鼠标滚轮事件。
+         *
+         * @return 若事件在列表区域内并被消费则返回 true
+         */
+        boolean handleMouseInput() {
+            int dwheel = Mouse.getEventDWheel();
+            if (dwheel == 0) {
+                return false;
+            }
+            int x = Mouse.getEventX() * width / mc.displayWidth;
+            int y = height - Mouse.getEventY() * height / mc.displayHeight - 1;
+            if (x >= listLeft && x <= listRight && y >= listTop && y <= listBottom) {
+                scrollBy(-Integer.signum(dwheel));
+                return true;
+            }
+            return false;
+        }
+
+        /**
+         * 处理鼠标点击事件。
+         *
+         * @return 若事件在列表区域内并被消费则返回 true
+         */
+        boolean mouseClicked(int mouseX, int mouseY, int button) {
+            if (mouseX < listLeft || mouseX > listRight || mouseY < listTop || mouseY > listBottom) {
+                return false;
+            }
+            // 滚动条区域
+            int trackX = listRight - scrollbarWidth - scrollbarMarginRight;
+            if (mouseX >= trackX && mouseX <= trackX + scrollbarWidth) {
+                draggingScrollbar = true;
+                updateScrollFromMouse(mouseY);
+                return true;
+            }
+            // 条目区域：仅当点击右侧清除按钮区时发送移除包
+            int row = (mouseY - listTop) / slotHeight + scrollOffset;
+            if (row >= 0 && row < monitoredEntries.length && mouseX >= listRight - 64) {
+                sendMonitorToggle(row);
+                return true;
+            }
+            // 消费列表区内的其他点击，避免穿透到底层控件
+            return true;
+        }
+
+        /** 处理鼠标拖拽（用于滚动条拖拽）。 */
+        void mouseClickMove(int mouseX, int mouseY, int button) {
+            if (draggingScrollbar) {
+                updateScrollFromMouse(mouseY);
+            }
+        }
+
+        /** 处理鼠标释放（结束滚动条拖拽）。 */
+        void mouseReleased(int mouseX, int mouseY, int button) {
+            draggingScrollbar = false;
+        }
+
+        /** 根据鼠标 Y 坐标更新 scrollOffset（滚动条拖拽用）。 */
+        private void updateScrollFromMouse(int mouseY) {
+            int maxScroll = getMaxScroll();
+            if (maxScroll <= 0) {
+                scrollOffset = 0;
+                return;
+            }
+            int totalRows = Math.max(visibleRows(), monitoredEntries.length);
+            int thumbH = Math.max(10, listHeight * visibleRows() / totalRows);
+            int available = listHeight - thumbH;
+            int relY = mouseY - listTop - thumbH / 2;
+            if (relY < 0) {
+                relY = 0;
+            }
+            if (relY > available) {
+                relY = available;
+            }
+            scrollOffset = relY * maxScroll / available;
+            clampScroll();
+        }
     }
 
 }

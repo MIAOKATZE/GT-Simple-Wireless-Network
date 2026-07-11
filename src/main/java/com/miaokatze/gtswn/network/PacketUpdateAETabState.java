@@ -26,6 +26,7 @@ import io.netty.buffer.ByteBuf;
  * <li>3 = 监控列表切换物品（stackData 含 ItemStack）</li>
  * <li>4 = 监控列表切换流体（stackData 含 FluidStack）</li>
  * <li>5 = 清除走势图绑定</li>
+ * <li>6 = 清除 AE 实时监控全部物品与流体</li>
  * </ul>
  */
 public class PacketUpdateAETabState implements IMessage {
@@ -111,6 +112,9 @@ public class PacketUpdateAETabState implements IMessage {
                     break;
                 case 5: // 清除走势图绑定
                     panel.clearAEBinding();
+                    break;
+                case 6: // 清除 AE 实时监控全部物品与流体
+                    panel.clearAllAEMonitors();
                     break;
                 default:
                     break;

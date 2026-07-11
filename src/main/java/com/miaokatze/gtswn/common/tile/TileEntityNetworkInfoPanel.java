@@ -99,6 +99,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private String aeAxisMax = "";
     private String aeLineColor = "1F6FFF";
 
+    // === AE 走势图显示控制字段（v1.5.5）：旧存档无该字段时默认全部开启，保持向后兼容 ===
+    private boolean showAEBrief = true;
+    private boolean showAEChartAmount = true;
+    private boolean showAEChartRate = true;
+
     private long lastSampleTick = -1L;
     private BigInteger cachedEu = BigInteger.ZERO;
     private double cachedEut = 0.0D;
@@ -602,6 +607,21 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
 
+    /** 一键清除 AE 实时监控列表中的所有物品与流体监控 */
+    public void clearAllAEMonitors() {
+        for (ItemStack stack : new ArrayList<>(monitoredItems)) {
+            clearAEData(getAEKey(stack));
+        }
+        for (FluidStack fluid : new ArrayList<>(monitoredFluids)) {
+            clearAEData(getAEKey(fluid));
+        }
+        monitoredItems.clear();
+        monitoredFluids.clear();
+        markDirty();
+        configureStackWatcher();
+        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
     /**
      * 切换物品监视（添加/移除）。
      *
@@ -951,6 +971,18 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return parseOptionalColor(aeLineColor);
     }
 
+    public boolean isShowAEBrief() {
+        return showAEBrief;
+    }
+
+    public boolean isShowAEChartAmount() {
+        return showAEChartAmount;
+    }
+
+    public boolean isShowAEChartRate() {
+        return showAEChartRate;
+    }
+
     public void setAETrackingWindow(int window) {
         this.aeTrackingWindow = clampInt(window, AEMonitorDataSet.WINDOW_5_MIN, AEMonitorDataSet.WINDOW_24_HOUR);
         markDirty();
@@ -1031,6 +1063,26 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 displayMode = (displayMode == 0) ? 1 : 0;
                 // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
                 cachedStatus = formatStatus(cachedEut, eutDataSet.size() < 2, false);
+                break;
+            case 20:
+                // AE 走势图：简报显示开关
+                showAEBrief = !showAEBrief;
+                break;
+            case 21:
+                // AE 走势图：存量曲线开关
+                showAEChartAmount = !showAEChartAmount;
+                break;
+            case 22:
+                // AE 走势图：变化率曲线开关
+                showAEChartRate = !showAEChartRate;
+                break;
+            case 25:
+                // AE 时长窗口：循环到上一个窗口
+                aeTrackingWindow = prevTrackingWindow(aeTrackingWindow);
+                break;
+            case 26:
+                // AE 时长窗口：循环到下一个窗口
+                aeTrackingWindow = nextTrackingWindow(aeTrackingWindow);
                 break;
             default:
                 return;
@@ -1222,6 +1274,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             case NetworkInfoDataSet.WINDOW_24_HOUR:
             default:
                 return NetworkInfoDataSet.WINDOW_5_MIN;
+        }
+    }
+
+    private static int prevTrackingWindow(int window) {
+        switch (window) {
+            case NetworkInfoDataSet.WINDOW_1_HOUR:
+                return NetworkInfoDataSet.WINDOW_5_MIN;
+            case NetworkInfoDataSet.WINDOW_8_HOUR:
+                return NetworkInfoDataSet.WINDOW_1_HOUR;
+            case NetworkInfoDataSet.WINDOW_24_HOUR:
+                return NetworkInfoDataSet.WINDOW_8_HOUR;
+            case NetworkInfoDataSet.WINDOW_5_MIN:
+            default:
+                return NetworkInfoDataSet.WINDOW_24_HOUR;
         }
     }
 
@@ -1728,6 +1794,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         tag.setString("aeAxisMin", aeAxisMin);
         tag.setString("aeAxisMax", aeAxisMax);
         tag.setString("aeLineColor", aeLineColor);
+        tag.setBoolean("showAEBrief", showAEBrief);
+        tag.setBoolean("showAEChartAmount", showAEChartAmount);
+        tag.setBoolean("showAEChartRate", showAEChartRate);
     }
 
     private void readAEChartConfig(NBTTagCompound tag) {
@@ -1752,6 +1821,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         aeAxisMin = tag.hasKey("aeAxisMin") ? cleanText(tag.getString("aeAxisMin")) : "";
         aeAxisMax = tag.hasKey("aeAxisMax") ? cleanText(tag.getString("aeAxisMax")) : "";
         aeLineColor = tag.hasKey("aeLineColor") ? cleanColorText(tag.getString("aeLineColor")) : "1F6FFF";
+        // 旧存档无这些字段时默认 true，保证图表/简报默认可见
+        showAEBrief = !tag.hasKey("showAEBrief") || tag.getBoolean("showAEBrief");
+        showAEChartAmount = !tag.hasKey("showAEChartAmount") || tag.getBoolean("showAEChartAmount");
+        showAEChartRate = !tag.hasKey("showAEChartRate") || tag.getBoolean("showAEChartRate");
     }
 
     private static Double parseOptionalDouble(String value) {

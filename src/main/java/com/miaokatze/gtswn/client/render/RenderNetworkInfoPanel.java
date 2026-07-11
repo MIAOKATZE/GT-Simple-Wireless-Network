@@ -165,7 +165,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         }
     }
 
-    /** 绘制 AE 走势图标签页（v1.5.4） */
+    /** 绘制 AE 走势图标签页（v1.5.5） */
     private void drawAEChartPanel(TileEntityNetworkInfoPanel panel, FontRenderer font, int safe, int width, int height,
         int briefHeight) {
         ItemStack item = panel.getChartItem();
@@ -184,14 +184,16 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         }
 
         // 顶部简报区：左侧图标，右侧名称/存量/速率
+        // 图标尺寸做上限，避免凸出屏幕；垂直居中显示
+        int iconSize = Math.min(briefHeight, 28);
         int iconX = safe;
-        int iconY = safe;
+        int iconY = safe + (briefHeight - iconSize) / 2;
         String name;
         if (item != null) {
-            drawItemIconTESR(item, iconX, iconY, briefHeight);
+            drawItemIconTESR(item, iconX, iconY, iconSize);
             name = item.getDisplayName();
         } else {
-            drawFluidIconTESR(fluid, iconX, iconY, briefHeight);
+            drawFluidIconTESR(fluid, iconX, iconY, iconSize);
             name = fluid.getLocalizedName();
         }
 
@@ -234,7 +236,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 }
 
                 if (samples.size() < 2) {
-                    drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null);
+                    drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null);
                     drawCentered(
                         font,
                         StatCollector.translateToLocalFormatted("gtswn.network_info.screen.collecting", samples.size()),
@@ -243,24 +245,62 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                         plotY + plotH / 2 - 4,
                         0x777777);
                 } else {
+                    // 分别提取存量与变化率序列
                     double[] amounts = new double[samples.size()];
+                    double[] rates = new double[samples.size()];
                     for (int i = 0; i < samples.size(); i++) {
-                        amounts[i] = samples.get(i).amount;
+                        AEMonitorSample s = samples.get(i);
+                        amounts[i] = s.amount;
+                        rates[i] = s.rate;
                     }
-                    double[] amountRange = range(amounts, panel.getAEAxisMin(), panel.getAEAxisMax());
-                    drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, amountRange);
-                    Integer lineColorObj = panel.getAELineColor();
-                    int lineColor = lineColorObj == null ? AE_LINE_DEFAULT_COLOR : lineColorObj.intValue();
-                    drawSeries(
-                        amounts,
-                        amountRange,
-                        plotX,
-                        plotY,
-                        plotW,
-                        plotH,
-                        lineColor,
-                        panel.getAETrendLineThickness(),
-                        panel.getAETrendLineSmoothing());
+                    boolean showAmount = panel.isShowAEChartAmount();
+                    boolean showRate = panel.isShowAEChartRate();
+
+                    if (!showAmount && !showRate) {
+                        // 两条走势线都被关闭时给出明确提示
+                        drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, null, null);
+                        drawCentered(
+                            font,
+                            tr("gtswn.network_info.screen.ae_chart_no_line"),
+                            plotX,
+                            plotW,
+                            plotY + plotH / 2 - 4,
+                            0x777777);
+                    } else {
+                        // 复用同一 AE Y 轴字段同时约束存量和变化率（简化实现，后续可按需分离）
+                        double[] amountRange = showAmount ? range(amounts, panel.getAEAxisMin(), panel.getAEAxisMax())
+                            : null;
+                        double[] rateRange = showRate ? range(rates, panel.getAEAxisMin(), panel.getAEAxisMax()) : null;
+                        drawAEAcademicAxes(panel, font, plotX, plotY, plotW, plotH, amountRange, rateRange);
+
+                        Integer lineColorObj = panel.getAELineColor();
+                        int amountColor = lineColorObj == null ? AE_LINE_DEFAULT_COLOR : lineColorObj.intValue();
+                        if (showAmount) {
+                            drawSeries(
+                                amounts,
+                                amountRange,
+                                plotX,
+                                plotY,
+                                plotW,
+                                plotH,
+                                amountColor,
+                                panel.getAETrendLineThickness(),
+                                panel.getAETrendLineSmoothing());
+                        }
+                        if (showRate) {
+                            // 变化率曲线使用绿色，线宽与样条密度与存量线一致
+                            drawSeries(
+                                rates,
+                                rateRange,
+                                plotX,
+                                plotY,
+                                plotW,
+                                plotH,
+                                0x4CAF50,
+                                panel.getAETrendLineThickness(),
+                                panel.getAETrendLineSmoothing());
+                        }
+                    }
                 }
             }
         }
@@ -275,9 +315,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             0x6B7680);
     }
 
-    /** 绘制 AE 走势图坐标轴（与 EU 坐标轴同构，仅保留单 Y 轴与 AE 标签） */
+    /** 绘制 AE 走势图坐标轴（v1.5.5 支持左右双 Y 轴：左存量、右变化率） */
     private void drawAEAcademicAxes(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int y, int w, int h,
-        double[] range) {
+        double[] amountRange, double[] rateRange) {
         int thickness = panel.getAEChartBorderThickness();
         fillRect(x, y, w + thickness, thickness, AXIS_COLOR);
         fillRect(x, y + h, w + thickness, thickness, AXIS_COLOR);
@@ -288,10 +328,15 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             int ty = y + h - i * h / 4;
             fillRect(x - 4, ty, 4, Math.max(1, thickness), TICK_COLOR);
             fillRect(x + w, ty, 4, Math.max(1, thickness), TICK_COLOR);
-            if (range != null) {
-                double value = range[0] + (range[1] - range[0]) * i / 4.0D;
+            if (amountRange != null) {
+                double value = amountRange[0] + (amountRange[1] - amountRange[0]) * i / 4.0D;
                 String label = sci(value);
                 font.drawString(label, x - 8 - font.getStringWidth(label), ty - 4, AXIS_COLOR);
+            }
+            if (rateRange != null) {
+                double value = rateRange[0] + (rateRange[1] - rateRange[0]) * i / 4.0D;
+                String label = sci(value);
+                font.drawString(label, x + w + 8, ty - 4, 0x4CAF50);
             }
         }
         for (int i = 0; i < 5; i++) {
@@ -304,8 +349,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             }
         }
         drawCentered(font, tr("gtswn.network_info.screen.time_axis"), x, w, y + h + 20, 0x4E5964);
-        if (range != null) {
+        if (amountRange != null) {
             drawRotated(font, tr("gtswn.network_info.screen.ae_axis"), x - 56, y + h / 2 + 42, AXIS_COLOR);
+        }
+        if (rateRange != null) {
+            drawRotated(font, tr("gtswn.network_info.screen.ae_rate_axis"), x + w + 48, y + h / 2 + 38, 0x4CAF50);
         }
     }
 
@@ -389,11 +437,14 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     private void drawAEMonitorRow(FontRenderer font, ItemStack item, FluidStack fluid, AEMonitorSample sample,
         Double avg, int rowY, int displayMode, int iconX, int nameX, int amountX, int rateX, int avgX) {
         String name;
+        // 列表图标尺寸限制为行高 - 2，防止行高变化时图标凸出
+        int iconSize = Math.min(16, 18 - 2);
+        int iconY = rowY + (18 - iconSize) / 2;
         if (item != null) {
-            drawItemIconTESR(item, iconX, rowY, 16);
+            drawItemIconTESR(item, iconX, iconY, iconSize);
             name = item.getDisplayName();
         } else {
-            drawFluidIconTESR(fluid, iconX, rowY, 16);
+            drawFluidIconTESR(fluid, iconX, iconY, iconSize);
             name = fluid.getLocalizedName();
         }
 
@@ -428,10 +479,13 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         if (stack == null) {
             return;
         }
+        // 防御性限制图标尺寸，避免过大的图标凸出屏幕或产生深度冲突
+        int iconSize = Math.min(size, 32);
         Minecraft mc = Minecraft.getMinecraft();
         GL11.glPushMatrix();
-        GL11.glTranslatef(x, y, 5.0F);
-        float localScale = size / 16.0F;
+        // Z 偏移从 5.0F 降到 0.75F，降低图标凸出信息屏表面的视觉悬突
+        GL11.glTranslatef(x, y, 0.75F);
+        float localScale = iconSize / 16.0F;
         GL11.glScalef(localScale, localScale, localScale);
         boolean lightingEnabled = GL11.glIsEnabled(GL11.GL_LIGHTING);
         RenderHelper.enableGUIStandardItemLighting();
@@ -458,9 +512,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         if (fluid == null || fluid.getFluid() == null) {
             return;
         }
+        // 流体图标同样做尺寸上限，避免简报区大图标凸出
+        int iconSize = Math.min(size, 32);
         int color = fluid.getFluid()
             .getColor(fluid);
-        fillRect(x, y, size, size, 0xFF000000 | color);
+        fillRect(x, y, iconSize, iconSize, 0xFF000000 | color);
     }
 
     /** 客户端没有 AE gridProxy，通过是否存在监控数据推断在线状态 */

@@ -192,10 +192,12 @@ gtswn.network_info.screen.ae_online=Online
 gtswn.network_info.screen.ae_offline=Offline
 gtswn.network_info.screen.ae_offline_overlay=AE Network Offline
 gtswn.network_info.screen.ae_axis=AE Amount
+gtswn.network_info.screen.ae_rate_axis=AE Rate
+gtswn.network_info.screen.ae_chart_no_line=No trend line selected
 gtswn.network_info.screen.ae_monitor_header_name=Name
 gtswn.network_info.screen.ae_monitor_header_amount=Amount
-gtswn.network_info.screen.ae_monitor_header_rate=Rate/min
-gtswn.network_info.screen.ae_monitor_header_avg=Avg/min
+gtswn.network_info.screen.ae_monitor_header_rate=Realtime Rate
+gtswn.network_info.screen.ae_monitor_header_avg=Average Rate
 
 # 1.4.4 status wording and realtime EU/t
 # Silent/<1EU/Reloading/LongTermSilent special status display (from MTEWirelessEnergyMonitor / WirelessMonitorHUD boundary handling)
@@ -261,6 +263,13 @@ gtswn.network_info.gui.ae.window.8h=8 h
 gtswn.network_info.gui.ae.window.24h=24 h
 gtswn.network_info.gui.ae.remove=Remove
 gtswn.network_info.gui.ae.clear_all=Clear All
+# v1.5.5 AE chart buttons and monitor list new keys
+gtswn.network_info.gui.ae.brief=Brief AE
+gtswn.network_info.gui.ae.chart.amount=Chart Amount
+gtswn.network_info.gui.ae.chart.rate=Chart Rate
+gtswn.network_info.gui.ae.monitor.brief=AE Status: %s | Monitored: %d
+gtswn.network_info.gui.ae.monitor.header_current=Current
+gtswn.network_info.gui.ae.monitor.header_remove=Remove
 gtswn.network_info.chat.bind_item=Bound chart item: %s
 gtswn.network_info.chat.bind_fluid=Bound chart fluid: %s
 gtswn.network_info.chat.add_item=Added monitor: %s
