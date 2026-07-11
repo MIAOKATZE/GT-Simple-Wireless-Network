@@ -483,15 +483,21 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         int iconSize = Math.min(size, 32);
         Minecraft mc = Minecraft.getMinecraft();
         GL11.glPushMatrix();
-        // Z 偏移从 5.0F 降到 0.75F，降低图标凸出信息屏表面的视觉悬突
-        GL11.glTranslatef(x, y, 0.75F);
+        // Z 偏移大幅减小，避免 3D 物品模型凸出信息屏表面
+        GL11.glTranslatef(x, y, 0.1F);
         float localScale = iconSize / 16.0F;
         GL11.glScalef(localScale, localScale, localScale);
         boolean lightingEnabled = GL11.glIsEnabled(GL11.GL_LIGHTING);
+        // 临时禁用深度测试，避免 3D 物品 icon 与面板产生深度冲突而凸出
+        boolean depthEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
         RenderHelper.enableGUIStandardItemLighting();
         RenderItem.getInstance()
             .renderItemAndEffectIntoGUI(mc.fontRenderer, mc.getTextureManager(), stack, 0, 0);
         RenderHelper.disableStandardItemLighting();
+        if (depthEnabled) {
+            GL11.glEnable(GL11.GL_DEPTH_TEST);
+        }
         if (lightingEnabled) {
             GL11.glEnable(GL11.GL_LIGHTING);
         } else {

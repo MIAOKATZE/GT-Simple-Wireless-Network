@@ -248,14 +248,7 @@ gtswn.network_info.gui.ae.rate.up=+%s/min
 gtswn.network_info.gui.ae.rate.down=-%s/min
 gtswn.network_info.gui.ae.rate.stable=稳定
 # v1.5.4 AE 配置界面新增
-gtswn.network_info.gui.ae.chart_settings=AE 图表样式
-gtswn.network_info.gui.ae.y_min=AE Y最小
-gtswn.network_info.gui.ae.y_max=AE Y最大
-gtswn.network_info.gui.ae.border=AE 边框
-gtswn.network_info.gui.ae.line_width=AE 走势线
-gtswn.network_info.gui.ae.smoothing=AE 样条密度
-gtswn.network_info.gui.ae.bg=AE 背景
-gtswn.network_info.gui.ae.line_color=AE 线条颜色
+gtswn.network_info.gui.ae.chart_settings=图表样式
 gtswn.network_info.gui.ae.window=AE 时长
 gtswn.network_info.gui.ae.window.5min=5分钟
 gtswn.network_info.gui.ae.window.1h=1小时

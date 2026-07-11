@@ -248,14 +248,7 @@ gtswn.network_info.gui.ae.rate.up=+%s/min
 gtswn.network_info.gui.ae.rate.down=-%s/min
 gtswn.network_info.gui.ae.rate.stable=Stable
 # v1.5.4 AE config UI new keys
-gtswn.network_info.gui.ae.chart_settings=AE Chart Style
-gtswn.network_info.gui.ae.y_min=AE Y min
-gtswn.network_info.gui.ae.y_max=AE Y max
-gtswn.network_info.gui.ae.border=AE Border
-gtswn.network_info.gui.ae.line_width=AE Line
-gtswn.network_info.gui.ae.smoothing=AE Smoothing
-gtswn.network_info.gui.ae.bg=AE BG
-gtswn.network_info.gui.ae.line_color=AE Line Color
+gtswn.network_info.gui.ae.chart_settings=Chart Style
 gtswn.network_info.gui.ae.window=AE Window
 gtswn.network_info.gui.ae.window.5min=5 min
 gtswn.network_info.gui.ae.window.1h=1 h

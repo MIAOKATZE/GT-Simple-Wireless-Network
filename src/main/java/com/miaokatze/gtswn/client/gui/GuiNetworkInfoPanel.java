@@ -247,8 +247,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         buttonList.add(new GuiButton(AE_WINDOW_NEXT_BUTTON, left + 174, row2Y, 24, 16, "+"));
         buttonList.add(new GuiButton(AE_APPLY_BUTTON, left + 344, row2Y, 74, 16, tr("gtswn.network_info.gui.apply")));
 
-        // 配置文本框整体下移，避免与按钮行重叠
-        int fieldY = top + 148;
+        // 配置文本框整体下移，避免与按钮行重叠并和 EU 标签页对称
+        int fieldY = top + 165;
         aeAxisMinField = addField(left + 104, fieldY, 66, panel.getAEAxisMinText());
         aeAxisMaxField = addField(left + 250, fieldY, 66, panel.getAEAxisMaxText());
         fieldY += 22;
@@ -464,7 +464,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        drawDefaultBackground();
+        // 移除 drawDefaultBackground()，避免 AE 实时监控等标签页出现巨大 dirt 背景；
+        // 面板背景由 drawPanelBackground() 统一绘制。
         drawPanelBackground();
         drawTitleBar();
         // 标签页按钮始终绘制（已由 super.drawScreen 处理）
@@ -704,19 +705,20 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     /** 绘制 AE 走势图配置项标签（与 EU 的 drawChartSettings 布局对称，整体下移避免与按钮行重叠） */
     private void drawAEChartSettings() {
         int x = left + 12;
-        int y = top + 128;
+        int y = top + 157;
         fontRendererObj
             .drawString(EnumChatFormatting.BOLD + tr("gtswn.network_info.gui.ae.chart_settings"), x, y, 0x2F3640);
         y += 16;
-        drawFieldLabel(tr("gtswn.network_info.gui.ae.y_min"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.ae.y_max"), left + 180, y + 4);
+        // AE 走势图输入框标签复用 EU 标签，避免重复定义（按字段语义映射）
+        drawFieldLabel(tr("gtswn.network_info.gui.energy_y_min"), left + 12, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.energy_y_max"), left + 180, y + 4);
         y += 22;
-        drawFieldLabel(tr("gtswn.network_info.gui.ae.border"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.ae.line_width"), left + 180, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.ae.smoothing"), left + 326, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.border_width"), left + 12, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.line_width"), left + 180, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.smoothing"), left + 326, y + 4);
         y += 22;
-        drawFieldLabel(tr("gtswn.network_info.gui.ae.bg"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.ae.line_color"), left + 180, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.chart_bg"), left + 12, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.screen_bg"), left + 180, y + 4);
         fontRendererObj.drawString(tr("gtswn.network_info.gui.blank_auto"), left + 326, y + 4, 0x6B7680);
     }
 
