@@ -19,6 +19,14 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
     /** AE 图表配置（对应 TileEntity.applyAEChartConfig） */
     public static final int ACTION_AE_CHART_CONFIG = -2;
 
+    // === AE 实时监控配置 action 常量（v1.5.8）===
+    public static final int ACTION_AE_MONITOR_FONT_SIZE_MINUS = 30;
+    public static final int ACTION_AE_MONITOR_FONT_SIZE_PLUS = 31;
+    public static final int ACTION_AE_MONITOR_BOLD_TOGGLE = 32;
+    public static final int ACTION_AE_MONITOR_RENDER_MODE_TOGGLE = 33;
+    public static final int ACTION_AE_MONITOR_ICON_SIZE_MINUS = 34;
+    public static final int ACTION_AE_MONITOR_ICON_SIZE_PLUS = 35;
+
     private int x;
     private int y;
     private int z;

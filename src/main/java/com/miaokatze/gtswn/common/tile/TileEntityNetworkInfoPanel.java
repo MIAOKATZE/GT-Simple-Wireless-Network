@@ -104,6 +104,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private boolean showAEChartAmount = true;
     private boolean showAEChartRate = true;
 
+    // === AE 实时监控显示配置字段（v1.5.8）===
+    private int aeMonitorFontSize = 12; // 字号，范围 8~16
+    private boolean aeMonitorBold = false; // 名称是否加粗
+    private int aeMonitorRenderMode = 0; // 0=条目(list), 1=格子(grid)
+    private int aeMonitorIconSize = 16; // 图标大小，范围 8~32
+
     private long lastSampleTick = -1L;
     private BigInteger cachedEu = BigInteger.ZERO;
     private double cachedEut = 0.0D;
@@ -971,6 +977,23 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return parseOptionalColor(aeLineColor);
     }
 
+    // === AE 实时监控显示配置 Getter（v1.5.8）===
+    public int getAEMonitorFontSize() {
+        return aeMonitorFontSize;
+    }
+
+    public boolean isAEMonitorBold() {
+        return aeMonitorBold;
+    }
+
+    public int getAEMonitorRenderMode() {
+        return aeMonitorRenderMode;
+    }
+
+    public int getAEMonitorIconSize() {
+        return aeMonitorIconSize;
+    }
+
     public boolean isShowAEBrief() {
         return showAEBrief;
     }
@@ -1083,6 +1106,30 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             case 26:
                 // AE 时长窗口：循环到下一个窗口
                 aeTrackingWindow = nextTrackingWindow(aeTrackingWindow);
+                break;
+            case 30:
+                // AE 实时监控：字号减小（最小 8）
+                aeMonitorFontSize = Math.max(8, aeMonitorFontSize - 1);
+                break;
+            case 31:
+                // AE 实时监控：字号增大（最大 16）
+                aeMonitorFontSize = Math.min(16, aeMonitorFontSize + 1);
+                break;
+            case 32:
+                // AE 实时监控：名称加粗开关
+                aeMonitorBold = !aeMonitorBold;
+                break;
+            case 33:
+                // AE 实时监控：条目/格子显示模式切换
+                aeMonitorRenderMode = (aeMonitorRenderMode == 0) ? 1 : 0;
+                break;
+            case 34:
+                // AE 实时监控：图标大小减小（最小 8）
+                aeMonitorIconSize = Math.max(8, aeMonitorIconSize - 2);
+                break;
+            case 35:
+                // AE 实时监控：图标大小增大（最大 32）
+                aeMonitorIconSize = Math.min(32, aeMonitorIconSize + 2);
                 break;
             default:
                 return;
@@ -1556,6 +1603,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         readSyncData(tag);
         readAEChartConfig(tag);
+        readAEMonitorConfig(tag);
         // === AE 标签页字段读取 ===
         currentTab = tag.hasKey("currentTab") ? tag.getInteger("currentTab") : 0;
         if (tag.hasKey("chartItem")) {
@@ -1612,6 +1660,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         writeSyncData(tag);
         writeAEChartConfig(tag);
+        writeAEMonitorConfig(tag);
         // === AE 标签页字段写入 ===
         tag.setInteger("currentTab", currentTab);
         if (chartItem != null) {
@@ -1661,6 +1710,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         tag.setInteger("displayMode", displayMode);
         writeChartConfig(tag);
         writeAEChartConfig(tag);
+        writeAEMonitorConfig(tag);
         if (screen != null) {
             tag.setTag("screen", screen.toNBT());
         }
@@ -1713,6 +1763,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         displayMode = tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0;
         readChartConfig(tag);
         readAEChartConfig(tag);
+        readAEMonitorConfig(tag);
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
         }
@@ -1825,6 +1876,22 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         showAEBrief = !tag.hasKey("showAEBrief") || tag.getBoolean("showAEBrief");
         showAEChartAmount = !tag.hasKey("showAEChartAmount") || tag.getBoolean("showAEChartAmount");
         showAEChartRate = !tag.hasKey("showAEChartRate") || tag.getBoolean("showAEChartRate");
+    }
+
+    // === AE 实时监控显示配置 NBT 读写（v1.5.8）===
+    private void writeAEMonitorConfig(NBTTagCompound tag) {
+        tag.setInteger("aeMonitorFontSize", aeMonitorFontSize);
+        tag.setBoolean("aeMonitorBold", aeMonitorBold);
+        tag.setInteger("aeMonitorRenderMode", aeMonitorRenderMode);
+        tag.setInteger("aeMonitorIconSize", aeMonitorIconSize);
+    }
+
+    private void readAEMonitorConfig(NBTTagCompound tag) {
+        aeMonitorFontSize = tag.hasKey("aeMonitorFontSize") ? clampInt(tag.getInteger("aeMonitorFontSize"), 8, 16) : 12;
+        aeMonitorBold = !tag.hasKey("aeMonitorBold") || tag.getBoolean("aeMonitorBold");
+        aeMonitorRenderMode = tag.hasKey("aeMonitorRenderMode") ? clampInt(tag.getInteger("aeMonitorRenderMode"), 0, 1)
+            : 0;
+        aeMonitorIconSize = tag.hasKey("aeMonitorIconSize") ? clampInt(tag.getInteger("aeMonitorIconSize"), 8, 32) : 16;
     }
 
     private static Double parseOptionalDouble(String value) {

@@ -13,9 +13,10 @@ import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.client.renderer.tileentity.TileEntitySpecialRenderer;
-import net.minecraft.util.IIcon;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.IIcon;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.fluids.FluidStack;
 
@@ -378,49 +379,64 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         String status = tr(statusKey);
         font.drawString(status, width - safe - font.getStringWidth(status), titleY, statusColor);
 
-        // 列表区域
-        int rowY = titleY + 16;
-        int rowHeight = 18;
-        int bottomLimit = height - safe;
-        int iconX = safe;
-        int nameX = iconX + 20;
-        int amountX = safe + (width - safe * 2) * 50 / 100;
-        int rateX = safe + (width - safe * 2) * 72 / 100;
-        int avgX = safe + (width - safe * 2) * 86 / 100;
+        int panelWidth = width - safe * 2;
+        int listTop = titleY + 16;
+        int availableHeight = height - safe - listTop;
 
-        if (items.isEmpty() && fluids.isEmpty()) {
+        // 布局保护：面板可用空间过小时给出明确提示，避免后续除零或越界
+        if (panelWidth < 32 || availableHeight < 24) {
+            drawCentered(
+                font,
+                tr("gtswn.network_info.screen.ae_monitor_too_small"),
+                safe,
+                panelWidth,
+                height / 2 - 4,
+                0xF44336);
+        } else if (items.isEmpty() && fluids.isEmpty()) {
             drawCentered(
                 font,
                 tr("gtswn.network_info.screen.ae_monitor_empty"),
                 safe,
-                width - safe * 2,
+                panelWidth,
                 height / 2 - 4,
                 0x777777);
         } else {
-            // 表头
-            font.drawString(tr("gtswn.network_info.screen.ae_monitor_header_name"), nameX, rowY, 0x4C5660);
-            font.drawString(tr("gtswn.network_info.screen.ae_monitor_header_amount"), amountX, rowY, 0x4C5660);
-            font.drawString(tr("gtswn.network_info.screen.ae_monitor_header_rate"), rateX, rowY, 0x4C5660);
-            font.drawString(tr("gtswn.network_info.screen.ae_monitor_header_avg"), avgX, rowY, 0x4C5660);
-            rowY += 12;
+            // 读取 AE 实时监控显示配置
+            int renderMode = panel.getAEMonitorRenderMode();
+            int iconSize = Math.min(panel.getAEMonitorIconSize(), 32);
+            int fontSize = Math.max(8, Math.min(16, panel.getAEMonitorFontSize()));
+            boolean bold = panel.isAEMonitorBold();
 
-            // 物品行
-            for (ItemStack stack : items) {
-                if (rowY + rowHeight > bottomLimit) break;
-                String key = TileEntityNetworkInfoPanel.getAEKey(stack);
-                AEMonitorSample sample = key == null ? null : latest.get(key);
-                Double avg = key == null ? null : avg300s.get(key);
-                drawAEMonitorRow(font, stack, null, sample, avg, rowY, displayMode, iconX, nameX, amountX, rateX, avgX);
-                rowY += rowHeight;
-            }
-            // 流体行
-            for (FluidStack fluid : fluids) {
-                if (rowY + rowHeight > bottomLimit) break;
-                String key = TileEntityNetworkInfoPanel.getAEKey(fluid);
-                AEMonitorSample sample = key == null ? null : latest.get(key);
-                Double avg = key == null ? null : avg300s.get(key);
-                drawAEMonitorRow(font, null, fluid, sample, avg, rowY, displayMode, iconX, nameX, amountX, rateX, avgX);
-                rowY += rowHeight;
+            if (renderMode == 1) {
+                drawAEMonitorGrid(
+                    font,
+                    items,
+                    fluids,
+                    latest,
+                    avg300s,
+                    displayMode,
+                    safe,
+                    listTop,
+                    panelWidth,
+                    availableHeight,
+                    iconSize,
+                    fontSize,
+                    bold);
+            } else {
+                drawAEMonitorList(
+                    font,
+                    items,
+                    fluids,
+                    latest,
+                    avg300s,
+                    displayMode,
+                    safe,
+                    listTop,
+                    panelWidth,
+                    availableHeight,
+                    iconSize,
+                    fontSize,
+                    bold);
             }
         }
 
@@ -430,7 +446,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 font,
                 tr("gtswn.network_info.screen.ae_offline_overlay"),
                 safe,
-                width - safe * 2,
+                panelWidth,
                 height / 2 + 10,
                 0xF44336);
         }
@@ -438,33 +454,267 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     /** 绘制 AE 实时监控列表中的一行 */
     private void drawAEMonitorRow(FontRenderer font, ItemStack item, FluidStack fluid, AEMonitorSample sample,
-        Double avg, int rowY, int displayMode, int iconX, int nameX, int amountX, int rateX, int avgX) {
+        Double avg, int rowY, int displayMode, int iconX, int nameX, int amountX, int rateX, int avgX, int iconSize,
+        int fontSize, boolean bold, int rowHeight) {
         String name;
-        // 列表图标尺寸限制为行高 - 2，防止行高变化时图标凸出
-        int iconSize = Math.min(16, 18 - 2);
-        int iconY = rowY + (18 - iconSize) / 2;
+        // 图标尺寸由面板配置决定，上限已在调用处保护为 32；在行内垂直居中
+        int actualIconSize = Math.min(iconSize, 32);
+        int iconY = rowY + (rowHeight - actualIconSize) / 2;
         if (item != null) {
-            drawItemIconTESR(item, iconX, iconY, iconSize);
+            drawItemIconTESR(item, iconX, iconY, actualIconSize);
             name = item.getDisplayName();
         } else {
-            drawFluidIconTESR(fluid, iconX, iconY, iconSize);
+            drawFluidIconTESR(fluid, iconX, iconY, actualIconSize);
             name = fluid.getLocalizedName();
         }
 
-        int nameMaxW = amountX - nameX - 4;
-        font.drawString(font.trimStringToWidth(name, nameMaxW), nameX, rowY + 4, 0x2F3640);
+        // 根据配置字号计算缩放比例（基准为 12）
+        float fontScale = fontSize / 12.0F;
+        // 名称加粗时追加格式码
+        String displayName = bold ? EnumChatFormatting.BOLD + name : name;
+        // getStringWidth 返回未缩放宽度，裁剪宽度需除以缩放比例
+        int nameMaxW = (int) ((amountX - nameX - 4) / fontScale);
+        drawScaledString(font, font.trimStringToWidth(displayName, nameMaxW), nameX, rowY + 4, 0x2F3640, fontScale);
 
         String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, displayMode);
-        font.drawString(amountText, amountX, rowY + 4, 0x2F3640);
+        drawScaledString(font, amountText, amountX, rowY + 4, 0x2F3640, fontScale);
 
         double rate = sample == null ? 0.0D : sample.rate;
         String rateText = sample == null ? "-" : formatAEMonitorRate(rate, displayMode);
         int rateCol = sample == null ? 0x6B7680 : rateColor(rate);
-        font.drawString(rateText, rateX, rowY + 4, rateCol);
+        drawScaledString(font, rateText, rateX, rowY + 4, rateCol, fontScale);
 
         String avgText = avg == null ? "-" : formatAEMonitorRate(avg.doubleValue(), displayMode);
         int avgCol = avg == null ? 0x6B7680 : rateColor(avg.doubleValue());
-        font.drawString(avgText, avgX, rowY + 4, avgCol);
+        drawScaledString(font, avgText, avgX, rowY + 4, avgCol, fontScale);
+    }
+
+    /** 绘制 AE 实时监控列表模式（renderMode = 0） */
+    private void drawAEMonitorList(FontRenderer font, List<ItemStack> items, List<FluidStack> fluids,
+        Map<String, AEMonitorSample> latest, Map<String, Double> avg300s, int displayMode, int safe, int listTop,
+        int panelWidth, int availableHeight, int iconSize, int fontSize, boolean bold) {
+        float fontScale = fontSize / 12.0F;
+        // 行高由图标大小和字号共同决定，保证视觉协调
+        int rowHeight = Math.max(iconSize + 4, fontSize + 8);
+        int bottomLimit = listTop + availableHeight;
+        int iconX = safe;
+        int nameX = iconX + iconSize + 4;
+        int amountX = safe + panelWidth * 50 / 100;
+        int rateX = safe + panelWidth * 72 / 100;
+        int avgX = safe + panelWidth * 86 / 100;
+
+        int rowY = listTop;
+        // 表头使用相同字号缩放，保持与数据行视觉一致
+        drawScaledString(
+            font,
+            tr("gtswn.network_info.screen.ae_monitor_header_name"),
+            nameX,
+            rowY,
+            0x4C5660,
+            fontScale);
+        drawScaledString(
+            font,
+            tr("gtswn.network_info.screen.ae_monitor_header_amount"),
+            amountX,
+            rowY,
+            0x4C5660,
+            fontScale);
+        drawScaledString(
+            font,
+            tr("gtswn.network_info.screen.ae_monitor_header_rate"),
+            rateX,
+            rowY,
+            0x4C5660,
+            fontScale);
+        drawScaledString(font, tr("gtswn.network_info.screen.ae_monitor_header_avg"), avgX, rowY, 0x4C5660, fontScale);
+        // 表头占用高度随字号等比缩放（原设计为 12 像素）
+        rowY += Math.round(12 * fontScale);
+
+        // 物品行
+        for (ItemStack stack : items) {
+            if (rowY + rowHeight > bottomLimit) break;
+            String key = TileEntityNetworkInfoPanel.getAEKey(stack);
+            AEMonitorSample sample = key == null ? null : latest.get(key);
+            Double avg = key == null ? null : avg300s.get(key);
+            drawAEMonitorRow(
+                font,
+                stack,
+                null,
+                sample,
+                avg,
+                rowY,
+                displayMode,
+                iconX,
+                nameX,
+                amountX,
+                rateX,
+                avgX,
+                iconSize,
+                fontSize,
+                bold,
+                rowHeight);
+            rowY += rowHeight;
+        }
+        // 流体行
+        for (FluidStack fluid : fluids) {
+            if (rowY + rowHeight > bottomLimit) break;
+            String key = TileEntityNetworkInfoPanel.getAEKey(fluid);
+            AEMonitorSample sample = key == null ? null : latest.get(key);
+            Double avg = key == null ? null : avg300s.get(key);
+            drawAEMonitorRow(
+                font,
+                null,
+                fluid,
+                sample,
+                avg,
+                rowY,
+                displayMode,
+                iconX,
+                nameX,
+                amountX,
+                rateX,
+                avgX,
+                iconSize,
+                fontSize,
+                bold,
+                rowHeight);
+            rowY += rowHeight;
+        }
+    }
+
+    /** 绘制 AE 实时监控网格模式（renderMode = 1） */
+    private void drawAEMonitorGrid(FontRenderer font, List<ItemStack> items, List<FluidStack> fluids,
+        Map<String, AEMonitorSample> latest, Map<String, Double> avg300s, int displayMode, int safe, int listTop,
+        int panelWidth, int availableHeight, int iconSize, int fontSize, boolean bold) {
+        float fontScale = fontSize / 12.0F;
+
+        // 预计算所有监控项名称的最大未缩放宽度，作为格子宽度的依据
+        int nameMaxWidth = 0;
+        for (ItemStack stack : items) {
+            nameMaxWidth = Math.max(nameMaxWidth, getAEMonitorNameWidth(font, stack, null, bold));
+        }
+        for (FluidStack fluid : fluids) {
+            nameMaxWidth = Math.max(nameMaxWidth, getAEMonitorNameWidth(font, null, fluid, bold));
+        }
+        nameMaxWidth = Math.max(nameMaxWidth, font.getStringWidth("..."));
+
+        int actualIconSize = Math.min(iconSize, 32);
+        // 格子宽度 = 图标宽度 + 名称显示宽度 + 两侧边距
+        int cellWidth = actualIconSize + (int) (nameMaxWidth * fontScale) + 16;
+        int columns = Math.max(1, panelWidth / cellWidth);
+        // 列宽均分，避免右侧留白过多
+        int columnWidth = panelWidth / columns;
+
+        // 每个格子高度：图标 + 两行文字（名称、存量）+ 间距
+        int cellHeight = actualIconSize + fontSize * 2 + 12;
+        int totalItems = items.size() + fluids.size();
+        int rows = (totalItems + columns - 1) / columns;
+        int visibleRows = Math.max(0, availableHeight / cellHeight);
+        int endRow = Math.min(rows, visibleRows);
+
+        // 按行优先顺序绘制可见格子
+        for (int index = 0; index < totalItems; index++) {
+            int row = index / columns;
+            if (row >= endRow) break;
+            int col = index % columns;
+            int cellX = safe + col * columnWidth;
+            int cellY = listTop + row * cellHeight;
+
+            if (index < items.size()) {
+                ItemStack stack = items.get(index);
+                String key = TileEntityNetworkInfoPanel.getAEKey(stack);
+                AEMonitorSample sample = key == null ? null : latest.get(key);
+                drawAEMonitorCell(
+                    font,
+                    stack,
+                    null,
+                    sample,
+                    displayMode,
+                    cellX,
+                    cellY,
+                    columnWidth,
+                    iconSize,
+                    fontSize,
+                    bold);
+            } else {
+                FluidStack fluid = fluids.get(index - items.size());
+                String key = TileEntityNetworkInfoPanel.getAEKey(fluid);
+                AEMonitorSample sample = key == null ? null : latest.get(key);
+                drawAEMonitorCell(
+                    font,
+                    null,
+                    fluid,
+                    sample,
+                    displayMode,
+                    cellX,
+                    cellY,
+                    columnWidth,
+                    iconSize,
+                    fontSize,
+                    bold);
+            }
+        }
+
+        // 若内容被截断，在可用区域底部给出提示
+        if (rows > visibleRows && visibleRows > 0) {
+            int hintY = listTop + visibleRows * cellHeight + 2;
+            if (hintY + fontSize <= listTop + availableHeight) {
+                drawScaledString(
+                    font,
+                    tr("gtswn.network_info.screen.ae_monitor_grid_truncated"),
+                    safe,
+                    hintY,
+                    0x6B7680,
+                    fontScale);
+            }
+        }
+    }
+
+    /** 绘制 AE 实时监控网格中的一个格子 */
+    private void drawAEMonitorCell(FontRenderer font, ItemStack item, FluidStack fluid, AEMonitorSample sample,
+        int displayMode, int cellX, int cellY, int cellWidth, int iconSize, int fontSize, boolean bold) {
+        String name;
+        int actualIconSize = Math.min(iconSize, 32);
+        int iconX = cellX + (cellWidth - actualIconSize) / 2;
+        int iconY = cellY + 4;
+        if (item != null) {
+            drawItemIconTESR(item, iconX, iconY, actualIconSize);
+            name = item.getDisplayName();
+        } else {
+            drawFluidIconTESR(fluid, iconX, iconY, actualIconSize);
+            name = fluid.getLocalizedName();
+        }
+
+        float fontScale = fontSize / 12.0F;
+        String displayName = bold ? EnumChatFormatting.BOLD + name : name;
+        int nameMaxW = (int) ((cellWidth - 8) / fontScale);
+        String trimmedName = font.trimStringToWidth(displayName, nameMaxW);
+        int nameW = font.getStringWidth(trimmedName);
+        int nameX = cellX + (cellWidth - (int) (nameW * fontScale)) / 2;
+        int nameY = iconY + actualIconSize + 2;
+        drawScaledString(font, trimmedName, nameX, nameY, 0x2F3640, fontScale);
+
+        String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, displayMode);
+        int amountW = font.getStringWidth(amountText);
+        int amountX = cellX + (cellWidth - (int) (amountW * fontScale)) / 2;
+        int amountY = nameY + fontSize + 2;
+        drawScaledString(font, amountText, amountX, amountY, 0x2F3640, fontScale);
+    }
+
+    /** 获取 AE 监控项名称的未缩放宽度，用于网格布局计算 */
+    private static int getAEMonitorNameWidth(FontRenderer font, ItemStack item, FluidStack fluid, boolean bold) {
+        String name;
+        if (item != null) {
+            name = item.getDisplayName();
+        } else if (fluid != null) {
+            name = fluid.getLocalizedName();
+        } else {
+            return 0;
+        }
+        if (bold) {
+            name = EnumChatFormatting.BOLD + name;
+        }
+        return font.getStringWidth(name);
     }
 
     /**
@@ -519,18 +769,24 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         int iconSize = Math.min(size, 32);
 
         // 取流体对应的 IIcon；流体自身未注册图标时回退到对应方块纹理
-        IIcon icon = fluid.getFluid().getIcon(fluid);
-        if (icon == null && fluid.getFluid().getBlock() != null) {
-            icon = fluid.getFluid().getBlock().getIcon(0, 0);
+        IIcon icon = fluid.getFluid()
+            .getIcon(fluid);
+        if (icon == null && fluid.getFluid()
+            .getBlock() != null) {
+            icon = fluid.getFluid()
+                .getBlock()
+                .getIcon(0, 0);
         }
         if (icon == null) {
             return;
         }
 
         Minecraft mc = Minecraft.getMinecraft();
-        mc.getTextureManager().bindTexture(TextureMap.locationBlocksTexture);
+        mc.getTextureManager()
+            .bindTexture(TextureMap.locationBlocksTexture);
 
-        int color = 0xFF000000 | fluid.getFluid().getColor(fluid);
+        int color = 0xFF000000 | fluid.getFluid()
+            .getColor(fluid);
         float r = ((color >> 16) & 255) / 255.0F;
         float g = ((color >> 8) & 255) / 255.0F;
         float b = (color & 255) / 255.0F;
@@ -881,6 +1137,15 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glTranslatef(centerX, y, 0.0F);
         GL11.glScalef(scale, scale, 1.0F);
         font.drawString(text, -font.getStringWidth(text) / 2, 0, color);
+        GL11.glPopMatrix();
+    }
+
+    /** 在指定位置以指定缩放绘制字符串，缩放操作被包裹在 glPushMatrix/glPopMatrix 中 */
+    private void drawScaledString(FontRenderer font, String text, int x, int y, int color, float scale) {
+        GL11.glPushMatrix();
+        GL11.glTranslatef(x, y, 0.0F);
+        GL11.glScalef(scale, scale, 1.0F);
+        font.drawString(text, 0, 0, color);
         GL11.glPopMatrix();
     }
 

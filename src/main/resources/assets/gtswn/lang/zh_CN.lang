@@ -198,6 +198,8 @@ gtswn.network_info.screen.ae_monitor_header_name=名称
 gtswn.network_info.screen.ae_monitor_header_amount=存量
 gtswn.network_info.screen.ae_monitor_header_rate=实时变化量
 gtswn.network_info.screen.ae_monitor_header_avg=平均变化量
+gtswn.network_info.screen.ae_monitor_too_small=面板空间不足
+gtswn.network_info.screen.ae_monitor_grid_truncated=...
 
 # 1.4.4 状态命名与实时 EU/t
 # 静默/<1EU/重载中/长期静默 四种特殊状态显示（来自 MTEWirelessEnergyMonitor / WirelessMonitorHUD 的边界判定）
@@ -242,7 +244,6 @@ gtswn.network_info.gui.ae.monitor.empty=暂无监控项
 gtswn.network_info.gui.ae.monitor.header_icon=图标
 gtswn.network_info.gui.ae.monitor.header_name=名称
 gtswn.network_info.gui.ae.monitor.header_amount=存量
-gtswn.network_info.gui.ae.monitor.header_rate=变化量/min
 gtswn.network_info.gui.ae.no_network=未连接 AE 网络
 gtswn.network_info.gui.ae.rate.up=+%s/min
 gtswn.network_info.gui.ae.rate.down=-%s/min
@@ -261,7 +262,6 @@ gtswn.network_info.gui.ae.brief=简报 AE
 gtswn.network_info.gui.ae.chart.amount=图表存量
 gtswn.network_info.gui.ae.chart.rate=图表变化率
 gtswn.network_info.gui.ae.monitor.brief=AE 状态：%s | 监控项：%d
-gtswn.network_info.gui.ae.monitor.header_current=目前情况
 gtswn.network_info.gui.ae.monitor.header_remove=清除
 gtswn.network_info.chat.bind_item=已绑定走势图物品：%s
 gtswn.network_info.chat.bind_fluid=已绑定走势图流体：%s
@@ -270,3 +270,12 @@ gtswn.network_info.chat.remove_item=已移除监视：%s
 gtswn.network_info.chat.add_fluid=已添加流体监视：%s
 gtswn.network_info.chat.remove_fluid=已移除流体监视：%s
 gtswn.network_info.chat.clear=已清除走势图绑定
+# v1.5.8 AE 实时监控 UI 修正
+gtswn.network_info.gui.ae.line_color=走势线颜色
+gtswn.network_info.gui.ae.monitor.font_size=字号
+gtswn.network_info.gui.ae.monitor.bold=加粗
+gtswn.network_info.gui.ae.monitor.render_mode.list=条目
+gtswn.network_info.gui.ae.monitor.render_mode.grid=格子
+gtswn.network_info.gui.ae.monitor.icon_size=图标大小
+gtswn.network_info.gui.ae.monitor.header_realtime=实时变化量
+gtswn.network_info.gui.ae.monitor.header_average=平均变化量

@@ -198,6 +198,8 @@ gtswn.network_info.screen.ae_monitor_header_name=Name
 gtswn.network_info.screen.ae_monitor_header_amount=Amount
 gtswn.network_info.screen.ae_monitor_header_rate=Realtime Rate
 gtswn.network_info.screen.ae_monitor_header_avg=Average Rate
+gtswn.network_info.screen.ae_monitor_too_small=Panel too small
+gtswn.network_info.screen.ae_monitor_grid_truncated=...
 
 # 1.4.4 status wording and realtime EU/t
 # Silent/<1EU/Reloading/LongTermSilent special status display (from MTEWirelessEnergyMonitor / WirelessMonitorHUD boundary handling)
@@ -242,7 +244,6 @@ gtswn.network_info.gui.ae.monitor.empty=No monitored items
 gtswn.network_info.gui.ae.monitor.header_icon=Icon
 gtswn.network_info.gui.ae.monitor.header_name=Name
 gtswn.network_info.gui.ae.monitor.header_amount=Amount
-gtswn.network_info.gui.ae.monitor.header_rate=Rate/min
 gtswn.network_info.gui.ae.no_network=Not connected to AE network
 gtswn.network_info.gui.ae.rate.up=+%s/min
 gtswn.network_info.gui.ae.rate.down=-%s/min
@@ -261,7 +262,6 @@ gtswn.network_info.gui.ae.brief=Brief AE
 gtswn.network_info.gui.ae.chart.amount=Chart Amount
 gtswn.network_info.gui.ae.chart.rate=Chart Rate
 gtswn.network_info.gui.ae.monitor.brief=AE Status: %s | Monitored: %d
-gtswn.network_info.gui.ae.monitor.header_current=Current
 gtswn.network_info.gui.ae.monitor.header_remove=Remove
 gtswn.network_info.chat.bind_item=Bound chart item: %s
 gtswn.network_info.chat.bind_fluid=Bound chart fluid: %s
@@ -270,3 +270,12 @@ gtswn.network_info.chat.remove_item=Removed monitor: %s
 gtswn.network_info.chat.add_fluid=Added fluid monitor: %s
 gtswn.network_info.chat.remove_fluid=Removed fluid monitor: %s
 gtswn.network_info.chat.clear=Cleared chart binding
+# v1.5.8 AE monitor UI fix
+gtswn.network_info.gui.ae.line_color=AE Line Color
+gtswn.network_info.gui.ae.monitor.font_size=Font
+gtswn.network_info.gui.ae.monitor.bold=Bold
+gtswn.network_info.gui.ae.monitor.render_mode.list=List
+gtswn.network_info.gui.ae.monitor.render_mode.grid=Grid
+gtswn.network_info.gui.ae.monitor.icon_size=Icon
+gtswn.network_info.gui.ae.monitor.header_realtime=Realtime
+gtswn.network_info.gui.ae.monitor.header_average=Average
