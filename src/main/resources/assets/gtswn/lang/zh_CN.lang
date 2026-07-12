@@ -46,12 +46,10 @@ gtswn.ui.tooltip.param1.minus=参数1 -最高位
 gtswn.ui.tooltip.param1.plus=参数1 +最高位
 gtswn.ui.tooltip.param1.mul10=参数1 ×10
 gtswn.ui.tooltip.param1.div10=参数1 ÷10
-gtswn.ui.tooltip.param1.reset=参数1 清零
 gtswn.ui.tooltip.param2.minus=参数2 -最高位
 gtswn.ui.tooltip.param2.plus=参数2 +最高位
 gtswn.ui.tooltip.param2.mul10=参数2 ×10
 gtswn.ui.tooltip.param2.div10=参数2 ÷10
-gtswn.ui.tooltip.param2.reset=参数2 清零
 
 # HUD Text
 # HUD 重载过渡期显示文本（首次接收同步前的占位状态）
@@ -233,23 +231,12 @@ gtswn.network_info.screen.eut_axis=实时电网状态（EU/t）
 gtswn.network_info.gui.tab.eu=无线 EU 网络
 gtswn.network_info.gui.tab.ae_chart=AE 走势图
 gtswn.network_info.gui.tab.ae_monitor=AE 实时监控
-gtswn.network_info.gui.ae.chart.bind_item=绑定物品：%s
-gtswn.network_info.gui.ae.chart.bind_fluid=绑定流体：%s
 gtswn.network_info.gui.ae.chart.empty=未绑定
-gtswn.network_info.gui.ae.monitor.list=监视：%d 物品，%d 流体
-gtswn.network_info.gui.ae.placeholder=数据采样中...
 gtswn.network_info.gui.ae.rightclick_hint=手持物品右键方块配置
-gtswn.network_info.gui.ae.chart.current=当前存量：%s
-gtswn.network_info.gui.ae.chart.rate=变化速率：%s/min
-gtswn.network_info.gui.ae.chart.collecting=收集中... %d/2
 gtswn.network_info.gui.ae.monitor.empty=暂无监控项
 gtswn.network_info.gui.ae.monitor.header_icon=图标
 gtswn.network_info.gui.ae.monitor.header_name=名称
 gtswn.network_info.gui.ae.monitor.header_amount=存量
-gtswn.network_info.gui.ae.no_network=未连接 AE 网络
-gtswn.network_info.gui.ae.rate.up=+%s/min
-gtswn.network_info.gui.ae.rate.down=-%s/min
-gtswn.network_info.gui.ae.rate.stable=稳定
 # v1.5.4 AE 配置界面新增
 gtswn.network_info.gui.ae.chart_settings=图表样式
 gtswn.network_info.gui.ae.window=AE 时长

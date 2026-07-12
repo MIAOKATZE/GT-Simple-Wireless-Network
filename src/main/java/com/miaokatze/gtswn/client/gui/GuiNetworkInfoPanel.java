@@ -627,7 +627,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         int briefY = top + 100;
         boolean online = hasAEMonitorData(panel);
         String statusKey = online ? "gtswn.network_info.screen.ae_online" : "gtswn.network_info.screen.ae_offline";
-        int statusColor = online ? 0x4CAF50 : 0xF44336;
+        // 在线状态文字使用深绿 0x2E7D32，与 AE 实时监控主题色一致
+        int statusColor = online ? 0x2E7D32 : 0xF44336;
         fontRendererObj.drawString(
             StatCollector.translateToLocalFormatted(
                 "gtswn.network_info.gui.ae.monitor.brief",
@@ -638,8 +639,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             statusColor);
 
         // 区域 4：表头（滚动列表内部绘制行内容：图标/名称/数量/实时变化量/平均变化量/清除按钮）
-        // headerY 上移 8px：原 top+146 与列表第一行图标 top+150 重叠 2-6px，现留出约 4px 间距
-        int headerY = top + 138;
+        // headerY 下移 15px：表头与列表整体下移，留出更多顶部空间
+        int headerY = top + 153;
         int listLeft = left + 8;
         int listRight = left + xSize - 8;
         fontRendererObj
@@ -657,7 +658,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
         // 空列表提示（覆盖在列表上方）
         if (monitoredEntries.length == 0) {
-            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.empty"), left + 12, top + 170, 0x6B7680);
+            fontRendererObj.drawString(tr("gtswn.network_info.gui.ae.monitor.empty"), left + 12, top + 185, 0x6B7680);
         }
     }
 
@@ -1002,10 +1003,10 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         }
     }
 
-    /** 根据变化速率返回颜色：正绿、负红、零灰 */
+    /** 根据变化速率返回颜色：正深绿、负红、零灰 */
     private int rateColor(double rate) {
         if (rate > 0.0D) {
-            return 0x4CAF50;
+            return 0x2E7D32;
         }
         if (rate < 0.0D) {
             return 0xF44336;
@@ -1034,13 +1035,13 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         /** 列表左边界（面板内部左侧留 8px） */
         private final int listLeft = GuiNetworkInfoPanel.this.left + 8;
         /** 列表上边界（位于表头下方） */
-        private final int listTop = GuiNetworkInfoPanel.this.top + 148;
+        private final int listTop = GuiNetworkInfoPanel.this.top + 163;
         /** 列表右边界（面板内部右侧留 8px） */
         private final int listRight = GuiNetworkInfoPanel.this.left + xSize - 8;
         /** 列表内容宽度（430 - 16 = 414） */
         private final int listWidth = xSize - 16;
-        /** 列表可视高度（从 top+148 到 top+255） */
-        private final int listHeight = GuiNetworkInfoPanel.this.top + 255 - listTop;
+        /** 列表可视高度（从 top+163 到 top+270） */
+        private final int listHeight = GuiNetworkInfoPanel.this.top + 270 - listTop;
         /** 列表下边界（与原 GuiSlot 的 bottom 一致） */
         private final int listBottom = listTop + listHeight;
         /** 单行高度 */

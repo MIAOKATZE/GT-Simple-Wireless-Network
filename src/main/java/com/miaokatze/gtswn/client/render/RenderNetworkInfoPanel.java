@@ -300,7 +300,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                                 panel.getAETrendLineSmoothing());
                         }
                         if (showRate) {
-                            // 变化率曲线使用绿色，线宽与样条密度与存量线一致
+                            // 变化率曲线使用橙色（与无线EU网络EU/t线一致），线宽与样条密度与存量线一致
                             drawSeries(
                                 rates,
                                 rateRange,
@@ -308,7 +308,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                                 plotY,
                                 plotW,
                                 plotH,
-                                0x4CAF50,
+                                0xFF7A18,
                                 panel.getAETrendLineThickness(),
                                 panel.getAETrendLineSmoothing());
                         }
@@ -348,7 +348,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             if (rateRange != null) {
                 double value = rateRange[0] + (rateRange[1] - rateRange[0]) * i / 4.0D;
                 String label = formatAEChartAxis(value, displayMode);
-                font.drawString(label, x + w + 8, ty - 4, 0x4CAF50);
+                font.drawString(label, x + w + 8, ty - 4, 0xFF7A18);
             }
         }
         for (int i = 0; i < 5; i++) {
@@ -365,7 +365,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             drawRotated(font, tr("gtswn.network_info.screen.ae_axis"), x - 56, y + h / 2 + 42, AXIS_COLOR);
         }
         if (rateRange != null) {
-            drawRotated(font, tr("gtswn.network_info.screen.ae_rate_axis"), x + w + 48, y + h / 2 + 38, 0x4CAF50);
+            drawRotated(font, tr("gtswn.network_info.screen.ae_rate_axis"), x + w + 48, y + h / 2 + 38, 0xFF7A18);
         }
     }
 
@@ -383,7 +383,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         font.drawString(tr("gtswn.network_info.screen.ae_monitor_title"), safe, titleY, 0x26323D);
         boolean online = hasAEMonitorData(panel);
         String statusKey = online ? "gtswn.network_info.screen.ae_online" : "gtswn.network_info.screen.ae_offline";
-        int statusColor = online ? 0x4CAF50 : 0xF44336;
+        // 在线状态文字使用深绿 0x2E7D32，与 AE 实时监控主题色一致
+        int statusColor = online ? 0x2E7D32 : 0xF44336;
         String status = tr(statusKey);
         font.drawString(status, width - safe - font.getStringWidth(status), titleY, statusColor);
 
@@ -1324,10 +1325,10 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         }
     }
 
-    /** 根据变化速率返回颜色：正绿、负红、零灰 */
+    /** 根据变化速率返回颜色：正深绿、负红、零灰 */
     private static int rateColor(double rate) {
         if (rate > 0.0D) {
-            return 0x4CAF50;
+            return 0x2E7D32;
         }
         if (rate < 0.0D) {
             return 0xF44336;

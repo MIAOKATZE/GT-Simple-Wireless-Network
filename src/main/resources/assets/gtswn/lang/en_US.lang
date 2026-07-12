@@ -46,12 +46,10 @@ gtswn.ui.tooltip.param1.minus=Param1 -Highest digit
 gtswn.ui.tooltip.param1.plus=Param1 +Highest digit
 gtswn.ui.tooltip.param1.mul10=Param1 ×10
 gtswn.ui.tooltip.param1.div10=Param1 ÷10
-gtswn.ui.tooltip.param1.reset=Param1 Reset
 gtswn.ui.tooltip.param2.minus=Param2 -Highest digit
 gtswn.ui.tooltip.param2.plus=Param2 +Highest digit
 gtswn.ui.tooltip.param2.mul10=Param2 ×10
 gtswn.ui.tooltip.param2.div10=Param2 ÷10
-gtswn.ui.tooltip.param2.reset=Param2 Reset
 
 # HUD Text
 # HUD reload transition placeholder text (before first sync received)
@@ -233,23 +231,12 @@ gtswn.network_info.screen.eut_axis=Realtime Grid Status (EU/t)
 gtswn.network_info.gui.tab.eu=Wireless EU
 gtswn.network_info.gui.tab.ae_chart=AE Trend
 gtswn.network_info.gui.tab.ae_monitor=AE Monitor
-gtswn.network_info.gui.ae.chart.bind_item=Bound Item: %s
-gtswn.network_info.gui.ae.chart.bind_fluid=Bound Fluid: %s
 gtswn.network_info.gui.ae.chart.empty=Not bound
-gtswn.network_info.gui.ae.monitor.list=Monitored: %d items, %d fluids
-gtswn.network_info.gui.ae.placeholder=Sampling data...
 gtswn.network_info.gui.ae.rightclick_hint=Right-click block with item to configure
-gtswn.network_info.gui.ae.chart.current=Current: %s
-gtswn.network_info.gui.ae.chart.rate=Rate: %s/min
-gtswn.network_info.gui.ae.chart.collecting=Collecting... %d/2
 gtswn.network_info.gui.ae.monitor.empty=No monitored items
 gtswn.network_info.gui.ae.monitor.header_icon=Icon
 gtswn.network_info.gui.ae.monitor.header_name=Name
 gtswn.network_info.gui.ae.monitor.header_amount=Amount
-gtswn.network_info.gui.ae.no_network=Not connected to AE network
-gtswn.network_info.gui.ae.rate.up=+%s/min
-gtswn.network_info.gui.ae.rate.down=-%s/min
-gtswn.network_info.gui.ae.rate.stable=Stable
 # v1.5.4 AE config UI new keys
 gtswn.network_info.gui.ae.chart_settings=Chart Style
 gtswn.network_info.gui.ae.window=AE Window
