@@ -5,12 +5,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import net.minecraft.client.Minecraft;
-import net.minecraft.tileentity.TileEntity;
-import net.minecraft.world.World;
-
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -150,45 +147,70 @@ public class PacketSyncAEMonitorData implements IMessage {
     }
 
     /**
-     * 客户端处理：定位信息屏 TileEntity，切回主线程后写入 AE 缓存。
+     * 客户端处理：委托给 {@link com.miaokatze.gtswn.main.CommonProxy#handleSyncAEMonitorData}。
      * <p>
-     * 【线程安全】SimpleChannelHandlerWrapper 在 Netty 网络线程调用 onMessage，而 GUI/TESR
-     * 在客户端主线程读取 TileEntity 字段，故用 {@link Minecraft#func_152344_a(Runnable)}
-     * 把写操作调度到主线程，避免并发读到半更新状态。
+     * 【hotfix v1.5.14】原实现直接调用 {@code Minecraft.getMinecraft().theWorld}，
+     * 而 theWorld 字段类型 WorldClient 是 @SideOnly(Side.CLIENT) 类。在 Java 25 JVM 下，
+     * registerMessage 调用 Handler.class.newInstance() 会触发 getDeclaredConstructors0()
+     * 解析方法体引用类型，导致 WorldClient 被加载，被 SideTransformer 拒绝崩服。
      * <p>
-     * 【注意】不要在此类上加 @SideOnly(Side.CLIENT)！registerMessage 需要在双端都传入 Handler 的 Class 对象，
-     * 加 @SideOnly 会导致服务端 SideTransformer 剥离该类，抛出 NoClassDefFoundError 崩服。
+     * 现改为通过 @SidedProxy 委托：本 Handler 方法体只引用 CommonProxy（双端类型），
+     * 不引用任何客户端类，从根源上避免类加载触发。实际客户端逻辑在 ClientProxy 中实现。
+     * <p>
+     * 【注意】不要在此类上加 @SideOnly(Side.CLIENT)！registerMessage 需要在双端都传入
+     * Handler 的 Class 对象，加 @SideOnly 会导致服务端 SideTransformer 剥离该类，
+     * 抛出 NoClassDefFoundError 崩服。
      */
     public static class Handler implements IMessageHandler<PacketSyncAEMonitorData, IMessage> {
 
         @Override
-        public IMessage onMessage(final PacketSyncAEMonitorData msg, MessageContext ctx) {
+        public IMessage onMessage(PacketSyncAEMonitorData msg, MessageContext ctx) {
             // 包注册在 CLIENT，但防御性校验 side 避免异常场景
             if (ctx.side.isServer()) {
                 return null;
             }
-
-            final World world = Minecraft.getMinecraft().theWorld;
-            if (world == null) {
-                return null;
-            }
-
-            // 先在网络线程定位 TileEntity（避免主线程 world 快照不一致）
-            final TileEntity te = world.getTileEntity(msg.x, msg.y, msg.z);
-            if (!(te instanceof TileEntityNetworkInfoPanel)) {
-                return null;
-            }
-
-            // 切到主线程再修改 TileEntity 字段
-            Minecraft.getMinecraft()
-                .func_152344_a(() -> {
-                    TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) world
-                        .getTileEntity(msg.x, msg.y, msg.z);
-                    if (panel != null) {
-                        panel.receiveAEMonitorData(msg.chartSamples, msg.monitorLatest, msg.monitorAvg300s);
-                    }
-                });
+            // 委托给 @SidedProxy：服务端调用 CommonProxy 空实现，客户端调用 ClientProxy 实际处理
+            // 这样 Handler 类方法体不引用任何 @SideOnly 客户端类，避免 registerMessage 时的类加载崩溃
+            GTSimpleWirelessNetwork.proxy.handleSyncAEMonitorData(msg);
             return null;
         }
+    }
+
+    // ==================== Getter 方法（hotfix v1.5.14 新增）====================
+    // 供 ClientProxy 通过 message 对象访问 private 字段，避免破坏封装性
+
+    /** @return 目标信息屏 X 坐标 */
+    public int getX() {
+        return x;
+    }
+
+    /** @return 目标信息屏 Y 坐标 */
+    public int getY() {
+        return y;
+    }
+
+    /** @return 目标信息屏 Z 坐标 */
+    public int getZ() {
+        return z;
+    }
+
+    /** @return 走势图 key（null 表示无绑定） */
+    public String getChartKey() {
+        return chartKey;
+    }
+
+    /** @return 走势图样本列表 */
+    public List<AEMonitorSample> getChartSamples() {
+        return chartSamples;
+    }
+
+    /** @return 实时监控列表各 key 的最新采样值 */
+    public Map<String, AEMonitorSample> getMonitorLatest() {
+        return monitorLatest;
+    }
+
+    /** @return 实时监控列表各 key 的 300s 平均变化率 */
+    public Map<String, Double> getMonitorAvg300s() {
+        return monitorAvg300s;
     }
 }

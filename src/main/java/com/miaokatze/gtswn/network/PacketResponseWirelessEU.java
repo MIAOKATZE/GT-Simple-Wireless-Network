@@ -1,8 +1,6 @@
 package com.miaokatze.gtswn.network;
 
-import net.minecraft.client.Minecraft;
-
-import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -42,24 +40,26 @@ public class PacketResponseWirelessEU implements IMessage {
     }
 
     /**
-     * 客户端处理：切回客户端主线程后写入 HUD 缓存。
+     * 客户端处理：委托给 {@link com.miaokatze.gtswn.main.CommonProxy#handleResponseEU}。
      * <p>
-     * 【线程安全】1.7.10 的 SimpleChannelHandlerWrapper.channelRead0 直接在 Netty 网络线程调用 onMessage，
-     * 而 HUD 渲染在客户端主线程读取 static 缓存，两者并发会竞争 static 字段。故必须用
-     * {@link Minecraft#func_152344_a(Runnable)}（1.7.10 中 addScheduledTask 的 SRG 名）把写操作调度到主线程，
-     * 避免渲染线程读到半更新状态。
+     * 【hotfix v1.5.14】原实现直接调用 {@code Minecraft.getMinecraft().func_152344_a(...)}。
+     * 虽然 Minecraft 类本身无 @SideOnly 注解，当前不崩溃，但为了一致性和健壮性，
+     * 统一通过 @SidedProxy 委托，避免 Handler 类方法体引用客户端 API。
      * <p>
-     * 【注意】不要在此类上加 @SideOnly(Side.CLIENT)！registerMessage 需要在双端都传入 Handler 的 Class 对象，
-     * 加 @SideOnly 会导致服务端 SideTransformer 剥离该类，抛出 NoClassDefFoundError 崩服。
+     * 【注意】不要在此类上加 @SideOnly(Side.CLIENT)！registerMessage 需要在双端都传入
+     * Handler 的 Class 对象，加 @SideOnly 会导致服务端 SideTransformer 剥离该类，
+     * 抛出 NoClassDefFoundError 崩服。
      */
     public static class Handler implements IMessageHandler<PacketResponseWirelessEU, IMessage> {
 
         @Override
         public IMessage onMessage(PacketResponseWirelessEU message, MessageContext ctx) {
-            final String euStr = message.euStr;
-            // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
-            Minecraft.getMinecraft()
-                .func_152344_a(() -> WirelessMonitorHUD.receiveSyncedEU(euStr));
+            // 包注册在 CLIENT，但防御性校验 side 避免异常场景
+            if (ctx.side.isServer()) {
+                return null;
+            }
+            // 委托给 @SidedProxy：服务端调用 CommonProxy 空实现，客户端调用 ClientProxy 实际处理
+            GTSimpleWirelessNetwork.proxy.handleResponseEU(message.euStr);
             return null;
         }
     }

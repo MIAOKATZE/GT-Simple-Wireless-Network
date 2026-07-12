@@ -17,6 +17,7 @@ import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
@@ -164,6 +165,43 @@ public class CommonProxy {
      * 如果之前注册失败，可以在此处进行最后的补救尝试。
      */
     public void loadComplete(cpw.mods.fml.common.event.FMLLoadCompleteEvent event) {}
+
+    /**
+     * 【hotfix v1.5.14】处理服务端→客户端 EU 响应包（客户端专用逻辑）。
+     * <p>
+     * 服务端空实现：此包只发往客户端，服务端收到也不会调用本方法。
+     * 客户端逻辑由 {@link ClientProxy#handleResponseEU} 重写。
+     * <p>
+     * 【为什么这样设计】原 {@code PacketResponseWirelessEU.Handler} 直接调用
+     * {@code Minecraft.getMinecraft().func_152344_a(...)}，虽然 Minecraft 类本身无 @SideOnly 注解
+     * 当前不崩溃，但为了一致性和健壮性，统一通过 @SidedProxy 委托，避免 Handler 类方法体
+     * 引用客户端 API。
+     *
+     * @param euStr 服务端传来的 EU 字符串
+     */
+    public void handleResponseEU(String euStr) {
+        // 服务端空实现：此包只发往客户端
+    }
+
+    /**
+     * 【hotfix v1.5.14】处理服务端→客户端 AE 监控数据同步包（客户端专用逻辑）。
+     * <p>
+     * 服务端空实现：此包只发往客户端，服务端收到也不会调用本方法。
+     * 客户端逻辑由 {@link ClientProxy#handleSyncAEMonitorData} 重写。
+     * <p>
+     * 【为什么这样设计】原 {@code PacketSyncAEMonitorData.Handler} 直接调用
+     * {@code Minecraft.getMinecraft().theWorld}，而 {@code Minecraft.theWorld} 字段
+     * 声明类型是 {@code WorldClient}（@SideOnly(Side.CLIENT)）。在 Java 25 JVM + Forge 1.7.10 下，
+     * {@code SimpleNetworkWrapper.registerMessage} 调用 {@code Handler.class.newInstance()}
+     * 会触发 {@code getDeclaredConstructors0()} 解析方法体引用类型，导致 WorldClient 被加载，
+     * 被 SideTransformer 拒绝，抛出 NoClassDefFoundError 崩服。
+     * 通过 @SidedProxy 委托，Handler 类方法体不再引用任何客户端类，彻底避免类加载触发。
+     *
+     * @param msg AE 监控数据同步包
+     */
+    public void handleSyncAEMonitorData(PacketSyncAEMonitorData msg) {
+        // 服务端空实现：此包只发往客户端
+    }
 
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
         return null;
