@@ -957,7 +957,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             case 1:
                 return FormatUtil.formatScientific(value);
             case 2:
-                return FormatUtil.formatMetric(value);
+                return FormatUtil.formatMetric(value, 2);
             case 0:
             default:
                 return FormatUtil.formatNormal(value);
@@ -970,7 +970,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             case 1:
                 return FormatUtil.formatScientificDouble(rate);
             case 2:
-                return FormatUtil.formatMetricDouble(rate);
+                return FormatUtil.formatMetricDouble(rate, 2);
             case 0:
             default:
                 return FormatUtil.formatNormalDouble(rate);
@@ -983,7 +983,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             case 1:
                 return FormatUtil.formatScientific(eu);
             case 2:
-                return FormatUtil.formatMetric(eu);
+                return FormatUtil.formatMetric(eu, 2);
             case 0:
             default:
                 return FormatUtil.formatNormal(eu);

@@ -224,6 +224,23 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         int rateColor = newest == null ? 0x6B7680 : rateColor(newest.rate);
         font.drawString(rateLabel, textX, textY, rateColor);
 
+        // 平均变化速率（基于当前窗口61点首尾差值法，与AE实时监控的averageRate300s算法一致）
+        // 数字保持默认深色，不按正负着色
+        double avgRate = 0.0D;
+        if (samples.size() >= 2) {
+            AEMonitorSample first = samples.get(0);
+            AEMonitorSample last = samples.get(samples.size() - 1);
+            long tickDiff = last.tick - first.tick;
+            if (tickDiff > 0L) {
+                avgRate = (last.amount - first.amount) / (double) tickDiff * 1200.0D;
+            }
+        }
+        String avgRateText = (newest == null || samples.size() < 2) ? "-" : formatAEChartRate(avgRate, displayMode);
+        String avgRateLabel = StatCollector
+            .translateToLocalFormatted("gtswn.network_info.screen.ae_chart_avg_rate", avgRateText);
+        textY += 12;
+        font.drawString(avgRateLabel, textX, textY, 0x34404A);
+
         // 中部走势图区：与 EU 图表相同的边距、坐标轴、Catmull-Rom 样条
         int chartTop = safe + briefHeight + 12;
         int chartBottom = height - safe - 16;
@@ -781,8 +798,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glScalef(localScale, localScale, localScale);
         // 关键：把 3D 物品沿 Z 轴压扁，使其紧贴面板
         GL11.glScalef(1.0F, 1.0F, 0.005F);
-        // 保存 GL 属性：RenderItem 可能改变 blend/alpha test/cull/光照等状态
-        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT);
+        // 保存 GL 属性：RenderItem 可能改变 blend/alpha test/cull/光照/深度等状态
+        // v1.5.13：补充 GL_DEPTH_BUFFER_BIT，防止 Forge IItemRenderer 修改 glDepthFunc/glDepthMask 后
+        // 状态泄漏到后续渲染，导致走势图/坐标轴等元素浮在最上层盖过其他材质
+        GL11.glPushAttrib(
+            GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_DEPTH_BUFFER_BIT);
         // 继续临时禁用深度测试，避免图标被面板表面裁剪
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
@@ -792,6 +812,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             .renderItemAndEffectIntoGUI(mc.fontRenderer, mc.getTextureManager(), stack, 0, 0);
         RenderHelper.disableStandardItemLighting();
         GL11.glPopAttrib();
+        // 保险：显式恢复深度测试状态，避免某些驱动下 glPopAttrib 对深度状态的恢复不可靠
+        GL11.glEnable(GL11.GL_DEPTH_TEST);
+        GL11.glDepthFunc(GL11.GL_LEQUAL);
         GL11.glPopMatrix();
     }
 
@@ -886,7 +909,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                     "gtswn.network_info.screen.energy",
                     // EU 根据 displayMode 切换常规/科学计数
                     panel.getDisplayMode() == 0 ? FormatUtil.formatBigInteger(panel.getCachedEu())
-                        : FormatUtil.formatScientific(panel.getCachedEu())),
+                        : panel.getDisplayMode() == 1 ? FormatUtil.formatScientific(panel.getCachedEu())
+                            : FormatUtil.formatMetric(panel.getCachedEu(), 2)),
                 x,
                 w,
                 lineY,
@@ -1268,7 +1292,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             case 1:
                 return FormatUtil.formatScientific(value, 0);
             case 2:
-                return FormatUtil.formatMetric(value);
+                return FormatUtil.formatMetric(value, 2);
             case 0:
             default:
                 return FormatUtil.formatNormal(value);
@@ -1305,7 +1329,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             case 1:
                 return FormatUtil.formatScientific(value);
             case 2:
-                return FormatUtil.formatMetric(value);
+                return FormatUtil.formatMetric(value, 2);
             case 0:
             default:
                 return FormatUtil.formatNormal(value);
@@ -1318,7 +1342,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             case 1:
                 return FormatUtil.formatScientificDouble(rate);
             case 2:
-                return FormatUtil.formatMetricDouble(rate);
+                return FormatUtil.formatMetricDouble(rate, 2);
             case 0:
             default:
                 return FormatUtil.formatNormalDouble(rate);

@@ -249,13 +249,53 @@ public class FormatUtil {
     }
 
     /**
+     * 千位模式格式化 BigInteger（K/M/G/T/P），保留指定小数位
+     * <p>
+     * 使用 1,000 为底（国际单位制词头）对数值进行压缩。
+     * 负数采用前缀负号（例如 -1500 decimals=2 格式化为 "-1.50K"）。
+     *
+     * @param value    要格式化的 BigInteger 值
+     * @param decimals 小数位数（0-6，超出范围被钳制）
+     * @return 格式化后的字符串（例如：1.50K / 2.70M / 3.00G），null 或 0 返回 "0"
+     */
+    public static String formatMetric(BigInteger value, int decimals) {
+        if (value == null || value.equals(BigInteger.ZERO)) {
+            return "0";
+        }
+        // 钳制小数位范围
+        int dec = Math.max(0, Math.min(6, decimals));
+        String fmt = "%." + dec + "f%s";
+
+        // 使用绝对值判断量级，负数前缀负号
+        BigInteger absValue = value.abs();
+        double d = value.doubleValue();
+
+        String result;
+        if (absValue.compareTo(BigInteger.valueOf(1_000_000_000_000_000L)) >= 0) {
+            result = String.format(Locale.ROOT, fmt, d / 1_000_000_000_000_000.0, "P");
+        } else if (absValue.compareTo(BigInteger.valueOf(1_000_000_000_000L)) >= 0) {
+            result = String.format(Locale.ROOT, fmt, d / 1_000_000_000_000.0, "T");
+        } else if (absValue.compareTo(BigInteger.valueOf(1_000_000_000L)) >= 0) {
+            result = String.format(Locale.ROOT, fmt, d / 1_000_000_000.0, "G");
+        } else if (absValue.compareTo(BigInteger.valueOf(1_000_000L)) >= 0) {
+            result = String.format(Locale.ROOT, fmt, d / 1_000_000.0, "M");
+        } else if (absValue.compareTo(BigInteger.valueOf(1_000L)) >= 0) {
+            result = String.format(Locale.ROOT, fmt, d / 1_000.0, "K");
+        } else {
+            // 小于1000：原值加小数
+            result = String.format(Locale.ROOT, fmt, d, "");
+        }
+        return value.signum() < 0 ? "-" + result : result;
+    }
+
+    /**
      * 千位模式格式化 double（K/M/G/T/P）
      * <p>
      * 使用 1,000 为底（国际单位制词头）对数值进行压缩，不保留小数。
-     * 负数采用后缀负号（例如 -1500 格式化为 "1K-"），与 GTNH 相关显示习惯保持一致。
+     * 负数采用前缀负号（例如 -1500 格式化为 "-1K"）。
      *
      * @param value 要格式化的 double 值
-     * @return 格式化后的字符串（例如：1K / 2M / 3G / 4T / 5P 或 1K-），0/NaN/Infinity 返回 "0"
+     * @return 格式化后的字符串（例如：1K / 2M / 3G / 4T / 5P 或 -1K），0/NaN/Infinity 返回 "0"
      */
     public static String formatMetricDouble(double value) {
         // 零值、NaN、Infinity 兜底
@@ -269,7 +309,7 @@ public class FormatUtil {
         // 小于 1000 时直接取整显示
         if (absValue < 1000.0) {
             String result = String.valueOf(Math.round(absValue));
-            return negative ? result + "-" : result;
+            return negative ? "-" + result : result;
         }
 
         // 确定单位与除数
@@ -292,9 +332,45 @@ public class FormatUtil {
             divisor = 1_000.0;
         }
 
-        // 取整后拼接单位，负数后缀负号
+        // 取整后拼接单位，负数前缀负号
         String result = String.valueOf(Math.round(absValue / divisor)) + unit;
-        return negative ? result + "-" : result;
+        return negative ? "-" + result : result;
+    }
+
+    /**
+     * 千位模式格式化 double（K/M/G/T/P），保留指定小数位
+     * <p>
+     * 负数采用前缀负号（例如 -1500 decimals=2 格式化为 "-1.50K"）。
+     *
+     * @param value    要格式化的 double 值
+     * @param decimals 小数位数（0-6，超出范围被钳制）
+     * @return 格式化后的字符串，0/NaN/Infinity 返回 "0"
+     */
+    public static String formatMetricDouble(double value, int decimals) {
+        if (value == 0.0 || Double.isNaN(value) || Double.isInfinite(value)) {
+            return "0";
+        }
+        int dec = Math.max(0, Math.min(6, decimals));
+        String fmt = "%." + dec + "f%s";
+
+        boolean negative = value < 0;
+        double absValue = Math.abs(value);
+
+        String result;
+        if (absValue < 1000.0) {
+            result = String.format(Locale.ROOT, fmt, absValue, "");
+        } else if (absValue >= 1_000_000_000_000_000.0) {
+            result = String.format(Locale.ROOT, fmt, absValue / 1_000_000_000_000_000.0, "P");
+        } else if (absValue >= 1_000_000_000_000.0) {
+            result = String.format(Locale.ROOT, fmt, absValue / 1_000_000_000_000.0, "T");
+        } else if (absValue >= 1_000_000_000.0) {
+            result = String.format(Locale.ROOT, fmt, absValue / 1_000_000_000.0, "G");
+        } else if (absValue >= 1_000_000.0) {
+            result = String.format(Locale.ROOT, fmt, absValue / 1_000_000.0, "M");
+        } else {
+            result = String.format(Locale.ROOT, fmt, absValue / 1_000.0, "K");
+        }
+        return negative ? "-" + result : result;
     }
 
     /**

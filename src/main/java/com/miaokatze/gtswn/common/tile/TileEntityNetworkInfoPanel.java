@@ -1294,7 +1294,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 eutText = FormatUtil.formatScientificDouble(Math.abs(eut));
                 break;
             case 2:
-                eutText = FormatUtil.formatMetricDouble(Math.abs(eut));
+                eutText = FormatUtil.formatMetricDouble(Math.abs(eut), 2);
                 break;
             case 0:
             default:

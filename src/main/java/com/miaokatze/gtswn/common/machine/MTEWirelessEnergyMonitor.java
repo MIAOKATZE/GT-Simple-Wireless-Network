@@ -391,7 +391,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 euPerTickStr = FormatUtil.formatScientificDouble(absEut);
                 break;
             case 2:
-                euPerTickStr = FormatUtil.formatMetricDouble(absEut);
+                euPerTickStr = FormatUtil.formatMetricDouble(absEut, 2);
                 break;
             case 0:
             default:
@@ -432,7 +432,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 euPerTickStr = FormatUtil.formatScientificDouble(absEut);
                 break;
             case 2:
-                euPerTickStr = FormatUtil.formatMetricDouble(absEut);
+                euPerTickStr = FormatUtil.formatMetricDouble(absEut, 2);
                 break;
             case 0:
             default:
@@ -477,7 +477,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             case 1:
                 return translate("gtswn.ui.wireless.energy.scientific", FormatUtil.formatScientific(eu));
             case 2:
-                return translate("gtswn.ui.wireless.energy", FormatUtil.formatMetric(eu));
+                return translate("gtswn.ui.wireless.energy", FormatUtil.formatMetric(eu, 2));
             case 0:
             default:
                 return translate("gtswn.ui.wireless.energy", FormatUtil.formatNormal(eu));
