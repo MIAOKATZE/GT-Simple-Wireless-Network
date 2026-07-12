@@ -58,9 +58,37 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 - **Multi-block Screen / 多方块屏幕**: Main panel + extender panels form a contiguous filled rectangle; extender screens automatically attach to adjacent main screens
 - **4 Time Windows / 4 时间窗口**: 5-minute (real-time) / 1-hour / 8-hour / 24-hour datasets, with nested mean-value recording (1h←5m means, 8h←1h means, 24h←8h means)
-- **Spline Curves / 样条曲线**: Catmull-Rom spline (tension 0.5) with configurable smoothing (0-12 → 4-26 segments)
+- **Spline Curves / 样条曲线**: Fritsch-Carlson monotone cubic Hermite spline with configurable smoothing (0-12 → 4-26 segments)
 - **Per-Player Sharing / 玩家共享**: Datasets bound to player UUID; multiple screens display the same data
 - **Configurable Background / 可配置背景**: Customizable screen background color; clear to disable TESR fill
+- **Display Modes / 显示模式**: Normal counting (1,234,567) / Scientific notation (1.23E6) / Metric notation (1.23K)
+
+### AE Chart / AE 走势图
+
+**AE Chart / AE 走势图** — Bind a specific item or fluid from the AE network to visualize its stock and change rate trends over time. Dual Y-axis display (left = stock blue, right = change rate orange), supports 4 time windows (5m/1h/8h/24h). Right-click the panel with an item/fluid in hand to bind. Brief area shows current stock, realtime change rate, and average change rate (first-last delta method over the 61-point window).
+
+AE 走势图，绑定 AE 网络中的特定物品或流体，可视化其存量与变化率趋势。双 Y 轴显示（左=存量蓝、右=变化率橙），支持 4 时间窗口（5m/1h/8h/24h）。手持物品/流体右键信息屏即可绑定。简报区显示当前存量、实时变化速率、平均变化速率（基于 61 点首尾差值法）。
+
+<!-- AE 走势图截图位置 / AE Chart screenshot placeholder -->
+<p align="center"><img src="images/AE_Chart_CN.png" width="400"><br><em>AE 走势图 / AE Chart（截图待补充 / screenshot TBD）</em></p>
+
+- **Dual Y-Axis / 双 Y 轴**: Left axis = stock (blue), right axis = change rate (orange, consistent with wireless EU network EU/t line color)
+- **Brief Area / 简报区**: Current stock + realtime change rate + average change rate (61-point first-last delta)
+- **Configurable / 可配置**: Y-axis min/max, line thickness, spline smoothing, background color, line color, line visibility toggles
+
+### AE Realtime Monitor / AE 实时监测
+
+**AE Realtime Monitor / AE 实时监测** — Monitor multiple AE items/fluids simultaneously in a scrollable list. Each row shows icon, name, stock, realtime change rate, and 300s average change rate. Supports grid mode and configurable font size/bold/icon size. Right-click the panel with an item/fluid in hand to add a monitored item.
+
+AE 实时监测，同时监控多个 AE 物品/流体，可滚动列表显示。每行包含图标、名称、存量、实时变化率、300s 平均变化率。支持格子模式与可配置字号/加粗/图标大小。手持物品/流体右键信息屏即可添加监视项。
+
+<!-- AE 实时监测截图位置 / AE Realtime Monitor screenshot placeholder -->
+<p align="center"><img src="images/AE_Monitor_CN.png" width="400"><br><em>AE 实时监测 / AE Realtime Monitor（截图待补充 / screenshot TBD）</em></p>
+
+- **Scrollable List / 可滚动列表**: Custom GUI scroll list with mouse wheel, drag, and scrollbar support
+- **Per-Item Data / 单项数据**: Icon + name + stock + realtime rate + 300s average rate (first-last delta)
+- **Grid Mode / 格子模式**: Alternative compact grid layout with configurable cell size
+- **Online Status / 在线状态**: Deep green text indicates the AE item is online and being monitored
 
 
 ***

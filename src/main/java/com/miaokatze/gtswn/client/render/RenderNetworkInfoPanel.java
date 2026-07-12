@@ -792,19 +792,26 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         int iconSize = Math.min(size, 32);
         Minecraft mc = Minecraft.getMinecraft();
         GL11.glPushMatrix();
-        // 极小的正向 Z 偏移
-        GL11.glTranslatef(x, y, 0.001F);
+        // v1.5.13：增大 Z 偏移（原 0.001F 不足以将 effect 层推到面板表面前方）
+        // 确保 renderItemAndEffectIntoGUI 渲染的所有层（图标四边形、附魔光效、GT 覆盖层）
+        // 均位于面板表面（局部 Z≈-0.256）前方，从而可以保持深度测试启用
+        GL11.glTranslatef(x, y, 2.0F);
         float localScale = iconSize / 16.0F;
         GL11.glScalef(localScale, localScale, localScale);
-        // 关键：把 3D 物品沿 Z 轴压扁，使其紧贴面板
+        // 把 3D 物品沿 Z 轴压扁，减少 Z 方向跨度
         GL11.glScalef(1.0F, 1.0F, 0.005F);
-        // 保存 GL 属性：RenderItem 可能改变 blend/alpha test/cull/光照/深度等状态
-        // v1.5.13：补充 GL_DEPTH_BUFFER_BIT，防止 Forge IItemRenderer 修改 glDepthFunc/glDepthMask 后
-        // 状态泄漏到后续渲染，导致走势图/坐标轴等元素浮在最上层盖过其他材质
+        // 保存 GL 属性：RenderItem 可能改变 blend/alpha test/cull/光照/深度/polygon 状态
+        // v1.5.13：补充 GL_DEPTH_BUFFER_BIT，防止 Forge IItemRenderer 修改 glDepthFunc/glDepthMask 后状态泄漏
+        // v1.5.13：补充 GL_POLYGON_BIT，保存/恢复 polygonOffset 参数
         GL11.glPushAttrib(
-            GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_DEPTH_BUFFER_BIT);
-        // 继续临时禁用深度测试，避免图标被面板表面裁剪
-        GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT
+                | GL11.GL_CURRENT_BIT
+                | GL11.GL_DEPTH_BUFFER_BIT
+                | GL11.GL_POLYGON_BIT);
+        // v1.5.13：保持深度测试启用，使面板前方方块可以正确遮挡图标（修复图标浮在最顶层的问题）
+        // 使用 polygon offset 防止图标与面板表面 z-fighting（参考 Nuclear-Control 做法）
+        GL11.glEnable(GL11.GL_POLYGON_OFFSET_FILL);
+        GL11.glPolygonOffset(-1.0F, -1.0F);
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
         RenderHelper.enableGUIStandardItemLighting();
         // 使用 renderItemAndEffectIntoGUI 以触发 Forge IItemRenderer，从而渲染 GT 物品覆盖层
