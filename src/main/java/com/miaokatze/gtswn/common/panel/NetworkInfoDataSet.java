@@ -45,6 +45,11 @@ public class NetworkInfoDataSet {
     // 全局采样锁（用 world tick）：多屏共享时去重，距离上次采样 ≥ 100 ticks (5s) 才允许新采样
     private long lastSampleTick = -1L;
 
+    // 最近一次采样的真实时间戳（System.currentTimeMillis，v1.5.15 新增）。
+    // 与 lastSampleTick（world tick）不同：world tick 在每次会话重置为 0，无法跨会话比较；
+    // 此字段使用真实时间，用于 cleanupStale 判断玩家是否长期未活跃，从而清理其数据集释放内存。
+    private long lastSampleTimeMs = 0L;
+
     /**
      * 主入口：接收一个原始采样点（每 5s 一次），按流入计数链分发到各级窗口（均值录入）。
      * <p>
@@ -57,6 +62,8 @@ public class NetworkInfoDataSet {
      * @param eut    当前 EU/t 斜率
      */
     public void addSample(BigInteger eu, long tick, long timeMs, double eut) {
+        // v1.5.15：记录真实时间戳，供 cleanupStale 跨会话判断玩家活跃度
+        this.lastSampleTimeMs = System.currentTimeMillis();
         // 5m 集始终以瞬时值录入（行为不变）
         NetworkInfoSample sample = new NetworkInfoSample(timeMs, tick, eu, eut);
         series5m.add(sample);
@@ -168,6 +175,17 @@ public class NetworkInfoDataSet {
     }
 
     /**
+     * v1.5.15：获取最近一次采样的真实时间戳（System.currentTimeMillis）。
+     * <p>
+     * 用于 cleanupStale 跨会话判断玩家活跃度，清理长期未采样的数据集。
+     *
+     * @return 真实时间戳；0=从未采样或旧存档无此字段
+     */
+    public long getLastSampleTimeMs() {
+        return lastSampleTimeMs;
+    }
+
+    /**
      * 查询指定窗口的当前样本数。
      */
     public int size(int window) {
@@ -216,7 +234,7 @@ public class NetworkInfoDataSet {
     }
 
     /**
-     * NBT 序列化：写 4 个 series compound + 3 个 counter + lastSampleTick。
+     * NBT 序列化：写 4 个 series compound + 3 个 counter + lastSampleTick + lastSampleTimeMs。
      */
     public NBTTagCompound toNBT() {
         NBTTagCompound tag = new NBTTagCompound();
@@ -228,6 +246,8 @@ public class NetworkInfoDataSet {
         tag.setInteger("counter1h", counter1h);
         tag.setInteger("counter8h", counter8h);
         tag.setLong("lastSampleTick", lastSampleTick);
+        // v1.5.15：持久化真实时间戳，跨会话判断玩家活跃度
+        tag.setLong("lastSampleTimeMs", lastSampleTimeMs);
         return tag;
     }
 
@@ -260,6 +280,8 @@ public class NetworkInfoDataSet {
         counter1h = tag.getInteger("counter1h");
         counter8h = tag.getInteger("counter8h");
         lastSampleTick = tag.getLong("lastSampleTick");
+        // v1.5.15：读取真实时间戳；旧存档无此 key 时返回 0（视为远古数据，将被 cleanupStale 清理）
+        lastSampleTimeMs = tag.getLong("lastSampleTimeMs");
         // 旧格式（"samples" 键）忽略，数据集保持空（旧数据丢弃，不迁移）
     }
 }

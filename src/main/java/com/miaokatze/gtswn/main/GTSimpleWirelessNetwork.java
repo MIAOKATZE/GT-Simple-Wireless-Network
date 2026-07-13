@@ -11,6 +11,7 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLLoadCompleteEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
+import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 
 /**
@@ -75,6 +76,22 @@ public class GTSimpleWirelessNetwork {
     @Mod.EventHandler
     public void serverStarting(FMLServerStartingEvent event) {
         proxy.serverStarting(event);
+    }
+
+    /**
+     * 服务器已启动阶段（v1.5.15 新增）。
+     * <p>
+     * 所有世界已加载，用于触发网络信息屏历史数据的过期清理。
+     */
+    @Mod.EventHandler
+    public void serverStarted(FMLServerStartedEvent event) {
+        if (proxy != null) {
+            try {
+                proxy.serverStarted(event);
+            } catch (Throwable t) {
+                LOG.error("在 serverStarted 阶段调用代理类时发生错误", t);
+            }
+        }
     }
 
     /**

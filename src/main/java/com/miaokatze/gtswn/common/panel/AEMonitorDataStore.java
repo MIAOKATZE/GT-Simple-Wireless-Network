@@ -52,6 +52,19 @@ public class AEMonitorDataStore extends WorldSavedData {
     }
 
     /**
+     * 仅查询不创建：返回指定坐标 key 的数据集，不存在则返回 null（v1.5.15 新增）。
+     * <p>
+     * 用于 clearAEData / sendAEMonitorDataToClients 等只读场景，避免创建空数据集导致内存泄漏
+     * 与脏 markDirty 写入。
+     *
+     * @param coordinateKey 信息屏方块的坐标字符串（{@code dimensionId:x:y:z}）
+     * @return 对应的数据集；不存在返回 null
+     */
+    public AEMonitorDataSet getIfPresent(String coordinateKey) {
+        return dataSets.get(coordinateKey);
+    }
+
+    /**
      * 移除指定坐标 key 的数据集，方块破坏时调用以释放内存并避免脏数据残留。
      *
      * @param coordinateKey 信息屏方块的坐标字符串（{@code dimensionId:x:y:z}）

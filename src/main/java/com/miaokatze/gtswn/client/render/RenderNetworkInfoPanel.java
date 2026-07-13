@@ -66,11 +66,22 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         if (screen == null) {
             return 0;
         }
+        // v1.5.15：修复方向性各异性渲染错位。
+        // 局部 X+ 在旋转后对应世界坐标方向：
+        // facing=3 (S, 不旋转) → +X，offset = xCoord - minX（左到右递增）
+        // facing=2 (N, 180°) → -X，offset = maxX - xCoord（镜像）
+        // facing=4 (W, -90°) → +Z，offset = zCoord - minZ（左到右递增）
+        // facing=5 (E, +90°) → -Z，offset = maxZ - zCoord（镜像）
+        // 原 NS/EW 共用公式导致 facing=2/5 画面错位。
         int facing = screen.facing;
-        if (facing == 2 || facing == 3) {
-            return panel.xCoord - screen.minX;
+        if (facing == 2) {
+            return screen.maxX - panel.xCoord; // N: 180°镜像
+        } else if (facing == 4) {
+            return panel.zCoord - screen.minZ; // W: 不变
+        } else if (facing == 5) {
+            return screen.maxZ - panel.zCoord; // E: +90°镜像
         }
-        return panel.zCoord - screen.minZ;
+        return panel.xCoord - screen.minX; // S (facing==3) 及默认
     }
 
     private int getCoreVerticalOffset(TileEntityNetworkInfoPanel panel, NetworkScreen screen) {

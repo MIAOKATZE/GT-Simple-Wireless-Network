@@ -189,6 +189,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             }
             if (needsDataRefresh && ownerUUID != null) {
                 refreshCachedSamples();
+                // v1.5.15：清空 eutDataSet 强制冷启动。
+                // readPlacementData 恢复的 lastSampleTick 是旧会话的 world tick，
+                // 与当前 worldObj.getTotalWorldTime() 不在同一时间基准，
+                // 若不清空，sampleNetwork 会用旧 tick 做 gap 检测导致首帧 eut 异常。
+                eutDataSet.clear();
                 NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(worldObj)
                     .getOrCreate(ownerUUID.toString());
                 NetworkInfoSample newest = dataSet.newest();
@@ -237,6 +242,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
+        // v1.5.15：防御性清理 stackWatcher，防止 chunk 卸载后 watcher 残留导致 AE 网络侧仍持有引用
+        if (stackWatcher != null) {
+            stackWatcher.clear();
+        }
         if (gridProxy != null) {
             gridProxy.onChunkUnload();
         }
@@ -366,9 +375,13 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (dataKey == null) {
             return;
         }
-        AEMonitorDataStore.get(worldObj)
-            .getOrCreate(dataKey)
-            .clear(key);
+        // v1.5.15：改用 getIfPresent 避免为已破坏/卸载的方块创建空数据集导致内存泄漏
+        AEMonitorDataStore store = AEMonitorDataStore.get(worldObj);
+        AEMonitorDataSet dataSet = store.getIfPresent(dataKey);
+        if (dataSet != null) {
+            dataSet.clear(key);
+            store.markDirty();
+        }
     }
 
     /**
@@ -476,7 +489,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
 
         AEMonitorDataSet dataSet = AEMonitorDataStore.get(worldObj)
-            .getOrCreate(dataKey);
+            .getIfPresent(dataKey);
+        // v1.5.15：无数据可推送时直接返回，避免 getOrCreate 创建空集导致内存泄漏
+        if (dataSet == null) {
+            return;
+        }
 
         String chartKey = null;
         List<AEMonitorSample> chartSamples = new ArrayList<>();
@@ -1584,9 +1601,19 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     public static void rebuildNearbyScreens(World world, int x, int y, int z) {
-        for (int dx = -16; dx <= 16; dx++) {
-            for (int dy = -16; dy <= 16; dy++) {
-                for (int dz = -16; dz <= 16; dz++) {
+        // v1.5.15：原 3 参数版本委托给 4 参数版本，保持向后兼容
+        rebuildNearbyScreens(world, x, y, z, 16);
+    }
+
+    /**
+     * v1.5.15：可指定扫描范围的重建方法，替代固定 ±16 全空间扫描。
+     * 
+     * @param range 扫描半径（方块数）
+     */
+    public static void rebuildNearbyScreens(World world, int x, int y, int z, int range) {
+        for (int dx = -range; dx <= range; dx++) {
+            for (int dy = -range; dy <= range; dy++) {
+                for (int dz = -range; dz <= range; dz++) {
                     TileEntity tile = world.getTileEntity(x + dx, y + dy, z + dz);
                     if (tile instanceof TileEntityNetworkInfoPanel) {
                         ((TileEntityNetworkInfoPanel) tile).rebuildScreen();
@@ -1749,6 +1776,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             fluidList.appendTag(f.writeToNBT(new NBTTagCompound()));
         }
         tag.setTag("monitoredFluids", fluidList);
+        // v1.5.15：同步 aeChartSamples，防止客户端跨维度往返后走势图短暂为空
+        if (aeChartSamples != null && !aeChartSamples.isEmpty()) {
+            NBTTagList aeChartList = new NBTTagList();
+            for (AEMonitorSample s : aeChartSamples) {
+                aeChartList.appendTag(s.toNBT());
+            }
+            tag.setTag("aeChartSamples", aeChartList);
+        }
     }
 
     private void readSyncData(NBTTagCompound tag) {
@@ -1812,6 +1847,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             for (int i = 0; i < fluidList.tagCount(); i++) {
                 FluidStack f = FluidStack.loadFluidStackFromNBT(fluidList.getCompoundTagAt(i));
                 if (f != null) monitoredFluids.add(f);
+            }
+        }
+        // v1.5.15：读取 aeChartSamples，与 writeSyncData 对应
+        aeChartSamples.clear();
+        if (tag.hasKey("aeChartSamples")) {
+            NBTTagList aeChartList = tag.getTagList("aeChartSamples", Constants.NBT.TAG_COMPOUND);
+            for (int i = 0; i < aeChartList.tagCount(); i++) {
+                aeChartSamples.add(AEMonitorSample.fromNBT(aeChartList.getCompoundTagAt(i)));
             }
         }
     }

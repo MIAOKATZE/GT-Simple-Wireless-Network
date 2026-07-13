@@ -52,6 +52,23 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
         return screen;
     }
 
+    // v1.5.15：新增 getter，供 BlockNetworkInfoPanelExtender.breakBlock 在 super.breakBlock 前捕获 core 坐标
+    public int getCoreX() {
+        return coreX;
+    }
+
+    public int getCoreY() {
+        return coreY;
+    }
+
+    public int getCoreZ() {
+        return coreZ;
+    }
+
+    public boolean isPartOfScreen() {
+        return partOfScreen;
+    }
+
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);

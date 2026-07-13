@@ -6,6 +6,7 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Ene
 import java.io.File;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.Tags;
@@ -13,6 +14,7 @@ import com.miaokatze.gtswn.common.command.CommandGTSWN;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
+import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
@@ -25,6 +27,7 @@ import com.miaokatze.gtswn.register.TextureManager;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
+import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import gregtech.api.GregTechAPI;
@@ -158,6 +161,38 @@ public class CommonProxy {
     @SuppressWarnings({ "unused" })
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new CommandGTSWN());
+    }
+
+    /**
+     * 服务器已启动阶段（v1.5.15 新增）。
+     * <p>
+     * 在此阶段所有世界已加载，可安全获取 overworld 并执行 WorldSavedData 清理。
+     * 用于清理超过 {@link Config#keepHistoryDays} 天未采样的网络信息屏历史数据集，避免内存泄漏。
+     */
+    @SuppressWarnings({ "unused" })
+    public void serverStarted(FMLServerStartedEvent event) {
+        // 仅在配置启用清理时执行（keepHistoryDays=0 表示永不清理）
+        if (Config.keepHistoryDays <= 0) {
+            return;
+        }
+        try {
+            // 获取 overworld（dimension 0），NetworkInfoDataStore 存储在 perWorldStorage 中
+            World overworld = MinecraftServer.getServer()
+                .worldServerForDimension(0);
+            if (overworld == null) {
+                GTSimpleWirelessNetwork.LOG.warn("[serverStarted] overworld 不可用，跳过网络信息屏历史数据清理");
+                return;
+            }
+            long cutoffMs = System.currentTimeMillis() - Config.keepHistoryDays * 24L * 3600L * 1000L;
+            int removed = NetworkInfoDataStore.get(overworld)
+                .cleanupStale(cutoffMs);
+            if (removed > 0) {
+                GTSimpleWirelessNetwork.LOG
+                    .info("[serverStarted] 已清理 " + removed + " 个超过 " + Config.keepHistoryDays + " 天未采样的网络信息屏数据集");
+            }
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.error("[serverStarted] 清理网络信息屏历史数据时发生错误", t);
+        }
     }
 
     /**

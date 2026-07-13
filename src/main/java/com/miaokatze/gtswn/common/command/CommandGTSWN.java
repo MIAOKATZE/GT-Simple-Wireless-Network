@@ -6,10 +6,17 @@ import java.util.UUID;
 
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
+import net.minecraft.command.PlayerNotFoundException;
 import net.minecraft.command.WrongUsageException;
+import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StatCollector;
+import net.minecraft.world.World;
+
+import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
+import com.miaokatze.gtswn.config.Config;
 
 import gregtech.common.misc.WirelessNetworkManager;
 import gregtech.common.misc.spaceprojects.SpaceProjectManager;
@@ -21,6 +28,7 @@ import gregtech.common.misc.spaceprojects.SpaceProjectManager;
  * <ul>
  * <li>/gtswn global_energy_trans &lt;fromUUID&gt; &lt;toUUID&gt; — EU 迁移</li>
  * <li>/gtswn global_energy_join &lt;memberUUID&gt; &lt;leaderUUID&gt; — 加入无线网络</li>
+ * <li>/gtswn cleanup_info_data &lt;all|player&gt; — 清理网络信息屏历史数据（v1.5.15 新增）</li>
  * </ul>
  * 仅管理员(OP等级4)可用。
  */
@@ -28,6 +36,7 @@ public class CommandGTSWN extends CommandBase {
 
     private static final String SUBCMD_TRANSFER = "global_energy_trans";
     private static final String SUBCMD_JOIN = "global_energy_join";
+    private static final String SUBCMD_CLEANUP_INFO = "cleanup_info_data";
 
     @Override
     public String getCommandName() {
@@ -40,7 +49,10 @@ public class CommandGTSWN extends CommandBase {
             + " <fromUUID> <toUUID>"
             + " | /gtswn "
             + SUBCMD_JOIN
-            + " <memberUUID> <leaderUUID>";
+            + " <memberUUID> <leaderUUID>"
+            + " | /gtswn "
+            + SUBCMD_CLEANUP_INFO
+            + " <all|player>";
     }
 
     @Override
@@ -51,7 +63,16 @@ public class CommandGTSWN extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCMD_TRANSFER, SUBCMD_JOIN);
+            return getListOfStringsMatchingLastWord(args, SUBCMD_TRANSFER, SUBCMD_JOIN, SUBCMD_CLEANUP_INFO);
+        }
+        // cleanup_info_data 子命令补全：all + 在线玩家名
+        if (args.length == 2 && SUBCMD_CLEANUP_INFO.equals(args[0])) {
+            String[] players = MinecraftServer.getServer()
+                .getAllUsernames();
+            String[] candidates = new String[players.length + 1];
+            candidates[0] = "all";
+            System.arraycopy(players, 0, candidates, 1, players.length);
+            return getListOfStringsMatchingLastWord(args, candidates);
         }
         return null;
     }
@@ -65,6 +86,8 @@ public class CommandGTSWN extends CommandBase {
             processTransfer(sender, args);
         } else if (SUBCMD_JOIN.equals(args[0])) {
             processJoin(sender, args);
+        } else if (SUBCMD_CLEANUP_INFO.equals(args[0])) {
+            processCleanupInfoData(sender, args);
         } else {
             throw new WrongUsageException(getCommandUsage(sender));
         }
@@ -185,5 +208,85 @@ public class CommandGTSWN extends CommandBase {
         sender.addChatMessage(
             new ChatComponentText(
                 String.format(StatCollector.translateToLocal("gtswn.command.join.network_eu"), targetEU)));
+    }
+
+    /**
+     * 处理 cleanup_info_data 子命令（v1.5.15 新增）。
+     * <p>
+     * 清理网络信息屏历史数据集，支持两种模式：
+     * <ul>
+     * <li>{@code /gtswn cleanup_info_data all} — 清理所有超过 {@link Config#keepHistoryDays} 天未采样的数据集</li>
+     * <li>{@code /gtswn cleanup_info_data <player>} — 清理指定在线玩家（按 UUID）的数据集</li>
+     * </ul>
+     * 注意：清理操作不可逆，被清理的玩家下次放置信息屏时会从空数据集重新开始采集。
+     *
+     * @param sender 命令发送者
+     * @param args   原始参数数组，args[0]=cleanup_info_data，args[1]=all|player
+     */
+    private void processCleanupInfoData(ICommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.addChatMessage(
+                new ChatComponentText(EnumChatFormatting.RED + "用法: /gtswn " + SUBCMD_CLEANUP_INFO + " <all|player>"));
+            return;
+        }
+
+        // 获取 overworld（NetworkInfoDataStore 存储在 perWorldStorage 中）
+        World overworld = MinecraftServer.getServer()
+            .worldServerForDimension(0);
+        if (overworld == null) {
+            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + "无法获取 overworld，清理失败。"));
+            return;
+        }
+
+        NetworkInfoDataStore store = NetworkInfoDataStore.get(overworld);
+        String target = args[1];
+
+        if ("all".equalsIgnoreCase(target)) {
+            // 全量清理模式：按 keepHistoryDays 计算 cutoff
+            if (Config.keepHistoryDays <= 0) {
+                sender.addChatMessage(
+                    new ChatComponentText(EnumChatFormatting.YELLOW + "keepHistoryDays=0（永不清理），强制全量清理所有过期数据集。"));
+                // 即使配置为 0，命令也执行清理（命令优先级高于配置）
+                // 用一个极长的时间阈值，确保所有"有 lastSampleTimeMs 记录"的数据集都被判断
+                // 但 lastSampleTimeMs=0（从未采样或旧存档）的数据集也会被清理（0 < cutoffMs 恒成立）
+            }
+            long cutoffMs = System.currentTimeMillis() - Config.keepHistoryDays * 24L * 3600L * 1000L;
+            int removed = store.cleanupStale(cutoffMs);
+            sender.addChatMessage(
+                new ChatComponentText(
+                    EnumChatFormatting.GREEN + "[cleanup_info_data] 已清理 "
+                        + removed
+                        + " 个数据集（阈值 "
+                        + Config.keepHistoryDays
+                        + " 天）。"));
+        } else {
+            // 指定玩家清理模式：解析玩家名 → UUID → remove
+            EntityPlayerMP player;
+            try {
+                player = getPlayer(sender, target);
+            } catch (PlayerNotFoundException e) {
+                sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + "未找到玩家: " + target + "（仅支持在线玩家）"));
+                return;
+            }
+            UUID playerUUID = player.getUniqueID();
+            boolean removed = store.remove(playerUUID.toString());
+            if (removed) {
+                sender.addChatMessage(
+                    new ChatComponentText(
+                        EnumChatFormatting.GREEN + "[cleanup_info_data] 已移除玩家 "
+                            + target
+                            + " ("
+                            + playerUUID
+                            + ") 的网络信息屏数据集。"));
+            } else {
+                sender.addChatMessage(
+                    new ChatComponentText(
+                        EnumChatFormatting.YELLOW + "[cleanup_info_data] 玩家 "
+                            + target
+                            + " ("
+                            + playerUUID
+                            + ") 无数据集可移除。"));
+            }
+        }
     }
 }

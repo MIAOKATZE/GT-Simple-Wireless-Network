@@ -13,7 +13,11 @@ public class ItemBlockNetworkInfoPanel extends ItemBlock {
 
     public ItemBlockNetworkInfoPanel(Block block) {
         super(block);
-        setMaxStackSize(1);
+        // v1.5.15：允许堆叠到 64，修复无法常规堆叠的问题。
+        // - 创造栏/合成产物（无 NBT）可正常堆叠
+        // - 拓展屏破坏掉落物（无 NBT）可与合成/创造产物堆叠
+        // - 主屏破坏掉落物（有 NBT：OwnerUUID+图表配置+采样历史）仅与 NBT 完全相同的掉落物堆叠（MC 原版机制）
+        setMaxStackSize(64);
     }
 
     @Override

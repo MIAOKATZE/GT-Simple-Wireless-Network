@@ -19,6 +19,7 @@ import net.minecraftforge.fluids.FluidContainerRegistry;
 import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
+import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.CreativeTabManager;
@@ -158,6 +159,21 @@ public class BlockNetworkInfoPanel extends BlockContainer {
     }
 
     @Override
+    public boolean removedByPlayer(World world, EntityPlayer player, int x, int y, int z, boolean willHarvest) {
+        // v1.5.15：延迟方块删除到 getDrops 之后，确保 getDrops 能访问 TileEntity 写入 NBT
+        // Forge 1.7.10 默认流程：removedByPlayer → setBlockToAir → removeTileEntity → getDrops（TE 已 null）
+        // 修复后：removedByPlayer(返回true不删) → getDrops(TE存活) → harvestBlock → setBlockToAir
+        return willHarvest || super.removedByPlayer(world, player, x, y, z, false);
+    }
+
+    @Override
+    public void harvestBlock(World world, EntityPlayer player, int x, int y, int z, int meta) {
+        // v1.5.15：配合 removedByPlayer，在 getDrops 完成后才真正删除方块
+        super.harvestBlock(world, player, x, y, z, meta);
+        world.setBlockToAir(x, y, z);
+    }
+
+    @Override
     public ArrayList<ItemStack> getDrops(World world, int x, int y, int z, int metadata, int fortune) {
         ArrayList<ItemStack> drops = new ArrayList<>();
         ItemStack stack = new ItemStack(this, 1, 0);
@@ -173,6 +189,8 @@ public class BlockNetworkInfoPanel extends BlockContainer {
 
     @Override
     public void breakBlock(World world, int x, int y, int z, net.minecraft.block.Block block, int meta) {
+        // v1.5.15：捕获 screen 边界（super.breakBlock 后 TE 被移除，无法再读）
+        int minX = x, minY = y, minZ = z, maxX = x, maxY = y, maxZ = z;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile instanceof TileEntityNetworkInfoPanel) {
             TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
@@ -184,12 +202,35 @@ public class BlockNetworkInfoPanel extends BlockContainer {
                     AEMonitorDataStore.get(world)
                         .remove(dataKey);
                 }
+                // v1.5.15：捕获 screen 边界用于后续定向重建
+                NetworkScreen screen = panel.getScreen();
+                if (screen != null) {
+                    minX = screen.minX;
+                    minY = screen.minY;
+                    minZ = screen.minZ;
+                    maxX = screen.maxX;
+                    maxY = screen.maxY;
+                    maxZ = screen.maxZ;
+                }
             }
         }
         super.breakBlock(world, x, y, z, block, meta);
-        // v1.4.6：主屏破坏后通知附近主屏重建，避免旧 screen 状态残留（与 Extender.breakBlock 行为一致）
         if (!world.isRemote) {
-            TileEntityNetworkInfoPanel.rebuildNearbyScreens(world, x, y, z);
+            // v1.5.15：扫描 screen 边界 ±1（而非 ±16），重建受影响的 Panel
+            // 性能提升：从 35937 次 getTileEntity 降到 (w+2)*(h+2)*(d+2) 次
+            for (int bx = minX - 1; bx <= maxX + 1; bx++) {
+                for (int by = minY - 1; by <= maxY + 1; by++) {
+                    for (int bz = minZ - 1; bz <= maxZ + 1; bz++) {
+                        if (bx == x && by == y && bz == z) {
+                            continue; // 跳过自身
+                        }
+                        TileEntity t = world.getTileEntity(bx, by, bz);
+                        if (t instanceof TileEntityNetworkInfoPanel) {
+                            ((TileEntityNetworkInfoPanel) t).rebuildScreen();
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -224,18 +265,41 @@ public class BlockNetworkInfoPanel extends BlockContainer {
         if (!isCompatibleScreenPart(world, x, y - 1, z, facing)) {
             mask |= 2;
         }
-        if (facing == 2 || facing == 3) {
+        // v1.5.15：修复方向性各异性——左右边缘需按朝向镜像。
+        // bit2 (mask4)=左侧无邻居，bit3 (mask8)=右侧无邻居。
+        // 观察者面对屏幕时左手边方向：
+        // facing=3 (S) → X-，facing=2 (N) → X+（镜像）
+        // facing=4 (W) → Z-，facing=5 (E) → Z+（镜像）
+        if (facing == 2) {
+            // N: 180°镜像，左右互换
+            if (!isCompatibleScreenPart(world, x + 1, y, z, facing)) {
+                mask |= 4;
+            }
+            if (!isCompatibleScreenPart(world, x - 1, y, z, facing)) {
+                mask |= 8;
+            }
+        } else if (facing == 3) {
+            // S: 不变
             if (!isCompatibleScreenPart(world, x - 1, y, z, facing)) {
                 mask |= 4;
             }
             if (!isCompatibleScreenPart(world, x + 1, y, z, facing)) {
                 mask |= 8;
             }
-        } else {
+        } else if (facing == 4) {
+            // W: 不变
             if (!isCompatibleScreenPart(world, x, y, z - 1, facing)) {
                 mask |= 4;
             }
             if (!isCompatibleScreenPart(world, x, y, z + 1, facing)) {
+                mask |= 8;
+            }
+        } else {
+            // E (facing==5): +90°镜像，左右互换
+            if (!isCompatibleScreenPart(world, x, y, z + 1, facing)) {
+                mask |= 4;
+            }
+            if (!isCompatibleScreenPart(world, x, y, z - 1, facing)) {
                 mask |= 8;
             }
         }

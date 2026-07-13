@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.panel;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 import net.minecraft.nbt.NBTTagCompound;
@@ -54,6 +55,48 @@ public class NetworkInfoDataStore extends WorldSavedData {
             markDirty();
         }
         return set;
+    }
+
+    /**
+     * 移除指定 ownerUUID 的数据集，释放内存。
+     * 调用前应确认该玩家已无任何网络信息屏方块。
+     *
+     * @param id 玩家 ownerUUID 字符串
+     * @return true=已移除并标记 dirty；false=key 不存在无需移除
+     */
+    public boolean remove(String id) {
+        if (dataSets.remove(id) != null) {
+            markDirty();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * 清理超过指定时间未采样的数据集（v1.5.15 新增）。
+     * <p>
+     * 用于服务器启动时或运维命令清理长期未活跃的玩家数据集，避免内存无限增长。
+     * 判定依据为 {@link NetworkInfoDataSet#getLastSampleTimeMs()}，早于 cutoffMs 的数据集将被移除。
+     *
+     * @param cutoffMs 时间阈值（毫秒），早于此时间的数据集将被移除
+     * @return 清理的数据集数量
+     */
+    public int cleanupStale(long cutoffMs) {
+        int removed = 0;
+        Iterator<Map.Entry<String, NetworkInfoDataSet>> it = dataSets.entrySet()
+            .iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, NetworkInfoDataSet> entry = it.next();
+            if (entry.getValue()
+                .getLastSampleTimeMs() < cutoffMs) {
+                it.remove();
+                removed++;
+            }
+        }
+        if (removed > 0) {
+            markDirty();
+        }
+        return removed;
     }
 
     @Override

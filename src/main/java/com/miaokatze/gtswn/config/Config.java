@@ -33,6 +33,9 @@ public class Config {
     /** AE2 网络监视配置类目名 */
     private static final String CATEGORY_AE2 = "ae2";
 
+    /** 网络信息屏历史数据保留配置类目名（v1.5.15 新增） */
+    private static final String CATEGORY_NETWORK_INFO = "network_info";
+
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
     // 此配置仅用于在基准值基础上进行微调。
@@ -94,6 +97,14 @@ public class Config {
     // 关闭后不再采集 AE 监控数据 / Disables AE monitoring data sampling when false
     // 默认 true / Default true
     public static boolean aeChartEnabled = true;
+
+    // 网络信息屏历史数据保留天数 / Network info panel history retention days (v1.5.15 新增)
+    // 超过此天数未采样的玩家数据集将在服务器启动时被清理，释放内存。
+    // 0 = 永不清理（不推荐，长期运行会内存泄漏）。
+    // Network info panel history retention days. Datasets not sampled within this many days
+    // will be cleaned up at server startup to release memory. 0 = never clean (not recommended).
+    // 默认 7 天 / Default 7 days
+    public static int keepHistoryDays = 7;
 
     /**
      * 同步主配置文件 (gtswn.cfg)
@@ -206,6 +217,24 @@ public class Config {
 
         // 控制 hud 类目内 key 的显示顺序：X偏移 → Y偏移 → 缩放
         configuration.setCategoryPropertyOrder(CATEGORY_HUD, Arrays.asList("HudXOffset", "HudYOffset", "HudScale"));
+
+        // === 网络信息屏历史数据保留配置类目（v1.5.15 新增，独立顶层 network_info 类目） ===
+        configuration.setCategoryComment(
+            CATEGORY_NETWORK_INFO,
+            "网络信息屏历史数据保留配置 / Network info panel history retention configuration\n"
+                + "控制长期未活跃玩家数据集的清理策略 / Controls cleanup of inactive player datasets");
+
+        // 网络信息屏历史数据保留天数 / Network info panel history retention days
+        // 0 = 永不清理；超过此天数未采样的玩家数据将在服务器启动时清理
+        keepHistoryDays = configuration.getInt(
+            "keepHistoryDays",
+            CATEGORY_NETWORK_INFO,
+            keepHistoryDays,
+            0,
+            365,
+            "网络信息屏历史数据保留天数 / Network info panel history retention days\n"
+                + "超过此天数未采样的玩家数据将在服务器启动时清理 / Datasets not sampled within this many days will be cleaned at server startup\n"
+                + "0=永不清理（默认7天）/ 0=never clean (Default 7 days)");
 
         if (configuration.hasChanged()) {
             configuration.save();
