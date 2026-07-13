@@ -245,6 +245,10 @@ gtswn.network_info.gui.ae.window.5min=5分钟
 gtswn.network_info.gui.ae.window.1h=1小时
 gtswn.network_info.gui.ae.window.8h=8小时
 gtswn.network_info.gui.ae.window.24h=24小时
+gtswn.network_info.gui.ae.window.7d=7天
+gtswn.network_info.gui.ae.window.1M=1月
+gtswn.network_info.gui.ae.window.3M=3月
+gtswn.network_info.gui.ae.window.1Y=1年
 gtswn.network_info.gui.ae.remove=移除
 gtswn.network_info.gui.ae.clear_all=全部清除
 # v1.5.5 AE 走势图按钮与监控列表新增

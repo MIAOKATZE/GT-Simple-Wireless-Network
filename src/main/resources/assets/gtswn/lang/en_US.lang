@@ -245,6 +245,10 @@ gtswn.network_info.gui.ae.window.5min=5 min
 gtswn.network_info.gui.ae.window.1h=1 h
 gtswn.network_info.gui.ae.window.8h=8 h
 gtswn.network_info.gui.ae.window.24h=24 h
+gtswn.network_info.gui.ae.window.7d=7 d
+gtswn.network_info.gui.ae.window.1M=1 M
+gtswn.network_info.gui.ae.window.3M=3 M
+gtswn.network_info.gui.ae.window.1Y=1 Y
 gtswn.network_info.gui.ae.remove=Remove
 gtswn.network_info.gui.ae.clear_all=Clear All
 # v1.5.5 AE chart buttons and monitor list new keys

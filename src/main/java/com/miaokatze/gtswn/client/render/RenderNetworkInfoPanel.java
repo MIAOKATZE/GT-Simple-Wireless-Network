@@ -197,7 +197,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             return;
         }
 
-        // 顶部简报区：左侧图标，右侧名称/存量/速率
+        // 顶部简报区：左侧图标，右侧名称/存量/速率（居中+缩放绘制，复用 briefRatio 字号）
         // 图标尺寸做上限，避免凸出屏幕；垂直居中显示
         int iconSize = Math.min(briefHeight, 28);
         int iconX = safe;
@@ -211,31 +211,46 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             name = fluid.getLocalizedName();
         }
 
-        int textX = iconX + briefHeight + 8;
-        int textY = iconY + 2;
+        // 文本区域：图标右侧到右边距，4 行文本垂直居中于简报区
+        int textX = iconX + iconSize + 8;
         int textW = width - textX - safe;
-        font.drawString(font.trimStringToWidth(name, textW), textX, textY, 0x26323D);
+        // 复用 EU 简报的 briefRatio 字号缩放（briefRatio/20.0F），EU 与 AE 简报字号统一调整
+        float scale = panel.getBriefFontScale();
+        int lineCount = 4;
+        int lineStep = Math.max(10, Math.round(10.0F * scale));
+        int lineY = safe + Math.max(0, (briefHeight - lineCount * lineStep) / 2);
+
+        // 第1行：名称
+        drawScaledCentered(font, font.trimStringToWidth(name, textW), textX, textW, lineY, 0x26323D, scale);
+        lineY += lineStep;
 
         List<AEMonitorSample> samples = panel.getAEChartSamples();
         AEMonitorSample newest = samples.isEmpty() ? null : samples.get(samples.size() - 1);
         int displayMode = panel.getDisplayMode();
 
-        textY += 12;
+        // 第2行：当前存量
         String amountText = newest == null ? tr("gtswn.network_info.screen.collecting_value")
             : formatAEChartAmount(newest.amount, displayMode);
-        font.drawString(
-            StatCollector.translateToLocalFormatted("gtswn.network_info.screen.ae_chart_current", amountText),
+        drawScaledCentered(
+            font,
+            font.trimStringToWidth(
+                StatCollector.translateToLocalFormatted("gtswn.network_info.screen.ae_chart_current", amountText),
+                textW),
             textX,
-            textY,
-            0x34404A);
+            textW,
+            lineY,
+            0x34404A,
+            scale);
+        lineY += lineStep;
 
-        textY += 12;
+        // 第3行：变化速率（按正负着色）
         String rateText = newest == null ? "-" : formatAEChartRate(newest.rate, displayMode);
         String rateLabel = StatCollector.translateToLocalFormatted("gtswn.network_info.screen.ae_chart_rate", rateText);
         int rateColor = newest == null ? 0x6B7680 : rateColor(newest.rate);
-        font.drawString(rateLabel, textX, textY, rateColor);
+        drawScaledCentered(font, font.trimStringToWidth(rateLabel, textW), textX, textW, lineY, rateColor, scale);
+        lineY += lineStep;
 
-        // 平均变化速率（基于当前窗口61点首尾差值法，与AE实时监控的averageRate300s算法一致）
+        // 第4行：平均变化速率（基于当前窗口61点首尾差值法，与AE实时监控的averageRate300s算法一致）
         // 数字保持默认深色，不按正负着色
         double avgRate = 0.0D;
         if (samples.size() >= 2) {
@@ -249,8 +264,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         String avgRateText = (newest == null || samples.size() < 2) ? "-" : formatAEChartRate(avgRate, displayMode);
         String avgRateLabel = StatCollector
             .translateToLocalFormatted("gtswn.network_info.screen.ae_chart_avg_rate", avgRateText);
-        textY += 12;
-        font.drawString(avgRateLabel, textX, textY, 0x34404A);
+        drawScaledCentered(font, font.trimStringToWidth(avgRateLabel, textW), textX, textW, lineY, 0x34404A, scale);
 
         // 中部走势图区：与 EU 图表相同的边距、坐标轴、Catmull-Rom 样条
         int chartTop = safe + briefHeight + 12;
@@ -1387,6 +1401,14 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 return "8h";
             case AEMonitorDataSet.WINDOW_24_HOUR:
                 return "24h";
+            case AEMonitorDataSet.WINDOW_7_DAY:
+                return "7d";
+            case AEMonitorDataSet.WINDOW_1_MONTH:
+                return "1M";
+            case AEMonitorDataSet.WINDOW_3_MONTH:
+                return "3M";
+            case AEMonitorDataSet.WINDOW_1_YEAR:
+                return "1Y";
             case AEMonitorDataSet.WINDOW_5_MIN:
             default:
                 return "5m";

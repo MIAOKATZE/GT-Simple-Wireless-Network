@@ -1,7 +1,9 @@
 package com.miaokatze.gtswn.common.panel;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import net.minecraft.nbt.NBTTagCompound;
@@ -55,6 +57,27 @@ public class NetworkInfoDataStore extends WorldSavedData {
             markDirty();
         }
         return set;
+    }
+
+    /**
+     * 获取当前活跃的 dataSet 条目（5 分钟内有请求的）。
+     * <p>
+     * 返回快照 List 避免 ConcurrentModificationException，供调度器遍历活跃数据集采样。
+     * 调度器不再维护引用计数，改为依赖信息屏 updateEntity 主动更新 lastRequestTick，
+     * 5 分钟（6000t）内无请求的 dataSet 视为不活跃，跳过采样。
+     *
+     * @param currentTick 当前 overworld tick
+     * @return 活跃条目列表（快照，修改不影响内部映射）
+     */
+    public List<Map.Entry<String, NetworkInfoDataSet>> getActiveEntries(long currentTick) {
+        List<Map.Entry<String, NetworkInfoDataSet>> result = new ArrayList<>();
+        for (Map.Entry<String, NetworkInfoDataSet> entry : dataSets.entrySet()) {
+            if (entry.getValue()
+                .isRequestActive(currentTick)) {
+                result.add(entry);
+            }
+        }
+        return result;
     }
 
     /**

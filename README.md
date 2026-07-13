@@ -51,30 +51,32 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 ## Network Info Panel & Extender / 网络信息屏与拓展屏
 
-**Network Info Panel / 网络信息屏** — A multi-block display panel that visualizes wireless network energy trends over multiple time windows (5m/1h/8h/24h). Composed of a main panel and extender panels, it forms a contiguous screen of arbitrary rectangular size. Uses Catmull-Rom spline curves for smooth trend rendering and supports per-player data sharing across multiple screens.
+**Network Info Panel / 网络信息屏** — A multi-block display panel that visualizes wireless network energy trends over 8 nested time windows (5m/1h/8h/24h/7d/1M/3M/1Y). Composed of a main panel and extender panels, it forms a contiguous screen of arbitrary rectangular size. Uses Fritsch-Carlson monotone cubic Hermite spline curves for smooth trend rendering and supports per-player data sharing across multiple screens.
 
-网络信息屏，多方块显示面板，可视化无线电网能量趋势（5分钟/1小时/8小时/24小时多时间窗口）。由主屏和拓展屏组成，可拼接成任意矩形尺寸的连续屏幕。采用 Catmull-Rom 样条曲线平滑渲染趋势，支持多屏间按玩家 UUID 共享数据。
+网络信息屏，多方块显示面板，可视化无线电网能量趋势（8 个嵌套时间窗口：5 分钟 / 1 小时 / 8 小时 / 24 小时 / 7 天 / 1 月 / 3 月 / 1 年）。由主屏和拓展屏组成，可拼接成任意矩形尺寸的连续屏幕。采用 Fritsch-Carlson 单调三次 Hermite 样条曲线平滑渲染趋势，支持多屏间按玩家 UUID 共享数据。
 
 <p align="center"><img src="images/Network Info Panel_CN.png" width="300"><img src="images/Network Info Panel_EN.png" width="300"><br><img src="images/Network Info Panel_L_CN.png" width="300"><img src="images/Network Info Panel_L_EN.png" width="300"><br><em>网络全天候检测示意图 / Network All-Weather Monitoring</em></p>
 
 
 - **Multi-block Screen / 多方块屏幕**: Main panel + extender panels form a contiguous filled rectangle; extender screens automatically attach to adjacent main screens
-- **4 Time Windows / 4 时间窗口**: 5-minute (real-time) / 1-hour / 8-hour / 24-hour datasets, with nested mean-value recording (1h←5m means, 8h←1h means, 24h←8h means)
+- **8 Time Windows / 8 时间窗口**: 5m / 1h / 8h / 24h / 7d / 1M(28d) / 3M(84d) / 1Y(336d) datasets, each 61-point FIFO with **natural-ratio** mean-value inflow chain (12→8→3→7→4→3→4); windows fill up and drop oldest automatically, no manual cleanup needed
+- **Request-Driven Sampling / 请求驱动采样**: v1.5.17 起，信息屏每 tick 通过 `updateRequestTick` 通知数据集"我在线"，调度器只对 5 分钟内有请求的数据集采样；超时自动停止采样，无需安全网清理
 - **Spline Curves / 样条曲线**: Fritsch-Carlson monotone cubic Hermite spline with configurable smoothing (0-12 → 4-26 segments)
 - **Per-Player Sharing / 玩家共享**: Datasets bound to player UUID; multiple screens display the same data
 - **Configurable Background / 可配置背景**: Customizable screen background color; clear to disable TESR fill
-- **Display Modes / 显示模式**: Normal counting (1,234,567) / Scientific notation (1.23E6) / Metric notation (1.23K)
+- **Display Modes / 显示模式**: Normal counting (1,234,567) / Scientific notation (1.23E6) / Metric notation (1.23K)，**默认科学计数**
 
 ### AE Chart / AE 走势图
 
-**AE Chart / AE 走势图** — Bind a specific item or fluid from the AE network to visualize its stock and change rate trends over time. Dual Y-axis display (left = stock blue, right = change rate orange), supports 4 time windows (5m/1h/8h/24h). Right-click the panel with an item/fluid in hand to bind. Brief area shows current stock, realtime change rate, and average change rate (first-last delta method over the 61-point window).
+**AE Chart / AE 走势图** — Bind a specific item or fluid from the AE network to visualize its stock and change rate trends over time. Dual Y-axis display (left = stock blue, right = change rate orange), supports 8 time windows (5m/1h/8h/24h/7d/1M/3M/1Y) sharing the same natural-ratio inflow chain as the EU Chart. Right-click the panel with an item/fluid in hand to bind. Brief area is **centered & scalable** (reusing `briefRatio`), showing current stock, realtime change rate, and average change rate (first-last delta method over the 61-point window).
 
-AE 走势图，绑定 AE 网络中的特定物品或流体，可视化其存量与变化率趋势。双 Y 轴显示（左=存量蓝、右=变化率橙），支持 4 时间窗口（5m/1h/8h/24h）。手持物品/流体右键信息屏即可绑定。简报区显示当前存量、实时变化速率、平均变化速率（基于 61 点首尾差值法）。
+AE 走势图，绑定 AE 网络中的特定物品或流体，可视化其存量与变化率趋势。双 Y 轴显示（左=存量蓝、右=变化率橙），支持 8 时间窗口（5m/1h/8h/24h/7d/1M/3M/1Y），与 EU 走势图共用相同的自然比例流入链。手持物品/流体右键信息屏即可绑定。简报区**居中显示且可缩放**（复用 `briefRatio`），显示当前存量、实时变化速率、平均变化速率（基于 61 点首尾差值法）。
 
 <!-- AE 走势图截图位置 / AE Chart screenshot placeholder -->
 <p align="center"><img src="images/Network Info Panel_AE1.png" width="450"><br><em>AE 走势图 / AE Chart</em></p>
 
 - **Dual Y-Axis / 双 Y 轴**: Left axis = stock (blue), right axis = change rate (orange, consistent with wireless EU network EU/t line color)
+- **Centered Brief / 居中简报**: v1.5.17 起简报文字居中绘制，GUI 的 `+/-` 按钮复用 `briefRatio` 控制字号（与 EU 走势图一致），点击时长标签按钮切换 8 时间窗口
 - **Brief Area / 简报区**: Current stock + realtime change rate + average change rate (61-point first-last delta)
 - **Configurable / 可配置**: Y-axis min/max, line thickness, spline smoothing, background color, line color, line visibility toggles
 

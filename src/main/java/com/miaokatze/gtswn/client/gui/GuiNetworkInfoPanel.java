@@ -386,16 +386,19 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             // 一键清除全部物品+流体监控
             GTSWNPacketHandler.NETWORK
                 .sendToServer(new PacketUpdateAETabState(panel.xCoord, panel.yCoord, panel.zCoord, (byte) 6, 0, null));
-        } else if (button.id == AE_WINDOW_LABEL_BUTTON || button.id == AE_MONITOR_FONT_SIZE_LABEL
-            || button.id == AE_MONITOR_ICON_SIZE_LABEL) {
-                // 时长标签、字号标签、图标大小标签仅作显示，无动作
-                return;
-            } else if (button.id >= AE_MONITOR_FONT_SIZE_MINUS && button.id <= AE_MONITOR_ICON_SIZE_PLUS) {
-                // AE 实时监控配置按钮（字号、加粗、呈现方式、图标大小）
-                GTSWNPacketHandler.NETWORK.sendToServer(
-                    new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
-            } else if (button.id == 20 || button.id == 21 || button.id == 22 || button.id == 25 || button.id == 26) {
-                // AE 走势图开关与时长 +/- 直接走通用 action 包
+        } else if (button.id == AE_MONITOR_FONT_SIZE_LABEL || button.id == AE_MONITOR_ICON_SIZE_LABEL) {
+            // 字号标签、图标大小标签仅作显示，无动作
+            return;
+        } else if (button.id >= AE_MONITOR_FONT_SIZE_MINUS && button.id <= AE_MONITOR_ICON_SIZE_PLUS) {
+            // AE 实时监控配置按钮（字号、加粗、呈现方式、图标大小）
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
+        } else if (button.id == 20 || button.id == 21
+            || button.id == 22
+            || button.id == 24
+            || button.id == 25
+            || button.id == 26) {
+                // AE 走势图开关、检测时长标签（切换窗口）与字号 +/- 直接走通用 action 包
                 GTSWNPacketHandler.NETWORK.sendToServer(
                     new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
             } else {
@@ -863,6 +866,18 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 break;
             case 3:
                 suffix = tr("gtswn.network_info.gui.ae.window.24h");
+                break;
+            case 4:
+                suffix = tr("gtswn.network_info.gui.ae.window.7d");
+                break;
+            case 5:
+                suffix = tr("gtswn.network_info.gui.ae.window.1M");
+                break;
+            case 6:
+                suffix = tr("gtswn.network_info.gui.ae.window.3M");
+                break;
+            case 7:
+                suffix = tr("gtswn.network_info.gui.ae.window.1Y");
                 break;
             case 0:
             default:

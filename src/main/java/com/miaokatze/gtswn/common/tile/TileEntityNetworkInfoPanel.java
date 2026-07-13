@@ -75,7 +75,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private int trackingWindow = NetworkInfoDataSet.WINDOW_5_MIN;
     private int briefRatio = 28;
     // 显示模式：0=常规计数，1=科学计数，2=千位计数 K/M/G/T/P（EU 与 EU/t 均跟随此模式）
-    private int displayMode = 0;
+    // 默认 1=科学计数，符合大数值场景的常见偏好
+    private int displayMode = 1;
     private String energyAxisMin = "";
     private String energyAxisMax = "";
     private String eutAxisMin = "";
@@ -125,17 +126,21 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** 标记是否需要从 NetworkInfoDataStore 刷新一次缓存（重载/放置后） */
     private boolean needsDataRefresh = true;
 
-    /** 是否已注册到调度器（防止重复注册） */
-    private boolean registeredWithScheduler = false;
-
     /** 上次已知采样 tick（轮询时检测新数据用） */
     private long lastKnownSampleTick = -1L;
 
-    /** 调度器单例（CommonProxy.init 时注入） */
+    /**
+     * 调度器单例（CommonProxy.init 时注入）。
+     * <p>
+     * v1.5.17 起调度器自驱（请求驱动 + 5 分钟超时），panel 不再直接引用此字段，
+     * 保留仅为 CommonProxy 兼容（CommonProxy.init 仍调用 setMonitorScheduler 注入）。
+     */
     private static NetworkInfoMonitorScheduler monitorScheduler;
 
     /**
-     * 注入调度器实例（由 CommonProxy.init 调用）
+     * 注入调度器实例（由 CommonProxy.init 调用）。
+     * <p>
+     * v1.5.17 起 panel 不再直接调用调度器的 register/unregister，此方法仅为兼容 CommonProxy 保留。
      */
     public static void setMonitorScheduler(NetworkInfoMonitorScheduler scheduler) {
         monitorScheduler = scheduler;
@@ -199,10 +204,24 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 screenInitialized = true;
             }
 
-            // ===== EU 监控调度器注册（首次执行且 ownerUUID 已绑定时） =====
-            if (ownerUUID != null && !registeredWithScheduler && monitorScheduler != null) {
-                monitorScheduler.register(ownerUUID.toString());
-                registeredWithScheduler = true;
+            // ===== 获取 overworld tick（供 lastRequestTick 与轮询逻辑共用） =====
+            // 调度器使用 overworld tick 作为采样基准，panel 必须用同一基准更新 lastRequestTick
+            MinecraftServer server = MinecraftServer.getServer();
+            long overworldTick = -1L;
+            if (server != null) {
+                World overworld = server.worldServerForDimension(0);
+                if (overworld != null) {
+                    overworldTick = overworld.getTotalWorldTime();
+                }
+            }
+
+            // ===== 更新请求 tick（调度器据此判断是否活跃采样） =====
+            // 信息屏每次 updateEntity 都更新 lastRequestTick，调度器仅对 5 分钟内有请求的 dataSet 采样
+            if (ownerUUID != null && overworldTick >= 0L) {
+                NetworkInfoDataSet dataSet = getOwnerDataSet();
+                if (dataSet != null) {
+                    dataSet.updateRequestTick(overworldTick);
+                }
             }
 
             // ===== 冷启动数据刷新（重进存档/放置方块后执行一次） =====
@@ -266,11 +285,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     @Override
     public void invalidate() {
-        // 注销调度器引用计数
-        if (registeredWithScheduler && ownerUUID != null && monitorScheduler != null) {
-            monitorScheduler.unregister(ownerUUID.toString());
-            registeredWithScheduler = false;
-        }
         super.invalidate();
         if (gridProxy != null) {
             gridProxy.invalidate();
@@ -279,11 +293,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     @Override
     public void onChunkUnload() {
-        // 注销调度器引用计数（chunk 卸载时屏不再活跃）
-        if (registeredWithScheduler && ownerUUID != null && monitorScheduler != null) {
-            monitorScheduler.unregister(ownerUUID.toString());
-            registeredWithScheduler = false;
-        }
         super.onChunkUnload();
         // v1.5.15：防御性清理 stackWatcher，防止 chunk 卸载后 watcher 残留导致 AE 网络侧仍持有引用
         if (stackWatcher != null) {
@@ -859,8 +868,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     /**
-     * 获取该信息屏绑定的玩家 UUID（供调度器安全网清理使用）
-     * 
+     * 获取该信息屏绑定的玩家 UUID。
+     *
      * @return ownerUUID，未绑定返回 null
      */
     public UUID getOwnerUUID() {
@@ -1089,7 +1098,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     public void setAETrackingWindow(int window) {
-        this.aeTrackingWindow = clampInt(window, AEMonitorDataSet.WINDOW_5_MIN, AEMonitorDataSet.WINDOW_24_HOUR);
+        // v1.5.17：上限扩展到 WINDOW_1_YEAR（8 窗口）
+        this.aeTrackingWindow = clampInt(window, AEMonitorDataSet.WINDOW_5_MIN, AEMonitorDataSet.WINDOW_1_YEAR);
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
@@ -1114,11 +1124,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             String key = line.substring(0, index);
             String value = cleanText(line.substring(index + 1));
             if ("aeWindow".equals(key)) {
+                // v1.5.17：上限扩展到 WINDOW_1_YEAR（8 窗口）
                 aeTrackingWindow = clampInt(
                     value,
                     aeTrackingWindow,
                     AEMonitorDataSet.WINDOW_5_MIN,
-                    AEMonitorDataSet.WINDOW_24_HOUR);
+                    AEMonitorDataSet.WINDOW_1_YEAR);
             } else if ("aeBorder".equals(key)) {
                 aeChartBorderThickness = clampInt(value, aeChartBorderThickness, 1, 8);
             } else if ("aeBg".equals(key)) {
@@ -1185,13 +1196,19 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 // AE 走势图：变化率曲线开关
                 showAEChartRate = !showAEChartRate;
                 break;
+            case 24:
+                // AE 检测时长窗口：点击标签按钮循环到下一个窗口（与 EU 的 case 4 行为一致）
+                aeTrackingWindow = nextTrackingWindow(aeTrackingWindow);
+                // 立即推送新窗口数据给客户端，避免等待下次采样才刷新
+                sendAEMonitorDataToClients();
+                break;
             case 25:
-                // AE 时长窗口：循环到上一个窗口
-                aeTrackingWindow = prevTrackingWindow(aeTrackingWindow);
+                // AE 简报字号减小（复用 EU 的 briefRatio，与 case 5 行为一致）
+                briefRatio = Math.max(10, briefRatio - 5);
                 break;
             case 26:
-                // AE 时长窗口：循环到下一个窗口
-                aeTrackingWindow = nextTrackingWindow(aeTrackingWindow);
+                // AE 简报字号增大（复用 EU 的 briefRatio，与 case 6 行为一致）
+                briefRatio = Math.min(80, briefRatio + 5);
                 break;
             case 30:
                 // AE 实时监控：字号减小（最小 8）
@@ -1371,6 +1388,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 return "8h";
             case NetworkInfoDataSet.WINDOW_24_HOUR:
                 return "24h";
+            case NetworkInfoDataSet.WINDOW_7_DAY:
+                return "7d";
+            case NetworkInfoDataSet.WINDOW_1_MONTH:
+                return "1M";
+            case NetworkInfoDataSet.WINDOW_3_MONTH:
+                return "3M";
+            case NetworkInfoDataSet.WINDOW_1_YEAR:
+                return "1Y";
             case NetworkInfoDataSet.WINDOW_5_MIN:
             default:
                 return "5m";
@@ -1386,6 +1411,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             case NetworkInfoDataSet.WINDOW_8_HOUR:
                 return NetworkInfoDataSet.WINDOW_24_HOUR;
             case NetworkInfoDataSet.WINDOW_24_HOUR:
+                return NetworkInfoDataSet.WINDOW_7_DAY;
+            case NetworkInfoDataSet.WINDOW_7_DAY:
+                return NetworkInfoDataSet.WINDOW_1_MONTH;
+            case NetworkInfoDataSet.WINDOW_1_MONTH:
+                return NetworkInfoDataSet.WINDOW_3_MONTH;
+            case NetworkInfoDataSet.WINDOW_3_MONTH:
+                return NetworkInfoDataSet.WINDOW_1_YEAR;
+            case NetworkInfoDataSet.WINDOW_1_YEAR:
             default:
                 return NetworkInfoDataSet.WINDOW_5_MIN;
         }
@@ -1399,9 +1432,17 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 return NetworkInfoDataSet.WINDOW_1_HOUR;
             case NetworkInfoDataSet.WINDOW_24_HOUR:
                 return NetworkInfoDataSet.WINDOW_8_HOUR;
+            case NetworkInfoDataSet.WINDOW_7_DAY:
+                return NetworkInfoDataSet.WINDOW_24_HOUR;
+            case NetworkInfoDataSet.WINDOW_1_MONTH:
+                return NetworkInfoDataSet.WINDOW_7_DAY;
+            case NetworkInfoDataSet.WINDOW_3_MONTH:
+                return NetworkInfoDataSet.WINDOW_1_MONTH;
+            case NetworkInfoDataSet.WINDOW_1_YEAR:
+                return NetworkInfoDataSet.WINDOW_3_MONTH;
             case NetworkInfoDataSet.WINDOW_5_MIN:
             default:
-                return NetworkInfoDataSet.WINDOW_24_HOUR;
+                return NetworkInfoDataSet.WINDOW_1_YEAR;
         }
     }
 
@@ -1671,7 +1712,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0, 0, 2);
+        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 1, 0, 2);
         readChartConfig(tag);
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
@@ -1841,7 +1882,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
         trackingWindow = tag.getInteger("trackingWindow");
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0, 0, 2);
+        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 1, 0, 2);
         readChartConfig(tag);
         readAEChartConfig(tag);
         readAEMonitorConfig(tag);
@@ -1944,7 +1985,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             ? clampInt(
                 tag.getInteger("aeTrackingWindow"),
                 AEMonitorDataSet.WINDOW_5_MIN,
-                AEMonitorDataSet.WINDOW_24_HOUR)
+                AEMonitorDataSet.WINDOW_1_YEAR)
             : AEMonitorDataSet.WINDOW_5_MIN;
         aeChartBorderThickness = tag.hasKey("aeChartBorderThickness")
             ? clampInt(tag.getInteger("aeChartBorderThickness"), 1, 8)
