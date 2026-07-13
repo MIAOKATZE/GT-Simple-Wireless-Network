@@ -15,6 +15,8 @@ import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
+import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
@@ -24,6 +26,7 @@ import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
 
+import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
@@ -115,6 +118,16 @@ public class CommonProxy {
         GTSimpleWirelessNetwork.LOG.info(
             "[2/3] 创造模式物品栏初始化完成，当前包含 " + CreativeTabManager.getItemsToAdd()
                 .size() + " 个物品。");
+
+        // 注册无线 EU 监控调度器到 FMLCommonHandler 事件总线（server tick）
+        // 调度器在 ServerTickEvent END phase 每 100t 统一采样所有活跃玩家的 EU 数据
+        NetworkInfoMonitorScheduler scheduler = new NetworkInfoMonitorScheduler();
+        FMLCommonHandler.instance()
+            .bus()
+            .register(scheduler);
+        // 注入到 TileEntityNetworkInfoPanel 静态字段，供所有信息屏共享
+        TileEntityNetworkInfoPanel.setMonitorScheduler(scheduler);
+        GTSimpleWirelessNetwork.LOG.info("[2/3] 无线 EU 监控调度器已注册到事件总线。");
     }
 
     /**

@@ -20,6 +20,7 @@ import net.minecraft.nbt.NBTTagList;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.StatCollector;
@@ -33,9 +34,9 @@ import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
+import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
-import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
@@ -61,12 +62,8 @@ import appeng.me.helpers.IGridProxyable;
 import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
 import cpw.mods.fml.common.network.NetworkRegistry;
-import gregtech.common.misc.WirelessNetworkManager;
 
 public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxyable, IStackWatcherHost {
-
-    private static final long SAMPLE_INTERVAL_TICKS = 100L;
-    private static final long MAX_CONTINUOUS_GAP_TICKS = 200L;
 
     private UUID ownerUUID;
     private String ownerName = "";
@@ -110,11 +107,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private int aeMonitorRenderMode = 0; // 0=条目(list), 1=格子(grid)
     private int aeMonitorIconSize = 16; // 图标大小，范围 8~32
 
-    private long lastSampleTick = -1L;
     private BigInteger cachedEu = BigInteger.ZERO;
     private double cachedEut = 0.0D;
     private String cachedStatus = "No data";
-    private final EUDataSet eutDataSet = new EUDataSet();
     private final List<NetworkInfoSample> cachedSamples = new ArrayList<>();
     private NetworkScreen screen;
     private boolean screenInitialized = false;
@@ -129,6 +124,22 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private NBTTagCompound pendingProxyNBT = null;
     /** 标记是否需要从 NetworkInfoDataStore 刷新一次缓存（重载/放置后） */
     private boolean needsDataRefresh = true;
+
+    /** 是否已注册到调度器（防止重复注册） */
+    private boolean registeredWithScheduler = false;
+
+    /** 上次已知采样 tick（轮询时检测新数据用） */
+    private long lastKnownSampleTick = -1L;
+
+    /** 调度器单例（CommonProxy.init 时注入） */
+    private static NetworkInfoMonitorScheduler monitorScheduler;
+
+    /**
+     * 注入调度器实例（由 CommonProxy.init 调用）
+     */
+    public static void setMonitorScheduler(NetworkInfoMonitorScheduler scheduler) {
+        monitorScheduler = scheduler;
+    }
 
     // === AE 标签页相关字段 ===
 
@@ -187,31 +198,53 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 rebuildScreen();
                 screenInitialized = true;
             }
+
+            // ===== EU 监控调度器注册（首次执行且 ownerUUID 已绑定时） =====
+            if (ownerUUID != null && !registeredWithScheduler && monitorScheduler != null) {
+                monitorScheduler.register(ownerUUID.toString());
+                registeredWithScheduler = true;
+            }
+
+            // ===== 冷启动数据刷新（重进存档/放置方块后执行一次） =====
             if (needsDataRefresh && ownerUUID != null) {
+                needsDataRefresh = false;
+                // 从全局数据集拉取该玩家已有数据填入缓存
                 refreshCachedSamples();
-                // v1.5.15：清空 eutDataSet 强制冷启动。
-                // readPlacementData 恢复的 lastSampleTick 是旧会话的 world tick，
-                // 与当前 worldObj.getTotalWorldTime() 不在同一时间基准，
-                // 若不清空，sampleNetwork 会用旧 tick 做 gap 检测导致首帧 eut 异常。
-                eutDataSet.clear();
-                NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(worldObj)
-                    .getOrCreate(ownerUUID.toString());
-                NetworkInfoSample newest = dataSet.newest();
-                if (newest != null) {
-                    cachedEu = newest.eu;
-                    cachedEut = newest.eut;
+                NetworkInfoDataSet dataSet = getOwnerDataSet();
+                if (dataSet != null) {
+                    NetworkInfoSample newest = dataSet.newest();
+                    if (newest != null) {
+                        cachedEu = newest.eu;
+                        cachedEut = newest.eut;
+                        lastKnownSampleTick = newest.tick;
+                    }
+                    boolean cold = dataSet.isColdStarting();
+                    boolean longSilent = dataSet.isLongTermSilent();
+                    cachedStatus = formatStatus(cachedEut, cold, longSilent);
                 }
-                cachedStatus = formatStatus(cachedEut, eutDataSet.isEmpty() || eutDataSet.size() < 2, false);
-                // 重置 lastSampleTick：让重进存档后尽快触发一次采样，避免恢复旧 tick 导致采样被跳过
-                lastSampleTick = tick < SAMPLE_INTERVAL_TICKS ? -1L : tick - SAMPLE_INTERVAL_TICKS;
                 markDirty();
                 worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-                needsDataRefresh = false;
             }
-            if (ownerUUID != null && (lastSampleTick < 0L || tick - lastSampleTick >= SAMPLE_INTERVAL_TICKS)) {
-                sampleNetwork(tick);
-                lastSampleTick = tick;
+
+            // ===== 轮询全局数据集，检测新采样数据 =====
+            if (ownerUUID != null) {
+                NetworkInfoDataSet dataSet = getOwnerDataSet();
+                if (dataSet != null) {
+                    NetworkInfoSample newest = dataSet.newest();
+                    if (newest != null && newest.tick != lastKnownSampleTick) {
+                        cachedEu = newest.eu;
+                        cachedEut = newest.eut;
+                        boolean cold = dataSet.isColdStarting();
+                        boolean longSilent = dataSet.isLongTermSilent();
+                        cachedStatus = formatStatus(cachedEut, cold, longSilent);
+                        refreshCachedSamples(dataSet);
+                        lastKnownSampleTick = newest.tick;
+                        markDirty();
+                        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+                    }
+                }
             }
+
             // 服务端每 Config.aeSampleInterval ticks 执行一次 AE 采样并推送给客户端
             if (Config.aeChartEnabled
                 && (lastAESampleTick < 0L || tick - lastAESampleTick >= Config.aeSampleInterval)) {
@@ -233,6 +266,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     @Override
     public void invalidate() {
+        // 注销调度器引用计数
+        if (registeredWithScheduler && ownerUUID != null && monitorScheduler != null) {
+            monitorScheduler.unregister(ownerUUID.toString());
+            registeredWithScheduler = false;
+        }
         super.invalidate();
         if (gridProxy != null) {
             gridProxy.invalidate();
@@ -241,6 +279,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     @Override
     public void onChunkUnload() {
+        // 注销调度器引用计数（chunk 卸载时屏不再活跃）
+        if (registeredWithScheduler && ownerUUID != null && monitorScheduler != null) {
+            monitorScheduler.unregister(ownerUUID.toString());
+            registeredWithScheduler = false;
+        }
         super.onChunkUnload();
         // v1.5.15：防御性清理 stackWatcher，防止 chunk 卸载后 watcher 残留导致 AE 网络侧仍持有引用
         if (stackWatcher != null) {
@@ -815,12 +858,33 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
     }
 
+    /**
+     * 获取该信息屏绑定的玩家 UUID（供调度器安全网清理使用）
+     * 
+     * @return ownerUUID，未绑定返回 null
+     */
     public UUID getOwnerUUID() {
         return ownerUUID;
     }
 
     public String getOwnerName() {
         return ownerName;
+    }
+
+    /**
+     * 获取该信息屏所属玩家的全局数据集（统一使用 overworld 数据存储）
+     * 仅服务端调用，客户端返回 null
+     * 
+     * @return NetworkInfoDataSet 或 null
+     */
+    private NetworkInfoDataSet getOwnerDataSet() {
+        if (worldObj == null || worldObj.isRemote || ownerUUID == null) return null;
+        MinecraftServer server = MinecraftServer.getServer();
+        if (server == null) return null;
+        World overworld = server.worldServerForDimension(0);
+        if (overworld == null) return null;
+        return NetworkInfoDataStore.get(overworld)
+            .getOrCreate(ownerUUID.toString());
     }
 
     public BigInteger getCachedEu() {
@@ -1102,8 +1166,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             case 7:
                 // 切换显示模式：0->1->2->0（常规/科学/千位），影响 EU 与 EU/t 的格式化
                 displayMode = (displayMode + 1) % 3;
-                // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
-                cachedStatus = formatStatus(cachedEut, eutDataSet.size() < 2, false);
+            // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
+            {
+                NetworkInfoDataSet dataSet = getOwnerDataSet();
+                boolean cold = (dataSet == null) || dataSet.isColdStarting();
+                cachedStatus = formatStatus(cachedEut, cold, dataSet != null && dataSet.isLongTermSilent());
+            }
                 break;
             case 20:
                 // AE 走势图：简报显示开关
@@ -1192,9 +1260,19 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
 
+    /**
+     * 读取放置数据（从区块 NBT 或物品 NBT 恢复）
+     *
+     * <p>
+     * 本版本简化：
+     * <ul>
+     * <li>保留：OwnerUUID、OwnerName、lastAESampleTick、chartConfig</li>
+     * <li>删除：lastSampleTick、eutMeasurementHistory（已迁移到全局 NetworkInfoDataSet）</li>
+     * <li>旧 NBT 中的 lastSampleTick/eutMeasurementHistory key 被自然忽略</li>
+     * </ul>
+     */
     public void readPlacementData(NBTTagCompound tag) {
-        // 旧版本曾有 "DatasetId" 键（每屏独立数据集），现改为按 ownerUUID 共享数据集，
-        // 旧数据无法适配新机制 → 直接丢弃，不再读取
+        if (tag == null) return;
         if (tag.hasKey("OwnerUUID")) {
             try {
                 ownerUUID = UUID.fromString(tag.getString("OwnerUUID"));
@@ -1202,89 +1280,49 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 ownerUUID = null;
             }
         }
-        if (tag.hasKey("OwnerName")) {
-            ownerName = tag.getString("OwnerName");
-        }
-        if (tag.hasKey("lastSampleTick")) {
-            lastSampleTick = tag.getLong("lastSampleTick");
-        }
+        ownerName = tag.getString("OwnerName");
         if (tag.hasKey("lastAESampleTick")) {
             lastAESampleTick = tag.getLong("lastAESampleTick");
         }
-        eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
         readChartConfig(tag);
         needsDataRefresh = true;
     }
 
+    /**
+     * 写入区块 NBT 持久化数据（注意：此方法同时被 writeToNBT 区块持久化和 getDrops 物品掉落使用）
+     *
+     * <p>
+     * 本版本简化：
+     * <ul>
+     * <li>保留：OwnerUUID、OwnerName、lastAESampleTick、chartConfig（这些是区块 NBT 恢复必需的）</li>
+     * <li>删除：lastSampleTick、eutMeasurementHistory（已迁移到全局 NetworkInfoDataSet）</li>
+     * </ul>
+     */
     public void writePlacementData(NBTTagCompound tag) {
         if (ownerUUID != null) {
             tag.setString("OwnerUUID", ownerUUID.toString());
         }
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
-        tag.setLong("lastSampleTick", lastSampleTick);
         tag.setLong("lastAESampleTick", lastAESampleTick);
-        eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
         writeChartConfig(tag);
     }
 
-    private void sampleNetwork(long tick) {
-        if (ownerUUID == null) {
-            return;
-        }
-        NetworkInfoDataStore store = NetworkInfoDataStore.get(worldObj);
-        // 数据集 key 从 datasetId 改为 ownerUUID.toString()，同一玩家的所有信息屏共享同一份数据
-        NetworkInfoDataSet dataSet = store.getOrCreate(ownerUUID.toString());
-
-        // 全局采样锁：多屏共享时，距离上次采样 < 100 ticks 则跳过本屏采样
-        if (!dataSet.tryAcquireSampleLock(tick)) {
-            // 即使跳过采样，也要用数据集最新点反写 cachedEu/cachedEut，保证多屏显示一致
-            NetworkInfoSample newest = dataSet.newest();
-            if (newest != null) {
-                cachedEu = newest.eu;
-                cachedEut = newest.eut;
-            }
-            return;
-        }
-
-        BigInteger eu = WirelessNetworkManager.getUserEU(ownerUUID);
-        cachedEu = eu == null ? BigInteger.ZERO : eu;
-
-        // eutDataSet 仍每屏独立（实时 EU/t 显示用，不变）
-        boolean coldStarting = eutDataSet.isEmpty();
-        if (lastSampleTick > 0L && tick - lastSampleTick > MAX_CONTINUOUS_GAP_TICKS) {
-            eutDataSet.clear();
-            coldStarting = true;
-        }
-        eutDataSet.add(cachedEu, tick);
-        cachedEut = eutDataSet.calculateRecentEUT();
-
-        long nowMs = System.currentTimeMillis();
-        dataSet.addSample(cachedEu, tick, nowMs, cachedEut);
-        store.markDirty();
-
-        // 反写 newest() 确保多屏一致（用数据集实际存储的值，而非本屏局部计算值）
-        NetworkInfoSample newest = dataSet.newest();
-        if (newest != null) {
-            cachedEu = newest.eu;
-            cachedEut = newest.eut;
-        }
-
-        cachedStatus = formatStatus(cachedEut, coldStarting || eutDataSet.size() < 2, false);
-        lastSampleTick = tick; // 保留：用于本 TE 的 gap 检测
-        refreshCachedSamples(dataSet);
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-    }
-
+    /**
+     * 刷新本屏走势图缓存（从全局数据集查询当前 trackingWindow）
+     */
     private void refreshCachedSamples() {
         if (worldObj == null || worldObj.isRemote || ownerUUID == null) {
             return;
         }
-        refreshCachedSamples(
-            NetworkInfoDataStore.get(worldObj)
-                .getOrCreate(ownerUUID.toString()));
+        NetworkInfoDataSet dataSet = getOwnerDataSet();
+        if (dataSet != null) {
+            refreshCachedSamples(dataSet);
+        }
     }
 
+    /**
+     * 从指定数据集刷新本屏走势图缓存
+     */
     private void refreshCachedSamples(NetworkInfoDataSet dataSet) {
         cachedSamples.clear();
         cachedSamples.addAll(dataSet.query(trackingWindow));
@@ -1635,8 +1673,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 0, 0, 2);
         readChartConfig(tag);
-        lastSampleTick = tag.getLong("lastSampleTick");
-        eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
         if (tag.hasKey("screen")) {
             screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
         }
@@ -1692,8 +1728,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         tag.setInteger("briefRatio", briefRatio);
         tag.setInteger("displayMode", displayMode);
         writeChartConfig(tag);
-        tag.setLong("lastSampleTick", lastSampleTick);
-        eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
         if (screen != null) {
             tag.setTag("screen", screen.toNBT());
         }

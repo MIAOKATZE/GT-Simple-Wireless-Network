@@ -8,7 +8,6 @@ import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
-import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.IIcon;
@@ -84,15 +83,12 @@ public class BlockNetworkInfoPanel extends BlockContainer {
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile instanceof TileEntityNetworkInfoPanel) {
             TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
+            // 绑定放置者为 owner（无论物品是否有 NBT，都以放置者为准）
             if (placer instanceof EntityPlayer) {
                 EntityPlayer player = (EntityPlayer) placer;
                 panel.bindOwner(player.getUniqueID(), player.getCommandSenderName());
             }
-            if (stack != null && stack.hasTagCompound()) {
-                // 来自掉落物或复制：恢复放置数据（OwnerUUID、图表配置等）
-                // 旧版 PanelUUID 已不再使用，读取时会被忽略
-                panel.readPlacementData(stack.getTagCompound());
-            }
+            // 不再调用 readPlacementData（物品无 NBT，且数据归属应以放置者为准）
             panel.rebuildScreen();
         }
     }
@@ -176,14 +172,8 @@ public class BlockNetworkInfoPanel extends BlockContainer {
     @Override
     public ArrayList<ItemStack> getDrops(World world, int x, int y, int z, int metadata, int fortune) {
         ArrayList<ItemStack> drops = new ArrayList<>();
-        ItemStack stack = new ItemStack(this, 1, 0);
-        TileEntity tile = world.getTileEntity(x, y, z);
-        if (tile instanceof TileEntityNetworkInfoPanel) {
-            NBTTagCompound tag = new NBTTagCompound();
-            ((TileEntityNetworkInfoPanel) tile).writePlacementData(tag);
-            stack.setTagCompound(tag);
-        }
-        drops.add(stack);
+        // 破坏后掉落物无 NBT（数据保留在 WorldSavedData 中，方块仅作为"调用器"）
+        drops.add(new ItemStack(this, 1, metadata));
         return drops;
     }
 

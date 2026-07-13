@@ -5,6 +5,8 @@ import java.util.List;
 
 import net.minecraft.nbt.NBTTagCompound;
 
+import com.miaokatze.gtswn.common.util.EUDataSet;
+
 /**
  * 网络信息屏数据集（每玩家一份，4 窗口 × 61 点 FIFO）。
  * <p>
@@ -45,6 +47,14 @@ public class NetworkInfoDataSet {
     // 全局采样锁（用 world tick）：多屏共享时去重，距离上次采样 ≥ 100 ticks (5s) 才允许新采样
     private long lastSampleTick = -1L;
 
+    /**
+     * 局部 EU/t 计算数据集（per-player 共享，从 TileEntity 迁移至此）。
+     * <p>
+     * 用于记录原始 EU 采样值并计算瞬时 EU/t 斜率，替代原 TileEntityNetworkInfoPanel 中的局部 eutDataSet。
+     * 随 NetworkInfoDataSet 一起持久化到 overworld 的 NetworkInfoDataStore，实现多屏共享。
+     */
+    private final EUDataSet eutDataSet = new EUDataSet();
+
     // 最近一次采样的真实时间戳（System.currentTimeMillis，v1.5.15 新增）。
     // 与 lastSampleTick（world tick）不同：world tick 在每次会话重置为 0，无法跨会话比较；
     // 此字段使用真实时间，用于 cleanupStale 判断玩家是否长期未活跃，从而清理其数据集释放内存。
@@ -53,17 +63,24 @@ public class NetworkInfoDataSet {
     /**
      * 主入口：接收一个原始采样点（每 5s 一次），按流入计数链分发到各级窗口（均值录入）。
      * <p>
+     * v1.5.16 改造：eut 不再由调用方传入，改为内部通过 {@link EUDataSet} 计算瞬时斜率。
+     * 调用流程：先 eutDataSet.add(eu, tick) 记录原始值，再 calculateRecentEUT() 取最近两点斜率作为瞬时 EU/t。
+     * <p>
      * 计数链规则（均值录入）：5m 集始终以瞬时值录入；每 12 个 5m 点触发 1h 录入——eut 取最近 12 个 5m 点均值，
      * eu/timeMs/tick 用当前触发点瞬时值；同理 1h→8h 每 8 个（eut 取最近 8 个 1h 点均值）、8h→24h 每 3 个（eut 取最近 3 个 8h 点均值）。
+     * 多屏共享时去重：同一玩家的所有信息屏共享同一份数据集，调度器保证每 100t 只采样一次。
      *
      * @param eu     当前 EU 总量
      * @param tick   世界 tick
      * @param timeMs 真实时间戳（毫秒）
-     * @param eut    当前 EU/t 斜率
      */
-    public void addSample(BigInteger eu, long tick, long timeMs, double eut) {
+    public void addSample(BigInteger eu, long tick, long timeMs) {
         // v1.5.15：记录真实时间戳，供 cleanupStale 跨会话判断玩家活跃度
         this.lastSampleTimeMs = System.currentTimeMillis();
+        // v1.5.16：先记录到 EU/t 数据集（per-player 共享，从 TileEntity 迁移至此）
+        eutDataSet.add(eu, tick);
+        // 计算瞬时 EU/t（基于最近两个采样点的斜率）
+        double eut = eutDataSet.calculateRecentEUT();
         // 5m 集始终以瞬时值录入（行为不变）
         NetworkInfoSample sample = new NetworkInfoSample(timeMs, tick, eu, eut);
         series5m.add(sample);
@@ -186,6 +203,50 @@ public class NetworkInfoDataSet {
     }
 
     /**
+     * 是否处于冷启动状态（数据点不足 2 个，无法计算斜率）。
+     * <p>
+     * 用于 TileEntity 格式化状态显示："冷启动中"。
+     *
+     * @return true 表示数据点 < 2
+     */
+    public boolean isColdStarting() {
+        return eutDataSet.size() < 2;
+    }
+
+    /**
+     * 是否处于长期静默状态（静默模式持续 ≥ 300s = 6000 ticks）。
+     * <p>
+     * 长期静默时数据集只保留首末两个数据点，显示标签切换为"长期静默"。
+     *
+     * @return true 表示长期静默
+     */
+    public boolean isLongTermSilent() {
+        return eutDataSet.isLongTermSilent();
+    }
+
+    /**
+     * 是否处于静默状态（≥2 点且所有 value 相同）。
+     * <p>
+     * 静默 = 所有采样点的 EU 值完全一致，但尚未达到长期静默阈值。
+     *
+     * @return true 表示静默（size ≥ 2 且值全部相同）
+     */
+    public boolean isSilent() {
+        return eutDataSet.size() >= 2 && eutDataSet.isAllSameValue();
+    }
+
+    /**
+     * 获取最近瞬时 EU/t（基于最近两个采样点的斜率）。
+     * <p>
+     * 用于 TileEntity 显示当前 EU/t 数值。
+     *
+     * @return 瞬时 EU/t；数据点 < 2 时返回 0.0
+     */
+    public double getRecentEUT() {
+        return eutDataSet.calculateRecentEUT();
+    }
+
+    /**
      * 查询指定窗口的当前样本数。
      */
     public int size(int window) {
@@ -214,6 +275,8 @@ public class NetworkInfoDataSet {
         counter1h = 0;
         counter8h = 0;
         lastSampleTick = -1L;
+        // v1.5.16：清空 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）
+        eutDataSet.clear();
     }
 
     /**
@@ -248,6 +311,9 @@ public class NetworkInfoDataSet {
         tag.setLong("lastSampleTick", lastSampleTick);
         // v1.5.15：持久化真实时间戳，跨会话判断玩家活跃度
         tag.setLong("lastSampleTimeMs", lastSampleTimeMs);
+        // v1.5.16：持久化 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）
+        // saveToNBT 向 tag 写入子键 "eutMeasurementHistory"，不会覆盖其他字段
+        eutDataSet.saveToNBT(tag, "eutMeasurementHistory");
         return tag;
     }
 
@@ -282,6 +348,11 @@ public class NetworkInfoDataSet {
         lastSampleTick = tag.getLong("lastSampleTick");
         // v1.5.15：读取真实时间戳；旧存档无此 key 时返回 0（视为远古数据，将被 cleanupStale 清理）
         lastSampleTimeMs = tag.getLong("lastSampleTimeMs");
+        // v1.5.16：读取 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）
+        // 旧存档无此 key 时跳过，eutDataSet 保持空（冷启动）
+        if (tag.hasKey("eutMeasurementHistory")) {
+            eutDataSet.loadFromNBT(tag, "eutMeasurementHistory");
+        }
         // 旧格式（"samples" 键）忽略，数据集保持空（旧数据丢弃，不迁移）
     }
 }
