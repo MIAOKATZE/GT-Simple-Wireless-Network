@@ -84,20 +84,10 @@ public class CommonProxy {
             }
         };
 
-        // 将注册任务添加到 GregTech 的 sAfterGTLoad 队列
-        try {
-            if (GregTechAPI.sAfterGTLoad == null) {
-                GTSimpleWirelessNetwork.LOG.warn("警告: GregTechAPI.sAfterGTLoad 为空，无法添加注册任务。");
-            } else {
-                int before = GregTechAPI.sAfterGTLoad.size();
-                GregTechAPI.sAfterGTLoad.add(registerRunnable);
-                int after = GregTechAPI.sAfterGTLoad.size();
-                GTSimpleWirelessNetwork.LOG
-                    .info("[1/3] 已将机器注册任务加入 GregTech 加载队列 (队列大小: " + before + " -> " + after + ")");
-            }
-        } catch (Throwable t) {
-            GTSimpleWirelessNetwork.LOG.error("无法将注册任务添加到 GregTech 队列", t);
-        }
+        // GregTechAPI.sAfterGTLoad 在 GT PreInit 阶段已初始化，此处不会为 null
+        // GTSWN 作为 required-after:gregtech 的模组，PreInit 必然在 GT PreInit 之后执行
+        GregTechAPI.sAfterGTLoad.add(registerRunnable);
+        GTSimpleWirelessNetwork.LOG.info("[1/3] 已将机器注册任务加入 GregTech 加载队列。");
 
         // 注册网络包通道（便携监测终端 EU 同步：修复客户端恒显示 0EU 的 Bug）
         GTSWNPacketHandler.register();

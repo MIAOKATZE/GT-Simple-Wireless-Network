@@ -95,7 +95,8 @@ public class FormatUtil {
         // 分离整数部分和小数部分
         String[] parts = formatted.split("\\.");
         String integerPart = parts[0];
-        String decimalPart = parts.length > 1 ? parts[1] : "0".repeat(decimals);
+        // Java 8 兼容：构造指定长度的"0"字符串（替代 String.repeat，后者是 Java 11+ stdlib API）
+        String decimalPart = parts.length > 1 ? parts[1] : new String(new char[decimals]).replace('\0', '0');
 
         String finalResult = insertThousandSeparators(integerPart) + "." + decimalPart;
 

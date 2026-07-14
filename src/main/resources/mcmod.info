@@ -13,9 +13,9 @@
 		"logoFile": "",
 		"screenshots": [],
 		"parent": "",
-		"requiredMods": [],
-		"dependencies": ["gregtech"],
+		"requiredMods": ["gregtech", "appliedenergistics2"],
+		"dependencies": ["gregtech", "appliedenergistics2"],
 		"dependants": [],
-		"useDependencyInformation": true
+		"useDependencyInformation": false
 	}]
 }
