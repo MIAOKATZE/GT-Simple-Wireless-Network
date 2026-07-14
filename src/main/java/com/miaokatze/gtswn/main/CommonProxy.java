@@ -84,10 +84,12 @@ public class CommonProxy {
             }
         };
 
-        // GregTechAPI.sAfterGTLoad 在 GT PreInit 阶段已初始化，此处不会为 null
-        // GTSWN 作为 required-after:gregtech 的模组，PreInit 必然在 GT PreInit 之后执行
-        GregTechAPI.sAfterGTLoad.add(registerRunnable);
-        GTSimpleWirelessNetwork.LOG.info("[1/3] 已将机器注册任务加入 GregTech 加载队列。");
+        // 将机器注册任务加入 GregTechAPI.sAfterGTPreload 队列
+        // 由 GT5U 在其 PreInit 主体末尾（GTMod.java 行 342-344，紧接 LoaderMetaTileEntities.run 之后）代为触发
+        // 这是 GT5U 生态中第三方 mod 注册机器的推荐做法（参考 GigaGramFab.java 行 65-98）
+        // 前置条件：@Mod 注解声明 required-before:gregtech，确保本 mod 的 preInit 在 GT preInit 之前执行
+        GregTechAPI.sAfterGTPreload.add(registerRunnable);
+        GTSimpleWirelessNetwork.LOG.info("[1/3] 已将机器注册任务加入 GregTech sAfterGTPreload 队列。");
 
         // 注册网络包通道（便携监测终端 EU 同步：修复客户端恒显示 0EU 的 Bug）
         GTSWNPacketHandler.register();

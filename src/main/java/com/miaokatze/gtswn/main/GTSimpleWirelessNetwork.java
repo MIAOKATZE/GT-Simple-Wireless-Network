@@ -23,7 +23,10 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
     version = Tags.VERSION,
     name = "GTSimpleWirelessNetwork",
     acceptedMinecraftVersions = "[1.7.10]",
-    dependencies = "required-after:gregtech;required-after:appliedenergistics2;")
+    // required-before:gregtech 确保 GTSWN 的 preInit 在 GT preInit 之前执行
+    // 这是 sAfterGTPreload 方案的前置条件：本 mod 需在 GT PreInit 末尾遍历 sAfterGTPreload 队列之前完成 Runnable 添加
+    // 参考 GigaGramFab.java 行 45 的 required-before:gregtech 模式
+    dependencies = "required-before:gregtech;required-after:appliedenergistics2;")
 public class GTSimpleWirelessNetwork {
 
     // 模组唯一标识符 (Mod ID)
