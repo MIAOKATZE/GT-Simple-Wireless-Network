@@ -104,6 +104,7 @@ gtswn.chat.tap.capacity=§7 电容:
 gtswn.chat.tap.voltage=§7 电压: 
 gtswn.chat.tap.amperage=§7 电流: 
 gtswn.chat.tap.cannot_place_cover=§c[链路终端] 无法在此面放置覆盖板！
+gtswn.chat.tap.cover_exists=§c[链路终端] 该面已存在覆盖板，请先移除！
 gtswn.chat.tap.attaching=§e[链路终端] 正在附着
 gtswn.chat.tap.mode_power=§e动力
 gtswn.chat.tap.mode_energy=§a能源

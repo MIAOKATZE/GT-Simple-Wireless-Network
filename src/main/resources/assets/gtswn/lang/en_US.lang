@@ -104,6 +104,7 @@ gtswn.chat.tap.capacity=§7 Capacity:
 gtswn.chat.tap.voltage=§7 Voltage: 
 gtswn.chat.tap.amperage=§7 Amperage: 
 gtswn.chat.tap.cannot_place_cover=§c[Link Terminal] Cannot place cover on this side!
+gtswn.chat.tap.cover_exists=§c[Link Terminal] A cover already exists on this side! Remove it first.
 gtswn.chat.tap.attaching=§e[Link Terminal] Attaching 
 gtswn.chat.tap.mode_power=§ePower
 gtswn.chat.tap.mode_energy=§aEnergy

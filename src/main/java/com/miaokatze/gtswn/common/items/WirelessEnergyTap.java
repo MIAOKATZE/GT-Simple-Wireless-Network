@@ -229,6 +229,15 @@ public class WirelessEnergyTap extends Item {
 
             // === 如果没有我们的覆盖板，继续检测参数，然后附着 ===
 
+            // === 目标面已有外来覆盖板时终止附着，防止挤掉原有覆盖板 ===
+            // 本 mod 覆盖板已在上方分支被移除，能走到这里说明 targetSide 上的覆盖板必为外来覆盖板
+            // 必须检测 targetSide（九宫格换算的预计附加面）而非原始 side，与下方 placeCover 严格同面
+            if (coverable.hasCoverAtSide(targetSide)) {
+                player.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cover_exists")));
+                return;
+            }
+
             // 1. 检查是否有电容
             long capacity = container.getEUCapacity();
             if (capacity <= 0) {
