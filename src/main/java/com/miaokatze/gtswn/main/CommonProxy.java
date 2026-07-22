@@ -8,6 +8,7 @@ import java.io.File;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
+import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.common.command.CommandGTSWN;
@@ -16,12 +17,14 @@ import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
+import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
+import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
@@ -120,6 +123,17 @@ public class CommonProxy {
         // 注入到 TileEntityNetworkInfoPanel 静态字段，供所有信息屏共享
         TileEntityNetworkInfoPanel.setMonitorScheduler(scheduler);
         GTSimpleWirelessNetwork.LOG.info("[2/3] 无线 EU 监控调度器已注册到事件总线。");
+
+        // 注册量子化控制器事件处理器（T2）：
+        // - Forge 事件总线：右键拦截 / 挖掘减速 / 邻接通知 / 破坏出册
+        // - FML 事件总线：ServerTickEvent 每秒巡检（连接过滤兜底 + D8 自动合并）
+        // 同一实例注册两条总线，内部冷却表/巡检 tick 计数状态共享
+        QuantumControllerEventHandler quantumHandler = new QuantumControllerEventHandler();
+        MinecraftForge.EVENT_BUS.register(quantumHandler);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(quantumHandler);
+        GTSimpleWirelessNetwork.LOG.info("[2/3] 量子化控制器事件处理器已注册到双事件总线。");
     }
 
     /**
@@ -240,6 +254,23 @@ public class CommonProxy {
      * @param msg AE 监控数据同步包
      */
     public void handleSyncAEMonitorData(PacketSyncAEMonitorData msg) {
+        // 服务端空实现：此包只发往客户端
+    }
+
+    /**
+     * 处理服务端→客户端 量子终端数据同步包（客户端专用逻辑）。
+     * <p>
+     * 服务端空实现：此包只发往客户端，服务端收到也不会调用本方法。
+     * 客户端逻辑由 {@link ClientProxy#handleSyncQuantumTerminalData} 重写。
+     * <p>
+     * 【为什么这样设计】与 {@link #handleSyncAEMonitorData} 相同的 hotfix v1.5.14 模式：
+     * 包 Handler 方法体不得引用 @SideOnly(Side.CLIENT) 客户端类（如 Minecraft/GuiScreen），
+     * 否则 registerMessage 时类加载解析会在服务端被 SideTransformer 拒绝崩服。
+     * 统一经 @SidedProxy 委托，Handler 只引用双端类型。
+     *
+     * @param msg 量子终端数据同步包
+     */
+    public void handleSyncQuantumTerminalData(PacketSyncQuantumTerminalData msg) {
         // 服务端空实现：此包只发往客户端
     }
 

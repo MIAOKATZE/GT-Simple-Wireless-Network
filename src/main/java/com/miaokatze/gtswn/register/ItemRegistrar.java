@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.register;
 
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dynamo_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quantum_Terminal;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
@@ -22,6 +23,7 @@ public class ItemRegistrar {
         BlockRegistrar.init();
         registerTestCoin();
         registerPortableWirelessNetworkMonitor();
+        registerMENetworkQuantumTerminal();
         registerWirelessEnergyTap();
         registerGTswnCoverEnergyWireless();
         registerGTswnCoverDynamoWireless();
@@ -41,6 +43,13 @@ public class ItemRegistrar {
     private static void registerPortableWirelessNetworkMonitor() {
         Portable_Wireless_Network_Monitor
             .setAndRegister(com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor::new);
+    }
+
+    /**
+     * 注册 ME 网络量子终端（T1 存根：仅注册，手势逻辑 T3 实现）
+     */
+    private static void registerMENetworkQuantumTerminal() {
+        ME_Network_Quantum_Terminal.setAndRegister(com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal::new);
     }
 
     /**

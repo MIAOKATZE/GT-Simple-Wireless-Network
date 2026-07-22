@@ -1,6 +1,7 @@
 # Items
 item.PortableWirelessNetworkMonitor_GTswn.name=便携式无线网络监测终端
 item.TestCoin_GTswn.name=测试硬币
+item.MENetworkQuantumTerminal_GTswn.name=ME网络量子终端
 
 # Machines
 gtswn.machine.wireless_monitor=无线能量监视器
@@ -142,6 +143,7 @@ gtswn.chat.cover.next_upload=§7 距下次上传:
 # Network Info Panel
 tile.NetworkInfoPanel_GTswn.name=网络信息屏
 tile.NetworkInfoPanelExtender_GTswn.name=网络信息拓展屏
+tile.NetworkQuantumNode_GTswn.name=ME网络量子节点
 gtswn.network_info.owner=拥有者：%s
 gtswn.network_info.energy=能量：%s EU
 gtswn.network_info.unknown=未知
@@ -274,3 +276,28 @@ gtswn.network_info.gui.ae.monitor.render_mode.grid=格子
 gtswn.network_info.gui.ae.monitor.icon_size=图标大小
 gtswn.network_info.gui.ae.monitor.header_realtime=实时变化量
 gtswn.network_info.gui.ae.monitor.header_average=平均变化量
+
+# ME Network Quantum Terminal (T2 事件拦截 / T3 终端手势)
+gtswn.tooltip.quantum_terminal.unbound=§7未绑定网络——右击运行中的ME控制器进行量子化绑定
+gtswn.tooltip.quantum_terminal.bound=§b已绑定: §f%s [%d, %d, %d]
+gtswn.tooltip.quantum_terminal.usage=§e右击方块放置量子节点，Shift+右击打开界面
+gtswn.chat.quantum.quantized=§a[量子终端] 控制器结构已量子化（%d 块），网络总频道: %d
+gtswn.chat.quantum.bound=§b[量子终端] 已绑定到网络 [%d, %d, %d]
+gtswn.chat.quantum.dequantized=§e[量子终端] 已取消量子化
+gtswn.chat.quantum.not_active=§c[量子终端] 目标不是正常运行的ME控制器
+gtswn.chat.quantum.no_permission=§c[量子终端] 没有该网络的权限
+gtswn.chat.quantum.need_bind=§c[量子终端] 请先绑定一个量子化控制器
+gtswn.chat.quantum.node_placed=§a[量子终端] 量子节点已接入网络
+gtswn.chat.quantum.node_offline=§c[量子节点] 锚点控制器不可达，节点离线
+gtswn.chat.quantum.node_online=§a[量子节点] 节点在线，已桥接至锚点网络（32 频道容量）
+gtswn.chat.quantum.node_offline_crossdim=§c[量子节点] 暂不支持跨维度桥接，节点离线
+gtswn.chat.quantum.blocked=§c[量子化] 该控制器已量子化，仅能量交互设备可用
+gtswn.chat.quantum.merged=§a[量子化] %d 块新控制器已自动并入量子化结构
+
+# ME Network Quantum Terminal GUI (T6 终端界面)
+gtswn.gui.quantum.title=ME网络量子终端
+gtswn.gui.quantum.channels=§b频道: §f%d / %d
+gtswn.gui.quantum.power.usage=§b能量消耗: §f%.1f AE/t §7(注入 %.1f)
+gtswn.gui.quantum.power.stored=§b网络储能: §f%.0f / %.0f AE
+gtswn.gui.quantum.devices=§b已接入设备 (%d):
+gtswn.gui.quantum.offline=§c网络离线（锚点不可达）

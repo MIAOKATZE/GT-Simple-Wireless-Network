@@ -1,6 +1,7 @@
 # Items
 item.PortableWirelessNetworkMonitor_GTswn.name=Portable Wireless Network Monitor
 item.TestCoin_GTswn.name=Test Coin
+item.MENetworkQuantumTerminal_GTswn.name=ME Network Quantum Terminal
 
 # Machines
 gtswn.machine.wireless_monitor=Wireless Energy Monitor
@@ -142,6 +143,7 @@ gtswn.chat.cover.next_upload=§7 Next upload in:
 # Network Info Panel
 tile.NetworkInfoPanel_GTswn.name=Network Info Panel
 tile.NetworkInfoPanelExtender_GTswn.name=Network Info Extender Panel
+tile.NetworkQuantumNode_GTswn.name=ME Network Quantum Node
 gtswn.network_info.owner=Owner: %s
 gtswn.network_info.energy=Energy: %s EU
 gtswn.network_info.unknown=Unknown
@@ -274,3 +276,28 @@ gtswn.network_info.gui.ae.monitor.render_mode.grid=Grid
 gtswn.network_info.gui.ae.monitor.icon_size=Icon
 gtswn.network_info.gui.ae.monitor.header_realtime=Realtime
 gtswn.network_info.gui.ae.monitor.header_average=Average
+
+# ME Network Quantum Terminal (T2 event interception / T3 terminal gestures)
+gtswn.tooltip.quantum_terminal.unbound=§7Unbound — right-click an active ME Controller to quantize & bind
+gtswn.tooltip.quantum_terminal.bound=§bBound: §f%s [%d, %d, %d]
+gtswn.tooltip.quantum_terminal.usage=§eRClick to place Quantum Node, Shift+RClick for GUI
+gtswn.chat.quantum.quantized=§a[Quantum Terminal] Controller structure quantized (%d blocks), total channels: %d
+gtswn.chat.quantum.bound=§b[Quantum Terminal] Bound to network [%d, %d, %d]
+gtswn.chat.quantum.dequantized=§e[Quantum Terminal] De-quantized
+gtswn.chat.quantum.not_active=§c[Quantum Terminal] Target is not an active ME Controller
+gtswn.chat.quantum.no_permission=§c[Quantum Terminal] No permission for this network
+gtswn.chat.quantum.need_bind=§c[Quantum Terminal] Bind a quantized controller first
+gtswn.chat.quantum.node_placed=§a[Quantum Terminal] Quantum node linked
+gtswn.chat.quantum.node_offline=§c[Quantum Node] Anchor unreachable, node offline
+gtswn.chat.quantum.node_online=§a[Quantum Node] Node online, bridged to anchor network (32 channel capacity)
+gtswn.chat.quantum.node_offline_crossdim=§c[Quantum Node] Cross-dimension bridging not supported, node offline
+gtswn.chat.quantum.blocked=§c[Quantized] Controller is quantized; energy-only devices allowed
+gtswn.chat.quantum.merged=§a[Quantized] %d new controller block(s) auto-merged into the quantized structure
+
+# ME Network Quantum Terminal GUI (T6 terminal interface)
+gtswn.gui.quantum.title=ME Network Quantum Terminal
+gtswn.gui.quantum.channels=§bChannels: §f%d / %d
+gtswn.gui.quantum.power.usage=§bPower drain: §f%.1f AE/t §7(in %.1f)
+gtswn.gui.quantum.power.stored=§bStored: §f%.0f / %.0f AE
+gtswn.gui.quantum.devices=§bAttached devices (%d):
+gtswn.gui.quantum.offline=§cNetwork offline (anchor unreachable)

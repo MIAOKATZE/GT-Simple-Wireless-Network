@@ -18,6 +18,8 @@ import cpw.mods.fml.relauncher.Side;
  * <li>2 = {@link PacketUpdateNetworkInfoPanelConfig}（C→S 信息屏配置）</li>
  * <li>3 = {@link PacketUpdateAETabState}（C→S AE 标签页+监视列表）</li>
  * <li>4 = {@link PacketSyncAEMonitorData}（S→C AE 监控数据同步）</li>
+ * <li>5 = {@link PacketRequestQuantumTerminalData}（C→S 请求量子终端数据）</li>
+ * <li>6 = {@link PacketSyncQuantumTerminalData}（S→C 量子终端数据同步）</li>
  * </ul>
  */
 public class GTSWNPacketHandler {
@@ -44,5 +46,17 @@ public class GTSWNPacketHandler {
         NETWORK.registerMessage(PacketUpdateAETabState.Handler.class, PacketUpdateAETabState.class, 3, Side.SERVER);
         // 4: 服务端→客户端 AE 监控数据同步
         NETWORK.registerMessage(PacketSyncAEMonitorData.Handler.class, PacketSyncAEMonitorData.class, 4, Side.CLIENT);
+        // 5: 客户端→服务端 请求量子终端数据（无字段，服务端取玩家手持校验）
+        NETWORK.registerMessage(
+            PacketRequestQuantumTerminalData.Handler.class,
+            PacketRequestQuantumTerminalData.class,
+            5,
+            Side.SERVER);
+        // 6: 服务端→客户端 量子终端数据同步
+        NETWORK.registerMessage(
+            PacketSyncQuantumTerminalData.Handler.class,
+            PacketSyncQuantumTerminalData.class,
+            6,
+            Side.CLIENT);
     }
 }

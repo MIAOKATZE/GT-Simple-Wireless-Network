@@ -8,10 +8,13 @@ import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
 import com.miaokatze.gtswn.client.gui.GuiNetworkInfoPanel;
+import com.miaokatze.gtswn.client.gui.GuiQuantumTerminal;
 import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
+import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 
 import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
@@ -101,6 +104,26 @@ public class ClientProxy extends CommonProxy {
             });
     }
 
+    /**
+     * 客户端处理量子终端数据同步包：切主线程后写入 GUI 静态缓存。
+     * <p>
+     * 【线程安全】与 {@link #handleSyncAEMonitorData} 同理：onMessage 运行在 Netty 网络线程，
+     * 而 GuiQuantumTerminal 在客户端主线程读取静态缓存，故用
+     * {@link Minecraft#func_152344_a(Runnable)} 把写操作调度到主线程。
+     * <p>
+     * 【类加载安全】本方法在 ClientProxy 中，仅客户端加载，可安全引用 Minecraft 与 GUI 类。
+     */
+    @Override
+    public void handleSyncQuantumTerminalData(PacketSyncQuantumTerminalData msg) {
+        final QuantumNetworkData data = msg.getData();
+        if (data == null) {
+            return;
+        }
+        // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
+        Minecraft.getMinecraft()
+            .func_152344_a(() -> GuiQuantumTerminal.receiveData(data));
+    }
+
     @Override
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
         if (id == GTSimpleWirelessNetwork.GUI_NETWORK_INFO_PANEL) {
@@ -108,6 +131,10 @@ public class ClientProxy extends CommonProxy {
             if (tile instanceof TileEntityNetworkInfoPanel) {
                 return new GuiNetworkInfoPanel((TileEntityNetworkInfoPanel) tile);
             }
+        }
+        // ME 网络量子终端：手持物品 GUI，无 TileEntity 依赖，数据走包 5/6 轮询
+        if (id == GTSimpleWirelessNetwork.GUI_QUANTUM_TERMINAL) {
+            return new GuiQuantumTerminal();
         }
         return null;
     }

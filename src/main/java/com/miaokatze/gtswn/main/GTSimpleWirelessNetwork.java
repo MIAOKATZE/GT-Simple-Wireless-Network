@@ -32,6 +32,8 @@ public class GTSimpleWirelessNetwork {
     // 模组唯一标识符 (Mod ID)
     public static final String MODID = "gtswn";
     public static final int GUI_NETWORK_INFO_PANEL = 1;
+    /** ME 网络量子终端 GUI ID（规划 §4；GUI handler 的 case 在 T6 实现） */
+    public static final int GUI_QUANTUM_TERMINAL = 2;
 
     @Mod.Instance(MODID)
     public static GTSimpleWirelessNetwork instance;

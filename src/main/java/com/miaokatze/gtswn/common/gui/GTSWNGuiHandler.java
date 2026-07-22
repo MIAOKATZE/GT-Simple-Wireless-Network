@@ -19,6 +19,10 @@ public class GTSWNGuiHandler implements IGuiHandler {
                 return new ContainerNetworkInfoPanel((TileEntityNetworkInfoPanel) tile);
             }
         }
+        // ME 网络量子终端：手持物品 GUI（无槽位纯展示），坐标参数无意义，取玩家手持
+        if (id == GTSimpleWirelessNetwork.GUI_QUANTUM_TERMINAL) {
+            return new ContainerQuantumTerminal(player, player.getHeldItem());
+        }
         return null;
     }
 
