@@ -4,6 +4,7 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockContainer;
 import net.minecraft.block.material.Material;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.World;
@@ -24,6 +25,15 @@ import com.miaokatze.gtswn.register.CreativeTabManager;
 public class BlockNetworkQuantumNode extends BlockContainer {
 
     /**
+     * ISBRH 渲染 ID（v1.6.1 问题 1「线缆形态」）。
+     * <p>
+     * 【双端安全】Block 类只持有本 int 字段（默认 -1 未注册），不直接引用 client 包类，
+     * 避免服务端加载 Block 时触发 NoClassDefFoundError；
+     * 由 {@code ClientProxy.init()} 注册 ISBRH 后回写真实 renderId。
+     */
+    public static int renderId = -1;
+
+    /**
      * 构造函数：初始化量子节点方块的基础属性
      */
     public BlockNetworkQuantumNode() {
@@ -41,6 +51,32 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         setStepSound(Block.soundTypeMetal);
         // 加入模组创造模式标签页
         setCreativeTab(CreativeTabManager.CREATIVE_TAB);
+        // v1.6.1 问题 1：线缆形态——小核心包围盒（5/16~11/16，仿 AE 线缆核心），
+        // 选中框/碰撞箱即核心大小，连接臂仅作渲染延伸（见 RenderNetworkQuantumNode）
+        setBlockBounds(0.3125F, 0.3125F, 0.3125F, 0.6875F, 0.6875F, 0.6875F);
+    }
+
+    // ==================== v1.6.1 问题 1：线缆形态渲染（非整方块） ====================
+
+    /** 非不透明整方块：避免邻居面被剔除（核心四周需可见） */
+    @Override
+    public boolean isOpaqueCube() {
+        return false;
+    }
+
+    /** 非标准整方块渲染：走 ISBRH 自定义渲染 */
+    @Override
+    public boolean renderAsNormalBlock() {
+        return false;
+    }
+
+    /**
+     * 渲染类型：返回静态 renderId（双端安全，见字段注释）。
+     * 注意 BlockContainer 默认返回 -1（不渲染），必须覆盖为 ISBRH renderId。
+     */
+    @Override
+    public int getRenderType() {
+        return renderId;
     }
 
     /**
@@ -63,6 +99,23 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     @Override
     public boolean onBlockActivated(World world, int x, int y, int z, EntityPlayer player, int side, float hitX,
         float hitY, float hitZ) {
+        // v1.6.1 问题 6：Shift+右击收回节点（掉落物品并移除方块，pop 音效仿 AE 扳手回收）
+        if (player.isSneaking()) {
+            if (!world.isRemote) {
+                // setBlockToAir 不触发 harvestBlock 掉落逻辑，需手动掉落，无双倍掉落风险
+                dropBlockAsItem(world, x, y, z, new ItemStack(this));
+                world.setBlockToAir(x, y, z);
+                world.playSoundEffect(
+                    x + 0.5D,
+                    y + 0.5D,
+                    z + 0.5D,
+                    "random.pop",
+                    0.2F,
+                    ((world.rand.nextFloat() - world.rand.nextFloat()) * 0.7F + 1.0F) * 2.0F);
+                player.addChatComponentMessage(new ChatComponentTranslation("gtswn.chat.quantum.node_retrieved"));
+            }
+            return true;
+        }
         if (world.isRemote) {
             return true;
         }

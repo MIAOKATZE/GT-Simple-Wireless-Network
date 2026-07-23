@@ -26,7 +26,9 @@ import appeng.me.helpers.IGridProxyable;
 import appeng.parts.networking.PartQuartzFiber;
 import appeng.tile.networking.TileCableBus;
 import appeng.tile.networking.TileController;
+import appeng.tile.networking.TileCreativeEnergyCell;
 import appeng.tile.networking.TileEnergyAcceptor;
+import appeng.tile.networking.TileEnergyCell;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -208,11 +210,12 @@ public class QuantumControllerEventHandler {
     // ==================== 5. 每秒巡检（兜底 + D8 自动合并） ====================
 
     /**
-     * ServerTickEvent（END 相，每 20t 一次）：
+     * ServerTickEvent（END 相）：
      * <ol>
-     * <li>遍历每个已加载世界的注册表，TE 已不是控制器 → 出册（防 NBT 重载/旁路残留）</li>
-     * <li>仍在册的控制器 → 重算连接过滤（兜底，覆盖邻接通知未触达的路径）</li>
-     * <li>D8：已量子化控制器 6 邻接出现未入册控制器 → 洪泛其整结构自动入册
+     * <li>每 tick：排空量子终端数据请求队列（v1.6.1 问题 4b，Netty 线程入队 → 主线程装配回包）</li>
+     * <li>每 20t：遍历每个已加载世界的注册表，TE 已不是控制器 → 出册（防 NBT 重载/旁路残留）</li>
+     * <li>每 20t：仍在册的控制器 → 重算连接过滤（兜底，覆盖邻接通知未触达的路径）</li>
+     * <li>每 20t：D8——已量子化控制器 6 邻接出现未入册控制器 → 洪泛其整结构自动入册
      * （防止借新结构开线缆后门），逐块应用过滤并向附近玩家提示合并事件</li>
      * </ol>
      */
@@ -221,6 +224,8 @@ public class QuantumControllerEventHandler {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
+        // v1.6.1 问题 4b：每 tick 在主线程排空量子终端数据请求队列（独立于下方每秒巡检节奏）
+        QuantumTerminalRequestQueue.drain();
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) {
             return;
@@ -325,6 +330,9 @@ public class QuantumControllerEventHandler {
      * <ul>
      * <li>{@link TileController}：同伴控制器（D10 整结构互联）</li>
      * <li>{@link TileEnergyAcceptor}：能量接收器（纯能量交互设备）</li>
+     * <li>{@link TileEnergyCell} / {@link TileCreativeEnergyCell}：能源元件（v1.6.1 问题 4a，
+     * 量子化控制器需保持与能源元件连接，否则网络断电停机；致密能源元件
+     * TileDenseEnergyCell 继承 TileEnergyCell，一并覆盖）</li>
      * <li>{@link TileCableBus} 且其<b>朝向本控制器那一面</b>的 Part 是 {@link PartQuartzFiber}
      * （石英纤维通过 outerProxy 按面暴露纯能量节点）</li>
      * </ul>
@@ -345,6 +353,10 @@ public class QuantumControllerEventHandler {
             if (neighbor instanceof TileController) {
                 allowed.add(d);
             } else if (neighbor instanceof TileEnergyAcceptor) {
+                allowed.add(d);
+            } else if (neighbor instanceof TileEnergyCell || neighbor instanceof TileCreativeEnergyCell) {
+                // v1.6.1 问题 4a：量子化控制器需保持与能源元件连接，否则网络断电停机
+                // （TileDenseEnergyCell 致密能源元件继承 TileEnergyCell，此处一并放行）
                 allowed.add(d);
             } else if (neighbor instanceof TileCableBus) {
                 // 石英纤维判定：站在控制器视角邻居在方向 d，从 cable bus 视角控制器在 d 的反方向，

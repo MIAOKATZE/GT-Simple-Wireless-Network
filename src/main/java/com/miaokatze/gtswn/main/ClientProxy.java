@@ -6,10 +6,13 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 
+import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
 import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
 import com.miaokatze.gtswn.client.gui.GuiNetworkInfoPanel;
 import com.miaokatze.gtswn.client.gui.GuiQuantumTerminal;
 import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
+import com.miaokatze.gtswn.client.render.RenderNetworkQuantumNode;
+import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
@@ -41,7 +44,15 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new WirelessMonitorHUD());
         // 注册无线链路终端辅助线渲染器（DrawBlockHighlightEvent，与 GT 扳手/覆盖板工具相同机制）
         MinecraftForge.EVENT_BUS.register(new WirelessTapHighlightRenderer());
+        // v1.6.1 问题 2：注册量子节点放置预览框渲染器（手持已绑定量子终端瞄准可放置位置时画青色预览盒）
+        MinecraftForge.EVENT_BUS.register(new QuantumNodeHighlightRenderer());
         ClientRegistry.bindTileEntitySpecialRenderer(TileEntityNetworkInfoPanel.class, new RenderNetworkInfoPanel());
+
+        // v1.6.1 问题 1：注册量子节点 ISBRH（线缆形态：小核心 + 朝 AE 网格宿主的连接臂）。
+        // 【双端安全】renderId 先由 register() 申请并注册渲染器，再回写到 Block 类的静态 int 字段，
+        // Block.getRenderType 只读该 int，Block 类不引用任何 client 包类，服务端加载安全。
+        RenderNetworkQuantumNode.register();
+        BlockNetworkQuantumNode.renderId = RenderNetworkQuantumNode.INSTANCE.getRenderId();
 
         // 注：原 PlayerLoggedOutEvent 监听器用于保存便携式 HUD 历史到物品 NBT，
         // 已随 WirelessMonitorHUD.saveHistoryToItemStack 删除而移除（用户确认便携式随退出登录重置）。

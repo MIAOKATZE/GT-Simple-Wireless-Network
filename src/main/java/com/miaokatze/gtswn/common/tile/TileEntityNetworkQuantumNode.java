@@ -7,6 +7,9 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
+import com.miaokatze.gtswn.config.Config;
+
 import appeng.api.AEApi;
 import appeng.api.exceptions.ExistingConnectionException;
 import appeng.api.exceptions.FailedConnection;
@@ -105,7 +108,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         /** 无权限（网络有安全终端且放置者无权限，createGridConnection 抛 SecurityConnectionException） */
         NO_PERMISSION,
         /** 网络未就绪（锚点控制器 proxy 未 ready / GridNode 未创建 / 其他建连失败，瞬时可重试） */
-        NETWORK_NOT_READY
+        NETWORK_NOT_READY,
+        /** 锚点控制器未处于量子化状态（v1.6.1 问题 5：取消量子化后桥接应断开并停连） */
+        ANCHOR_NOT_QUANTIZED
     }
 
     // ==================== 锚点写入（量子终端放置节点时调用） ====================
@@ -203,6 +208,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * NONE → gtswn.chat.quantum.node_online（新增）；
      * CROSS_DIMENSION → gtswn.chat.quantum.node_offline_crossdim（新增）；
      * NO_PERMISSION → gtswn.chat.quantum.no_permission（已有）；
+     * ANCHOR_NOT_QUANTIZED → gtswn.chat.quantum.node_offline_not_quantized（v1.6.1 新增，lang 由任务 B 补）；
      * 其余（无锚点/锚点不可达/网络未就绪）→ gtswn.chat.quantum.node_offline（已有）。
      */
     public String getOfflineReasonKey() {
@@ -213,6 +219,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 return "gtswn.chat.quantum.node_offline_crossdim";
             case NO_PERMISSION:
                 return "gtswn.chat.quantum.no_permission";
+            case ANCHOR_NOT_QUANTIZED:
+                return "gtswn.chat.quantum.node_offline_not_quantized";
             case NO_ANCHOR:
             case ANCHOR_UNREACHABLE:
             case NETWORK_NOT_READY:
@@ -233,8 +241,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             gridProxy.setFlags(GridFlags.DENSE_CAPACITY);
             // 全方向可邻接：相邻设备/线缆可普通邻接接入本节点
             gridProxy.setValidSides(EnumSet.allOf(ForgeDirection.class));
-            // D5：16 AE/t 闲置功耗
-            gridProxy.setIdlePowerUsage(16.0D);
+            // D5 → v1.6.1 问题 7：闲置功耗改读配置（默认 10 AE/t；v1.6.0 硬编码 16）
+            gridProxy.setIdlePowerUsage(Config.quantumNodeIdlePowerUsage);
         }
         return gridProxy;
     }
@@ -330,21 +338,27 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /**
      * 连接维护主循环（每 20 tick 一次）。
      * <ol>
-     * <li>连接存活且锚点未改指 → 跳过；</li>
-     * <li>连接在但锚点已改指 → 销毁旧连接后重建；</li>
+     * <li>连接存活、锚点未改指且锚点仍量子化 → 跳过；</li>
+     * <li>连接在但锚点已改指 / 锚点已取消量子化（v1.6.1 问题 5）→ 销毁旧连接后重建（重建时按规则离线）；</li>
      * <li>无连接 → 按 D6/D7 规则尝试建连，失败记录离线原因待下轮重试。</li>
      * </ol>
      */
     private void maintainConnection() {
         if (this.connection != null) {
-            if (isLinked() && isAnchorSnapshotMatched()) {
-                // 连接存活且锚点未变：无需维护
+            if (isLinked() && isAnchorSnapshotMatched() && isAnchorStillQuantized()) {
+                // 连接存活、锚点未变且锚点仍量子化：无需维护
                 return;
             }
-            // 连接已死（对端销毁/本节点重建）或锚点改指：清理后走重建
+            // 连接已死（对端销毁/本节点重建）或锚点改指或锚点已取消量子化：清理后走重建
             destroyBridgeConnection();
         }
         tryConnect();
+    }
+
+    /** 锚点控制器当前是否仍处于量子化状态（同维度 + 已入册） */
+    private boolean isAnchorStillQuantized() {
+        return this.anchorDim == worldObj.provider.dimensionId && QuantumControllerRegistry.get(worldObj)
+            .isQuantized(this.anchorX, this.anchorY, this.anchorZ);
     }
 
     /** 尝试向锚点控制器建立桥接连接，失败时记录离线原因 */
@@ -357,6 +371,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // D6：v1 不支持跨维度桥接
         if (this.anchorDim != worldObj.provider.dimensionId) {
             this.offlineReason = OfflineReason.CROSS_DIMENSION;
+            return;
+        }
+        // v1.6.1 问题 5：锚点控制器未处于量子化状态（已取消量子化）→ 不建连。
+        // 注册表查询仅读 WorldSavedData 坐标集合，不触发区块加载，可在区块校验前执行
+        if (!QuantumControllerRegistry.get(worldObj)
+            .isQuantized(this.anchorX, this.anchorY, this.anchorZ)) {
+            this.offlineReason = OfflineReason.ANCHOR_NOT_QUANTIZED;
             return;
         }
         // 锚点区块未加载：blockExists 不触发区块加载（与 TileWirelessBase 重连循环同一手法），

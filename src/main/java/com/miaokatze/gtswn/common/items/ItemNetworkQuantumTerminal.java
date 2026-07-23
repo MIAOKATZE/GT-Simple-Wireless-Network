@@ -328,8 +328,8 @@ public class ItemNetworkQuantumTerminal extends Item {
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
     }
 
-    /** 终端是否已绑定 */
-    private static boolean isBound(ItemStack stack) {
+    /** 终端是否已绑定（public：v1.6.1 起供客户端放置预览渲染器等外部调用） */
+    public static boolean isBound(ItemStack stack) {
         return stack.stackTagCompound != null && stack.stackTagCompound.getByte(NBT_BOUND) == 1;
     }
 
@@ -362,6 +362,9 @@ public class ItemNetworkQuantumTerminal extends Item {
                     tag.getInteger(NBT_ANCHOR_X),
                     tag.getInteger(NBT_ANCHOR_Y),
                     tag.getInteger(NBT_ANCHOR_Z)));
+            // v1.6.1 问题 4a：已绑定时提示供电要求——量子化会过滤控制器连接面，
+            // 需先接入能源元件保持网络供电，否则量子化后网络断电停机
+            list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.power_requirement"));
         } else {
             list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.unbound"));
         }

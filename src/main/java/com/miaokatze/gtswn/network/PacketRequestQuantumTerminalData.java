@@ -1,9 +1,8 @@
 package com.miaokatze.gtswn.network;
 
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.item.ItemStack;
 
-import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalRequestQueue;
 
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -14,11 +13,15 @@ import io.netty.buffer.ByteBuf;
  * 客户端→服务端 请求包：请求刷新 ME 网络量子终端的显示数据（discriminator = 5）。
  * <p>
  * 无字段：服务端直接从 {@code ctx.getServerHandler().playerEntity.getHeldItem()} 取玩家手持物品，
- * 校验为「已绑定的 ME 网络量子终端」后按终端 NBT 锚点装配 {@link QuantumNetworkData}，
+ * 校验为「已绑定的 ME 网络量子终端」后按终端 NBT 锚点装配 {@code QuantumNetworkData}，
  * 经 {@link PacketSyncQuantumTerminalData} 回发给请求方。
  * <p>
  * 发送方：{@code GuiQuantumTerminal.updateScreen()} 每 10 tick 轮询一次（规划 §6 客户端刷新模式）。
  * 手持校验失败（不是终端 / 未绑定）时静默丢弃不回包，客户端等下个周期重试。
+ * <p>
+ * v1.6.1 问题 4b：本 Handler 运行在 Netty 网络线程，不得直接读世界/装配网络数据
+ * （既线程不安全，异常时又会永不回包使 GUI 停在「...」）。改为仅入队
+ * {@link QuantumTerminalRequestQueue}，由 ServerTickEvent 在主线程 drain 装配回包。
  */
 public class PacketRequestQuantumTerminalData implements IMessage {
 
@@ -36,10 +39,11 @@ public class PacketRequestQuantumTerminalData implements IMessage {
     }
 
     /**
-     * 服务端处理：校验手持 → 装配 → 回包。
+     * 服务端处理：仅入队，不在 Netty 线程装配。
      * <p>
-     * 线程模型照项目既有 C→S 包（PacketUpdateAETabState/PacketRequestWirelessEU）：
-     * 直接在 onMessage 内访问世界数据，不做额外线程切换。
+     * v1.6.1 问题 4b 修复：onMessage 由 Netty 网络线程执行（1.7.10 无 ServerThreadUtil），
+     * 线程切换采用「队列 + ServerTickEvent 排水」模式——此处只把玩家引用入队
+     * {@link QuantumTerminalRequestQueue}，装配与回包由主线程 drain 完成。
      */
     public static class Handler implements IMessageHandler<PacketRequestQuantumTerminalData, IMessage> {
 
@@ -47,17 +51,7 @@ public class PacketRequestQuantumTerminalData implements IMessage {
         public IMessage onMessage(PacketRequestQuantumTerminalData msg, MessageContext ctx) {
             // 1.7.10 API：经 ctx.getServerHandler().playerEntity 取得请求方玩家
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
-            if (player == null) {
-                return null;
-            }
-            ItemStack held = player.getHeldItem();
-            // 装配内含手持校验：非已绑定量子终端返回 null，静默丢弃（客户端等下轮重试）
-            QuantumNetworkData data = QuantumNetworkData.assemble(player, held);
-            if (data == null) {
-                return null;
-            }
-            // 回发数据同步包给请求方客户端
-            GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalData(data), player);
+            QuantumTerminalRequestQueue.enqueue(player);
             return null;
         }
     }

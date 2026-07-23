@@ -280,6 +280,7 @@ gtswn.network_info.gui.ae.monitor.header_average=Average
 # ME Network Quantum Terminal (T2 event interception / T3 terminal gestures)
 gtswn.tooltip.quantum_terminal.unbound=§7Unbound — right-click an active ME Controller to quantize & bind
 gtswn.tooltip.quantum_terminal.bound=§bBound: §f%s [%d, %d, %d]
+gtswn.tooltip.quantum_terminal.power_requirement=§eRequires the ME network to be powered (connect an Energy Cell before quantizing the controller)
 gtswn.tooltip.quantum_terminal.usage=§eRClick to place Quantum Node, Shift+RClick for GUI
 gtswn.chat.quantum.quantized=§a[Quantum Terminal] Controller structure quantized (%d blocks), total channels: %d
 gtswn.chat.quantum.bound=§b[Quantum Terminal] Bound to network [%d, %d, %d]
@@ -291,6 +292,8 @@ gtswn.chat.quantum.node_placed=§a[Quantum Terminal] Quantum node linked
 gtswn.chat.quantum.node_offline=§c[Quantum Node] Anchor unreachable, node offline
 gtswn.chat.quantum.node_online=§a[Quantum Node] Node online, bridged to anchor network (32 channel capacity)
 gtswn.chat.quantum.node_offline_crossdim=§c[Quantum Node] Cross-dimension bridging not supported, node offline
+gtswn.chat.quantum.node_offline_not_quantized=§c[Quantum Node] Anchor controller is not quantized
+gtswn.chat.quantum.node_retrieved=§a[Quantum Node] Quantum node retrieved
 gtswn.chat.quantum.blocked=§c[Quantized] Controller is quantized; energy-only devices allowed
 gtswn.chat.quantum.merged=§a[Quantized] %d new controller block(s) auto-merged into the quantized structure
 

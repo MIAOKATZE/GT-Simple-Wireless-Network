@@ -143,6 +143,32 @@ public class QuantumNetworkData {
     }
 
     /**
+     * 从手持已绑定终端构造「离线快照」（v1.6.1 问题 4b 兜底）：
+     * 仅填充锚点坐标，{@link #online} 保持 false（离线语义），其余字段保持默认 0 / 空列表，
+     * GUI 据此显示离线面板而非「...」。
+     * 手持不是已绑定量子终端时返回 null。
+     *
+     * @param held 玩家手持物品
+     * @return 离线快照；手持不是已绑定量子终端时返回 null
+     */
+    public static QuantumNetworkData offlineFromStack(ItemStack held) {
+        if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) {
+            return null;
+        }
+        NBTTagCompound tag = held.stackTagCompound;
+        if (tag == null || tag.getByte(NBT_BOUND) != 1) {
+            return null;
+        }
+        QuantumNetworkData data = new QuantumNetworkData();
+        // online 默认 false = 离线语义；仅锚点四维标有效，供 GUI 离线面板显示绑定目标
+        data.anchorDim = tag.getInteger(NBT_ANCHOR_DIM);
+        data.anchorX = tag.getInteger(NBT_ANCHOR_X);
+        data.anchorY = tag.getInteger(NBT_ANCHOR_Y);
+        data.anchorZ = tag.getInteger(NBT_ANCHOR_Z);
+        return data;
+    }
+
+    /**
      * 按锚点四维标装配网络快照（仅服务端调用）。
      * <p>
      * 离线判定全部走「不触发区块加载」的路径：worldServerForDimension 只取已加载维度，

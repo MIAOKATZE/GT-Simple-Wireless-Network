@@ -98,6 +98,11 @@ public class Config {
     // 默认 true / Default true
     public static boolean aeChartEnabled = true;
 
+    // ME 网络量子节点闲置功耗（AE/t）/ ME Network Quantum Node idle power usage (AE/t)（v1.6.1 问题 7）
+    // 每个已桥接的量子节点都会给锚点所属 ME 网络增加此功耗
+    // 默认 10 / Default 10；v1.6.0 硬编码为 16 / Hardcoded to 16 in v1.6.0
+    public static double quantumNodeIdlePowerUsage = 10.0D;
+
     // 网络信息屏历史数据保留天数 / Network info panel history retention days (v1.5.15 新增)
     // 超过此天数未采样的玩家数据集将在服务器启动时被清理，释放内存。
     // 0 = 永不清理（不推荐，长期运行会内存泄漏）。
@@ -297,6 +302,18 @@ public class Config {
             aeChartEnabled,
             "是否启用 AE2 走势图 / Enable AE2 chart\n" + "关闭后不再采集 AE 监控数据 / Disables AE monitoring data sampling when false\n"
                 + "默认 true / Default true");
+
+        // ME 网络量子节点闲置功耗（AE/t）/ ME Network Quantum Node idle power usage (AE/t)（v1.6.1 问题 7）
+        // getFloat 返回 float， widening 赋值给 double 字段；默认值随字段初值 10.0
+        quantumNodeIdlePowerUsage = configuration.getFloat(
+            "quantumNodeIdlePowerUsage",
+            CATEGORY_AE2,
+            (float) quantumNodeIdlePowerUsage,
+            0.0F,
+            10000.0F,
+            "ME 网络量子节点闲置功耗（AE/t）/ ME Network Quantum Node idle power usage (AE/t)\n"
+                + "每个已桥接的量子节点都会给锚点所属 ME 网络增加此功耗 / Each bridged quantum node adds this power draw to the anchor ME network\n"
+                + "默认 10 / Default 10；v1.6.0 硬编码为 16 / Hardcoded to 16 in v1.6.0");
 
         if (configuration.hasChanged()) {
             configuration.save();
