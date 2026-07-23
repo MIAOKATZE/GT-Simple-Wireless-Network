@@ -20,6 +20,7 @@ import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.crossmod.waila.WailaIntegration;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
@@ -30,6 +31,7 @@ import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
 
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
@@ -134,6 +136,12 @@ public class CommonProxy {
             .bus()
             .register(quantumHandler);
         GTSimpleWirelessNetwork.LOG.info("[2/3] 量子化控制器事件处理器已注册到双事件总线。");
+
+        // v1.6.2：WAILA 软集成——检测到 WAILA 才经 IMC 注册量子节点状态显示，无 WAILA 不影响运行
+        if (Loader.isModLoaded("Waila")) {
+            WailaIntegration.init();
+            GTSimpleWirelessNetwork.LOG.info("[2/3] 检测到 WAILA，量子节点状态显示已注册。");
+        }
     }
 
     /**

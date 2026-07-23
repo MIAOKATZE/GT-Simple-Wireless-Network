@@ -315,6 +315,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (worldObj == null || worldObj.isRemote) {
             return;
         }
+        // v1.6.2 修复：无锚点节点（未经量子终端放置，如创造模式直接放置的空白节点）无效——
+        // 不初始化 AE proxy（不创建 GridNode、不耗电、不接受邻居连接），恒离线 NO_ANCHOR。
+        // 空白节点一旦经终端放置写入锚点（setAnchor），本判定自动解除，proxy 走正常就绪流程。
+        if (!hasAnchor()) {
+            this.offlineReason = OfflineReason.NO_ANCHOR;
+            return;
+        }
         // ===== proxy 就绪流程（照样板：暂存 NBT 重放 → onReady 一次性调用） =====
         if (pendingProxyNBT != null) {
             getProxy().readFromNBT(pendingProxyNBT);

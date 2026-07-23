@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 
 import net.minecraft.block.Block;
+import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
@@ -11,6 +12,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.IIcon;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -28,6 +30,8 @@ import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
 import appeng.util.Platform;
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
 
 /**
  * ME 网络量子终端（T3 手势逻辑完整实现，规划 plan_20260722152445.md §2 D3 / §5.1 / §7）。
@@ -81,6 +85,43 @@ public class ItemNetworkQuantumTerminal extends Item {
         setCreativeTab(CreativeTabs.tabMisc);
         // 设置最大堆叠数量为 1（绑定类设备不可堆叠）
         setMaxStackSize(1);
+    }
+
+    // ==================== v1.6.2：绑定态双材质（未绑定=蓝，绑定=紫） ====================
+
+    /** 绑定后材质（客户端），未绑定材质走 Item 默认 itemIcon */
+    @SideOnly(Side.CLIENT)
+    private IIcon boundIcon;
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public void registerIcons(IIconRegister register) {
+        super.registerIcons(register);
+        this.boundIcon = register.registerIcon("gtswn:ME_Network_Quantum_Terminal_Bound");
+    }
+
+    /**
+     * 按绑定状态切换图标（1.7.10 物品渲染统一走 getIconIndex）。
+     * NBT 在双端同步（物品栏容器同步），客户端可直接读绑定状态。
+     */
+    @Override
+    @SideOnly(Side.CLIENT)
+    public IIcon getIconIndex(ItemStack stack) {
+        return isBound(stack) ? this.boundIcon : this.itemIcon;
+    }
+
+    /**
+     * v1.6.2 修复：Shift+右击量子节点收回时不再误开终端 GUI。
+     * <p>
+     * 1.7.10 机制：潜行持物品右击方块时，若物品的 doesSneakBypassUse 返回 false，
+     * 客户端会跳过方块 onBlockActivated 而直接走 sendUseItem → 服务端 onItemRightClick，
+     * 导致节点收回（方块潜行分支）不执行、反而打开终端 GUI。返回 true 则潜行交互
+     * 正常派发给方块 onBlockActivated，由方块执行收回逻辑。
+     * 仅对量子节点返回 true，其余方块保持默认（潜行时不绕过，等效空手行为不变）。
+     */
+    @Override
+    public boolean doesSneakBypassUse(World world, int x, int y, int z, EntityPlayer player) {
+        return world.getBlock(x, y, z) == BlockRegistrar.networkQuantumNode;
     }
 
     // ==================== 手势 1-4：右击方块（onItemUseFirst） ====================

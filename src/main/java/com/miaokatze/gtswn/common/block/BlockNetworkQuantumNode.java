@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.common.block;
 
+import java.util.ArrayList;
+
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockContainer;
 import net.minecraft.block.material.Material;
@@ -85,6 +87,17 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     @Override
     public TileEntity createNewTileEntity(World world, int meta) {
         return new TileEntityNetworkQuantumNode();
+    }
+
+    /**
+     * v1.6.2：挖掘不掉落。
+     * <p>
+     * 节点只能经「Shift+右击」收回（见 onBlockActivated 潜行分支），挖掘直接销毁不掉落，
+     * 防止玩家用镐子批量采掘绕过锚点语义（掉落物重新放置即丢失锚点，成为无效空白节点）。
+     */
+    @Override
+    public ArrayList<ItemStack> getDrops(World world, int x, int y, int z, int metadata, int fortune) {
+        return new ArrayList<ItemStack>();
     }
 
     /**

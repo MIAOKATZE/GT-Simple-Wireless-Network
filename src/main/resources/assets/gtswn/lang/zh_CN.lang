@@ -304,3 +304,14 @@ gtswn.gui.quantum.power.usage=§b能量消耗: §f%.1f AE/t §7(注入 %.1f)
 gtswn.gui.quantum.power.stored=§b网络储能: §f%.0f / %.0f AE
 gtswn.gui.quantum.devices=§b已接入设备 (%d):
 gtswn.gui.quantum.offline=§c网络离线（锚点不可达）
+
+# WAILA 量子节点状态显示 (v1.6.2)
+gtswn.waila.quantum_node.online=§a在线：已桥接至锚点网络（32 频道容量）
+gtswn.waila.quantum_node.offline=§c离线：%s
+gtswn.waila.quantum_node.reason.no_anchor=未绑定锚点（请用量子终端放置）
+gtswn.waila.quantum_node.reason.cross_dimension=暂不支持跨维度桥接
+gtswn.waila.quantum_node.reason.anchor_unreachable=锚点控制器不可达
+gtswn.waila.quantum_node.reason.no_permission=没有该网络的权限
+gtswn.waila.quantum_node.reason.network_not_ready=网络未就绪（重试中）
+gtswn.waila.quantum_node.reason.anchor_not_quantized=锚点控制器未量子化
+gtswn.waila.quantum_node.reason.unknown=未知原因

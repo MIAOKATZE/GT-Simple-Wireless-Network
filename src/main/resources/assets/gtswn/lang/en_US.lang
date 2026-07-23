@@ -304,3 +304,14 @@ gtswn.gui.quantum.power.usage=§bPower drain: §f%.1f AE/t §7(in %.1f)
 gtswn.gui.quantum.power.stored=§bStored: §f%.0f / %.0f AE
 gtswn.gui.quantum.devices=§bAttached devices (%d):
 gtswn.gui.quantum.offline=§cNetwork offline (anchor unreachable)
+
+# WAILA quantum node status (v1.6.2)
+gtswn.waila.quantum_node.online=§aOnline: bridged to anchor network (32-channel capacity)
+gtswn.waila.quantum_node.offline=§cOffline: %s
+gtswn.waila.quantum_node.reason.no_anchor=No anchor bound (place via quantum terminal)
+gtswn.waila.quantum_node.reason.cross_dimension=Cross-dimension bridging not supported
+gtswn.waila.quantum_node.reason.anchor_unreachable=Anchor controller unreachable
+gtswn.waila.quantum_node.reason.no_permission=No permission for this network
+gtswn.waila.quantum_node.reason.network_not_ready=Network not ready (retrying)
+gtswn.waila.quantum_node.reason.anchor_not_quantized=Anchor controller not quantized
+gtswn.waila.quantum_node.reason.unknown=Unknown reason
