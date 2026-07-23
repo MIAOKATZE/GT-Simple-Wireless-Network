@@ -50,13 +50,32 @@ public final class QuantumTerminalRequestQueue {
                 return;
             }
             ItemStack held = player.getHeldItem();
+            // v1.6.2 诊断躍点 2/4【主线程排水】：确认请求已进入主线程装配
+            GTSimpleWirelessNetwork.LOG.info(
+                "[量子终端][2/4 排水装配] 玩家=" + player.getCommandSenderName()
+                    + "，手持="
+                    + (held != null ? held.getItem()
+                        .getUnlocalizedName() : "null")
+                    + "，已绑定="
+                    + com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal.isBound(held));
             QuantumNetworkData data = QuantumNetworkData.assemble(player, held);
             if (data == null) {
                 // 手持不是已绑定量子终端 → 回发 null 前再试离线快照（同样要求已绑定，通常为 null）
                 data = QuantumNetworkData.offlineFromStack(held);
             }
             if (data != null) {
+                // v1.6.2 诊断躍点 3/4【回发同步包】：确认包 6 已发出及其在线语义
+                GTSimpleWirelessNetwork.LOG.info(
+                    "[量子终端][3/4 回发同步包] online=" + data.online
+                        + "，频道="
+                        + data.usedChannels
+                        + "/"
+                        + data.totalChannels
+                        + "，设备数="
+                        + data.totalMachines);
                 GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalData(data), player);
+            } else {
+                GTSimpleWirelessNetwork.LOG.warn("[量子终端][3/4 回发同步包] 手持非已绑定终端，无数据回发（客户端继续显示等待态）");
             }
         } catch (Throwable t) {
             // 装配读世界/网格可能抛异常（网格解体、区块竞争等）：回发离线快照兜底，保证 GUI 不卡在「...」

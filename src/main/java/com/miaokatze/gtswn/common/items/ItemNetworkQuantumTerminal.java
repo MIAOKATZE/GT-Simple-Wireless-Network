@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Set;
 
 import net.minecraft.block.Block;
-import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
@@ -12,7 +11,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
-import net.minecraft.util.IIcon;
+import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -30,8 +29,6 @@ import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
 import appeng.util.Platform;
-import cpw.mods.fml.relauncher.Side;
-import cpw.mods.fml.relauncher.SideOnly;
 
 /**
  * ME 网络量子终端（T3 手势逻辑完整实现，规划 plan_20260722152445.md §2 D3 / §5.1 / §7）。
@@ -40,9 +37,9 @@ import cpw.mods.fml.relauncher.SideOnly;
  * <ul>
  * <li>右击<b>未量子化</b>且正常运行的控制器 = 量子化整结构（D10 洪泛）并绑定</li>
  * <li>右击<b>已量子化</b>控制器 = 绑定 / 改绑（仅写终端 NBT 锚点）</li>
- * <li>Shift+右击已量子化控制器 = 取消量子化（整结构出册 + 恢复全方向可连接）</li>
+ * <li>Shift+右击已量子化控制器 = 取消量子化并解绑（整结构出册 + 恢复全方向可连接 + 清除终端锚点）</li>
  * <li>右击普通方块（已绑定）= 在点击面放置「ME 网络量子节点」（D4 不消耗物品）</li>
- * <li>Shift+右击空气 = 打开终端 GUI（GUI 本体 T6 实现，此处仅发 openGui）</li>
+ * <li>Shift+右击空气 = 打开终端 GUI（v1.6.2：有且仅有此路径开 GUI，见 onItemRightClick 射线守卫）</li>
  * </ul>
  * <p>
  * 双端模型（1.7.10 机制，已核实）：客户端 {@code onItemUseFirst} 返回 true 会拦截 C08 包
@@ -87,28 +84,7 @@ public class ItemNetworkQuantumTerminal extends Item {
         setMaxStackSize(1);
     }
 
-    // ==================== v1.6.2：绑定态双材质（未绑定=蓝，绑定=紫） ====================
-
-    /** 绑定后材质（客户端），未绑定材质走 Item 默认 itemIcon */
-    @SideOnly(Side.CLIENT)
-    private IIcon boundIcon;
-
-    @Override
-    @SideOnly(Side.CLIENT)
-    public void registerIcons(IIconRegister register) {
-        super.registerIcons(register);
-        this.boundIcon = register.registerIcon("gtswn:ME_Network_Quantum_Terminal_Bound");
-    }
-
-    /**
-     * 按绑定状态切换图标（1.7.10 物品渲染统一走 getIconIndex）。
-     * NBT 在双端同步（物品栏容器同步），客户端可直接读绑定状态。
-     */
-    @Override
-    @SideOnly(Side.CLIENT)
-    public IIcon getIconIndex(ItemStack stack) {
-        return isBound(stack) ? this.boundIcon : this.itemIcon;
-    }
+    // v1.6.2：终端固定单材质（用户定夺：未绑定/绑定不再区分图标），无 registerIcons/getIconIndex 覆写
 
     /**
      * v1.6.2 修复：Shift+右击量子节点收回时不再误开终端 GUI。
@@ -156,7 +132,7 @@ public class ItemNetworkQuantumTerminal extends Item {
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
         boolean quantized = registry.isQuantized(x, y, z);
         if (player.isSneaking()) {
-            // 手势 3：Shift+右击已量子化控制器 = 取消量子化
+            // 手势 3：Shift+右击已量子化控制器 = 取消量子化并解绑终端（v1.6.2：同步清除绑定）
             if (!quantized) {
                 // 未量子化时 Shift 无取消语义：放行（等效空手点击，可正常打开控制器）
                 return false;
@@ -166,6 +142,7 @@ public class ItemNetworkQuantumTerminal extends Item {
                 return true;
             }
             dequantizeStructure(player, world, registry, x, y, z);
+            clearAnchor(stack);
             return true;
         }
         if (quantized) {
@@ -223,12 +200,16 @@ public class ItemNetworkQuantumTerminal extends Item {
     // ==================== 手势 5：右击空气（onItemRightClick） ====================
 
     /**
-     * Shift+右击空气 = 打开终端 GUI。
+     * Shift+右击空气 = 打开终端 GUI（v1.6.2：有且仅有此路径开 GUI）。
      * <p>
-     * 右击空气走 C07/C08(side=255) 路径，双端均会调用本方法；开 GUI 属服务端权威行为
+     * 右击空气走 C08(side=255) 路径，双端均会调用本方法；开 GUI 属服务端权威行为
      * （openGui 由服务端发包），客户端直接返回。
      * <p>
-     * 注意：GUI handler 的 case 在 T6 实现，此处 openGui 在 T6 落地前不产生界面。
+     * 【射线守卫】潜行持本物品右击<b>任意方块</b>时，客户端因 doesSneakBypassUse=false
+     * （量子节点除外）会跳过方块激活、落到 sendUseItem → 服务端同样走进本方法。
+     * 此处用玩家视线射线判定：命中方块即视为方块交互（如 Shift+右击控制器取消量子化
+     * 已由 onItemUseFirst 处理），直接返回不开 GUI；仅视线落空（右击空气）才开 GUI。
+     * 距离取与客户端一致的手长：创造 5.0 / 生存 4.5。
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
@@ -238,6 +219,12 @@ public class ItemNetworkQuantumTerminal extends Item {
         if (player.isSneaking()) {
             if (!isBound(stack)) {
                 sendMessage(player, "gtswn.chat.quantum.need_bind");
+                return stack;
+            }
+            double reach = player.capabilities.isCreativeMode ? 5.0D : 4.5D;
+            MovingObjectPosition hit = player.rayTrace(reach, 1.0F);
+            if (hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
+                // 瞄准方块（控制器/节点/任意方块）→ 方块交互路径，不开 GUI
                 return stack;
             }
             // 坐标参数对手持物品 GUI 无意义（T6 Container 取 player.getHeldItem()），传玩家位置占位
@@ -369,6 +356,23 @@ public class ItemNetworkQuantumTerminal extends Item {
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
     }
 
+    /**
+     * 清除终端绑定（v1.6.2：Shift+右击已量子化控制器取消量子化时同步解绑）。
+     * 仅移除本模组写入的 6 个键，不整段置空以兼容改名/附魔等外部 NBT。
+     */
+    private static void clearAnchor(ItemStack stack) {
+        NBTTagCompound tag = stack.stackTagCompound;
+        if (tag == null) {
+            return;
+        }
+        tag.removeTag(NBT_BOUND);
+        tag.removeTag(NBT_ANCHOR_DIM);
+        tag.removeTag(NBT_ANCHOR_X);
+        tag.removeTag(NBT_ANCHOR_Y);
+        tag.removeTag(NBT_ANCHOR_Z);
+        tag.removeTag(NBT_BOUND_NAME);
+    }
+
     /** 终端是否已绑定（public：v1.6.1 起供客户端放置预览渲染器等外部调用） */
     public static boolean isBound(ItemStack stack) {
         return stack.stackTagCompound != null && stack.stackTagCompound.getByte(NBT_BOUND) == 1;
@@ -409,8 +413,12 @@ public class ItemNetworkQuantumTerminal extends Item {
         } else {
             list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.unbound"));
         }
-        // 空行分隔 + 操作提示
+        // 空行分隔 + 逐手势操作说明（v1.6.2：五行完整手势表）
         list.add("");
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.controller"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.dequantize"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.place"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.pickup"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.gui"));
     }
 }

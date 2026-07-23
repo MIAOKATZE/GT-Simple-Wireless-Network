@@ -51,6 +51,9 @@ public class PacketRequestQuantumTerminalData implements IMessage {
         public IMessage onMessage(PacketRequestQuantumTerminalData msg, MessageContext ctx) {
             // 1.7.10 API：经 ctx.getServerHandler().playerEntity 取得请求方玩家
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
+            // v1.6.2 诊断躍点 1/4【请求接收】：确认包 5 抵达服务端（Netty 线程）
+            com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG
+                .info("[量子终端][1/4 请求接收] 玩家=" + player.getCommandSenderName() + "，入队排水");
             QuantumTerminalRequestQueue.enqueue(player);
             return null;
         }
