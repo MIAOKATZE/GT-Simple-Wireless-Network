@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.quantum;
 
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -12,16 +13,19 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
+import net.minecraft.world.ChunkPosition;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.event.world.ExplosionEvent;
 
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 
+import appeng.api.implementations.items.INetworkToolItem;
 import appeng.me.helpers.IGridProxyable;
 import appeng.parts.networking.PartQuartzFiber;
 import appeng.tile.networking.TileCableBus;
@@ -55,8 +59,8 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  */
 public class QuantumControllerEventHandler {
 
-    /** 等效挖掘硬度目标值：黑曜石（50）× 10 = 500 */
-    private static final float QUANTUM_EFFECTIVE_HARDNESS = 500.0F;
+    /** 等效挖掘硬度目标值：黑曜石（50）× 20 = 1000 */
+    private static final float QUANTUM_EFFECTIVE_HARDNESS = 1000.0F;
 
     /** 右键拦截聊天提示冷却（tick），防止按住右键/连点刷屏 */
     private static final long BLOCKED_MSG_COOLDOWN_TICKS = 40L;
@@ -98,8 +102,12 @@ public class QuantumControllerEventHandler {
             .isQuantized(event.x, event.y, event.z)) {
             return;
         }
-        // 手持量子终端 → 放行（不取消事件，物品 onItemUseFirst 才能收到交互）
+        // AE2 网络工具普通右击 → 放行原生网络状态 GUI；Shift+右击仍落入下方拦截，防止拆卸
         ItemStack held = event.entityPlayer.getHeldItem();
+        if (held != null && held.getItem() instanceof INetworkToolItem && !event.entityPlayer.isSneaking()) {
+            return;
+        }
+        // 手持量子终端 → 放行（不取消事件，物品 onItemUseFirst 才能收到交互）
         if (held != null && held.getItem() instanceof ItemNetworkQuantumTerminal) {
             return;
         }
@@ -116,14 +124,14 @@ public class QuantumControllerEventHandler {
         }
     }
 
-    // ==================== 2. 挖掘减速（等效硬度 500） ====================
+    // ==================== 2. 挖掘减速（等效硬度 1000） ====================
 
     /**
-     * 把已量子化控制器与量子节点的挖掘速度按「实际硬度 / 500」缩放，
-     * 使挖掘耗时等效于硬度 500（黑曜石 50 的 10 倍）。
+     * 把已量子化控制器的挖掘速度按「实际硬度 / 1000」缩放，
+     * 使挖掘耗时等效于硬度 1000（黑曜石 50 的 20 倍）。
      * <p>
-     * 机制：挖掘耗时 ∝ blockHardness / newSpeed，故 newSpeed ×= (hardness/500) 后等效硬度即 500。
-     * 公式对控制器（≈3.5）与量子节点（50）通用。本事件双侧触发，此处只读查询无副作用，
+     * 机制：挖掘耗时 ∝ blockHardness / newSpeed，故 newSpeed ×= (hardness/1000) 后等效硬度即 1000。
+     * 量子节点方块的硬度已直接设为 1000，不再由本事件修正。本事件双侧触发，此处只读查询无副作用，
      * 客户端查不到量子化状态（WorldSavedData 不同步）时不减速——由服务端权威纠正（挖掘回弹），可接受。
      */
     @SubscribeEvent
@@ -133,23 +141,46 @@ public class QuantumControllerEventHandler {
             return;
         }
         World world = event.entityPlayer.worldObj;
-        boolean isQuantumBlock = event.block instanceof BlockNetworkQuantumNode;
-        if (!isQuantumBlock) {
-            // 非量子节点方块：仅当目标 TE 是「已量子化」的控制器时才减速
-            TileEntity te = world.getTileEntity(event.x, event.y, event.z);
-            if (!(te instanceof TileController)) {
-                return;
-            }
-            if (!QuantumControllerRegistry.get(world)
-                .isQuantized(event.x, event.y, event.z)) {
-                return;
-            }
+        // 量子节点方块：硬度/抗性已在方块属性中直接表达，不依赖事件修正
+        if (event.block instanceof BlockNetworkQuantumNode) {
+            return;
+        }
+        // 非量子节点方块：仅当目标 TE 是「已量子化」的控制器时才减速
+        TileEntity te = world.getTileEntity(event.x, event.y, event.z);
+        if (!(te instanceof TileController)) {
+            return;
+        }
+        if (!QuantumControllerRegistry.get(world)
+            .isQuantized(event.x, event.y, event.z)) {
+            return;
         }
         float hardness = event.block.getBlockHardness(world, event.x, event.y, event.z);
         if (hardness <= 0.0F) {
             return;
         }
         event.newSpeed = event.originalSpeed * (hardness / QUANTUM_EFFECTIVE_HARDNESS);
+    }
+
+    /**
+     * 爆炸免疫：从受影响方块列表中移除已量子化 ME 控制器，使其等效防爆 400000。
+     * <p>
+     * 仅服务端处理：爆炸事件服务端权威，客户端直接忽略。
+     */
+    @SubscribeEvent
+    public void onExplodeDetonate(ExplosionEvent.Detonate event) {
+        if (event.world.isRemote) {
+            return;
+        }
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(event.world);
+        Iterator<ChunkPosition> it = event.getAffectedBlocks()
+            .iterator();
+        while (it.hasNext()) {
+            ChunkPosition pos = it.next();
+            if (event.world.getTileEntity(pos.chunkPosX, pos.chunkPosY, pos.chunkPosZ) instanceof TileController
+                && registry.isQuantized(pos.chunkPosX, pos.chunkPosY, pos.chunkPosZ)) {
+                it.remove();
+            }
+        }
     }
 
     // ==================== 3. 邻接变化即时重算连接过滤（D1-B 主路径） ====================

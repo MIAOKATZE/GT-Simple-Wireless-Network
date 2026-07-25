@@ -21,7 +21,9 @@ import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.IMachineSet;
 import appeng.api.networking.energy.IEnergyGrid;
+import appeng.api.networking.storage.IStorageGrid;
 import appeng.me.GridAccessException;
+import appeng.me.cache.GridStorageCache;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
@@ -96,6 +98,21 @@ public class QuantumNetworkData {
 
     /** 网络储能上限（AE） */
     public double maxStoredPower;
+
+    /** 能量网络是否拥有无限储能（创造能量单元等） */
+    public boolean powerInfinite;
+
+    /** 物品存储字节：已用 / 总计 */
+    public double itemBytesUsed;
+    public double itemBytesTotal;
+
+    /** 流体存储字节：已用 / 总计 */
+    public double fluidBytesUsed;
+    public double fluidBytesTotal;
+
+    /** 源质存储字节：已用 / 总计（无 Thaumcraft 时恒为 0） */
+    public double essentiaBytesUsed;
+    public double essentiaBytesTotal;
 
     /** 设备总数（全部机器类的节点数之和） */
     public int totalMachines;
@@ -241,9 +258,27 @@ public class QuantumNetworkData {
             data.avgPowerInjection = energy.getAvgPowerInjection();
             data.storedPower = energy.getStoredPower();
             data.maxStoredPower = energy.getMaxStoredPower();
+            data.powerInfinite = energy.getHasInfiniteStore();
         }
 
-        // 8. 设备列表聚合：逐机器类统计数量，图标取该类第一个有效 machineRepresentation
+        // 8. 物品 / 流体 / 源质 存储字节统计（IStorageGrid 实际实现为 GridStorageCache）
+        IStorageGrid storageGrid = grid.getCache(IStorageGrid.class);
+        if (storageGrid instanceof GridStorageCache) {
+            GridStorageCache storage = (GridStorageCache) storageGrid;
+            data.itemBytesUsed = storage.getItemBytesUsed();
+            data.itemBytesTotal = storage.getItemBytesTotal();
+            data.fluidBytesUsed = storage.getFluidBytesUsed();
+            data.fluidBytesTotal = storage.getFluidBytesTotal();
+            // 源质方法在部分 AE2 版本可能不存在：反射探测，失败则保持默认 0
+            try {
+                data.essentiaBytesUsed = storage.getEssentiaBytesUsed();
+                data.essentiaBytesTotal = storage.getEssentiaBytesTotal();
+            } catch (NoSuchMethodError ignored) {
+                // 旧版 AE2 无源质存储：保持 0
+            }
+        }
+
+        // 9. 设备列表聚合：逐机器类统计数量，图标取该类第一个有效 machineRepresentation
         // （仿 ContainerNetworkStatus 的遍历方式；getMachines 对未知类返回空集而非 null，已核实 Grid.java:214-220）
         int total = 0;
         List<DeviceEntry> aggregated = new ArrayList<>();

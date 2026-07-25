@@ -8,21 +8,23 @@ import net.minecraft.client.renderer.entity.RenderItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.MathHelper;
+import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.StatCollector;
 
 import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestQuantumTerminalData;
 
 /**
- * ME 网络量子终端客户端 GUI（T6，规划 plan_20260722152445.md §3/§6/§7）。
+ * ME 网络量子终端客户端 GUI（v1.6.2 仿 AE2 Network Status 界面重做）。
  * <p>
- * 纯 {@link GuiScreen}（无槽位界面，风格仿 {@link GuiNetworkInfoPanel} 但简化）：
- * 显示锚点坐标、频道用量、能量消耗/注入、网络储能与可滚动设备列表。
+ * 纯 {@link GuiScreen}（无槽位界面）：顶部网络信息 + 现存/最大能源、中部 5×4 设备图标网格、
+ * 底部耗能/产能/物品/流体/源质统计。
  * <p>
- * 数据流（规划 §6 客户端刷新模式）：
+ * 数据流：
  * <ol>
  * <li>{@link #updateScreen()} 每 {@value #POLL_INTERVAL_TICKS} tick 经包 5 向服务端轮询；</li>
  * <li>服务端回包 6 → ClientProxy 切主线程 → {@link #receiveData(QuantumNetworkData)} 写静态缓存；</li>
@@ -31,34 +33,40 @@ import com.miaokatze.gtswn.network.PacketRequestQuantumTerminalData;
  */
 public class GuiQuantumTerminal extends GuiScreen {
 
+    /** AE2 网络状态界面纹理 */
+    private static final ResourceLocation TEXTURE = new ResourceLocation(
+        "appliedenergistics2",
+        "textures/guis/networkstatus.png");
+
     /** 最新网络快照（包 6 经 ClientProxy 切主线程写入；GUI 打开/关闭时清空） */
     private static QuantumNetworkData latestData = null;
 
     /** 轮询间隔（tick）：每 10 tick 发一次请求包 5 */
     private static final int POLL_INTERVAL_TICKS = 10;
 
-    /** 设备列表可见行数 */
-    private static final int VISIBLE_ROWS = 8;
+    /** GUI 尺寸（与 AE2 NetworkStatus 一致） */
+    private final int xSize = 195;
+    private final int ySize = 183;
 
-    /** 设备列表行高（px，与 16x16 图标同高） */
-    private static final int ROW_HEIGHT = 16;
+    /** 设备图标网格：5 列 × 4 行 */
+    private static final int GRID_COLUMNS = 5;
+    private static final int GRID_ROWS = 4;
+    private static final int CELL_WIDTH = 28;
+    private static final int CELL_HEIGHT = 20;
+    private static final int ICON_SIZE = 16;
 
-    /** 面板尺寸（xSize≈256 / ySize≈200 自定，规划任务书） */
-    private final int xSize = 256;
-    private final int ySize = 224;
-
-    /** 面板左上角屏幕坐标 */
-    private int left;
-    private int top;
+    /** GUI 左上角屏幕坐标 */
+    private int guiLeft;
+    private int guiTop;
 
     /** 轮询计时器（初值 0 → 打开后首个 updateScreen 立即发首包） */
     private int pollTimer = 0;
 
-    /** 设备列表滚动偏移（滚轮调整，绘制时按条目数 clamp） */
-    private int scrollOffset = 0;
+    /** 设备网格滚动偏移（按行） */
+    private int scrollRow = 0;
 
     public GuiQuantumTerminal() {
-        // 打开 GUI 时清空缓存，防止串上一次会话的旧数据（规划 §6：GUI 关闭即弃）
+        // 打开 GUI 时清空缓存，防止串上一次会话的旧数据
         latestData = null;
     }
 
@@ -72,8 +80,8 @@ public class GuiQuantumTerminal extends GuiScreen {
     @Override
     public void initGui() {
         super.initGui();
-        this.left = (this.width - this.xSize) / 2;
-        this.top = (this.height - this.ySize) / 2;
+        this.guiLeft = (this.width - this.xSize) / 2;
+        this.guiTop = (this.height - this.ySize) / 2;
     }
 
     @Override
@@ -88,166 +96,209 @@ public class GuiQuantumTerminal extends GuiScreen {
     @Override
     public void onGuiClosed() {
         super.onGuiClosed();
-        // Esc/关闭即弃缓存（规划 §6）
+        // Esc/关闭即弃缓存
         latestData = null;
     }
 
     @Override
     public void handleMouseInput() {
-        // 滚轮调整设备列表滚动偏移（无其他可滚控件，直接消费）
+        // 滚轮按行滚动设备网格
         int wheel = Mouse.getEventDWheel();
         if (wheel != 0 && latestData != null) {
-            int maxOffset = Math.max(0, latestData.entries.size() - VISIBLE_ROWS);
-            this.scrollOffset = MathHelper.clamp_int(this.scrollOffset - Integer.signum(wheel), 0, maxOffset);
+            int maxRow = Math.max(0, (latestData.entries.size() + GRID_COLUMNS - 1) / GRID_COLUMNS - GRID_ROWS);
+            this.scrollRow = MathHelper.clamp_int(this.scrollRow - Integer.signum(wheel), 0, maxRow);
         }
         super.handleMouseInput();
     }
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        // 面板背景与标题栏（浅色风格仿信息屏，不画 drawDefaultBackground 的 dirt 底）
-        drawPanelBackground();
-        drawTitleBar();
+        // 绘制 AE2 网络状态背景
+        this.mc.getTextureManager()
+            .bindTexture(TEXTURE);
+        this.drawTexturedModalRect(this.guiLeft, this.guiTop, 0, 0, this.xSize, this.ySize);
+
+        // 标题
+        this.fontRendererObj
+            .drawString(tr("gtswn.gui.quantum.network_details"), this.guiLeft + 8, this.guiTop + 6, 0x404040);
+
         QuantumNetworkData data = latestData;
         if (data == null) {
-            // 首个回包未到达：显示等待占位（数据区留空，下轮轮询到达后自动填充）
-            fontRendererObj.drawString(EnumChatFormatting.GRAY + "...", left + 12, top + 40, 0x6B7680);
+            // 首个回包未到达：显示等待占位
+            this.fontRendererObj
+                .drawString(EnumChatFormatting.GRAY + "...", this.guiLeft + 13, this.guiTop + 40, 0x404040);
+        } else if (!data.online) {
+            drawOffline(data);
         } else {
-            // 锚点坐标行：复用 tooltip.bound 键（§7 无独立 GUI 锚点键）；
-            // name 参数客户端无法解析锚点维度的显示名，以「DIM + id」代替
-            fontRendererObj.drawString(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.tooltip.quantum_terminal.bound",
-                    "DIM " + data.anchorDim,
-                    data.anchorX,
-                    data.anchorY,
-                    data.anchorZ),
-                left + 12,
-                top + 24,
-                0x2F3640);
-            if (!data.online) {
-                // 离线（维度不存在/锚点区块未加载/锚点已非控制器/网格未就绪）
-                fontRendererObj.drawString(tr("gtswn.gui.quantum.offline"), left + 12, top + 40, 0xF44336);
-            } else {
-                drawOnlineData(data);
-            }
+            drawOnline(data);
         }
+
         super.drawScreen(mouseX, mouseY, partialTicks);
     }
 
-    /** 绘制在线数据：频道 / 能量消耗 / 储能 / 设备列表 */
-    private void drawOnlineData(QuantumNetworkData data) {
-        fontRendererObj.drawString(
-            StatCollector
-                .translateToLocalFormatted("gtswn.gui.quantum.channels", data.usedChannels, data.totalChannels),
-            left + 12,
-            top + 36,
-            0x2F3640);
-        fontRendererObj.drawString(
-            StatCollector
-                .translateToLocalFormatted("gtswn.gui.quantum.power.usage", data.avgPowerUsage, data.avgPowerInjection),
-            left + 12,
-            top + 48,
-            0x2F3640);
-        fontRendererObj.drawString(
-            StatCollector
-                .translateToLocalFormatted("gtswn.gui.quantum.power.stored", data.storedPower, data.maxStoredPower),
-            left + 12,
-            top + 60,
-            0x2F3640);
-        // 分隔线（与信息屏同一浅灰）
-        drawRect(left + 8, top + 70, left + xSize - 8, top + 71, 0xFFB8C0C8);
-        // 设备列表标题（含设备总数）
-        fontRendererObj.drawString(
-            StatCollector.translateToLocalFormatted("gtswn.gui.quantum.devices", data.totalMachines),
-            left + 12,
-            top + 74,
-            0x2F3640);
-        drawDeviceList(data);
+    /** 绘制在线数据：能源 / 设备网格 / 底部统计 */
+    private void drawOnline(QuantumNetworkData data) {
+        // 现存 / 最大能源
+        String storedStr = data.powerInfinite ? "∞" : formatAE(data.storedPower);
+        String maxStr = data.powerInfinite ? "∞" : formatAE(data.maxStoredPower);
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.stored_power") + ": " + storedStr,
+            this.guiLeft + 13,
+            this.guiTop + 16,
+            0x404040);
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.max_power") + ": " + maxStr,
+            this.guiLeft + 13,
+            this.guiTop + 26,
+            0x404040);
+
+        // 设备图标网格
+        drawDeviceGrid(data);
+
+        // 底部统计行：耗能、产能、物品、流体、源质
+        int y = this.guiTop + 123;
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.power_usage") + ": " + formatAE(data.avgPowerUsage) + " AE/t",
+            this.guiLeft + 13,
+            y,
+            0x404040);
+        y += 10;
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.power_input") + ": " + formatAE(data.avgPowerInjection) + " AE/t",
+            this.guiLeft + 13,
+            y,
+            0x404040);
+        y += 10;
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.items") + ": " + formatByteLine(data.itemBytesUsed, data.itemBytesTotal),
+            this.guiLeft + 13,
+            y,
+            0x404040);
+        y += 10;
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.fluids") + ": " + formatByteLine(data.fluidBytesUsed, data.fluidBytesTotal),
+            this.guiLeft + 13,
+            y,
+            0x404040);
+        y += 10;
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.essentia") + ": " + formatByteLine(data.essentiaBytesUsed, data.essentiaBytesTotal),
+            this.guiLeft + 13,
+            y,
+            0x404040);
     }
 
-    /** 绘制设备列表：每行 16x16 图标 + 本地化名 + 右对齐数量；超出可见行画简易滚动条 */
-    private void drawDeviceList(QuantumNetworkData data) {
+    /** 绘制离线状态：标题 + 锚点信息 + 离线提示 */
+    private void drawOffline(QuantumNetworkData data) {
+        // 锚点坐标行
+        this.fontRendererObj.drawString(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.tooltip.quantum_terminal.bound",
+                "DIM " + data.anchorDim,
+                data.anchorX,
+                data.anchorY,
+                data.anchorZ),
+            this.guiLeft + 13,
+            this.guiTop + 40,
+            0x404040);
+        // 离线提示
+        this.fontRendererObj.drawString(
+            EnumChatFormatting.RED + tr("gtswn.gui.quantum.offline"),
+            this.guiLeft + 13,
+            this.guiTop + 55,
+            0x404040);
+    }
+
+    /** 绘制设备图标网格：5 列 × 4 行，按 ItemStack 聚合计数 */
+    private void drawDeviceGrid(QuantumNetworkData data) {
         List<QuantumNetworkData.DeviceEntry> entries = data.entries;
-        int listX = left + 12;
-        int listY = top + 86;
-        // 右侧预留 6px 滚动条位
-        int listRight = left + xSize - 18;
-        // 新数据条目数变化时 clamp 偏移防越界
-        int maxOffset = Math.max(0, entries.size() - VISIBLE_ROWS);
-        this.scrollOffset = MathHelper.clamp_int(this.scrollOffset, 0, maxOffset);
-        for (int row = 0; row < VISIBLE_ROWS; row++) {
-            int index = this.scrollOffset + row;
-            if (index >= entries.size()) {
-                break;
-            }
-            QuantumNetworkData.DeviceEntry entry = entries.get(index);
-            int rowY = listY + row * ROW_HEIGHT;
-            // 设备图标
+        int maxRow = Math.max(0, (entries.size() + GRID_COLUMNS - 1) / GRID_COLUMNS - GRID_ROWS);
+        this.scrollRow = MathHelper.clamp_int(this.scrollRow, 0, maxRow);
+
+        int startIndex = this.scrollRow * GRID_COLUMNS;
+        int viewEnd = Math.min(startIndex + GRID_COLUMNS * GRID_ROWS, entries.size());
+
+        for (int i = startIndex; i < viewEnd; i++) {
+            int gridIndex = i - startIndex;
+            int col = gridIndex % GRID_COLUMNS;
+            int row = gridIndex / GRID_COLUMNS;
+
+            int x = this.guiLeft + 14 + col * CELL_WIDTH;
+            int y = this.guiTop + 41 + row * CELL_HEIGHT;
+
+            QuantumNetworkData.DeviceEntry entry = entries.get(i);
             if (entry.icon != null) {
-                drawItemIcon(entry.icon, listX, rowY);
+                drawItemIcon(entry.icon, x, y);
+
+                // 数量文本以 0.5 倍缩放画在图标右下
+                String countStr = formatCount(entry.count);
+                GL11.glPushMatrix();
+                GL11.glScalef(0.5F, 0.5F, 0.5F);
+                int w = this.fontRendererObj.getStringWidth(countStr);
+                this.fontRendererObj
+                    .drawString(countStr, (x + ICON_SIZE - w + 1) * 2, (y + ICON_SIZE - 6) * 2, 0xFFFFFF);
+                GL11.glPopMatrix();
             }
-            // 设备名称（超长按可用宽度截断）
-            String name = entry.icon != null ? entry.icon.getDisplayName() : "?";
-            String countText = "×" + entry.count;
-            int countWidth = fontRendererObj.getStringWidth(countText);
-            int nameMaxWidth = listRight - (listX + 20) - countWidth - 8;
-            fontRendererObj.drawString(
-                fontRendererObj.trimStringToWidth(name, Math.max(nameMaxWidth, 20)),
-                listX + 20,
-                rowY + 4,
-                0x2F3640);
-            // 数量（右对齐）
-            fontRendererObj.drawString(countText, listRight - countWidth, rowY + 4, 0x4C5660);
-        }
-        // 简易滚动条：轨道 + 按偏移比例定位的滑块（条目数超过可见行才显示）
-        if (entries.size() > VISIBLE_ROWS) {
-            int trackX = left + xSize - 12;
-            int trackHeight = VISIBLE_ROWS * ROW_HEIGHT;
-            drawRect(trackX, listY, trackX + 4, listY + trackHeight, 0xFFB8C0C8);
-            int thumbHeight = Math.max(10, trackHeight * VISIBLE_ROWS / entries.size());
-            // maxOffset 在此分支恒 > 0，无除零风险
-            int thumbY = listY + (trackHeight - thumbHeight) * this.scrollOffset / maxOffset;
-            drawRect(trackX, thumbY, trackX + 4, thumbY + thumbHeight, 0xFF6A7680);
         }
     }
 
-    /** 面板背景（浅色填充 + 深色 1px 边框，仿信息屏 drawPanelBackground） */
-    private void drawPanelBackground() {
-        drawRect(left, top, left + xSize, top + ySize, 0xFFE8EAEC);
-        drawRect(left, top, left + xSize, top + 1, 0xFF607080);
-        drawRect(left, top + ySize - 1, left + xSize, top + ySize, 0xFF607080);
-        drawRect(left, top, left + 1, top + ySize, 0xFF607080);
-        drawRect(left + xSize - 1, top, left + xSize, top + ySize, 0xFF607080);
-    }
-
-    /** 标题栏（深色底 + 1px 高光/阴影边框 + 白色粗体标题，仿信息屏 drawTitleBar） */
-    private void drawTitleBar() {
-        String title = EnumChatFormatting.BOLD + tr("gtswn.gui.quantum.title");
-        int titleWidth = fontRendererObj.getStringWidth(title);
-        int boxPadding = 6;
-        int boxX = left + 8;
-        int boxY = top + 6;
-        int boxW = titleWidth + boxPadding * 2;
-        int boxH = 14;
-        drawRect(boxX, boxY, boxX + boxW, boxY + boxH, 0xFF607080);
-        drawRect(boxX, boxY, boxX + boxW, boxY + 1, 0xFFA0A8B0);
-        drawRect(boxX, boxY + boxH - 1, boxX + boxW, boxY + boxH, 0xFF405060);
-        drawRect(boxX, boxY, boxX + 1, boxY + boxH, 0xFFA0A8B0);
-        drawRect(boxX + boxW - 1, boxY, boxX + boxW, boxY + boxH, 0xFF405060);
-        fontRendererObj.drawString(title, boxX + boxPadding, boxY + 3, 0xFFFFFF);
-    }
-
-    /** 本地化工具（与信息屏 tr 同款） */
-    private static String tr(String key) {
-        return StatCollector.translateToLocal(key);
-    }
-
-    /** 绘制 16x16 物品图标（启用标准 GUI 物品光照，仿信息屏 drawItemIcon） */
+    /** 绘制 16×16 物品图标（启用标准 GUI 物品光照） */
     private void drawItemIcon(ItemStack stack, int x, int y) {
         RenderHelper.enableGUIStandardItemLighting();
         RenderItem.getInstance()
-            .renderItemAndEffectIntoGUI(fontRendererObj, mc.getTextureManager(), stack, x, y);
+            .renderItemAndEffectIntoGUI(this.fontRendererObj, this.mc.getTextureManager(), stack, x, y);
         RenderHelper.disableStandardItemLighting();
+    }
+
+    /** 格式化字节行：used / total，total>0 时追加百分比 */
+    private String formatByteLine(double used, double total) {
+        String line = formatBytes(used) + " / " + formatBytes(total);
+        if (total > 0.0D) {
+            line += " (" + String.format("%.1f", used * 100.0D / total) + "%)";
+        }
+        return line;
+    }
+
+    /** 格式化 AE 能量值：k / M / G / T / P */
+    private static String formatAE(double value) {
+        if (value == 0.0D) {
+            return "0";
+        }
+        String[] suffixes = { "", "k", "M", "G", "T", "P" };
+        int idx = 0;
+        double v = value;
+        while (Math.abs(v) >= 1000.0D && idx < suffixes.length - 1) {
+            v /= 1000.0D;
+            idx++;
+        }
+        return String.format("%.2f", v) + suffixes[idx];
+    }
+
+    /** 格式化字节：B / kB / MB / GB / TB / PB */
+    private static String formatBytes(double value) {
+        if (value == 0.0D) {
+            return "0 B";
+        }
+        String[] suffixes = { "B", "kB", "MB", "GB", "TB", "PB" };
+        int idx = 0;
+        double v = value;
+        while (Math.abs(v) >= 1024.0D && idx < suffixes.length - 1) {
+            v /= 1024.0D;
+            idx++;
+        }
+        return String.format("%.2f", v) + " " + suffixes[idx];
+    }
+
+    /** 格式化设备数量：≥10k 显示为 Xk */
+    private static String formatCount(int count) {
+        if (count >= 10000) {
+            return (count / 1000) + "k";
+        }
+        return String.valueOf(count);
+    }
+
+    /** 本地化工具 */
+    private static String tr(String key) {
+        return StatCollector.translateToLocal(key);
     }
 }

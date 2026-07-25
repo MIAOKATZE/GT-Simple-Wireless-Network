@@ -16,6 +16,7 @@ import io.netty.buffer.ByteBuf;
  * <p>
  * 字段与 {@link QuantumNetworkData} 一一对应（规划 plan_20260722152445.md §6）：
  * online / anchorDim+xyz / totalChannels / usedChannels / 能量四项 /
+ * itemBytesUsed/Total / fluidBytesUsed/Total / essentiaBytesUsed/Total / powerInfinite /
  * totalMachines / entryCount + entries{ItemStack icon, int count}。
  * <p>
  * 序列化约定：toBytes/fromBytes 严格对称（风格仿 {@link PacketSyncAEMonitorData}）；
@@ -47,6 +48,13 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         buf.writeDouble(data.avgPowerInjection);
         buf.writeDouble(data.storedPower);
         buf.writeDouble(data.maxStoredPower);
+        buf.writeDouble(data.itemBytesUsed);
+        buf.writeDouble(data.itemBytesTotal);
+        buf.writeDouble(data.fluidBytesUsed);
+        buf.writeDouble(data.fluidBytesTotal);
+        buf.writeDouble(data.essentiaBytesUsed);
+        buf.writeDouble(data.essentiaBytesTotal);
+        buf.writeBoolean(data.powerInfinite);
         buf.writeInt(data.totalMachines);
         // 设备条目：entryCount + entryCount × { ItemStack, int }
         buf.writeInt(data.entries.size());
@@ -70,6 +78,13 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         d.avgPowerInjection = buf.readDouble();
         d.storedPower = buf.readDouble();
         d.maxStoredPower = buf.readDouble();
+        d.itemBytesUsed = buf.readDouble();
+        d.itemBytesTotal = buf.readDouble();
+        d.fluidBytesUsed = buf.readDouble();
+        d.fluidBytesTotal = buf.readDouble();
+        d.essentiaBytesUsed = buf.readDouble();
+        d.essentiaBytesTotal = buf.readDouble();
+        d.powerInfinite = buf.readBoolean();
         d.totalMachines = buf.readInt();
         int entryCount = buf.readInt();
         // 防御性上限：异常包体的 entryCount 不应导致内存暴涨（与装配端 MAX_ENTRIES 一致留余量）

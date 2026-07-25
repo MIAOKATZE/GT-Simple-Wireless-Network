@@ -1,0 +1,3 @@
+# SDKMAN 项目级 JDK 版本
+# 运行 `sdk env` 激活
+java=25.0.4-amzn

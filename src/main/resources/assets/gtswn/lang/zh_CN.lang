@@ -284,7 +284,7 @@ gtswn.tooltip.quantum_terminal.power_requirement=§e需要 ME 网络保持供电
 gtswn.tooltip.quantum_terminal.usage.controller=§7右击控制器: §f量子化并绑定（已量子化则改绑）
 gtswn.tooltip.quantum_terminal.usage.dequantize=§7Shift+右击控制器: §f取消量子化并解绑
 gtswn.tooltip.quantum_terminal.usage.place=§7右击方块: §f放置量子节点
-gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+右击量子节点: §f收回节点
+gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+右击量子节点: §f销毁节点（无掉落）
 gtswn.tooltip.quantum_terminal.usage.gui=§7Shift+右击空气: §f打开终端界面
 gtswn.chat.quantum.quantized=§a[量子终端] 控制器结构已量子化（%d 块），网络总频道: %d
 gtswn.chat.quantum.bound=§b[量子终端] 已绑定到网络 [%d, %d, %d]
@@ -297,17 +297,22 @@ gtswn.chat.quantum.node_offline=§c[量子节点] 锚点控制器不可达，节
 gtswn.chat.quantum.node_online=§a[量子节点] 节点在线，已桥接至锚点网络（32 频道容量）
 gtswn.chat.quantum.node_offline_crossdim=§c[量子节点] 暂不支持跨维度桥接，节点离线
 gtswn.chat.quantum.node_offline_not_quantized=§c[量子节点] 锚点控制器未量子化
-gtswn.chat.quantum.node_retrieved=§a[量子节点] 已收回量子节点
+gtswn.chat.quantum.node_destroyed=§a[量子节点] 已销毁量子节点
 gtswn.chat.quantum.blocked=§c[量子化] 该控制器已量子化，仅能量交互设备可用
 gtswn.chat.quantum.merged=§a[量子化] %d 块新控制器已自动并入量子化结构
 
 # ME Network Quantum Terminal GUI (T6 终端界面)
 gtswn.gui.quantum.title=ME网络量子终端
-gtswn.gui.quantum.channels=§b频道: §f%d / %d
-gtswn.gui.quantum.power.usage=§b能量消耗: §f%.1f AE/t §7(注入 %.1f)
-gtswn.gui.quantum.power.stored=§b网络储能: §f%.0f / %.0f AE
-gtswn.gui.quantum.devices=§b已接入设备 (%d):
 gtswn.gui.quantum.offline=§c网络离线（锚点不可达）
+gtswn.gui.quantum.network_details=网络信息
+gtswn.gui.quantum.stored_power=现存能源
+gtswn.gui.quantum.max_power=最大能源
+gtswn.gui.quantum.power_usage=耗能
+gtswn.gui.quantum.power_input=产能
+gtswn.gui.quantum.items=物品
+gtswn.gui.quantum.fluids=流体
+gtswn.gui.quantum.essentia=源质
+gtswn.gui.quantum.installed=已安装
 
 # WAILA 量子节点状态显示 (v1.6.2)
 gtswn.waila.quantum_node.online=§a在线：已桥接至锚点网络（32 频道容量）

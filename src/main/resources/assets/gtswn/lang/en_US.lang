@@ -284,7 +284,7 @@ gtswn.tooltip.quantum_terminal.power_requirement=§eRequires the ME network to b
 gtswn.tooltip.quantum_terminal.usage.controller=§7RClick Controller: §fQuantize & bind (rebind if quantized)
 gtswn.tooltip.quantum_terminal.usage.dequantize=§7Shift+RClick Controller: §fDequantize & unbind
 gtswn.tooltip.quantum_terminal.usage.place=§7RClick Block: §fPlace Quantum Node
-gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+RClick Quantum Node: §fPick up the node
+gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+Right-click quantum node: §fDestroy node (no drops)
 gtswn.tooltip.quantum_terminal.usage.gui=§7Shift+RClick Air: §fOpen terminal GUI
 gtswn.chat.quantum.quantized=§a[Quantum Terminal] Controller structure quantized (%d blocks), total channels: %d
 gtswn.chat.quantum.bound=§b[Quantum Terminal] Bound to network [%d, %d, %d]
@@ -297,17 +297,22 @@ gtswn.chat.quantum.node_offline=§c[Quantum Node] Anchor unreachable, node offli
 gtswn.chat.quantum.node_online=§a[Quantum Node] Node online, bridged to anchor network (32 channel capacity)
 gtswn.chat.quantum.node_offline_crossdim=§c[Quantum Node] Cross-dimension bridging not supported, node offline
 gtswn.chat.quantum.node_offline_not_quantized=§c[Quantum Node] Anchor controller is not quantized
-gtswn.chat.quantum.node_retrieved=§a[Quantum Node] Quantum node retrieved
+gtswn.chat.quantum.node_destroyed=§a[Quantum Node] Quantum node destroyed
 gtswn.chat.quantum.blocked=§c[Quantized] Controller is quantized; energy-only devices allowed
 gtswn.chat.quantum.merged=§a[Quantized] %d new controller block(s) auto-merged into the quantized structure
 
 # ME Network Quantum Terminal GUI (T6 terminal interface)
 gtswn.gui.quantum.title=ME Network Quantum Terminal
-gtswn.gui.quantum.channels=§bChannels: §f%d / %d
-gtswn.gui.quantum.power.usage=§bPower drain: §f%.1f AE/t §7(in %.1f)
-gtswn.gui.quantum.power.stored=§bStored: §f%.0f / %.0f AE
-gtswn.gui.quantum.devices=§bAttached devices (%d):
 gtswn.gui.quantum.offline=§cNetwork offline (anchor unreachable)
+gtswn.gui.quantum.network_details=Network Details
+gtswn.gui.quantum.stored_power=Stored Power
+gtswn.gui.quantum.max_power=Max Power
+gtswn.gui.quantum.power_usage=Power Usage
+gtswn.gui.quantum.power_input=Power Input
+gtswn.gui.quantum.items=Items
+gtswn.gui.quantum.fluids=Fluids
+gtswn.gui.quantum.essentia=Essentia
+gtswn.gui.quantum.installed=Installed
 
 # WAILA quantum node status (v1.6.2)
 gtswn.waila.quantum_node.online=§aOnline: bridged to anchor network (32-channel capacity)

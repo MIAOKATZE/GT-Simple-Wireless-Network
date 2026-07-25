@@ -11,6 +11,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
@@ -44,11 +45,10 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         setBlockName("NetworkQuantumNode_GTswn");
         // 设置材质路径，指向 assets/gtswn/textures/blocks/ME_Network_Quantum_Node.png
         setBlockTextureName("gtswn:ME_Network_Quantum_Node");
-        // 硬度先给黑曜石基础值 50：等效 500（黑曜石×10）的挖掘减速由 T2 的
-        // PlayerEvent.BreakSpeed 事件实现，与量子化 ME 控制器的处理方式保持一致
-        setHardness(50.0F);
-        // 爆炸抗性 = 黑曜石级 6000
-        setResistance(6000.0F);
+        // 硬度 = 黑曜石 × 20 = 1000，与量子化控制器等效硬度一致
+        setHardness(1000.0F);
+        // 爆炸抗性 = 黑曜石 × 200 = 400000
+        setResistance(400000.0F);
         // 脚步/破坏音效：金属（Material.iron 对应音色）
         setStepSound(Block.soundTypeMetal);
         // 加入模组创造模式标签页
@@ -92,12 +92,20 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     /**
      * v1.6.2：挖掘不掉落。
      * <p>
-     * 节点只能经「Shift+右击」收回（见 onBlockActivated 潜行分支），挖掘直接销毁不掉落，
+     * 节点只能经「Shift+右击」由量子终端销毁（见 onBlockActivated 潜行分支），挖掘直接销毁不掉落，
      * 防止玩家用镐子批量采掘绕过锚点语义（掉落物重新放置即丢失锚点，成为无效空白节点）。
      */
     @Override
     public ArrayList<ItemStack> getDrops(World world, int x, int y, int z, int metadata, int fortune) {
         return new ArrayList<ItemStack>();
+    }
+
+    /**
+     * 禁用精准采集：即使通过精准采集镐挖掘也直接销毁，不掉落任何物品。
+     */
+    @Override
+    public boolean canSilkHarvest(World world, EntityPlayer player, int x, int y, int z, int metadata) {
+        return false;
     }
 
     /**
@@ -112,22 +120,24 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     @Override
     public boolean onBlockActivated(World world, int x, int y, int z, EntityPlayer player, int side, float hitX,
         float hitY, float hitZ) {
-        // v1.6.1 问题 6：Shift+右击收回节点（掉落物品并移除方块，pop 音效仿 AE 扳手回收）
+        // v1.6.2：Shift+右击仅当手持量子终端时销毁节点（无掉落），pop 音效仿 AE 扳手回收
         if (player.isSneaking()) {
-            if (!world.isRemote) {
-                // setBlockToAir 不触发 harvestBlock 掉落逻辑，需手动掉落，无双倍掉落风险
-                dropBlockAsItem(world, x, y, z, new ItemStack(this));
-                world.setBlockToAir(x, y, z);
-                world.playSoundEffect(
-                    x + 0.5D,
-                    y + 0.5D,
-                    z + 0.5D,
-                    "random.pop",
-                    0.2F,
-                    ((world.rand.nextFloat() - world.rand.nextFloat()) * 0.7F + 1.0F) * 2.0F);
-                player.addChatComponentMessage(new ChatComponentTranslation("gtswn.chat.quantum.node_retrieved"));
+            ItemStack held = player.getHeldItem();
+            if (held != null && held.getItem() instanceof ItemNetworkQuantumTerminal) {
+                if (!world.isRemote) {
+                    world.setBlockToAir(x, y, z);
+                    world.playSoundEffect(
+                        x + 0.5D,
+                        y + 0.5D,
+                        z + 0.5D,
+                        "random.pop",
+                        0.2F,
+                        ((world.rand.nextFloat() - world.rand.nextFloat()) * 0.7F + 1.0F) * 2.0F);
+                    player.addChatComponentMessage(new ChatComponentTranslation("gtswn.chat.quantum.node_destroyed"));
+                }
+                return true;
             }
-            return true;
+            // 潜行但手持非终端：落入下方状态提示分支，不破坏方块
         }
         if (world.isRemote) {
             return true;
