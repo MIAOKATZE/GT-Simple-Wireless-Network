@@ -13,6 +13,7 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridBlock;
@@ -192,6 +193,8 @@ public class QuantumNetworkData {
      * blockExists 不触发锚点区块加载（与 TileEntityNetworkQuantumNode 重连循环同一手法）。
      */
     public static QuantumNetworkData assemble(int anchorDim, int anchorX, int anchorY, int anchorZ) {
+        GTSimpleWirelessNetwork.LOG
+            .info("[量子终端][装配] 开始 anchor=" + anchorDim + "@" + anchorX + "," + anchorY + "," + anchorZ);
         QuantumNetworkData data = new QuantumNetworkData();
         data.anchorDim = anchorDim;
         data.anchorX = anchorX;
@@ -228,6 +231,7 @@ public class QuantumNetworkData {
             return data;
         }
         data.online = true;
+        GTSimpleWirelessNetwork.LOG.info("[量子终端][装配] 网格就绪");
 
         // 5. 总频道数：从锚点洪泛整结构坐标集，复用 Registry 的公式方法。
         // 【偏离规划 §6 的说明】§6 原文写法为 grid.getMachines(TileController.class)，
@@ -239,6 +243,7 @@ public class QuantumNetworkData {
         // （computeTotalChannels(floodControllers(...))）完全一致：均为「结构内控制器」。
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, anchorX, anchorY, anchorZ);
         data.totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
+        GTSimpleWirelessNetwork.LOG.info("[量子终端][装配] 频道统计完成 total=" + data.totalChannels);
 
         // 6. 已消耗频道：网格内全部量子节点，各取连接 usedChannels 的 max 后求和（规划 §6）
         int used = 0;
@@ -259,6 +264,8 @@ public class QuantumNetworkData {
             data.storedPower = energy.getStoredPower();
             data.maxStoredPower = energy.getMaxStoredPower();
             data.powerInfinite = energy.getHasInfiniteStore();
+            GTSimpleWirelessNetwork.LOG
+                .info("[量子终端][装配] 能量四项完成 stored=" + data.storedPower + " max=" + data.maxStoredPower);
         }
 
         // 8. 物品 / 流体 / 源质 存储字节统计（IStorageGrid 实际实现为 GridStorageCache）
@@ -276,6 +283,7 @@ public class QuantumNetworkData {
             } catch (NoSuchMethodError ignored) {
                 // 旧版 AE2 无源质存储：保持 0
             }
+            GTSimpleWirelessNetwork.LOG.info("[量子终端][装配] 存储字节完成");
         }
 
         // 9. 设备列表聚合：逐机器类统计数量，图标取该类第一个有效 machineRepresentation
@@ -315,6 +323,8 @@ public class QuantumNetworkData {
             aggregated = new ArrayList<>(aggregated.subList(0, MAX_ENTRIES));
         }
         data.entries.addAll(aggregated);
+        GTSimpleWirelessNetwork.LOG
+            .info("[量子终端][装配] 完成 条目=" + data.entries.size() + " totalMachines=" + data.totalMachines);
         return data;
     }
 }

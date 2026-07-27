@@ -87,6 +87,9 @@ public class GuiQuantumTerminal extends GuiScreen {
     /** v1.6.5 一次性渲染日志：本次 GUI 会话首次绘制在线数据时记录，用于确定性验证渲染路径 */
     private boolean loggedFirstDataRender = false;
 
+    /** v1.6.6 绘制帧计数器：约每 60 帧输出一次绘制状态，避免刷屏 */
+    private int drawFrameCounter = 0;
+
     public GuiQuantumTerminal() {
         // v1.6.5：不再无条件清空缓存——仅当缓存锚点与当前手持终端绑定目标不一致时清空。
         // 保留缓存时重开 GUI 立即显示上次快照，≤10 tick 内由轮询自动刷新。
@@ -95,6 +98,9 @@ public class GuiQuantumTerminal extends GuiScreen {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(held);
         if (!matchesCachedAnchor(anchor)) {
             latestData = null;
+            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI 构造] 锚点不一致/无缓存，清空 latestData");
+        } else {
+            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI 构造] 锚点匹配，复用缓存条目=" + latestData.entries.size());
         }
     }
 
@@ -113,6 +119,8 @@ public class GuiQuantumTerminal extends GuiScreen {
      */
     public static void receiveData(QuantumNetworkData data) {
         latestData = data;
+        GTSimpleWirelessNetwork.LOG
+            .info("[量子终端][GUI receiveData] 写入缓存 online=" + data.online + " 条目=" + data.entries.size());
     }
 
     @Override
@@ -127,6 +135,7 @@ public class GuiQuantumTerminal extends GuiScreen {
         super.updateScreen();
         // 每 10 tick 轮询一次服务端数据；pollTimer 初值 0 → 打开后立即发首包
         if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0) {
+            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI updateScreen] 发送请求包 #" + this.pollTimer);
             GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestQuantumTerminalData());
         }
     }
@@ -185,6 +194,13 @@ public class GuiQuantumTerminal extends GuiScreen {
             } else {
                 updateScrollFromMouse(mouseY);
             }
+        }
+
+        // 约每 60 帧输出一次绘制状态，用于定位卡死阶段（避免每帧刷屏）
+        if (this.drawFrameCounter++ % 60 == 0) {
+            QuantumNetworkData d = latestData;
+            String state = d == null ? "null" : (d.online ? "online(" + d.entries.size() + ")" : "offline");
+            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI drawScreen] 绘制中 data=" + state);
         }
 
         // 绘制 AE2 网络状态背景
@@ -342,12 +358,17 @@ public class GuiQuantumTerminal extends GuiScreen {
         }
     }
 
-    /** 绘制 16×16 物品图标（启用标准 GUI 物品光照） */
+    /** 绘制 16×16 物品图标（启用标准 GUI 物品光照；v1.6.6 单个图标渲染异常时跳过，避免整 GUI 崩溃） */
     private void drawItemIcon(ItemStack stack, int x, int y) {
-        RenderHelper.enableGUIStandardItemLighting();
-        RenderItem.getInstance()
-            .renderItemAndEffectIntoGUI(this.fontRendererObj, this.mc.getTextureManager(), stack, x, y);
-        RenderHelper.disableStandardItemLighting();
+        try {
+            RenderHelper.enableGUIStandardItemLighting();
+            RenderItem.getInstance()
+                .renderItemAndEffectIntoGUI(this.fontRendererObj, this.mc.getTextureManager(), stack, x, y);
+            RenderHelper.disableStandardItemLighting();
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.warn("[量子终端][GUI] 渲染设备图标异常，跳过：" + stack, t);
+            RenderHelper.disableStandardItemLighting();
+        }
     }
 
     /** 格式化字节行：used / total，total>0 时追加百分比 */
@@ -359,8 +380,14 @@ public class GuiQuantumTerminal extends GuiScreen {
         return line;
     }
 
-    /** 格式化 AE 能量值：k / M / G / T / P */
+    /** 格式化 AE 能量值：k / M / G / T / P（v1.6.6 防御 Infinity/NaN） */
     private static String formatAE(double value) {
+        if (Double.isNaN(value)) {
+            return "NaN";
+        }
+        if (Double.isInfinite(value)) {
+            return "∞";
+        }
         if (value == 0.0D) {
             return "0";
         }
@@ -374,8 +401,14 @@ public class GuiQuantumTerminal extends GuiScreen {
         return String.format("%.2f", v) + suffixes[idx];
     }
 
-    /** 格式化字节：B / kB / MB / GB / TB / PB */
+    /** 格式化字节：B / kB / MB / GB / TB / PB（v1.6.6 防御 Infinity/NaN） */
     private static String formatBytes(double value) {
+        if (Double.isNaN(value)) {
+            return "NaN";
+        }
+        if (Double.isInfinite(value)) {
+            return "∞";
+        }
         if (value == 0.0D) {
             return "0 B";
         }

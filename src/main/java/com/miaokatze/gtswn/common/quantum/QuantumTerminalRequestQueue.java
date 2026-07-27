@@ -44,6 +44,7 @@ public final class QuantumTerminalRequestQueue {
 
     /** 主线程执行：校验玩家仍在线，再装配/回发；任何异常都回发离线快照兜底 */
     private static void process(EntityPlayerMP player) {
+        GTSimpleWirelessNetwork.LOG.info("[量子终端][队列] 开始处理玩家请求");
         try {
             if (player.playerNetServerHandler == null) {
                 // 已掉线：静默丢弃
@@ -59,6 +60,7 @@ public final class QuantumTerminalRequestQueue {
                     data = new QuantumNetworkData();
                 }
             }
+            GTSimpleWirelessNetwork.LOG.info("[量子终端][队列] 装配返回 online=" + data.online + " 准备回发包6");
             // v1.6.2 诊断躍点 3/4【回发同步包】：确认包 6 已发出及其在线语义（v1.6.5 起保留 3/4 与 4/4 闭环日志）
             GTSimpleWirelessNetwork.LOG.info(
                 "[量子终端][3/4 回发同步包] online=" + data.online
