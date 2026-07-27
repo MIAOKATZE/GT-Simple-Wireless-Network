@@ -378,6 +378,22 @@ public class ItemNetworkQuantumTerminal extends Item {
         return stack.stackTagCompound != null && stack.stackTagCompound.getByte(NBT_BOUND) == 1;
     }
 
+    /**
+     * 读取终端绑定的锚点（v1.6.5：客户端 GUI 缓存匹配用）。
+     * <p>
+     * 客户端手持物品的 NBT 由服务端同步，可直接读取。
+     *
+     * @return {dim, x, y, z}；未绑定或入参为空返回 {@code null}
+     */
+    public static int[] getAnchor(ItemStack stack) {
+        if (stack == null || !isBound(stack)) {
+            return null;
+        }
+        NBTTagCompound tag = stack.stackTagCompound;
+        return new int[] { tag.getInteger(NBT_ANCHOR_DIM), tag.getInteger(NBT_ANCHOR_X), tag.getInteger(NBT_ANCHOR_Y),
+            tag.getInteger(NBT_ANCHOR_Z) };
+    }
+
     /** 确保 ItemStack NBT 存在 */
     private static NBTTagCompound ensureNBT(ItemStack stack) {
         if (stack.stackTagCompound == null) {
