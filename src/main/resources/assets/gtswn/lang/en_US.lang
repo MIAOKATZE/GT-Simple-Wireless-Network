@@ -314,13 +314,6 @@ gtswn.gui.quantum.fluids=Fluids
 gtswn.gui.quantum.essentia=Essentia
 gtswn.gui.quantum.installed=Installed
 
-# WAILA quantum node status (v1.6.2)
-gtswn.waila.quantum_node.online=§aOnline: bridged to anchor network (32-channel capacity)
-gtswn.waila.quantum_node.offline=§cOffline: %s
-gtswn.waila.quantum_node.reason.no_anchor=No anchor bound (place via quantum terminal)
-gtswn.waila.quantum_node.reason.cross_dimension=Cross-dimension bridging not supported
-gtswn.waila.quantum_node.reason.anchor_unreachable=Anchor controller unreachable
-gtswn.waila.quantum_node.reason.no_permission=No permission for this network
-gtswn.waila.quantum_node.reason.network_not_ready=Network not ready (retrying)
-gtswn.waila.quantum_node.reason.anchor_not_quantized=Anchor controller not quantized
-gtswn.waila.quantum_node.reason.unknown=Unknown reason
+# WAILA quantum node status (since v1.6.4 offline reason is not shown here; use right-click chat instead)
+gtswn.waila.quantum_node.online=§aDevice Online
+gtswn.waila.quantum_node.offline=§cDevice Offline

@@ -3,12 +3,17 @@ package com.miaokatze.gtswn.common.tile;
 import java.util.EnumSet;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.network.NetworkManager;
+import net.minecraft.network.Packet;
+import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.register.BlockRegistrar;
 
 import appeng.api.AEApi;
 import appeng.api.exceptions.ExistingConnectionException;
@@ -53,6 +58,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /** 连接维护间隔（tick）：20t = 1 秒，与量子化事件处理器巡检同节奏 */
     private static final long MAINTENANCE_INTERVAL_TICKS = 20L;
 
+    /** 同步 NBT 键名：桥接在线状态（仅 description packet 用，不持久化） */
+    private static final String NBT_SYNC_LINKED = "linked";
+
     // ==================== 锚点字段（T3 已有，NBT 持久化） ====================
 
     /** 锚点控制器维度 ID（未设置时为 Integer.MIN_VALUE，见 {@link #hasAnchor()}） */
@@ -90,6 +98,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 上次连接维护的世界 tick；-1 = 尚未维护（就绪后首轮 updateEntity 立即执行一次） */
     private long lastMaintenanceTick = -1L;
+
+    /** 客户端渲染用在线状态缓存（由 onDataPacket 维护；服务端勿用，服务端以 isLinked() 为权威） */
+    private boolean clientLinked = false;
+
+    /** 服务端上次已同步的在线状态（每 tick 比对，变化才 markBlockForUpdate 发包） */
+    private boolean lastSyncedLinked = false;
 
     // ==================== 离线原因枚举 ====================
 
@@ -201,6 +215,19 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         return this.offlineReason;
     }
 
+    /** 客户端渲染用在线状态（仅客户端有意义；服务端请用 {@link #isLinked()}） */
+    public boolean isLinkedClient() {
+        return this.clientLinked;
+    }
+
+    /** 服务端每 tick 比对在线状态，变化即 markBlockForUpdate 推送 S35（驱动客户端材质切换） */
+    private void syncLinkedStateIfChanged(boolean now) {
+        if (now != this.lastSyncedLinked) {
+            this.lastSyncedLinked = now;
+            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+        }
+    }
+
     /**
      * 当前状态对应的 lang 键（在线返回在线提示键，离线返回原因提示键）。
      * <p>
@@ -236,6 +263,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (gridProxy == null && !worldObj.isRemote) {
             // 构造参数照抄信息屏样板：(IGridProxyable, nbtName="proxy", 视觉物品=null, inWorld=true)
             gridProxy = new AENetworkProxy(this, "proxy", null, true);
+            // v1.6.4 任务2：注入视觉代表物品，否则 AE2 网络工具设备枚举（ContainerNetworkStatus）
+            // 因 getMachineRepresentation()==null 跳过本节点
+            gridProxy.setVisualRepresentation(new ItemStack(BlockRegistrar.networkQuantumNode, 1, 0));
             // DENSE_CAPACITY = 32 频道容量（AE2 单连接上限，即规划定的「无频道上限」最高形态），
             // 与控制器 proxy 的 DENSE_CAPACITY 对齐，桥接连接即可满载 32 频道
             gridProxy.setFlags(GridFlags.DENSE_CAPACITY);
@@ -320,6 +350,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // 空白节点一旦经终端放置写入锚点（setAnchor），本判定自动解除，proxy 走正常就绪流程。
         if (!hasAnchor()) {
             this.offlineReason = OfflineReason.NO_ANCHOR;
+            syncLinkedStateIfChanged(false);
             return;
         }
         // ===== proxy 就绪流程（照样板：暂存 NBT 重放 → onReady 一次性调用） =====
@@ -331,6 +362,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             getProxy().onReady();
             aeProxyReady = true;
         }
+        // v1.6.4 任务4：每 tick 比对在线状态（不受下方 20t 维护窗口限制），
+        // 变化即 markBlockForUpdate 推送 S35，材质切换延迟 ≤1t
+        syncLinkedStateIfChanged(isLinked());
         // ===== 桥接连接维护：每 20 tick 一次；lastMaintenanceTick 初值 -1 保证就绪后首轮立即执行 =====
         long tick = worldObj.getTotalWorldTime();
         if (this.lastMaintenanceTick >= 0L && tick - this.lastMaintenanceTick < MAINTENANCE_INTERVAL_TICKS) {
@@ -532,6 +566,27 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         if (gridProxy != null) {
             gridProxy.writeToNBT(tag);
+        }
+    }
+
+    // ==================== 在线状态同步（v1.6.4 任务4：驱动客户端状态材质渲染） ====================
+    // 独立小 NBT，不带 readFromNBT/writeToNBT 的 "proxy" GridNode 持久化数据
+
+    @Override
+    public Packet getDescriptionPacket() {
+        // ①chunk 初次同步（S21/S26 携带）②服务端 markBlockForUpdate 触发的 S35 单点更新
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setBoolean(NBT_SYNC_LINKED, isLinked());
+        return new S35PacketUpdateTileEntity(xCoord, yCoord, zCoord, 1, tag);
+    }
+
+    @Override
+    public void onDataPacket(NetworkManager net, S35PacketUpdateTileEntity pkt) {
+        this.clientLinked = pkt.func_148857_g()
+            .getBoolean(NBT_SYNC_LINKED);
+        // 1.7.10 客户端收 S35 不自动重渲染：markBlockForUpdate → RenderGlobal 标脏，下帧按新图标重绘
+        if (worldObj != null) {
+            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
         }
     }
 }

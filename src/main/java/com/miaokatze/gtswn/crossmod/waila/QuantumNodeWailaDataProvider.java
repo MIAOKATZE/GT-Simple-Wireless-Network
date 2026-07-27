@@ -1,7 +1,6 @@
 package com.miaokatze.gtswn.crossmod.waila;
 
 import java.util.List;
-import java.util.Locale;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
@@ -20,8 +19,9 @@ import mcp.mobius.waila.api.IWailaDataProvider;
 /**
  * 量子节点 WAILA 数据提供器（v1.6.2）。
  * <p>
- * 显示节点桥接状态：在线（已桥接至锚点网络）/ 离线（含原因）。
- * 数据流：服务端 {@link #getNBTData} 把 {@code isLinked()} 与 {@code getOfflineReason()}
+ * 显示节点桥接状态：在线（已桥接至锚点网络）/ 离线。v1.6.4 起 WAILA 不显示离线原因，
+ * 原因仍由右键聊天提示（chat.quantum.* 键系）提供。
+ * 数据流：服务端 {@link #getNBTData} 把 {@code isLinked()}
  * 写入同步 NBT；客户端 {@link #getWailaBody} 读 NBT 渲染文本——避免客户端直接触达
  * 服务端专属的 AE 网格状态。
  * <p>
@@ -34,9 +34,6 @@ public class QuantumNodeWailaDataProvider implements IWailaDataProvider {
     /** 同步 NBT 键：桥接在线状态 */
     private static final String TAG_LINKED = "gtswn_qn_linked";
 
-    /** 同步 NBT 键：离线原因枚举名 */
-    private static final String TAG_OFFLINE_REASON = "gtswn_qn_offline";
-
     @Override
     public List<String> getWailaBody(ItemStack itemStack, List<String> currenttip, IWailaDataAccessor accessor,
         IWailaConfigHandler config) {
@@ -48,13 +45,8 @@ public class QuantumNodeWailaDataProvider implements IWailaDataProvider {
         if (tag.getBoolean(TAG_LINKED)) {
             currenttip.add(StatCollector.translateToLocal("gtswn.waila.quantum_node.online"));
         } else {
-            // 枚举名 → 小写 → lang 键后缀；无对应键（含 NONE 瞬态）回退 unknown
-            String reason = tag.getString(TAG_OFFLINE_REASON)
-                .toLowerCase(Locale.ROOT);
-            String reasonKey = "gtswn.waila.quantum_node.reason." + reason;
-            String reasonText = StatCollector.canTranslate(reasonKey) ? StatCollector.translateToLocal(reasonKey)
-                : StatCollector.translateToLocal("gtswn.waila.quantum_node.reason.unknown");
-            currenttip.add(StatCollector.translateToLocalFormatted("gtswn.waila.quantum_node.offline", reasonText));
+            // v1.6.4 起离线不显示原因，原因由右键聊天提示提供
+            currenttip.add(StatCollector.translateToLocal("gtswn.waila.quantum_node.offline"));
         }
         return currenttip;
     }
@@ -65,10 +57,6 @@ public class QuantumNodeWailaDataProvider implements IWailaDataProvider {
         if (te instanceof TileEntityNetworkQuantumNode) {
             TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) te;
             tag.setBoolean(TAG_LINKED, node.isLinked());
-            tag.setString(
-                TAG_OFFLINE_REASON,
-                node.getOfflineReason()
-                    .name());
         }
         return tag;
     }

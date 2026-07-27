@@ -5,10 +5,13 @@ import java.util.ArrayList;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockContainer;
 import net.minecraft.block.material.Material;
+import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
+import net.minecraft.util.IIcon;
+import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
@@ -24,6 +27,9 @@ import com.miaokatze.gtswn.register.CreativeTabManager;
  * <p>
  * 本任务（T1）仅完成注册骨架：黑曜石×10 级硬度/抗性、材质、创造 Tab，
  * createNewTileEntity 返回空 TE 存根，不实现任何网络桥接逻辑。
+ * <p>
+ * v1.6.4 任务4：状态材质——世界内按 TE 在线状态渲染（在线动画 / 离线静态），
+ * 物品栏与破坏粒子等无世界上下文路径恒显示在线动画图标。
  */
 public class BlockNetworkQuantumNode extends BlockContainer {
 
@@ -35,6 +41,12 @@ public class BlockNetworkQuantumNode extends BlockContainer {
      * 由 {@code ClientProxy.init()} 注册 ISBRH 后回写真实 renderId。
      */
     public static int renderId = -1;
+
+    /** 在线动画图标（ME_Network_Quantum_Node.png，16x64 四帧竖条，mcmeta frametime=10） */
+    private IIcon iconOnline;
+
+    /** 离线静态图标（ME_Network_Quantum_Node_OFF.png，16x16 单帧，无 mcmeta） */
+    private IIcon iconOffline;
 
     /**
      * 构造函数：初始化量子节点方块的基础属性
@@ -79,6 +91,32 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     @Override
     public int getRenderType() {
         return renderId;
+    }
+
+    // ==================== v1.6.4 任务4：状态材质（在线动画 / 离线静态） ====================
+
+    @Override
+    public void registerBlockIcons(IIconRegister register) {
+        this.iconOnline = register.registerIcon("gtswn:ME_Network_Quantum_Node");
+        this.iconOffline = register.registerIcon("gtswn:ME_Network_Quantum_Node_OFF");
+        // 兼容第三方直接读 blockIcon 字段的路径（WAILA/NEI 图标等）
+        this.blockIcon = this.iconOnline;
+    }
+
+    /** 世界内渲染图标（ISBRH renderStandardBlock → RenderBlocks.getBlockIcon → 本方法）：在线动画 / 离线静态 */
+    @Override
+    public IIcon getIcon(IBlockAccess world, int x, int y, int z, int side) {
+        TileEntity te = world.getTileEntity(x, y, z);
+        if (te instanceof TileEntityNetworkQuantumNode && ((TileEntityNetworkQuantumNode) te).isLinkedClient()) {
+            return this.iconOnline;
+        }
+        return this.iconOffline;
+    }
+
+    /** 物品栏/破坏粒子等无世界上下文路径：恒显示在线动画图标 */
+    @Override
+    public IIcon getIcon(int side, int meta) {
+        return this.iconOnline;
     }
 
     /**

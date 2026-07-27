@@ -314,13 +314,6 @@ gtswn.gui.quantum.fluids=流体
 gtswn.gui.quantum.essentia=源质
 gtswn.gui.quantum.installed=已安装
 
-# WAILA 量子节点状态显示 (v1.6.2)
-gtswn.waila.quantum_node.online=§a在线：已桥接至锚点网络（32 频道容量）
-gtswn.waila.quantum_node.offline=§c离线：%s
-gtswn.waila.quantum_node.reason.no_anchor=未绑定锚点（请用量子终端放置）
-gtswn.waila.quantum_node.reason.cross_dimension=暂不支持跨维度桥接
-gtswn.waila.quantum_node.reason.anchor_unreachable=锚点控制器不可达
-gtswn.waila.quantum_node.reason.no_permission=没有该网络的权限
-gtswn.waila.quantum_node.reason.network_not_ready=网络未就绪（重试中）
-gtswn.waila.quantum_node.reason.anchor_not_quantized=锚点控制器未量子化
-gtswn.waila.quantum_node.reason.unknown=未知原因
+# WAILA 量子节点状态显示 (v1.6.4 起不显示离线原因，原因由右键聊天提示提供)
+gtswn.waila.quantum_node.online=§a设备在线
+gtswn.waila.quantum_node.offline=§c设备离线
