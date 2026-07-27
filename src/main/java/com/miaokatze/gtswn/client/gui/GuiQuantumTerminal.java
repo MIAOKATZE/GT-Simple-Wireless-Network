@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.client.gui;
 
+import java.util.Arrays;
 import java.util.List;
 
 import net.minecraft.client.Minecraft;
@@ -220,6 +221,44 @@ public class GuiQuantumTerminal extends GuiScreen {
         }
 
         super.drawScreen(mouseX, mouseY, partialTicks);
+
+        // v1.6.8：设备图标 tooltip——鼠标悬停在网格图标上时显示「设备名 + 已安装: 数量」
+        // 前置条件：在线（离线/未收到包时不显示）；命中检测独立实现，不影响 drawDeviceGrid 现有逻辑
+        if (latestData != null && latestData.online) {
+            drawDeviceTooltip(mouseX, mouseY);
+        }
+    }
+
+    /**
+     * v1.6.8：设备图标网格 tooltip 命中检测与渲染。
+     * <p>
+     * 复用 drawDeviceGrid 的坐标常量（GRID_ORIGIN_X/Y、CELL_WIDTH/HEIGHT、ICON_SIZE），
+     * 遍历当前可见页（受 scrollRow 控制）的图标，命中后构造两行 tooltip 并 drawHoveringText。
+     */
+    private void drawDeviceTooltip(int mouseX, int mouseY) {
+        List<QuantumNetworkData.DeviceEntry> entries = latestData.entries;
+        int startIndex = this.scrollRow * GRID_COLUMNS;
+        int viewEnd = Math.min(startIndex + GRID_COLUMNS * GRID_ROWS, entries.size());
+        for (int i = startIndex; i < viewEnd; i++) {
+            int gridIndex = i - startIndex;
+            int col = gridIndex % GRID_COLUMNS;
+            int row = gridIndex / GRID_COLUMNS;
+            int cellX = this.guiLeft + GRID_ORIGIN_X + col * CELL_WIDTH;
+            int cellY = this.guiTop + GRID_ORIGIN_Y + row * CELL_HEIGHT;
+            // 命中条件：鼠标位于 16×16 图标范围内
+            if (mouseX >= cellX && mouseX < cellX + ICON_SIZE && mouseY >= cellY && mouseY < cellY + ICON_SIZE) {
+                QuantumNetworkData.DeviceEntry entry = entries.get(i);
+                if (entry.icon == null) {
+                    break;
+                }
+                // 第一行：设备名；第二行：已安装: 数量
+                List<String> lines = Arrays.asList(
+                    entry.icon.getDisplayName(),
+                    tr("gtswn.gui.quantum.installed") + ": " + formatCount(entry.count));
+                drawHoveringText(lines, mouseX, mouseY, fontRendererObj);
+                break;
+            }
+        }
     }
 
     /** 绘制滚动条滑块（经典 MC 风格：灰主体 + 左上亮边 + 右下暗边）；仅条目超一页时显示 */
@@ -252,6 +291,18 @@ public class GuiQuantumTerminal extends GuiScreen {
             this.guiLeft + 13,
             this.guiTop + 26,
             0x404040);
+
+        // 频道行（v1.6.8 新增）：used / total (百分比%)，过载态红色
+        int channelPct = data.totalChannels > 0 ? (int) (data.usedChannels * 100L / data.totalChannels) : 0;
+        int channelColor = data.usedChannels > data.totalChannels ? 0xFF0000 : 0x404040;
+        String channelLine = tr("gtswn.gui.quantum.channels") + ": "
+            + data.usedChannels
+            + " / "
+            + data.totalChannels
+            + " ("
+            + channelPct
+            + "%)";
+        this.fontRendererObj.drawString(channelLine, this.guiLeft + 13, this.guiTop + 36, channelColor);
 
         // 设备图标网格
         drawDeviceGrid(data);

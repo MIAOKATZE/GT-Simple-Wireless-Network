@@ -240,16 +240,8 @@ public class QuantumNetworkData {
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, anchorX, anchorY, anchorZ);
         data.totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
 
-        // 6. 已消耗频道：网格内全部量子节点，各取连接 usedChannels 的 max 后求和（规划 §6）
-        int used = 0;
-        for (IGridNode node : grid.getMachines(TileEntityNetworkQuantumNode.class)) {
-            int nodeMax = 0;
-            for (IGridConnection connection : node.getConnections()) {
-                nodeMax = Math.max(nodeMax, connection.getUsedChannels());
-            }
-            used += nodeMax;
-        }
-        data.usedChannels = used;
+        // 6. 已消耗频道：复用抽取的方法（v1.6.8 抽取，供 TileEntityNetworkQuantumNode 复用）
+        data.usedChannels = computeUsedChannels(grid);
 
         // 7. 能量四项（IEnergyGrid 缓存，AE2 保证该缓存恒存在，仍做 null 防御）
         IEnergyGrid energy = grid.getCache(IEnergyGrid.class);
@@ -316,5 +308,28 @@ public class QuantumNetworkData {
         }
         data.entries.addAll(aggregated);
         return data;
+    }
+
+    /**
+     * 计算网格内所有量子节点桥接连接承载的频道总数（v1.6.8 抽取，供 TileEntityNetworkQuantumNode 复用）。
+     * <p>
+     * 口径：遍历 {@code grid.getMachines(TileEntityNetworkQuantumNode.class)}，
+     * 每节点取其所有连接 usedChannels 的 max，求和。
+     * <p>
+     * max 口径拓扑上等价于"桥接连接 usedChannels"（桥接连接恒≥邻接连接）。
+     *
+     * @param grid 锚点控制器所属网格
+     * @return 全部量子节点已用频道总和
+     */
+    public static int computeUsedChannels(IGrid grid) {
+        int used = 0;
+        for (IGridNode node : grid.getMachines(TileEntityNetworkQuantumNode.class)) {
+            int nodeMax = 0;
+            for (IGridConnection connection : node.getConnections()) {
+                nodeMax = Math.max(nodeMax, connection.getUsedChannels());
+            }
+            used += nodeMax;
+        }
+        return used;
     }
 }

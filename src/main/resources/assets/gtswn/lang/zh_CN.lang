@@ -300,6 +300,7 @@ gtswn.chat.quantum.node_offline_not_quantized=§c[量子节点] 锚点控制器�
 gtswn.chat.quantum.node_destroyed=§a[量子节点] 已销毁量子节点
 gtswn.chat.quantum.blocked=§c[量子化] 该控制器已量子化，仅能量交互设备可用
 gtswn.chat.quantum.merged=§a[量子化] %d 块新控制器已自动并入量子化结构
+gtswn.chat.quantum.warning_95=§e[量子节点] 警告：网络频道使用已达 95%%（%d/%d），继续接入将导致控制器爆炸！
 
 # ME Network Quantum Terminal GUI (T6 终端界面)
 gtswn.gui.quantum.title=ME网络量子终端
@@ -313,6 +314,7 @@ gtswn.gui.quantum.items=物品
 gtswn.gui.quantum.fluids=流体
 gtswn.gui.quantum.essentia=源质
 gtswn.gui.quantum.installed=已安装
+gtswn.gui.quantum.channels=频道
 
 # WAILA 量子节点状态显示 (v1.6.4 起不显示离线原因，原因由右键聊天提示提供)
 gtswn.waila.quantum_node.online=§a设备在线

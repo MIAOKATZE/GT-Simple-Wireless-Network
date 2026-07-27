@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.tile;
 
 import java.util.EnumSet;
+import java.util.Set;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
@@ -9,9 +10,12 @@ import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.StatCollector;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
@@ -20,10 +24,13 @@ import appeng.api.exceptions.ExistingConnectionException;
 import appeng.api.exceptions.FailedConnection;
 import appeng.api.exceptions.SecurityConnectionException;
 import appeng.api.networking.GridFlags;
+import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridNode;
 import appeng.api.util.AECableType;
 import appeng.api.util.DimensionalCoord;
+import appeng.core.worlddata.WorldData;
+import appeng.me.GridAccessException;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
@@ -104,6 +111,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 服务端上次已同步的在线状态（每 tick 比对，变化才 markBlockForUpdate 发包） */
     private boolean lastSyncedLinked = false;
+
+    /** 该节点上次 max usedChannels（-1 = 未初始化；v1.6.8 新增，用于 95% 预警跟踪本节点频道增长） */
+    private int lastNodeUsedChannels = -1;
 
     // ==================== 离线原因枚举 ====================
 
@@ -385,6 +395,15 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * </ol>
      */
     private void maintainConnection() {
+        // v1.6.8：网络过载检查（仅桥接存活时执行，避免离线节点重复触发）
+        if (this.connection != null && isLinked()) {
+            checkNetworkOverload();
+            // 检查后如果爆炸已触发，connection 会被同步销毁，直接返回
+            if (this.connection == null || !isLinked()) {
+                return;
+            }
+        }
+        // ===== 原有逻辑保持不变 =====
         if (this.connection != null) {
             if (isLinked() && isAnchorSnapshotMatched() && isAnchorStillQuantized()) {
                 // 连接存活、锚点未变且锚点仍量子化：无需维护
@@ -394,6 +413,117 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             destroyBridgeConnection();
         }
         tryConnect();
+    }
+
+    // ==================== v1.6.8：网络过载爆炸 + 95% 预警 ====================
+
+    /**
+     * v1.6.8：网络过载检查。
+     * <p>
+     * 每 20t 在 maintainConnection 顶部执行：
+     * <ol>
+     * <li>获取锚点控制器 grid</li>
+     * <li>计算 totalChannels（floodControllers + computeTotalChannels）</li>
+     * <li>计算全局 usedChannels（复用 QuantumNetworkData.computeUsedChannels）</li>
+     * <li>used > total → explodeControllers（整个控制器结构 TNT 级爆炸）</li>
+     * <li>used >= 95% * total 且本节点频道增长 → warnPlacer（向放置者发聊天警告）</li>
+     * </ol>
+     */
+    private void checkNetworkOverload() {
+        // 1. 获取锚点控制器 TE
+        TileEntity anchorTE = worldObj.getTileEntity(this.anchorX, this.anchorY, this.anchorZ);
+        if (!(anchorTE instanceof TileController)) {
+            return;
+        }
+        // 2. 经接口获取 grid（编译坑规避：源表达式静态类型为 TileEntity）
+        AENetworkProxy anchorProxy = ((IGridProxyable) anchorTE).getProxy();
+        if (anchorProxy == null || !anchorProxy.isReady()) {
+            return;
+        }
+        final IGrid grid;
+        try {
+            grid = anchorProxy.getGrid();
+        } catch (GridAccessException e) {
+            return;
+        }
+        // 3. 计算总频道
+        Set<Long> structure = QuantumControllerRegistry
+            .floodControllers(worldObj, this.anchorX, this.anchorY, this.anchorZ);
+        if (structure.isEmpty()) {
+            return;
+        }
+        int total = QuantumControllerRegistry.computeTotalChannels(structure);
+        // 4. 计算全局已用频道（复用 QuantumNetworkData 抽取的方法）
+        int used = QuantumNetworkData.computeUsedChannels(grid);
+        // 5. 计算本节点 max usedChannels
+        IGridNode myNode = getProxy().getNode();
+        if (myNode == null) {
+            return;
+        }
+        int nodeUsed = 0;
+        for (IGridConnection c : myNode.getConnections()) {
+            nodeUsed = Math.max(nodeUsed, c.getUsedChannels());
+        }
+        // 6. 爆炸判定（严格大于）
+        if (used > total) {
+            explodeControllers(structure);
+            return;
+        }
+        // 7. 95% 预警判定（本节点频道增长 + 全局达 95% + 未过载）
+        if (nodeUsed > this.lastNodeUsedChannels && used * 100 >= total * 95 && used < total) {
+            warnPlacer(used, total);
+        }
+        // 8. 更新本节点上次值
+        this.lastNodeUsedChannels = nodeUsed;
+    }
+
+    /**
+     * v1.6.8：网络过载爆炸——销毁整个控制器结构 + TNT 级爆炸。
+     * <p>
+     * 先 setBlockToAir 全部控制器（同步销毁所有量子节点连接，去重后续节点爆炸检测），
+     * 再在锚点位置 createExplosion 制造 TNT 级爆炸效果（威力 4.0，破坏方块+伤害实体）。
+     *
+     * @param structure floodControllers 返回的整结构坐标集
+     */
+    private void explodeControllers(Set<Long> structure) {
+        // 1. 销毁所有控制器方块（setBlockToAir 触发 TileController.invalidate → GridNode.destroy
+        // → 所有量子节点 connection 同步销毁，后续节点 isLinked() 返回 false 跳过爆炸）
+        for (long packed : structure) {
+            int cx = QuantumControllerRegistry.unpackX(packed);
+            int cy = QuantumControllerRegistry.unpackY(packed);
+            int cz = QuantumControllerRegistry.unpackZ(packed);
+            worldObj.setBlockToAir(cx, cy, cz);
+        }
+        // 2. 锚点位置 TNT 级爆炸（威力 4.0，smoking=true 破坏周围方块）
+        worldObj.createExplosion(null, this.anchorX + 0.5D, this.anchorY + 0.5D, this.anchorZ + 0.5D, 4.0F, true);
+    }
+
+    /**
+     * v1.6.8：95% 预警——向本节点放置者发送聊天警告。
+     * <p>
+     * 通过 GridNode.getPlayerID() 反查在线玩家（WorldData.instance().playerData().getPlayerFromID）。
+     * 玩家离线时返回 null，预警静默跳过（符合"仅放置者"语义）。
+     *
+     * @param used  当前已用频道
+     * @param total 总频道上限
+     */
+    private void warnPlacer(int used, int total) {
+        IGridNode myNode = getProxy().getNode();
+        if (myNode == null) {
+            return;
+        }
+        int playerID = myNode.getPlayerID();
+        if (playerID < 0) {
+            return;
+        }
+        EntityPlayer placer = WorldData.instance()
+            .playerData()
+            .getPlayerFromID(playerID);
+        if (placer == null) {
+            return;
+        }
+        String msg = StatCollector.translateToLocalFormatted("gtswn.chat.quantum.warning_95", used, total);
+        placer.addChatMessage(new ChatComponentText(msg));
     }
 
     /** 锚点控制器当前是否仍处于量子化状态（同维度 + 已入册） */

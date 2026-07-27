@@ -300,6 +300,7 @@ gtswn.chat.quantum.node_offline_not_quantized=§c[Quantum Node] Anchor controlle
 gtswn.chat.quantum.node_destroyed=§a[Quantum Node] Quantum node destroyed
 gtswn.chat.quantum.blocked=§c[Quantized] Controller is quantized; energy-only devices allowed
 gtswn.chat.quantum.merged=§a[Quantized] %d new controller block(s) auto-merged into the quantized structure
+gtswn.chat.quantum.warning_95=§e[Quantum Node] Warning: Network channel usage has reached 95%% (%d/%d), further connections will cause controller explosion!
 
 # ME Network Quantum Terminal GUI (T6 terminal interface)
 gtswn.gui.quantum.title=ME Network Quantum Terminal
@@ -313,6 +314,7 @@ gtswn.gui.quantum.items=Items
 gtswn.gui.quantum.fluids=Fluids
 gtswn.gui.quantum.essentia=Essentia
 gtswn.gui.quantum.installed=Installed
+gtswn.gui.quantum.channels=Channels
 
 # WAILA quantum node status (since v1.6.4 offline reason is not shown here; use right-click chat instead)
 gtswn.waila.quantum_node.online=§aDevice Online
