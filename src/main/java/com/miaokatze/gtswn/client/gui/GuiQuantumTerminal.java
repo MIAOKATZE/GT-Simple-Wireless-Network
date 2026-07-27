@@ -84,12 +84,6 @@ public class GuiQuantumTerminal extends GuiScreen {
     /** 滚动条拖拽中（mouseClicked 命中轨道置位，松开左键复位） */
     private boolean draggingScroll = false;
 
-    /** v1.6.5 一次性渲染日志：本次 GUI 会话首次绘制在线数据时记录，用于确定性验证渲染路径 */
-    private boolean loggedFirstDataRender = false;
-
-    /** v1.6.6 绘制帧计数器：约每 60 帧输出一次绘制状态，避免刷屏 */
-    private int drawFrameCounter = 0;
-
     public GuiQuantumTerminal() {
         // v1.6.5：不再无条件清空缓存——仅当缓存锚点与当前手持终端绑定目标不一致时清空。
         // 保留缓存时重开 GUI 立即显示上次快照，≤10 tick 内由轮询自动刷新。
@@ -98,10 +92,21 @@ public class GuiQuantumTerminal extends GuiScreen {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(held);
         if (!matchesCachedAnchor(anchor)) {
             latestData = null;
-            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI 构造] 锚点不一致/无缓存，清空 latestData");
-        } else {
-            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI 构造] 锚点匹配，复用缓存条目=" + latestData.entries.size());
         }
+    }
+
+    /**
+     * v1.6.7 核心修复：覆写默认行为，打开 GUI 时不暂停游戏 tick。
+     * <p>
+     * 1.7.10 中 {@link GuiScreen#doesGuiPauseGame()} 默认返回 true，会导致单人 integrated server
+     * 模式下打开 GUI 暂停整个游戏 tick——服务端不 tick 即无法处理包 5 请求，客户端永远收不到
+     * 包 6 回包，GUI 卡在「...」占位符（v1.6.5 之前的 GUI 空白现象根因）。
+     * <p>
+     * dedicated server 中 GUI 是客户端概念本来就不影响服务端 tick，故此修改对服务端无副作用。
+     */
+    @Override
+    public boolean doesGuiPauseGame() {
+        return false;
     }
 
     /** 缓存快照的锚点是否与手持终端绑定目标一致（无缓存/未绑定视为不一致） */
@@ -119,8 +124,6 @@ public class GuiQuantumTerminal extends GuiScreen {
      */
     public static void receiveData(QuantumNetworkData data) {
         latestData = data;
-        GTSimpleWirelessNetwork.LOG
-            .info("[量子终端][GUI receiveData] 写入缓存 online=" + data.online + " 条目=" + data.entries.size());
     }
 
     @Override
@@ -135,7 +138,6 @@ public class GuiQuantumTerminal extends GuiScreen {
         super.updateScreen();
         // 每 10 tick 轮询一次服务端数据；pollTimer 初值 0 → 打开后立即发首包
         if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0) {
-            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI updateScreen] 发送请求包 #" + this.pollTimer);
             GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestQuantumTerminalData());
         }
     }
@@ -196,13 +198,6 @@ public class GuiQuantumTerminal extends GuiScreen {
             }
         }
 
-        // 约每 60 帧输出一次绘制状态，用于定位卡死阶段（避免每帧刷屏）
-        if (this.drawFrameCounter++ % 60 == 0) {
-            QuantumNetworkData d = latestData;
-            String state = d == null ? "null" : (d.online ? "online(" + d.entries.size() + ")" : "offline");
-            GTSimpleWirelessNetwork.LOG.info("[量子终端][GUI drawScreen] 绘制中 data=" + state);
-        }
-
         // 绘制 AE2 网络状态背景
         this.mc.getTextureManager()
             .bindTexture(TEXTURE);
@@ -244,16 +239,6 @@ public class GuiQuantumTerminal extends GuiScreen {
 
     /** 绘制在线数据：能源 / 设备网格 / 底部统计 */
     private void drawOnline(QuantumNetworkData data) {
-        // v1.6.5 一次性渲染日志：确定性验证「数据到达 → 实际绘制」闭环（排障后可移除）
-        if (!this.loggedFirstDataRender) {
-            this.loggedFirstDataRender = true;
-            GTSimpleWirelessNetwork.LOG.info(
-                "[量子终端] GUI 首次绘制在线数据：频道=" + data.usedChannels
-                    + "/"
-                    + data.totalChannels
-                    + "，设备条目="
-                    + data.entries.size());
-        }
         // 现存 / 最大能源
         String storedStr = data.powerInfinite ? "∞" : formatAE(data.storedPower);
         String maxStr = data.powerInfinite ? "∞" : formatAE(data.maxStoredPower);

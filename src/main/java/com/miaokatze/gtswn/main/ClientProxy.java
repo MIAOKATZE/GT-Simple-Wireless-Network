@@ -130,8 +130,6 @@ public class ClientProxy extends CommonProxy {
         if (data == null) {
             return;
         }
-        // v1.6.2 诊断躍点 4/4【客户端接收】：确认包 6 抵达客户端并写入 GUI 缓存
-        GTSimpleWirelessNetwork.LOG.info("[量子终端][4/4 客户端接收] online=" + data.online + "，写入 GUI 缓存");
         // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
         Minecraft.getMinecraft()
             .func_152344_a(() -> GuiQuantumTerminal.receiveData(data));
