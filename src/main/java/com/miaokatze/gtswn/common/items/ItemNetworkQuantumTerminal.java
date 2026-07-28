@@ -28,6 +28,7 @@ import appeng.me.GridAccessException;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
+import appeng.util.LookDirection;
 import appeng.util.Platform;
 
 /**
@@ -210,6 +211,11 @@ public class ItemNetworkQuantumTerminal extends Item {
      * 此处用玩家视线射线判定：命中方块即视为方块交互（如 Shift+右击控制器取消量子化
      * 已由 onItemUseFirst 处理），直接返回不开 GUI；仅视线落空（右击空气）才开 GUI。
      * 距离取与客户端一致的手长：创造 5.0 / 生存 4.5。
+     * <p>
+     * v1.6.11 hotfix：原 {@code player.rayTrace(reach, 1.0F)} 在 dedicated server 抛
+     * {@link NoSuchMethodError}（{@code EntityPlayer.rayTrace} 在服务端不可用），
+     * 改用 AE2 {@link appeng.util.Platform#getPlayerRay} + {@link net.minecraft.world.World#rayTraceBlocks}
+     * 标准视线检测；reach 由 {@code EntityPlayerMP.theItemInWorldManager.getBlockReachDistance()} 自动决定。
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
@@ -221,8 +227,13 @@ public class ItemNetworkQuantumTerminal extends Item {
                 sendMessage(player, "gtswn.chat.quantum.need_bind");
                 return stack;
             }
-            double reach = player.capabilities.isCreativeMode ? 5.0D : 4.5D;
-            MovingObjectPosition hit = player.rayTrace(reach, 1.0F);
+            // v1.6.11 hotfix：原 player.rayTrace(reach, 1.0F) 在 dedicated server 抛 NoSuchMethodError
+            // （EntityPlayer.rayTrace 在服务端不可用），改用 AE2 Platform 标准视线检测。
+            // Platform.getPlayerRay 内部对 EntityPlayerMP 自动用 theItemInWorldManager.getBlockReachDistance()
+            // 取 reach（创造 5.0 / 生存 4.5），与原代码意图一致；AE2 PartPlacement.java:72 / AEBaseBlock.java:219
+            // 均用此模式做服务端视线检测，证明服务端兼容。
+            LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
+            MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), true);
             if (hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
                 // 瞄准方块（控制器/节点/任意方块）→ 方块交互路径，不开 GUI
                 return stack;
