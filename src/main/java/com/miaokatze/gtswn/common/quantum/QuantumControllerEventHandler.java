@@ -7,6 +7,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
@@ -26,6 +27,9 @@ import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 
 import appeng.api.implementations.items.INetworkToolItem;
+import appeng.block.networking.BlockCreativeEnergyCell;
+import appeng.block.networking.BlockEnergyAcceptor;
+import appeng.block.networking.BlockEnergyCell;
 import appeng.me.helpers.IGridProxyable;
 import appeng.parts.networking.PartQuartzFiber;
 import appeng.tile.networking.TileCableBus;
@@ -111,7 +115,12 @@ public class QuantumControllerEventHandler {
         if (held != null && held.getItem() instanceof ItemNetworkQuantumTerminal) {
             return;
         }
-        // 其余物品/空手 → 全量拦截（能量设备放置靠点击相邻非控制器方块完成，不受影响）
+        // v1.6.12：手持能源相关方块（能源接收器/能源元件/创造能源元件/致密能源元件）→ 放行放置
+        // 与 applyConnectionFilter 连接白名单语义对齐：能放行放置的方块即是放置后控制器会接受连接的方块
+        if (isEnergyRelatedItem(held)) {
+            return;
+        }
+        // 非能源相关物品/空手 → 全量拦截
         event.setCanceled(true);
         // 冷却防刷屏：同一玩家 2 秒内仅提示一次
         long now = event.world.getTotalWorldTime();
@@ -122,6 +131,40 @@ public class QuantumControllerEventHandler {
             event.entityPlayer
                 .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.quantum.blocked")));
         }
+    }
+
+    /**
+     * 判定手持物品是否为「能源相关方块」（v1.6.12 放行放置）。
+     * <p>
+     * 用于 {@link #onPlayerInteract} 放行玩家贴已量子化控制器表面放置能源相关方块的场景。
+     * 与 {@link #applyConnectionFilter} 的连接白名单语义对齐——能放行的方块即是放置后
+     * 控制器会接受连接的方块（能源接收器 / 能源元件 / 创造能源元件），避免玩家贴控制器
+     * 放置非能源方块造成「放得下却连不上」的视觉不一致。
+     * <p>
+     * 覆盖：
+     * <ul>
+     * <li>{@link BlockEnergyAcceptor}（能源接收器）</li>
+     * <li>{@link BlockEnergyCell}（能源元件，含致密 BlockDenseEnergyCell——因其继承 BlockEnergyCell，
+     * instanceof 一并覆盖）</li>
+     * <li>{@link BlockCreativeEnergyCell}（创造能源元件）</li>
+     * </ul>
+     * 不放行 cable bus（ItemMultiPart）——玩家需在控制器旁的非控制器面先放 cable bus，
+     * 再插入石英纤维朝向控制器（此路径不触发 onPlayerInteract，已正常工作）。
+     *
+     * @param stack 玩家手持物品栈（可能为 null）
+     * @return true 表示该物品是能源相关方块，应放行右键放置
+     */
+    private static boolean isEnergyRelatedItem(ItemStack stack) {
+        if (stack == null || stack.getItem() == null) {
+            return false;
+        }
+        Block block = Block.getBlockFromItem(stack.getItem());
+        if (block == null) {
+            return false;
+        }
+        // 致密 BlockDenseEnergyCell 继承 BlockEnergyCell，instanceof BlockEnergyCell 一并覆盖
+        return block instanceof BlockEnergyAcceptor || block instanceof BlockEnergyCell
+            || block instanceof BlockCreativeEnergyCell;
     }
 
     // ==================== 2. 挖掘减速（等效硬度 1000） ====================
