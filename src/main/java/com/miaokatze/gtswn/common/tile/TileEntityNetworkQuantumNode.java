@@ -12,11 +12,17 @@ import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
+import net.minecraft.world.ChunkCoordIntPair;
+import net.minecraft.world.WorldServer;
+import net.minecraftforge.common.DimensionManager;
+import net.minecraftforge.common.ForgeChunkManager;
+import net.minecraftforge.common.ForgeChunkManager.Ticket;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
 import appeng.api.AEApi;
@@ -115,6 +121,20 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /** 该节点上次 max usedChannels（-1 = 未初始化；v1.6.8 新增，用于 95% 预警跟踪本节点频道增长） */
     private int lastNodeUsedChannels = -1;
 
+    // ==================== v1.6.10 跨维度强制加载 Ticket 管理 ====================
+
+    /** 节点所在维度的 ForgeChunkManager Ticket（强制加载节点区块，保证本 TE 持续 tick） */
+    private Ticket nodeTicket = null;
+
+    /** 锚点所在维度的 ForgeChunkManager Ticket（强制加载锚点区块，保证控制器 TE 持续 tick） */
+    private Ticket anchorTicket = null;
+
+    /** 上次申请 anchorTicket 时的锚点快照（锚点改指时释放旧 anchorTicket） */
+    private int ticketedAnchorDim = Integer.MIN_VALUE;
+    private int ticketedAnchorX;
+    private int ticketedAnchorY;
+    private int ticketedAnchorZ;
+
     // ==================== 离线原因枚举 ====================
 
     /**
@@ -125,8 +145,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         NONE,
         /** 无锚点（未经量子终端放置，或锚点数据缺失） */
         NO_ANCHOR,
-        /** 跨维度（D6：v1 不支持跨维度桥接） */
-        CROSS_DIMENSION,
         /** 锚点不可达（锚点区块未加载，或锚点位置已不是 ME 控制器） */
         ANCHOR_UNREACHABLE,
         /** 无权限（网络有安全终端且放置者无权限，createGridConnection 抛 SecurityConnectionException） */
@@ -241,19 +259,18 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /**
      * 当前状态对应的 lang 键（在线返回在线提示键，离线返回原因提示键）。
      * <p>
-     * 键位映射（尽量复用已有键，T4 仅新增 node_online 与 node_offline_crossdim 两键）：
+     * 键位映射（尽量复用已有键）：
      * NONE → gtswn.chat.quantum.node_online（新增）；
-     * CROSS_DIMENSION → gtswn.chat.quantum.node_offline_crossdim（新增）；
      * NO_PERMISSION → gtswn.chat.quantum.no_permission（已有）；
      * ANCHOR_NOT_QUANTIZED → gtswn.chat.quantum.node_offline_not_quantized（v1.6.1 新增，lang 由任务 B 补）；
      * 其余（无锚点/锚点不可达/网络未就绪）→ gtswn.chat.quantum.node_offline（已有）。
+     * <p>
+     * v1.6.10：移除 CROSS_DIMENSION 离线原因（已支持跨维度桥接），node_offline_crossdim 键同步删除。
      */
     public String getOfflineReasonKey() {
         switch (this.offlineReason) {
             case NONE:
                 return "gtswn.chat.quantum.node_online";
-            case CROSS_DIMENSION:
-                return "gtswn.chat.quantum.node_offline_crossdim";
             case NO_PERMISSION:
                 return "gtswn.chat.quantum.no_permission";
             case ANCHOR_NOT_QUANTIZED:
@@ -330,6 +347,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void invalidate() {
         // 断桥接连接必须先于 proxy 生命周期：显式 destroy 防止网格残留幽灵节点
         destroyBridgeConnection();
+        // v1.6.10：释放强制加载 Ticket（TE 被销毁/卸载时不再持有 Ticket 配额）
+        releaseNodeTicket();
+        releaseAnchorTicket();
         super.invalidate();
         if (gridProxy != null) {
             gridProxy.invalidate();
@@ -342,6 +362,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void onChunkUnload() {
         // 同 invalidate：先断桥接连接再走 proxy 生命周期
         destroyBridgeConnection();
+        // v1.6.10：释放强制加载 Ticket（区块卸载时同步释放，避免 Ticket 残留）
+        releaseNodeTicket();
+        releaseAnchorTicket();
         super.onChunkUnload();
         if (gridProxy != null) {
             gridProxy.onChunkUnload();
@@ -389,9 +412,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /**
      * 连接维护主循环（每 20 tick 一次）。
      * <ol>
-     * <li>连接存活、锚点未改指且锚点仍量子化 → 跳过；</li>
+     * <li>连接存活、锚点未改指且锚点仍量子化 → 跳过（v1.6.10：仍调 maintainTickets 防区块卸载）；</li>
      * <li>连接在但锚点已改指 / 锚点已取消量子化（v1.6.1 问题 5）→ 销毁旧连接后重建（重建时按规则离线）；</li>
      * <li>无连接 → 按 D6/D7 规则尝试建连，失败记录离线原因待下轮重试。</li>
+     * <li>v1.6.10：只要有锚点就调 maintainTickets 维护强制加载 Ticket（保本 TE 与锚点控制器持续 tick）。</li>
      * </ol>
      */
     private void maintainConnection() {
@@ -406,13 +430,138 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // ===== 原有逻辑保持不变 =====
         if (this.connection != null) {
             if (isLinked() && isAnchorSnapshotMatched() && isAnchorStillQuantized()) {
-                // 连接存活、锚点未变且锚点仍量子化：无需维护
+                // v1.6.10：连接存活时仍需维护 Ticket（防止 Ticket 失效后区块卸载导致 TE 停 tick）
+                maintainTickets();
                 return;
             }
             // 连接已死（对端销毁/本节点重建）或锚点改指或锚点已取消量子化：清理后走重建
             destroyBridgeConnection();
         }
         tryConnect();
+        // v1.6.10：无论 tryConnect 成功与否，只要有锚点就维护 Ticket
+        // （Ticket 不依赖 connection 存活——锚点区块强制加载是桥接重建的前提，应优先于连接建立）
+        if (hasAnchor()) {
+            maintainTickets();
+        }
+    }
+
+    // ==================== v1.6.10 跨维度强制加载 Ticket 管理 ====================
+
+    /**
+     * 维护强制加载 Ticket（每 20t 在 maintainConnection 末尾调用）。
+     * <p>
+     * 策略：
+     * <ol>
+     * <li>节点 Ticket：强制加载节点所在区块，保证本 TE 持续 tick（玩家离开节点维度后桥接不断）</li>
+     * <li>锚点 Ticket：强制加载锚点所在区块，保证控制器 TE 持续 tick（AE2 网络推进）</li>
+     * <li>Ticket 失效（null，如服务器重启后）→ 重新申请（nodeTicket 由 callback 持久化恢复，anchorTicket 靠 tick 重建）</li>
+     * <li>锚点改指 → 释放旧 anchorTicket，申请新的</li>
+     * </ol>
+     */
+    private void maintainTickets() {
+        // 1. 节点 Ticket（始终需要，保证本 TE 持续 tick）
+        if (this.nodeTicket == null) {
+            requestNodeTicket();
+        }
+        // 2. 锚点 Ticket（锚点改指时释放旧的再申请新的）
+        if (this.anchorTicket == null || !isTicketedAnchorMatched()) {
+            releaseAnchorTicket();
+            requestAnchorTicket();
+        }
+    }
+
+    /**
+     * 申请节点所在区块的强制加载 Ticket。
+     * <p>
+     * 持久化：modData 存 type=node + 节点坐标，供 callback 在服务器重启后据此找到本 TE 并关联。
+     */
+    private void requestNodeTicket() {
+        this.nodeTicket = ForgeChunkManager
+            .requestTicket(GTSimpleWirelessNetwork.instance, worldObj, ForgeChunkManager.Type.NORMAL);
+        if (this.nodeTicket == null) {
+            GTSimpleWirelessNetwork.LOG
+                .warn("[量子节点] ForgeChunkManager Ticket 配额耗尽，节点区块强制加载失败 @ ({},{},{})", xCoord, yCoord, zCoord);
+            return;
+        }
+        ChunkCoordIntPair chunk = new ChunkCoordIntPair(xCoord >> 4, zCoord >> 4);
+        ForgeChunkManager.forceChunk(this.nodeTicket, chunk);
+        // 持久化标识：callback 据此找节点 TE
+        NBTTagCompound tag = this.nodeTicket.getModData();
+        tag.setString("type", "node");
+        tag.setInteger("nodeX", xCoord);
+        tag.setInteger("nodeY", yCoord);
+        tag.setInteger("nodeZ", zCoord);
+    }
+
+    /**
+     * 申请锚点所在区块的强制加载 Ticket。
+     * <p>
+     * 跨维度：锚点维度与节点维度可能不同，Ticket 申请在锚点维度 world 上。
+     * 不持久化重建：modData 存 type=anchor 标识，callback 遇到此 ticket 直接释放（靠 TE tick 重建），
+     * 避免锚点维度 callback 跨维度找不到节点 TE 的顺序依赖问题。
+     */
+    private void requestAnchorTicket() {
+        WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
+        if (anchorWorld == null) {
+            return;
+        }
+        this.anchorTicket = ForgeChunkManager
+            .requestTicket(GTSimpleWirelessNetwork.instance, anchorWorld, ForgeChunkManager.Type.NORMAL);
+        if (this.anchorTicket == null) {
+            GTSimpleWirelessNetwork.LOG.warn(
+                "[量子节点] ForgeChunkManager Ticket 配额耗尽，锚点区块强制加载失败 @ dim={} ({},{},{})",
+                this.anchorDim,
+                this.anchorX,
+                this.anchorY,
+                this.anchorZ);
+            return;
+        }
+        ChunkCoordIntPair chunk = new ChunkCoordIntPair(this.anchorX >> 4, this.anchorZ >> 4);
+        ForgeChunkManager.forceChunk(this.anchorTicket, chunk);
+        // 标识 type=anchor，callback 遇到此类 ticket 直接释放（靠 TE tick 重建）
+        NBTTagCompound tag = this.anchorTicket.getModData();
+        tag.setString("type", "anchor");
+        // 快照当前锚点
+        this.ticketedAnchorDim = this.anchorDim;
+        this.ticketedAnchorX = this.anchorX;
+        this.ticketedAnchorY = this.anchorY;
+        this.ticketedAnchorZ = this.anchorZ;
+    }
+
+    /** 释放节点 Ticket */
+    private void releaseNodeTicket() {
+        if (this.nodeTicket != null) {
+            ForgeChunkManager.releaseTicket(this.nodeTicket);
+            this.nodeTicket = null;
+        }
+    }
+
+    /** 释放锚点 Ticket（同步清空锚点快照） */
+    private void releaseAnchorTicket() {
+        if (this.anchorTicket != null) {
+            ForgeChunkManager.releaseTicket(this.anchorTicket);
+            this.anchorTicket = null;
+        }
+        this.ticketedAnchorDim = Integer.MIN_VALUE;
+    }
+
+    /** 当前锚点与 anchorTicket 申请时快照一致（用于检测锚点改指） */
+    private boolean isTicketedAnchorMatched() {
+        return this.ticketedAnchorDim == this.anchorDim && this.ticketedAnchorX == this.anchorX
+            && this.ticketedAnchorY == this.anchorY
+            && this.ticketedAnchorZ == this.anchorZ;
+    }
+
+    /**
+     * v1.6.10：callback 恢复时调用——将持久化恢复的 nodeTicket 关联到本 TE。
+     * <p>
+     * 服务器重启后 ForgeChunkManager 加载持久化的 nodeTicket，callback 据 modData 的 nodeX/Y/Z
+     * 找到本 TE 并调用此方法关联，节点区块随之强制加载，本 TE tick 后 maintainTickets 重建 anchorTicket。
+     *
+     * @param ticket callback 传入的持久化 nodeTicket
+     */
+    public void setNodeTicketFromCallback(Ticket ticket) {
+        this.nodeTicket = ticket;
     }
 
     // ==================== v1.6.8：网络过载爆炸 + 95% 预警 ====================
@@ -430,8 +579,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * </ol>
      */
     private void checkNetworkOverload() {
+        // v1.6.10：取锚点维度 world（跨维度桥接时 worldObj 是节点维度，锚点控制器在 anchorWorld）
+        WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
+        if (anchorWorld == null) {
+            return;
+        }
         // 1. 获取锚点控制器 TE
-        TileEntity anchorTE = worldObj.getTileEntity(this.anchorX, this.anchorY, this.anchorZ);
+        TileEntity anchorTE = anchorWorld.getTileEntity(this.anchorX, this.anchorY, this.anchorZ);
         if (!(anchorTE instanceof TileController)) {
             return;
         }
@@ -448,7 +602,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // 3. 计算总频道
         Set<Long> structure = QuantumControllerRegistry
-            .floodControllers(worldObj, this.anchorX, this.anchorY, this.anchorZ);
+            .floodControllers(anchorWorld, this.anchorX, this.anchorY, this.anchorZ);
         if (structure.isEmpty()) {
             return;
         }
@@ -486,16 +640,21 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * @param structure floodControllers 返回的整结构坐标集
      */
     private void explodeControllers(Set<Long> structure) {
+        // v1.6.10：取锚点维度 world（跨维度桥接时爆炸须发生在锚点维度，而非节点维度）
+        WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
+        if (anchorWorld == null) {
+            return;
+        }
         // 1. 销毁所有控制器方块（setBlockToAir 触发 TileController.invalidate → GridNode.destroy
         // → 所有量子节点 connection 同步销毁，后续节点 isLinked() 返回 false 跳过爆炸）
         for (long packed : structure) {
             int cx = QuantumControllerRegistry.unpackX(packed);
             int cy = QuantumControllerRegistry.unpackY(packed);
             int cz = QuantumControllerRegistry.unpackZ(packed);
-            worldObj.setBlockToAir(cx, cy, cz);
+            anchorWorld.setBlockToAir(cx, cy, cz);
         }
         // 2. 锚点位置 TNT 级爆炸（威力 4.0，smoking=true 破坏周围方块）
-        worldObj.createExplosion(null, this.anchorX + 0.5D, this.anchorY + 0.5D, this.anchorZ + 0.5D, 4.0F, true);
+        anchorWorld.createExplosion(null, this.anchorX + 0.5D, this.anchorY + 0.5D, this.anchorZ + 0.5D, 4.0F, true);
     }
 
     /**
@@ -526,9 +685,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         placer.addChatMessage(new ChatComponentText(msg));
     }
 
-    /** 锚点控制器当前是否仍处于量子化状态（同维度 + 已入册） */
+    /** 锚点控制器当前是否仍处于量子化状态（v1.6.10 跨维度：取锚点维度 world 查询注册表） */
     private boolean isAnchorStillQuantized() {
-        return this.anchorDim == worldObj.provider.dimensionId && QuantumControllerRegistry.get(worldObj)
+        WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
+        if (anchorWorld == null) {
+            return false;
+        }
+        return QuantumControllerRegistry.get(anchorWorld)
             .isQuantized(this.anchorX, this.anchorY, this.anchorZ);
     }
 
@@ -539,26 +702,29 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             this.offlineReason = OfflineReason.NO_ANCHOR;
             return;
         }
-        // D6：v1 不支持跨维度桥接
-        if (this.anchorDim != worldObj.provider.dimensionId) {
-            this.offlineReason = OfflineReason.CROSS_DIMENSION;
+        // v1.6.10：跨维度桥接——取锚点维度 world（维度未加载 → 离线 ANCHOR_UNREACHABLE）
+        WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
+        if (anchorWorld == null) {
+            this.offlineReason = OfflineReason.ANCHOR_UNREACHABLE;
             return;
         }
         // v1.6.1 问题 5：锚点控制器未处于量子化状态（已取消量子化）→ 不建连。
         // 注册表查询仅读 WorldSavedData 坐标集合，不触发区块加载，可在区块校验前执行
-        if (!QuantumControllerRegistry.get(worldObj)
+        if (!QuantumControllerRegistry.get(anchorWorld)
             .isQuantized(this.anchorX, this.anchorY, this.anchorZ)) {
             this.offlineReason = OfflineReason.ANCHOR_NOT_QUANTIZED;
             return;
         }
         // 锚点区块未加载：blockExists 不触发区块加载（与 TileWirelessBase 重连循环同一手法），
-        // 避免节点 tick 把锚点区块常加载造成级联加载
-        if (!worldObj.blockExists(this.anchorX, this.anchorY, this.anchorZ)) {
+        // 避免节点 tick 把锚点区块常加载造成级联加载。
+        // v1.6.10：跨维度时锚点区块由 anchorTicket 强制加载（maintainTickets 维护），
+        // 首次 tryConnect 时 Ticket 尚未申请，blockExists 可能返回 false → 下轮 Ticket 申请后再连
+        if (!anchorWorld.blockExists(this.anchorX, this.anchorY, this.anchorZ)) {
             this.offlineReason = OfflineReason.ANCHOR_UNREACHABLE;
             return;
         }
         // 锚点位置已不是 ME 控制器（D7：锚点被拆 → 离线保留绑定，可经终端改绑后重放节点）
-        TileEntity anchorTE = worldObj.getTileEntity(this.anchorX, this.anchorY, this.anchorZ);
+        TileEntity anchorTE = anchorWorld.getTileEntity(this.anchorX, this.anchorY, this.anchorZ);
         if (!(anchorTE instanceof TileController)) {
             this.offlineReason = OfflineReason.ANCHOR_UNREACHABLE;
             return;

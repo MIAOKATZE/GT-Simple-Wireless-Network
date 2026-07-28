@@ -295,7 +295,6 @@ gtswn.chat.quantum.need_bind=§c[Quantum Terminal] Bind a quantized controller f
 gtswn.chat.quantum.node_placed=§a[Quantum Terminal] Quantum node linked
 gtswn.chat.quantum.node_offline=§c[Quantum Node] Anchor unreachable, node offline
 gtswn.chat.quantum.node_online=§a[Quantum Node] Node online, bridged to anchor network (32 channel capacity)
-gtswn.chat.quantum.node_offline_crossdim=§c[Quantum Node] Cross-dimension bridging not supported, node offline
 gtswn.chat.quantum.node_offline_not_quantized=§c[Quantum Node] Anchor controller is not quantized
 gtswn.chat.quantum.node_destroyed=§a[Quantum Node] Quantum node destroyed
 gtswn.chat.quantum.blocked=§c[Quantized] Controller is quantized; energy-only devices allowed

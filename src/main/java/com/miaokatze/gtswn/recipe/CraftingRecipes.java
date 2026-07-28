@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.recipe;
 
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quantum_Terminal;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel_Extender;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
@@ -7,11 +8,13 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
 import net.minecraft.init.Blocks;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
 
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
+import cpw.mods.fml.common.registry.GameRegistry;
 import gregtech.api.enums.ItemList;
 import gregtech.api.enums.Materials;
 import gregtech.api.enums.OrePrefixes;
@@ -47,6 +50,8 @@ public class CraftingRecipes {
         addWirelessEnergyTapRecipe();
         addNetworkInfoPanelRecipe();
         addNetworkInfoPanelExtenderRecipe();
+        // ME 网络量子终端
+        addQuantumTerminalRecipe();
     }
 
     /**
@@ -233,5 +238,53 @@ public class CraftingRecipes {
             .add(recipe);
 
         GTSimpleWirelessNetwork.LOG.info("已添加网络信息拓展屏合成配方");
+    }
+
+    /**
+     * 添加 ME 网络量子终端的合成配方
+     * <p>
+     * 合成表（十字结构，中心 C = AE2 控制器）：
+     * 福鲁伊克斯方块 | GT metaitem.01:32680 | 福鲁伊克斯方块
+     * GT metaitem.01:32680 | AE2 控制器 | GT metaitem.01:32680
+     * 福鲁伊克斯方块 | GT metaitem.01:32680 | 福鲁伊克斯方块
+     * <p>
+     * 材料引用遵循 plan/crafting_20260727_094902.java 参考配方：
+     * AE2 方块经 GameRegistry.findItem 解耦（项目无 AE2 方块 OreDict 先例），
+     * GT metaitem.01:32680 经 findItem + meta（动态注册 meta，无 ItemList 静态映射）。
+     */
+    private static void addQuantumTerminalRecipe() {
+        // A = AE2 福鲁伊克斯方块（appliedenergistics2:tile.BlockFluix）
+        Item fluixItem = GameRegistry.findItem("appliedenergistics2", "tile.BlockFluix");
+        // B = GT metaitem.01:32680（gregtech:gt.metaitem.01 的 meta 32680）
+        Item gtMetaItem = GameRegistry.findItem("gregtech", "gt.metaitem.01");
+        // C = AE2 控制器（appliedenergistics2:tile.BlockController）
+        Item controllerItem = GameRegistry.findItem("appliedenergistics2", "tile.BlockController");
+
+        // 防御性校验：AE2/GT 未加载时 findItem 返回 null，跳过注册避免 NPE
+        if (fluixItem == null || gtMetaItem == null || controllerItem == null) {
+            GTSimpleWirelessNetwork.LOG.warn("[配方] ME 网络量子终端合成配方注册跳过：AE2/GT 物品缺失");
+            return;
+        }
+
+        ItemStack fluix = new ItemStack(fluixItem, 1, 0);
+        ItemStack gtComponent = new ItemStack(gtMetaItem, 1, 32680);
+        ItemStack controller = new ItemStack(controllerItem, 1, 0);
+
+        net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
+            ME_Network_Quantum_Terminal.get(1),
+            "ABA",
+            "BCB",
+            "ABA",
+            'A',
+            fluix,
+            'B',
+            gtComponent,
+            'C',
+            controller);
+
+        CraftingManager.getInstance()
+            .getRecipeList()
+            .add(recipe);
+        GTSimpleWirelessNetwork.LOG.info("已添加 ME 网络量子终端合成配方");
     }
 }

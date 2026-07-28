@@ -295,7 +295,6 @@ gtswn.chat.quantum.need_bind=§c[量子终端] 请先绑定一个量子化控制
 gtswn.chat.quantum.node_placed=§a[量子终端] 量子节点已接入网络
 gtswn.chat.quantum.node_offline=§c[量子节点] 锚点控制器不可达，节点离线
 gtswn.chat.quantum.node_online=§a[量子节点] 节点在线，已桥接至锚点网络（32 频道容量）
-gtswn.chat.quantum.node_offline_crossdim=§c[量子节点] 暂不支持跨维度桥接，节点离线
 gtswn.chat.quantum.node_offline_not_quantized=§c[量子节点] 锚点控制器未量子化
 gtswn.chat.quantum.node_destroyed=§a[量子节点] 已销毁量子节点
 gtswn.chat.quantum.blocked=§c[量子化] 该控制器已量子化，仅能量交互设备可用

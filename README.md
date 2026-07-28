@@ -175,6 +175,60 @@ Acts as a **virtual cable** — drains the machine's output into an internal buf
 
 ***
 
+## ME Network Quantum Terminal & Node / ME 网络量子终端与节点
+
+<p align="center"><img src="images/ME_Network_Quantum_Terminal.png" width="400"> <img src="images/ME_Network_Quantum_Node.png" width="400"><br><em>ME 网络量子终端（左）与量子节点（右）/ ME Network Quantum Terminal (left) & Quantum Node (right)</em></p>
+
+为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
+
+Adds a "quantum" remote-access mechanism to AE2 networks. The Quantum Terminal quantizes a formed ME controller structure and binds its network; the Quantum Node acts as a remote access point that bridges into the anchored controller's grid via a virtual GridConnection — bypassing vanilla cable distance limits so adjacent AE2 devices join directly.
+
+> ⚠️ 量子终端与量子节点均无合成配方，通过创造模式获取；节点仅能由已绑定终端右击空地放置。
+> ⚠️ Both the Quantum Terminal and Quantum Node have no crafting recipe — obtain via Creative; nodes can only be placed by right-clicking ground with a bound terminal.
+
+### Quantum Terminal / 量子终端
+
+| 手势 / Gesture | 行为 / Behavior |
+|---|---|
+| Right-click controller / 右击控制器 | Quantize & bind the entire structure (rebinds if already quantized) / 量子化并绑定整结构（已量子化则改绑） |
+| Shift+right-click controller / Shift+右击控制器 | Dequantize & unbind / 取消量子化并解绑 |
+| Right-click ground (bound) / 右击空地（已绑定）| Place a Quantum Node / 放置量子节点 |
+| Shift+right-click node / Shift+右击节点 | Destroy the node (no drops) / 销毁节点（无掉落） |
+| Shift+right-click air / Shift+右击空气 | Open terminal GUI / 打开终端界面 |
+
+### Quantum Node / 量子节点
+
+- **Remote Bridge / 远程桥接**: Bridges into the anchored controller's ME grid via a virtual connection; adjacent AE2 devices join the network directly. / 经虚拟桥接接入锚点控制器 ME 网络，相邻 AE2 设备直接入网。
+- **No Channel Limit / 无频道上限**: Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels. / 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。
+- **Idle Power / 待机功耗**: Configurable via `quantumNodeIdlePowerUsage` (default 10.0 AE/t). / 通过 `quantumNodeIdlePowerUsage` 配置（默认 10.0 AE/t）。
+- **Single-Dimension / 单维度**: v1 does not support cross-dimension bridging. / v1 不支持跨维度桥接。
+
+### Quantum Terminal GUI / 量子终端界面
+
+v1.6.9 起精简为紧凑布局（120×92），仅显示三类核心信息：
+
+As of v1.6.9, the GUI is streamlined into a compact layout (120×92) showing only three core items:
+
+| 项目 / Item | 说明 / Description |
+|---|---|
+| Controller Pos + Dim / 控制器坐标 + 维度 | Anchor coordinates and dimension / 锚点坐标与维度 |
+| Quantum Node Count / 量子节点数量 | Number of Quantum Nodes in the network / 网络中量子节点数量 |
+| Channels / 频道 | `used / total (pct%)`, red highlight when overloaded / `已用 / 总数 (百分比%)`，过载时红色高亮 |
+
+### Overload Protection / 过载保护
+
+当量子节点带入的频道总数超过控制器结构容量（`(n×6 − sharedFaces) × 32`）时，整个控制器结构 **TNT 级爆炸**；达到 95% 阈值时向节点放置者发送聊天警告。
+
+When the total channels brought in by Quantum Nodes exceed the controller structure capacity (`(n×6 − sharedFaces) × 32`), the entire structure **detonates in a TNT-level explosion**; a chat warning is sent to the node's placer at the 95% threshold.
+
+### Hardened Controller / 量子化控制器强化
+
+量子化后的 ME 控制器获得等效硬度（挖掘速度降至 1/1000）与等效防爆（400000），且对爆炸事件自动移除受影响方块——防止被意外破坏或爆破。
+
+Quantized ME controllers gain equivalent hardness (mining speed × 1/1000) and equivalent blast resistance (400000), and are automatically removed from explosion-affected block lists — preventing accidental breakage or blasting.
+
+***
+
 ## Admin Commands / 管理员命令
 
 OP level 4 required. / 需要 OP 等级 4。
