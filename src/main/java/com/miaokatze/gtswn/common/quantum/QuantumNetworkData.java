@@ -87,6 +87,9 @@ public class QuantumNetworkData {
     /** 已消耗频道 = Σ 各量子节点连接 usedChannels 的 max */
     public int usedChannels;
 
+    /** 网络中量子节点（TileEntityNetworkQuantumNode）数量（v1.6.9 新增，供终端 UI 紧凑显示） */
+    public int quantumNodeCount;
+
     /** 网络平均能量消耗（AE/t，近 10 tick 平均） */
     public double avgPowerUsage;
 
@@ -242,6 +245,9 @@ public class QuantumNetworkData {
 
         // 6. 已消耗频道：复用抽取的方法（v1.6.8 抽取，供 TileEntityNetworkQuantumNode 复用）
         data.usedChannels = computeUsedChannels(grid);
+        // v1.6.9：统计量子节点方块数量（grid.getMachines 已在 computeUsedChannels 内成功使用同模式，编译坑已排除）
+        data.quantumNodeCount = grid.getMachines(TileEntityNetworkQuantumNode.class)
+            .size();
 
         // 7. 能量四项（IEnergyGrid 缓存，AE2 保证该缓存恒存在，仍做 null 防御）
         IEnergyGrid energy = grid.getCache(IEnergyGrid.class);

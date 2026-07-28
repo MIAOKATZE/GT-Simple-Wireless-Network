@@ -17,11 +17,12 @@ import io.netty.buffer.ByteBuf;
  * 字段与 {@link QuantumNetworkData} 一一对应（规划 plan_20260722152445.md §6）：
  * online / anchorDim+xyz / totalChannels / usedChannels / 能量四项 /
  * itemBytesUsed/Total / fluidBytesUsed/Total / essentiaBytesUsed/Total / powerInfinite /
- * totalMachines / entryCount + entries{ItemStack icon, int count}。
+ * totalMachines / entryCount + entries{ItemStack icon, int count} / quantumNodeCount。
  * <p>
  * 序列化约定：toBytes/fromBytes 严格对称（风格仿 {@link PacketSyncAEMonitorData}）；
  * ItemStack 用 {@link ByteBufUtils#writeItemStack}（图标为 machineRepresentation 小对象，
  * 无大 NBT，直接写入即可）；online=false 时仍写全字段（值为默认 0/空列表），保持读写对称。
+ * v1.6.9 末尾追加 quantumNodeCount 保持向后兼容。
  */
 public class PacketSyncQuantumTerminalData implements IMessage {
 
@@ -62,6 +63,8 @@ public class PacketSyncQuantumTerminalData implements IMessage {
             ByteBufUtils.writeItemStack(buf, entry.icon);
             buf.writeInt(entry.count);
         }
+        // v1.6.9：末尾追加 quantumNodeCount（保持向后兼容，旧客户端读取时多出 4 字节被丢弃）
+        buf.writeInt(data.quantumNodeCount);
     }
 
     @Override
@@ -95,6 +98,10 @@ public class PacketSyncQuantumTerminalData implements IMessage {
             if (icon != null && icon.getItem() != null) {
                 d.entries.add(new QuantumNetworkData.DeviceEntry(icon, count));
             }
+        }
+        // v1.6.9：防御性读取 quantumNodeCount（防新客户端读旧服务端包越界崩溃）
+        if (buf.readableBytes() >= 4) {
+            d.quantumNodeCount = buf.readInt();
         }
         this.data = d;
     }

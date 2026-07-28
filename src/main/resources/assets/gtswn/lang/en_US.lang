@@ -306,15 +306,10 @@ gtswn.chat.quantum.warning_95=§e[Quantum Node] Warning: Network channel usage h
 gtswn.gui.quantum.title=ME Network Quantum Terminal
 gtswn.gui.quantum.offline=§cNetwork offline (anchor unreachable)
 gtswn.gui.quantum.network_details=Network Details
-gtswn.gui.quantum.stored_power=Stored Power
-gtswn.gui.quantum.max_power=Max Power
-gtswn.gui.quantum.power_usage=Power Usage
-gtswn.gui.quantum.power_input=Power Input
-gtswn.gui.quantum.items=Items
-gtswn.gui.quantum.fluids=Fluids
-gtswn.gui.quantum.essentia=Essentia
-gtswn.gui.quantum.installed=Installed
 gtswn.gui.quantum.channels=Channels
+gtswn.gui.quantum.controller_pos=Controller Pos
+gtswn.gui.quantum.dimension=Dimension
+gtswn.gui.quantum.node_count=Quantum Nodes
 
 # WAILA quantum node status (since v1.6.4 offline reason is not shown here; use right-click chat instead)
 gtswn.waila.quantum_node.online=§aDevice Online
