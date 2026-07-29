@@ -72,13 +72,18 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
     @Override
     public boolean renderWorldBlock(IBlockAccess world, int x, int y, int z, Block block, int modelId,
         RenderBlocks renderer) {
+        // v1.6.13 任务1：防御 world 为空
+        if (world == null) {
+            return false;
+        }
         // 核心：renderBounds 取自方块 setBlockBounds 设定的小核心包围盒
         renderer.setRenderBoundsFromBlock(block);
         renderer.renderStandardBlock(block, x, y, z);
         // 六向：邻居为 AE 网格宿主（IGridHost，含 AE 线缆/面板/机器及本模组量子节点）时渲染连接臂
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
             TileEntity neighbor = world.getTileEntity(x + d.offsetX, y + d.offsetY, z + d.offsetZ);
-            if (neighbor instanceof IGridHost) {
+            // v1.6.13 任务1：增加 null 检查
+            if (neighbor != null && neighbor instanceof IGridHost) {
                 double[] b = ARM_BOUNDS[d.ordinal()];
                 renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
                 renderer.renderStandardBlock(block, x, y, z);

@@ -17,6 +17,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
@@ -433,6 +434,10 @@ public class WirelessEnergyTap extends Item {
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
+        // v1.6.13 任务2：无线链路终端子系统禁用时禁止所有链路终端交互
+        if (!Config.enableLinkTerminal) {
+            return false;
+        }
         // 只在服务端处理
         if (world.isRemote) {
             return false;
@@ -463,6 +468,10 @@ public class WirelessEnergyTap extends Item {
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
+        // v1.6.13 任务2：无线链路终端子系统禁用时禁止所有链路终端交互
+        if (!Config.enableLinkTerminal) {
+            return stack;
+        }
         // 只在服务端处理
         if (world.isRemote) {
             return stack;

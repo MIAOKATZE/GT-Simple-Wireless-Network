@@ -19,6 +19,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
@@ -112,13 +113,21 @@ public class ItemNetworkQuantumTerminal extends Item {
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
+        // v1.6.13 任务2：ME 网络量子终端子系统禁用时禁止所有量子终端手势
+        if (!Config.enableQuantumTerminal) {
+            return false;
+        }
+        GTSimpleWirelessNetwork.LOG
+            .debug("[量子终端] onItemUseFirst 进入 @ ({},{},{}) side={} 玩家={}", x, y, z, side, player.getCommandSenderName());
         // 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
         if (world.isRemote) {
             return false;
         }
         TileEntity te = world.getTileEntity(x, y, z);
         if (te instanceof TileController) {
-            return handleControllerClick(stack, player, world, (TileController) te, x, y, z);
+            boolean result = handleControllerClick(stack, player, world, (TileController) te, x, y, z);
+            GTSimpleWirelessNetwork.LOG.debug("[量子终端] handleControllerClick 返回 {}", result);
+            return result;
         }
         return handleBlockClick(stack, player, world, x, y, z, side);
     }
@@ -219,6 +228,12 @@ public class ItemNetworkQuantumTerminal extends Item {
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
+        // v1.6.13 任务2：ME 网络量子终端子系统禁用时禁止所有量子终端手势
+        if (!Config.enableQuantumTerminal) {
+            return stack;
+        }
+        GTSimpleWirelessNetwork.LOG
+            .debug("[量子终端] onItemRightClick 进入 玩家={} isRemote={}", player.getCommandSenderName(), world.isRemote);
         if (world.isRemote) {
             return stack;
         }
@@ -232,13 +247,16 @@ public class ItemNetworkQuantumTerminal extends Item {
             // Platform.getPlayerRay 内部对 EntityPlayerMP 自动用 theItemInWorldManager.getBlockReachDistance()
             // 取 reach（创造 5.0 / 生存 4.5），与原代码意图一致；AE2 PartPlacement.java:72 / AEBaseBlock.java:219
             // 均用此模式做服务端视线检测，证明服务端兼容。
+            GTSimpleWirelessNetwork.LOG.trace("[量子终端] 调用 Platform.getPlayerRay 前");
             LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
+            GTSimpleWirelessNetwork.LOG.trace("[量子终端] 调用 Platform.getPlayerRay 后");
             MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), true);
             if (hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
                 // 瞄准方块（控制器/节点/任意方块）→ 方块交互路径，不开 GUI
                 return stack;
             }
             // 坐标参数对手持物品 GUI 无意义（T6 Container 取 player.getHeldItem()），传玩家位置占位
+            GTSimpleWirelessNetwork.LOG.debug("[量子终端] 打开量子终端 GUI 玩家={}", player.getCommandSenderName());
             player.openGui(
                 GTSimpleWirelessNetwork.instance,
                 GTSimpleWirelessNetwork.GUI_QUANTUM_TERMINAL,

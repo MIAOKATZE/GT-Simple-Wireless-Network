@@ -106,6 +106,10 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     /** 世界内渲染图标（ISBRH renderStandardBlock → RenderBlocks.getBlockIcon → 本方法）：在线动画 / 离线静态 */
     @Override
     public IIcon getIcon(IBlockAccess world, int x, int y, int z, int side) {
+        // v1.6.13 任务1：防御 TE 为空或类型不符
+        if (world == null) {
+            return this.iconOffline;
+        }
         TileEntity te = world.getTileEntity(x, y, z);
         if (te instanceof TileEntityNetworkQuantumNode && ((TileEntityNetworkQuantumNode) te).isLinkedClient()) {
             return this.iconOnline;

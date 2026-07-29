@@ -25,6 +25,8 @@ import net.minecraftforge.event.world.ExplosionEvent;
 
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.api.implementations.items.INetworkToolItem;
 import appeng.block.networking.BlockCreativeEnergyCell;
@@ -91,11 +93,22 @@ public class QuantumControllerEventHandler {
      */
     @SubscribeEvent
     public void onPlayerInteract(PlayerInteractEvent event) {
+        // v1.6.13 任务2：ME 网络量子终端子系统禁用时直接跳过所有量子化控制器交互拦截
+        if (!Config.enableQuantumTerminal) {
+            return;
+        }
         if (event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK) {
             return;
         }
+        GTSimpleWirelessNetwork.LOG.trace(
+            "[量子化] onPlayerInteract 处理右键方块 @ ({},{},{}) {}",
+            event.x,
+            event.y,
+            event.z,
+            event.entityPlayer.getCommandSenderName());
         // 仅服务端取消与提示；客户端镜像事件直接忽略，避免提示双发
         if (event.world.isRemote) {
+            GTSimpleWirelessNetwork.LOG.trace("[量子化] 忽略客户端镜像事件");
             return;
         }
         TileEntity te = event.world.getTileEntity(event.x, event.y, event.z);
@@ -121,6 +134,12 @@ public class QuantumControllerEventHandler {
             return;
         }
         // 非能源相关物品/空手 → 全量拦截
+        GTSimpleWirelessNetwork.LOG.debug(
+            "[量子化] 拦截非能源相关物品/空手右键已量子化控制器 @ ({},{},{}) 玩家={}",
+            event.x,
+            event.y,
+            event.z,
+            event.entityPlayer.getCommandSenderName());
         event.setCanceled(true);
         // 冷却防刷屏：同一玩家 2 秒内仅提示一次
         long now = event.world.getTotalWorldTime();
@@ -184,6 +203,10 @@ public class QuantumControllerEventHandler {
             return;
         }
         World world = event.entityPlayer.worldObj;
+        // v1.6.13 任务1：客户端路径 TRACE 日志
+        if (world.isRemote) {
+            GTSimpleWirelessNetwork.LOG.trace("[量子化] onBreakSpeed 客户端路径 @ ({},{},{})", event.x, event.y, event.z);
+        }
         // 量子节点方块：硬度/抗性已在方块属性中直接表达，不依赖事件修正
         if (event.block instanceof BlockNetworkQuantumNode) {
             return;
@@ -195,6 +218,8 @@ public class QuantumControllerEventHandler {
         }
         if (!QuantumControllerRegistry.get(world)
             .isQuantized(event.x, event.y, event.z)) {
+            // v1.6.13 任务1：未量子化时 DEBUG 日志
+            GTSimpleWirelessNetwork.LOG.debug("[量子化] onBreakSpeed 目标未量子化 @ ({},{},{})", event.x, event.y, event.z);
             return;
         }
         float hardness = event.block.getBlockHardness(world, event.x, event.y, event.z);

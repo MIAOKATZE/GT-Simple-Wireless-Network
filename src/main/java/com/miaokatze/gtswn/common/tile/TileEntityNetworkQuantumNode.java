@@ -383,6 +383,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // 空白节点一旦经终端放置写入锚点（setAnchor），本判定自动解除，proxy 走正常就绪流程。
         if (!hasAnchor()) {
             this.offlineReason = OfflineReason.NO_ANCHOR;
+            GTSimpleWirelessNetwork.LOG.trace("[量子节点] updateEntity 无锚点，同步离线状态 @ ({},{},{})", xCoord, yCoord, zCoord);
             syncLinkedStateIfChanged(false);
             return;
         }
@@ -397,7 +398,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // v1.6.4 任务4：每 tick 比对在线状态（不受下方 20t 维护窗口限制），
         // 变化即 markBlockForUpdate 推送 S35，材质切换延迟 ≤1t
-        syncLinkedStateIfChanged(isLinked());
+        boolean linkedNow = isLinked();
+        GTSimpleWirelessNetwork.LOG
+            .trace("[量子节点] updateEntity 同步在线状态 @ ({},{},{}) linked={}", xCoord, yCoord, zCoord, linkedNow);
+        syncLinkedStateIfChanged(linkedNow);
         // ===== 桥接连接维护：每 20 tick 一次；lastMaintenanceTick 初值 -1 保证就绪后首轮立即执行 =====
         long tick = worldObj.getTotalWorldTime();
         if (this.lastMaintenanceTick >= 0L && tick - this.lastMaintenanceTick < MAINTENANCE_INTERVAL_TICKS) {
@@ -836,6 +840,16 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             this.anchorY = tag.getInteger(NBT_ANCHOR_Y);
             this.anchorZ = tag.getInteger(NBT_ANCHOR_Z);
         }
+        // v1.6.13 任务1：防御性读取同步在线状态，防止区块加载/磁盘读取后 clientLinked 缺失
+        if (tag.hasKey(NBT_SYNC_LINKED)) {
+            this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);
+            GTSimpleWirelessNetwork.LOG.debug(
+                "[量子节点] readFromNBT 读取同步状态 @ ({},{},{}) clientLinked={}",
+                xCoord,
+                yCoord,
+                zCoord,
+                this.clientLinked);
+        }
         if (tag.hasKey("proxy")) {
             if (worldObj != null && !worldObj.isRemote) {
                 getProxy().readFromNBT(tag);
@@ -860,6 +874,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             tag.setInteger(NBT_ANCHOR_Y, this.anchorY);
             tag.setInteger(NBT_ANCHOR_Z, this.anchorZ);
         }
+        // v1.6.13 任务1：持久化同步在线状态，用于区块加载/磁盘读取后恢复 clientLinked
+        tag.setBoolean(NBT_SYNC_LINKED, isLinked());
+        GTSimpleWirelessNetwork.LOG
+            .debug("[量子节点] writeToNBT 写入同步状态 @ ({},{},{}) linked={}", xCoord, yCoord, zCoord, isLinked());
         if (gridProxy != null) {
             gridProxy.writeToNBT(tag);
         }
@@ -878,8 +896,17 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     @Override
     public void onDataPacket(NetworkManager net, S35PacketUpdateTileEntity pkt) {
-        this.clientLinked = pkt.func_148857_g()
-            .getBoolean(NBT_SYNC_LINKED);
+        // v1.6.13 任务1：防御 pkt 为空或读取失败
+        if (pkt == null) {
+            GTSimpleWirelessNetwork.LOG.warn("[量子节点] onDataPacket 收到 null 包");
+            return;
+        }
+        NBTTagCompound tag = pkt.func_148857_g();
+        if (tag == null) {
+            GTSimpleWirelessNetwork.LOG.warn("[量子节点] onDataPacket 读取 NBT 失败");
+            return;
+        }
+        this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);
         // 1.7.10 客户端收 S35 不自动重渲染：markBlockForUpdate → RenderGlobal 标脏，下帧按新图标重绘
         if (worldObj != null) {
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);

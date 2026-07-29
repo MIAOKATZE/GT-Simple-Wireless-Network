@@ -36,6 +36,9 @@ public class Config {
     /** 网络信息屏历史数据保留配置类目名（v1.5.15 新增） */
     private static final String CATEGORY_NETWORK_INFO = "network_info";
 
+    /** 功能子系统开关配置类目名（v1.6.13 新增） */
+    private static final String CATEGORY_FEATURES = "features";
+
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
     // 此配置仅用于在基准值基础上进行微调。
@@ -110,6 +113,16 @@ public class Config {
     // will be cleaned up at server startup to release memory. 0 = never clean (not recommended).
     // 默认 7 天 / Default 7 days
     public static int keepHistoryDays = 7;
+
+    // 是否启用无线链路终端子系统（含 WirelessEnergyTap、Energy/Dynamo 无线覆盖板及其配方）（v1.6.13 新增）
+    // Enable wireless link terminal subsystem (WirelessEnergyTap + Energy/Dynamo wireless covers + recipes)
+    // 默认 true / Default true
+    public static boolean enableLinkTerminal = true;
+
+    // 是否启用 ME 网络量子终端子系统（含 ItemNetworkQuantumTerminal、BlockNetworkQuantumNode 及其配方）（v1.6.13 新增）
+    // Enable ME network quantum terminal subsystem (quantum terminal + quantum node + recipes)
+    // 默认 true / Default true
+    public static boolean enableQuantumTerminal = true;
 
     /**
      * 同步主配置文件 (gtswn.cfg)
@@ -240,6 +253,34 @@ public class Config {
             "网络信息屏历史数据保留天数 / Network info panel history retention days\n"
                 + "超过此天数未采样的玩家数据将在服务器启动时清理 / Datasets not sampled within this many days will be cleaned at server startup\n"
                 + "0=永不清理（默认7天）/ 0=never clean (Default 7 days)");
+
+        // === 功能子系统开关类目（v1.6.13 新增，独立顶层 features 类目，与 general/hud/network_info 平级） ===
+        configuration.setCategoryComment(
+            CATEGORY_FEATURES,
+            "功能子系统开关 / Feature subsystem toggles\n"
+                + "关闭后对应子系统的物品、方块、配方及功能入口将被禁用 / Disables items, blocks, recipes and entry points of the corresponding subsystem");
+
+        // 是否启用无线链路终端子系统 / Enable wireless link terminal subsystem
+        enableLinkTerminal = configuration.getBoolean(
+            "enableLinkTerminal",
+            CATEGORY_FEATURES,
+            enableLinkTerminal,
+            "是否启用无线链路终端子系统 / Enable wireless link terminal subsystem\n"
+                + "关闭后禁用 WirelessEnergyTap、Energy/Dynamo 无线覆盖板及其配方 / Disables WirelessEnergyTap, Energy/Dynamo wireless covers and their recipes\n"
+                + "默认 true / Default true");
+
+        // 是否启用 ME 网络量子终端子系统 / Enable ME network quantum terminal subsystem
+        enableQuantumTerminal = configuration.getBoolean(
+            "enableQuantumTerminal",
+            CATEGORY_FEATURES,
+            enableQuantumTerminal,
+            "是否启用 ME 网络量子终端子系统 / Enable ME network quantum terminal subsystem\n"
+                + "关闭后禁用 ME 网络量子终端、量子节点方块及其配方 / Disables ME network quantum terminal, quantum node block and their recipes\n"
+                + "默认 true / Default true");
+
+        // 控制 features 类目内 key 的显示顺序：链路终端开关 → 量子终端开关
+        configuration
+            .setCategoryPropertyOrder(CATEGORY_FEATURES, Arrays.asList("enableLinkTerminal", "enableQuantumTerminal"));
 
         if (configuration.hasChanged()) {
             configuration.save();
