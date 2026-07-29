@@ -6,7 +6,6 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Ene
 import java.io.File;
 
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 import net.minecraftforge.common.ForgeChunkManager;
@@ -168,37 +167,26 @@ public class CommonProxy {
             GTSimpleWirelessNetwork.LOG.error("[3/3] 合成配方注册过程中发生错误", t);
         }
 
-        // 注册GTswn覆盖板（按配置开关条件注册）
-        if (Config.enableLinkTerminal) {
-            GTSimpleWirelessNetwork.LOG.info("[PostInit] 开始注册GTswn覆盖板...");
-            try {
-                // 防御性校验：子系统启用时覆盖板物品应已注册，若 get(1) 返回 null 则跳过避免 NPE
-                ItemStack energyCover = GTswn_Cover_Energy_Wireless.get(1);
-                ItemStack dynamoCover = GTswn_Cover_Dynamo_Wireless.get(1);
-                if (energyCover == null || dynamoCover == null) {
-                    GTSimpleWirelessNetwork.LOG.warn("[PostInit] GTswn 覆盖板注册跳过：覆盖板物品未注册");
-                } else {
-                    // 注册无线能量覆盖板（输入）-用我们自己的纹理！
-                    CoverRegistry.registerCover(
-                        energyCover,
-                        TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_INPUT),
-                        context -> new GTswn_Cover_EnergyWireless(context),
-                        CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
+        // 注册GTswn覆盖板
+        GTSimpleWirelessNetwork.LOG.info("[PostInit] 开始注册GTswn覆盖板...");
+        try {
+            // 注册无线能量覆盖板（输入）-用我们自己的纹理！
+            CoverRegistry.registerCover(
+                GTswn_Cover_Energy_Wireless.get(1),
+                TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_INPUT),
+                context -> new GTswn_Cover_EnergyWireless(context),
+                CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
 
-                    // 注册无线动力覆盖板（输出）-用我们自己的纹理！
-                    CoverRegistry.registerCover(
-                        dynamoCover,
-                        TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_OUTPUT),
-                        context -> new GTswn_Cover_DynamoWireless(context),
-                        CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
+            // 注册无线动力覆盖板（输出）-用我们自己的纹理！
+            CoverRegistry.registerCover(
+                GTswn_Cover_Dynamo_Wireless.get(1),
+                TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_OUTPUT),
+                context -> new GTswn_Cover_DynamoWireless(context),
+                CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
 
-                    GTSimpleWirelessNetwork.LOG.info("[PostInit] GTswn覆盖板注册成功！");
-                }
-            } catch (Throwable t) {
-                GTSimpleWirelessNetwork.LOG.error("[PostInit] GTswn覆盖板注册失败", t);
-            }
-        } else {
-            GTSimpleWirelessNetwork.LOG.info("[PostInit] 无线链路终端子系统已禁用，跳过 GTswn 覆盖板注册。");
+            GTSimpleWirelessNetwork.LOG.info("[PostInit] GTswn覆盖板注册成功！");
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.error("[PostInit] GTswn覆盖板注册失败", t);
         }
     }
 

@@ -12,7 +12,6 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
 
-import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.registry.GameRegistry;
@@ -47,16 +46,12 @@ public class CraftingRecipes {
         addPortableMonitorRecipe();
         // 无线能量监视器（工作台版）
         addWirelessEnergyMonitorRecipe();
-        // 无线网络链路终端（按配置开关条件注册）
-        if (Config.enableLinkTerminal) {
-            addWirelessEnergyTapRecipe();
-        }
+        // 无线网络链路终端
+        addWirelessEnergyTapRecipe();
         addNetworkInfoPanelRecipe();
         addNetworkInfoPanelExtenderRecipe();
-        // ME 网络量子终端（按配置开关条件注册）
-        if (Config.enableQuantumTerminal) {
-            addQuantumTerminalRecipe();
-        }
+        // ME 网络量子终端
+        addQuantumTerminalRecipe();
     }
 
     /**
@@ -107,13 +102,6 @@ public class CraftingRecipes {
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
     private static void addWirelessEnergyTapRecipe() {
-        // 防御性校验：子系统启用时 WirelessEnergyTap 应已注册，若 get(1) 返回 null 则跳过避免 NPE
-        ItemStack output = Wireless_Energy_Tap.get(1);
-        if (output == null) {
-            GTSimpleWirelessNetwork.LOG.warn("[配方] 无线网络链路终端合成配方注册跳过：输出物品未注册");
-            return;
-        }
-
         // 获取原材料
         ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
@@ -122,7 +110,7 @@ public class CraftingRecipes {
 
         // 使用 Forge 的 ShapedOreRecipe 添加合成配方
         net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
-            output,
+            Wireless_Energy_Tap.get(1),
             "ABC",
             "ADC",
             "EBE",
@@ -265,13 +253,6 @@ public class CraftingRecipes {
      * GT metaitem.01:32680 经 findItem + meta（动态注册 meta，无 ItemList 静态映射）。
      */
     private static void addQuantumTerminalRecipe() {
-        // 防御性校验：子系统启用时 ME 网络量子终端应已注册，若 get(1) 返回 null 则跳过避免 NPE
-        ItemStack output = ME_Network_Quantum_Terminal.get(1);
-        if (output == null) {
-            GTSimpleWirelessNetwork.LOG.warn("[配方] ME 网络量子终端合成配方注册跳过：输出物品未注册");
-            return;
-        }
-
         // A = AE2 福鲁伊克斯方块（appliedenergistics2:tile.BlockFluix）
         Item fluixItem = GameRegistry.findItem("appliedenergistics2", "tile.BlockFluix");
         // B = GT metaitem.01:32680（gregtech:gt.metaitem.01 的 meta 32680）
@@ -290,7 +271,7 @@ public class CraftingRecipes {
         ItemStack controller = new ItemStack(controllerItem, 1, 0);
 
         net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
-            output,
+            ME_Network_Quantum_Terminal.get(1),
             "ABA",
             "BCB",
             "ABA",

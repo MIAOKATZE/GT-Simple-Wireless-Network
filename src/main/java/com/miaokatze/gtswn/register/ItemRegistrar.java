@@ -7,7 +7,6 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wirele
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
-import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 /**
@@ -24,18 +23,10 @@ public class ItemRegistrar {
         BlockRegistrar.init();
         registerTestCoin();
         registerPortableWirelessNetworkMonitor();
-        if (Config.enableQuantumTerminal) {
-            registerMENetworkQuantumTerminal();
-        } else {
-            GTSimpleWirelessNetwork.LOG.info("ME 网络量子终端子系统已禁用，跳过相关物品注册。");
-        }
-        if (Config.enableLinkTerminal) {
-            registerWirelessEnergyTap();
-            registerGTswnCoverEnergyWireless();
-            registerGTswnCoverDynamoWireless();
-        } else {
-            GTSimpleWirelessNetwork.LOG.info("无线链路终端子系统已禁用，跳过相关物品注册。");
-        }
+        registerMENetworkQuantumTerminal();
+        registerWirelessEnergyTap();
+        registerGTswnCoverEnergyWireless();
+        registerGTswnCoverDynamoWireless();
         GTSimpleWirelessNetwork.LOG.info("物品注册完成。");
     }
 
