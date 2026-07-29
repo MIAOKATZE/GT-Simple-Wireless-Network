@@ -19,7 +19,6 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
-import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
@@ -113,10 +112,6 @@ public class ItemNetworkQuantumTerminal extends Item {
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
-        // v1.6.13 任务2：ME 网络量子终端子系统禁用时禁止所有量子终端手势
-        if (!Config.enableQuantumTerminal) {
-            return false;
-        }
         GTSimpleWirelessNetwork.LOG
             .debug("[量子终端] onItemUseFirst 进入 @ ({},{},{}) side={} 玩家={}", x, y, z, side, player.getCommandSenderName());
         // 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
@@ -228,10 +223,6 @@ public class ItemNetworkQuantumTerminal extends Item {
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
-        // v1.6.13 任务2：ME 网络量子终端子系统禁用时禁止所有量子终端手势
-        if (!Config.enableQuantumTerminal) {
-            return stack;
-        }
         GTSimpleWirelessNetwork.LOG
             .debug("[量子终端] onItemRightClick 进入 玩家={} isRemote={}", player.getCommandSenderName(), world.isRemote);
         if (world.isRemote) {

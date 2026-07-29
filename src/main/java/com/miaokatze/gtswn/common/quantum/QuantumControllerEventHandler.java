@@ -25,7 +25,6 @@ import net.minecraftforge.event.world.ExplosionEvent;
 
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
-import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.api.implementations.items.INetworkToolItem;
@@ -93,10 +92,6 @@ public class QuantumControllerEventHandler {
      */
     @SubscribeEvent
     public void onPlayerInteract(PlayerInteractEvent event) {
-        // v1.6.13 任务2：ME 网络量子终端子系统禁用时直接跳过所有量子化控制器交互拦截
-        if (!Config.enableQuantumTerminal) {
-            return;
-        }
         if (event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK) {
             return;
         }
