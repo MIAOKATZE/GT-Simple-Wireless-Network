@@ -44,6 +44,9 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 已量子化控制器坐标集（long 打包值） */
     private final Set<Long> controllers = new HashSet<>();
 
+    /** 运行期结构 revision；不持久化，仅用于让统计缓存感知量子化结构变化。 */
+    private long revision;
+
     /**
      * 本世界维度 ID（运行时字段，不持久化到独立 tag）。
      * 由 {@link #get(World)} 赋值，仅用于 writeToNBT 时按 §5.3 结构填 dim 冗余字段。
@@ -100,6 +103,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 入册单个坐标（已存在则无效果）；修改后标记 dirty 触发落盘 */
     public void quantize(int x, int y, int z) {
         if (this.controllers.add(pack(x, y, z))) {
+            this.revision++;
             markDirty();
         }
     }
@@ -107,6 +111,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 批量入册（打包坐标集，通常为 floodControllers 的洪泛结果） */
     public void quantizeAll(Set<Long> packedCoords) {
         if (this.controllers.addAll(packedCoords)) {
+            this.revision++;
             markDirty();
         }
     }
@@ -114,6 +119,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 出册单个坐标；不存在则无效果 */
     public void dequantize(int x, int y, int z) {
         if (this.controllers.remove(pack(x, y, z))) {
+            this.revision++;
             markDirty();
         }
     }
@@ -121,8 +127,14 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 出册打包坐标（供 tick 巡检遍历打包值时直接使用） */
     public void dequantize(long packed) {
         if (this.controllers.remove(packed)) {
+            this.revision++;
             markDirty();
         }
+    }
+
+    /** 获取本次运行期结构 revision（不参与存档）。 */
+    public long getRevision() {
+        return this.revision;
     }
 
     /** 查询指定坐标是否已量子化 */
@@ -230,6 +242,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         this.controllers.clear();
+        this.revision++;
         if (!tag.hasKey(NBT_CONTROLLERS)) {
             return;
         }

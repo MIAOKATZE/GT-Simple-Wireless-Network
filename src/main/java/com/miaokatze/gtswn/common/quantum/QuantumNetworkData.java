@@ -1,7 +1,10 @@
 package com.miaokatze.gtswn.common.quantum;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.entity.player.EntityPlayer;
@@ -55,6 +58,19 @@ public class QuantumNetworkData {
 
     /** 设备列表截断上限（规划 §6：entryCount ≤ 128，防包体积膨胀） */
     public static final int MAX_ENTRIES = 128;
+
+    /** 完整终端快照缓存间隔：与客户端轮询间隔一致，避免同一轮请求重复枚举 AE 网络。 */
+    private static final long FULL_CACHE_INTERVAL_TICKS = 10L;
+
+    /** 完整快照缓存保留窗口（时间桶）。 */
+    private static final long FULL_CACHE_RETAIN_BUCKETS = 4L;
+
+    private static final Map<AnchorKey, FullCacheEntry> FULL_CACHE = new HashMap<>();
+    private static long lastFullCachePruneBucket = Long.MIN_VALUE;
+    private static long fullCacheHits;
+    private static long fullCacheMisses;
+    private static long fullAssemblies;
+    private static long fullAssemblyNanos;
 
     // ==================== NBT 键名（与 ItemNetworkQuantumTerminal 私有常量同字符串，规划 §5.1） ====================
     // 为遵守「不改 T1-T4 已完成文件」的纪律，此处冗余定义同名字符串而非把终端的键名改 public
@@ -232,24 +248,32 @@ public class QuantumNetworkData {
         } catch (GridAccessException e) {
             return data;
         }
+
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        long bucket = world.getTotalWorldTime() / FULL_CACHE_INTERVAL_TICKS;
+        pruneFullCache(bucket);
+        AnchorKey cacheKey = new AnchorKey(anchorDim, anchorX, anchorY, anchorZ);
+        FullCacheEntry cached = FULL_CACHE.get(cacheKey);
+        if (cached != null && cached.bucket == bucket
+            && cached.revision == registry.getRevision()
+            && cached.grid == grid) {
+            fullCacheHits++;
+            cached.lastAccessBucket = bucket;
+            return cached.data.copy();
+        }
+        fullCacheMisses++;
+        long assemblyStarted = System.nanoTime();
         data.online = true;
 
-        // 5. 总频道数：从锚点洪泛整结构坐标集，复用 Registry 的公式方法。
-        // 【偏离规划 §6 的说明】§6 原文写法为 grid.getMachines(TileController.class)，
-        // 但该调用的泛型实参传递（以及 IGridHost→TileController 的 instanceof/cast）会触发
-        // javac 解析 TileController 类层次上挂的 RotaryCraft/CoFH/Mekanism 可选接口
-        // （不在编译 classpath，报「无法访问」，与 getProxy() 编译坑同根因）。
-        // 故改用世界洪泛：floodControllers 内部是 TileEntity→TileController 的父→子
-        // instanceof（不触发层次解析，T2/T3 已验证可编译）。口径与 T3 量子化聊天提示
-        // （computeTotalChannels(floodControllers(...))）完全一致：均为「结构内控制器」。
-        Set<Long> structure = QuantumControllerRegistry.floodControllers(world, anchorX, anchorY, anchorZ);
-        data.totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
-
-        // 6. 已消耗频道：复用抽取的方法（v1.6.8 抽取，供 TileEntityNetworkQuantumNode 复用）
-        data.usedChannels = computeUsedChannels(grid);
-        // v1.6.9：统计量子节点方块数量（grid.getMachines 已在 computeUsedChannels 内成功使用同模式，编译坑已排除）
-        data.quantumNodeCount = grid.getMachines(TileEntityNetworkQuantumNode.class)
-            .size();
+        // 5-6. 总频道、已用频道和量子节点数共享同一份主线程统计快照。
+        QuantumNetworkStatsCache.Snapshot stats = QuantumNetworkStatsCache
+            .getOrCompute(world, anchorX, anchorY, anchorZ, grid);
+        if (stats == null) {
+            return data;
+        }
+        data.totalChannels = stats.totalChannels;
+        data.usedChannels = stats.usedChannels;
+        data.quantumNodeCount = stats.quantumNodeCount;
 
         // 7. 能量四项（IEnergyGrid 缓存，AE2 保证该缓存恒存在，仍做 null 防御）
         IEnergyGrid energy = grid.getCache(IEnergyGrid.class);
@@ -315,7 +339,82 @@ public class QuantumNetworkData {
             aggregated = new ArrayList<>(aggregated.subList(0, MAX_ENTRIES));
         }
         data.entries.addAll(aggregated);
+
+        FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data.copy()));
+        fullAssemblies++;
+        fullAssemblyNanos += System.nanoTime() - assemblyStarted;
         return data;
+    }
+
+    /** 清理服务器切换或测试之间的完整快照缓存。 */
+    public static void clearCache() {
+        FULL_CACHE.clear();
+        lastFullCachePruneBucket = Long.MIN_VALUE;
+        fullCacheHits = 0L;
+        fullCacheMisses = 0L;
+        fullAssemblies = 0L;
+        fullAssemblyNanos = 0L;
+    }
+
+    /** 每秒由 ServerTick 低频输出一次 DEBUG 统计并归零。 */
+    public static String consumeDebugStats() {
+        String result = "fullHit=" + fullCacheHits
+            + ", fullMiss="
+            + fullCacheMisses
+            + ", fullAssemble="
+            + fullAssemblies
+            + ", fullAssembleMs="
+            + (fullAssemblyNanos / 1000000L);
+        fullCacheHits = 0L;
+        fullCacheMisses = 0L;
+        fullAssemblies = 0L;
+        fullAssemblyNanos = 0L;
+        return result;
+    }
+
+    private static void pruneFullCache(long currentBucket) {
+        if (lastFullCachePruneBucket == currentBucket) {
+            return;
+        }
+        lastFullCachePruneBucket = currentBucket;
+        Iterator<Map.Entry<AnchorKey, FullCacheEntry>> iterator = FULL_CACHE.entrySet()
+            .iterator();
+        while (iterator.hasNext()) {
+            FullCacheEntry entry = iterator.next()
+                .getValue();
+            if (entry.lastAccessBucket < currentBucket - FULL_CACHE_RETAIN_BUCKETS) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private QuantumNetworkData copy() {
+        QuantumNetworkData copy = new QuantumNetworkData();
+        copy.online = this.online;
+        copy.anchorDim = this.anchorDim;
+        copy.anchorX = this.anchorX;
+        copy.anchorY = this.anchorY;
+        copy.anchorZ = this.anchorZ;
+        copy.totalChannels = this.totalChannels;
+        copy.channelsInfinite = this.channelsInfinite;
+        copy.usedChannels = this.usedChannels;
+        copy.quantumNodeCount = this.quantumNodeCount;
+        copy.avgPowerUsage = this.avgPowerUsage;
+        copy.avgPowerInjection = this.avgPowerInjection;
+        copy.storedPower = this.storedPower;
+        copy.maxStoredPower = this.maxStoredPower;
+        copy.powerInfinite = this.powerInfinite;
+        copy.itemBytesUsed = this.itemBytesUsed;
+        copy.itemBytesTotal = this.itemBytesTotal;
+        copy.fluidBytesUsed = this.fluidBytesUsed;
+        copy.fluidBytesTotal = this.fluidBytesTotal;
+        copy.essentiaBytesUsed = this.essentiaBytesUsed;
+        copy.essentiaBytesTotal = this.essentiaBytesTotal;
+        copy.totalMachines = this.totalMachines;
+        for (DeviceEntry entry : this.entries) {
+            copy.entries.add(new DeviceEntry(entry.icon == null ? null : entry.icon.copy(), entry.count));
+        }
+        return copy;
     }
 
     /**
@@ -339,5 +438,58 @@ public class QuantumNetworkData {
             used += nodeMax;
         }
         return used;
+    }
+
+    private static final class FullCacheEntry {
+
+        private final IGrid grid;
+        private final long bucket;
+        private final long revision;
+        private final QuantumNetworkData data;
+        private long lastAccessBucket;
+
+        private FullCacheEntry(IGrid grid, long bucket, long revision, QuantumNetworkData data) {
+            this.grid = grid;
+            this.bucket = bucket;
+            this.revision = revision;
+            this.data = data;
+            this.lastAccessBucket = bucket;
+        }
+    }
+
+    private static final class AnchorKey {
+
+        private final int dimension;
+        private final int x;
+        private final int y;
+        private final int z;
+
+        private AnchorKey(int dimension, int x, int y, int z) {
+            this.dimension = dimension;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (!(obj instanceof AnchorKey)) {
+                return false;
+            }
+            AnchorKey other = (AnchorKey) obj;
+            return this.dimension == other.dimension && this.x == other.x && this.y == other.y && this.z == other.z;
+        }
+
+        @Override
+        public int hashCode() {
+            int result = this.dimension;
+            result = 31 * result + this.x;
+            result = 31 * result + this.y;
+            result = 31 * result + this.z;
+            return result;
+        }
     }
 }

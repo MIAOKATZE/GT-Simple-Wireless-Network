@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.quantum;
 
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -25,11 +26,14 @@ public final class QuantumTerminalRequestQueue {
     /** 待处理请求队列：仅缓存玩家引用，主线程 drain 时再校验在线/手持 */
     private static final ConcurrentLinkedQueue<EntityPlayerMP> PENDING = new ConcurrentLinkedQueue<>();
 
+    /** 同一玩家同时只保留一个待处理请求，避免客户端轮询在服务器卡顿时形成请求洪峰。 */
+    private static final ConcurrentHashMap<EntityPlayerMP, Boolean> PENDING_PLAYERS = new ConcurrentHashMap<>();
+
     private QuantumTerminalRequestQueue() {}
 
     /** Netty 线程入队（仅缓存玩家引用，主线程 drain 时再校验在线/手持） */
     public static void enqueue(EntityPlayerMP player) {
-        if (player != null) {
+        if (player != null && PENDING_PLAYERS.putIfAbsent(player, Boolean.TRUE) == null) {
             PENDING.add(player);
         }
     }
@@ -38,6 +42,7 @@ public final class QuantumTerminalRequestQueue {
     public static void drain() {
         EntityPlayerMP player;
         while ((player = PENDING.poll()) != null) {
+            PENDING_PLAYERS.remove(player);
             process(player);
         }
     }

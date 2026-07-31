@@ -46,7 +46,8 @@ public class QuantumChunkLoaderCallback implements LoadingCallback {
                 TileEntity te = world.getTileEntity(nodeX, nodeY, nodeZ);
                 if (te instanceof TileEntityNetworkQuantumNode) {
                     ((TileEntityNetworkQuantumNode) te).setNodeTicketFromCallback(ticket);
-                    GTSimpleWirelessNetwork.LOG.info("[量子节点] callback 恢复 nodeTicket @ ({},{},{})", nodeX, nodeY, nodeZ);
+                    GTSimpleWirelessNetwork.LOG
+                        .debug("[量子节点] callback 恢复 nodeTicket @ ({},{},{})", nodeX, nodeY, nodeZ);
                 } else {
                     // 节点 TE 已不存在（被销毁但 ticket 残留）：释放，避免配额泄漏
                     ForgeChunkManager.releaseTicket(ticket);

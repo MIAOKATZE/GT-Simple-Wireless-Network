@@ -20,7 +20,7 @@ import net.minecraftforge.common.ForgeChunkManager.Ticket;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
-import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
@@ -134,6 +134,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private int ticketedAnchorX;
     private int ticketedAnchorY;
     private int ticketedAnchorZ;
+
+    /** Ticket 配额失败只在一次失败阶段记录一次，避免每 20 tick 刷屏。 */
+    private boolean nodeTicketWarningLogged;
+    private boolean anchorTicketWarningLogged;
 
     // ==================== 离线原因枚举 ====================
 
@@ -383,7 +387,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // 空白节点一旦经终端放置写入锚点（setAnchor），本判定自动解除，proxy 走正常就绪流程。
         if (!hasAnchor()) {
             this.offlineReason = OfflineReason.NO_ANCHOR;
-            GTSimpleWirelessNetwork.LOG.trace("[量子节点] updateEntity 无锚点，同步离线状态 @ ({},{},{})", xCoord, yCoord, zCoord);
             syncLinkedStateIfChanged(false);
             return;
         }
@@ -399,8 +402,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // v1.6.4 任务4：每 tick 比对在线状态（不受下方 20t 维护窗口限制），
         // 变化即 markBlockForUpdate 推送 S35，材质切换延迟 ≤1t
         boolean linkedNow = isLinked();
-        GTSimpleWirelessNetwork.LOG
-            .trace("[量子节点] updateEntity 同步在线状态 @ ({},{},{}) linked={}", xCoord, yCoord, zCoord, linkedNow);
         syncLinkedStateIfChanged(linkedNow);
         // ===== 桥接连接维护：每 20 tick 一次；lastMaintenanceTick 初值 -1 保证就绪后首轮立即执行 =====
         long tick = worldObj.getTotalWorldTime();
@@ -483,10 +484,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.nodeTicket = ForgeChunkManager
             .requestTicket(GTSimpleWirelessNetwork.instance, worldObj, ForgeChunkManager.Type.NORMAL);
         if (this.nodeTicket == null) {
-            GTSimpleWirelessNetwork.LOG
-                .warn("[量子节点] ForgeChunkManager Ticket 配额耗尽，节点区块强制加载失败 @ ({},{},{})", xCoord, yCoord, zCoord);
+            if (!this.nodeTicketWarningLogged) {
+                this.nodeTicketWarningLogged = true;
+                GTSimpleWirelessNetwork.LOG
+                    .warn("[量子节点] ForgeChunkManager Ticket 配额耗尽，节点区块强制加载失败 @ ({},{},{})", xCoord, yCoord, zCoord);
+            }
             return;
         }
+        this.nodeTicketWarningLogged = false;
         ChunkCoordIntPair chunk = new ChunkCoordIntPair(xCoord >> 4, zCoord >> 4);
         ForgeChunkManager.forceChunk(this.nodeTicket, chunk);
         // 持久化标识：callback 据此找节点 TE
@@ -512,14 +517,18 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.anchorTicket = ForgeChunkManager
             .requestTicket(GTSimpleWirelessNetwork.instance, anchorWorld, ForgeChunkManager.Type.NORMAL);
         if (this.anchorTicket == null) {
-            GTSimpleWirelessNetwork.LOG.warn(
-                "[量子节点] ForgeChunkManager Ticket 配额耗尽，锚点区块强制加载失败 @ dim={} ({},{},{})",
-                this.anchorDim,
-                this.anchorX,
-                this.anchorY,
-                this.anchorZ);
+            if (!this.anchorTicketWarningLogged) {
+                this.anchorTicketWarningLogged = true;
+                GTSimpleWirelessNetwork.LOG.warn(
+                    "[量子节点] ForgeChunkManager Ticket 配额耗尽，锚点区块强制加载失败 @ dim={} ({},{},{})",
+                    this.anchorDim,
+                    this.anchorX,
+                    this.anchorY,
+                    this.anchorZ);
+            }
             return;
         }
+        this.anchorTicketWarningLogged = false;
         ChunkCoordIntPair chunk = new ChunkCoordIntPair(this.anchorX >> 4, this.anchorZ >> 4);
         ForgeChunkManager.forceChunk(this.anchorTicket, chunk);
         // 标识 type=anchor，callback 遇到此类 ticket 直接释放（靠 TE tick 重建）
@@ -538,6 +547,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             ForgeChunkManager.releaseTicket(this.nodeTicket);
             this.nodeTicket = null;
         }
+        this.nodeTicketWarningLogged = false;
     }
 
     /** 释放锚点 Ticket（同步清空锚点快照） */
@@ -546,6 +556,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             ForgeChunkManager.releaseTicket(this.anchorTicket);
             this.anchorTicket = null;
         }
+        this.anchorTicketWarningLogged = false;
         this.ticketedAnchorDim = Integer.MIN_VALUE;
     }
 
@@ -609,15 +620,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         } catch (GridAccessException e) {
             return;
         }
-        // 3. 计算总频道
-        Set<Long> structure = QuantumControllerRegistry
-            .floodControllers(anchorWorld, this.anchorX, this.anchorY, this.anchorZ);
-        if (structure.isEmpty()) {
+        // 3-4. 复用同一锚点的 20 tick 主线程统计快照，避免每个节点重复洪泛和遍历全网节点。
+        QuantumNetworkStatsCache.Snapshot stats = QuantumNetworkStatsCache
+            .getOrCompute(anchorWorld, this.anchorX, this.anchorY, this.anchorZ, grid);
+        if (stats == null) {
             return;
         }
-        int total = QuantumControllerRegistry.computeTotalChannels(structure);
-        // 4. 计算全局已用频道（复用 QuantumNetworkData 抽取的方法）
-        int used = QuantumNetworkData.computeUsedChannels(grid);
+        int total = stats.totalChannels;
+        int used = stats.usedChannels;
         // 5. 计算本节点 max usedChannels
         IGridNode myNode = getProxy().getNode();
         if (myNode == null) {
@@ -629,7 +639,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // 6. 爆炸判定（严格大于）
         if (used > total) {
-            explodeControllers(structure);
+            explodeControllers(stats.getStructure());
             return;
         }
         // 7. 95% 预警判定（本节点频道增长 + 全局达 95% + 未过载）
@@ -848,12 +858,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // v1.6.13 任务1：防御性读取同步在线状态，防止区块加载/磁盘读取后 clientLinked 缺失
         if (tag.hasKey(NBT_SYNC_LINKED)) {
             this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);
-            GTSimpleWirelessNetwork.LOG.debug(
-                "[量子节点] readFromNBT 读取同步状态 @ ({},{},{}) clientLinked={}",
-                xCoord,
-                yCoord,
-                zCoord,
-                this.clientLinked);
         }
         if (tag.hasKey("proxy")) {
             if (worldObj != null && !worldObj.isRemote) {

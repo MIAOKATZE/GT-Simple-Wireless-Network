@@ -31,6 +31,7 @@ import appeng.api.implementations.items.INetworkToolItem;
 import appeng.block.networking.BlockCreativeEnergyCell;
 import appeng.block.networking.BlockEnergyAcceptor;
 import appeng.block.networking.BlockEnergyCell;
+import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.parts.networking.PartQuartzFiber;
 import appeng.tile.networking.TileCableBus;
@@ -82,6 +83,12 @@ public class QuantumControllerEventHandler {
     /** 上次巡检的世界 tick（-1 = 未巡检过） */
     private long lastSweepTick = -1L;
 
+    /** 上一次处理的服务器实例，用于切换存档时清理运行期缓存。 */
+    private MinecraftServer lastCacheServer;
+
+    /** 连接过滤实际触发 AE2 updateState 的次数，仅用于每秒 DEBUG 汇总。 */
+    private static long filterUpdates;
+
     // ==================== 1. 右键交互全量拦截（D2-A） ====================
 
     /**
@@ -95,15 +102,8 @@ public class QuantumControllerEventHandler {
         if (event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK) {
             return;
         }
-        GTSimpleWirelessNetwork.LOG.trace(
-            "[量子化] onPlayerInteract 处理右键方块 @ ({},{},{}) {}",
-            event.x,
-            event.y,
-            event.z,
-            event.entityPlayer.getCommandSenderName());
         // 仅服务端取消与提示；客户端镜像事件直接忽略，避免提示双发
         if (event.world.isRemote) {
-            GTSimpleWirelessNetwork.LOG.trace("[量子化] 忽略客户端镜像事件");
             return;
         }
         TileEntity te = event.world.getTileEntity(event.x, event.y, event.z);
@@ -198,9 +198,8 @@ public class QuantumControllerEventHandler {
             return;
         }
         World world = event.entityPlayer.worldObj;
-        // v1.6.13 任务1：客户端路径 TRACE 日志
         if (world.isRemote) {
-            GTSimpleWirelessNetwork.LOG.trace("[量子化] onBreakSpeed 客户端路径 @ ({},{},{})", event.x, event.y, event.z);
+            return;
         }
         // 量子节点方块：硬度/抗性已在方块属性中直接表达，不依赖事件修正
         if (event.block instanceof BlockNetworkQuantumNode) {
@@ -213,8 +212,6 @@ public class QuantumControllerEventHandler {
         }
         if (!QuantumControllerRegistry.get(world)
             .isQuantized(event.x, event.y, event.z)) {
-            // v1.6.13 任务1：未量子化时 DEBUG 日志
-            GTSimpleWirelessNetwork.LOG.debug("[量子化] onBreakSpeed 目标未量子化 @ ({},{},{})", event.x, event.y, event.z);
             return;
         }
         float hardness = event.block.getBlockHardness(world, event.x, event.y, event.z);
@@ -318,12 +315,18 @@ public class QuantumControllerEventHandler {
         if (event.phase != TickEvent.Phase.END) {
             return;
         }
-        // v1.6.1 问题 4b：每 tick 在主线程排空量子终端数据请求队列（独立于下方每秒巡检节奏）
-        QuantumTerminalRequestQueue.drain();
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) {
             return;
         }
+        if (this.lastCacheServer != server) {
+            this.lastCacheServer = server;
+            this.lastSweepTick = -1L;
+            QuantumNetworkStatsCache.clear();
+            QuantumNetworkData.clearCache();
+        }
+        // v1.6.1 问题 4b：每 tick 在主线程排空量子终端数据请求队列（独立于下方每秒巡检节奏）
+        QuantumTerminalRequestQueue.drain();
         // 以 overworld 总 tick 做间隔基准（与 NetworkInfoMonitorScheduler 一致）
         World overworld = server.worldServerForDimension(0);
         if (overworld == null) {
@@ -344,6 +347,14 @@ public class QuantumControllerEventHandler {
                     .error("[量子化] 世界 " + world.provider.dimensionId + " 巡检异常", t);
             }
         }
+        if (GTSimpleWirelessNetwork.LOG.isDebugEnabled()) {
+            GTSimpleWirelessNetwork.LOG.debug(
+                "[量子性能] {} ; {} ; filterUpdate={}",
+                QuantumNetworkStatsCache.consumeDebugStats(),
+                QuantumNetworkData.consumeDebugStats(),
+                filterUpdates);
+        }
+        filterUpdates = 0L;
     }
 
     /** 巡检单个世界：出册失效坐标、重算过滤、D8 合并 */
@@ -460,11 +471,7 @@ public class QuantumControllerEventHandler {
                 }
             }
         }
-        // 经 IGridProxyable 接口调用 getProxy()：源表达式必须是 TileEntity 而非 TileController——
-        // 后者 cast 会触发 javac 解析 AEPowerTile 上挂的 Mekanism/CoFH/RotaryCraft 可选接口
-        // （不在编译 classpath，报「无法访问」），而 TileEntity 的层次是干净的
-        ((IGridProxyable) te).getProxy()
-            .setValidSides(allowed);
+        setValidSidesIfChanged(te, allowed);
     }
 
     /**
@@ -474,9 +481,20 @@ public class QuantumControllerEventHandler {
     public static void restoreAllSides(World world, int x, int y, int z) {
         TileEntity te = world.getTileEntity(x, y, z);
         if (te instanceof TileController) {
-            // 同 applyConnectionFilter：经 IGridProxyable 接口绕开可选能量接口的类型层次
-            ((IGridProxyable) te).getProxy()
-                .setValidSides(EnumSet.allOf(ForgeDirection.class));
+            setValidSidesIfChanged(te, EnumSet.allOf(ForgeDirection.class));
         }
+    }
+
+    /** 只有 AE2 当前有效面集合发生变化时才触发 GridNode.updateState。 */
+    private static void setValidSidesIfChanged(TileEntity te, EnumSet<ForgeDirection> desired) {
+        AENetworkProxy proxy = ((IGridProxyable) te).getProxy();
+        EnumSet<ForgeDirection> current = proxy.getConnectableSides();
+        if (current != null && current.equals(desired)) {
+            return;
+        }
+        EnumSet<ForgeDirection> copy = EnumSet.noneOf(ForgeDirection.class);
+        copy.addAll(desired);
+        proxy.setValidSides(copy);
+        filterUpdates++;
     }
 }
