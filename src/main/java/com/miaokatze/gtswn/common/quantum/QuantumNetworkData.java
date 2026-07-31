@@ -83,6 +83,7 @@ public class QuantumNetworkData {
 
     /** 总频道数 =（控制器数 × 6 − 相连面数）× 32 */
     public int totalChannels;
+    public boolean channelsInfinite;
 
     /** 已消耗频道 = Σ 各量子节点连接 usedChannels 的 max */
     public int usedChannels;
@@ -200,6 +201,7 @@ public class QuantumNetworkData {
         data.anchorX = anchorX;
         data.anchorY = anchorY;
         data.anchorZ = anchorZ;
+        data.channelsInfinite = QuantumControllerRegistry.isChannelsInfinite();
 
         // 1. 维度解析：维度不存在或未加载 → 离线
         MinecraftServer server = MinecraftServer.getServer();

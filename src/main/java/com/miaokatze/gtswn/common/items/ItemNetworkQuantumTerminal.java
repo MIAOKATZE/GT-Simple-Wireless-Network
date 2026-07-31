@@ -280,7 +280,11 @@ public class ItemNetworkQuantumTerminal extends Item {
         }
         writeAnchor(stack, world, x, y, z);
         int totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
-        sendMessage(player, "gtswn.chat.quantum.quantized", structure.size(), totalChannels);
+        if (QuantumControllerRegistry.isChannelsInfinite()) {
+            sendMessage(player, "gtswn.chat.quantum.quantized_infinite", structure.size());
+        } else {
+            sendMessage(player, "gtswn.chat.quantum.quantized", structure.size(), totalChannels);
+        }
     }
 
     /**

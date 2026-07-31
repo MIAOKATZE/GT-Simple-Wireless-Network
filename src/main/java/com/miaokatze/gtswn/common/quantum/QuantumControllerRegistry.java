@@ -12,6 +12,8 @@ import net.minecraft.world.WorldSavedData;
 import net.minecraft.world.storage.MapStorage;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import appeng.core.AEConfig;
+import appeng.core.features.AEFeature;
 import appeng.tile.networking.TileController;
 
 /**
@@ -183,6 +185,17 @@ public class QuantumControllerRegistry extends WorldSavedData {
             }
         }
         return visited;
+    }
+
+    /**
+     * Returns whether AE2 has disabled channel accounting globally.
+     *
+     * AE2's NetworkFeatures.Channels=false setting is represented by the absence
+     * of AEFeature.Channels from its feature flags. If AE2 has not finished
+     * initializing, retain the finite-channel behavior.
+     */
+    public static boolean isChannelsInfinite() {
+        return AEConfig.instance != null && !AEConfig.instance.isFeatureEnabled(AEFeature.Channels);
     }
 
     /**

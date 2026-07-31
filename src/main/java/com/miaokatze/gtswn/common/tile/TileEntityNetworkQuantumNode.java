@@ -583,6 +583,11 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * </ol>
      */
     private void checkNetworkOverload() {
+        // AE2 Channels=false already removes the native channel limit. Skip this
+        // mod's independent budget, warning, and overflow explosion checks too.
+        if (QuantumControllerRegistry.isChannelsInfinite()) {
+            return;
+        }
         // v1.6.10：取锚点维度 world（跨维度桥接时 worldObj 是节点维度，锚点控制器在 anchorWorld）
         WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
         if (anchorWorld == null) {

@@ -181,6 +181,11 @@ public class GuiQuantumTerminal extends GuiScreen {
             this.guiTop + 44,
             0x404040);
         // 频道行（保留 v1.6.8 三件套 used/total/(pct%)，过载态红色高亮）
+        if (data.channelsInfinite) {
+            String channelLine = tr("gtswn.gui.quantum.channels") + ": " + data.usedChannels + " / \u221e";
+            this.fontRendererObj.drawString(channelLine, this.guiLeft + 13, this.guiTop + 56, 0x404040);
+            return;
+        }
         int channelPct = data.totalChannels > 0 ? (int) (data.usedChannels * 100L / data.totalChannels) : 0;
         int channelColor = data.usedChannels > data.totalChannels ? 0xFF0000 : 0x404040;
         String channelLine = tr("gtswn.gui.quantum.channels") + ": "

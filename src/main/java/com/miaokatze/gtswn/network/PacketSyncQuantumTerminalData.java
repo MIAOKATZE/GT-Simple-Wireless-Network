@@ -17,7 +17,8 @@ import io.netty.buffer.ByteBuf;
  * 字段与 {@link QuantumNetworkData} 一一对应（规划 plan_20260722152445.md §6）：
  * online / anchorDim+xyz / totalChannels / usedChannels / 能量四项 /
  * itemBytesUsed/Total / fluidBytesUsed/Total / essentiaBytesUsed/Total / powerInfinite /
- * totalMachines / entryCount + entries{ItemStack icon, int count} / quantumNodeCount。
+ * totalMachines / entryCount + entries{ItemStack icon, int count} / quantumNodeCount /
+ * channelsInfinite（末尾追加，兼容旧包）。
  * <p>
  * 序列化约定：toBytes/fromBytes 严格对称（风格仿 {@link PacketSyncAEMonitorData}）；
  * ItemStack 用 {@link ByteBufUtils#writeItemStack}（图标为 machineRepresentation 小对象，
@@ -65,6 +66,8 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         }
         // v1.6.9：末尾追加 quantumNodeCount（保持向后兼容，旧客户端读取时多出 4 字节被丢弃）
         buf.writeInt(data.quantumNodeCount);
+        // v1.6.15：末尾追加无限频道标志，旧客户端会忽略多出的 1 字节
+        buf.writeBoolean(data.channelsInfinite);
     }
 
     @Override
@@ -102,6 +105,10 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         // v1.6.9：防御性读取 quantumNodeCount（防新客户端读旧服务端包越界崩溃）
         if (buf.readableBytes() >= 4) {
             d.quantumNodeCount = buf.readInt();
+        }
+        // v1.6.15：旧服务端没有该字段时保留默认 false
+        if (buf.readableBytes() >= 1) {
+            d.channelsInfinite = buf.readBoolean();
         }
         this.data = d;
     }

@@ -287,6 +287,7 @@ gtswn.tooltip.quantum_terminal.usage.place=§7右击方块: §f放置量子节�
 gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+右击量子节点: §f销毁节点（无掉落）
 gtswn.tooltip.quantum_terminal.usage.gui=§7Shift+右击空气: §f打开终端界面
 gtswn.chat.quantum.quantized=§a[量子终端] 控制器结构已量子化（%d 块），网络总频道: %d
+gtswn.chat.quantum.quantized_infinite=§a[量子终端] 控制器结构已量子化（%d 块），频道：无限
 gtswn.chat.quantum.bound=§b[量子终端] 已绑定到网络 [%d, %d, %d]
 gtswn.chat.quantum.dequantized=§e[量子终端] 已取消量子化
 gtswn.chat.quantum.not_active=§c[量子终端] 目标不是正常运行的ME控制器

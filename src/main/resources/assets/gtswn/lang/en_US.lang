@@ -287,6 +287,7 @@ gtswn.tooltip.quantum_terminal.usage.place=§7RClick Block: §fPlace Quantum Nod
 gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+Right-click quantum node: §fDestroy node (no drops)
 gtswn.tooltip.quantum_terminal.usage.gui=§7Shift+RClick Air: §fOpen terminal GUI
 gtswn.chat.quantum.quantized=§a[Quantum Terminal] Controller structure quantized (%d blocks), total channels: %d
+gtswn.chat.quantum.quantized_infinite=§a[Quantum Terminal] Controller structure quantized (%d blocks), channels: infinite
 gtswn.chat.quantum.bound=§b[Quantum Terminal] Bound to network [%d, %d, %d]
 gtswn.chat.quantum.dequantized=§e[Quantum Terminal] De-quantized
 gtswn.chat.quantum.not_active=§c[Quantum Terminal] Target is not an active ME Controller
