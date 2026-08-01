@@ -486,8 +486,11 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (this.nodeTicket == null) {
             if (!this.nodeTicketWarningLogged) {
                 this.nodeTicketWarningLogged = true;
-                GTSimpleWirelessNetwork.LOG
-                    .warn("[量子节点] ForgeChunkManager Ticket 配额耗尽，节点区块强制加载失败 @ ({},{},{})", xCoord, yCoord, zCoord);
+                GTSimpleWirelessNetwork.LOG.warn(
+                    "[Quantum Node] ForgeChunkManager ticket quota exhausted; failed to force-load node chunk @ ({},{},{})",
+                    xCoord,
+                    yCoord,
+                    zCoord);
             }
             return;
         }
@@ -520,7 +523,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             if (!this.anchorTicketWarningLogged) {
                 this.anchorTicketWarningLogged = true;
                 GTSimpleWirelessNetwork.LOG.warn(
-                    "[量子节点] ForgeChunkManager Ticket 配额耗尽，锚点区块强制加载失败 @ dim={} ({},{},{})",
+                    "[Quantum Node] ForgeChunkManager ticket quota exhausted; failed to force-load anchor chunk @ dim={} ({},{},{})",
                     this.anchorDim,
                     this.anchorX,
                     this.anchorY,
@@ -552,11 +555,17 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 释放锚点 Ticket（同步清空锚点快照） */
     private void releaseAnchorTicket() {
-        if (this.anchorTicket != null) {
+        boolean hadTicket = this.anchorTicket != null;
+        if (hadTicket) {
             ForgeChunkManager.releaseTicket(this.anchorTicket);
             this.anchorTicket = null;
         }
-        this.anchorTicketWarningLogged = false;
+        // Keep the warning gate closed while a failed request is retried without a Ticket.
+        // Reset it only when an existing Ticket was actually released, so a changed anchor
+        // can report a fresh failure without logging the same quota error every 20 ticks.
+        if (hadTicket) {
+            this.anchorTicketWarningLogged = false;
+        }
         this.ticketedAnchorDim = Integer.MIN_VALUE;
     }
 
