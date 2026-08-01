@@ -12,11 +12,8 @@ import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
-import net.minecraft.world.ChunkCoordIntPair;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
-import net.minecraftforge.common.ForgeChunkManager;
-import net.minecraftforge.common.ForgeChunkManager.Ticket;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
@@ -53,7 +50,8 @@ import appeng.tile.networking.TileController;
  * 生命周期严格仿本项目 {@link TileEntityNetworkInfoPanel}：proxy 懒加载构造、
  * validate/invalidate/onChunkUnload/updateEntity 接入 proxy 生命周期、NBT 键名 "proxy" 一致。
  * 桥接连接为运行时字段不持久化，每 20 tick（含就绪后首轮立即一次）执行一次连接维护：
- * 连接存活则跳过，否则按 D6（不跨维度）/D7（锚点破坏离线）规则尝试重建；
+ * 连接存活则跳过，否则按自然加载状态和 D7（锚点破坏离线）规则尝试重建；
+ * 本节点不主动申请 ForgeChunkManager Ticket，节点与锚点持续工作依赖服务器或其他模组提供的区块加载；
  * invalidate/onChunkUnload 先显式 destroy 桥接连接再走 proxy 生命周期，防止网格残留幽灵节点。
  */
 public class TileEntityNetworkQuantumNode extends TileEntity implements IGridProxyable {
@@ -120,24 +118,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 该节点上次 max usedChannels（-1 = 未初始化；v1.6.8 新增，用于 95% 预警跟踪本节点频道增长） */
     private int lastNodeUsedChannels = -1;
-
-    // ==================== v1.6.10 跨维度强制加载 Ticket 管理 ====================
-
-    /** 节点所在维度的 ForgeChunkManager Ticket（强制加载节点区块，保证本 TE 持续 tick） */
-    private Ticket nodeTicket = null;
-
-    /** 锚点所在维度的 ForgeChunkManager Ticket（强制加载锚点区块，保证控制器 TE 持续 tick） */
-    private Ticket anchorTicket = null;
-
-    /** 上次申请 anchorTicket 时的锚点快照（锚点改指时释放旧 anchorTicket） */
-    private int ticketedAnchorDim = Integer.MIN_VALUE;
-    private int ticketedAnchorX;
-    private int ticketedAnchorY;
-    private int ticketedAnchorZ;
-
-    /** Ticket 配额失败只在一次失败阶段记录一次，避免每 20 tick 刷屏。 */
-    private boolean nodeTicketWarningLogged;
-    private boolean anchorTicketWarningLogged;
 
     // ==================== 离线原因枚举 ====================
 
@@ -351,9 +331,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void invalidate() {
         // 断桥接连接必须先于 proxy 生命周期：显式 destroy 防止网格残留幽灵节点
         destroyBridgeConnection();
-        // v1.6.10：释放强制加载 Ticket（TE 被销毁/卸载时不再持有 Ticket 配额）
-        releaseNodeTicket();
-        releaseAnchorTicket();
         super.invalidate();
         if (gridProxy != null) {
             gridProxy.invalidate();
@@ -366,9 +343,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void onChunkUnload() {
         // 同 invalidate：先断桥接连接再走 proxy 生命周期
         destroyBridgeConnection();
-        // v1.6.10：释放强制加载 Ticket（区块卸载时同步释放，避免 Ticket 残留）
-        releaseNodeTicket();
-        releaseAnchorTicket();
         super.onChunkUnload();
         if (gridProxy != null) {
             gridProxy.onChunkUnload();
@@ -417,10 +391,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /**
      * 连接维护主循环（每 20 tick 一次）。
      * <ol>
-     * <li>连接存活、锚点未改指且锚点仍量子化 → 跳过（v1.6.10：仍调 maintainTickets 防区块卸载）；</li>
+     * <li>连接存活、锚点未改指且锚点仍量子化 → 跳过；</li>
      * <li>连接在但锚点已改指 / 锚点已取消量子化（v1.6.1 问题 5）→ 销毁旧连接后重建（重建时按规则离线）；</li>
      * <li>无连接 → 按 D6/D7 规则尝试建连，失败记录离线原因待下轮重试。</li>
-     * <li>v1.6.10：只要有锚点就调 maintainTickets 维护强制加载 Ticket（保本 TE 与锚点控制器持续 tick）。</li>
+     * <li>节点与锚点区块由外部区块加载器自然加载；区块加载后本循环负责自动恢复连接。</li>
      * </ol>
      */
     private void maintainConnection() {
@@ -435,157 +409,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // ===== 原有逻辑保持不变 =====
         if (this.connection != null) {
             if (isLinked() && isAnchorSnapshotMatched() && isAnchorStillQuantized()) {
-                // v1.6.10：连接存活时仍需维护 Ticket（防止 Ticket 失效后区块卸载导致 TE 停 tick）
-                maintainTickets();
                 return;
             }
             // 连接已死（对端销毁/本节点重建）或锚点改指或锚点已取消量子化：清理后走重建
             destroyBridgeConnection();
         }
         tryConnect();
-        // v1.6.10：无论 tryConnect 成功与否，只要有锚点就维护 Ticket
-        // （Ticket 不依赖 connection 存活——锚点区块强制加载是桥接重建的前提，应优先于连接建立）
-        if (hasAnchor()) {
-            maintainTickets();
-        }
-    }
-
-    // ==================== v1.6.10 跨维度强制加载 Ticket 管理 ====================
-
-    /**
-     * 维护强制加载 Ticket（每 20t 在 maintainConnection 末尾调用）。
-     * <p>
-     * 策略：
-     * <ol>
-     * <li>节点 Ticket：强制加载节点所在区块，保证本 TE 持续 tick（玩家离开节点维度后桥接不断）</li>
-     * <li>锚点 Ticket：强制加载锚点所在区块，保证控制器 TE 持续 tick（AE2 网络推进）</li>
-     * <li>Ticket 失效（null，如服务器重启后）→ 重新申请（nodeTicket 由 callback 持久化恢复，anchorTicket 靠 tick 重建）</li>
-     * <li>锚点改指 → 释放旧 anchorTicket，申请新的</li>
-     * </ol>
-     */
-    private void maintainTickets() {
-        // 1. 节点 Ticket（始终需要，保证本 TE 持续 tick）
-        if (this.nodeTicket == null) {
-            requestNodeTicket();
-        }
-        // 2. 锚点 Ticket（锚点改指时释放旧的再申请新的）
-        if (this.anchorTicket == null || !isTicketedAnchorMatched()) {
-            releaseAnchorTicket();
-            requestAnchorTicket();
-        }
-    }
-
-    /**
-     * 申请节点所在区块的强制加载 Ticket。
-     * <p>
-     * 持久化：modData 存 type=node + 节点坐标，供 callback 在服务器重启后据此找到本 TE 并关联。
-     */
-    private void requestNodeTicket() {
-        this.nodeTicket = ForgeChunkManager
-            .requestTicket(GTSimpleWirelessNetwork.instance, worldObj, ForgeChunkManager.Type.NORMAL);
-        if (this.nodeTicket == null) {
-            if (!this.nodeTicketWarningLogged) {
-                this.nodeTicketWarningLogged = true;
-                GTSimpleWirelessNetwork.LOG.warn(
-                    "[Quantum Node] ForgeChunkManager ticket quota exhausted; failed to force-load node chunk @ ({},{},{})",
-                    xCoord,
-                    yCoord,
-                    zCoord);
-            }
-            return;
-        }
-        this.nodeTicketWarningLogged = false;
-        ChunkCoordIntPair chunk = new ChunkCoordIntPair(xCoord >> 4, zCoord >> 4);
-        ForgeChunkManager.forceChunk(this.nodeTicket, chunk);
-        // 持久化标识：callback 据此找节点 TE
-        NBTTagCompound tag = this.nodeTicket.getModData();
-        tag.setString("type", "node");
-        tag.setInteger("nodeX", xCoord);
-        tag.setInteger("nodeY", yCoord);
-        tag.setInteger("nodeZ", zCoord);
-    }
-
-    /**
-     * 申请锚点所在区块的强制加载 Ticket。
-     * <p>
-     * 跨维度：锚点维度与节点维度可能不同，Ticket 申请在锚点维度 world 上。
-     * 不持久化重建：modData 存 type=anchor 标识，callback 遇到此 ticket 直接释放（靠 TE tick 重建），
-     * 避免锚点维度 callback 跨维度找不到节点 TE 的顺序依赖问题。
-     */
-    private void requestAnchorTicket() {
-        WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
-        if (anchorWorld == null) {
-            return;
-        }
-        this.anchorTicket = ForgeChunkManager
-            .requestTicket(GTSimpleWirelessNetwork.instance, anchorWorld, ForgeChunkManager.Type.NORMAL);
-        if (this.anchorTicket == null) {
-            if (!this.anchorTicketWarningLogged) {
-                this.anchorTicketWarningLogged = true;
-                GTSimpleWirelessNetwork.LOG.warn(
-                    "[Quantum Node] ForgeChunkManager ticket quota exhausted; failed to force-load anchor chunk @ dim={} ({},{},{})",
-                    this.anchorDim,
-                    this.anchorX,
-                    this.anchorY,
-                    this.anchorZ);
-            }
-            return;
-        }
-        this.anchorTicketWarningLogged = false;
-        ChunkCoordIntPair chunk = new ChunkCoordIntPair(this.anchorX >> 4, this.anchorZ >> 4);
-        ForgeChunkManager.forceChunk(this.anchorTicket, chunk);
-        // 标识 type=anchor，callback 遇到此类 ticket 直接释放（靠 TE tick 重建）
-        NBTTagCompound tag = this.anchorTicket.getModData();
-        tag.setString("type", "anchor");
-        // 快照当前锚点
-        this.ticketedAnchorDim = this.anchorDim;
-        this.ticketedAnchorX = this.anchorX;
-        this.ticketedAnchorY = this.anchorY;
-        this.ticketedAnchorZ = this.anchorZ;
-    }
-
-    /** 释放节点 Ticket */
-    private void releaseNodeTicket() {
-        if (this.nodeTicket != null) {
-            ForgeChunkManager.releaseTicket(this.nodeTicket);
-            this.nodeTicket = null;
-        }
-        this.nodeTicketWarningLogged = false;
-    }
-
-    /** 释放锚点 Ticket（同步清空锚点快照） */
-    private void releaseAnchorTicket() {
-        boolean hadTicket = this.anchorTicket != null;
-        if (hadTicket) {
-            ForgeChunkManager.releaseTicket(this.anchorTicket);
-            this.anchorTicket = null;
-        }
-        // Keep the warning gate closed while a failed request is retried without a Ticket.
-        // Reset it only when an existing Ticket was actually released, so a changed anchor
-        // can report a fresh failure without logging the same quota error every 20 ticks.
-        if (hadTicket) {
-            this.anchorTicketWarningLogged = false;
-        }
-        this.ticketedAnchorDim = Integer.MIN_VALUE;
-    }
-
-    /** 当前锚点与 anchorTicket 申请时快照一致（用于检测锚点改指） */
-    private boolean isTicketedAnchorMatched() {
-        return this.ticketedAnchorDim == this.anchorDim && this.ticketedAnchorX == this.anchorX
-            && this.ticketedAnchorY == this.anchorY
-            && this.ticketedAnchorZ == this.anchorZ;
-    }
-
-    /**
-     * v1.6.10：callback 恢复时调用——将持久化恢复的 nodeTicket 关联到本 TE。
-     * <p>
-     * 服务器重启后 ForgeChunkManager 加载持久化的 nodeTicket，callback 据 modData 的 nodeX/Y/Z
-     * 找到本 TE 并调用此方法关联，节点区块随之强制加载，本 TE tick 后 maintainTickets 重建 anchorTicket。
-     *
-     * @param ticket callback 传入的持久化 nodeTicket
-     */
-    public void setNodeTicketFromCallback(Ticket ticket) {
-        this.nodeTicket = ticket;
     }
 
     // ==================== v1.6.8：网络过载爆炸 + 95% 预警 ====================
@@ -745,8 +574,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // 锚点区块未加载：blockExists 不触发区块加载（与 TileWirelessBase 重连循环同一手法），
         // 避免节点 tick 把锚点区块常加载造成级联加载。
-        // v1.6.10：跨维度时锚点区块由 anchorTicket 强制加载（maintainTickets 维护），
-        // 首次 tryConnect 时 Ticket 尚未申请，blockExists 可能返回 false → 下轮 Ticket 申请后再连
+        // 锚点区块未加载时保持离线；不主动加载区块，待服务器或其他模组自然加载后由下一轮重试
         if (!anchorWorld.blockExists(this.anchorX, this.anchorY, this.anchorZ)) {
             this.offlineReason = OfflineReason.ANCHOR_UNREACHABLE;
             return;

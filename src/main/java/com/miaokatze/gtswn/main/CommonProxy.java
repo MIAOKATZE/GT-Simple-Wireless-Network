@@ -145,12 +145,13 @@ public class CommonProxy {
             GTSimpleWirelessNetwork.LOG.info("[2/3] 检测到 WAILA，量子节点状态显示已注册。");
         }
 
-        // v1.6.10：注册量子节点跨维度强制加载的 ForgeChunkManager callback。
-        // 必须在 init 阶段（ForgeChunkManager 已就绪、 worlds 尚未加载）注册，
-        // 服务器重启加载持久化 ticket 时 callback.ticketsLoaded 会据此恢复 nodeTicket。
+        // 注册旧版量子节点 ForgeChunkManager Ticket 清理 callback。
+        // 必须在 init 阶段（ForgeChunkManager 已就绪、worlds 尚未加载）注册，
+        // 服务器重启加载旧 forcedchunks.dat 时 callback.ticketsLoaded 会释放遗留 Ticket；
+        // 当前量子节点不再申请或主动强制加载区块。
         ForgeChunkManager
             .setForcedChunkLoadingCallback(GTSimpleWirelessNetwork.instance, new QuantumChunkLoaderCallback());
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 量子节点跨维度强制加载 callback 已注册。");
+        GTSimpleWirelessNetwork.LOG.info("[2/3] 量子节点旧版 Ticket 清理 callback 已注册。");
     }
 
     /**
