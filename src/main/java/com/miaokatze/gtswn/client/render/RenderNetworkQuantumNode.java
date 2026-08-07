@@ -10,6 +10,8 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+
 import appeng.api.networking.IGridHost;
 import cpw.mods.fml.client.registry.ISimpleBlockRenderingHandler;
 import cpw.mods.fml.client.registry.RenderingRegistry;
@@ -22,7 +24,8 @@ import cpw.mods.fml.client.registry.RenderingRegistry;
  * {@code TileCableBus implements AEMultiTile}（线缆/面板的宿主），而
  * {@code AEMultiTile extends IGridHost}（appeng/helpers/AEMultiTile.java:17），
  * 机器 Tile 经 {@code IGridProxyable extends IGridHost} 接入——故单一 instanceof
- * 同时覆盖 AE 线缆、面板与机器；本模组的量子节点 TE 亦实现 IGridProxyable，节点间亦连臂。
+ * 同时覆盖 AE 线缆、面板与机器；本模组的量子节点 TE 亦实现 IGridProxyable，但
+ * v1.6.19 起节点间不连臂（量子节点之间互不连接，渲染与 AE2 连接逻辑保持一致）。
  * <p>
  * 【双端安全】renderId 静态字段由 {@code ClientProxy.init()} 调 {@link #register()} 时赋值，
  * Block.getRenderType 只读 Block 类上的 int 字段，不直接引用本客户端类。
@@ -79,11 +82,12 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
         // 核心：renderBounds 取自方块 setBlockBounds 设定的小核心包围盒
         renderer.setRenderBoundsFromBlock(block);
         renderer.renderStandardBlock(block, x, y, z);
-        // 六向：邻居为 AE 网格宿主（IGridHost，含 AE 线缆/面板/机器及本模组量子节点）时渲染连接臂
+        // 六向：邻居为 AE 网格宿主（IGridHost，含 AE 线缆/面板/机器，不含本模组量子节点）时渲染连接臂
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
             TileEntity neighbor = world.getTileEntity(x + d.offsetX, y + d.offsetY, z + d.offsetZ);
-            // v1.6.13 任务1：增加 null 检查
-            if (neighbor != null && neighbor instanceof IGridHost) {
+            // v1.6.13 任务1：增加 null 检查；v1.6.19：量子节点之间不连臂
+            if (neighbor != null && neighbor instanceof IGridHost
+                && !(neighbor instanceof TileEntityNetworkQuantumNode)) {
                 double[] b = ARM_BOUNDS[d.ordinal()];
                 renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
                 renderer.renderStandardBlock(block, x, y, z);

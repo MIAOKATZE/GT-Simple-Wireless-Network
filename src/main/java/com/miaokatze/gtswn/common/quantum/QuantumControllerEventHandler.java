@@ -25,7 +25,9 @@ import net.minecraftforge.event.world.ExplosionEvent;
 
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+import com.miaokatze.gtswn.network.WirelessEURequestQueue;
 
 import appeng.api.implementations.items.INetworkToolItem;
 import appeng.block.networking.BlockCreativeEnergyCell;
@@ -324,9 +326,12 @@ public class QuantumControllerEventHandler {
             this.lastSweepTick = -1L;
             QuantumNetworkStatsCache.clear();
             QuantumNetworkData.clearCache();
+            QuantumOverloadCountdown.clear();
         }
         // v1.6.1 问题 4b：每 tick 在主线程排空量子终端数据请求队列（独立于下方每秒巡检节奏）
         QuantumTerminalRequestQueue.drain();
+        // v1.6.19：每 tick 在主线程排空无线 EU 查询请求队列（WirelessNetworkManager 主线程安全）
+        WirelessEURequestQueue.drain();
         // 以 overworld 总 tick 做间隔基准（与 NetworkInfoMonitorScheduler 一致）
         World overworld = server.worldServerForDimension(0);
         if (overworld == null) {
@@ -364,6 +369,8 @@ public class QuantumControllerEventHandler {
         if (all.isEmpty()) {
             return;
         }
+        // v1.6.19：性能审计——巡检计数
+        PerformanceAudit.recordControllerSweep();
         for (long packed : all) {
             int x = QuantumControllerRegistry.unpackX(packed);
             int y = QuantumControllerRegistry.unpackY(packed);
@@ -396,6 +403,8 @@ public class QuantumControllerEventHandler {
 
     /** D8 合并：洪泛新结构入册 + 逐块应用过滤 + 向附近玩家提示 */
     private static void mergeNewStructure(QuantumControllerRegistry registry, World world, int x, int y, int z) {
+        // v1.6.19：性能审计——D8 合并计数
+        PerformanceAudit.recordControllerMerge();
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, x, y, z);
         // 统计真正新增的块数（洪泛可能覆盖已入册的旧结构块）
         int added = 0;
@@ -496,5 +505,7 @@ public class QuantumControllerEventHandler {
         copy.addAll(desired);
         proxy.setValidSides(copy);
         filterUpdates++;
+        // v1.6.19：性能审计——连接过滤实际更新计数
+        PerformanceAudit.recordControllerFilterUpdate();
     }
 }

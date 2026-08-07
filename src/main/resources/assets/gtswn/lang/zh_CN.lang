@@ -301,6 +301,8 @@ gtswn.chat.quantum.node_destroyed=§a[量子节点] 已销毁量子节点
 gtswn.chat.quantum.blocked=§c[量子化] 该控制器已量子化，仅能量交互设备可用
 gtswn.chat.quantum.merged=§a[量子化] %d 块新控制器已自动并入量子化结构
 gtswn.chat.quantum.warning_95=§e[量子节点] 警告：网络频道使用已达 95%%（%d/%d），继续接入将导致控制器爆炸！
+gtswn.chat.quantum.overload_warning=§4[量子节点] 警告：频道超限！量子网络将在 {0} 后爆炸，请立即断开多余设备或节点
+gtswn.chat.quantum.overload_cancelled=§a[量子节点] 频道占用已恢复，爆炸已取消
 
 # ME Network Quantum Terminal GUI (T6 终端界面)
 gtswn.gui.quantum.title=ME网络量子终端

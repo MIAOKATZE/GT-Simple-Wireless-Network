@@ -7,6 +7,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -76,6 +77,8 @@ public class PacketUpdateAETabState implements IMessage {
 
         @Override
         public IMessage onMessage(PacketUpdateAETabState msg, MessageContext ctx) {
+            // v1.6.19：性能审计——C→S 包计数（discriminator 3）
+            if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(3);
             EntityPlayer player = ctx.getServerHandler().playerEntity;
             World world = player.worldObj;
             TileEntity te = world.getTileEntity(msg.panelX, msg.panelY, msg.panelZ);

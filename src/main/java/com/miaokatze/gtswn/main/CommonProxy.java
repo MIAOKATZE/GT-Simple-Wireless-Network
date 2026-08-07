@@ -18,6 +18,7 @@ import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.QuantumChunkLoaderCallback;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
@@ -68,6 +69,8 @@ public class CommonProxy {
         Config.synchronizeConfiguration(mainConfigFile);
         Config.synchronizeNetworkConfiguration(networkConfigFile);
         Config.synchronizeAEConfiguration(new net.minecraftforge.common.config.Configuration(aeConfigFile));
+        // v1.6.19：性能审计开关（preInit 配置读取后设置，重启生效；关闭时完全静默）
+        PerformanceAudit.setEnabled(Config.performanceAuditEnabled);
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
 
@@ -138,6 +141,12 @@ public class CommonProxy {
             .bus()
             .register(quantumHandler);
         GTSimpleWirelessNetwork.LOG.info("[2/3] 量子化控制器事件处理器已注册到双事件总线。");
+
+        // v1.6.19：注册性能审计 tick 结算监听（ServerTickEvent END；开关关闭时完全静默）
+        FMLCommonHandler.instance()
+            .bus()
+            .register(new PerformanceAudit.ServerTickListener());
+        GTSimpleWirelessNetwork.LOG.info("[2/3] 性能审计 tick 结算监听已注册到事件总线。");
 
         // v1.6.2：WAILA 软集成——检测到 WAILA 才经 IMC 注册量子节点状态显示，无 WAILA 不影响运行
         if (Loader.isModLoaded("Waila")) {

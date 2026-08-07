@@ -1,15 +1,15 @@
 package com.miaokatze.gtswn.network;
 
-import java.math.BigInteger;
 import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayerMP;
+
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
 import cpw.mods.fml.common.network.simpleimpl.MessageContext;
-import gregtech.common.misc.WirelessNetworkManager;
 import io.netty.buffer.ByteBuf;
 
 /**
@@ -44,14 +44,18 @@ public class PacketRequestWirelessEU implements IMessage {
     }
 
     /**
-     * 服务端处理：查询玩家无线电网 EU 并回包。
+     * 服务端处理：仅入队，不在 Netty 线程直读无线电网。
      * <p>
-     * 运行在服务端网络线程，查询 {@link WirelessNetworkManager}（服务端数据）安全。
+     * v1.6.19：查询切主线程执行——{@code WirelessNetworkManager} 是服务端主线程维护的
+     * HashMap，Netty 网络线程直读存在并发风险。此处仅把 (玩家, UUID) 入队
+     * {@link WirelessEURequestQueue}，由 ServerTickEvent（END phase）在主线程 drain 查询并回包。
      */
     public static class Handler implements IMessageHandler<PacketRequestWirelessEU, IMessage> {
 
         @Override
         public IMessage onMessage(PacketRequestWirelessEU message, MessageContext ctx) {
+            // v1.6.19：性能审计——C→S 包计数（discriminator 0）
+            if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(0);
             String uuidStr = message.ownerUUID;
             // 空 UUID 静默丢弃，客户端等下个周期重试
             if (uuidStr == null || uuidStr.isEmpty()) {
@@ -66,17 +70,8 @@ public class PacketRequestWirelessEU implements IMessage {
                 return null;
             }
 
-            // 服务端查询无线电网 EU（GlobalEnergy 数据仅在服务端存在）
-            BigInteger eu = WirelessNetworkManager.getUserEU(uuid);
-
-            // 1.7.10 API：通过 ctx.getServerHandler().playerEntity 取得请求方玩家
-            EntityPlayerMP player = (EntityPlayerMP) ctx.getServerHandler().playerEntity;
-            if (player == null) {
-                return null;
-            }
-
-            // 回包给请求方客户端（BigInteger.toString 自带符号与十进制，无需额外编码）
-            GTSWNPacketHandler.NETWORK.sendTo(new PacketResponseWirelessEU(eu.toString()), player);
+            // 查询移交主线程：仅入队，由 ServerTickEvent 在主线程 drain 查询并回包
+            WirelessEURequestQueue.enqueue((EntityPlayerMP) ctx.getServerHandler().playerEntity, uuid.toString());
             return null;
         }
     }

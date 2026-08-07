@@ -11,6 +11,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.util.ChatComponentText;
 
 import com.google.common.io.ByteArrayDataInput;
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverContext;
@@ -92,6 +93,10 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
     public void doCoverThings(byte aInputRedstone, long aTimer) {
         if (!this.configured || this.voltage <= 0 || this.amperage <= 0 || this.capacity <= 0) return;
 
+        // v1.6.19：性能审计——覆盖板 tick 计数 + 本 tick 耗时采样（开关关闭时零开销）
+        PerformanceAudit.recordWirelessTick();
+        long auditT0 = PerformanceAudit.start();
+
         ICoverable tileEntity = coveredTile.get();
         if (!(tileEntity instanceof BaseMetaTileEntity bmte)) return;
 
@@ -116,6 +121,8 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
             ticksSinceLastRefill = 0L;
             refillFromNetwork(bmte);
         }
+        // v1.6.19：性能审计——本 tick 覆盖板耗时采样终点
+        PerformanceAudit.record(auditT0);
     }
 
     /**
@@ -135,6 +142,8 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
         if (owner == null) return;
         if (addEUToGlobalEnergyMap(owner, -totalDeducted)) {
             this.storedEU = this.capacity;
+            // v1.6.19：性能审计——下行补满成功计数
+            PerformanceAudit.recordWirelessDraw();
         }
     }
 

@@ -9,6 +9,7 @@ import java.util.Set;
 
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
 import appeng.api.networking.IGrid;
@@ -58,11 +59,15 @@ public final class QuantumNetworkStatsCache {
         CacheEntry cached = CACHE.get(key);
         if (cached != null && cached.bucket == bucket && cached.revision == revision && cached.grid == grid) {
             cacheHits++;
+            // v1.6.19：性能审计——缓存命中计数
+            PerformanceAudit.recordStatsHit();
             cached.lastAccessBucket = bucket;
             return cached.snapshot;
         }
 
         cacheMisses++;
+        // v1.6.19：性能审计——缓存未命中计数
+        PerformanceAudit.recordStatsMiss();
         long started = System.nanoTime();
         Set<Long> structure = QuantumControllerRegistry.floodControllers(anchorWorld, anchorX, anchorY, anchorZ);
         if (structure.isEmpty()) {

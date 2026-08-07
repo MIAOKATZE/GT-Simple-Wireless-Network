@@ -301,6 +301,8 @@ gtswn.chat.quantum.node_destroyed=§a[Quantum Node] Quantum node destroyed
 gtswn.chat.quantum.blocked=§c[Quantized] Controller is quantized; energy-only devices allowed
 gtswn.chat.quantum.merged=§a[Quantized] %d new controller block(s) auto-merged into the quantized structure
 gtswn.chat.quantum.warning_95=§e[Quantum Node] Warning: Network channel usage has reached 95%% (%d/%d), further connections will cause controller explosion!
+gtswn.chat.quantum.overload_warning=§4[Quantum Node] Warning: channel limit exceeded! The network will explode in {0}. Disconnect extra devices or nodes immediately
+gtswn.chat.quantum.overload_cancelled=§a[Quantum Node] Channel usage recovered, explosion cancelled
 
 # ME Network Quantum Terminal GUI (T6 terminal interface)
 gtswn.gui.quantum.title=ME Network Quantum Terminal

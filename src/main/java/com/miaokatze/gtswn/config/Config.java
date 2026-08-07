@@ -103,6 +103,12 @@ public class Config {
     // 默认 10 / Default 10；v1.6.0 硬编码为 16 / Hardcoded to 16 in v1.6.0
     public static double quantumNodeIdlePowerUsage = 10.0D;
 
+    // 性能审计开关 / Performance audit switch (v1.6.19 新增)
+    // 默认 false：完全静默；开启后每 5 分钟向日志输出 TPS/本mod每tick耗时/交互计数报告
+    // Default false: fully silent; when enabled, reports TPS/mod mspt/interaction counts every 5 minutes
+    // 需重启生效 / Requires restart
+    public static boolean performanceAuditEnabled = false;
+
     // 网络信息屏历史数据保留天数 / Network info panel history retention days (v1.5.15 新增)
     // 超过此天数未采样的玩家数据集将在服务器启动时被清理，释放内存。
     // 0 = 永不清理（不推荐，长期运行会内存泄漏）。
@@ -128,6 +134,14 @@ public class Config {
             -5000,
             5000,
             "应用于 MTE ID 基准值的偏移量 (用于预留 ID 区间)");
+
+        // 性能审计开关 / Performance audit switch
+        performanceAuditEnabled = configuration.getBoolean(
+            "performanceAuditEnabled",
+            Configuration.CATEGORY_GENERAL,
+            performanceAuditEnabled,
+            "性能审计开关 / Performance audit switch\n"
+                + "默认 false：完全静默；开启后每 5 分钟向日志输出 TPS/本mod每tick耗时/交互计数报告，需重启生效 / Default false: fully silent; when enabled, reports TPS/mod mspt/interaction counts every 5 minutes (requires restart)");
 
         if (configuration.hasChanged()) {
             configuration.save();

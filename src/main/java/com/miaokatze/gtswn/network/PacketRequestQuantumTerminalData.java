@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.network;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalRequestQueue;
 
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -49,6 +50,8 @@ public class PacketRequestQuantumTerminalData implements IMessage {
 
         @Override
         public IMessage onMessage(PacketRequestQuantumTerminalData msg, MessageContext ctx) {
+            // v1.6.19：性能审计——C→S 包计数（discriminator 5）
+            if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(5);
             // 1.7.10 API：经 ctx.getServerHandler().playerEntity 取得请求方玩家
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
             QuantumTerminalRequestQueue.enqueue(player);

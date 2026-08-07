@@ -16,8 +16,10 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
+import com.miaokatze.gtswn.common.quantum.QuantumOverloadCountdown;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
@@ -236,6 +238,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private void syncLinkedStateIfChanged(boolean now) {
         if (now != this.lastSyncedLinked) {
             this.lastSyncedLinked = now;
+            // v1.6.19：性能审计——在线状态同步包计数（每变化一次即发包一次）
+            PerformanceAudit.recordQuantumSyncPacket();
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
         }
     }
@@ -300,7 +304,18 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     @Override
     public IGridNode getGridNode(ForgeDirection dir) {
-        if (worldObj == null || worldObj.isRemote) return null;
+        if (worldObj == null || worldObj.isRemote) {
+            return null;
+        }
+        // v1.6.19：量子节点之间互不连接——相邻为量子节点时该方向不暴露节点，
+        // AE2 FindConnections 在两侧都会跳过该方向的建连尝试
+        if (dir != null) {
+            TileEntity neighbor = worldObj
+                .getTileEntity(xCoord + dir.offsetX, yCoord + dir.offsetY, zCoord + dir.offsetZ);
+            if (neighbor instanceof TileEntityNetworkQuantumNode) {
+                return null;
+            }
+        }
         return getProxy().getNode();
     }
 
@@ -364,6 +379,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             syncLinkedStateIfChanged(false);
             return;
         }
+        // v1.6.19：性能审计——本节点单 tick 耗时采样起点（开关关闭时零开销）
+        long auditT0 = PerformanceAudit.start();
         // ===== proxy 就绪流程（照样板：暂存 NBT 重放 → onReady 一次性调用） =====
         if (pendingProxyNBT != null) {
             getProxy().readFromNBT(pendingProxyNBT);
@@ -380,10 +397,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // ===== 桥接连接维护：每 20 tick 一次；lastMaintenanceTick 初值 -1 保证就绪后首轮立即执行 =====
         long tick = worldObj.getTotalWorldTime();
         if (this.lastMaintenanceTick >= 0L && tick - this.lastMaintenanceTick < MAINTENANCE_INTERVAL_TICKS) {
+            // v1.6.19：性能审计——非维护窗口 tick 也结算本 tick 耗时（isLinked 判活等）
+            PerformanceAudit.record(auditT0);
             return;
         }
         this.lastMaintenanceTick = tick;
         maintainConnection();
+        PerformanceAudit.record(auditT0);
     }
 
     // ==================== 桥接逻辑（仅服务端） ====================
@@ -398,6 +418,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * </ol>
      */
     private void maintainConnection() {
+        // v1.6.19：性能审计——连接维护计数
+        PerformanceAudit.recordQuantumMaintenance();
         // v1.6.8：网络过载检查（仅桥接存活时执行，避免离线节点重复触发）
         if (this.connection != null && isLinked()) {
             checkNetworkOverload();
@@ -427,11 +449,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * <li>获取锚点控制器 grid</li>
      * <li>计算 totalChannels（floodControllers + computeTotalChannels）</li>
      * <li>计算全局 usedChannels（复用 QuantumNetworkData.computeUsedChannels）</li>
-     * <li>used > total → explodeControllers（整个控制器结构 TNT 级爆炸）</li>
+     * <li>used > total → 启动 3 分钟爆炸倒计时并公告；剩余 2/1 分钟、10 秒处各再公告一次；
+     * 期间频道恢复即取消倒计时并公告；到期仍超限才 explodeControllers（整个控制器结构 TNT 级爆炸）</li>
      * <li>used >= 95% * total 且本节点频道增长 → warnPlacer（向放置者发聊天警告）</li>
      * </ol>
      */
     private void checkNetworkOverload() {
+        // v1.6.19：性能审计——过载检查计数
+        PerformanceAudit.recordQuantumOverloadCheck();
         // AE2 Channels=false already removes the native channel limit. Skip this
         // mod's independent budget, warning, and overflow explosion checks too.
         if (QuantumControllerRegistry.isChannelsInfinite()) {
@@ -475,10 +500,35 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         for (IGridConnection c : myNode.getConnections()) {
             nodeUsed = Math.max(nodeUsed, c.getUsedChannels());
         }
-        // 6. 爆炸判定（严格大于）
-        if (used > total) {
-            explodeControllers(stats.getStructure());
-            return;
+        // 6. 超限倒计时判定（v1.6.19：不再立即爆炸，先 3 分钟倒计时，期间恢复即取消）
+        QuantumOverloadCountdown.Result countdown = QuantumOverloadCountdown.check(
+            this.anchorDim,
+            this.anchorX,
+            this.anchorY,
+            this.anchorZ,
+            anchorWorld.getTotalWorldTime(),
+            used > total);
+        switch (countdown) {
+            case EXPLODE:
+                explodeControllers(stats.getStructure());
+                return;
+            case STARTED:
+                messagePlacer("gtswn.chat.quantum.overload_warning", "3 分钟");
+                break;
+            case ANNOUNCE_2MIN:
+                messagePlacer("gtswn.chat.quantum.overload_warning", "2 分钟");
+                break;
+            case ANNOUNCE_1MIN:
+                messagePlacer("gtswn.chat.quantum.overload_warning", "1 分钟");
+                break;
+            case ANNOUNCE_10S:
+                messagePlacer("gtswn.chat.quantum.overload_warning", "10 秒");
+                break;
+            case CANCELLED:
+                messagePlacer("gtswn.chat.quantum.overload_cancelled");
+                break;
+            default:
+                break;
         }
         // 7. 95% 预警判定（本节点频道增长 + 全局达 95% + 未过载）
         if (nodeUsed > this.lastNodeUsedChannels && used * 100 >= total * 95 && used < total) {
@@ -491,6 +541,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /**
      * v1.6.8：网络过载爆炸——销毁整个控制器结构 + TNT 级爆炸。
      * <p>
+     * v1.6.19 起仅在超限倒计时到期仍超限时触发（不再立即爆炸）。
      * 先 setBlockToAir 全部控制器（同步销毁所有量子节点连接，去重后续节点爆炸检测），
      * 再在锚点位置 createExplosion 制造 TNT 级爆炸效果（威力 4.0，破坏方块+伤害实体）。
      *
@@ -515,15 +566,27 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     }
 
     /**
-     * v1.6.8：95% 预警——向本节点放置者发送聊天警告。
-     * <p>
-     * 通过 GridNode.getPlayerID() 反查在线玩家（WorldData.instance().playerData().getPlayerFromID）。
-     * 玩家离线时返回 null，预警静默跳过（符合"仅放置者"语义）。
+     * v1.6.8：95% 预警——向本节点放置者发送聊天警告（委托给 {@link #messagePlacer}）。
      *
      * @param used  当前已用频道
      * @param total 总频道上限
      */
     private void warnPlacer(int used, int total) {
+        messagePlacer("gtswn.chat.quantum.warning_95", used, total);
+    }
+
+    /**
+     * v1.6.19：向本节点放置者发送聊天消息。
+     * <p>
+     * 通过 GridNode.getPlayerID() 反查在线玩家（WorldData.instance().playerData().getPlayerFromID）。
+     * 玩家离线时返回 null，消息静默跳过（符合"仅放置者"语义）。
+     * args 为空时用 {@link StatCollector#translateToLocal}，非空时用
+     * {@link StatCollector#translateToLocalFormatted}。
+     *
+     * @param key  语言键
+     * @param args 格式化参数（可为空）
+     */
+    private void messagePlacer(String key, Object... args) {
         IGridNode myNode = getProxy().getNode();
         if (myNode == null) {
             return;
@@ -538,7 +601,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (placer == null) {
             return;
         }
-        String msg = StatCollector.translateToLocalFormatted("gtswn.chat.quantum.warning_95", used, total);
+        String msg = args.length == 0 ? StatCollector.translateToLocal(key)
+            : StatCollector.translateToLocalFormatted(key, args);
         placer.addChatMessage(new ChatComponentText(msg));
     }
 
@@ -554,6 +618,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 尝试向锚点控制器建立桥接连接，失败时记录离线原因 */
     private void tryConnect() {
+        // v1.6.19：性能审计——建连尝试计数
+        PerformanceAudit.recordQuantumTryConnect();
         // 无锚点：未经量子终端放置的节点（如创造模式直接放置）恒离线
         if (!hasAnchor()) {
             this.offlineReason = OfflineReason.NO_ANCHOR;
@@ -613,6 +679,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 .createGridConnection(myNode, anchorNode);
             snapshotAnchor();
             this.offlineReason = OfflineReason.NONE;
+            // v1.6.19：性能审计——建连成功计数
+            PerformanceAudit.recordQuantumBridgeSuccess();
         } catch (SecurityConnectionException e) {
             // §9 风险行：网络有安全终端且放置者无权限（放置者 ≠ 网络 owner）
             this.connection = null;
@@ -624,6 +692,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             if (this.connection != null) {
                 snapshotAnchor();
                 this.offlineReason = OfflineReason.NONE;
+                // v1.6.19：性能审计——收养既有直连成功计数
+                PerformanceAudit.recordQuantumBridgeSuccess();
             } else {
                 this.offlineReason = OfflineReason.NETWORK_NOT_READY;
             }
@@ -641,6 +711,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      */
     private void destroyBridgeConnection() {
         if (this.connection != null) {
+            // v1.6.19：性能审计——桥接销毁计数
+            PerformanceAudit.recordBridgeDestroyed();
             try {
                 this.connection.destroy();
             } catch (Exception e) {

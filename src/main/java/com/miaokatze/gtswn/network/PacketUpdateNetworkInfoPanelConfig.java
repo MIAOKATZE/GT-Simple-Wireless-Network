@@ -4,6 +4,7 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -76,6 +77,8 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
 
         @Override
         public IMessage onMessage(PacketUpdateNetworkInfoPanelConfig message, MessageContext ctx) {
+            // v1.6.19：性能审计——C→S 包计数（discriminator 2）
+            if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(2);
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
             if (player == null) {
                 return null;

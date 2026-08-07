@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
@@ -34,6 +35,8 @@ public final class QuantumTerminalRequestQueue {
     /** Netty 线程入队（仅缓存玩家引用，主线程 drain 时再校验在线/手持） */
     public static void enqueue(EntityPlayerMP player) {
         if (player != null && PENDING_PLAYERS.putIfAbsent(player, Boolean.TRUE) == null) {
+            // v1.6.19：性能审计——终端请求计数
+            PerformanceAudit.recordTerminalRequest();
             PENDING.add(player);
         }
     }
@@ -55,7 +58,10 @@ public final class QuantumTerminalRequestQueue {
                 return;
             }
             ItemStack held = player.getHeldItem();
+            // v1.6.19：性能审计——装配耗时采样（开关关闭时零开销）
+            long t0 = PerformanceAudit.start();
             QuantumNetworkData data = QuantumNetworkData.assemble(player, held);
+            PerformanceAudit.record(t0);
             if (data == null) {
                 // 手持不是已绑定量子终端 → 回发全零离线快照，保证 GUI 不卡在「...」
                 data = QuantumNetworkData.offlineFromStack(held);
@@ -63,8 +69,13 @@ public final class QuantumTerminalRequestQueue {
                     // 空手或非绑定终端：回发一个全零快照（online=false，无锚点坐标）
                     data = new QuantumNetworkData();
                 }
+            } else {
+                // v1.6.19：性能审计——装配成功计数
+                PerformanceAudit.recordTerminalAssembled();
             }
             GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalData(data), player);
+            // v1.6.19：性能审计——正常回包计数
+            PerformanceAudit.recordTerminalReply();
         } catch (Throwable t) {
             // 装配读世界/网格可能抛异常（网格解体、区块竞争等）：回发离线快照兜底，保证 GUI 不卡在「...」
             GTSimpleWirelessNetwork.LOG.error("[量子终端] 装配网络数据异常，回发离线快照", t);
@@ -74,6 +85,8 @@ public final class QuantumTerminalRequestQueue {
                     fallback = new QuantumNetworkData();
                 }
                 GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalData(fallback), player);
+                // v1.6.19：性能审计——兜底回包计数
+                PerformanceAudit.recordTerminalReply();
             } catch (Throwable ignored) {
                 // 兜底回发也失败（玩家掉线等）：放弃，客户端等下轮轮询
             }
