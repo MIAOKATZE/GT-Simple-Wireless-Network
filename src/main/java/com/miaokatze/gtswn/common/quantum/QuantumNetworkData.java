@@ -259,15 +259,15 @@ public class QuantumNetworkData {
             && cached.grid == grid) {
             fullCacheHits++;
             cached.lastAccessBucket = bucket;
-            return cached.data.copy();
+            // v1.6.20：缓存与命中返回共享同一对象（装配完成后无服务端修改点，客户端反序列化自建副本）
+            return cached.data;
         }
         fullCacheMisses++;
         long assemblyStarted = System.nanoTime();
         data.online = true;
 
         // 5-6. 总频道、已用频道和量子节点数共享同一份主线程统计快照。
-        QuantumNetworkStatsCache.Snapshot stats = QuantumNetworkStatsCache
-            .getOrCompute(world, anchorX, anchorY, anchorZ, grid);
+        QuantumNetworkStatsCache.Snapshot stats = QuantumNetworkStatsCache.getOrCompute(cacheKey, world, grid);
         if (stats == null) {
             return data;
         }
@@ -340,7 +340,9 @@ public class QuantumNetworkData {
         }
         data.entries.addAll(aggregated);
 
-        FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data.copy()));
+        // v1.6.20：直接缓存装配结果对象（免 copy）；返回路径与缓存共享同一实例，
+        // 装配完成后服务端无修改点（PacketSyncQuantumTerminalData.toBytes 只读）
+        FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data));
         fullAssemblies++;
         fullAssemblyNanos += System.nanoTime() - assemblyStarted;
         return data;
@@ -454,42 +456,6 @@ public class QuantumNetworkData {
             this.revision = revision;
             this.data = data;
             this.lastAccessBucket = bucket;
-        }
-    }
-
-    private static final class AnchorKey {
-
-        private final int dimension;
-        private final int x;
-        private final int y;
-        private final int z;
-
-        private AnchorKey(int dimension, int x, int y, int z) {
-            this.dimension = dimension;
-            this.x = x;
-            this.y = y;
-            this.z = z;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (!(obj instanceof AnchorKey)) {
-                return false;
-            }
-            AnchorKey other = (AnchorKey) obj;
-            return this.dimension == other.dimension && this.x == other.x && this.y == other.y && this.z == other.z;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = this.dimension;
-            result = 31 * result + this.x;
-            result = 31 * result + this.y;
-            result = 31 * result + this.z;
-            return result;
         }
     }
 }

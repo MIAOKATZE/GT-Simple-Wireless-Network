@@ -47,6 +47,12 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 运行期结构 revision；不持久化，仅用于让统计缓存感知量子化结构变化。 */
     private long revision;
 
+    /** 全部坐标集快照（懒构建，revision 变化时失效重建，供 tick 巡检复用）。 */
+    private Set<Long> snapshot = null;
+
+    /** 快照对应的 revision（-1 = 快照未构建/已失效）。 */
+    private long snapshotRevision = -1L;
+
     /**
      * 本世界维度 ID（运行时字段，不持久化到独立 tag）。
      * 由 {@link #get(World)} 赋值，仅用于 writeToNBT 时按 §5.3 结构填 dim 冗余字段。
@@ -149,10 +155,18 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     /**
      * 获取全部已量子化坐标的快照（打包值集合）。
+     * <p>
      * 返回副本以避免遍历期间被修改（tick 巡检中可能并发出册）。
+     * v1.6.20：revision 未变化时复用上次拷贝，避免每 20t 每世界重复分配；
+     * revision 变化的路径（quantize / quantizeAll / dequantize / readFromNBT）全部递增，
+     * 快照惰性重建——巡检循环内的自修改只影响下一轮，与逐点拷贝语义等价。
      */
     public Set<Long> getAll() {
-        return new HashSet<>(this.controllers);
+        if (this.snapshot == null || this.snapshotRevision != this.revision) {
+            this.snapshot = new HashSet<>(this.controllers);
+            this.snapshotRevision = this.revision;
+        }
+        return this.snapshot;
     }
 
     // ==================== 洪泛与频道公式（静态工具） ====================

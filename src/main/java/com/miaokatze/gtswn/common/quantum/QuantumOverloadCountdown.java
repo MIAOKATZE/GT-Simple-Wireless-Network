@@ -51,11 +51,12 @@ public final class QuantumOverloadCountdown {
     /**
      * 按锚点检查一次超限状态（主线程）。
      *
+     * @param key        锚点坐标键（调用方持有常驻实例复用，避免高频分配）
+     * @param worldTick  当前世界 tick
      * @param overloaded 本次采样是否超限（used &gt; total）
      * @return 需要执行的公告/动作结果
      */
-    public static Result check(int dim, int x, int y, int z, long worldTick, boolean overloaded) {
-        AnchorKey key = new AnchorKey(dim, x, y, z);
+    public static Result check(AnchorKey key, long worldTick, boolean overloaded) {
         if (!overloaded) {
             if (STATES.remove(key) != null) {
                 return Result.CANCELLED;
@@ -93,42 +94,6 @@ public final class QuantumOverloadCountdown {
         private State(long deadlineTick, int lastAnnounceLevel) {
             this.deadlineTick = deadlineTick;
             this.lastAnnounceLevel = lastAnnounceLevel;
-        }
-    }
-
-    private static final class AnchorKey {
-
-        private final int dim;
-        private final int x;
-        private final int y;
-        private final int z;
-
-        private AnchorKey(int dim, int x, int y, int z) {
-            this.dim = dim;
-            this.x = x;
-            this.y = y;
-            this.z = z;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (!(obj instanceof AnchorKey)) {
-                return false;
-            }
-            AnchorKey other = (AnchorKey) obj;
-            return this.dim == other.dim && this.x == other.x && this.y == other.y && this.z == other.z;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = this.dim;
-            result = 31 * result + this.x;
-            result = 31 * result + this.y;
-            result = 31 * result + this.z;
-            return result;
         }
     }
 }

@@ -17,6 +17,7 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.quantum.AnchorKey;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
 import com.miaokatze.gtswn.common.quantum.QuantumOverloadCountdown;
@@ -120,6 +121,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 该节点上次 max usedChannels（-1 = 未初始化；v1.6.8 新增，用于 95% 预警跟踪本节点频道增长） */
     private int lastNodeUsedChannels = -1;
+
+    /** 锚点坐标键常驻实例（checkNetworkOverload 复用，锚点改指时按四字段比对重建；不持久化） */
+    private AnchorKey anchorKey = null;
 
     // ==================== 离线原因枚举 ====================
 
@@ -483,9 +487,17 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         } catch (GridAccessException e) {
             return;
         }
-        // 3-4. 复用同一锚点的 20 tick 主线程统计快照，避免每个节点重复洪泛和遍历全网节点。
-        QuantumNetworkStatsCache.Snapshot stats = QuantumNetworkStatsCache
-            .getOrCompute(anchorWorld, this.anchorX, this.anchorY, this.anchorZ, grid);
+        // v1.6.20：复用节点常驻 AnchorKey（锚点改指/首次使用时按四字段重建），
+        // 避免每 20t 每次检查向统计缓存与倒计时各分配一个新键
+        AnchorKey key = this.anchorKey;
+        if (key == null || key.getDimension() != this.anchorDim
+            || key.getX() != this.anchorX
+            || key.getY() != this.anchorY
+            || key.getZ() != this.anchorZ) {
+            key = this.anchorKey = new AnchorKey(this.anchorDim, this.anchorX, this.anchorY, this.anchorZ);
+        }
+        // 3-4. 复用同一锚点的 100 tick 主线程统计快照，避免每个节点重复洪泛和遍历全网节点。
+        QuantumNetworkStatsCache.Snapshot stats = QuantumNetworkStatsCache.getOrCompute(key, anchorWorld, grid);
         if (stats == null) {
             return;
         }
@@ -501,13 +513,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             nodeUsed = Math.max(nodeUsed, c.getUsedChannels());
         }
         // 6. 超限倒计时判定（v1.6.19：不再立即爆炸，先 3 分钟倒计时，期间恢复即取消）
-        QuantumOverloadCountdown.Result countdown = QuantumOverloadCountdown.check(
-            this.anchorDim,
-            this.anchorX,
-            this.anchorY,
-            this.anchorZ,
-            anchorWorld.getTotalWorldTime(),
-            used > total);
+        QuantumOverloadCountdown.Result countdown = QuantumOverloadCountdown
+            .check(key, anchorWorld.getTotalWorldTime(), used > total);
         switch (countdown) {
             case EXPLODE:
                 explodeControllers(stats.getStructure());

@@ -104,10 +104,15 @@ public class Config {
     public static double quantumNodeIdlePowerUsage = 10.0D;
 
     // 性能审计开关 / Performance audit switch (v1.6.19 新增)
-    // 默认 false：完全静默；开启后每 5 分钟向日志输出 TPS/本mod每tick耗时/交互计数报告
-    // Default false: fully silent; when enabled, reports TPS/mod mspt/interaction counts every 5 minutes
+    // 默认 false：完全静默；开启后按 performanceAuditIntervalMinutes（默认 10 分钟）向日志输出 TPS/本mod每tick耗时/交互计数报告
+    // Default false: fully silent; when enabled, reports TPS/mod mspt/interaction counts per
+    // performanceAuditIntervalMinutes (default 10 minutes)
     // 需重启生效 / Requires restart
     public static boolean performanceAuditEnabled = false;
+
+    // 性能审计报告周期（分钟）/ Performance audit report interval in minutes (v1.6.20 新增)
+    // 默认 10 分钟，范围 1~60，需重启生效 / Default 10 minutes, range 1-60, requires restart
+    public static int performanceAuditIntervalMinutes = 10;
 
     // 网络信息屏历史数据保留天数 / Network info panel history retention days (v1.5.15 新增)
     // 超过此天数未采样的玩家数据集将在服务器启动时被清理，释放内存。
@@ -141,7 +146,16 @@ public class Config {
             Configuration.CATEGORY_GENERAL,
             performanceAuditEnabled,
             "性能审计开关 / Performance audit switch\n"
-                + "默认 false：完全静默；开启后每 5 分钟向日志输出 TPS/本mod每tick耗时/交互计数报告，需重启生效 / Default false: fully silent; when enabled, reports TPS/mod mspt/interaction counts every 5 minutes (requires restart)");
+                + "默认 false：完全静默；开启后按 performanceAuditIntervalMinutes（默认 10 分钟）向日志输出 TPS/本mod每tick耗时/交互计数报告，需重启生效 / Default false: fully silent; when enabled, reports TPS/mod mspt/interaction counts per performanceAuditIntervalMinutes (default 10 minutes, requires restart)");
+
+        // 性能审计报告周期 / Performance audit report interval
+        performanceAuditIntervalMinutes = configuration.getInt(
+            "performanceAuditIntervalMinutes",
+            Configuration.CATEGORY_GENERAL,
+            performanceAuditIntervalMinutes,
+            1,
+            60,
+            "性能审计报告周期（分钟）/ Performance audit report interval (minutes)");
 
         if (configuration.hasChanged()) {
             configuration.save();

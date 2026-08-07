@@ -71,6 +71,8 @@ public class CommonProxy {
         Config.synchronizeAEConfiguration(new net.minecraftforge.common.config.Configuration(aeConfigFile));
         // v1.6.19：性能审计开关（preInit 配置读取后设置，重启生效；关闭时完全静默）
         PerformanceAudit.setEnabled(Config.performanceAuditEnabled);
+        // v1.6.20：性能审计报告周期（分钟；preInit 配置读取后设置，重启生效）
+        PerformanceAudit.setReportIntervalMinutes(Config.performanceAuditIntervalMinutes);
 
         GTSimpleWirelessNetwork.LOG.info("GTSimpleWirelessNetwork 开始初始化 (版本: " + Tags.VERSION + ")");
 

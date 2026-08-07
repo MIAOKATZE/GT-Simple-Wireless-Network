@@ -371,6 +371,8 @@ public class QuantumControllerEventHandler {
         }
         // v1.6.19：性能审计——巡检计数
         PerformanceAudit.recordControllerSweep();
+        // v1.6.20：允许面集合在循环外建一次复用，避免每控制器每次调用新建 EnumSet
+        EnumSet<ForgeDirection> allowed = EnumSet.noneOf(ForgeDirection.class);
         for (long packed : all) {
             int x = QuantumControllerRegistry.unpackX(packed);
             int y = QuantumControllerRegistry.unpackY(packed);
@@ -382,7 +384,7 @@ public class QuantumControllerEventHandler {
                 continue;
             }
             // 连接过滤兜底重算
-            applyConnectionFilter(world, x, y, z);
+            applyConnectionFilter(world, x, y, z, allowed);
             // D8：6 邻接发现未入册控制器 → 整结构自动合并量子化
             for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
                 int nx = x + d.offsetX;
@@ -438,7 +440,15 @@ public class QuantumControllerEventHandler {
     // ==================== 连接过滤核心（静态工具，供物品/事件共用） ====================
 
     /**
-     * 对已量子化控制器逐面判定并应用连接白名单（规划 §1 已核实机理）。
+     * 对已量子化控制器逐面判定并应用连接白名单（自建允许面集合）。
+     * 委托给复用集合的重载，语义一致。
+     */
+    public static void applyConnectionFilter(World world, int x, int y, int z) {
+        applyConnectionFilter(world, x, y, z, EnumSet.noneOf(ForgeDirection.class));
+    }
+
+    /**
+     * 对已量子化控制器逐面判定并应用连接白名单（复用调用方提供的允许面集合）。
      * <p>
      * 放行面 = 相邻为以下之一：
      * <ul>
@@ -455,13 +465,16 @@ public class QuantumControllerEventHandler {
      * <p>
      * 注意：控制器 proxy 未 ready 时调用同样安全——AENetworkProxy.getNode() 创建节点后
      * updateState 会读取最新 validSides。
+     * <p>
+     * v1.6.20：allowed 由调用方（每秒巡检循环外）持有复用，方法开头 clear() 后填充，
+     * 避免每控制器每次调用新建 EnumSet；语义与自建版本逐点等价。
      */
-    public static void applyConnectionFilter(World world, int x, int y, int z) {
+    public static void applyConnectionFilter(World world, int x, int y, int z, EnumSet<ForgeDirection> allowed) {
         TileEntity te = world.getTileEntity(x, y, z);
         if (!(te instanceof TileController)) {
             return;
         }
-        EnumSet<ForgeDirection> allowed = EnumSet.noneOf(ForgeDirection.class);
+        allowed.clear();
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
             TileEntity neighbor = world.getTileEntity(x + d.offsetX, y + d.offsetY, z + d.offsetZ);
             if (neighbor instanceof TileController) {

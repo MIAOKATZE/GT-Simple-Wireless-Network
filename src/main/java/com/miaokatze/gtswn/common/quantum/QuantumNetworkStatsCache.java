@@ -2,7 +2,6 @@ package com.miaokatze.gtswn.common.quantum;
 
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -22,13 +21,17 @@ import appeng.api.networking.IMachineSet;
  *
  * <p>
  * 量子节点的维护周期彼此不一定对齐。按锚点、AE 网格实例、注册表 revision
- * 和 20 tick 时间桶缓存后，同一网络的多个节点不会重复洪泛控制器结构或遍历所有
+ * 和 100 tick 时间桶缓存后，同一网络的多个节点不会重复洪泛控制器结构或遍历所有
  * 量子节点。此类只允许在服务器主线程调用；缓存内容为不可变快照。
  * </p>
  */
 public final class QuantumNetworkStatsCache {
 
-    private static final long CACHE_INTERVAL_TICKS = 20L;
+    /**
+     * 统计时间桶宽（tick）。v1.6.20：由 20t 放宽到 100t——过载/预警统计时效从 ≤1s
+     * 放宽到 ≤5s，3 分钟爆炸倒计时语义不变；结构变更仍走 revision 即时失效。
+     */
+    private static final long CACHE_INTERVAL_TICKS = 100L;
     private static final long RETAIN_BUCKETS = 4L;
 
     private static final Map<AnchorKey, CacheEntry> CACHE = new HashMap<>();
@@ -42,18 +45,20 @@ public final class QuantumNetworkStatsCache {
     private QuantumNetworkStatsCache() {}
 
     /**
-     * 获取锚点网络统计；同一 20 tick 桶内只计算一次。
+     * 获取锚点网络统计；同一 100 tick 桶内只计算一次。
      *
+     * @param key         锚点坐标键（调用方持有常驻实例复用，避免高频分配）
+     * @param anchorWorld 锚点所在维度世界（仅用于取世界时间算桶）
+     * @param grid        锚点控制器所属 ME 网格
      * @return 不可变快照；锚点结构不存在或网格暂不可用时返回 null
      */
-    public static Snapshot getOrCompute(World anchorWorld, int anchorX, int anchorY, int anchorZ, IGrid grid) {
+    public static Snapshot getOrCompute(AnchorKey key, World anchorWorld, IGrid grid) {
         if (anchorWorld == null || grid == null) {
             return null;
         }
 
         long bucket = anchorWorld.getTotalWorldTime() / CACHE_INTERVAL_TICKS;
         prune(bucket);
-        AnchorKey key = new AnchorKey(anchorWorld.provider.dimensionId, anchorX, anchorY, anchorZ);
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(anchorWorld);
         long revision = registry.getRevision();
         CacheEntry cached = CACHE.get(key);
@@ -69,7 +74,8 @@ public final class QuantumNetworkStatsCache {
         // v1.6.19：性能审计——缓存未命中计数
         PerformanceAudit.recordStatsMiss();
         long started = System.nanoTime();
-        Set<Long> structure = QuantumControllerRegistry.floodControllers(anchorWorld, anchorX, anchorY, anchorZ);
+        Set<Long> structure = QuantumControllerRegistry
+            .floodControllers(anchorWorld, key.getX(), key.getY(), key.getZ());
         if (structure.isEmpty()) {
             return null;
         }
@@ -147,7 +153,8 @@ public final class QuantumNetworkStatsCache {
             this.totalChannels = totalChannels;
             this.usedChannels = usedChannels;
             this.quantumNodeCount = quantumNodeCount;
-            this.structure = Collections.unmodifiableSet(new HashSet<>(structure));
+            // v1.6.20：直接包装洪泛返回的集合（构造后无人修改，消费者只读）免拷贝
+            this.structure = Collections.unmodifiableSet(structure);
         }
 
         public Set<Long> getStructure() {
@@ -169,42 +176,6 @@ public final class QuantumNetworkStatsCache {
             this.revision = revision;
             this.snapshot = snapshot;
             this.lastAccessBucket = bucket;
-        }
-    }
-
-    private static final class AnchorKey {
-
-        private final int dimension;
-        private final int x;
-        private final int y;
-        private final int z;
-
-        private AnchorKey(int dimension, int x, int y, int z) {
-            this.dimension = dimension;
-            this.x = x;
-            this.y = y;
-            this.z = z;
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (!(obj instanceof AnchorKey)) {
-                return false;
-            }
-            AnchorKey other = (AnchorKey) obj;
-            return this.dimension == other.dimension && this.x == other.x && this.y == other.y && this.z == other.z;
-        }
-
-        @Override
-        public int hashCode() {
-            int result = this.dimension;
-            result = 31 * result + this.x;
-            result = 31 * result + this.y;
-            result = 31 * result + this.z;
-            return result;
         }
     }
 }
