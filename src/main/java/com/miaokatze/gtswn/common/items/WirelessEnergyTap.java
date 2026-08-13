@@ -17,11 +17,14 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 
 import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
+import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.ICoverable;
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.implementations.MTEBasicMachineWithRecipe;
 import gregtech.api.recipe.RecipeMaps;
@@ -192,6 +195,11 @@ public class WirelessEnergyTap extends Item {
 
         IBasicEnergyContainer container = (IBasicEnergyContainer) te;
 
+        // 激光仓检测：激光源仓/靶仓的 getOutputVoltage 被 isEnetOutput=false 门控为 0，需直读仓专属 V/A
+        // Laser hatch: isEnetOutput=false gates getOutputVoltage to 0, read hatch-specific V/A directly
+        IMetaTileEntity laserMte = (te instanceof IGregTechTileEntity igte) ? igte.getMetaTileEntity() : null;
+        boolean laserHatch = laserMte != null && LaserHatchUtil.isLaserHatch(laserMte);
+
         // === 首先检查：整个机器是否有我们的GTswn覆盖板 ===
         if (te instanceof ICoverable) {
             ICoverable coverable = (ICoverable) te;
@@ -264,6 +272,11 @@ public class WirelessEnergyTap extends Item {
                 voltage = container.getOutputVoltage();
             }
 
+            // 激光仓专属电压（源仓=maxEUOutput()、靶仓=maxEUInput()，均 V[mTier] 恒非零）
+            if (laserHatch) {
+                voltage = LaserHatchUtil.getLaserVoltage(laserMte);
+            }
+
             if (voltage <= 0) {
                 player
                     .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_voltage")));
@@ -274,6 +287,11 @@ public class WirelessEnergyTap extends Item {
             long amperage = container.getInputAmperage();
             if (amperage <= 1) {
                 amperage = 2;
+            }
+
+            // 激光仓专属安培（源仓=maxAmperesOut()、靶仓=maxAmperesIn()，恒>1，2A 兜底不生效）
+            if (laserHatch) {
+                amperage = LaserHatchUtil.getLaserAmperage(laserMte);
             }
 
             // 4. 检查是否为单方块电弧炉(通过配方表精确识别),如果是则强制 4A
@@ -314,6 +332,17 @@ public class WirelessEnergyTap extends Item {
                     player.addChatMessage(
                         new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
                     return;
+                }
+
+                // 激光仓绑定：消耗 1 根激光真空管（失败终止附着，不扣管）
+                if (laserHatch && !LaserHatchUtil.consumeLaserPipe(player)) {
+                    player.addChatMessage(
+                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
+                    return;
+                }
+                if (laserHatch) {
+                    player.addChatMessage(
+                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
                 }
 
                 // 3. 使用CoverPlacer放置
@@ -385,6 +414,20 @@ public class WirelessEnergyTap extends Item {
             player.addChatMessage(
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
             return;
+        }
+
+        // 激光仓绑定：消耗 1 根激光真空管（失败终止附着，不扣管）
+        // Laser hatch binding: consumes 1 Laser Vacuum Pipe (abort on missing pipe, no consumption on failure)
+        IMetaTileEntity mte = (coverable instanceof IGregTechTileEntity igte) ? igte.getMetaTileEntity() : null;
+        boolean laserHatch = mte != null && LaserHatchUtil.isLaserHatch(mte);
+        if (laserHatch && !LaserHatchUtil.consumeLaserPipe(player)) {
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
+            return;
+        }
+        if (laserHatch) {
+            player
+                .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
         }
 
         // 放置覆盖板
@@ -531,5 +574,7 @@ public class WirelessEnergyTap extends Item {
         String modeKey = outputMode ? "gtswn.tooltip.tap.mode.output" : "gtswn.tooltip.tap.mode.input";
         list.add("");
         list.add(StatCollector.translateToLocal(modeKey));
+        // 激光仓绑定消耗提示 / Binding a laser hatch consumes a Laser Vacuum Pipe
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.laser_pipe_cost"));
     }
 }

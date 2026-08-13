@@ -87,6 +87,7 @@ item.wirelessEnergyTap.name=Wireless Network Link Terminal
 item.wirelessEnergyTap.desc=Connect energy containers to GT wireless network
 gtswn.tooltip.tap.mode.input=Current Mode: Energy Link (Input)
 gtswn.tooltip.tap.mode.output=Current Mode: Power Link (Output)
+gtswn.tooltip.tap.laser_pipe_cost=Binding Laser Source/Target Hatches consumes a Laser Vacuum Pipe
 gtswn.chat.tap.mode.input=§a[Link Terminal] Switched to Energy Link mode
 gtswn.chat.tap.mode.output=§a[Link Terminal] Switched to Power Link mode
 gtswn.chat.tap.not_energy_container=§c[Link Terminal] Not an energy container
@@ -118,6 +119,8 @@ gtswn.chat.tap.cover_capacity=§b Cover capacity:
 gtswn.chat.tap.cannot_get_cover=§c[Link Terminal] Cannot get cover item!
 gtswn.chat.tap.no_cover_support=§c[Link Terminal] Machine doesn't support covers
 gtswn.chat.tap.bind_notify=§e[Link Terminal] Bound to the machine owner's power grid. Please confirm your team has shared the grid (this message will appear %d more times).
+gtswn.chat.tap.laser_missing_pipe=§c[Link Terminal] Missing Laser Vacuum Pipe! Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
+gtswn.chat.tap.laser_consumed=§a[Link Terminal] Consumed 1 Laser Vacuum Pipe.
 
 # Wireless Cover Right-Click Config
 gtswn.chat.cover.energy_config=GTswn Link Terminal (Energy) Config:

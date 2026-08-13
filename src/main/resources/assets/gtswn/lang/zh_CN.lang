@@ -87,6 +87,7 @@ item.wirelessEnergyTap.name=无线网络链路终端
 item.wirelessEnergyTap.desc=连接能量容器到GT无线电网
 gtswn.tooltip.tap.mode.input=当前模式: 能源链接（从电网获取）
 gtswn.tooltip.tap.mode.output=当前模式: 动力链接（向电网输出）
+gtswn.tooltip.tap.laser_pipe_cost=绑定激光仓时需要消耗激光真空管
 gtswn.chat.tap.mode.input=§a[链路终端] 已切换为能源链接模式
 gtswn.chat.tap.mode.output=§a[链路终端] 已切换为动力链接模式
 gtswn.chat.tap.not_energy_container=§c[链路终端] 不是能量容器
@@ -118,6 +119,8 @@ gtswn.chat.tap.cover_capacity=§b 覆盖板电容:
 gtswn.chat.tap.cannot_get_cover=§c[链路终端] 无法获取覆盖板！
 gtswn.chat.tap.no_cover_support=§c[链路终端] 机器不支持覆盖板
 gtswn.chat.tap.bind_notify=§e[链路终端] 绑定的是机器拥有者的电网，请确认团队已经共享了电网（该信息还会出现 %d 次）。
+gtswn.chat.tap.laser_missing_pipe=§c[链路终端] 背包缺少激光真空管！绑定激光源仓/靶仓需消耗 1 根激光真空管。
+gtswn.chat.tap.laser_consumed=§a[链路终端] 已消耗 1 根激光真空管。
 
 # Wireless Cover Right-Click Config
 gtswn.chat.cover.energy_config=GTswn链路终端（能源）配置：

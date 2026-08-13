@@ -12,9 +12,11 @@ import net.minecraft.util.ChatComponentText;
 
 import com.google.common.io.ByteArrayDataInput;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverContext;
+import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.MetaTileEntity;
@@ -95,8 +97,12 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
         // Per tick: read machine output, drain V×A EU into buffer
         // 只对会输出能量的机器取电(getOutputVoltage > 0),避免误取非输出机器
         // Only drain from output-capable machines (getOutputVoltage > 0)
-        long outputV = bmte.getOutputVoltage();
-        long outputA = bmte.getOutputAmperage();
+        // 激光仓：getOutputVoltage 被 isEnetOutput=false 门控为 0，直读仓专属 V/A 取电
+        // Laser hatch: getOutputVoltage gated to 0 by isEnetOutput=false, read hatch-specific V/A directly
+        IMetaTileEntity laserMte = bmte.getMetaTileEntity();
+        boolean laserHatch = LaserHatchUtil.isLaserHatch(laserMte);
+        long outputV = laserHatch ? LaserHatchUtil.getLaserVoltage(laserMte) : bmte.getOutputVoltage();
+        long outputA = laserHatch ? LaserHatchUtil.getLaserAmperage(laserMte) : bmte.getOutputAmperage();
         if (outputV > 0 && outputA > 0) {
             long currentEU = bmte.getStoredEUuncapped();
             long minStoredEU = 0L;
