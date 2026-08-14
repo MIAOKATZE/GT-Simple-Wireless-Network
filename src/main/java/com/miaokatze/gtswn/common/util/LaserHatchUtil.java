@@ -1,7 +1,9 @@
 package com.miaokatze.gtswn.common.util;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.play.server.S2FPacketSetSlot;
 import net.minecraft.tileentity.TileEntity;
 
 import gregtech.api.GregTechAPI;
@@ -123,6 +125,14 @@ public class LaserHatchUtil {
                 stack.stackSize--;
                 if (stack.stackSize <= 0) {
                     mainInventory[i] = null;
+                }
+                // 1.7.10：无 GUI 打开时 openContainer(inventoryContainer) 无 ICrafting，detectAndSendChanges 不会
+                // 向客户端推送槽位；显式发送 S2FPacketSetSlot 同步该槽位，否则客户端背包残留旧物品直至下次交互。
+                // 1.7.10: with no GUI open the inventoryContainer has no ICrafting listeners, so
+                // detectAndSendChanges never pushes slots; send S2FPacketSetSlot explicitly so the
+                // client slot updates immediately instead of showing stale items until the next interaction.
+                if (player instanceof EntityPlayerMP playerMP) {
+                    playerMP.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, i, mainInventory[i]));
                 }
                 return true;
             }
