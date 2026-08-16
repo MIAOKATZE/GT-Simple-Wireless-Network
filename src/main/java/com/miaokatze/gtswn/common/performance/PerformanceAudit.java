@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.common.performance;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import net.minecraft.server.MinecraftServer;
@@ -11,6 +12,8 @@ import net.minecraft.world.WorldServer;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.sun.management.ThreadMXBean;
 
+import cpw.mods.fml.common.Loader;
+import cpw.mods.fml.common.ModContainer;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -90,6 +93,32 @@ public final class PerformanceAudit {
     private static long packetInfoPanelConfig = 0L;
     private static long packetAETab = 0L;
 
+    // ==================== 命名切片采样（v1.6.23：按来源/按依赖 mod 记录延迟） ====================
+
+    /** 切片名：本 mod 发起的 AE2 建连/拆连/收养直连（AE2 归属） */
+    public static final String SLICE_AE2_CONNECT = "ae2.connect";
+
+    /** 切片名：本 mod 发起的 AE2 网格访问（getGrid/getMachines/getConnections/能量/存储读取，AE2 归属） */
+    public static final String SLICE_AE2_GRID_QUERY = "ae2.gridQuery";
+
+    /** 切片名：量子网络统计原始计算（洪泛+频道公式+网格遍历，gtswn 归属） */
+    public static final String SLICE_GTSWN_STATS_RAW = "gtswn.statsRaw";
+
+    /** 切片名：终端网络数据全量装配（gtswn 归属） */
+    public static final String SLICE_GTSWN_ASSEMBLE = "gtswn.assemble";
+
+    /** 切片名：无线覆盖板 doCoverThings（GT cover API 宿主内运行的本 mod 代码，GT5U 归属） */
+    public static final String SLICE_GT_COVER = "gt.cover";
+
+    /** 切片采样表：name → {count, sumNanos, maxNanos}（插入序即报告顺序） */
+    private static final Map<String, long[]> SLICES = new LinkedHashMap<>();
+
+    /** AE2 网格事件计数（v1.6.23）：事件类型 → 窗口内次数（由量子节点 @MENetworkEventSubscribe 回调） */
+    private static final Map<String, Long> AE2_EVENTS = new LinkedHashMap<>();
+
+    /** 依赖 mod 版本行（运行时 FML ModList 读取，首次取用后缓存） */
+    private static String dependencyLine = null;
+
     // ==================== JVM GC 基线 ====================
 
     /** 各收集器上次报告的累计 collectionCount/collectionTime（按收集器名区分 young/full） */
@@ -157,6 +186,42 @@ public final class PerformanceAudit {
         if (startNanos != 0L) {
             perTickNanos += System.nanoTime() - startNanos;
         }
+    }
+
+    // ==================== 命名切片采样（v1.6.23） ====================
+    // 切片与 start()/record()（MSTP 顶层窗口口径）相互独立：切片嵌套在窗口内，
+    // 只作诊断分解，不参与 MSTP 求和，避免双计。开关关闭时 startSlice 返回 0、
+    // endSlice/recordAe2Event 直接跳过，零开销。
+
+    /** 开始一次命名切片采样；关闭时返回 0（endSlice 自动跳过） */
+    public static long startSlice() {
+        return enabled ? System.nanoTime() : 0L;
+    }
+
+    /** 结束命名切片采样：累计次数/总时长/峰值（t0=0 时零开销跳过） */
+    public static void endSlice(String name, long startNanos) {
+        if (startNanos == 0L) {
+            return;
+        }
+        long nano = System.nanoTime() - startNanos;
+        long[] s = SLICES.get(name);
+        if (s == null) {
+            s = new long[3];
+            SLICES.put(name, s);
+        }
+        s[0]++;
+        s[1] += nano;
+        if (nano > s[2]) {
+            s[2] = nano;
+        }
+    }
+
+    /** AE2 网格事件计数（由量子节点 @MENetworkEventSubscribe 回调调用，仅计数不耗时） */
+    public static void recordAe2Event(String type) {
+        if (!enabled) {
+            return;
+        }
+        AE2_EVENTS.merge(type, 1L, Long::sum);
     }
 
     /**
@@ -375,6 +440,95 @@ public final class PerformanceAudit {
 
     // ==================== 报告结算 ====================
 
+    /** 切片报告文本：name=均 x ms/t·峰 x ms·x 次（均按窗口 tick 平均） */
+    private static String formatSlices() {
+        if (SLICES.isEmpty()) {
+            return "无";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, long[]> e : SLICES.entrySet()) {
+            String name = e.getKey();
+            long[] s = e.getValue();
+            if (sb.length() > 0) {
+                sb.append(" | ");
+            }
+            sb.append(name)
+                .append("=均")
+                .append(String.format("%.5f", (double) s[1] / Math.max(1L, windowTicks) / 1e6))
+                .append("ms/t·峰")
+                .append(String.format("%.3f", (double) s[2] / 1e6))
+                .append("ms·")
+                .append(s[0])
+                .append("次");
+        }
+        return sb.toString();
+    }
+
+    /** 按 mod 归属延迟行：gtswn=MSTP 口径；AE2=connect+gridQuery 切片合计；GT5U=gt.cover 切片 */
+    private static String formatByMod() {
+        double gtswn = windowTicks > 0L ? (double) windowSumNanos / windowTicks / 1e6 : 0.0D;
+        double ae2 = ((double) sliceSum(SLICE_AE2_CONNECT) + sliceSum(SLICE_AE2_GRID_QUERY)) / Math.max(1L, windowTicks)
+            / 1e6;
+        double gt = (double) sliceSum(SLICE_GT_COVER) / Math.max(1L, windowTicks) / 1e6;
+        return "gtswn=" + String.format("%.5f", gtswn)
+            + " ms/t | AE2(被本mod调起)="
+            + String.format("%.5f", ae2)
+            + " ms/t | GT5U覆盖板="
+            + String.format("%.5f", gt)
+            + " ms/t";
+    }
+
+    private static long sliceSum(String name) {
+        long[] s = SLICES.get(name);
+        return s == null ? 0L : s[1];
+    }
+
+    /** AE2 网格事件计数文本（按类型，插入序） */
+    private static String formatAe2Events() {
+        if (AE2_EVENTS.isEmpty()) {
+            return "无";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Map.Entry<String, Long> e : AE2_EVENTS.entrySet()) {
+            if (sb.length() > 0) {
+                sb.append(" ");
+            }
+            sb.append(e.getKey())
+                .append('=')
+                .append(e.getValue());
+        }
+        return sb.toString();
+    }
+
+    /** 依赖 mod 版本行（运行时 FML ModList，缺失返回 N/A；首次取用后缓存） */
+    private static String formatDependencies() {
+        if (dependencyLine == null) {
+            dependencyLine = "AE2U=" + modVersion("appliedenergistics2")
+                + " GT5U="
+                + modVersion("gregtech")
+                + " GTNHLib="
+                + modVersion("gtnhlib")
+                + " ModularUI2="
+                + modVersion("modularui2")
+                + " StructureLib="
+                + modVersion("structurelib")
+                + " Waila="
+                + modVersion("Waila");
+        }
+        return dependencyLine;
+    }
+
+    private static String modVersion(String modId) {
+        try {
+            ModContainer container = Loader.instance()
+                .getIndexedModList()
+                .get(modId);
+            return container == null ? "N/A" : container.getVersion();
+        } catch (Throwable t) {
+            return "N/A";
+        }
+    }
+
     /**
      * 输出性能窗口报告（默认 10 分钟，周期可配置；单次多行 INFO 日志）并更新 GC 基线。
      * <p>
@@ -482,6 +636,10 @@ public final class PerformanceAudit {
                 + "[性能审计] 无线能源: 覆盖板tick={} 下行补满={} 上行上传={}\n"
                 + "[性能审计] 网络包(C→S): 合计={} [终端请求={} 无线EU={} 信息屏配置={} AE标签={}]\n"
                 + "[性能审计] 延迟分布: <=20ms={} 20-50ms={} 50-100ms={} 100-200ms={} >200ms={} | 最卡tick=#{}\n"
+                + "[性能审计] 延迟切片: {}\n"
+                + "[性能审计] 按mod延迟: {}\n"
+                + "[性能审计] AE2事件: {}\n"
+                + "[性能审计] 依赖mod: {}\n"
                 + "[性能审计] 堆水位: min={}% avg={}% max={}%\n"
                 + "[性能审计] 线程分配: {}\n"
                 + "[性能审计] 服务器: 玩家={} 实体={} 区块={}\n"
@@ -520,6 +678,10 @@ public final class PerformanceAudit {
             latency100To200,
             latency200Plus,
             worstTickIndex,
+            formatSlices(),
+            formatByMod(),
+            formatAe2Events(),
+            formatDependencies(),
             heapMinStr,
             heapAvgStr,
             heapMaxStr,
@@ -566,6 +728,8 @@ public final class PerformanceAudit {
         packetWirelessEU = 0L;
         packetInfoPanelConfig = 0L;
         packetAETab = 0L;
+        SLICES.clear();
+        AE2_EVENTS.clear();
         latencyLe20 = 0L;
         latency20To50 = 0L;
         latency50To100 = 0L;

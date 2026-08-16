@@ -137,6 +137,8 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
         }
         // v1.6.19：性能审计——本 tick 覆盖板耗时采样终点
         PerformanceAudit.record(auditT0);
+        // v1.6.23：性能审计——覆盖板切片（gt.cover，GT cover API 宿主归属）
+        PerformanceAudit.endSlice(PerformanceAudit.SLICE_GT_COVER, auditT0);
     }
 
     /**

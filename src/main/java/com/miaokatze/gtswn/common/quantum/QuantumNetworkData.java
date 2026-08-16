@@ -15,6 +15,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
 import appeng.api.networking.IGrid;
@@ -275,70 +276,76 @@ public class QuantumNetworkData {
         data.usedChannels = stats.usedChannels;
         data.quantumNodeCount = stats.quantumNodeCount;
 
-        // 7. 能量四项（IEnergyGrid 缓存，AE2 保证该缓存恒存在，仍做 null 防御）
-        IEnergyGrid energy = grid.getCache(IEnergyGrid.class);
-        if (energy != null) {
-            data.avgPowerUsage = energy.getAvgPowerUsage();
-            data.avgPowerInjection = energy.getAvgPowerInjection();
-            data.storedPower = energy.getStoredPower();
-            data.maxStoredPower = energy.getMaxStoredPower();
-            data.powerInfinite = energy.getHasInfiniteStore();
-        }
-
-        // 8. 物品 / 流体 / 源质 存储字节统计（IStorageGrid 实际实现为 GridStorageCache）
-        IStorageGrid storageGrid = grid.getCache(IStorageGrid.class);
-        if (storageGrid instanceof GridStorageCache) {
-            GridStorageCache storage = (GridStorageCache) storageGrid;
-            data.itemBytesUsed = storage.getItemBytesUsed();
-            data.itemBytesTotal = storage.getItemBytesTotal();
-            data.fluidBytesUsed = storage.getFluidBytesUsed();
-            data.fluidBytesTotal = storage.getFluidBytesTotal();
-            // 源质方法在部分 AE2 版本可能不存在：反射探测，失败则保持默认 0
-            try {
-                data.essentiaBytesUsed = storage.getEssentiaBytesUsed();
-                data.essentiaBytesTotal = storage.getEssentiaBytesTotal();
-            } catch (NoSuchMethodError ignored) {
-                // 旧版 AE2 无源质存储：保持 0
+        // 7-9. AE2 能量/存储/设备枚举读取（v1.6.23：归入 ae2.gridQuery 切片，区分 AE2 侧耗时）
+        long qT0 = PerformanceAudit.startSlice();
+        try {
+            // 7. 能量四项（IEnergyGrid 缓存，AE2 保证该缓存恒存在，仍做 null 防御）
+            IEnergyGrid energy = grid.getCache(IEnergyGrid.class);
+            if (energy != null) {
+                data.avgPowerUsage = energy.getAvgPowerUsage();
+                data.avgPowerInjection = energy.getAvgPowerInjection();
+                data.storedPower = energy.getStoredPower();
+                data.maxStoredPower = energy.getMaxStoredPower();
+                data.powerInfinite = energy.getHasInfiniteStore();
             }
-        }
 
-        // 9. 设备列表聚合：逐机器类统计数量，图标取该类第一个有效 machineRepresentation
-        // （仿 ContainerNetworkStatus 的遍历方式；getMachines 对未知类返回空集而非 null，已核实 Grid.java:214-220）
-        int total = 0;
-        List<DeviceEntry> aggregated = new ArrayList<>();
-        for (Class<? extends IGridHost> machineClass : grid.getMachinesClasses()) {
-            IMachineSet machines = grid.getMachines(machineClass);
-            if (machines.isEmpty()) {
-                continue;
+            // 8. 物品 / 流体 / 源质 存储字节统计（IStorageGrid 实际实现为 GridStorageCache）
+            IStorageGrid storageGrid = grid.getCache(IStorageGrid.class);
+            if (storageGrid instanceof GridStorageCache) {
+                GridStorageCache storage = (GridStorageCache) storageGrid;
+                data.itemBytesUsed = storage.getItemBytesUsed();
+                data.itemBytesTotal = storage.getItemBytesTotal();
+                data.fluidBytesUsed = storage.getFluidBytesUsed();
+                data.fluidBytesTotal = storage.getFluidBytesTotal();
+                // 源质方法在部分 AE2 版本可能不存在：反射探测，失败则保持默认 0
+                try {
+                    data.essentiaBytesUsed = storage.getEssentiaBytesUsed();
+                    data.essentiaBytesTotal = storage.getEssentiaBytesTotal();
+                } catch (NoSuchMethodError ignored) {
+                    // 旧版 AE2 无源质存储：保持 0
+                }
             }
-            int count = machines.size();
-            total += count;
-            ItemStack icon = null;
-            for (IGridNode node : machines) {
-                IGridBlock gridBlock = node.getGridBlock();
-                if (gridBlock == null) {
+
+            // 9. 设备列表聚合：逐机器类统计数量，图标取该类第一个有效 machineRepresentation
+            // （仿 ContainerNetworkStatus 的遍历方式；getMachines 对未知类返回空集而非 null，已核实 Grid.java:214-220）
+            int total = 0;
+            List<DeviceEntry> aggregated = new ArrayList<>();
+            for (Class<? extends IGridHost> machineClass : grid.getMachinesClasses()) {
+                IMachineSet machines = grid.getMachines(machineClass);
+                if (machines.isEmpty()) {
                     continue;
                 }
-                ItemStack rep = gridBlock.getMachineRepresentation();
-                if (rep != null && rep.getItem() != null) {
-                    // 复制防外部修改；stackSize 固定 1，真实数量由 count 字段表达
-                    icon = rep.copy();
-                    icon.stackSize = 1;
-                    break;
+                int count = machines.size();
+                total += count;
+                ItemStack icon = null;
+                for (IGridNode node : machines) {
+                    IGridBlock gridBlock = node.getGridBlock();
+                    if (gridBlock == null) {
+                        continue;
+                    }
+                    ItemStack rep = gridBlock.getMachineRepresentation();
+                    if (rep != null && rep.getItem() != null) {
+                        // 复制防外部修改；stackSize 固定 1，真实数量由 count 字段表达
+                        icon = rep.copy();
+                        icon.stackSize = 1;
+                        break;
+                    }
+                }
+                // 无有效图标的类不进入列表（数量仍计入 totalMachines）
+                if (icon != null) {
+                    aggregated.add(new DeviceEntry(icon, count));
                 }
             }
-            // 无有效图标的类不进入列表（数量仍计入 totalMachines）
-            if (icon != null) {
-                aggregated.add(new DeviceEntry(icon, count));
+            data.totalMachines = total;
+            // 按数量降序排序，超出 MAX_ENTRIES 截断（规划 §6 防包体积膨胀）
+            aggregated.sort((a, b) -> Integer.compare(b.count, a.count));
+            if (aggregated.size() > MAX_ENTRIES) {
+                aggregated = new ArrayList<>(aggregated.subList(0, MAX_ENTRIES));
             }
+            data.entries.addAll(aggregated);
+        } finally {
+            PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_GRID_QUERY, qT0);
         }
-        data.totalMachines = total;
-        // 按数量降序排序，超出 MAX_ENTRIES 截断（规划 §6 防包体积膨胀）
-        aggregated.sort((a, b) -> Integer.compare(b.count, a.count));
-        if (aggregated.size() > MAX_ENTRIES) {
-            aggregated = new ArrayList<>(aggregated.subList(0, MAX_ENTRIES));
-        }
-        data.entries.addAll(aggregated);
 
         // v1.6.20：直接缓存装配结果对象（免 copy）；返回路径与缓存共享同一实例，
         // 装配完成后服务端无修改点（PacketSyncQuantumTerminalData.toBytes 只读）

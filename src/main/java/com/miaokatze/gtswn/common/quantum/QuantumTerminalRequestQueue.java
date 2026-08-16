@@ -62,6 +62,8 @@ public final class QuantumTerminalRequestQueue {
             long t0 = PerformanceAudit.start();
             QuantumNetworkData data = QuantumNetworkData.assemble(player, held);
             PerformanceAudit.record(t0);
+            // v1.6.23：性能审计——终端装配切片（gtswn.assemble，独立于 MSTP 的分解计时）
+            PerformanceAudit.endSlice(PerformanceAudit.SLICE_GTSWN_ASSEMBLE, t0);
             if (data == null) {
                 // 手持不是已绑定量子终端 → 回发全零离线快照，保证 GUI 不卡在「...」
                 data = QuantumNetworkData.offlineFromStack(held);

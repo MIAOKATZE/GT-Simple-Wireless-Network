@@ -33,6 +33,18 @@ import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridNode;
+import appeng.api.networking.events.MENetworkBootingStatusChange;
+import appeng.api.networking.events.MENetworkCellArrayUpdate;
+import appeng.api.networking.events.MENetworkChannelsChanged;
+import appeng.api.networking.events.MENetworkControllerChange;
+import appeng.api.networking.events.MENetworkCraftingCpuChange;
+import appeng.api.networking.events.MENetworkEventSubscribe;
+import appeng.api.networking.events.MENetworkPostCacheConstruction;
+import appeng.api.networking.events.MENetworkPowerIdleChange;
+import appeng.api.networking.events.MENetworkPowerStatusChange;
+import appeng.api.networking.events.MENetworkPowerStorage;
+import appeng.api.networking.events.MENetworkSecurityChange;
+import appeng.api.networking.events.MENetworkStorageEvent;
 import appeng.api.util.AECableType;
 import appeng.api.util.DimensionalCoord;
 import appeng.core.worlddata.WorldData;
@@ -509,8 +521,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return;
         }
         int nodeUsed = 0;
-        for (IGridConnection c : myNode.getConnections()) {
-            nodeUsed = Math.max(nodeUsed, c.getUsedChannels());
+        // v1.6.23：性能审计——AE2 网格查询切片计时（getConnections/getUsedChannels）
+        long aeT0 = PerformanceAudit.startSlice();
+        try {
+            for (IGridConnection c : myNode.getConnections()) {
+                nodeUsed = Math.max(nodeUsed, c.getUsedChannels());
+            }
+        } finally {
+            PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_GRID_QUERY, aeT0);
         }
         // 6. 超限倒计时判定（v1.6.19：不再立即爆炸，先 3 分钟倒计时，期间恢复即取消）
         QuantumOverloadCountdown.Result countdown = QuantumOverloadCountdown
@@ -682,8 +700,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         try {
             // 已核实：createGridConnection 不校验方向位/邻接，仅查自重/安全/重复
             // （appeng/core/Api.java:109 → GridConnection.java:204-246）
-            this.connection = AEApi.instance()
-                .createGridConnection(myNode, anchorNode);
+            // v1.6.23：性能审计——AE2 建连切片计时（AE2 全网重路由成本归入 ae2.connect）
+            long aeT0 = PerformanceAudit.startSlice();
+            try {
+                this.connection = AEApi.instance()
+                    .createGridConnection(myNode, anchorNode);
+            } finally {
+                PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_CONNECT, aeT0);
+            }
             snapshotAnchor();
             this.offlineReason = OfflineReason.NONE;
             // v1.6.19：性能审计——建连成功计数
@@ -695,7 +719,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         } catch (ExistingConnectionException e) {
             // 两节点间已存在直连（如玩家另拉了线缆/石英纤维以外的部件直接贴上）：
             // 桥接冗余但目标已达成——收养既有直连视为在线，保证 isLinked() 语义正确
-            this.connection = findDirectConnection(myNode, anchorNode);
+            long aeT0 = PerformanceAudit.startSlice();
+            try {
+                this.connection = findDirectConnection(myNode, anchorNode);
+            } finally {
+                PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_CONNECT, aeT0);
+            }
             if (this.connection != null) {
                 snapshotAnchor();
                 this.offlineReason = OfflineReason.NONE;
@@ -720,10 +749,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (this.connection != null) {
             // v1.6.19：性能审计——桥接销毁计数
             PerformanceAudit.recordBridgeDestroyed();
+            // v1.6.23：性能审计——AE2 拆连切片计时（destroy 触发全网重路由，归入 ae2.connect）
+            long aeT0 = PerformanceAudit.startSlice();
             try {
                 this.connection.destroy();
             } catch (Exception e) {
                 // 连接已被对端销毁或网格已解体：忽略，保证 TE 拆除路径不被打断
+            } finally {
+                PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_CONNECT, aeT0);
             }
             this.connection = null;
         }
@@ -758,6 +791,80 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /** 清除锚点快照（连接销毁后置于「未连接」状态） */
     private void clearAnchorSnapshot() {
         this.connectedAnchorDim = Integer.MIN_VALUE;
+    }
+
+    // ==================== AE2 网格事件监视（v1.6.23） ====================
+    // 机制（已对 AE2U rv3 参考源码核实）：NetworkEventBus.readClass 在节点入网时
+    // （GridNode.add → 首个该类机器入网即全局注册一次）扫描本类 @MENetworkEventSubscribe
+    // 单参方法，postEvent 按事件类型精确查表并对网格内本类全部机器回调——
+    // 因此每个要计数的事件类各需一个单参方法，且回调只发生在本类节点所在的网格。
+    // 只计数不耗时；绝不 cancel 事件、绝不抛异常（EventMethod.invoke 对异常包装上抛，
+    // 会破坏 AE2 事件总线）。
+
+    /** AE2 频道全局重算事件（建连/拆连/线缆变化触发，与卡顿尖峰相关性最高） */
+    @MENetworkEventSubscribe
+    public void onAe2ChannelsChanged(MENetworkChannelsChanged event) {
+        PerformanceAudit.recordAe2Event("channels");
+    }
+
+    /** AE2 控制器结构变更事件（量子化/取消量子化/拆装控制器） */
+    @MENetworkEventSubscribe
+    public void onAe2ControllerChange(MENetworkControllerChange event) {
+        PerformanceAudit.recordAe2Event("controller");
+    }
+
+    /** AE2 网络供电状态变化 */
+    @MENetworkEventSubscribe
+    public void onAe2PowerStatusChange(MENetworkPowerStatusChange event) {
+        PerformanceAudit.recordAe2Event("powerStatus");
+    }
+
+    /** AE2 网络空闲功耗变化 */
+    @MENetworkEventSubscribe
+    public void onAe2PowerIdleChange(MENetworkPowerIdleChange event) {
+        PerformanceAudit.recordAe2Event("powerIdle");
+    }
+
+    /** AE2 能量存储单元变化 */
+    @MENetworkEventSubscribe
+    public void onAe2PowerStorage(MENetworkPowerStorage event) {
+        PerformanceAudit.recordAe2Event("powerStorage");
+    }
+
+    /** AE2 存储网格事件（配方/物品变动） */
+    @MENetworkEventSubscribe
+    public void onAe2StorageEvent(MENetworkStorageEvent event) {
+        PerformanceAudit.recordAe2Event("storage");
+    }
+
+    /** AE2 安全权限变化（安全终端改动） */
+    @MENetworkEventSubscribe
+    public void onAe2SecurityChange(MENetworkSecurityChange event) {
+        PerformanceAudit.recordAe2Event("security");
+    }
+
+    /** AE2 合成 CPU 变化 */
+    @MENetworkEventSubscribe
+    public void onAe2CraftingCpuChange(MENetworkCraftingCpuChange event) {
+        PerformanceAudit.recordAe2Event("craftingCpu");
+    }
+
+    /** AE2 存储元件阵列更新 */
+    @MENetworkEventSubscribe
+    public void onAe2CellArrayUpdate(MENetworkCellArrayUpdate event) {
+        PerformanceAudit.recordAe2Event("cellArray");
+    }
+
+    /** AE2 网格启动状态变化（节点上线/下线联动） */
+    @MENetworkEventSubscribe
+    public void onAe2BootingStatusChange(MENetworkBootingStatusChange event) {
+        PerformanceAudit.recordAe2Event("booting");
+    }
+
+    /** AE2 网格创建完成事件（Grid 构造后首个事件，代表含本类节点的网格实例重建/新建） */
+    @MENetworkEventSubscribe
+    public void onAe2GridCreated(MENetworkPostCacheConstruction event) {
+        PerformanceAudit.recordAe2Event("gridCreated");
     }
 
     // ==================== NBT 持久化（锚点字段保留现有代码；proxy 键名 "proxy" 与样板一致） ====================

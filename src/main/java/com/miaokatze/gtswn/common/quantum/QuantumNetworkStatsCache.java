@@ -74,29 +74,42 @@ public final class QuantumNetworkStatsCache {
         // v1.6.19：性能审计——缓存未命中计数
         PerformanceAudit.recordStatsMiss();
         long started = System.nanoTime();
-        Set<Long> structure = QuantumControllerRegistry
-            .floodControllers(anchorWorld, key.getX(), key.getY(), key.getZ());
-        if (structure.isEmpty()) {
-            return null;
-        }
-
-        int totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
-        IMachineSet nodes = grid.getMachines(TileEntityNetworkQuantumNode.class);
-        int usedChannels = 0;
-        int quantumNodeCount = nodes.size();
-        for (IGridNode node : nodes) {
-            int nodeMax = 0;
-            for (IGridConnection connection : node.getConnections()) {
-                nodeMax = Math.max(nodeMax, connection.getUsedChannels());
+        // v1.6.23：性能审计——统计原始计算切片（gtswn.statsRaw：洪泛+频道公式+网格遍历总时长）
+        long sliceT0 = PerformanceAudit.startSlice();
+        try {
+            Set<Long> structure = QuantumControllerRegistry
+                .floodControllers(anchorWorld, key.getX(), key.getY(), key.getZ());
+            if (structure.isEmpty()) {
+                return null;
             }
-            usedChannels += nodeMax;
-        }
 
-        Snapshot snapshot = new Snapshot(totalChannels, usedChannels, quantumNodeCount, structure);
-        CACHE.put(key, new CacheEntry(grid, bucket, revision, snapshot));
-        rawComputations++;
-        rawComputationNanos += System.nanoTime() - started;
-        return snapshot;
+            int totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
+            // v1.6.23：性能审计——其中 AE2 网格部分单独切片（ae2.gridQuery）
+            int usedChannels = 0;
+            int quantumNodeCount = 0;
+            long qT0 = PerformanceAudit.startSlice();
+            try {
+                IMachineSet nodes = grid.getMachines(TileEntityNetworkQuantumNode.class);
+                quantumNodeCount = nodes.size();
+                for (IGridNode node : nodes) {
+                    int nodeMax = 0;
+                    for (IGridConnection connection : node.getConnections()) {
+                        nodeMax = Math.max(nodeMax, connection.getUsedChannels());
+                    }
+                    usedChannels += nodeMax;
+                }
+            } finally {
+                PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_GRID_QUERY, qT0);
+            }
+
+            Snapshot snapshot = new Snapshot(totalChannels, usedChannels, quantumNodeCount, structure);
+            CACHE.put(key, new CacheEntry(grid, bucket, revision, snapshot));
+            rawComputations++;
+            rawComputationNanos += System.nanoTime() - started;
+            return snapshot;
+        } finally {
+            PerformanceAudit.endSlice(PerformanceAudit.SLICE_GTSWN_STATS_RAW, sliceT0);
+        }
     }
 
     /** 清理服务器切换或测试之间的运行时缓存。 */
