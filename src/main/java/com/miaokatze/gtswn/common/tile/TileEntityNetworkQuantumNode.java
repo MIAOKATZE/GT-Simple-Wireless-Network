@@ -87,6 +87,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /** 同步 NBT 键名：桥接在线状态（仅 description packet 用，不持久化） */
     private static final String NBT_SYNC_LINKED = "linked";
 
+    /** 同步 NBT 键名：服务端真实节点连接方向位掩码（v1.6.24 新增，仅 description packet 用，不持久化） */
+    private static final String NBT_SYNC_SIDES = "sides";
+
     // ==================== 锚点字段（T3 已有，NBT 持久化） ====================
 
     /** 锚点控制器维度 ID（未设置时为 Integer.MIN_VALUE，见 {@link #hasAnchor()}） */
@@ -130,6 +133,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 服务端上次已同步的在线状态（每 tick 比对，变化才 markBlockForUpdate 发包） */
     private boolean lastSyncedLinked = false;
+
+    /** 客户端渲染用已连接方向位掩码（v1.6.24：仅 onDataPacket 维护；服务端勿用，服务端以真实连接为准） */
+    private int clientConnectedSides = 0;
+
+    /** 服务端上次已同步的方向掩码（v1.6.24：每维护窗口比对，变化才 markBlockForUpdate 发包） */
+    private int lastSyncedSides = 0;
 
     /** 该节点上次 max usedChannels（-1 = 未初始化；v1.6.8 新增，用于 95% 预警跟踪本节点频道增长） */
     private int lastNodeUsedChannels = -1;
@@ -250,12 +259,65 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         return this.clientLinked;
     }
 
+    /**
+     * 客户端渲染用已连接方向位掩码（v1.6.24：仅客户端有意义；服务端请以真实连接为准）。
+     * <p>
+     * 供 ISBRH 渲染器 {@code RenderNetworkQuantumNode} 消费：只对置位方向画连接臂。
+     */
+    public int getConnectedSidesMask() {
+        return this.clientConnectedSides;
+    }
+
     /** 服务端每 tick 比对在线状态，变化即 markBlockForUpdate 推送 S35（驱动客户端材质切换） */
     private void syncLinkedStateIfChanged(boolean now) {
         if (now != this.lastSyncedLinked) {
             this.lastSyncedLinked = now;
             // v1.6.19：性能审计——在线状态同步包计数（每变化一次即发包一次）
             PerformanceAudit.recordQuantumSyncPacket();
+            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+        }
+    }
+
+    /**
+     * 计算本节点 GridNode 的真实连接方向位掩码（v1.6.24）。
+     * <p>
+     * 语义复刻 AE2 原生线缆 PartCable 的 writeToStream：遍历 {@code node.getConnections()}，
+     * 对每个 {@link IGridConnection} 取 {@code getDirection(node)}，仅对方向确定且非
+     * UNKNOWN 的连接置位 {@code 1 << direction.ordinal()}。
+     * 参考实现见
+     * 
+     * <pre>
+     * E:\CodeGT\Source_Code_Reference_Collection\Applied-Energistics-2-Unofficial-rv3-beta-1000-GTNH\
+     *   src\main\java\appeng\parts\networking\PartCable.java:357-372
+     * </pre>
+     * 
+     * 量子节点到锚点控制器的桥接连接方向无关（createGridConnection 无方向，
+     * GridConnection.getDirection 返回 ForgeDirection.UNKNOWN），天然不进掩码，不会画向控制器的臂。
+     *
+     * @return 6-bit 方向掩码（bit = direction ordinal；节点/代理不可用或客户端返回 0）
+     */
+    private int computeConnectedSidesMask() {
+        if (worldObj == null || worldObj.isRemote || this.gridProxy == null) {
+            return 0;
+        }
+        IGridNode node = this.gridProxy.getNode();
+        if (node == null) {
+            return 0;
+        }
+        int mask = 0;
+        for (IGridConnection c : node.getConnections()) {
+            ForgeDirection d = c.getDirection(node);
+            if (d != null && d != ForgeDirection.UNKNOWN) {
+                mask |= 1 << d.ordinal();
+            }
+        }
+        return mask;
+    }
+
+    /** 服务端每维护窗口比对方向掩码，变化即 markBlockForUpdate 推送 S35（驱动客户端连接臂渲染） */
+    private void syncSidesIfChanged(int mask) {
+        if (mask != this.lastSyncedSides) {
+            this.lastSyncedSides = mask;
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
         }
     }
@@ -436,6 +498,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private void maintainConnection() {
         // v1.6.19：性能审计——连接维护计数
         PerformanceAudit.recordQuantumMaintenance();
+        // v1.6.24：每次维护窗口（20t，≤1s）重算并同步连接方向掩码（在过载检查/桥接分支之前执行，
+        // 不受下方 bridge 早退分支影响；空白节点不执行维护，客户端掩码默认 0 不画臂）
+        syncSidesIfChanged(computeConnectedSidesMask());
         // v1.6.8：网络过载检查（仅桥接存活时执行，避免离线节点重复触发）
         if (this.connection != null && isLinked()) {
             checkNetworkOverload();
@@ -923,6 +988,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // ①chunk 初次同步（S21/S26 携带）②服务端 markBlockForUpdate 触发的 S35 单点更新
         NBTTagCompound tag = new NBTTagCompound();
         tag.setBoolean(NBT_SYNC_LINKED, isLinked());
+        // v1.6.24：追加同步服务端真实连接方向掩码（客户端按位移位重建方向并只对置位方向画臂）
+        tag.setInteger(NBT_SYNC_SIDES, computeConnectedSidesMask());
         return new S35PacketUpdateTileEntity(xCoord, yCoord, zCoord, 1, tag);
     }
 
@@ -939,6 +1006,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return;
         }
         this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);
+        // v1.6.24：追加读取连接方向掩码（键缺失时 getInteger 默认 0，天然安全）
+        this.clientConnectedSides = tag.getInteger(NBT_SYNC_SIDES);
         // 1.7.10 客户端收 S35 不自动重渲染：markBlockForUpdate → RenderGlobal 标脏，下帧按新图标重绘
         if (worldObj != null) {
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);

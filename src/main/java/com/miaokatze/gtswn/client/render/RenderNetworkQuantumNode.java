@@ -12,20 +12,23 @@ import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
-import appeng.api.networking.IGridHost;
 import cpw.mods.fml.client.registry.ISimpleBlockRenderingHandler;
 import cpw.mods.fml.client.registry.RenderingRegistry;
 
 /**
- * 量子节点 ISBRH 渲染器（v1.6.1 问题 1）：小核心 + 朝邻接 AE 网格宿主方向渲染连接臂，
+ * 量子节点 ISBRH 渲染器（v1.6.1 问题 1）：小核心 + 朝真实连接的 AE 网格方向渲染连接臂，
  * 视觉仿 AE 线缆，使节点能自然贴在 AE 面板/线缆/机器旁。
  * <p>
- * 【连接判定】邻居 TileEntity instanceof {@link IGridHost} 即画臂。已核实 AE2 源码：
- * {@code TileCableBus implements AEMultiTile}（线缆/面板的宿主），而
- * {@code AEMultiTile extends IGridHost}（appeng/helpers/AEMultiTile.java:17），
- * 机器 Tile 经 {@code IGridProxyable extends IGridHost} 接入——故单一 instanceof
- * 同时覆盖 AE 线缆、面板与机器；本模组的量子节点 TE 亦实现 IGridProxyable，但
- * v1.6.19 起节点间不连臂（量子节点之间互不连接，渲染与 AE2 连接逻辑保持一致）。
+ * 【连接判定（v1.6.24）】服务端把 GridNode 真实连接映射为每方向位掩码，经 S35
+ * （getDescriptionPacket NBT 键 "sides"，复刻 AE2 原生 PartCable writeToStream 策略）
+ * 同步到客户端；渲染器只对置位方向画臂。已核实 AE2 原生线缆 PartCable：服务端
+ * {@code for (IGridConnection gc : n.getConnections()) { ... cs |= 1 << side.ordinal(); }}
+ * 仅对 getDirection 确定且非 UNKNOWN 的方向置位，客户端按位重建方向并只对连接方向渲染
+ * （E:\...\Applied-Energistics-2-Unofficial-rv3-beta-1000-GTNH\
+ * src\main\java\appeng\parts\networking\PartCable.java:357-372、388-421、301-303）。
+ * v1.6.24 起删除原「邻居为 IGridHost 即画臂」判定：GT 普通机器/裸线缆锚宿主
+ * 虽实现 IGridHost 但无真实网格连接，不再画臂；量子节点到锚点控制器的桥接连接方向无关
+ * （getDirection 返回 UNKNOWN），天然不进掩码，也不会画出向控制器的臂。
  * <p>
  * 【双端安全】renderId 静态字段由 {@code ClientProxy.init()} 调 {@link #register()} 时赋值，
  * Block.getRenderType 只读 Block 类上的 int 字段，不直接引用本客户端类。
@@ -68,7 +71,7 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
     // 同名 static/实例方法共存）。外部读取 renderId 请走 INSTANCE.getRenderId()。
 
     /**
-     * 世界内渲染：核心（方块自身包围盒）+ 六向连接臂（邻居为 AE 网格宿主时）。
+     * 世界内渲染：核心（方块自身包围盒）+ 六向连接臂（服务端同步的连接方向位掩码置位时）。
      * <p>
      * 注意 1.7.10 接口签名为 boolean 返回值（true = 已渲染）。
      */
@@ -82,12 +85,14 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
         // 核心：renderBounds 取自方块 setBlockBounds 设定的小核心包围盒
         renderer.setRenderBoundsFromBlock(block);
         renderer.renderStandardBlock(block, x, y, z);
-        // 六向：邻居为 AE 网格宿主（IGridHost，含 AE 线缆/面板/机器，不含本模组量子节点）时渲染连接臂
+        // 六向：v1.6.24 起不再判邻居是否为 IGridHost 宿主，改为读本 TE 经 S35 同步的连接方向位掩码，
+        // 只对置位方向画臂（self 为 null 或非本 TE 类型时 mask=0 不画臂，安全降级）
+        TileEntity self = world.getTileEntity(x, y, z);
+        int mask = (self instanceof TileEntityNetworkQuantumNode)
+            ? ((TileEntityNetworkQuantumNode) self).getConnectedSidesMask()
+            : 0;
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
-            TileEntity neighbor = world.getTileEntity(x + d.offsetX, y + d.offsetY, z + d.offsetZ);
-            // v1.6.13 任务1：增加 null 检查；v1.6.19：量子节点之间不连臂
-            if (neighbor != null && neighbor instanceof IGridHost
-                && !(neighbor instanceof TileEntityNetworkQuantumNode)) {
+            if (((mask >> d.ordinal()) & 1) != 0) {
                 double[] b = ARM_BOUNDS[d.ordinal()];
                 renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
                 renderer.renderStandardBlock(block, x, y, z);
