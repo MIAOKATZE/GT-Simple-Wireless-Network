@@ -9,6 +9,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
@@ -64,7 +65,8 @@ import appeng.tile.networking.TileController;
  * <p>
  * 生命周期严格仿本项目 {@link TileEntityNetworkInfoPanel}：proxy 懒加载构造、
  * validate/invalidate/onChunkUnload/updateEntity 接入 proxy 生命周期、NBT 键名 "proxy" 一致。
- * 桥接连接为运行时字段不持久化，每 20 tick（含就绪后首轮立即一次）执行一次连接维护：
+ * 桥接连接为运行时字段不持久化，每 20 tick 执行一次连接维护，并通过确定性相位错开
+ * 区块重载后的首轮重连；失败时指数退避且受单 tick 全局预算限制，消除批量重连风暴。
  * 连接存活则跳过，否则按自然加载状态和 D7（锚点破坏离线）规则尝试重建；
  * 本节点不主动申请 ForgeChunkManager Ticket，节点与锚点持续工作依赖服务器或其他模组提供的区块加载；
  * invalidate/onChunkUnload 先显式 destroy 桥接连接再走 proxy 生命周期，防止网格残留幽灵节点。
@@ -83,6 +85,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 连接维护间隔（tick）：20t = 1 秒，与量子化事件处理器巡检同节奏 */
     private static final long MAINTENANCE_INTERVAL_TICKS = 20L;
+
+    /** 失败重连退避上限（tick）：10 秒 */
+    private static final int MAX_RECONNECT_BACKOFF_TICKS = 200;
+
+    /** 单 tick 全局建连预算，避免区块批量重载时触发 AE2 重路由风暴 */
+    private static final int MAX_CONNECTS_PER_TICK = 2;
+    private static int connectsThisTick = 0;
+    private static long connectBudgetTick = Long.MIN_VALUE;
 
     /** 同步 NBT 键名：桥接在线状态（仅 description packet 用，不持久化） */
     private static final String NBT_SYNC_LINKED = "linked";
@@ -125,8 +135,11 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /** 当前离线原因（运行时缓存，供状态查询与右键提示；在线时为 NONE） */
     private OfflineReason offlineReason = OfflineReason.NO_ANCHOR;
 
-    /** 上次连接维护的世界 tick；-1 = 尚未维护（就绪后首轮 updateEntity 立即执行一次） */
+    /** 上次连接维护的世界 tick；-1 = 尚未维护（首次到达时设置确定性错峰相位） */
     private long lastMaintenanceTick = -1L;
+
+    /** 失败重连退避间隔（tick）；成功建连后恢复为基础维护间隔 */
+    private int reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
 
     /** 客户端渲染用在线状态缓存（由 onDataPacket 维护；服务端勿用，服务端以 isLinked() 为权威） */
     private boolean clientLinked = false;
@@ -472,9 +485,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // 变化即 markBlockForUpdate 推送 S35，材质切换延迟 ≤1t
         boolean linkedNow = isLinked();
         syncLinkedStateIfChanged(linkedNow);
-        // ===== 桥接连接维护：每 20 tick 一次；lastMaintenanceTick 初值 -1 保证就绪后首轮立即执行 =====
+        // ===== 桥接连接维护：每 20 tick 一次；首次到达时按坐标相位错峰 =====
         long tick = worldObj.getTotalWorldTime();
-        if (this.lastMaintenanceTick >= 0L && tick - this.lastMaintenanceTick < MAINTENANCE_INTERVAL_TICKS) {
+        if (this.lastMaintenanceTick < 0L) {
+            int phase = 1 + (int) (Math.abs(xCoord * 31L + yCoord * 7L + zCoord * 13L) % MAINTENANCE_INTERVAL_TICKS);
+            this.lastMaintenanceTick = tick - MAINTENANCE_INTERVAL_TICKS + phase;
+        }
+        if (tick - this.lastMaintenanceTick < this.reconnectBackoff) {
             // v1.6.19：性能审计——非维护窗口 tick 也结算本 tick 耗时（isLinked 判活等）
             PerformanceAudit.record(auditT0);
             return;
@@ -706,39 +723,45 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             .isQuantized(this.anchorX, this.anchorY, this.anchorZ);
     }
 
+    /** 记录失败原因并指数增加重连退避窗口。 */
+    private void failReconnect(OfflineReason reason) {
+        this.offlineReason = reason;
+        this.reconnectBackoff = Math.min(this.reconnectBackoff * 2, MAX_RECONNECT_BACKOFF_TICKS);
+    }
+
     /** 尝试向锚点控制器建立桥接连接，失败时记录离线原因 */
     private void tryConnect() {
         // v1.6.19：性能审计——建连尝试计数
         PerformanceAudit.recordQuantumTryConnect();
         // 无锚点：未经量子终端放置的节点（如创造模式直接放置）恒离线
         if (!hasAnchor()) {
-            this.offlineReason = OfflineReason.NO_ANCHOR;
+            failReconnect(OfflineReason.NO_ANCHOR);
             return;
         }
         // v1.6.10：跨维度桥接——取锚点维度 world（维度未加载 → 离线 ANCHOR_UNREACHABLE）
         WorldServer anchorWorld = DimensionManager.getWorld(this.anchorDim);
         if (anchorWorld == null) {
-            this.offlineReason = OfflineReason.ANCHOR_UNREACHABLE;
+            failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
             return;
         }
         // v1.6.1 问题 5：锚点控制器未处于量子化状态（已取消量子化）→ 不建连。
         // 注册表查询仅读 WorldSavedData 坐标集合，不触发区块加载，可在区块校验前执行
         if (!QuantumControllerRegistry.get(anchorWorld)
             .isQuantized(this.anchorX, this.anchorY, this.anchorZ)) {
-            this.offlineReason = OfflineReason.ANCHOR_NOT_QUANTIZED;
+            failReconnect(OfflineReason.ANCHOR_NOT_QUANTIZED);
             return;
         }
         // 锚点区块未加载：blockExists 不触发区块加载（与 TileWirelessBase 重连循环同一手法），
         // 避免节点 tick 把锚点区块常加载造成级联加载。
         // 锚点区块未加载时保持离线；不主动加载区块，待服务器或其他模组自然加载后由下一轮重试
         if (!anchorWorld.blockExists(this.anchorX, this.anchorY, this.anchorZ)) {
-            this.offlineReason = OfflineReason.ANCHOR_UNREACHABLE;
+            failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
             return;
         }
         // 锚点位置已不是 ME 控制器（D7：锚点被拆 → 离线保留绑定，可经终端改绑后重放节点）
         TileEntity anchorTE = anchorWorld.getTileEntity(this.anchorX, this.anchorY, this.anchorZ);
         if (!(anchorTE instanceof TileController)) {
-            this.offlineReason = OfflineReason.ANCHOR_UNREACHABLE;
+            failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
             return;
         }
         // 经 IGridProxyable 接口调用 getProxy()：源表达式必须是 TileEntity 而非 TileController——
@@ -748,23 +771,36 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         AENetworkProxy anchorProxy = ((IGridProxyable) anchorTE).getProxy();
         if (anchorProxy == null || !anchorProxy.isReady()) {
             // 锚点控制器 proxy 未 ready（区块刚加载尚未首 tick）：瞬时状态，下轮重试
-            this.offlineReason = OfflineReason.NETWORK_NOT_READY;
+            failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
         }
         IGridNode anchorNode = anchorProxy.getNode();
         if (anchorNode == null) {
-            this.offlineReason = OfflineReason.NETWORK_NOT_READY;
+            failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
         }
         IGridNode myNode = getProxy().getNode();
         if (myNode == null) {
             // 本节点 proxy 未 ready 时 getNode() 返回 null；首轮维护在 onReady 之后执行，此处仅防御
-            this.offlineReason = OfflineReason.NETWORK_NOT_READY;
+            failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
         }
         try {
             // 已核实：createGridConnection 不校验方向位/邻接，仅查自重/安全/重复
             // （appeng/core/Api.java:109 → GridConnection.java:204-246）
+            long nowTick = worldObj.getTotalWorldTime();
+            long serverTick = MinecraftServer.getServer()
+                .getTickCounter();
+            if (serverTick != connectBudgetTick) {
+                connectBudgetTick = serverTick;
+                connectsThisTick = 0;
+            }
+            if (connectsThisTick >= MAX_CONNECTS_PER_TICK) {
+                PerformanceAudit.recordConnectBudgetDeferred();
+                this.lastMaintenanceTick = nowTick - this.reconnectBackoff + 1;
+                return;
+            }
+            connectsThisTick++;
             // v1.6.23：性能审计——AE2 建连切片计时（AE2 全网重路由成本归入 ae2.connect）
             long aeT0 = PerformanceAudit.startSlice();
             try {
@@ -775,12 +811,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             }
             snapshotAnchor();
             this.offlineReason = OfflineReason.NONE;
+            this.reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
             // v1.6.19：性能审计——建连成功计数
             PerformanceAudit.recordQuantumBridgeSuccess();
         } catch (SecurityConnectionException e) {
             // §9 风险行：网络有安全终端且放置者无权限（放置者 ≠ 网络 owner）
             this.connection = null;
-            this.offlineReason = OfflineReason.NO_PERMISSION;
+            failReconnect(OfflineReason.NO_PERMISSION);
         } catch (ExistingConnectionException e) {
             // 两节点间已存在直连（如玩家另拉了线缆/石英纤维以外的部件直接贴上）：
             // 桥接冗余但目标已达成——收养既有直连视为在线，保证 isLinked() 语义正确
@@ -793,15 +830,16 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             if (this.connection != null) {
                 snapshotAnchor();
                 this.offlineReason = OfflineReason.NONE;
+                this.reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
                 // v1.6.19：性能审计——收养既有直连成功计数
                 PerformanceAudit.recordQuantumBridgeSuccess();
             } else {
-                this.offlineReason = OfflineReason.NETWORK_NOT_READY;
+                failReconnect(OfflineReason.NETWORK_NOT_READY);
             }
         } catch (FailedConnection e) {
             // 其余建连失败（FailedConnection 剩余子类如 NullNodeConnectionException）：瞬时处理，下轮重试
             this.connection = null;
-            this.offlineReason = OfflineReason.NETWORK_NOT_READY;
+            failReconnect(OfflineReason.NETWORK_NOT_READY);
         }
     }
 

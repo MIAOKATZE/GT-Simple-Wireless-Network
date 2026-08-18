@@ -61,6 +61,7 @@ public final class PerformanceAudit {
     private static long quantumOverloadCheck = 0L;
     private static long quantumSyncPacket = 0L;
     private static long bridgeDestroyed = 0L;
+    private static long connectBudgetDeferred = 0L;
 
     // ==================== 量子终端计数器 ====================
 
@@ -336,6 +337,12 @@ public final class PerformanceAudit {
     public static void recordBridgeDestroyed() {
         if (!enabled) return;
         bridgeDestroyed++;
+    }
+
+    /** 单 tick 建连预算触发顺延次数 */
+    public static void recordConnectBudgetDeferred() {
+        if (!enabled) return;
+        connectBudgetDeferred++;
     }
 
     // ==================== 量子终端计数 ====================
@@ -630,7 +637,7 @@ public final class PerformanceAudit {
         GTSimpleWirelessNetwork.LOG.info(
             "[性能审计] ===== {} 分钟性能窗口 (共 {} tick) =====\n" + "[性能审计] TPS: 平均 {} (峰值每tick延迟 {} ms)\n"
                 + "[性能审计] 本mod MSTP: 平均 {} ms/t | 峰值 {} ms/t\n"
-                + "[性能审计] 量子节点: 维护={} 建连尝试={} 桥接成功={} 过载检查={} 同步包={} 桥接销毁={}\n"
+                + "[性能审计] 量子节点: 维护={} 建连尝试={} 桥接成功={} 过载检查={} 同步包={} 桥接销毁={} 预算顺延={}\n"
                 + "[性能审计] 终端: 请求={} 装配={} 回包={}\n"
                 + "[性能审计] 巡检: sweep={} 过滤更新={} 合并={} | 统计缓存: 命中={} 未命中={}\n"
                 + "[性能审计] 无线能源: 覆盖板tick={} 下行补满={} 上行上传={}\n"
@@ -656,6 +663,7 @@ public final class PerformanceAudit {
             quantumOverloadCheck,
             quantumSyncPacket,
             bridgeDestroyed,
+            connectBudgetDeferred,
             terminalRequest,
             terminalAssembled,
             terminalReply,
@@ -712,6 +720,7 @@ public final class PerformanceAudit {
         quantumOverloadCheck = 0L;
         quantumSyncPacket = 0L;
         bridgeDestroyed = 0L;
+        connectBudgetDeferred = 0L;
         terminalRequest = 0L;
         terminalAssembled = 0L;
         terminalReply = 0L;
