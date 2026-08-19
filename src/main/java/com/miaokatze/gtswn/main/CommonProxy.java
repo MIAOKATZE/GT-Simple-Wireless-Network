@@ -303,6 +303,10 @@ public class CommonProxy {
         // 服务端空实现：此包只发往客户端
     }
 
+    public void openQuantumTerminalGui() {}
+
+    public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {}
+
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
         return null;
     }

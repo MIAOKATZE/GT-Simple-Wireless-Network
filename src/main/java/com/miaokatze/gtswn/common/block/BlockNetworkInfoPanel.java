@@ -96,9 +96,6 @@ public class BlockNetworkInfoPanel extends BlockContainer {
     @Override
     public boolean onBlockActivated(World world, int x, int y, int z, EntityPlayer player, int side, float hitX,
         float hitY, float hitZ) {
-        if (world.isRemote) {
-            return true;
-        }
         TileEntity tile = world.getTileEntity(x, y, z);
         if (!(tile instanceof TileEntityNetworkInfoPanel)) {
             return false;
@@ -107,8 +104,11 @@ public class BlockNetworkInfoPanel extends BlockContainer {
         ItemStack heldItem = player.getHeldItem();
         int currentTab = panel.getCurrentTab();
 
-        // 仅当 AE 标签页激活且手持物品非空时，执行右键配置逻辑
+        // 仅当 AE 标签页激活且手持物品非空时，执行右键配置逻辑（仅服务端；客户端放行等待服务端处理）
         if (heldItem != null && (currentTab == 1 || currentTab == 2)) {
+            if (world.isRemote) {
+                return true;
+            }
             // 尝试提取流体（含流体容器 → 流体通道；空容器/普通物品 → 物品通道）
             FluidStack fluid = FluidContainerRegistry.getFluidForFilledItem(heldItem);
 
@@ -147,10 +147,14 @@ public class BlockNetworkInfoPanel extends BlockContainer {
             return true;
         }
 
-        // 其他情况（EU 标签页或空手）打开 GUI（原逻辑）
+        // 其他情况（EU 标签页或空手）：客户端本地打开 GUI（v1.6.26：不再走服务端 openGui——FML OpenGuiHandler
+        // 会把服务端 windowId 无条件盖写进客户端 openContainer，纯 GuiScreen 下即背包容器，导致会话级 windowId
+        // 污染；改纯客户端本地打开彻底绕开该路径）
+        if (world.isRemote) {
+            GTSimpleWirelessNetwork.proxy.openNetworkInfoPanelGui(panel);
+            return true;
+        }
         world.markBlockForUpdate(x, y, z);
-        player
-            .openGui(GTSimpleWirelessNetwork.instance, GTSimpleWirelessNetwork.GUI_NETWORK_INFO_PANEL, world, x, y, z);
         return true;
     }
 

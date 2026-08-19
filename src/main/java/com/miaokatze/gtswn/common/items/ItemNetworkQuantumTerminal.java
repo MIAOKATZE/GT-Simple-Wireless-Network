@@ -207,54 +207,38 @@ public class ItemNetworkQuantumTerminal extends Item {
     /**
      * Shift+右击空气 = 打开终端 GUI（v1.6.2：有且仅有此路径开 GUI）。
      * <p>
-     * 右击空气走 C08(side=255) 路径，双端均会调用本方法；开 GUI 属服务端权威行为
-     * （openGui 由服务端发包），客户端直接返回。
+     * 右击空气走 C08(side=255) 路径，双端均会调用本方法。v1.6.26 起改为<b>纯客户端本地打开</b>
+     * （proxy.openQuantumTerminalGui → displayGuiScreen，服务端不再 openGui）：FML 1.7.10
+     * OpenGuiHandler 会把服务端 windowId 无条件盖写进客户端 openContainer，而 GuiQuantumTerminal
+     * 是纯 GuiScreen（不替换 openContainer，即背包容器），旧路径导致会话级 windowId 污染
+     * （背包点击错乱/被静默丢弃，仅重登复位）与服务端容器泄漏。数据仍走包 5/6 轮询，与 Container 无关。
      * <p>
      * 【射线守卫】潜行持本物品右击<b>任意方块</b>时，客户端因 doesSneakBypassUse=false
-     * （量子节点除外）会跳过方块激活、落到 sendUseItem → 服务端同样走进本方法。
-     * 此处用玩家视线射线判定：命中方块即视为方块交互（如 Shift+右击控制器取消量子化
-     * 已由 onItemUseFirst 处理），直接返回不开 GUI；仅视线落空（右击空气）才开 GUI。
-     * 距离取与客户端一致的手长：创造 5.0 / 生存 4.5。
+     * （量子节点除外）会跳过方块激活、落到 sendUseItem。客户端用玩家视线射线判定：
+     * 命中方块即视为方块交互（如 Shift+右击控制器取消量子化已由 onItemUseFirst 处理），
+     * 不开 GUI；仅视线落空（右击空气）才开 GUI。距离取与客户端一致的手长：创造 5.0 / 生存 4.5。
      * <p>
      * v1.6.11 hotfix：原 {@code player.rayTrace(reach, 1.0F)} 在 dedicated server 抛
      * {@link NoSuchMethodError}（{@code EntityPlayer.rayTrace} 在服务端不可用），
      * 改用 AE2 {@link appeng.util.Platform#getPlayerRay} + {@link net.minecraft.world.World#rayTraceBlocks}
-     * 标准视线检测；reach 由 {@code EntityPlayerMP.theItemInWorldManager.getBlockReachDistance()} 自动决定。
+     * 标准视线检测（双端可用；v1.6.26 起仅客户端执行）。
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         GTSimpleWirelessNetwork.LOG
             .debug("[量子终端] onItemRightClick 进入 玩家={} isRemote={}", player.getCommandSenderName(), world.isRemote);
         if (world.isRemote) {
+            if (player.isSneaking() && isBound(stack)) {
+                LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
+                MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), true);
+                if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) {
+                    GTSimpleWirelessNetwork.proxy.openQuantumTerminalGui();
+                }
+            }
             return stack;
         }
-        if (player.isSneaking()) {
-            if (!isBound(stack)) {
-                sendMessage(player, "gtswn.chat.quantum.need_bind");
-                return stack;
-            }
-            // v1.6.11 hotfix：原 player.rayTrace(reach, 1.0F) 在 dedicated server 抛 NoSuchMethodError
-            // （EntityPlayer.rayTrace 在服务端不可用），改用 AE2 Platform 标准视线检测。
-            // Platform.getPlayerRay 内部对 EntityPlayerMP 自动用 theItemInWorldManager.getBlockReachDistance()
-            // 取 reach（创造 5.0 / 生存 4.5），与原代码意图一致；AE2 PartPlacement.java:72 / AEBaseBlock.java:219
-            // 均用此模式做服务端视线检测，证明服务端兼容。
-            GTSimpleWirelessNetwork.LOG.trace("[量子终端] 调用 Platform.getPlayerRay 前");
-            LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
-            GTSimpleWirelessNetwork.LOG.trace("[量子终端] 调用 Platform.getPlayerRay 后");
-            MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), true);
-            if (hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-                // 瞄准方块（控制器/节点/任意方块）→ 方块交互路径，不开 GUI
-                return stack;
-            }
-            // 坐标参数对手持物品 GUI 无意义（T6 Container 取 player.getHeldItem()），传玩家位置占位
-            GTSimpleWirelessNetwork.LOG.debug("[量子终端] 打开量子终端 GUI 玩家={}", player.getCommandSenderName());
-            player.openGui(
-                GTSimpleWirelessNetwork.instance,
-                GTSimpleWirelessNetwork.GUI_QUANTUM_TERMINAL,
-                world,
-                (int) player.posX,
-                (int) player.posY,
-                (int) player.posZ);
+        if (player.isSneaking() && !isBound(stack)) {
+            sendMessage(player, "gtswn.chat.quantum.need_bind");
         }
         return stack;
     }

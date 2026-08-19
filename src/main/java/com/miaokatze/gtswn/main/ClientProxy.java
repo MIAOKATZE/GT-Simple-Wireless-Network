@@ -136,17 +136,19 @@ public class ClientProxy extends CommonProxy {
     }
 
     @Override
+    public void openQuantumTerminalGui() {
+        Minecraft.getMinecraft()
+            .displayGuiScreen(new GuiQuantumTerminal());
+    }
+
+    @Override
+    public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {
+        Minecraft.getMinecraft()
+            .displayGuiScreen(new GuiNetworkInfoPanel(panel));
+    }
+
+    @Override
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
-        if (id == GTSimpleWirelessNetwork.GUI_NETWORK_INFO_PANEL) {
-            TileEntity tile = world.getTileEntity(x, y, z);
-            if (tile instanceof TileEntityNetworkInfoPanel) {
-                return new GuiNetworkInfoPanel((TileEntityNetworkInfoPanel) tile);
-            }
-        }
-        // ME 网络量子终端：手持物品 GUI，无 TileEntity 依赖，数据走包 5/6 轮询
-        if (id == GTSimpleWirelessNetwork.GUI_QUANTUM_TERMINAL) {
-            return new GuiQuantumTerminal();
-        }
         return null;
     }
 }

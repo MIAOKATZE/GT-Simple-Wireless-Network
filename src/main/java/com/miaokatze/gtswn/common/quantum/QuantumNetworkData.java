@@ -60,8 +60,8 @@ public class QuantumNetworkData {
     /** 设备列表截断上限（规划 §6：entryCount ≤ 128，防包体积膨胀） */
     public static final int MAX_ENTRIES = 128;
 
-    /** 完整终端快照缓存间隔：与客户端轮询间隔一致，避免同一轮请求重复枚举 AE 网络。 */
-    private static final long FULL_CACHE_INTERVAL_TICKS = 10L;
+    /** 完整终端快照缓存间隔：与 stats 缓存 100t 桶对齐，快照最大陈旧约 5s。 */
+    private static final long FULL_CACHE_INTERVAL_TICKS = 100L;
 
     /** 完整快照缓存保留窗口（时间桶）。 */
     private static final long FULL_CACHE_RETAIN_BUCKETS = 4L;
