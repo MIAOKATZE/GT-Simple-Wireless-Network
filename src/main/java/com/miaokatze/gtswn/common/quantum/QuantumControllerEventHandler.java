@@ -147,7 +147,12 @@ public class QuantumControllerEventHandler {
             event.entityPlayer.getCommandSenderName());
         event.setCanceled(true);
         // 冷却防刷屏：同一玩家 2 秒内仅提示一次
-        long now = event.world.getTotalWorldTime();
+        // B2-05：写入与清理（onServerTick→pruneBlockedMsgCooldowns，overworld tick 基准）统一时钟域——
+        // 用玩家所在世界的 getTotalWorldTime 会在跨维度时与清理基准错位（下界时钟快 1 倍导致冷却缩水到 ~1s），
+        // 统一取主世界（dim 0）时钟；主世界玩家语义不变
+        long now = MinecraftServer.getServer()
+            .worldServerForDimension(0)
+            .getTotalWorldTime();
         UUID playerId = event.entityPlayer.getUniqueID();
         Long last = this.lastBlockedMsgTick.get(playerId);
         if (last == null || now - last >= BLOCKED_MSG_COOLDOWN_TICKS) {
