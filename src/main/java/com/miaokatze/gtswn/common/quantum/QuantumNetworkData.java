@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.quantum;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -54,6 +55,10 @@ import appeng.tile.networking.TileController;
  * <p>
  * 字段为 public 的 POJO 风格（仿 {@code AEMonitorSample} 的 public final 字段先例），
  * 双端共享：服务端装配写入，客户端经包 6 反序列化后只读。
+ * <p>
+ * SWN-OPT-13（P-4）防御性冻结：完整装配入缓存前 {@link #entries} 已包装为
+ * {@link Collections#unmodifiableList}——缓存命中返回的是共享实例，任何持引用的写入
+ * 都会污染缓存并使包体漂移；如需修改请自建副本，禁止写缓存返回实例。
  */
 public class QuantumNetworkData {
 
@@ -138,8 +143,13 @@ public class QuantumNetworkData {
     /** 设备总数（全部机器类的节点数之和） */
     public int totalMachines;
 
-    /** 聚合后的设备条目（按数量降序，≤ {@link #MAX_ENTRIES} 条） */
-    public final List<DeviceEntry> entries = new ArrayList<>();
+    /**
+     * 聚合后的设备条目（按数量降序，≤ {@link #MAX_ENTRIES} 条）。
+     * <p>
+     * 服务端完整装配入缓存前冻结为 unmodifiableList（SWN-OPT-13）；客户端经包 6
+     * 反序列化自建实例，构建期可变（{@code fromBytes} 填充完毕后同样只读消费）。
+     */
+    public List<DeviceEntry> entries = new ArrayList<>();
 
     /**
      * 设备条目：一类机器的图标与数量。
@@ -261,6 +271,7 @@ public class QuantumNetworkData {
             fullCacheHits++;
             cached.lastAccessBucket = bucket;
             // v1.6.20：缓存与命中返回共享同一对象（装配完成后无服务端修改点，客户端反序列化自建副本）
+            // SWN-OPT-13：entries 已在入缓存前冻结为 unmodifiableList，命中返回的即冻结实例
             return cached.data;
         }
         fullCacheMisses++;
@@ -349,6 +360,8 @@ public class QuantumNetworkData {
 
         // v1.6.20：直接缓存装配结果对象（免 copy）；返回路径与缓存共享同一实例，
         // 装配完成后服务端无修改点（PacketSyncQuantumTerminalData.toBytes 只读）
+        // SWN-OPT-13：入缓存前冻结 entries，把「无修改点」约定升级为运行期强制
+        data.entries = Collections.unmodifiableList(data.entries);
         FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data));
         fullAssemblies++;
         fullAssemblyNanos += System.nanoTime() - assemblyStarted;
