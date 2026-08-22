@@ -55,17 +55,19 @@ import appeng.util.Platform;
 public class ItemNetworkQuantumTerminal extends Item {
 
     // ==================== NBT 键名（规划 §5.1） ====================
+    // B2-14：以下五键为全仓唯一定义（QuantumNetworkData 改引此处），
+    // 字面量与原双份定义逐字一致——编译期常量内联，NBT 字节级零差异，旧存档终端直接兼容
 
     /** 已绑定标记：1 = 已绑定（byte） */
-    private static final String NBT_BOUND = "QT_Bound";
+    public static final String NBT_BOUND = "QT_Bound";
 
     /** 锚点控制器维度 ID */
-    private static final String NBT_ANCHOR_DIM = "QT_AnchorDim";
+    public static final String NBT_ANCHOR_DIM = "QT_AnchorDim";
 
     /** 锚点控制器坐标 */
-    private static final String NBT_ANCHOR_X = "QT_AnchorX";
-    private static final String NBT_ANCHOR_Y = "QT_AnchorY";
-    private static final String NBT_ANCHOR_Z = "QT_AnchorZ";
+    public static final String NBT_ANCHOR_X = "QT_AnchorX";
+    public static final String NBT_ANCHOR_Y = "QT_AnchorY";
+    public static final String NBT_ANCHOR_Z = "QT_AnchorZ";
 
     /** 绑定时维度显示名（tooltip 用） */
     private static final String NBT_BOUND_NAME = "QT_BoundName";

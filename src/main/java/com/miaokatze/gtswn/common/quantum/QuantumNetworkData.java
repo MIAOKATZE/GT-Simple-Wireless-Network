@@ -78,19 +78,9 @@ public class QuantumNetworkData {
     private static long fullAssemblies;
     private static long fullAssemblyNanos;
 
-    // ==================== NBT 键名（与 ItemNetworkQuantumTerminal 私有常量同字符串，规划 §5.1） ====================
-    // 为遵守「不改 T1-T4 已完成文件」的纪律，此处冗余定义同名字符串而非把终端的键名改 public
-
-    /** 已绑定标记：1 = 已绑定（byte） */
-    private static final String NBT_BOUND = "QT_Bound";
-
-    /** 锚点控制器维度 ID */
-    private static final String NBT_ANCHOR_DIM = "QT_AnchorDim";
-
-    /** 锚点控制器坐标 */
-    private static final String NBT_ANCHOR_X = "QT_AnchorX";
-    private static final String NBT_ANCHOR_Y = "QT_AnchorY";
-    private static final String NBT_ANCHOR_Z = "QT_AnchorZ";
+    // ==================== NBT 键名（单源于 ItemNetworkQuantumTerminal，规划 §5.1） ====================
+    // B2-14：删除原「不改 T1-T4 已完成文件」纪律下的冗余字符串副本，改引物品侧 public 常量；
+    // 字面量逐字不变（编译期常量内联），旧存档终端 NBT 字节级零差异
 
     // ==================== 快照字段（与包 6 字段一一对应，规划 §6） ====================
 
@@ -180,14 +170,14 @@ public class QuantumNetworkData {
             return null;
         }
         NBTTagCompound tag = held.stackTagCompound;
-        if (tag == null || tag.getByte(NBT_BOUND) != 1) {
+        if (tag == null || tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) != 1) {
             return null;
         }
         return assemble(
-            tag.getInteger(NBT_ANCHOR_DIM),
-            tag.getInteger(NBT_ANCHOR_X),
-            tag.getInteger(NBT_ANCHOR_Y),
-            tag.getInteger(NBT_ANCHOR_Z));
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z));
     }
 
     /**
@@ -204,15 +194,15 @@ public class QuantumNetworkData {
             return null;
         }
         NBTTagCompound tag = held.stackTagCompound;
-        if (tag == null || tag.getByte(NBT_BOUND) != 1) {
+        if (tag == null || tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) != 1) {
             return null;
         }
         QuantumNetworkData data = new QuantumNetworkData();
         // online 默认 false = 离线语义；仅锚点四维标有效，供 GUI 离线面板显示绑定目标
-        data.anchorDim = tag.getInteger(NBT_ANCHOR_DIM);
-        data.anchorX = tag.getInteger(NBT_ANCHOR_X);
-        data.anchorY = tag.getInteger(NBT_ANCHOR_Y);
-        data.anchorZ = tag.getInteger(NBT_ANCHOR_Z);
+        data.anchorDim = tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM);
+        data.anchorX = tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X);
+        data.anchorY = tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y);
+        data.anchorZ = tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z);
         return data;
     }
 
