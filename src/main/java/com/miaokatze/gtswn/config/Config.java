@@ -87,12 +87,6 @@ public class Config {
     // 默认 64 / Default 64
     public static int aeMaxMonitoredItems = 64;
 
-    // AE2 走势图最大采样点数 / AE2 chart max sample points
-    // 决定 5 分钟窗口保留多少个点（受内部 FIFO 容量 61 限制） / Determines how many points the 5-min window keeps (capped by FIFO capacity
-    // 61)
-    // 默认 61 / Default 61
-    public static int aeMaxSamplePoints = 61;
-
     // 是否启用 AE2 走势图 / Enable AE2 chart
     // 关闭后不再采集 AE 监控数据 / Disables AE monitoring data sampling when false
     // 默认 true / Default true
@@ -277,7 +271,8 @@ public class Config {
     /**
      * 同步 AE2 网络监视配置文件
      * <p>
-     * 处理 AE2 信息屏的采样间隔、最大监视项数、走势图采样点数与启用开关。
+     * 处理 AE2 信息屏的采样间隔、最大监视项数与启用开关（B2-11：移除零消费的 aeMaxSamplePoints 死配置，
+     * 实际容量由 {@code AEMonitorWindowSeries.CAPACITY} 固定 61，Forge 对配置文件残留键静默忽略）。
      * 从传入的 {@link Configuration} 中读取 {@code [ae2]} 类目，更新静态变量；
      * 如果配置有变动则自动保存。
      *
@@ -311,17 +306,6 @@ public class Config {
             "AE2 实时监控最大监视项数 / AE2 real-time monitor max items\n"
                 + "限制单个信息屏可同时监视的物品与流体总数 / Limits total items + fluids per panel\n"
                 + "默认 64 / Default 64");
-
-        // AE2 走势图最大采样点数 / AE2 chart max sample points
-        aeMaxSamplePoints = configuration.getInt(
-            "aeMaxSamplePoints",
-            CATEGORY_AE2,
-            aeMaxSamplePoints,
-            10,
-            120,
-            "AE2 走势图最大采样点数 / AE2 chart max sample points\n"
-                + "决定 5 分钟窗口保留多少个点（受内部 FIFO 容量 61 限制） / Determines how many points the 5-min window keeps (capped by FIFO capacity 61)\n"
-                + "默认 61 / Default 61");
 
         // 是否启用 AE2 走势图 / Enable AE2 chart
         aeChartEnabled = configuration.getBoolean(
