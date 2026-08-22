@@ -1,16 +1,12 @@
 package com.miaokatze.gtswn.common.tile;
 
 import java.math.BigInteger;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Queue;
-import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayer;
@@ -38,6 +34,7 @@ import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.panel.PanelBroadcastPort;
+import com.miaokatze.gtswn.common.tile.screen.ScreenStructure;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
@@ -115,8 +112,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private double cachedEut = 0.0D;
     private String cachedStatus = "No data";
     private final List<NetworkInfoSample> cachedSamples = new ArrayList<>();
-    private NetworkScreen screen;
-    private boolean screenInitialized = false;
+
+    /**
+     * E2（O2-01b）：多方块结构域——BFS 连通重建/最大填满子矩形/Extender 附着与渲染包围盒，
+     * 方法体逐字搬迁至 {@link ScreenStructure}，本类保留门面单行委托（外部调用面零改动）。
+     */
+    private final ScreenStructure structure = new ScreenStructure(this);
 
     /** AE2 网络代理，懒加载，首次调用 getProxy() 时初始化 */
     private AENetworkProxy gridProxy = null;
@@ -186,9 +187,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 getProxy().onReady();
                 aeProxyReady = true;
             }
-            if (!screenInitialized) {
-                rebuildScreen();
-                screenInitialized = true;
+            if (!structure.isInitialized()) {
+                structure.rebuild();
+                structure.markInitialized();
             }
 
             // ===== 获取 overworld tick（供 lastRequestTick 与轮询逻辑共用） =====
@@ -921,7 +922,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     public NetworkScreen getScreen() {
-        return screen;
+        return structure.getScreen();
     }
 
     public boolean isShowBriefEnergy() {
@@ -1422,260 +1423,34 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
     }
 
-    public void rebuildScreen() {
-        int facing = getBlockMetadata();
-        if (facing < 2 || facing > 5) {
-            facing = 3;
-        }
-
-        Set<String> visited = new HashSet<>();
-        // v1.4.6：新增 screenParts 只记录兼容的屏幕方块（主屏+Extender），用于后续矩形识别与 Extender 遍历
-        // 修复 bug：原 BFS 把空气方块也加入 visited，污染 findLargestFilledRect 的 occupied 集合，
-        // 导致算法返回包含空气行的更大矩形（如 3x3 错误扩展为 5x3）
-        Set<String> screenParts = new HashSet<>();
-        Queue<int[]> queue = new ArrayDeque<>();
-        queue.add(new int[] { xCoord, yCoord, zCoord });
-        int minX = xCoord;
-        int maxX = xCoord;
-        int minY = yCoord;
-        int maxY = yCoord;
-        int minZ = zCoord;
-        int maxZ = zCoord;
-
-        while (!queue.isEmpty()) {
-            int[] pos = queue.remove();
-            String key = key(pos[0], pos[1], pos[2]);
-            if (!visited.add(key)) {
-                continue;
-            }
-            TileEntity tile = worldObj.getTileEntity(pos[0], pos[1], pos[2]);
-            if (!isCompatibleScreenPart(tile, facing)) {
-                continue;
-            }
-            screenParts.add(key); // v1.4.6：仅兼容方块才记录到 screenParts，避免空气方块污染矩形识别
-            minX = Math.min(minX, pos[0]);
-            maxX = Math.max(maxX, pos[0]);
-            minY = Math.min(minY, pos[1]);
-            maxY = Math.max(maxY, pos[1]);
-            minZ = Math.min(minZ, pos[2]);
-            maxZ = Math.max(maxZ, pos[2]);
-            addPlaneNeighbors(queue, pos[0], pos[1], pos[2], facing);
-        }
-
-        // v1.4.5：改为识别"完全填满的子矩形"，而非整个包围盒
-        // v1.4.6：在 screenParts（仅兼容方块）中找出包含 core 位置的最大填满子矩形
-        int[] rect = findLargestFilledRect(screenParts, facing, xCoord, yCoord, zCoord); // v1.4.6：传 screenParts 而非
-                                                                                         // visited，确保只识别真实屏幕方块
-        NetworkScreen next = new NetworkScreen();
-        next.minX = rect[0];
-        next.minY = rect[1];
-        next.minZ = rect[2];
-        next.maxX = rect[3];
-        next.maxY = rect[4];
-        next.maxZ = rect[5];
-        next.coreX = xCoord;
-        next.coreY = yCoord;
-        next.coreZ = zCoord;
-        next.facing = facing;
-        screen = next;
-
-        // 遍历所有兼容的屏幕方块：子矩形内的 Extender 附着到 core，子矩形外的 Extender 解除附着
-        // v1.4.6：用 screenParts 替代 visited，避免遍历到空气等不兼容方块
-        for (String key : screenParts) {
-            int[] pos = parseKey(key);
-            TileEntity tile = worldObj.getTileEntity(pos[0], pos[1], pos[2]);
-            if (tile instanceof TileEntityNetworkInfoPanelExtender) {
-                TileEntityNetworkInfoPanelExtender extender = (TileEntityNetworkInfoPanelExtender) tile;
-                // 判断该 Extender 是否落在最终子矩形内
-                boolean inRect = pos[0] >= next.minX && pos[0] <= next.maxX
-                    && pos[1] >= next.minY
-                    && pos[1] <= next.maxY
-                    && pos[2] >= next.minZ
-                    && pos[2] <= next.maxZ;
-                if (inRect) {
-                    extender.attachToCore(this, next);
-                } else {
-                    // 连通但在子矩形外的 Extender，解除附着避免残留 partOfScreen 状态
-                    extender.detachFromCore();
-                }
-            }
-            worldObj.markBlockForUpdate(pos[0], pos[1], pos[2]);
-        }
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-    }
-
     /**
-     * 在已连通的屏幕方块集合中，找出包含 core 位置的、完全被填满的最大子矩形。
-     * <p>
-     * 算法思路：
-     * <ol>
-     * <li>将 3D 方块坐标投影到 2D 平面（facing 2/3 时水平轴=X，facing 4/5 时水平轴=Z，垂直轴=Y）</li>
-     * <li>枚举垂直行区间 [top, bottom]，增量维护每列是否在该行区间内全部被占用</li>
-     * <li>约束：core 的垂直坐标必须在 [top, bottom] 内，且 core 的水平列必须被占用</li>
-     * <li>从 core 水平坐标向左右扩展连续被占用的最远边界，计算面积</li>
-     * <li>取面积最大的子矩形作为结果</li>
-     * </ol>
-     * <p>
-     * 复杂度 O(rows² × cols)，屏幕规模小（通常 ≤16×16）完全可行。
-     *
-     * @param screenParts 已连通且兼容的屏幕方块坐标集合（不含空气等不兼容方块，key 格式 "x,y,z"）
-     * @param facing      朝向（2/3 为 X 方向展开，4/5 为 Z 方向展开）
-     * @param coreX       主屏 X 坐标
-     * @param coreY       主屏 Y 坐标
-     * @param coreZ       主屏 Z 坐标
-     * @return int[6] = {minX, minY, minZ, maxX, maxY, maxZ} 最大填满子矩形的 3D 边界
+     * E2 门面：多方块结构重建（外部调用面：双 Block 类放置/破坏回调；编排头经 structure.rebuild() 直达域对象）。
      */
-    private static int[] findLargestFilledRect(Set<String> screenParts, int facing, int coreX, int coreY, int coreZ) {
-        // 确定投影轴：facing 2/3 时水平轴=X，facing 4/5 时水平轴=Z；垂直轴始终=Y
-        boolean xAxis = (facing == 2 || facing == 3);
-        int coreH = xAxis ? coreX : coreZ;
-        int coreV = coreY;
-
-        // 收集所有已占用方块的 2D 坐标，并求包围范围
-        java.util.Set<Long> occupied = new java.util.HashSet<>();
-        int hMin = coreH, hMax = coreH, vMin = coreV, vMax = coreV;
-        for (String key : screenParts) {
-            int[] pos = parseKey(key);
-            int h = xAxis ? pos[0] : pos[2];
-            int v = pos[1];
-            // 用 (long)h << 32 | (v & 0xFFFFFFFFL) 编码 2D 坐标，避免 Long.signum 问题
-            occupied.add(((long) h << 32) | (v & 0xFFFFFFFFL));
-            hMin = Math.min(hMin, h);
-            hMax = Math.max(hMax, h);
-            vMin = Math.min(vMin, v);
-            vMax = Math.max(vMax, v);
-        }
-
-        int cols = hMax - hMin + 1;
-        boolean[] colOk = new boolean[cols];
-
-        int bestArea = 1;
-        int bestLeft = coreH, bestRight = coreH, bestTop = coreV, bestBottom = coreV;
-
-        // 枚举行(垂直)区间 [top, bottom]
-        for (int top = vMin; top <= vMax; top++) {
-            // 每个 top 起始重置列占用状态
-            java.util.Arrays.fill(colOk, true);
-            for (int bottom = top; bottom <= vMax; bottom++) {
-                // 增量更新：bottom 行加入后，列 c 仍为 true 当且仅当 (c, bottom) 被占用
-                for (int c = hMin; c <= hMax; c++) {
-                    int idx = c - hMin;
-                    if (colOk[idx]) {
-                        long code = ((long) c << 32) | (bottom & 0xFFFFFFFFL);
-                        if (!occupied.contains(code)) {
-                            colOk[idx] = false;
-                        }
-                    }
-                }
-                // 约束：core 的垂直坐标必须在 [top, bottom] 内
-                if (coreV < top || coreV > bottom) {
-                    continue;
-                }
-                // 约束：core 的水平列必须被占用
-                if (!colOk[coreH - hMin]) {
-                    continue;
-                }
-                // 从 coreH 向左右扩展连续 true 的最远边界
-                int left = coreH;
-                while (left - 1 >= hMin && colOk[left - 1 - hMin]) {
-                    left--;
-                }
-                int right = coreH;
-                while (right + 1 <= hMax && colOk[right + 1 - hMin]) {
-                    right++;
-                }
-                int area = (bottom - top + 1) * (right - left + 1);
-                if (area > bestArea) {
-                    bestArea = area;
-                    bestLeft = left;
-                    bestRight = right;
-                    bestTop = top;
-                    bestBottom = bottom;
-                }
-            }
-        }
-
-        // 映射回 3D 边界
-        if (xAxis) {
-            return new int[] { bestLeft, bestTop, coreZ, bestRight, bestBottom, coreZ };
-        } else {
-            return new int[] { coreX, bestTop, bestLeft, coreX, bestBottom, bestRight };
-        }
+    public void rebuildScreen() {
+        structure.rebuild();
     }
 
     @Override
     public AxisAlignedBB getRenderBoundingBox() {
-        if (screen == null) {
-            return AxisAlignedBB.getBoundingBox(xCoord, yCoord, zCoord, xCoord + 1.0D, yCoord + 1.0D, zCoord + 1.0D);
-        }
-        return AxisAlignedBB
-            .getBoundingBox(
-                screen.minX,
-                screen.minY,
-                screen.minZ,
-                screen.maxX + 1.0D,
-                screen.maxY + 1.0D,
-                screen.maxZ + 1.0D)
-            .expand(0.25D, 0.25D, 0.25D);
-    }
-
-    public void detachScreen() {
-        if (screen == null || worldObj == null) {
-            return;
-        }
-        for (int x = screen.minX; x <= screen.maxX; x++) {
-            for (int y = screen.minY; y <= screen.maxY; y++) {
-                for (int z = screen.minZ; z <= screen.maxZ; z++) {
-                    TileEntity tile = worldObj.getTileEntity(x, y, z);
-                    if (tile instanceof TileEntityNetworkInfoPanelExtender) {
-                        ((TileEntityNetworkInfoPanelExtender) tile).detachFromCore();
-                    }
-                }
-            }
-        }
-    }
-
-    private boolean isCompatibleScreenPart(TileEntity tile, int facing) {
-        if (tile instanceof TileEntityNetworkInfoPanel) {
-            return tile == this && tile.getBlockMetadata() == facing;
-        }
-        return tile instanceof TileEntityNetworkInfoPanelExtender && tile.getBlockMetadata() == facing;
-    }
-
-    private void addPlaneNeighbors(Queue<int[]> queue, int x, int y, int z, int facing) {
-        queue.add(new int[] { x, y + 1, z });
-        queue.add(new int[] { x, y - 1, z });
-        if (facing == 2 || facing == 3) {
-            queue.add(new int[] { x + 1, y, z });
-            queue.add(new int[] { x - 1, y, z });
-        } else {
-            queue.add(new int[] { x, y, z + 1 });
-            queue.add(new int[] { x, y, z - 1 });
-        }
-    }
-
-    public static void rebuildNearbyScreens(World world, int x, int y, int z) {
-        // v1.5.15：原 3 参数版本委托给 4 参数版本，保持向后兼容
-        rebuildNearbyScreens(world, x, y, z, 16);
+        return structure.renderBounds(xCoord, yCoord, zCoord);
     }
 
     /**
-     * v1.5.15：可指定扫描范围的重建方法，替代固定 ±16 全空间扫描。
-     * 
-     * @param range 扫描半径（方块数）
+     * E2 门面：破坏/卸载时遍历屏幕范围解除全部 Extender 附着（外部调用面：BlockNetworkInfoPanel）。
      */
+    public void detachScreen() {
+        structure.detach();
+    }
+
+    /**
+     * E2 门面：扫描范围内全部信息屏重建（外部调用面：BlockNetworkInfoPanelExtender 放置/破坏回调）。
+     */
+    public static void rebuildNearbyScreens(World world, int x, int y, int z) {
+        ScreenStructure.rebuildNearby(world, x, y, z);
+    }
+
     public static void rebuildNearbyScreens(World world, int x, int y, int z, int range) {
-        for (int dx = -range; dx <= range; dx++) {
-            for (int dy = -range; dy <= range; dy++) {
-                for (int dz = -range; dz <= range; dz++) {
-                    TileEntity tile = world.getTileEntity(x + dx, y + dy, z + dz);
-                    if (tile instanceof TileEntityNetworkInfoPanel) {
-                        ((TileEntityNetworkInfoPanel) tile).rebuildScreen();
-                    }
-                }
-            }
-        }
+        ScreenStructure.rebuildNearby(world, x, y, z, range);
     }
 
     @Override
@@ -1691,7 +1466,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 1, 0, 2);
         readChartConfig(tag);
         if (tag.hasKey("screen")) {
-            screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
+            structure.setScreen(NetworkScreen.fromNBT(tag.getCompoundTag("screen")));
         }
         readSyncData(tag);
         readAEChartConfig(tag);
@@ -1745,8 +1520,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         tag.setInteger("briefRatio", briefRatio);
         tag.setInteger("displayMode", displayMode);
         writeChartConfig(tag);
-        if (screen != null) {
-            tag.setTag("screen", screen.toNBT());
+        if (structure.getScreen() != null) {
+            tag.setTag(
+                "screen",
+                structure.getScreen()
+                    .toNBT());
         }
         // B2-09：不再调 writeSyncData(tag)——sync 数据（cachedEu/cachedStatus/samples/aeChartSamples 等）
         // 是 S35 描述包专用快照，readSyncData 读取全守卫，断档后由 needsDataRefresh 冷启动从 WSD 正本重建，
@@ -1803,8 +1581,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         writeChartConfig(tag);
         writeAEChartConfig(tag);
         writeAEMonitorConfig(tag);
-        if (screen != null) {
-            tag.setTag("screen", screen.toNBT());
+        if (structure.getScreen() != null) {
+            tag.setTag(
+                "screen",
+                structure.getScreen()
+                    .toNBT());
         }
         NBTTagList list = new NBTTagList();
         for (NetworkInfoSample sample : cachedSamples) {
@@ -1865,7 +1646,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         readAEChartConfig(tag);
         readAEMonitorConfig(tag);
         if (tag.hasKey("screen")) {
-            screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
+            structure.setScreen(NetworkScreen.fromNBT(tag.getCompoundTag("screen")));
         }
         cachedSamples.clear();
         NBTTagList list = tag.getTagList("samples", Constants.NBT.TAG_COMPOUND);
@@ -2062,12 +1843,4 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return Math.max(min, Math.min(max, value));
     }
 
-    private static String key(int x, int y, int z) {
-        return x + "," + y + "," + z;
-    }
-
-    private static int[] parseKey(String key) {
-        String[] parts = key.split(",");
-        return new int[] { Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]) };
-    }
 }

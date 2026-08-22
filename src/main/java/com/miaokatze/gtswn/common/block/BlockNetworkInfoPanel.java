@@ -19,6 +19,7 @@ import net.minecraftforge.fluids.FluidStack;
 import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.tile.screen.ScreenStructureUtil;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 

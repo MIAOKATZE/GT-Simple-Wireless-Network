@@ -12,6 +12,7 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
+import com.miaokatze.gtswn.common.tile.screen.ScreenStructureUtil;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
 public class BlockNetworkInfoPanelExtender extends BlockContainer {

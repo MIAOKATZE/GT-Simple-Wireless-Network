@@ -1,4 +1,4 @@
-package com.miaokatze.gtswn.common.block;
+package com.miaokatze.gtswn.common.tile.screen;
 
 import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.tileentity.TileEntity;
@@ -13,8 +13,10 @@ import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
  * <p>
  * {@code BlockNetworkInfoPanel} 与 {@code BlockNetworkInfoPanelExtender} 此前各持一份
  * 逐字一致的双份拷贝（五工具双份合计约 182 行），本类单源收敛，方法体逐字搬迁、零行为变更；
- * {@code findNeighborFacing}（拓展屏独占）首轮不迁，仍留 {@code BlockNetworkInfoPanelExtender}。
- * 第二步（O2-01b = E2）ScreenStructure 域迁入时收编本工具类。
+ * {@code findNeighborFacing}（拓展屏独占）不迁，仍留 {@code BlockNetworkInfoPanelExtender}。
+ * E2（O2-01b）已随 ScreenStructure 域迁入收编本工具类至 {@code common.tile.screen}
+ * （纯位置搬迁，方法体与可见性零变更）；注意本类 {@link #isCompatibleScreenPart} 为方块侧
+ * 贴图边掩码口径（任意主屏均兼容），与 ScreenStructure 的 BFS 口径（仅 core 自身）有意不同。
  */
 public final class ScreenStructureUtil {
 
