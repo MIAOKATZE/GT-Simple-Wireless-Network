@@ -20,7 +20,6 @@ import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.AxisAlignedBB;
-import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -29,15 +28,13 @@ import net.minecraftforge.fluids.FluidStack;
 import com.miaokatze.gtswn.common.panel.AEMonitorDataSet;
 import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
-import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
-import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
+import com.miaokatze.gtswn.common.panel.EUCacheBridge;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.panel.PanelBroadcastPort;
 import com.miaokatze.gtswn.common.panel.PanelConfigStore;
+import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.screen.ScreenStructure;
-import com.miaokatze.gtswn.common.util.FormatUtil;
-import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.networking.GridFlags;
@@ -69,11 +66,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private UUID ownerUUID;
     private String ownerName = "";
 
-    private BigInteger cachedEu = BigInteger.ZERO;
-    private double cachedEut = 0.0D;
-    private String cachedStatus = "No data";
-    private final List<NetworkInfoSample> cachedSamples = new ArrayList<>();
-
     /**
      * E2（O2-01b）：多方块结构域——BFS 连通重建/最大填满子矩形/Extender 附着与渲染包围盒，
      * 方法体逐字搬迁至 {@link ScreenStructure}，本类保留门面单行委托（外部调用面零改动）。
@@ -87,6 +79,13 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      */
     private final PanelConfigStore store = new PanelConfigStore(this::markDirtyAndSync);
 
+    /**
+     * E4（O2-03）：EU 缓存桥域——updateRequestTick/冷启动/轮询三段 + EU/EU-t/状态文本/走势样本缓存
+     * + O2-28 owner 数据集解析缓存，方法体逐字搬迁至 {@link EUCacheBridge}；三段顺序不变，
+     * S35 四键（cachedEu/cachedEut/cachedStatus/samples）经 bridge.readSync/writeSync 搬运。
+     */
+    private final EUCacheBridge bridge = new EUCacheBridge(this, store);
+
     /** AE2 网络代理，懒加载，首次调用 getProxy() 时初始化 */
     private AENetworkProxy gridProxy = null;
 
@@ -95,20 +94,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     /** 区块加载时 worldObj 可能尚未设置，暂存 AE proxy NBT，待世界可用后再恢复 */
     private NBTTagCompound pendingProxyNBT = null;
-    /** 标记是否需要从 NetworkInfoDataStore 刷新一次缓存（重载/放置后） */
-    private boolean needsDataRefresh = true;
-
-    /** 上次已知采样 tick（轮询时检测新数据用） */
-    private long lastKnownSampleTick = -1L;
-
-    /**
-     * O2-28：owner 数据集解析缓存（ownerUUID 绑定不变时引用稳定，
-     * 免 updateEntity 每 tick 2 次 UUID.toString + mapStorage 查询 + getOrCreate HashMap）。
-     * store 侧 remove/cleanupStale 推进 revision，缓存据此失效重解析。
-     */
-    private NetworkInfoDataStore cachedOwnerDataStore = null;
-    private NetworkInfoDataSet cachedOwnerDataSet = null;
-    private int cachedOwnerDataSetRevision = -1;
 
     // === AE 标签页相关字段 ===
 
@@ -171,54 +156,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 }
             }
 
-            // ===== 更新请求 tick（调度器据此判断是否活跃采样） =====
-            // 信息屏每次 updateEntity 都更新 lastRequestTick，调度器仅对 5 分钟内有请求的 dataSet 采样
-            if (ownerUUID != null && overworldTick >= 0L) {
-                NetworkInfoDataSet dataSet = getOwnerDataSet();
-                if (dataSet != null) {
-                    dataSet.updateRequestTick(overworldTick);
-                }
-            }
-
-            // ===== 冷启动数据刷新（重进存档/放置方块后执行一次） =====
-            if (needsDataRefresh && ownerUUID != null) {
-                needsDataRefresh = false;
-                // 从全局数据集拉取该玩家已有数据填入缓存
-                refreshCachedSamples();
-                NetworkInfoDataSet dataSet = getOwnerDataSet();
-                if (dataSet != null) {
-                    NetworkInfoSample newest = dataSet.newest();
-                    if (newest != null) {
-                        cachedEu = newest.eu;
-                        cachedEut = newest.eut;
-                        lastKnownSampleTick = newest.tick;
-                    }
-                    boolean cold = dataSet.isColdStarting();
-                    boolean longSilent = dataSet.isLongTermSilent();
-                    cachedStatus = formatStatus(cachedEut, cold, longSilent);
-                }
-                markDirty();
-                worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-            }
-
-            // ===== 轮询全局数据集，检测新采样数据 =====
-            if (ownerUUID != null) {
-                NetworkInfoDataSet dataSet = getOwnerDataSet();
-                if (dataSet != null) {
-                    NetworkInfoSample newest = dataSet.newest();
-                    if (newest != null && newest.tick != lastKnownSampleTick) {
-                        cachedEu = newest.eu;
-                        cachedEut = newest.eut;
-                        boolean cold = dataSet.isColdStarting();
-                        boolean longSilent = dataSet.isLongTermSilent();
-                        cachedStatus = formatStatus(cachedEut, cold, longSilent);
-                        refreshCachedSamples(dataSet);
-                        lastKnownSampleTick = newest.tick;
-                        markDirty();
-                        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-                    }
-                }
-            }
+            // ===== EU 缓存域（E4 迁入 EUCacheBridge）：请求 tick 更新 → 冷启动刷新 → 新数据轮询，三段顺序不变 =====
+            bridge.tickServer(overworldTick);
 
             // 服务端每 Config.aeSampleInterval ticks 执行一次 AE 采样并推送给客户端
             if (Config.aeChartEnabled
@@ -825,8 +764,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (uuid != null && ownerUUID == null) {
             ownerUUID = uuid;
             ownerName = name == null ? "" : name;
-            needsDataRefresh = true;
-            invalidateOwnerDataSetCache();
+            bridge.onOwnerBound();
+            bridge.markDataRefreshNeeded();
             markDirty();
         }
     }
@@ -845,48 +784,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     /**
-     * 获取该信息屏所属玩家的全局数据集（统一使用 overworld 数据存储）
-     * 仅服务端调用，客户端返回 null
-     * <p>
-     * O2-28：ownerUUID 绑定不变时数据集引用稳定，缓存解析结果；
-     * store 侧 remove/cleanupStale 推进 revision 时缓存失效，重新 getOrCreate
-     * 取活引用（cleanup_info_data 命令清理后从空数据集重启的语义不变）。
-     *
-     * @return NetworkInfoDataSet 或 null
+     * E4 门面：owner→全局数据集解析与 O2-28 缓存已迁入 {@link EUCacheBridge}（getOwnerDataSet 私有化）。
      */
-    private NetworkInfoDataSet getOwnerDataSet() {
-        if (worldObj == null || worldObj.isRemote || ownerUUID == null) return null;
-        if (cachedOwnerDataSet != null && cachedOwnerDataStore != null
-            && cachedOwnerDataSetRevision == cachedOwnerDataStore.getRevision()) {
-            return cachedOwnerDataSet;
-        }
-        MinecraftServer server = MinecraftServer.getServer();
-        if (server == null) return null;
-        World overworld = server.worldServerForDimension(0);
-        if (overworld == null) return null;
-        cachedOwnerDataStore = NetworkInfoDataStore.get(overworld);
-        cachedOwnerDataSet = cachedOwnerDataStore.getOrCreate(ownerUUID.toString());
-        cachedOwnerDataSetRevision = cachedOwnerDataStore.getRevision();
-        return cachedOwnerDataSet;
-    }
 
-    /** 失效 O2-28 的 owner 数据集解析缓存（ownerUUID 变化点调用）。 */
-    private void invalidateOwnerDataSetCache() {
-        cachedOwnerDataStore = null;
-        cachedOwnerDataSet = null;
-        cachedOwnerDataSetRevision = -1;
-    }
-
+    /** E4 门面：EU 缓存桥数据源（外部 12 文件调用面零改动） */
     public BigInteger getCachedEu() {
-        return cachedEu;
+        return bridge.getCachedEu();
     }
 
     public String getCachedStatus() {
-        return cachedStatus;
+        return bridge.getCachedStatus();
     }
 
     public List<NetworkInfoSample> getCachedSamples() {
-        return cachedSamples;
+        return bridge.getCachedSamples();
     }
 
     public NetworkScreen getScreen() {
@@ -1086,12 +997,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         if (action == 4) {
             // 刷新走势图缓存，使新窗口立即生效
-            refreshCachedSamples();
+            bridge.refreshChartCache();
         } else if (action == 7) {
             // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
-            NetworkInfoDataSet dataSet = getOwnerDataSet();
-            boolean cold = (dataSet == null) || dataSet.isColdStarting();
-            cachedStatus = formatStatus(cachedEut, cold, dataSet != null && dataSet.isLongTermSilent());
+            bridge.refreshStatusText();
         } else if (action == 24) {
             // 立即推送新窗口数据给客户端，避免等待下次采样才刷新
             sendAEMonitorDataToClients();
@@ -1131,14 +1040,14 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             } catch (IllegalArgumentException e) {
                 ownerUUID = null;
             }
-            invalidateOwnerDataSetCache();
+            bridge.onOwnerBound();
         }
         ownerName = tag.getString("OwnerName");
         if (tag.hasKey("lastAESampleTick")) {
             lastAESampleTick = tag.getLong("lastAESampleTick");
         }
         store.readPlacement(tag);
-        needsDataRefresh = true;
+        bridge.markDataRefreshNeeded();
     }
 
     /**
@@ -1161,81 +1070,12 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     /**
-     * 刷新本屏走势图缓存（从全局数据集查询当前 trackingWindow）
+     * E4 窗口枚举化：短名映射迁入 {@link WindowLabel}（原 8 分支 switch 语义逐字等价，
+     * 越界值回落 "5m" 与原 default 分支一致）。
      */
-    private void refreshCachedSamples() {
-        if (worldObj == null || worldObj.isRemote || ownerUUID == null) {
-            return;
-        }
-        NetworkInfoDataSet dataSet = getOwnerDataSet();
-        if (dataSet != null) {
-            refreshCachedSamples(dataSet);
-        }
-    }
-
-    /**
-     * 从指定数据集刷新本屏走势图缓存
-     */
-    private void refreshCachedSamples(NetworkInfoDataSet dataSet) {
-        cachedSamples.clear();
-        cachedSamples.addAll(dataSet.query(store.getTrackingWindow()));
-    }
-
-    private String formatStatus(double eut, boolean coldStarting, boolean longTermSilent) {
-        if (coldStarting) {
-            return tr("gtswn.network_info.status.cold");
-        }
-        if (longTermSilent) {
-            return tr("gtswn.network_info.status.longtermsilent");
-        }
-        if (Math.abs(eut) < 0.000001D) {
-            return tr("gtswn.network_info.status.silent");
-        }
-        if (Math.abs(eut) < 1.0D) {
-            return tr("gtswn.network_info.status.lessthan1");
-        }
-        String key = eut > 0 ? "gtswn.network_info.status.up" : "gtswn.network_info.status.down";
-        // EU/t 数值根据 displayMode 切换常规/科学/千位计数
-        String eutText;
-        switch (store.getDisplayMode()) {
-            case 1:
-                eutText = FormatUtil.formatScientificDouble(Math.abs(eut));
-                break;
-            case 2:
-                eutText = FormatUtil.formatMetricDouble(Math.abs(eut), 2);
-                break;
-            case 0:
-            default:
-                eutText = FormatUtil.formatNormalDouble(Math.abs(eut));
-                break;
-        }
-        return StatCollector.translateToLocalFormatted(key, eutText, GTTierUtil.formatGTPower(eut));
-    }
-
-    private static String tr(String key) {
-        return StatCollector.translateToLocal(key);
-    }
-
     public String getWindowName() {
-        switch (store.getTrackingWindow()) {
-            case NetworkInfoDataSet.WINDOW_1_HOUR:
-                return "1h";
-            case NetworkInfoDataSet.WINDOW_8_HOUR:
-                return "8h";
-            case NetworkInfoDataSet.WINDOW_24_HOUR:
-                return "24h";
-            case NetworkInfoDataSet.WINDOW_7_DAY:
-                return "7d";
-            case NetworkInfoDataSet.WINDOW_1_MONTH:
-                return "1M";
-            case NetworkInfoDataSet.WINDOW_3_MONTH:
-                return "3M";
-            case NetworkInfoDataSet.WINDOW_1_YEAR:
-                return "1Y";
-            case NetworkInfoDataSet.WINDOW_5_MIN:
-            default:
-                return "5m";
-        }
+        return WindowLabel.of(store.getTrackingWindow())
+            .shortName();
     }
 
     /**
@@ -1365,9 +1205,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     private void writeSyncData(NBTTagCompound tag) {
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
-        tag.setString("cachedEu", cachedEu == null ? "0" : cachedEu.toString());
-        tag.setDouble("cachedEut", cachedEut);
-        tag.setString("cachedStatus", cachedStatus == null ? "" : cachedStatus);
+        bridge.writeSync(tag);
         store.writeSync(tag);
         if (structure.getScreen() != null) {
             tag.setTag(
@@ -1375,11 +1213,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 structure.getScreen()
                     .toNBT());
         }
-        NBTTagList list = new NBTTagList();
-        for (NetworkInfoSample sample : cachedSamples) {
-            list.appendTag(sample.toNBT());
-        }
-        tag.setTag("samples", list);
         // === AE 标签页状态同步 ===
         tag.setInteger("currentTab", currentTab);
         if (chartItem != null) {
@@ -1412,25 +1245,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (tag.hasKey("OwnerName")) {
             ownerName = tag.getString("OwnerName");
         }
-        if (tag.hasKey("cachedEu")) {
-            try {
-                cachedEu = new BigInteger(tag.getString("cachedEu"));
-            } catch (NumberFormatException e) {
-                cachedEu = BigInteger.ZERO;
-            }
-        }
-        cachedEut = tag.getDouble("cachedEut");
-        if (tag.hasKey("cachedStatus")) {
-            cachedStatus = tag.getString("cachedStatus");
-        }
+        bridge.readSync(tag);
         store.readSync(tag);
         if (tag.hasKey("screen")) {
             structure.setScreen(NetworkScreen.fromNBT(tag.getCompoundTag("screen")));
-        }
-        cachedSamples.clear();
-        NBTTagList list = tag.getTagList("samples", Constants.NBT.TAG_COMPOUND);
-        for (int i = 0; i < list.tagCount(); i++) {
-            cachedSamples.add(NetworkInfoSample.fromNBT(list.getCompoundTagAt(i)));
         }
         // === AE 标签页状态读取 ===
         if (tag.hasKey("currentTab")) {

@@ -21,10 +21,10 @@ import net.minecraftforge.fluids.FluidStack;
 
 import org.lwjgl.opengl.GL11;
 
-import com.miaokatze.gtswn.common.panel.AEMonitorDataSet;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
+import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 
@@ -1382,26 +1382,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         return 0x6B7680;
     }
 
-    /** 根据 AE 时间窗口常量返回显示名称 */
+    /** 根据 AE 时间窗口常量返回显示名称（E4 窗口枚举化：短名映射迁入 WindowLabel） */
     private static String aeWindowName(int window) {
-        switch (window) {
-            case AEMonitorDataSet.WINDOW_1_HOUR:
-                return "1h";
-            case AEMonitorDataSet.WINDOW_8_HOUR:
-                return "8h";
-            case AEMonitorDataSet.WINDOW_24_HOUR:
-                return "24h";
-            case AEMonitorDataSet.WINDOW_7_DAY:
-                return "7d";
-            case AEMonitorDataSet.WINDOW_1_MONTH:
-                return "1M";
-            case AEMonitorDataSet.WINDOW_3_MONTH:
-                return "3M";
-            case AEMonitorDataSet.WINDOW_1_YEAR:
-                return "1Y";
-            case AEMonitorDataSet.WINDOW_5_MIN:
-            default:
-                return "5m";
-        }
+        return WindowLabel.of(window)
+            .shortName();
     }
 }

@@ -22,6 +22,7 @@ import net.minecraftforge.fluids.FluidStack;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
@@ -861,37 +862,12 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             + aeLineColorField.getText();
     }
 
-    /** 根据 AE 时长窗口常量生成按钮显示文本 */
+    /** 根据 AE 时长窗口常量生成按钮显示文本（E4 窗口枚举化：langKey 映射迁入 WindowLabel） */
     private String getAEWindowDisplay(int window) {
-        String suffix;
-        switch (window) {
-            case 1:
-                suffix = tr("gtswn.network_info.gui.ae.window.1h");
-                break;
-            case 2:
-                suffix = tr("gtswn.network_info.gui.ae.window.8h");
-                break;
-            case 3:
-                suffix = tr("gtswn.network_info.gui.ae.window.24h");
-                break;
-            case 4:
-                suffix = tr("gtswn.network_info.gui.ae.window.7d");
-                break;
-            case 5:
-                suffix = tr("gtswn.network_info.gui.ae.window.1M");
-                break;
-            case 6:
-                suffix = tr("gtswn.network_info.gui.ae.window.3M");
-                break;
-            case 7:
-                suffix = tr("gtswn.network_info.gui.ae.window.1Y");
-                break;
-            case 0:
-            default:
-                suffix = tr("gtswn.network_info.gui.ae.window.5min");
-                break;
-        }
-        return tr("gtswn.network_info.gui.ae.window") + ": " + suffix;
+        return tr("gtswn.network_info.gui.ae.window") + ": "
+            + tr(
+                WindowLabel.of(window)
+                    .langKey());
     }
 
     private static String bool(String label, boolean value) {

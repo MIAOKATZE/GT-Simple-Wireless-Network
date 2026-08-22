@@ -600,27 +600,9 @@ public final class PanelConfigStore {
         aeMonitorIconSize = tag.hasKey("aeMonitorIconSize") ? clampInt(tag.getInteger("aeMonitorIconSize"), 8, 32) : 16;
     }
 
-    /** EU/AE 检测时长窗口环进（原 TE.nextTrackingWindow；窗口枚举化归 E4/O2-14） */
+    /** EU/AE 检测时长窗口环进（原 TE.nextTrackingWindow；E4 窗口枚举化迁入 {@link WindowLabel#nextWindow}） */
     private static int nextTrackingWindow(int window) {
-        switch (window) {
-            case NetworkInfoDataSet.WINDOW_5_MIN:
-                return NetworkInfoDataSet.WINDOW_1_HOUR;
-            case NetworkInfoDataSet.WINDOW_1_HOUR:
-                return NetworkInfoDataSet.WINDOW_8_HOUR;
-            case NetworkInfoDataSet.WINDOW_8_HOUR:
-                return NetworkInfoDataSet.WINDOW_24_HOUR;
-            case NetworkInfoDataSet.WINDOW_24_HOUR:
-                return NetworkInfoDataSet.WINDOW_7_DAY;
-            case NetworkInfoDataSet.WINDOW_7_DAY:
-                return NetworkInfoDataSet.WINDOW_1_MONTH;
-            case NetworkInfoDataSet.WINDOW_1_MONTH:
-                return NetworkInfoDataSet.WINDOW_3_MONTH;
-            case NetworkInfoDataSet.WINDOW_3_MONTH:
-                return NetworkInfoDataSet.WINDOW_1_YEAR;
-            case NetworkInfoDataSet.WINDOW_1_YEAR:
-            default:
-                return NetworkInfoDataSet.WINDOW_5_MIN;
-        }
+        return WindowLabel.nextWindow(window);
     }
 
     static Double parseOptionalDouble(String value) {
