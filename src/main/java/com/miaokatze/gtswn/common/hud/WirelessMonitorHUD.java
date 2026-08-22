@@ -42,6 +42,12 @@ public class WirelessMonitorHUD extends Gui {
     /** 缓存的拥有者 UUID（用于 HUD 显示） */
     private static String cachedOwnerUUID = null;
 
+    /**
+     * 缓存的拥有者 UUID 解析结果（O2-27：随 {@link #cachedOwnerUUID} 变更点同步更新，
+     * 渲染路径读缓存，免每帧 UUID.fromString 字符串解析）。
+     */
+    private static UUID parsedOwnerUuid = null;
+
     /** 服务端同步过来的 EU 字符串（BigInteger.toString()），未收到响应前为 null（用于判断首次进入） */
     private static String syncedEuStr = null;
 
@@ -89,7 +95,7 @@ public class WirelessMonitorHUD extends Gui {
     public static void setEnabled(boolean enabled, String ownerUUID) {
         hudEnabled = enabled;
         if (ownerUUID != null && !ownerUUID.isEmpty()) {
-            cachedOwnerUUID = ownerUUID;
+            setCachedOwnerUUID(ownerUUID);
         }
     }
 
@@ -120,7 +126,7 @@ public class WirelessMonitorHUD extends Gui {
      * 用户确认世界切换时保留数据集以维持 EU/t 连续性。
      */
     private static void clearCache() {
-        cachedOwnerUUID = null;
+        setCachedOwnerUUID(null);
         // 重置服务端同步缓存，避免跨存档/世界切换时残留旧值
         syncedEuStr = null;
         cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
@@ -134,6 +140,28 @@ public class WirelessMonitorHUD extends Gui {
         lastInventoryCheckTick = 0;
         hudEnabled = false;
         displayMode = 0;
+    }
+
+    /**
+     * 更新缓存的拥有者 UUID 字符串及其解析结果（O2-27）。
+     * <p>
+     * {@link #cachedOwnerUUID} 的所有赋值点统一走本方法，保证
+     * {@link #parsedOwnerUuid} 同步失效/重建；解析失败时解析结果置 null，
+     * 渲染路径据此跳过（与原先每帧 try-catch UUID.fromString 的语义一致）。
+     *
+     * @param ownerUUID 新的拥有者 UUID 字符串（null/空时一并清空解析结果）
+     */
+    private static void setCachedOwnerUUID(String ownerUUID) {
+        cachedOwnerUUID = ownerUUID;
+        if (ownerUUID == null || ownerUUID.isEmpty()) {
+            parsedOwnerUuid = null;
+            return;
+        }
+        try {
+            parsedOwnerUuid = UUID.fromString(ownerUUID);
+        } catch (IllegalArgumentException e) {
+            parsedOwnerUuid = null;
+        }
     }
 
     /**
@@ -195,7 +223,7 @@ public class WirelessMonitorHUD extends Gui {
                         dataSet.clear();
                         syncedEuStr = null;
                     }
-                    cachedOwnerUUID = newOwnerUUID;
+                    setCachedOwnerUUID(newOwnerUUID);
                     displayMode = hudMode;
                     hudEnabled = hudMode > 0;
 
@@ -205,11 +233,9 @@ public class WirelessMonitorHUD extends Gui {
                     if (hudEnabled) {
                         lastUpdateTick = 0;
 
-                        // 立即更新一次缓存
-                        try {
-                            updateCache(currentTick, UUID.fromString(newOwnerUUID));
-                        } catch (Exception e) {
-                            // UUID 解析失败，忽略
+                        // 立即更新一次缓存（解析失败时 parsedOwnerUuid 为 null，跳过，与原 try-catch 忽略语义一致）
+                        if (parsedOwnerUuid != null) {
+                            updateCache(currentTick, parsedOwnerUuid);
                         }
                     }
                 }
@@ -218,7 +244,7 @@ public class WirelessMonitorHUD extends Gui {
                 if (hudEnabled) {
                     // 失去监视器：清空所有缓存（含 dataSet），避免跨存档污染
                     hudEnabled = false;
-                    cachedOwnerUUID = null;
+                    setCachedOwnerUUID(null);
                     displayMode = 0;
                     clearCache();
                 }
@@ -237,11 +263,9 @@ public class WirelessMonitorHUD extends Gui {
             return;
         }
 
-        // 解析拥有者 UUID
-        UUID uuid;
-        try {
-            uuid = UUID.fromString(cachedOwnerUUID);
-        } catch (Exception e) {
+        // 拥有者 UUID（O2-27：读缓存解析结果，非法/未解析时与原 try-catch return 语义一致）
+        UUID uuid = parsedOwnerUuid;
+        if (uuid == null) {
             return;
         }
 
