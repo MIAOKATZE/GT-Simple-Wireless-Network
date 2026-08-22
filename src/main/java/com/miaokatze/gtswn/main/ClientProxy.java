@@ -13,6 +13,7 @@ import com.miaokatze.gtswn.client.gui.GuiQuantumTerminal;
 import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.client.render.RenderNetworkQuantumNode;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
+import com.miaokatze.gtswn.common.hud.HudController;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
@@ -31,6 +32,13 @@ import cpw.mods.fml.common.event.FMLInitializationEvent;
 public class ClientProxy extends CommonProxy {
 
     /**
+     * HUD 业务控制器唯一实例（O2-B10：原 WirelessMonitorHUD 的 static 可变态收编为
+     * HudState 实例，本字段即「唯一 static 持有点 = ClientProxy 注册处」；
+     * 渲染器与 EU 回包路径经构造/本字段共享同一实例）。
+     */
+    private final HudController hudController = new HudController();
+
+    /**
      * 初始化阶段 (Init)
      * 在此阶段注册客户端特定的事件处理器，如 HUD 渲染器。
      */
@@ -42,7 +50,7 @@ public class ClientProxy extends CommonProxy {
         // 注册 HUD 渲染器到 Forge 事件总线（仅在客户端）
         // 注意：RenderGameOverlayEvent 是 Forge 事件，必须注册到 MinecraftForge.EVENT_BUS
         GTSimpleWirelessNetwork.LOG.info("[2/2] 注册客户端 HUD 渲染器...");
-        MinecraftForge.EVENT_BUS.register(new WirelessMonitorHUD());
+        MinecraftForge.EVENT_BUS.register(new WirelessMonitorHUD(this.hudController));
         // 注册无线链路终端辅助线渲染器（DrawBlockHighlightEvent，与 GT 扳手/覆盖板工具相同机制）
         MinecraftForge.EVENT_BUS.register(new WirelessTapHighlightRenderer());
         // v1.6.1 问题 2：注册量子节点放置预览框渲染器（手持已绑定量子终端瞄准可放置位置时画青色预览盒）
@@ -76,8 +84,9 @@ public class ClientProxy extends CommonProxy {
     @Override
     public void handleResponseEU(String euStr) {
         // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
+        // O2-B10：EU 回包写入经控制器实例（原 WirelessMonitorHUD.receiveSyncedEU 静态入口随 B10 实例化）
         Minecraft.getMinecraft()
-            .func_152344_a(() -> WirelessMonitorHUD.receiveSyncedEU(euStr));
+            .func_152344_a(() -> this.hudController.receiveSyncedEU(euStr));
     }
 
     /**
@@ -156,6 +165,15 @@ public class ClientProxy extends CommonProxy {
     public void openQuantumTerminalGui() {
         Minecraft.getMinecraft()
             .displayGuiScreen(new GuiQuantumTerminal());
+    }
+
+    /**
+     * HUD 模式切换意图的客户端落地（O2-B10：物品侧经 @SidedProxy 发意图，本方法转
+     * {@link HudController#applyHudToggle}；同 tick 执行，与原静态 setter 直调语义一致）。
+     */
+    @Override
+    public void toggleHudMode(int mode, String ownerUUID) {
+        this.hudController.applyHudToggle(mode, ownerUUID);
     }
 
     @Override

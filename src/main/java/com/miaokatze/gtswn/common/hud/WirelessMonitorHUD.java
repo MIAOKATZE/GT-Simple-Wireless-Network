@@ -1,28 +1,15 @@
 package com.miaokatze.gtswn.common.hud;
 
-import java.math.BigInteger;
-import java.util.UUID;
-
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.inventory.IInventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
 import org.lwjgl.opengl.GL11;
 
-import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
-import com.miaokatze.gtswn.common.util.EUDataSet;
-import com.miaokatze.gtswn.common.util.FormatUtil;
-import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
-import com.miaokatze.gtswn.network.PacketRequestWirelessEU;
 
-import baubles.api.BaublesApi;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /**
@@ -30,138 +17,17 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
  * <p>
  * 当监测终端在玩家背包内时，在饱食度上方显示无线电网能量值。
  * 使用 Forge 事件系统监听游戏渲染事件，在适当的位置绘制 HUD 文本。
+ * <p>
+ * O2-B10 / O2-B03-6：渲染方法只留 ⑤ GL 绘制段；原 ①世界切换状态机 / ②背包复合扫描 /
+ * ③开关与 gap 检测 / ④数据集更新四段业务与全部可变态迁 {@link HudController}/{@link HudState}
+ * （经构造注入共享同一实例，唯一实例持有点 = ClientProxy 注册处）。
  */
 public class WirelessMonitorHUD extends Gui {
 
-    /** HUD 全局开关状态（默认关闭） */
-    private static boolean hudEnabled = false;
+    private final HudController controller;
 
-    /** HUD 显示模式（0=关闭，1=常规计数，2=科学计数） */
-    private static int displayMode = 0;
-
-    /** 缓存的拥有者 UUID（用于 HUD 显示） */
-    private static String cachedOwnerUUID = null;
-
-    /**
-     * 缓存的拥有者 UUID 解析结果（O2-27：随 {@link #cachedOwnerUUID} 变更点同步更新，
-     * 渲染路径读缓存，免每帧 UUID.fromString 字符串解析）。
-     */
-    private static UUID parsedOwnerUuid = null;
-
-    /** 服务端同步过来的 EU 字符串（BigInteger.toString()），未收到响应前为 null（用于判断首次进入） */
-    private static String syncedEuStr = null;
-
-    /**
-     * EU 测量数据集（替代原 measurementHistory 列表）。
-     * <p>
-     * 容量 61（0s 首检 + 60 次 100t 检测 = 300s），FIFO 老化，
-     * 内部使用 BigDecimal 精确计算 EU/t 斜率。static 单例：HUD 全局唯一。
-     */
-    private static final EUDataSet dataSet = new EUDataSet();
-
-    /** 缓存的 EU/t 文本 */
-    private static String cachedEUTText = "";
-    private static String cachedRealtimeEUTText = "";
-
-    /** HUD 更新间隔（ticks），每 100 ticks（5 秒）更新一次（与 MTE 统一） */
-    private static final int UPDATE_INTERVAL = 100;
-
-    /** 上次更新的真实时间戳（毫秒），用于登出/重进期间的 gap 检测（getTotalWorldTime 登出不推进） */
-    private static long lastUpdateRealTimeMs = 0L;
-
-    /** 背包遍历间隔（ticks），每 20 ticks（1 秒）检查一次 */
-    private static final int INVENTORY_CHECK_INTERVAL = 20;
-
-    /** 上次更新的时间戳（游戏 tick） */
-    private static long lastUpdateTick = 0;
-
-    /** 上次背包检查的时间戳（游戏 tick） */
-    private static long lastInventoryCheckTick = 0;
-
-    /** 缓存的无线电网能量值 */
-    private static String cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
-        + ": §f0 §b"
-        + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-
-    /** 当前世界 ID（用于检测世界切换） */
-    private static int currentWorldId = -1;
-
-    /**
-     * 设置 HUD 显示状态
-     *
-     * @param enabled   是否启用 HUD
-     * @param ownerUUID 拥有者 UUID（可选）
-     */
-    public static void setEnabled(boolean enabled, String ownerUUID) {
-        hudEnabled = enabled;
-        if (ownerUUID != null && !ownerUUID.isEmpty()) {
-            setCachedOwnerUUID(ownerUUID);
-        }
-    }
-
-    /**
-     * 设置 HUD 显示模式
-     *
-     * @param mode 显示模式（0=关闭，1=常规计数，2=科学计数）
-     */
-    public static void setDisplayMode(int mode) {
-        displayMode = mode;
-        // 重置更新时间，强制下次渲染时立即更新
-        lastUpdateTick = 0;
-    }
-
-    /**
-     * 获取 HUD 全局开关状态
-     *
-     * @return 当前 HUD 是否启用
-     */
-    public static boolean isEnabled() {
-        return hudEnabled;
-    }
-
-    /**
-     * 清空所有缓存数据（用于玩家失去监视器、HUD 关闭等场景）。
-     * <p>
-     * 注意：世界切换不再调用此方法（见 {@link #onRenderOverlay} 中的世界切换处理），
-     * 用户确认世界切换时保留数据集以维持 EU/t 连续性。
-     */
-    private static void clearCache() {
-        setCachedOwnerUUID(null);
-        // 重置服务端同步缓存，避免跨存档/世界切换时残留旧值
-        syncedEuStr = null;
-        cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
-            + ": §f0 §b"
-            + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-        cachedEUTText = "";
-        cachedRealtimeEUTText = "";
-        dataSet.clear(); // 清空数据集
-        lastUpdateTick = 0; // 强制首次检测
-        lastUpdateRealTimeMs = 0; // 重置真实时间戳
-        lastInventoryCheckTick = 0;
-        hudEnabled = false;
-        displayMode = 0;
-    }
-
-    /**
-     * 更新缓存的拥有者 UUID 字符串及其解析结果（O2-27）。
-     * <p>
-     * {@link #cachedOwnerUUID} 的所有赋值点统一走本方法，保证
-     * {@link #parsedOwnerUuid} 同步失效/重建；解析失败时解析结果置 null，
-     * 渲染路径据此跳过（与原先每帧 try-catch UUID.fromString 的语义一致）。
-     *
-     * @param ownerUUID 新的拥有者 UUID 字符串（null/空时一并清空解析结果）
-     */
-    private static void setCachedOwnerUUID(String ownerUUID) {
-        cachedOwnerUUID = ownerUUID;
-        if (ownerUUID == null || ownerUUID.isEmpty()) {
-            parsedOwnerUuid = null;
-            return;
-        }
-        try {
-            parsedOwnerUuid = UUID.fromString(ownerUUID);
-        } catch (IllegalArgumentException e) {
-            parsedOwnerUuid = null;
-        }
+    public WirelessMonitorHUD(HudController controller) {
+        this.controller = controller;
     }
 
     /**
@@ -184,107 +50,10 @@ public class WirelessMonitorHUD extends Gui {
 
         EntityPlayer player = mc.thePlayer;
 
-        // 检测世界切换：用户确认世界切换时保留数据集（维持 EU/t 连续性）
-        // 仅重置 UI 状态（syncedEuStr、cachedEUText、cachedEUTText、lastUpdateTick），不清空 dataSet
-        int worldId = mc.theWorld.provider.dimensionId;
-        if (worldId != currentWorldId) {
-            currentWorldId = worldId;
-            // 保留 dataSet（用户确认），只重置 UI 状态
-            syncedEuStr = null;
-            cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
-                + ": §f... §b"
-                + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-            cachedEUTText = "";
-            cachedRealtimeEUTText = "";
-            lastUpdateTick = 0; // 强制下次更新
-            // 不清空 dataSet
-        }
-
-        // 获取世界时间
-        long currentTick = mc.theWorld.getTotalWorldTime();
-
-        // 每 INVENTORY_CHECK_INTERVAL ticks 检查一次背包（在 hudEnabled 检查之前执行）
-        if (currentTick - lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
-            // 单次背包扫描（主手 → Baubles → 主背包）：owner 与 HUD 模式同源返回，绑定口径一致
-            MonitorScanResult scan = scanMonitorInInventory(player);
-            String newOwnerUUID = scan.ownerUUID;
-
-            // 如果找到了已绑定的监测终端，使用其 NBT 中的 HUD 模式
-            if (newOwnerUUID != null && !newOwnerUUID.isEmpty()) {
-                int hudMode = scan.hudMode;
-
-                // 如果 HUD 模式或拥有者发生变化，更新缓存
-                if (!newOwnerUUID.equals(cachedOwnerUUID) || displayMode != hudMode) {
-                    // B2-04：换绑定账户时清空旧 owner 的数据集与 EU 显示残留——dataSet 属于旧 owner
-                    // 的网络快照，syncedEuStr 残留会在切换瞬间短暂显示旧 owner 余额；
-                    // 仅 HUD 模式变化（同 owner）不清，与上方世界切换保留 dataSet 语义（用户确认）不冲突
-                    boolean ownerChanged = !newOwnerUUID.equals(cachedOwnerUUID);
-                    if (ownerChanged) {
-                        dataSet.clear();
-                        syncedEuStr = null;
-                    }
-                    setCachedOwnerUUID(newOwnerUUID);
-                    displayMode = hudMode;
-                    hudEnabled = hudMode > 0;
-
-                    // 如果 HUD 开启，重置更新时间强制立即更新
-                    // 注：便携式随退出登录重置（用户确认），不再从物品 NBT 加载历史，
-                    // 靠 gap 检测和首次检测重建数据集
-                    if (hudEnabled) {
-                        lastUpdateTick = 0;
-
-                        // 立即更新一次缓存（解析失败时 parsedOwnerUuid 为 null，跳过，与原 try-catch 忽略语义一致）
-                        if (parsedOwnerUuid != null) {
-                            updateCache(currentTick, parsedOwnerUuid);
-                        }
-                    }
-                }
-            } else {
-                // 没找到监测终端，关闭 HUD
-                if (hudEnabled) {
-                    // 失去监视器：清空所有缓存（含 dataSet），避免跨存档污染
-                    hudEnabled = false;
-                    setCachedOwnerUUID(null);
-                    displayMode = 0;
-                    clearCache();
-                }
-            }
-
-            lastInventoryCheckTick = currentTick;
-        }
-
-        // 检查 HUD 是否启用（在背包检查之后）
-        if (!hudEnabled) {
+        // ①-④ 业务段（世界切换/背包扫描/开关与 gap/数据集更新）在控制器内驱动；
+        // 返回 false 表示本帧不渲染
+        if (!this.controller.updateForFrame(player)) {
             return;
-        }
-
-        // 如果找不到监测终端，不显示 HUD
-        if (cachedOwnerUUID == null || cachedOwnerUUID.isEmpty()) {
-            return;
-        }
-
-        // 拥有者 UUID（O2-27：读缓存解析结果，非法/未解析时与原 try-catch return 语义一致）
-        UUID uuid = parsedOwnerUuid;
-        if (uuid == null) {
-            return;
-        }
-
-        // 真实时间 gap 检测（登出期间 tick 不推进，用真实时间检测）
-        // 说明：getTotalWorldTime() 登出期间不推进，无法检测登出时长；
-        // System.currentTimeMillis() 真实时间，登出期间持续推进；
-        // 阈值 10000ms = 10秒，与 MTE 的 200L ticks = 10s 对齐；
-        // 短时卡顿（<10s）豁免，保留数据集
-        long currentRealTimeMs = System.currentTimeMillis();
-        if (lastUpdateRealTimeMs > 0 && currentRealTimeMs - lastUpdateRealTimeMs > 10000L) {
-            // 长时重载/退出重进（>10秒真实时间）：清空数据集，强制首次检测
-            dataSet.clear();
-            lastUpdateTick = 0; // 强制首次检测
-        }
-        lastUpdateRealTimeMs = currentRealTimeMs;
-
-        // 每 UPDATE_INTERVAL ticks 更新一次缓存
-        if (currentTick - lastUpdateTick >= UPDATE_INTERVAL) {
-            updateCache(currentTick, uuid);
         }
 
         // 计算 HUD 位置（饱食度上方）
@@ -319,364 +88,35 @@ public class WirelessMonitorHUD extends Gui {
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_LIGHTING);
 
+        String euText = this.controller.euText();
+
         // 获取文本宽度
-        int textWidth = mc.fontRenderer.getStringWidth(cachedEUText);
+        int textWidth = mc.fontRenderer.getStringWidth(euText);
 
         // 绘制半透明背景
         drawRect(hudX - 2, hudY - 2, hudX + textWidth + 2, hudY + 10, 0x80000000);
 
         // 绘制文本（使用格式化字符串，带颜色代码）
-        mc.fontRenderer.drawStringWithShadow(cachedEUText, hudX, hudY, 0xFFFFFF);
+        mc.fontRenderer.drawStringWithShadow(euText, hudX, hudY, 0xFFFFFF);
 
         // 绘制 EU/t 信息（在上方一行）
         int eutY = hudY - 12;
-        int eutTextWidth = mc.fontRenderer.getStringWidth(cachedEUTText);
+        int eutTextWidth = mc.fontRenderer.getStringWidth(this.controller.eutText());
         drawRect(hudX - 2, eutY - 2, hudX + Math.max(textWidth, eutTextWidth) + 2, eutY + 10, 0x80000000);
-        mc.fontRenderer.drawStringWithShadow(cachedEUTText, hudX, eutY, 0xFFFFFF);
+        mc.fontRenderer.drawStringWithShadow(this.controller.eutText(), hudX, eutY, 0xFFFFFF);
 
         int realtimeY = hudY - 24;
-        int realtimeTextWidth = mc.fontRenderer.getStringWidth(cachedRealtimeEUTText);
+        int realtimeTextWidth = mc.fontRenderer.getStringWidth(this.controller.realtimeEutText());
         drawRect(
             hudX - 2,
             realtimeY - 2,
             hudX + Math.max(Math.max(textWidth, eutTextWidth), realtimeTextWidth) + 2,
             realtimeY + 10,
             0x80000000);
-        mc.fontRenderer.drawStringWithShadow(cachedRealtimeEUTText, hudX, realtimeY, 0xFFFFFF);
+        mc.fontRenderer.drawStringWithShadow(this.controller.realtimeEutText(), hudX, realtimeY, 0xFFFFFF);
 
         // 恢复 OpenGL 状态
         GL11.glPopMatrix();
         GL11.glPopAttrib();
-    }
-
-    /**
-     * 单次背包扫描的复合结果（合并原三重同构扫描，见《全局调查-优化建议》OPT-7）。
-     * <p>
-     * 主手 → Baubles 饰品栏 → 主背包一次遍历，返回第一个「已绑定」便携监测终端的
-     * 拥有者 UUID 与 HUD 模式；未找到已绑定终端时 ownerUUID 为 null、hudMode 为 0。
-     * <p>
-     * B2-16：删除零消费的 {@code stack} 死字段（唯一调用方只读 ownerUUID/hudMode）。
-     */
-    private static final class MonitorScanResult {
-
-        /** 未找到已绑定监测终端时的空结果（hudMode=0 与既有默认语义一致） */
-        static final MonitorScanResult NONE = new MonitorScanResult(null, 0);
-
-        /** 拥有者 UUID 字符串（仅已绑定时非 null） */
-        final String ownerUUID;
-
-        /** 监测终端 NBT 中的 HUD 显示模式（0=关闭，1=常规计数，2=科学计数） */
-        final int hudMode;
-
-        MonitorScanResult(String ownerUUID, int hudMode) {
-            this.ownerUUID = ownerUUID;
-            this.hudMode = hudMode;
-        }
-    }
-
-    /**
-     * 单次遍历背包查找「已绑定」的便携监测终端（主手 → Baubles 饰品栏 → 主背包）。
-     * <p>
-     * 合并原 findMonitorInInventory / findMonitorStackInInventory / getHUDModeFromInventory
-     * 三重同构扫描（每 20t 最多三遍背包遍历 → 一次遍历返回复合结果，调用方各取所需）；
-     * HUD 模式与拥有者提取统一先过 {@link #isMonitorBound(ItemStack)}，与 owner 判定口径一致（BUG-8）。
-     *
-     * @param player 玩家实体
-     * @return 第一个已绑定监测终端的复合结果；未找到返回 {@link MonitorScanResult#NONE}
-     */
-    private MonitorScanResult scanMonitorInInventory(EntityPlayer player) {
-        // 检查主手
-        MonitorScanResult result = inspectMonitorStack(player.getHeldItem());
-        if (result != null) {
-            return result;
-        }
-
-        // --- 饰品栏扫描（Baubles 不存在时安全降级） ---
-        try {
-            IInventory baubles = BaublesApi.getBaubles(player);
-            if (baubles != null) {
-                for (int i = 0; i < baubles.getSizeInventory(); i++) {
-                    result = inspectMonitorStack(baubles.getStackInSlot(i));
-                    if (result != null) {
-                        return result;
-                    }
-                }
-            }
-        } catch (NoClassDefFoundError ignored) {
-            // Baubles 未安装，跳过饰品栏扫描
-        }
-
-        // 遍历背包槽位（0-35）
-        for (int i = 0; i < player.inventory.mainInventory.length; i++) {
-            result = inspectMonitorStack(player.inventory.mainInventory[i]);
-            if (result != null) {
-                return result;
-            }
-        }
-
-        return MonitorScanResult.NONE;
-    }
-
-    /**
-     * 检查单个槽位：是「已绑定」的便携监测终端则打包复合结果（拥有者 UUID + HUD 模式），
-     * 否则返回 null 继续扫描后续槽位（未绑定监视器不参与 HUD 模式判定，BUG-8）。
-     */
-    private static MonitorScanResult inspectMonitorStack(ItemStack stack) {
-        if (stack == null || !(stack.getItem() instanceof PortableWirelessNetworkMonitor)) {
-            return null;
-        }
-        if (!isMonitorBound(stack)) {
-            return null;
-        }
-        return new MonitorScanResult(
-            stack.stackTagCompound.getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID),
-            stack.stackTagCompound.getInteger(PortableWirelessNetworkMonitor.NBT_HUD_MODE));
-    }
-
-    /**
-     * 检查监测终端是否已绑定。
-     * <p>
-     * NBT 键名引用物品侧常量，避免 "Initialized"/"OwnerUUID" 字面量双处硬编码（C-3）。
-     *
-     * @param stack 物品堆栈
-     * @return 是否已绑定
-     */
-    private static boolean isMonitorBound(ItemStack stack) {
-        if (stack.stackTagCompound == null) {
-            return false;
-        }
-        return stack.stackTagCompound.getBoolean(PortableWirelessNetworkMonitor.NBT_INITIALIZED)
-            && stack.stackTagCompound.hasKey(PortableWirelessNetworkMonitor.NBT_OWNER_UUID);
-    }
-
-    /**
-     * 接收服务端同步过来的 EU 字符串（由 {@code PacketResponseWirelessEU.Handler} 通过
-     * {@code Minecraft.addScheduledTask} 调度到客户端主线程后调用）。
-     * <p>
-     * 承担原 {@code updateCache} 的格式化、记录测量、计算 EU/t 职责；运行在客户端主线程，可安全操作 static 字段。
-     *
-     * @param euStr 服务端传来的 {@code BigInteger.toString()} 字符串
-     */
-    public static void receiveSyncedEU(String euStr) {
-        if (euStr == null || euStr.isEmpty()) {
-            return;
-        }
-
-        // 解析服务端传来的 EU 字符串（异常时设为 ZERO，避免渲染崩溃）
-        BigInteger wirelessEU;
-        try {
-            wirelessEU = new BigInteger(euStr);
-        } catch (NumberFormatException e) {
-            wirelessEU = BigInteger.ZERO;
-        }
-
-        // 更新同步缓存
-        syncedEuStr = euStr;
-
-        // 获取当前世界 tick（receiveSyncedEU 无 currentTick 入参，自行从客户端世界读取）
-        Minecraft mc = Minecraft.getMinecraft();
-        long currentTick = (mc.theWorld != null) ? mc.theWorld.getTotalWorldTime() : 0L;
-
-        // 根据显示模式格式化能量值
-        String euFormatted;
-        if (displayMode == 2) {
-            // 科学计数法
-            euFormatted = FormatUtil.formatScientific(wirelessEU);
-        } else {
-            // 常规计数（带逗号分隔）
-            euFormatted = FormatUtil.formatNormal(wirelessEU);
-        }
-
-        cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
-            + ": §f"
-            + euFormatted
-            + " §b"
-            + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-
-        // 记录到数据集（替代 FormatUtil.recordMeasurement，EUDataSet 内部自动 FIFO 老化）
-        dataSet.add(wirelessEU, currentTick);
-        // 格式化 HUD 电网状态文本
-        cachedEUTText = formatHUDStatus();
-        cachedRealtimeEUTText = formatHUDRealtimeStatus();
-    }
-
-    /**
-     * 更新 HUD 缓存数据。
-     * <p>
-     * [Bugfix] 不再在客户端直接调用 {@code WirelessNetworkManager.getUserEU}（GlobalEnergy 数据仅在服务端，
-     * 客户端恒返 0）。改为向服务端发送 {@link PacketRequestWirelessEU} 请求包，由服务端查询后回包，
-     * 实际的格式化与 EU/t 计算在 {@link #receiveSyncedEU} 中完成。
-     *
-     * @param currentTick 当前游戏 tick
-     * @param uuid        保留以兼容现有调用点；EU 数据已改为服务端同步，本方法不再直接使用此参数
-     */
-    private void updateCache(long currentTick, UUID uuid) {
-        // 向服务端发送 EU 请求包（仅当拥有者 UUID 有效时）
-        if (cachedOwnerUUID != null && !cachedOwnerUUID.isEmpty()) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestWirelessEU(cachedOwnerUUID));
-        }
-
-        // 首次进入（尚未收到服务端响应）时显示占位符，避免闪烁；
-        // 已有同步数据时 cachedEUText 由 receiveSyncedEU 维护，此处不覆盖
-        if (syncedEuStr == null) {
-            cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
-                + ": §f..."
-                + " §b"
-                + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-        }
-
-        lastUpdateTick = currentTick;
-    }
-
-    // 记录/清理方法已迁移至 EUDataSet（T4 公共工具类提取）
-
-    /**
-     * 根据数据集格式化 HUD 电网状态文本。
-     * <p>
-     * 显示逻辑（与 MTE 统一）：
-     * <ul>
-     * <li>size &lt; 2：网络状态：计算中...（标题青色 + 计算中橙黄）—— 首检未完成</li>
-     * <li>eut == 0：0 (静默) —— 绝对无变化</li>
-     * <li>0 &lt; |eut| &lt; 1：0 (&lt;1EU) —— 近似无变化</li>
-     * <li>|eut| &gt;= 1：正常显示（数值 + 电压等级）</li>
-     * </ul>
-     *
-     * @return 格式化后的 HUD 电网状态文本（带 § 颜色代码）
-     */
-    private static String formatHUDStatus() {
-        // 便携式冷启动：size < 2 时无法计算斜率，显示"网络状态：计算中..."
-        // v1.3.2 修正：原阈值 size < 6 为 v1.3.0 前 600t 间隔的过时逻辑，
-        // 现检测间隔 100t 且静默压缩后 size 恒为 2，故与 MTE formatEUTStatus 统一为 size < 2
-        // 颜色：标题青色 §b（与其他状态行一致），"计算中"橙黄 §6 警示
-        if (dataSet.size() < 2) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                + ": §6"
-                + StatCollector.translateToLocal("gtswn.hud.network.status.calculating");
-        }
-
-        // 由 EUDataSet 计算 EU/t 斜率（BigDecimal 精确除法）
-        double eut = dataSet.calculateEUT();
-
-        // 绝对无变化（首末两点 EU 完全相等）
-        if (eut == 0.0) {
-            // 长期静默：静默模式持续 ≥ 300s（数据集压缩为 2 个数据点）
-            if (dataSet.isLongTermSilent()) {
-                return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                    + ": §f0 §bEU/t (§7"
-                    + StatCollector.translateToLocal("gtswn.hud.network.status.long_silent")
-                    + "§b)";
-            }
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                + ": §f0 §bEU/t (§7"
-                + StatCollector.translateToLocal("gtswn.hud.network.status.silent")
-                + "§b)";
-        }
-
-        double absEut = Math.abs(eut);
-
-        // 小于 1 EU/t：变化过小，近似无变化
-        if (absEut < 1.0) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
-                + ": §f0 §bEU/t (§7"
-                + StatCollector.translateToLocal("gtswn.hud.network.status.lt1")
-                + "§b)";
-        }
-
-        // 正常显示：数值 + GT 电压等级
-        // displayMode==2 科学计数（与 EU 总量判断一致），否则常规计数
-        String euPerTickStr = (displayMode == 2) ? FormatUtil.formatScientificDouble(absEut)
-            : FormatUtil.formatNormalDouble(absEut);
-        String gtPowerText = GTTierUtil.formatGTPower(eut);
-        int gtTier = GTTierUtil.getGTTier(eut);
-        String bracketColor = GTTierUtil.TIER_COLORS[gtTier];
-        String statusLabel = StatCollector.translateToLocal("gtswn.hud.network.status");
-        String eutUnit = StatCollector.translateToLocal("gtswn.hud.eut.unit");
-
-        // v1.4.14 修正：去除 ↑↓ 箭头，增加用 +，减少用 -（与实时状态行格式统一）
-        // 注意：euPerTickStr 基于 absEut 计算，减少时通过 "-" 前缀补负号
-        if (eut > 0) {
-            return "§b" + statusLabel
-                + ": §a+"
-                + euPerTickStr
-                + " §b"
-                + eutUnit
-                + " "
-                + bracketColor
-                + "("
-                + gtPowerText
-                + ")";
-        } else {
-            return "§b" + statusLabel
-                + ": §c-"
-                + euPerTickStr
-                + " §b"
-                + eutUnit
-                + " "
-                + bracketColor
-                + "("
-                + gtPowerText
-                + ")";
-        }
-    }
-
-    // 测量记录类、电压等级数组、格式化方法已迁移至 FormatUtil 与 GTTierUtil（T4 公共工具类提取）
-    private static String formatHUDRealtimeStatus() {
-        String statusLabel = StatCollector.translateToLocal("gtswn.hud.network.realtime_status");
-        String eutUnit = StatCollector.translateToLocal("gtswn.hud.eut.unit");
-        if (dataSet.size() < 2) {
-            return "\u00A7b" + statusLabel
-                + ": \u00A76"
-                + StatCollector.translateToLocal("gtswn.hud.network.status.calculating");
-        }
-
-        double eut = dataSet.calculateRecentEUT();
-        if (eut == 0.0) {
-            return "\u00A7b" + statusLabel
-                + ": \u00A7f0 \u00A7b"
-                + eutUnit
-                + " (\u00A77"
-                + StatCollector.translateToLocal("gtswn.hud.network.status.silent")
-                + "\u00A7b)";
-        }
-
-        double absEut = Math.abs(eut);
-        if (absEut < 1.0) {
-            return "\u00A7b" + statusLabel
-                + ": \u00A7f0 \u00A7b"
-                + eutUnit
-                + " (\u00A77"
-                + StatCollector.translateToLocal("gtswn.hud.network.status.lt1")
-                + "\u00A7b)";
-        }
-
-        // displayMode==2 科学计数（与 EU 总量判断一致），否则常规计数
-        String euPerTickStr = (displayMode == 2) ? FormatUtil.formatScientificDouble(absEut)
-            : FormatUtil.formatNormalDouble(absEut);
-        String gtPowerText = GTTierUtil.formatGTPower(eut);
-        int gtTier = GTTierUtil.getGTTier(eut);
-        String bracketColor = GTTierUtil.TIER_COLORS[gtTier];
-
-        if (eut > 0) {
-            return "\u00A7b" + statusLabel
-                + ": \u00A7a+"
-                + euPerTickStr
-                + " \u00A7b"
-                + eutUnit
-                + " "
-                + bracketColor
-                + "("
-                + gtPowerText
-                + ")";
-        }
-        return "\u00A7b" + statusLabel
-            + ": \u00A7c-"
-            + euPerTickStr
-            + " \u00A7b"
-            + eutUnit
-            + " "
-            + bracketColor
-            + "("
-            + gtPowerText
-            + ")";
     }
 }

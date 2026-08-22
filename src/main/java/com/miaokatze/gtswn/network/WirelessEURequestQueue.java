@@ -71,7 +71,7 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
 
     /**
      * 持有校验（B2-03）：扫描玩家主手 → Baubles 饰品栏 → 主背包（0-35），槽位口径与客户端
-     * {@code WirelessMonitorHUD.scanMonitorInInventory} 对齐。
+     * {@code HudController.scanMonitorInInventory}（O2-B10 前在 WirelessMonitorHUD）对齐。
      * <p>
      * 语义 = 持有即授权：终端物品是能力凭证，物品可合法转移且转移后无需重绑
      * （跨 owner 显示是既定功能，故不做「UUID == 请求者本人」的身份校验）。

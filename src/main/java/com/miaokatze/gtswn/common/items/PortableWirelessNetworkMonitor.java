@@ -13,7 +13,7 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
-import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import baubles.api.BaubleType;
 import baubles.api.IBauble;
@@ -105,6 +105,44 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         return aStack.stackTagCompound.getBoolean(NBT_INITIALIZED) && aStack.stackTagCompound.hasKey(NBT_OWNER_UUID);
     }
 
+    // ========== HUD/客户端语义门面（O2-B10：监视器 NBT 布局读取归物品侧单源） ==========
+
+    /**
+     * 语义门面：是否「已绑定」的便携监测终端（HUD 背包扫描判定用，绑定口径与本类
+     * {@link #isBound(ItemStack)} 一致但不做 ensureNBT 副作用；未绑定监视器不参与
+     * HUD 模式判定，BUG-8 口径随门面保持）。
+     *
+     * @param stack 物品堆栈
+     * @return 是否本类的已绑定实例
+     */
+    public static boolean isMonitorBound(ItemStack stack) {
+        if (!(stack.getItem() instanceof PortableWirelessNetworkMonitor)) {
+            return false;
+        }
+        if (stack.stackTagCompound == null) {
+            return false;
+        }
+        return stack.stackTagCompound.getBoolean(NBT_INITIALIZED) && stack.stackTagCompound.hasKey(NBT_OWNER_UUID);
+    }
+
+    /**
+     * 语义门面：已绑定终端的拥有者 UUID 字符串。
+     * 调用方需先过 {@link #isMonitorBound(ItemStack)}（与原 HUD 直读 getString 行为一致）。
+     */
+    public static String getOwnerUUID(ItemStack stack) {
+        return stack.stackTagCompound.getString(NBT_OWNER_UUID);
+    }
+
+    /**
+     * 语义门面：HUD 显示模式（0=关闭，1=常规计数，2=科学计数；未绑定默认 0）。
+     */
+    public static int getHudMode(ItemStack stack) {
+        if (stack.stackTagCompound == null) {
+            return 0;
+        }
+        return stack.stackTagCompound.getInteger(NBT_HUD_MODE);
+    }
+
     /**
      * 绑定当前玩家为拥有者（仅用于未绑定状态）
      */
@@ -160,11 +198,12 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         // 更新 HUD 模式（两端都执行）
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, newMode);
 
-        // 仅在客户端同步到 HUD 管理器
+        // 仅在客户端同步到 HUD 管理器（O2-B10：改经 @SidedProxy 发意图，消除本类对客户端类
+        // WirelessMonitorHUD 的字节码引用——items→hud 拆环；CommonProxy 空实现，ClientProxy
+        // 转 HudController，同 tick 执行，模式切换即时生效语义不变）
         if (aPlayer.worldObj.isRemote) {
             String ownerUUID = aStack.stackTagCompound.getString(NBT_OWNER_UUID);
-            WirelessMonitorHUD.setEnabled(newMode > 0, ownerUUID);
-            WirelessMonitorHUD.setDisplayMode(newMode);
+            GTSimpleWirelessNetwork.proxy.toggleHudMode(newMode, ownerUUID);
         }
 
         // 仅在客户端发送提示信息

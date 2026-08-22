@@ -331,6 +331,20 @@ public class CommonProxy {
 
     public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {}
 
+    /**
+     * HUD 模式切换意图（O2-B10：items→hud 拆环，物品类不再字节码引用客户端类
+     * {@code WirelessMonitorHUD}，类加载安全由「不执行即不解析」惯例升级为 @SidedProxy 结构保证）。
+     * <p>
+     * 服务端空实现：HUD 仅客户端存在。客户端逻辑由 {@link ClientProxy#toggleHudMode} 重写，
+     * 与 {@link #handleResponseEU} 等同用 @SidedProxy 委托范式（包 1/4/6 同源）。
+     *
+     * @param mode      新 HUD 显示模式（0=关闭，1=常规计数，2=科学计数）
+     * @param ownerUUID 拥有者 UUID（可为 null/空，语义同原静态 setter：空值不更新 owner 缓存）
+     */
+    public void toggleHudMode(int mode, String ownerUUID) {
+        // 服务端空实现：HUD 仅客户端
+    }
+
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
         return null;
     }
