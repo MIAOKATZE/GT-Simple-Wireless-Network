@@ -113,7 +113,9 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
             if (availableEU > 0) {
                 long euToTake = Math.min(availableEU, outputV * outputA);
                 if (bmte.decreaseStoredEU(euToTake, true)) {
-                    this.storedEU += euToTake;
+                    // B2-06：饱和累加防回绕（复刻 MTEWirelessEnergyMonitor.safeAddStep 同式）——
+                    // 名义电容对齐：理论上 ~90 天连续满输出会溢出 long
+                    this.storedEU = safeAdd(this.storedEU, euToTake);
                 }
             }
         }
@@ -182,5 +184,19 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
     public void configure() {
         this.configured = true;
         this.storedEU = 0L;
+    }
+
+    /**
+     * 缓冲池饱和加法（B2-06）：相加溢出时钳制到 long 上界，防止回绕。
+     * 与 {@code MTEWirelessEnergyMonitor.safeAddStep}（SWN-BUG-04）同式。
+     */
+    private static long safeAdd(long value, long step) {
+        if (step > 0L && value > Long.MAX_VALUE - step) {
+            return Long.MAX_VALUE;
+        }
+        if (step < 0L && value < Long.MIN_VALUE - step) {
+            return Long.MIN_VALUE;
+        }
+        return value + step;
     }
 }
