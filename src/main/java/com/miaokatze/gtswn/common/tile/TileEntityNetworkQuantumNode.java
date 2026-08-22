@@ -620,16 +620,24 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 explodeControllers(stats.getStructure());
                 return;
             case STARTED:
-                messagePlacer("gtswn.chat.quantum.overload_warning", "3 分钟");
+                messagePlacer(
+                    "gtswn.chat.quantum.overload_warning",
+                    StatCollector.translateToLocal("gtswn.chat.quantum.duration.3min"));
                 break;
             case ANNOUNCE_2MIN:
-                messagePlacer("gtswn.chat.quantum.overload_warning", "2 分钟");
+                messagePlacer(
+                    "gtswn.chat.quantum.overload_warning",
+                    StatCollector.translateToLocal("gtswn.chat.quantum.duration.2min"));
                 break;
             case ANNOUNCE_1MIN:
-                messagePlacer("gtswn.chat.quantum.overload_warning", "1 分钟");
+                messagePlacer(
+                    "gtswn.chat.quantum.overload_warning",
+                    StatCollector.translateToLocal("gtswn.chat.quantum.duration.1min"));
                 break;
             case ANNOUNCE_10S:
-                messagePlacer("gtswn.chat.quantum.overload_warning", "10 秒");
+                messagePlacer(
+                    "gtswn.chat.quantum.overload_warning",
+                    StatCollector.translateToLocal("gtswn.chat.quantum.duration.10s"));
                 break;
             case CANCELLED:
                 messagePlacer("gtswn.chat.quantum.overload_cancelled");
