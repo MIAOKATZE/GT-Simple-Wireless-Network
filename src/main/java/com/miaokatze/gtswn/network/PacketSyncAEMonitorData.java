@@ -2,8 +2,10 @@ package com.miaokatze.gtswn.network;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.AEMonitorWindowSeries;
@@ -23,11 +25,19 @@ import io.netty.buffer.ByteBuf;
  * 客户端 {@link Handler} 收到后将数据写入 TileEntity 的客户端缓存，供 GUI/TESR 渲染读取。
  * <p>
  * discriminator = 4（见 {@link GTSWNPacketHandler#register()}）。
+ * <p>
+ * 【O2-20 广播第一刀（同 jar 双端，零协议语义变化）】
+ * <ul>
+ * <li>样本 timeMs 不上线（全 client/ grep 实证零消费，客户端重建以 0 占位）：32→24B/样本</li>
+ * <li>monitorLatest / monitorAvg300s 双 Map 合一上线：同 key 只写一次字符串，
+ * 1B flags（bit0=hasLatest，bit1=hasAvg）标记各段有无——latest 的 key 集 ⊆ avg 的 key 集
+ * （avg 无条件写入，latest 依赖 newest 非空），满配 64 key 约省 1.3KB</li>
+ * </ul>
  */
 public class PacketSyncAEMonitorData implements IMessage {
 
     /**
-     * 实时监控 key 数（monitorLatest / monitorAvg300s）的防御性读取上限（B2-12）。
+     * 实时监控 key 数（monitorLatest / monitorAvg300s 合并 key 集）的防御性读取上限（B2-12）。
      * 推导 = 2 × aeMaxMonitoredItems 上限（物品+流体，Config 钳制 1-256）= 2 × 256 = 512。
      */
     private static final int MAX_MONITOR_KEYS = 512;
@@ -52,11 +62,6 @@ public class PacketSyncAEMonitorData implements IMessage {
         this.chartSamples = new ArrayList<>();
         this.monitorLatest = new HashMap<>();
         this.monitorAvg300s = new HashMap<>();
-    }
-
-    public PacketSyncAEMonitorData(int x, int y, int z, String chartKey, List<AEMonitorSample> chartSamples,
-        Map<String, AEMonitorSample> monitorLatest) {
-        this(x, y, z, chartKey, chartSamples, monitorLatest, null);
     }
 
     public PacketSyncAEMonitorData(int x, int y, int z, String chartKey, List<AEMonitorSample> chartSamples,
@@ -87,16 +92,22 @@ public class PacketSyncAEMonitorData implements IMessage {
             }
         }
 
-        buf.writeInt(monitorLatest.size());
-        for (Map.Entry<String, AEMonitorSample> entry : monitorLatest.entrySet()) {
-            ByteBufUtils.writeUTF8String(buf, entry.getKey());
-            writeSample(buf, entry.getValue());
-        }
-
-        buf.writeInt(monitorAvg300s.size());
-        for (Map.Entry<String, Double> entry : monitorAvg300s.entrySet()) {
-            ByteBufUtils.writeUTF8String(buf, entry.getKey());
-            buf.writeDouble(entry.getValue());
+        // O2-20：latest/avg 双 Map 合一上线——同 key 只写一次，flags 标记各段有无
+        Set<String> monitorKeys = new HashSet<>();
+        monitorKeys.addAll(monitorLatest.keySet());
+        monitorKeys.addAll(monitorAvg300s.keySet());
+        buf.writeInt(monitorKeys.size());
+        for (String key : monitorKeys) {
+            ByteBufUtils.writeUTF8String(buf, key);
+            AEMonitorSample sample = monitorLatest.get(key);
+            Double avg = monitorAvg300s.get(key);
+            buf.writeByte((sample != null ? 1 : 0) | (avg != null ? 2 : 0));
+            if (sample != null) {
+                writeSample(buf, sample);
+            }
+            if (avg != null) {
+                buf.writeDouble(avg);
+            }
         }
     }
 
@@ -123,40 +134,40 @@ public class PacketSyncAEMonitorData implements IMessage {
             chartKey = null;
         }
 
-        int latestCount = buf.readInt();
+        // O2-20：合并 key 集读取，flags（bit0=hasLatest，bit1=hasAvg）标记各段有无
+        int monitorCount = buf.readInt();
         // 防御性上限（B2-12）：见 MAX_MONITOR_KEYS 注释（2 × 256 推导）
-        latestCount = Math.min(latestCount, MAX_MONITOR_KEYS);
-        for (int i = 0; i < latestCount; i++) {
+        monitorCount = Math.min(monitorCount, MAX_MONITOR_KEYS);
+        for (int i = 0; i < monitorCount; i++) {
             String key = ByteBufUtils.readUTF8String(buf);
-            AEMonitorSample sample = readSample(buf);
-            monitorLatest.put(key, sample);
-        }
-
-        int avgCount = buf.readInt();
-        // 防御性上限（B2-12）：与 monitorLatest 同一 key 集，同一上界
-        avgCount = Math.min(avgCount, MAX_MONITOR_KEYS);
-        for (int i = 0; i < avgCount; i++) {
-            String key = ByteBufUtils.readUTF8String(buf);
-            double avg = buf.readDouble();
-            monitorAvg300s.put(key, avg);
+            int flags = buf.readByte() & 0xFF;
+            if ((flags & 1) != 0) {
+                monitorLatest.put(key, readSample(buf));
+            }
+            if ((flags & 2) != 0) {
+                monitorAvg300s.put(key, buf.readDouble());
+            }
         }
     }
 
-    /** 将一个 AEMonitorSample 的四个字段写入 ByteBuf。 */
+    /**
+     * 将一个 AEMonitorSample 写入 ByteBuf。
+     * <p>
+     * O2-20：timeMs 客户端零消费（全 client/ grep 实证），不再上线——样本 32→24B；
+     * 服务端 WSD/NBT 与聚合链的 timeMs 不受影响。
+     */
     private static void writeSample(ByteBuf buf, AEMonitorSample sample) {
-        buf.writeLong(sample.timeMs);
         buf.writeLong(sample.tick);
         buf.writeLong(sample.amount);
         buf.writeDouble(sample.rate);
     }
 
-    /** 从 ByteBuf 读取一个 AEMonitorSample。 */
+    /** 从 ByteBuf 读取一个 AEMonitorSample（timeMs 未上线，重建以 0 占位）。 */
     private static AEMonitorSample readSample(ByteBuf buf) {
-        long timeMs = buf.readLong();
         long tick = buf.readLong();
         long amount = buf.readLong();
         double rate = buf.readDouble();
-        return new AEMonitorSample(timeMs, tick, amount, rate);
+        return new AEMonitorSample(0L, tick, amount, rate);
     }
 
     /**

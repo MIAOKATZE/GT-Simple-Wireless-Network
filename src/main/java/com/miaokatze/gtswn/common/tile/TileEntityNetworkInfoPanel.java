@@ -500,7 +500,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
 
         // 无论是否写入新采样，都推送一次最新数据给客户端，保证 GUI 状态及时
-        sendAEMonitorDataToClients();
+        // O2-20 空屏推送门控：走势图/监控列表全空的屏不再周期推送空包——
+        // 解绑/清空后的客户端清显示由 toggle/clear 操作的即时推送负责（见各移除路径）
+        if (chartItem != null || chartFluid != null || !monitoredItems.isEmpty() || !monitoredFluids.isEmpty()) {
+            sendAEMonitorDataToClients();
+        }
     }
 
     /**
@@ -681,6 +685,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         chartFluid = null;
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+        // O2-20：解绑后立即推送空走势段清客户端显示（周期推送已被空屏门控跳过）
+        sendAEMonitorDataToClients();
     }
 
     /** 一键清除 AE 实时监控列表中的所有物品与流体监控 */
@@ -695,6 +701,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         monitoredFluids.clear();
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+        // O2-20：清空后立即推送空监控段清客户端显示（周期推送已被空屏门控跳过）
+        sendAEMonitorDataToClients();
     }
 
     /**
@@ -710,6 +718,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 monitoredItems.remove(i);
                 markDirty();
                 worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+                // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
+                sendAEMonitorDataToClients();
                 return false;
             }
         }
@@ -733,6 +743,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 monitoredFluids.remove(i);
                 markDirty();
                 worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+                // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
+                sendAEMonitorDataToClients();
                 return false;
             }
         }
