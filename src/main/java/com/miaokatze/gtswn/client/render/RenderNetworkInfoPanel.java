@@ -1303,16 +1303,6 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glColor4f(r, g, b, 1.0F);
     }
 
-    private static String sci(double value) {
-        // 极小值视为 0，避免无意义的科学计数显示
-        if (Math.abs(value) < 0.000001D) {
-            return "0";
-        }
-        // 统一委托给 FormatUtil，使 HUD 渲染与 MTE 共用同一套 E 格式科学计数法，
-        // 避免 ×10^ 与 E 两种风格混用导致显示不一致。
-        return FormatUtil.formatScientificDouble(value);
-    }
-
     private static String tr(String key) {
         return StatCollector.translateToLocal(key);
     }

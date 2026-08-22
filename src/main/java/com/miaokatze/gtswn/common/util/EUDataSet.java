@@ -159,45 +159,12 @@ public class EUDataSet {
     }
 
     /**
-     * 获取最新测量点（index size-1）。
-     *
-     * @return 最新测量点；空集返回 null
-     */
-    public Measurement getNewest() {
-        if (data.isEmpty()) {
-            return null;
-        }
-        return data.get(data.size() - 1);
-    }
-
-    /**
-     * 获取最旧测量点（index 0）。
-     *
-     * @return 最旧测量点；空集返回 null
-     */
-    public Measurement getOldest() {
-        if (data.isEmpty()) {
-            return null;
-        }
-        return data.get(0);
-    }
-
-    /**
      * 当前数据量。
      *
      * @return 数据点数量（0 ~ {@link #CAPACITY}）
      */
     public int size() {
         return data.size();
-    }
-
-    /**
-     * 是否已满（size == {@link #CAPACITY}）。
-     *
-     * @return 已满返回 true
-     */
-    public boolean isFull() {
-        return data.size() >= CAPACITY;
     }
 
     /**

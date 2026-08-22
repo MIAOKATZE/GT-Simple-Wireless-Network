@@ -36,17 +36,6 @@ public class NetworkInfoDataSet {
     public static final int WINDOW_3_MONTH = 6;
     public static final int WINDOW_1_YEAR = 7;
 
-    // 各窗口对应的时长（毫秒），仅供 GUI 显示与坐标轴标签使用，不再用于桶化压缩
-    private static final long FIVE_MIN_MS = 5L * 60L * 1000L;
-    private static final long ONE_HOUR_MS = 60L * 60L * 1000L;
-    private static final long EIGHT_HOUR_MS = 8L * 60L * 60L * 1000L;
-    private static final long DAY_MS = 24L * 60L * 60L * 1000L;
-    // v1.5.17：新增 4 个窗口对应的时长（毫秒）
-    private static final long SEVEN_DAY_MS = 7L * 24L * 60L * 60L * 1000L;
-    private static final long ONE_MONTH_MS = 28L * 24L * 60L * 60L * 1000L; // 1M = 28 天
-    private static final long THREE_MONTH_MS = 84L * 24L * 60L * 60L * 1000L; // 3M = 84 天
-    private static final long ONE_YEAR_MS = 336L * 24L * 60L * 60L * 1000L; // 1Y = 336 天 ≈ 11 个月
-
     // 8 个独立 61 点 FIFO 数据集
     private final NetworkInfoWindowSeries series5m = new NetworkInfoWindowSeries();
     private final NetworkInfoWindowSeries series1h = new NetworkInfoWindowSeries();
@@ -338,28 +327,6 @@ public class NetworkInfoDataSet {
     }
 
     /**
-     * 是否处于静默状态（≥2 点且所有 value 相同）。
-     * <p>
-     * 静默 = 所有采样点的 EU 值完全一致，但尚未达到长期静默阈值。
-     *
-     * @return true 表示静默（size ≥ 2 且值全部相同）
-     */
-    public boolean isSilent() {
-        return eutDataSet.size() >= 2 && eutDataSet.isAllSameValue();
-    }
-
-    /**
-     * 获取最近瞬时 EU/t（基于最近两个采样点的斜率）。
-     * <p>
-     * 用于 TileEntity 显示当前 EU/t 数值。
-     *
-     * @return 瞬时 EU/t；数据点 < 2 时返回 0.0
-     */
-    public double getRecentEUT() {
-        return eutDataSet.calculateRecentEUT();
-    }
-
-    /**
      * 查询指定窗口的当前样本数。
      */
     public int size(int window) {
@@ -408,31 +375,6 @@ public class NetworkInfoDataSet {
         lastSampleTick = -1L;
         // v1.5.16：清空 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）
         eutDataSet.clear();
-    }
-
-    /**
-     * 窗口常量转毫秒（仅供 GUI 显示与坐标轴标签使用）。
-     */
-    public static long windowToMillis(int window) {
-        switch (window) {
-            case WINDOW_1_HOUR:
-                return ONE_HOUR_MS;
-            case WINDOW_8_HOUR:
-                return EIGHT_HOUR_MS;
-            case WINDOW_24_HOUR:
-                return DAY_MS;
-            case WINDOW_7_DAY:
-                return SEVEN_DAY_MS;
-            case WINDOW_1_MONTH:
-                return ONE_MONTH_MS;
-            case WINDOW_3_MONTH:
-                return THREE_MONTH_MS;
-            case WINDOW_1_YEAR:
-                return ONE_YEAR_MS;
-            case WINDOW_5_MIN:
-            default:
-                return FIVE_MIN_MS;
-        }
     }
 
     /**

@@ -546,7 +546,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * <ol>
      * <li>获取锚点控制器 grid</li>
      * <li>计算 totalChannels（floodControllers + computeTotalChannels）</li>
-     * <li>计算全局 usedChannels（复用 QuantumNetworkData.computeUsedChannels）</li>
+     * <li>计算全局 usedChannels（经 QuantumNetworkStatsCache 100t 主线程统计快照取，
+     * 快照内部按全网量子节点连接 max 求和内联自算）</li>
      * <li>used > total → 启动 3 分钟爆炸倒计时并公告；剩余 2/1 分钟、10 秒处各再公告一次；
      * 期间频道恢复即取消倒计时并公告；到期仍超限才 explodeControllers（整个控制器结构 TNT 级爆炸）</li>
      * <li>used >= 95% * total 且本节点频道增长 → warnPlacer（向放置者发聊天警告）</li>

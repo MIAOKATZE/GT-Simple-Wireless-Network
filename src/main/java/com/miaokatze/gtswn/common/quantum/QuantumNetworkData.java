@@ -17,11 +17,9 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
-import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridBlock;
-import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.IMachineSet;
@@ -398,29 +396,6 @@ public class QuantumNetworkData {
                 iterator.remove();
             }
         }
-    }
-
-    /**
-     * 计算网格内所有量子节点桥接连接承载的频道总数（v1.6.8 抽取，供 TileEntityNetworkQuantumNode 复用）。
-     * <p>
-     * 口径：遍历 {@code grid.getMachines(TileEntityNetworkQuantumNode.class)}，
-     * 每节点取其所有连接 usedChannels 的 max，求和。
-     * <p>
-     * max 口径拓扑上等价于"桥接连接 usedChannels"（桥接连接恒≥邻接连接）。
-     *
-     * @param grid 锚点控制器所属网格
-     * @return 全部量子节点已用频道总和
-     */
-    public static int computeUsedChannels(IGrid grid) {
-        int used = 0;
-        for (IGridNode node : grid.getMachines(TileEntityNetworkQuantumNode.class)) {
-            int nodeMax = 0;
-            for (IGridConnection connection : node.getConnections()) {
-                nodeMax = Math.max(nodeMax, connection.getUsedChannels());
-            }
-            used += nodeMax;
-        }
-        return used;
     }
 
     private static final class FullCacheEntry {
