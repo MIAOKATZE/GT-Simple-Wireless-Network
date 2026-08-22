@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
+import com.miaokatze.gtswn.common.panel.AEMonitorWindowSeries;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -24,6 +25,12 @@ import io.netty.buffer.ByteBuf;
  * discriminator = 4（见 {@link GTSWNPacketHandler#register()}）。
  */
 public class PacketSyncAEMonitorData implements IMessage {
+
+    /**
+     * 实时监控 key 数（monitorLatest / monitorAvg300s）的防御性读取上限（B2-12）。
+     * 推导 = 2 × aeMaxMonitoredItems 上限（物品+流体，Config 钳制 1-256）= 2 × 256 = 512。
+     */
+    private static final int MAX_MONITOR_KEYS = 512;
 
     /** 目标信息屏坐标 */
     private int x, y, z;
@@ -107,6 +114,8 @@ public class PacketSyncAEMonitorData implements IMessage {
         if (hasChart) {
             chartKey = ByteBufUtils.readUTF8String(buf);
             int sampleCount = buf.readInt();
+            // 防御性上限（B2-12）：走势图样本不会超过 FIFO 容量 61（与包 6 entryCount 钳制同范式）
+            sampleCount = Math.min(sampleCount, AEMonitorWindowSeries.CAPACITY);
             for (int i = 0; i < sampleCount; i++) {
                 chartSamples.add(readSample(buf));
             }
@@ -115,6 +124,8 @@ public class PacketSyncAEMonitorData implements IMessage {
         }
 
         int latestCount = buf.readInt();
+        // 防御性上限（B2-12）：见 MAX_MONITOR_KEYS 注释（2 × 256 推导）
+        latestCount = Math.min(latestCount, MAX_MONITOR_KEYS);
         for (int i = 0; i < latestCount; i++) {
             String key = ByteBufUtils.readUTF8String(buf);
             AEMonitorSample sample = readSample(buf);
@@ -122,6 +133,8 @@ public class PacketSyncAEMonitorData implements IMessage {
         }
 
         int avgCount = buf.readInt();
+        // 防御性上限（B2-12）：与 monitorLatest 同一 key 集，同一上界
+        avgCount = Math.min(avgCount, MAX_MONITOR_KEYS);
         for (int i = 0; i < avgCount; i++) {
             String key = ByteBufUtils.readUTF8String(buf);
             double avg = buf.readDouble();
