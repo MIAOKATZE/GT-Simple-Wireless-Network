@@ -430,6 +430,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      */
     private void sampleAENetwork(long tick) {
         if (!isAEConnected()) {
+            // B2-02：断网时改为空推送——清掉客户端走势图/监控缓存，避免 GUI 无限期显示陈旧值；
+            // 服务端 WSD 历史不动，重连后由下方采样逻辑恢复
+            pushAEMonitorOffline();
             return;
         }
 
@@ -548,6 +551,36 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
         GTSWNPacketHandler.NETWORK.sendToAllAround(
             new PacketSyncAEMonitorData(xCoord, yCoord, zCoord, chartKey, chartSamples, monitorLatest, monitorAvg300s),
+            new NetworkRegistry.TargetPoint(
+                worldObj.provider.dimensionId,
+                xCoord + 0.5D,
+                yCoord + 0.5D,
+                zCoord + 0.5D,
+                64.0D));
+    }
+
+    /**
+     * AE 断网时的空推送（B2-02）：向周围客户端推送空数据集，客户端 {@code receiveAEMonitorData}
+     * 的 clear+addAll 语义会把走势图/实时监控缓存清空，避免断网后 GUI/TESR 无限期显示陈旧值。
+     * <p>
+     * 不复用 {@link #sendAEMonitorDataToClients()}：该方法在 dataSet == null 时直接返回，
+     * 且 dataSet 存在时推送的是 WSD 旧值而非空态，均达不到清显示的目的。
+     * 服务端 WSD 历史不动，重连后由 {@link #sampleAENetwork(long)} 重新采样推送恢复；
+     * 节律 = 断网期间每 {@code Config.aeSampleInterval} 一次空包，与在线推送同频。
+     */
+    private void pushAEMonitorOffline() {
+        if (worldObj == null || worldObj.isRemote) {
+            return;
+        }
+        GTSWNPacketHandler.NETWORK.sendToAllAround(
+            new PacketSyncAEMonitorData(
+                xCoord,
+                yCoord,
+                zCoord,
+                null,
+                Collections.<AEMonitorSample>emptyList(),
+                Collections.<String, AEMonitorSample>emptyMap(),
+                Collections.<String, Double>emptyMap()),
             new NetworkRegistry.TargetPoint(
                 worldObj.provider.dimensionId,
                 xCoord + 0.5D,
