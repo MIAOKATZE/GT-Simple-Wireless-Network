@@ -71,13 +71,15 @@ public class GTTierUtil {
             }
         }
 
-        int amperage = (int) Math.ceil(absEU / GTValues.V[tier]);
+        // B2-07：amperage 保持 double——(int) 强转在 absEU ≥ 4.6×10^18 EU/t 时会回绕成负数，
+        // 令「amperage > 4」过载升级误判为不过载；此处仅参与比较，无显示语义
+        double amperage = Math.ceil(absEU / GTValues.V[tier]);
         if (amperage > 4 && tier < TIER_NAMES.length - 1) {
             tier++;
-            amperage = (int) Math.ceil(absEU / GTValues.V[tier]);
+            amperage = Math.ceil(absEU / GTValues.V[tier]);
             while (amperage > 4 && tier < TIER_NAMES.length - 1) {
                 tier++;
-                amperage = (int) Math.ceil(absEU / GTValues.V[tier]);
+                amperage = Math.ceil(absEU / GTValues.V[tier]);
             }
         }
         return tier;
@@ -97,14 +99,17 @@ public class GTTierUtil {
         int tier = getGTTier(euPerTick);
         long voltage = GTValues.V[tier];
         double absEU = Math.abs(euPerTick);
-        int amperage = (int) Math.ceil(absEU / voltage);
+        // B2-07：显示层封顶 999A——(int) 强转在 absEU ≥ 4.6×10^18 EU/t 时回绕成负数，
+        // 过载判定用未截断的 amp 先行，显示值 Math.min 封顶 999 避免回绕
+        double amp = Math.ceil(absEU / voltage);
+        int amperage = (int) Math.min(amp, 999.0);
 
         boolean isOverloaded = false;
-        if (amperage > 4 && tier == TIER_NAMES.length - 1) {
+        if (amp > 4 && tier == TIER_NAMES.length - 1) {
             // 已到 MAX 级仍超 4A，截断为 4A 并标记过载
             isOverloaded = true;
             amperage = 4;
-        } else if (amperage > 4) {
+        } else if (amp > 4) {
             // 已被 getGTTier 处理过，正常情况不应再超过 4A（防御性兜底）
             isOverloaded = true;
             amperage = 4;
