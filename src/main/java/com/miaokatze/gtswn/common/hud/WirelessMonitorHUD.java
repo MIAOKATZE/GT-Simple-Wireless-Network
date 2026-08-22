@@ -187,6 +187,14 @@ public class WirelessMonitorHUD extends Gui {
 
                 // 如果 HUD 模式或拥有者发生变化，更新缓存
                 if (!newOwnerUUID.equals(cachedOwnerUUID) || displayMode != hudMode) {
+                    // B2-04：换绑定账户时清空旧 owner 的数据集与 EU 显示残留——dataSet 属于旧 owner
+                    // 的网络快照，syncedEuStr 残留会在切换瞬间短暂显示旧 owner 余额；
+                    // 仅 HUD 模式变化（同 owner）不清，与上方世界切换保留 dataSet 语义（用户确认）不冲突
+                    boolean ownerChanged = !newOwnerUUID.equals(cachedOwnerUUID);
+                    if (ownerChanged) {
+                        dataSet.clear();
+                        syncedEuStr = null;
+                    }
                     cachedOwnerUUID = newOwnerUUID;
                     displayMode = hudMode;
                     hudEnabled = hudMode > 0;
