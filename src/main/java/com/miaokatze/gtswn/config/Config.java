@@ -277,7 +277,7 @@ public class Config {
      * 同步 AE2 网络监视配置文件
      * <p>
      * 处理 AE2 信息屏的采样间隔、最大监视项数与启用开关（B2-11：移除零消费的 aeMaxSamplePoints 死配置，
-     * 实际容量由 {@code AEMonitorWindowSeries.CAPACITY} 固定 61，Forge 对配置文件残留键静默忽略）。
+     * 实际容量由 {@code WindowChain.CAPACITY} 固定 61，Forge 对配置文件残留键静默忽略）。
      * 从传入的 {@link Configuration} 中读取 {@code [ae2]} 类目，更新静态变量；
      * 如果配置有变动则自动保存。
      *

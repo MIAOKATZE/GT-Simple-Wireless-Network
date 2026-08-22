@@ -8,7 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
-import com.miaokatze.gtswn.common.panel.AEMonitorWindowSeries;
+import com.miaokatze.gtswn.common.panel.WindowChain;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -126,7 +126,7 @@ public class PacketSyncAEMonitorData implements IMessage {
             chartKey = ByteBufUtils.readUTF8String(buf);
             int sampleCount = buf.readInt();
             // 防御性上限（B2-12）：走势图样本不会超过 FIFO 容量 61（与包 6 entryCount 钳制同范式）
-            sampleCount = Math.min(sampleCount, AEMonitorWindowSeries.CAPACITY);
+            sampleCount = Math.min(sampleCount, WindowChain.CAPACITY);
             for (int i = 0; i < sampleCount; i++) {
                 chartSamples.add(readSample(buf));
             }
