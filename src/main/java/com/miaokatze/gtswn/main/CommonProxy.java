@@ -125,12 +125,11 @@ public class CommonProxy {
 
         // 注册无线 EU 监控调度器到 FMLCommonHandler 事件总线（server tick）
         // 调度器在 ServerTickEvent END phase 每 100t 统一采样所有活跃玩家的 EU 数据
+        // （v1.5.17 起调度器自驱，无 panel 侧静态字段注入——原 setMonitorScheduler 死代码已随 OPT-5 清理）
         NetworkInfoMonitorScheduler scheduler = new NetworkInfoMonitorScheduler();
         FMLCommonHandler.instance()
             .bus()
             .register(scheduler);
-        // 注入到 TileEntityNetworkInfoPanel 静态字段，供所有信息屏共享
-        TileEntityNetworkInfoPanel.setMonitorScheduler(scheduler);
         GTSimpleWirelessNetwork.LOG.info("[2/3] 无线 EU 监控调度器已注册到事件总线。");
 
         // 注册量子化控制器事件处理器（T2）：

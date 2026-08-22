@@ -397,35 +397,6 @@ public class QuantumNetworkData {
         }
     }
 
-    private QuantumNetworkData copy() {
-        QuantumNetworkData copy = new QuantumNetworkData();
-        copy.online = this.online;
-        copy.anchorDim = this.anchorDim;
-        copy.anchorX = this.anchorX;
-        copy.anchorY = this.anchorY;
-        copy.anchorZ = this.anchorZ;
-        copy.totalChannels = this.totalChannels;
-        copy.channelsInfinite = this.channelsInfinite;
-        copy.usedChannels = this.usedChannels;
-        copy.quantumNodeCount = this.quantumNodeCount;
-        copy.avgPowerUsage = this.avgPowerUsage;
-        copy.avgPowerInjection = this.avgPowerInjection;
-        copy.storedPower = this.storedPower;
-        copy.maxStoredPower = this.maxStoredPower;
-        copy.powerInfinite = this.powerInfinite;
-        copy.itemBytesUsed = this.itemBytesUsed;
-        copy.itemBytesTotal = this.itemBytesTotal;
-        copy.fluidBytesUsed = this.fluidBytesUsed;
-        copy.fluidBytesTotal = this.fluidBytesTotal;
-        copy.essentiaBytesUsed = this.essentiaBytesUsed;
-        copy.essentiaBytesTotal = this.essentiaBytesTotal;
-        copy.totalMachines = this.totalMachines;
-        for (DeviceEntry entry : this.entries) {
-            copy.entries.add(new DeviceEntry(entry.icon == null ? null : entry.icon.copy(), entry.count));
-        }
-        return copy;
-    }
-
     /**
      * 计算网格内所有量子节点桥接连接承载的频道总数（v1.6.8 抽取，供 TileEntityNetworkQuantumNode 复用）。
      * <p>

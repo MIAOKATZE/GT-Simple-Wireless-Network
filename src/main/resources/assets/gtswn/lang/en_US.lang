@@ -55,6 +55,9 @@ gtswn.ui.tooltip.param2.div10=Param2 ÷10
 # HUD Text
 # HUD reload transition placeholder text (before first sync received)
 gtswn.hud.network.status.calculating=Calculating...
+gtswn.hud.network.status.silent=Silent
+gtswn.hud.network.status.long_silent=Long-Term Silent
+gtswn.hud.network.status.lt1=<1EU
 gtswn.hud.wireless.network=Wireless Network
 gtswn.hud.eu.unit=EU
 gtswn.hud.eut.unit=EU/t
@@ -63,6 +66,8 @@ gtswn.hud.eut.unit=EU/t
 gtswn.tooltip.monitor.hud.mode.off=§cHUD: Off
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: Normal
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: Scientific
+gtswn.tooltip.monitor.owner.unbound=Unbound
+gtswn.tooltip.monitor.owner.bound=Owner: %s
 gtswn.tooltip.monitor.usage=§eRight-click§f to toggle HUD mode
 gtswn.tooltip.monitor.baubles.equip=§fCan be equipped in any §bBaubles slot§f
 # Portable mechanism description (v1.3.0, 3-line brief form)
@@ -81,6 +86,12 @@ gtswn.chat.monitor.mode.switch=§a[Portable Monitor] HUD mode switched to: %s
 gtswn.chat.monitor.mode.off=§cOff
 gtswn.chat.monitor.mode.normal=§bNormal
 gtswn.chat.monitor.mode.scientific=§eScientific
+
+# Test Coin
+gtswn.chat.testcoin.insufficient=§c[Test Coin] Insufficient wireless network energy, cannot deduct!
+gtswn.chat.testcoin.deducted=§a[Test Coin] Deducted §f%s §aEU from your wireless network
+gtswn.chat.testcoin.added=§a[Test Coin] Added §f%s §aEU to your wireless network
+gtswn.chat.testcoin.current=§7Current wireless network energy: §f%s §7EU
 
 # Wireless Energy Tap
 item.wirelessEnergyTap.name=Wireless Network Link Terminal

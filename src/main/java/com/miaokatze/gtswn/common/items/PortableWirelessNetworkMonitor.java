@@ -31,17 +31,17 @@ import cpw.mods.fml.common.Optional;
 @Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles")
 public class PortableWirelessNetworkMonitor extends Item implements IBauble {
 
-    /** NBT 键名：存储拥有者的 UUID 字符串 */
-    private static final String NBT_OWNER_UUID = "OwnerUUID";
+    /** NBT 键名：存储拥有者的 UUID 字符串（public：WirelessMonitorHUD 绑定判定/owner 提取共用，C-3） */
+    public static final String NBT_OWNER_UUID = "OwnerUUID";
 
-    /** NBT 键名：标记是否已初始化拥有者 */
-    private static final String NBT_INITIALIZED = "Initialized";
+    /** NBT 键名：标记是否已初始化拥有者（public：WirelessMonitorHUD 绑定判定共用，C-3） */
+    public static final String NBT_INITIALIZED = "Initialized";
 
     /** NBT 键名：存储拥有者的玩家名称（用于 tooltip 显示） */
     private static final String NBT_OWNER_NAME = "OwnerName";
 
-    /** NBT 键名：HUD 显示模式（0=关闭，1=常规计数，2=科学计数） */
-    private static final String NBT_HUD_MODE = "HUDMode";
+    /** NBT 键名：HUD 显示模式（0=关闭，1=常规计数，2=科学计数）（public：WirelessMonitorHUD 共用，C-3） */
+    public static final String NBT_HUD_MODE = "HUDMode";
 
     /**
      * 构造函数：初始化便携式无线网络监测终端的基础属性
@@ -234,7 +234,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
     public void addInformation(ItemStack aStack, EntityPlayer aPlayer, List<String> aList, boolean aF3_H) {
         // 确保 NBT 已初始化
         if (aStack.stackTagCompound == null) {
-            aList.add("§7未绑定拥有者");
+            aList.add("§7" + StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
         } else {
             // 检查是否已绑定
             boolean isInitialized = aStack.stackTagCompound.getBoolean(NBT_INITIALIZED);
@@ -242,7 +242,8 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
 
             if (isInitialized && ownerName != null && !ownerName.isEmpty()) {
                 // 已绑定：显示拥有者名称（亮蓝色）
-                aList.add("§b§l拥有者: " + ownerName);
+                aList.add(
+                    "§b§l" + StatCollector.translateToLocalFormatted("gtswn.tooltip.monitor.owner.bound", ownerName));
 
                 // 显示当前 HUD 模式
                 int hudMode = aStack.stackTagCompound.getInteger(NBT_HUD_MODE);
@@ -263,7 +264,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
                 aList.add(StatCollector.translateToLocal(modeKey));
             } else {
                 // 未绑定
-                aList.add("§7未绑定拥有者");
+                aList.add("§7" + StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
             }
         }
 

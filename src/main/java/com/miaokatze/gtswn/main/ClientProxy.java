@@ -56,7 +56,7 @@ public class ClientProxy extends CommonProxy {
 
         // 注：原 PlayerLoggedOutEvent 监听器用于保存便携式 HUD 历史到物品 NBT，
         // 已随 WirelessMonitorHUD.saveHistoryToItemStack 删除而移除（用户确认便携式随退出登录重置）。
-        // HUD 状态会在下次 findMonitorInInventory 时自动重置：
+        // HUD 状态会在下次背包周期扫描（scanMonitorInInventory，每 20t）时自动重置：
         // - 无监视器 → clearCache() 清空所有缓存
         // - 有监视器 → 重新初始化，靠 gap 检测和首次检测重建数据集
     }

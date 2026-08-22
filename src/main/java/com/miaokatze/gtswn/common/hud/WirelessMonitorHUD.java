@@ -177,12 +177,13 @@ public class WirelessMonitorHUD extends Gui {
 
         // 每 INVENTORY_CHECK_INTERVAL ticks 检查一次背包（在 hudEnabled 检查之前执行）
         if (currentTick - lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
-            String newOwnerUUID = findMonitorInInventory(player);
+            // 单次背包扫描（主手 → Baubles → 主背包）：owner 与 HUD 模式同源返回，绑定口径一致
+            MonitorScanResult scan = scanMonitorInInventory(player);
+            String newOwnerUUID = scan.ownerUUID;
 
-            // 如果找到了监测终端，从 NBT 读取 HUD 模式并初始化
+            // 如果找到了已绑定的监测终端，使用其 NBT 中的 HUD 模式
             if (newOwnerUUID != null && !newOwnerUUID.isEmpty()) {
-                // 获取物品的 HUD 模式
-                int hudMode = getHUDModeFromInventory(player);
+                int hudMode = scan.hudMode;
 
                 // 如果 HUD 模式或拥有者发生变化，更新缓存
                 if (!newOwnerUUID.equals(cachedOwnerUUID) || displayMode != hudMode) {
@@ -317,73 +318,47 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
-     * 遍历玩家背包查找便携监测终端
-     *
-     * @param player 玩家实体
-     * @return 拥有者 UUID，如果未找到则返回 null
-     */
-    private String findMonitorInInventory(EntityPlayer player) {
-        // 检查主手
-        ItemStack heldItem = player.getHeldItem();
-        if (heldItem != null) {
-            if (heldItem.getItem() instanceof PortableWirelessNetworkMonitor) {
-                if (isMonitorBound(heldItem)) {
-                    String uuid = heldItem.stackTagCompound.getString("OwnerUUID");
-                    return uuid;
-                }
-            }
-        }
-
-        // --- 饰品栏扫描（Baubles 不存在时安全降级） ---
-        try {
-            IInventory baubles = BaublesApi.getBaubles(player);
-            if (baubles != null) {
-                for (int i = 0; i < baubles.getSizeInventory(); i++) {
-                    ItemStack baubleStack = baubles.getStackInSlot(i);
-                    if (baubleStack != null && baubleStack.getItem() instanceof PortableWirelessNetworkMonitor) {
-                        if (isMonitorBound(baubleStack)) {
-                            return baubleStack.stackTagCompound.getString("OwnerUUID");
-                        }
-                    }
-                }
-            }
-        } catch (NoClassDefFoundError ignored) {
-            // Baubles 未安装，跳过饰品栏扫描
-        }
-
-        // 遍历背包槽位（0-35）
-        for (int i = 0; i < player.inventory.mainInventory.length; i++) {
-            ItemStack stack = player.inventory.mainInventory[i];
-            if (stack != null) {
-                if (stack.getItem() instanceof PortableWirelessNetworkMonitor) {
-                    if (isMonitorBound(stack)) {
-                        String uuid = stack.stackTagCompound.getString("OwnerUUID");
-                        return uuid;
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
-    /**
-     * 遍历玩家背包查找便携监测终端（返回物品栈版本）
+     * 单次背包扫描的复合结果（合并原三重同构扫描，见《全局调查-优化建议》OPT-7）。
      * <p>
-     * 与 {@link #findMonitorInInventory(EntityPlayer)} 扫描顺序一致：
-     * 主手 → Baubles 饰品栏 → 背包槽位（0-35）。
-     * 用于 NBT 历史读写时需要操作具体物品栈的场景。
+     * 主手 → Baubles 饰品栏 → 主背包一次遍历，返回第一个「已绑定」便携监测终端的
+     * 物品栈、拥有者 UUID 与 HUD 模式；未找到已绑定终端时 stack 为 null、hudMode 为 0。
+     */
+    private static final class MonitorScanResult {
+
+        /** 未找到已绑定监测终端时的空结果（hudMode=0 与既有默认语义一致） */
+        static final MonitorScanResult NONE = new MonitorScanResult(null, null, 0);
+
+        /** 已绑定的监测终端物品栈（未找到为 null，非 null 即等价于 bound=true） */
+        final ItemStack stack;
+
+        /** 拥有者 UUID 字符串（仅已绑定时非 null） */
+        final String ownerUUID;
+
+        /** 监测终端 NBT 中的 HUD 显示模式（0=关闭，1=常规计数，2=科学计数） */
+        final int hudMode;
+
+        MonitorScanResult(ItemStack stack, String ownerUUID, int hudMode) {
+            this.stack = stack;
+            this.ownerUUID = ownerUUID;
+            this.hudMode = hudMode;
+        }
+    }
+
+    /**
+     * 单次遍历背包查找「已绑定」的便携监测终端（主手 → Baubles 饰品栏 → 主背包）。
+     * <p>
+     * 合并原 findMonitorInInventory / findMonitorStackInInventory / getHUDModeFromInventory
+     * 三重同构扫描（每 20t 最多三遍背包遍历 → 一次遍历返回复合结果，调用方各取所需）；
+     * HUD 模式与拥有者提取统一先过 {@link #isMonitorBound(ItemStack)}，与 owner 判定口径一致（BUG-8）。
      *
      * @param player 玩家实体
-     * @return 已绑定的监视器物品栈，未找到返回 null
+     * @return 第一个已绑定监测终端的复合结果；未找到返回 {@link MonitorScanResult#NONE}
      */
-    private ItemStack findMonitorStackInInventory(EntityPlayer player) {
+    private MonitorScanResult scanMonitorInInventory(EntityPlayer player) {
         // 检查主手
-        ItemStack heldItem = player.getHeldItem();
-        if (heldItem != null && heldItem.getItem() instanceof PortableWirelessNetworkMonitor) {
-            if (isMonitorBound(heldItem)) {
-                return heldItem;
-            }
+        MonitorScanResult result = inspectMonitorStack(player.getHeldItem());
+        if (result != null) {
+            return result;
         }
 
         // --- 饰品栏扫描（Baubles 不存在时安全降级） ---
@@ -391,11 +366,9 @@ public class WirelessMonitorHUD extends Gui {
             IInventory baubles = BaublesApi.getBaubles(player);
             if (baubles != null) {
                 for (int i = 0; i < baubles.getSizeInventory(); i++) {
-                    ItemStack baubleStack = baubles.getStackInSlot(i);
-                    if (baubleStack != null && baubleStack.getItem() instanceof PortableWirelessNetworkMonitor) {
-                        if (isMonitorBound(baubleStack)) {
-                            return baubleStack;
-                        }
+                    result = inspectMonitorStack(baubles.getStackInSlot(i));
+                    if (result != null) {
+                        return result;
                     }
                 }
             }
@@ -405,70 +378,46 @@ public class WirelessMonitorHUD extends Gui {
 
         // 遍历背包槽位（0-35）
         for (int i = 0; i < player.inventory.mainInventory.length; i++) {
-            ItemStack stack = player.inventory.mainInventory[i];
-            if (stack != null && stack.getItem() instanceof PortableWirelessNetworkMonitor) {
-                if (isMonitorBound(stack)) {
-                    return stack;
-                }
+            result = inspectMonitorStack(player.inventory.mainInventory[i]);
+            if (result != null) {
+                return result;
             }
         }
 
-        return null;
+        return MonitorScanResult.NONE;
     }
 
     /**
-     * 检查监测终端是否已绑定
+     * 检查单个槽位：是「已绑定」的便携监测终端则打包复合结果（物品栈 + 拥有者 UUID + HUD 模式），
+     * 否则返回 null 继续扫描后续槽位（未绑定监视器不参与 HUD 模式判定，BUG-8）。
+     */
+    private static MonitorScanResult inspectMonitorStack(ItemStack stack) {
+        if (stack == null || !(stack.getItem() instanceof PortableWirelessNetworkMonitor)) {
+            return null;
+        }
+        if (!isMonitorBound(stack)) {
+            return null;
+        }
+        return new MonitorScanResult(
+            stack,
+            stack.stackTagCompound.getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID),
+            stack.stackTagCompound.getInteger(PortableWirelessNetworkMonitor.NBT_HUD_MODE));
+    }
+
+    /**
+     * 检查监测终端是否已绑定。
+     * <p>
+     * NBT 键名引用物品侧常量，避免 "Initialized"/"OwnerUUID" 字面量双处硬编码（C-3）。
      *
      * @param stack 物品堆栈
      * @return 是否已绑定
      */
-    private boolean isMonitorBound(ItemStack stack) {
+    private static boolean isMonitorBound(ItemStack stack) {
         if (stack.stackTagCompound == null) {
             return false;
         }
-        return stack.stackTagCompound.getBoolean("Initialized") && stack.stackTagCompound.hasKey("OwnerUUID");
-    }
-
-    /**
-     * 从背包中获取监测终端的 HUD 模式
-     */
-    private int getHUDModeFromInventory(EntityPlayer player) {
-        // 检查主手
-        ItemStack heldItem = player.getHeldItem();
-        if (heldItem != null && heldItem.getItem() instanceof PortableWirelessNetworkMonitor) {
-            if (heldItem.stackTagCompound != null) {
-                return heldItem.stackTagCompound.getInteger("HUDMode");
-            }
-        }
-
-        // --- 饰品栏扫描（Baubles 不存在时安全降级） ---
-        try {
-            IInventory baublesInv = BaublesApi.getBaubles(player);
-            if (baublesInv != null) {
-                for (int i = 0; i < baublesInv.getSizeInventory(); i++) {
-                    ItemStack baubleStack = baublesInv.getStackInSlot(i);
-                    if (baubleStack != null && baubleStack.getItem() instanceof PortableWirelessNetworkMonitor) {
-                        if (baubleStack.stackTagCompound != null) {
-                            return baubleStack.stackTagCompound.getInteger("HUDMode");
-                        }
-                    }
-                }
-            }
-        } catch (NoClassDefFoundError ignored) {
-            // Baubles 未安装，跳过饰品栏扫描
-        }
-
-        // 遍历背包槽位
-        for (int i = 0; i < player.inventory.mainInventory.length; i++) {
-            ItemStack stack = player.inventory.mainInventory[i];
-            if (stack != null && stack.getItem() instanceof PortableWirelessNetworkMonitor) {
-                if (stack.stackTagCompound != null) {
-                    return stack.stackTagCompound.getInteger("HUDMode");
-                }
-            }
-        }
-
-        return 0;
+        return stack.stackTagCompound.getBoolean(PortableWirelessNetworkMonitor.NBT_INITIALIZED)
+            && stack.stackTagCompound.hasKey(PortableWirelessNetworkMonitor.NBT_OWNER_UUID);
     }
 
     /**
@@ -583,16 +532,25 @@ public class WirelessMonitorHUD extends Gui {
         if (eut == 0.0) {
             // 长期静默：静默模式持续 ≥ 300s（数据集压缩为 2 个数据点）
             if (dataSet.isLongTermSilent()) {
-                return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": §f0 §bEU/t (§7长期静默§b)";
+                return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
+                    + ": §f0 §bEU/t (§7"
+                    + StatCollector.translateToLocal("gtswn.hud.network.status.long_silent")
+                    + "§b)";
             }
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": §f0 §bEU/t (§7静默§b)";
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
+                + ": §f0 §bEU/t (§7"
+                + StatCollector.translateToLocal("gtswn.hud.network.status.silent")
+                + "§b)";
         }
 
         double absEut = Math.abs(eut);
 
         // 小于 1 EU/t：变化过小，近似无变化
         if (absEut < 1.0) {
-            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status") + ": §f0 §bEU/t (§7<1EU§b)";
+            return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")
+                + ": §f0 §bEU/t (§7"
+                + StatCollector.translateToLocal("gtswn.hud.network.status.lt1")
+                + "§b)";
         }
 
         // 正常显示：数值 + GT 电压等级
@@ -644,12 +602,22 @@ public class WirelessMonitorHUD extends Gui {
 
         double eut = dataSet.calculateRecentEUT();
         if (eut == 0.0) {
-            return "\u00A7b" + statusLabel + ": \u00A7f0 \u00A7b" + eutUnit + " (\u00A77静默\u00A7b)";
+            return "\u00A7b" + statusLabel
+                + ": \u00A7f0 \u00A7b"
+                + eutUnit
+                + " (\u00A77"
+                + StatCollector.translateToLocal("gtswn.hud.network.status.silent")
+                + "\u00A7b)";
         }
 
         double absEut = Math.abs(eut);
         if (absEut < 1.0) {
-            return "\u00A7b" + statusLabel + ": \u00A7f0 \u00A7b" + eutUnit + " (\u00A77<1EU\u00A7b)";
+            return "\u00A7b" + statusLabel
+                + ": \u00A7f0 \u00A7b"
+                + eutUnit
+                + " (\u00A77"
+                + StatCollector.translateToLocal("gtswn.hud.network.status.lt1")
+                + "\u00A7b)";
         }
 
         // displayMode==2 科学计数（与 EU 总量判断一致），否则常规计数

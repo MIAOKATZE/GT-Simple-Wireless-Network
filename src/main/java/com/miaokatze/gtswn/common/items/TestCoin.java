@@ -8,7 +8,10 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
+
+import com.miaokatze.gtswn.common.util.FormatUtil;
 
 import gregtech.common.misc.WirelessNetworkManager;
 
@@ -64,46 +67,29 @@ public class TestCoin extends Item {
             BigInteger deduction = BigInteger.valueOf(EU_AMOUNT);
             if (currentEU.compareTo(deduction) < 0) {
                 // 能量不足，无法扣除
-                aPlayer.addChatMessage(new ChatComponentText("§c[测试硬币] 无线电网能量不足，无法扣除！"));
+                aPlayer.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.testcoin.insufficient")));
                 return aStack;
             }
             newEU = currentEU.subtract(deduction);
-            aPlayer.addChatMessage(new ChatComponentText("§a[测试硬币] 已从您的无线电网扣除 §f" + EU_AMOUNT + " §aEU"));
+            aPlayer.addChatMessage(
+                new ChatComponentText(
+                    StatCollector.translateToLocalFormatted("gtswn.chat.testcoin.deducted", EU_AMOUNT)));
         } else {
             // 普通右键：增加 EU
             newEU = currentEU.add(BigInteger.valueOf(EU_AMOUNT));
-            aPlayer.addChatMessage(new ChatComponentText("§a[测试硬币] 已向您的无线电网添加 §f" + EU_AMOUNT + " §aEU"));
+            aPlayer.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.chat.testcoin.added", EU_AMOUNT)));
         }
 
         // 更新无线电网能量
         WirelessNetworkManager.setUserEU(playerUUID, newEU);
 
         // 显示当前总能量
-        String euFormatted = formatBigInteger(newEU);
-        aPlayer.addChatMessage(new ChatComponentText("§7当前无线电网能量: §f" + euFormatted + " §7EU"));
+        String euFormatted = FormatUtil.formatBigInteger(newEU);
+        aPlayer.addChatMessage(
+            new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.chat.testcoin.current", euFormatted)));
 
         return aStack;
-    }
-
-    /**
-     * 格式化 BigInteger 为带逗号分隔的字符串
-     */
-    private String formatBigInteger(BigInteger value) {
-        if (value == null) {
-            return "0";
-        }
-
-        String str = value.toString();
-        StringBuilder result = new StringBuilder();
-        int length = str.length();
-
-        for (int i = 0; i < length; i++) {
-            if (i > 0 && (length - i) % 3 == 0) {
-                result.append(",");
-            }
-            result.append(str.charAt(i));
-        }
-
-        return result.toString();
     }
 }

@@ -34,7 +34,6 @@ import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
-import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -128,23 +127,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     /** 上次已知采样 tick（轮询时检测新数据用） */
     private long lastKnownSampleTick = -1L;
-
-    /**
-     * 调度器单例（CommonProxy.init 时注入）。
-     * <p>
-     * v1.5.17 起调度器自驱（请求驱动 + 5 分钟超时），panel 不再直接引用此字段，
-     * 保留仅为 CommonProxy 兼容（CommonProxy.init 仍调用 setMonitorScheduler 注入）。
-     */
-    private static NetworkInfoMonitorScheduler monitorScheduler;
-
-    /**
-     * 注入调度器实例（由 CommonProxy.init 调用）。
-     * <p>
-     * v1.5.17 起 panel 不再直接调用调度器的 register/unregister，此方法仅为兼容 CommonProxy 保留。
-     */
-    public static void setMonitorScheduler(NetworkInfoMonitorScheduler scheduler) {
-        monitorScheduler = scheduler;
-    }
 
     // === AE 标签页相关字段 ===
 

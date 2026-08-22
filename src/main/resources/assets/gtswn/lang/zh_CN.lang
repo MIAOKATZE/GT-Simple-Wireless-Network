@@ -55,6 +55,9 @@ gtswn.ui.tooltip.param2.div10=参数2 ÷10
 # HUD Text
 # HUD 重载过渡期显示文本（首次接收同步前的占位状态）
 gtswn.hud.network.status.calculating=计算中...
+gtswn.hud.network.status.silent=静默
+gtswn.hud.network.status.long_silent=长期静默
+gtswn.hud.network.status.lt1=<1EU
 gtswn.hud.wireless.network=无线电网
 gtswn.hud.eu.unit=EU
 gtswn.hud.eut.unit=EU/t
@@ -63,6 +66,8 @@ gtswn.hud.eut.unit=EU/t
 gtswn.tooltip.monitor.hud.mode.off=§cHUD: 关闭
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: 常规计数
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: 科学计数
+gtswn.tooltip.monitor.owner.unbound=未绑定拥有者
+gtswn.tooltip.monitor.owner.bound=拥有者: %s
 gtswn.tooltip.monitor.usage=§e右键§f切换 HUD 模式
 gtswn.tooltip.monitor.baubles.equip=§f可在 §bBaubles 饰品栏§f任意槽位装备
 # 便携式机制说明（v1.3.0 新增，3 行简略形式）
@@ -81,6 +86,12 @@ gtswn.chat.monitor.mode.switch=§a[便携监测终端] HUD 模式已切换为: %
 gtswn.chat.monitor.mode.off=§c关闭
 gtswn.chat.monitor.mode.normal=§b常规计数
 gtswn.chat.monitor.mode.scientific=§e科学计数
+
+# 测试硬币
+gtswn.chat.testcoin.insufficient=§c[测试硬币] 无线电网能量不足，无法扣除！
+gtswn.chat.testcoin.deducted=§a[测试硬币] 已从您的无线电网扣除 §f%s §aEU
+gtswn.chat.testcoin.added=§a[测试硬币] 已向您的无线电网添加 §f%s §aEU
+gtswn.chat.testcoin.current=§7当前无线电网能量: §f%s §7EU
 
 # Wireless Energy Tap
 item.wirelessEnergyTap.name=无线网络链路终端
