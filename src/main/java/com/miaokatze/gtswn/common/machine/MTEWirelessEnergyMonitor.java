@@ -82,7 +82,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
     // 红石控制相关
     private int redstoneMode = 0; // 0=关闭, 1=正向, 2=反向, 3=正向区间, 4=反向区间
-    /** 锚定参数模式：0=电网电量（BigInteger），1=电网状态数值（EU/t，double→long 截断） */
+    /** 锚定参数模式：0=电网电量（BigInteger），1=电网状态数值（EU/t，double→long 截断），2=实时 EU/t */
     private int anchorMode = 0;
     private BigInteger param1Value = BigInteger.ZERO; // 参数1数值
     private BigInteger param2Value = BigInteger.ZERO; // 参数2数值
@@ -211,6 +211,45 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     }
 
     /**
+     * 红石模式判定纯函数（O2-11：getGeneralRS / updateRedstoneOutput / loadNBTData
+     * 三处同构 switch 收敛单源，零行为变更）。
+     * <p>
+     * v1.2.1 曾在三份拷贝中各自打补丁修滞后状态机——收敛后此处为唯一权威实现。
+     * <ul>
+     * <li>模式 1/2：电量高于/低于参数1时输出</li>
+     * <li>模式 3：正向区间滞后——未输出看参数1（开启阈值），已输出看参数2（&gt;= 保持，低于才取消）</li>
+     * <li>模式 4：反向区间滞后——未输出看参数2（开启阈值），已输出看参数1（&lt;= 保持，高于才取消）</li>
+     * <li>模式 0/未知：不输出</li>
+     * </ul>
+     *
+     * @param mode          红石模式（0=关闭，1=正向，2=反向，3=正向区间，4=反向区间）
+     * @param currentEU     当前锚定值（anchorMode 决定数据源）
+     * @param param1        参数1（BigInteger）
+     * @param param2        参数2（BigInteger）
+     * @param currentOutput 当前输出状态（滞后模式的状态机输入；NBT 加载站点传 false，
+     *                      即按"未输出"状态判定，现状语义）
+     * @return 是否应输出红石信号
+     */
+    private static boolean computeRedstoneOutput(int mode, BigInteger currentEU, BigInteger param1, BigInteger param2,
+        boolean currentOutput) {
+        switch (mode) {
+            case 1: // 正向：电量 > 参数1 时输出
+                return currentEU.compareTo(param1) > 0;
+            case 2: // 反向：电量 < 参数1 时输出
+                return currentEU.compareTo(param1) < 0;
+            case 3: // 正向区间：>参数1 开启，&lt;参数2 取消（滞后状态机）
+                // 未输出时看开启阈值（参数1），已输出时看保持条件（>= 参数2）
+                return currentOutput ? currentEU.compareTo(param2) >= 0 : currentEU.compareTo(param1) > 0;
+            case 4: // 反向区间：&lt;参数2 开启，&gt;参数1 取消（滞后状态机）
+                // 未输出时看开启阈值（参数2），已输出时看保持条件（<= 参数1）
+                return currentOutput ? currentEU.compareTo(param1) <= 0 : currentEU.compareTo(param2) < 0;
+            case 0: // 关闭
+            default:
+                return false;
+        }
+    }
+
+    /**
      * 获取通用红石信号强度
      */
     @Override
@@ -219,44 +258,11 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             return 0;
         }
 
-        // 根据当前锚定值和参数判断是否输出信号（anchorMode 决定数据源）
+        // 根据当前锚定值和参数判断是否输出信号（anchorMode 决定数据源；
+        // getAnchorValue 三个分支均返回非 null，原 null 守卫为死码已删）
         BigInteger currentEU = getAnchorValue();
-        if (currentEU == null) {
-            return 0;
-        }
 
-        boolean shouldOutput = false;
-
-        switch (redstoneMode) {
-            case 1: // 正向：电量 > 参数1 时输出
-                shouldOutput = currentEU.compareTo(param1Value) > 0;
-                break;
-            case 2: // 反向：电量 < 参数1 时输出
-                shouldOutput = currentEU.compareTo(param1Value) < 0;
-                break;
-            case 3: // 正向区间：>参数1输出, <参数2取消（滞后）
-                // v1.2.1 修复：与 updateRedstoneOutput 保持一致的滞后状态机
-                if (!redstoneOutput) {
-                    // 当前未输出，检查是否大于参数1（开启阈值）
-                    shouldOutput = currentEU.compareTo(param1Value) > 0;
-                } else {
-                    // 当前已输出，检查是否仍 >= 参数2（保持条件，低于参数2才取消）
-                    shouldOutput = currentEU.compareTo(param2Value) >= 0;
-                }
-                break;
-            case 4: // 反向区间：>参数1取消, <参数2输出（滞后）
-                // v1.2.1 修复：与 updateRedstoneOutput 保持一致的滞后状态机
-                if (!redstoneOutput) {
-                    // 当前未输出，检查是否小于参数2（开启阈值）
-                    shouldOutput = currentEU.compareTo(param2Value) < 0;
-                } else {
-                    // 当前已输出，检查是否仍 <= 参数1（保持条件，高于参数1才取消）
-                    shouldOutput = currentEU.compareTo(param1Value) <= 0;
-                }
-                break;
-            default:
-                shouldOutput = false;
-        }
+        boolean shouldOutput = computeRedstoneOutput(redstoneMode, currentEU, param1Value, param2Value, redstoneOutput);
 
         // 如果应该输出，返回15强度；否则返回0
         return shouldOutput ? (byte) 15 : (byte) 0;
@@ -266,37 +272,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private void updateRedstoneOutput() {
         // 锚定值：anchorMode=0 时为电网电量，anchorMode=1 时为 EU/t（long 截断）
         BigInteger currentEU = getAnchorValue();
-        boolean newOutput = false;
-
-        switch (redstoneMode) {
-            case 0: // 关闭：不输出红石信号
-                newOutput = false;
-                break;
-            case 1: // 正向：电网电量大于参数1时输出红石信号
-                newOutput = currentEU.compareTo(param1Value) > 0;
-                break;
-            case 2: // 反向：电网电量小于参数1时输出红石信号
-                newOutput = currentEU.compareTo(param1Value) < 0;
-                break;
-            case 3: // 正向区间：大于参数1时输出，必须小于参数2才能取消
-                if (!redstoneOutput) {
-                    // 当前未输出，检查是否大于参数1
-                    newOutput = currentEU.compareTo(param1Value) > 0;
-                } else {
-                    // 当前已输出，检查是否小于参数2
-                    newOutput = currentEU.compareTo(param2Value) >= 0;
-                }
-                break;
-            case 4: // 反向区间：大于参数1时取消，必须小于参数2才能输出
-                if (!redstoneOutput) {
-                    // 当前未输出，检查是否小于参数2
-                    newOutput = currentEU.compareTo(param2Value) < 0;
-                } else {
-                    // 当前已输出，检查是否大于参数1
-                    newOutput = currentEU.compareTo(param1Value) <= 0;
-                }
-                break;
-        }
+        boolean newOutput = computeRedstoneOutput(redstoneMode, currentEU, param1Value, param2Value, redstoneOutput);
 
         // 如果红石状态发生变化，更新输出
         if (newOutput != redstoneOutput) {
@@ -1352,25 +1328,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
         // 重新计算当前的红石输出状态（基于加载的参数和当前锚定值）
         // v1.2.1 修复：模式3/4 改为与 updateRedstoneOutput 一致的滞后逻辑（加载时 redstoneOutput 默认 false，即"未输出"状态）
+        // O2-11：收敛到 computeRedstoneOutput 纯函数，滞后模式传 false（未输出状态判定，现状语义；
+        // 滞后带重载闪断的行为修正 O2-12 另行独立 commit）
         BigInteger currentEU = getAnchorValue();
         if (currentEU != null && redstoneMode > 0) {
             // 根据红石模式和参数重新判断是否应该输出
-            switch (redstoneMode) {
-                case 1: // 正向：电量 > 参数1
-                    redstoneOutput = currentEU.compareTo(param1Value) > 0;
-                    break;
-                case 2: // 反向：电量 < 参数1
-                    redstoneOutput = currentEU.compareTo(param1Value) < 0;
-                    break;
-                case 3: // 正向区间：使用滞后逻辑（加载时视为未输出状态）
-                    redstoneOutput = currentEU.compareTo(param1Value) > 0;
-                    break;
-                case 4: // 反向区间：使用滞后逻辑（加载时视为未输出状态）
-                    redstoneOutput = currentEU.compareTo(param2Value) < 0;
-                    break;
-                default:
-                    redstoneOutput = false;
-            }
+            redstoneOutput = computeRedstoneOutput(redstoneMode, currentEU, param1Value, param2Value, false);
         } else {
             // 如果无法获取电网能量，使用保存的状态
             redstoneOutput = savedRedstoneOutput;
