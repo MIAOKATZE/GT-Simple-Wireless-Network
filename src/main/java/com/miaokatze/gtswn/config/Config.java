@@ -97,6 +97,11 @@ public class Config {
     // 默认 10 / Default 10；v1.6.0 硬编码为 16 / Hardcoded to 16 in v1.6.0
     public static double quantumNodeIdlePowerUsage = 10.0D;
 
+    // 量子终端装配端是否枚举全量字段（O2-18）
+    // GUI（v1.6.9 紧凑化 + O2-17 短回包）只消费 9 个字段；能量四项/存储字节/设备列表枚举
+    // 为死负载，每 100t 每锚点执行一次。默认 false 跳过（代码保留不删，审计模式仍可开启）。
+    public static boolean quantumTerminalAssembleFullData = false;
+
     // 性能审计开关 / Performance audit switch (v1.6.19 新增)
     // 默认 false：完全静默；开启后按 performanceAuditIntervalMinutes（默认 10 分钟）向日志输出 TPS/本mod每tick耗时/交互计数报告
     // Default false: fully silent; when enabled, reports TPS/mod mspt/interaction counts per
@@ -326,6 +331,16 @@ public class Config {
             "ME 网络量子节点闲置功耗（AE/t）/ ME Network Quantum Node idle power usage (AE/t)\n"
                 + "每个已桥接的量子节点都会给锚点所属 ME 网络增加此功耗 / Each bridged quantum node adds this power draw to the anchor ME network\n"
                 + "默认 10 / Default 10；v1.6.0 硬编码为 16 / Hardcoded to 16 in v1.6.0");
+
+        // 量子终端装配端是否枚举全量字段 / Assemble full quantum terminal data (O2-18)
+        quantumTerminalAssembleFullData = configuration.getBoolean(
+            "quantumTerminalAssembleFullData",
+            CATEGORY_AE2,
+            quantumTerminalAssembleFullData,
+            "量子终端装配端是否枚举 GUI 已不消费的能量/存储/设备列表字段 / "
+                + "Assemble energy/storage/device-list fields no longer consumed by the compact GUI\n"
+                + "false = 跳过死负载枚举（默认，推荐）/ false = skip dead-load enumeration (default, recommended)\n"
+                + "true = 审计模式保留诊断价值，未来 GUI 回扩时使用 / true = audit mode for diagnostics or future GUI expansion");
 
         if (configuration.hasChanged()) {
             configuration.save();

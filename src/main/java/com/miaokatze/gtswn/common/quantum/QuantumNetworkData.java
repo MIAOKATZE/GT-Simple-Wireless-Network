@@ -17,6 +17,7 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridBlock;
@@ -276,6 +277,16 @@ public class QuantumNetworkData {
         data.quantumNodeCount = stats.quantumNodeCount;
 
         // 7-9. AE2 能量/存储/设备枚举读取（v1.6.23：归入 ae2.gridQuery 切片，区分 AE2 侧耗时）
+        // O2-18：GUI（v1.6.9 紧凑化 + O2-17 短回包）已不消费这些字段，Config 门控默认跳过
+        // （每 100t 每锚点免一次能量/存储/设备全枚举）；代码保留不物理删除——审计模式
+        // （quantumTerminalAssembleFullData=true）保留诊断价值，未来 GUI 回扩时要用
+        if (!Config.quantumTerminalAssembleFullData) {
+            data.entries = Collections.unmodifiableList(data.entries);
+            FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data));
+            fullAssemblies++;
+            fullAssemblyNanos += System.nanoTime() - assemblyStarted;
+            return data;
+        }
         long qT0 = PerformanceAudit.startSlice();
         try {
             // 7. 能量四项（IEnergyGrid 缓存，AE2 保证该缓存恒存在，仍做 null 防御）
