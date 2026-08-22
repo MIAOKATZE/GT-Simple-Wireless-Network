@@ -596,10 +596,12 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * <ul>
      * <li>displayMode (IntSyncValue, C2S) - 显示模式</li>
      * <li>redstoneMode (IntSyncValue, C2S) - 红石模式</li>
+     * <li>anchorMode (IntSyncValue, C2S) - 锚定参数模式</li>
      * <li>param1Value (LongSyncValue, C2S) - 参数1数值</li>
      * <li>param2Value (LongSyncValue, C2S) - 参数2数值</li>
-     * <li>cachedModeText/euText/statusText/redstoneModeText/redstoneOutputText/modeDescText (StringSyncValue)
-     * - 6 个动态显示文本</li>
+     * <li>cachedModeText/cachedEUText/cachedStatusText/cachedRealtimeStatusText/
+     * cachedRedstoneModeText/cachedRedstoneOutputText/cachedModeDescText (StringSyncValue)
+     * - 7 个动态显示文本</li>
      * </ul>
      *
      * @param guiData     GUI 位置数据

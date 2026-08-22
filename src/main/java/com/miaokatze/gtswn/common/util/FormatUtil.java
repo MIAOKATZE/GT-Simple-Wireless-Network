@@ -377,11 +377,11 @@ public class FormatUtil {
     /**
      * 格式化 BigInteger 为易读字符串
      * <p>
-     * 来自 {@code PortableWirelessNetworkMonitor#formatBigInteger}。
      * 与 {@link #formatNormal(BigInteger)} 的差异：小数值（&lt; 1,000,000）直接 toString 不加分隔符，
      * 大数值才使用逗号分隔。
      * <p>
-     * 注：原方法在 PortableWirelessNetworkMonitor 中未被调用（死代码），提取至此以备复用。
+     * 注：提取自原 {@code PortableWirelessNetworkMonitor} 的私有实现（提取时在该类中为死代码）；
+     * 该原方法与 {@code TestCoin} 中的历史重复副本均已删除，现由本方法统一提供。
      *
      * @param value 要格式化的 BigInteger 值
      * @return 小数值直接 toString，大数值带逗号分隔；null 返回 "0"

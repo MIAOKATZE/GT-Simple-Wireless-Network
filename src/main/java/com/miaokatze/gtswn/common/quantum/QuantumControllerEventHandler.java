@@ -51,7 +51,7 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * <ul>
  * <li>{@link #onPlayerInteract}：全量拦截对已量子化控制器的右键交互（D2-A），
  * 手持量子终端时放行（手势由物品 onItemUseFirst 处理）</li>
- * <li>{@link #onBreakSpeed}：量子化控制器与量子节点挖掘减速至等效硬度 500（黑曜石×10）</li>
+ * <li>{@link #onBreakSpeed}：量子化控制器与量子节点挖掘减速至等效硬度 1000（黑曜石×20）</li>
  * <li>{@link #onBlockPlace}：方块放置时即时重算邻接已量子化控制器的连接过滤
  * （1.7.10 无 NeighborNotifyEvent，以 PlaceEvent 覆盖主路径）</li>
  * <li>{@link #onBlockBreak}：已量子化控制器被拆时出册清理（整结构逐块拆除逐块出册）</li>
