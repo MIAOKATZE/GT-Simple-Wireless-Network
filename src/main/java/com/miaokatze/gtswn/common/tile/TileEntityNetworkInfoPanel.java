@@ -122,6 +122,15 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** 上次已知采样 tick（轮询时检测新数据用） */
     private long lastKnownSampleTick = -1L;
 
+    /**
+     * O2-28：owner 数据集解析缓存（ownerUUID 绑定不变时引用稳定，
+     * 免 updateEntity 每 tick 2 次 UUID.toString + mapStorage 查询 + getOrCreate HashMap）。
+     * store 侧 remove/cleanupStale 推进 revision，缓存据此失效重解析。
+     */
+    private NetworkInfoDataStore cachedOwnerDataStore = null;
+    private NetworkInfoDataSet cachedOwnerDataSet = null;
+    private int cachedOwnerDataSetRevision = -1;
+
     // === AE 标签页相关字段 ===
 
     /** 当前标签页：0=EU网络, 1=AE走势图, 2=AE实时监控 */
@@ -799,6 +808,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             ownerUUID = uuid;
             ownerName = name == null ? "" : name;
             needsDataRefresh = true;
+            invalidateOwnerDataSetCache();
             markDirty();
         }
     }
@@ -819,17 +829,34 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /**
      * 获取该信息屏所属玩家的全局数据集（统一使用 overworld 数据存储）
      * 仅服务端调用，客户端返回 null
-     * 
+     * <p>
+     * O2-28：ownerUUID 绑定不变时数据集引用稳定，缓存解析结果；
+     * store 侧 remove/cleanupStale 推进 revision 时缓存失效，重新 getOrCreate
+     * 取活引用（cleanup_info_data 命令清理后从空数据集重启的语义不变）。
+     *
      * @return NetworkInfoDataSet 或 null
      */
     private NetworkInfoDataSet getOwnerDataSet() {
         if (worldObj == null || worldObj.isRemote || ownerUUID == null) return null;
+        if (cachedOwnerDataSet != null && cachedOwnerDataStore != null
+            && cachedOwnerDataSetRevision == cachedOwnerDataStore.getRevision()) {
+            return cachedOwnerDataSet;
+        }
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) return null;
         World overworld = server.worldServerForDimension(0);
         if (overworld == null) return null;
-        return NetworkInfoDataStore.get(overworld)
-            .getOrCreate(ownerUUID.toString());
+        cachedOwnerDataStore = NetworkInfoDataStore.get(overworld);
+        cachedOwnerDataSet = cachedOwnerDataStore.getOrCreate(ownerUUID.toString());
+        cachedOwnerDataSetRevision = cachedOwnerDataStore.getRevision();
+        return cachedOwnerDataSet;
+    }
+
+    /** 失效 O2-28 的 owner 数据集解析缓存（ownerUUID 变化点调用）。 */
+    private void invalidateOwnerDataSetCache() {
+        cachedOwnerDataStore = null;
+        cachedOwnerDataSet = null;
+        cachedOwnerDataSetRevision = -1;
     }
 
     public BigInteger getCachedEu() {
@@ -1217,6 +1244,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             } catch (IllegalArgumentException e) {
                 ownerUUID = null;
             }
+            invalidateOwnerDataSetCache();
         }
         ownerName = tag.getString("OwnerName");
         if (tag.hasKey("lastAESampleTick")) {

@@ -26,6 +26,14 @@ public class NetworkInfoDataStore extends WorldSavedData {
      */
     private final Map<String, NetworkInfoDataSet> dataSets = new HashMap<>();
 
+    /**
+     * 数据集结构修订号（O2-28）：{@link #remove} / {@link #cleanupStale} 实际移除条目时 +1。
+     * <p>
+     * 供信息屏 TE 侧的 owner 数据集引用缓存校验——revision 变化说明缓存引用可能已从
+     * 本映射剥离，需重新走 {@link #getOrCreate} 取活引用，保证命令清理语义不变。
+     */
+    private int revision = 0;
+
     public NetworkInfoDataStore(String name) {
         super(name);
     }
@@ -89,10 +97,16 @@ public class NetworkInfoDataStore extends WorldSavedData {
      */
     public boolean remove(String id) {
         if (dataSets.remove(id) != null) {
+            revision++;
             markDirty();
             return true;
         }
         return false;
+    }
+
+    /** 获取数据集结构修订号（O2-28：remove/cleanupStale 移除条目时推进，供 TE 缓存校验）。 */
+    public int getRevision() {
+        return revision;
     }
 
     /**
@@ -117,6 +131,7 @@ public class NetworkInfoDataStore extends WorldSavedData {
             }
         }
         if (removed > 0) {
+            revision++;
             markDirty();
         }
         return removed;
