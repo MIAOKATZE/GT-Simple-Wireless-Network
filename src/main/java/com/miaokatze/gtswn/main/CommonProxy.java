@@ -29,6 +29,7 @@ import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
+import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
@@ -299,6 +300,20 @@ public class CommonProxy {
      * @param msg 量子终端数据同步包
      */
     public void handleSyncQuantumTerminalData(PacketSyncQuantumTerminalData msg) {
+        // 服务端空实现：此包只发往客户端
+    }
+
+    /**
+     * 处理服务端→客户端 量子终端短回包（disc 7，O2-17，客户端专用逻辑）。
+     * <p>
+     * 服务端空实现：此包只发往客户端。客户端逻辑由
+     * {@link ClientProxy#handleSyncQuantumTerminalDataLite} 重写。
+     * 设计与 {@link #handleSyncQuantumTerminalData} 相同的 hotfix v1.5.14
+     * 类加载安全模式（Handler 只引用双端类型，经 @SidedProxy 委托）。
+     *
+     * @param msg 量子终端数据短回包（仅 9 字段有效）
+     */
+    public void handleSyncQuantumTerminalDataLite(PacketSyncQuantumTerminalDataLite msg) {
         // 服务端空实现：此包只发往客户端
     }
 

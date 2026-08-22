@@ -18,6 +18,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
+import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
 import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
@@ -131,6 +132,22 @@ public class ClientProxy extends CommonProxy {
             return;
         }
         // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
+        Minecraft.getMinecraft()
+            .func_152344_a(() -> GuiQuantumTerminal.receiveData(data));
+    }
+
+    /**
+     * 客户端处理量子终端短回包（disc 7，O2-17）：切主线程后写入 GUI 静态缓存。
+     * <p>
+     * 线程安全与类加载安全模式同 {@link #handleSyncQuantumTerminalData}；
+     * 短包仅 9 字段有效，receiveData 接口不变（GUI 零改动）。
+     */
+    @Override
+    public void handleSyncQuantumTerminalDataLite(PacketSyncQuantumTerminalDataLite msg) {
+        final QuantumNetworkData data = msg.getData();
+        if (data == null) {
+            return;
+        }
         Minecraft.getMinecraft()
             .func_152344_a(() -> GuiQuantumTerminal.receiveData(data));
     }

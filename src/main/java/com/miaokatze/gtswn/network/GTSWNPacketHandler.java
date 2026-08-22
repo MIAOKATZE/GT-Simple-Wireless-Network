@@ -19,7 +19,10 @@ import cpw.mods.fml.relauncher.Side;
  * <li>3 = {@link PacketUpdateAETabState}（C→S AE 标签页+监视列表）</li>
  * <li>4 = {@link PacketSyncAEMonitorData}（S→C AE 监控数据同步）</li>
  * <li>5 = {@link PacketRequestQuantumTerminalData}（C→S 请求量子终端数据）</li>
- * <li>6 = {@link PacketSyncQuantumTerminalData}（S→C 量子终端数据同步）</li>
+ * <li>6 = {@link PacketSyncQuantumTerminalData}（S→C 量子终端数据同步，全量 24 字段；
+ * O2-17 后不再由包 5 轮询路径发送，保留作协议回退位与 GUI 回扩位）</li>
+ * <li>7 = {@link PacketSyncQuantumTerminalDataLite}（S→C 量子终端短回包，仅 GUI 消费的
+ * 9 字段固定 30B；O2-17：终端轮询回包 119+~10N→30B，满配 -97.9%）</li>
  * </ul>
  */
 public class GTSWNPacketHandler {
@@ -57,6 +60,12 @@ public class GTSWNPacketHandler {
             PacketSyncQuantumTerminalData.Handler.class,
             PacketSyncQuantumTerminalData.class,
             6,
+            Side.CLIENT);
+        // 7: 服务端→客户端 量子终端短回包（O2-17：轮询路径专用，仅 9 字段 30B）
+        NETWORK.registerMessage(
+            PacketSyncQuantumTerminalDataLite.Handler.class,
+            PacketSyncQuantumTerminalDataLite.class,
+            7,
             Side.CLIENT);
     }
 }

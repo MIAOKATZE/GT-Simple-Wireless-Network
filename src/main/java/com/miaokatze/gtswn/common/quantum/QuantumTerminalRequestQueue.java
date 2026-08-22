@@ -9,7 +9,7 @@ import net.minecraft.item.ItemStack;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
-import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
+import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
 /**
  * 量子终端数据请求的待处理队列（v1.6.1 问题 4b）。
@@ -75,7 +75,8 @@ public final class QuantumTerminalRequestQueue {
                 // v1.6.19：性能审计——装配成功计数
                 PerformanceAudit.recordTerminalAssembled();
             }
-            GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalData(data), player);
+            // O2-17：轮询回包改用 disc 7 短包（仅 GUI 消费的 9 字段，30B；全量包 6 保留作回退位）
+            GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalDataLite(data), player);
             // v1.6.19：性能审计——正常回包计数
             PerformanceAudit.recordTerminalReply();
         } catch (Throwable t) {
@@ -86,7 +87,7 @@ public final class QuantumTerminalRequestQueue {
                 if (fallback == null) {
                     fallback = new QuantumNetworkData();
                 }
-                GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalData(fallback), player);
+                GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalDataLite(fallback), player);
                 // v1.6.19：性能审计——兜底回包计数
                 PerformanceAudit.recordTerminalReply();
             } catch (Throwable ignored) {
