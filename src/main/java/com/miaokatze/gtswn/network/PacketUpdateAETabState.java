@@ -81,6 +81,12 @@ public class PacketUpdateAETabState implements IMessage {
             if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(3);
             EntityPlayer player = ctx.getServerHandler().playerEntity;
             World world = player.worldObj;
+            // SWN-BUG-03：与包 2（PacketUpdateNetworkInfoPanelConfig）同款 8 格距离拦截——
+            // 防止恶意客户端携带任意坐标对他人信息屏越权切页/改绑定/清空监控
+            // （ownerUUID 是数据集归属键而非权限键，且可能尚未绑定，故与包 2 范式一致仅做距离校验）
+            if (player.getDistanceSq(msg.panelX + 0.5D, msg.panelY + 0.5D, msg.panelZ + 0.5D) > 64D) {
+                return null;
+            }
             TileEntity te = world.getTileEntity(msg.panelX, msg.panelY, msg.panelZ);
             if (!(te instanceof TileEntityNetworkInfoPanel)) return null;
             TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) te;
