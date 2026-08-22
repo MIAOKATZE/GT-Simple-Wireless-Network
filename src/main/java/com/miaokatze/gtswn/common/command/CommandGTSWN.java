@@ -11,7 +11,6 @@ import net.minecraft.command.WrongUsageException;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ChatComponentText;
-import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
@@ -105,18 +104,22 @@ public class CommandGTSWN extends CommandBase {
             toUUID = UUID.fromString(args[2]);
         } catch (IllegalArgumentException e) {
             sender.addChatMessage(
-                new ChatComponentText(EnumChatFormatting.RED + "UUID 格式错误,请检查参数。用法: " + getCommandUsage(sender)));
+                new ChatComponentText(
+                    StatCollector
+                        .translateToLocalFormatted("gtswn.command.trans.uuid_error", getCommandUsage(sender))));
             return;
         }
 
         if (fromUUID.equals(toUUID)) {
-            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.YELLOW + "源 UUID 与目标 UUID 相同,无需迁移。"));
+            sender
+                .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.trans.same_uuid")));
             return;
         }
 
         BigInteger eu = WirelessNetworkManager.getUserEU(fromUUID);
         if (eu.signum() <= 0) {
-            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.YELLOW + "源网络无 EU 可迁移: " + fromUUID));
+            sender.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.command.trans.no_eu", fromUUID)));
             return;
         }
 
@@ -132,19 +135,22 @@ public class CommandGTSWN extends CommandBase {
         BigInteger targetEU = WirelessNetworkManager.getUserEU(toUUID);
         WirelessNetworkManager.setUserEU(toUUID, targetEU.add(eu));
 
-        sender.addChatMessage(new ChatComponentText(EnumChatFormatting.GREEN + "迁移成功: " + eu + " EU"));
-        sender.addChatMessage(new ChatComponentText(EnumChatFormatting.GREEN + "从: " + fromUUID));
-        sender.addChatMessage(new ChatComponentText(EnumChatFormatting.GREEN + "到: " + toUUID));
+        sender.addChatMessage(
+            new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.command.trans.success", eu)));
+        sender.addChatMessage(
+            new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.command.trans.from", fromUUID)));
+        sender.addChatMessage(
+            new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.command.trans.to", toUUID)));
         sender.addChatMessage(
             new ChatComponentText(
-                EnumChatFormatting.AQUA + "目标网络当前总量: " + WirelessNetworkManager.getUserEU(toUUID) + " EU"));
+                StatCollector.translateToLocalFormatted(
+                    "gtswn.command.trans.target_total",
+                    WirelessNetworkManager.getUserEU(toUUID))));
     }
 
     private void processJoin(ICommandSender sender, String[] args) {
         if (args.length < 3) {
-            sender.addChatMessage(
-                new ChatComponentText(
-                    EnumChatFormatting.RED + StatCollector.translateToLocal("gtswn.command.join.usage")));
+            sender.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.join.usage")));
             return;
         }
 
@@ -154,8 +160,8 @@ public class CommandGTSWN extends CommandBase {
             memberUUID = UUID.fromString(args[1]);
             leaderUUID = UUID.fromString(args[2]);
         } catch (IllegalArgumentException e) {
-            sender.addChatMessage(
-                new ChatComponentText(EnumChatFormatting.RED + "UUID format error, please check parameters."));
+            sender
+                .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.join.uuid_error")));
             return;
         }
 
@@ -225,8 +231,7 @@ public class CommandGTSWN extends CommandBase {
      */
     private void processCleanupInfoData(ICommandSender sender, String[] args) {
         if (args.length < 2) {
-            sender.addChatMessage(
-                new ChatComponentText(EnumChatFormatting.RED + "用法: /gtswn " + SUBCMD_CLEANUP_INFO + " <all|player>"));
+            sender.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.cleanup.usage")));
             return;
         }
 
@@ -234,7 +239,8 @@ public class CommandGTSWN extends CommandBase {
         World overworld = MinecraftServer.getServer()
             .worldServerForDimension(0);
         if (overworld == null) {
-            sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + "无法获取 overworld，清理失败。"));
+            sender.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.command.cleanup.no_overworld")));
             return;
         }
 
@@ -245,7 +251,7 @@ public class CommandGTSWN extends CommandBase {
             // 全量清理模式：按 keepHistoryDays 计算 cutoff
             if (Config.keepHistoryDays <= 0) {
                 sender.addChatMessage(
-                    new ChatComponentText(EnumChatFormatting.YELLOW + "keepHistoryDays=0（永不清理），强制全量清理所有过期数据集。"));
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.command.cleanup.force_all")));
                 // 即使配置为 0，命令也执行清理（命令优先级高于配置）
                 // 用一个极长的时间阈值，确保所有"有 lastSampleTimeMs 记录"的数据集都被判断
                 // 但 lastSampleTimeMs=0（从未采样或旧存档）的数据集也会被清理（0 < cutoffMs 恒成立）
@@ -254,18 +260,17 @@ public class CommandGTSWN extends CommandBase {
             int removed = store.cleanupStale(cutoffMs);
             sender.addChatMessage(
                 new ChatComponentText(
-                    EnumChatFormatting.GREEN + "[cleanup_info_data] 已清理 "
-                        + removed
-                        + " 个数据集（阈值 "
-                        + Config.keepHistoryDays
-                        + " 天）。"));
+                    StatCollector
+                        .translateToLocalFormatted("gtswn.command.cleanup.done_all", removed, Config.keepHistoryDays)));
         } else {
             // 指定玩家清理模式：解析玩家名 → UUID → remove
             EntityPlayerMP player;
             try {
                 player = getPlayer(sender, target);
             } catch (PlayerNotFoundException e) {
-                sender.addChatMessage(new ChatComponentText(EnumChatFormatting.RED + "未找到玩家: " + target + "（仅支持在线玩家）"));
+                sender.addChatMessage(
+                    new ChatComponentText(
+                        StatCollector.translateToLocalFormatted("gtswn.command.cleanup.player_not_found", target)));
                 return;
             }
             UUID playerUUID = player.getUniqueID();
@@ -273,19 +278,11 @@ public class CommandGTSWN extends CommandBase {
             if (removed) {
                 sender.addChatMessage(
                     new ChatComponentText(
-                        EnumChatFormatting.GREEN + "[cleanup_info_data] 已移除玩家 "
-                            + target
-                            + " ("
-                            + playerUUID
-                            + ") 的网络信息屏数据集。"));
+                        StatCollector.translateToLocalFormatted("gtswn.command.cleanup.removed", target, playerUUID)));
             } else {
                 sender.addChatMessage(
                     new ChatComponentText(
-                        EnumChatFormatting.YELLOW + "[cleanup_info_data] 玩家 "
-                            + target
-                            + " ("
-                            + playerUUID
-                            + ") 无数据集可移除。"));
+                        StatCollector.translateToLocalFormatted("gtswn.command.cleanup.no_data", target, playerUUID)));
             }
         }
     }

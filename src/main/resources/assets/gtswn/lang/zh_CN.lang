@@ -148,7 +148,28 @@ gtswn.command.join.same_uuid=§e成员UUID与队长UUID相同，无需加入
 gtswn.command.join.cascade_warn=§e注意: %s 的队长为 %s，%s 将加入 %s 的网络
 gtswn.command.join.cycle_detect=§c循环检测: %s 是 %s 的队长，无法将 %s 加入 %s 的网络
 gtswn.command.join.network_eu=§b目标网络当前总量: %s EU
-gtswn.command.join.usage=用法: /gtswn global_energy_join <memberUUID> <leaderUUID>
+gtswn.command.join.usage=§c用法: /gtswn global_energy_join <memberUUID> <leaderUUID>
+
+# GTSWN Command - global_energy_trans
+gtswn.command.trans.uuid_error=§cUUID 格式错误,请检查参数。用法: %s
+gtswn.command.trans.same_uuid=§e源 UUID 与目标 UUID 相同,无需迁移。
+gtswn.command.trans.no_eu=§e源网络无 EU 可迁移: %s
+gtswn.command.trans.success=§a迁移成功: %s EU
+gtswn.command.trans.from=§a从: %s
+gtswn.command.trans.to=§a到: %s
+gtswn.command.trans.target_total=§b目标网络当前总量: %s EU
+
+# GTSWN Command - global_energy_join (leftover)
+gtswn.command.join.uuid_error=§cUUID 格式错误,请检查参数。
+
+# GTSWN Command - cleanup_info_data
+gtswn.command.cleanup.usage=§c用法: /gtswn cleanup_info_data <all|player>
+gtswn.command.cleanup.no_overworld=§c无法获取 overworld，清理失败。
+gtswn.command.cleanup.force_all=§ekeepHistoryDays=0（永不清理），强制全量清理所有过期数据集。
+gtswn.command.cleanup.done_all=§a[cleanup_info_data] 已清理 %s 个数据集（阈值 %s 天）。
+gtswn.command.cleanup.player_not_found=§c未找到玩家: %s（仅支持在线玩家）
+gtswn.command.cleanup.removed=§a[cleanup_info_data] 已移除玩家 %s (%s) 的网络信息屏数据集。
+gtswn.command.cleanup.no_data=§e[cleanup_info_data] 玩家 %s (%s) 无数据集可移除。
 
 # Cover Timer
 gtswn.chat.cover.next_refill=§7 距下次补能: 

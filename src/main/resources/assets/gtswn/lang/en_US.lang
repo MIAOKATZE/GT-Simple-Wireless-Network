@@ -148,7 +148,28 @@ gtswn.command.join.same_uuid=§eMember UUID is the same as leader UUID, no actio
 gtswn.command.join.cascade_warn=§eNote: %s's leader is %s, %s will join %s's network
 gtswn.command.join.cycle_detect=§cCycle detected: %s is %s's leader, cannot join %s to %s's network
 gtswn.command.join.network_eu=§bTarget network total: %s EU
-gtswn.command.join.usage=Usage: /gtswn global_energy_join <memberUUID> <leaderUUID>
+gtswn.command.join.usage=§cUsage: /gtswn global_energy_join <memberUUID> <leaderUUID>
+
+# GTSWN Command - global_energy_trans
+gtswn.command.trans.uuid_error=§cUUID format error, please check parameters. Usage: %s
+gtswn.command.trans.same_uuid=§eSource UUID is the same as target UUID, no migration needed.
+gtswn.command.trans.no_eu=§eSource network has no EU to migrate: %s
+gtswn.command.trans.success=§aMigration successful: %s EU
+gtswn.command.trans.from=§aFrom: %s
+gtswn.command.trans.to=§aTo: %s
+gtswn.command.trans.target_total=§bTarget network current total: %s EU
+
+# GTSWN Command - global_energy_join (leftover)
+gtswn.command.join.uuid_error=§cUUID format error, please check parameters.
+
+# GTSWN Command - cleanup_info_data
+gtswn.command.cleanup.usage=§cUsage: /gtswn cleanup_info_data <all|player>
+gtswn.command.cleanup.no_overworld=§cFailed to get overworld, cleanup aborted.
+gtswn.command.cleanup.force_all=§ekeepHistoryDays=0 (never clean), force-cleaning all expired datasets.
+gtswn.command.cleanup.done_all=§a[cleanup_info_data] Cleaned %s dataset(s) (threshold %s day(s)).
+gtswn.command.cleanup.player_not_found=§cPlayer not found: %s (online players only)
+gtswn.command.cleanup.removed=§a[cleanup_info_data] Removed network info panel dataset of player %s (%s).
+gtswn.command.cleanup.no_data=§e[cleanup_info_data] Player %s (%s) has no dataset to remove.
 
 # Cover Timer
 gtswn.chat.cover.next_refill=§7 Next refill in: 
