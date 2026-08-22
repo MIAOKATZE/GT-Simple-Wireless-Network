@@ -12,6 +12,7 @@ import net.minecraft.util.ChatComponentText;
 
 import com.google.common.io.ByteArrayDataInput;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverContext;
@@ -193,7 +194,9 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
     public void configure(int voltage, int amperage) {
         this.voltage = voltage;
         this.amperage = amperage;
-        this.capacity = (long) voltage * amperage * 800L; // 电容量 = V × A × 800 tick / Capacity = V × A × 800 ticks
+        // 电容量 = V × A × 800 tick / Capacity = V × A × 800 ticks
+        // SWN-BUG-06+SWN-OPT-17：公式收敛至 CoverMaths.bufferCapacity 单源（与链路终端预告共享）
+        this.capacity = CoverMaths.bufferCapacity(voltage, amperage);
         this.configured = true;
         // 配置时立即从电网补满到电容量上限
         // Refill to capacity immediately upon configuration

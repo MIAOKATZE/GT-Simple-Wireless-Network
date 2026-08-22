@@ -17,6 +17,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 
 import gregtech.api.covers.CoverPlacer;
@@ -305,7 +306,8 @@ public class WirelessEnergyTap extends Item {
 
             // 5. 计算电容量 = 电压 × 安培 × 800 tick
             // Calculate cover capacity = voltage × amperage × 800 ticks
-            long coverCapacity = voltage * amperage * 800L;
+            // SWN-BUG-06+SWN-OPT-17：公式收敛至 CoverMaths.bufferCapacity 单源（与能源覆盖板实配共享）
+            long coverCapacity = CoverMaths.bufferCapacity(voltage, amperage);
 
             // 6. 输出检测信息到聊天
             player.addChatMessage(
