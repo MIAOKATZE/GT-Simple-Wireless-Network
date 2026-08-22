@@ -10,8 +10,9 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
-import net.minecraft.world.storage.MapStorage;
 import net.minecraftforge.common.util.ForgeDirection;
+
+import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 import appeng.core.AEConfig;
 import appeng.core.features.AEFeature;
@@ -66,16 +67,11 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     /**
      * 获取指定世界的注册表（不存在则创建并挂载到 perWorldStorage）。
-     * 模式仿 {@code NetworkInfoDataStore#get(World)}。
+     * 模板经 {@link SavedDataUtil#loadOrCreate} 单源化（O2-15，原三份逐字符相同模板之一）。
      */
     public static QuantumControllerRegistry get(World world) {
-        MapStorage storage = world.perWorldStorage;
-        QuantumControllerRegistry data = (QuantumControllerRegistry) storage
-            .loadData(QuantumControllerRegistry.class, DATA_NAME);
-        if (data == null) {
-            data = new QuantumControllerRegistry(DATA_NAME);
-            storage.setData(DATA_NAME, data);
-        }
+        QuantumControllerRegistry data = SavedDataUtil
+            .loadOrCreate(world, DATA_NAME, QuantumControllerRegistry.class, QuantumControllerRegistry::new);
         data.dimensionId = world.provider.dimensionId;
         return data;
     }
