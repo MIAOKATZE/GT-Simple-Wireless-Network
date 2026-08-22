@@ -73,6 +73,14 @@ public class QuantumControllerEventHandler {
     /** 右键拦截聊天提示冷却（tick），防止按住右键/连点刷屏 */
     private static final long BLOCKED_MSG_COOLDOWN_TICKS = 40L;
 
+    /**
+     * 冷却表条目保留窗口（tick）：冷却 40t 的 10 倍 = 400t（20s）。
+     * <p>
+     * SWN-OPT-12：冷却表原本只 put 不 remove，每个右键过量子化控制器的玩家 UUID 常驻
+     * HashMap 缓慢无上界增长；每秒巡检顺带清理超窗条目（移除仅使下次提示重新计数，无功能影响）。
+     */
+    private static final long BLOCKED_MSG_RETAIN_TICKS = BLOCKED_MSG_COOLDOWN_TICKS * 10L;
+
     /** tick 巡检间隔（tick）：20t = 1 秒 */
     private static final long SWEEP_INTERVAL_TICKS = 20L;
 
@@ -342,6 +350,8 @@ public class QuantumControllerEventHandler {
             return;
         }
         this.lastSweepTick = tick;
+        // SWN-OPT-12：每秒巡检顺带清理右键拦截提示冷却表的过期条目（防无上界增长）
+        pruneBlockedMsgCooldowns(tick);
         // WorldSavedData 是 perWorldStorage 每世界一份，逐世界各自巡检
         for (WorldServer world : server.worldServers) {
             try {
@@ -360,6 +370,18 @@ public class QuantumControllerEventHandler {
                 filterUpdates);
         }
         filterUpdates = 0L;
+    }
+
+    /** 清理右键拦截提示冷却表中超过保留窗口未再触发的条目（SWN-OPT-12） */
+    private void pruneBlockedMsgCooldowns(long now) {
+        Iterator<Long> it = this.lastBlockedMsgTick.values()
+            .iterator();
+        while (it.hasNext()) {
+            if (now - it.next()
+                .longValue() > BLOCKED_MSG_RETAIN_TICKS) {
+                it.remove();
+            }
+        }
     }
 
     /** 巡检单个世界：出册失效坐标、重算过滤、D8 合并 */
