@@ -13,6 +13,7 @@ import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
 
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -515,6 +516,13 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             return;
         }
 
+        // O2-21：无接收者预检——64 格（与 TargetPoint 半径一致）内无玩家时连包体都不组装，
+        // 无人区常载屏每采样间隔免一次走势 61 点 + 双 Map 三段集合 build；
+        // 视锥级过滤不实施（失步无刷新问题，接收端现存 TE 缺席丢弃已够）
+        if (!hasNearbyReceiver()) {
+            return;
+        }
+
         String dataKey = getAEMonitorDataKey();
         if (dataKey == null) {
             return;
@@ -570,6 +578,25 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 yCoord + 0.5D,
                 zCoord + 0.5D,
                 64.0D));
+    }
+
+    /**
+     * O2-21：64 格（与推送 TargetPoint 半径一致）内是否存在玩家接收者。
+     * <p>
+     * 只查本维度 {@code worldObj.playerEntities}（sendToAllAround 的 TargetPoint 也限定本维度）；
+     * 平方距离比较避免开方。
+     */
+    private boolean hasNearbyReceiver() {
+        double sq = 64.0D * 64.0D;
+        for (EntityPlayer player : worldObj.playerEntities) {
+            double dx = player.posX - (xCoord + 0.5D);
+            double dy = player.posY - (yCoord + 0.5D);
+            double dz = player.posZ - (zCoord + 0.5D);
+            if (dx * dx + dy * dy + dz * dz <= sq) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
