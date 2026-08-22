@@ -890,7 +890,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             long currentValue = param1Sync.getLongValue();
                             long absValue = Math.abs(currentValue);
                             long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                            param1Sync.setValue(currentValue + step);
+                            param1Sync.setValue(safeAddStep(currentValue, step));
                             return true;
                         })
                             .background(GTGuiTextures.BUTTON_STANDARD)
@@ -899,7 +899,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.plus"))))
                         // ×10 按钮
                         .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            param1Sync.setValue(param1Sync.getLongValue() * 10);
+                            param1Sync.setValue(safeMul10(param1Sync.getLongValue()));
                             return true;
                         })
                             .background(GTGuiTextures.BUTTON_STANDARD)
@@ -977,7 +977,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             long currentValue = param2Sync.getLongValue();
                             long absValue = Math.abs(currentValue);
                             long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                            param2Sync.setValue(currentValue + step);
+                            param2Sync.setValue(safeAddStep(currentValue, step));
                             return true;
                         })
                             .background(GTGuiTextures.BUTTON_STANDARD)
@@ -986,7 +986,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                             .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.plus"))))
                         // ×10 按钮
                         .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            param2Sync.setValue(param2Sync.getLongValue() * 10);
+                            param2Sync.setValue(safeMul10(param2Sync.getLongValue()));
                             return true;
                         })
                             .background(GTGuiTextures.BUTTON_STANDARD)
@@ -1380,5 +1380,36 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         if (getBaseMetaTileEntity() != null) {
             getBaseMetaTileEntity().issueTextureUpdate();
         }
+    }
+
+    // ==================== MUI2 参数按钮饱和运算（SWN-BUG-04） ====================
+
+    /**
+     * ×10 按钮饱和乘法（SWN-BUG-04）：值超出 {@code ±Long.MAX_VALUE/10} 时钳制到对应边界。
+     * <p>
+     * 原裸乘在值 &gt; {@code Long.MAX_VALUE/10} 时回绕为负，导致红石阈值语义反转；
+     * 输入框路径本有全 long 域解析约束（{@code numbersLong}），按钮路径经此对齐。
+     */
+    private static long safeMul10(long value) {
+        if (value > Long.MAX_VALUE / 10L) {
+            return Long.MAX_VALUE;
+        }
+        if (value < Long.MIN_VALUE / 10L) {
+            return Long.MIN_VALUE;
+        }
+        return value * 10L;
+    }
+
+    /**
+     * + 按钮饱和加法（SWN-BUG-04）：相加溢出时钳制到 long 边界，防止回绕。
+     */
+    private static long safeAddStep(long value, long step) {
+        if (step > 0L && value > Long.MAX_VALUE - step) {
+            return Long.MAX_VALUE;
+        }
+        if (step < 0L && value < Long.MIN_VALUE - step) {
+            return Long.MIN_VALUE;
+        }
+        return value + step;
     }
 }
