@@ -9,10 +9,10 @@ import java.util.Set;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
-import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridConnection;
+import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.IMachineSet;
 
@@ -89,14 +89,20 @@ public final class QuantumNetworkStatsCache {
             int quantumNodeCount = 0;
             long qT0 = PerformanceAudit.startSlice();
             try {
-                IMachineSet nodes = grid.getMachines(TileEntityNetworkQuantumNode.class);
-                quantumNodeCount = nodes.size();
-                for (IGridNode node : nodes) {
-                    int nodeMax = 0;
-                    for (IGridConnection connection : node.getConnections()) {
-                        nodeMax = Math.max(nodeMax, connection.getUsedChannels());
+                // O2-B08：节点类经 QuantumNodeTypes 注册表取用（quantum→tile 拆环，grid.getMachines
+                // 需具体 Class）；未注册（理论不可达——TE 注册期即加载）按零节点处理。
+                // usedChannels 口径不动：单节点取其全部连接的 max（桥接 ≥ 邻接）
+                Class<? extends IGridHost> nodeClass = QuantumNodeTypes.nodeClass();
+                if (nodeClass != null) {
+                    IMachineSet nodes = grid.getMachines(nodeClass);
+                    quantumNodeCount = nodes.size();
+                    for (IGridNode node : nodes) {
+                        int nodeMax = 0;
+                        for (IGridConnection connection : node.getConnections()) {
+                            nodeMax = Math.max(nodeMax, connection.getUsedChannels());
+                        }
+                        usedChannels += nodeMax;
                     }
-                    usedChannels += nodeMax;
                 }
             } finally {
                 PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_GRID_QUERY, qT0);

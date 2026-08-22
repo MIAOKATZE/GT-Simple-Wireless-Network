@@ -19,8 +19,10 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.AnchorKey;
+import com.miaokatze.gtswn.common.quantum.AnchorReachability;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
+import com.miaokatze.gtswn.common.quantum.QuantumNodeTypes;
 import com.miaokatze.gtswn.common.quantum.QuantumOverloadCountdown;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -72,6 +74,13 @@ import appeng.tile.networking.TileController;
  * invalidate/onChunkUnload 先显式 destroy 桥接连接再走 proxy 生命周期，防止网格残留幽灵节点。
  */
 public class TileEntityNetworkQuantumNode extends TileEntity implements IGridProxyable {
+
+    static {
+        // O2-B08：向 quantum 侧注册节点类——grid.getMachines 需具体 Class（无法纯接口化），
+        // 注册表回调替代 quantum→tile 直接类引用；本类经 BlockRegistrar.registerTileEntity
+        // （preInit）加载，早于任何网格枚举
+        QuantumNodeTypes.register(TileEntityNetworkQuantumNode.class);
+    }
 
     // ==================== NBT 键名 ====================
 
@@ -753,36 +762,33 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
             return;
         }
-        // v1.6.1 问题 5：锚点控制器未处于量子化状态（已取消量子化）→ 不建连。
-        // 注册表查询仅读 WorldSavedData 坐标集合，不触发区块加载，可在区块校验前执行
-        if (!QuantumControllerRegistry.get(anchorWorld)
-            .isQuantized(this.anchorX, this.anchorY, this.anchorZ)) {
-            failReconnect(OfflineReason.ANCHOR_NOT_QUANTIZED);
-            return;
+        // O2-B08：锚点可达性判定（未量子化/区块未加载/非控制器/proxy 未就绪）抽至 quantum 侧
+        // AnchorReachability，与 QuantumNetworkData.assemble 同源；失败原因映射保持原口径
+        AnchorReachability.Result reach = AnchorReachability
+            .resolve(anchorWorld, this.anchorX, this.anchorY, this.anchorZ, true, true);
+        switch (reach.status) {
+            case NOT_QUANTIZED:
+                // v1.6.1 问题 5：锚点控制器未处于量子化状态（已取消量子化）→ 不建连
+                failReconnect(OfflineReason.ANCHOR_NOT_QUANTIZED);
+                return;
+            case CHUNK_UNLOADED:
+                // 锚点区块未加载：不主动加载，待服务器或其他模组自然加载后由下一轮重试
+                failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
+                return;
+            case NOT_CONTROLLER:
+                // 锚点位置已不是 ME 控制器（D7：锚点被拆 → 离线保留绑定，可经终端改绑后重放节点）
+                failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
+                return;
+            case PROXY_NOT_READY:
+                // 锚点控制器 proxy 未 ready（区块刚加载尚未首 tick）：瞬时状态，下轮重试
+                failReconnect(OfflineReason.NETWORK_NOT_READY);
+                return;
+            default:
+                break;
         }
-        // 锚点区块未加载：blockExists 不触发区块加载（与 TileWirelessBase 重连循环同一手法），
-        // 避免节点 tick 把锚点区块常加载造成级联加载。
-        // 锚点区块未加载时保持离线；不主动加载区块，待服务器或其他模组自然加载后由下一轮重试
-        if (!anchorWorld.blockExists(this.anchorX, this.anchorY, this.anchorZ)) {
-            failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
-            return;
-        }
-        // 锚点位置已不是 ME 控制器（D7：锚点被拆 → 离线保留绑定，可经终端改绑后重放节点）
-        TileEntity anchorTE = anchorWorld.getTileEntity(this.anchorX, this.anchorY, this.anchorZ);
-        if (!(anchorTE instanceof TileController)) {
-            failReconnect(OfflineReason.ANCHOR_UNREACHABLE);
-            return;
-        }
-        // 经 IGridProxyable 接口调用 getProxy()：源表达式必须是 TileEntity 而非 TileController——
-        // 后者 cast 会触发 javac 解析 AEPowerTile 上挂的 Mekanism/CoFH/RotaryCraft 可选接口
-        // （不在编译 classpath，报「无法访问」），而 TileEntity 的层次是干净的
-        // （与 QuantumControllerEventHandler.applyConnectionFilter 同一写法）
-        AENetworkProxy anchorProxy = ((IGridProxyable) anchorTE).getProxy();
-        if (anchorProxy == null || !anchorProxy.isReady()) {
-            // 锚点控制器 proxy 未 ready（区块刚加载尚未首 tick）：瞬时状态，下轮重试
-            failReconnect(OfflineReason.NETWORK_NOT_READY);
-            return;
-        }
+        // 锚点 proxy 已就绪，取锚点节点（源表达式保持 TileEntity 静态类型，规避 AE2 可选接口解析，
+        // 与 AnchorReachability 内部及 QuantumControllerEventHandler.applyConnectionFilter 同一写法）
+        AENetworkProxy anchorProxy = ((IGridProxyable) reach.anchorTE).getProxy();
         IGridNode anchorNode = anchorProxy.getNode();
         if (anchorNode == null) {
             failReconnect(OfflineReason.NETWORK_NOT_READY);

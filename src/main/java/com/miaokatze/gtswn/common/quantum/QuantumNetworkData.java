@@ -12,7 +12,6 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
@@ -30,7 +29,6 @@ import appeng.me.GridAccessException;
 import appeng.me.cache.GridStorageCache;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
-import appeng.tile.networking.TileController;
 
 /**
  * 量子终端网络数据装配器 + 数据载体 POJO（T5，规划 plan_20260722152445.md §6）。
@@ -228,20 +226,17 @@ public class QuantumNetworkData {
         if (world == null) {
             return data;
         }
-        // 2. 锚点区块未加载 → 离线（blockExists 不触发区块加载）
-        if (!world.blockExists(anchorX, anchorY, anchorZ)) {
-            return data;
-        }
-        // 3. 锚点位置已不是 ME 控制器（D7：锚点被拆 → 离线保留绑定）→ 离线
-        TileEntity te = world.getTileEntity(anchorX, anchorY, anchorZ);
-        if (!(te instanceof TileController)) {
+        // 2-3. 锚点可达性判定（区块已加载 + 位置是 ME 控制器，O2-B08 抽至 AnchorReachability
+        // 与节点建连同源单源；requireQuantized=false——装配原实现不查量子化状态，口径保持）
+        AnchorReachability.Result reach = AnchorReachability.resolve(world, anchorX, anchorY, anchorZ, false, false);
+        if (reach.status != AnchorReachability.Status.OK) {
             return data;
         }
         // 4. 获取锚点所属网格；GridAccessException（节点/网格未就绪）→ 离线
         // 编译坑规避：必须经 IGridProxyable 接口调 getProxy()，且源表达式静态类型为 TileEntity——
         // 直接从 TileController 调用会触发 javac 解析 AEPowerTile 类层次上挂的
         // Mekanism/CoFH/RotaryCraft 可选接口（不在编译 classpath，报「无法访问」）
-        AENetworkProxy proxy = ((IGridProxyable) te).getProxy();
+        AENetworkProxy proxy = ((IGridProxyable) reach.anchorTE).getProxy();
         final IGrid grid;
         try {
             grid = proxy.getGrid();
