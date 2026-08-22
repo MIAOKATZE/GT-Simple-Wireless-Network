@@ -1708,7 +1708,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (screen != null) {
             tag.setTag("screen", screen.toNBT());
         }
-        writeSyncData(tag);
+        // B2-09：不再调 writeSyncData(tag)——sync 数据（cachedEu/cachedStatus/samples/aeChartSamples 等）
+        // 是 S35 描述包专用快照，readSyncData 读取全守卫，断档后由 needsDataRefresh 冷启动从 WSD 正本重建，
+        // 区块 NBT 双写只增体积；writeSyncData/readSyncData 本体与 S35 路径（getDescriptionPacket/onDataPacket）不动
         writeAEChartConfig(tag);
         writeAEMonitorConfig(tag);
         // === AE 标签页字段写入 ===
