@@ -27,6 +27,11 @@ import net.minecraftforge.common.util.Constants;
  * <li>3M 集：每 3 个 1M 采样触发一次（3M=3*1M=84天），rate 取最近 3 个 1M 点的算术均值（嵌套均值）</li>
  * <li>1Y 集：每 4 个 3M 采样触发一次（1Y=4*3M=336天≈11个月），rate 取最近 4 个 3M 点的算术均值（嵌套均值）</li>
  * </ul>
+ * <p>
+ * O2-13：窗口结构（NBT 键名 + 流入阈值 + 各触碰点循环）此前散布在 16 张并行 Map
+ * （8 series Map + 7 counter Map），v1.5.17 扩窗时全部触碰点被双改——现收敛为
+ * {@link #WINDOW_DEFS} 单点定义，addSample/query/size/clear/toNBT/readFromNBT
+ * 按下标循环化，后续再扩窗口只改一处。NBT 键名与 v1.5.17 hasKey 守卫逐字保留。
  */
 public class AEMonitorDataSet {
 
@@ -40,27 +45,61 @@ public class AEMonitorDataSet {
     public static final int WINDOW_3_MONTH = 6;
     public static final int WINDOW_1_YEAR = 7;
 
-    private final Map<String, AEMonitorWindowSeries> series5m = new HashMap<>();
-    private final Map<String, AEMonitorWindowSeries> series1h = new HashMap<>();
-    private final Map<String, AEMonitorWindowSeries> series8h = new HashMap<>();
-    private final Map<String, AEMonitorWindowSeries> series24h = new HashMap<>();
-    // v1.5.17：新增 4 个高级窗口 series
-    private final Map<String, AEMonitorWindowSeries> series7d = new HashMap<>();
-    private final Map<String, AEMonitorWindowSeries> series1M = new HashMap<>();
-    private final Map<String, AEMonitorWindowSeries> series3M = new HashMap<>();
-    private final Map<String, AEMonitorWindowSeries> series1Y = new HashMap<>();
+    /** 窗口总数（下标 = 窗口常量值） */
+    public static final int WINDOW_COUNT = 8;
 
-    private final Map<String, Integer> counter5m = new HashMap<>();
-    private final Map<String, Integer> counter1h = new HashMap<>();
-    private final Map<String, Integer> counter8h = new HashMap<>();
-    // v1.5.17：24h 不再是终端，新增后续计数器
-    private final Map<String, Integer> counter24h = new HashMap<>(); // 满 7 触发 7d 流入
-    private final Map<String, Integer> counter7d = new HashMap<>(); // 满 4 触发 1M 流入
-    private final Map<String, Integer> counter1M = new HashMap<>(); // 满 3 触发 3M 流入
-    private final Map<String, Integer> counter3M = new HashMap<>(); // 满 4 触发 1Y 流入
+    /**
+     * 窗口定义单点（O2-13）：series/counter 的 NBT 键名与本窗口流入阈值。
+     * <p>
+     * {@code inflowCount} = 本窗口每 N 个采样触发下一级窗口流入一次（同时也是
+     * 计算下一级 rate 时对上一级窗口 {@code getLastN} 的取点数）。1Y 为终端窗口：
+     * 无计数器（counterKey=null）、无下一级流入。
+     */
+    private static final class WindowDef {
+
+        final String seriesKey;
+        final String counterKey;
+        final int inflowCount;
+
+        WindowDef(String seriesKey, String counterKey, int inflowCount) {
+            this.seriesKey = seriesKey;
+            this.counterKey = counterKey;
+            this.inflowCount = inflowCount;
+        }
+    }
+
+    private static final WindowDef[] WINDOW_DEFS = {
+        // 5m：每 12 点触发 1h 流入
+        new WindowDef("series5m", "counter5m", 12), new WindowDef("series1h", "counter1h", 8),
+        new WindowDef("series8h", "counter8h", 3),
+        // v1.5.17：24h 不再是终端，新增后续窗口
+        new WindowDef("series24h", "counter24h", 7), new WindowDef("series7d", "counter7d", 4),
+        new WindowDef("series1M", "counter1M", 3), new WindowDef("series3M", "counter3M", 4),
+        // 1Y 终端窗口：无计数器、无下一级
+        new WindowDef("series1Y", null, 0) };
+
+    /** 每窗口一张 series Map（下标 = 窗口常量，取代 8 个并行字段） */
+    private final List<Map<String, AEMonitorWindowSeries>> seriesByWindow;
+
+    /** 每窗口一张流入计数 Map（与 seriesByWindow 同下标；1Y 槽位为 null） */
+    private final List<Map<String, Integer>> counterByWindow;
 
     // 每个 key 独立的采样锁（world tick），距离上次采样 ≥ 100 ticks 才允许新采样
     private final Map<String, Long> lastSampleTick = new HashMap<>();
+
+    public AEMonitorDataSet() {
+        this.seriesByWindow = new ArrayList<>(WINDOW_COUNT);
+        this.counterByWindow = new ArrayList<>(WINDOW_COUNT);
+        for (int w = 0; w < WINDOW_COUNT; w++) {
+            seriesByWindow.add(new HashMap<>());
+            counterByWindow.add(WINDOW_DEFS[w].counterKey == null ? null : new HashMap<>());
+        }
+    }
+
+    /** 窗口常量 → 下标（越界/非法值回落 5m，与原 switch default 分支语义一致） */
+    private static int indexOf(int window) {
+        return (window >= 0 && window < WINDOW_COUNT) ? window : WINDOW_5_MIN;
+    }
 
     private AEMonitorWindowSeries getOrCreate(Map<String, AEMonitorWindowSeries> map, String key) {
         AEMonitorWindowSeries series = map.get(key);
@@ -71,7 +110,7 @@ public class AEMonitorDataSet {
         return series;
     }
 
-    private int getCounter(Map<String, Integer> map, String key) {
+    private static int getCounter(Map<String, Integer> map, String key) {
         Integer value = map.get(key);
         return value == null ? 0 : value.intValue();
     }
@@ -92,87 +131,24 @@ public class AEMonitorDataSet {
         }
 
         AEMonitorSample sample = new AEMonitorSample(timeMs, tick, amount, rate);
-        getOrCreate(series5m, key).add(sample);
-        counter5m.put(key, getCounter(counter5m, key) + 1);
+        getOrCreate(seriesByWindow.get(WINDOW_5_MIN), key).add(sample);
 
-        if (getCounter(counter5m, key) >= 12) {
-            counter5m.put(key, 0);
-            double avgRate1h = averageRate(getOrCreate(series5m, key).getLastN(12));
-            AEMonitorSample sample1h = new AEMonitorSample(sample.timeMs, sample.tick, sample.amount, avgRate1h);
-            getOrCreate(series1h, key).add(sample1h);
-            counter1h.put(key, getCounter(counter1h, key) + 1);
-
-            if (getCounter(counter1h, key) >= 8) {
-                counter1h.put(key, 0);
-                double avgRate8h = averageRate(getOrCreate(series1h, key).getLastN(8));
-                AEMonitorSample sample8h = new AEMonitorSample(
-                    sample1h.timeMs,
-                    sample1h.tick,
-                    sample1h.amount,
-                    avgRate8h);
-                getOrCreate(series8h, key).add(sample8h);
-                counter8h.put(key, getCounter(counter8h, key) + 1);
-
-                if (getCounter(counter8h, key) >= 3) {
-                    counter8h.put(key, 0);
-                    double avgRate24h = averageRate(getOrCreate(series8h, key).getLastN(3));
-                    AEMonitorSample sample24h = new AEMonitorSample(
-                        sample8h.timeMs,
-                        sample8h.tick,
-                        sample8h.amount,
-                        avgRate24h);
-                    getOrCreate(series24h, key).add(sample24h);
-                    // v1.5.17：24h 不再是终端，继续向 7d / 1M / 3M / 1Y 流入
-                    counter24h.put(key, getCounter(counter24h, key) + 1);
-                    if (getCounter(counter24h, key) >= 7) {
-                        // 触发 7d 集：rate 取最近 7 个 24h 点的均值（嵌套均值）
-                        counter24h.put(key, 0);
-                        double avgRate7d = averageRate(getOrCreate(series24h, key).getLastN(7));
-                        AEMonitorSample sample7d = new AEMonitorSample(
-                            sample24h.timeMs,
-                            sample24h.tick,
-                            sample24h.amount,
-                            avgRate7d);
-                        getOrCreate(series7d, key).add(sample7d);
-                        counter7d.put(key, getCounter(counter7d, key) + 1);
-                        if (getCounter(counter7d, key) >= 4) {
-                            // 触发 1M 集：rate 取最近 4 个 7d 点的均值（嵌套均值）
-                            counter7d.put(key, 0);
-                            double avgRate1M = averageRate(getOrCreate(series7d, key).getLastN(4));
-                            AEMonitorSample sample1M = new AEMonitorSample(
-                                sample7d.timeMs,
-                                sample7d.tick,
-                                sample7d.amount,
-                                avgRate1M);
-                            getOrCreate(series1M, key).add(sample1M);
-                            counter1M.put(key, getCounter(counter1M, key) + 1);
-                            if (getCounter(counter1M, key) >= 3) {
-                                // 触发 3M 集：rate 取最近 3 个 1M 点的均值（嵌套均值）
-                                counter1M.put(key, 0);
-                                double avgRate3M = averageRate(getOrCreate(series1M, key).getLastN(3));
-                                AEMonitorSample sample3M = new AEMonitorSample(
-                                    sample1M.timeMs,
-                                    sample1M.tick,
-                                    sample1M.amount,
-                                    avgRate3M);
-                                getOrCreate(series3M, key).add(sample3M);
-                                counter3M.put(key, getCounter(counter3M, key) + 1);
-                                if (getCounter(counter3M, key) >= 4) {
-                                    // 触发 1Y 集：rate 取最近 4 个 3M 点的均值（嵌套均值）
-                                    counter3M.put(key, 0);
-                                    double avgRate1Y = averageRate(getOrCreate(series3M, key).getLastN(4));
-                                    AEMonitorSample sample1Y = new AEMonitorSample(
-                                        sample3M.timeMs,
-                                        sample3M.tick,
-                                        sample3M.amount,
-                                        avgRate1Y);
-                                    getOrCreate(series1Y, key).add(sample1Y);
-                                }
-                            }
-                        }
-                    }
-                }
+        // 流入计数链（O2-13 循环化）：本窗口计数 +1；满阈值时以「上一级窗口最近 N 点 rate
+        // 均值 + 触发点瞬时 amount/timeMs/tick」录入下一级窗口；未满阈值则更深层级全部不动
+        // （与原 8 级嵌套 if 链语义一致，source 沿链传递始终为最近一次触发点）
+        AEMonitorSample source = sample;
+        for (int w = 0; w + 1 < WINDOW_COUNT; w++) {
+            Map<String, Integer> counters = counterByWindow.get(w);
+            int count = getCounter(counters, key) + 1;
+            counters.put(key, count);
+            if (count < WINDOW_DEFS[w].inflowCount) {
+                break;
             }
+            counters.put(key, 0);
+            double avgRate = averageRate(getOrCreate(seriesByWindow.get(w), key).getLastN(WINDOW_DEFS[w].inflowCount));
+            AEMonitorSample derived = new AEMonitorSample(source.timeMs, source.tick, source.amount, avgRate);
+            getOrCreate(seriesByWindow.get(w + 1), key).add(derived);
+            source = derived;
         }
 
         lastSampleTick.put(key, tick);
@@ -218,7 +194,8 @@ public class AEMonitorDataSet {
      * @return 平均变化率（每分钟数量变化）；样本不足或 tick 差非正则返回 0.0
      */
     public double averageRate300s(String key) {
-        AEMonitorWindowSeries series = series5m.get(key);
+        AEMonitorWindowSeries series = seriesByWindow.get(WINDOW_5_MIN)
+            .get(key);
         if (series == null || series.size() < 2) {
             return 0.0D;
         }
@@ -241,34 +218,8 @@ public class AEMonitorDataSet {
      * @return 该窗口的 ArrayList 副本；key 不存在返回空列表
      */
     public List<AEMonitorSample> query(String key, int window) {
-        AEMonitorWindowSeries series;
-        switch (window) {
-            case WINDOW_1_HOUR:
-                series = series1h.get(key);
-                break;
-            case WINDOW_8_HOUR:
-                series = series8h.get(key);
-                break;
-            case WINDOW_24_HOUR:
-                series = series24h.get(key);
-                break;
-            case WINDOW_7_DAY:
-                series = series7d.get(key);
-                break;
-            case WINDOW_1_MONTH:
-                series = series1M.get(key);
-                break;
-            case WINDOW_3_MONTH:
-                series = series3M.get(key);
-                break;
-            case WINDOW_1_YEAR:
-                series = series1Y.get(key);
-                break;
-            case WINDOW_5_MIN:
-            default:
-                series = series5m.get(key);
-                break;
-        }
+        AEMonitorWindowSeries series = seriesByWindow.get(indexOf(window))
+            .get(key);
         return series == null ? new ArrayList<>() : series.copy();
     }
 
@@ -279,7 +230,8 @@ public class AEMonitorDataSet {
      * @return 最新点；key 不存在或空集返回 null
      */
     public AEMonitorSample newest(String key) {
-        AEMonitorWindowSeries series = series5m.get(key);
+        AEMonitorWindowSeries series = seriesByWindow.get(WINDOW_5_MIN)
+            .get(key);
         return series == null ? null : series.newest();
     }
 
@@ -287,34 +239,8 @@ public class AEMonitorDataSet {
      * 查询指定 key 与窗口的当前样本数。
      */
     public int size(String key, int window) {
-        AEMonitorWindowSeries series;
-        switch (window) {
-            case WINDOW_1_HOUR:
-                series = series1h.get(key);
-                break;
-            case WINDOW_8_HOUR:
-                series = series8h.get(key);
-                break;
-            case WINDOW_24_HOUR:
-                series = series24h.get(key);
-                break;
-            case WINDOW_7_DAY:
-                series = series7d.get(key);
-                break;
-            case WINDOW_1_MONTH:
-                series = series1M.get(key);
-                break;
-            case WINDOW_3_MONTH:
-                series = series3M.get(key);
-                break;
-            case WINDOW_1_YEAR:
-                series = series1Y.get(key);
-                break;
-            case WINDOW_5_MIN:
-            default:
-                series = series5m.get(key);
-                break;
-        }
+        AEMonitorWindowSeries series = seriesByWindow.get(indexOf(window))
+            .get(key);
         return series == null ? 0 : series.size();
     }
 
@@ -322,23 +248,14 @@ public class AEMonitorDataSet {
      * 清空指定 key 的所有窗口、计数器与采样锁，释放内存。
      */
     public void clear(String key) {
-        series5m.remove(key);
-        series1h.remove(key);
-        series8h.remove(key);
-        series24h.remove(key);
-        // v1.5.17：清空 4 个新增窗口 series
-        series7d.remove(key);
-        series1M.remove(key);
-        series3M.remove(key);
-        series1Y.remove(key);
-        counter5m.remove(key);
-        counter1h.remove(key);
-        counter8h.remove(key);
-        // v1.5.17：清空 4 个新增计数器
-        counter24h.remove(key);
-        counter7d.remove(key);
-        counter1M.remove(key);
-        counter3M.remove(key);
+        for (int w = 0; w < WINDOW_COUNT; w++) {
+            seriesByWindow.get(w)
+                .remove(key);
+        }
+        for (int w = 0; w + 1 < WINDOW_COUNT; w++) {
+            counterByWindow.get(w)
+                .remove(key);
+        }
         lastSampleTick.remove(key);
     }
 
@@ -346,35 +263,29 @@ public class AEMonitorDataSet {
      * 清空全部 key。
      */
     public void clear() {
-        series5m.clear();
-        series1h.clear();
-        series8h.clear();
-        series24h.clear();
-        // v1.5.17：清空 4 个新增窗口 series
-        series7d.clear();
-        series1M.clear();
-        series3M.clear();
-        series1Y.clear();
-        counter5m.clear();
-        counter1h.clear();
-        counter8h.clear();
-        // v1.5.17：清空 4 个新增计数器
-        counter24h.clear();
-        counter7d.clear();
-        counter1M.clear();
-        counter3M.clear();
+        for (int w = 0; w < WINDOW_COUNT; w++) {
+            seriesByWindow.get(w)
+                .clear();
+        }
+        for (int w = 0; w + 1 < WINDOW_COUNT; w++) {
+            counterByWindow.get(w)
+                .clear();
+        }
         lastSampleTick.clear();
     }
 
     /**
-     * 获取当前所有 key 的集合。
+     * 获取当前所有 key 的集合（以 5m 集为准：每个 addSample 的 key 必先入 5m 集）。
      */
     public Set<String> getKeys() {
-        return new HashSet<>(series5m.keySet());
+        return new HashSet<>(
+            seriesByWindow.get(WINDOW_5_MIN)
+                .keySet());
     }
 
     /**
      * NBT 序列化：每个 key 一个 entry，包含 8 个 series、7 个 counter 与 lastSampleTick。
+     * 键写入顺序（series 5m→1Y、counter 5m→3M、lastSampleTick）与 O2-13 前逐字段版一致。
      */
     public NBTTagCompound toNBT() {
         NBTTagCompound tag = new NBTTagCompound();
@@ -384,31 +295,16 @@ public class AEMonitorDataSet {
             entry.setString("key", key);
 
             NBTTagCompound data = new NBTTagCompound();
-            AEMonitorWindowSeries s5m = series5m.get(key);
-            AEMonitorWindowSeries s1h = series1h.get(key);
-            AEMonitorWindowSeries s8h = series8h.get(key);
-            AEMonitorWindowSeries s24h = series24h.get(key);
-            // v1.5.17：新增 4 个高级窗口 series
-            AEMonitorWindowSeries s7d = series7d.get(key);
-            AEMonitorWindowSeries s1M = series1M.get(key);
-            AEMonitorWindowSeries s3M = series3M.get(key);
-            AEMonitorWindowSeries s1Y = series1Y.get(key);
-            if (s5m != null) data.setTag("series5m", s5m.toNBT());
-            if (s1h != null) data.setTag("series1h", s1h.toNBT());
-            if (s8h != null) data.setTag("series8h", s8h.toNBT());
-            if (s24h != null) data.setTag("series24h", s24h.toNBT());
-            if (s7d != null) data.setTag("series7d", s7d.toNBT());
-            if (s1M != null) data.setTag("series1M", s1M.toNBT());
-            if (s3M != null) data.setTag("series3M", s3M.toNBT());
-            if (s1Y != null) data.setTag("series1Y", s1Y.toNBT());
-            data.setInteger("counter5m", getCounter(counter5m, key));
-            data.setInteger("counter1h", getCounter(counter1h, key));
-            data.setInteger("counter8h", getCounter(counter8h, key));
-            // v1.5.17：持久化 4 个新增计数器
-            data.setInteger("counter24h", getCounter(counter24h, key));
-            data.setInteger("counter7d", getCounter(counter7d, key));
-            data.setInteger("counter1M", getCounter(counter1M, key));
-            data.setInteger("counter3M", getCounter(counter3M, key));
+            for (int w = 0; w < WINDOW_COUNT; w++) {
+                AEMonitorWindowSeries series = seriesByWindow.get(w)
+                    .get(key);
+                if (series != null) {
+                    data.setTag(WINDOW_DEFS[w].seriesKey, series.toNBT());
+                }
+            }
+            for (int w = 0; w + 1 < WINDOW_COUNT; w++) {
+                data.setInteger(WINDOW_DEFS[w].counterKey, getCounter(counterByWindow.get(w), key));
+            }
             Long lastTick = lastSampleTick.get(key);
             data.setLong("lastSampleTick", lastTick == null ? -1L : lastTick.longValue());
 
@@ -441,39 +337,15 @@ public class AEMonitorDataSet {
             }
             NBTTagCompound data = entry.getCompoundTag("data");
 
-            if (data.hasKey("series5m")) {
-                getOrCreate(series5m, key).readFromNBT(data.getCompoundTag("series5m"));
+            for (int w = 0; w < WINDOW_COUNT; w++) {
+                if (data.hasKey(WINDOW_DEFS[w].seriesKey)) {
+                    getOrCreate(seriesByWindow.get(w), key).readFromNBT(data.getCompoundTag(WINDOW_DEFS[w].seriesKey));
+                }
             }
-            if (data.hasKey("series1h")) {
-                getOrCreate(series1h, key).readFromNBT(data.getCompoundTag("series1h"));
+            for (int w = 0; w + 1 < WINDOW_COUNT; w++) {
+                counterByWindow.get(w)
+                    .put(key, data.getInteger(WINDOW_DEFS[w].counterKey));
             }
-            if (data.hasKey("series8h")) {
-                getOrCreate(series8h, key).readFromNBT(data.getCompoundTag("series8h"));
-            }
-            if (data.hasKey("series24h")) {
-                getOrCreate(series24h, key).readFromNBT(data.getCompoundTag("series24h"));
-            }
-            // v1.5.17：读取 4 个新增窗口 series；旧存档无此键时跳过（series 保持空）
-            if (data.hasKey("series7d")) {
-                getOrCreate(series7d, key).readFromNBT(data.getCompoundTag("series7d"));
-            }
-            if (data.hasKey("series1M")) {
-                getOrCreate(series1M, key).readFromNBT(data.getCompoundTag("series1M"));
-            }
-            if (data.hasKey("series3M")) {
-                getOrCreate(series3M, key).readFromNBT(data.getCompoundTag("series3M"));
-            }
-            if (data.hasKey("series1Y")) {
-                getOrCreate(series1Y, key).readFromNBT(data.getCompoundTag("series1Y"));
-            }
-            counter5m.put(key, data.getInteger("counter5m"));
-            counter1h.put(key, data.getInteger("counter1h"));
-            counter8h.put(key, data.getInteger("counter8h"));
-            // v1.5.17：读取 4 个新增计数器；旧存档无此键时 getInteger 返回 0（符合预期）
-            counter24h.put(key, data.getInteger("counter24h"));
-            counter7d.put(key, data.getInteger("counter7d"));
-            counter1M.put(key, data.getInteger("counter1M"));
-            counter3M.put(key, data.getInteger("counter3M"));
             lastSampleTick.put(key, data.getLong("lastSampleTick"));
         }
     }
