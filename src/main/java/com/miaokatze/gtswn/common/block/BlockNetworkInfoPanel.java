@@ -11,7 +11,6 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.IIcon;
-import net.minecraft.util.MathHelper;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.FluidContainerRegistry;
@@ -56,11 +55,12 @@ public class BlockNetworkInfoPanel extends BlockContainer {
 
     @Override
     public IIcon getIcon(int side, int meta) {
-        int facing = normalizeFacing(meta);
+        // E1（O2-01a）：五工具收敛至 ScreenStructureUtil，本类私有副本已删
+        int facing = ScreenStructureUtil.normalizeFacing(meta);
         if (side == facing) {
             return screenIcon;
         }
-        if (side == opposite(facing)) {
+        if (side == ScreenStructureUtil.opposite(facing)) {
             return backIcon;
         }
         return sideIcon;
@@ -68,16 +68,16 @@ public class BlockNetworkInfoPanel extends BlockContainer {
 
     @Override
     public IIcon getIcon(IBlockAccess world, int x, int y, int z, int side) {
-        int facing = normalizeFacing(world.getBlockMetadata(x, y, z));
+        int facing = ScreenStructureUtil.normalizeFacing(world.getBlockMetadata(x, y, z));
         if (side == facing) {
-            return connectedScreenIcons[getEdgeMask(world, x, y, z, facing)];
+            return connectedScreenIcons[ScreenStructureUtil.getEdgeMask(world, x, y, z, facing)];
         }
         return getIcon(side, facing);
     }
 
     @Override
     public void onBlockPlacedBy(World world, int x, int y, int z, EntityLivingBase placer, ItemStack stack) {
-        int facing = getHorizontalFacingFromEntity(placer);
+        int facing = ScreenStructureUtil.getHorizontalFacingFromEntity(placer);
         world.setBlockMetadataWithNotify(x, y, z, facing, 2);
 
         TileEntity tile = world.getTileEntity(x, y, z);
@@ -225,104 +225,6 @@ public class BlockNetworkInfoPanel extends BlockContainer {
                     }
                 }
             }
-        }
-    }
-
-    private static int getHorizontalFacingFromEntity(EntityLivingBase entity) {
-        int direction = MathHelper.floor_double(entity.rotationYaw * 4.0F / 360.0F + 0.5D) & 3;
-        switch (direction) {
-            case 0:
-                return 2;
-            case 1:
-                return 5;
-            case 2:
-                return 3;
-            case 3:
-                return 4;
-            default:
-                return 3;
-        }
-    }
-
-    private static int normalizeFacing(int meta) {
-        if (meta >= 2 && meta <= 5) {
-            return meta;
-        }
-        return 3;
-    }
-
-    private static int getEdgeMask(IBlockAccess world, int x, int y, int z, int facing) {
-        int mask = 0;
-        if (!isCompatibleScreenPart(world, x, y + 1, z, facing)) {
-            mask |= 1;
-        }
-        if (!isCompatibleScreenPart(world, x, y - 1, z, facing)) {
-            mask |= 2;
-        }
-        // v1.5.15：修复方向性各异性——左右边缘需按朝向镜像。
-        // bit2 (mask4)=左侧无邻居，bit3 (mask8)=右侧无邻居。
-        // 观察者面对屏幕时左手边方向：
-        // facing=3 (S) → X-，facing=2 (N) → X+（镜像）
-        // facing=4 (W) → Z-，facing=5 (E) → Z+（镜像）
-        if (facing == 2) {
-            // N: 180°镜像，左右互换
-            if (!isCompatibleScreenPart(world, x + 1, y, z, facing)) {
-                mask |= 4;
-            }
-            if (!isCompatibleScreenPart(world, x - 1, y, z, facing)) {
-                mask |= 8;
-            }
-        } else if (facing == 3) {
-            // S: 不变
-            if (!isCompatibleScreenPart(world, x - 1, y, z, facing)) {
-                mask |= 4;
-            }
-            if (!isCompatibleScreenPart(world, x + 1, y, z, facing)) {
-                mask |= 8;
-            }
-        } else if (facing == 4) {
-            // W: 不变
-            if (!isCompatibleScreenPart(world, x, y, z - 1, facing)) {
-                mask |= 4;
-            }
-            if (!isCompatibleScreenPart(world, x, y, z + 1, facing)) {
-                mask |= 8;
-            }
-        } else {
-            // E (facing==5): +90°镜像，左右互换
-            if (!isCompatibleScreenPart(world, x, y, z + 1, facing)) {
-                mask |= 4;
-            }
-            if (!isCompatibleScreenPart(world, x, y, z - 1, facing)) {
-                mask |= 8;
-            }
-        }
-        return mask;
-    }
-
-    private static boolean isCompatibleScreenPart(IBlockAccess world, int x, int y, int z, int facing) {
-        TileEntity tile = world.getTileEntity(x, y, z);
-        return (tile instanceof TileEntityNetworkInfoPanel
-            || tile instanceof com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender)
-            && normalizeFacing(tile.getBlockMetadata()) == facing;
-    }
-
-    private static int opposite(int side) {
-        switch (side) {
-            case 2:
-                return 3;
-            case 3:
-                return 2;
-            case 4:
-                return 5;
-            case 5:
-                return 4;
-            case 0:
-                return 1;
-            case 1:
-                return 0;
-            default:
-                return side;
         }
     }
 }
