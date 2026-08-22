@@ -34,6 +34,7 @@ import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.panel.PanelBroadcastPort;
+import com.miaokatze.gtswn.common.panel.PanelConfigStore;
 import com.miaokatze.gtswn.common.tile.screen.ScreenStructure;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
@@ -68,46 +69,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     private UUID ownerUUID;
     private String ownerName = "";
 
-    private boolean showBriefEnergy = true;
-    private boolean showBriefStatus = true;
-    private boolean showChartEnergy = true;
-    private boolean showChartStatus = true;
-    private int trackingWindow = NetworkInfoDataSet.WINDOW_5_MIN;
-    private int briefRatio = 28;
-    // 显示模式：0=常规计数，1=科学计数，2=千位计数 K/M/G/T/P（EU 与 EU/t 均跟随此模式）
-    // 默认 1=科学计数，符合大数值场景的常见偏好
-    private int displayMode = 1;
-    private String energyAxisMin = "";
-    private String energyAxisMax = "";
-    private String eutAxisMin = "";
-    private String eutAxisMax = "";
-    private int chartBorderThickness = 3;
-    private String chartBackgroundColor = "";
-    private int trendLineThickness = 3;
-    private int trendLineSmoothing = 2;
-    private String screenBackgroundColor = ""; // 默认无背景色，TESR 不绘制背景填充
-
-    // === AE 图表配置字段（v1.5.4）===
-    private int aeTrackingWindow = AEMonitorDataSet.WINDOW_5_MIN;
-    private int aeChartBorderThickness = 3;
-    private String aeChartBackgroundColor = "";
-    private int aeTrendLineThickness = 3;
-    private int aeTrendLineSmoothing = 2;
-    private String aeAxisMin = "";
-    private String aeAxisMax = "";
-    private String aeLineColor = "1F6FFF";
-
-    // === AE 走势图显示控制字段（v1.5.5）：旧存档无该字段时默认全部开启，保持向后兼容 ===
-    private boolean showAEBrief = true;
-    private boolean showAEChartAmount = true;
-    private boolean showAEChartRate = true;
-
-    // === AE 实时监控显示配置字段（v1.5.8）===
-    private int aeMonitorFontSize = 12; // 字号，范围 8~16
-    private boolean aeMonitorBold = false; // 名称是否加粗
-    private int aeMonitorRenderMode = 0; // 0=条目(list), 1=格子(grid)
-    private int aeMonitorIconSize = 16; // 图标大小，范围 8~32
-
     private BigInteger cachedEu = BigInteger.ZERO;
     private double cachedEut = 0.0D;
     private String cachedStatus = "No data";
@@ -118,6 +79,13 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * 方法体逐字搬迁至 {@link ScreenStructure}，本类保留门面单行委托（外部调用面零改动）。
      */
     private final ScreenStructure structure = new ScreenStructure(this);
+
+    /**
+     * E3（O2-02）：面板配置域——全部显示/图表配置 + 行协议 + NBT/S35 序列化通道，
+     * 方法体逐字搬迁至 {@link PanelConfigStore}；本类保留 getter 门面单行委托，
+     * case 4/7/24 的跨域后置动作留 TE 编排（O2-A06），键名逐字不动。
+     */
+    private final PanelConfigStore store = new PanelConfigStore(this::markDirtyAndSync);
 
     /** AE2 网络代理，懒加载，首次调用 getProxy() 时初始化 */
     private AENetworkProxy gridProxy = null;
@@ -926,351 +894,220 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     public boolean isShowBriefEnergy() {
-        return showBriefEnergy;
+        return store.isShowBriefEnergy();
     }
 
     public boolean isShowBriefStatus() {
-        return showBriefStatus;
+        return store.isShowBriefStatus();
     }
 
     public boolean isShowChartEnergy() {
-        return showChartEnergy;
+        return store.isShowChartEnergy();
     }
 
     public boolean isShowChartStatus() {
-        return showChartStatus;
+        return store.isShowChartStatus();
     }
 
     public int getBriefRatio() {
-        return briefRatio;
+        return store.getBriefRatio();
     }
 
     public float getBriefFontScale() {
-        return Math.max(10, Math.min(80, briefRatio)) / 20.0F;
+        return store.getBriefFontScale();
     }
 
     public int getDisplayMode() {
-        return displayMode;
+        return store.getDisplayMode();
     }
 
     public void setDisplayMode(int mode) {
-        // 钳制到 [0,2]，兼容旧存档或异常包中的越界值
-        this.displayMode = Math.max(0, Math.min(2, mode));
+        store.setDisplayMode(mode);
     }
 
     public String getEnergyAxisMinText() {
-        return energyAxisMin;
+        return store.getEnergyAxisMinText();
     }
 
     public String getEnergyAxisMaxText() {
-        return energyAxisMax;
+        return store.getEnergyAxisMaxText();
     }
 
     public String getEutAxisMinText() {
-        return eutAxisMin;
+        return store.getEutAxisMinText();
     }
 
     public String getEutAxisMaxText() {
-        return eutAxisMax;
+        return store.getEutAxisMaxText();
     }
 
     public int getChartBorderThickness() {
-        return chartBorderThickness;
+        return store.getChartBorderThickness();
     }
 
     public String getChartBackgroundColorText() {
-        return chartBackgroundColor;
+        return store.getChartBackgroundColorText();
     }
 
     public int getTrendLineThickness() {
-        return trendLineThickness;
+        return store.getTrendLineThickness();
     }
 
     public int getTrendLineSmoothing() {
-        return trendLineSmoothing;
+        return store.getTrendLineSmoothing();
     }
 
     public String getScreenBackgroundColorText() {
-        return screenBackgroundColor;
+        return store.getScreenBackgroundColorText();
     }
 
     public Double getEnergyAxisMin() {
-        return parseOptionalDouble(energyAxisMin);
+        return store.getEnergyAxisMin();
     }
 
     public Double getEnergyAxisMax() {
-        return parseOptionalDouble(energyAxisMax);
+        return store.getEnergyAxisMax();
     }
 
     public Double getEutAxisMin() {
-        return parseOptionalDouble(eutAxisMin);
+        return store.getEutAxisMin();
     }
 
     public Double getEutAxisMax() {
-        return parseOptionalDouble(eutAxisMax);
+        return store.getEutAxisMax();
     }
 
     public Integer getChartBackgroundColor() {
-        return parseOptionalColor(chartBackgroundColor);
+        return store.getChartBackgroundColor();
     }
 
     public boolean hasScreenBackgroundColor() {
-        return parseOptionalColor(screenBackgroundColor) != null;
+        return store.hasScreenBackgroundColor();
     }
 
     public int getScreenBackgroundColor() {
-        Integer color = parseOptionalColor(screenBackgroundColor);
-        return color == null ? 0xDDE1E4 : color.intValue(); // 防御性兜底：hasScreenBackgroundColor() 为 false 时渲染路径不调用此方法
+        return store.getScreenBackgroundColor();
     }
 
     // ==================== AE 图表配置 Getter / Setter（v1.5.4）====================
 
     public int getAETrackingWindow() {
-        return aeTrackingWindow;
+        return store.getAETrackingWindow();
     }
 
     public int getAEChartBorderThickness() {
-        return aeChartBorderThickness;
+        return store.getAEChartBorderThickness();
     }
 
     public String getAEChartBackgroundColorText() {
-        return aeChartBackgroundColor;
+        return store.getAEChartBackgroundColorText();
     }
 
     public Integer getAEChartBackgroundColor() {
-        return parseOptionalColor(aeChartBackgroundColor);
+        return store.getAEChartBackgroundColor();
     }
 
     public int getAETrendLineThickness() {
-        return aeTrendLineThickness;
+        return store.getAETrendLineThickness();
     }
 
     public int getAETrendLineSmoothing() {
-        return aeTrendLineSmoothing;
+        return store.getAETrendLineSmoothing();
     }
 
     public String getAEAxisMinText() {
-        return aeAxisMin;
+        return store.getAEAxisMinText();
     }
 
     public String getAEAxisMaxText() {
-        return aeAxisMax;
+        return store.getAEAxisMaxText();
     }
 
     public Double getAEAxisMin() {
-        return parseOptionalDouble(aeAxisMin);
+        return store.getAEAxisMin();
     }
 
     public Double getAEAxisMax() {
-        return parseOptionalDouble(aeAxisMax);
+        return store.getAEAxisMax();
     }
 
     public String getAELineColorText() {
-        return aeLineColor;
+        return store.getAELineColorText();
     }
 
     public Integer getAELineColor() {
-        return parseOptionalColor(aeLineColor);
+        return store.getAELineColor();
     }
 
     // === AE 实时监控显示配置 Getter（v1.5.8）===
     public int getAEMonitorFontSize() {
-        return aeMonitorFontSize;
+        return store.getAEMonitorFontSize();
     }
 
     public boolean isAEMonitorBold() {
-        return aeMonitorBold;
+        return store.isAEMonitorBold();
     }
 
     public int getAEMonitorRenderMode() {
-        return aeMonitorRenderMode;
+        return store.getAEMonitorRenderMode();
     }
 
     public int getAEMonitorIconSize() {
-        return aeMonitorIconSize;
+        return store.getAEMonitorIconSize();
     }
 
     public boolean isShowAEBrief() {
-        return showAEBrief;
+        return store.isShowAEBrief();
     }
 
     public boolean isShowAEChartAmount() {
-        return showAEChartAmount;
+        return store.isShowAEChartAmount();
     }
 
     public boolean isShowAEChartRate() {
-        return showAEChartRate;
+        return store.isShowAEChartRate();
     }
 
     /**
-     * 解析 AE 图表配置字符串，格式与 applyChartConfig 类似，每行 key=value。
-     * <p>
-     * 支持键：aeWindow, aeBorder, aeBg, aeLineW, aeSmoothing, aeMin, aeMax, aeLineColor。
-     *
-     * @param payload 配置文本
+     * E3 门面：AE 图表配置行协议（值变更体归 Store，含末尾 markChanged 回调）。
      */
     public void applyAEChartConfig(String payload) {
-        if (payload == null) {
-            return;
-        }
-        String[] lines = payload.split("\n", -1);
-        for (String line : lines) {
-            int index = line.indexOf('=');
-            if (index <= 0) {
-                continue;
-            }
-            String key = line.substring(0, index);
-            String value = cleanText(line.substring(index + 1));
-            if ("aeWindow".equals(key)) {
-                // v1.5.17：上限扩展到 WINDOW_1_YEAR（8 窗口）
-                aeTrackingWindow = clampInt(
-                    value,
-                    aeTrackingWindow,
-                    AEMonitorDataSet.WINDOW_5_MIN,
-                    AEMonitorDataSet.WINDOW_1_YEAR);
-            } else if ("aeBorder".equals(key)) {
-                aeChartBorderThickness = clampInt(value, aeChartBorderThickness, 1, 8);
-            } else if ("aeBg".equals(key)) {
-                aeChartBackgroundColor = cleanColorText(value);
-            } else if ("aeLineW".equals(key)) {
-                aeTrendLineThickness = clampInt(value, aeTrendLineThickness, 1, 8);
-            } else if ("aeSmoothing".equals(key)) {
-                aeTrendLineSmoothing = clampInt(value, aeTrendLineSmoothing, 0, 12);
-            } else if ("aeMin".equals(key)) {
-                aeAxisMin = value;
-            } else if ("aeMax".equals(key)) {
-                aeAxisMax = value;
-            } else if ("aeLineColor".equals(key)) {
-                aeLineColor = cleanColorText(value);
-            }
-        }
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+        store.applyAEChartConfig(payload);
     }
 
+    /**
+     * E3 门面：面板配置开关/步进行为编排——值变更体归 Store；case 4/7/24 的跨域后置动作
+     * （刷新走势缓存 / displayMode 切换即时重算状态文本 / AE 立即推送）留 TE（O2-A06），
+     * 执行顺序与搬迁前一致：值变更 → 后置动作 → markDirty + markBlockForUpdate。
+     */
     public void applyConfigAction(int action) {
-        switch (action) {
-            case 0:
-                showBriefEnergy = !showBriefEnergy;
-                break;
-            case 1:
-                showBriefStatus = !showBriefStatus;
-                break;
-            case 2:
-                showChartEnergy = !showChartEnergy;
-                break;
-            case 3:
-                showChartStatus = !showChartStatus;
-                break;
-            case 4:
-                trackingWindow = nextTrackingWindow(trackingWindow);
-                refreshCachedSamples();
-                break;
-            case 5:
-                briefRatio = Math.max(10, briefRatio - 5);
-                break;
-            case 6:
-                briefRatio = Math.min(80, briefRatio + 5);
-                break;
-            case 7:
-                // 切换显示模式：0->1->2->0（常规/科学/千位），影响 EU 与 EU/t 的格式化
-                displayMode = (displayMode + 1) % 3;
-            // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
-            {
-                NetworkInfoDataSet dataSet = getOwnerDataSet();
-                boolean cold = (dataSet == null) || dataSet.isColdStarting();
-                cachedStatus = formatStatus(cachedEut, cold, dataSet != null && dataSet.isLongTermSilent());
-            }
-                break;
-            case 20:
-                // AE 走势图：简报显示开关
-                showAEBrief = !showAEBrief;
-                break;
-            case 21:
-                // AE 走势图：存量曲线开关
-                showAEChartAmount = !showAEChartAmount;
-                break;
-            case 22:
-                // AE 走势图：变化率曲线开关
-                showAEChartRate = !showAEChartRate;
-                break;
-            case 24:
-                // AE 检测时长窗口：点击标签按钮循环到下一个窗口（与 EU 的 case 4 行为一致）
-                aeTrackingWindow = nextTrackingWindow(aeTrackingWindow);
-                // 立即推送新窗口数据给客户端，避免等待下次采样才刷新
-                sendAEMonitorDataToClients();
-                break;
-            case 25:
-                // AE 简报字号减小（复用 EU 的 briefRatio，与 case 5 行为一致）
-                briefRatio = Math.max(10, briefRatio - 5);
-                break;
-            case 26:
-                // AE 简报字号增大（复用 EU 的 briefRatio，与 case 6 行为一致）
-                briefRatio = Math.min(80, briefRatio + 5);
-                break;
-            case 30:
-                // AE 实时监控：字号减小（最小 8）
-                aeMonitorFontSize = Math.max(8, aeMonitorFontSize - 1);
-                break;
-            case 31:
-                // AE 实时监控：字号增大（最大 16）
-                aeMonitorFontSize = Math.min(16, aeMonitorFontSize + 1);
-                break;
-            case 32:
-                // AE 实时监控：名称加粗开关
-                aeMonitorBold = !aeMonitorBold;
-                break;
-            case 33:
-                // AE 实时监控：条目/格子显示模式切换
-                aeMonitorRenderMode = (aeMonitorRenderMode == 0) ? 1 : 0;
-                break;
-            case 34:
-                // AE 实时监控：图标大小减小（最小 8）
-                aeMonitorIconSize = Math.max(8, aeMonitorIconSize - 2);
-                break;
-            case 35:
-                // AE 实时监控：图标大小增大（最大 32）
-                aeMonitorIconSize = Math.min(32, aeMonitorIconSize + 2);
-                break;
-            default:
-                return;
-        }
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-    }
-
-    public void applyChartConfig(String payload) {
-        if (payload == null) {
+        if (!store.applyConfigAction(action)) {
             return;
         }
-        String[] lines = payload.split("\n", -1);
-        for (String line : lines) {
-            int index = line.indexOf('=');
-            if (index <= 0) {
-                continue;
-            }
-            String key = line.substring(0, index);
-            String value = cleanText(line.substring(index + 1));
-            if ("energyMin".equals(key)) {
-                energyAxisMin = value;
-            } else if ("energyMax".equals(key)) {
-                energyAxisMax = value;
-            } else if ("eutMin".equals(key)) {
-                eutAxisMin = value;
-            } else if ("eutMax".equals(key)) {
-                eutAxisMax = value;
-            } else if ("border".equals(key)) {
-                chartBorderThickness = clampInt(value, chartBorderThickness, 1, 8);
-            } else if ("chartBg".equals(key)) {
-                chartBackgroundColor = cleanColorText(value);
-            } else if ("line".equals(key)) {
-                trendLineThickness = clampInt(value, trendLineThickness, 1, 8);
-            } else if ("smoothing".equals(key)) {
-                trendLineSmoothing = clampInt(value, trendLineSmoothing, 0, 12);
-            } else if ("screenColor".equals(key)) {
-                screenBackgroundColor = cleanColorText(value);
-            }
+        if (action == 4) {
+            // 刷新走势图缓存，使新窗口立即生效
+            refreshCachedSamples();
+        } else if (action == 7) {
+            // 立即重算 cachedStatus，使 GUI/TESR 即时反映新格式（无需等下次采样）
+            NetworkInfoDataSet dataSet = getOwnerDataSet();
+            boolean cold = (dataSet == null) || dataSet.isColdStarting();
+            cachedStatus = formatStatus(cachedEut, cold, dataSet != null && dataSet.isLongTermSilent());
+        } else if (action == 24) {
+            // 立即推送新窗口数据给客户端，避免等待下次采样才刷新
+            sendAEMonitorDataToClients();
         }
+        markDirtyAndSync();
+    }
+
+    /**
+     * E3 门面：EU 图表配置行协议（值变更体归 Store，含末尾 markChanged 回调）。
+     */
+    public void applyChartConfig(String payload) {
+        store.applyChartConfig(payload);
+    }
+
+    /** 值变更副作用出口：Store DirtyListener 与 applyConfigAction 编排共用 */
+    private void markDirtyAndSync() {
         markDirty();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
@@ -1300,7 +1137,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (tag.hasKey("lastAESampleTick")) {
             lastAESampleTick = tag.getLong("lastAESampleTick");
         }
-        readChartConfig(tag);
+        store.readPlacement(tag);
         needsDataRefresh = true;
     }
 
@@ -1320,7 +1157,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
         tag.setLong("lastAESampleTick", lastAESampleTick);
-        writeChartConfig(tag);
+        store.writePlacement(tag);
     }
 
     /**
@@ -1341,7 +1178,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      */
     private void refreshCachedSamples(NetworkInfoDataSet dataSet) {
         cachedSamples.clear();
-        cachedSamples.addAll(dataSet.query(trackingWindow));
+        cachedSamples.addAll(dataSet.query(store.getTrackingWindow()));
     }
 
     private String formatStatus(double eut, boolean coldStarting, boolean longTermSilent) {
@@ -1360,7 +1197,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         String key = eut > 0 ? "gtswn.network_info.status.up" : "gtswn.network_info.status.down";
         // EU/t 数值根据 displayMode 切换常规/科学/千位计数
         String eutText;
-        switch (displayMode) {
+        switch (store.getDisplayMode()) {
             case 1:
                 eutText = FormatUtil.formatScientificDouble(Math.abs(eut));
                 break;
@@ -1380,7 +1217,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     public String getWindowName() {
-        switch (trackingWindow) {
+        switch (store.getTrackingWindow()) {
             case NetworkInfoDataSet.WINDOW_1_HOUR:
                 return "1h";
             case NetworkInfoDataSet.WINDOW_8_HOUR:
@@ -1398,28 +1235,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             case NetworkInfoDataSet.WINDOW_5_MIN:
             default:
                 return "5m";
-        }
-    }
-
-    private static int nextTrackingWindow(int window) {
-        switch (window) {
-            case NetworkInfoDataSet.WINDOW_5_MIN:
-                return NetworkInfoDataSet.WINDOW_1_HOUR;
-            case NetworkInfoDataSet.WINDOW_1_HOUR:
-                return NetworkInfoDataSet.WINDOW_8_HOUR;
-            case NetworkInfoDataSet.WINDOW_8_HOUR:
-                return NetworkInfoDataSet.WINDOW_24_HOUR;
-            case NetworkInfoDataSet.WINDOW_24_HOUR:
-                return NetworkInfoDataSet.WINDOW_7_DAY;
-            case NetworkInfoDataSet.WINDOW_7_DAY:
-                return NetworkInfoDataSet.WINDOW_1_MONTH;
-            case NetworkInfoDataSet.WINDOW_1_MONTH:
-                return NetworkInfoDataSet.WINDOW_3_MONTH;
-            case NetworkInfoDataSet.WINDOW_3_MONTH:
-                return NetworkInfoDataSet.WINDOW_1_YEAR;
-            case NetworkInfoDataSet.WINDOW_1_YEAR:
-            default:
-                return NetworkInfoDataSet.WINDOW_5_MIN;
         }
     }
 
@@ -1457,20 +1272,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
         readPlacementData(tag);
-        showBriefEnergy = !tag.hasKey("showBriefEnergy") || tag.getBoolean("showBriefEnergy");
-        showBriefStatus = !tag.hasKey("showBriefStatus") || tag.getBoolean("showBriefStatus");
-        showChartEnergy = !tag.hasKey("showChartEnergy") || tag.getBoolean("showChartEnergy");
-        showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
-        trackingWindow = tag.getInteger("trackingWindow");
-        briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 1, 0, 2);
-        readChartConfig(tag);
+        store.readFromNBT(tag);
         if (tag.hasKey("screen")) {
             structure.setScreen(NetworkScreen.fromNBT(tag.getCompoundTag("screen")));
         }
         readSyncData(tag);
-        readAEChartConfig(tag);
-        readAEMonitorConfig(tag);
         // === AE 标签页字段读取 ===
         currentTab = tag.hasKey("currentTab") ? tag.getInteger("currentTab") : 0;
         if (tag.hasKey("chartItem")) {
@@ -1512,14 +1318,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     public void writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
         writePlacementData(tag);
-        tag.setBoolean("showBriefEnergy", showBriefEnergy);
-        tag.setBoolean("showBriefStatus", showBriefStatus);
-        tag.setBoolean("showChartEnergy", showChartEnergy);
-        tag.setBoolean("showChartStatus", showChartStatus);
-        tag.setInteger("trackingWindow", trackingWindow);
-        tag.setInteger("briefRatio", briefRatio);
-        tag.setInteger("displayMode", displayMode);
-        writeChartConfig(tag);
+        store.writeToNBT(tag);
         if (structure.getScreen() != null) {
             tag.setTag(
                 "screen",
@@ -1529,8 +1328,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         // B2-09：不再调 writeSyncData(tag)——sync 数据（cachedEu/cachedStatus/samples/aeChartSamples 等）
         // 是 S35 描述包专用快照，readSyncData 读取全守卫，断档后由 needsDataRefresh 冷启动从 WSD 正本重建，
         // 区块 NBT 双写只增体积；writeSyncData/readSyncData 本体与 S35 路径（getDescriptionPacket/onDataPacket）不动
-        writeAEChartConfig(tag);
-        writeAEMonitorConfig(tag);
         // === AE 标签页字段写入 ===
         tag.setInteger("currentTab", currentTab);
         if (chartItem != null) {
@@ -1571,16 +1368,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         tag.setString("cachedEu", cachedEu == null ? "0" : cachedEu.toString());
         tag.setDouble("cachedEut", cachedEut);
         tag.setString("cachedStatus", cachedStatus == null ? "" : cachedStatus);
-        tag.setBoolean("showBriefEnergy", showBriefEnergy);
-        tag.setBoolean("showBriefStatus", showBriefStatus);
-        tag.setBoolean("showChartEnergy", showChartEnergy);
-        tag.setBoolean("showChartStatus", showChartStatus);
-        tag.setInteger("trackingWindow", trackingWindow);
-        tag.setInteger("briefRatio", briefRatio);
-        tag.setInteger("displayMode", displayMode);
-        writeChartConfig(tag);
-        writeAEChartConfig(tag);
-        writeAEMonitorConfig(tag);
+        store.writeSync(tag);
         if (structure.getScreen() != null) {
             tag.setTag(
                 "screen",
@@ -1635,16 +1423,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (tag.hasKey("cachedStatus")) {
             cachedStatus = tag.getString("cachedStatus");
         }
-        showBriefEnergy = !tag.hasKey("showBriefEnergy") || tag.getBoolean("showBriefEnergy");
-        showBriefStatus = !tag.hasKey("showBriefStatus") || tag.getBoolean("showBriefStatus");
-        showChartEnergy = !tag.hasKey("showChartEnergy") || tag.getBoolean("showChartEnergy");
-        showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
-        trackingWindow = tag.getInteger("trackingWindow");
-        briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
-        displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 1, 0, 2);
-        readChartConfig(tag);
-        readAEChartConfig(tag);
-        readAEMonitorConfig(tag);
+        store.readSync(tag);
         if (tag.hasKey("screen")) {
             structure.setScreen(NetworkScreen.fromNBT(tag.getCompoundTag("screen")));
         }
@@ -1691,156 +1470,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 aeChartSamples.add(AEMonitorSample.fromNBT(aeChartList.getCompoundTagAt(i)));
             }
         }
-    }
-
-    private void writeChartConfig(NBTTagCompound tag) {
-        tag.setString("energyAxisMin", energyAxisMin);
-        tag.setString("energyAxisMax", energyAxisMax);
-        tag.setString("eutAxisMin", eutAxisMin);
-        tag.setString("eutAxisMax", eutAxisMax);
-        tag.setInteger("chartBorderThickness", chartBorderThickness);
-        tag.setString("chartBackgroundColor", chartBackgroundColor);
-        tag.setInteger("trendLineThickness", trendLineThickness);
-        tag.setInteger("trendLineSmoothing", trendLineSmoothing);
-        tag.setString("screenBackgroundColor", screenBackgroundColor);
-    }
-
-    private void readChartConfig(NBTTagCompound tag) {
-        energyAxisMin = tag.hasKey("energyAxisMin") ? tag.getString("energyAxisMin") : "";
-        energyAxisMax = tag.hasKey("energyAxisMax") ? tag.getString("energyAxisMax") : "";
-        eutAxisMin = tag.hasKey("eutAxisMin") ? tag.getString("eutAxisMin") : "";
-        eutAxisMax = tag.hasKey("eutAxisMax") ? tag.getString("eutAxisMax") : "";
-        chartBorderThickness = tag.hasKey("chartBorderThickness")
-            ? clampInt(tag.getInteger("chartBorderThickness"), 1, 8)
-            : 3;
-        chartBackgroundColor = tag.hasKey("chartBackgroundColor")
-            ? cleanColorText(tag.getString("chartBackgroundColor"))
-            : "";
-        trendLineThickness = tag.hasKey("trendLineThickness") ? clampInt(tag.getInteger("trendLineThickness"), 1, 8)
-            : 3;
-        trendLineSmoothing = tag.hasKey("trendLineSmoothing") ? clampInt(tag.getInteger("trendLineSmoothing"), 0, 12)
-            : 2;
-        screenBackgroundColor = tag.hasKey("screenBackgroundColor")
-            ? cleanColorText(tag.getString("screenBackgroundColor"))
-            : ""; // 旧存档无此字段时默认空（不绘制背景）
-    }
-
-    private void writeAEChartConfig(NBTTagCompound tag) {
-        tag.setInteger("aeTrackingWindow", aeTrackingWindow);
-        tag.setInteger("aeChartBorderThickness", aeChartBorderThickness);
-        tag.setString("aeChartBackgroundColor", aeChartBackgroundColor);
-        tag.setInteger("aeTrendLineThickness", aeTrendLineThickness);
-        tag.setInteger("aeTrendLineSmoothing", aeTrendLineSmoothing);
-        tag.setString("aeAxisMin", aeAxisMin);
-        tag.setString("aeAxisMax", aeAxisMax);
-        tag.setString("aeLineColor", aeLineColor);
-        tag.setBoolean("showAEBrief", showAEBrief);
-        tag.setBoolean("showAEChartAmount", showAEChartAmount);
-        tag.setBoolean("showAEChartRate", showAEChartRate);
-    }
-
-    private void readAEChartConfig(NBTTagCompound tag) {
-        aeTrackingWindow = tag.hasKey("aeTrackingWindow")
-            ? clampInt(
-                tag.getInteger("aeTrackingWindow"),
-                AEMonitorDataSet.WINDOW_5_MIN,
-                AEMonitorDataSet.WINDOW_1_YEAR)
-            : AEMonitorDataSet.WINDOW_5_MIN;
-        aeChartBorderThickness = tag.hasKey("aeChartBorderThickness")
-            ? clampInt(tag.getInteger("aeChartBorderThickness"), 1, 8)
-            : 3;
-        aeChartBackgroundColor = tag.hasKey("aeChartBackgroundColor")
-            ? cleanColorText(tag.getString("aeChartBackgroundColor"))
-            : "";
-        aeTrendLineThickness = tag.hasKey("aeTrendLineThickness")
-            ? clampInt(tag.getInteger("aeTrendLineThickness"), 1, 8)
-            : 3;
-        aeTrendLineSmoothing = tag.hasKey("aeTrendLineSmoothing")
-            ? clampInt(tag.getInteger("aeTrendLineSmoothing"), 0, 12)
-            : 2;
-        aeAxisMin = tag.hasKey("aeAxisMin") ? cleanText(tag.getString("aeAxisMin")) : "";
-        aeAxisMax = tag.hasKey("aeAxisMax") ? cleanText(tag.getString("aeAxisMax")) : "";
-        aeLineColor = tag.hasKey("aeLineColor") ? cleanColorText(tag.getString("aeLineColor")) : "1F6FFF";
-        // 旧存档无这些字段时默认 true，保证图表/简报默认可见
-        showAEBrief = !tag.hasKey("showAEBrief") || tag.getBoolean("showAEBrief");
-        showAEChartAmount = !tag.hasKey("showAEChartAmount") || tag.getBoolean("showAEChartAmount");
-        showAEChartRate = !tag.hasKey("showAEChartRate") || tag.getBoolean("showAEChartRate");
-    }
-
-    // === AE 实时监控显示配置 NBT 读写（v1.5.8）===
-    private void writeAEMonitorConfig(NBTTagCompound tag) {
-        tag.setInteger("aeMonitorFontSize", aeMonitorFontSize);
-        tag.setBoolean("aeMonitorBold", aeMonitorBold);
-        tag.setInteger("aeMonitorRenderMode", aeMonitorRenderMode);
-        tag.setInteger("aeMonitorIconSize", aeMonitorIconSize);
-    }
-
-    private void readAEMonitorConfig(NBTTagCompound tag) {
-        aeMonitorFontSize = tag.hasKey("aeMonitorFontSize") ? clampInt(tag.getInteger("aeMonitorFontSize"), 8, 16) : 12;
-        aeMonitorBold = !tag.hasKey("aeMonitorBold") || tag.getBoolean("aeMonitorBold");
-        aeMonitorRenderMode = tag.hasKey("aeMonitorRenderMode") ? clampInt(tag.getInteger("aeMonitorRenderMode"), 0, 1)
-            : 0;
-        aeMonitorIconSize = tag.hasKey("aeMonitorIconSize") ? clampInt(tag.getInteger("aeMonitorIconSize"), 8, 32) : 16;
-    }
-
-    private static Double parseOptionalDouble(String value) {
-        if (value == null || value.trim()
-            .isEmpty()) {
-            return null;
-        }
-        try {
-            return Double.valueOf(value.trim());
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static Integer parseOptionalColor(String value) {
-        String clean = cleanColorText(value);
-        if (clean.isEmpty()) {
-            return null;
-        }
-        try {
-            return Integer.valueOf((int) Long.parseLong(clean, 16));
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    private static String cleanText(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.trim()
-            .replace('\r', ' ')
-            .replace('\n', ' ');
-    }
-
-    private static String cleanColorText(String value) {
-        String clean = cleanText(value).replace("#", "");
-        if (clean.length() > 6) {
-            clean = clean.substring(0, 6);
-        }
-        for (int i = 0; i < clean.length(); i++) {
-            char c = clean.charAt(i);
-            boolean hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-            if (!hex) {
-                return "";
-            }
-        }
-        return clean.toUpperCase();
-    }
-
-    private static int clampInt(String value, int fallback, int min, int max) {
-        try {
-            return clampInt(Integer.parseInt(value), min, max);
-        } catch (NumberFormatException e) {
-            return fallback;
-        }
-    }
-
-    private static int clampInt(int value, int min, int max) {
-        return Math.max(min, Math.min(max, value));
     }
 
 }
