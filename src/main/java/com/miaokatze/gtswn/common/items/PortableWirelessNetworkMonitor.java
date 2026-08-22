@@ -112,11 +112,11 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
      * {@link #isBound(ItemStack)} 一致但不做 ensureNBT 副作用；未绑定监视器不参与
      * HUD 模式判定，BUG-8 口径随门面保持）。
      *
-     * @param stack 物品堆栈
+     * @param stack 物品堆栈（允许 null：HUD 背包扫描的空槽位/空手直接传入）
      * @return 是否本类的已绑定实例
      */
     public static boolean isMonitorBound(ItemStack stack) {
-        if (!(stack.getItem() instanceof PortableWirelessNetworkMonitor)) {
+        if (stack == null || !(stack.getItem() instanceof PortableWirelessNetworkMonitor)) {
             return false;
         }
         if (stack.stackTagCompound == null) {
