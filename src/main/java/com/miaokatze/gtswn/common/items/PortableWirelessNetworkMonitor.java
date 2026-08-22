@@ -117,12 +117,15 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         // 默认 HUD 模式为关闭
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, 0);
 
-        // 向玩家发送提示信息
-        String boundMsg = StatCollector
-            .translateToLocalFormatted("gtswn.chat.monitor.bound", aPlayer.getCommandSenderName());
-        String hintMsg = StatCollector.translateToLocal("gtswn.chat.monitor.bound.hint");
-        aPlayer.addChatMessage(new ChatComponentText(boundMsg));
-        aPlayer.addChatMessage(new ChatComponentText(hintMsg));
+        // 向玩家发送提示信息（B2-08：onItemRightClick 双端各执行一次，无服务端门会双发；
+        // 仅服务端权威转发，与 TestCoin 绑定提示范式对齐）
+        if (!aPlayer.worldObj.isRemote) {
+            String boundMsg = StatCollector
+                .translateToLocalFormatted("gtswn.chat.monitor.bound", aPlayer.getCommandSenderName());
+            String hintMsg = StatCollector.translateToLocal("gtswn.chat.monitor.bound.hint");
+            aPlayer.addChatMessage(new ChatComponentText(boundMsg));
+            aPlayer.addChatMessage(new ChatComponentText(hintMsg));
+        }
     }
 
     /**
@@ -138,10 +141,12 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         // 重置 HUD 模式为关闭
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, 0);
 
-        // 发送提示信息
-        String reboundMsg = StatCollector
-            .translateToLocalFormatted("gtswn.chat.monitor.rebound", aPlayer.getCommandSenderName());
-        aPlayer.addChatMessage(new ChatComponentText(reboundMsg));
+        // 发送提示信息（B2-08：仅服务端权威转发，避免双端镜像双发）
+        if (!aPlayer.worldObj.isRemote) {
+            String reboundMsg = StatCollector
+                .translateToLocalFormatted("gtswn.chat.monitor.rebound", aPlayer.getCommandSenderName());
+            aPlayer.addChatMessage(new ChatComponentText(reboundMsg));
+        }
     }
 
     /**
