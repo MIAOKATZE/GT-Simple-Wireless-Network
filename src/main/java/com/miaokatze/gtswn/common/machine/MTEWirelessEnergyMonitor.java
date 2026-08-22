@@ -875,7 +875,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                                 if (nextStep < 1) nextStep = 1;
                                 newValue = currentValue - nextStep;
                             } else {
-                                newValue = currentValue - step;
+                                newValue = safeAddStep(currentValue, -step);
                             }
                             // 支持负数：不再截断为 0
                             param1Sync.setValue(newValue);
@@ -962,7 +962,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                                 if (nextStep < 1) nextStep = 1;
                                 newValue = currentValue - nextStep;
                             } else {
-                                newValue = currentValue - step;
+                                newValue = safeAddStep(currentValue, -step);
                             }
                             // 支持负数：不再截断为 0
                             param2Sync.setValue(newValue);
