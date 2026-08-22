@@ -1,14 +1,9 @@
 package com.miaokatze.gtswn.network;
 
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.ItemStack;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.tileentity.TileEntity;
-import net.minecraft.world.World;
-import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
-import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -79,55 +74,21 @@ public class PacketUpdateAETabState implements IMessage {
         public IMessage onMessage(PacketUpdateAETabState msg, MessageContext ctx) {
             // v1.6.19：性能审计——C→S 包计数（discriminator 3）
             if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(3);
-            EntityPlayer player = ctx.getServerHandler().playerEntity;
-            World world = player.worldObj;
+            // B07（吸收 B2-01）：补 player null 守卫（与包 2 同款，原 Netty 直改路径缺失）
+            EntityPlayerMP player = ctx.getServerHandler().playerEntity;
+            if (player == null || player.worldObj == null) {
+                return null;
+            }
             // SWN-BUG-03：与包 2（PacketUpdateNetworkInfoPanelConfig）同款 8 格距离拦截——
             // 防止恶意客户端携带任意坐标对他人信息屏越权切页/改绑定/清空监控
             // （ownerUUID 是数据集归属键而非权限键，且可能尚未绑定，故与包 2 范式一致仅做距离校验）
             if (player.getDistanceSq(msg.panelX + 0.5D, msg.panelY + 0.5D, msg.panelZ + 0.5D) > 64D) {
                 return null;
             }
-            TileEntity te = world.getTileEntity(msg.panelX, msg.panelY, msg.panelZ);
-            if (!(te instanceof TileEntityNetworkInfoPanel)) return null;
-            TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) te;
-
-            switch (msg.actionType) {
-                case 0: // 切换标签页
-                    panel.setCurrentTab(msg.tabIndex);
-                    break;
-                case 1: // 走势图绑定物品
-                    if (msg.stackData != null) {
-                        ItemStack stack = ItemStack.loadItemStackFromNBT(msg.stackData);
-                        panel.setChartItem(stack);
-                    }
-                    break;
-                case 2: // 走势图绑定流体
-                    if (msg.stackData != null) {
-                        FluidStack fluid = FluidStack.loadFluidStackFromNBT(msg.stackData);
-                        panel.setChartFluid(fluid);
-                    }
-                    break;
-                case 3: // 监控列表切换物品
-                    if (msg.stackData != null) {
-                        ItemStack stack = ItemStack.loadItemStackFromNBT(msg.stackData);
-                        panel.toggleItemMonitor(stack);
-                    }
-                    break;
-                case 4: // 监控列表切换流体
-                    if (msg.stackData != null) {
-                        FluidStack fluid = FluidStack.loadFluidStackFromNBT(msg.stackData);
-                        panel.toggleFluidMonitor(fluid);
-                    }
-                    break;
-                case 5: // 清除走势图绑定
-                    panel.clearAEBinding();
-                    break;
-                case 6: // 清除 AE 实时监控全部物品与流体
-                    panel.clearAllAEMonitors();
-                    break;
-                default:
-                    break;
-            }
+            // B07（吸收 B2-01）：Netty 线程只入队，switch 世界态修改由
+            // PanelActionQueue 在主线程 drain 复验（在线/距离/TE 类型）后执行
+            PanelActionQueue
+                .enqueueAETab(player, msg.panelX, msg.panelY, msg.panelZ, msg.actionType, msg.tabIndex, msg.stackData);
             return null;
         }
     }

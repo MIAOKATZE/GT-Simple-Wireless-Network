@@ -9,7 +9,6 @@ import java.util.Set;
 
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.WindowChain;
-import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -21,7 +20,8 @@ import io.netty.buffer.ByteBuf;
 /**
  * 服务端→客户端 同步包：将 AE 走势图样本与实时监控列表最新值推送到客户端信息屏。
  * <p>
- * 服务端 {@link TileEntityNetworkInfoPanel#sendAEMonitorDataToClients()} 在每次 AE 采样后构造并发送此包，
+ * 服务端 {@code TileEntityNetworkInfoPanel.sendAEMonitorDataToClients()} 在每次 AE 采样后经广播端口
+ * （B07：{@code NetworkPanelBroadcastPort}，本包类）构造并发送此包，
  * 客户端 {@link Handler} 收到后将数据写入 TileEntity 的客户端缓存，供 GUI/TESR 渲染读取。
  * <p>
  * discriminator = 4（见 {@link GTSWNPacketHandler#register()}）。

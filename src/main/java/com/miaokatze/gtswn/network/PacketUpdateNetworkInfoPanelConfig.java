@@ -1,11 +1,9 @@
 package com.miaokatze.gtswn.network;
 
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
-import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -83,26 +81,15 @@ public class PacketUpdateNetworkInfoPanelConfig implements IMessage {
             if (player == null) {
                 return null;
             }
-            apply(message, player);
-            return null;
-        }
-
-        private void apply(PacketUpdateNetworkInfoPanelConfig message, EntityPlayerMP player) {
+            // B07（吸收 B2-01）：Netty 线程只做 8 格距离快筛 + 入队，世界态修改由
+            // PanelActionQueue 在主线程 drain 复验（在线/距离/TE 类型）后执行
             World world = player.worldObj;
             if (world == null || player.getDistanceSq(message.x + 0.5D, message.y + 0.5D, message.z + 0.5D) > 64D) {
-                return;
+                return null;
             }
-            TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
-            if (tile instanceof TileEntityNetworkInfoPanel) {
-                TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
-                if (message.action == ACTION_CHART_CONFIG) {
-                    panel.applyChartConfig(message.chartConfig);
-                } else if (message.action == ACTION_AE_CHART_CONFIG) {
-                    panel.applyAEChartConfig(message.chartConfig);
-                } else if (message.action >= 0) {
-                    panel.applyConfigAction(message.action);
-                }
-            }
+            PanelActionQueue
+                .enqueueConfig(player, message.x, message.y, message.z, message.action, message.chartConfig);
+            return null;
         }
     }
 }

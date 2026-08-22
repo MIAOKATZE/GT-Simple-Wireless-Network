@@ -37,11 +37,10 @@ import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
+import com.miaokatze.gtswn.common.panel.PanelBroadcastPort;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
-import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGridNode;
@@ -55,9 +54,19 @@ import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
-import cpw.mods.fml.common.network.NetworkRegistry;
 
 public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxyable {
+
+    /**
+     * B07（O2-B07 拆环后半）：广播端口——tile→network 依赖经接口反转，
+     * 由 CommonProxy.init 注入 network 侧实现（NetworkPanelBroadcastPort），本类不再 import 网络包类。
+     */
+    private static PanelBroadcastPort broadcastPort = null;
+
+    /** 注册期注入广播端口（CommonProxy.init 调用一次；未注入时服务端推送静默跳过） */
+    public static void setBroadcastPort(PanelBroadcastPort port) {
+        broadcastPort = port;
+    }
 
     private UUID ownerUUID;
     private String ownerName = "";
@@ -570,14 +579,18 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             monitorAvg300s.put(key, dataSet.averageRate300s(key));
         }
 
-        GTSWNPacketHandler.NETWORK.sendToAllAround(
-            new PacketSyncAEMonitorData(xCoord, yCoord, zCoord, chartKey, chartSamples, monitorLatest, monitorAvg300s),
-            new NetworkRegistry.TargetPoint(
-                worldObj.provider.dimensionId,
-                xCoord + 0.5D,
-                yCoord + 0.5D,
-                zCoord + 0.5D,
-                64.0D));
+        // B07：经广播端口推送（包体构造与 TargetPoint 由 network 侧端口实现承载，逐字搬迁）
+        if (broadcastPort != null) {
+            broadcastPort.broadcastAEMonitorData(
+                worldObj,
+                xCoord,
+                yCoord,
+                zCoord,
+                chartKey,
+                chartSamples,
+                monitorLatest,
+                monitorAvg300s);
+        }
     }
 
     /**
@@ -612,21 +625,18 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (worldObj == null || worldObj.isRemote) {
             return;
         }
-        GTSWNPacketHandler.NETWORK.sendToAllAround(
-            new PacketSyncAEMonitorData(
+        // B07：空数据集推送同经广播端口（B2-02 语义不变，客户端 clear+addAll 即清显示）
+        if (broadcastPort != null) {
+            broadcastPort.broadcastAEMonitorData(
+                worldObj,
                 xCoord,
                 yCoord,
                 zCoord,
                 null,
                 Collections.<AEMonitorSample>emptyList(),
                 Collections.<String, AEMonitorSample>emptyMap(),
-                Collections.<String, Double>emptyMap()),
-            new NetworkRegistry.TargetPoint(
-                worldObj.provider.dimensionId,
-                xCoord + 0.5D,
-                yCoord + 0.5D,
-                zCoord + 0.5D,
-                64.0D));
+                Collections.<String, Double>emptyMap());
+        }
     }
 
     // ==================== AE 标签页与监视列表操作 ====================

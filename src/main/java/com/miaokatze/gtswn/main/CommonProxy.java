@@ -27,9 +27,11 @@ import com.miaokatze.gtswn.crossmod.waila.WailaIntegration;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.NetworkPanelBroadcastPort;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
+import com.miaokatze.gtswn.network.PanelActionQueue;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
@@ -106,6 +108,9 @@ public class CommonProxy {
 
         // 注册网络包通道（便携监测终端 EU 同步：修复客户端恒显示 0EU 的 Bug）
         GTSWNPacketHandler.register();
+        // B07（O2-B07，吸收 B2-01）：面板操作队列自宿主 tick 监听注册——包 2/3 世界态修改
+        // 由 ServerTickEvent(END) 主线程排空（与通道注册同址，队列即 network→tile 唯一受控调用点）
+        PanelActionQueue.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(GTSimpleWirelessNetwork.instance, new GTSWNGuiHandler());
     }
 
@@ -132,6 +137,11 @@ public class CommonProxy {
             .bus()
             .register(scheduler);
         GTSimpleWirelessNetwork.LOG.info("[2/3] 无线 EU 监控调度器已注册到事件总线。");
+
+        // B07（O2-B07 拆环后半）：注入 network 侧广播端口——TEPanel 推送不再直引 GTSWNPacketHandler，
+        // tile→network 依赖归零（推送域 O2-04 拆出后只持端口，O2-22/23 广播裁剪在端口实现内落点）
+        TileEntityNetworkInfoPanel.setBroadcastPort(new NetworkPanelBroadcastPort());
+        GTSimpleWirelessNetwork.LOG.info("[2/3] 信息屏广播端口已注入（tile→network 拆环闭合）。");
 
         // 注册量子化控制器事件处理器（T2）：
         // - Forge 事件总线：右键拦截 / 挖掘减速 / 邻接通知 / 破坏出册
