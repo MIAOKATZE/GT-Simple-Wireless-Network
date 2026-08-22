@@ -1,19 +1,13 @@
 package com.miaokatze.gtswn.common.tile;
 
 import java.math.BigInteger;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.nbt.NBTTagList;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
@@ -21,12 +15,10 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.World;
-import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.FluidStack;
 
-import com.miaokatze.gtswn.common.panel.AEMonitorDataSet;
-import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
+import com.miaokatze.gtswn.common.panel.AEMonitorController;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.EUCacheBridge;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
@@ -35,7 +27,6 @@ import com.miaokatze.gtswn.common.panel.PanelBroadcastPort;
 import com.miaokatze.gtswn.common.panel.PanelConfigStore;
 import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.screen.ScreenStructure;
-import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGridNode;
@@ -95,34 +86,50 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** 区块加载时 worldObj 可能尚未设置，暂存 AE proxy NBT，待世界可用后再恢复 */
     private NBTTagCompound pendingProxyNBT = null;
 
-    // === AE 标签页相关字段 ===
+    /**
+     * E5（O2-04）：AE2 gridProxy 只读查询口——proxy 调用权留本类（深查 §三-2 硬约束：
+     * 域对象不得持有 getProxy() 调用权），域对象经接口查询。
+     */
+    private final AEMonitorController.AEQuery aeQuery = new AEMonitorController.AEQuery() {
 
-    /** 当前标签页：0=EU网络, 1=AE走势图, 2=AE实时监控 */
-    private int currentTab = 0;
+        @Override
+        public boolean isConnected() {
+            return isAEConnected();
+        }
 
-    /** AE 走势图绑定的物品（null 表示未绑定） */
-    private ItemStack chartItem = null;
+        @Override
+        public long itemAmount(ItemStack stack) {
+            return getAEItemAmount(stack);
+        }
 
-    /** AE 走势图绑定的流体（null 表示未绑定） */
-    private FluidStack chartFluid = null;
+        @Override
+        public long fluidAmount(FluidStack fluid) {
+            return getAEFluidAmount(fluid);
+        }
+    };
 
-    /** AE 实时监控的物品列表 */
-    private final List<ItemStack> monitoredItems = new ArrayList<>();
+    /**
+     * E5（O2-04）：AE 监控网络语义域——采样门控与推送、标签页状态与绑定操作、客户端镜像缓存，
+     * 方法体逐字搬迁至 {@link AEMonitorController}；本类保留操作族门面单行委托（网络包/
+     * 双 Block/ClientProxy/Render/Gui 调用面零改动），区块 NBT 与 S35 的 AE 段键名逐字不动。
+     */
+    private final AEMonitorController controller = new AEMonitorController(
+        this,
+        aeQuery,
+        store,
+        this::markDirtyAndSync);
 
-    /** AE 实时监控的流体列表 */
-    private final List<FluidStack> monitoredFluids = new ArrayList<>();
-
-    /** 上次 AE 采样 tick，-1 表示尚未采样 */
-    private long lastAESampleTick = -1L;
-
-    /** 客户端 AE 走势图样本缓存（由 PacketSyncAEMonitorData 推送） */
-    private final List<AEMonitorSample> aeChartSamples = new ArrayList<>();
-
-    /** 客户端 AE 实时监控列表最新值缓存（key → 最新样本） */
-    private final Map<String, AEMonitorSample> aeMonitorLatest = new HashMap<>();
-
-    /** 客户端 AE 实时监控 300s 平均变化率缓存（key → 每分钟数量变化） */
-    private final Map<String, Double> aeMonitorAvg300s = new HashMap<>();
+    /**
+     * E5：C 域推送出口——广播端口静态单例转发（broadcastPort/setBroadcastPort 留本类，
+     * CommonProxy.init 注入面不变；null 守卫在此收口，域对象不感知端口单例）。
+     */
+    public void broadcastAEMonitorData(World world, int x, int y, int z, String chartKey,
+        List<AEMonitorSample> chartSamples, Map<String, AEMonitorSample> monitorLatest,
+        Map<String, Double> monitorAvg300s) {
+        if (broadcastPort != null) {
+            broadcastPort.broadcastAEMonitorData(world, x, y, z, chartKey, chartSamples, monitorLatest, monitorAvg300s);
+        }
+    }
 
     @Override
     public void updateEntity() {
@@ -159,12 +166,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             // ===== EU 缓存域（E4 迁入 EUCacheBridge）：请求 tick 更新 → 冷启动刷新 → 新数据轮询，三段顺序不变 =====
             bridge.tickServer(overworldTick);
 
-            // 服务端每 Config.aeSampleInterval ticks 执行一次 AE 采样并推送给客户端
-            if (Config.aeChartEnabled
-                && (lastAESampleTick < 0L || tick - lastAESampleTick >= Config.aeSampleInterval)) {
-                sampleAENetwork(tick);
-                lastAESampleTick = tick;
-            }
+            // ===== AE 监控域（E5 迁入 AEMonitorController）：采样门控 + 采样 + 推送，五段顺序末段不变 =====
+            controller.tickSampling(tick);
         }
     }
 
@@ -290,274 +293,30 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
     }
 
-    /**
-     * 生成本方块在 AEMonitorDataStore 中使用的坐标主键。
-     * <p>
-     * 格式：{@code dimensionId:xCoord:yCoord:zCoord}。
-     * 该 key 随方块位置唯一确定，避免使用 panelUUID 带来的存档迁移与数据残留问题。
-     *
-     * @return 坐标字符串；world 不可用时返回 null
-     */
+    /** E5 门面：AE 坐标主键（方法体迁入 {@link AEMonitorController#dataKey}；BlockNetworkInfoPanel 调用面） */
     public String getAEMonitorDataKey() {
-        if (worldObj == null) {
-            return null;
-        }
-        return worldObj.provider.dimensionId + ":" + xCoord + ":" + yCoord + ":" + zCoord;
+        return AEMonitorController.dataKey(this);
     }
 
-    /**
-     * 清空指定 key 在本屏坐标主键下的 AE 采样数据。
-     * <p>
-     * 仅服务端执行；坐标 key 未初始化或 world 不可用时安全跳过。
-     */
-    private void clearAEData(String key) {
-        if (key == null || worldObj == null || worldObj.isRemote) {
-            return;
-        }
-        String dataKey = getAEMonitorDataKey();
-        if (dataKey == null) {
-            return;
-        }
-        // v1.5.15：改用 getIfPresent 避免为已破坏/卸载的方块创建空数据集导致内存泄漏
-        AEMonitorDataStore store = AEMonitorDataStore.get(worldObj);
-        AEMonitorDataSet dataSet = store.getIfPresent(dataKey);
-        if (dataSet != null) {
-            dataSet.clear(key);
-            store.markDirty();
-        }
-    }
-
-    /**
-     * 生成 AE 走势图/实时监控的物品 key。
-     *
-     * @param stack 物品堆（null 或空返回 null）
-     * @return item:&lt;registryName&gt;:&lt;meta&gt;
-     */
+    /** E5 门面：AE 物品 key（方法体迁入 {@link AEMonitorController#aeKey}；Render/Gui 调用面） */
     public static String getAEKey(ItemStack stack) {
-        if (stack == null || stack.getItem() == null) return null;
-        return "item:" + Item.itemRegistry.getNameForObject(stack.getItem()) + ":" + stack.getItemDamage();
+        return AEMonitorController.aeKey(stack);
     }
 
-    /**
-     * 生成 AE 走势图/实时监控的流体 key。
-     *
-     * @param fluid 流体堆（null 或空返回 null）
-     * @return fluid:&lt;fluidName&gt;
-     */
+    /** E5 门面：AE 流体 key（方法体迁入 {@link AEMonitorController#aeKey}；Render/Gui 调用面） */
     public static String getAEKey(FluidStack fluid) {
-        if (fluid == null || fluid.getFluid() == null) return null;
-        return "fluid:" + fluid.getFluid()
-            .getName();
+        return AEMonitorController.aeKey(fluid);
     }
 
-    /**
-     * 服务端执行 AE 网络采样：对走势图绑定与实时监控列表中的每个物品/流体查询 AE 存量并写入数据集。
-     *
-     * @param tick 当前世界 tick
-     */
-    private void sampleAENetwork(long tick) {
-        if (!isAEConnected()) {
-            // B2-02：断网时改为空推送——清掉客户端走势图/监控缓存，避免 GUI 无限期显示陈旧值；
-            // 服务端 WSD 历史不动，重连后由下方采样逻辑恢复
-            pushAEMonitorOffline();
-            return;
-        }
-
-        String dataKey = getAEMonitorDataKey();
-        if (dataKey == null) {
-            return;
-        }
-
-        AEMonitorDataStore store = AEMonitorDataStore.get(worldObj);
-        AEMonitorDataSet dataSet = store.getOrCreate(dataKey);
-        boolean wroteAny = false;
-        long timeMs = System.currentTimeMillis();
-
-        // 走势图物品
-        if (chartItem != null) {
-            String key = getAEKey(chartItem);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = getAEItemAmount(chartItem);
-                dataSet.addSample(key, amount, tick, timeMs);
-                wroteAny = true;
-            }
-        }
-
-        // 走势图流体
-        if (chartFluid != null) {
-            String key = getAEKey(chartFluid);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = getAEFluidAmount(chartFluid);
-                dataSet.addSample(key, amount, tick, timeMs);
-                wroteAny = true;
-            }
-        }
-
-        // 实时监控物品列表
-        for (ItemStack stack : monitoredItems) {
-            String key = getAEKey(stack);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = getAEItemAmount(stack);
-                dataSet.addSample(key, amount, tick, timeMs);
-                wroteAny = true;
-            }
-        }
-
-        // 实时监控流体列表
-        for (FluidStack fluid : monitoredFluids) {
-            String key = getAEKey(fluid);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = getAEFluidAmount(fluid);
-                dataSet.addSample(key, amount, tick, timeMs);
-                wroteAny = true;
-            }
-        }
-
-        if (wroteAny) {
-            store.markDirty();
-        }
-
-        // 无论是否写入新采样，都推送一次最新数据给客户端，保证 GUI 状态及时
-        // O2-20 空屏推送门控：走势图/监控列表全空的屏不再周期推送空包——
-        // 解绑/清空后的客户端清显示由 toggle/clear 操作的即时推送负责（见各移除路径）
-        if (chartItem != null || chartFluid != null || !monitoredItems.isEmpty() || !monitoredFluids.isEmpty()) {
-            sendAEMonitorDataToClients();
-        }
-    }
-
-    /**
-     * 服务端将当前 AE 走势图样本与实时监控最新值推送给周围客户端。
-     */
-    private void sendAEMonitorDataToClients() {
-        if (worldObj == null || worldObj.isRemote) {
-            return;
-        }
-
-        // O2-21：无接收者预检——64 格（与 TargetPoint 半径一致）内无玩家时连包体都不组装，
-        // 无人区常载屏每采样间隔免一次走势 61 点 + 双 Map 三段集合 build；
-        // 视锥级过滤不实施（失步无刷新问题，接收端现存 TE 缺席丢弃已够）
-        if (!hasNearbyReceiver()) {
-            return;
-        }
-
-        String dataKey = getAEMonitorDataKey();
-        if (dataKey == null) {
-            return;
-        }
-
-        AEMonitorDataSet dataSet = AEMonitorDataStore.get(worldObj)
-            .getIfPresent(dataKey);
-        // v1.5.15：无数据可推送时直接返回，避免 getOrCreate 创建空集导致内存泄漏
-        if (dataSet == null) {
-            return;
-        }
-
-        String chartKey = null;
-        List<AEMonitorSample> chartSamples = new ArrayList<>();
-        if (chartItem != null) {
-            chartKey = getAEKey(chartItem);
-            if (chartKey != null) {
-                chartSamples = dataSet.query(chartKey, getAETrackingWindow());
-            }
-        } else if (chartFluid != null) {
-            chartKey = getAEKey(chartFluid);
-            if (chartKey != null) {
-                chartSamples = dataSet.query(chartKey, getAETrackingWindow());
-            }
-        }
-
-        Map<String, AEMonitorSample> monitorLatest = new HashMap<>();
-        Map<String, Double> monitorAvg300s = new HashMap<>();
-        for (ItemStack stack : monitoredItems) {
-            String key = getAEKey(stack);
-            if (key == null) continue;
-            AEMonitorSample sample = dataSet.newest(key);
-            if (sample != null) {
-                monitorLatest.put(key, sample);
-            }
-            monitorAvg300s.put(key, dataSet.averageRate300s(key));
-        }
-        for (FluidStack fluid : monitoredFluids) {
-            String key = getAEKey(fluid);
-            if (key == null) continue;
-            AEMonitorSample sample = dataSet.newest(key);
-            if (sample != null) {
-                monitorLatest.put(key, sample);
-            }
-            monitorAvg300s.put(key, dataSet.averageRate300s(key));
-        }
-
-        // B07：经广播端口推送（包体构造与 TargetPoint 由 network 侧端口实现承载，逐字搬迁）
-        if (broadcastPort != null) {
-            broadcastPort.broadcastAEMonitorData(
-                worldObj,
-                xCoord,
-                yCoord,
-                zCoord,
-                chartKey,
-                chartSamples,
-                monitorLatest,
-                monitorAvg300s);
-        }
-    }
-
-    /**
-     * O2-21：64 格（与推送 TargetPoint 半径一致）内是否存在玩家接收者。
-     * <p>
-     * 只查本维度 {@code worldObj.playerEntities}（sendToAllAround 的 TargetPoint 也限定本维度）；
-     * 平方距离比较避免开方。
-     */
-    private boolean hasNearbyReceiver() {
-        double sq = 64.0D * 64.0D;
-        for (EntityPlayer player : worldObj.playerEntities) {
-            double dx = player.posX - (xCoord + 0.5D);
-            double dy = player.posY - (yCoord + 0.5D);
-            double dz = player.posZ - (zCoord + 0.5D);
-            if (dx * dx + dy * dy + dz * dz <= sq) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    /**
-     * AE 断网时的空推送（B2-02）：向周围客户端推送空数据集，客户端 {@code receiveAEMonitorData}
-     * 的 clear+addAll 语义会把走势图/实时监控缓存清空，避免断网后 GUI/TESR 无限期显示陈旧值。
-     * <p>
-     * 不复用 {@link #sendAEMonitorDataToClients()}：该方法在 dataSet == null 时直接返回，
-     * 且 dataSet 存在时推送的是 WSD 旧值而非空态，均达不到清显示的目的。
-     * 服务端 WSD 历史不动，重连后由 {@link #sampleAENetwork(long)} 重新采样推送恢复；
-     * 节律 = 断网期间每 {@code Config.aeSampleInterval} 一次空包，与在线推送同频。
-     */
-    private void pushAEMonitorOffline() {
-        if (worldObj == null || worldObj.isRemote) {
-            return;
-        }
-        // B07：空数据集推送同经广播端口（B2-02 语义不变，客户端 clear+addAll 即清显示）
-        if (broadcastPort != null) {
-            broadcastPort.broadcastAEMonitorData(
-                worldObj,
-                xCoord,
-                yCoord,
-                zCoord,
-                null,
-                Collections.<AEMonitorSample>emptyList(),
-                Collections.<String, AEMonitorSample>emptyMap(),
-                Collections.<String, Double>emptyMap());
-        }
-    }
-
-    // ==================== AE 标签页与监视列表操作 ====================
+    // ==================== AE 标签页与监视列表操作（E5：方法体迁入 AEMonitorController，门面单行委托）====================
 
     /** 切换当前标签页 */
     public void setCurrentTab(int tab) {
-        this.currentTab = (tab >= 0 && tab <= 2) ? tab : 0;
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+        controller.setCurrentTab(tab);
     }
 
     public int getCurrentTab() {
-        return currentTab;
+        return controller.getCurrentTab();
     }
 
     /**
@@ -566,88 +325,30 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @return true=新绑定, false=清除绑定
      */
     public boolean setChartItem(ItemStack stack) {
-        if (stack != null && chartItem != null && ItemStack.areItemStacksEqual(chartItem, stack)) {
-            clearAEData(getAEKey(chartItem));
-            chartItem = null;
-            markDirty();
-            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-            return false;
-        }
-        if (chartItem != null) {
-            clearAEData(getAEKey(chartItem));
-        }
-        if (chartFluid != null) {
-            clearAEData(getAEKey(chartFluid));
-        }
-        chartItem = stack != null ? stack.copy() : null;
-        chartFluid = null; // 物品与流体互斥
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-        return true;
+        return controller.setChartItem(stack);
     }
 
     /** 绑定走势图流体 */
     public boolean setChartFluid(FluidStack fluid) {
-        if (fluid != null && chartFluid != null
-            && fluid.getFluid()
-                .equals(chartFluid.getFluid())) {
-            clearAEData(getAEKey(chartFluid));
-            chartFluid = null;
-            markDirty();
-            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-            return false;
-        }
-        if (chartFluid != null) {
-            clearAEData(getAEKey(chartFluid));
-        }
-        if (chartItem != null) {
-            clearAEData(getAEKey(chartItem));
-        }
-        chartFluid = fluid != null ? fluid.copy() : null;
-        chartItem = null;
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-        return true;
+        return controller.setChartFluid(fluid);
     }
 
     public ItemStack getChartItem() {
-        return chartItem;
+        return controller.getChartItem();
     }
 
     public FluidStack getChartFluid() {
-        return chartFluid;
+        return controller.getChartFluid();
     }
 
     /** 清除走势图所有绑定 */
     public void clearAEBinding() {
-        if (chartItem != null) {
-            clearAEData(getAEKey(chartItem));
-        }
-        if (chartFluid != null) {
-            clearAEData(getAEKey(chartFluid));
-        }
-        chartItem = null;
-        chartFluid = null;
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-        // O2-20：解绑后立即推送空走势段清客户端显示（周期推送已被空屏门控跳过）
-        sendAEMonitorDataToClients();
+        controller.clearAEBinding();
     }
 
     /** 一键清除 AE 实时监控列表中的所有物品与流体监控 */
     public void clearAllAEMonitors() {
-        for (ItemStack stack : new ArrayList<>(monitoredItems)) {
-            clearAEData(getAEKey(stack));
-        }
-        for (FluidStack fluid : new ArrayList<>(monitoredFluids)) {
-            clearAEData(getAEKey(fluid));
-        }
-        monitoredItems.clear();
-        monitoredFluids.clear();
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-        // O2-20：清空后立即推送空监控段清客户端显示（周期推送已被空屏门控跳过）
-        sendAEMonitorDataToClients();
+        controller.clearAllAEMonitors();
     }
 
     /**
@@ -656,58 +357,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @return true=已添加, false=已移除
      */
     public boolean toggleItemMonitor(ItemStack stack) {
-        if (stack == null) return false;
-        for (int i = 0; i < monitoredItems.size(); i++) {
-            if (ItemStack.areItemStacksEqual(monitoredItems.get(i), stack)) {
-                clearAEData(getAEKey(monitoredItems.get(i)));
-                monitoredItems.remove(i);
-                markDirty();
-                worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-                // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
-                sendAEMonitorDataToClients();
-                return false;
-            }
-        }
-        if (monitoredItems.size() < Config.aeMaxMonitoredItems) {
-            monitoredItems.add(stack.copy());
-            markDirty();
-            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-            return true;
-        }
-        return false;
+        return controller.toggleItemMonitor(stack);
     }
 
     /** 切换流体监视（添加/移除） */
     public boolean toggleFluidMonitor(FluidStack fluid) {
-        if (fluid == null) return false;
-        for (int i = 0; i < monitoredFluids.size(); i++) {
-            if (monitoredFluids.get(i)
-                .getFluid()
-                .equals(fluid.getFluid())) {
-                clearAEData(getAEKey(monitoredFluids.get(i)));
-                monitoredFluids.remove(i);
-                markDirty();
-                worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-                // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
-                sendAEMonitorDataToClients();
-                return false;
-            }
-        }
-        if (monitoredFluids.size() < Config.aeMaxMonitoredItems) {
-            monitoredFluids.add(fluid.copy());
-            markDirty();
-            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
-            return true;
-        }
-        return false;
+        return controller.toggleFluidMonitor(fluid);
     }
 
     public List<ItemStack> getMonitoredItems() {
-        return monitoredItems;
+        return controller.getMonitoredItems();
     }
 
     public List<FluidStack> getMonitoredFluids() {
-        return monitoredFluids;
+        return controller.getMonitoredFluids();
     }
 
     /**
@@ -716,7 +379,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @return 样本列表的不可读修改视图
      */
     public List<AEMonitorSample> getAEChartSamples() {
-        return Collections.unmodifiableList(aeChartSamples);
+        return controller.getAEChartSamples();
     }
 
     /**
@@ -725,11 +388,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @return key → 最新样本的不可修改映射
      */
     public Map<String, AEMonitorSample> getAEMonitorLatest() {
-        return Collections.unmodifiableMap(aeMonitorLatest);
+        return controller.getAEMonitorLatest();
     }
 
     /**
-     * 客户端接收服务端推送的 AE 监控数据，深拷贝后写入本地缓存。
+     * 客户端接收服务端推送的 AE 监控数据，深拷贝后写入本地缓存（ClientProxy 调用面）。
      *
      * @param chartSamples   走势图样本列表
      * @param monitorLatest  实时监控列表最新值
@@ -737,18 +400,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      */
     public void receiveAEMonitorData(List<AEMonitorSample> chartSamples, Map<String, AEMonitorSample> monitorLatest,
         Map<String, Double> monitorAvg300s) {
-        aeChartSamples.clear();
-        if (chartSamples != null) {
-            aeChartSamples.addAll(chartSamples);
-        }
-        aeMonitorLatest.clear();
-        if (monitorLatest != null) {
-            aeMonitorLatest.putAll(monitorLatest);
-        }
-        aeMonitorAvg300s.clear();
-        if (monitorAvg300s != null) {
-            aeMonitorAvg300s.putAll(monitorAvg300s);
-        }
+        controller.receiveAEMonitorData(chartSamples, monitorLatest, monitorAvg300s);
     }
 
     /**
@@ -757,7 +409,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @return key → 平均变化率的不可修改映射
      */
     public Map<String, Double> getAEMonitorAvg300s() {
-        return Collections.unmodifiableMap(aeMonitorAvg300s);
+        return controller.getAEMonitorAvg300s();
     }
 
     public void bindOwner(UUID uuid, String name) {
@@ -1003,7 +655,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             bridge.refreshStatusText();
         } else if (action == 24) {
             // 立即推送新窗口数据给客户端，避免等待下次采样才刷新
-            sendAEMonitorDataToClients();
+            controller.pushNow();
         }
         markDirtyAndSync();
     }
@@ -1044,7 +696,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
         ownerName = tag.getString("OwnerName");
         if (tag.hasKey("lastAESampleTick")) {
-            lastAESampleTick = tag.getLong("lastAESampleTick");
+            controller.setLastAESampleTick(tag.getLong("lastAESampleTick"));
         }
         store.readPlacement(tag);
         bridge.markDataRefreshNeeded();
@@ -1065,7 +717,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             tag.setString("OwnerUUID", ownerUUID.toString());
         }
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
-        tag.setLong("lastAESampleTick", lastAESampleTick);
+        tag.setLong("lastAESampleTick", controller.getLastAESampleTick());
         store.writePlacement(tag);
     }
 
@@ -1117,34 +769,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             structure.setScreen(NetworkScreen.fromNBT(tag.getCompoundTag("screen")));
         }
         readSyncData(tag);
-        // === AE 标签页字段读取 ===
-        currentTab = tag.hasKey("currentTab") ? tag.getInteger("currentTab") : 0;
-        if (tag.hasKey("chartItem")) {
-            chartItem = ItemStack.loadItemStackFromNBT(tag.getCompoundTag("chartItem"));
-        } else {
-            chartItem = null;
-        }
-        if (tag.hasKey("chartFluid")) {
-            chartFluid = FluidStack.loadFluidStackFromNBT(tag.getCompoundTag("chartFluid"));
-        } else {
-            chartFluid = null;
-        }
-        monitoredItems.clear();
-        if (tag.hasKey("monitoredItems")) {
-            NBTTagList list = tag.getTagList("monitoredItems", Constants.NBT.TAG_COMPOUND);
-            for (int i = 0; i < list.tagCount(); i++) {
-                ItemStack s = ItemStack.loadItemStackFromNBT(list.getCompoundTagAt(i));
-                if (s != null) monitoredItems.add(s);
-            }
-        }
-        monitoredFluids.clear();
-        if (tag.hasKey("monitoredFluids")) {
-            NBTTagList list = tag.getTagList("monitoredFluids", Constants.NBT.TAG_COMPOUND);
-            for (int i = 0; i < list.tagCount(); i++) {
-                FluidStack f = FluidStack.loadFluidStackFromNBT(list.getCompoundTagAt(i));
-                if (f != null) monitoredFluids.add(f);
-            }
-        }
+        // === AE 标签页字段读取（E5 迁入 AEMonitorController.readTabState）===
+        controller.readTabState(tag);
         if (tag.hasKey("proxy")) {
             if (worldObj != null && !worldObj.isRemote) {
                 getProxy().readFromNBT(tag);
@@ -1168,24 +794,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         // B2-09：不再调 writeSyncData(tag)——sync 数据（cachedEu/cachedStatus/samples/aeChartSamples 等）
         // 是 S35 描述包专用快照，readSyncData 读取全守卫，断档后由 needsDataRefresh 冷启动从 WSD 正本重建，
         // 区块 NBT 双写只增体积；writeSyncData/readSyncData 本体与 S35 路径（getDescriptionPacket/onDataPacket）不动
-        // === AE 标签页字段写入 ===
-        tag.setInteger("currentTab", currentTab);
-        if (chartItem != null) {
-            tag.setTag("chartItem", chartItem.writeToNBT(new NBTTagCompound()));
-        }
-        if (chartFluid != null) {
-            tag.setTag("chartFluid", chartFluid.writeToNBT(new NBTTagCompound()));
-        }
-        NBTTagList itemList = new NBTTagList();
-        for (ItemStack s : monitoredItems) {
-            itemList.appendTag(s.writeToNBT(new NBTTagCompound()));
-        }
-        tag.setTag("monitoredItems", itemList);
-        NBTTagList fluidList = new NBTTagList();
-        for (FluidStack f : monitoredFluids) {
-            fluidList.appendTag(f.writeToNBT(new NBTTagCompound()));
-        }
-        tag.setTag("monitoredFluids", fluidList);
+        // === AE 标签页字段写入（E5 迁入 AEMonitorController.writeTabState）===
+        controller.writeTabState(tag);
         if (gridProxy != null) {
             gridProxy.writeToNBT(tag);
         }
@@ -1213,32 +823,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 structure.getScreen()
                     .toNBT());
         }
-        // === AE 标签页状态同步 ===
-        tag.setInteger("currentTab", currentTab);
-        if (chartItem != null) {
-            tag.setTag("chartItem", chartItem.writeToNBT(new NBTTagCompound()));
-        }
-        if (chartFluid != null) {
-            tag.setTag("chartFluid", chartFluid.writeToNBT(new NBTTagCompound()));
-        }
-        NBTTagList itemList = new NBTTagList();
-        for (ItemStack s : monitoredItems) {
-            itemList.appendTag(s.writeToNBT(new NBTTagCompound()));
-        }
-        tag.setTag("monitoredItems", itemList);
-        NBTTagList fluidList = new NBTTagList();
-        for (FluidStack f : monitoredFluids) {
-            fluidList.appendTag(f.writeToNBT(new NBTTagCompound()));
-        }
-        tag.setTag("monitoredFluids", fluidList);
-        // v1.5.15：同步 aeChartSamples，防止客户端跨维度往返后走势图短暂为空
-        if (aeChartSamples != null && !aeChartSamples.isEmpty()) {
-            NBTTagList aeChartList = new NBTTagList();
-            for (AEMonitorSample s : aeChartSamples) {
-                aeChartList.appendTag(s.toNBT());
-            }
-            tag.setTag("aeChartSamples", aeChartList);
-        }
+        // === AE 标签页状态同步（E5 迁入 AEMonitorController.writeSync）===
+        controller.writeSync(tag);
     }
 
     private void readSyncData(NBTTagCompound tag) {
@@ -1250,44 +836,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (tag.hasKey("screen")) {
             structure.setScreen(NetworkScreen.fromNBT(tag.getCompoundTag("screen")));
         }
-        // === AE 标签页状态读取 ===
-        if (tag.hasKey("currentTab")) {
-            currentTab = tag.getInteger("currentTab");
-        }
-        if (tag.hasKey("chartItem")) {
-            chartItem = ItemStack.loadItemStackFromNBT(tag.getCompoundTag("chartItem"));
-        } else {
-            chartItem = null;
-        }
-        if (tag.hasKey("chartFluid")) {
-            chartFluid = FluidStack.loadFluidStackFromNBT(tag.getCompoundTag("chartFluid"));
-        } else {
-            chartFluid = null;
-        }
-        monitoredItems.clear();
-        if (tag.hasKey("monitoredItems")) {
-            NBTTagList itemList = tag.getTagList("monitoredItems", Constants.NBT.TAG_COMPOUND);
-            for (int i = 0; i < itemList.tagCount(); i++) {
-                ItemStack s = ItemStack.loadItemStackFromNBT(itemList.getCompoundTagAt(i));
-                if (s != null) monitoredItems.add(s);
-            }
-        }
-        monitoredFluids.clear();
-        if (tag.hasKey("monitoredFluids")) {
-            NBTTagList fluidList = tag.getTagList("monitoredFluids", Constants.NBT.TAG_COMPOUND);
-            for (int i = 0; i < fluidList.tagCount(); i++) {
-                FluidStack f = FluidStack.loadFluidStackFromNBT(fluidList.getCompoundTagAt(i));
-                if (f != null) monitoredFluids.add(f);
-            }
-        }
-        // v1.5.15：读取 aeChartSamples，与 writeSyncData 对应
-        aeChartSamples.clear();
-        if (tag.hasKey("aeChartSamples")) {
-            NBTTagList aeChartList = tag.getTagList("aeChartSamples", Constants.NBT.TAG_COMPOUND);
-            for (int i = 0; i < aeChartList.tagCount(); i++) {
-                aeChartSamples.add(AEMonitorSample.fromNBT(aeChartList.getCompoundTagAt(i)));
-            }
-        }
+        // === AE 标签页状态读取（E5 迁入 AEMonitorController.readSync）===
+        controller.readSync(tag);
     }
 
 }
