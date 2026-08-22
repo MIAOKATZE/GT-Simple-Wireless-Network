@@ -1,12 +1,10 @@
 package com.miaokatze.gtswn.common.quantum;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
@@ -21,37 +19,40 @@ import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
  * <p>
  * 1.7.10 无 ServerThreadUtil / MinecraftServer.addScheduledTask（1.8+ 才有），
  * 故采用「队列 + ServerTickEvent 排水」模式实现网络线程 → 主线程的切换。
+ * <p>
+ * O2-16：队列骨架（去重门 + 排空）由 {@link PlayerRequestQueue} 基类承载；
+ * 本子类保留 payload=玩家本体、入队审计计数与「任何异常都回发离线快照」的兜底契约。
  */
-public final class QuantumTerminalRequestQueue {
+public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<EntityPlayerMP> {
 
-    /** 待处理请求队列：仅缓存玩家引用，主线程 drain 时再校验在线/手持 */
-    private static final ConcurrentLinkedQueue<EntityPlayerMP> PENDING = new ConcurrentLinkedQueue<>();
-
-    /** 同一玩家同时只保留一个待处理请求，避免客户端轮询在服务器卡顿时形成请求洪峰。 */
-    private static final ConcurrentHashMap<EntityPlayerMP, Boolean> PENDING_PLAYERS = new ConcurrentHashMap<>();
+    private static final QuantumTerminalRequestQueue INSTANCE = new QuantumTerminalRequestQueue();
 
     private QuantumTerminalRequestQueue() {}
 
     /** Netty 线程入队（仅缓存玩家引用，主线程 drain 时再校验在线/手持） */
     public static void enqueue(EntityPlayerMP player) {
-        if (player != null && PENDING_PLAYERS.putIfAbsent(player, Boolean.TRUE) == null) {
-            // v1.6.19：性能审计——终端请求计数
-            PerformanceAudit.recordTerminalRequest();
-            PENDING.add(player);
-        }
+        INSTANCE.offer(player, player);
     }
 
     /** 主线程逐条处理；本 tick 内排空当前快照 */
     public static void drain() {
-        EntityPlayerMP player;
-        while ((player = PENDING.poll()) != null) {
-            PENDING_PLAYERS.remove(player);
-            process(player);
-        }
+        INSTANCE.drainAll();
+    }
+
+    @Override
+    protected EntityPlayerMP playerOf(EntityPlayerMP player) {
+        return player;
+    }
+
+    @Override
+    protected void onEnqueued(EntityPlayerMP player) {
+        // v1.6.19：性能审计——终端请求计数
+        PerformanceAudit.recordTerminalRequest();
     }
 
     /** 主线程执行：校验玩家仍在线，再装配/回发；任何异常都回发离线快照兜底 */
-    private static void process(EntityPlayerMP player) {
+    @Override
+    protected void process(EntityPlayerMP player) {
         try {
             if (player.playerNetServerHandler == null) {
                 // 已掉线：静默丢弃

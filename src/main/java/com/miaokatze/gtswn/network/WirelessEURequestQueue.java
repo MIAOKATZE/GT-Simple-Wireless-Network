@@ -2,14 +2,13 @@ package com.miaokatze.gtswn.network;
 
 import java.math.BigInteger;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 
 import baubles.api.BaublesApi;
 import gregtech.common.misc.WirelessNetworkManager;
@@ -21,41 +20,52 @@ import gregtech.common.misc.WirelessNetworkManager;
  * {@link PacketRequestWirelessEU.Handler} 仅入队 (player, ownerUUID)，由
  * {@code QuantumControllerEventHandler} 的 ServerTickEvent（END phase）在主线程逐条 drain：
  * 主线程查询 EU 并回发 {@link PacketResponseWirelessEU}；玩家掉线/格式异常时静默丢弃，
- * 客户端下轮轮询重试。与 {@link QuantumTerminalRequestQueue} 同一「Netty 入队 → 主线程 drain」模式。
+ * 客户端下轮轮询重试。与 {@code QuantumTerminalRequestQueue} 同一「Netty 入队 → 主线程 drain」模式。
+ * <p>
+ * O2-16：队列骨架（去重门 + 排空）由 {@link PlayerRequestQueue} 基类承载；
+ * 本子类保留 payload=(player, ownerUUID)、B2-03 持有校验与「掉线/格式异常静默丢弃」策略
+ * （与终端侧离线快照兜底契约不同，故异常处理不进基类）。
  */
-public final class WirelessEURequestQueue {
+public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEURequestQueue.Request> {
 
-    /** 待处理请求队列：仅缓存玩家引用与拥有者 UUID，主线程 drain 时再查询回包 */
-    private static final ConcurrentLinkedQueue<Request> PENDING = new ConcurrentLinkedQueue<>();
-
-    /** 同一玩家同时只保留一个待处理请求，避免客户端轮询在服务器卡顿时形成请求洪峰 */
-    private static final ConcurrentHashMap<EntityPlayerMP, Boolean> PENDING_PLAYERS = new ConcurrentHashMap<>();
+    private static final WirelessEURequestQueue INSTANCE = new WirelessEURequestQueue();
 
     private WirelessEURequestQueue() {}
 
     /** Netty 线程入队（仅缓存玩家引用与拥有者 UUID，主线程 drain 时再查询回包） */
     public static void enqueue(EntityPlayerMP player, String ownerUUID) {
-        if (player != null && ownerUUID != null && PENDING_PLAYERS.putIfAbsent(player, Boolean.TRUE) == null) {
-            PENDING.add(new Request(player, ownerUUID));
+        if (ownerUUID != null) {
+            INSTANCE.offer(player, new Request(player, ownerUUID));
         }
     }
 
     /** 主线程逐条处理；本 tick 内排空当前快照 */
     public static void drain() {
-        Request req;
-        while ((req = PENDING.poll()) != null) {
-            PENDING_PLAYERS.remove(req.player);
-            try {
-                if (req.player.playerNetServerHandler == null) continue;
-                // B2-03 持有校验：仅当请求玩家实际持有绑定到该 UUID 的便携监测终端时才查询回发，
-                // 封死「仅凭枚举他人 UUID 即可读取其无线电网余额」的信息泄露面；
-                // 不持有（含终端已转移/丢弃）时静默丢弃，客户端下轮轮询重试
-                if (!holdsMonitorFor(req.player, req.ownerUUID)) continue;
-                BigInteger eu = WirelessNetworkManager.getUserEU(UUID.fromString(req.ownerUUID));
-                GTSWNPacketHandler.NETWORK.sendTo(new PacketResponseWirelessEU(eu.toString()), req.player);
-            } catch (Throwable t) {
-                // 玩家掉线/格式异常：静默丢弃，客户端下轮轮询
+        INSTANCE.drainAll();
+    }
+
+    @Override
+    protected EntityPlayerMP playerOf(Request request) {
+        return request.player;
+    }
+
+    /** 主线程处理单条：校验在线与持有（B2-03）后查询回包；掉线/格式异常静默丢弃 */
+    @Override
+    protected void process(Request request) {
+        try {
+            if (request.player.playerNetServerHandler == null) {
+                return;
             }
+            // B2-03 持有校验：仅当请求玩家实际持有绑定到该 UUID 的便携监测终端时才查询回发，
+            // 封死「仅凭枚举他人 UUID 即可读取其无线电网余额」的信息泄露面；
+            // 不持有（含终端已转移/丢弃）时静默丢弃，客户端下轮轮询重试
+            if (!holdsMonitorFor(request.player, request.ownerUUID)) {
+                return;
+            }
+            BigInteger eu = WirelessNetworkManager.getUserEU(UUID.fromString(request.ownerUUID));
+            GTSWNPacketHandler.NETWORK.sendTo(new PacketResponseWirelessEU(eu.toString()), request.player);
+        } catch (Throwable t) {
+            // 玩家掉线/格式异常：静默丢弃，客户端下轮轮询
         }
     }
 
@@ -113,7 +123,7 @@ public final class WirelessEURequestQueue {
             && ownerUUID.equals(stack.stackTagCompound.getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID));
     }
 
-    private static final class Request {
+    static final class Request {
 
         private final EntityPlayerMP player;
         private final String ownerUUID;
