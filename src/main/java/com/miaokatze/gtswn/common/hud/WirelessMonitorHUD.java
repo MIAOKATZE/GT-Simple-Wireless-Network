@@ -329,15 +329,14 @@ public class WirelessMonitorHUD extends Gui {
      * 单次背包扫描的复合结果（合并原三重同构扫描，见《全局调查-优化建议》OPT-7）。
      * <p>
      * 主手 → Baubles 饰品栏 → 主背包一次遍历，返回第一个「已绑定」便携监测终端的
-     * 物品栈、拥有者 UUID 与 HUD 模式；未找到已绑定终端时 stack 为 null、hudMode 为 0。
+     * 拥有者 UUID 与 HUD 模式；未找到已绑定终端时 ownerUUID 为 null、hudMode 为 0。
+     * <p>
+     * B2-16：删除零消费的 {@code stack} 死字段（唯一调用方只读 ownerUUID/hudMode）。
      */
     private static final class MonitorScanResult {
 
         /** 未找到已绑定监测终端时的空结果（hudMode=0 与既有默认语义一致） */
-        static final MonitorScanResult NONE = new MonitorScanResult(null, null, 0);
-
-        /** 已绑定的监测终端物品栈（未找到为 null，非 null 即等价于 bound=true） */
-        final ItemStack stack;
+        static final MonitorScanResult NONE = new MonitorScanResult(null, 0);
 
         /** 拥有者 UUID 字符串（仅已绑定时非 null） */
         final String ownerUUID;
@@ -345,8 +344,7 @@ public class WirelessMonitorHUD extends Gui {
         /** 监测终端 NBT 中的 HUD 显示模式（0=关闭，1=常规计数，2=科学计数） */
         final int hudMode;
 
-        MonitorScanResult(ItemStack stack, String ownerUUID, int hudMode) {
-            this.stack = stack;
+        MonitorScanResult(String ownerUUID, int hudMode) {
             this.ownerUUID = ownerUUID;
             this.hudMode = hudMode;
         }
@@ -396,7 +394,7 @@ public class WirelessMonitorHUD extends Gui {
     }
 
     /**
-     * 检查单个槽位：是「已绑定」的便携监测终端则打包复合结果（物品栈 + 拥有者 UUID + HUD 模式），
+     * 检查单个槽位：是「已绑定」的便携监测终端则打包复合结果（拥有者 UUID + HUD 模式），
      * 否则返回 null 继续扫描后续槽位（未绑定监视器不参与 HUD 模式判定，BUG-8）。
      */
     private static MonitorScanResult inspectMonitorStack(ItemStack stack) {
@@ -407,7 +405,6 @@ public class WirelessMonitorHUD extends Gui {
             return null;
         }
         return new MonitorScanResult(
-            stack,
             stack.stackTagCompound.getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID),
             stack.stackTagCompound.getInteger(PortableWirelessNetworkMonitor.NBT_HUD_MODE));
     }
