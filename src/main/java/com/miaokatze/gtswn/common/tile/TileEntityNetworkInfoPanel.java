@@ -836,10 +836,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return cachedEu;
     }
 
-    public double getCachedEut() {
-        return cachedEut;
-    }
-
     public String getCachedStatus() {
         return cachedStatus;
     }
@@ -866,10 +862,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     public boolean isShowChartStatus() {
         return showChartStatus;
-    }
-
-    public int getTrackingWindow() {
-        return trackingWindow;
     }
 
     public int getBriefRatio() {
@@ -1031,13 +1023,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     public boolean isShowAEChartRate() {
         return showAEChartRate;
-    }
-
-    public void setAETrackingWindow(int window) {
-        // v1.5.17：上限扩展到 WINDOW_1_YEAR（8 窗口）
-        this.aeTrackingWindow = clampInt(window, AEMonitorDataSet.WINDOW_5_MIN, AEMonitorDataSet.WINDOW_1_YEAR);
-        markDirty();
-        worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
 
     /**
@@ -1357,28 +1342,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             case NetworkInfoDataSet.WINDOW_1_YEAR:
             default:
                 return NetworkInfoDataSet.WINDOW_5_MIN;
-        }
-    }
-
-    private static int prevTrackingWindow(int window) {
-        switch (window) {
-            case NetworkInfoDataSet.WINDOW_1_HOUR:
-                return NetworkInfoDataSet.WINDOW_5_MIN;
-            case NetworkInfoDataSet.WINDOW_8_HOUR:
-                return NetworkInfoDataSet.WINDOW_1_HOUR;
-            case NetworkInfoDataSet.WINDOW_24_HOUR:
-                return NetworkInfoDataSet.WINDOW_8_HOUR;
-            case NetworkInfoDataSet.WINDOW_7_DAY:
-                return NetworkInfoDataSet.WINDOW_24_HOUR;
-            case NetworkInfoDataSet.WINDOW_1_MONTH:
-                return NetworkInfoDataSet.WINDOW_7_DAY;
-            case NetworkInfoDataSet.WINDOW_3_MONTH:
-                return NetworkInfoDataSet.WINDOW_1_MONTH;
-            case NetworkInfoDataSet.WINDOW_1_YEAR:
-                return NetworkInfoDataSet.WINDOW_3_MONTH;
-            case NetworkInfoDataSet.WINDOW_5_MIN:
-            default:
-                return NetworkInfoDataSet.WINDOW_1_YEAR;
         }
     }
 
