@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.quantum;
 
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Queue;
 import java.util.Set;
@@ -160,10 +161,14 @@ public class QuantumControllerRegistry extends WorldSavedData {
      * v1.6.20：revision 未变化时复用上次拷贝，避免每 20t 每世界重复分配；
      * revision 变化的路径（quantize / quantizeAll / dequantize / readFromNBT）全部递增，
      * 快照惰性重建——巡检循环内的自修改只影响下一轮，与逐点拷贝语义等价。
+     * <p>
+     * B2-13：快照冻结为 {@link Collections#unmodifiableSet}（与 QuantumNetworkStatsCache /
+     * QuantumNetworkData 缓存口径对齐）——复用窗口内任何持引用的写入都会污染共享实例，
+     * 冻结后此类误用立即抛异常而非静默漂移；调用方只读遍历，零改动。
      */
     public Set<Long> getAll() {
         if (this.snapshot == null || this.snapshotRevision != this.revision) {
-            this.snapshot = new HashSet<>(this.controllers);
+            this.snapshot = Collections.unmodifiableSet(new HashSet<>(this.controllers));
             this.snapshotRevision = this.revision;
         }
         return this.snapshot;
