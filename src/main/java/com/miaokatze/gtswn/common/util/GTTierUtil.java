@@ -1,38 +1,21 @@
 package com.miaokatze.gtswn.common.util;
 
+import gregtech.api.enums.GTValues;
+
 /**
  * GT 电压等级工具类
  * <p>
- * 提供 GT 电压等级（ULV / LV / MV / HV / ... / MAX）的数组定义与
+ * 提供 GT 电压等级（ULV / LV / MV / HV / ... / MAX）的名称/颜色表与
  * EU/t → 电流+电压等级的格式化方法。
- * 仅依赖 JDK，不引用本模组业务类，避免循环依赖。
+ * <p>
+ * 电压数值单源引用 GT5U {@link GTValues#V}（SWN-OPT-04：本地硬拷贝已实际漂移——
+ * MAX 档差 7、缺 error tier 第 15 档；GT5U 为必选依赖，直接改引消除静默漂移）。
+ * 名称/颜色表仍为本 mod 展示层定义，档位上限 14=MAX 与两表长度对齐（15 档），
+ * 不进入 GT5U 的 index 15 error tier（8589934592，防数组越界的哨兵档，非真实等级）。
  * <p>
  * 来源：合并自 {@code MTEWirelessEnergyMonitor} 与 {@code WirelessMonitorHUD} 的重复实现。
  */
 public class GTTierUtil {
-
-    /**
-     * GT 电压等级定义（每安培的 EU/t）
-     * <p>
-     * 索引：0=ULV, 1=LV, 2=MV, 3=HV, 4=EV, 5=IV, 6=LuV, 7=ZPM, 8=UV,
-     * 9=UHV, 10=UEV, 11=UIV, 12=UMV, 13=UXV, 14=MAX
-     */
-    public static final long[] VOLTAGES = { 8L, // ULV
-        32L, // LV
-        128L, // MV
-        512L, // HV
-        2048L, // EV
-        8192L, // IV
-        32768L, // LuV
-        131072L, // ZPM
-        524288L, // UV
-        2097152L, // UHV
-        8388608L, // UEV
-        33554432L, // UIV
-        134217728L, // UMV
-        536870912L, // UXV
-        2147483647L // MAX
-    };
 
     /**
      * GT 电压等级名称
@@ -65,8 +48,9 @@ public class GTTierUtil {
      * <p>
      * 算法步骤：
      * <ol>
-     * <li>选择初始 Tier：找到第一个满足 {@code absEU < VOLTAGES[i] * 5} 的等级</li>
-     * <li>计算电流：{@code amperage = ceil(absEU / VOLTAGES[tier])}</li>
+     * <li>选择初始 Tier：找到第一个满足 {@code absEU < GTValues.V[i] * 5} 的等级
+     * （循环上界取名称表长度 15，不进入 GTValues.V 的 index 15 error tier 哨兵档）</li>
+     * <li>计算电流：{@code amperage = ceil(absEU / GTValues.V[tier])}</li>
      * <li>过载升级：若 {@code amperage > 4} 且未到 MAX，则升一级重新计算电流，直到电流 ≤ 4 或到 MAX</li>
      * </ol>
      * 合并自 HUD 的 {@code getGTTier}（MTE 原版将此逻辑内联在 formatGTPower 中，逻辑等价）。
@@ -77,23 +61,23 @@ public class GTTierUtil {
     public static int getGTTier(double euPerTick) {
         double absEU = Math.abs(euPerTick);
         int tier = 0;
-        for (int i = 0; i < VOLTAGES.length; i++) {
-            if (absEU < VOLTAGES[i] * 5) {
+        for (int i = 0; i < TIER_NAMES.length; i++) {
+            if (absEU < GTValues.V[i] * 5) {
                 tier = i;
                 break;
             }
-            if (i == VOLTAGES.length - 1) {
+            if (i == TIER_NAMES.length - 1) {
                 tier = i;
             }
         }
 
-        int amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
-        if (amperage > 4 && tier < VOLTAGES.length - 1) {
+        int amperage = (int) Math.ceil(absEU / GTValues.V[tier]);
+        if (amperage > 4 && tier < TIER_NAMES.length - 1) {
             tier++;
-            amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
-            while (amperage > 4 && tier < VOLTAGES.length - 1) {
+            amperage = (int) Math.ceil(absEU / GTValues.V[tier]);
+            while (amperage > 4 && tier < TIER_NAMES.length - 1) {
                 tier++;
-                amperage = (int) Math.ceil(absEU / VOLTAGES[tier]);
+                amperage = (int) Math.ceil(absEU / GTValues.V[tier]);
             }
         }
         return tier;
@@ -111,12 +95,12 @@ public class GTTierUtil {
      */
     public static String formatGTPower(double euPerTick) {
         int tier = getGTTier(euPerTick);
-        long voltage = VOLTAGES[tier];
+        long voltage = GTValues.V[tier];
         double absEU = Math.abs(euPerTick);
         int amperage = (int) Math.ceil(absEU / voltage);
 
         boolean isOverloaded = false;
-        if (amperage > 4 && tier == VOLTAGES.length - 1) {
+        if (amperage > 4 && tier == TIER_NAMES.length - 1) {
             // 已到 MAX 级仍超 4A，截断为 4A 并标记过载
             isOverloaded = true;
             amperage = 4;
