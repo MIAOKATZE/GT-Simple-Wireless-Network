@@ -44,15 +44,9 @@ import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGridNode;
-import appeng.api.networking.security.BaseActionSource;
-import appeng.api.networking.storage.IStackWatcher;
-import appeng.api.networking.storage.IStackWatcherHost;
 import appeng.api.storage.IMEMonitor;
-import appeng.api.storage.StorageChannel;
 import appeng.api.storage.data.IAEFluidStack;
 import appeng.api.storage.data.IAEItemStack;
-import appeng.api.storage.data.IAEStack;
-import appeng.api.storage.data.IItemList;
 import appeng.api.util.AECableType;
 import appeng.api.util.DimensionalCoord;
 import appeng.me.GridAccessException;
@@ -62,7 +56,7 @@ import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
 import cpw.mods.fml.common.network.NetworkRegistry;
 
-public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxyable, IStackWatcherHost {
+public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxyable {
 
     private UUID ownerUUID;
     private String ownerName = "";
@@ -156,14 +150,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     /** 客户端 AE 实时监控 300s 平均变化率缓存（key → 每分钟数量变化） */
     private final Map<String, Double> aeMonitorAvg300s = new HashMap<>();
-
-    // === IStackWatcher 框架（v1.5.1 引入，v1.5.2 填充采样）===
-
-    /** AE2 注入的栈监听器，grid 就绪后由 AE2 主动调用 updateWatcher 注入 */
-    private IStackWatcher stackWatcher;
-
-    /** 标记 AE 网络栈发生变化（onStackChange 回调设置，updateEntity 检测后清零），volatile 保证跨线程可见性 */
-    private volatile boolean aeStackDirty = false;
 
     @Override
     public void updateEntity() {
@@ -276,10 +262,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
-        // v1.5.15：防御性清理 stackWatcher，防止 chunk 卸载后 watcher 残留导致 AE 网络侧仍持有引用
-        if (stackWatcher != null) {
-            stackWatcher.clear();
-        }
         if (gridProxy != null) {
             gridProxy.onChunkUnload();
         }
@@ -597,7 +579,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             clearAEData(getAEKey(chartItem));
             chartItem = null;
             markDirty();
-            configureStackWatcher();
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
             return false;
         }
@@ -610,7 +591,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         chartItem = stack != null ? stack.copy() : null;
         chartFluid = null; // 物品与流体互斥
         markDirty();
-        configureStackWatcher();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
         return true;
     }
@@ -623,7 +603,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
             clearAEData(getAEKey(chartFluid));
             chartFluid = null;
             markDirty();
-            configureStackWatcher();
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
             return false;
         }
@@ -636,7 +615,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         chartFluid = fluid != null ? fluid.copy() : null;
         chartItem = null;
         markDirty();
-        configureStackWatcher();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
         return true;
     }
@@ -660,7 +638,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         chartItem = null;
         chartFluid = null;
         markDirty();
-        configureStackWatcher();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
 
@@ -675,7 +652,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         monitoredItems.clear();
         monitoredFluids.clear();
         markDirty();
-        configureStackWatcher();
         worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
     }
 
@@ -691,7 +667,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 clearAEData(getAEKey(monitoredItems.get(i)));
                 monitoredItems.remove(i);
                 markDirty();
-                configureStackWatcher();
                 worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
                 return false;
             }
@@ -699,7 +674,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (monitoredItems.size() < Config.aeMaxMonitoredItems) {
             monitoredItems.add(stack.copy());
             markDirty();
-            configureStackWatcher();
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
             return true;
         }
@@ -716,7 +690,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 clearAEData(getAEKey(monitoredFluids.get(i)));
                 monitoredFluids.remove(i);
                 markDirty();
-                configureStackWatcher();
                 worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
                 return false;
             }
@@ -724,7 +697,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (monitoredFluids.size() < Config.aeMaxMonitoredItems) {
             monitoredFluids.add(fluid.copy());
             markDirty();
-            configureStackWatcher();
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
             return true;
         }
@@ -787,57 +759,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      */
     public Map<String, Double> getAEMonitorAvg300s() {
         return Collections.unmodifiableMap(aeMonitorAvg300s);
-    }
-
-    // ==================== IStackWatcherHost 实现（v1.5.1 框架，v1.5.2 填充采样）====================
-
-    @Override
-    public void updateWatcher(IStackWatcher newWatcher) {
-        this.stackWatcher = newWatcher;
-        configureStackWatcher();
-    }
-
-    /**
-     * 重新配置栈监听器关注的物品/流体列表。
-     * 在 chartItem/chartFluid/monitoredItems/monitoredFluids 变化后调用。
-     * stackWatcher 为 null 时（AE 网络未就绪）安全跳过。
-     */
-    private void configureStackWatcher() {
-        if (this.stackWatcher == null) return;
-        this.stackWatcher.clear();
-        // 走势图绑定的物品/流体
-        if (chartItem != null) {
-            stackWatcher.add(AEItemStack.create(chartItem));
-        }
-        if (chartFluid != null) {
-            stackWatcher.add(AEFluidStack.create(chartFluid));
-        }
-        // 实时监控列表
-        for (ItemStack s : monitoredItems) {
-            stackWatcher.add(AEItemStack.create(s));
-        }
-        for (FluidStack f : monitoredFluids) {
-            stackWatcher.add(AEFluidStack.create(f));
-        }
-    }
-
-    /**
-     * AE2 网络栈变化回调。可能在 AE 网络线程调用。
-     * v1.5.1 仅设置 dirty 标记，v1.5.2 在 updateEntity 中检测后执行采样。
-     */
-    @Override
-    public void onStackChange(IItemList o, IAEStack fullStack, IAEStack diffStack, BaseActionSource src,
-        StorageChannel chan) {
-        this.aeStackDirty = true;
-    }
-
-    /** 检查并消费 AE 栈变化标记（v1.5.2 在 updateEntity 中调用） */
-    public boolean consumeAEStackDirty() {
-        if (aeStackDirty) {
-            aeStackDirty = false;
-            return true;
-        }
-        return false;
     }
 
     public void bindOwner(UUID uuid, String name) {
