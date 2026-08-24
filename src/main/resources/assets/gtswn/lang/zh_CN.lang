@@ -359,3 +359,45 @@ gtswn.gui.quantum.node_count=量子节点
 # WAILA 量子节点状态显示 (v1.6.4 起不显示离线原因，原因由右键聊天提示提供)
 gtswn.waila.quantum_node.online=§a设备在线
 gtswn.waila.quantum_node.offline=§c设备离线
+
+# 设备信息终端 (Device Info Terminal，阶段 A；tooltip 全文案阶段 F addInformation 引用)
+item.gtswn.deviceInfoTerminal.name=设备信息终端
+item.gtswn.deviceInfoTerminal.tooltip.l1=§7右击空气: §f打开设备监控界面
+item.gtswn.deviceInfoTerminal.tooltip.l2=§7右击可工作机器: §f绑定到终端监控
+item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+右击空气: §f全域扫描团队机器（20 秒倒计时，可取消）
+item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+点击条目: §f远程解绑 · 传送消耗经验等级
+
+# 设备信息终端 GUI (Device Info Terminal GUI，阶段 E 引用)
+gtswn.device.gui.title=设备信息终端
+gtswn.device.gui.count_mode=计数法: %s
+gtswn.device.gui.count_mode.normal=常规
+gtswn.device.gui.count_mode.scientific=科学计数
+gtswn.device.gui.count_mode.thousands=千位分隔
+gtswn.device.gui.show_recipe=显示配方: %s
+gtswn.device.gui.on=开
+gtswn.device.gui.off=关
+gtswn.device.gui.col.name=机器名
+gtswn.device.gui.col.state=状态
+gtswn.device.gui.col.instant=瞬时 EU/t
+gtswn.device.gui.col.average=平均 EU/t
+gtswn.device.gui.col.pos=位置
+gtswn.device.gui.footer=Ctrl+点击解除绑定 · 悬浮查看配方 · 点击列头排序
+gtswn.device.gui.teleport=传送
+gtswn.device.gui.no_bindings=未绑定任何机器
+gtswn.device.gui.tooltip.recipe_title=当前执行配方（输出快照，近似）
+gtswn.device.gui.tooltip.recipe_none=无
+gtswn.device.gui.state.idle=§e待机
+gtswn.device.gui.state.running=§a运行
+gtswn.device.gui.state.stopped=§c停机
+
+# 设备信息终端聊天 (Device info terminal chat)
+gtswn.device.chat.bound=§a[设备终端] 已绑定: §f%s
+gtswn.device.chat.already_bound=§7[设备终端] 该机器已在绑定列表中
+gtswn.device.chat.auto_bound=§a[设备终端] 已自动绑定: §f%s
+gtswn.device.chat.not_machine=§c[设备终端] 目标不是可监控的 GT 机器
+gtswn.device.chat.limit=§c[设备终端] 绑定数已达上限（%d），无法继续添加
+gtswn.device.chat.scan.start=§b[设备终端] 开始扫描团队机器（约 20 秒后执行，合并计算在后台线程）...
+gtswn.device.chat.scan.countdown=§7[设备终端] %d 秒后执行扫描
+gtswn.device.chat.scan.cancelled=§e[设备终端] 扫描已取消
+gtswn.device.chat.scan.complete=§a[设备终端] 扫描完成: 已录入 %d 台（团队 %d 人）
+gtswn.device.chat.teleport.no_xp=§c[设备终端] 经验等级不足，传送需要 %d 级

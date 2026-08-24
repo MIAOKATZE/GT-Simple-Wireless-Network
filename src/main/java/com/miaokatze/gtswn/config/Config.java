@@ -147,6 +147,24 @@ public class Config {
     // 默认 7 天 / Default 7 days
     public static int keepHistoryDays = 7;
 
+    // 设备信息终端采样间隔（秒）/ Device info terminal sample interval (seconds)
+    // 每台绑定机器的 EU/t FIFO 采样节奏（60 点 FIFO 计算平均）。值越小数据越实时，服务器负担越大。
+    // Sample cadence of the EU/t FIFO (60 points) per bound machine. Smaller = more real-time, higher server load.
+    // 默认 10 秒，范围 1~3600，需重启生效 / Default 10, range 1-3600, requires restart
+    public static int deviceSampleIntervalSeconds = 10;
+
+    // 设备信息终端传送经验等级消耗 / Device info terminal teleport XP level cost
+    // 从终端列表传送到机器位置时扣除的经验等级。设为下限 1 仍会消耗。
+    // XP levels deducted when teleporting to a machine from the terminal list. Minimum 1 still costs levels.
+    // 默认 3，范围 1~1000 / Default 3, range 1-1000
+    public static int deviceTeleportXPCost = 3;
+
+    // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
+    // 右击绑定 / 放置自动绑定 / 扫描录入共用此上限，超限拒绝并聊天提示。
+    // Hard cap shared by manual bind / auto bind on place / scan import; exceeding rejects with a chat message.
+    // 默认 1024，范围 16~65536 / Default 1024, range 16-65536
+    public static int deviceTerminalMaxMachines = 1024;
+
     /**
      * 同步主配置文件 (gtswn.cfg)
      * <p>
@@ -181,6 +199,38 @@ public class Config {
             1,
             60,
             "性能审计报告周期（分钟）/ Performance audit report interval (minutes)");
+
+        // 设备信息终端采样间隔（秒）/ Device info terminal sample interval (seconds)
+        deviceSampleIntervalSeconds = configuration.getInt(
+            "deviceSampleIntervalSeconds",
+            Configuration.CATEGORY_GENERAL,
+            deviceSampleIntervalSeconds,
+            1,
+            3600,
+            "设备信息终端采样间隔（秒），每台绑定机器的 EU/t FIFO 采样节奏 / Device info terminal sample "
+                + "interval in seconds (EU/t FIFO cadence per bound machine)\n"
+                + "默认 10 秒，范围 1~3600，需重启生效 / Default 10, range 1-3600, requires restart");
+
+        // 设备信息终端传送经验等级消耗 / Device info terminal teleport XP level cost
+        deviceTeleportXPCost = configuration.getInt(
+            "deviceTeleportXPCost",
+            Configuration.CATEGORY_GENERAL,
+            deviceTeleportXPCost,
+            1,
+            1000,
+            "设备信息终端传送经验等级消耗 / Device info terminal teleport XP level cost\n"
+                + "默认 3，范围 1~1000 / Default 3, range 1-1000");
+
+        // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
+        deviceTerminalMaxMachines = configuration.getInt(
+            "deviceTerminalMaxMachines",
+            Configuration.CATEGORY_GENERAL,
+            deviceTerminalMaxMachines,
+            16,
+            65536,
+            "单台设备信息终端最大绑定机器数（右击绑定/放置自动绑定/扫描录入共用上限） / Max bound "
+                + "machines per device info terminal (shared cap for manual bind / auto bind / scan)\n"
+                + "默认 1024，范围 16~65536 / Default 1024, range 16-65536");
 
         if (configuration.hasChanged()) {
             configuration.save();

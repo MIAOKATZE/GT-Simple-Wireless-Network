@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.register;
 
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Device_Info_Terminal;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dynamo_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quantum_Terminal;
@@ -24,6 +25,7 @@ public class ItemRegistrar {
         registerTestCoin();
         registerPortableWirelessNetworkMonitor();
         registerMENetworkQuantumTerminal();
+        registerDeviceInfoTerminal();
         registerWirelessEnergyTap();
         registerGTswnCoverEnergyWireless();
         registerGTswnCoverDynamoWireless();
@@ -50,6 +52,13 @@ public class ItemRegistrar {
      */
     private static void registerMENetworkQuantumTerminal() {
         ME_Network_Quantum_Terminal.setAndRegister(com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal::new);
+    }
+
+    /**
+     * 注册设备信息终端（阶段 A：物品+NBT 偏好+机器绑定；扫描/GUI 阶段 C-E 实现）
+     */
+    private static void registerDeviceInfoTerminal() {
+        Device_Info_Terminal.setAndRegister(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal::new);
     }
 
     /**

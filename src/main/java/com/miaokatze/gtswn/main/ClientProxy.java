@@ -2,12 +2,15 @@ package com.miaokatze.gtswn.main;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.common.MinecraftForge;
 
+import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
 import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
+import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
 import com.miaokatze.gtswn.client.gui.GuiNetworkInfoPanel;
 import com.miaokatze.gtswn.client.gui.GuiQuantumTerminal;
 import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
@@ -15,9 +18,11 @@ import com.miaokatze.gtswn.client.render.RenderNetworkQuantumNode;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.hud.HudController;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
+import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
+import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
@@ -161,10 +166,70 @@ public class ClientProxy extends CommonProxy {
             .func_152344_a(() -> GuiQuantumTerminal.receiveData(data));
     }
 
+    /**
+     * 客户端处理设备信息终端数据分页同步包（disc 9，阶段 D2）：切主线程后写
+     * {@link DeviceTerminalClientCache}（分页到齐整体替换防撕裂，缓存锚点=终端 UUID
+     * 不随 GUI 关闭清空）。
+     * <p>
+     * 线程安全与类加载安全模式同 {@link #handleSyncQuantumTerminalData}：onMessage 运行
+     * 在 Netty 网络线程，用 {@link Minecraft#func_152344_a(Runnable)} 切主线程；本方法
+     * 仅客户端加载，可安全引用客户端缓存类。
+     */
+    @Override
+    public void handleSyncDeviceTerminalData(PacketSyncDeviceTerminalData msg) {
+        final java.util.UUID terminalId = msg.getTerminalId();
+        if (terminalId == null) {
+            // 坏包退化的惰性消息：丢弃
+            return;
+        }
+        final long version = msg.getVersion();
+        final int pageIndex = msg.getPageIndex();
+        final int pageTotal = msg.getPageTotal();
+        final java.util.List<com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry> page = new java.util.ArrayList<>(
+            msg.getEntries());
+        // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
+        Minecraft.getMinecraft()
+            .func_152344_a(
+                () -> DeviceTerminalClientCache.receivePage(terminalId, version, pageIndex, pageTotal, page));
+    }
+
     @Override
     public void openQuantumTerminalGui() {
         Minecraft.getMinecraft()
             .displayGuiScreen(new GuiQuantumTerminal());
+    }
+
+    /**
+     * 客户端打开设备信息终端 GUI（阶段 E3：{@code ItemDeviceInfoTerminal.onItemRightClick}
+     * 非 Shift 右击空气经 @SidedProxy 委托至此）。
+     * <p>
+     * 解析手持优先 → 主背包首台的设备信息终端（与服务端
+     * {@code DeviceTerminalRequestQueue.findTerminalStack} 同序），<b>只读</b>其 DIT_UUID 与
+     * UI 偏好（不生成 UUID——服务端 onItemRightClick 同拍生成并显式 S2FPacketSetSlot 同步；
+     * 未同步到时 GUI 先显示「...」占位，逐 tick 只读重解析自动锚定）后本地 displayGuiScreen。
+     * 未持有终端（防御）静默不打开。
+     */
+    @Override
+    public void openDeviceInfoTerminalGui() {
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayer player = mc.thePlayer;
+        if (player == null) {
+            return;
+        }
+        ItemStack stack = player.getHeldItem();
+        if (!(stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal)) {
+            stack = null;
+            for (ItemStack candidate : player.inventory.mainInventory) {
+                if (candidate != null && candidate.getItem() instanceof ItemDeviceInfoTerminal) {
+                    stack = candidate;
+                    break;
+                }
+            }
+        }
+        if (stack == null) {
+            return;
+        }
+        mc.displayGuiScreen(new GuiDeviceInfoTerminal(ItemDeviceInfoTerminal.readTerminalId(stack), stack));
     }
 
     /**

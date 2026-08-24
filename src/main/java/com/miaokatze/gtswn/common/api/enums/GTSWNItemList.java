@@ -36,6 +36,8 @@ public enum GTSWNItemList implements IItemContainer {
     ME_Network_Quantum_Terminal,
     // ME 网络量子节点（T1 存根：仅注册，桥接逻辑 T4 实现）
     ME_Network_Quantum_Node,
+    // 设备信息终端（阶段 A：物品+绑定手势；采样/扫描/GUI 阶段 C-E 实现）
+    Device_Info_Terminal,
     // 测试硬币（测试环境道具：右键 +100万 EU，Shift+右键 -100万 EU）
     TestCoin;
 

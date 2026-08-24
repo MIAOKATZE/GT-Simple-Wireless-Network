@@ -359,3 +359,45 @@ gtswn.gui.quantum.node_count=Quantum Nodes
 # WAILA quantum node status (since v1.6.4 offline reason is not shown here; use right-click chat instead)
 gtswn.waila.quantum_node.online=§aDevice Online
 gtswn.waila.quantum_node.offline=§cDevice Offline
+
+# Device Info Terminal (stage A; tooltip lines referenced by stage F addInformation)
+item.gtswn.deviceInfoTerminal.name=Device Info Terminal
+item.gtswn.deviceInfoTerminal.tooltip.l1=§7Right-click air: §fOpen the device monitor UI
+item.gtswn.deviceInfoTerminal.tooltip.l2=§7Right-click a working machine: §fBind it to the terminal
+item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+right-click air: §fTeam-wide machine scan (20s countdown, cancellable)
+item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+click an entry: §fRemote unbind · Teleport costs XP levels
+
+# Device Info Terminal GUI (referenced by stage E)
+gtswn.device.gui.title=Device Info Terminal
+gtswn.device.gui.count_mode=Notation: %s
+gtswn.device.gui.count_mode.normal=Normal
+gtswn.device.gui.count_mode.scientific=Scientific
+gtswn.device.gui.count_mode.thousands=Thousands
+gtswn.device.gui.show_recipe=Show recipe: %s
+gtswn.device.gui.on=ON
+gtswn.device.gui.off=OFF
+gtswn.device.gui.col.name=Machine
+gtswn.device.gui.col.state=State
+gtswn.device.gui.col.instant=Instant EU/t
+gtswn.device.gui.col.average=Avg EU/t
+gtswn.device.gui.col.pos=Position
+gtswn.device.gui.footer=Ctrl+click to unbind · Hover for recipe · Click column header to sort
+gtswn.device.gui.teleport=Teleport
+gtswn.device.gui.no_bindings=No machines bound
+gtswn.device.gui.tooltip.recipe_title=Current recipe (output snapshot, approximate)
+gtswn.device.gui.tooltip.recipe_none=None
+gtswn.device.gui.state.idle=§eIdle
+gtswn.device.gui.state.running=§aRunning
+gtswn.device.gui.state.stopped=§cStopped
+
+# Device info terminal chat
+gtswn.device.chat.bound=§a[Device Terminal] Bound: §f%s
+gtswn.device.chat.already_bound=§7[Device Terminal] Machine already in binding list
+gtswn.device.chat.auto_bound=§a[Device Terminal] Auto-bound: §f%s
+gtswn.device.chat.not_machine=§c[Device Terminal] Target is not a monitorable GT machine
+gtswn.device.chat.limit=§c[Device Terminal] Binding limit reached (%d), cannot add more
+gtswn.device.chat.scan.start=§b[Device Terminal] Scanning team machines (executes in ~20s, merging on a background thread)...
+gtswn.device.chat.scan.countdown=§7[Device Terminal] Scan executes in %d s
+gtswn.device.chat.scan.cancelled=§e[Device Terminal] Scan cancelled
+gtswn.device.chat.scan.complete=§a[Device Terminal] Scan complete: %d machines imported (team of %d)
+gtswn.device.chat.teleport.no_xp=§c[Device Terminal] Not enough XP levels, teleport costs %d

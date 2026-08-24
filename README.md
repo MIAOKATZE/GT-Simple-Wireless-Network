@@ -229,6 +229,32 @@ Quantized ME controllers gain equivalent hardness (mining speed × 1/1000) and e
 
 ***
 
+## Device Info Terminal / 设备信息终端
+
+<!-- 图预留：界面截图待补充 / Image reserved: screenshot to be added -->
+<p align="center"><img src="images/device_info_terminal.png" alt="设备信息终端界面（图预留 / image reserved）/ Device Info Terminal GUI (image reserved)" width="450"><br><em>设备信息终端界面（图预留 / image reserved）/ Device Info Terminal GUI (image reserved)</em></p>
+
+手持式 GT 机器监控终端：绑定任意可工作 GT 机器（单方块/多方块），在滚动列表中实时查看三态（运行/待机/停机）、瞬时 EU/t、60 点平均 EU/t、位置与当前执行配方；支持五列排序（服务端 NBT 持久化）、三种计数法、行内经验传送与 Ctrl+点击远程解绑。
+
+A handheld GT machine monitor: bind any working GT machine (single-block or multiblock) and review its tri-state (Running/Idle/Stopped), instant EU/t, 60-point average EU/t, position and current recipe in a scrolling list; five-column sorting (persisted to server NBT), three notations, in-row XP-cost teleport and Ctrl+click remote unbind are supported.
+
+| 手势 / Gesture | 行为 / Behavior |
+|---|---|
+| Right-click a working machine / 右击可工作机器 | Bind it to this terminal / 绑定到本终端（放置机器时背包含终端自动绑定 / auto-bound on placement if a terminal is in the placer's inventory） |
+| Right-click air / 右击空气 | Open the terminal GUI / 打开终端界面 |
+| Shift+right-click air / Shift+右击空气 | Team-wide scan toggle (20s countdown, cancellable; team = GTNHLib Team owners/officers/members) / 全域扫描开关（20 秒倒计时可取消；团队 = GTNHLib Team 管理员/官员/成员并集） |
+| Ctrl+click a row / Ctrl+点击条目 | Remote unbind (no confirmation) / 远程解绑（无确认） |
+| Click the ✦ button on a row / 点击行内 ✦ 按钮 | Teleport to the machine (costs XP levels, 3s cooldown) / 传送到机器（消耗经验等级，3 秒冷却） |
+
+- **Sampling & Averages / 采样与均值**: Machines are sampled every `deviceSampleIntervalSeconds` (default 10s); the average column is a 60-point rolling mean, instant EU/t is the latest sample. / 每 `deviceSampleIntervalSeconds`（默认 10 秒）采样一次；平均列为 60 点滚动均值，瞬时 EU/t 取最新采样点。
+- **Recipe Hover / 配方悬浮**: Hover a row ≥0.5s to view the current recipe (output snapshot, approximate); the "Show recipe" toggle temporarily replaces the two power columns with the recipe text. / 行悬浮 ≥0.5 秒查看当前执行配方（输出快照，近似）；「显示配方」开关可临时用配方文本替换两列功率数值。
+- **Configs / 配置**: `deviceSampleIntervalSeconds` (default 10, min 1) sampling interval; `deviceTeleportXPCost` (default 3, min 1) teleport XP-level cost; `deviceTerminalMaxMachines` (default 1024, min 16) per-terminal binding cap. / `deviceSampleIntervalSeconds`（默认 10，最小 1）采样间隔；`deviceTeleportXPCost`（默认 3，最小 1）传送消耗经验等级；`deviceTerminalMaxMachines`（默认 1024，最小 16）单终端绑定上限。
+
+> ⚠️ 设备信息终端暂无合成配方，通过创造模式获取。
+> ⚠️ The Device Info Terminal currently has no crafting recipe — obtain via Creative.
+
+***
+
 ## Admin Commands / 管理员命令
 
 OP level 4 required. / 需要 OP 等级 4。

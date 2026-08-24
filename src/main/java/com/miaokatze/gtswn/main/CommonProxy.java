@@ -16,6 +16,9 @@ import com.miaokatze.gtswn.common.command.CommandGTSWN;
 import com.miaokatze.gtswn.common.covers.CoverDropSuppressionHandler;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+import com.miaokatze.gtswn.common.device.DeviceEventHandler;
+import com.miaokatze.gtswn.common.device.DeviceSampleScheduler;
+import com.miaokatze.gtswn.common.device.DeviceScanManager;
 import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
@@ -27,9 +30,11 @@ import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.crossmod.waila.WailaIntegration;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
+import com.miaokatze.gtswn.network.DeviceTerminalActionQueue;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.NetworkPanelBroadcastPort;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
+import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 import com.miaokatze.gtswn.network.PanelActionQueue;
@@ -129,6 +134,9 @@ public class CommonProxy {
         // B07（O2-B07，吸收 B2-01）：面板操作队列自宿主 tick 监听注册——包 2/3 世界态修改
         // 由 ServerTickEvent(END) 主线程排空（与通道注册同址，队列即 network→tile 唯一受控调用点）
         PanelActionQueue.register();
+        // 阶段 D3：设备信息终端动作队列自宿主 tick 监听注册——包 10 动作（排序/计数法/解绑/传送）
+        // 由 ServerTickEvent(END) 主线程排空（照 PanelActionQueue 同址注册模式）
+        DeviceTerminalActionQueue.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(GTSimpleWirelessNetwork.instance, new GTSWNGuiHandler());
     }
 
@@ -171,6 +179,29 @@ public class CommonProxy {
             .bus()
             .register(quantumHandler);
         GTSimpleWirelessNetwork.LOG.info("[2/3] 量子化控制器事件处理器已注册到双事件总线。");
+
+        // 注册设备信息终端事件处理器（阶段 B）：
+        // - Forge 事件总线：机器放置登记/自动绑定、破坏出册级联解绑
+        // - FML 事件总线：玩家登录/登出维护活跃终端索引（供阶段 C 采样调度）
+        // 同一实例注册两条总线（仿上方量子处理器模式）
+        DeviceEventHandler deviceHandler = new DeviceEventHandler();
+        MinecraftForge.EVENT_BUS.register(deviceHandler);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(deviceHandler);
+        GTSimpleWirelessNetwork.LOG.info("[2/3] 设备信息终端事件处理器已注册到双事件总线。");
+
+        // 注册设备信息终端调度器与扫描管理器（阶段 C）：
+        // - DeviceSampleScheduler（FML 总线 ServerTickEvent END）：每 tick 排空包 8 请求队列
+        // （版本未变跳过重发）+ 周期采样（活跃终端绑定键，≤100 台/tick 预算）与自愈；
+        // 登出清理请求队列已收版本缓存
+        // - DeviceScanManager（FML 总线 ServerTickEvent END + PlayerLoggedOutEvent）：
+        // Shift+右击扫描的倒计时推进、后台合并结果主线程排水应用、登出清理
+        FMLCommonHandler.instance()
+            .bus()
+            .register(new DeviceSampleScheduler());
+        DeviceScanManager.register();
+        GTSimpleWirelessNetwork.LOG.info("[2/3] 设备信息终端采样调度器与扫描管理器已注册到事件总线。");
 
         // v1.6.30：注册链路终端覆盖板物品掉落抑制监听（覆盖板由终端物品免费创建，掉落=无限复制）
         MinecraftForge.EVENT_BUS.register(new CoverDropSuppressionHandler());
@@ -348,7 +379,31 @@ public class CommonProxy {
         // 服务端空实现：此包只发往客户端
     }
 
+    /**
+     * 处理服务端→客户端 设备信息终端数据分页同步包（disc 9，阶段 D2，客户端专用逻辑）。
+     * <p>
+     * 服务端空实现：此包只发往客户端，服务端收到也不会调用本方法。
+     * 客户端逻辑由 {@link ClientProxy#handleSyncDeviceTerminalData} 重写。
+     * 设计与 {@link #handleSyncQuantumTerminalData} 相同的 hotfix v1.5.14
+     * 类加载安全模式（Handler 只引用双端类型，经 @SidedProxy 委托；客户端
+     * func_152344_a 切主线程写 DeviceTerminalClientCache，分页到齐整体替换防撕裂）。
+     *
+     * @param msg 设备信息终端数据分页同步包
+     */
+    public void handleSyncDeviceTerminalData(PacketSyncDeviceTerminalData msg) {
+        // 服务端空实现：此包只发往客户端
+    }
+
     public void openQuantumTerminalGui() {}
+
+    /**
+     * 打开设备信息终端 GUI（阶段 E3，客户端专用逻辑）。
+     * <p>
+     * 服务端空实现：GUI 为纯客户端 {@code GuiScreen}（量子终端 v1.6.26 纯客户端打开路径，
+     * 不触碰服务端容器）。客户端逻辑由 {@link ClientProxy#openDeviceInfoTerminalGui} 重写：
+     * 解析手持优先的设备信息终端 → 读 DIT_UUID 与 UI 偏好（只读）→ 本地 displayGuiScreen。
+     */
+    public void openDeviceInfoTerminalGui() {}
 
     public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {}
 

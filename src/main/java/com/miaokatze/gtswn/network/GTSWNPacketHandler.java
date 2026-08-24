@@ -23,6 +23,12 @@ import cpw.mods.fml.relauncher.Side;
  * O2-17 后不再由包 5 轮询路径发送，保留作协议回退位与 GUI 回扩位）</li>
  * <li>7 = {@link PacketSyncQuantumTerminalDataLite}（S→C 量子终端短回包，仅 GUI 消费的
  * 9 字段固定 30B；O2-17：终端轮询回包 119+~10N→30B，满配 -97.9%）</li>
+ * <li>8 = {@link PacketRequestDeviceTerminalData}（C→S 请求设备信息终端数据，无字段；
+ * Handler 仅入队 DeviceTerminalRequestQueue，ServerTick END 主线程版本校验分页回发）</li>
+ * <li>9 = {@link PacketSyncDeviceTerminalData}（S→C 设备信息终端数据分页同步，
+ * 128 条/页 entryTotal 封顶 1024，全防御反序列化，客户端经 @SidedProxy 切主线程写缓存）</li>
+ * <li>10 = {@link PacketDeviceTerminalAction}（C→S 设备信息终端 GUI 动作：排序/计数法/
+ * 解绑/传送；照 PanelActionQueue 模式 Netty 入队→主线程 drain）</li>
  * </ul>
  */
 public class GTSWNPacketHandler {
@@ -67,5 +73,23 @@ public class GTSWNPacketHandler {
             PacketSyncQuantumTerminalDataLite.class,
             7,
             Side.CLIENT);
+        // 8: 客户端→服务端 请求设备信息终端数据（无字段；Netty 入队→主线程版本校验分页回发）
+        NETWORK.registerMessage(
+            PacketRequestDeviceTerminalData.Handler.class,
+            PacketRequestDeviceTerminalData.class,
+            8,
+            Side.SERVER);
+        // 9: 服务端→客户端 设备信息终端数据分页同步（客户端 Handler 双端类型经 @SidedProxy 委托）
+        NETWORK.registerMessage(
+            PacketSyncDeviceTerminalData.Handler.class,
+            PacketSyncDeviceTerminalData.class,
+            9,
+            Side.CLIENT);
+        // 10: 客户端→服务端 设备信息终端 GUI 动作（Netty 入队→DeviceTerminalActionQueue 主线程 drain）
+        NETWORK.registerMessage(
+            PacketDeviceTerminalAction.Handler.class,
+            PacketDeviceTerminalAction.class,
+            10,
+            Side.SERVER);
     }
 }
