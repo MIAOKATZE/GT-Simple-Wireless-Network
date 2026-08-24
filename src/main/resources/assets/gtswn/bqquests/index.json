@@ -1,17 +1,73 @@
 {
-  "version": 1,
   "questLines": [
     {
-      "idHigh": 5139824709172461569,
-      "idLow": 1,
-      "orderIndex": 0,
-      "lineFile": "assets/gtswn/bqquests/testline/QuestLine.json",
       "entries": [
         {
-          "questFile": "assets/gtswn/bqquests/testquests/TestQuest.json",
-          "entryFile": "assets/gtswn/bqquests/testline/TestQuest.entry.json"
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/WelcometotheGrid-R1RXTgAAAAAAAAAAAAAAAQ==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/WelcometotheGrid-R1RXTgAAAAAAAAAAAAAAAQ==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/WatchingtheWatts-R1RXTgAAAAAAAAAAAAAAAg==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/WatchingtheWatts-R1RXTgAAAAAAAAAAAAAAAg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/FiveFlavorsofRed-R1RXTgAAAAAAAAAAAAAAAw==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/FiveFlavorsofRed-R1RXTgAAAAAAAAAAAAAAAw==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/PocketSizedOvers-R1RXTgAAAAAAAAAAAAAABA==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/PocketSizedOvers-R1RXTgAAAAAAAAAAAAAABA==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheFirstLink-R1RXTgAAAAAAAAAAAAAABQ==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheFirstLink-R1RXTgAAAAAAAAAAAAAABQ==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/PowerFromThinAir-R1RXTgAAAAAAAAAAAAAABg==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/PowerFromThinAir-R1RXTgAAAAAAAAAAAAAABg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/FeedingtheGrid-R1RXTgAAAAAAAAAAAAAABw==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/FeedingtheGrid-R1RXTgAAAAAAAAAAAAAABw==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TrendsonaWall-R1RXTgAAAAAAAAAAAAAACA==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TrendsonaWall-R1RXTgAAAAAAAAAAAAAACA==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheBiggerPicture-R1RXTgAAAAAAAAAAAAAACQ==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheBiggerPicture-R1RXTgAAAAAAAAAAAAAACQ==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/QuantumLeap-R1RXTgAAAAAAAAAAAAAACg==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/QuantumLeap-R1RXTgAAAAAAAAAAAAAACg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/PlantingQuantumN-R1RXTgAAAAAAAAAAAAAACw==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/PlantingQuantumN-R1RXTgAAAAAAAAAAAAAACw==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/MindYourChannels-R1RXTgAAAAAAAAAAAAAADA==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/MindYourChannels-R1RXTgAAAAAAAAAAAAAADA==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheMachineLedger-R1RXTgAAAAAAAAAAAAAADQ==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheMachineLedger-R1RXTgAAAAAAAAAAAAAADQ==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheFullWirelessR-R1RXTgAAAAAAAAAAAAAADg==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheFullWirelessR-R1RXTgAAAAAAAAAAAAAADg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/CuttheLastCable-R1RXTgAAAAAAAAAAAAAADw==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/CuttheLastCable-R1RXTgAAAAAAAAAAAAAADw==.json"
         }
-      ]
+      ],
+      "idHigh": 5139829067255644160,
+      "idLow": 1,
+      "lineFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/QuestLine.json",
+      "orderIndex": 901
     }
-  ]
+  ],
+  "version": 1
 }

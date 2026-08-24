@@ -275,9 +275,12 @@ public class CommonProxy {
     @SuppressWarnings({ "unused" })
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new CommandGTSWN());
-        // BQ 任务注入（PoC）：@Mod 已声明 after:betterquesting，此刻 BQ 的 default load
-        // 已同步完成；注入器幂等 get-or-create，BQ 缺席时静默返回（详见 BqQuestInjector）
-        BqQuestInjector.inject();
+        // BQ 任务注入：@Mod 已声明 after:betterquesting，此刻 BQ 的 default load 已同步完成；
+        // 注入器幂等 get-or-create。守卫必须在调用方：BQ 缺席时 BqQuestInjector 类链接
+        // 即会触发 BQ 类型解析，先经零 BQ 引用的 BqCompat 短路才能保证注入器类根本不加载。
+        if (BqCompat.isBqLoaded()) {
+            BqQuestInjector.inject();
+        }
     }
 
     /**
