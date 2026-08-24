@@ -210,7 +210,11 @@ gtswn.network_info.gui.eut_y_min=状态Y最小
 gtswn.network_info.gui.eut_y_max=状态Y最大
 gtswn.network_info.gui.border_width=边框
 gtswn.network_info.gui.line_width=走势线
-gtswn.network_info.gui.smoothing=样条密度
+gtswn.network_info.gui.smoothing=平滑强度
+gtswn.network_info.gui.spline_type.pass=过点样条
+gtswn.network_info.gui.spline_type.fit=拟合样条
+gtswn.network_info.gui.spline_type.poly=折线样条
+gtswn.network_info.gui.spline_type.digital=数字样条
 gtswn.network_info.gui.chart_bg=图表背景
 gtswn.network_info.gui.screen_bg=屏幕背景
 gtswn.network_info.gui.blank_auto=留空=自动/无

@@ -13,6 +13,7 @@ import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.common.command.CommandGTSWN;
+import com.miaokatze.gtswn.common.covers.CoverDropSuppressionHandler;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
@@ -45,6 +46,7 @@ import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import gregtech.api.GregTechAPI;
+import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
 import gregtech.api.render.TextureFactory;
 
@@ -53,6 +55,22 @@ import gregtech.api.render.TextureFactory;
  * 处理服务端和客户端共有的逻辑，如配置加载、机器注册、创造模式物品栏初始化等。
  */
 public class CommonProxy {
+
+    /**
+     * 链路终端覆盖板专用 placer（v1.6.30，替代 CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER）。
+     * <p>
+     * isGuiClickable=true 使单方块机器正面允许保留该覆盖板（GT5U MTEBasicMachine.allowCoverOnSide
+     * 对正面仅放行 GUI 可点击覆盖板，否则重放机器/扳手换面时 checkDropCover 会把覆盖板顶落）；
+     * allowOnPrimitiveBlock 维持 false 与原行为一致；
+     * 右键交互不受影响——覆盖板 onCoverRightClick 优先拦截显示配置。
+     * <p>
+     * Dedicated CoverPlacer for link-terminal covers. isGuiClickable=true lets single-block machines
+     * keep the cover on their front face (MTEBasicMachine.allowCoverOnSide only allows GUI-clickable
+     * covers there); allowOnPrimitiveBlock stays false as before; right-click interaction is
+     * unaffected since the cover's onCoverRightClick intercepts first.
+     */
+    private static final CoverPlacer GTSWN_LINK_TERMINAL_PLACER = CoverPlacer.builder()
+        .build();
 
     /**
      * 预初始化阶段 (PreInit)
@@ -154,6 +172,9 @@ public class CommonProxy {
             .register(quantumHandler);
         GTSimpleWirelessNetwork.LOG.info("[2/3] 量子化控制器事件处理器已注册到双事件总线。");
 
+        // v1.6.30：注册链路终端覆盖板物品掉落抑制监听（覆盖板由终端物品免费创建，掉落=无限复制）
+        MinecraftForge.EVENT_BUS.register(new CoverDropSuppressionHandler());
+
         // v1.6.19：注册性能审计 tick 结算监听（ServerTickEvent END；开关关闭时完全静默）
         FMLCommonHandler.instance()
             .bus()
@@ -197,14 +218,14 @@ public class CommonProxy {
                 GTswn_Cover_Energy_Wireless.get(1),
                 TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_INPUT),
                 context -> new GTswn_Cover_EnergyWireless(context),
-                CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
+                GTSWN_LINK_TERMINAL_PLACER);
 
             // 注册无线动力覆盖板（输出）-用我们自己的纹理！
             CoverRegistry.registerCover(
                 GTswn_Cover_Dynamo_Wireless.get(1),
                 TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_OUTPUT),
                 context -> new GTswn_Cover_DynamoWireless(context),
-                CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER);
+                GTSWN_LINK_TERMINAL_PLACER);
 
             GTSimpleWirelessNetwork.LOG.info("[PostInit] GTswn覆盖板注册成功！");
         } catch (Throwable t) {

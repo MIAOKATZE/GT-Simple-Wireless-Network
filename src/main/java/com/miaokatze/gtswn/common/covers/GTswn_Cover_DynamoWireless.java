@@ -26,14 +26,15 @@ import io.netty.buffer.ByteBuf;
  * 链路终端（动力）—— 虚空覆盖板
  * <p>
  * 本质为一个"虚拟导线":每 tick 读取机器的输出电压/安培,按 V×A 从机器取电存入内部缓冲池(电容量 = 2^63-1)。
- * 每 600 tick 将缓冲池累积的 EU 送到无线电网(计算上行损耗)。
+ * 每基础值 tick(默认 600,Config.interactionRateTicks)将缓冲池累积的 EU 送到无线电网(计算上行损耗)。
  * 卸载时将剩余电量发回网络(计算上行损耗)。
  * <p>
  * 通过 letsEnergyOut()=false 阻止机器向覆盖板所在面输出到真导线,避免双重消耗。
  * <p>
  * Link Terminal (Dynamo) — a void cover acting as a virtual cable.
  * Reads machine output V/A per tick, drains V×A EU into internal buffer (capacity = 2^63-1).
- * Uploads buffer to wireless network every 600 ticks (with uplink loss).
+ * Uploads buffer to wireless network every base-value ticks (default 600, Config.interactionRateTicks,
+ * with uplink loss).
  * Returns remaining buffer to network on removal (with uplink loss).
  */
 public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
@@ -120,10 +121,10 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
             }
         }
 
-        // 每 600 tick:把缓冲池累积的 EU 送到电网(计算上行损耗)
-        // Every 600 ticks: upload buffer to network (with uplink loss)
+        // 每基础值 tick(默认 600):把缓冲池累积的 EU 送到电网(计算上行损耗)
+        // Every base-value ticks (default 600): upload buffer to network (with uplink loss)
         ticksSinceLastUpload++;
-        if (ticksSinceLastUpload >= 600L) {
+        if (ticksSinceLastUpload >= Config.interactionRateTicks) {
             ticksSinceLastUpload = 0L;
             if (this.storedEU > 0) {
                 UUID owner = getOwner(bmte);
@@ -167,7 +168,7 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
             aPlayer.addChatMessage(
                 new ChatComponentText(
                     net.minecraft.util.StatCollector.translateToLocal("gtswn.chat.cover.next_upload")
-                        + (600 - ticksSinceLastUpload)
+                        + (Config.interactionRateTicks - ticksSinceLastUpload)
                         + " ticks"));
         } else {
             aPlayer.addChatMessage(

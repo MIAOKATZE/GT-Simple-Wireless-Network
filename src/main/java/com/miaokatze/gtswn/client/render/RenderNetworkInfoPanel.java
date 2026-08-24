@@ -339,7 +339,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                                 plotH,
                                 amountColor,
                                 panel.getAETrendLineThickness(),
-                                panel.getAETrendLineSmoothing());
+                                panel.getAETrendLineSmoothing(),
+                                panel.getAETrendLineSplineType());
                         }
                         if (showRate) {
                             // 变化率曲线使用橙色（与无线EU网络EU/t线一致），线宽与样条密度与存量线一致
@@ -352,7 +353,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                                 plotH,
                                 0xFF7A18,
                                 panel.getAETrendLineThickness(),
-                                panel.getAETrendLineSmoothing());
+                                panel.getAETrendLineSmoothing(),
+                                panel.getAETrendLineSplineType());
                         }
                     }
                 }
@@ -1014,7 +1016,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 plotH,
                 ENERGY_COLOR,
                 panel.getTrendLineThickness(),
-                panel.getTrendLineSmoothing());
+                panel.getTrendLineSmoothing(),
+                panel.getTrendLineSplineType());
         }
         if (eutValues != null) {
             drawSeries(
@@ -1026,7 +1029,8 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 plotH,
                 EUT_COLOR,
                 panel.getTrendLineThickness(),
-                panel.getTrendLineSmoothing());
+                panel.getTrendLineSmoothing(),
+                panel.getTrendLineSplineType());
         }
     }
 
@@ -1070,15 +1074,32 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
     }
 
     private void drawSeries(double[] values, double[] range, int x, int y, int w, int h, int color, int thickness,
-        int smoothing) {
+        int smoothing, int splineType) {
         if (values == null || values.length < 2 || h <= 2 || range == null) {
             return;
         }
         double min = range[0];
         double max = range[1];
-        // smoothing 配置映射为样条分段数：0=线性(1段)，1..12 → 4..26 段
+        // smoothing 配置映射为样条分段数（仅默认过点样条使用）：0=线性(1段)，1..12 → 4..26 段
         int segments = smoothing <= 0 ? 1 : smoothing * 2 + 2;
-        double[][] path = monotoneCubicPath(values, segments);
+        // 样条类型分派：0=过点样条（Fritsch-Carlson 单调 Hermite，默认）、1=拟合样条（Chaikin 切角，
+        // 平滑强度决定切角轮数）、2=折线样条（每段单段插值即直线直连）、3=数字样条（阶跃保持方块波形）
+        double[][] path;
+        switch (splineType) {
+            case 1:
+                path = chaikinPath(values, fitIterations(smoothing));
+                break;
+            case 2:
+                path = monotoneCubicPath(values, 1);
+                break;
+            case 3:
+                path = stepPath(values);
+                break;
+            case 0:
+            default:
+                path = monotoneCubicPath(values, segments);
+                break;
+        }
 
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glLineWidth(thickness);
@@ -1233,6 +1254,104 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 idx++;
             }
         }
+        return path;
+    }
+
+    /**
+     * 拟合样条的 Chaikin 切角轮数：平滑强度 0-5 → 1 轮、6-11 → 2 轮、12 → 3 轮切角。
+     *
+     * @param smoothing 平滑强度（0~12）
+     * @return 切角迭代轮数（≥1）
+     */
+    private static int fitIterations(int smoothing) {
+        return Math.max(1, Math.min(3, 1 + smoothing / 6));
+    }
+
+    /**
+     * Chaikin 切角拟合样条：每轮迭代对相邻点对 (a,b) 生成 0.75a+0.25b 与 0.25a+0.75b 两点，
+     * 首尾原点保留；收敛于二次 B 样条，曲线逼近但不经过内部样品点（不要求过点）。
+     * X 等间距索引映射：path[i][0] = 索引坐标（浮点），path[i][1] = 值，格式同 {@link #monotoneCubicPath}。
+     *
+     * @param values     样品值数组（已按时间索引化，X 等间距）
+     * @param iterations 切角迭代轮数（≥1）
+     * @return 密集顶点路径
+     */
+    private static double[][] chaikinPath(double[] values, int iterations) {
+        int n = values.length;
+        if (n < 2) {
+            // 退化情况：直接返回原始点
+            double[][] path = new double[n][2];
+            for (int i = 0; i < n; i++) {
+                path[i][0] = i;
+                path[i][1] = values[i];
+            }
+            return path;
+        }
+        // 初始点集 (i, values[i])
+        double[][] pts = new double[n][2];
+        for (int i = 0; i < n; i++) {
+            pts[i][0] = i;
+            pts[i][1] = values[i];
+        }
+        for (int iter = 0; iter < iterations; iter++) {
+            int m = pts.length;
+            // 每轮切角：首点 + 每对相邻点生成 2 点 + 尾点 = 2m 个点
+            double[][] next = new double[2 * m][2];
+            next[0][0] = pts[0][0];
+            next[0][1] = pts[0][1]; // 首点原样保留
+            int idx = 1;
+            for (int i = 0; i < m - 1; i++) {
+                double ax = pts[i][0];
+                double ay = pts[i][1];
+                double bx = pts[i + 1][0];
+                double by = pts[i + 1][1];
+                next[idx][0] = 0.75D * ax + 0.25D * bx;
+                next[idx][1] = 0.75D * ay + 0.25D * by;
+                idx++;
+                next[idx][0] = 0.25D * ax + 0.75D * bx;
+                next[idx][1] = 0.25D * ay + 0.75D * by;
+                idx++;
+            }
+            next[idx][0] = pts[m - 1][0];
+            next[idx][1] = pts[m - 1][1]; // 尾点原样保留
+            pts = next;
+        }
+        return pts;
+    }
+
+    /**
+     * 数字样条：阶跃保持的方块波形——每个样品值水平保持到下一采样点再阶跃，
+     * 形成与数字信号一致的方块波形。
+     * X 等间距索引映射：path[i][0] = 索引坐标（浮点），path[i][1] = 值，格式同 {@link #monotoneCubicPath}。
+     *
+     * @param values 样品值数组（已按时间索引化，X 等间距）
+     * @return 阶跃路径，长度 = 2 * (values.length - 1) + 1
+     */
+    private static double[][] stepPath(double[] values) {
+        int n = values.length;
+        if (n < 2) {
+            // 退化情况：直接返回原始点
+            double[][] path = new double[n][2];
+            for (int i = 0; i < n; i++) {
+                path[i][0] = i;
+                path[i][1] = values[i];
+            }
+            return path;
+        }
+        double[][] path = new double[2 * (n - 1) + 1][2];
+        int idx = 0;
+        for (int i = 0; i < n - 1; i++) {
+            // (i, v[i]) 与 (i+1, v[i])：当前样品值保持到下一采样点
+            path[idx][0] = i;
+            path[idx][1] = values[i];
+            idx++;
+            path[idx][0] = i + 1;
+            path[idx][1] = values[i];
+            idx++;
+        }
+        // 末尾补最后一个采样点
+        path[idx][0] = n - 1;
+        path[idx][1] = values[n - 1];
         return path;
     }
 

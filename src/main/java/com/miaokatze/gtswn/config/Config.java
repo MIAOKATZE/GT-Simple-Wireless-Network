@@ -19,6 +19,8 @@ import net.minecraftforge.common.config.Configuration;
  * <pre>
  * general {
  *     DownlinkLossEU / UplinkLossEU   // 上下行损耗
+ *     InteractionRateTicks            // 链路终端交互间隔（基础值）
+ *     BufferRedundancyTicks           // 链路终端缓冲冗余（与基础值共同决定缓存量）
  * }
  * hud {
  *     HudXOffset / HudYOffset / HudScale  // HUD 偏移与缩放
@@ -55,6 +57,30 @@ public class Config {
     // 默认 0.0 = 无损耗；1.0 = 电网净增加为 0（上传不了任何 EU）
     // Default 0.0 = no loss; 1.0 = network receives nothing (cannot upload any EU)
     public static float uplinkLossEU = 0.0f;
+
+    // 链路终端交互间隔（tick）/ Link terminal interaction interval (ticks)
+    // 基础值决定交互频率：能源链路终端每该值 tick 从无线电网补满一次缓冲，
+    // 动力链路终端每该值 tick 向电网上送一次缓冲。
+    // The base value decides interaction frequency: energy link terminals refill their buffer from
+    // the wireless network every this many ticks, dynamo link terminals upload their buffer to the
+    // network every this many ticks.
+    // 公式：交互间隔 = 此值 tick / Formula: interaction interval = this value in ticks
+    // 警告：过小的值会导致交互过于频繁，引发性能问题（大量覆盖板高频读写电网）。
+    // Warning: too small a value causes overly frequent interactions and performance issues
+    // (many covers reading/writing the network at high frequency).
+    // 默认 600 = 30 秒 / Default 600 = 30 seconds
+    public static int interactionRateTicks = 600;
+
+    // 缓冲冗余时长（tick）/ Buffer redundancy ticks
+    // 冗余值决定单次缓存量。公式：能源链路终端缓冲容量 = 电压 × 安培 ×（基础值 + 冗余值）EU
+    // （tick 当量，默认 600+200=800）。
+    // The redundancy value decides the per-interaction buffer size. Formula: energy link terminal
+    // buffer capacity = voltage × amperage × (base + redundancy) EU (tick-equivalent,
+    // default 600+200=800).
+    // 警告：过小的值会导致两次交互之间缓存量不足，机器可能断电。
+    // Warning: too small a value leaves insufficient buffer between interactions; machines may lose power.
+    // 默认 200 / Default 200
+    public static int bufferRedundancyTicks = 200;
 
     // HUD 水平偏移 / HUD horizontal offset
     // 正值 = HUD 向右移动，负值 = HUD 向左移动 / positive = shift right, negative = shift left
@@ -201,6 +227,45 @@ public class Config {
             "上行损耗系数 / Uplink loss ratio\n" + "动力覆盖板向无线网络送电时，机器扣减的 EU 不变，电网实际增加量按 (1 - 此值) 倍率计算。\n"
                 + "When dynamo cover outputs EU to wireless network, machine deducts full amount; network receives (1 - this value) × EU.\n"
                 + "默认 0.0 = 无损耗；1.0 = 电网净增加为 0（上传不了任何 EU） / Default 0.0 = no loss; 1.0 = network receives nothing");
+
+        // 链路终端交互间隔（tick）/ Link terminal interaction interval (ticks)
+        // 基础值决定交互频率：能源链路终端每该值 tick 从无线电网补满一次、
+        // 动力链路终端每该值 tick 向电网上送一次。
+        // The base value decides interaction frequency: energy link terminals refill from the wireless
+        // network every this many ticks, dynamo link terminals upload to the network every this many ticks.
+        interactionRateTicks = configuration.getInt(
+            "InteractionRateTicks",
+            Configuration.CATEGORY_GENERAL,
+            interactionRateTicks,
+            20,
+            60000,
+            "链路终端交互间隔（tick）/ Link terminal interaction interval (ticks)\n"
+                + "基础值决定交互频率——能源链路终端每该值 tick 从无线电网补满一次、动力链路终端每该值 tick 向电网上送一次。\n"
+                + "公式：交互间隔 = 此值 tick。\n"
+                + "警告：过小的值会导致交互过于频繁，引发性能问题（大量覆盖板高频读写电网）。\n"
+                + "The base value decides interaction frequency: energy link terminals refill their buffer from the wireless network every\n"
+                + "this many ticks, dynamo link terminals upload their buffer to the network every this many ticks.\n"
+                + "Formula: interaction interval = this value in ticks.\n"
+                + "Warning: too small a value causes overly frequent interactions and performance issues (many covers reading/writing the network at high frequency).\n"
+                + "默认 600 = 30 秒 / Default 600 = 30 seconds, range 20-60000");
+
+        // 缓冲冗余时长（tick）/ Buffer redundancy ticks
+        // 冗余值决定单次缓存量：能源链路终端缓冲容量 = 电压 × 安培 ×（基础值 + 冗余值）EU。
+        // The redundancy value decides the per-interaction buffer size: energy link terminal buffer
+        // capacity = voltage × amperage × (base + redundancy) EU.
+        bufferRedundancyTicks = configuration.getInt(
+            "BufferRedundancyTicks",
+            Configuration.CATEGORY_GENERAL,
+            bufferRedundancyTicks,
+            0,
+            60000,
+            "缓冲冗余时长（tick）/ Buffer redundancy ticks\n"
+                + "冗余值决定单次缓存量。公式：能源链路终端缓冲容量 = 电压 × 安培 ×（基础值 + 冗余值）EU（tick 当量，默认 600+200=800）。\n"
+                + "警告：过小的值会导致两次交互之间缓存量不足，机器可能断电。\n"
+                + "The redundancy value decides the per-interaction buffer size. Formula: energy link terminal buffer capacity =\n"
+                + "voltage × amperage × (base + redundancy) EU (tick-equivalent, default 600+200=800).\n"
+                + "Warning: too small a value leaves insufficient buffer between interactions; machines may lose power.\n"
+                + "默认 200 / Default 200, range 0-60000");
 
         // === HUD 显示参数类目（独立顶层 hud 类目，与 general 平级） ===
         // 配置项：HudXOffset / HudYOffset / HudScale
