@@ -72,6 +72,10 @@ dependencies {
 
     // WAILA: compileOnly — v1.6.2 可选软集成（量子节点在线/离线状态显示），无 WAILA 时不加载相关类
     compileOnly("com.github.GTNewHorizons:waila:1.19.30:dev") { transitive = false }
+
+    // BetterQuesting: compileOnly — 任务注入软集成（BQ 缺席时静默降级，零新增运行时依赖）
+    // 全部 BQ 类型引用收敛于 crossmod/bq/BqQuestInjector；preInit 探测见 crossmod/bq/BqCompat
+    compileOnly("com.github.GTNewHorizons:BetterQuesting:3.8.72-GTNH:dev") { transitive = false }
 }
 
 

@@ -27,6 +27,8 @@ import com.miaokatze.gtswn.common.quantum.QuantumChunkLoaderCallback;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.crossmod.bq.BqCompat;
+import com.miaokatze.gtswn.crossmod.bq.BqQuestInjector;
 import com.miaokatze.gtswn.crossmod.waila.WailaIntegration;
 import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
@@ -138,6 +140,8 @@ public class CommonProxy {
         // 由 ServerTickEvent(END) 主线程排空（照 PanelActionQueue 同址注册模式）
         DeviceTerminalActionQueue.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(GTSimpleWirelessNetwork.instance, new GTSWNGuiHandler());
+        // BQ 任务注入集成（PoC）：preInit 反射探测（BqCompat 无任何 BQ 类型引用，缺席时静默）
+        BqCompat.detect();
     }
 
     /**
@@ -271,6 +275,9 @@ public class CommonProxy {
     @SuppressWarnings({ "unused" })
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new CommandGTSWN());
+        // BQ 任务注入（PoC）：@Mod 已声明 after:betterquesting，此刻 BQ 的 default load
+        // 已同步完成；注入器幂等 get-or-create，BQ 缺席时静默返回（详见 BqQuestInjector）
+        BqQuestInjector.inject();
     }
 
     /**

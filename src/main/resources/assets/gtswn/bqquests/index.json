@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "questLines": [
+    {
+      "idHigh": 5139824709172461569,
+      "idLow": 1,
+      "orderIndex": 0,
+      "lineFile": "assets/gtswn/bqquests/testline/QuestLine.json",
+      "entries": [
+        {
+          "questFile": "assets/gtswn/bqquests/testquests/TestQuest.json",
+          "entryFile": "assets/gtswn/bqquests/testline/TestQuest.entry.json"
+        }
+      ]
+    }
+  ]
+}

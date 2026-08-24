@@ -26,7 +26,9 @@ import cpw.mods.fml.common.event.FMLServerStartingEvent;
     // required-before:gregtech 确保 GTSWN 的 preInit 在 GT preInit 之前执行
     // 这是 sAfterGTPreload 方案的前置条件：本 mod 需在 GT PreInit 末尾遍历 sAfterGTPreload 队列之前完成 Runnable 添加
     // 参考 GigaGramFab.java 行 45 的 required-before:gregtech 模式
-    dependencies = "required-before:gregtech;required-after:appliedenergistics2;")
+    // after:betterquesting 是纯排序约束（不要求 BQ 存在）：确保 BQ 的 serverStarting
+    // default load（clear + config 重载）先行完成，GTSWN 的任务注入在其后幂等追加
+    dependencies = "required-before:gregtech;required-after:appliedenergistics2;after:betterquesting;")
 public class GTSimpleWirelessNetwork {
 
     // 模组唯一标识符 (Mod ID)
