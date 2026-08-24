@@ -16,7 +16,7 @@ import com.miaokatze.gtswn.common.util.SavedDataUtil;
 /**
  * 全局设备登记表（每存档一份，阶段 B）。
  * <p>
- * 记录所有可监控 GT 机器（判别式：IGregTechTileEntity + RecipeMapWorkable + IMachineProgress）
+ * 记录所有可监控 GT 机器（判别式：IGregTechTileEntity + MTEBasicMachine / MTEMultiBlockBase）
  * 的 owner UUID 与本地显示名。机器键为 {@code "dim:x:y:z"}（全维度唯一），
  * 由 {@link #makeKey} 统一生成，是登记表 / 终端数据仓 / 采样调度三方共用的主键。
  * <p>

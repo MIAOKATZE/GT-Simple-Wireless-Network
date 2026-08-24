@@ -18,8 +18,8 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
-import gregtech.api.interfaces.tileentity.IMachineProgress;
-import gregtech.api.interfaces.tileentity.RecipeMapWorkable;
+import gregtech.api.metatileentity.implementations.MTEBasicMachine;
+import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
 /**
  * 设备信息终端事件处理器（阶段 B，双总线注册见 CommonProxy）。
@@ -30,8 +30,8 @@ import gregtech.api.interfaces.tileentity.RecipeMapWorkable;
  * </ul>
  * <p>
  * 性能口径：全部处理只做点查（登记表单键）与终端 Map 遍历（removeKeyFromAll），
- * 无世界 / 区块 / 实体遍历。PlaceEvent 时 MTE 尚未挂载则跳过（拿不到就跳过，
- * 完整登记由扫描（阶段 C）与终端右击补登兜底）。
+ * 无世界 / 区块 / 实体遍历。GT5U ItemMachines.placeBlockAt 在 PlaceEvent 前已同步
+ * 挂载 MTE，事件内可直接判别；旁路放置的漏登由终端右击绑定补登兜底。
  */
 public class DeviceEventHandler {
 
@@ -46,13 +46,10 @@ public class DeviceEventHandler {
         if (event.world.isRemote) {
             return;
         }
-        // PlaceEvent 在 setBlock 后触发，TE 已存在但 GT 的 MTE 可能尚未挂载：拿不到就跳过
+        // GT5U ItemMachines.placeBlockAt 在 PlaceEvent 前已同步挂载 MTE，此处可直接判别（D1）
         TileEntity te = event.world.getTileEntity(event.x, event.y, event.z);
-        if (!(te instanceof IGregTechTileEntity)) {
-            return;
-        }
-        IMetaTileEntity mte = ((IGregTechTileEntity) te).getMetaTileEntity();
-        if (mte == null || !(mte instanceof RecipeMapWorkable) || !(mte instanceof IMachineProgress)) {
+        IMetaTileEntity mte = te instanceof IGregTechTileEntity ? ((IGregTechTileEntity) te).getMetaTileEntity() : null;
+        if (!(mte instanceof MTEBasicMachine) && !(mte instanceof MTEMultiBlockBase)) {
             return;
         }
         int dim = event.world.provider.dimensionId;

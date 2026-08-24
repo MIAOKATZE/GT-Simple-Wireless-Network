@@ -20,7 +20,6 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.IMachineProgress;
-import gregtech.api.interfaces.tileentity.RecipeMapWorkable;
 import gregtech.api.metatileentity.implementations.MTEBasicMachine;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
@@ -39,10 +38,11 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  * <ul>
  * <li>解析 {@code dim:x:y:z} → 维度不存在 / 区块未加载（{@code chunkExists} 为 false）
  * → 跳过保留旧值（不强加载区块）</li>
- * <li>区块已加载但 TE 不满足判别式（IGregTechTileEntity + RecipeMapWorkable + IMachineProgress）
+ * <li>区块已加载但 TE 不满足判别式（IGregTechTileEntity + MTEBasicMachine/MTEMultiBlockBase）
  * → <b>自愈</b>：登记表出册 + {@link DeviceTerminalDataStore#removeKeyFromAll} 级联解绑
  * （version++ 由 store 内部保证），下一台继续</li>
- * <li>有效机器 → 读三态（停机/运行/待机统一口径）、瞬时功率（mEUt 绝对值）、输出快照
+ * <li>有效机器 → 读三态（停机/运行/待机统一口径，isAllowedToWork/isActive 经基座
+ * BaseMetaTileEntity 委托）、瞬时功率（mEUt 绝对值）、输出快照
  * （仅运行中，非运行置空串）→ 对含该键的所有活跃终端各自 MachineRecord 追加 FIFO 环形
  * 采样点、重算 60 点均值、刷新 name/localName → version++</li>
  * </ul>
@@ -147,9 +147,9 @@ public class DeviceSampleScheduler {
                 continue;
             }
             TileEntity te = world.getTileEntity(pos[1], pos[2], pos[3]);
-            IMetaTileEntity mte = te instanceof IGregTechTileEntity ? ((IGregTechTileEntity) te).getMetaTileEntity()
-                : null;
-            if (!(mte instanceof RecipeMapWorkable) || !(mte instanceof IMachineProgress)) {
+            IGregTechTileEntity gtTE = te instanceof IGregTechTileEntity ? (IGregTechTileEntity) te : null;
+            IMetaTileEntity mte = gtTE != null ? gtTE.getMetaTileEntity() : null;
+            if (!(mte instanceof MTEBasicMachine) && !(mte instanceof MTEMultiBlockBase)) {
                 // 区块已加载但 TE 不再是可监控机器 → 自愈：出册 + 级联解绑（version++），下一台继续
                 if (registry == null) {
                     registry = DeviceRegistryData.get(overworld);
@@ -159,7 +159,8 @@ public class DeviceSampleScheduler {
                 store.removeKeyFromAll(key);
                 continue;
             }
-            IMachineProgress progress = (IMachineProgress) mte;
+            // 三态经基座委托（BaseMetaTileEntity 实现 IMachineProgress），cast 基座而非 mte
+            IMachineProgress progress = (IMachineProgress) gtTE;
             // 三态统一口径：!isAllowedToWork→停机 / isActive→运行 / 其余待机
             int state = !progress.isAllowedToWork() ? DeviceTerminalDataStore.STATE_STOPPED
                 : progress.isActive() ? DeviceTerminalDataStore.STATE_RUNNING : DeviceTerminalDataStore.STATE_IDLE;

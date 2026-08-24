@@ -24,21 +24,25 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
-import gregtech.api.interfaces.tileentity.IMachineProgress;
-import gregtech.api.interfaces.tileentity.RecipeMapWorkable;
+import gregtech.api.metatileentity.implementations.MTEBasicMachine;
+import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
 /**
  * 设备信息终端（实施计划阶段 A：物品 + NBT 偏好 + 机器绑定手势）。
  * <p>
  * 手势表：
  * <ul>
- * <li>右击<b>可工作 GT 机器</b>（服务端）= 绑定到本终端（登记表无则补登 owner=点击者）</li>
+ * <li>右击<b>加工 GT 机器</b> = 绑定到本终端：onItemUseFirst 服务端权威
+ * （客户端返回 false 放行让 C08 包发出、服务端返回 true 拦截，仿
+ * {@link ItemNetworkQuantumTerminal#onItemUseFirst} 先例；登记表无则补登 owner=点击者）</li>
+ * <li>右击<b>GT 非加工机器</b> = not_machine 提示并拦截（不开其 GUI）；右击<b>非 GT 方块</b>
+ * = 放行（等效空手交互）</li>
  * <li>右击空气 = 打开终端 GUI（阶段 E 客户端本地打开，本阶段服务端无操作）</li>
  * <li>Shift+右击空气 = 扫描开关（阶段 C，见 onItemRightClick 的 TODO）</li>
  * </ul>
  * <p>
- * 判别式（统一口径）：{@code te instanceof IGregTechTileEntity} 且
- * {@code mte instanceof RecipeMapWorkable && mte instanceof IMachineProgress}。
+ * 判别式（统一口径 D1）：{@code te instanceof IGregTechTileEntity && mte != null
+ * && (mte instanceof MTEBasicMachine || mte instanceof MTEMultiBlockBase)}。
  * <p>
  * NBT 结构：DIT_UUID（终端实例 UUID，首用生成，绑定数据仓锚点）+
  * UI 偏好三键（排序列 / 排序方向 / 计数法，非法值读侧回退默认）。
@@ -105,44 +109,46 @@ public class ItemDeviceInfoTerminal extends Item {
         setMaxStackSize(1);
     }
 
-    // ==================== 手势 1：右击机器 = 绑定（onItemUse，服务端权威） ====================
+    // ==================== 手势 1：右击机器 = 绑定（onItemUseFirst，服务端权威） ====================
 
     /**
-     * 右击可工作 GT 机器 = 绑定到本终端（服务端权威处理并拦截，客户端放行镜像）。
+     * 右击加工 GT 机器 = 绑定到本终端（onItemUseFirst 服务端权威处理并拦截，客户端放行）。
      * <p>
+     * 客户端返回 false 让 C08 包发出（仿 {@link ItemNetworkQuantumTerminal} 先例）；
      * Shift 分支 = 扫描开关（移交 {@link DeviceScanManager}，与右击空气手势一致）；
-     * 非 Shift 才走绑定流程：判别式失败 → 聊天原因；成功 → 登记表无该机器则补登
-     * （owner=点击者）→ 数据仓加绑定（尊重 {@link Config#deviceTerminalMaxMachines} 上限，
-     * 超限聊天拒绝）。
+     * 非 Shift 才走绑定流程：非 GT 方块放行（不提示不拦截）；GT 非加工机器 → 聊天原因
+     * 并拦截（不开其 GUI）；成功路径：登记表无该机器则补登（owner=点击者）→ 数据仓加绑定
+     * （尊重 {@link Config#deviceTerminalMaxMachines} 上限，超限聊天拒绝）。
      */
     @Override
-    public boolean onItemUse(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
+    public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
-        // 客户端放行（返回 false 让交互镜像继续，业务全部由服务端权威执行）
+        // ① 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
         if (world.isRemote) {
             return false;
         }
-        // Shift+右击机器 = 扫描开关（不绑定；与 Shift+右击空气同一手势语义）
+        // ② Shift+右击 = 扫描开关（不绑定；与 Shift+右击空气同一手势语义）
         if (player.isSneaking()) {
             if (player instanceof EntityPlayerMP) {
                 DeviceScanManager.toggleScan((EntityPlayerMP) player, getOrCreateTerminalId(stack));
             }
             return true;
         }
+        // ③ 非 GT 方块：放行（等效空手交互，不提示不拦截）
         TileEntity te = world.getTileEntity(x, y, z);
         if (!(te instanceof IGregTechTileEntity)) {
-            sendMessage(player, "gtswn.device.chat.not_machine");
-            return true;
+            return false;
         }
+        // ④ GT 非加工机器（D1 后半不通过）：提示原因并拦截（防止误开其 GUI）
         IMetaTileEntity mte = ((IGregTechTileEntity) te).getMetaTileEntity();
-        if (!(mte instanceof RecipeMapWorkable) || !(mte instanceof IMachineProgress)) {
+        if (!(mte instanceof MTEBasicMachine) && !(mte instanceof MTEMultiBlockBase)) {
             sendMessage(player, "gtswn.device.chat.not_machine");
             return true;
         }
+        // ⑤ 加工机器：登记表无则补登（owner=点击者；放置事件未覆盖到的旁路路径在此兜底）
         int dim = world.provider.dimensionId;
         String key = DeviceRegistryData.makeKey(dim, x, y, z);
         String localName = mte.getLocalName();
-        // 登记表无则补登（owner=点击者；放置事件未覆盖到的旁路路径在此兜底）
         DeviceRegistryData registry = DeviceRegistryData.get(world);
         if (registry.getEntry(key) == null) {
             registry.register(key, player.getUniqueID(), localName);
