@@ -42,6 +42,8 @@ public final class PanelConfigStore {
     private String chartBackgroundColor = "";
     private int trendLineThickness = 3;
     private int trendLineSmoothing = 2;
+    // 走势线样条类型：0=过点样条（Fritsch-Carlson 单调 Hermite，默认），1=拟合样条，2=折线样条，3=数字样条
+    private int trendLineSplineType = 0;
     private String screenBackgroundColor = ""; // 默认无背景色，TESR 不绘制背景填充
 
     // === AE 图表配置字段（v1.5.4）===
@@ -50,6 +52,8 @@ public final class PanelConfigStore {
     private String aeChartBackgroundColor = "";
     private int aeTrendLineThickness = 3;
     private int aeTrendLineSmoothing = 2;
+    // AE 走势线样条类型：0=过点样条（默认），1=拟合样条，2=折线样条，3=数字样条
+    private int aeTrendLineSplineType = 0;
     private String aeAxisMin = "";
     private String aeAxisMax = "";
     private String aeLineColor = "1F6FFF";
@@ -190,6 +194,10 @@ public final class PanelConfigStore {
                 // 立即重算 cachedStatus（跨域后置）由 TE 编排，使 GUI/TESR 即时反映新格式（无需等下次采样）
                 displayMode = (displayMode + 1) % 3;
                 break;
+            case 9:
+                // EU 走势线样条类型轮换：0过点/1拟合/2折线/3数字
+                trendLineSplineType = (trendLineSplineType + 1) % 4;
+                break;
             case 20:
                 // AE 走势图：简报显示开关
                 showAEBrief = !showAEBrief;
@@ -214,6 +222,10 @@ public final class PanelConfigStore {
             case 26:
                 // AE 简报字号增大（复用 EU 的 briefRatio，与 case 6 行为一致）
                 briefRatio = Math.min(80, briefRatio + 5);
+                break;
+            case 27:
+                // AE 走势线样条类型轮换：0过点/1拟合/2折线/3数字（与 EU case 9 行为一致）
+                aeTrendLineSplineType = (aeTrendLineSplineType + 1) % 4;
                 break;
             case 30:
                 // AE 实时监控：字号减小（最小 8）
@@ -316,6 +328,10 @@ public final class PanelConfigStore {
         return trendLineSmoothing;
     }
 
+    public int getTrendLineSplineType() {
+        return trendLineSplineType;
+    }
+
     public String getScreenBackgroundColorText() {
         return screenBackgroundColor;
     }
@@ -373,6 +389,10 @@ public final class PanelConfigStore {
 
     public int getAETrendLineSmoothing() {
         return aeTrendLineSmoothing;
+    }
+
+    public int getAETrendLineSplineType() {
+        return aeTrendLineSplineType;
     }
 
     public String getAEAxisMinText() {
@@ -519,6 +539,7 @@ public final class PanelConfigStore {
         tag.setString("chartBackgroundColor", chartBackgroundColor);
         tag.setInteger("trendLineThickness", trendLineThickness);
         tag.setInteger("trendLineSmoothing", trendLineSmoothing);
+        tag.setInteger("trendLineSplineType", trendLineSplineType);
         tag.setString("screenBackgroundColor", screenBackgroundColor);
     }
 
@@ -537,6 +558,9 @@ public final class PanelConfigStore {
             : 3;
         trendLineSmoothing = tag.hasKey("trendLineSmoothing") ? clampInt(tag.getInteger("trendLineSmoothing"), 0, 12)
             : 2;
+        // 旧存档无此键时默认 0（过点样条），完全向后兼容
+        trendLineSplineType = tag.hasKey("trendLineSplineType") ? clampInt(tag.getInteger("trendLineSplineType"), 0, 3)
+            : 0;
         screenBackgroundColor = tag.hasKey("screenBackgroundColor")
             ? cleanColorText(tag.getString("screenBackgroundColor"))
             : ""; // 旧存档无此字段时默认空（不绘制背景）
@@ -548,6 +572,7 @@ public final class PanelConfigStore {
         tag.setString("aeChartBackgroundColor", aeChartBackgroundColor);
         tag.setInteger("aeTrendLineThickness", aeTrendLineThickness);
         tag.setInteger("aeTrendLineSmoothing", aeTrendLineSmoothing);
+        tag.setInteger("aeTrendLineSplineType", aeTrendLineSplineType);
         tag.setString("aeAxisMin", aeAxisMin);
         tag.setString("aeAxisMax", aeAxisMax);
         tag.setString("aeLineColor", aeLineColor);
@@ -575,6 +600,10 @@ public final class PanelConfigStore {
         aeTrendLineSmoothing = tag.hasKey("aeTrendLineSmoothing")
             ? clampInt(tag.getInteger("aeTrendLineSmoothing"), 0, 12)
             : 2;
+        // 旧存档无此键时默认 0（过点样条），完全向后兼容
+        aeTrendLineSplineType = tag.hasKey("aeTrendLineSplineType")
+            ? clampInt(tag.getInteger("aeTrendLineSplineType"), 0, 3)
+            : 0;
         aeAxisMin = tag.hasKey("aeAxisMin") ? cleanText(tag.getString("aeAxisMin")) : "";
         aeAxisMax = tag.hasKey("aeAxisMax") ? cleanText(tag.getString("aeAxisMax")) : "";
         aeLineColor = tag.hasKey("aeLineColor") ? cleanColorText(tag.getString("aeLineColor")) : "1F6FFF";

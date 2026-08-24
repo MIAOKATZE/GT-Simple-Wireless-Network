@@ -520,6 +520,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return store.getTrendLineSmoothing();
     }
 
+    public int getTrendLineSplineType() {
+        return store.getTrendLineSplineType();
+    }
+
     public String getScreenBackgroundColorText() {
         return store.getScreenBackgroundColorText();
     }
@@ -576,6 +580,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     public int getAETrendLineSmoothing() {
         return store.getAETrendLineSmoothing();
+    }
+
+    public int getAETrendLineSplineType() {
+        return store.getAETrendLineSplineType();
     }
 
     public String getAEAxisMinText() {

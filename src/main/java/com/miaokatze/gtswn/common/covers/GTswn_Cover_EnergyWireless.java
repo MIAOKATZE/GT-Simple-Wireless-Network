@@ -24,19 +24,21 @@ import io.netty.buffer.ByteBuf;
  * 链路终端（能源）—— 虚空覆盖板
  * <p>
  * 本质为一个"虚拟电源":内部维护电容量缓冲池,像导线一样每 tick 向机器持续输入 V×A 的 EU。
- * 每 600 tick 从无线电网补满缓冲池(计算下行损耗)。
+ * 每基础值 tick(默认 600,Config.interactionRateTicks)从无线电网补满缓冲池(计算下行损耗)。
  * 卸载时将剩余电量发回网络(计算上行损耗)。
  * <p>
  * Link Terminal (Energy) — a void cover acting as a virtual power source.
  * Maintains an internal capacity buffer, continuously injects V×A EU per tick like a cable.
- * Refills from wireless network every 600 ticks (with downlink loss).
+ * Refills from wireless network every base-value ticks (default 600, Config.interactionRateTicks,
+ * with downlink loss).
  * Returns remaining buffer to network on removal (with uplink loss).
  */
 public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
 
     private int voltage = 0;
     private int amperage = 0;
-    private long capacity = 0L; // 电容量上限 = V × A × 800 / Capacity upper bound = V × A × 800
+    private long capacity = 0L; // 电容量上限 = V × A ×（基础值+冗余值,默认 800）/ Capacity = V × A × (base + redundancy ticks, default
+                                // 800)
     private long ticksSinceLastRefill = 0L; // 距上次网络补满的tick计数 / Ticks since last network refill
 
     public GTswn_Cover_EnergyWireless(CoverContext context) {
@@ -115,10 +117,10 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
             }
         }
 
-        // 每 600 tick:从电网补满到电容量上限
-        // Every 600 ticks: refill buffer to capacity from network
+        // 每基础值 tick(默认 600):从电网补满到电容量上限
+        // Every base-value ticks (default 600): refill buffer to capacity from network
         ticksSinceLastRefill++;
-        if (ticksSinceLastRefill >= 600L) {
+        if (ticksSinceLastRefill >= Config.interactionRateTicks) {
             ticksSinceLastRefill = 0L;
             refillFromNetwork(bmte);
         }
@@ -174,7 +176,7 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
             aPlayer.addChatMessage(
                 new ChatComponentText(
                     net.minecraft.util.StatCollector.translateToLocal("gtswn.chat.cover.next_refill")
-                        + (600 - ticksSinceLastRefill)
+                        + (Config.interactionRateTicks - ticksSinceLastRefill)
                         + " ticks"));
         } else {
             aPlayer.addChatMessage(
@@ -194,7 +196,7 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
     public void configure(int voltage, int amperage) {
         this.voltage = voltage;
         this.amperage = amperage;
-        // 电容量 = V × A × 800 tick / Capacity = V × A × 800 ticks
+        // 电容量 = V × A ×（基础值 + 冗余值）tick / Capacity = V × A × (base + redundancy) ticks
         // SWN-BUG-06+SWN-OPT-17：公式收敛至 CoverMaths.bufferCapacity 单源（与链路终端预告共享）
         this.capacity = CoverMaths.bufferCapacity(voltage, amperage);
         this.configured = true;

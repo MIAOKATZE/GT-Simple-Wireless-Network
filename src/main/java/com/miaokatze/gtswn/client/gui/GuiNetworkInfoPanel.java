@@ -182,6 +182,9 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         buttonList.add(new GuiButton(6, left + 158, y2, 24, 16, "+"));
         buttonList.add(new GuiButton(7, left + 188, y2, 74, 16, getDisplayModeButtonText(panel.getDisplayMode())));
         buttonList.add(new GuiButton(8, left + 344, y2, 74, 16, tr("gtswn.network_info.gui.apply")));
+        // 样条类型按钮：位于平滑强度输入框正上方，点击轮换 0过点/1拟合/2折线/3数字
+        buttonList
+            .add(new GuiButton(9, left + 372, top + 187, 46, 16, getSplineTypeName(panel.getTrendLineSplineType())));
 
         int fieldY = top + 165;
         energyMinField = addField(left + 104, fieldY, 66, panel.getEnergyAxisMinText());
@@ -249,6 +252,9 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         buttonList.add(new GuiButton(AE_WINDOW_PREV_BUTTON, left + 146, row2Y, 24, 16, "-"));
         buttonList.add(new GuiButton(AE_WINDOW_NEXT_BUTTON, left + 174, row2Y, 24, 16, "+"));
         buttonList.add(new GuiButton(AE_APPLY_BUTTON, left + 344, row2Y, 74, 16, tr("gtswn.network_info.gui.apply")));
+        // AE 样条类型按钮：位于 aeSmoothingField 输入框正上方，点击轮换 0过点/1拟合/2折线/3数字
+        buttonList
+            .add(new GuiButton(27, left + 372, top + 165, 46, 16, getSplineTypeName(panel.getAETrendLineSplineType())));
 
         // 配置文本框整体下移，避免与按钮行重叠并和 EU 标签页对称
         int fieldY = top + 165;
@@ -401,6 +407,13 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             // AE 实时监控配置按钮（字号、加粗、呈现方式、图标大小）
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
+        } else if (button.id == 9 || button.id == 27) {
+            // 样条类型轮换：action 号与按钮 id 一致（9=EU，27=AE），服务端 Store 内取模轮换；
+            // 本地按下一状态即时刷新按钮文本，服务端回包后由 initGui 重建控件校正
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
+            int current = button.id == 9 ? panel.getTrendLineSplineType() : panel.getAETrendLineSplineType();
+            button.displayString = getSplineTypeName((current + 1) % 4);
         } else if (button.id == 20 || button.id == 21
             || button.id == 22
             || button.id == 24
@@ -989,6 +1002,21 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             case 0:
             default:
                 return tr("gtswn.network_info.gui.mode.normal");
+        }
+    }
+
+    /** 根据样条类型四态生成样条类型按钮文本（0过点/1拟合/2折线/3数字） */
+    private static String getSplineTypeName(int type) {
+        switch (type) {
+            case 1:
+                return tr("gtswn.network_info.gui.spline_type.fit");
+            case 2:
+                return tr("gtswn.network_info.gui.spline_type.poly");
+            case 3:
+                return tr("gtswn.network_info.gui.spline_type.digital");
+            case 0:
+            default:
+                return tr("gtswn.network_info.gui.spline_type.pass");
         }
     }
 
