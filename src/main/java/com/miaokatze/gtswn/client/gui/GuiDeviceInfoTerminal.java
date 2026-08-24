@@ -15,11 +15,11 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
-import com.gtnewhorizon.gtnhlib.util.numberformatting.NumberFormatUtil;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.util.FormatUtil;
+import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
@@ -27,7 +27,8 @@ import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
- * 设备信息终端客户端 GUI（实施计划 E1/E3/E4：vanilla {@link GuiScreen} 自绘，430×252 六列布局）。
+ * 设备信息终端客户端 GUI（实施计划 E1/E3/E4：vanilla {@link GuiScreen} 自绘，450×252 六列布局，
+ * v1.7.2 面板加宽 +20px）。
  * <p>
  * 数据流（UI 只发 action，不直改服务端权威数据）：
  * <ol>
@@ -39,7 +40,7 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * 同键保持绑定序）；排序/计数法点击后本地立即生效并发包 10（action 0/1）持久化到物品 NBT。</li>
  * </ol>
  * <p>
- * 布局（自上而下）：标题 / 顶行两按钮（计数法三态轮换 + 显示配方纯本地开关）/ 列头行
+ * 布局（自上而下）：标题 / 顶行两按钮（计数模式四态轮换 + 显示配方纯本地开关）/ 列头行
  * （点击排序，▲▼ 高亮当前列，平均列默认降序、其余默认升序）/ 滚动列表
  * （{@link GuiDeviceEntryList}，行高 20）/ 底行操作提示。
  * <p>
@@ -58,16 +59,16 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 悬浮出 tooltip 的停留门槛（毫秒） */
     private static final long HOVER_TOOLTIP_DELAY_MS = 500L;
 
-    /** 悬浮配方文本手动换行宽度（字符；防超宽 tooltip 出屏） */
-    private static final int TOOLTIP_WRAP_CHARS = 48;
+    /** 悬浮配方文本换行宽度（像素，≈200px；v1.7.2 起用 listFormattedStringToWidth 按像素分行） */
+    private static final int TOOLTIP_WRAP_WIDTH = 200;
 
-    /** GUI 宽度（六列布局） */
-    private final int xSize = 430;
+    /** GUI 宽度（六列布局，v1.7.2 加宽 +20px） */
+    private final int xSize = 450;
 
     /** GUI 高度（标题/按钮/列头/列表/底行合计） */
     private final int ySize = 252;
 
-    /** 顶行按钮：计数法三态轮换（本地立即轮换 + 发包 10 action 1 持久化） */
+    /** 顶行按钮：计数法四态轮换（本地立即轮换 + 发包 10 action 1 持久化） */
     private static final int BTN_COUNT_MODE = 0;
 
     /** 顶行按钮：显示配方开关（纯 GUI 实例字段，不发包不持久化） */
@@ -111,10 +112,10 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 排序方向（true=降序；初始从 stack NBT 读，默认 DESC） */
     private boolean sortDesc;
 
-    /** 计数法（0 常规 / 1 科学 / 2 千位；初始从 stack NBT 读） */
+    /** 计数法（0 常规 / 1 科学 / 2 千位 / 3 电压等级；初始从 stack NBT 读） */
     private int countMode;
 
-    /** 显示配方开关（纯 GUI 实例字段：开启时瞬时/平均两列临时显示 recipeStr） */
+    /** 显示配方开关（纯 GUI 实例字段：开启时瞬时/平均两列区临时替换为单条配方行） */
     private boolean showRecipe = false;
 
     /** 排序偏好被点击后置位，强制下次 refreshEntries 重排（同版本快照也重排） */
@@ -261,8 +262,8 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     @Override
     protected void actionPerformed(GuiButton button) {
         if (button.id == BTN_COUNT_MODE) {
-            // 本地立即轮换显示（下轮打开由服务端 NBT 校正）+ 发包 action 1 持久化
-            this.countMode = (this.countMode + 1) % 3;
+            // 本地立即轮换显示（下轮打开由服务端 NBT 校正）+ 发包 action 1 持久化（四态轮换）
+            this.countMode = (this.countMode + 1) % 4;
             button.displayString = countModeText();
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketDeviceTerminalAction(
@@ -278,13 +279,15 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         }
     }
 
-    /** 计数法按钮文案（计数法: 常规/科学计数/千位分隔） */
+    /** 计数法按钮文案（计数模式: 常规计数/科学计数/千位计数/电压等级） */
     private String countModeText() {
         String mode = tr(
             this.countMode == PacketDeviceTerminalAction.MODE_NORMAL ? "gtswn.device.gui.count_mode.normal"
                 : this.countMode == PacketDeviceTerminalAction.MODE_SCIENTIFIC
                     ? "gtswn.device.gui.count_mode.scientific"
-                    : "gtswn.device.gui.count_mode.thousands");
+                    : this.countMode == PacketDeviceTerminalAction.MODE_THOUSANDS
+                        ? "gtswn.device.gui.count_mode.thousands"
+                        : "gtswn.device.gui.count_mode.voltage");
         return StatCollector.translateToLocalFormatted("gtswn.device.gui.count_mode", mode);
     }
 
@@ -402,21 +405,25 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             0x404040);
     }
 
-    /** 列头行：五列可排序标签 + 当前排序列 ▲/▼ 高亮（点击排序，见 headerColumnAt）+ 传送列标签（不可排序）。 */
+    /**
+     * 列头行：五列可排序标签 + 当前排序列 ▲/▼ 高亮（点击排序，见 headerColumnAt）+ 传送列标签（不可排序）。
+     * <p>
+     * v1.7.2 列头全加粗 §l（与列表行加粗一致）。
+     */
     private void drawColumnHeaders() {
         int[] colX = { GuiDeviceEntryList.COL_NAME_X, GuiDeviceEntryList.COL_STATE_X, GuiDeviceEntryList.COL_INST_X,
             GuiDeviceEntryList.COL_AVG_X, GuiDeviceEntryList.COL_POS_X };
         for (int i = 0; i < COLUMN_KEYS.length; i++) {
             String label = tr(COLUMN_KEYS[i]) + (i == this.sortColumn ? (this.sortDesc ? " \u25BC" : " \u25B2") : "");
             this.fontRendererObj.drawString(
-                label,
+                "§l" + label,
                 this.guiLeft + 8 + colX[i],
                 this.guiTop + HEADER_Y,
                 i == this.sortColumn ? 0x1F4E79 : 0x2F3640);
         }
         // 第六列：传送列头（行内 ✦ 按钮列；不可排序，仅标签）
         this.fontRendererObj.drawString(
-            tr("gtswn.device.gui.teleport"),
+            "§l" + tr("gtswn.device.gui.teleport"),
             this.guiLeft + 8 + GuiDeviceEntryList.TP_BTN_X - 6,
             this.guiTop + HEADER_Y,
             0x2F3640);
@@ -440,7 +447,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 列表区中央灰字提示（占位 / 无绑定共用）。 */
     private void drawCenteredListText(String text) {
-        int x = this.guiLeft + 8 + (414 - this.fontRendererObj.getStringWidth(text)) / 2;
+        int x = this.guiLeft + 8 + (434 - this.fontRendererObj.getStringWidth(text)) / 2;
         int y = this.guiTop + 52 + 180 / 2 - 4;
         this.fontRendererObj.drawString(text, x, y, 0x6B7680);
     }
@@ -451,7 +458,11 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             .drawString(tr("gtswn.device.gui.footer"), this.guiLeft + 8, this.guiTop + FOOTER_Y, 0x6B7680);
     }
 
-    /** 行悬浮 ≥0.5s：drawHoveringText 显示当前执行配方完整串（标题行 + 按字符宽换行）。 */
+    /**
+     * 行机器名列悬浮 ≥0.5s：显示当前执行配方（v1.7.2 双侧：标题 +「输入:」行 +「输出:」行，
+     * 单侧最多 4 项超限补「 等...」，{@code listFormattedStringToWidth} 按 ≈200px 像素分行，
+     * 替代旧 48 字符硬切）。
+     */
     private void drawHoverTooltip(int mouseX, int mouseY) {
         if (this.entryList == null || this.entryList.hoverElapsedMillis() < HOVER_TOOLTIP_DELAY_MS) {
             return;
@@ -460,13 +471,30 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         if (hovered == null) {
             return;
         }
+        String recipeIn = hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
+        String recipeOut = hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();
         lines.add(tr("gtswn.device.gui.tooltip.recipe_title"));
-        String recipe = hovered.recipeStr == null || hovered.recipeStr.isEmpty()
-            ? tr("gtswn.device.gui.tooltip.recipe_none")
-            : hovered.recipeStr;
-        for (int i = 0; i < recipe.length(); i += TOOLTIP_WRAP_CHARS) {
-            lines.add(recipe.substring(i, Math.min(recipe.length(), i + TOOLTIP_WRAP_CHARS)));
+        if (recipeIn.isEmpty() && recipeOut.isEmpty()) {
+            lines.add(tr("gtswn.device.gui.tooltip.recipe_none"));
+        } else {
+            // 某侧为空不画该行（输入侧因 GT5U 无公开 lastRecipe 入路暂为空串）
+            if (!recipeIn.isEmpty()) {
+                lines.addAll(
+                    this.fontRendererObj.listFormattedStringToWidth(
+                        StatCollector.translateToLocalFormatted(
+                            "gtswn.device.gui.tooltip.recipe_in",
+                            GuiDeviceEntryList.sidePreview(recipeIn, 4)),
+                        TOOLTIP_WRAP_WIDTH));
+            }
+            if (!recipeOut.isEmpty()) {
+                lines.addAll(
+                    this.fontRendererObj.listFormattedStringToWidth(
+                        StatCollector.translateToLocalFormatted(
+                            "gtswn.device.gui.tooltip.recipe_out",
+                            GuiDeviceEntryList.sidePreview(recipeOut, 4)),
+                        TOOLTIP_WRAP_WIDTH));
+            }
         }
         drawHoveringText(lines, mouseX, mouseY, this.fontRendererObj);
     }
@@ -517,7 +545,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         return this.sortedEntries;
     }
 
-    /** @return 显示配方开关（列表据此临时用 recipeStr 覆盖瞬时/平均两列文本） */
+    /** @return 显示配方开关（列表据此用单条配方行覆盖瞬时/平均两列区文本） */
     boolean showRecipeEnabled() {
         return this.showRecipe;
     }
@@ -528,26 +556,33 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         return tr(STATE_KEYS[idx]);
     }
 
-    /** 瞬时 EU/t（long）按当前计数法格式化：常规 FormatUtil / 科学 FormatUtil / 千位 GTNHLib。 */
+    /**
+     * 瞬时 EU/t（long）按当前计数模式格式化：常规 FormatUtil / 科学 FormatUtil /
+     * 千位（v1.7.2 起公制 K/M/G/T/P 2 位小数）FormatUtil.formatMetric / 电压等级 GTTierUtil。
+     */
     String formatEUt(long value) {
         switch (this.countMode) {
             case PacketDeviceTerminalAction.MODE_SCIENTIFIC:
                 return FormatUtil.formatScientific(BigInteger.valueOf(value));
             case PacketDeviceTerminalAction.MODE_THOUSANDS:
-                return NumberFormatUtil.formatNumber(value);
+                return FormatUtil.formatMetric(BigInteger.valueOf(value), 2);
+            case PacketDeviceTerminalAction.MODE_VOLTAGE:
+                return GTTierUtil.formatGTPowerDecimal(value);
             case PacketDeviceTerminalAction.MODE_NORMAL:
             default:
                 return FormatUtil.formatNormal(BigInteger.valueOf(value));
         }
     }
 
-    /** 平均 EU/t（double，60 点均值）按当前计数法格式化（double 变体）。 */
+    /** 平均 EU/t（double，60 点均值）按当前计数模式格式化（double 变体）。 */
     String formatAvg(double value) {
         switch (this.countMode) {
             case PacketDeviceTerminalAction.MODE_SCIENTIFIC:
                 return FormatUtil.formatScientificDouble(value);
             case PacketDeviceTerminalAction.MODE_THOUSANDS:
-                return NumberFormatUtil.formatNumber(value);
+                return FormatUtil.formatMetricDouble(value, 2);
+            case PacketDeviceTerminalAction.MODE_VOLTAGE:
+                return GTTierUtil.formatGTPowerDecimal(value);
             case PacketDeviceTerminalAction.MODE_NORMAL:
             default:
                 return FormatUtil.formatNormalDouble(value);
@@ -597,11 +632,17 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     private static int modeFromString(String mode) {
         if (ItemDeviceInfoTerminal.NUM_SCIENTIFIC.equals(mode)) return PacketDeviceTerminalAction.MODE_SCIENTIFIC;
         if (ItemDeviceInfoTerminal.NUM_THOUSANDS.equals(mode)) return PacketDeviceTerminalAction.MODE_THOUSANDS;
+        if (ItemDeviceInfoTerminal.NUM_VOLTAGE.equals(mode)) return PacketDeviceTerminalAction.MODE_VOLTAGE;
         return PacketDeviceTerminalAction.MODE_NORMAL;
     }
 
     /** 本地化工具 */
     private static String tr(String key) {
+        return StatCollector.translateToLocal(key);
+    }
+
+    /** 本地化工具（{@link GuiDeviceEntryList} 同包静态共用） */
+    static String trStatic(String key) {
         return StatCollector.translateToLocal(key);
     }
 }

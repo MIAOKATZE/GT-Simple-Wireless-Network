@@ -42,9 +42,10 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  * → <b>自愈</b>：登记表出册 + {@link DeviceTerminalDataStore#removeKeyFromAll} 级联解绑
  * （version++ 由 store 内部保证），下一台继续</li>
  * <li>有效机器 → 读三态（停机/运行/待机统一口径，isAllowedToWork/isActive 经基座
- * BaseMetaTileEntity 委托）、瞬时功率（mEUt 绝对值）、输出快照
- * （仅运行中，非运行置空串）→ 对含该键的所有活跃终端各自 MachineRecord 追加 FIFO 环形
- * 采样点、重算 60 点均值、刷新 name/localName → version++</li>
+ * BaseMetaTileEntity 委托）、瞬时功率（mEUt 绝对值）、配方双侧快照
+ * （v1.7.2：输入侧因 GT5U 无公开 lastRecipe 入口暂置空，输出侧经公有 mOutputItems/
+ * mOutputFluids 采集；仅运行中，非运行置空串）→ 对含该键的所有活跃终端各自 MachineRecord
+ * 追加 FIFO 环形采样点、重算 60 点均值、刷新 name/localName → version++</li>
  * </ul>
  */
 public class DeviceSampleScheduler {
@@ -52,8 +53,14 @@ public class DeviceSampleScheduler {
     /** 每 tick 采样排水预算（台） */
     private static final int PER_TICK_BUDGET = 100;
 
-    /** 输出快照字符串总长封顶（字符） */
+    /** 单侧配方快照字符串总长封顶（字符，输入/输出各自封顶） */
     private static final int RECIPE_STR_CAP = 120;
+
+    /** 单侧配方快照条目数上限（超过 8 项服务端截断，GUI 侧另有 ellipsis 兜底） */
+    private static final int RECIPE_SIDE_MAX_ITEMS = 8;
+
+    /** 单项显示名长度封顶（字符，截断后再拼 xN/nL 后缀） */
+    private static final int RECIPE_PART_NAME_CAP = 24;
 
     /** 采样工作队列（去重；仅服务端主线程访问） */
     private final LinkedHashSet<String> workQueue = new LinkedHashSet<>();
@@ -166,7 +173,8 @@ public class DeviceSampleScheduler {
                 : progress.isActive() ? DeviceTerminalDataStore.STATE_RUNNING : DeviceTerminalDataStore.STATE_IDLE;
             long eut = Math.abs(readEUt(mte));
             String localName = mte.getLocalName();
-            String recipeStr = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeSnapshot(mte) : "";
+            String recipeIn = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeInputSnapshot(mte) : "";
+            String recipeOut = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeOutputSnapshot(mte) : "";
             // 分发到含该键的所有活跃终端
             if (activeTerminals == null) {
                 DeviceTerminalDataStore dataStore = DeviceTerminalDataStore.get(overworld);
@@ -205,7 +213,8 @@ public class DeviceSampleScheduler {
                 record.x = pos[1];
                 record.y = pos[2];
                 record.z = pos[3];
-                record.recipeStr = recipeStr;
+                record.recipeIn = recipeIn;
+                record.recipeOut = recipeOut;
                 data.version++;
             }
             if (store != null && !activeTerminals.isEmpty()) {
@@ -232,10 +241,26 @@ public class DeviceSampleScheduler {
     }
 
     /**
-     * 输出快照（近似）：mOutputItems / mOutputFluids 拼「物品 xN + 流体 1000L」式描述，
-     * display name 取值，总长封顶 {@value #RECIPE_STR_CAP} 字符；空输出返回空串。
+     * 输入侧配方快照（v1.7.2 双侧采集）。
+     * <p>
+     * 【GT5U 5.09.54.20 公开 API 核实结论】MTEBasicMachine.mLastRecipe 为 protected 字段
+     * （MTEBasicMachine.java:139），全 gregtech.api 无公开取 lastRecipe 的入口；
+     * MTEMultiBlockBase 在该版本无 lastRecipe 字段；配方类 gregtech.api.util.GTRecipe 亦无
+     * getRepresentativeInputs/Outputs 数组方法（仅 per-index getRepresentativeInput(int)）。
+     * 输入侧无可用的公开入口，按计划回退：置空串返回（禁止反射私有成员），
+     * 待 GT5U 后续开放公开 API 再补双侧完整采样。
      */
-    private static String buildRecipeSnapshot(IMetaTileEntity mte) {
+    private static String buildRecipeInputSnapshot(IMetaTileEntity mte) {
+        return "";
+    }
+
+    /**
+     * 输出侧快照（近似）：mOutputItems / mOutputFluids 拼「显示名 xN|显示名 nL|...」式描述，
+     * display name 取值，单项名封 {@value #RECIPE_PART_NAME_CAP} 字符、单侧条目数封
+     * {@value #RECIPE_SIDE_MAX_ITEMS} 项、总长封顶 {@value #RECIPE_STR_CAP} 字符（超限截断）；
+     * 空输出返回空串。
+     */
+    private static String buildRecipeOutputSnapshot(IMetaTileEntity mte) {
         StringBuilder sb = new StringBuilder();
         ItemStack[] outputItems = null;
         FluidStack[] outputFluids = null;
@@ -245,12 +270,16 @@ public class DeviceSampleScheduler {
             outputItems = ((MTEMultiBlockBase) mte).mOutputItems;
             outputFluids = ((MTEMultiBlockBase) mte).mOutputFluids;
         }
+        int count = 0;
         if (outputItems != null) {
             for (ItemStack stack : outputItems) {
                 if (stack == null || stack.getItem() == null || stack.stackSize <= 0) {
                     continue;
                 }
-                appendPart(sb, stack.getDisplayName() + " x" + stack.stackSize);
+                appendPart(sb, capName(stack.getDisplayName()) + " x" + stack.stackSize);
+                if (++count >= RECIPE_SIDE_MAX_ITEMS) {
+                    return capTotal(sb);
+                }
             }
         }
         if (outputFluids != null) {
@@ -258,18 +287,34 @@ public class DeviceSampleScheduler {
                 if (fluid == null || fluid.getFluid() == null || fluid.amount <= 0) {
                     continue;
                 }
-                appendPart(sb, fluid.getLocalizedName() + " " + fluid.amount + "L");
+                appendPart(sb, capName(fluid.getLocalizedName()) + " " + fluid.amount + "L");
+                if (++count >= RECIPE_SIDE_MAX_ITEMS) {
+                    return capTotal(sb);
+                }
             }
         }
-        return sb.length() > RECIPE_STR_CAP ? sb.substring(0, RECIPE_STR_CAP) : sb.toString();
+        return capTotal(sb);
     }
 
-    /** 追加片段（" + " 分隔），封顶后停止追加 */
+    /** 追加片段（"|" 分隔，v1.7.2 双侧序列化格式），超条目数上限后由调用方截断停止 */
     private static void appendPart(StringBuilder sb, String part) {
         if (sb.length() > 0) {
-            sb.append(" + ");
+            sb.append('|');
         }
         sb.append(part);
+    }
+
+    /** 单项显示名截断（null 安全） */
+    private static String capName(String name) {
+        if (name == null) {
+            return "";
+        }
+        return name.length() > RECIPE_PART_NAME_CAP ? name.substring(0, RECIPE_PART_NAME_CAP) : name;
+    }
+
+    /** 单侧总长封顶截断 */
+    private static String capTotal(StringBuilder sb) {
+        return sb.length() > RECIPE_STR_CAP ? sb.substring(0, RECIPE_STR_CAP) : sb.toString();
     }
 
     /** 解析机器键 {@code dim:x:y:z} → [dim,x,y,z]；格式坏返回 null */

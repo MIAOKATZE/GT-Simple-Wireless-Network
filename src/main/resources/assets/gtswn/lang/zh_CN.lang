@@ -369,10 +369,11 @@ item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+点击条目: §f远程解绑 �
 
 # 设备信息终端 GUI (Device Info Terminal GUI，阶段 E 引用)
 gtswn.device.gui.title=设备信息终端
-gtswn.device.gui.count_mode=计数法: %s
-gtswn.device.gui.count_mode.normal=常规
+gtswn.device.gui.count_mode=计数模式: %s
+gtswn.device.gui.count_mode.normal=常规计数
 gtswn.device.gui.count_mode.scientific=科学计数
-gtswn.device.gui.count_mode.thousands=千位分隔
+gtswn.device.gui.count_mode.thousands=千位计数
+gtswn.device.gui.count_mode.voltage=电压等级
 gtswn.device.gui.show_recipe=显示配方: %s
 gtswn.device.gui.on=开
 gtswn.device.gui.off=关
@@ -385,8 +386,11 @@ gtswn.device.gui.footer=Ctrl+点击解除绑定 · 悬浮查看配方 · 点击�
 gtswn.device.gui.teleport=传送
 gtswn.device.gui.no_bindings=未绑定任何机器
 gtswn.device.gui.tooltip.recipe_title=当前执行配方（输出快照，近似）
+gtswn.device.gui.tooltip.recipe_in=输入: %s
+gtswn.device.gui.tooltip.recipe_out=输出: %s
+gtswn.device.gui.more_suffix=等...
 gtswn.device.gui.tooltip.recipe_none=无
-gtswn.device.gui.state.idle=§e待机
+gtswn.device.gui.state.idle=§6待机
 gtswn.device.gui.state.running=§a运行
 gtswn.device.gui.state.stopped=§c停机
 

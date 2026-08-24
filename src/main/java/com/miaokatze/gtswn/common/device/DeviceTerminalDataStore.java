@@ -337,8 +337,11 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         public int z;
 
-        /** 当前执行配方描述（输出快照，近似；阶段 C 采样填充） */
-        public String recipeStr = "";
+        /** 当前执行配方输入侧描述（v1.7.2 双侧快照；GT5U 无公开 lastRecipe 入口暂置空；阶段 C 采样填充） */
+        public String recipeIn = "";
+
+        /** 当前执行配方输出侧描述（输出快照，近似；阶段 C 采样填充） */
+        public String recipeOut = "";
 
         void readFromNBT(NBTTagCompound tag) {
             NBTTagList list = tag.getTagList("fifo", Constants.NBT.TAG_COMPOUND);
@@ -357,7 +360,10 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             x = tag.getInteger("x");
             y = tag.getInteger("y");
             z = tag.getInteger("z");
-            recipeStr = tag.getString("recipe");
+            // v1.7.2 旧档兼容：旧版本仅存单侧 "recipe" 键，新档缺 recipeIn/recipeOut 时
+            // getString 返回空串（不迁移旧值，下一采样周期由调度器刷新为双侧新值）
+            recipeIn = tag.getString("recipeIn");
+            recipeOut = tag.getString("recipeOut");
         }
 
         NBTTagCompound toNBT() {
@@ -378,7 +384,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             tag.setInteger("x", x);
             tag.setInteger("y", y);
             tag.setInteger("z", z);
-            tag.setString("recipe", recipeStr == null ? "" : recipeStr);
+            tag.setString("recipeIn", recipeIn == null ? "" : recipeIn);
+            tag.setString("recipeOut", recipeOut == null ? "" : recipeOut);
             return tag;
         }
     }

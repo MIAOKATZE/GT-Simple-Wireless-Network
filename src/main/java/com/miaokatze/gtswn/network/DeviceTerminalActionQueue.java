@@ -8,9 +8,12 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
+import net.minecraft.world.WorldServer;
+import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRequestQueue;
@@ -21,6 +24,7 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.util.GTUtility;
 
 /**
@@ -40,8 +44,9 @@ import gregtech.api.util.GTUtility;
  * <li>0 排序 / 1 计数法：写回发送者物品栏终端物品的 UI 偏好 NBT（服务端权威，聊天静默）</li>
  * <li>2 解绑：{@link DeviceTerminalDataStore#removeBinding}（version++ 内部保证，未绑定静默）</li>
  * <li>3 传送：per-player 3s 冷却 → experienceLevel≥{@link Config#deviceTeleportXPCost} 复查
- * （不足聊天提示）→ addExperienceLevel(-cost) → 同维 setPlayerLocation（先下坐骑）/
- * 跨维 {@link GTUtility#moveEntityToDimensionAtCoords}</li>
+ * （不足聊天提示）→ addExperienceLevel(-cost) → 落点=目标机器正前方 1 格（TE null/非 GT 回退
+ * 正上方，见 {@code computeLanding}）→ 同维 setPlayerLocation（先下坐骑）/ 跨维
+ * {@link GTUtility#moveEntityToDimensionAtCoords}（目标维度 world 先解析朝向）</li>
  * </ul>
  * 任何动作应用后 {@link DeviceTerminalRequestQueue#invalidate} 失效该玩家已收版本，
  * 下轮请求排水立即回发快照（闭环）。
@@ -185,19 +190,43 @@ public final class DeviceTerminalActionQueue {
         TELEPORT_COOLDOWN.put(player.getUniqueID(), now);
         player.addExperienceLevel(-Config.deviceTeleportXPCost);
         if (player.dimension == record.dim) {
-            // 同维：先下坐骑再落位
+            // 同维：先下坐骑再落位（落点=机器正前方，见 computeLanding）
             player.mountEntity(null);
-            player.playerNetServerHandler.setPlayerLocation(
-                record.x + 0.5D,
-                record.y + 1.0D,
-                record.z + 0.5D,
-                player.rotationYaw,
-                player.rotationPitch);
+            double[] landing = computeLanding(player.worldObj, record);
+            player.playerNetServerHandler
+                .setPlayerLocation(landing[0], landing[1], landing[2], player.rotationYaw, player.rotationPitch);
         } else {
-            // 跨维：GT5U moveEntityToDimensionAtCoords（内部处理坐骑/重生包；非跨维返回 false）
-            GTUtility
-                .moveEntityToDimensionAtCoords(player, record.dim, record.x + 0.5D, record.y + 1.0D, record.z + 0.5D);
+            // 跨维：先用目标维度 world 解析机器朝向再落位（区块加载属可接受开销）；
+            // GT5U moveEntityToDimensionAtCoords（内部处理坐骑/重生包；非跨维返回 false）
+            MinecraftServer server = MinecraftServer.getServer();
+            WorldServer targetWorld = server == null ? null : server.worldServerForDimension(record.dim);
+            double[] landing = computeLanding(targetWorld, record);
+            GTUtility.moveEntityToDimensionAtCoords(player, record.dim, landing[0], landing[1], landing[2]);
         }
+    }
+
+    /**
+     * 传送落点计算（v1.7.2 传送正前方）：从目标维度读目标 TE（区块加载属可接受开销），
+     * GT 机器经 {@code getFrontFacing()} 得朝向 → 落点=机器坐标+朝向前方 1 格中心、
+     * feet y=机器 y（与机器同层）；TE null / 非 GT / 朝向未知（UNKNOWN）一律回退现行为
+     * （机器正上方 y+1.0，防落进机器方块内）。
+     */
+    private static double[] computeLanding(World world, DeviceTerminalDataStore.MachineRecord record) {
+        double fallbackX = record.x + 0.5D;
+        double fallbackY = record.y + 1.0D;
+        double fallbackZ = record.z + 0.5D;
+        if (world == null) {
+            return new double[] { fallbackX, fallbackY, fallbackZ };
+        }
+        TileEntity te = world.getTileEntity(record.x, record.y, record.z);
+        if (!(te instanceof IGregTechTileEntity)) {
+            return new double[] { fallbackX, fallbackY, fallbackZ };
+        }
+        ForgeDirection front = ((IGregTechTileEntity) te).getFrontFacing();
+        if (front == null || front == ForgeDirection.UNKNOWN) {
+            return new double[] { fallbackX, fallbackY, fallbackZ };
+        }
+        return new double[] { record.x + front.offsetX + 0.5D, record.y, record.z + front.offsetZ + 0.5D };
     }
 
     /** 当前服务端 tick（overworld 总 tick 基准） */
@@ -234,6 +263,8 @@ public final class DeviceTerminalActionQueue {
                 return ItemDeviceInfoTerminal.NUM_SCIENTIFIC;
             case PacketDeviceTerminalAction.MODE_THOUSANDS:
                 return ItemDeviceInfoTerminal.NUM_THOUSANDS;
+            case PacketDeviceTerminalAction.MODE_VOLTAGE:
+                return ItemDeviceInfoTerminal.NUM_VOLTAGE;
             default:
                 return null;
         }

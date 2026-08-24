@@ -15,15 +15,18 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * 设备信息终端滚动列表（实施计划 E2：复制改造 {@link GuiAEMonitorList} 的
  * 滚动偏移 / 滚动条拖拽 / 鼠标滚轮 / 行命中骨架，不继承 {@code GuiSlot}）。
  * <p>
- * 每行六列：机器名（超宽截断+省略号）、状态色字（§ 键本地化，0 待机黄 / 1 运行绿 / 2 停机红）、
- * 瞬时 EU/t、平均 EU/t（两列在宿主「显示配方」开启时临时替换为 recipeStr，排序仍按数值——
- * 排序在宿主侧基于 Entry 原始字段完成）、位置 {@code dim(x,y,z)}、行右侧传送小按钮
+ * 每行六列：机器名（超宽截断+省略号）、状态色字（§ 键本地化，0 待机金 / 1 运行绿 / 2 停机红）、
+ * 瞬时 EU/t、平均 EU/t（v1.7.2 宿主「显示配方」开启时该两列区临时替换为单条配方行——
+ * 输入侧前2项 " → " 输出侧前2项，灰字 ellipsis，排序仍按数值——排序在宿主侧基于 Entry
+ * 原始字段完成）、位置 {@code dim(x,y,z)}、行右侧传送小按钮
  * {@code ✦N}（N={@code Config.deviceTeleportXPCost}，客户端经验等级不足时红字）。
+ * v1.7.2 全行文字加粗 §l（{@code applyBold} 与既有 § 颜色码共存，ellipsis 去码截断防花屏）。
  * <p>
  * 交互（UI 只发包不直改服务端权威数据）：点击传送按钮 → 宿主 sendTeleport（包 10 action 3）；
  * Ctrl+点击行任意处 → 宿主 sendUnbind（包 10 action 2，无确认）；其余列表区点击一律消费防穿透。
  * <p>
- * 悬浮：鼠标停在行上换行即重置时间戳（{@link #hoverIndex} / {@link #hoverStartMillis}），
+ * 悬浮（v1.7.2 Tooltip 收敛到机器名列）：鼠标停在行上<b>且 X 在机器名列区间内</b>才计时，
+ * 换行或移出机器名列即重置时间戳（{@link #hoverIndex} / {@link #hoverStartMillis}），
  * 宿主 drawScreen 末尾按 ≥0.5s 询问 {@link #hoverElapsedMillis()} 画配方 tooltip。
  * <p>
  * 宿主依赖与 {@code GuiAEMonitorList} 相同：GuiScreen 的 {@code mc}/{@code fontRendererObj}
@@ -50,7 +53,7 @@ class GuiDeviceEntryList {
     static final int COL_POS_X = 304;
 
     /** 传送按钮 X 偏移（列表右缘内、滚动条左侧） */
-    static final int TP_BTN_X = 380;
+    static final int TP_BTN_X = 400;
 
     /** 传送按钮宽度 */
     static final int TP_BTN_W = 24;
@@ -58,17 +61,14 @@ class GuiDeviceEntryList {
     /** 机器名列最大文本宽度（超出截断+省略号） */
     static final int NAME_WIDTH = 104;
 
-    /** 瞬时列最大文本宽度 */
-    static final int INST_WIDTH = 62;
+    /** 位置列最大文本宽度（v1.7.2 面板加宽 +20px） */
+    static final int POS_WIDTH = 92;
 
-    /** 平均列最大文本宽度 */
-    static final int AVG_WIDTH = 72;
+    /** 列头命中区右边界（相对 listLeft；传送列头不可排序；v1.7.2 加宽 +20px） */
+    static final int HEADER_MAX_X = 400;
 
-    /** 位置列最大文本宽度 */
-    static final int POS_WIDTH = 72;
-
-    /** 列头命中区右边界（相对 listLeft；传送列头不可排序） */
-    static final int HEADER_MAX_X = 380;
+    /** 配方单条覆盖可用宽（COL_INST_X→COL_POS_X，v1.7.2 显示配方单条行） */
+    static final int RECIPE_LINE_WIDTH = COL_POS_X - COL_INST_X;
 
     // ==================== 几何（构造快照，仿 GuiAEMonitorList） ====================
 
@@ -84,7 +84,7 @@ class GuiDeviceEntryList {
     /** 列表右边界（面板内部右侧留 8px） */
     private final int listRight;
 
-    /** 列表内容宽度（430 - 16 = 414） */
+    /** 列表内容宽度（450 - 16 = 434，v1.7.2 面板加宽 +20px） */
     private final int listWidth;
 
     /** 列表可视高度（top+52 到 top+232，9 行 × 20） */
@@ -122,8 +122,8 @@ class GuiDeviceEntryList {
         this.host = host;
         this.listLeft = left + 8;
         this.listTop = top + 52;
-        this.listRight = left + 430 - 8;
-        this.listWidth = 414;
+        this.listRight = left + 450 - 8;
+        this.listWidth = 434;
         this.listHeight = top + 232 - this.listTop;
         this.listBottom = this.listTop + this.listHeight;
     }
@@ -177,35 +177,42 @@ class GuiDeviceEntryList {
         FontRenderer font = host.font();
         int textY = y + 6;
 
-        // 悬浮计时：命中本行（换行即重置时间戳）
-        if (mouseX >= listLeft && mouseX <= listRight && mouseY >= y && mouseY < y + slotHeight) {
+        // 悬浮计时（v1.7.2 Tooltip 收敛到机器名列）：命中本行且 X 在机器名列区间内才计时，
+        // 换行重置时间戳；行内移出机器名列立即作废计时（不出 tooltip）
+        boolean inRow = mouseX >= listLeft && mouseX <= listRight && mouseY >= y && mouseY < y + slotHeight;
+        boolean inNameCol = mouseX >= listLeft + COL_NAME_X && mouseX < listLeft + COL_NAME_X + NAME_WIDTH;
+        if (inRow && inNameCol) {
             if (hoverIndex != index) {
                 hoverIndex = index;
                 hoverStartMillis = System.currentTimeMillis();
             }
+        } else if (hoverIndex == index) {
+            hoverIndex = -1;
         }
 
-        // 机器名列：超宽截断+省略号
-        font.drawString(ellipsis(font, entry.name, NAME_WIDTH), x + COL_NAME_X, textY, 0x2F3640);
+        // 机器名列：超宽截断+省略号；v1.7.2 全行文字加粗 §l（applyBold 与颜色码共存）
+        font.drawString(applyBold(ellipsis(font, entry.name, NAME_WIDTH)), x + COL_NAME_X, textY, 0x2F3640);
 
-        // 状态列：三态色字（lang 键自带 §e/§a/§c 颜色码，覆盖默认色参数）
-        font.drawString(host.stateText(entry.state), x + COL_STATE_X, textY, 0x2F3640);
+        // 状态列：三态色字（lang 键自带 §6/§a/§c 颜色码，覆盖默认色参数）
+        font.drawString(applyBold(host.stateText(entry.state)), x + COL_STATE_X, textY, 0x2F3640);
 
-        // 瞬时 / 平均两列：显示配方开启且有配方 → 临时替换为 recipeStr（灰字，各自按列宽截断）；
-        // 否则按宿主计数法格式化（排序始终按 Entry 原始数值，与显示无关）
-        String recipe = entry.recipeStr == null ? "" : entry.recipeStr;
-        boolean recipeOverride = host.showRecipeEnabled() && !recipe.isEmpty();
+        // 瞬时 / 平均区（v1.7.2 配方改单条覆盖）：显示配方开启且有配方 → 只画一条，
+        // 起点 COL_INST_X、可用宽 RECIPE_LINE_WIDTH（灰字，ellipsis 截断）；
+        // 关闭时两列恢复数值显示（排序始终按 Entry 原始数值，与显示无关）
+        String recipeIn = entry.recipeIn == null ? "" : entry.recipeIn.trim();
+        String recipeOut = entry.recipeOut == null ? "" : entry.recipeOut.trim();
+        boolean recipeOverride = host.showRecipeEnabled() && (!recipeIn.isEmpty() || !recipeOut.isEmpty());
         if (recipeOverride) {
-            font.drawString(ellipsis(font, recipe, INST_WIDTH), x + COL_INST_X, textY, 0x6B7680);
-            font.drawString(ellipsis(font, recipe, AVG_WIDTH), x + COL_AVG_X, textY, 0x6B7680);
+            String line = recipeLine(recipeIn, recipeOut, 2);
+            font.drawString(applyBold(ellipsis(font, line, RECIPE_LINE_WIDTH)), x + COL_INST_X, textY, 0x6B7680);
         } else {
-            font.drawString(host.formatEUt(entry.inst), x + COL_INST_X, textY, 0x2F3640);
-            font.drawString(host.formatAvg(entry.avg), x + COL_AVG_X, textY, 0x2F3640);
+            font.drawString(applyBold(host.formatEUt(entry.inst)), x + COL_INST_X, textY, 0x2F3640);
+            font.drawString(applyBold(host.formatAvg(entry.avg)), x + COL_AVG_X, textY, 0x2F3640);
         }
 
         // 位置列：dim(x,y,z)
         String posText = entry.dim + "(" + entry.x + "," + entry.y + "," + entry.z + ")";
-        font.drawString(ellipsis(font, posText, POS_WIDTH), x + COL_POS_X, textY, 0x2F3640);
+        font.drawString(applyBold(ellipsis(font, posText, POS_WIDTH)), x + COL_POS_X, textY, 0x2F3640);
 
         // 传送按钮（仅视觉，点击由 mouseClicked 处理）：✦N，N=传送经验消耗；
         // 客户端经验等级足够=绿字，不足=红字（服务端动作队列仍会权威复查）
@@ -216,7 +223,7 @@ class GuiDeviceEntryList {
         String tpText = "\u2726" + host.teleportCost();
         int tpW = font.getStringWidth(tpText);
         int tpColor = host.clientPlayerLevel() >= host.teleportCost() ? 0x2E7D32 : 0xF44336;
-        font.drawString(tpText, btnX + (TP_BTN_W - tpW) / 2, btnY + 3, tpColor);
+        font.drawString(applyBold(tpText), btnX + (TP_BTN_W - tpW) / 2, btnY + 3, tpColor);
     }
 
     // ==================== 悬浮查询（宿主 tooltip 用） ====================
@@ -414,11 +421,82 @@ class GuiDeviceEntryList {
 
     // ==================== 文本工具 ====================
 
-    /** 超宽截断+省略号（宽度内放不下时截到 width-6 并补 "..."）。 */
+    /**
+     * 超宽截断+省略号（宽度内放不下时截到 width-6 并补 "..."）。
+     * <p>
+     * v1.7.2 §l 加粗与颜色码共存防花屏：测量与截断基于去格式码可见宽度
+     * （vanilla {@code getStringWidth}/{@code trimStringToWidth} 均跳过 § 序列，
+     * 不会把 § 与其码字符切断）；截断后 "..." 继承截断点激活的颜色/加粗状态。
+     */
     static String ellipsis(FontRenderer font, String text, int width) {
-        if (text == null || font.getStringWidth(text) <= width) {
-            return text == null ? "" : text;
+        if (text == null || text.isEmpty()) {
+            return "";
+        }
+        if (font.getStringWidth(text) <= width) {
+            return text;
         }
         return font.trimStringToWidth(text, Math.max(0, width - 6)) + "...";
+    }
+
+    /**
+     * 全文字加粗 §l（v1.7.2 列表全加粗）：开头拼 {@code §l}，且每个颜色码（§0-§f 会重置
+     * 加粗状态）之后重拼一次，保证与既有 § 颜色码共存时加粗贯穿整串；格式码（§k-§o）
+     * 不重置状态无需重拼。
+     */
+    static String applyBold(String text) {
+        if (text == null || text.isEmpty()) {
+            return text == null ? "" : text;
+        }
+        StringBuilder sb = new StringBuilder("§l");
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            sb.append(c);
+            if (c == '§' && i + 1 < text.length()) {
+                char code = text.charAt(++i);
+                sb.append(code);
+                if ("0123456789abcdef".indexOf(Character.toLowerCase(code)) >= 0) {
+                    sb.append('§')
+                        .append('l');
+                }
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * 配方行内预览（v1.7.2 输入+输出）：输入侧前 N 项 + " → " + 输出侧前 N 项；
+     * 某侧为空时只显示另一侧（输入侧因 GT5U 无公开 lastRecipe 入口暂为空串）。
+     */
+    static String recipeLine(String recipeIn, String recipeOut, int maxPerSide) {
+        String inPart = sidePreview(recipeIn, maxPerSide);
+        String outPart = sidePreview(recipeOut, maxPerSide);
+        if (inPart.isEmpty()) {
+            return outPart;
+        }
+        if (outPart.isEmpty()) {
+            return inPart;
+        }
+        return inPart + " → " + outPart;
+    }
+
+    /** 单侧预览："A|B|C" 取前 max 项（"|" 连接保持序列化格式），超 max 项补 " 等..."（lang 键）。 */
+    static String sidePreview(String side, int max) {
+        if (side == null || side.isEmpty()) {
+            return "";
+        }
+        String[] parts = side.split("\\|");
+        int n = Math.min(parts.length, max);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            if (i > 0) {
+                sb.append('|');
+            }
+            sb.append(parts[i].trim());
+        }
+        if (parts.length > max) {
+            sb.append(' ')
+                .append(GuiDeviceInfoTerminal.trStatic("gtswn.device.gui.more_suffix"));
+        }
+        return sb.toString();
     }
 }

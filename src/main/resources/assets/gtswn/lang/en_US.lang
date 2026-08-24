@@ -369,10 +369,11 @@ item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+click an entry: §fRemote unbin
 
 # Device Info Terminal GUI (referenced by stage E)
 gtswn.device.gui.title=Device Info Terminal
-gtswn.device.gui.count_mode=Notation: %s
+gtswn.device.gui.count_mode=Count Mode: %s
 gtswn.device.gui.count_mode.normal=Normal
 gtswn.device.gui.count_mode.scientific=Scientific
 gtswn.device.gui.count_mode.thousands=Thousands
+gtswn.device.gui.count_mode.voltage=Voltage Tier
 gtswn.device.gui.show_recipe=Show recipe: %s
 gtswn.device.gui.on=ON
 gtswn.device.gui.off=OFF
@@ -385,8 +386,11 @@ gtswn.device.gui.footer=Ctrl+click to unbind · Hover for recipe · Click column
 gtswn.device.gui.teleport=Teleport
 gtswn.device.gui.no_bindings=No machines bound
 gtswn.device.gui.tooltip.recipe_title=Current recipe (output snapshot, approximate)
+gtswn.device.gui.tooltip.recipe_in=Input: %s
+gtswn.device.gui.tooltip.recipe_out=Output: %s
+gtswn.device.gui.more_suffix=etc...
 gtswn.device.gui.tooltip.recipe_none=None
-gtswn.device.gui.state.idle=§eIdle
+gtswn.device.gui.state.idle=§6Idle
 gtswn.device.gui.state.running=§aRunning
 gtswn.device.gui.state.stopped=§cStopped
 

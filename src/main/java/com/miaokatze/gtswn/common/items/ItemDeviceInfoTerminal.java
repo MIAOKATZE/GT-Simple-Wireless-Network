@@ -38,7 +38,8 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  * <li>右击<b>GT 非加工机器</b> = not_machine 提示并拦截（不开其 GUI）；右击<b>非 GT 方块</b>
  * = 放行（等效空手交互）</li>
  * <li>右击空气 = 打开终端 GUI（阶段 E 客户端本地打开，本阶段服务端无操作）</li>
- * <li>Shift+右击空气 = 扫描开关（阶段 C，见 onItemRightClick 的 TODO）</li>
+ * <li>Shift+右击（机器/空气均可）= 扫描开关（onItemRightClick 的 Shift 分支处理，
+ * onItemUseFirst 对 Shift 一律放行防双 toggle 抵消）</li>
  * </ul>
  * <p>
  * 判别式（统一口径 D1）：{@code te instanceof IGregTechTileEntity && mte != null
@@ -95,6 +96,9 @@ public class ItemDeviceInfoTerminal extends Item {
     /** 计数法：千位分隔 */
     public static final String NUM_THOUSANDS = "THOUSANDS";
 
+    /** 计数法：电压等级（v1.7.2 第四模式） */
+    public static final String NUM_VOLTAGE = "VOLTAGE";
+
     /**
      * 构造函数：初始化设备信息终端的基础属性（仿 {@link ItemNetworkQuantumTerminal}）。
      */
@@ -115,7 +119,9 @@ public class ItemDeviceInfoTerminal extends Item {
      * 右击加工 GT 机器 = 绑定到本终端（onItemUseFirst 服务端权威处理并拦截，客户端放行）。
      * <p>
      * 客户端返回 false 让 C08 包发出（仿 {@link ItemNetworkQuantumTerminal} 先例）；
-     * Shift 分支 = 扫描开关（移交 {@link DeviceScanManager}，与右击空气手势一致）；
+     * Shift 一律放行（return false，终端等效空手）——扫描开关统一由
+     * {@link #onItemRightClick} 的 Shift 分支经 vanilla 回退路径触发（不在本方法拦截，
+     * 否则潜行右击机器时双路径各触发一次 toggle 相互抵消导致扫描无法启动）；
      * 非 Shift 才走绑定流程：非 GT 方块放行（不提示不拦截）；GT 非加工机器 → 聊天原因
      * 并拦截（不开其 GUI）；成功路径：登记表无该机器则补登（owner=点击者）→ 数据仓加绑定
      * （尊重 {@link Config#deviceTerminalMaxMachines} 上限，超限聊天拒绝）。
@@ -127,12 +133,11 @@ public class ItemDeviceInfoTerminal extends Item {
         if (world.isRemote) {
             return false;
         }
-        // ② Shift+右击 = 扫描开关（不绑定；与 Shift+右击空气同一手势语义）
+        // ② Shift+右击机器：一律放行（终端等效空手，仿 ItemNetworkQuantumTerminal 先例）——
+        // 扫描开关统一走 onItemRightClick 的 Shift 分支，此处拦截会导致 vanilla 回退路径
+        // 再触发一次 toggle 相互抵消（扫描无法启动）
         if (player.isSneaking()) {
-            if (player instanceof EntityPlayerMP) {
-                DeviceScanManager.toggleScan((EntityPlayerMP) player, getOrCreateTerminalId(stack));
-            }
-            return true;
+            return false;
         }
         // ③ 非 GT 方块：放行（等效空手交互，不提示不拦截）
         TileEntity te = world.getTileEntity(x, y, z);
@@ -307,7 +312,9 @@ public class ItemDeviceInfoTerminal extends Item {
             return NUM_NORMAL;
         }
         String value = stack.stackTagCompound.getString(NBT_NUM_FORMAT);
-        if (NUM_NORMAL.equals(value) || NUM_SCIENTIFIC.equals(value) || NUM_THOUSANDS.equals(value)) {
+        if (NUM_NORMAL.equals(value) || NUM_SCIENTIFIC.equals(value)
+            || NUM_THOUSANDS.equals(value)
+            || NUM_VOLTAGE.equals(value)) {
             return value;
         }
         return NUM_NORMAL;

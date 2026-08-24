@@ -114,7 +114,8 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
                         record.x,
                         record.y,
                         record.z,
-                        record.recipeStr));
+                        record.recipeIn,
+                        record.recipeOut));
             }
             int entryTotal = Math.min(entries.size(), PacketSyncDeviceTerminalData.MAX_ENTRIES);
             int pageTotal = Math.max(1, (entryTotal + PAGE_SIZE - 1) / PAGE_SIZE);

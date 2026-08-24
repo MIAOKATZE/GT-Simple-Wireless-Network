@@ -16,7 +16,7 @@ import io.netty.buffer.ByteBuf;
  * 字段：action（byte）+ 列 byte + 方向 byte + 计数法 byte + key（str，正则校验）。
  * <ul>
  * <li>{@link #ACTION_SORT} = 0 排序（column 0-4 NAME/STATE/INST/AVG/POS + direction 0/1）</li>
- * <li>{@link #ACTION_COUNT_MODE} = 1 计数法（0-2 NORMAL/SCIENTIFIC/THOUSANDS）</li>
+ * <li>{@link #ACTION_COUNT_MODE} = 1 计数法（0-3 NORMAL/SCIENTIFIC/THOUSANDS/VOLTAGE）</li>
  * <li>{@link #ACTION_UNBIND} = 2 解绑（key）</li>
  * <li>{@link #ACTION_TELEPORT} = 3 传送（key；3s 冷却 + 经验复查扣减 + 同/跨维传送）</li>
  * </ul>
@@ -60,14 +60,17 @@ public class PacketDeviceTerminalAction implements IMessage {
     /** 排序方向：降序 */
     public static final byte DIR_DESC = 1;
 
-    /** 计数法：常规 */
+    /** 计数法：常规计数 */
     public static final byte MODE_NORMAL = 0;
 
     /** 计数法：科学计数 */
     public static final byte MODE_SCIENTIFIC = 1;
 
-    /** 计数法：千位分隔 */
+    /** 计数法：千位计数（v1.7.2 起 K/M/G/T/P 2 位小数公制格式） */
     public static final byte MODE_THOUSANDS = 2;
+
+    /** 计数法：电压等级（v1.7.2 新增第四模式，电流+电压档位显示） */
+    public static final byte MODE_VOLTAGE = 3;
 
     /** key 字段长度上限（防御） */
     private static final int MAX_KEY_LEN = 64;

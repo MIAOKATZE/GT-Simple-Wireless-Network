@@ -19,12 +19,12 @@ import io.netty.buffer.ByteBuf;
  * 分页协议（128 条/页，满配 1024 条拆 8 页）：terminalUuid / version / pageIndex /
  * pageTotal / entryTotal（封顶 {@value #MAX_ENTRIES}）/ 本页条目
  * {key（正则 {@code dim:x:y:z}）/ name（封 {@value #MAX_NAME_LEN}）/ state（byte 三态）/
- * inst（long 瞬时 EU/t）/ avg（double 均值）/ dim,x,y,z（int）/ recipeStr（封
- * {@value #MAX_RECIPE_LEN}）}。
+ * inst（long 瞬时 EU/t）/ avg（double 均值）/ dim,x,y,z（int）/ recipeIn + recipeOut
+ * （各封 {@value #MAX_RECIPE_LEN}，v1.7.2 双侧配方快照）}。
  * <p>
  * fromBytes 全防御（吸收量子系统 v1.6.1 教训）：整体 try-catch（坏包退化为 terminalId=null
  * 的惰性消息，客户端 Handler 判空丢弃）、条目数 {@link #MAX_ENTRIES} 封顶、逐条
- * readableBytes 预检 + 单条异常截断（保留已解析前缀）、name/recipeStr 读侧截断、
+ * readableBytes 预检 + 单条异常截断（保留已解析前缀）、name/recipeIn/recipeOut 读侧截断、
  * key 正则校验非法跳过。
  * <p>
  * 客户端 Handler 方法体只引用双端类型（hotfix v1.5.14 类加载安全模式：不得引用
@@ -41,7 +41,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
     /** name 字段长度上限（字符） */
     public static final int MAX_NAME_LEN = 64;
 
-    /** recipeStr 字段长度上限（字符） */
+    /** 配方单侧字段长度上限（字符，recipeIn/recipeOut 各自封顶） */
     public static final int MAX_RECIPE_LEN = 120;
 
     /** 机器键正则（dim:x:y:z，允许负坐标） */
@@ -96,7 +96,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             buf.writeInt(entry.x);
             buf.writeInt(entry.y);
             buf.writeInt(entry.z);
-            ByteBufUtils.writeUTF8String(buf, entry.recipeStr);
+            ByteBufUtils.writeUTF8String(buf, entry.recipeIn);
+            ByteBufUtils.writeUTF8String(buf, entry.recipeOut);
         }
     }
 
@@ -124,13 +125,14 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     int x = buf.readInt();
                     int y = buf.readInt();
                     int z = buf.readInt();
-                    String recipeStr = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
+                    String recipeIn = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
+                    String recipeOut = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
                     // key 正则校验：非法键跳过该条（不阻断后续条目）
                     if (key == null || !KEY_PATTERN.matcher(key)
                         .matches()) {
                         continue;
                     }
-                    entries.add(new Entry(key, name, state, inst, avg, dim, x, y, z, recipeStr));
+                    entries.add(new Entry(key, name, state, inst, avg, dim, x, y, z, recipeIn, recipeOut));
                 } catch (Exception e) {
                     // 单条损坏（字符串长度越界等）：截断解析，保留已解析前缀
                     break;
@@ -184,7 +186,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
     }
 
     /**
-     * 单条机器条目（双端类型；构造时截断 name/recipeStr 至封顶长度）。
+     * 单条机器条目（双端类型；构造时截断 name/recipeIn/recipeOut 至封顶长度）。
      */
     public static final class Entry {
 
@@ -213,11 +215,14 @@ public class PacketSyncDeviceTerminalData implements IMessage {
 
         public final int z;
 
-        /** 当前执行配方描述（输出快照，≤{@value #MAX_RECIPE_LEN} 字符） */
-        public final String recipeStr;
+        /** 当前执行配方输入侧描述（v1.7.2；GT5U 无公开 lastRecipe 入口暂为空串，≤{@value #MAX_RECIPE_LEN} 字符） */
+        public final String recipeIn;
+
+        /** 当前执行配方输出侧描述（输出快照，近似，≤{@value #MAX_RECIPE_LEN} 字符） */
+        public final String recipeOut;
 
         public Entry(String key, String name, byte state, long inst, double avg, int dim, int x, int y, int z,
-            String recipeStr) {
+            String recipeIn, String recipeOut) {
             this.key = key == null ? "" : key;
             this.name = truncate(name, MAX_NAME_LEN);
             this.state = state;
@@ -227,7 +232,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             this.x = x;
             this.y = y;
             this.z = z;
-            this.recipeStr = truncate(recipeStr, MAX_RECIPE_LEN);
+            this.recipeIn = truncate(recipeIn, MAX_RECIPE_LEN);
+            this.recipeOut = truncate(recipeOut, MAX_RECIPE_LEN);
         }
     }
 
