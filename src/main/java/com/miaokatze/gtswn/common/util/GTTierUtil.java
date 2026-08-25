@@ -86,54 +86,32 @@ public class GTTierUtil {
     }
 
     /**
-     * 将 EU/t 转换为 GT 的电流+电压等级格式
+     * 将 EU/t 转换为 GT 的电流+电压等级格式（统一方法的整数调用侧薄委托）。
      * <p>
-     * 采用 HUD 版实现（先调用 {@link #getGTTier} 再格式化），与 MTE 原内联版逻辑等价但更清晰。
+     * v1.7.4 起与设备终端「电压等级」计数模式统一为同一实现（均 1 位小数）；
+     * 本方法取绝对值委托 {@link #formatGTPowerDecimal}，括号内保持无符号——
+     * 统计/HUD/MTE 调用方的方向语义由 ↑↓/正负文案承担。
      * <p>
-     * 输出示例：{@code §92A HV}（蓝色 2A HV）、{@code §64A MAX+}（金色 4A MAX+ 过载）。
+     * 输出示例：{@code §92.0A HV}（蓝色 2.0A HV）、{@code §410.0A MAX}（深红 10.0A MAX）。
      *
      * @param euPerTick 每秒能量变化率
-     * @return 格式化后的字符串（带 § 颜色代码），例如 {@code §92A HV}
+     * @return 格式化后的字符串（带 § 颜色代码），例如 {@code §92.0A HV}
      */
     public static String formatGTPower(double euPerTick) {
-        int tier = getGTTier(euPerTick);
-        long voltage = GTValues.V[tier];
-        double absEU = Math.abs(euPerTick);
-        // B2-07：显示层封顶 999A——(int) 强转在 absEU ≥ 4.6×10^18 EU/t 时回绕成负数，
-        // 过载判定用未截断的 amp 先行，显示值 Math.min 封顶 999 避免回绕
-        double amp = Math.ceil(absEU / voltage);
-        int amperage = (int) Math.min(amp, 999.0);
-
-        boolean isOverloaded = false;
-        if (amp > 4 && tier == TIER_NAMES.length - 1) {
-            // 已到 MAX 级仍超 4A，截断为 4A 并标记过载
-            isOverloaded = true;
-            amperage = 4;
-        } else if (amp > 4) {
-            // 已被 getGTTier 处理过，正常情况不应再超过 4A（防御性兜底）
-            isOverloaded = true;
-            amperage = 4;
-        }
-
-        String color = TIER_COLORS[tier];
-        String tierName = TIER_NAMES[tier];
-
-        if (isOverloaded) {
-            return color + amperage + "A " + tierName + "+";
-        } else {
-            return color + amperage + "A " + tierName;
-        }
+        return formatGTPowerDecimal(Math.abs(euPerTick));
     }
 
     /**
-     * 将 EU/t 转换为 GT 的电流+电压等级格式（v1.7.2 第四计数模式「电压等级」用，
-     * {@link #formatGTPower} 的小数电流变体）。
+     * 将 EU/t 转换为 GT 的电流+电压等级格式（「电流*电压」统一格式化方法）。
      * <p>
-     * 与整数版的差异：电流不做向上取整，按 {@code absEU / V[tier]} 真实值四舍五入保留
-     * 1 位小数（例 2048EU/t HV → {@code §92.0A HV}）；档位与进位逻辑复用 {@link #getGTTier}
-     * （&gt;4A 自动升档到 MAX）；MAX 级仍超 4A 时显示封顶 {@code 4.0A} 并带 {@code "+"}
-     * 过载标记（例 8589934592EU/t → {@code §44.0A MAX+}）；负值（发电）加 {@code "-"} 前缀
+     * 电流按 {@code absEU / V[tier]} 真实值四舍五入保留 1 位小数（例 2048EU/t HV →
+     * {@code §92.0A HV}）；档位与进位逻辑复用 {@link #getGTTier}（&gt;4A 自动升档）。
+     * MAX 档已是最高档、无更高级可升：超过 4A 后电流值按真实比值继续增大、不封顶
+     * （例 10737418200EU/t → {@code §410.0A MAX}）；负值（发电）加 {@code "-"} 前缀
      * （例 -1024EU/t → {@code §9-2.0A HV}）；档位颜色与整数版一致。
+     * <p>
+     * v1.7.4：整数变体 {@link #formatGTPower} 改为本方法的绝对值薄委托，两处表现
+     * （无线电网统计括号后缀、设备信息终端「电压等级」计数模式）共用同一实现。
      *
      * @param euPerTick 每秒能量变化率（正=耗电 / 负=发电）
      * @return 格式化后的字符串（带 § 颜色代码），例如 {@code §92.0A HV}
@@ -142,22 +120,13 @@ public class GTTierUtil {
         int tier = getGTTier(euPerTick);
         double voltage = GTValues.V[tier];
         double absEU = Math.abs(euPerTick);
+        // MAX 档无更高级可升：电流不封顶，按真实比值继续增大（仍保留 1 位小数）
         double amp = absEU / voltage;
-        boolean isOverloaded = false;
-        if (amp > 4.0D && tier == TIER_NAMES.length - 1) {
-            // 已到 MAX 级仍超 4A：封顶 4.0A 并标记过载（非 MAX 档的 >4A 已被 getGTTier 升档消化）
-            isOverloaded = true;
-            amp = 4.0D;
-        }
         // 四舍五入保留 1 位小数（先乘 10 取整再除回，防二进制浮点 String.format 边界抖动）
         double rounded = Math.round(amp * 10.0D) / 10.0D;
         String color = TIER_COLORS[tier];
         String tierName = TIER_NAMES[tier];
         String sign = euPerTick < 0.0D ? "-" : "";
-        return color + sign
-            + String.format(java.util.Locale.ROOT, "%.1f", rounded)
-            + "A "
-            + tierName
-            + (isOverloaded ? "+" : "");
+        return color + sign + String.format(java.util.Locale.ROOT, "%.1f", rounded) + "A " + tierName;
     }
 }
