@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Extender panels stretch your screen into any contiguous rectangle.\n\nOne craft yields 2 extenders: 4 LV Sensors on the corners, glass cross, and a Computer Screen cover in the middle. Extenders automatically attach to adjacent main panels and fill the wall with one continuous display.\n\nHold an item or fluid and right-click the panel to bind an AE stock chart, or add entries to the realtime AE monitor list. The same 8 time windows apply.",
+      "desc:8": "Extender panels stretch your display into one seamless wall.\n\nThey snap onto adjacent main panels and keep tiling outward into any contiguous rectangle — build it as large as you like; there is no hard size cap.\n\nYou craft some, I gift some: completing this quest pays out a bundle of extenders on the house.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The ME Network Quantum Terminal turns a formed ME controller structure into a remote-access anchor.\n\nCraft it with 4 Fluix Blocks on the corners, 4 LV Emitters in the cross, and 1 ME Controller in the center. Right-click a running, formed controller to quantize and bind the whole structure; shift+right-click it to dequantize.\n\nA quantized controller is hardened: mining takes 1000x longer and it shrugs off explosions. Shift+right-click air with the terminal to open its GUI.",
+      "desc:8": "Right-click a formed ME controller structure with this terminal to quantize it: the whole structure becomes a quantized anchor and its maximum channel capacity is computed on the spot. A quantized controller refuses every connection except pure energy supply.\n\nAfter that, plant Quantum Nodes through the terminal to bridge devices into the ME network.\n\nBeware: exceed the maximum connectable channels and the quantized controller explodes. Note that when infinite channels are enabled on the AE2 side, there is no channel limit and nothing blows up (more detail in the quests downstream).",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 0,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§d§lQuantum Leap",
+      "name:8": "§d§lQuantize the ME Network",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,
@@ -39,7 +39,7 @@
       "rewards:9": {
         "0:10": {
           "Count:3": 2,
-          "Damage:2": 32701,
+          "Damage:2": 32680,
           "OreDict:8": "",
           "id:8": "gregtech:gt.metaitem.01"
         }

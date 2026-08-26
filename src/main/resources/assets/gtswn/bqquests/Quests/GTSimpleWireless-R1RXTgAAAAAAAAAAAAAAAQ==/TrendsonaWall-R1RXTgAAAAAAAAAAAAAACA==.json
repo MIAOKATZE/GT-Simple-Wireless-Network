@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Network Info Panel renders your grid history as smooth curves on a wall-sized multi-block screen.\n\nCraft it with 4 LV Sensors on the corners, glass in a cross, and one Wireless Energy Monitor in the center — yes, it eats a monitor, plan ahead. Right-click the placed panel to open its config GUI.\n\nIt tracks 8 nested time windows (5m/1h/8h/24h/7d/1M/3M/1Y) on a 61-point FIFO, drawing Fritsch-Carlson splines. All screens placed by the same player share one dataset.",
+      "desc:8": "The Network Info Panel renders your network history as smooth curves on a wall-sized multi-block screen.\n\nIt does not just record EU wireless network status — connected to an ME network, it also tracks real-time and historical item changes inside it.\n\nHow it works: EU wireless readings follow the placing player's own wireless network; for the ME side, right-click the panel while holding an item or fluid cell to configure what to monitor. You can also open its terminal for more detailed settings.\n\nIts edge: extremely low performance and memory consumption while recording up to a full year of network history — 8 nested time windows (5m/1h/8h/24h/7d/1M/3M/1Y) on a 61-point FIFO, drawn as Fritsch-Carlson splines. All screens placed by the same player share one dataset.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

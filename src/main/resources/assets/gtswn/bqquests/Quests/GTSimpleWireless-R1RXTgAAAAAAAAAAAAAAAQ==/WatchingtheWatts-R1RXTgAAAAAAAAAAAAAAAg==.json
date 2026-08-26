@@ -39,29 +39,11 @@
       "rewards:9": {
         "0:10": {
           "Count:3": 2,
-          "Damage:2": 0,
+          "Damage:2": 32690,
           "OreDict:8": "",
-          "id:8": "minecraft:comparator"
+          "id:8": "gregtech:gt.metaitem.01"
         }
       }
-    },
-    "1:10": {
-      "choices:9": {
-        "0:10": {
-          "Count:3": 1,
-          "Damage:2": 3,
-          "OreDict:8": "",
-          "id:8": "enhancedlootbags:lootbag"
-        },
-        "1:10": {
-          "Count:3": 8,
-          "Damage:2": 0,
-          "OreDict:8": "",
-          "id:8": "minecraft:gold_ingot"
-        }
-      },
-      "index:3": 1,
-      "rewardID:8": "bq_standard:choice"
     }
   },
   "tasks:9": {

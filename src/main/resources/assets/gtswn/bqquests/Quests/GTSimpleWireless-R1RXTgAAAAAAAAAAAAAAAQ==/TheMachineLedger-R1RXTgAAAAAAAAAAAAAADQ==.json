@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Device Info Terminal has no recipe — it is handed to you here, as the chapter's milestone.\n\nRight-click any working GT machine to bind it; right-click air to open the ledger. Rows show tri-state (Running/Idle/Stopped), instant EU/t, a 60-point rolling average, position and the current recipe. Sort by any of five columns; the notation mode toggles like the monitors.\n\nThe row's sparkle button teleports you to the machine for XP levels, Ctrl+click unbinds remotely, and shift+right-click air runs a team-wide scan with a 20 second countdown. Placing a machine while carrying the terminal auto-binds it too.",
+      "desc:8": "The Device Info Terminal is your machine ledger.\n\nRight-click any working GT machine to bind it; right-click air to open the ledger. Rows show tri-state (Running/Idle/Stopped), instant EU/t, a 60-point rolling average, position and the current recipe. Sort by any of five columns; the notation mode toggles like the monitors.\n\nThe row's sparkle button teleports you to the machine for XP levels, Ctrl+click unbinds remotely, and shift+right-click air runs a team-wide scan with a 20 second countdown. Placing a machine while carrying the terminal auto-binds it too.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
