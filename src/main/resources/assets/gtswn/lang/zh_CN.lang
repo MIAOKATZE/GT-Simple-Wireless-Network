@@ -412,7 +412,7 @@ gtswn.device.chat.teleport.no_xp=§c[设备终端] 经验等级不足，传送�
 ## 简易无线网络
 
 betterquesting.questline.R1RXTgAAAAAAAAAAAAAAAQ.name=§5§l简易无线网络
-betterquesting.questline.R1RXTgAAAAAAAAAAAAAAAQ.desc=把一切电容设备链接进同一个无线 EU 网络。%n%n十五题：从无线能量监视器与掌上 HUD，经链路终端与无线覆盖板，一路走到墙面信息屏、量子化的 ME 网络与设备信息终端。%n%nGTSWN 的机器均直接接入 GregTech 电力体系。
+betterquesting.questline.R1RXTgAAAAAAAAAAAAAAAQ.desc=把一切电容设备链接进同一个无线 EU 网络。%n%n十三题：从无线能量监视器与掌上 HUD，经链路终端与无线覆盖板，一路走到墙面信息屏、量子化的 ME 网络与设备信息终端。%n%nGTSWN 的机器均直接接入 GregTech 电力体系。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAAAQ.name=§a§l万物尽在掌控之中
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAAAQ.desc=简易无线网络（GTSWN）给 GregTech 带来导线之外的玩法：§6无线 EU 网络§r、§d量子化的 ME 网络§r，还有§b实时的机器状态监控§r——可测量、可传输、可上墙显示、可随身监管。%n%n本线将从无线能量监视器与掌上 HUD 讲起，经链路终端与无线覆盖板，一路走到墙面信息屏、ME 网络量子化与设备信息终端。%n%n§7§o这里全部是 LV 时代科技。保持区块常加载，阈值设得理智一点。§r
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAAAg.name=§b§l监视每一瓦特
@@ -439,8 +439,4 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.name=§d§l管好你的频道
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.desc=打开终端 GUI（Shift+右击空气），看频道一行：已用、总数，以及紧张时会变§c红§r的百分比。%n%n这里就是前置任务爆炸警告的细则：控制器容量为 §b（面数×6−共享面数）×32 频道§r；每个节点连接最多带入 §b32§r 个。达到 §e95%%§r 会收到聊天警告；§c一旦超过容量，整个控制器结构会像 TNT 一样爆炸§r——没人想把量子化控制器从天花板上刮下来。%n%n而承诺过的例外：AE2 侧开启§a无限频道§r后，§a限制彻底消失——无上限，也不会爆炸§r。%n%n留足频道余量，每次扩网后查一眼 GUI，大工程前先解绑闲置节点。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.name=§6§l机器总账
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=设备信息终端是你的机器总账。%n%n右击任意可工作的 GT 机器即可绑定；右击空气打开台账。列表每行显示三态（运行/待机/停机）、瞬时 EU/t、§e60 点滚动均值§r、位置与当前执行配方；五列可排序，计数法与监视器一样可切换。%n%n行内的✦按钮消耗§e经验等级§r把你传送到机器旁，Ctrl+点击可远程解绑，Shift+右击空气则启动带 §e20 秒倒计时§r的全域团队扫描。背包里有终端时放置的机器也会自动绑定。
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAADg.name=§c§l完整无线电站
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAADg.desc=可选挑战：每样 GTSWN 主角装备各集齐一件，随时上交。%n%n清单：无线能量监视器、便携式监测终端、链路终端、网络信息屏、信息拓展屏与 ME 量子终端。不限顺序，交一件勾一件。%n%n交完后东西都还在，不会消耗。一面装备齐全的显示墙加一台绑定的终端，就是 GTNH 里最接近任务控制室的东西。
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAADw.name=§a§l剪断最后一根线
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAADw.desc=环顾四周：电网由监视器计量、由链路覆盖板吞吐、由信息屏上墙、由量子节点铺遍地图、由机器台账逐行审计。%n%n几句临别赠言：监视器所在区块保持常加载，红石缓冲才不会失效；每波节点扩张前留足频道余量；团队队长还能用 /gtswn 管理命令合并无线电网。%n%n你已正式挣脱线缆。去无线吧。
 # BQ quests END

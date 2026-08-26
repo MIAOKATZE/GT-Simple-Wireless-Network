@@ -9,7 +9,12 @@ import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.common.util.Constants;
@@ -58,6 +63,8 @@ import cpw.mods.fml.common.Loader;
  * 「定义刷新」——快照进度→重读定义→merge 回填，完成/领取状态保留，
  * 挂线坐标同步替换；老世界无版本戳视为待升级刷一次。
  * 由此实现「新任务覆盖老任务」：发新版只需替换 jar，玩家免手动迁移</li>
+ * <li>剪枝（无条件执行）：线上存在但 index.json 清单中已删除的任务，摘线并移出
+ * 任务数据库——删除操作同样自动传播到所有世界</li>
  * <li>进度回填：QuestProgress 目录逐玩家 merge=true 重放（对抗 default load
  * 对"库内不存在任务"进度的静默丢弃，见设计文档第 2 节）</li>
  * <li>同步四连（NetSettingSync / NetQuestSync.quickSync / NetChapterSync / markDirty）</li>
@@ -102,6 +109,7 @@ public final class BqQuestInjector {
             }
             int questCount = 0;
             int refreshedCount = 0;
+            int prunedCount = 0;
             // 版本戳对账：版本变化（含老世界无戳）→ 刷新全部已存在任务的定义与挂线坐标
             boolean refresh = isDefinitionRefreshNeeded();
             for (int i = 0; i < lines.size(); i++) {
@@ -111,6 +119,7 @@ public final class BqQuestInjector {
                     refresh);
                 questCount += r[0];
                 refreshedCount += r[1];
+                prunedCount += r[2];
             }
             restoreProgress();
             if (refresh) {
@@ -122,11 +131,12 @@ public final class BqQuestInjector {
             NetChapterSync.sendSync(null, null);
             SaveLoadHandler.INSTANCE.markDirty();
             GTSimpleWirelessNetwork.LOG.info(
-                "[BQ] 任务注入完成：{} 条任务线，{} 个新任务，{} 个定义刷新{}",
+                "[BQ] 任务注入完成：{} 条任务线，{} 个新任务，{} 个定义刷新{}，{} 个已删除任务清理",
                 lines.size(),
                 questCount,
                 refreshedCount,
-                refresh ? "（对齐版本 " + Tags.VERSION + "）" : "");
+                refresh ? "（对齐版本 " + Tags.VERSION + "）" : "",
+                prunedCount);
         } catch (Throwable t) {
             GTSimpleWirelessNetwork.LOG.error("[BQ] 任务注入失败（不影响 GTSWN 主功能）", t);
         }
@@ -142,10 +152,14 @@ public final class BqQuestInjector {
      * 刷新规则（{@code refresh==true}，版本戳对账失败时）：已存在任务重读定义
      * （进度快照→readFromNBT→merge 回填，完成/领取保留），挂线坐标用
      * {@code line.put} 直接替换（UuidDatabase map 语义）。
+     * <p>
+     * 剪枝规则（无条件执行）：线上存在、但 index.json 清单中已不存在的任务视为
+     * 已删除——摘线并从任务数据库移除（进度文件残留无害），使删除操作同样
+     * 自动传播到老世界。
      *
      * @param lineSpec index.json 中该线的声明对象
      * @param refresh  是否对已存在任务执行定义刷新
-     * @return int[]{本次新建任务数, 本次刷新定义任务数}
+     * @return int[]{本次新建任务数, 本次刷新定义任务数, 本次剪枝删除任务数}
      */
     private static int[] loadQuestLine(JsonObject lineSpec, boolean refresh) {
         UUID lineId = new UUID(
@@ -164,7 +178,7 @@ public final class BqQuestInjector {
                     .getAsString());
             if (lineTag == null) {
                 GTSimpleWirelessNetwork.LOG.warn("[BQ] 任务线定义文件缺失，跳过该线: {}", lineSpec.get("lineFile"));
-                return new int[] { 0, 0 };
+                return new int[] { 0, 0, 0 };
             }
             line = new QuestLine();
             line.readFromNBT(lineTag);
@@ -176,6 +190,7 @@ public final class BqQuestInjector {
 
         int created = 0;
         int refreshed = 0;
+        Set<UUID> expected = new HashSet<>();
         JsonArray entries = lineSpec.getAsJsonArray("entries");
         for (int i = 0; i < entries.size(); i++) {
             JsonObject entry = entries.get(i)
@@ -188,6 +203,7 @@ public final class BqQuestInjector {
                 continue;
             }
             UUID questId = NBTConverter.UuidValueType.QUEST.readId(questTag);
+            expected.add(questId);
             IQuest existing = QuestDatabase.INSTANCE.get(questId);
             if (existing == null) {
                 IQuest quest = new QuestInstance();
@@ -221,11 +237,25 @@ public final class BqQuestInjector {
                 }
             }
         }
+        // 剪枝：清单中已删除的任务从线上摘除并移出任务数据库（无条件执行，删除自动传播到老世界）
+        int pruned = 0;
+        List<UUID> stale = line.orderedEntries()
+            .map(Map.Entry::getKey)
+            .filter(id -> !expected.contains(id))
+            .collect(Collectors.toList());
+        for (UUID id : stale) {
+            line.remove(id);
+            QuestDatabase.INSTANCE.remove(id);
+            pruned++;
+        }
+        if (pruned > 0) {
+            GTSimpleWirelessNetwork.LOG.info("[BQ] 任务线 {} 清理已删除任务 {} 个: {}", lineId, pruned, stale);
+        }
         if (lineCreated || created > 0 || refreshed > 0) {
             GTSimpleWirelessNetwork.LOG
                 .info("[BQ] 任务线 {} 装载：线新建={}，新任务={}，刷新定义={}", lineId, lineCreated, created, refreshed);
         }
-        return new int[] { created, refreshed };
+        return new int[] { created, refreshed, pruned };
     }
 
     /**
