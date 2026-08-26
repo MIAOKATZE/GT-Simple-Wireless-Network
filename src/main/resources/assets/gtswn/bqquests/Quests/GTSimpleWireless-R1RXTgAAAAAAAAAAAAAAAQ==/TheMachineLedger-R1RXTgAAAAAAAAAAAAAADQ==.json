@@ -2,14 +2,14 @@
   "preRequisites:9": {
     "0:10": {
       "questIDHigh:4": 5139829067255644160,
-      "questIDLow:4": 12
+      "questIDLow:4": 1
     }
   },
   "properties:10": {
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Device Info Terminal is your machine ledger.\n\nRight-click any working GT machine to bind it; right-click air to open the ledger. Rows show tri-state (Running/Idle/Stopped), instant EU/t, a 60-point rolling average, position and the current recipe. Sort by any of five columns; the notation mode toggles like the monitors.\n\nThe row's sparkle button teleports you to the machine for XP levels, Ctrl+click unbinds remotely, and shift+right-click air runs a team-wide scan with a 20 second countdown. Placing a machine while carrying the terminal auto-binds it too.",
+      "desc:8": "The Device Info Terminal is your machine ledger.\n\nRight-click any working GT machine to bind it; right-click air to open the ledger. Rows show tri-state (Running/Idle/Stopped), instant EU/t, a §e60-point rolling average§r, position and the current recipe. Sort by any of five columns; the notation mode toggles like the monitors.\n\nThe row's sparkle button teleports you to the machine for §eXP levels§r, Ctrl+click unbinds remotely, and shift+right-click air runs a team-wide scan with a §e20 second countdown§r. Placing a machine while carrying the terminal auto-binds it too.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

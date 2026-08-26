@@ -2,17 +2,23 @@ package com.miaokatze.gtswn.crossmod.bq;
 
 import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.common.util.Constants;
 
+import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import betterquesting.api.questing.IQuest;
@@ -46,9 +52,12 @@ import cpw.mods.fml.common.Loader;
  * <ol>
  * <li>读 assets/gtswn/bqquests/index.json 清单（规避 1.7.10 jar 目录枚举）</li>
  * <li>逐文件 Gson 解析 → NBTConverter.JSONtoNBT_Object(format=true)</li>
- * <li>任务与任务线幂等 get-or-create 装载（get(id)==null 才 new + readFromNBT；
- * 已存在直接跳过——重读定义会 reset 任务级进度）</li>
+ * <li>任务与任务线幂等 get-or-create 装载（get(id)==null 才 new + readFromNBT）</li>
  * <li>QuestLineEntry 挂线（未挂才 put）与 QuestLineDatabase.setOrderIndex</li>
+ * <li>版本戳对账（世界目录 gtswn-injected.json vs Tags.VERSION）：不一致时执行
+ * 「定义刷新」——快照进度→重读定义→merge 回填，完成/领取状态保留，
+ * 挂线坐标同步替换；老世界无版本戳视为待升级刷一次。
+ * 由此实现「新任务覆盖老任务」：发新版只需替换 jar，玩家免手动迁移</li>
  * <li>进度回填：QuestProgress 目录逐玩家 merge=true 重放（对抗 default load
  * 对"库内不存在任务"进度的静默丢弃，见设计文档第 2 节）</li>
  * <li>同步四连（NetSettingSync / NetQuestSync.quickSync / NetChapterSync / markDirty）</li>
@@ -58,6 +67,9 @@ public final class BqQuestInjector {
 
     /** jar 内任务清单资源路径（index 声明文件树，规避 1.7.10 jar 目录枚举坑） */
     private static final String INDEX_RESOURCE = "assets/gtswn/bqquests/index.json";
+
+    /** 世界侧版本戳文件名（位于 BQ_Settings.curWorldDir 下），记录最近一次注入所用定义版本 */
+    private static final String STAMP_FILE_NAME = "gtswn-injected.json";
 
     private BqQuestInjector() {}
 
@@ -89,35 +101,53 @@ public final class BqQuestInjector {
                 return;
             }
             int questCount = 0;
+            int refreshedCount = 0;
+            // 版本戳对账：版本变化（含老世界无戳）→ 刷新全部已存在任务的定义与挂线坐标
+            boolean refresh = isDefinitionRefreshNeeded();
             for (int i = 0; i < lines.size(); i++) {
-                questCount += loadQuestLine(
+                int[] r = loadQuestLine(
                     lines.get(i)
-                        .getAsJsonObject());
+                        .getAsJsonObject(),
+                    refresh);
+                questCount += r[0];
+                refreshedCount += r[1];
             }
             restoreProgress();
+            if (refresh) {
+                writeStamp(Tags.VERSION);
+            }
             // 同步四连（与 QuestCommandDefaults.load 尾部同款）
             NetSettingSync.sendSync(null);
             NetQuestSync.quickSync(null, true, true);
             NetChapterSync.sendSync(null, null);
             SaveLoadHandler.INSTANCE.markDirty();
-            GTSimpleWirelessNetwork.LOG.info("[BQ] 任务注入完成：{} 条任务线，{} 个新任务", lines.size(), questCount);
+            GTSimpleWirelessNetwork.LOG.info(
+                "[BQ] 任务注入完成：{} 条任务线，{} 个新任务，{} 个定义刷新{}",
+                lines.size(),
+                questCount,
+                refreshedCount,
+                refresh ? "（对齐版本 " + Tags.VERSION + "）" : "");
         } catch (Throwable t) {
             GTSimpleWirelessNetwork.LOG.error("[BQ] 任务注入失败（不影响 GTSWN 主功能）", t);
         }
     }
 
     /**
-     * 装载单条任务线及其下所有任务（全幂等）。
+     * 装载单条任务线及其下所有任务（全幂等 + 版本化定义刷新）。
      * <p>
-     * 幂等规则：线 get(id)==null 才 new QuestLine + readFromNBT + put；
+     * 装载规则：线 get(id)==null 才 new QuestLine + readFromNBT + put；
      * 任务 get(id)==null 才 new QuestInstance + readFromNBT + put；
      * 线内条目 line.get(questId)==null 才 put(new QuestLineEntry)。
-     * 已存在的定义一律跳过（不覆盖、不重读——readFromNBT 会 reset 任务级进度）。
+     * <p>
+     * 刷新规则（{@code refresh==true}，版本戳对账失败时）：已存在任务重读定义
+     * （进度快照→readFromNBT→merge 回填，完成/领取保留），挂线坐标用
+     * {@code line.put} 直接替换（UuidDatabase map 语义）。
      *
      * @param lineSpec index.json 中该线的声明对象
-     * @return 本次新建的任务数（已存在的不计）
+     * @param refresh  是否对已存在任务执行定义刷新
+     * @return int[]{本次新建任务数, 本次刷新定义任务数}
      */
-    private static int loadQuestLine(JsonObject lineSpec) {
+    private static int[] loadQuestLine(JsonObject lineSpec, boolean refresh) {
         UUID lineId = new UUID(
             lineSpec.get("idHigh")
                 .getAsLong(),
@@ -134,7 +164,7 @@ public final class BqQuestInjector {
                     .getAsString());
             if (lineTag == null) {
                 GTSimpleWirelessNetwork.LOG.warn("[BQ] 任务线定义文件缺失，跳过该线: {}", lineSpec.get("lineFile"));
-                return 0;
+                return new int[] { 0, 0 };
             }
             line = new QuestLine();
             line.readFromNBT(lineTag);
@@ -145,6 +175,7 @@ public final class BqQuestInjector {
         QuestLineDatabase.INSTANCE.setOrderIndex(lineId, orderIndex);
 
         int created = 0;
+        int refreshed = 0;
         JsonArray entries = lineSpec.getAsJsonArray("entries");
         for (int i = 0; i < entries.size(); i++) {
             JsonObject entry = entries.get(i)
@@ -157,13 +188,19 @@ public final class BqQuestInjector {
                 continue;
             }
             UUID questId = NBTConverter.UuidValueType.QUEST.readId(questTag);
-            if (QuestDatabase.INSTANCE.get(questId) == null) {
+            IQuest existing = QuestDatabase.INSTANCE.get(questId);
+            if (existing == null) {
                 IQuest quest = new QuestInstance();
                 quest.readFromNBT(questTag);
                 QuestDatabase.INSTANCE.put(questId, quest);
                 created++;
+            } else if (refresh) {
+                // 版本升级：重读定义（名称/描述/前置/奖励/任务），玩家进度保留
+                refreshDefinition(existing, questTag);
+                refreshed++;
             }
-            // 任务必须挂线（/bq_admin purge_hidden_quests 会清未挂线任务）：未挂才 put
+            // 任务必须挂线（/bq_admin purge_hidden_quests 会清未挂线任务）：未挂才 put；
+            // 已挂线且刷新中则替换条目以同步编辑器坐标
             if (line.get(questId) == null) {
                 NBTTagCompound entryTag = readNbtResource(
                     entry.get("entryFile")
@@ -173,12 +210,80 @@ public final class BqQuestInjector {
                     continue;
                 }
                 line.put(questId, new QuestLineEntry(entryTag));
+            } else if (refresh) {
+                NBTTagCompound entryTag = readNbtResource(
+                    entry.get("entryFile")
+                        .getAsString());
+                if (entryTag == null) {
+                    GTSimpleWirelessNetwork.LOG.warn("[BQ] 线内条目文件缺失，坐标保持原样: {}", entry.get("entryFile"));
+                } else {
+                    line.put(questId, new QuestLineEntry(entryTag));
+                }
             }
         }
-        if (lineCreated || created > 0) {
-            GTSimpleWirelessNetwork.LOG.info("[BQ] 任务线 {} 装载：线新建={}，新任务={}", lineId, lineCreated, created);
+        if (lineCreated || created > 0 || refreshed > 0) {
+            GTSimpleWirelessNetwork.LOG
+                .info("[BQ] 任务线 {} 装载：线新建={}，新任务={}，刷新定义={}", lineId, lineCreated, created, refreshed);
         }
-        return created;
+        return new int[] { created, refreshed };
+    }
+
+    /**
+     * 定义刷新（新任务覆盖老任务的核心步骤）：先快照进度，再重读定义，最后 merge 回填。
+     * <p>
+     * 完成状态与奖励领取标记整体保留在 completeUsers；子任务进度随快照回填，
+     * 若新版定义的任务数量/顺序变化，超出部分的子任务细粒度进度被丢弃
+     * （任务级完成与奖励领取不受影响）。
+     */
+    private static void refreshDefinition(IQuest quest, NBTTagCompound defTag) {
+        NBTTagCompound progress = quest.writeProgressToNBT(new NBTTagCompound(), null);
+        quest.readFromNBT(defTag);
+        quest.readProgressFromNBT(progress, true);
+    }
+
+    /**
+     * 版本戳判定：世界目录缺少版本戳文件（v1.7.5 及之前注入的老世界）或版本号
+     * 与当前构建 {@link Tags#VERSION} 不同时返回 true。
+     */
+    private static boolean isDefinitionRefreshNeeded() {
+        String stamped = readStamp();
+        return stamped == null || !stamped.equals(Tags.VERSION);
+    }
+
+    /**
+     * 读取世界侧版本戳（{@value #STAMP_FILE_NAME}），缺失或解析失败返回 null。
+     */
+    private static String readStamp() {
+        File f = new File(BQ_Settings.curWorldDir, STAMP_FILE_NAME);
+        if (!f.isFile()) {
+            return null;
+        }
+        try (BufferedReader br = new BufferedReader(
+            new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8),
+            1024)) {
+            JsonObject o = new JsonParser().parse(br)
+                .getAsJsonObject();
+            return o.has("version") && o.get("version")
+                .isJsonPrimitive() ? o.get("version")
+                    .getAsString() : null;
+        } catch (Exception e) {
+            GTSimpleWirelessNetwork.LOG.warn("[BQ] 版本戳读取失败，本次按需要刷新处理", e);
+            return null;
+        }
+    }
+
+    /**
+     * 写入世界侧版本戳。失败仅告警不阻断：下次启动会多刷一次定义（幂等无害）。
+     */
+    private static void writeStamp(String version) {
+        File f = new File(BQ_Settings.curWorldDir, STAMP_FILE_NAME);
+        JsonObject o = new JsonObject();
+        o.addProperty("version", version);
+        try (Writer w = new OutputStreamWriter(new FileOutputStream(f), StandardCharsets.UTF_8)) {
+            new Gson().toJson(o, w);
+        } catch (Exception e) {
+            GTSimpleWirelessNetwork.LOG.warn("[BQ] 版本戳写入失败（下次启动可能重复刷新一次定义）", e);
+        }
     }
 
     /**

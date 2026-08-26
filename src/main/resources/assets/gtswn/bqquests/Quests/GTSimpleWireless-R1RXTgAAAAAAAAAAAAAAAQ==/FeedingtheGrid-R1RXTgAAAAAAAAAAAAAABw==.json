@@ -2,14 +2,14 @@
   "preRequisites:9": {
     "0:10": {
       "questIDHigh:4": 5139829067255644160,
-      "questIDLow:4": 6
+      "questIDLow:4": 5
     }
   },
   "properties:10": {
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Power mode: shift+right-click the terminal to flip it, then right-click a generator-type machine to attach a Link Anchor (Power) cover. It acts as a virtual cable, draining the machine's output into an internal buffer and uploading it to the wireless network every 600 ticks.\n\nUplink loss defaults to zero, and the cover blocks the machine from outputting into real cables on that side, so nothing is counted twice. Machines that do not output are skipped automatically. The interaction frequency and the up/downlink losses can be changed in config/gtswn/gtswn_network.cfg.\n\nThe grid highlight turns purple in Power mode. Now every distant dynamo is a grid feeder.",
+      "desc:8": "Power mode: shift+right-click the terminal to flip it, then right-click a generator-type machine to attach a Link Anchor (Power) cover. It acts as a virtual cable, draining the machine's output into an internal buffer and uploading it to the wireless network every §e600 ticks§r.\n\nUplink loss defaults to §azero§r, and the cover blocks the machine from outputting into real cables on that side, so nothing is counted twice. Machines that do not output are skipped automatically. The interaction frequency and the up/downlink losses can be changed in §b§nconfig/gtswn/gtswn_network.cfg§r.\n\nThe grid highlight turns §5purple§r in Power mode. Now every distant dynamo is a grid feeder.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -32,20 +32,7 @@
   },
   "questIDHigh:4": 5139829067255644160,
   "questIDLow:4": 7,
-  "rewards:9": {
-    "0:10": {
-      "index:3": 0,
-      "rewardID:8": "bq_standard:item",
-      "rewards:9": {
-        "0:10": {
-          "Count:3": 2,
-          "Damage:2": 32680,
-          "OreDict:8": "",
-          "id:8": "gregtech:gt.metaitem.01"
-        }
-      }
-    }
-  },
+  "rewards:9": {},
   "tasks:9": {
     "0:10": {
       "index:3": 0,

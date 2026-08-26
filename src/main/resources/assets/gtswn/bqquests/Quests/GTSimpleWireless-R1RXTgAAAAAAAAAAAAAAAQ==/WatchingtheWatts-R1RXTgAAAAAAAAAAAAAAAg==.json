@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Wireless Energy Monitor watches your wireless network and computes its power with smart statistics.\n\nCraft it in a crafting table with 4 LV Sensors, 2 Steel Plates, an LV Machine Hull and 2 Steel Screws. It is an LV machine that neither consumes nor produces EU — it only measures.\n\nKeep the machine's chunk loaded: after a short reload (10s or less) it auto-resumes, while a long outage arms a 30 second redstone buffer.",
+      "desc:8": "The Wireless Energy Monitor watches your wireless network and computes its power with smart statistics.\n\nCraft it in a crafting table with 4 LV Sensors, 2 Steel Plates, an LV Machine Hull and 2 Steel Screws. It is an LV machine that neither consumes nor produces EU — §bit only measures§r.\n\n§e§lKeep the machine's chunk loaded:§r after a short reload (§e10s or less§r) it auto-resumes, while a long outage arms a §e30 second redstone buffer§r.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -17,7 +17,7 @@
         "OreDict:8": "",
         "id:8": "gregtech:gt.blockmachines"
       },
-      "isMain:1": 0,
+      "isMain:1": 1,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
       "name:8": "§b§lWatching the Watts",
@@ -48,13 +48,8 @@
   },
   "tasks:9": {
     "0:10": {
-      "autoConsume:1": 0,
-      "consume:1": 0,
-      "groupDetect:1": 0,
-      "ignoreNBT:1": 1,
       "index:3": 0,
-      "partialMatch:1": 1,
-      "requireOnlyOneItem:1": 0,
+      "taskID:8": "bq_standard:retrieval",
       "requiredItems:9": {
         "0:10": {
           "Count:3": 1,
@@ -63,7 +58,12 @@
           "id:8": "gregtech:gt.blockmachines"
         }
       },
-      "taskID:8": "bq_standard:retrieval"
+      "consume:1": 0,
+      "autoConsume:1": 0,
+      "ignoreNBT:1": 1,
+      "partialMatch:1": 1,
+      "groupDetect:1": 0,
+      "requireOnlyOneItem:1": 0
     }
   }
 }

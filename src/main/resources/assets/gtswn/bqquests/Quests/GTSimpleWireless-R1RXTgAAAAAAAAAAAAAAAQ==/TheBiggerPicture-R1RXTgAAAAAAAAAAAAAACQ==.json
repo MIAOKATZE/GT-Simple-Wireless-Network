@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Extender panels stretch your display into one seamless wall.\n\nThey snap onto adjacent main panels and keep tiling outward into any contiguous rectangle — build it as large as you like; there is no hard size cap.\n\nYou craft some, I gift some: completing this quest pays out a bundle of extenders on the house.",
+      "desc:8": "Extender panels stretch your display into one seamless wall.\n\nThey snap onto adjacent main panels and keep tiling outward into §bany contiguous rectangle§r — build it as large as you like; §athere is no hard size cap§r.\n\n§d§oYou craft some, I gift some: completing this quest pays out a bundle of extenders on the house.§r",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -38,23 +38,18 @@
       "rewardID:8": "bq_standard:item",
       "rewards:9": {
         "0:10": {
-          "Count:3": 16,
+          "Count:3": 8,
           "Damage:2": 0,
           "OreDict:8": "",
-          "id:8": "minecraft:quartz"
+          "id:8": "gtswn:NetworkInfoPanelExtender_GTswn"
         }
       }
     }
   },
   "tasks:9": {
     "0:10": {
-      "allowAnvil:1": 0,
-      "allowCraft:1": 1,
-      "allowCraftedFromStatistics:1": 0,
-      "allowSmelt:1": 1,
-      "ignoreNBT:1": 1,
       "index:3": 0,
-      "partialMatch:1": 1,
+      "taskID:8": "bq_standard:crafting",
       "requiredItems:9": {
         "0:10": {
           "Count:3": 2,
@@ -63,7 +58,12 @@
           "id:8": "gtswn:NetworkInfoPanelExtender_GTswn"
         }
       },
-      "taskID:8": "bq_standard:crafting"
+      "ignoreNBT:1": 1,
+      "partialMatch:1": 1,
+      "allowCraft:1": 1,
+      "allowSmelt:1": 1,
+      "allowAnvil:1": 0,
+      "allowCraftedFromStatistics:1": 0
     }
   }
 }

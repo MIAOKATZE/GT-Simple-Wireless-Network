@@ -2,14 +2,14 @@
   "preRequisites:9": {
     "0:10": {
       "questIDHigh:4": 5139829067255644160,
-      "questIDLow:4": 9
+      "questIDLow:4": 1
     }
   },
   "properties:10": {
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Right-click a formed ME controller structure with this terminal to quantize it: the whole structure becomes a quantized anchor and its maximum channel capacity is computed on the spot. A quantized controller refuses every connection except pure energy supply.\n\nAfter that, plant Quantum Nodes through the terminal to bridge devices into the ME network.\n\nBeware: exceed the maximum connectable channels and the quantized controller explodes. Note that when infinite channels are enabled on the AE2 side, there is no channel limit and nothing blows up (more detail in the quests downstream).",
+      "desc:8": "Right-click a formed ME controller structure with this terminal to quantize it: the whole structure becomes a §dquantized anchor§r and its maximum channel capacity is computed on the spot. A quantized controller refuses every connection except pure §eenergy supply§r.\n\nAfter that, plant Quantum Nodes through the terminal to bridge devices into the ME network.\n\n§c§lBeware:§r§c exceed the maximum connectable channels and the quantized controller explodes.§r Note that when §ainfinite channels§r are enabled on the AE2 side, §athere is no channel limit and nothing blows up§r (more detail in the quests downstream).",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -17,7 +17,7 @@
         "OreDict:8": "",
         "id:8": "gtswn:MENetworkQuantumTerminal_GTswn"
       },
-      "isMain:1": 0,
+      "isMain:1": 1,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
       "name:8": "§d§lQuantize the ME Network",
@@ -48,13 +48,8 @@
   },
   "tasks:9": {
     "0:10": {
-      "allowAnvil:1": 0,
-      "allowCraft:1": 1,
-      "allowCraftedFromStatistics:1": 0,
-      "allowSmelt:1": 1,
-      "ignoreNBT:1": 1,
       "index:3": 0,
-      "partialMatch:1": 1,
+      "taskID:8": "bq_standard:crafting",
       "requiredItems:9": {
         "0:10": {
           "Count:3": 1,
@@ -63,7 +58,12 @@
           "id:8": "gtswn:MENetworkQuantumTerminal_GTswn"
         }
       },
-      "taskID:8": "bq_standard:crafting"
+      "ignoreNBT:1": 1,
+      "partialMatch:1": 1,
+      "allowCraft:1": 1,
+      "allowSmelt:1": 1,
+      "allowAnvil:1": 0,
+      "allowCraftedFromStatistics:1": 0
     }
   }
 }
