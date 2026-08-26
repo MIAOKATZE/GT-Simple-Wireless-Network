@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Energy mode: right-click any GT machine while holding the Link Terminal to attach a Link Anchor (Energy) cover — the machine then drinks from the wireless network like it was cabled in.\n\nThe cover keeps a capacity buffer of §eV x A x 800 ticks§r, injects up to §eV x A§r per tick, and refills from your wireless EU every §e600 ticks§r with the configured downlink loss (§c15 percent§r by default). Removing the cover refunds its buffer. The interaction frequency and the up/downlink losses can be changed in §b§nconfig/gtswn/gtswn_network.cfg§r.\n\nPointing at a machine draws a 3x3 grid highlight — §eyellow§r lines in Energy mode. Binding a Laser Source Hatch costs 1 Laser Vacuum Pipe.",
+      "desc:8": "Energy mode: right-click any GT machine while holding the Link Terminal to attach a Link Anchor (Energy) cover — the machine then drinks from the wireless network like it was cabled in.\n\nThe cover keeps a capacity buffer of §1V x A x 800 ticks§r, injects up to §1V x A§r per tick, and refills from your wireless EU every §1600 ticks§r with the configured downlink loss (§c15 percent§r by default). Removing the cover refunds its buffer. The interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r.\n\nPointing at a machine draws a 3x3 grid highlight — §1yellow§r lines in Energy mode. Binding a Laser Source Hatch costs 1 Laser Vacuum Pipe.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 0,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§e§lLight Up Every Corner",
+      "name:8": "§1§lLight Up Every Corner",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,

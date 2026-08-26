@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Right-click a formed ME controller structure with this terminal to quantize it: the whole structure becomes a §dquantized anchor§r and its maximum channel capacity is computed on the spot. A quantized controller refuses every connection except pure §eenergy supply§r.\n\nAfter that, plant Quantum Nodes through the terminal to bridge devices into the ME network.\n\n§c§lBeware:§r§c exceed the maximum connectable channels and the quantized controller explodes.§r Note that when §ainfinite channels§r are enabled on the AE2 side, §athere is no channel limit and nothing blows up§r (more detail in the quests downstream).",
+      "desc:8": "Right-click a formed ME controller structure with this terminal to quantize it: the whole structure becomes a §dquantized anchor§r and its maximum channel capacity is computed on the spot. A quantized controller refuses every connection except pure §1energy supply§r.\n\nAfter that, plant Quantum Nodes through the terminal to bridge devices into the ME network.\n\n§c§lBeware:§r§c exceed the maximum connectable channels and the quantized controller explodes.§r Note that when §2infinite channels§r are enabled on the AE2 side, §2there is no channel limit and nothing blows up§r (more detail in the quests downstream).",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

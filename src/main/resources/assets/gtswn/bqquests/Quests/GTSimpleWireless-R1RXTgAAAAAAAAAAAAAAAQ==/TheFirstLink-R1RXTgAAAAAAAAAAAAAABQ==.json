@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Wireless Network Link Terminal is your key into the wireless EU network.\n\nIt intelligently links machines into your wireless network through Link Anchor covers: energy terminals pull power on demand, dynamo terminals feed it back — §aa lean buffer keeps cache pressure low while staying fast§r.\n\nBy default it interacts with the network every §e600 ticks (30 seconds)§r; the interaction frequency and the up/downlink losses can be changed in §b§nconfig/gtswn/gtswn_network.cfg§r §7(InteractionRateTicks)§r. §cWarning: cranking the interaction frequency way up significantly increases performance overhead.§r\n\nShift+right-click it to switch between Energy mode (draw from the network) and Power mode (feed the network). The item texture always shows which mode is active.",
+      "desc:8": "The Wireless Network Link Terminal is your key into the wireless EU network.\n\nIt intelligently links machines into your wireless network through Link Anchor covers: energy terminals pull power on demand, dynamo terminals feed it back — §2a lean buffer keeps cache pressure low while staying fast§r.\n\nBy default it interacts with the network every §1600 ticks (30 seconds)§r; the interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r §8(InteractionRateTicks)§r. §cWarning: cranking the interaction frequency way up significantly increases performance overhead.§r\n\nShift+right-click it to switch between Energy mode (draw from the network) and Power mode (feed the network). The item texture always shows which mode is active.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

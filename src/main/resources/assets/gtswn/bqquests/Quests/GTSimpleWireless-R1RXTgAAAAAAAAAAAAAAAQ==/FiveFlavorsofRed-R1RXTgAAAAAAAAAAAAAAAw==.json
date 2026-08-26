@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Place your Wireless Energy Monitor, give it LV power, and right-click it to open the GUI.\n\nThe redstone mode button cycles §efive modes§r: Off, High Level (signal when EU is above §eParam1§r), Low Level (below §eParam1§r), High-Hysteresis (output above §eParam1§r, cancel only below §eParam2§r) and Low-Hysteresis. Output is full strength §e15§r. The anchor toggle switches what is measured: wireless energy storage or EU/t status. Param values are typed in directly, scientific notation like §e1.5E6§r works.\n\nEnergy refreshes every §e5 seconds§r over a §e300 second window§r; redstone reacts every §e2 ticks§r. Wire the output into a comparator circuit and let the grid guard itself.",
+      "desc:8": "Place your Wireless Energy Monitor, give it LV power, and right-click it to open the GUI.\n\nThe redstone mode button cycles §1five modes§r: Off, High Level (signal when EU is above §1Param1§r), Low Level (below §1Param1§r), High-Hysteresis (output above §1Param1§r, cancel only below §1Param2§r) and Low-Hysteresis. Output is full strength §115§r. The anchor toggle switches what is measured: wireless energy storage or EU/t status. Param values are typed in directly, scientific notation like §11.5E6§r works.\n\nEnergy refreshes every §15 seconds§r over a §1300 second window§r; redstone reacts every §12 ticks§r. Wire the output into a comparator circuit and let the grid guard itself.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 0,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§b§lSmart Grid",
+      "name:8": "§3§lSmart Grid",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,

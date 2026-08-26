@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Wireless Energy Monitor watches your wireless network and computes its power with smart statistics.\n\nCraft it in a crafting table with 4 LV Sensors, 2 Steel Plates, an LV Machine Hull and 2 Steel Screws. It is an LV machine that neither consumes nor produces EU — §bit only measures§r.\n\n§e§lKeep the machine's chunk loaded:§r after a short reload (§e10s or less§r) it auto-resumes, while a long outage arms a §e30 second redstone buffer§r.",
+      "desc:8": "The Wireless Energy Monitor watches your wireless network and computes its power with smart statistics.\n\nCraft it in a crafting table with 4 LV Sensors, 2 Steel Plates, an LV Machine Hull and 2 Steel Screws. It is an LV machine that neither consumes nor produces EU — §3it only measures§r.\n\n§1§lKeep the machine's chunk loaded:§r after a short reload (§110s or less§r) it auto-resumes, while a long outage arms a §130 second redstone buffer§r.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 1,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§b§lWatching the Watts",
+      "name:8": "§3§lWatching the Watts",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,

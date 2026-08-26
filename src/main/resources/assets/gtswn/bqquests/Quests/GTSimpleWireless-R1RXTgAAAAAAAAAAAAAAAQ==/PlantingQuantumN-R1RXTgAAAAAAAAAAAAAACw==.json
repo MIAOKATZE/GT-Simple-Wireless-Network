@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "With a bound terminal, right-click any ground to plant a Quantum Node.\n\nEach node bridges into the anchored controller's grid through a virtual connection, so adjacent AE2 devices join the network directly — §avanilla cable distance limits simply do not apply§r. Each connection carries dense-cable capacity: §b32 channels§r, and the node itself consumes none. Idle draw is §e10 AE/t§r by default.\n\nNodes work within the same dimension only. Shift+right-click a node with the terminal to destroy it.",
+      "desc:8": "With a bound terminal, right-click any ground to plant a Quantum Node.\n\nEach node bridges into the anchored controller's grid through a virtual connection, so adjacent AE2 devices join the network directly — §2vanilla cable distance limits simply do not apply§r. Each connection carries dense-cable capacity: §332 channels§r, and the node itself consumes none. Idle draw is §110 AE/t§r by default.\n\nNodes work within the same dimension only. Shift+right-click a node with the terminal to destroy it.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
