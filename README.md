@@ -177,14 +177,14 @@ Acts as a **virtual cable** — drains the machine's output into an internal buf
 
 ## ME Network Quantum Terminal & Node / ME 网络量子终端与节点
 
-<p align="center"><img src="images/ME_Network_Quantum_Terminal.png" width="400"> <img src="images/ME_Network_Quantum_Node.png" width="400"><br><em>ME 网络量子终端（左）与量子节点（右）/ ME Network Quantum Terminal (left) & Quantum Node (right)</em></p>
+<p align="center"><img src="images/ME_Network_Quantum_Terminal.png" width="240"> <img src="images/ME_Network_Quantum_Node.png" width="400"><br><em>ME 网络量子终端（左）与量子节点（右）/ ME Network Quantum Terminal (left) & Quantum Node (right)</em></p>
 
 为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
 
 Adds a "quantum" remote-access mechanism to AE2 networks. The Quantum Terminal quantizes a formed ME controller structure and binds its network; the Quantum Node acts as a remote access point that bridges into the anchored controller's grid via a virtual GridConnection — bypassing vanilla cable distance limits so adjacent AE2 devices join directly.
 
-> ⚠️ 量子终端与量子节点均无合成配方，通过创造模式获取；节点仅能由已绑定终端右击空地放置。
-> ⚠️ Both the Quantum Terminal and Quantum Node have no crafting recipe — obtain via Creative; nodes can only be placed by right-clicking ground with a bound terminal.
+Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emitter ×4 + ME Controller ×1); the Quantum Node has no recipe — place it with a bound terminal by right-clicking ground, and destroy it with shift+right-click (no drops).
+量子终端可通过 LV 级工作台配方合成（福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1）；量子节点无独立配方——已绑定终端右击空地放置，Shift+右击销毁（无掉落）。
 
 ### Quantum Terminal / 量子终端
 
@@ -231,8 +231,7 @@ Quantized ME controllers gain equivalent hardness (mining speed × 1/1000) and e
 
 ## Device Info Terminal / 设备信息终端
 
-<!-- 图预留：界面截图待补充 / Image reserved: screenshot to be added -->
-<p align="center"><img src="images/device_info_terminal.png" alt="设备信息终端界面（图预留 / image reserved）/ Device Info Terminal GUI (image reserved)" width="450"><br><em>设备信息终端界面（图预留 / image reserved）/ Device Info Terminal GUI (image reserved)</em></p>
+<p align="center"><img src="images/Device_Info_Terminal.png" width="180"><img src="images/Device_Info_Terminal_UI.png" width="500"><br><em>设备信息终端物品（左）与界面（右） / Device Info Terminal item (left) & GUI (right)</em></p>
 
 手持式 GT 机器监控终端：绑定任意可工作 GT 机器（单方块/多方块），在滚动列表中实时查看三态（运行/待机/停机）、瞬时 EU/t、60 点平均 EU/t、位置与当前执行配方；支持五列排序（服务端 NBT 持久化）、三种计数法、行内经验传送与 Ctrl+点击远程解绑。
 
@@ -249,9 +248,19 @@ A handheld GT machine monitor: bind any working GT machine (single-block or mult
 - **Sampling & Averages / 采样与均值**: Machines are sampled every `deviceSampleIntervalSeconds` (default 10s); the average column is a 60-point rolling mean, instant EU/t is the latest sample. / 每 `deviceSampleIntervalSeconds`（默认 10 秒）采样一次；平均列为 60 点滚动均值，瞬时 EU/t 取最新采样点。
 - **Recipe Hover / 配方悬浮**: Hover a row ≥0.5s to view the current recipe (output snapshot, approximate); the "Show recipe" toggle temporarily replaces the two power columns with the recipe text. / 行悬浮 ≥0.5 秒查看当前执行配方（输出快照，近似）；「显示配方」开关可临时用配方文本替换两列功率数值。
 - **Configs / 配置**: `deviceSampleIntervalSeconds` (default 10, min 1) sampling interval; `deviceTeleportXPCost` (default 3, min 1) teleport XP-level cost; `deviceTerminalMaxMachines` (default 1024, min 16) per-terminal binding cap. / `deviceSampleIntervalSeconds`（默认 10，最小 1）采样间隔；`deviceTeleportXPCost`（默认 3，最小 1）传送消耗经验等级；`deviceTerminalMaxMachines`（默认 1024，最小 16）单终端绑定上限。
+- **Crafting / 合成**: LV-tier shaped recipe (since v1.7.8): LV Sensor ×4 + LV Emitter ×2 + Steel Plate ×2 + Computer Screen Cover ×1 + Ender Pearl ×1 → Device Info Terminal ×1. / LV 级有序配方（v1.7.8 起）：LV 传感器 ×4 + LV 发射器 ×2 + 钢板 ×2 + 电脑屏幕覆盖板 ×1 + 末影珍珠 ×1 → 设备信息终端 ×1。
 
-> ⚠️ 设备信息终端暂无合成配方，通过创造模式获取。
-> ⚠️ The Device Info Terminal currently has no crafting recipe — obtain via Creative.
+***
+
+## BetterQuesting Quest Pack / BQ 任务包
+
+<p align="center"><img src="images/BetterQuest.png" width="600"><br><em>「简易无线网络」任务线总览（13 题，红连线分支树） / "GT Simple Wireless Network" quest line (13 quests)</em></p>
+
+随模组内置 **简易无线网络（GT Simple Wireless Network）** 任务线：13 个任务从无线能量监视器与掌上 HUD 讲起，经链路终端与无线覆盖板、墙面信息屏，一直到 ME 网络量子化与设备信息终端——全部为 LV 时代科技。任务线与各任务的名称、描述均内置中英双语本地化。
+
+A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Network (简易无线网络)** quest line of 13 quests — from the Wireless Energy Monitor and pocket HUD through the Link Terminal and its covers and wall-sized info panels, ending with ME network quantization and the Device Info Terminal. Everything is LV-era tech. Quest line and per-quest names/descriptions are localized in both Chinese and English.
+
+- **Auto Deployment / 自动装载**: 新世界由注入器按任务行 UUID 幂等装载；老世界进档（serverStarting）时按版本戳自动对齐最新定义，进度保留；已从清单移除的任务自动剪枝。 / The injector idempotently loads the pack into new worlds by quest-line UUID; existing worlds auto-align to the latest definitions on server start via the version stamp, keeping progress, and removed quests are pruned automatically.
 
 ***
 
