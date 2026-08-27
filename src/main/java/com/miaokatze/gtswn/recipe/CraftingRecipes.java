@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.recipe;
 
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Device_Info_Terminal;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quantum_Terminal;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel_Extender;
@@ -8,6 +9,7 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
 import net.minecraft.init.Blocks;
+import net.minecraft.init.Items;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
@@ -52,6 +54,8 @@ public class CraftingRecipes {
         addNetworkInfoPanelExtenderRecipe();
         // ME 网络量子终端
         addQuantumTerminalRecipe();
+        // 设备信息终端
+        addDeviceInfoTerminalRecipe();
     }
 
     /**
@@ -238,6 +242,44 @@ public class CraftingRecipes {
             .add(recipe);
 
         GTSimpleWirelessNetwork.LOG.info("已添加网络信息拓展屏合成配方");
+    }
+
+    /**
+     * 添加设备信息终端的合成配方
+     * <p>
+     * 合成表：
+     * LV传感器 | 钢板 | LV传感器
+     * LV发射器 | 电脑屏幕覆盖板 | LV发射器
+     * 钢板 | 末影珍珠 | 钢板
+     */
+    private static void addDeviceInfoTerminalRecipe() {
+        ItemStack lvSensor = ItemList.Sensor_LV.get(1); // LV传感器
+        ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
+        ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢板
+        ItemStack screen = ItemList.Cover_Screen.get(1); // 电脑屏幕覆盖板
+        ItemStack enderPearl = new ItemStack(Items.ender_pearl, 1, 0); // 末影珍珠
+
+        net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
+            Device_Info_Terminal.get(1),
+            "ABA",
+            "CDC",
+            "BEB",
+            'A',
+            lvSensor,
+            'B',
+            steelPlate,
+            'C',
+            lvEmitter,
+            'D',
+            screen,
+            'E',
+            enderPearl);
+
+        CraftingManager.getInstance()
+            .getRecipeList()
+            .add(recipe);
+
+        GTSimpleWirelessNetwork.LOG.info("已添加设备信息终端合成配方");
     }
 
     /**
