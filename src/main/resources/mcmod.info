@@ -4,7 +4,7 @@
 		"modid": "gtswn",
 		"name": "GTSimpleWirelessNetwork",
 		"description": "A GregTech New Horizons mod that adds wireless energy monitoring, transfer, and redstone control to the GTNH wireless EU network.",
-		"version": "0.0.0",
+		"version": "1.7.9",
 		"mcversion": "1.7.10",
 		"url": "https://github.com/MIAOKATZE/GT-Simple-Wireless-Network",
 		"updateUrl": "",
