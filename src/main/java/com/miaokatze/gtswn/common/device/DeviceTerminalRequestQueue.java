@@ -108,6 +108,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
                         key,
                         record.name,
                         (byte) record.state,
+                        record.powerType,
                         latestSample(record),
                         record.avg,
                         record.dim,

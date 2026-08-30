@@ -40,9 +40,14 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * 同键保持绑定序）；排序/计数法点击后本地立即生效并发包 10（action 0/1）持久化到物品 NBT。</li>
  * </ol>
  * <p>
- * 布局（自上而下）：标题 / 顶行两按钮（计数模式四态轮换 + 显示配方纯本地开关）/ 列头行
+ * 布局（自上而下）：标题 / 顶行四按钮（计数模式四态轮换 + 显示配方纯本地开关 +
+ * 功率筛选三态轮换 + 状态筛选四态轮换，后三者为纯 GUI 会话态）/ 列头行
  * （点击排序，▲▼ 高亮当前列，平均列默认降序、其余默认升序）/ 滚动列表
  * （{@link GuiDeviceEntryList}，行高 20）/ 底行操作提示。
+ * <p>
+ * 筛选（v1.8.0）：功率（全部→耗电→发电）与状态（全部→待机→运行→停机）两组可叠加
+ * （AND），插在条目副本生成后、排序前；会话态实例字段仿显示配方——不发包不持久化，
+ * 重开 GUI 复位为全部/全部。
  * <p>
  * 锚点解析：GUI 持有打开时传入的终端 UUID，每 tick 只读重解析手持优先终端（与服务端
  * {@code DeviceTerminalRequestQueue.findTerminalStack} 同序；服务端右击空气时显式
@@ -73,6 +78,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 顶行按钮：显示配方开关（纯 GUI 实例字段，不发包不持久化） */
     private static final int BTN_SHOW_RECIPE = 1;
+
+    /** 顶行按钮：功率筛选三态轮换（纯 GUI 会话态，不发包不持久化；v1.8.0） */
+    private static final int BTN_POWER_FILTER = 2;
+
+    /** 顶行按钮：状态筛选四态轮换（纯 GUI 会话态，不发包不持久化；v1.8.0） */
+    private static final int BTN_STATE_FILTER = 3;
 
     /** 列头行文本 Y 偏移（按钮行下方） */
     private static final int HEADER_Y = 40;
@@ -118,6 +129,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 显示配方开关（纯 GUI 实例字段：开启时瞬时/平均两列区临时替换为单条配方行） */
     private boolean showRecipe = false;
 
+    /** 功率筛选会话态：0 全部 / 1 耗电 / 2 发电（重开 GUI 复位为全部） */
+    private int powerFilter = 0;
+
+    /** 状态筛选会话态：0 全部 / 1 待机 / 2 运行 / 3 停机（重开 GUI 复位为全部） */
+    private int stateFilter = 0;
+
     /** 排序偏好被点击后置位，强制下次 refreshEntries 重排（同版本快照也重排） */
     private boolean sortDirty = false;
 
@@ -156,9 +173,15 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         this.guiLeft = (this.width - this.xSize) / 2;
         this.guiTop = (this.height - this.ySize) / 2;
         buttonList.clear();
-        // 顶行两按钮（列头行上方）
+        // 顶行四按钮（列头行上方）：计数模式 / 显示配方 / 功率筛选 / 状态筛选
+        // （显示配方右缘 +256；功率筛选 +264 宽 94；状态筛选 +362 宽 80，右缘 +442 = xSize-8，
+        // 均不越界面右缘、不与相邻按钮/列头重叠）
         buttonList.add(new GuiButton(BTN_COUNT_MODE, this.guiLeft + 8, this.guiTop + 16, 130, 16, countModeText()));
         buttonList.add(new GuiButton(BTN_SHOW_RECIPE, this.guiLeft + 146, this.guiTop + 16, 110, 16, showRecipeText()));
+        buttonList
+            .add(new GuiButton(BTN_POWER_FILTER, this.guiLeft + 264, this.guiTop + 16, 94, 16, powerFilterText()));
+        buttonList
+            .add(new GuiButton(BTN_STATE_FILTER, this.guiLeft + 362, this.guiTop + 16, 80, 16, stateFilterText()));
         this.entryList = new GuiDeviceEntryList(this, this.guiLeft, this.guiTop);
         refreshAnchor();
         refreshEntries();
@@ -223,6 +246,13 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             this.displayedVersion = snapshot.version;
             this.sortDirty = false;
             List<Entry> copy = new ArrayList<>(snapshot.entries);
+            // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
+            if (this.powerFilter != 0) {
+                copy.removeIf(entry -> !matchesPowerFilter(entry, this.powerFilter));
+            }
+            if (this.stateFilter != 0) {
+                copy.removeIf(entry -> !matchesStateFilter(entry, this.stateFilter));
+            }
             Comparator<Entry> cmp = (a, b) -> compareEntries(a, b, this.sortColumn);
             if (this.sortDesc) {
                 cmp = cmp.reversed();
@@ -231,6 +261,16 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             this.sortedEntries = copy;
             if (this.entryList != null) this.entryList.clampScroll();
         }
+    }
+
+    /** 功率筛选判定：1=仅耗电（powerType 0）/ 2=仅发电（powerType 1）；其余模式不筛。 */
+    private static boolean matchesPowerFilter(Entry entry, int mode) {
+        return mode == 1 ? entry.powerType == 0 : entry.powerType == 1;
+    }
+
+    /** 状态筛选判定：1=仅待机 / 2=仅运行 / 3=仅停机（复用三态 0/1/2）；其余模式不筛。 */
+    private static boolean matchesStateFilter(Entry entry, int mode) {
+        return mode == 1 ? entry.state == 0 : mode == 2 ? entry.state == 1 : entry.state == 2;
     }
 
     /** 排序比较器：NAME 字符串 / STATE int / INST long / AVG double / POS dim,x,y,z 字典序。 */
@@ -276,6 +316,18 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             // 纯 GUI 实例字段：不发包不持久化
             this.showRecipe = !this.showRecipe;
             button.displayString = showRecipeText();
+        } else if (button.id == BTN_POWER_FILTER) {
+            // 功率筛选三态轮换：全部→耗电→发电→全部（纯会话态，不发包不持久化）
+            this.powerFilter = (this.powerFilter + 1) % 3;
+            button.displayString = powerFilterText();
+            this.sortDirty = true;
+            refreshEntries();
+        } else if (button.id == BTN_STATE_FILTER) {
+            // 状态筛选四态轮换：全部→待机→运行→停机→全部（纯会话态，不发包不持久化）
+            this.stateFilter = (this.stateFilter + 1) % 4;
+            button.displayString = stateFilterText();
+            this.sortDirty = true;
+            refreshEntries();
         }
     }
 
@@ -296,6 +348,24 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         return StatCollector.translateToLocalFormatted(
             "gtswn.device.gui.show_recipe",
             tr(this.showRecipe ? "gtswn.device.gui.on" : "gtswn.device.gui.off"));
+    }
+
+    /** 功率筛选按钮文案（功率筛选: 全部/耗电/发电） */
+    private String powerFilterText() {
+        String value = tr(
+            this.powerFilter == 1 ? "gtswn.device.gui.filter.power.consume"
+                : this.powerFilter == 2 ? "gtswn.device.gui.filter.power.generate"
+                    : "gtswn.device.gui.filter.power.all");
+        return StatCollector.translateToLocalFormatted("gtswn.device.gui.filter.power", value);
+    }
+
+    /** 状态筛选按钮文案（状态筛选: 全部/待机/运行/停机；三态名复用 gtswn.device.gui.state.*） */
+    private String stateFilterText() {
+        String value = tr(
+            this.stateFilter == 1 ? "gtswn.device.gui.state.idle"
+                : this.stateFilter == 2 ? "gtswn.device.gui.state.running"
+                    : this.stateFilter == 3 ? "gtswn.device.gui.state.stopped" : "gtswn.device.gui.filter.state.all");
+        return StatCollector.translateToLocalFormatted("gtswn.device.gui.filter.state", value);
     }
 
     // ==================== 列头排序 ====================

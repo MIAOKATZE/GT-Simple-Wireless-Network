@@ -48,6 +48,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
     /** 机器状态：停机（!isAllowedToWork） */
     public static final int STATE_STOPPED = 2;
 
+    /** 功率分类：耗电（旧档缺省值） */
+    public static final byte POWER_TYPE_CONSUME = 0;
+
+    /** 功率分类：发电（{@link DeviceMachineTypes#isGeneratorMachine} 判定） */
+    public static final byte POWER_TYPE_GENERATE = 1;
+
     /** 终端 UUID → 终端数据 */
     private final Map<UUID, TerminalData> terminals = new HashMap<>();
 
@@ -110,9 +116,11 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      * 加绑定（右击机器 / 放置自动绑定 / 扫描录入统一入口）。
      * <p>
      * 尊重 {@link Config#deviceTerminalMaxMachines} 上限；成功时以 localName 与坐标
-     * 创建初始 MachineRecord（FIFO 空、状态待机，采样由阶段 C 调度填充）。
+     * 创建初始 MachineRecord（FIFO 空、状态待机、功率分类按调用方传入，采样由阶段 C
+     * 调度持续刷新）。
      */
-    public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z) {
+    public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
+        byte powerType) {
         TerminalData data = getOrCreateTerminal(terminalId);
         if (data.boundKeys.contains(key)) {
             return AddResult.ALREADY_BOUND;
@@ -123,6 +131,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         data.boundKeys.add(key);
         MachineRecord record = new MachineRecord();
         record.name = localName;
+        record.powerType = powerType == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
         record.dim = dim;
         record.x = x;
         record.y = y;
@@ -324,6 +333,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         /** 三态：STATE_IDLE / STATE_RUNNING / STATE_STOPPED */
         public int state = STATE_IDLE;
 
+        /** 功率分类：0=耗电 / 1=发电（旧档缺省 0；采样与绑定时由 isGeneratorMachine 刷新） */
+        public byte powerType = POWER_TYPE_CONSUME;
+
         /** 机器本地显示名（绑定 / 采样时刷新） */
         public String name = "";
 
@@ -355,6 +367,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             count = Math.min(Math.max(tag.getInteger("count"), 0), FIFO_SIZE);
             avg = tag.getDouble("avg");
             state = tag.getInteger("state");
+            // v1.8.0 旧档兼容：缺 powerType 键时 getByte 返回 0（=耗电），非 1 值一律钳回耗电
+            powerType = tag.getByte("powerType") == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
             name = tag.getString("name");
             dim = tag.getInteger("dim");
             x = tag.getInteger("x");
@@ -379,6 +393,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             tag.setInteger("count", count);
             tag.setDouble("avg", avg);
             tag.setInteger("state", state);
+            tag.setByte("powerType", powerType);
             tag.setString("name", name == null ? "" : name);
             tag.setInteger("dim", dim);
             tag.setInteger("x", x);

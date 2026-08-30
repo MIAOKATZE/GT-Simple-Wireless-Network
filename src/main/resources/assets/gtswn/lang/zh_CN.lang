@@ -364,7 +364,7 @@ gtswn.waila.quantum_node.offline=§c设备离线
 item.gtswn.deviceInfoTerminal.name=设备信息终端
 item.gtswn.deviceInfoTerminal.tooltip.l1=§7右击空气: §f打开设备监控界面
 item.gtswn.deviceInfoTerminal.tooltip.l2=§7右击可工作机器: §f绑定到终端监控
-item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+右击空气: §f全域扫描团队机器（20 秒倒计时，可取消）
+item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+右击: §f扫描当前维度内你（含团队）的机器（5 秒逐秒倒计时，仅已加载区块，可取消）
 item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+点击条目: §f远程解绑 · 传送消耗经验等级
 
 # 设备信息终端 GUI (Device Info Terminal GUI，阶段 E 引用)
@@ -377,6 +377,12 @@ gtswn.device.gui.count_mode.voltage=电压等级
 gtswn.device.gui.show_recipe=显示配方: %s
 gtswn.device.gui.on=开
 gtswn.device.gui.off=关
+gtswn.device.gui.filter.power=功率筛选: %s
+gtswn.device.gui.filter.power.all=全部
+gtswn.device.gui.filter.power.consume=耗电
+gtswn.device.gui.filter.power.generate=发电
+gtswn.device.gui.filter.state=状态筛选: %s
+gtswn.device.gui.filter.state.all=全部
 gtswn.device.gui.col.name=机器名
 gtswn.device.gui.col.state=状态
 gtswn.device.gui.col.instant=瞬时 EU/t
@@ -400,7 +406,7 @@ gtswn.device.chat.already_bound=§7[设备终端] 该机器已在绑定列表中
 gtswn.device.chat.auto_bound=§a[设备终端] 已自动绑定: §f%s
 gtswn.device.chat.not_machine=§c[设备终端] 目标不是可监控的 GT 机器
 gtswn.device.chat.limit=§c[设备终端] 绑定数已达上限（%d），无法继续添加
-gtswn.device.chat.scan.start=§b[设备终端] 开始扫描团队机器（约 20 秒后执行，合并计算在后台线程）...
+gtswn.device.chat.scan.start=§b[设备终端] 开始扫描团队机器（约 5 秒后执行，当前维度范围内机器在后台线程合并计算）...
 gtswn.device.chat.scan.countdown=§7[设备终端] %d 秒后执行扫描
 gtswn.device.chat.scan.cancelled=§e[设备终端] 扫描已取消
 gtswn.device.chat.scan.complete=§a[设备终端] 扫描完成: 已录入 %d 台（团队 %d 人）
@@ -438,5 +444,5 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAACw.desc=手持已绑定的终端右击�
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.name=§d§l管好你的频道
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.desc=打开终端 GUI（Shift+右击空气），看频道一行：已用、总数，以及紧张时会变§c红§r的百分比。%n%n这里就是前置任务爆炸警告的细则：控制器容量为 §3（面数×6−共享面数）×32 频道§r；每个节点连接最多带入 §332§r 个。达到 §195%%§r 会收到聊天警告；§c一旦超过容量，整个控制器结构会像 TNT 一样爆炸§r——没人想把量子化控制器从天花板上刮下来。%n%n而承诺过的例外：AE2 侧开启§2无限频道§r后，§2限制彻底消失——无上限，也不会爆炸§r。%n%n留足频道余量，每次扩网后查一眼 GUI，大工程前先解绑闲置节点。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.name=§6§l机器总账
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=设备信息终端是你的机器总账。%n%n右击任意可工作的 GT 机器即可绑定；右击空气打开台账。列表每行显示三态（运行/待机/停机）、瞬时 EU/t、§160 点滚动均值§r、位置与当前执行配方；五列可排序，计数法与监视器一样可切换。%n%n行内的✦按钮消耗§1经验等级§r把你传送到机器旁，Ctrl+点击可远程解绑，Shift+右击空气则启动带 §120 秒倒计时§r的全域团队扫描。背包里有终端时放置的机器也会自动绑定。
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=设备信息终端是你的机器总账。%n%n右击任意可工作的 GT 机器即可绑定；右击空气打开台账。列表每行显示三态（运行/待机/停机）、瞬时 EU/t、§160 点滚动均值§r、位置与当前执行配方；五列可排序，计数法与监视器一样可切换。%n%n行内的✦按钮消耗§1经验等级§r把你传送到机器旁，Ctrl+点击可远程解绑，Shift+右击空气则启动带 §15 秒逐秒倒计时§r的当前维度团队扫描（仅已加载区块）。背包里有终端时放置的机器也会自动绑定。
 # BQ quests END

@@ -19,6 +19,7 @@ import io.netty.buffer.ByteBuf;
  * 分页协议（128 条/页，满配 1024 条拆 8 页）：terminalUuid / version / pageIndex /
  * pageTotal / entryTotal（封顶 {@value #MAX_ENTRIES}）/ 本页条目
  * {key（正则 {@code dim:x:y:z}）/ name（封 {@value #MAX_NAME_LEN}）/ state（byte 三态）/
+ * powerType（byte 0=耗电 / 1=发电，v1.8.0 新增，紧随 state 对称写读）/
  * inst（long 瞬时 EU/t）/ avg（double 均值）/ dim,x,y,z（int）/ recipeIn + recipeOut
  * （各封 {@value #MAX_RECIPE_LEN}，v1.7.2 双侧配方快照）}。
  * <p>
@@ -90,6 +91,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             ByteBufUtils.writeUTF8String(buf, entry.key);
             ByteBufUtils.writeUTF8String(buf, entry.name);
             buf.writeByte(entry.state);
+            buf.writeByte(entry.powerType);
             buf.writeLong(entry.inst);
             buf.writeDouble(entry.avg);
             buf.writeInt(entry.dim);
@@ -119,6 +121,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     String key = ByteBufUtils.readUTF8String(buf);
                     String name = truncate(ByteBufUtils.readUTF8String(buf), MAX_NAME_LEN);
                     byte state = buf.readByte();
+                    byte powerType = buf.readByte();
                     long inst = buf.readLong();
                     double avg = buf.readDouble();
                     int dim = buf.readInt();
@@ -132,7 +135,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                         .matches()) {
                         continue;
                     }
-                    entries.add(new Entry(key, name, state, inst, avg, dim, x, y, z, recipeIn, recipeOut));
+                    entries.add(new Entry(key, name, state, powerType, inst, avg, dim, x, y, z, recipeIn, recipeOut));
                 } catch (Exception e) {
                     // 单条损坏（字符串长度越界等）：截断解析，保留已解析前缀
                     break;
@@ -199,6 +202,9 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         /** 三态：0 待机 / 1 运行 / 2 停机 */
         public final byte state;
 
+        /** 功率分类：0 耗电 / 1 发电（v1.8.0；非 1 值钳回 0） */
+        public final byte powerType;
+
         /** 瞬时 EU/t（FIFO 最新采样点） */
         public final long inst;
 
@@ -221,11 +227,12 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         /** 当前执行配方输出侧描述（输出快照，近似，≤{@value #MAX_RECIPE_LEN} 字符） */
         public final String recipeOut;
 
-        public Entry(String key, String name, byte state, long inst, double avg, int dim, int x, int y, int z,
-            String recipeIn, String recipeOut) {
+        public Entry(String key, String name, byte state, byte powerType, long inst, double avg, int dim, int x, int y,
+            int z, String recipeIn, String recipeOut) {
             this.key = key == null ? "" : key;
             this.name = truncate(name, MAX_NAME_LEN);
             this.state = state;
+            this.powerType = powerType == 1 ? (byte) 1 : (byte) 0;
             this.inst = inst;
             this.avg = avg;
             this.dim = dim;

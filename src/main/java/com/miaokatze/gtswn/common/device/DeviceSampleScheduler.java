@@ -18,10 +18,17 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
+import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.IMachineProgress;
+import gregtech.api.metatileentity.implementations.MTEBasicGenerator;
 import gregtech.api.metatileentity.implementations.MTEBasicMachine;
+import gregtech.api.metatileentity.implementations.MTEExtendedPowerMultiBlockBase;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
+import gregtech.common.tileentities.generators.MTELightningRod;
+import gregtech.common.tileentities.generators.MTESolarGenerator;
+import gregtech.common.tileentities.machines.multi.turbines.MTELargeTurbineBase;
+import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
 
 /**
  * 设备信息终端采样调度器（实施计划 C1，注册于 CommonProxy.init 的 FML 总线）。
@@ -38,11 +45,12 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  * <ul>
  * <li>解析 {@code dim:x:y:z} → 维度不存在 / 区块未加载（{@code chunkExists} 为 false）
  * → 跳过保留旧值（不强加载区块）</li>
- * <li>区块已加载但 TE 不满足判别式（IGregTechTileEntity + MTEBasicMachine/MTEMultiBlockBase）
+ * <li>区块已加载但 TE 不满足 D1 判别式（{@link DeviceMachineTypes#isWorkingMachine}）
  * → <b>自愈</b>：登记表出册 + {@link DeviceTerminalDataStore#removeKeyFromAll} 级联解绑
  * （version++ 由 store 内部保证），下一台继续</li>
  * <li>有效机器 → 读三态（停机/运行/待机统一口径，isAllowedToWork/isActive 经基座
- * BaseMetaTileEntity 委托）、瞬时功率（mEUt 绝对值）、配方双侧快照
+ * BaseMetaTileEntity 委托）、瞬时功率（{@link #readEUt} 按机器类型分支，取 abs 正数幅值）、
+ * 功率分类（发电谓词刷新 powerType 0/1）、配方双侧快照
  * （v1.7.2：输入侧因 GT5U 无公开 lastRecipe 入口暂置空，输出侧经公有 mOutputItems/
  * mOutputFluids 采集；仅运行中，非运行置空串）→ 对含该键的所有活跃终端各自 MachineRecord
  * 追加 FIFO 环形采样点、重算 60 点均值、刷新 name/localName → version++</li>
@@ -156,7 +164,7 @@ public class DeviceSampleScheduler {
             TileEntity te = world.getTileEntity(pos[1], pos[2], pos[3]);
             IGregTechTileEntity gtTE = te instanceof IGregTechTileEntity ? (IGregTechTileEntity) te : null;
             IMetaTileEntity mte = gtTE != null ? gtTE.getMetaTileEntity() : null;
-            if (!(mte instanceof MTEBasicMachine) && !(mte instanceof MTEMultiBlockBase)) {
+            if (!DeviceMachineTypes.isWorkingMachine(mte)) {
                 // 区块已加载但 TE 不再是可监控机器 → 自愈：出册 + 级联解绑（version++），下一台继续
                 if (registry == null) {
                     registry = DeviceRegistryData.get(overworld);
@@ -171,7 +179,10 @@ public class DeviceSampleScheduler {
             // 三态统一口径：!isAllowedToWork→停机 / isActive→运行 / 其余待机
             int state = !progress.isAllowedToWork() ? DeviceTerminalDataStore.STATE_STOPPED
                 : progress.isActive() ? DeviceTerminalDataStore.STATE_RUNNING : DeviceTerminalDataStore.STATE_IDLE;
-            long eut = Math.abs(readEUt(mte));
+            long eut = Math.abs(readEUt(mte, gtTE));
+            // 功率分类（0=耗电 / 1=发电），随采样持续刷新（含旧档补齐）
+            byte powerType = DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
             String localName = mte.getLocalName();
             String recipeIn = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeInputSnapshot(mte) : "";
             String recipeOut = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeOutputSnapshot(mte) : "";
@@ -208,6 +219,7 @@ public class DeviceSampleScheduler {
                 }
                 record.avg = record.count > 0 ? (double) sum / record.count : 0D;
                 record.state = state;
+                record.powerType = powerType;
                 record.name = localName;
                 record.dim = pos[0];
                 record.x = pos[1];
@@ -227,17 +239,37 @@ public class DeviceSampleScheduler {
     // ==================== 采样读取工具 ====================
 
     /**
-     * 读瞬时功率 mEUt（MTEBasicMachine / MTEMultiBlockBase 公有字段，负=耗电）。
-     * 两类基类无公共父类持有该字段，分别 instanceof 读取。
+     * 读瞬时/平均功率（调用方取 abs 保持正数幅值语义）。按序分支（GT5U 5.09.54.20 语义）：
+     * <ol>
+     * <li>发电常规机（MTEBasicGenerator / MTESolarGenerator / MTELightningRod）→
+     * 基座 {@link IBasicEnergyContainer#getAverageElectricOutput()}（IGregTechTileEntity →
+     * ICoverable → IBasicEnergyContainer，cast 基座 gtTE 而非 mte）。语义注记：mAverageEUOutput
+     * 仅 drainEnergyUnits 累加，燃料入缓冲而未被抽取时显示 0，可接受</li>
+     * <li>大型涡轮 / XL 涡轮（MTEExtendedPowerMultiBlockBase 子类）→ {@code Math.abs(lEUt)}
+     * （lEUt &gt; 0 = addEnergyOutput）</li>
+     * <li>其他多方块 → {@code mEUt}（&gt;0 = 发电 / &lt;0 = 耗电，setEnergyUsage 配方正值取负）</li>
+     * <li>单方块加工机（MTEBasicMachine）→ 既有 {@code mEUt}（负 = 耗电）</li>
+     * </ol>
+     * 两类基类无公共父类持有功率字段，分别 instanceof 读取。
      */
-    private static int readEUt(IMetaTileEntity mte) {
-        if (mte instanceof MTEBasicMachine) {
-            return ((MTEBasicMachine) mte).mEUt;
+    private static long readEUt(IMetaTileEntity mte, IGregTechTileEntity gtTE) {
+        // ① 发电常规机：基座平均输出（燃料入缓冲未抽取显示 0 可接受）
+        if (mte instanceof MTEBasicGenerator || mte instanceof MTESolarGenerator || mte instanceof MTELightningRod) {
+            return ((IBasicEnergyContainer) gtTE).getAverageElectricOutput();
         }
+        // ② 大型 / XL 涡轮：lEUt 正值 = 输出
+        if (mte instanceof MTELargeTurbineBase || mte instanceof MTEXLTurbineBase) {
+            return Math.abs(((MTEExtendedPowerMultiBlockBase) mte).lEUt);
+        }
+        // ③ 其他多方块：mEUt（>0 发电 / <0 耗电）
         if (mte instanceof MTEMultiBlockBase) {
             return ((MTEMultiBlockBase) mte).mEUt;
         }
-        return 0;
+        // ④ 单方块加工机：既有 mEUt（负 = 耗电）
+        if (mte instanceof MTEBasicMachine) {
+            return ((MTEBasicMachine) mte).mEUt;
+        }
+        return 0L;
     }
 
     /**

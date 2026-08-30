@@ -15,6 +15,7 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.device.DeviceMachineTypes;
 import com.miaokatze.gtswn.common.device.DeviceRegistryData;
 import com.miaokatze.gtswn.common.device.DeviceScanManager;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
@@ -24,8 +25,6 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
-import gregtech.api.metatileentity.implementations.MTEBasicMachine;
-import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
 /**
  * 设备信息终端（实施计划阶段 A：物品 + NBT 偏好 + 机器绑定手势）。
@@ -42,8 +41,9 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  * onItemUseFirst 对 Shift 一律放行防双 toggle 抵消）</li>
  * </ul>
  * <p>
- * 判别式（统一口径 D1）：{@code te instanceof IGregTechTileEntity && mte != null
- * && (mte instanceof MTEBasicMachine || mte instanceof MTEMultiBlockBase)}。
+ * 判别式（统一口径 D1，{@link DeviceMachineTypes#isWorkingMachine}）：
+ * {@code te instanceof IGregTechTileEntity && isWorkingMachine(mte)}
+ * （MTEBasicMachine ∥ MTEMultiBlockBase ∥ MTEBasicGenerator ∥ MTESolarGenerator ∥ MTELightningRod）。
  * <p>
  * NBT 结构：DIT_UUID（终端实例 UUID，首用生成，绑定数据仓锚点）+
  * UI 偏好三键（排序列 / 排序方向 / 计数法，非法值读侧回退默认）。
@@ -144,9 +144,9 @@ public class ItemDeviceInfoTerminal extends Item {
         if (!(te instanceof IGregTechTileEntity)) {
             return false;
         }
-        // ④ GT 非加工机器（D1 后半不通过）：提示原因并拦截（防止误开其 GUI）
+        // ④ GT 非工作机器（D1 不通过，含发电常规机/太阳能/避雷针在内均可绑定）：提示原因并拦截
         IMetaTileEntity mte = ((IGregTechTileEntity) te).getMetaTileEntity();
-        if (!(mte instanceof MTEBasicMachine) && !(mte instanceof MTEMultiBlockBase)) {
+        if (!DeviceMachineTypes.isWorkingMachine(mte)) {
             sendMessage(player, "gtswn.device.chat.not_machine");
             return true;
         }
@@ -160,7 +160,16 @@ public class ItemDeviceInfoTerminal extends Item {
         }
         UUID terminalId = getOrCreateTerminalId(stack);
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(world);
-        AddResult result = store.addBinding(terminalId, key, localName, dim, x, y, z);
+        AddResult result = store.addBinding(
+            terminalId,
+            key,
+            localName,
+            dim,
+            x,
+            y,
+            z,
+            DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                : DeviceTerminalDataStore.POWER_TYPE_CONSUME);
         switch (result) {
             case SUCCESS:
                 sendMessage(player, "gtswn.device.chat.bound", localName);
@@ -183,7 +192,7 @@ public class ItemDeviceInfoTerminal extends Item {
      * 右击空气手势。
      * <ul>
      * <li>Shift 分支 = 扫描开关（阶段 C 接线）：服务端移交 {@link DeviceScanManager}——
-     * 进行中=取消，否则 20s 倒计时后「主线程快照 → 后台单线程过滤合并 → 结果队列 →
+     * 进行中=取消，否则 5s 逐秒倒计时后「主线程快照（当前维度） → 后台单线程过滤合并 → 结果队列 →
      * ServerTick END 排水应用」</li>
      * <li>普通分支 = 打开终端 GUI（阶段 E 接线）：客户端经 @SidedProxy 本地
      * {@code displayGuiScreen} 打开（仿量子终端 v1.6.26 纯客户端路径，不触碰服务端容器）；

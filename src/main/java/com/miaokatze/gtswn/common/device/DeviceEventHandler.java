@@ -18,8 +18,6 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
-import gregtech.api.metatileentity.implementations.MTEBasicMachine;
-import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
 /**
  * 设备信息终端事件处理器（阶段 B，双总线注册见 CommonProxy）。
@@ -49,7 +47,7 @@ public class DeviceEventHandler {
         // GT5U ItemMachines.placeBlockAt 在 PlaceEvent 前已同步挂载 MTE，此处可直接判别（D1）
         TileEntity te = event.world.getTileEntity(event.x, event.y, event.z);
         IMetaTileEntity mte = te instanceof IGregTechTileEntity ? ((IGregTechTileEntity) te).getMetaTileEntity() : null;
-        if (!(mte instanceof MTEBasicMachine) && !(mte instanceof MTEMultiBlockBase)) {
+        if (!DeviceMachineTypes.isWorkingMachine(mte)) {
             return;
         }
         int dim = event.world.provider.dimensionId;
@@ -60,10 +58,12 @@ public class DeviceEventHandler {
             .register(key, event.player.getUniqueID(), localName);
         // 放置者背包内的终端逐台自动绑定 + 轻提示（同时补登记活跃索引，覆盖会话内新获得终端）
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(event.world);
+        byte powerType = DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+            : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
         for (UUID terminalId : collectTerminalIds(event.player)) {
             DeviceTerminalDataStore.ensureActiveTerminal(event.player.getUniqueID(), terminalId);
             DeviceTerminalDataStore.AddResult result = store
-                .addBinding(terminalId, key, localName, dim, event.x, event.y, event.z);
+                .addBinding(terminalId, key, localName, dim, event.x, event.y, event.z, powerType);
             switch (result) {
                 case SUCCESS:
                     sendMessage(event.player, "gtswn.device.chat.auto_bound", localName);

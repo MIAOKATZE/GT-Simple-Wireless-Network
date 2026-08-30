@@ -364,7 +364,7 @@ gtswn.waila.quantum_node.offline=§cDevice Offline
 item.gtswn.deviceInfoTerminal.name=Device Info Terminal
 item.gtswn.deviceInfoTerminal.tooltip.l1=§7Right-click air: §fOpen the device monitor UI
 item.gtswn.deviceInfoTerminal.tooltip.l2=§7Right-click a working machine: §fBind it to the terminal
-item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+right-click air: §fTeam-wide machine scan (20s countdown, cancellable)
+item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+right-click: §fScan your (and your team's) machines in the current dimension (per-second 5s countdown, loaded chunks only, cancellable)
 item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+click an entry: §fRemote unbind · Teleport costs XP levels
 
 # Device Info Terminal GUI (referenced by stage E)
@@ -377,6 +377,12 @@ gtswn.device.gui.count_mode.voltage=Voltage Tier
 gtswn.device.gui.show_recipe=Show recipe: %s
 gtswn.device.gui.on=ON
 gtswn.device.gui.off=OFF
+gtswn.device.gui.filter.power=Power filter: %s
+gtswn.device.gui.filter.power.all=All
+gtswn.device.gui.filter.power.consume=Consuming
+gtswn.device.gui.filter.power.generate=Generating
+gtswn.device.gui.filter.state=State filter: %s
+gtswn.device.gui.filter.state.all=All
 gtswn.device.gui.col.name=Machine
 gtswn.device.gui.col.state=State
 gtswn.device.gui.col.instant=Instant EU/t
@@ -400,7 +406,7 @@ gtswn.device.chat.already_bound=§7[Device Terminal] Machine already in binding 
 gtswn.device.chat.auto_bound=§a[Device Terminal] Auto-bound: §f%s
 gtswn.device.chat.not_machine=§c[Device Terminal] Target is not a monitorable GT machine
 gtswn.device.chat.limit=§c[Device Terminal] Binding limit reached (%d), cannot add more
-gtswn.device.chat.scan.start=§b[Device Terminal] Scanning team machines (executes in ~20s, merging on a background thread)...
+gtswn.device.chat.scan.start=§b[Device Terminal] Scanning team machines (executes in ~5s, current-dimension machines merged on a background thread)...
 gtswn.device.chat.scan.countdown=§7[Device Terminal] Scan executes in %d s
 gtswn.device.chat.scan.cancelled=§e[Device Terminal] Scan cancelled
 gtswn.device.chat.scan.complete=§a[Device Terminal] Scan complete: %d machines imported (team of %d)
@@ -438,5 +444,5 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAACw.desc=With a bound terminal, right-cl
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.name=§d§lMind Your Channels
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.desc=Open the terminal GUI (shift+right-click air) and read the Channels line: used, total, and a percentage that turns §cred§r when things get tight.%n%nHere is the fine print behind the prerequisite's explosion warning: controller capacity is §3(faces x 6 minus shared faces) x 32 channels§r; every node connection brings up to §332§r. At §195 percent§r you get a chat warning; §cpush past 100 percent and the entire controller structure detonates like TNT§r. Nobody wants to scrape quantized controller off the ceiling.%n%nAnd the promised exception: enable §2infinite channels§r on the AE2 side and §2the limit disappears entirely — no cap, no boom§r.%n%nKeep a channel headroom, check the GUI after each expansion, and unbind idle nodes before big builds.
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.name=§6§lThe Machine Ledger
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=The Device Info Terminal is your machine ledger.%n%nRight-click any working GT machine to bind it; right-click air to open the ledger. Rows show tri-state (Running/Idle/Stopped), instant EU/t, a §160-point rolling average§r, position and the current recipe. Sort by any of five columns; the notation mode toggles like the monitors.%n%nThe row's sparkle button teleports you to the machine for §1XP levels§r, Ctrl+click unbinds remotely, and shift+right-click air runs a team-wide scan with a §120 second countdown§r. Placing a machine while carrying the terminal auto-binds it too.
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=The Device Info Terminal is your machine ledger.%n%nRight-click any working GT machine to bind it; right-click air to open the ledger. Rows show tri-state (Running/Idle/Stopped), instant EU/t, a §160-point rolling average§r, position and the current recipe. Sort by any of five columns; the notation mode toggles like the monitors.%n%nThe row's sparkle button teleports you to the machine for §1XP levels§r, Ctrl+click unbinds remotely, and shift+right-click air runs a scan of team machines in your current dimension with a §1per-second 5s countdown§r (loaded chunks only). Placing a machine while carrying the terminal auto-binds it too.
 # BQ quests END
