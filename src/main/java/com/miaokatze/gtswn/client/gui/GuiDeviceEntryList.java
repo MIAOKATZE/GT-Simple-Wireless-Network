@@ -9,6 +9,7 @@ import net.minecraft.client.gui.ScaledResolution;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
@@ -206,8 +207,16 @@ class GuiDeviceEntryList {
             String line = recipeLine(recipeIn, recipeOut, 2);
             font.drawString(applyBold(ellipsis(font, line, RECIPE_LINE_WIDTH)), x + COL_INST_X, textY, 0x6B7680);
         } else {
-            font.drawString(applyBold(host.formatEUt(entry.inst)), x + COL_INST_X, textY, 0x2F3640);
-            font.drawString(applyBold(host.formatAvg(entry.avg)), x + COL_AVG_X, textY, 0x2F3640);
+            font.drawString(
+                applyBold(host.formatEUt(entry.inst)),
+                x + COL_INST_X,
+                textY,
+                eutColor(entry.powerType, entry.inst));
+            font.drawString(
+                applyBold(host.formatAvg(entry.avg)),
+                x + COL_AVG_X,
+                textY,
+                eutColor(entry.powerType, entry.avg));
         }
 
         // 位置列：dim(x,y,z)
@@ -224,6 +233,17 @@ class GuiDeviceEntryList {
         int tpW = font.getStringWidth(tpText);
         int tpColor = host.clientPlayerLevel() >= host.teleportCost() ? 0x2E7D32 : 0xF44336;
         font.drawString(applyBold(tpText), btnX + (TP_BTN_W - tpW) / 2, btnY + 3, tpColor);
+    }
+
+    /**
+     * EU/t 列着色（v1.7.11）：非零按功率分类着色（发电绿 / 耗电橙），零值回退中性色；
+     * 瞬时 / 平均两列各自独立判零，排序仍按 Entry 原始数值不受影响。
+     */
+    private static int eutColor(byte powerType, double value) {
+        if (value == 0D) {
+            return 0x2F3640;
+        }
+        return powerType == DeviceTerminalDataStore.POWER_TYPE_GENERATE ? 0x2E7D32 : 0xE67E22;
     }
 
     // ==================== 悬浮查询（宿主 tooltip 用） ====================

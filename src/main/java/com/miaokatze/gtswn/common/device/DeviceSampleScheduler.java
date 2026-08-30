@@ -179,7 +179,8 @@ public class DeviceSampleScheduler {
             // 三态统一口径：!isAllowedToWork→停机 / isActive→运行 / 其余待机
             int state = !progress.isAllowedToWork() ? DeviceTerminalDataStore.STATE_STOPPED
                 : progress.isActive() ? DeviceTerminalDataStore.STATE_RUNNING : DeviceTerminalDataStore.STATE_IDLE;
-            long eut = Math.abs(readEUt(mte, gtTE));
+            // 非运行态瞬时功率必须钳 0（读数源会保留旧配方值，如多方块 mEUt 仅 stopMachine 清零），非 RUNNING 跳过读取
+            long eut = state == DeviceTerminalDataStore.STATE_RUNNING ? Math.abs(readEUt(mte, gtTE)) : 0L;
             // 功率分类（0=耗电 / 1=发电），随采样持续刷新（含旧档补齐）
             byte powerType = DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
                 : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
