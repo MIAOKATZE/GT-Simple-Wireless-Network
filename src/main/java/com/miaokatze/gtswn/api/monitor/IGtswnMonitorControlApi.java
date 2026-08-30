@@ -3,7 +3,7 @@ package com.miaokatze.gtswn.api.monitor;
 import java.util.UUID;
 
 /**
- * GTSWN 公开受控交互 API（v1.7.9 新增）。
+ * GTSWN 公开受控交互 API（v1.7.9 引入，v1.7.14 注释口径统一）。
  * <p>
  * 面向其他 mod 的电网监控数据集受控交互入口，仅提供两个无破坏性操作：
  * 激活数据集（保持采样不断线）与即时采样（立即写入一个采样点）。

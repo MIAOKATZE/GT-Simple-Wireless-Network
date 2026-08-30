@@ -3,8 +3,10 @@ package com.miaokatze.gtswn.common.panel;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
@@ -17,6 +19,7 @@ import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 /**
  * AE 监控网络语义域（O2-04 = E 线 E5，四域拆分第四步）：采样门控与推送、标签页状态与绑定操作、
@@ -32,10 +35,16 @@ import com.miaokatze.gtswn.config.Config;
  * aeMonitorAvg300s）仅客户端写入（PacketSyncAEMonitorData → ClientProxy → TE 门面 → 此处），
  * 横跨双端为数据内聚优先的既定裁决。序列化键名逐字不动：区块 NBT 的 currentTab/chartItem/
  * chartFluid/monitoredItems/monitoredFluids 与 S35 同键 + aeChartSamples。
+ * <p>
+ * G4（v1.7.14）：采样段经 {@link AESamplingStrategy} 双实现收敛——PerKey（现状逐 key
+ * findPrecise）与 SingleIteration（一次迭代 storage list 收全部 key，经 {@link AEQuery#bulkAmounts}）
+ * 同 tick 对账，观察期零失配才切 SingleIteration 常态，失配计数&gt;0 立即永久降级 PerKey +
+ * 一次性 warning；推送段装配产物入 {@link AEAssemblyCache}（键 = panelKey/窗口/绑定集版本/
+ * dataSet revision，弱引用校验数据集身份），结果不变跳过重建。
  */
 public final class AEMonitorController {
 
-    /** AE2 gridProxy 只读查询口——实现由 TE 提供（isAEConnected/getAEItemAmount/getAEFluidAmount） */
+    /** AE2 gridProxy 只读查询口——实现由 TE 提供（isAEConnected/getAEItemAmount/getAEFluidAmount/bulkAmounts） */
     public interface AEQuery {
 
         boolean isConnected();
@@ -43,6 +52,14 @@ public final class AEMonitorController {
         long itemAmount(ItemStack stack);
 
         long fluidAmount(FluidStack fluid);
+
+        /**
+         * G4：一次迭代批量收集——单遍遍历本屏 AE2 item/fluid storage list，以 aeKey 匹配
+         * 全部被监视 key（首中即记，未命中以 0 计）。每屏 gridProxy 各自独立、跨维度屏各自
+         * 世界，收集天然按本屏节点分组；网络重组/断电后 grid 不可达抛 GridAccessException
+         * 时实现方按全 0 返回，由控制器侧对账判定一致性。
+         */
+        Map<String, Long> bulkAmounts(List<ItemStack> items, List<FluidStack> fluids);
     }
 
     private final TileEntityNetworkInfoPanel core;
@@ -77,6 +94,48 @@ public final class AEMonitorController {
     /** 客户端 AE 实时监控 300s 平均变化率缓存（key → 每分钟数量变化） */
     private final Map<String, Double> aeMonitorAvg300s = new HashMap<>();
 
+    // ==================== G4（v1.7.14）：采样策略对账降级 + 装配缓存失效维度 ====================
+
+    /** G4：对账观察期（tick）——期内每采样轮 PerKey/SingleIteration 同 tick 双跑对账 */
+    private static final long RECONCILE_WINDOW_TICKS = 600L;
+
+    /** G4：常态期抽查间隔（tick）——切 SingleIteration 后每 6000t 低频双跑一次 */
+    private static final long RECONCILE_SPOT_INTERVAL_TICKS = 6000L;
+
+    /** G4：切换前要求的最少非空对账次数（空绑定双跑无证明力，观察期顺延至攒够） */
+    private static final int MIN_RECONCILE_RUNS = 2;
+
+    /** G4：现行采样策略（初始 PerKey=现状路径；观察期零失配切 SingleIteration，失配永久降级） */
+    private AESamplingStrategy samplingStrategy = AESamplingStrategy.PerKey.INSTANCE;
+
+    /** G4：对账观察期起点（首次采样记录；<0 未初始化） */
+    private long reconcileStartTick = -1L;
+
+    /** G4：上次对账/抽查 tick（<0 未初始化） */
+    private long lastReconcileTick = -1L;
+
+    /** G4：非空双跑累计次数（切换门槛证据） */
+    private int reconcileRuns = 0;
+
+    /** G4：累计失配数（>0 即已降级，此后不再对账——事件驱动不刷屏） */
+    private int mismatchCount = 0;
+
+    /** G4：降级 warning 一次性标志 */
+    private boolean downgradeLogged = false;
+
+    /**
+     * G4：绑定集版本——chartItem/chartFluid/监控列表任何增删改与 NBT 重载时 +1
+     * （装配缓存键的失效维度之一）。
+     */
+    private int bindingVersion = 0;
+
+    /**
+     * G4：dataSet revision——本控制器每次写入/清除样本 +1。AE dataSet 与屏坐标一一对应，
+     * 全部变更经本控制器，本地计数即忠实 revision；破坏重放/存档重载产生的新数据集
+     * 由装配缓存的弱引用身份校验兜底。
+     */
+    private long dataSetRevision = 0L;
+
     public AEMonitorController(TileEntityNetworkInfoPanel core, AEQuery query, PanelConfigStore store,
         PanelConfigStore.DirtyListener dirty) {
         this.core = core;
@@ -101,7 +160,14 @@ public final class AEMonitorController {
         }
     }
 
-    /** 服务端将当前 AE 走势图样本与实时监控最新值推送给周围客户端（原 sendAEMonitorDataToClients） */
+    /**
+     * 服务端将当前 AE 走势图样本与实时监控最新值推送给周围客户端（原 sendAEMonitorDataToClients）。
+     * <p>
+     * G4：装配段加缓存——键 =（panelKey, trackingWindow, 绑定集版本, dataSet revision），任一变化
+     * 即失效重建；dataSet 弱引用失配（store remove / 破坏重放 / 世界重载）不命中；同键命中直接
+     * 复用不可变产物跳过 61 点走势 + 双 Map 三段集合的重建（消费端 Packet 构造自深拷贝，无共享
+     * 可变态），缓存路径异常回退独立装配，推送语义不变。
+     */
     public void pushNow() {
         if (core.getWorldObj() == null || core.getWorldObj().isRemote) {
             return;
@@ -126,8 +192,48 @@ public final class AEMonitorController {
             return;
         }
 
+        AEAssemblyCache.Assembly assembly;
+        try {
+            String cacheKey = dataKey + "#"
+                + store.getAETrackingWindow()
+                + "#"
+                + bindingVersion
+                + "#"
+                + dataSetRevision;
+            AEAssemblyCache.Assembly cached = AEAssemblyCache.lookup(dataSet, cacheKey);
+            if (cached != null) {
+                // G4 命中路径：结果不变跳过重建，产物直接复用
+                assembly = cached;
+            } else {
+                // G4 失效路径：任一维度变化，重建并落缓存
+                assembly = assemble(dataSet);
+                AEAssemblyCache.store(dataSet, cacheKey, assembly);
+            }
+        } catch (Exception e) {
+            // G4 保守回退：缓存路径任何异常退回独立装配（不落缓存、不共享），推送语义不变
+            assembly = assemble(dataSet);
+        }
+
+        // B07：经广播端口推送（包体构造与 TargetPoint 由 network 侧端口实现承载，逐字搬迁；
+        // null 守卫在 TE 的出口转发内）
+        core.broadcastAEMonitorData(
+            core.getWorldObj(),
+            core.xCoord,
+            core.yCoord,
+            core.zCoord,
+            assembly.chartKey,
+            assembly.chartSamples,
+            assembly.monitorLatest,
+            assembly.monitorAvg300s);
+    }
+
+    /**
+     * G4：推送装配（原 pushNow 中段逐字搬迁：走势 query + monitorLatest/monitorAvg300s 双 Map
+     * 构建），产物以不可变视图封存，供 {@link AEAssemblyCache} 跨推送/跨屏共享。
+     */
+    private AEAssemblyCache.Assembly assemble(AEMonitorDataSet dataSet) {
         String chartKey = null;
-        List<AEMonitorSample> chartSamples = new ArrayList<>();
+        List<AEMonitorSample> chartSamples = Collections.emptyList();
         if (chartItem != null) {
             chartKey = aeKey(chartItem);
             if (chartKey != null) {
@@ -161,17 +267,11 @@ public final class AEMonitorController {
             monitorAvg300s.put(key, dataSet.averageRate300s(key));
         }
 
-        // B07：经广播端口推送（包体构造与 TargetPoint 由 network 侧端口实现承载，逐字搬迁；
-        // null 守卫在 TE 的出口转发内）
-        core.broadcastAEMonitorData(
-            core.getWorldObj(),
-            core.xCoord,
-            core.yCoord,
-            core.zCoord,
+        return new AEAssemblyCache.Assembly(
             chartKey,
-            chartSamples,
-            monitorLatest,
-            monitorAvg300s);
+            Collections.unmodifiableList(chartSamples),
+            Collections.unmodifiableMap(monitorLatest),
+            Collections.unmodifiableMap(monitorAvg300s));
     }
 
     /**
@@ -219,7 +319,9 @@ public final class AEMonitorController {
     }
 
     /**
-     * 服务端执行 AE 网络采样：对走势图绑定与实时监控列表中的每个物品/流体查询 AE 存量并写入数据集。
+     * 服务端执行 AE 网络采样：走势图绑定与实时监控列表的全部 key 经现行 {@link AESamplingStrategy}
+     * 收集 AE 存量后，按 per-key 采样锁逐 key 写入数据集（G4：原逐段 lock→query→add 收敛为
+     * 策略批量收集 + lock→add 写入环；同 aeKey 首个 stack 优先的口径不变）。
      *
      * @param tick 当前世界 tick
      */
@@ -238,50 +340,28 @@ public final class AEMonitorController {
 
         AEMonitorDataStore store = AEMonitorDataStore.get(core.getWorldObj());
         AEMonitorDataSet dataSet = store.getOrCreate(dataKey);
-        boolean wroteAny = false;
         long timeMs = System.currentTimeMillis();
 
-        // 走势图物品
-        if (chartItem != null) {
-            String key = aeKey(chartItem);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = query.itemAmount(chartItem);
-                dataSet.addSample(key, amount, tick, timeMs);
-                wroteAny = true;
-            }
-        }
+        // G4：合并走势图与监控列表（chart 绑定在前，与原逐段写入顺序一致），按现行策略收集
+        Map<String, Long> amounts = collectWithReconciliation(tick, mergeMonitoredItems(), mergeMonitoredFluids());
 
-        // 走势图流体
-        if (chartFluid != null) {
-            String key = aeKey(chartFluid);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = query.fluidAmount(chartFluid);
-                dataSet.addSample(key, amount, tick, timeMs);
-                wroteAny = true;
-            }
-        }
-
-        // 实时监控物品列表
-        for (ItemStack stack : monitoredItems) {
-            String key = aeKey(stack);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = query.itemAmount(stack);
-                dataSet.addSample(key, amount, tick, timeMs);
-                wroteAny = true;
-            }
-        }
-
-        // 实时监控流体列表
-        for (FluidStack fluid : monitoredFluids) {
-            String key = aeKey(fluid);
-            if (key != null && dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
-                long amount = query.fluidAmount(fluid);
-                dataSet.addSample(key, amount, tick, timeMs);
+        boolean wroteAny = false;
+        for (Map.Entry<String, Long> entry : amounts.entrySet()) {
+            String key = entry.getKey();
+            if (dataSet.tryAcquireSampleLock(key, tick, Config.aeSampleInterval)) {
+                dataSet.addSample(
+                    key,
+                    entry.getValue()
+                        .longValue(),
+                    tick,
+                    timeMs);
                 wroteAny = true;
             }
         }
 
         if (wroteAny) {
+            // G4：数据集内容已变，推进本地 revision（装配缓存失效）
+            dataSetRevision++;
             store.markDirty();
         }
 
@@ -291,6 +371,155 @@ public final class AEMonitorController {
         if (chartItem != null || chartFluid != null || !monitoredItems.isEmpty() || !monitoredFluids.isEmpty()) {
             pushNow();
         }
+    }
+
+    /** G4：走势图物品 + 实时监控物品合并（chartItem 在前，与原逐段写入顺序一致） */
+    private List<ItemStack> mergeMonitoredItems() {
+        List<ItemStack> items = new ArrayList<>(1 + monitoredItems.size());
+        if (chartItem != null) {
+            items.add(chartItem);
+        }
+        items.addAll(monitoredItems);
+        return items;
+    }
+
+    /** G4：走势图流体 + 实时监控流体合并（chartFluid 在前，与原逐段写入顺序一致） */
+    private List<FluidStack> mergeMonitoredFluids() {
+        List<FluidStack> fluids = new ArrayList<>(1 + monitoredFluids.size());
+        if (chartFluid != null) {
+            fluids.add(chartFluid);
+        }
+        fluids.addAll(monitoredFluids);
+        return fluids;
+    }
+
+    /**
+     * G4：按现行策略收集存量，双实现对账（观察期每采样轮、常态期低频抽查、失配后不再对账）。
+     * <ul>
+     * <li>观察期（首 {@link #RECONCILE_WINDOW_TICKS} tick）：PerKey 与 SingleIteration 同 tick
+     * 双跑，结果 Map 相等性对账；零失配且非空双跑 ≥ {@link #MIN_RECONCILE_RUNS} 次才切
+     * SingleIteration 常态（一次性 info 说明）</li>
+     * <li>常态期：每 {@link #RECONCILE_SPOT_INTERVAL_TICKS} tick 抽查一次</li>
+     * <li>任何失配或策略异常：立即永久降级 PerKey + 一次性 warning（含失配 key 样例）</li>
+     * </ul>
+     * 对账轮与降级后一律以 PerKey 结果为写入基准（保守：未证实路径的数据不落数据集）。
+     */
+    private Map<String, Long> collectWithReconciliation(long tick, List<ItemStack> items, List<FluidStack> fluids) {
+        AESamplingStrategy current = samplingStrategy;
+        Map<String, Long> result = safeCollect(current, items, fluids);
+        if (result == null && current == AESamplingStrategy.SingleIteration.INSTANCE) {
+            // G4 保守回退：常态期 SingleIteration 收集异常——立即降级 + 本轮回退 PerKey 收集，
+            // 不让异常静默吞掉整轮采样
+            Map<String, Long> fallback = safeCollect(AESamplingStrategy.PerKey.INSTANCE, items, fluids);
+            mismatchCount++;
+            samplingStrategy = AESamplingStrategy.PerKey.INSTANCE;
+            logDowngradeOnce(result, fallback);
+            result = fallback;
+        }
+        if (!shouldReconcile(tick)) {
+            return result != null ? result : new HashMap<String, Long>();
+        }
+
+        // 对账轮：另一实现同 tick 双跑比较
+        AESamplingStrategy other = current == AESamplingStrategy.SingleIteration.INSTANCE
+            ? AESamplingStrategy.PerKey.INSTANCE
+            : AESamplingStrategy.SingleIteration.INSTANCE;
+        Map<String, Long> otherResult = safeCollect(other, items, fluids);
+        lastReconcileTick = tick;
+        if (!items.isEmpty() || !fluids.isEmpty()) {
+            reconcileRuns++;
+        }
+
+        if (result == null || otherResult == null || !result.equals(otherResult)) {
+            // 失配（含策略异常）：立即降级 + 一次性 warning，此后不再对账
+            mismatchCount++;
+            samplingStrategy = AESamplingStrategy.PerKey.INSTANCE;
+            logDowngradeOnce(result, otherResult);
+        } else if (current == AESamplingStrategy.PerKey.INSTANCE && reconcileRuns >= MIN_RECONCILE_RUNS
+            && tick - reconcileStartTick >= RECONCILE_WINDOW_TICKS) {
+                // 观察期满且证据足够：切换 SingleIteration 常态（一次性 info 说明，此后低频抽查）
+                samplingStrategy = AESamplingStrategy.SingleIteration.INSTANCE;
+                logStrategySwitch();
+            }
+
+        if (samplingStrategy == AESamplingStrategy.PerKey.INSTANCE) {
+            // 降级/对账期以 PerKey 结果为写入基准
+            Map<String, Long> perKey = current == AESamplingStrategy.PerKey.INSTANCE ? result : otherResult;
+            return perKey != null ? perKey : new HashMap<String, Long>();
+        }
+        return result != null ? result : new HashMap<String, Long>();
+    }
+
+    /**
+     * G4：本轮是否对账。已降级不再对账；观察期内每采样轮对账；观察期已过但非空证据不足
+     * （空绑定期）顺延；常态期每 {@link #RECONCILE_SPOT_INTERVAL_TICKS} tick 抽查一次。
+     */
+    private boolean shouldReconcile(long tick) {
+        if (reconcileStartTick < 0L) {
+            reconcileStartTick = tick;
+        }
+        if (mismatchCount > 0) {
+            return false;
+        }
+        if (tick - reconcileStartTick < RECONCILE_WINDOW_TICKS) {
+            return true;
+        }
+        if (samplingStrategy == AESamplingStrategy.PerKey.INSTANCE && reconcileRuns < MIN_RECONCILE_RUNS) {
+            return true;
+        }
+        return lastReconcileTick < 0L || tick - lastReconcileTick >= RECONCILE_SPOT_INTERVAL_TICKS;
+    }
+
+    /** G4：策略收集的保守包装——任何异常返回 null（视为该轮失配，交由降级处理） */
+    private Map<String, Long> safeCollect(AESamplingStrategy strategy, List<ItemStack> items, List<FluidStack> fluids) {
+        try {
+            return strategy.collect(query, items, fluids);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** G4：一次性降级 warning（含失配 key 样例，事件驱动不刷屏） */
+    private void logDowngradeOnce(Map<String, Long> current, Map<String, Long> other) {
+        if (downgradeLogged) {
+            return;
+        }
+        downgradeLogged = true;
+        GTSimpleWirelessNetwork.LOG.warn(
+            "[AE监控] SingleIteration 批量采样对账失配，已永久降级 PerKey（{}：失配 key 样例 {}）",
+            dataKey(core),
+            mismatchKeys(current, other));
+    }
+
+    /** G4：一次性切换说明（info，每控制器至多一次——降级后不再回升） */
+    private void logStrategySwitch() {
+        GTSimpleWirelessNetwork.LOG.info(
+            "[AE监控] SingleIteration 批量采样启用（{}：观察期 {} 轮对账零失配，此后每 {}t 抽查一次）",
+            dataKey(core),
+            Integer.valueOf(reconcileRuns),
+            Long.valueOf(RECONCILE_SPOT_INTERVAL_TICKS));
+    }
+
+    /** G4：对账失配 key 样例（至多 3 个；null map 记为策略异常标记） */
+    private List<String> mismatchKeys(Map<String, Long> a, Map<String, Long> b) {
+        List<String> keys = new ArrayList<>(3);
+        if (a == null || b == null) {
+            keys.add(a == b ? "<双策略收集异常>" : (a == null ? "<现行策略收集异常>" : "<对侧策略收集异常>"));
+            return keys;
+        }
+        Set<String> union = new HashSet<>(a.keySet());
+        union.addAll(b.keySet());
+        for (String key : union) {
+            Long va = a.get(key);
+            Long vb = b.get(key);
+            if (va == null ? vb != null : !va.equals(vb)) {
+                keys.add(key + "(" + va + " != " + vb + ")");
+                if (keys.size() >= 3) {
+                    break;
+                }
+            }
+        }
+        return keys;
     }
 
     /**
@@ -311,6 +540,8 @@ public final class AEMonitorController {
         AEMonitorDataSet dataSet = store.getIfPresent(dataKey);
         if (dataSet != null) {
             dataSet.clear(key);
+            // G4：数据集内容已变（该 key 采样清空），推进 revision 使装配缓存失效
+            dataSetRevision++;
             store.markDirty();
         }
     }
@@ -376,6 +607,7 @@ public final class AEMonitorController {
         if (stack != null && chartItem != null && ItemStack.areItemStacksEqual(chartItem, stack)) {
             clearAEData(aeKey(chartItem));
             chartItem = null;
+            bindingVersion++; // G4：绑定集变化，装配缓存失效
             dirty.markChanged();
             return false;
         }
@@ -387,6 +619,7 @@ public final class AEMonitorController {
         }
         chartItem = stack != null ? stack.copy() : null;
         chartFluid = null; // 物品与流体互斥
+        bindingVersion++; // G4：绑定集变化，装配缓存失效
         dirty.markChanged();
         return true;
     }
@@ -398,6 +631,7 @@ public final class AEMonitorController {
                 .equals(chartFluid.getFluid())) {
             clearAEData(aeKey(chartFluid));
             chartFluid = null;
+            bindingVersion++; // G4：绑定集变化，装配缓存失效
             dirty.markChanged();
             return false;
         }
@@ -409,6 +643,7 @@ public final class AEMonitorController {
         }
         chartFluid = fluid != null ? fluid.copy() : null;
         chartItem = null;
+        bindingVersion++; // G4：绑定集变化，装配缓存失效
         dirty.markChanged();
         return true;
     }
@@ -431,6 +666,7 @@ public final class AEMonitorController {
         }
         chartItem = null;
         chartFluid = null;
+        bindingVersion++; // G4：绑定集变化，装配缓存失效
         dirty.markChanged();
         // O2-20：解绑后立即推送空走势段清客户端显示（周期推送已被空屏门控跳过）
         pushNow();
@@ -446,6 +682,7 @@ public final class AEMonitorController {
         }
         monitoredItems.clear();
         monitoredFluids.clear();
+        bindingVersion++; // G4：绑定集变化，装配缓存失效
         dirty.markChanged();
         // O2-20：清空后立即推送空监控段清客户端显示（周期推送已被空屏门控跳过）
         pushNow();
@@ -462,6 +699,7 @@ public final class AEMonitorController {
             if (ItemStack.areItemStacksEqual(monitoredItems.get(i), stack)) {
                 clearAEData(aeKey(monitoredItems.get(i)));
                 monitoredItems.remove(i);
+                bindingVersion++; // G4：绑定集变化，装配缓存失效
                 dirty.markChanged();
                 // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
                 pushNow();
@@ -470,6 +708,7 @@ public final class AEMonitorController {
         }
         if (monitoredItems.size() < Config.aeMaxMonitoredItems) {
             monitoredItems.add(stack.copy());
+            bindingVersion++; // G4：绑定集变化，装配缓存失效
             dirty.markChanged();
             return true;
         }
@@ -485,6 +724,7 @@ public final class AEMonitorController {
                 .equals(fluid.getFluid())) {
                 clearAEData(aeKey(monitoredFluids.get(i)));
                 monitoredFluids.remove(i);
+                bindingVersion++; // G4：绑定集变化，装配缓存失效
                 dirty.markChanged();
                 // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
                 pushNow();
@@ -493,6 +733,7 @@ public final class AEMonitorController {
         }
         if (monitoredFluids.size() < Config.aeMaxMonitoredItems) {
             monitoredFluids.add(fluid.copy());
+            bindingVersion++; // G4：绑定集变化，装配缓存失效
             dirty.markChanged();
             return true;
         }
@@ -611,6 +852,7 @@ public final class AEMonitorController {
                 if (f != null) monitoredFluids.add(f);
             }
         }
+        bindingVersion++; // G4：绑定集整段重载，装配缓存失效
     }
 
     /** S35 描述包 AE 状态段写入（原 TE.writeSyncData 的 AE 段：同键 + aeChartSamples） */
@@ -681,6 +923,7 @@ public final class AEMonitorController {
                 aeChartSamples.add(AEMonitorSample.fromNBT(aeChartList.getCompoundTagAt(i)));
             }
         }
+        bindingVersion++; // G4：绑定集整段重载（客户端镜像路径），装配缓存失效
     }
 
     /** 放置数据 lastAESampleTick 读取委托（readPlacementData 用） */

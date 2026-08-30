@@ -3,7 +3,7 @@ package com.miaokatze.gtswn.api.monitor;
 import java.math.BigInteger;
 
 /**
- * 历史采样点（不可变值对象，v1.7.9 新增）。
+ * 历史采样点（不可变值对象，v1.7.9 引入，v1.7.14 注释口径统一）。
  * <p>
  * 统一承载电网与 AE 两侧的历史样本，字段换算语义按数据来源区分：
  * <ul>

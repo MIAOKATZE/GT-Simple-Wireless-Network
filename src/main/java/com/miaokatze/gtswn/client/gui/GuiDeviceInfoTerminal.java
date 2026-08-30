@@ -33,11 +33,15 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * 数据流（UI 只发 action，不直改服务端权威数据）：
  * <ol>
  * <li>{@link #updateScreen()} 每 {@value #POLL_INTERVAL_TICKS} tick 经包 8 向服务端轮询
- * （pollTimer=0 首帧即发）；{@link #doesGuiPauseGame()} 返回 false 防单人暂停导致轮询僵死；</li>
- * <li>服务端包 9 分页回发 → ClientProxy 切主线程 → {@link DeviceTerminalClientCache}
- * （锚点=终端 UUID，GUI 关闭不清缓存，重开即显上次快照）；</li>
- * <li>绘制读 {@link #sortedEntries}：每次快照版本变化按当前排序列/方向重排（稳定排序，
- * 同键保持绑定序）；排序/计数法点击后本地立即生效并发包 10（action 0/1）持久化到物品 NBT。</li>
+ * （pollTimer=0 首帧即发）；{@link #doesGuiPauseGame()} 返回 false 防单人暂停导致轮询僵死；
+ * 列表区滚轮翻页且增量批次未到齐时经 {@link #requestPendingPages()} 限频追加请求（G5-3）；</li>
+ * <li>服务端包 9 <b>增量分页</b>回发（每次排水最多 2 页：当前页 + 预取，v1.7.14 G5；不再
+ * 版本一变即 8 页全量连发）→ ClientProxy 切主线程 → {@link DeviceTerminalClientCache}
+ * （锚点=终端 UUID，GUI 关闭不清缓存，重开即显上次快照；增量页按版本累积，未到齐提交
+ * 连续前缀快照）；</li>
+ * <li>绘制读 {@link #sortedEntries}：快照版本<b>或条目数</b>（增量前缀增长）变化时按当前
+ * 排序列/方向重排（稳定排序，同键保持绑定序），版本未变且前缀未增长且无偏好脏标则入口
+ * 短路零重排（G5-2）；排序/计数法点击后本地立即生效并发包 10（action 0/1）持久化到物品 NBT。</li>
  * </ol>
  * <p>
  * 布局（自上而下）：标题 / 顶行四按钮（计数模式四态轮换 + 显示配方纯本地开关 +
@@ -49,9 +53,11 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * （AND），插在条目副本生成后、排序前；会话态实例字段仿显示配方——不发包不持久化，
  * 重开 GUI 复位为全部/全部。
  * <p>
- * 锚点解析：GUI 持有打开时传入的终端 UUID，每 tick 只读重解析手持优先终端（与服务端
- * {@code DeviceTerminalRequestQueue.findTerminalStack} 同序；服务端右击空气时显式
- * S2FPacketSetSlot 同步 DIT_UUID 到客户端，见 ItemDeviceInfoTerminal.onItemRightClick）。
+ * 锚点解析（G5-1 缓存）：GUI 持有打开时传入的终端 UUID；不再每 tick 全物品栏重扫——
+ * 槽位指纹（主背包槽物品引用 + 手持槽下标）变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
+ * 复核时才重解析手持优先终端（与服务端 {@code DeviceTerminalRequestQueue.findTerminalStack}
+ * 同序；服务端右击空气时显式 S2FPacketSetSlot 同步 DIT_UUID 到客户端，槽位对象替换即被
+ * 指纹检出，见 ItemDeviceInfoTerminal.onItemRightClick）；GUI 打开时强制一次全扫。
  * <p>
  * 初始 UI 偏好（排序列/方向/计数法）从打开时物品 stack NBT 读；action 后以本地状态为准
  * （服务端 NBT 写回由动作队列权威执行，下轮打开校正）。
@@ -60,6 +66,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 轮询间隔（tick）：每 20 tick（1 秒）发一次请求包 8 */
     private static final int POLL_INTERVAL_TICKS = 20;
+
+    /** 锚点复核间隔（tick）：槽位指纹之外的低频兜底全扫（G5-1；GUI 打开时另强制一次） */
+    private static final int ANCHOR_RECHECK_TICKS = 20;
+
+    /** 滚轮触发追加轮询的最小间隔（tick）：限频防滚轮连击形成请求洪峰（G5-3） */
+    private static final int EXTRA_POLL_INTERVAL_TICKS = 10;
 
     /** 悬浮出 tooltip 的停留门槛（毫秒） */
     private static final long HOVER_TOOLTIP_DELAY_MS = 500L;
@@ -108,11 +120,26 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 轮询计时器（初值 0 → 打开后首个 updateScreen 立即发首包） */
     private int pollTimer = 0;
 
-    /** 当前终端锚点 UUID（构造传入 + 每 tick 只读重解析；null=客户端 NBT 尚未同步到 UUID） */
+    /** 追加轮询冷却（tick，>0 期间滚轮不再触发续页请求；G5-3） */
+    private int extraPollCooldown = 0;
+
+    /** 锚点复核计时器（初值 0 → initGui 首次 refreshAnchor 即强制全扫一次） */
+    private int anchorTimer = 0;
+
+    /** 上次锚点解析时的主背包槽物品引用指纹（槽位同步/挪动替换对象即失配；null=未扫过） */
+    private ItemStack[] anchorSlotRefs;
+
+    /** 上次锚点解析时的手持槽下标（切快捷栏不换槽内容但换手持，同样触发重扫） */
+    private int anchorHeldSlot = -1;
+
+    /** 当前终端锚点 UUID（构造传入 + 指纹/复核触发重解析；null=客户端 NBT 尚未同步到 UUID） */
     private UUID anchor;
 
     /** 当前快照数据版本（Long.MIN_VALUE=尚无任何快照；版本变化触发重排） */
     private long displayedVersion = Long.MIN_VALUE;
+
+    /** 当前已排条目数（-1=无快照；增量前缀同版本增长时与版本共同触发重排，G5-2/G5-3） */
+    private int displayedEntryCount = -1;
 
     /** 排序后条目（绘制与列表命中共用；无数据为空列表） */
     private List<Entry> sortedEntries = Collections.emptyList();
@@ -188,13 +215,17 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     }
 
     /**
-     * 每 tick：重解析锚点（只读，手持优先，与服务端队列解析同序）→ 版本变化或偏好变化时重排 →
-     * 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
+     * 每 tick：锚点重解析（G5-1 缓存：槽位指纹变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
+     * 复核才全物品栏重扫，手持优先，与服务端队列解析同序）→ 版本/条目数变化或偏好变化时重排
+     * （G5-2 入口短路）→ 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
      */
     @Override
     public void updateScreen() {
         refreshAnchor();
         refreshEntries();
+        if (this.extraPollCooldown > 0) {
+            this.extraPollCooldown--;
+        }
         if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0) {
             GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
         }
@@ -202,13 +233,56 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     // ==================== 锚点与数据刷新 ====================
 
-    /** 只读重解析终端锚点 UUID（手持优先 → 主背包首台；与 DeviceTerminalRequestQueue 同序）。 */
+    /**
+     * 只读重解析终端锚点 UUID（手持优先 → 主背包首台；与 DeviceTerminalRequestQueue 同序）。
+     * <p>
+     * G5-1 锚点缓存：不再每 tick 全物品栏重扫——槽位指纹（主背包槽物品引用 + 手持槽下标）
+     * 变化才重扫，另每 {@value #ANCHOR_RECHECK_TICKS} tick 强制复核一次兜底（覆盖原地 NBT
+     * 变异等不换对象引用的边角，锚点变化 ≤20t 内跟踪）；GUI 打开时（指纹未建 / 计时器归零）
+     * 自然强制一次全扫。槽位挪动 / 快捷栏切换同 tick 即检出，语义与每 tick 重扫一致。
+     */
     private void refreshAnchor() {
+        this.anchorTimer++;
+        EntityPlayer player = this.mc.thePlayer;
+        if (player == null) {
+            // 与旧语义一致：解析不可用（玩家未就绪）保持现锚点
+            return;
+        }
+        if (this.anchorTimer % ANCHOR_RECHECK_TICKS != 0 && !inventoryFingerprintChanged(player)) {
+            return;
+        }
+        ItemStack[] inv = player.inventory.mainInventory;
+        this.anchorSlotRefs = new ItemStack[inv.length];
+        System.arraycopy(inv, 0, this.anchorSlotRefs, 0, inv.length);
+        this.anchorHeldSlot = player.inventory.currentItem;
         UUID resolved = resolveTerminalId();
         if (resolved != null && !resolved.equals(this.anchor)) {
             this.anchor = resolved;
             this.displayedVersion = Long.MIN_VALUE;
+            this.displayedEntryCount = -1;
         }
+    }
+
+    /**
+     * 槽位指纹比对：主背包任一槽物品引用（identity）或手持槽下标变化即视为物品栏变化。
+     * <p>
+     * 客户端槽位同步（S2FPacketSetSlot / 挪动 / 拾取放置）一律整对象替换数组元素，引用
+     * 比对即可覆盖；比每 tick 对全物品栏做 NBT 字符串读 + UUID 解析廉价得多。
+     */
+    private boolean inventoryFingerprintChanged(EntityPlayer player) {
+        if (this.anchorSlotRefs == null || this.anchorHeldSlot != player.inventory.currentItem) {
+            return true;
+        }
+        ItemStack[] inv = player.inventory.mainInventory;
+        if (inv.length != this.anchorSlotRefs.length) {
+            return true;
+        }
+        for (int i = 0; i < inv.length; i++) {
+            if (inv[i] != this.anchorSlotRefs[i]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 客户端只读解析（不生成不写 NBT）：手持优先 → 主背包首台终端的 DIT_UUID。 */
@@ -231,19 +305,32 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         return stack == null ? this.anchor : ItemDeviceInfoTerminal.readTerminalId(stack);
     }
 
-    /** 快照版本变化或排序偏好变化时按当前列/方向重排（稳定排序，同键保持绑定序）。 */
+    /**
+     * 快照版本 / 条目数（增量前缀增长）或排序偏好变化时按当前列/方向重排（稳定排序，同键保持绑定序）。
+     * <p>
+     * G5-2 版本不变零重排：短路置于入口最早期——版本相等、条目数相等且无偏好/筛选脏标时
+     * 仅一次缓存查询 + 两个标量比较即返回，不建副本不排序不触发 clampScroll。
+     */
     private void refreshEntries() {
         Snapshot snapshot = this.anchor == null ? null : DeviceTerminalClientCache.getSnapshot(this.anchor);
+        if (!this.sortDirty && snapshot != null
+            && snapshot.version == this.displayedVersion
+            && snapshot.entries.size() == this.displayedEntryCount) {
+            return;
+        }
         if (snapshot == null) {
             if (this.displayedVersion != Long.MIN_VALUE) {
                 this.displayedVersion = Long.MIN_VALUE;
+                this.displayedEntryCount = -1;
                 this.sortedEntries = Collections.emptyList();
                 if (this.entryList != null) this.entryList.clampScroll();
             }
             return;
         }
-        if (snapshot.version != this.displayedVersion || this.sortDirty) {
+        if (snapshot.version != this.displayedVersion || snapshot.entries.size() != this.displayedEntryCount
+            || this.sortDirty) {
             this.displayedVersion = snapshot.version;
+            this.displayedEntryCount = snapshot.entries.size();
             this.sortDirty = false;
             List<Entry> copy = new ArrayList<>(snapshot.entries);
             // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
@@ -587,9 +674,27 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     @Override
     public void handleMouseInput() {
         if (this.entryList != null && this.entryList.handleMouseInput()) {
+            // G5-3 翻页按需：滚轮在列表区滚动且服务端增量批次未到齐 → 限频追加请求接力续页
+            requestPendingPages();
             return;
         }
         super.handleMouseInput();
+    }
+
+    /**
+     * 追加轮询（限频 {@value #EXTRA_POLL_INTERVAL_TICKS} tick 一次）：仅当当前终端缓存批次
+     * 仍有未到齐页时发送包 8——服务端每次排水最多回 2 页（当前页 + 预取）自已发页接力，
+     * 滚轮连击被限频；批次已到齐时客户端侧零发包（服务端版本跳过之外再省一道）。
+     */
+    private void requestPendingPages() {
+        if (this.extraPollCooldown > 0 || this.anchor == null) {
+            return;
+        }
+        if (!DeviceTerminalClientCache.hasMorePending(this.anchor)) {
+            return;
+        }
+        this.extraPollCooldown = EXTRA_POLL_INTERVAL_TICKS;
+        GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
     }
 
     @Override

@@ -1,7 +1,7 @@
 package com.miaokatze.gtswn.api.monitor;
 
 /**
- * GTSWN 公开监控 API 入口（v1.7.9 新增）。
+ * GTSWN 公开监控 API 入口（v1.7.9 引入，v1.7.14 注释口径统一）。
  * <p>
  * 静态无状态单例，直接调用即可，无需在 mod 生命周期任何阶段注册或初始化：
  * 

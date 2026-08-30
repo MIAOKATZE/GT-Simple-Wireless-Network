@@ -68,6 +68,27 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
     }
 
     @Override
+    public Optional<Double> getNetworkAverageEut(UUID owner, int windowId) {
+        World overworld = serverOverworld();
+        if (overworld == null || owner == null || !isValidWindow(windowId)) return Optional.empty();
+
+        NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(overworld)
+            .getIfPresent(owner.toString());
+        if (dataSet == null) return Optional.empty();
+
+        List<NetworkInfoSample> samples = dataSet.query(windowId);
+        if (samples.isEmpty()) return Optional.empty();
+
+        // 均值口径：窗口内各采样点 eut 的算术平均（与流入计数链派生点聚合值、
+        // 设备信息终端「平均 EU/t」列同口径），不采用 EU 存量首尾斜率
+        double sum = 0.0D;
+        for (NetworkInfoSample sample : samples) {
+            sum += sample.eut;
+        }
+        return Optional.of(sum / samples.size());
+    }
+
+    @Override
     public Optional<AEMonitorSnapshot> getAEMonitorSnapshot(World panelWorld, String panelKey) {
         AEMonitorDataSet dataSet = aeDataSet(panelWorld, panelKey);
         if (dataSet == null) return Optional.empty();

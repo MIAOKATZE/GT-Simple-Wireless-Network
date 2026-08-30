@@ -6,7 +6,7 @@ import java.util.UUID;
 import net.minecraft.world.World;
 
 /**
- * GTSWN 公开只读监控 API（v1.7.9 新增）。
+ * GTSWN 公开只读监控 API（v1.7.9 引入，v1.7.14 新增 getNetworkAverageEut 并统一注释口径）。
  * <p>
  * 面向其他 mod 的无线电网 / AE 监视只读查询入口，全部方法返回 {@link Optional}，
  * 数据不存在时返回 {@code Optional.empty()} 而非抛出异常。返回的快照对象均为
@@ -47,6 +47,26 @@ public interface IGtswnMonitorApi {
      * @return 该窗口的历史样本；数据集不存在返回 empty（数据集存在但窗口为空时返回样本数为 0 的窗口）
      */
     Optional<HistoryWindow> getNetworkHistory(UUID owner, int windowId);
+
+    /**
+     * 查询指定玩家电网在某一时间窗口内的平均 EU/t（v1.7.14 新增）。
+     * <p>
+     * 对 owner 的电网监控数据集在 windowId 窗口内的全部采样点取 eut 的算术均值，
+     * 正=平均净充电，负=平均净放电。均值口径与本 mod 自身显示一致：流入计数链派生窗口
+     * 的聚合值即上一级窗口最近 N 点 eut 均值，设备信息终端「平均 EU/t」列同为样本值均值，
+     * 均不采用 EU 存量首尾斜率。窗口编号语义与 {@link #getNetworkHistory} 相同
+     * （0-7 共 8 级窗口，样本旧→新，最多 61 点）。
+     * <p>
+     * 纯只读查询：不创建空数据集、不 markDirty、不影响采样节奏；返回值为不可变
+     * {@code Double}。仅服务端主线程调用（ServerTick 生命周期内），客户端逻辑侧调用
+     * 不抛异常，一律返回 {@code Optional.empty()}。
+     *
+     * @param owner    玩家 UUID；null 返回 empty
+     * @param windowId 窗口编号，合法范围 0-7；越界返回 empty
+     * @return 窗口内样本 eut 的算术均值；owner 无数据集、窗口内 0 样本、
+     *         windowId 越界或客户端逻辑侧调用返回 empty
+     */
+    Optional<Double> getNetworkAverageEut(UUID owner, int windowId);
 
     /**
      * 查询指定网络信息屏的 AE 监视快照（全部被监视 key 的最新数量与 5 分钟平均速率）。

@@ -67,6 +67,11 @@ dependencies {
     // Add test dependencies here if you plan to run unit tests locally.
     // (Optional) testImplementation(platform('org.junit:junit-bom:5.14.1'))
 
+    // v0.8.0 G1 纯逻辑单测（src/test：KeyFormat/FifoMath，零 MC 类加载）：JUnit4。
+    // 模板示例为 junit-bom(JUnit5) 需显式 useJUnitPlatform 接线，本仓未启用，
+    // 走 Gradle 默认 JUnit4 探测（junit 在 test 运行时类路径即生效）。
+    testImplementation("junit:junit:4.13.2")
+
     // Baubles-Expanded: compileOnly — 可选依赖，运行时由玩家自行安装 Baubles
     compileOnly("com.github.GTNewHorizons:Baubles-Expanded:2.2.6-GTNH:dev") { transitive = false }
 

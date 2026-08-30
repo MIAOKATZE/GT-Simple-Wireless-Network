@@ -1,11 +1,16 @@
 package com.miaokatze.gtswn.common.tile;
 
+import java.lang.ref.WeakReference;
 import java.math.BigInteger;
 import java.util.EnumSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
@@ -106,6 +111,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         public long fluidAmount(FluidStack fluid) {
             return getAEFluidAmount(fluid);
         }
+
+        @Override
+        public Map<String, Long> bulkAmounts(List<ItemStack> items, List<FluidStack> fluids) {
+            return singleIterationAmounts(items, fluids);
+        }
     };
 
     /**
@@ -131,6 +141,50 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
     }
 
+    // ==================== G2（v1.7.14）：EU 轮询门控 + overworld 引用缓存 ====================
+
+    /** G2：EU 轮询门控间隔（tick）——overworld 取数与 bridge.tickServer 至多每 100t 执行一次 */
+    private static final int EU_POLL_INTERVAL_TICKS = 100;
+
+    /** G2：overworld 引用复核周期（门控调用次数）——6 次 ≈ 600t 回源一次，纠正世界重载滞留引用 */
+    private static final int OVERWORLD_REFETCH_CALLS = 6;
+
+    /**
+     * G2：overworld 引用缓存（静态弱引用）。dim 0 世界被服务器强持有，正常存续期内直接复用；
+     * 集成服世界重载/卸载后旧实例无强引用即被 GC 清除，弱引用见 null 回源；仍有第三方
+     * 强引用滞留时由 {@link #OVERWORLD_REFETCH_CALLS} 周期复核兜底纠正。
+     */
+    private static WeakReference<World> overworldRef = null;
+
+    /** G2：复核倒计数（所有屏共享递减，仅服务端主线程访问） */
+    private static int overworldRefetchCountdown = 0;
+
+    /** G2：EU 轮询段倒计数（实例字段；0 起步使冷启动/重载后首 tick 即执行不延迟） */
+    private int euPollCountdown = 0;
+
+    /**
+     * G2：带引用缓存的 overworld tick 取数（仅 EU 轮询段每 100t 调用一次，替代原每 tick
+     * {@code MinecraftServer.getServer() + worldServerForDimension(0)} 直查）。
+     * <p>
+     * 调度器使用 overworld tick 作为采样基准，panel 必须用同一基准更新 lastRequestTick。
+     *
+     * @return overworld tick；服务器或世界不可用时 -1（与改造前直查失败语义一致）
+     */
+    private static long cachedOverworldTick() {
+        MinecraftServer server = MinecraftServer.getServer();
+        if (server == null) {
+            return -1L;
+        }
+        World overworld = overworldRef == null ? null : overworldRef.get();
+        if (overworld == null || --overworldRefetchCountdown <= 0) {
+            // 引用断失（GC 清除）或复核周期到：回源一次并重置倒计数
+            overworld = server.worldServerForDimension(0);
+            overworldRef = new WeakReference<World>(overworld);
+            overworldRefetchCountdown = OVERWORLD_REFETCH_CALLS;
+        }
+        return overworld == null ? -1L : overworld.getTotalWorldTime();
+    }
+
     @Override
     public void updateEntity() {
         super.updateEntity();
@@ -152,21 +206,20 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 structure.markInitialized();
             }
 
-            // ===== 获取 overworld tick（供 lastRequestTick 与轮询逻辑共用） =====
-            // 调度器使用 overworld tick 作为采样基准，panel 必须用同一基准更新 lastRequestTick
-            MinecraftServer server = MinecraftServer.getServer();
-            long overworldTick = -1L;
-            if (server != null) {
-                World overworld = server.worldServerForDimension(0);
-                if (overworld != null) {
-                    overworldTick = overworld.getTotalWorldTime();
-                }
+            // ===== EU 缓存域（E4 迁入 EUCacheBridge）：请求 tick 更新 → 冷启动刷新 → 新数据轮询，三段顺序不变 =====
+            // G2：整段 100t 门控 + overworld 引用缓存——tickServer 内三段均无每 tick 必要逻辑
+            // （调度器活跃判定窗口 6000t，lastRequestTick 每 100t 推进远在其内；冷启动刷新一次性；
+            // newest() 轮询仅影响显示时效），markBlockForUpdate 链路完整保留、至多延迟 100t；
+            // 冷启动/重载后首 tick 即触发（倒计数 0 起步），无冷启动空窗
+            if (euPollCountdown <= 0) {
+                euPollCountdown = EU_POLL_INTERVAL_TICKS;
+                bridge.tickServer(cachedOverworldTick());
+            } else {
+                euPollCountdown--;
             }
 
-            // ===== EU 缓存域（E4 迁入 EUCacheBridge）：请求 tick 更新 → 冷启动刷新 → 新数据轮询，三段顺序不变 =====
-            bridge.tickServer(overworldTick);
-
             // ===== AE 监控域（E5 迁入 AEMonitorController）：采样门控 + 采样 + 推送，五段顺序末段不变 =====
+            // G2：不受 EU 门控影响——tickSampling 内部自有 aeSampleInterval 门控，节奏逐字保持
             controller.tickSampling(tick);
         }
     }
@@ -291,6 +344,63 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         } catch (GridAccessException e) {
             return 0;
         }
+    }
+
+    /**
+     * G4（SingleIteration 策略）：一次迭代批量收集——单遍遍历本屏 AE2 item/fluid storage list，
+     * 以 aeKey 字符串匹配全部被监视 key（首中即记；同 item+meta 异 NBT 变体的迭代序歧义由
+     * AEMonitorController 同 tick 对账失配降级兜底）。未命中 key 以 0 计，与逐 key findPrecise
+     * 未命中返回 0 的现状语义一致；grid 不可达（断电/拆线/网络重组）时保持全 0 返回，
+     * 同样由对账判定一致性。
+     *
+     * @param items  被监视物品（chartItem + 监控列表）
+     * @param fluids 被监视流体（chartFluid + 监控列表）
+     * @return aeKey → 存量
+     */
+    private Map<String, Long> singleIterationAmounts(List<ItemStack> items, List<FluidStack> fluids) {
+        Map<String, Long> result = new HashMap<>();
+        for (ItemStack stack : items) {
+            String key = AEMonitorController.aeKey(stack);
+            if (key != null) {
+                result.putIfAbsent(key, Long.valueOf(0L));
+            }
+        }
+        for (FluidStack fluid : fluids) {
+            String key = AEMonitorController.aeKey(fluid);
+            if (key != null) {
+                result.putIfAbsent(key, Long.valueOf(0L));
+            }
+        }
+        if (worldObj == null || worldObj.isRemote || gridProxy == null) {
+            return result;
+        }
+        Set<String> matched = new HashSet<>();
+        try {
+            for (IAEItemStack stored : gridProxy.getStorage()
+                .getItemInventory()
+                .getStorageList()) {
+                if (stored == null || stored.getItem() == null) continue;
+                String name = Item.itemRegistry.getNameForObject(stored.getItem());
+                if (name == null) continue;
+                String key = "item:" + name + ":" + stored.getItemDamage();
+                if (result.containsKey(key) && matched.add(key)) {
+                    result.put(key, Long.valueOf(stored.getStackSize()));
+                }
+            }
+            for (IAEFluidStack stored : gridProxy.getStorage()
+                .getFluidInventory()
+                .getStorageList()) {
+                if (stored == null || stored.getFluid() == null) continue;
+                String key = "fluid:" + stored.getFluid()
+                    .getName();
+                if (result.containsKey(key) && matched.add(key)) {
+                    result.put(key, Long.valueOf(stored.getStackSize()));
+                }
+            }
+        } catch (GridAccessException e) {
+            // 与 per-key 路径同语义：grid 不可达视为未命中（保持 0 默认），由对账判定一致性
+        }
+        return result;
     }
 
     /** E5 门面：AE 坐标主键（方法体迁入 {@link AEMonitorController#dataKey}；BlockNetworkInfoPanel 调用面） */

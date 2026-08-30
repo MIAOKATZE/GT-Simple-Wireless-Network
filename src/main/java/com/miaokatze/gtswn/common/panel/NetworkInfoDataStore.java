@@ -43,7 +43,7 @@ public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSe
     }
 
     /**
-     * 仅查询不创建：返回指定 ownerUUID 的数据集，不存在则返回 null（v1.7.9 新增）。
+     * 仅查询不创建：返回指定 ownerUUID 的数据集，不存在则返回 null（v1.7.9 引入，v1.7.14 注释口径统一）。
      * <p>
      * 供监控 API（api.monitor 包）等只读场景使用，避免创建空数据集导致内存泄漏
      * 与脏 markDirty 写入（写法对齐 {@link AEMonitorDataStore#getIfPresent}）。

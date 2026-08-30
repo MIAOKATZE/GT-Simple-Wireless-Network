@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.device;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -43,7 +44,8 @@ import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
  * </ol>
  * 单键采样流程：
  * <ul>
- * <li>解析 {@code dim:x:y:z} → 维度不存在 / 区块未加载（{@code chunkExists} 为 false）
+ * <li>解析 {@code dim:x:y:z}（{@link KeyFormat#parse} 带结果缓存，坏键同样缓存不重复 split）
+ * → 维度不存在 / 区块未加载（{@code chunkExists} 为 false）
  * → 跳过保留旧值（不强加载区块）</li>
  * <li>区块已加载但 TE 不满足 D1 判别式（{@link DeviceMachineTypes#isWorkingMachine}）
  * → <b>自愈</b>：登记表出册 + {@link DeviceTerminalDataStore#removeKeyFromAll} 级联解绑
@@ -53,8 +55,11 @@ import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
  * 功率分类（发电谓词刷新 powerType 0/1）、配方双侧快照
  * （v1.7.2：输入侧因 GT5U 无公开 lastRecipe 入口暂置空，输出侧经公有 mOutputItems/
  * mOutputFluids 采集；仅运行中，非运行置空串）→ 对含该键的所有活跃终端各自 MachineRecord
- * 追加 FIFO 环形采样点、重算 60 点均值、刷新 name/localName → version++</li>
+ * 追加 FIFO 环形采样点、经 {@link FifoMath} 以 runningSum 增量推进 60 点均值
+ * （O(1) 入加挤出减；会话缓存 + 旧档首载一次性重建，MachineRecord 字段与 NBT 结构不变）、
+ * 刷新 name/localName → version++</li>
  * </ul>
+ * 每轮排水（{@link #drainSamples}）任一终端记录成功写入后，轮末统一 markDirty（每轮至多一次）。
  */
 public class DeviceSampleScheduler {
 
@@ -75,6 +80,29 @@ public class DeviceSampleScheduler {
 
     /** 采样间隔计数器（仅主线程） */
     private int intervalCounter = 0;
+
+    /**
+     * FIFO 增量均值会话缓存：机器键 →（终端 UUID → 上次推进后的 runningSum 状态）。
+     * <p>
+     * 仅服务端主线程访问；不落盘（MachineRecord 字段与 NBT 结构不变，旧档兼容）。
+     * 首次遇到某 (键, 终端) 或缓存状态与记录当前 (idx, count) 不一致（解绑重绑 / 存档重载
+     * 重建了记录）时，用 {@link FifoMath#rebuildSum} 从存量 fifo 一次性重建（最多 60 点）；
+     * 自愈解绑时整键清除。正确性不依赖登录 / 登出清理（状态对不上即自愈重建）。
+     */
+    private final Map<String, Map<UUID, FifoState>> fifoStates = new HashMap<>();
+
+    /** runningSum 会话缓存条目：上次推进后的 (sum, idx, count)，须与记录状态一致才可增量推进 */
+    private static final class FifoState {
+
+        /** 有效样本之和（与 {@link FifoMath#rebuildSum} 口径一致） */
+        long sum;
+
+        /** 上次推进后的写指针 */
+        int idx;
+
+        /** 上次推进后的有效样本数 */
+        int count;
+    }
 
     /**
      * ServerTickEvent（END 相）：先排空请求队列（每 tick 响应 GUI 轮询），再推进采样。
@@ -134,6 +162,7 @@ public class DeviceSampleScheduler {
      */
     private void drainSamples(MinecraftServer server, World overworld) {
         int processed = 0;
+        boolean anyRecordWritten = false;
         DeviceTerminalDataStore store = null;
         DeviceRegistryData registry = null;
         // 活跃终端快照（本 tick 内复用：同键分发到含它的所有活跃终端）
@@ -143,7 +172,7 @@ public class DeviceSampleScheduler {
             String key = it.next();
             it.remove();
             processed++;
-            int[] pos = parseKey(key);
+            int[] pos = KeyFormat.parse(key);
             if (pos == null) {
                 // 键格式损坏（正常路径不可达，仅存档手改/损坏时）：自愈出册级联解绑
                 if (registry == null) {
@@ -152,6 +181,8 @@ public class DeviceSampleScheduler {
                 }
                 registry.unregister(key);
                 store.removeKeyFromAll(key);
+                // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
+                this.fifoStates.remove(key);
                 continue;
             }
             World world = server.worldServerForDimension(pos[0]);
@@ -172,6 +203,8 @@ public class DeviceSampleScheduler {
                 }
                 registry.unregister(key);
                 store.removeKeyFromAll(key);
+                // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
+                this.fifoStates.remove(key);
                 continue;
             }
             // 三态经基座委托（BaseMetaTileEntity 实现 IMachineProgress），cast 基座而非 mte
@@ -209,16 +242,18 @@ public class DeviceSampleScheduler {
                     record = new DeviceTerminalDataStore.MachineRecord();
                     data.records.put(key, record);
                 }
+                // 增量均值：会话缓存状态与记录 (idx, count) 不一致（解绑重绑 / 存档重载）时首载重建
+                FifoState window = fifoState(key, entry.getKey(), record);
+                long runningSum = FifoMath.push(record.fifo, record.idx, record.count, window.sum, eut);
                 record.fifo[record.idx] = eut;
                 record.idx = (record.idx + 1) % DeviceTerminalDataStore.FIFO_SIZE;
                 if (record.count < DeviceTerminalDataStore.FIFO_SIZE) {
                     record.count++;
                 }
-                long sum = 0L;
-                for (long value : record.fifo) {
-                    sum += value;
-                }
-                record.avg = record.count > 0 ? (double) sum / record.count : 0D;
+                window.sum = runningSum;
+                window.idx = record.idx;
+                window.count = record.count;
+                record.avg = FifoMath.avg(runningSum, record.count);
                 record.state = state;
                 record.powerType = powerType;
                 record.name = localName;
@@ -229,12 +264,34 @@ public class DeviceSampleScheduler {
                 record.recipeIn = recipeIn;
                 record.recipeOut = recipeOut;
                 data.version++;
-            }
-            if (store != null && !activeTerminals.isEmpty()) {
-                // 任一终端记录更新即标脏（version++ 在上方逐终端完成）
-                store.markDirty();
+                anyRecordWritten = true;
             }
         }
+        if (anyRecordWritten && store != null) {
+            // 轮末统一标脏：本轮有任何终端记录成功写入才标（每轮至多一次；version++ 在上方逐终端完成）
+            store.markDirty();
+        }
+    }
+
+    /**
+     * 取该 (机器键, 终端) 的 FIFO 增量状态：缓存缺失或与记录当前 (idx, count) 不一致时，
+     * 用 {@link FifoMath#rebuildSum} 从存量 fifo 一次性重建（旧档首载最多 60 点求和）。
+     */
+    private FifoState fifoState(String key, UUID terminalId, DeviceTerminalDataStore.MachineRecord record) {
+        Map<UUID, FifoState> perKey = this.fifoStates.get(key);
+        FifoState window = perKey != null ? perKey.get(terminalId) : null;
+        if (window == null || window.idx != record.idx || window.count != record.count) {
+            window = new FifoState();
+            window.sum = FifoMath.rebuildSum(record.fifo, record.count);
+            window.idx = record.idx;
+            window.count = record.count;
+            if (perKey == null) {
+                perKey = new HashMap<>();
+                this.fifoStates.put(key, perKey);
+            }
+            perKey.put(terminalId, window);
+        }
+        return window;
     }
 
     // ==================== 采样读取工具 ====================
@@ -348,22 +405,5 @@ public class DeviceSampleScheduler {
     /** 单侧总长封顶截断 */
     private static String capTotal(StringBuilder sb) {
         return sb.length() > RECIPE_STR_CAP ? sb.substring(0, RECIPE_STR_CAP) : sb.toString();
-    }
-
-    /** 解析机器键 {@code dim:x:y:z} → [dim,x,y,z]；格式坏返回 null */
-    private static int[] parseKey(String key) {
-        if (key == null) {
-            return null;
-        }
-        String[] parts = key.split(":");
-        if (parts.length != 4) {
-            return null;
-        }
-        try {
-            return new int[] { Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]),
-                Integer.parseInt(parts[3]) };
-        } catch (NumberFormatException e) {
-            return null;
-        }
     }
 }
