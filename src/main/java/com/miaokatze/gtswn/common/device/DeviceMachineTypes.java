@@ -23,11 +23,28 @@ import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
  * 刻意分离：前者含涡轮/聚变/镭反应堆（均为 {@code MTEMultiBlockBase} 子类），不得混入 D1</li>
  * <li>{@code MTEExtendedPowerMultiBlockBase} 本身含大量 Industrial 耗电子类，不可作发电信号；
  * {@code MTEWormholeGenerator} 无 EU 记账，两类均不进发电谓词</li>
+ * <li>GTSR 巨型蒸汽轮机机组（{@code MTEMegaSteamTurbineArray}）继承
+ * {@code MTEEnhancedMultiBlockBase} 而非涡轮基类，且为 GTSR 唯一发电多方块；以
+ * {@link Class#forName} 软检测纳入发电谓词，不引入编译期依赖，GTSR 缺失时退化为 null</li>
  * </ul>
  */
 public final class DeviceMachineTypes {
 
+    /** GTSR 巨型蒸汽轮机机组类（GTSR 未安装时为 null）；仅加载不初始化，避免早期类加载副作用。 */
+    private static final Class<?> GTSR_MEGA_STEAM_TURBINE = lookupGtsrMegaSteamTurbine();
+
     private DeviceMachineTypes() {}
+
+    private static Class<?> lookupGtsrMegaSteamTurbine() {
+        try {
+            return Class.forName(
+                "com.miaokatze.gtsr.common.machine.MTEMegaSteamTurbineArray",
+                false,
+                DeviceMachineTypes.class.getClassLoader());
+        } catch (ClassNotFoundException | LinkageError ignored) {
+            return null;
+        }
+    }
 
     /**
      * D1 工作机器判别式（绑定 / 放置登记 / 采样自愈 / 世界扫描统一口径）：
@@ -44,8 +61,9 @@ public final class DeviceMachineTypes {
 
     /**
      * 发电分类谓词（powerType=1）：发电常规机 / 太阳能 / 避雷针 / 大型涡轮 / XL 涡轮 /
-     * 聚变计算机 / 镭反应堆。仅用于 {@link DeviceTerminalDataStore.MachineRecord} 的
-     * powerType 分类与 GUI「发电」筛选，不影响可绑定范围（D1）。
+     * 聚变计算机 / 镭反应堆 / GTSR 巨型蒸汽轮机（软检测）。仅用于
+     * {@link DeviceTerminalDataStore.MachineRecord} 的 powerType 分类与 GUI「发电」筛选，
+     * 不影响可绑定范围（D1）。
      */
     public static boolean isGeneratorMachine(IMetaTileEntity mte) {
         return mte instanceof MTEBasicGenerator || mte instanceof MTESolarGenerator
@@ -53,6 +71,7 @@ public final class DeviceMachineTypes {
             || mte instanceof MTELargeTurbineBase
             || mte instanceof MTEXLTurbineBase
             || mte instanceof MTEFusionComputer
-            || mte instanceof MTELargeNaquadahReactor;
+            || mte instanceof MTELargeNaquadahReactor
+            || (GTSR_MEGA_STEAM_TURBINE != null && GTSR_MEGA_STEAM_TURBINE.isInstance(mte));
     }
 }
