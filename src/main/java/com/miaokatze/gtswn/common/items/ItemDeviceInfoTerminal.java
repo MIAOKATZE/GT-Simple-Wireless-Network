@@ -359,8 +359,7 @@ public class ItemDeviceInfoTerminal extends Item {
      * 新终端扫描绑定成功但 GUI 因客户端 UUID 缺失而永远空列表，仅老终端/重登后正常）。
      */
     private static void syncHeldSlot(EntityPlayerMP player, ItemStack stack) {
-        player.playerNetServerHandler
-            .sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, stack));
+        player.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, stack));
     }
 
     /** 服务端向玩家发送本地化聊天提示（仅服务端调用） */
