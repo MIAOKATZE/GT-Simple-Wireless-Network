@@ -410,6 +410,7 @@ gtswn.device.chat.scan.start=§b[设备终端] 开始扫描团队机器（约 5 
 gtswn.device.chat.scan.countdown=§7[设备终端] %d 秒后执行扫描
 gtswn.device.chat.scan.cancelled=§e[设备终端] 扫描已取消
 gtswn.device.chat.scan.complete=§a[设备终端] 扫描完成: 已录入 %d 台（团队 %d 人）
+gtswn.device.chat.scan.skipped_owner=§7[设备终端] 另有 %d 台机器因归属（无主或非团队成员）被跳过
 gtswn.device.chat.teleport.no_xp=§c[设备终端] 经验等级不足，传送需要 %d 级
 
 # BQ quests BEGIN

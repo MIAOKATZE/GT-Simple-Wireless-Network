@@ -51,6 +51,14 @@ public final class DeviceTerminalClientCache {
             // 旧版本页迟达（服务端已重发更高版本）：丢弃防回退
             return;
         }
+        // 同版本迟到重复页（整批已提交、pending 已清、分页布局一致）：直接丢弃，不重开批次——
+        // 重开会产生只含本页的不完整 pending 批次，令 hasMorePending 恒真并触发无效追加轮询
+        // （v1.7.15 修复）。安全性依据服务端不变式「数据变更必然 version++」：同 version 的
+        // 已提交整批与重发页内容等价（如传送动作后的 invalidate 重发），丢弃不损失数据；
+        // pageTotal 不同的同版本页视为服务端重新分页，放行走原批次切换逻辑。
+        if (version == cached.version && cached.pendingPages == null && cached.pageTotal == pageTotal) {
+            return;
+        }
         // 批次切换判据：已提交版本与在途批次版本的较大者（在途页重复到达不重开批，只幂等覆盖）
         long knownVersion = cached.pendingPages == null ? cached.version
             : Math.max(cached.version, cached.pendingVersion);

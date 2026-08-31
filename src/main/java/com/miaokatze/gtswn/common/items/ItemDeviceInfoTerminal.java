@@ -159,6 +159,11 @@ public class ItemDeviceInfoTerminal extends Item {
             registry.register(key, player.getUniqueID(), localName);
         }
         UUID terminalId = getOrCreateTerminalId(stack);
+        // 首用生成 UUID 后立即同步手持槽：GUI 锚点/客户端缓存键依赖客户端 NBT 的 UUID，
+        // 1.7.10 原地 NBT 变更不自动推送（否则新终端扫描绑定后 GUI 因客户端 UUID 缺失永远空列表）
+        if (player instanceof EntityPlayerMP playerMP) {
+            syncHeldSlot(playerMP, stack);
+        }
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(world);
         AddResult result = store.addBinding(
             terminalId,
@@ -212,8 +217,10 @@ public class ItemDeviceInfoTerminal extends Item {
         }
         if (player.isSneaking()) {
             // 扫描开关（服务端权威；终端 UUID 解析后移交 DeviceScanManager）
-            if (player instanceof EntityPlayerMP) {
-                DeviceScanManager.toggleScan((EntityPlayerMP) player, getOrCreateTerminalId(stack));
+            if (player instanceof EntityPlayerMP playerMP) {
+                DeviceScanManager.toggleScan(playerMP, getOrCreateTerminalId(stack));
+                // 首用生成 UUID 后立即同步手持槽（绑定锚点对客户端可见，理由同 onItemUseFirst）
+                syncHeldSlot(playerMP, stack);
             }
             return stack;
         }
@@ -221,7 +228,7 @@ public class ItemDeviceInfoTerminal extends Item {
         // （GUI 锚点/UI 偏好初始读取依赖客户端 NBT；同步动作包服务端写回的偏好也借此通道校正）
         getOrCreateTerminalId(stack);
         if (player instanceof EntityPlayerMP playerMP) {
-            playerMP.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, player.inventory.currentItem, stack));
+            syncHeldSlot(playerMP, stack);
         }
         return stack;
     }
@@ -340,6 +347,20 @@ public class ItemDeviceInfoTerminal extends Item {
             stack.stackTagCompound = new NBTTagCompound();
         }
         return stack.stackTagCompound;
+    }
+
+    /**
+     * 服务端显式同步手持槽的终端 NBT 到客户端（首用生成 UUID / 偏好写回后调用）。
+     * <p>
+     * 1.7.10 {@code S2FPacketSetSlot} 对 windowId=0 使用 {@code ContainerPlayer} 的
+     * <b>容器槽序</b>（0=合成结果，1-4=合成矩阵，5-8=护甲，9-35=主背包，36-44=快捷栏），
+     * 快捷栏槽 {@code inventory.currentItem}（0-8）必须映射为 {@code 36 + currentItem}——
+     * 直发 currentItem 会打到合成格/护甲槽，终端 NBT 从未真正到达客户端（v1.7.15 修复：
+     * 新终端扫描绑定成功但 GUI 因客户端 UUID 缺失而永远空列表，仅老终端/重登后正常）。
+     */
+    private static void syncHeldSlot(EntityPlayerMP player, ItemStack stack) {
+        player.playerNetServerHandler
+            .sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, stack));
     }
 
     /** 服务端向玩家发送本地化聊天提示（仅服务端调用） */

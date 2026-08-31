@@ -278,10 +278,17 @@ public final class DeviceScanManager {
         Map<String, DeviceEntry> registry, Set<String> bound, List<Candidate> worldCandidates, int capacity) {
         List<Candidate> candidates = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        // 归属过滤计数（v1.7.15）：owner∉团队（含无主/defaultUuid）被跳过的机器数，仅用于
+        // complete 后的 skipped_owner 提示，帮助玩家定位「扫描显示多但录入少」的归属原因
+        int ownerFiltered = 0;
         // A) 登记表源：登记表仅收录 D1 机器（放置/绑定即校验），这里按 owner∈团队 + 维度过滤
         for (Map.Entry<String, DeviceEntry> entry : registry.entrySet()) {
             String key = entry.getKey();
-            if (bound.contains(key) || seen.contains(key) || !team.contains(entry.getValue().owner)) {
+            if (bound.contains(key) || seen.contains(key)) {
+                continue;
+            }
+            if (!team.contains(entry.getValue().owner)) {
+                ownerFiltered++;
                 continue;
             }
             int[] pos = parseKey(key);
@@ -306,9 +313,11 @@ public final class DeviceScanManager {
         // B) 世界源：D1 判别在快照时完成（workingMachine 标志），此处仅查标志（纯内存）
         for (Candidate candidate : worldCandidates) {
             String key = candidate.key;
-            if (!candidate.workingMachine || bound.contains(key)
-                || seen.contains(key)
-                || !team.contains(candidate.ownerUuid)) {
+            if (!candidate.workingMachine || bound.contains(key) || seen.contains(key)) {
+                continue;
+            }
+            if (!team.contains(candidate.ownerUuid)) {
+                ownerFiltered++;
                 continue;
             }
             seen.add(key);
@@ -320,7 +329,7 @@ public final class DeviceScanManager {
         if (candidates.size() > capacity) {
             candidates = new ArrayList<>(candidates.subList(0, capacity));
         }
-        return new ScanResult(state, team.size(), candidates);
+        return new ScanResult(state, team.size(), ownerFiltered, candidates);
     }
 
     // ==================== 结果排水（主线程） ====================
@@ -386,6 +395,10 @@ public final class DeviceScanManager {
                     }
                 }
                 sendChat(player, "gtswn.device.chat.scan.complete", added, result.teamSize);
+                if (result.ownerFiltered > 0) {
+                    // 归属跳过明细（v1.7.15）：让「扫描显示多但录入少」的归属原因对玩家可见
+                    sendChat(player, "gtswn.device.chat.scan.skipped_owner", result.ownerFiltered);
+                }
             } catch (Throwable t) {
                 GTSimpleWirelessNetwork.LOG.error("[设备终端] 扫描结果应用异常（结果丢弃）", t);
             }
@@ -497,12 +510,16 @@ public final class DeviceScanManager {
         /** 团队人数（聊天报告参数） */
         final int teamSize;
 
+        /** 归属过滤跳过数（owner∉团队，含无主/defaultUuid；0=不发 skipped_owner 提示） */
+        final int ownerFiltered;
+
         /** 候选机器（已过滤排序截断，纯内存副本） */
         final List<Candidate> candidates;
 
-        ScanResult(ScanState state, int teamSize, List<Candidate> candidates) {
+        ScanResult(ScanState state, int teamSize, int ownerFiltered, List<Candidate> candidates) {
             this.state = state;
             this.teamSize = teamSize;
+            this.ownerFiltered = ownerFiltered;
             this.candidates = candidates;
         }
     }

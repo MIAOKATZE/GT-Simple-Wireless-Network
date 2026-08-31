@@ -410,6 +410,7 @@ gtswn.device.chat.scan.start=§b[Device Terminal] Scanning team machines (execut
 gtswn.device.chat.scan.countdown=§7[Device Terminal] Scan executes in %d s
 gtswn.device.chat.scan.cancelled=§e[Device Terminal] Scan cancelled
 gtswn.device.chat.scan.complete=§a[Device Terminal] Scan complete: %d machines imported (team of %d)
+gtswn.device.chat.scan.skipped_owner=§7[Device Terminal] %d machines skipped (unowned or outside your team)
 gtswn.device.chat.teleport.no_xp=§c[Device Terminal] Not enough XP levels, teleport costs %d
 
 # BQ quests BEGIN
