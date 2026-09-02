@@ -128,11 +128,16 @@ public class LaserHatchUtil {
                 }
                 // 1.7.10：无 GUI 打开时 openContainer(inventoryContainer) 无 ICrafting，detectAndSendChanges 不会
                 // 向客户端推送槽位；显式发送 S2FPacketSetSlot 同步该槽位，否则客户端背包残留旧物品直至下次交互。
+                // S2FPacketSetSlot windowId=0 使用 ContainerPlayer 容器槽序（36-44=快捷栏）：快捷栏数组序 0-8
+                // 必须映射为 36+i，直发 i 会打到合成结果/合成格/护甲槽，客户端出现顶掉装备的残影（点击即被服务端纠正）。
                 // 1.7.10: with no GUI open the inventoryContainer has no ICrafting listeners, so
                 // detectAndSendChanges never pushes slots; send S2FPacketSetSlot explicitly so the
                 // client slot updates immediately instead of showing stale items until the next interaction.
+                // windowId=0 follows ContainerPlayer order (36-44=hotbar): map hotbar index i to 36+i,
+                // raw i would hit the craft result/matrix/armor slots and ghost client-side.
                 if (player instanceof EntityPlayerMP playerMP) {
-                    playerMP.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, i, mainInventory[i]));
+                    playerMP.playerNetServerHandler
+                        .sendPacket(new S2FPacketSetSlot(0, i < 9 ? 36 + i : i, mainInventory[i]));
                 }
                 return true;
             }
