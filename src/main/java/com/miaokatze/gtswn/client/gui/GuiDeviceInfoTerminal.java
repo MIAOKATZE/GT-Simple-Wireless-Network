@@ -203,12 +203,14 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         // 顶行四按钮（列头行上方）：计数模式 / 显示配方 / 功率筛选 / 状态筛选
         // （显示配方右缘 +256；功率筛选 +264 宽 94；状态筛选 +362 宽 80，右缘 +442 = xSize-8，
         // 均不越界面右缘、不与相邻按钮/列头重叠）
-        buttonList.add(new GuiButton(BTN_COUNT_MODE, this.guiLeft + 8, this.guiTop + 16, 130, 16, countModeText()));
-        buttonList.add(new GuiButton(BTN_SHOW_RECIPE, this.guiLeft + 146, this.guiTop + 16, 110, 16, showRecipeText()));
         buttonList
-            .add(new GuiButton(BTN_POWER_FILTER, this.guiLeft + 264, this.guiTop + 16, 94, 16, powerFilterText()));
+            .add(new GtswnGuiButton(BTN_COUNT_MODE, this.guiLeft + 8, this.guiTop + 16, 130, 16, countModeText()));
         buttonList
-            .add(new GuiButton(BTN_STATE_FILTER, this.guiLeft + 362, this.guiTop + 16, 80, 16, stateFilterText()));
+            .add(new GtswnGuiButton(BTN_SHOW_RECIPE, this.guiLeft + 146, this.guiTop + 16, 110, 16, showRecipeText()));
+        buttonList
+            .add(new GtswnGuiButton(BTN_POWER_FILTER, this.guiLeft + 264, this.guiTop + 16, 94, 16, powerFilterText()));
+        buttonList
+            .add(new GtswnGuiButton(BTN_STATE_FILTER, this.guiLeft + 362, this.guiTop + 16, 80, 16, stateFilterText()));
         this.entryList = new GuiDeviceEntryList(this, this.guiLeft, this.guiTop);
         refreshAnchor();
         refreshEntries();
@@ -529,27 +531,35 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         drawHoverTooltip(mouseX, mouseY);
     }
 
-    /** 自绘面板背景（仿 GuiQuantumTerminal.drawPanelBackground 配色：浅灰底 + 深蓝灰边框）。 */
+    /**
+     * 面板背景：消费 gtswn 整版贴图 panel_device_info（450×252，1:1 绘制，plan/ui/texture-list.md §2/§3 #1），
+     * 几何与尺寸零变化；标题/列头两条分隔线仍代码绘制，色值琥珀化（GtswnGuiPalette.DIVIDER）。
+     */
     private void drawPanelBackground() {
-        drawRect(this.guiLeft, this.guiTop, this.guiLeft + this.xSize, this.guiTop + this.ySize, 0xFFE8EAEC);
-        drawRect(this.guiLeft, this.guiTop, this.guiLeft + this.xSize, this.guiTop + 1, 0xFF607080);
-        drawRect(
+        GtswnGuiDrawing.bind(GtswnGuiTextures.PANEL_DEVICE_INFO);
+        GtswnGuiDrawing.drawRegion(
+            GtswnGuiTextures.PANEL_DEVICE_INFO,
             this.guiLeft,
-            this.guiTop + this.ySize - 1,
-            this.guiLeft + this.xSize,
-            this.guiTop + this.ySize,
-            0xFF607080);
-        drawRect(this.guiLeft, this.guiTop, this.guiLeft + 1, this.guiTop + this.ySize, 0xFF607080);
-        drawRect(
-            this.guiLeft + this.xSize - 1,
             this.guiTop,
-            this.guiLeft + this.xSize,
-            this.guiTop + this.ySize,
-            0xFF607080);
+            0,
+            0,
+            GtswnGuiTextures.PANEL_DEVICE_INFO_W,
+            GtswnGuiTextures.PANEL_DEVICE_INFO_H,
+            this.zLevel);
         // 标题分隔线
-        drawRect(this.guiLeft + 8, this.guiTop + 14, this.guiLeft + this.xSize - 8, this.guiTop + 15, 0xFFB8C0C8);
+        drawRect(
+            this.guiLeft + 8,
+            this.guiTop + 14,
+            this.guiLeft + this.xSize - 8,
+            this.guiTop + 15,
+            GtswnGuiPalette.DIVIDER);
         // 列头分隔线
-        drawRect(this.guiLeft + 8, this.guiTop + 50, this.guiLeft + this.xSize - 8, this.guiTop + 51, 0xFFB8C0C8);
+        drawRect(
+            this.guiLeft + 8,
+            this.guiTop + 50,
+            this.guiLeft + this.xSize - 8,
+            this.guiTop + 51,
+            GtswnGuiPalette.DIVIDER);
     }
 
     /** 标题（居中） */
@@ -559,7 +569,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             title,
             this.guiLeft + (this.xSize - this.fontRendererObj.getStringWidth(title)) / 2,
             this.guiTop + 4,
-            0x404040);
+            GtswnGuiPalette.TEXT_TITLE);
     }
 
     /**
@@ -576,14 +586,14 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
                 "§l" + label,
                 this.guiLeft + 8 + colX[i],
                 this.guiTop + HEADER_Y,
-                i == this.sortColumn ? 0x1F4E79 : 0x2F3640);
+                i == this.sortColumn ? GtswnGuiPalette.TEXT_ACCENT : GtswnGuiPalette.TEXT_BODY);
         }
         // 第六列：传送列头（行内 ✦ 按钮列；不可排序，仅标签）
         this.fontRendererObj.drawString(
             "§l" + tr("gtswn.device.gui.teleport"),
             this.guiLeft + 8 + GuiDeviceEntryList.TP_BTN_X - 6,
             this.guiTop + HEADER_Y,
-            0x2F3640);
+            GtswnGuiPalette.TEXT_BODY);
     }
 
     /** 列表主体：无快照「...」占位 / 无绑定提示 / 正常列表。 */
@@ -606,13 +616,16 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     private void drawCenteredListText(String text) {
         int x = this.guiLeft + 8 + (434 - this.fontRendererObj.getStringWidth(text)) / 2;
         int y = this.guiTop + 52 + 180 / 2 - 4;
-        this.fontRendererObj.drawString(text, x, y, 0x6B7680);
+        this.fontRendererObj.drawString(text, x, y, GtswnGuiPalette.TEXT_MUTED);
     }
 
     /** 底行固定操作提示。 */
     private void drawFooter() {
-        this.fontRendererObj
-            .drawString(tr("gtswn.device.gui.footer"), this.guiLeft + 8, this.guiTop + FOOTER_Y, 0x6B7680);
+        this.fontRendererObj.drawString(
+            tr("gtswn.device.gui.footer"),
+            this.guiLeft + 8,
+            this.guiTop + FOOTER_Y,
+            GtswnGuiPalette.TEXT_MUTED);
     }
 
     /**
@@ -790,6 +803,11 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 矩形填充转发（列表背景/滚动条/按钮绘制用） */
     void fillRect(int x1, int y1, int x2, int y2, int color) {
         drawRect(x1, y1, x2, y2, color);
+    }
+
+    /** 绘制层级转发（Gui.zLevel 为 protected 跨包不可直引，列表组件贴图绘制用） */
+    float guiZLevel() {
+        return zLevel;
     }
 
     // ==================== 偏好映射工具 ====================

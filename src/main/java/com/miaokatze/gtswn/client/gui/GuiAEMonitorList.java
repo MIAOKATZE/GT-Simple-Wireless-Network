@@ -26,7 +26,8 @@ import com.miaokatze.gtswn.common.util.FormatUtil;
  * 提级后原 8 项隐式捕获显式化：几何（left/top/xSize 构造快照）、条目数组（{@code Supplier} 活读）、
  * 移除回包（{@code IntConsumer}）、panel 引用、宿主 GUI（fontRendererObj/mc/width/height 经宿主
  * 包私有访问器——GuiScreen 字段跨包 protected 不可直引）、图标绘制（宿主包私有方法）、
- * 格式化三件套随迁本类（O2-A07 ClientChartFormat 落地后再改引）、矩形填充经宿主转发 Gui.drawRect。
+ * 格式化三件套随迁本类（O2-A07 ClientChartFormat 落地后再改引）、矩形填充经宿主转发 Gui.drawRect
+ * （S6a 贴图化后本类绘制全部改走 GtswnGuiDrawing，不再使用 fillRect）。
  * <p>
  * 事件链不变量：滚轮优先于 super、列表区内点击一律消费、mouseMovedOrUp 无标签页条件直调
  * （宿主侧调用点维持原状）。
@@ -118,6 +119,13 @@ class GuiAEMonitorList {
      * @param mouseY 鼠标 Y
      */
     private void drawSlot(int index, int x, int y, int mouseX, int mouseY) {
+        // 行 hover 高亮（契约 §6-④ 新增视觉项）：ROW_HOVER 9-slice 先画、行内容后画；
+        // 纯绘制判定，命中/点击/滚动逻辑零改动。命中区右界让位滚动条区（宽 6 + 边距 2）。
+        int hoverRight = listRight - scrollbarWidth - scrollbarMarginRight;
+        if (mouseX >= listLeft && mouseX < hoverRight && mouseY >= y && mouseY < y + slotHeight) {
+            GtswnGuiDrawing
+                .drawNineSlice(GtswnGuiTextures.ROW_HOVER, 4, listLeft, y, listWidth, slotHeight, host.guiZLevel());
+        }
         Object entry = entries.get()[index];
         int displayMode = panel.getDisplayMode();
         int iconSize = 16;
@@ -151,12 +159,12 @@ class GuiAEMonitorList {
                     .trimStringToWidth(name, nameMaxW),
                 x + 22,
                 y + 6,
-                0x2F3640);
+                GtswnGuiPalette.TEXT_BODY);
 
         // 数量/存量列
         String amountText = sample == null ? "-" : formatAEMonitorAmount(sample.amount, displayMode);
         host.font()
-            .drawString(amountText, x + 110, y + 6, 0x2F3640);
+            .drawString(amountText, x + 110, y + 6, GtswnGuiPalette.TEXT_BODY);
 
         // 实时变化量 / 平均变化量两列
         String realtimeText;
@@ -165,9 +173,9 @@ class GuiAEMonitorList {
         int averageColor;
         if (sample == null) {
             realtimeText = "-";
-            realtimeColor = 0x6B7680;
+            realtimeColor = GtswnGuiPalette.TEXT_MUTED;
             averageText = "-";
-            averageColor = 0x6B7680;
+            averageColor = GtswnGuiPalette.TEXT_MUTED;
         } else {
             realtimeText = formatAEMonitorRate(sample.rate, displayMode);
             realtimeColor = rateColor(sample.rate);
@@ -175,7 +183,7 @@ class GuiAEMonitorList {
                 .get(key);
             if (avgRate == null) {
                 averageText = "-";
-                averageColor = 0x6B7680;
+                averageColor = GtswnGuiPalette.TEXT_MUTED;
             } else {
                 averageText = formatAEMonitorRate(avgRate, displayMode);
                 averageColor = rateColor(avgRate);
@@ -186,23 +194,27 @@ class GuiAEMonitorList {
         host.font()
             .drawString(averageText, x + 260, y + 6, averageColor);
 
-        // 清除按钮区域（仅视觉提示，点击由 mouseClicked 处理）
+        // 清除按钮 chip：CHIP_NORMAL 9-slice，几何不变（契约 §3 #9 / §6-⑤）
         int btnX = listRight - 62;
         int btnY = y + 4;
         int btnW = 56;
         int btnH = slotHeight - 8;
-        host.fillRect(btnX, btnY, btnX + btnW, btnY + btnH, 0xFFB8C0C8);
+        GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.CHIP_NORMAL, 4, btnX, btnY, btnW, btnH, host.guiZLevel());
         String removeText = tr("gtswn.network_info.gui.ae.remove");
         int textW = host.font()
             .getStringWidth(removeText);
         host.font()
-            .drawString(removeText, btnX + (btnW - textW) / 2, btnY + 2, 0x2F3640);
+            .drawString(removeText, btnX + (btnW - textW) / 2, btnY + 2, GtswnGuiPalette.TEXT_BODY);
     }
 
     // ==================== 背景与裁剪 ====================
-    /** 绘制列表背景色块（覆盖面板背景分隔线，避免列表区出现不需要的线条）。 */
+    /**
+     * 绘制列表背景（LIST_PANEL 9-slice，几何零变化：覆盖面板背景分隔线，避免列表区出现不需要的线条）。
+     * 契约出处：plan/ui/texture-list.md §3 #15 / §6-⑤。
+     */
     private void drawListBackground() {
-        host.fillRect(listLeft, listTop, listRight, listBottom, 0xFFEDF1F5);
+        GtswnGuiDrawing
+            .drawNineSlice(GtswnGuiTextures.LIST_PANEL, 4, listLeft, listTop, listWidth, listHeight, host.guiZLevel());
     }
 
     /**
@@ -235,13 +247,27 @@ class GuiAEMonitorList {
         Object[] monitoredEntries = entries.get();
         int trackX = listRight - scrollbarWidth - scrollbarMarginRight;
         int maxScroll = getMaxScroll();
-        // 轨道
-        host.fillRect(trackX, listTop, trackX + scrollbarWidth, listBottom, 0xFFB8C0C8);
+        // 轨道：SCROLLBAR_TRACK 纵向 9-slice（slice=2，宽 6 与轨道几何不变；契约 §3 #11 / §6-⑤）
+        GtswnGuiDrawing.drawNineSlice(
+            GtswnGuiTextures.SCROLLBAR_TRACK,
+            2,
+            trackX,
+            listTop,
+            scrollbarWidth,
+            listHeight,
+            host.guiZLevel());
         if (maxScroll > 0) {
             int totalRows = Math.max(visibleRows(), monitoredEntries.length);
             int thumbH = Math.max(10, listHeight * visibleRows() / totalRows);
             int thumbY = listTop + scrollOffset * (listHeight - thumbH) / maxScroll;
-            host.fillRect(trackX, thumbY, trackX + scrollbarWidth, thumbY + thumbH, 0xFF6A7680);
+            GtswnGuiDrawing.drawNineSlice(
+                GtswnGuiTextures.SCROLLBAR_THUMB,
+                2,
+                trackX,
+                thumbY,
+                scrollbarWidth,
+                thumbH,
+                host.guiZLevel());
         }
     }
 
@@ -381,15 +407,15 @@ class GuiAEMonitorList {
         }
     }
 
-    /** 根据变化速率返回颜色：正深绿、负红、零灰 */
+    /** 根据变化速率返回颜色：正绿、负红、零灰（契约 §5 色值映射 STATE_ONLINE/STATE_OFFLINE/TEXT_MUTED） */
     private static int rateColor(double rate) {
         if (rate > 0.0D) {
-            return 0x2E7D32;
+            return GtswnGuiPalette.STATE_ONLINE;
         }
         if (rate < 0.0D) {
-            return 0xF44336;
+            return GtswnGuiPalette.STATE_OFFLINE;
         }
-        return 0x6B7680;
+        return GtswnGuiPalette.TEXT_MUTED;
     }
 
     private static String tr(String key) {

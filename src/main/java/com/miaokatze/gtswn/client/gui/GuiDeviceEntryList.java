@@ -191,11 +191,22 @@ class GuiDeviceEntryList {
             hoverIndex = -1;
         }
 
+        // 行 hover 高亮（贴图化新增视觉项，契约 §3 #13 / §6 ④）：鼠标在行矩形内先画 row_hover 底再画内容；
+        // 仅视觉，不改上方 inRow/inNameCol 命中与 tooltip 计时判定
+        if (inRow) {
+            GtswnGuiDrawing
+                .drawNineSlice(GtswnGuiTextures.ROW_HOVER, 4, listLeft, y, listWidth, slotHeight, host.guiZLevel());
+        }
+
         // 机器名列：超宽截断+省略号；v1.7.2 全行文字加粗 §l（applyBold 与颜色码共存）
-        font.drawString(applyBold(ellipsis(font, entry.name, NAME_WIDTH)), x + COL_NAME_X, textY, 0x2F3640);
+        font.drawString(
+            applyBold(ellipsis(font, entry.name, NAME_WIDTH)),
+            x + COL_NAME_X,
+            textY,
+            GtswnGuiPalette.TEXT_BODY);
 
         // 状态列：三态色字（lang 键自带 §6/§a/§c 颜色码，覆盖默认色参数）
-        font.drawString(applyBold(host.stateText(entry.state)), x + COL_STATE_X, textY, 0x2F3640);
+        font.drawString(applyBold(host.stateText(entry.state)), x + COL_STATE_X, textY, GtswnGuiPalette.TEXT_BODY);
 
         // 瞬时 / 平均区（v1.7.2 配方改单条覆盖）：显示配方开启且有配方 → 只画一条，
         // 起点 COL_INST_X、可用宽 RECIPE_LINE_WIDTH（灰字，ellipsis 截断）；
@@ -205,7 +216,11 @@ class GuiDeviceEntryList {
         boolean recipeOverride = host.showRecipeEnabled() && (!recipeIn.isEmpty() || !recipeOut.isEmpty());
         if (recipeOverride) {
             String line = recipeLine(recipeIn, recipeOut, 2);
-            font.drawString(applyBold(ellipsis(font, line, RECIPE_LINE_WIDTH)), x + COL_INST_X, textY, 0x6B7680);
+            font.drawString(
+                applyBold(ellipsis(font, line, RECIPE_LINE_WIDTH)),
+                x + COL_INST_X,
+                textY,
+                GtswnGuiPalette.TEXT_MUTED);
         } else {
             font.drawString(
                 applyBold(host.formatEUt(entry.inst)),
@@ -221,17 +236,18 @@ class GuiDeviceEntryList {
 
         // 位置列：dim(x,y,z)
         String posText = entry.dim + "(" + entry.x + "," + entry.y + "," + entry.z + ")";
-        font.drawString(applyBold(ellipsis(font, posText, POS_WIDTH)), x + COL_POS_X, textY, 0x2F3640);
+        font.drawString(applyBold(ellipsis(font, posText, POS_WIDTH)), x + COL_POS_X, textY, GtswnGuiPalette.TEXT_BODY);
 
         // 传送按钮（仅视觉，点击由 mouseClicked 处理）：✦N，N=传送经验消耗；
         // 客户端经验等级足够=绿字，不足=红字（服务端动作队列仍会权威复查）
         int btnX = x + TP_BTN_X;
         int btnY = y + 3;
         int btnH = slotHeight - 6;
-        host.fillRect(btnX, btnY, btnX + TP_BTN_W, btnY + btnH, 0xFFB8C0C8);
+        GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.CHIP_NORMAL, 4, btnX, btnY, TP_BTN_W, btnH, host.guiZLevel());
         String tpText = "\u2726" + host.teleportCost();
         int tpW = font.getStringWidth(tpText);
-        int tpColor = host.clientPlayerLevel() >= host.teleportCost() ? 0x2E7D32 : 0xF44336;
+        int tpColor = host.clientPlayerLevel() >= host.teleportCost() ? GtswnGuiPalette.STATE_ONLINE
+            : GtswnGuiPalette.STATE_OFFLINE;
         font.drawString(applyBold(tpText), btnX + (TP_BTN_W - tpW) / 2, btnY + 3, tpColor);
     }
 
@@ -241,9 +257,10 @@ class GuiDeviceEntryList {
      */
     private static int eutColor(byte powerType, double value) {
         if (value == 0D) {
-            return 0x2F3640;
+            return GtswnGuiPalette.TEXT_BODY;
         }
-        return powerType == DeviceTerminalDataStore.POWER_TYPE_GENERATE ? 0x2E7D32 : 0xE67E22;
+        return powerType == DeviceTerminalDataStore.POWER_TYPE_GENERATE ? GtswnGuiPalette.STATE_ONLINE
+            : GtswnGuiPalette.STATE_IDLE;
     }
 
     // ==================== 悬浮查询（宿主 tooltip 用） ====================
@@ -264,9 +281,14 @@ class GuiDeviceEntryList {
 
     // ==================== 背景与裁剪（仿 GuiAEMonitorList） ====================
 
-    /** 绘制列表背景色块（覆盖面板背景分隔线，避免列表区出现不需要的线条）。 */
+    /**
+     * 绘制列表背景（覆盖面板背景分隔线，避免列表区出现不需要的线条）：
+     * 消费 gtswn 贴图 list_panel（INSET 凹陷，9-slice 切片 4px，契约 plan/ui/texture-list.md §3 #15），
+     * 区域几何零变化（listLeft/listTop/listWidth/listHeight 与原 fillRect 区域一致）。
+     */
     private void drawListBackground() {
-        host.fillRect(listLeft, listTop, listRight, listBottom, 0xFFEDF1F5);
+        GtswnGuiDrawing
+            .drawNineSlice(GtswnGuiTextures.LIST_PANEL, 4, listLeft, listTop, listWidth, listHeight, host.guiZLevel());
     }
 
     /**
@@ -299,8 +321,15 @@ class GuiDeviceEntryList {
     private void drawScrollbar() {
         int trackX = listRight - scrollbarWidth - scrollbarMarginRight;
         int maxScroll = getMaxScroll();
-        // 轨道
-        host.fillRect(trackX, listTop, trackX + scrollbarWidth, listBottom, 0xFFB8C0C8);
+        // 轨道（贴图化：scrollbar_track 纵向 9-slice 切片 2px，宽 6 与区域几何不变）
+        GtswnGuiDrawing.drawNineSlice(
+            GtswnGuiTextures.SCROLLBAR_TRACK,
+            2,
+            trackX,
+            listTop,
+            scrollbarWidth,
+            listHeight,
+            host.guiZLevel());
         if (maxScroll > 0) {
             int totalRows = Math.max(
                 visibleRows(),
@@ -308,7 +337,14 @@ class GuiDeviceEntryList {
                     .size());
             int thumbH = Math.max(10, listHeight * visibleRows() / totalRows);
             int thumbY = listTop + scrollOffset * (listHeight - thumbH) / maxScroll;
-            host.fillRect(trackX, thumbY, trackX + scrollbarWidth, thumbY + thumbH, 0xFF6A7680);
+            GtswnGuiDrawing.drawNineSlice(
+                GtswnGuiTextures.SCROLLBAR_THUMB,
+                2,
+                trackX,
+                thumbY,
+                scrollbarWidth,
+                thumbH,
+                host.guiZLevel());
         }
     }
 

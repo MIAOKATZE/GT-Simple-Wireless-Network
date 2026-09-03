@@ -114,18 +114,24 @@ public class GuiQuantumTerminal extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        // v1.6.9：自绘紧凑面板背景（不再绑定 AE2 networkstatus.png）
+        // 背景消费 gtswn 整版贴图（plan/ui/texture-list.md §3 #2）
         drawPanelBackground();
 
         // 标题
-        this.fontRendererObj
-            .drawString(tr("gtswn.gui.quantum.network_details"), this.guiLeft + 8, this.guiTop + 6, 0x404040);
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.network_details"),
+            this.guiLeft + 8,
+            this.guiTop + 6,
+            GtswnGuiPalette.TEXT_TITLE);
 
         QuantumNetworkData data = latestData;
         if (data == null) {
             // 首个回包未到达：显示等待占位
-            this.fontRendererObj
-                .drawString(EnumChatFormatting.GRAY + "...", this.guiLeft + 13, this.guiTop + 20, 0x404040);
+            this.fontRendererObj.drawString(
+                EnumChatFormatting.GRAY + "...",
+                this.guiLeft + 13,
+                this.guiTop + 20,
+                GtswnGuiPalette.TEXT_BODY);
         } else if (!data.online) {
             drawOffline(data);
         } else {
@@ -136,28 +142,27 @@ public class GuiQuantumTerminal extends GuiScreen {
     }
 
     /**
-     * 自绘紧凑面板背景（仿 GuiNetworkInfoPanel.drawPanelBackground，v1.6.9 起不再绑定 AE2 纹理）。
-     * <p>
-     * 配色与项目内 GuiNetworkInfoPanel 一致：浅灰背景 + 深蓝灰边框 + 浅蓝灰标题分隔线。
+     * 面板背景：消费 gtswn 整版贴图 panel_quantum（120×92，1:1 绘制，plan/ui/texture-list.md §2/§3 #2），
+     * 几何与尺寸零变化；标题分隔线仍代码绘制，色值琥珀化（GtswnGuiPalette.DIVIDER）。
      */
     private void drawPanelBackground() {
-        drawRect(this.guiLeft, this.guiTop, this.guiLeft + this.xSize, this.guiTop + this.ySize, 0xFFE8EAEC);
-        drawRect(this.guiLeft, this.guiTop, this.guiLeft + this.xSize, this.guiTop + 1, 0xFF607080);
-        drawRect(
+        GtswnGuiDrawing.bind(GtswnGuiTextures.PANEL_QUANTUM);
+        GtswnGuiDrawing.drawRegion(
+            GtswnGuiTextures.PANEL_QUANTUM,
             this.guiLeft,
-            this.guiTop + this.ySize - 1,
-            this.guiLeft + this.xSize,
-            this.guiTop + this.ySize,
-            0xFF607080);
-        drawRect(this.guiLeft, this.guiTop, this.guiLeft + 1, this.guiTop + this.ySize, 0xFF607080);
-        drawRect(
-            this.guiLeft + this.xSize - 1,
             this.guiTop,
-            this.guiLeft + this.xSize,
-            this.guiTop + this.ySize,
-            0xFF607080);
+            0,
+            0,
+            GtswnGuiTextures.PANEL_QUANTUM_W,
+            GtswnGuiTextures.PANEL_QUANTUM_H,
+            this.zLevel);
         // 标题分隔线
-        drawRect(this.guiLeft + 8, this.guiTop + 14, this.guiLeft + this.xSize - 8, this.guiTop + 15, 0xFFB8C0C8);
+        drawRect(
+            this.guiLeft + 8,
+            this.guiTop + 14,
+            this.guiLeft + this.xSize - 8,
+            this.guiTop + 15,
+            GtswnGuiPalette.DIVIDER);
     }
 
     /** 绘制在线数据：控制器坐标 / 维度 / 量子节点数 / 频道（used/total/百分比，过载红色） */
@@ -167,27 +172,29 @@ public class GuiQuantumTerminal extends GuiScreen {
             tr("gtswn.gui.quantum.controller_pos") + ": " + data.anchorX + ", " + data.anchorY + ", " + data.anchorZ,
             this.guiLeft + 13,
             this.guiTop + 20,
-            0x404040);
+            GtswnGuiPalette.TEXT_BODY);
         // 维度行
         this.fontRendererObj.drawString(
             tr("gtswn.gui.quantum.dimension") + ": " + data.anchorDim,
             this.guiLeft + 13,
             this.guiTop + 32,
-            0x404040);
+            GtswnGuiPalette.TEXT_BODY);
         // 量子节点数行（v1.6.9 新增字段）
         this.fontRendererObj.drawString(
             tr("gtswn.gui.quantum.node_count") + ": " + data.quantumNodeCount,
             this.guiLeft + 13,
             this.guiTop + 44,
-            0x404040);
+            GtswnGuiPalette.TEXT_BODY);
         // 频道行（保留 v1.6.8 三件套 used/total/(pct%)，过载态红色高亮）
         if (data.channelsInfinite) {
             String channelLine = tr("gtswn.gui.quantum.channels") + ": " + data.usedChannels + " / \u221e";
-            this.fontRendererObj.drawString(channelLine, this.guiLeft + 13, this.guiTop + 56, 0x404040);
+            this.fontRendererObj
+                .drawString(channelLine, this.guiLeft + 13, this.guiTop + 56, GtswnGuiPalette.TEXT_BODY);
             return;
         }
         int channelPct = data.totalChannels > 0 ? (int) (data.usedChannels * 100L / data.totalChannels) : 0;
-        int channelColor = data.usedChannels > data.totalChannels ? 0xFF0000 : 0x404040;
+        int channelColor = data.usedChannels > data.totalChannels ? GtswnGuiPalette.STATE_OVERLOAD
+            : GtswnGuiPalette.TEXT_BODY;
         String channelLine = tr("gtswn.gui.quantum.channels") + ": "
             + data.usedChannels
             + " / "
@@ -210,28 +217,31 @@ public class GuiQuantumTerminal extends GuiScreen {
             tr("gtswn.gui.quantum.controller_pos") + ": " + data.anchorX + ", " + data.anchorY + ", " + data.anchorZ,
             this.guiLeft + 13,
             this.guiTop + 20,
-            0x404040);
+            GtswnGuiPalette.TEXT_BODY);
         // 维度行
         this.fontRendererObj.drawString(
             tr("gtswn.gui.quantum.dimension") + ": " + data.anchorDim,
             this.guiLeft + 13,
             this.guiTop + 32,
-            0x404040);
+            GtswnGuiPalette.TEXT_BODY);
         // 量子节点数行（离线时硬编码 0）
-        this.fontRendererObj
-            .drawString(tr("gtswn.gui.quantum.node_count") + ": 0", this.guiLeft + 13, this.guiTop + 44, 0x404040);
+        this.fontRendererObj.drawString(
+            tr("gtswn.gui.quantum.node_count") + ": 0",
+            this.guiLeft + 13,
+            this.guiTop + 44,
+            GtswnGuiPalette.TEXT_BODY);
         // 频道行（离线时硬编码 "0 / 0 (0%)"）
         this.fontRendererObj.drawString(
             tr("gtswn.gui.quantum.channels") + ": 0 / 0 (0%)",
             this.guiLeft + 13,
             this.guiTop + 56,
-            0x404040);
+            GtswnGuiPalette.TEXT_BODY);
         // 离线提示
         this.fontRendererObj.drawString(
             EnumChatFormatting.RED + tr("gtswn.gui.quantum.offline"),
             this.guiLeft + 13,
             this.guiTop + 72,
-            0x404040);
+            GtswnGuiPalette.TEXT_BODY);
     }
 
     /** 本地化工具 */

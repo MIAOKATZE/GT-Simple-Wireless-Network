@@ -8,6 +8,8 @@ import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.client.gui.GtswnGuiDrawing;
+import com.miaokatze.gtswn.client.gui.GtswnGuiTextures;
 import com.miaokatze.gtswn.config.Config;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -93,8 +95,17 @@ public class WirelessMonitorHUD extends Gui {
         // 获取文本宽度
         int textWidth = mc.fontRenderer.getStringWidth(euText);
 
-        // 绘制半透明背景
-        drawRect(hudX - 2, hudY - 2, hudX + textWidth + 2, hudY + 10, 0x80000000);
+        // 绘制半透明背景（hud_base 8×8 贴图拉伸替代原 drawRect(0x80000000)；
+        // drawStretch 不管理 blend，每组绘制前显式开启）
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GtswnGuiDrawing.drawStretch(
+            GtswnGuiTextures.HUD_BASE,
+            hudX - 2,
+            hudY - 2,
+            (hudX + textWidth + 2) - (hudX - 2),
+            (hudY + 10) - (hudY - 2),
+            0);
 
         // 绘制文本（使用格式化字符串，带颜色代码）
         mc.fontRenderer.drawStringWithShadow(euText, hudX, hudY, 0xFFFFFF);
@@ -102,18 +113,32 @@ public class WirelessMonitorHUD extends Gui {
         // 绘制 EU/t 信息（在上方一行）
         int eutY = hudY - 12;
         int eutTextWidth = mc.fontRenderer.getStringWidth(this.controller.eutText());
-        drawRect(hudX - 2, eutY - 2, hudX + Math.max(textWidth, eutTextWidth) + 2, eutY + 10, 0x80000000);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GtswnGuiDrawing.drawStretch(
+            GtswnGuiTextures.HUD_BASE,
+            hudX - 2,
+            eutY - 2,
+            (hudX + Math.max(textWidth, eutTextWidth) + 2) - (hudX - 2),
+            (eutY + 10) - (eutY - 2),
+            0);
         mc.fontRenderer.drawStringWithShadow(this.controller.eutText(), hudX, eutY, 0xFFFFFF);
 
         int realtimeY = hudY - 24;
         int realtimeTextWidth = mc.fontRenderer.getStringWidth(this.controller.realtimeEutText());
-        drawRect(
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+        GtswnGuiDrawing.drawStretch(
+            GtswnGuiTextures.HUD_BASE,
             hudX - 2,
             realtimeY - 2,
-            hudX + Math.max(Math.max(textWidth, eutTextWidth), realtimeTextWidth) + 2,
-            realtimeY + 10,
-            0x80000000);
+            (hudX + Math.max(Math.max(textWidth, eutTextWidth), realtimeTextWidth) + 2) - (hudX - 2),
+            (realtimeY + 10) - (realtimeY - 2),
+            0);
         mc.fontRenderer.drawStringWithShadow(this.controller.realtimeEutText(), hudX, realtimeY, 0xFFFFFF);
+
+        // 三行半透明底绘制完毕，统一关闭 blend（外层 pushAttrib/popAttrib 兜底恢复状态）
+        GL11.glDisable(GL11.GL_BLEND);
 
         // 恢复 OpenGL 状态
         GL11.glPopMatrix();
