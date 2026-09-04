@@ -370,9 +370,9 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             case PacketDeviceTerminalAction.COLUMN_STATE:
                 return Integer.compare(a.state, b.state);
             case PacketDeviceTerminalAction.COLUMN_INST:
-                return Long.compare(a.inst, b.inst);
+                return Long.compare(a.instNet(), b.instNet());
             case PacketDeviceTerminalAction.COLUMN_AVG:
-                return Double.compare(a.avg, b.avg);
+                return Double.compare(a.avgNet(), b.avgNet());
             case PacketDeviceTerminalAction.COLUMN_POS:
                 int c = Integer.compare(a.dim, b.dim);
                 if (c != 0) return c;
@@ -644,6 +644,9 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         String recipeIn = hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
         String recipeOut = hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();
+        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.input", hovered.instIn));
+        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.output", hovered.instOut));
+        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.net", hovered.instNet()));
         lines.add(tr("gtswn.device.gui.tooltip.recipe_title"));
         if (recipeIn.isEmpty() && recipeOut.isEmpty()) {
             lines.add(tr("gtswn.device.gui.tooltip.recipe_none"));

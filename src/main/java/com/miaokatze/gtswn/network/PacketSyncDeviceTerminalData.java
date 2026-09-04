@@ -20,7 +20,7 @@ import io.netty.buffer.ByteBuf;
  * pageTotal / entryTotal（封顶 {@value #MAX_ENTRIES}）/ 本页条目
  * {key（正则 {@code dim:x:y:z}）/ name（封 {@value #MAX_NAME_LEN}）/ state（byte 三态）/
  * powerType（byte 0=耗电 / 1=发电，v1.8.0 新增，紧随 state 对称写读）/
- * inst（long 瞬时 EU/t）/ avg（double 均值）/ dim,x,y,z（int）/ recipeIn + recipeOut
+ * instIn/instOut（long 瞬时输入/输出 EU/t）/ avgIn/avgOut（double 输入/输出均值）/ dim,x,y,z（int）/ recipeIn + recipeOut
  * （各封 {@value #MAX_RECIPE_LEN}，v1.7.2 双侧配方快照）}。
  * <p>
  * fromBytes 全防御（吸收量子系统 v1.6.1 教训）：整体 try-catch（坏包退化为 terminalId=null
@@ -92,8 +92,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             ByteBufUtils.writeUTF8String(buf, entry.name);
             buf.writeByte(entry.state);
             buf.writeByte(entry.powerType);
-            buf.writeLong(entry.inst);
-            buf.writeDouble(entry.avg);
+            buf.writeLong(entry.instIn);
+            buf.writeLong(entry.instOut);
+            buf.writeDouble(entry.avgIn);
+            buf.writeDouble(entry.avgOut);
             buf.writeInt(entry.dim);
             buf.writeInt(entry.x);
             buf.writeInt(entry.y);
@@ -122,8 +124,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     String name = truncate(ByteBufUtils.readUTF8String(buf), MAX_NAME_LEN);
                     byte state = buf.readByte();
                     byte powerType = buf.readByte();
-                    long inst = buf.readLong();
-                    double avg = buf.readDouble();
+                    long instIn = buf.readLong();
+                    long instOut = buf.readLong();
+                    double avgIn = buf.readDouble();
+                    double avgOut = buf.readDouble();
                     int dim = buf.readInt();
                     int x = buf.readInt();
                     int y = buf.readInt();
@@ -135,7 +139,22 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                         .matches()) {
                         continue;
                     }
-                    entries.add(new Entry(key, name, state, powerType, inst, avg, dim, x, y, z, recipeIn, recipeOut));
+                    entries.add(
+                        new Entry(
+                            key,
+                            name,
+                            state,
+                            powerType,
+                            instIn,
+                            instOut,
+                            avgIn,
+                            avgOut,
+                            dim,
+                            x,
+                            y,
+                            z,
+                            recipeIn,
+                            recipeOut));
                 } catch (Exception e) {
                     // 单条损坏（字符串长度越界等）：截断解析，保留已解析前缀
                     break;
@@ -205,11 +224,25 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         /** 功率分类：0 耗电 / 1 发电（v1.8.0；非 1 值钳回 0） */
         public final byte powerType;
 
-        /** 瞬时 EU/t（FIFO 最新采样点） */
-        public final long inst;
+        /** 瞬时输入 EU/t（FIFO 最新采样点） */
+        public final long instIn;
 
-        /** 平均 EU/t（60 点均值） */
-        public final double avg;
+        /** 瞬时输出 EU/t（FIFO 最新采样点） */
+        public final long instOut;
+
+        /** 平均输入 EU/t（60 点均值） */
+        public final double avgIn;
+
+        /** 平均输出 EU/t（60 点均值） */
+        public final double avgOut;
+
+        public long instNet() {
+            return instOut - instIn;
+        }
+
+        public double avgNet() {
+            return avgOut - avgIn;
+        }
 
         /** 机器维度 */
         public final int dim;
@@ -227,14 +260,16 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         /** 当前执行配方输出侧描述（输出快照，近似，≤{@value #MAX_RECIPE_LEN} 字符） */
         public final String recipeOut;
 
-        public Entry(String key, String name, byte state, byte powerType, long inst, double avg, int dim, int x, int y,
-            int z, String recipeIn, String recipeOut) {
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut) {
             this.key = key == null ? "" : key;
             this.name = truncate(name, MAX_NAME_LEN);
             this.state = state;
             this.powerType = powerType == 1 ? (byte) 1 : (byte) 0;
-            this.inst = inst;
-            this.avg = avg;
+            this.instIn = instIn;
+            this.instOut = instOut;
+            this.avgIn = avgIn;
+            this.avgOut = avgOut;
             this.dim = dim;
             this.x = x;
             this.y = y;

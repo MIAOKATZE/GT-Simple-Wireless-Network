@@ -22,14 +22,9 @@ import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.IMachineProgress;
-import gregtech.api.metatileentity.implementations.MTEBasicGenerator;
 import gregtech.api.metatileentity.implementations.MTEBasicMachine;
 import gregtech.api.metatileentity.implementations.MTEExtendedPowerMultiBlockBase;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
-import gregtech.common.tileentities.generators.MTELightningRod;
-import gregtech.common.tileentities.generators.MTESolarGenerator;
-import gregtech.common.tileentities.machines.multi.turbines.MTELargeTurbineBase;
-import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
 
 /**
  * 设备信息终端采样调度器（实施计划 C1，注册于 CommonProxy.init 的 FML 总线）。
@@ -51,12 +46,15 @@ import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
  * → <b>自愈</b>：登记表出册 + {@link DeviceTerminalDataStore#removeKeyFromAll} 级联解绑
  * （version++ 由 store 内部保证），下一台继续</li>
  * <li>有效机器 → 读三态（停机/运行/待机统一口径，isAllowedToWork/isActive 经基座
- * BaseMetaTileEntity 委托）、瞬时功率（{@link #readEUt} 按机器类型分支，取 abs 正数幅值）、
+ * BaseMetaTileEntity 委托）、EU 方向统一采集（{@link #readEuFlow}：基座 getter 读双 5-tick
+ * 网络流量均值，多方块叠加双路 hatch 聚合并按引用去重，仅多方块且枚举失败且控制器双均值为 0
+ * 时按 mEUt/lEUt 符号兜底；in/out=实际网络流量，非运行态三通道全写 0）、
  * 功率分类（发电谓词刷新 powerType 0/1）、配方双侧快照
  * （v1.7.2：输入侧因 GT5U 无公开 lastRecipe 入口暂置空，输出侧经公有 mOutputItems/
  * mOutputFluids 采集；仅运行中，非运行置空串）→ 对含该键的所有活跃终端各自 MachineRecord
- * 追加 FIFO 环形采样点、经 {@link FifoMath} 以 runningSum 增量推进 60 点均值
- * （O(1) 入加挤出减；会话缓存 + 旧档首载一次性重建，MachineRecord 字段与 NBT 结构不变）、
+ * 追加 net/in/out 三通道 FIFO 环形采样点、经 {@link FifoMath} 以三个 runningSum 各自增量推进
+ * 60 点均值（O(1) 入加挤出减；会话缓存 + 旧档首载一次性重建；fifo/avg 语义为 net = out − in，
+ * 新增 fifoIn/fifoOut/inAvg/outAvg）、
  * 刷新 name/localName → version++</li>
  * </ul>
  * 每轮排水（{@link #drainSamples}）任一终端记录成功写入后，轮末统一 markDirty（每轮至多一次）。
@@ -84,18 +82,22 @@ public class DeviceSampleScheduler {
     /**
      * FIFO 增量均值会话缓存：机器键 →（终端 UUID → 上次推进后的 runningSum 状态）。
      * <p>
-     * 仅服务端主线程访问；不落盘（MachineRecord 字段与 NBT 结构不变，旧档兼容）。
-     * 首次遇到某 (键, 终端) 或缓存状态与记录当前 (idx, count) 不一致（解绑重绑 / 存档重载
-     * 重建了记录）时，用 {@link FifoMath#rebuildSum} 从存量 fifo 一次性重建（最多 60 点）；
+     * 仅服务端主线程访问；不落盘（net/in/out 三通道共用一份 (idx, count) 滚动状态，
+     * 旧档缺新键按 0 兼容）。首次遇到某 (键, 终端) 或缓存状态与记录当前 (idx, count)
+     * 不一致（解绑重绑 / 存档重载
+     * 重建了记录）时，用 {@link FifoMath#rebuildSum} 从三条存量 fifo 各一次性重建（最多 60 点）；
      * 自愈解绑时整键清除。正确性不依赖登录 / 登出清理（状态对不上即自愈重建）。
      */
     private final Map<String, Map<UUID, FifoState>> fifoStates = new HashMap<>();
 
-    /** runningSum 会话缓存条目：上次推进后的 (sum, idx, count)，须与记录状态一致才可增量推进 */
+    /** runningSum 会话缓存条目：上次推进后的三通道 (sum, sumIn, sumOut) 与 (idx, count)，须与记录状态一致才可增量推进 */
     private static final class FifoState {
 
-        /** 有效样本之和（与 {@link FifoMath#rebuildSum} 口径一致） */
-        long sum;
+        /** 流入通道（fifoIn）有效样本之和 */
+        long sumIn;
+
+        /** 流出通道（fifoOut）有效样本之和 */
+        long sumOut;
 
         /** 上次推进后的写指针 */
         int idx;
@@ -212,8 +214,16 @@ public class DeviceSampleScheduler {
             // 三态统一口径：!isAllowedToWork→停机 / isActive→运行 / 其余待机
             int state = !progress.isAllowedToWork() ? DeviceTerminalDataStore.STATE_STOPPED
                 : progress.isActive() ? DeviceTerminalDataStore.STATE_RUNNING : DeviceTerminalDataStore.STATE_IDLE;
-            // 非运行态瞬时功率必须钳 0（读数源会保留旧配方值，如多方块 mEUt 仅 stopMachine 清零），非 RUNNING 跳过读取
-            long eut = state == DeviceTerminalDataStore.STATE_RUNNING ? Math.abs(readEUt(mte, gtTE)) : 0L;
+            // EU 方向统一采集：in/out = 实际网络流量（5-tick 双均值，均 ≥0），net = out − in（可为负）；
+            // 非运行态（停机/待机）三通道全写 0（读数源会保留旧配方值，如多方块 mEUt 仅 stopMachine 清零），非 RUNNING 跳过读取
+            long euIn = 0L;
+            long euOut = 0L;
+            if (state == DeviceTerminalDataStore.STATE_RUNNING) {
+                long[] flow = readEuFlow(mte, gtTE);
+                euIn = flow[0];
+                euOut = flow[1];
+            }
+            long eut = euOut - euIn;
             // 功率分类（0=耗电 / 1=发电），随采样持续刷新（含旧档补齐）
             byte powerType = DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
                 : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
@@ -242,18 +252,22 @@ public class DeviceSampleScheduler {
                     record = new DeviceTerminalDataStore.MachineRecord();
                     data.records.put(key, record);
                 }
-                // 增量均值：会话缓存状态与记录 (idx, count) 不一致（解绑重绑 / 存档重载）时首载重建
+                // 增量均值：输入/输出双通道共用 (idx, count) 滚动；净值由下游派生。
                 FifoState window = fifoState(key, entry.getKey(), record);
-                long runningSum = FifoMath.push(record.fifo, record.idx, record.count, window.sum, eut);
-                record.fifo[record.idx] = eut;
+                long runningSumIn = FifoMath.push(record.fifoIn, record.idx, record.count, window.sumIn, euIn);
+                long runningSumOut = FifoMath.push(record.fifoOut, record.idx, record.count, window.sumOut, euOut);
+                record.fifoIn[record.idx] = euIn;
+                record.fifoOut[record.idx] = euOut;
                 record.idx = (record.idx + 1) % DeviceTerminalDataStore.FIFO_SIZE;
                 if (record.count < DeviceTerminalDataStore.FIFO_SIZE) {
                     record.count++;
                 }
-                window.sum = runningSum;
+                window.sumIn = runningSumIn;
+                window.sumOut = runningSumOut;
                 window.idx = record.idx;
                 window.count = record.count;
-                record.avg = FifoMath.avg(runningSum, record.count);
+                record.inAvg = FifoMath.avg(runningSumIn, record.count);
+                record.outAvg = FifoMath.avg(runningSumOut, record.count);
                 record.state = state;
                 record.powerType = powerType;
                 record.name = localName;
@@ -275,14 +289,16 @@ public class DeviceSampleScheduler {
 
     /**
      * 取该 (机器键, 终端) 的 FIFO 增量状态：缓存缺失或与记录当前 (idx, count) 不一致时，
-     * 用 {@link FifoMath#rebuildSum} 从存量 fifo 一次性重建（旧档首载最多 60 点求和）。
+     * 用 {@link FifoMath#rebuildSum} 从三条存量 fifo（net/in/out）各一次性重建
+     * （旧档首载最多 60 点求和；旧档缺 fifoIn/fifoOut 时数组全 0，重建和为 0）。
      */
     private FifoState fifoState(String key, UUID terminalId, DeviceTerminalDataStore.MachineRecord record) {
         Map<UUID, FifoState> perKey = this.fifoStates.get(key);
         FifoState window = perKey != null ? perKey.get(terminalId) : null;
         if (window == null || window.idx != record.idx || window.count != record.count) {
             window = new FifoState();
-            window.sum = FifoMath.rebuildSum(record.fifo, record.count);
+            window.sumIn = FifoMath.rebuildSum(record.fifoIn, record.count);
+            window.sumOut = FifoMath.rebuildSum(record.fifoOut, record.count);
             window.idx = record.idx;
             window.count = record.count;
             if (perKey == null) {
@@ -296,38 +312,188 @@ public class DeviceSampleScheduler {
 
     // ==================== 采样读取工具 ====================
 
+    // ==================== EU 方向统一采集（纯算法核 + 采样接线） ====================
+
     /**
-     * 读瞬时/平均功率（调用方取 abs 保持正数幅值语义）。按序分支（GT5U 5.09.54.20 语义）：
-     * <ol>
-     * <li>发电常规机（MTEBasicGenerator / MTESolarGenerator / MTELightningRod）→
-     * 基座 {@link IBasicEnergyContainer#getAverageElectricOutput()}（IGregTechTileEntity →
-     * ICoverable → IBasicEnergyContainer，cast 基座 gtTE 而非 mte）。语义注记：mAverageEUOutput
-     * 仅 drainEnergyUnits 累加，燃料入缓冲而未被抽取时显示 0，可接受</li>
-     * <li>大型涡轮 / XL 涡轮（MTEExtendedPowerMultiBlockBase 子类）→ {@code Math.abs(lEUt)}
-     * （lEUt &gt; 0 = addEnergyOutput）</li>
-     * <li>其他多方块 → {@code mEUt}（&gt;0 = 发电 / &lt;0 = 耗电，setEnergyUsage 配方正值取负）</li>
-     * <li>单方块加工机（MTEBasicMachine）→ 既有 {@code mEUt}（负 = 耗电）</li>
-     * </ol>
-     * 两类基类无公共父类持有功率字段，分别 instanceof 读取。
+     * 单个 hatch 采样点：{@code identity} 为 hatch 基座 tile 引用（跨 super 字段与 TT 反射两路
+     * 按引用去重，保留首次出现），{@code value} 为该 hatch 在对应方向上的贡献（能量仓 = 平均输入 /
+     * 动态仓 = 平均输出，直接取 5-tick 网络流量均值，≥0）。
      */
-    private static long readEUt(IMetaTileEntity mte, IGregTechTileEntity gtTE) {
-        // ① 发电常规机：基座平均输出（燃料入缓冲未抽取显示 0 可接受）
-        if (mte instanceof MTEBasicGenerator || mte instanceof MTESolarGenerator || mte instanceof MTELightningRod) {
-            return ((IBasicEnergyContainer) gtTE).getAverageElectricOutput();
+    public static final class EuFlowSample {
+
+        /** hatch 基座 tile 引用（identity 比较去重） */
+        public final Object identity;
+
+        /** 该 hatch 对应方向贡献（EU/t） */
+        public final long value;
+
+        public EuFlowSample(Object identity, long value) {
+            this.identity = identity;
+            this.value = value;
         }
-        // ② 大型 / XL 涡轮：lEUt 正值 = 输出
-        if (mte instanceof MTELargeTurbineBase || mte instanceof MTEXLTurbineBase) {
-            return Math.abs(((MTEExtendedPowerMultiBlockBase) mte).lEUt);
+    }
+
+    /**
+     * EU 方向统一采集纯算法（零 Minecraft 类加载，单测直测）。方向 = 读哪个 getter，
+     * 不按数值符号、不按基类白名单：{@code getAverageElectricInput()} /
+     * {@code getAverageElectricOutput()} 仅在 GT5U BaseMetaTileEntity 网络路径
+     * （injectEnergyUnits→Input / drainEnergyUnits、handleEUOutput→Output）累加，
+     * 语义为<b>实际网络流量</b>——无人取电的发电机 out 可为 0（预期语义）。
+     * <ol>
+     * <li>基座实现 IBasicEnergyContainer → 控制器双均值即采集起点（单机 / 发电机 / 太阳能 /
+     * 避雷针天然走此路，无类别特判，abs 与旧类别分支全部删除）</li>
+     * <li>多方块 → in += Σ 能量仓平均输入、out += Σ 动态仓平均输出（两路样本入参，
+     * 同一 hatch tile 按引用去重）</li>
+     * <li>兜底（三条件缺一不可）：多方块 && 两路均拿不到 hatch 列表（enumerated=false）&&
+     * 控制器两均值均为 0 → 按带符号 mEUt/lEUt：&gt;0 记 output、&lt;0 取反为正记 input、=0 双 0</li>
+     * </ol>
+     *
+     * @param hasContainer   tile 是否实现 IBasicEnergyContainer（false 时两控制器读数不参与）
+     * @param controllerIn   控制器基座 getAverageElectricInput()
+     * @param controllerOut  控制器基座 getAverageElectricOutput()
+     * @param isMultiBlock   MTE 是否 MTEMultiBlockBase
+     * @param hatchIn        输入方向 hatch 样本（可含两路重复；isMultiBlock=false 时可 null）
+     * @param hatchOut       输出方向 hatch 样本（同上）
+     * @param enumerated     是否至少一路成功拿到 hatch 列表（true 时禁用符号兜底）
+     * @param signedFallback 带符号 mEUt/lEUt（MTEExtendedPowerMultiBlockBase 取 lEUt，否则 mEUt）
+     * @return {@code {in, out}}，均 ≥0（in = 网络流入、out = 网络流出，net = out − in 由调用方计算）
+     */
+    public static long[] collectEuFlow(boolean hasContainer, long controllerIn, long controllerOut,
+        boolean isMultiBlock, List<EuFlowSample> hatchIn, List<EuFlowSample> hatchOut, boolean enumerated,
+        long signedFallback) {
+        long in = hasContainer ? controllerIn : 0L;
+        long out = hasContainer ? controllerOut : 0L;
+        if (!isMultiBlock) {
+            return new long[] { in, out };
         }
-        // ③ 其他多方块：mEUt（>0 发电 / <0 耗电）
-        if (mte instanceof MTEMultiBlockBase) {
-            return ((MTEMultiBlockBase) mte).mEUt;
+        in += sumDedupByIdentity(hatchIn);
+        out += sumDedupByIdentity(hatchOut);
+        if (!enumerated && controllerIn == 0L && controllerOut == 0L) {
+            if (signedFallback > 0L) {
+                out += signedFallback;
+            } else if (signedFallback < 0L) {
+                in += -signedFallback;
+            }
         }
-        // ④ 单方块加工机：既有 mEUt（负 = 耗电）
-        if (mte instanceof MTEBasicMachine) {
-            return ((MTEBasicMachine) mte).mEUt;
+        return new long[] { in, out };
+    }
+
+    /** hatch 样本按引用去重（保留首次出现）后累加；null / 空列表为 0 */
+    private static long sumDedupByIdentity(List<EuFlowSample> samples) {
+        if (samples == null || samples.isEmpty()) {
+            return 0L;
         }
-        return 0L;
+        long sum = 0L;
+        List<Object> seen = new ArrayList<>(samples.size());
+        for (EuFlowSample sample : samples) {
+            boolean duplicate = false;
+            for (Object identity : seen) {
+                if (identity == sample.identity) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!duplicate) {
+                seen.add(sample.identity);
+                sum += sample.value;
+            }
+        }
+        return sum;
+    }
+
+    /**
+     * 采样接线（仅 RUNNING 态由调用方进入）：控制器基座读双均值，MTE 为多方块时叠加双路 hatch
+     * 聚合，全部交给 {@link #collectEuFlow} 判定。两路 = GT5U MTEMultiBlockBase public 字段
+     * {@code mEnergyHatches}/{@code mDynamoHatches} 与 Tectech TTMultiblockBase public 方法
+     * {@code getExoticAndNormalEnergyHatchList()}/{@code getExoticDynamoHatches()} 反射
+     * （TT 列表含 mEnergyHatches 子集，故跨路同一 hatch 基座按引用去重）。枚举失败判定：
+     * public 字段为 null 且两反射方法均拿不到 List（TT 类 / 方法不存在、调用抛错、
+     * 返回非 List——一律吞掉，绝不抛穿主采样线程）；空列表一律视为枚举成功，不得触发符号兜底。
+     * 禁止编译期 import GoodGenerator/Tectech 类，TT 侧只走反射。
+     */
+    private static long[] readEuFlow(IMetaTileEntity mte, IGregTechTileEntity gtTE) {
+        boolean hasContainer = gtTE instanceof IBasicEnergyContainer;
+        long controllerIn = 0L;
+        long controllerOut = 0L;
+        if (hasContainer) {
+            IBasicEnergyContainer container = (IBasicEnergyContainer) gtTE;
+            controllerIn = container.getAverageElectricInput();
+            controllerOut = container.getAverageElectricOutput();
+        }
+        if (!(mte instanceof MTEMultiBlockBase)) {
+            // 单机 / 发电机 / 太阳能 / 避雷针：getter 即采集，无兜底
+            return collectEuFlow(hasContainer, controllerIn, controllerOut, false, null, null, false, 0L);
+        }
+        MTEMultiBlockBase multi = (MTEMultiBlockBase) mte;
+        List<EuFlowSample> hatchIn = new ArrayList<>();
+        List<EuFlowSample> hatchOut = new ArrayList<>();
+        boolean enumerated = false;
+        // 路 A：super public 字段（字段存在即枚举成功；空列表 = 该结构确无此类仓，不是枚举失败）
+        if (multi.mEnergyHatches != null) {
+            collectHatchSamples(hatchIn, multi.mEnergyHatches, true);
+            enumerated = true;
+        }
+        if (multi.mDynamoHatches != null) {
+            collectHatchSamples(hatchOut, multi.mDynamoHatches, false);
+            enumerated = true;
+        }
+        // 路 B：TT 反射（`|` 非短路与：两侧都必须尝试）
+        boolean viaTectech = collectExoticHatchSamples(multi, hatchIn, "getExoticAndNormalEnergyHatchList", true)
+            | collectExoticHatchSamples(multi, hatchOut, "getExoticDynamoHatches", false);
+        // 兜底信号：多方块代际功率字段（扩展电力多方块记 lEUt，其余记 mEUt，均带符号）
+        long signed = mte instanceof MTEExtendedPowerMultiBlockBase ? ((MTEExtendedPowerMultiBlockBase) mte).lEUt
+            : multi.mEUt;
+        return collectEuFlow(
+            hasContainer,
+            controllerIn,
+            controllerOut,
+            true,
+            hatchIn,
+            hatchOut,
+            enumerated || viaTectech,
+            signed);
+    }
+
+    /**
+     * 逐个 hatch MTE 经 {@code getBaseMetaTileEntity()} 取基座读对应均值成样本；
+     * 基座已失效 / 非能量容器跳过。跨路重复不在此处去重（交给 {@link #collectEuFlow}）。
+     */
+    private static void collectHatchSamples(List<EuFlowSample> target, List<?> hatches, boolean readInput) {
+        for (Object hatch : hatches) {
+            if (!(hatch instanceof IMetaTileEntity)) {
+                continue;
+            }
+            IGregTechTileEntity base = ((IMetaTileEntity) hatch).getBaseMetaTileEntity();
+            if (!(base instanceof IBasicEnergyContainer)) {
+                continue;
+            }
+            IBasicEnergyContainer container = (IBasicEnergyContainer) base;
+            target.add(
+                new EuFlowSample(
+                    base,
+                    readInput ? container.getAverageElectricInput() : container.getAverageElectricOutput()));
+        }
+    }
+
+    /**
+     * 反射调用 TT 多方块 public hatch 列表方法并采集；返回是否拿到 List。
+     * 返回空 List 同样算「拿到了列表」（该结构确无此类仓，不是枚举失败）。
+     */
+    private static boolean collectExoticHatchSamples(MTEMultiBlockBase multi, List<EuFlowSample> target,
+        String methodName, boolean readInput) {
+        try {
+            Object listed = multi.getClass()
+                .getMethod(methodName)
+                .invoke(multi);
+            if (!(listed instanceof List)) {
+                return false;
+            }
+            collectHatchSamples(target, (List<?>) listed, readInput);
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            // TT 未安装 / 方法不存在 / 调用抛错：本路不可用，按兜底处理，不抛穿
+            return false;
+        }
     }
 
     /**

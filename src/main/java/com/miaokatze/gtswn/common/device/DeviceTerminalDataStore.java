@@ -36,7 +36,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
     /** WorldSavedData 注册名（全仓唯一，落盘文件名） */
     public static final String DATA_NAME = "gtswn_device_terminal_data";
 
-    /** 每台机器 EU/t FIFO 深度（60 采样点，10s 间隔默认约 10 分钟窗口） */
+    /** 每台机器 EU/t FIFO 深度（输入/输出双通道共用写指针与计数，60 采样点） */
     public static final int FIFO_SIZE = 60;
 
     /** 机器状态：待机（非运行且允许工作） */
@@ -315,20 +315,30 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      * 单台机器采样记录：EU/t 环形 FIFO + 均值 + 三态 + 名字 / 坐标 / 配方快照。
      * <p>
      * 三态统一口径：{@code !isAllowedToWork()}→停机 / {@code isActive()}→运行 / 其余待机。
+     * <p>
+     * v1.7.18 起仅存储输入/输出双通道；净值始终由下游按 {@code out - in} 派生。
+     * 旧档的存储型 {@code fifo}/{@code avg} 净通道键会被忽略，缺少新双通道键时按 0
+     * 加载，窗口在新采样后自然回填。
      */
     public static final class MachineRecord {
 
-        /** EU/t 环形缓冲（长度恒为 {@link #FIFO_SIZE}，未采样位为 0） */
-        public final long[] fifo = new long[FIFO_SIZE];
+        /** 流入方向 EU/t 环形缓冲；旧档缺键时保持全 0。 */
+        public final long[] fifoIn = new long[FIFO_SIZE];
 
-        /** 环形写指针（下一个写入位） */
+        /** 流出方向 EU/t 环形缓冲；旧档缺键时保持全 0。 */
+        public final long[] fifoOut = new long[FIFO_SIZE];
+
+        /** 环形写指针（下一个写入位，输入/输出双通道共用） */
         public int idx;
 
-        /** 有效样本数（≤ FIFO_SIZE，均值分母） */
+        /** 有效样本数（≤ FIFO_SIZE，三通道均值共用分母） */
         public int count;
 
-        /** FIFO 均值（EU/t，采样时重算） */
-        public double avg;
+        /** FIFO 流入均值（EU/t，实际网络流入；v1.7.18 新增，旧档缺键为 0） */
+        public double inAvg;
+
+        /** FIFO 流出均值（EU/t，实际网络流出；v1.7.18 新增，旧档缺键为 0） */
+        public double outAvg;
 
         /** 三态：STATE_IDLE / STATE_RUNNING / STATE_STOPPED */
         public int state = STATE_IDLE;
@@ -356,16 +366,15 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         public String recipeOut = "";
 
         void readFromNBT(NBTTagCompound tag) {
-            NBTTagList list = tag.getTagList("fifo", Constants.NBT.TAG_COMPOUND);
-            int n = Math.min(list.tagCount(), FIFO_SIZE);
-            for (int i = 0; i < n; i++) {
-                fifo[i] = list.getCompoundTagAt(i)
-                    .getLong("v");
-            }
+            // 迁移语义：旧存储型净通道 fifo/avg 及其 NBT 键故意忽略；缺双通道键按 0，窗口自然回填。
+            readFifo(tag, "fifoIn", fifoIn);
+            readFifo(tag, "fifoOut", fifoOut);
             // 坏存档防御：idx 落到 [0, FIFO_SIZE)，count 落到 [0, FIFO_SIZE]，防采样越界 / 均值分母异常
             idx = ((tag.getInteger("idx") % FIFO_SIZE) + FIFO_SIZE) % FIFO_SIZE;
             count = Math.min(Math.max(tag.getInteger("count"), 0), FIFO_SIZE);
-            avg = tag.getDouble("avg");
+            // 旧 avg 净值键故意不读取；新均值键缺失时 getDouble 返回 0.0
+            inAvg = tag.getDouble("inAvg");
+            outAvg = tag.getDouble("outAvg");
             state = tag.getInteger("state");
             // v1.8.0 旧档兼容：缺 powerType 键时 getByte 返回 0（=耗电），非 1 值一律钳回耗电
             powerType = tag.getByte("powerType") == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
@@ -382,16 +391,13 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         NBTTagCompound toNBT() {
             NBTTagCompound tag = new NBTTagCompound();
-            NBTTagList list = new NBTTagList();
-            for (long value : fifo) {
-                NBTTagCompound entry = new NBTTagCompound();
-                entry.setLong("v", value);
-                list.appendTag(entry);
-            }
-            tag.setTag("fifo", list);
+            // 不再写入存储型净通道 fifo/avg；净值由双通道派生。
+            writeFifo(tag, "fifoIn", fifoIn);
+            writeFifo(tag, "fifoOut", fifoOut);
             tag.setInteger("idx", idx);
             tag.setInteger("count", count);
-            tag.setDouble("avg", avg);
+            tag.setDouble("inAvg", inAvg);
+            tag.setDouble("outAvg", outAvg);
             tag.setInteger("state", state);
             tag.setByte("powerType", powerType);
             tag.setString("name", name == null ? "" : name);
@@ -402,6 +408,27 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             tag.setString("recipeIn", recipeIn == null ? "" : recipeIn);
             tag.setString("recipeOut", recipeOut == null ? "" : recipeOut);
             return tag;
+        }
+
+        /** 读一条环形缓冲（键缺 / 旧档缺新键时 getTagList 返回空表 → 目标数组保持全 0；条目子键 "v"，三通道同构） */
+        private static void readFifo(NBTTagCompound tag, String key, long[] target) {
+            NBTTagList list = tag.getTagList(key, Constants.NBT.TAG_COMPOUND);
+            int n = Math.min(list.tagCount(), target.length);
+            for (int i = 0; i < n; i++) {
+                target[i] = list.getCompoundTagAt(i)
+                    .getLong("v");
+            }
+        }
+
+        /** 写一条环形缓冲（条目子键 "v"，三通道同构） */
+        private static void writeFifo(NBTTagCompound tag, String key, long[] source) {
+            NBTTagList list = new NBTTagList();
+            for (long value : source) {
+                NBTTagCompound entry = new NBTTagCompound();
+                entry.setLong("v", value);
+                list.appendTag(entry);
+            }
+            tag.setTag(key, list);
         }
     }
 

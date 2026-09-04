@@ -26,7 +26,7 @@ public class DeviceTerminalClientCacheTest {
 
     /** 构造最小 Entry（仅 key 参与断言，其余字段取代表性常量） */
     private static Entry entry(String key) {
-        return new Entry(key, key, (byte) 1, (byte) 0, 100L, 50D, 0, 1, 64, 1, "", "");
+        return new Entry(key, key, (byte) 1, (byte) 0, 40L, 100L, 20D, 50D, 0, 1, 64, 1, "", "");
     }
 
     /** 整批到齐整体替换 + 迟到重复页丢弃（v1.7.15 修复回归测试） */

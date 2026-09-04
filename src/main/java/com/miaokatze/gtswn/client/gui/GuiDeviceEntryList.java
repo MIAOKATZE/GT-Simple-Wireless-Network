@@ -9,7 +9,6 @@ import net.minecraft.client.gui.ScaledResolution;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
-import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
@@ -223,15 +222,11 @@ class GuiDeviceEntryList {
                 GtswnGuiPalette.TEXT_MUTED);
         } else {
             font.drawString(
-                applyBold(host.formatEUt(entry.inst)),
+                applyBold(host.formatEUt(entry.instNet())),
                 x + COL_INST_X,
                 textY,
-                eutColor(entry.powerType, entry.inst));
-            font.drawString(
-                applyBold(host.formatAvg(entry.avg)),
-                x + COL_AVG_X,
-                textY,
-                eutColor(entry.powerType, entry.avg));
+                eutColor(entry.instNet()));
+            font.drawString(applyBold(host.formatAvg(entry.avgNet())), x + COL_AVG_X, textY, eutColor(entry.avgNet()));
         }
 
         // 位置列：dim(x,y,z)
@@ -255,12 +250,10 @@ class GuiDeviceEntryList {
      * EU/t 列着色（v1.7.11）：非零按功率分类着色（发电绿 / 耗电橙），零值回退中性色；
      * 瞬时 / 平均两列各自独立判零，排序仍按 Entry 原始数值不受影响。
      */
-    private static int eutColor(byte powerType, double value) {
-        if (value == 0D) {
-            return GtswnGuiPalette.TEXT_BODY;
-        }
-        return powerType == DeviceTerminalDataStore.POWER_TYPE_GENERATE ? GtswnGuiPalette.STATE_ONLINE
-            : GtswnGuiPalette.STATE_IDLE;
+    private static int eutColor(double value) {
+        if (value > 0D) return GtswnGuiPalette.STATE_ONLINE;
+        if (value < 0D) return GtswnGuiPalette.STATE_IDLE;
+        return GtswnGuiPalette.TEXT_BODY;
     }
 
     // ==================== 悬浮查询（宿主 tooltip 用） ====================

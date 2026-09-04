@@ -199,8 +199,10 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
                         record.name,
                         (byte) record.state,
                         record.powerType,
-                        latestSample(record),
-                        record.avg,
+                        latestSample(record, false),
+                        latestSample(record, true),
+                        record.inAvg,
+                        record.outAvg,
                         record.dim,
                         record.x,
                         record.y,
@@ -214,11 +216,10 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
     }
 
     /** FIFO 最新采样点（环形缓冲上一个写入位；无样本返回 0） */
-    private static long latestSample(DeviceTerminalDataStore.MachineRecord record) {
-        if (record.count <= 0) {
-            return 0L;
-        }
-        return record.fifo[(record.idx - 1 + DeviceTerminalDataStore.FIFO_SIZE) % DeviceTerminalDataStore.FIFO_SIZE];
+    private static long latestSample(DeviceTerminalDataStore.MachineRecord record, boolean output) {
+        if (record.count <= 0) return 0L;
+        long[] fifo = output ? record.fifoOut : record.fifoIn;
+        return fifo[(record.idx - 1 + DeviceTerminalDataStore.FIFO_SIZE) % DeviceTerminalDataStore.FIFO_SIZE];
     }
 
     /** 物品栏首台设备信息终端（手持优先，其次主背包扫描） */
