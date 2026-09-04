@@ -16,14 +16,15 @@ import org.junit.Test;
 import com.miaokatze.gtswn.common.device.DeviceSampleScheduler.EuFlowSample;
 
 /**
- * EU 方向统一采集与三通道 FIFO 纯逻辑单测（v1.7.18，零 Minecraft 游戏类加载：
+ * EU 方向统一采集与三通道 FIFO 纯逻辑单测（EU 全 0 回归修复，零 Minecraft 游戏类加载：
  * 只触 {@link DeviceSampleScheduler#collectEuFlow} 纯算法核、
  * {@link DeviceTerminalDataStore.MachineRecord} 数据类与 NBT 数据标签，不启世界）。
  * <p>
- * 覆盖口径：getter 对采集（单机直读、无符号/类别特判）、多方块 hatch 双路聚合按引用去重、
- * 枚举失败（TT 反射不可用等价态）按带符号 mEUt/lEUt 兜底三态（正/负/零）与兜底门控、
- * 停机/待机三通道写 0、旧档 NBT 缺新键兼容与负 net 回环、net FIFO 均值线性
- * （恒有 {@code avg == outAvg − inAvg}）。
+ * 覆盖口径：getter 对采集（单机直读）、多方块 hatch 双路聚合按引用去重且聚合非零压制兜底、
+ * 真双零兜底门（in==0 &amp;&amp; out==0 &amp;&amp; fallbackEut&gt;0）方向由发电白名单决定
+ * （单方块耗电→in、发电机→out，方向不由数值符号决定）、fallbackEut=0/负幅值零写、
+ * 控制器均值非零不兜底、停机/待机三通道写 0、旧档 NBT 缺新键兼容与负 net 回环、
+ * net FIFO 均值线性（恒有 {@code avg == outAvg − inAvg}）。
  */
 public class DeviceEuFlowCollectionTest {
 
@@ -32,16 +33,16 @@ public class DeviceEuFlowCollectionTest {
 
     // ==================== getter 对采集 ====================
 
-    /** 单机：基座双 5-tick 均值直接成采集结果（方向=读哪个 getter，无 abs、无类别特判） */
+    /** 单机：基座双 5-tick 均值直接成采集结果（getter 有流量时兜底不介入，方向=读哪个 getter） */
     @Test
     public void singleBlockUsesContainerGetters() {
         assertArrayEquals(
             new long[] { 300L, 120L },
             DeviceSampleScheduler.collectEuFlow(true, 300L, 120L, false, null, null, false, 0L));
-        // 发电常规机稳态无人取电：out 均值 0 是预期语义（网络流量口径），不再被 abs(mEUt) 类分支伪造成发电量
+        // 发电机 getter 已记录网络流出：直读优先，兜底幅值不叠加
         assertArrayEquals(
-            new long[] { 0L, 0L },
-            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, false, null, null, false, 500L));
+            new long[] { 0L, 450L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 450L, false, null, null, true, 320L));
     }
 
     /** 基座未实现 IBasicEnergyContainer（理论不可达防御）：两控制器读数不参与采集 */
@@ -50,9 +51,9 @@ public class DeviceEuFlowCollectionTest {
         assertArrayEquals(
             new long[] { 0L, 0L },
             DeviceSampleScheduler.collectEuFlow(false, 999L, 999L, false, null, null, false, 0L));
-        // 非多方块时符号兜底也不介入（单机无枚举失败一说）
+        // container 缺失不阻断兜底门（in/out 均为 0 即真双零）：白名单耗电方向照常写入
         assertArrayEquals(
-            new long[] { 0L, 0L },
+            new long[] { 500L, 0L },
             DeviceSampleScheduler.collectEuFlow(false, 999L, 999L, false, null, null, false, 500L));
     }
 
@@ -60,7 +61,8 @@ public class DeviceEuFlowCollectionTest {
 
     /**
      * 两路（super public 字段 + TT 反射列表，TT 列表含 mEnergyHatches 子集）提交同一 hatch 基座
-     * 引用时按引用去重只计一次；同方向保留首次出现值；控制器读数与 hatch 聚合叠加。
+     * 引用时按引用去重只计一次；同方向保留首次出现值；控制器读数与 hatch 聚合叠加；
+     * 聚合非零即压制兜底（同一断言内 fallbackEut=777 未介入）。
      */
     @Test
     public void multiblockHatchAggregationDeduplicatesByIdentity() {
@@ -73,59 +75,117 @@ public class DeviceEuFlowCollectionTest {
             new EuFlowSample(energyHatchB, 50L));
         List<EuFlowSample> hatchOut = Arrays
             .asList(new EuFlowSample(dynamoHatch, 80L), new EuFlowSample(dynamoHatch, 99L));
-        // 大型硅岩反应堆场景：控制器双均值稳态 0，实际流量全记 hatch 基座；枚举成功时符号兜底不介入
+        // 大型硅岩反应堆场景：控制器双均值稳态 0，实际流量全记 hatch 基座；聚合非零压制兜底
         assertArrayEquals(
             new long[] { 250L, 80L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, hatchIn, hatchOut, true, 777L));
         // 普通耗电多方块：控制器与 hatch 聚合叠加
         assertArrayEquals(
             new long[] { 350L, 110L },
-            DeviceSampleScheduler.collectEuFlow(true, 100L, 30L, true, hatchIn, hatchOut, true, 777L));
+            DeviceSampleScheduler.collectEuFlow(true, 100L, 30L, true, hatchIn, hatchOut, false, 777L));
         // 不同引用同值不合并（去重仅按引用）
         List<EuFlowSample> twoDistinct = Arrays
             .asList(new EuFlowSample(new Object(), 70L), new EuFlowSample(new Object(), 70L));
         assertArrayEquals(
             new long[] { 140L, 0L },
-            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, twoDistinct, null, true, 0L));
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, twoDistinct, null, false, 0L));
     }
 
-    // ==================== TT 反射失败 → mEUt/lEUt 符号兜底三态 ====================
+    // ==================== 真双零兜底门：方向由发电白名单决定 ====================
 
-    /** 兜底三态：仅「多方块 && 枚举失败 && 控制器双均值均 0」时按带符号 mEUt/lEUt 记方向 */
+    /**
+     * 兜底三态：仅「in==0 &amp;&amp; out==0 &amp;&amp; fallbackEut&gt;0」时按调用方白名单
+     * isGenerator 记方向（耗电→in / 发电→out），方向不由数值符号决定；fallbackEut=0 零写。
+     */
     @Test
-    public void enumerationFailureFallsBackOnSignedEut() {
-        // >0 记 output
+    public void fallbackDirectionFollowsGeneratorWhitelist() {
+        // 白名单耗电（isGenerator=false）→ 记 input
         assertArrayEquals(
-            new long[] { 0L, 500L },
+            new long[] { 500L, 0L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 500L));
-        // <0 取反为正记 input
+        // 白名单发电（isGenerator=true）→ 记 output
         assertArrayEquals(
-            new long[] { 320L, 0L },
-            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, -320L));
-        // =0 双 0
+            new long[] { 0L, 320L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 320L));
+        // fallbackEut=0：零写
+        assertArrayEquals(
+            new long[] { 0L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 0L));
+    }
+
+    /** 单方块耗电兜底（v1.7.18 无线喂电回归主场景）：不再提前返回，真双零时 in=|mEUt| */
+    @Test
+    public void singleBlockConsumerFallsBackToInput() {
+        assertArrayEquals(
+            new long[] { 500L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, false, null, null, false, 500L));
+        // 方向只由白名单决定：即使 false（耗电）也不写 out
+        assertArrayEquals(
+            new long[] { 1L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, false, null, null, false, 1L));
+    }
+
+    /** 发电机兜底：白名单 isGenerator=true 时 out=|lEUt|/|mEUt|（单方块与多方块无仓同口径） */
+    @Test
+    public void generatorFallsBackToOutput() {
+        assertArrayEquals(
+            new long[] { 0L, 320L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, false, null, null, true, 320L));
+        // 多方块（无仓/仓全零）发电：同一白名单方向
+        assertArrayEquals(
+            new long[] { 0L, 777L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 777L));
+    }
+
+    /**
+     * hatch 聚合非零必须压制兜底（即使 isGenerator 与 fallbackEut 都指向兜底）；
+     * 空列表（枚举成功但聚合为 0）不再压制兜底——结构上无仓不等于无流量（v1.7.18 死码根因反转）。
+     */
+    @Test
+    public void hatchNonZeroSuppressesFallback() {
+        // 输入路聚合非零：in=hatch 聚合，兜底不介入
+        List<EuFlowSample> inOnly = Arrays.asList(new EuFlowSample(new Object(), 250L));
+        assertArrayEquals(
+            new long[] { 250L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, inOnly, emptySamples(), false, 500L));
+        // 输出路聚合非零：out=hatch 聚合，兜底幅值更大也不叠加
+        List<EuFlowSample> outOnly = Arrays.asList(new EuFlowSample(new Object(), 80L));
+        assertArrayEquals(
+            new long[] { 0L, 80L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), outOnly, true, 500L));
+        // 两路均空列表：真双零，兜底照常进入
+        assertArrayEquals(
+            new long[] { 500L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 500L));
+    }
+
+    /** fallbackEut=0（该机无兜底幅值）与负幅值（调用方 absEut 契约防御）：一律零写、不翻方向 */
+    @Test
+    public void zeroOrNegativeFallbackEutWritesNothing() {
         assertArrayEquals(
             new long[] { 0L, 0L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 0L));
+        assertArrayEquals(
+            new long[] { 0L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, false, null, null, true, 0L));
+        // 契约上调用方恒传 ≥0；核内 >0 门对负值同样零写（不写入、不取反、不改方向）
+        assertArrayEquals(
+            new long[] { 0L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, false, null, null, false, -500L));
+        assertArrayEquals(
+            new long[] { 0L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, -500L));
     }
 
-    /** 兜底门控：枚举成功 / 控制器任一均值非 0 / 非多方块，三种情况符号值一律不介入 */
+    /** 控制器任一均值非 0（记账已在网络路径体现）→ 兜底不介入，非零通道保持原值 */
     @Test
-    public void fallbackGatedByEnumerationAndControllerAverages() {
-        // 门控 ①：枚举成功（哪怕聚合为 0）→ 不兜底
-        assertArrayEquals(
-            new long[] { 0L, 0L },
-            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 500L));
-        // 门控 ②：控制器均值非 0（记账已在网络路径体现）→ 不兜底
+    public void controllerNonZeroSuppressesFallback() {
         assertArrayEquals(
             new long[] { 0L, 40L },
-            DeviceSampleScheduler.collectEuFlow(true, 0L, 40L, true, emptySamples(), emptySamples(), false, 500L));
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 40L, true, emptySamples(), emptySamples(), true, 500L));
         assertArrayEquals(
             new long[] { 90L, 0L },
-            DeviceSampleScheduler.collectEuFlow(true, 90L, 0L, true, emptySamples(), emptySamples(), false, -500L));
-        // 门控 ③：非多方块永不兜底
-        assertArrayEquals(
-            new long[] { 0L, 0L },
-            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, false, emptySamples(), emptySamples(), false, 500L));
+            DeviceSampleScheduler.collectEuFlow(true, 90L, 0L, true, emptySamples(), emptySamples(), false, 500L));
     }
 
     // ==================== 停机 / 待机三通道写 0 ====================
