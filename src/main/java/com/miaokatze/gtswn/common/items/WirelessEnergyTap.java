@@ -5,6 +5,7 @@ import java.util.List;
 
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.EnumAction;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -17,8 +18,11 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+import com.miaokatze.gtswn.common.covers.WirelessNodeRegistry;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
+import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketRequestNodeReveal;
 
 import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
@@ -38,6 +42,7 @@ import gregtech.common.covers.Cover;
  * 一个便携式的无线网络分接设备，允许玩家将任意能量容器连接到GT无线网络。
  * 功能特性：
  * - 右键空气：切换手持模式（能源/动力），更新材质
+ * - 对空蓄力约 3 秒后释放：向服务端请求显形周围已绑定的链路节点（客户端发请求，服务端查询回发）
  * - 右键能量容器：赋予或取消无线连接状态
  * - Shift + 右键能量容器：切换输入/输出模式
  * - 自动读取目标能量容器的电压等级
@@ -58,6 +63,13 @@ public class WirelessEnergyTap extends Item {
 
     /** 绑定提示最大显示次数 / Max bind notify times */
     private static final int MAX_BIND_NOTIFY = 10;
+
+    /**
+     * 节点显形蓄力总时长（tick）：60t = 3 秒，与原版弓箭同款蓄力路径
+     * （{@code setItemInUse} → {@code onPlayerStoppedUsing}），蓄满后释放才触发显形请求。
+     * Charge duration for node reveal (60 ticks = 3 s), vanilla bow-style use path.
+     */
+    private static final int MAX_CHARGE_DURATION_TICKS = 60;
 
     /** 两个材质图标 */
     private net.minecraft.util.IIcon[] icons = new net.minecraft.util.IIcon[2];
@@ -118,6 +130,22 @@ public class WirelessEnergyTap extends Item {
         // 更新最后使用时间
         aStack.stackTagCompound.setLong(NBT_LAST_USE_TIME, now);
         return true;
+    }
+
+    /**
+     * 显形冷却消费入口（公共）：语义与 {@link #canTrigger} 完全一致（4 tick 冷却检查 + LastUseTime 更新），
+     * 供网络层 {@code NodeRevealRequestQueue} 主线程 drain 消费节点显形请求。
+     * Consume the reveal cooldown (public): same semantics as canTrigger, for NodeRevealRequestQueue.
+     *
+     * @param player 请求玩家（取其当前手持物品栈参与冷却 NBT 读写）
+     * @return 冷却已消耗（本次允许触发）返回 true；仍在冷却或未手持本物品返回 false
+     */
+    public boolean tryConsumeRevealCooldown(EntityPlayer player) {
+        ItemStack held = player.getCurrentEquippedItem();
+        if (held == null || held.getItem() != this) {
+            return false;
+        }
+        return canTrigger(held, player.worldObj);
     }
 
     /**
@@ -226,6 +254,9 @@ public class WirelessEnergyTap extends Item {
             // === 如果有我们的覆盖板，移除它 ===
             if (hasOurCover) {
                 ItemStack removed = coverable.detachCover(coverSide);
+                // D3 兜底自愈：拆下成功即出册（幂等，坐标未册时无效果），防覆盖板被绕过终端移除后索引残留
+                WirelessNodeRegistry.get(world)
+                    .unregister(world, x, y, z);
                 player.addChatMessage(
                     new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.unlink_success")));
                 if (removed != null) {
@@ -261,7 +292,7 @@ public class WirelessEnergyTap extends Item {
             if (outputMode) {
                 // === 动力模式:虚拟导线,读取机器输出 V/A 取电 ===
                 // Dynamo cover reads machine output V/A per tick, drains into capacity buffer
-                attachDynamoCoverForFullTake(stack, player, coverable, targetSide);
+                attachDynamoCoverForFullTake(stack, player, world, x, y, z, coverable, targetSide);
                 return;
             }
 
@@ -362,6 +393,9 @@ public class WirelessEnergyTap extends Item {
                     // GT 电压/安培实际不会超出 int 范围（MAX 级约 2^30），此处 toIntExact 安全
                     ((GTswn_Cover_EnergyWireless) placedCover)
                         .configure(Math.toIntExact(voltage), Math.toIntExact(amperage));
+                    // D3 兜底自愈：placeCover+configure 成功即入册（能源节点，幂等）
+                    WirelessNodeRegistry.get(world)
+                        .register(world, x, y, z, WirelessNodeRegistry.TYPE_ENERGY);
                 }
 
                 // 5. 提示成功
@@ -399,11 +433,15 @@ public class WirelessEnergyTap extends Item {
      *
      * @param stack      链路终端物品栈(用于读写绑定提示计数NBT)
      * @param player     操作玩家
+     * @param world      目标世界(附着成功后入册 {@link WirelessNodeRegistry})
+     * @param x          目标机器 X(入册坐标)
+     * @param y          目标机器 Y(入册坐标)
+     * @param z          目标机器 Z(入册坐标)
      * @param coverable  目标机器
      * @param targetSide 附着面
      */
-    private void attachDynamoCoverForFullTake(ItemStack stack, EntityPlayer player, ICoverable coverable,
-        ForgeDirection targetSide) {
+    private void attachDynamoCoverForFullTake(ItemStack stack, EntityPlayer player, World world, int x, int y, int z,
+        ICoverable coverable, ForgeDirection targetSide) {
         ItemStack coverStack = GTSWNItemList.GTswn_Cover_Dynamo_Wireless.get(1);
         if (coverStack == null) {
             player.addChatMessage(
@@ -446,6 +484,9 @@ public class WirelessEnergyTap extends Item {
         Cover placedCover = coverable.getCoverAtSide(targetSide);
         if (placedCover instanceof GTswn_Cover_DynamoWireless) {
             ((GTswn_Cover_DynamoWireless) placedCover).configure();
+            // D3 兜底自愈：placeCover+configure 成功即入册（动力节点，幂等）
+            WirelessNodeRegistry.get(world)
+                .register(world, x, y, z, WirelessNodeRegistry.TYPE_DYNAMO);
         }
 
         // 只输出简洁成功信息
@@ -505,29 +546,84 @@ public class WirelessEnergyTap extends Item {
 
     /**
      * 处理右键空气事件
+     * <p>
+     * Shift 分支（切换模式）：行为与原版保持一致——客户端直接 return，服务端 canTrigger 冷却检查
+     * 通过后 toggle 模式 + chat 提示。
+     * 非 Shift 分支（节点显形蓄力）：改为双端进入物品使用状态（原版弓箭同款蓄力路径，
+     * vanilla 同步机制保证双端 {@code onPlayerStoppedUsing} 都会被回调），本方法不消耗冷却
+     * （服务端 {@code NodeRevealRequestQueue} 主线程 drain 时经
+     * {@link #tryConsumeRevealCooldown} 统一消费）。
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
-        // 只在服务端处理
-        if (world.isRemote) {
-            return stack;
-        }
-
-        // 检查是否可以触发（防止短时间内重复触发）
-        if (!canTrigger(stack, world)) {
-            return stack;
-        }
-
         // 只有 shift+右键才切换模式（对着空气）
         if (player.isSneaking()) {
+            // 只在服务端处理
+            if (world.isRemote) {
+                return stack;
+            }
+
+            // 检查是否可以触发（防止短时间内重复触发）
+            if (!canTrigger(stack, world)) {
+                return stack;
+            }
+
             boolean newMode = toggleOutputMode(stack);
             stack.setItemDamage(newMode ? 1 : 0);
             String modeKey = newMode ? "gtswn.chat.tap.mode.output" : "gtswn.chat.tap.mode.input";
             String msg = StatCollector.translateToLocal(modeKey);
             player.addChatMessage(new ChatComponentText(msg));
+            return stack;
         }
 
+        // 非 Shift：双端进入蓄力状态（vanilla 弓箭同款），释放时经 onPlayerStoppedUsing 触发显形请求
+        player.setItemInUse(stack, getMaxItemUseDuration(stack));
         return stack;
+    }
+
+    /**
+     * 蓄力总时长（tick）：60t = 3 秒。
+     */
+    @Override
+    public int getMaxItemUseDuration(ItemStack stack) {
+        return MAX_CHARGE_DURATION_TICKS;
+    }
+
+    /**
+     * 蓄力动作动画：原版弓箭拉弓（vanilla 同款蓄力视觉）。
+     */
+    @Override
+    public EnumAction getItemUseAction(ItemStack stack) {
+        return EnumAction.bow;
+    }
+
+    /**
+     * 释放蓄力（双端回调，原版弓箭同款路径）：
+     * <ul>
+     * <li>{@code ticksUsed < 60}：未蓄满 3 秒，静默取消（无 chat、不发包、不耗冷却）。</li>
+     * <li>{@code ticksUsed >= 60} 且客户端侧：防御当前手持仍为本物品（防换槽）后发送
+     * {@link PacketRequestNodeReveal}（disc 11），服务端队列 drain 完成全部校验与回包。</li>
+     * <li>服务端侧：不做事（手持/冷却/查询全部由服务端主线程 drain 统一处理；
+     * {@code world.isRemote} 守卫保证双端回调只发一次包）。</li>
+     * </ul>
+     * <p>
+     * 4 参语义（vanilla {@code ItemBow} 同款）：{@code remaining} 为剩余使用 tick，
+     * {@code ticksUsed = 60 - remaining}。
+     */
+    @Override
+    public void onPlayerStoppedUsing(ItemStack stack, World world, EntityPlayer player, int remaining) {
+        int ticksUsed = getMaxItemUseDuration(stack) - remaining;
+        // 未蓄满：静默取消
+        if (ticksUsed < MAX_CHARGE_DURATION_TICKS) {
+            return;
+        }
+        // 服务端不做事；客户端防御换槽后发显形请求
+        if (world.isRemote) {
+            ItemStack held = player.getCurrentEquippedItem();
+            if (held != null && held.getItem() == this) {
+                GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestNodeReveal());
+            }
+        }
     }
 
     /**
@@ -578,5 +674,7 @@ public class WirelessEnergyTap extends Item {
         list.add(StatCollector.translateToLocal(modeKey));
         // 激光仓绑定消耗提示 / Binding a laser hatch consumes a Laser Vacuum Pipe
         list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.laser_pipe_cost"));
+        // 蓄力显形提示 / Charge-and-release node reveal hint
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.reveal"));
     }
 }

@@ -2,11 +2,11 @@
 <p align="center"><strong><em>GTNH 无线电网模组</em></strong><br><strong><em>GTNH Wireless Energy Network Mod</em></strong></p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License BSD-3-Clause" src="https://img.shields.io/badge/License-BSD%203--Clause-blue.svg"></a>
+  <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg"></a>
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
-  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1-orange.svg"></a>
-  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.7.8" src="https://img.shields.io/badge/Release-1.7.8-green.svg"></a>
+  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1&2" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1%262-orange.svg"></a>
+  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.7.20" src="https://img.shields.io/badge/Release-1.7.20-green.svg"></a>
 </p>
 
 一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和链路终端覆盖板（能源/动力）——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
@@ -23,10 +23,10 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 | GTNH         | GTSWN  | 维护 / Maintenance |
 | ------------ | ------ | :--------------: |
-| 2.9.0 beta-1 | 1.0.0+ |        ✔️        |
+| 2.9.0 beta-1&2 | 1.0.0+ |        ✔️        |
 | 2.8.4        | 0.2.0  |        ❌️        |
 
-当前版本 / Current release：**1.7.8** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
+当前版本 / Current release：**1.7.20** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
 
 ***
 

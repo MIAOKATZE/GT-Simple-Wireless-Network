@@ -99,6 +99,7 @@ item.wirelessEnergyTap.desc=连接能量容器到GT无线电网
 gtswn.tooltip.tap.mode.input=当前模式: 能源链接（从电网获取）
 gtswn.tooltip.tap.mode.output=当前模式: 动力链接（向电网输出）
 gtswn.tooltip.tap.laser_pipe_cost=绑定激光仓时需要消耗激光真空管
+gtswn.tooltip.tap.reveal=右击空气长按蓄力约 3 秒后释放：显形 64 格内当前模式绑定的链路节点 60 秒（能源=§e黄色§r，动力=§5紫色§r）
 gtswn.chat.tap.mode.input=§a[链路终端] 已切换为能源链接模式
 gtswn.chat.tap.mode.output=§a[链路终端] 已切换为动力链接模式
 gtswn.chat.tap.not_energy_container=§c[链路终端] 不是能量容器
@@ -106,8 +107,8 @@ gtswn.chat.tap.no_capacity=§c[链路终端] 无电容方块，无法链接
 gtswn.chat.tap.no_voltage=§c[链路终端] 无电压设置，无法链接
 
 # Wireless Covers
-item.GTswn_Cover_Energy_Wireless.name=链路锚点（能源）
-item.GTswn_Cover_Dynamo_Wireless.name=链路锚点（动力）
+item.GTswn_Cover_Energy_Wireless.name=链路节点（能源）
+item.GTswn_Cover_Dynamo_Wireless.name=链路节点（动力）
 
 # Wireless Energy Tap Additional Chat Messages
 gtswn.chat.tap.unlink_success=§a[链路终端] 取消链接成功！
@@ -134,8 +135,8 @@ gtswn.chat.tap.laser_missing_pipe=§c[链路终端] 背包缺少激光真空管�
 gtswn.chat.tap.laser_consumed=§a[链路终端] 已消耗 1 根激光真空管。
 
 # Wireless Cover Right-Click Config
-gtswn.chat.cover.energy_config=GTswn链路终端（能源）配置:
-gtswn.chat.cover.dynamo_config=GTswn链路终端（动力）配置:
+gtswn.chat.cover.energy_config=GTswn链路节点（能源）配置:
+gtswn.chat.cover.dynamo_config=GTswn链路节点（动力）配置:
 gtswn.chat.cover.voltage_tier=电压等级: 
 gtswn.chat.cover.amperage_tier=电流等级: 
 gtswn.chat.cover.capacity=电容量: 
@@ -432,11 +433,11 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAAAw.desc=放下你的无线能量监视�
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABA.name=§d§l掌上监理
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABA.desc=便携式无线网络监测终端让你把电网装进口袋。%n%n首次右击即绑定拥有者；之后右击在 HUD 关闭、普通与科学计数模式间循环；潜行右击则§d重新绑定为当前玩家§r。%n%n放进任意 §dBaubles 饰品栏§r同样生效，在服务器与单人世界都能实时显示电量、EU/t 变化率与 GT 风格功率等级。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABQ.name=§6§l跨越维度的连接
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAABQ.desc=无线网络链路终端是你进入无线 EU 网络的钥匙。%n%n它通过链路锚点覆盖板把机器智能接入无线网络：能源端按需取电、动力端回馈电力——§2精简的缓冲设计在保证性能的同时把缓存压力压到很低§r。%n%n默认每 §1600 tick（30 秒）§r与电网交互一次；交互频率与上下行损耗均可在 §3§nconfig/gtswn/gtswn_network.cfg§r 中更改§8（InteractionRateTicks）§r。§c警告：过高的交互频率会显著提升性能压力。§r%n%nShift+右击可在能源模式（从电网取电）与动力模式（向电网送电）之间切换，物品贴图会实时显示当前模式。
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAABQ.desc=无线网络链路终端是你进入无线 EU 网络的钥匙。%n%n它通过链路节点覆盖板把机器智能接入无线网络：能源端按需取电、动力端回馈电力——§2精简的缓冲设计在保证性能的同时把缓存压力压到很低§r。%n%n默认每 §1600 tick（30 秒）§r与电网交互一次；交互频率与上下行损耗均可在 §3§nconfig/gtswn/gtswn_network.cfg§r 中更改§8（InteractionRateTicks）§r。§c警告：过高的交互频率会显著提升性能压力。§r%n%nShift+右击可在能源模式（从电网取电）与动力模式（向电网送电）之间切换，物品贴图会实时显示当前模式。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABg.name=§1§l点亮每个角落
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAABg.desc=能源模式：手持链路终端右击任意 GT 机器，即可挂上链路锚点（能源）覆盖板——机器从此像接了导线一样从无线电网取电。%n%n覆盖板维护一个 §1V×A×800 tick§r 的电容量缓冲池，每 tick 最多注入 §1V×A EU§r，并每 §1600 tick§r 按下行损耗（默认 §c15%%§r）从无线电网补满。拆下覆盖板会按比例退还缓冲余量。交互频率与上下行损耗可在 §3§nconfig/gtswn/gtswn_network.cfg§r 中更改。%n%n指向机器时会绘制 3×3 九宫格辅助线——能源模式为§1黄色§r。绑定激光源仓会消耗 1 根激光真空管。
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAABg.desc=能源模式：手持链路终端右击任意 GT 机器，即可挂上链路节点（能源）覆盖板——机器从此像接了导线一样从无线电网取电。%n%n覆盖板维护一个 §1V×A×800 tick§r 的电容量缓冲池，每 tick 最多注入 §1V×A EU§r，并每 §1600 tick§r 按下行损耗（默认 §c15%%§r）从无线电网补满。拆下覆盖板会按比例退还缓冲余量。交互频率与上下行损耗可在 §3§nconfig/gtswn/gtswn_network.cfg§r 中更改。%n%n指向机器时会绘制 3×3 九宫格辅助线——能源模式为§1黄色§r。绑定激光源仓会消耗 1 根激光真空管。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABw.name=§5§l收纳每份能量
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAABw.desc=动力模式：Shift+右击终端切换模式，再右击发电类机器，即可挂上链路锚点（动力）覆盖板。它像一根虚拟导线：读取机器输出存入内部缓冲池，并每 §1600 tick§r 上送到无线电网。%n%n上行损耗默认为 §2零§r；覆盖板会阻断机器向真实导线输出，杜绝重复计量。不输出的机器会被自动跳过。交互频率与上下行损耗可在 §3§nconfig/gtswn/gtswn_network.cfg§r 中更改。%n%n动力模式下九宫格辅助线显示为§5紫色§r。从此每台远方的发电机都是电网的馈入点。
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAABw.desc=动力模式：Shift+右击终端切换模式，再右击发电类机器，即可挂上链路节点（动力）覆盖板。它像一根虚拟导线：读取机器输出存入内部缓冲池，并每 §1600 tick§r 上送到无线电网。%n%n上行损耗默认为 §2零§r；覆盖板会阻断机器向真实导线输出，杜绝重复计量。不输出的机器会被自动跳过。交互频率与上下行损耗可在 §3§nconfig/gtswn/gtswn_network.cfg§r 中更改。%n%n动力模式下九宫格辅助线显示为§5紫色§r。从此每台远方的发电机都是电网的馈入点。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAACA.name=§3§l墙上的走势图
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAACA.desc=网络信息屏把网络历史渲染成墙面大小多方块屏幕上的平滑曲线。%n%n它不仅能记录 §6EU 无线网络的状态§r——接入 ME 网络后，还能记录其中§d实时与历史的物品变化§r。%n%n用法：EU 无线数据跟随放置者所属的无线网络；ME 网络则需要手持§1物品或流体单元§r右击信息屏进行配置。还可以打开它的终端进行更多细节上的配置。%n%n它的优势：以§2极低的性能与内存消耗记录长达一年的网络信息§r——§38 个嵌套时间窗口（5 分钟/1 小时/8 小时/24 小时/7 天/1 月/3 月/1 年）§r由 §161 点 FIFO§r 承载，用 Fritsch-Carlson 样条平滑绘制。同一玩家放置的所有屏幕共享同一份数据。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAACQ.name=§3§l更大的画面

@@ -21,13 +21,13 @@ import gregtech.api.metatileentity.BaseMetaTileEntity;
 import io.netty.buffer.ByteBuf;
 
 /**
- * 链路终端（能源）—— 虚空覆盖板
+ * 链路节点（能源）—— 虚空覆盖板
  * <p>
  * 本质为一个"虚拟电源":内部维护电容量缓冲池,像导线一样每 tick 向机器持续输入 V×A 的 EU。
  * 每基础值 tick(默认 600,Config.interactionRateTicks)从无线电网补满缓冲池(计算下行损耗)。
  * 卸载时将剩余电量发回网络(计算上行损耗)。
  * <p>
- * Link Terminal (Energy) — a void cover acting as a virtual power source.
+ * Link Node (Energy) — a void cover acting as a virtual power source.
  * Maintains an internal capacity buffer, continuously injects V×A EU per tick like a cable.
  * Refills from wireless network every base-value ticks (default 600, Config.interactionRateTicks,
  * with downlink loss).
@@ -43,6 +43,12 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
 
     public GTswn_Cover_EnergyWireless(CoverContext context) {
         super(context);
+    }
+
+    /** 能源无线节点：显形协议 type = {@link WirelessNodeRegistry#TYPE_ENERGY}（0） */
+    @Override
+    public byte nodeTypeId() {
+        return WirelessNodeRegistry.TYPE_ENERGY;
     }
 
     @Override

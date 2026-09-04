@@ -23,7 +23,7 @@ import gregtech.api.metatileentity.MetaTileEntity;
 import io.netty.buffer.ByteBuf;
 
 /**
- * 链路终端（动力）—— 虚空覆盖板
+ * 链路节点（动力）—— 虚空覆盖板
  * <p>
  * 本质为一个"虚拟导线":每 tick 读取机器的输出电压/安培,按 V×A 从机器取电存入内部缓冲池(电容量 = 2^63-1)。
  * 每基础值 tick(默认 600,Config.interactionRateTicks)将缓冲池累积的 EU 送到无线电网(计算上行损耗)。
@@ -31,7 +31,7 @@ import io.netty.buffer.ByteBuf;
  * <p>
  * 通过 letsEnergyOut()=false 阻止机器向覆盖板所在面输出到真导线,避免双重消耗。
  * <p>
- * Link Terminal (Dynamo) — a void cover acting as a virtual cable.
+ * Link Node (Dynamo) — a void cover acting as a virtual cable.
  * Reads machine output V/A per tick, drains V×A EU into internal buffer (capacity = 2^63-1).
  * Uploads buffer to wireless network every base-value ticks (default 600, Config.interactionRateTicks,
  * with uplink loss).
@@ -46,6 +46,12 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
 
     public GTswn_Cover_DynamoWireless(CoverContext context) {
         super(context);
+    }
+
+    /** 动力无线节点：显形协议 type = {@link WirelessNodeRegistry#TYPE_DYNAMO}（1） */
+    @Override
+    public byte nodeTypeId() {
+        return WirelessNodeRegistry.TYPE_DYNAMO;
     }
 
     @Override

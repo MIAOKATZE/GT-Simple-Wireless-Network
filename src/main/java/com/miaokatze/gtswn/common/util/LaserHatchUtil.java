@@ -17,13 +17,13 @@ import gregtech.api.metatileentity.implementations.MTEHatch;
  * 激光仓工具类
  * <p>
  * 提供激光源仓（MTEHatchDynamoTunnel）/ 激光靶仓（MTEHatchEnergyTunnel）的识别、专属 V/A 读取
- * 与激光真空管消耗能力，供链路终端（WirelessEnergyTap / GTswn_Cover_DynamoWireless）共用。
+ * 与激光真空管消耗能力，供链路终端与动力链路节点（WirelessEnergyTap / GTswn_Cover_DynamoWireless）共用。
  * <p>
  * 背景：激光仓将 {@code isEnetOutput} 覆写为 false，BaseMetaTileEntity.getOutputVoltage() 因此被门控恒返回 0，
  * 但 MetaTileEntity 层的 maxEUOutput() / maxAmperesOut() 等仓专属方法不受门控，必须直读取电。
  * <p>
  * Laser hatch utilities: identify Laser Source/Target Hatches (MTEHatchDynamoTunnel / MTEHatchEnergyTunnel),
- * read their hatch-specific V/A, and consume Laser Vacuum Pipes for the link terminal.
+ * read their hatch-specific V/A, and consume Laser Vacuum Pipes for the link terminal and dynamo link node.
  * Background: laser hatches override isEnetOutput to false, gating getOutputVoltage() to 0,
  * so the hatch-specific MetaTileEntity methods must be read directly.
  */

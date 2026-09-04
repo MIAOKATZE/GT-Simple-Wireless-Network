@@ -29,6 +29,12 @@ import cpw.mods.fml.relauncher.Side;
  * 128 条/页 entryTotal 封顶 1024，全防御反序列化，客户端经 @SidedProxy 切主线程写缓存）</li>
  * <li>10 = {@link PacketDeviceTerminalAction}（C→S 设备信息终端 GUI 动作：排序/计数法/
  * 解绑/传送；照 PanelActionQueue 模式 Netty 入队→主线程 drain）</li>
+ * <li>11 = {@link PacketRequestNodeReveal}（C→S 手持链路终端节点显形请求，无字段；
+ * Handler 仅入队 NodeRevealRequestQueue，ServerTick END 主线程复验手持/存活/冷却后
+ * 查询 WirelessNodeRegistry 并按 tap 模式过滤回发）</li>
+ * <li>12 = {@link PacketSyncNodeReveal}（S→C 节点显形同步：count 封顶 256 + N×{x,y,z,type} +
+ * 服务端本维 world tick + durationTicks=1200；空列表语义=客户端清缓存；
+ * 客户端经 @SidedProxy 切主线程写 WirelessNodeRevealRenderer 缓存）</li>
  * </ul>
  */
 public class GTSWNPacketHandler {
@@ -91,5 +97,9 @@ public class GTSWNPacketHandler {
             PacketDeviceTerminalAction.class,
             10,
             Side.SERVER);
+        // 11: 客户端→服务端 手持链路终端节点显形请求（无字段；Netty 入队→NodeRevealRequestQueue 主线程 drain）
+        NETWORK.registerMessage(PacketRequestNodeReveal.Handler.class, PacketRequestNodeReveal.class, 11, Side.SERVER);
+        // 12: 服务端→客户端 节点显形同步（客户端 Handler 双端类型经 @SidedProxy 委托）
+        NETWORK.registerMessage(PacketSyncNodeReveal.Handler.class, PacketSyncNodeReveal.class, 12, Side.CLIENT);
     }
 }

@@ -5,6 +5,10 @@ import static gregtech.common.misc.WirelessNetworkManager.addEUToGlobalEnergyMap
 
 import java.util.UUID;
 
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
+import net.minecraft.world.World;
+
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverContext;
@@ -13,7 +17,7 @@ import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.common.covers.Cover;
 
 /**
- * 无线链路终端覆盖板抽象基类
+ * 无线链路节点覆盖板抽象基类
  * <p>
  * 提取 {@link GTswn_Cover_DynamoWireless} 与 {@link GTswn_Cover_EnergyWireless} 的公共逻辑：
  * <ul>
@@ -31,7 +35,7 @@ import gregtech.common.covers.Cover;
  * voltage/amperage/capacity/storedEU/configured/ticksSinceLastRefill），
  * 强行上提会导致字段读写顺序耦合脆弱。公共字段 storedEU/configured 通过 protected 暴露给子类直接访问。
  * <p>
- * Abstract base for wireless link terminal covers, extracting common fields and behavior.
+ * Abstract base for wireless link node covers, extracting common fields and behavior.
  * Subclasses implement mode-specific logic (doCoverThings, configure, NBT/packet sync).
  */
 public abstract class GTswnCoverWirelessBase extends Cover {
@@ -97,11 +101,15 @@ public abstract class GTswnCoverWirelessBase extends Cover {
      * <p>
      * 两个子类的卸载逻辑完全一致，故上提到基类。电网实际增加量 = storedEU × (1 - uplinkLossEU)。
      * <p>
-     * On removal: return remaining buffer to network (with uplink loss).
-     * Network receives storedEU × (1 - uplinkLossEU).
+     * v1.8.x 节点显形：开头插入幂等出册（先于退款执行，退款逻辑原样保留、不因出册提前 return），
+     * 使任何移除路径（终端拆卸 / 机器破坏 / 覆盖板替换）都同步摘除节点索引。
+     * <p>
+     * On removal: unregister from the node index first (idempotent), then return remaining buffer
+     * to network (with uplink loss). Network receives storedEU × (1 - uplinkLossEU).
      */
     @Override
     public void onCoverRemoval() {
+        unregisterFromNodeRegistry();
         if (this.storedEU > 0) {
             ICoverable tileEntity = coveredTile.get();
             UUID owner = getOwner(tileEntity);
@@ -113,5 +121,55 @@ public abstract class GTswnCoverWirelessBase extends Cover {
             }
             this.storedEU = 0;
         }
+    }
+
+    /**
+     * 节点类型标识（显形协议包内 type 字节来源）：{@code 0}=能源无线 {@code 1}=动力无线，
+     * 值域与 {@link WirelessNodeRegistry#TYPE_ENERGY} / {@link WirelessNodeRegistry#TYPE_DYNAMO} 一致。
+     * <p>
+     * Node type id for the reveal protocol: 0 = energy, 1 = dynamo.
+     */
+    public abstract byte nodeTypeId();
+
+    /**
+     * 附着时（GT5U {@code CoverPlacer.placeCover} 在 attachCover 之后回调）：以覆盖板坐标
+     * 入册节点索引（{@link WirelessNodeRegistry}，WorldSavedData 每世界一份）。
+     * 仅服务端执行；注册表 register 本身幂等。
+     * <p>
+     * On attach: register this cover position into the per-world node index (server side only).
+     */
+    @Override
+    public void onPlayerAttach(EntityPlayer player, ItemStack coverItem) {
+        ICoverable tileEntity = coveredTile.get();
+        if (tileEntity == null || tileEntity.getWorld().isRemote) {
+            return;
+        }
+        World world = tileEntity.getWorld();
+        WirelessNodeRegistry.get(world)
+            .register(world, tileEntity.getXCoord(), tileEntity.getYCoord(), tileEntity.getZCoord(), nodeTypeId());
+    }
+
+    /**
+     * 基础 TE 被破坏时（GT5U 仅服务端生存破坏路径回调）：出册节点索引。
+     * 区块卸载（onCoverUnload）不挂钩——索引保留，配合显形查询期 UNLOADED 跳过语义。
+     * <p>
+     * On base TE destroyed: unregister from the node index (idempotent).
+     */
+    @Override
+    public void onBaseTEDestroyed() {
+        unregisterFromNodeRegistry();
+    }
+
+    /**
+     * 从所在世界的节点注册表出册（幂等：未册无效果；仅服务端；TE 已失效时静默跳过）。
+     */
+    private void unregisterFromNodeRegistry() {
+        ICoverable tileEntity = coveredTile.get();
+        if (tileEntity == null || tileEntity.getWorld().isRemote) {
+            return;
+        }
+        World world = tileEntity.getWorld();
+        WirelessNodeRegistry.get(world)
+            .unregister(world, tileEntity.getXCoord(), tileEntity.getYCoord(), tileEntity.getZCoord());
     }
 }

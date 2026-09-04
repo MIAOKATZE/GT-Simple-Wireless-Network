@@ -9,6 +9,7 @@ import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
+import com.miaokatze.gtswn.client.WirelessNodeRevealRenderer;
 import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
 import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
 import com.miaokatze.gtswn.client.gui.GuiNetworkInfoPanel;
@@ -23,6 +24,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
+import com.miaokatze.gtswn.network.PacketSyncNodeReveal;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
@@ -60,6 +62,9 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new WirelessTapHighlightRenderer());
         // v1.6.1 问题 2：注册量子节点放置预览框渲染器（手持已绑定量子终端瞄准可放置位置时画青色预览盒）
         MinecraftForge.EVENT_BUS.register(new QuantumNodeHighlightRenderer());
+        // 节点显形渲染器（RenderWorldLastEvent 穿墙线框 + WorldEvent.Unload 清缓存）：
+        // 包 12 显形回包经 handleSyncNodeReveal 切主线程写缓存后由此绘制
+        MinecraftForge.EVENT_BUS.register(new WirelessNodeRevealRenderer());
         ClientRegistry.bindTileEntitySpecialRenderer(TileEntityNetworkInfoPanel.class, new RenderNetworkInfoPanel());
 
         // v1.6.1 问题 1：注册量子节点 ISBRH（线缆形态：小核心 + 朝 AE 网格宿主的连接臂）。
@@ -191,6 +196,32 @@ public class ClientProxy extends CommonProxy {
         Minecraft.getMinecraft()
             .func_152344_a(
                 () -> DeviceTerminalClientCache.receivePage(terminalId, version, pageIndex, pageTotal, page));
+    }
+
+    /**
+     * 客户端处理节点显形同步包（disc 12）：切主线程后写
+     * {@link WirelessNodeRevealRenderer} 显形缓存（空列表 = 清缓存语义）。
+     * <p>
+     * 线程安全与类加载安全模式同 {@link #handleSyncDeviceTerminalData}：onMessage 运行
+     * 在 Netty 网络线程，用 {@link Minecraft#func_152344_a(Runnable)} 切主线程；
+     * 维度在主线程取客户端当前世界（服务端围绕请求玩家当前位置查询，玩家必在同维），
+     * 过期锚点由 {@code acceptReveal} 用客户端世界 tick 计算（服务端时钟不同源不可比较）。
+     */
+    @Override
+    public void handleSyncNodeReveal(PacketSyncNodeReveal msg) {
+        final long serverTotalWorldTime = msg.getServerTotalWorldTime();
+        final int durationTicks = msg.getDurationTicks();
+        final java.util.List<PacketSyncNodeReveal.RevealedNode> nodes = new java.util.ArrayList<>(msg.getNodes());
+        // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
+        Minecraft.getMinecraft()
+            .func_152344_a(() -> {
+                final World world = Minecraft.getMinecraft().theWorld;
+                if (world == null) {
+                    return;
+                }
+                WirelessNodeRevealRenderer
+                    .acceptReveal(world.provider.dimensionId, serverTotalWorldTime, durationTicks, nodes);
+            });
     }
 
     @Override

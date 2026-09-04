@@ -10,9 +10,9 @@ import com.miaokatze.gtswn.common.items.GTSwnCoverEnergyWireless;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /**
- * 链路终端覆盖板物品掉落抑制器（v1.6.30，服务端）。
+ * 链路节点覆盖板物品掉落抑制器（v1.6.30，服务端）。
  * <p>
- * 【为什么需要】链路终端覆盖板由能源/动力链路终端物品放置时免费创建（不消耗覆盖板物品），
+ * 【为什么需要】链路节点覆盖板由能源/动力链路终端物品放置时免费创建（不消耗覆盖板物品），
  * 因此覆盖板本身不可作为物品获得——任何掉落路径产出覆盖板 EntityItem 都等价于无限复制。
  * GT5U 存在三条把覆盖板作为 {@link EntityItem} 掉落的路径：
  * <ul>
@@ -27,7 +27,7 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
  * 与无线网络链路终端的拆卸行为天然一致。
  * 创造模式下玩家从物品栏丢弃该覆盖板物品同样会被取消（消失），属预期行为。
  * <p>
- * Cover Drop Suppression Handler (server-side). Link-terminal covers are created for free by the
+ * Cover Drop Suppression Handler (server-side). Link Node covers are created for free by the
  * terminal items, so they must never exist as items; any drop would be an infinite dupe. This
  * handler cancels the three GT5U drop paths (crowbar pry-off, sneaky machine break, checkDropCover
  * eviction) by canceling EntityJoinWorldEvent for those EntityItems. Buffer upload on removal is
@@ -37,8 +37,8 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 public class CoverDropSuppressionHandler {
 
     /**
-     * 取消链路终端覆盖板 EntityItem 的世界生成（仅服务端；客户端镜像事件直接忽略）。
-     * Cancel world-join of link-terminal cover EntityItems (server side only).
+     * 取消链路节点覆盖板 EntityItem 的世界生成（仅服务端；客户端镜像事件直接忽略）。
+     * Cancel world-join of link-node cover EntityItems (server side only).
      */
     @SubscribeEvent
     public void onEntityJoinWorld(EntityJoinWorldEvent event) {

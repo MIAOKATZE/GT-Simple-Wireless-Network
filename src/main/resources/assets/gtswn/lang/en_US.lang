@@ -99,6 +99,7 @@ item.wirelessEnergyTap.desc=Connect energy containers to GT wireless network
 gtswn.tooltip.tap.mode.input=Current Mode: Energy Link (Input)
 gtswn.tooltip.tap.mode.output=Current Mode: Power Link (Output)
 gtswn.tooltip.tap.laser_pipe_cost=Binding Laser Source/Target Hatches consumes a Laser Vacuum Pipe
+gtswn.tooltip.tap.reveal=Hold right-click in air for ~3s, then release: reveals Link Nodes bound in the current mode within 64 blocks for 60 seconds (Energy=§eyellow§r, Power=§5purple§r)
 gtswn.chat.tap.mode.input=§a[Link Terminal] Switched to Energy Link mode
 gtswn.chat.tap.mode.output=§a[Link Terminal] Switched to Power Link mode
 gtswn.chat.tap.not_energy_container=§c[Link Terminal] Not an energy container
@@ -106,8 +107,8 @@ gtswn.chat.tap.no_capacity=§c[Link Terminal] No EU capacity, cannot connect
 gtswn.chat.tap.no_voltage=§c[Link Terminal] No voltage tier detected, cannot connect
 
 # Wireless Covers
-item.GTswn_Cover_Energy_Wireless.name=Link Anchor (Energy)
-item.GTswn_Cover_Dynamo_Wireless.name=Link Anchor (Power)
+item.GTswn_Cover_Energy_Wireless.name=Link Node (Energy)
+item.GTswn_Cover_Dynamo_Wireless.name=Link Node (Power)
 
 # Wireless Energy Tap Additional Chat Messages
 gtswn.chat.tap.unlink_success=§a[Link Terminal] Link removed successfully!
@@ -134,8 +135,8 @@ gtswn.chat.tap.laser_missing_pipe=§c[Link Terminal] Missing Laser Vacuum Pipe! 
 gtswn.chat.tap.laser_consumed=§a[Link Terminal] Consumed 1 Laser Vacuum Pipe.
 
 # Wireless Cover Right-Click Config
-gtswn.chat.cover.energy_config=GTswn Link Terminal (Energy) Config:
-gtswn.chat.cover.dynamo_config=GTswn Link Terminal (Power) Config:
+gtswn.chat.cover.energy_config=GTswn Link Node (Energy) Config:
+gtswn.chat.cover.dynamo_config=GTswn Link Node (Power) Config:
 gtswn.chat.cover.voltage_tier=Voltage tier: 
 gtswn.chat.cover.amperage_tier=Amperage tier: 
 gtswn.chat.cover.capacity=Capacity: 
@@ -432,11 +433,11 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAAAw.desc=Place your Wireless Energy Moni
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABA.name=§d§lPocket-Sized Oversight
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABA.desc=The Portable Wireless Network Monitor puts your grid in your pocket.%n%nThe first right-click binds it to you; further right-clicks cycle the HUD Off, Normal and Scientific. Sneak-right-click §drebinds it to the player holding it§r.%n%nIt also works from any §dBaubles§r accessory slot, and shows live EU, EU/t rate and a GT-style power tier on servers as well as in single player.
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABQ.name=§6§lA Connection Across Dimensions
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAABQ.desc=The Wireless Network Link Terminal is your key into the wireless EU network.%n%nIt intelligently links machines into your wireless network through Link Anchor covers: energy terminals pull power on demand, dynamo terminals feed it back — §2a lean buffer keeps cache pressure low while staying fast§r.%n%nBy default it interacts with the network every §1600 ticks (30 seconds)§r; the interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r §8(InteractionRateTicks)§r. §cWarning: cranking the interaction frequency way up significantly increases performance overhead.§r%n%nShift+right-click it to switch between Energy mode (draw from the network) and Power mode (feed the network). The item texture always shows which mode is active.
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAABQ.desc=The Wireless Network Link Terminal is your key into the wireless EU network.%n%nIt intelligently links machines into your wireless network through Link Node covers: energy nodes pull power on demand, dynamo nodes feed it back — §2a lean buffer keeps cache pressure low while staying fast§r.%n%nBy default it interacts with the network every §1600 ticks (30 seconds)§r; the interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r §8(InteractionRateTicks)§r. §cWarning: cranking the interaction frequency way up significantly increases performance overhead.§r%n%nShift+right-click it to switch between Energy mode (draw from the network) and Power mode (feed the network). The item texture always shows which mode is active.
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABg.name=§1§lLight Up Every Corner
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAABg.desc=Energy mode: right-click any GT machine while holding the Link Terminal to attach a Link Anchor (Energy) cover — the machine then drinks from the wireless network like it was cabled in.%n%nThe cover keeps a capacity buffer of §1V x A x 800 ticks§r, injects up to §1V x A§r per tick, and refills from your wireless EU every §1600 ticks§r with the configured downlink loss (§c15 percent§r by default). Removing the cover refunds its buffer. The interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r.%n%nPointing at a machine draws a 3x3 grid highlight — §1yellow§r lines in Energy mode. Binding a Laser Source Hatch costs 1 Laser Vacuum Pipe.
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAABg.desc=Energy mode: right-click any GT machine while holding the Link Terminal to attach a Link Node (Energy) cover — the machine then drinks from the wireless network like it was cabled in.%n%nThe cover keeps a capacity buffer of §1V x A x 800 ticks§r, injects up to §1V x A§r per tick, and refills from your wireless EU every §1600 ticks§r with the configured downlink loss (§c15 percent§r by default). Removing the cover refunds its buffer. The interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r.%n%nPointing at a machine draws a 3x3 grid highlight — §1yellow§r lines in Energy mode. Binding a Laser Source Hatch costs 1 Laser Vacuum Pipe.
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAABw.name=§5§lGather Every Joule
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAABw.desc=Power mode: shift+right-click the terminal to flip it, then right-click a generator-type machine to attach a Link Anchor (Power) cover. It acts as a virtual cable, draining the machine's output into an internal buffer and uploading it to the wireless network every §1600 ticks§r.%n%nUplink loss defaults to §2zero§r, and the cover blocks the machine from outputting into real cables on that side, so nothing is counted twice. Machines that do not output are skipped automatically. The interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r.%n%nThe grid highlight turns §5purple§r in Power mode. Now every distant dynamo is a grid feeder.
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAABw.desc=Power mode: shift+right-click the terminal to flip it, then right-click a generator-type machine to attach a Link Node (Power) cover. It acts as a virtual cable, draining the machine's output into an internal buffer and uploading it to the wireless network every §1600 ticks§r.%n%nUplink loss defaults to §2zero§r, and the cover blocks the machine from outputting into real cables on that side, so nothing is counted twice. Machines that do not output are skipped automatically. The interaction frequency and the up/downlink losses can be changed in §3§nconfig/gtswn/gtswn_network.cfg§r.%n%nThe grid highlight turns §5purple§r in Power mode. Now every distant dynamo is a grid feeder.
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAACA.name=§3§lTrends on a Wall
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAACA.desc=The Network Info Panel renders your network history as smooth curves on a wall-sized multi-block screen.%n%nIt does not just record §6EU wireless network status§r — connected to an ME network, it also tracks §dreal-time and historical item changes§r inside it.%n%nHow it works: EU wireless readings follow the placing player's own wireless network; for the ME side, right-click the panel while holding an §1item or fluid cell§r to configure what to monitor. You can also open its terminal for more detailed settings.%n%nIts edge: §2extremely low performance and memory consumption§r while recording up to §2a full year§r of network history — §38 nested time windows (5m/1h/8h/24h/7d/1M/3M/1Y)§r on a §161-point FIFO§r, drawn as Fritsch-Carlson splines. All screens placed by the same player share one dataset.
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAACQ.name=§3§lThe Bigger Picture

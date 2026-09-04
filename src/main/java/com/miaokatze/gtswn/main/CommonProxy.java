@@ -35,8 +35,10 @@ import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.network.DeviceTerminalActionQueue;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.NetworkPanelBroadcastPort;
+import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
+import com.miaokatze.gtswn.network.PacketSyncNodeReveal;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 import com.miaokatze.gtswn.network.PanelActionQueue;
@@ -64,14 +66,14 @@ import gregtech.api.render.TextureFactory;
 public class CommonProxy {
 
     /**
-     * 链路终端覆盖板专用 placer（v1.6.30，替代 CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER）。
+     * 链路节点覆盖板专用 placer（v1.6.30，替代 CoverRegistry.INTERCEPTS_RIGHT_CLICK_COVER_PLACER）。
      * <p>
      * isGuiClickable=true 使单方块机器正面允许保留该覆盖板（GT5U MTEBasicMachine.allowCoverOnSide
      * 对正面仅放行 GUI 可点击覆盖板，否则重放机器/扳手换面时 checkDropCover 会把覆盖板顶落）；
      * allowOnPrimitiveBlock 维持 false 与原行为一致；
      * 右键交互不受影响——覆盖板 onCoverRightClick 优先拦截显示配置。
      * <p>
-     * Dedicated CoverPlacer for link-terminal covers. isGuiClickable=true lets single-block machines
+     * Dedicated CoverPlacer for link-node covers. isGuiClickable=true lets single-block machines
      * keep the cover on their front face (MTEBasicMachine.allowCoverOnSide only allows GUI-clickable
      * covers there); allowOnPrimitiveBlock stays false as before; right-click interaction is
      * unaffected since the cover's onCoverRightClick intercepts first.
@@ -139,6 +141,9 @@ public class CommonProxy {
         // 阶段 D3：设备信息终端动作队列自宿主 tick 监听注册——包 10 动作（排序/计数法/解绑/传送）
         // 由 ServerTickEvent(END) 主线程排空（照 PanelActionQueue 同址注册模式）
         DeviceTerminalActionQueue.register();
+        // 节点显形请求队列自宿主 tick 监听注册——包 11 显形请求（手持/冷却/注册表查询/模式过滤）
+        // 由 ServerTickEvent(END) 主线程排空（照 DeviceTerminalActionQueue 同址注册模式）
+        NodeRevealRequestQueue.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(GTSimpleWirelessNetwork.instance, new GTSWNGuiHandler());
         // BQ 任务注入集成（PoC）：preInit 反射探测（BqCompat 无任何 BQ 类型引用，缺席时静默）
         BqCompat.detect();
@@ -207,7 +212,7 @@ public class CommonProxy {
         DeviceScanManager.register();
         GTSimpleWirelessNetwork.LOG.info("[2/3] 设备信息终端采样调度器与扫描管理器已注册到事件总线。");
 
-        // v1.6.30：注册链路终端覆盖板物品掉落抑制监听（覆盖板由终端物品免费创建，掉落=无限复制）
+        // v1.6.30：注册链路节点覆盖板物品掉落抑制监听（覆盖板由终端物品免费创建，掉落=无限复制）
         MinecraftForge.EVENT_BUS.register(new CoverDropSuppressionHandler());
 
         // v1.6.19：注册性能审计 tick 结算监听（ServerTickEvent END；开关关闭时完全静默）
@@ -401,6 +406,23 @@ public class CommonProxy {
      * @param msg 设备信息终端数据分页同步包
      */
     public void handleSyncDeviceTerminalData(PacketSyncDeviceTerminalData msg) {
+        // 服务端空实现：此包只发往客户端
+    }
+
+    /**
+     * 处理服务端→客户端 节点显形同步包（disc 12，客户端专用逻辑）。
+     * <p>
+     * 服务端空实现：此包只发往客户端，服务端收到也不会调用本方法。
+     * 设计与 {@link #handleSyncDeviceTerminalData} 相同的 hotfix v1.5.14
+     * 类加载安全模式（Handler 只引用双端类型，经 @SidedProxy 委托）。
+     * <p>
+     * 客户端逻辑由 {@code ClientProxy.handleSyncNodeReveal} 重写（渲染切片补齐）：
+     * {@code Minecraft.func_152344_a} 切主线程调用
+     * {@code WirelessNodeRevealRenderer.acceptReveal(dim, serverTotalWorldTime, durationTicks, nodes)}。
+     *
+     * @param msg 节点显形同步包（空列表 = 客户端清缓存）
+     */
+    public void handleSyncNodeReveal(PacketSyncNodeReveal msg) {
         // 服务端空实现：此包只发往客户端
     }
 
