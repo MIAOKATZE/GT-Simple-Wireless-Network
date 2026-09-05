@@ -66,14 +66,14 @@ gtswn.hud.eut.unit=EU/t
 gtswn.tooltip.monitor.hud.mode.off=§cHUD: Off
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: Normal
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: Scientific
-gtswn.tooltip.monitor.owner.unbound=Unbound
-gtswn.tooltip.monitor.owner.bound=Owner: %s
+gtswn.tooltip.monitor.owner.unbound=§7Unbound§r
+gtswn.tooltip.monitor.owner.bound=§bOwner: §f%s§r
 gtswn.tooltip.monitor.usage=§eRight-click§f to toggle HUD mode
 gtswn.tooltip.monitor.baubles.equip=§fCan be equipped in any §bBaubles slot§f
 # Portable mechanism description (v1.3.0, 3-line brief form)
-gtswn.tooltip.monitor.mechanism.line1=§bStatus: §fevery §e5s§f, §a300s§f window average
-gtswn.tooltip.monitor.mechanism.line2=§bSilent: §fwith §7silent§f/§8long-term-silent§f(≥§a300s§f) detection
-gtswn.tooltip.monitor.mechanism.line3=§bCold Start: §fRejoin triggers, §edataset resets on logout
+gtswn.tooltip.monitor.mechanism.line1=§bStatus: §fevery §e5s§f, §a300s§f window average§r
+gtswn.tooltip.monitor.mechanism.line2=§bSilent: §fwith §7silent§f/§8long-term-silent§f(≥§a300s§f) detection§r
+gtswn.tooltip.monitor.mechanism.line3=§bCold Start: §fRejoin triggers, §edataset resets on logout§r
 
 # NC2 Industrial Information Panel Info (via GT Sensor Kit)
 gtswn.info.energy=§7Energy: %s
@@ -96,10 +96,10 @@ gtswn.chat.testcoin.current=§7Current wireless network energy: §f%s §7EU
 # Wireless Energy Tap
 item.wirelessEnergyTap.name=Wireless Network Link Terminal
 item.wirelessEnergyTap.desc=Connect energy containers to GT wireless network
-gtswn.tooltip.tap.mode.input=Current Mode: Energy Link (Input)
-gtswn.tooltip.tap.mode.output=Current Mode: Power Link (Output)
-gtswn.tooltip.tap.laser_pipe_cost=Binding Laser Source/Target Hatches consumes a Laser Vacuum Pipe
-gtswn.tooltip.tap.reveal=Alt+Right-click: instantly scan nearby link nodes (revealed through walls for 60s)
+gtswn.tooltip.tap.mode.input=§7Current Mode: §fEnergy Link (Input)§r
+gtswn.tooltip.tap.mode.output=§7Current Mode: §fPower Link (Output)§r
+gtswn.tooltip.tap.laser_pipe_cost=§7Binding Laser Source/Target Hatches consumes §6a Laser Vacuum Pipe§r
+gtswn.tooltip.tap.reveal=§eAlt+Right-click§7: §binstantly scan nearby link nodes (revealed through walls for 60s)§r
 gtswn.chat.tap.mode.input=§a[Link Terminal] Switched to Energy Link mode
 gtswn.chat.tap.mode.output=§a[Link Terminal] Switched to Power Link mode
 gtswn.chat.tap.not_energy_container=§c[Link Terminal] Not an energy container
@@ -177,6 +177,8 @@ gtswn.chat.cover.next_refill=§7 Next refill in:
 gtswn.chat.cover.next_upload=§7 Next upload in: 
 
 # Network Info Panel
+item.gtswn.networkInfoPanel.tooltip.l1=§7Wireless energy transfer cover panel
+item.gtswn.networkInfoPanel.tooltip.l2=§eBind a Link Terminal in the panel GUI to transfer energy§r
 tile.NetworkInfoPanel_GTswn.name=Network Info Panel
 tile.NetworkInfoPanelExtender_GTswn.name=Network Info Extender Panel
 tile.NetworkQuantumNode_GTswn.name=ME Network Quantum Node
@@ -318,14 +320,14 @@ gtswn.network_info.gui.ae.monitor.header_realtime=Realtime
 gtswn.network_info.gui.ae.monitor.header_average=Average
 
 # ME Network Quantum Terminal (T2 event interception / T3 terminal gestures)
-gtswn.tooltip.quantum_terminal.unbound=§7Unbound — right-click an active ME Controller to quantize & bind
-gtswn.tooltip.quantum_terminal.bound=§bBound: §f%s [%d, %d, %d]
-gtswn.tooltip.quantum_terminal.power_requirement=§eRequires the ME network to be powered (connect an Energy Cell before quantizing the controller)
-gtswn.tooltip.quantum_terminal.usage.controller=§7RClick Controller: §fQuantize & bind (rebind if quantized)
-gtswn.tooltip.quantum_terminal.usage.dequantize=§7Shift+RClick Controller: §fDequantize & unbind
-gtswn.tooltip.quantum_terminal.usage.place=§7RClick Block: §fPlace Quantum Node
-gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+Right-click quantum node: §fDestroy node (no drops)
-gtswn.tooltip.quantum_terminal.usage.gui=§7Shift+RClick Air: §fOpen terminal GUI
+gtswn.tooltip.quantum_terminal.unbound=§7Unbound — §eRight-click§7 an active ME Controller to quantize & bind§r
+gtswn.tooltip.quantum_terminal.bound=§bBound: §f%s [%d, %d, %d]§r
+gtswn.tooltip.quantum_terminal.power_requirement=§eRequires the ME network to be powered (connect an Energy Cell before quantizing the controller)§r
+gtswn.tooltip.quantum_terminal.usage.controller=§eRight-click Controller§7: §fQuantize & bind (rebind if quantized)§r
+gtswn.tooltip.quantum_terminal.usage.dequantize=§eShift+Right-click Controller§7: §fDequantize & unbind§r
+gtswn.tooltip.quantum_terminal.usage.place=§eRight-click Block§7: §fPlace Quantum Node§r
+gtswn.tooltip.quantum_terminal.usage.pickup=§eShift+Right-click quantum node§7: §fDestroy node (no drops)§r
+gtswn.tooltip.quantum_terminal.usage.gui=§eShift+Right-click Air§7: §fOpen terminal GUI§r
 gtswn.chat.quantum.quantized=§a[Quantum Terminal] Controller structure quantized (%d blocks), total channels: %d
 gtswn.chat.quantum.quantized_infinite=§a[Quantum Terminal] Controller structure quantized (%d blocks), channels: infinite
 gtswn.chat.quantum.bound=§b[Quantum Terminal] Bound to network [%d, %d, %d]
@@ -363,10 +365,10 @@ gtswn.waila.quantum_node.offline=§cDevice Offline
 
 # Device Info Terminal (stage A; tooltip lines referenced by stage F addInformation)
 item.gtswn.deviceInfoTerminal.name=Device Info Terminal
-item.gtswn.deviceInfoTerminal.tooltip.l1=§7Right-click air: §fOpen the device monitor UI
-item.gtswn.deviceInfoTerminal.tooltip.l2=§7Right-click a working machine: §fBind it to the terminal
-item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+right-click: §fScan your (and your team's) machines in the current dimension (per-second 5s countdown, loaded chunks only, cancellable)
-item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+click an entry: §fRemote unbind · Teleport costs XP levels
+item.gtswn.deviceInfoTerminal.tooltip.l1=§eRight-click air§7: §fOpen the device monitor UI§r
+item.gtswn.deviceInfoTerminal.tooltip.l2=§eRight-click a working machine§7: §fBind it to the terminal§r
+item.gtswn.deviceInfoTerminal.tooltip.l3=§eShift+right-click§7: §bScan your (and your team's) machines in the current dimension (per-second 5s countdown, loaded chunks only, cancellable)§r
+item.gtswn.deviceInfoTerminal.tooltip.l4=§eCtrl+click§7 an entry: §fRemote unbind · Teleport costs §6XP levels§r
 
 # Device Info Terminal GUI (referenced by stage E)
 gtswn.device.gui.title=Device Info Terminal
@@ -451,3 +453,5 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.desc=Open the terminal GUI (shift+ri
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.name=§6§lThe Machine Ledger
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=The Device Info Terminal is your machine ledger.%n%nRight-click any working GT machine to bind it; right-click air to open the ledger. Rows show tri-state (Running/Idle/Stopped), instant EU/t, a §160-point rolling average§r, position and the current recipe. Sort by any of five columns; the notation mode toggles like the monitors.%n%nThe row's sparkle button teleports you to the machine for §1XP levels§r, Ctrl+click unbinds remotely, and shift+right-click air runs a scan of team machines in your current dimension with a §1per-second 5s countdown§r (loaded chunks only). Placing a machine while carrying the terminal auto-binds it too.
 # BQ quests END
+gtswn.reveal.scan.result=Reveal scan: %s wireless link node(s) revealed
+gtswn.reveal.scan.empty=Reveal scan: no wireless link node found

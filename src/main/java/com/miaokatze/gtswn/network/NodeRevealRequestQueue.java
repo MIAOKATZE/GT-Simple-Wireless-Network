@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 
@@ -213,6 +214,12 @@ public final class NodeRevealRequestQueue {
         }
 
         // 空列表也照发（客户端语义 = 清缓存）；时间基准取服务端本维世界 tick
+        // 客户端按玩家语言渲染扫描反馈
+        if (!nodes.isEmpty()) {
+            player.addChatMessage(new ChatComponentTranslation("gtswn.reveal.scan.result", nodes.size()));
+        } else {
+            player.addChatMessage(new ChatComponentTranslation("gtswn.reveal.scan.empty"));
+        }
         GTSWNPacketHandler.NETWORK
             .sendTo(new PacketSyncNodeReveal(nodes, world.getTotalWorldTime(), REVEAL_DURATION_TICKS), player);
     }

@@ -6,7 +6,7 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1&2" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1%262-orange.svg"></a>
-  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.7.20" src="https://img.shields.io/badge/Release-1.7.20-green.svg"></a>
+  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.7.25" src="https://img.shields.io/badge/Release-1.7.25-green.svg"></a>
 </p>
 
 一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和链路终端覆盖板（能源/动力）——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
@@ -26,7 +26,7 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 | 2.9.0 beta-1&2 | 1.0.0+ |        ✔️        |
 | 2.8.4        | 0.2.0  |        ❌️        |
 
-当前版本 / Current release：**1.7.20** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
+当前版本 / Current release：**1.7.25** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
 
 ***
 
@@ -146,6 +146,7 @@ Both the **Wireless Energy Monitor** (block) and **Portable Wireless Network Mon
 
 A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
 
+- **显形扫描反馈 / Reveal Scan Feedback**: 显形扫描完成后会在聊天框提示显现的节点数量；未发现节点时提示“未发现”。/ After a reveal scan completes, the chat reports the number of nodes revealed; if none are found, it reports “none found”.
 - **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
 
 <p align="center"><img src="images/Portable_Wireless_Network_Tap_E.png" alt="能源模式九宫格辅助线 / Grid highlight (Energy mode)" width="200"><img src="images/Portable_Wireless_Network_Tap_P.png" alt="动力模式九宫格辅助线 / Grid highlight (Power mode)" width="200"><br><em>九宫格辅助线 / Grid Highlight</em></p>
@@ -255,6 +256,7 @@ A handheld GT machine monitor (**implemented, under active iteration**): bind an
 
 - **采样与均值 / Sampling & Averages**: 每 `deviceSampleIntervalSeconds`（默认 10 秒）采样一次；平均列为 60 点滚动均值，瞬时 EU/t 取最新采样点。/ Machines are sampled every `deviceSampleIntervalSeconds` (default 10s); the average column is a 60-point rolling mean, instant EU/t is the latest sample.
 - **配方悬浮 / Recipe Hover**: 行悬浮 ≥0.5 秒查看当前执行配方（输出快照，近似）；「显示配方」开关可临时用配方文本替换两列功率数值。/ Hover a row ≥0.5s to view the current recipe (output snapshot, approximate); the "Show recipe" toggle temporarily replaces the two power columns with the recipe text.
+- **功率 provider / Authoritative Power Providers**: 对大型硅岩反应堆、戴森云等实时输出不写入标准功率字段的机器，读取其权威实时功率并区分消耗/产出；这类机器不写入标准词条。/ For machines such as the Large Naquadah Reactor and Dyson Swarm whose realtime output is not written to standard power fields, the terminal reads the authoritative realtime power and distinguishes consumption from generation instead of relying on standard entries.
 - **配置 / Configs**: `deviceSampleIntervalSeconds`（默认 10，最小 1）采样间隔；`deviceTeleportXPCost`（默认 3，最小 1）传送消耗经验等级；`deviceTerminalMaxMachines`（默认 1024，最小 16）单终端绑定上限。/ `deviceSampleIntervalSeconds` (default 10, min 1) sampling interval; `deviceTeleportXPCost` (default 3, min 1) teleport XP-level cost; `deviceTerminalMaxMachines` (default 1024, min 16) per-terminal binding cap.
 - **合成 / Crafting**: LV 级有序配方（v1.7.8 起）：LV 传感器 ×2 + LV 发射器 ×2 + 钢板 ×3 + 电脑屏幕覆盖板 ×1 + 末影珍珠 ×1 → 设备信息终端 ×1。/ LV-tier shaped recipe (since v1.7.8): LV Sensor ×2 + LV Emitter ×2 + Steel Plate ×3 + Computer Screen Cover ×1 + Ender Pearl ×1 → Device Info Terminal ×1.
 

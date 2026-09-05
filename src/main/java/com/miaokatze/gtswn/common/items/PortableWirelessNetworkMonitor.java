@@ -278,7 +278,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
     public void addInformation(ItemStack aStack, EntityPlayer aPlayer, List<String> aList, boolean aF3_H) {
         // 确保 NBT 已初始化
         if (aStack.stackTagCompound == null) {
-            aList.add("§7" + StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
+            aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
         } else {
             // 检查是否已绑定
             boolean isInitialized = aStack.stackTagCompound.getBoolean(NBT_INITIALIZED);
@@ -286,8 +286,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
 
             if (isInitialized && ownerName != null && !ownerName.isEmpty()) {
                 // 已绑定：显示拥有者名称（亮蓝色）
-                aList.add(
-                    "§b§l" + StatCollector.translateToLocalFormatted("gtswn.tooltip.monitor.owner.bound", ownerName));
+                aList.add(StatCollector.translateToLocalFormatted("gtswn.tooltip.monitor.owner.bound", ownerName));
 
                 // 显示当前 HUD 模式
                 int hudMode = aStack.stackTagCompound.getInteger(NBT_HUD_MODE);
@@ -308,7 +307,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
                 aList.add(StatCollector.translateToLocal(modeKey));
             } else {
                 // 未绑定
-                aList.add("§7" + StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
+                aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
             }
         }
 

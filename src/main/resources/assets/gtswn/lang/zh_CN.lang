@@ -66,14 +66,14 @@ gtswn.hud.eut.unit=EU/t
 gtswn.tooltip.monitor.hud.mode.off=§cHUD: 关闭
 gtswn.tooltip.monitor.hud.mode.normal=§bHUD: 常规计数
 gtswn.tooltip.monitor.hud.mode.scientific=§eHUD: 科学计数
-gtswn.tooltip.monitor.owner.unbound=未绑定拥有者
-gtswn.tooltip.monitor.owner.bound=拥有者: %s
+gtswn.tooltip.monitor.owner.unbound=§7未绑定拥有者§r
+gtswn.tooltip.monitor.owner.bound=§b拥有者: §f%s§r
 gtswn.tooltip.monitor.usage=§e右键§f切换 HUD 模式
 gtswn.tooltip.monitor.baubles.equip=§f可在 §bBaubles 饰品栏§f任意槽位装备
 # 便携式机制说明（v1.3.0 新增，3 行简略形式）
-gtswn.tooltip.monitor.mechanism.line1=§b电网状态: §f每§e5秒§f检测，§a300秒§f窗口均值
-gtswn.tooltip.monitor.mechanism.line2=§b静默判定: §f含§7静默§f/§8长期静默§f(≥§a300秒§f)判定
-gtswn.tooltip.monitor.mechanism.line3=§b冷启动: §f退出重进触发，§e数据集随退出重置
+gtswn.tooltip.monitor.mechanism.line1=§b电网状态: §f每§e5秒§f检测，§a300秒§f窗口均值§r
+gtswn.tooltip.monitor.mechanism.line2=§b静默判定: §f含§7静默§f/§8长期静默§f(≥§a300秒§f)判定§r
+gtswn.tooltip.monitor.mechanism.line3=§b冷启动: §f退出重进触发，§e数据集随退出重置§r
 
 # NC2 工业信息屏信息（通过 GT 传感器套件）
 gtswn.info.energy=§7能量: %s
@@ -96,10 +96,10 @@ gtswn.chat.testcoin.current=§7当前无线电网能量: §f%s §7EU
 # Wireless Energy Tap
 item.wirelessEnergyTap.name=无线网络链路终端
 item.wirelessEnergyTap.desc=连接能量容器到GT无线电网
-gtswn.tooltip.tap.mode.input=当前模式: 能源链接（从电网获取）
-gtswn.tooltip.tap.mode.output=当前模式: 动力链接（向电网输出）
-gtswn.tooltip.tap.laser_pipe_cost=绑定激光仓时需要消耗激光真空管
-gtswn.tooltip.tap.reveal=Alt+右击：立即扫描周围链路节点（穿墙显示 60 秒）
+gtswn.tooltip.tap.mode.input=§7当前模式: §f能源链接（从电网获取）§r
+gtswn.tooltip.tap.mode.output=§7当前模式: §f动力链接（向电网输出）§r
+gtswn.tooltip.tap.laser_pipe_cost=§7绑定激光仓时需要消耗§6 1 根激光真空管§r
+gtswn.tooltip.tap.reveal=§eAlt+右击§7：§b立即扫描周围链路节点（穿墙显示 60 秒）§r
 gtswn.chat.tap.mode.input=§a[链路终端] 已切换为能源链接模式
 gtswn.chat.tap.mode.output=§a[链路终端] 已切换为动力链接模式
 gtswn.chat.tap.not_energy_container=§c[链路终端] 不是能量容器
@@ -177,6 +177,8 @@ gtswn.chat.cover.next_refill=§7 距下次补能:
 gtswn.chat.cover.next_upload=§7 距下次上传: 
 
 # Network Info Panel
+item.gtswn.networkInfoPanel.tooltip.l1=§7无线能量传输覆盖板
+item.gtswn.networkInfoPanel.tooltip.l2=§e在覆盖板 GUI 绑定链路终端后传输能量§r
 tile.NetworkInfoPanel_GTswn.name=网络信息屏
 tile.NetworkInfoPanelExtender_GTswn.name=网络信息拓展屏
 tile.NetworkQuantumNode_GTswn.name=ME网络量子节点
@@ -318,14 +320,14 @@ gtswn.network_info.gui.ae.monitor.header_realtime=实时变化量
 gtswn.network_info.gui.ae.monitor.header_average=平均变化量
 
 # ME Network Quantum Terminal (T2 事件拦截 / T3 终端手势)
-gtswn.tooltip.quantum_terminal.unbound=§7未绑定网络——右击运行中的ME控制器进行量子化绑定
-gtswn.tooltip.quantum_terminal.bound=§b已绑定: §f%s [%d, %d, %d]
-gtswn.tooltip.quantum_terminal.power_requirement=§e需要 ME 网络保持供电（请在量子化控制器前接入能源元件）
-gtswn.tooltip.quantum_terminal.usage.controller=§7右击控制器: §f量子化并绑定（已量子化则改绑）
-gtswn.tooltip.quantum_terminal.usage.dequantize=§7Shift+右击控制器: §f取消量子化并解绑
-gtswn.tooltip.quantum_terminal.usage.place=§7右击方块: §f放置量子节点
-gtswn.tooltip.quantum_terminal.usage.pickup=§7Shift+右击量子节点: §f销毁节点（无掉落）
-gtswn.tooltip.quantum_terminal.usage.gui=§7Shift+右击空气: §f打开终端界面
+gtswn.tooltip.quantum_terminal.unbound=§7未绑定网络——§e右击§7运行中的ME控制器进行量子化绑定§r
+gtswn.tooltip.quantum_terminal.bound=§b已绑定: §f%s [%d, %d, %d]§r
+gtswn.tooltip.quantum_terminal.power_requirement=§e需要 ME 网络保持供电（请在量子化控制器前接入能源元件）§r
+gtswn.tooltip.quantum_terminal.usage.controller=§e右击控制器§7: §f量子化并绑定（已量子化则改绑）§r
+gtswn.tooltip.quantum_terminal.usage.dequantize=§eShift+右击控制器§7: §f取消量子化并解绑§r
+gtswn.tooltip.quantum_terminal.usage.place=§e右击方块§7: §f放置量子节点§r
+gtswn.tooltip.quantum_terminal.usage.pickup=§eShift+右击量子节点§7: §f销毁节点（无掉落）§r
+gtswn.tooltip.quantum_terminal.usage.gui=§eShift+右击空气§7: §f打开终端界面§r
 gtswn.chat.quantum.quantized=§a[量子终端] 控制器结构已量子化（%d 块），网络总频道: %d
 gtswn.chat.quantum.quantized_infinite=§a[量子终端] 控制器结构已量子化（%d 块），频道:无限
 gtswn.chat.quantum.bound=§b[量子终端] 已绑定到网络 [%d, %d, %d]
@@ -363,10 +365,10 @@ gtswn.waila.quantum_node.offline=§c设备离线
 
 # 设备信息终端 (Device Info Terminal，阶段 A；tooltip 全文案阶段 F addInformation 引用)
 item.gtswn.deviceInfoTerminal.name=设备信息终端
-item.gtswn.deviceInfoTerminal.tooltip.l1=§7右击空气: §f打开设备监控界面
-item.gtswn.deviceInfoTerminal.tooltip.l2=§7右击可工作机器: §f绑定到终端监控
-item.gtswn.deviceInfoTerminal.tooltip.l3=§7Shift+右击: §f扫描当前维度内你（含团队）的机器（5 秒逐秒倒计时，仅已加载区块，可取消）
-item.gtswn.deviceInfoTerminal.tooltip.l4=§7Ctrl+点击条目: §f远程解绑 · 传送消耗经验等级
+item.gtswn.deviceInfoTerminal.tooltip.l1=§e右击空气§7: §f打开设备监控界面§r
+item.gtswn.deviceInfoTerminal.tooltip.l2=§e右击可工作机器§7: §f绑定到终端监控§r
+item.gtswn.deviceInfoTerminal.tooltip.l3=§eShift+右击§7: §b扫描当前维度内你（含团队）的机器（5 秒逐秒倒计时，仅已加载区块，可取消）§r
+item.gtswn.deviceInfoTerminal.tooltip.l4=§eCtrl+点击§7条目: §f远程解绑 · 传送消耗§6经验等级§r
 
 # 设备信息终端 GUI (Device Info Terminal GUI，阶段 E 引用)
 gtswn.device.gui.title=设备信息终端
@@ -451,3 +453,5 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.desc=打开终端 GUI（Shift+右击
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.name=§6§l机器总账
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=设备信息终端是你的机器总账。%n%n右击任意可工作的 GT 机器即可绑定；右击空气打开台账。列表每行显示三态（运行/待机/停机）、瞬时 EU/t、§160 点滚动均值§r、位置与当前执行配方；五列可排序，计数法与监视器一样可切换。%n%n行内的✦按钮消耗§1经验等级§r把你传送到机器旁，Ctrl+点击可远程解绑，Shift+右击空气则启动带 §15 秒逐秒倒计时§r的当前维度团队扫描（仅已加载区块）。背包里有终端时放置的机器也会自动绑定。
 # BQ quests END
+gtswn.reveal.scan.result=显形扫描：显现 %s 个无线链路节点
+gtswn.reveal.scan.empty=显形扫描：未发现无线链路节点

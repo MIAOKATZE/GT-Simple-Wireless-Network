@@ -6,6 +6,7 @@ import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.StatCollector;
 
 public class ItemBlockNetworkInfoPanel extends ItemBlock {
 
@@ -33,7 +34,7 @@ public class ItemBlockNetworkInfoPanel extends ItemBlock {
     @Override
     @SuppressWarnings({ "rawtypes", "unchecked" })
     public void addInformation(ItemStack stack, EntityPlayer player, List lines, boolean advanced) {
-        // 物品无 NBT，无 tooltip 显示
-        // （原 OwnerName tooltip 已移除，因为破坏后不保留 NBT 数据）
+        lines.add(StatCollector.translateToLocal("item.gtswn.networkInfoPanel.tooltip.l1"));
+        lines.add(StatCollector.translateToLocal("item.gtswn.networkInfoPanel.tooltip.l2"));
     }
 }
