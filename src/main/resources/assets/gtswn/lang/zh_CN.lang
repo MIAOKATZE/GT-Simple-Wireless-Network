@@ -99,7 +99,7 @@ item.wirelessEnergyTap.desc=连接能量容器到GT无线电网
 gtswn.tooltip.tap.mode.input=当前模式: 能源链接（从电网获取）
 gtswn.tooltip.tap.mode.output=当前模式: 动力链接（向电网输出）
 gtswn.tooltip.tap.laser_pipe_cost=绑定激光仓时需要消耗激光真空管
-gtswn.tooltip.tap.reveal=右击空气长按蓄力约 3 秒后释放：显形 64 格内当前模式绑定的链路节点 60 秒（能源=§e黄色§r，动力=§5紫色§r）
+gtswn.tooltip.tap.reveal=右击空气按住不动 0.5 秒后开始蓄力，约 2 秒蓄满，松手触发扫描：显形 64 格内当前模式绑定的链路节点 60 秒（能源=§e黄色§r，动力=§5紫色§r）
 gtswn.chat.tap.mode.input=§a[链路终端] 已切换为能源链接模式
 gtswn.chat.tap.mode.output=§a[链路终端] 已切换为动力链接模式
 gtswn.chat.tap.not_energy_container=§c[链路终端] 不是能量容器

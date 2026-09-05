@@ -6,6 +6,8 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Ene
 import java.io.File;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.EnumAction;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 import net.minecraftforge.common.ForgeChunkManager;
@@ -451,6 +453,26 @@ public class CommonProxy {
      */
     public void toggleHudMode(int mode, String ownerUUID) {
         // 服务端空实现：HUD 仅客户端
+    }
+
+    /**
+     * 链路终端蓄力动作动画判定（v1.7.21 手感调整：动态 EnumAction 虚分派入口）。
+     * <p>
+     * {@code WirelessEnergyTap.getItemUseAction} 经 {@code GTSimpleWirelessNetwork.proxy}
+     * 委托至此（共用代码零客户端类引用，与 {@link #handleResponseEU} 等同用
+     * {@code @SidedProxy} 委托范式，专用服类加载安全）。
+     * <p>
+     * 服务端默认实现恒返回 {@code none}：服务端不存在动作动画语义，也无任何副作用；
+     * 客户端宽限期 none / 有效蓄力期 bow 的判定由 {@code ClientProxy#getTapUseAction} 覆写。
+     *
+     * @param stack            链路终端物品栈（客户端覆写用其与 {@code player.getItemInUse()} 比对）
+     * @param maxDurationTicks 蓄力总时长（{@code WirelessEnergyTap.MAX_CHARGE_DURATION_TICKS}）
+     * @param graceTicks       蓄力宽限期（{@code WirelessEnergyTap.GRACE_TICKS}）
+     * @return 服务端恒 {@code none}
+     */
+    public EnumAction getTapUseAction(ItemStack stack, int maxDurationTicks, int graceTicks) {
+        // 服务端语义：无动画、无副作用
+        return EnumAction.none;
     }
 
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {

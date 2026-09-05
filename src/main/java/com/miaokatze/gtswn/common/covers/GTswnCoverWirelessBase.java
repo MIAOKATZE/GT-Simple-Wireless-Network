@@ -10,7 +10,10 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
 
+import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.relauncher.Side;
 import gregtech.api.covers.CoverContext;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
@@ -46,8 +49,60 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     /** 是否已配置 / Whether the cover has been configured */
     protected boolean configured = false;
 
+    /**
+     * v1.7.21 节点显形修复（旧世界空索引自愈）：构造即挂起延迟注册。
+     * <p>
+     * GT5U 恢复链路（5.09.54.20）：{@code BaseMetaTileEntity.readFromNBT}（BaseMetaTileEntity.java:160）
+     * → {@code setInitialValuesAsNBT} → {@code readCoverNBT}（:204）→
+     * {@code CoverableTileEntity.readCoversNBT}（:142）→ {@code CoverRegistry.buildCoverFromNbt}
+     * （CoverRegistry.java:114-127：工厂构造本覆盖板时 {@code coveredTile} 已绑定（Cover.java:69），
+     * 随后 {@code readFromNbt} → {@code readDataFromNbt}，Cover.java:84）。
+     * 因此每个 TE 反序列化（含每次区块加载）都会执行本构造器——这是旧世界恢复时唯一
+     * 不被子类覆写遮蔽的钩子点（两个子类覆写 {@code readDataFromNbt} 且不调 super，
+     * 基类 NBT 钩子是死代码）。
+     * <p>
+     * 挂起而非就地注册：TE 读 NBT 窗口内 {@code worldObj} 尚未赋值
+     * （GT5U {@code BaseTileEntity.markDirty} :559 注释与 {@code isServerSide()} :166-172 的
+     * effective-side 回退佐证），无法就地取世界/判 side；注册统一推迟到
+     * {@code NodeRevealRequestQueue} 的 ServerTick(END) drain（空清单早退，零常驻开销）。
+     * <p>
+     * v1.7.21 node-reveal fix (stale-world empty index self-heal): enqueue a deferred
+     * registration on construction — see class comment for the GT5U restore chain and why
+     * the constructor is the only unshadowed hook.
+     */
     public GTswnCoverWirelessBase(CoverContext context) {
         super(context, null);
+        enqueueDeferredNodeRegistration();
+    }
+
+    /**
+     * NBT 恢复路径的延迟注册挂起（服务端限定）：
+     * <ul>
+     * <li>{@code coveredTile} 未绑定（GT5U {@code addInstalledCoversInformation} 传 null 构造的
+     * 纯信息路径）→ 跳过：注册本就需要世界与坐标；</li>
+     * <li>{@code world} 已赋值且 {@code isRemote} → 跳过（客户端）；</li>
+     * <li>{@code world == null}（区块加载读 NBT 窗口，双端都可能）→ 按
+     * {@code FMLCommonHandler.getEffectiveSide()} 线程侧判定，客户端线程跳过
+     * （与 GT5U {@code BaseTileEntity.isServerSide()} :166-172 同款判定，
+     * 避免客户端静态清单泄漏）。</li>
+     * </ul>
+     * 通过上述守卫的条目（服务端，含 placeCover 正常附着路径的冗余条目）由
+     * ServerTick(END) drain 消费，注册幂等，冗余无副作用。
+     */
+    private void enqueueDeferredNodeRegistration() {
+        ICoverable tileEntity = coveredTile.get();
+        if (tileEntity == null) {
+            return;
+        }
+        World world = tileEntity.getWorld();
+        if (world != null && world.isRemote) {
+            return;
+        }
+        if (world == null && FMLCommonHandler.instance()
+            .getEffectiveSide() == Side.CLIENT) {
+            return;
+        }
+        NodeRevealRequestQueue.enqueueNodeRegistration(this);
     }
 
     @Override
@@ -132,21 +187,47 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     public abstract byte nodeTypeId();
 
     /**
-     * 附着时（GT5U {@code CoverPlacer.placeCover} 在 attachCover 之后回调）：以覆盖板坐标
-     * 入册节点索引（{@link WirelessNodeRegistry}，WorldSavedData 每世界一份）。
-     * 仅服务端执行；注册表 register 本身幂等。
+     * 节点索引注册的单一幂等入口（v1.7.21）：{@link #onPlayerAttach}（GT5U
+     * {@code CoverPlacer.placeCover} 附着回调）与 NBT 恢复路径（构造挂起 →
+     * ServerTick(END) drain 回调）共用。
      * <p>
-     * On attach: register this cover position into the per-world node index (server side only).
+     * 守卫与返回值：TE 未绑定（GT5U 纯信息构造路径，永不可注册）或客户端
+     * （{@code world.isRemote}）→ {@code true}（终态跳过）；世界未赋值（区块加载窗口内
+     * drain 时仍为 null 的极端情形）→ {@code false}（可重试，由队列侧有界重试，
+     * 超限告警丢弃并等待下次区块加载重治愈）；注册成功 → {@code true}。
+     * 注册表 {@code register} 本身幂等（坐标已册且类型相同即无效果）。
+     * <p>
+     * Single idempotent registration entry shared by the attach path and the
+     * deferred NBT-restore path; all guards live here. Returns {@code false} only
+     * for the retryable "world not bound yet" case.
+     */
+    public boolean registerIntoNodeIndex() {
+        ICoverable tileEntity = coveredTile.get();
+        if (tileEntity == null) {
+            return true;
+        }
+        World world = tileEntity.getWorld();
+        if (world == null) {
+            return false;
+        }
+        if (world.isRemote) {
+            return true;
+        }
+        WirelessNodeRegistry.get(world)
+            .register(world, tileEntity.getXCoord(), tileEntity.getYCoord(), tileEntity.getZCoord(), nodeTypeId());
+        return true;
+    }
+
+    /**
+     * 附着时（GT5U {@code CoverPlacer.placeCover} 在 attachCover 之后回调）：
+     * 经 {@link #registerIntoNodeIndex()} 幂等入册节点索引（服务端限定，守卫在入口内）。
+     * <p>
+     * On attach: register this cover position into the per-world node index via the
+     * shared idempotent entry (server side only; guards inside the entry).
      */
     @Override
     public void onPlayerAttach(EntityPlayer player, ItemStack coverItem) {
-        ICoverable tileEntity = coveredTile.get();
-        if (tileEntity == null || tileEntity.getWorld().isRemote) {
-            return;
-        }
-        World world = tileEntity.getWorld();
-        WirelessNodeRegistry.get(world)
-            .register(world, tileEntity.getXCoord(), tileEntity.getYCoord(), tileEntity.getZCoord(), nodeTypeId());
+        registerIntoNodeIndex();
     }
 
     /**

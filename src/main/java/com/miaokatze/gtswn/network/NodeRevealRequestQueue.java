@@ -55,6 +55,23 @@ public final class NodeRevealRequestQueue {
     /** 待处理请求队列（仅缓存玩家引用，主线程 drain 时再复验在线/存活/手持） */
     private static final ConcurrentLinkedQueue<EntityPlayerMP> PENDING = new ConcurrentLinkedQueue<>();
 
+    /**
+     * 待注册覆盖板挂起清单（v1.7.21 节点显形修复：旧世界 NBT 恢复自愈）。
+     * <p>
+     * {@code GTswnCoverWirelessBase} 构造（含每次 TE 反序列化/区块加载）时经
+     * {@code enqueueNodeRegistration} 挂起，由 {@link #onServerTick} 的 ServerTick(END)
+     * drain 消费——此时区块加载窗口已结束，{@code worldObj} 已赋值、{@code isRemote}
+     * 可判定，注册入口 {@code registerIntoNodeIndex()} 幂等。复用本类既有 END 挂点，
+     * 不新增独立全局 tick 订阅；空清单早退保证零常驻开销。客户端条目在挂起入口
+     * （effective-side 判定）即被丢弃，不会进入本清单。drain 时世界仍未就绪的条目
+     * 有界重试（{@link #MAX_REGISTRATION_ATTEMPTS} 次后告警丢弃，等待下次区块加载重治愈），
+     * 不做无限静默丢弃。
+     */
+    private static final ConcurrentLinkedQueue<PendingNodeRegistration> PENDING_NODE_REGISTRATIONS = new ConcurrentLinkedQueue<>();
+
+    /** 世界未就绪条目的重试上限（每个 ServerTick(END) drain 计 1 次；100 次 ≈ 5s 后告警丢弃） */
+    private static final int MAX_REGISTRATION_ATTEMPTS = 100;
+
     /** 显形半径平方（64 格，闭边界），与 {@link WirelessNodeIndexCodec#selectWithinRadius} 的 radiusSq 参数对应 */
     public static final long REVEAL_RADIUS_SQ = 4096L;
 
@@ -82,11 +99,57 @@ public final class NodeRevealRequestQueue {
         }
     }
 
+    /**
+     * 覆盖板节点注册挂起入口（v1.7.21）：{@code GTswnCoverWirelessBase} 构造时调用
+     * （服务端守卫已在调用侧完成）。null 防御后仅入队，世界访问留给 ServerTick(END) 主线程。
+     */
+    public static void enqueueNodeRegistration(GTswnCoverWirelessBase cover) {
+        if (cover != null) {
+            PENDING_NODE_REGISTRATIONS.add(new PendingNodeRegistration(cover));
+        }
+    }
+
     /** ServerTickEvent END phase 自宿主排空（主线程语义） */
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        drainNodeRegistrations();
         drain();
+    }
+
+    /**
+     * 主线程排空待注册覆盖板清单：空清单早退（常态零开销）→ 逐条回调
+     * {@code GTswnCoverWirelessBase.registerIntoNodeIndex()}（内部完成 world/tile 判空与
+     * isRemote 守卫，注册幂等，{@code false}=world 未就绪）；单条异常仅记日志丢弃；
+     * 未就绪条目有界重试（每轮 drain 计 1 次），超限告警丢弃。
+     */
+    private static void drainNodeRegistrations() {
+        if (PENDING_NODE_REGISTRATIONS.isEmpty()) {
+            return;
+        }
+        // 本轮 world 未就绪条目先收集、循环结束后统一回队：避免同轮 poll→add→poll 自旋
+        List<PendingNodeRegistration> deferred = null;
+        PendingNodeRegistration pending;
+        while ((pending = PENDING_NODE_REGISTRATIONS.poll()) != null) {
+            try {
+                if (pending.cover.registerIntoNodeIndex()) {
+                    continue;
+                }
+                if (++pending.attempts < MAX_REGISTRATION_ATTEMPTS) {
+                    if (deferred == null) {
+                        deferred = new ArrayList<>();
+                    }
+                    deferred.add(pending);
+                } else {
+                    GTSimpleWirelessNetwork.LOG.warn("[NodeRevealRequestQueue] 覆盖板节点注册重试超限（world 未就绪），丢弃等待下次区块加载自愈");
+                }
+            } catch (Throwable t) {
+                GTSimpleWirelessNetwork.LOG.error("[NodeRevealRequestQueue] 覆盖板节点注册异常（丢弃该条，继续后续）", t);
+            }
+        }
+        if (deferred != null) {
+            PENDING_NODE_REGISTRATIONS.addAll(deferred);
+        }
     }
 
     /** 主线程逐条处理：复验在线 + 存活 + 手持后执行；单条异常仅记日志丢弃 */
@@ -205,6 +268,20 @@ public final class NodeRevealRequestQueue {
             registry.register(world, x, y, z, otherType);
             healedTypes.put(packed, otherType);
             return WirelessNodeIndexCodec.ProbeResult.VALID;
+        }
+    }
+
+    /**
+     * 待注册条目（覆盖板引用 + 已重试次数）。{@code attempts} 仅由主线程 drain 读写，
+     * 经 {@link ConcurrentLinkedQueue} 的发布语义对入队线程可见。
+     */
+    private static final class PendingNodeRegistration {
+
+        private final GTswnCoverWirelessBase cover;
+        private int attempts;
+
+        private PendingNodeRegistration(GTswnCoverWirelessBase cover) {
+            this.cover = cover;
         }
     }
 }

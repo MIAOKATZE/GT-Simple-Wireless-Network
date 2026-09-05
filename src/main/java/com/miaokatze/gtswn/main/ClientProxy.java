@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.main;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.EnumAction;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
@@ -276,6 +277,30 @@ public class ClientProxy extends CommonProxy {
     public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {
         Minecraft.getMinecraft()
             .displayGuiScreen(new GuiNetworkInfoPanel(panel));
+    }
+
+    /**
+     * 链路终端蓄力动作动画的客户端判定（v1.7.21 手感调整，虚分派自
+     * {@code WirelessEnergyTap.getItemUseAction}，服务端默认实现见
+     * {@code CommonProxy#getTapUseAction}）。
+     * <p>
+     * 判定：{@code stack} 为玩家当前正在使用的物品栈（{@code player.getItemInUse()}）且
+     * 已使用时长 {@code maxDurationTicks - player.getItemInUseCount()} 仍在宽限期内
+     * （{@code < graceTicks}）→ {@code none}（无拉弓姿态）；否则 {@code bow}
+     * （原版拉弓视觉，与 v1.7.20 常驻行为一致）。
+     * <p>
+     * 【类加载安全】本方法在 ClientProxy 中，仅客户端被 @SidedProxy 机制加载，
+     * 可安全引用 {@code Minecraft.getMinecraft().thePlayer}。
+     * 未在游戏内（{@code thePlayer == null}）时退回 {@code none}（无渲染上下文，无动画语义）。
+     */
+    @Override
+    public EnumAction getTapUseAction(ItemStack stack, int maxDurationTicks, int graceTicks) {
+        EntityPlayer player = Minecraft.getMinecraft().thePlayer;
+        if (player == null) {
+            return EnumAction.none;
+        }
+        int elapsedTicks = maxDurationTicks - player.getItemInUseCount();
+        return stack == player.getItemInUse() && elapsedTicks < graceTicks ? EnumAction.none : EnumAction.bow;
     }
 
     @Override
