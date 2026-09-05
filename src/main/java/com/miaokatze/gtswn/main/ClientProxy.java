@@ -225,9 +225,6 @@ public class ClientProxy extends CommonProxy {
                 }
                 WirelessNodeRevealRenderer
                     .acceptReveal(world.provider.dimensionId, serverTotalWorldTime, durationTicks, nodes);
-                // [GTSWN-REVEAL-PROBE] C4
-                GTSimpleWirelessNetwork.LOG
-                    .info("[GTSWN-REVEAL] C4 accept dim=" + world.provider.dimensionId + " n=" + nodes.size());
             });
     }
 

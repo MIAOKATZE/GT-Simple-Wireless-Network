@@ -23,8 +23,9 @@ import com.miaokatze.gtswn.common.device.DeviceSampleScheduler.EuFlowSample;
  * 覆盖口径：getter 对采集（单机直读）、多方块 hatch 双路聚合按引用去重且聚合非零压制兜底、
  * 真双零兜底门（in==0 &amp;&amp; out==0 &amp;&amp; fallbackEut&gt;0）方向由发电白名单决定
  * （单方块耗电→in、发电机→out，方向不由数值符号决定）、fallbackEut=0/负幅值零写、
- * 控制器均值非零不兜底、停机/待机三通道写 0、旧档 NBT 缺新键兼容与负 net 回环、
- * net FIFO 均值线性（恒有 {@code avg == outAvg − inAvg}）。
+ * 控制器均值非零不兜底、特殊机器权威 provider 门（任务2：真双零时正值→out/负值→in，
+ * 0 落回白名单兜底，getter/hatch 非零不介入）、停机/待机三通道写 0、旧档 NBT 缺新键兼容与
+ * 负 net 回环、net FIFO 均值线性（恒有 {@code avg == outAvg − inAvg}）。
  */
 public class DeviceEuFlowCollectionTest {
 
@@ -186,6 +187,44 @@ public class DeviceEuFlowCollectionTest {
         assertArrayEquals(
             new long[] { 90L, 0L },
             DeviceSampleScheduler.collectEuFlow(true, 90L, 0L, true, emptySamples(), emptySamples(), false, 500L));
+    }
+
+    // ==================== 特殊机器权威 provider 门（任务2） ====================
+
+    /**
+     * provider 层（collectEuFlow 第 3 优先层，真双零门内、白名单兜底之前，9 参重载直测）：
+     * 正值=发电→out、负值=消耗→in=|值|（方向由权威字段符号决定，与 isGenerator 白名单冲突时
+     * 以符号为准，替代白名单兜底对该注册类的命中）；providerEut=0（未命中/字段缺失/异常/权威值
+     * 为 0）→ 原白名单兜底照常（不编造数值）；getter/hatch 已有流量（非双零）→ provider 不介入。
+     */
+    @Test
+    public void specialProviderSignDecidesDirectionOnDoubleZero() {
+        // 真双零 + provider 正值（发电型权威字段，如 LNR trueOutput/DysonSwarm euPerTick）→ out，
+        // 白名单即使判定耗电（isGenerator=false）也被 provider 命中替代
+        assertArrayEquals(
+            new long[] { 0L, 600L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 500L, 600L));
+        // 真双零 + provider 负值（消耗型权威字段）→ in=|值|，白名单即使判定发电也不写 out
+        assertArrayEquals(
+            new long[] { 800L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 0L, -800L));
+        // providerEut=0：未命中/失败/权威值为 0 → 原白名单兜底照常（耗电→in / 发电→out）
+        assertArrayEquals(
+            new long[] { 500L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 500L, 0L));
+        assertArrayEquals(
+            new long[] { 0L, 320L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 320L, 0L));
+        // getter/hatch 已有流量（非双零）：provider 不介入（权威值不叠加、不重复计数）
+        List<EuFlowSample> inOnly = Arrays.asList(new EuFlowSample(new Object(), 250L));
+        assertArrayEquals(
+            new long[] { 250L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, inOnly, emptySamples(), false, 0L, 999L));
+        // Long.MIN_VALUE 幅值防御（absEut 钳 Long.MAX_VALUE，不回绕为负）
+        assertArrayEquals(
+            new long[] { Long.MAX_VALUE, 0L },
+            DeviceSampleScheduler
+                .collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 0L, Long.MIN_VALUE));
     }
 
     // ==================== 停机 / 待机三通道写 0 ====================

@@ -7,7 +7,6 @@ import net.minecraftforge.client.event.MouseEvent;
 import org.lwjgl.input.Keyboard;
 
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestNodeReveal;
 
@@ -59,11 +58,7 @@ public class RevealTriggerHandler {
         if (held == null || !(held.getItem() instanceof WirelessEnergyTap)) {
             return;
         }
-        // [GTSWN-REVEAL-PROBE] C1 trigger alt+r
-        GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] C1 trigger alt+r");
         GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestNodeReveal());
-        // [GTSWN-REVEAL-PROBE] C2 send disc11
-        GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] C2 send disc11");
         // 抑制本次原版右键（防 Alt+右击误开机器 GUI/放置）
         event.setCanceled(true);
     }

@@ -16,7 +16,6 @@ import net.minecraftforge.event.world.WorldEvent;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.covers.WirelessNodeIndexCodec;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.PacketSyncNodeReveal;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -74,12 +73,6 @@ public final class WirelessNodeRevealRenderer {
     /** 线框外扩量：防 Z-fighting（与 WirelessTapHighlightRenderer 同值） */
     private static final double BOX_EXPAND = 0.002D;
 
-    /** [GTSWN-REVEAL-PROBE] C5 帧计数器（100 帧节流打点，仅客户端主线程读写） */
-    private static int frameCounter;
-
-    /** [GTSWN-REVEAL-PROBE] C6 首帧绘制打点标记（每次显形会话只打一次） */
-    private static boolean drewLogged;
-
     /**
      * 事件监听实例构造器（仅 ClientProxy init 注册一次；节点缓存本身全 static 共享）。
      */
@@ -111,8 +104,6 @@ public final class WirelessNodeRevealRenderer {
         }
         // 过期锚点 = 收包墙钟时刻 + 时长（tick→ms 换算 1t=50ms）
         expireAt = System.currentTimeMillis() + durationTicks * 50L;
-        // [GTSWN-REVEAL-PROBE] 新会话重置 C6 首帧打点标记
-        drewLogged = false;
     }
 
     /**
@@ -142,13 +133,6 @@ public final class WirelessNodeRevealRenderer {
             return;
         }
 
-        // [GTSWN-REVEAL-PROBE] C5：100 帧节流的渲染入口探针（走到此处缓存必非空）
-        frameCounter++;
-        if (frameCounter % 100 == 0) {
-            GTSimpleWirelessNetwork.LOG
-                .info("[GTSWN-REVEAL] C5 frame nodes=" + NODES.size() + " expireIn=" + (expireAt - now) + "ms");
-        }
-
         // 500ms 闪烁相位：false=节点类型色 / true=白色（FindIt 同款墙钟相位）
         final boolean altColor = (now / 500L) % 2L == 1L;
 
@@ -168,17 +152,8 @@ public final class WirelessNodeRevealRenderer {
         GL11.glDisable(GL11.GL_DEPTH_TEST);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
 
-        int drawn = 0;
         for (PacketSyncNodeReveal.RevealedNode node : NODES) {
-            if (drawNodeBox(world, node, altColor)) {
-                drawn++;
-            }
-        }
-
-        // [GTSWN-REVEAL-PROBE] C6：本次显形首个实际绘制帧打点一次（N>0 才打）
-        if (drawn > 0 && !drewLogged) {
-            drewLogged = true;
-            GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] C6 drew " + drawn + " boxes");
+            drawNodeBox(world, node, altColor);
         }
 
         GL11.glPopAttrib();
@@ -203,7 +178,6 @@ public final class WirelessNodeRevealRenderer {
      * 节点方块未加载/已被破坏时 {@code getBlock} 退化为 air，绘制默认整格包围盒
      * （显形语义是"注册表索引位置"，非当前方块形态，仍应可见）。
      *
-     * @return 本帧是否实际绘制（box 为 null 时 false，供 C6 探针计数）
      */
     private static boolean drawNodeBox(World world, PacketSyncNodeReveal.RevealedNode node, boolean altColor) {
         final Block block = world.getBlock(node.x, node.y, node.z);
@@ -266,8 +240,6 @@ public final class WirelessNodeRevealRenderer {
         NODES.clear();
         dimension = 0;
         expireAt = 0L;
-        // [GTSWN-REVEAL-PROBE] 缓存清空后重置 C6 首帧打点标记
-        drewLogged = false;
     }
 
     /** @return 显形所在维度 */

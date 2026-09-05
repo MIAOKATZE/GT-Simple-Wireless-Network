@@ -4,8 +4,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
-
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
 import cpw.mods.fml.common.network.simpleimpl.MessageContext;
@@ -157,12 +155,8 @@ public class PacketSyncNodeReveal implements IMessage {
             if (ctx.side.isServer()) {
                 return null;
             }
-            // [GTSWN-REVEAL-PROBE] C3
-            GTSimpleWirelessNetwork.LOG.info(
-                "[GTSWN-REVEAL] C3 recv count=" + msg.getNodes()
-                    .size());
             // 委托给 @SidedProxy：服务端调用 CommonProxy 空实现，客户端调用 ClientProxy 实际处理
-            GTSimpleWirelessNetwork.proxy.handleSyncNodeReveal(msg);
+            com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.proxy.handleSyncNodeReveal(msg);
             return null;
         }
     }
