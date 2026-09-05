@@ -175,7 +175,12 @@ public final class NodeRevealRequestQueue {
             return;
         }
         WirelessEnergyTap tap = (WirelessEnergyTap) held.getItem();
-        if (!tap.tryConsumeRevealCooldown(player)) {
+        // [GTSWN-REVEAL-PROBE] S2
+        GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] S2 held=" + held.getDisplayName());
+        boolean cooldownPass = tap.tryConsumeRevealCooldown(player);
+        // [GTSWN-REVEAL-PROBE] S3
+        GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] S3 cooldown=" + (cooldownPass ? "pass" : "fail"));
+        if (!cooldownPass) {
             // 4 tick 冷却中：静默丢弃（不回包）
             return;
         }
@@ -201,6 +206,16 @@ public final class NodeRevealRequestQueue {
         // 修剪集回传注册表（INVALID 节点整批出册，最多一次 markDirty）
         registry.prune(world, selection.pruned);
 
+        // [GTSWN-REVEAL-PROBE] S4
+        GTSimpleWirelessNetwork.LOG.info(
+            "[GTSWN-REVEAL] S4 snap=" + snapshot.size()
+                + " sel="
+                + selection.selected.size()
+                + " prune="
+                + selection.pruned.size()
+                + " want="
+                + wantedType);
+
         List<PacketSyncNodeReveal.RevealedNode> nodes = new ArrayList<>(selection.selected.size());
         for (WirelessNodeIndexCodec.SelectedNode node : selection.selected) {
             Byte healed = healedTypes.get(node.packed);
@@ -212,6 +227,10 @@ public final class NodeRevealRequestQueue {
         }
 
         // 空列表也照发（客户端语义 = 清缓存）；时间基准取服务端本维世界 tick
+        // [GTSWN-REVEAL-PROBE] S5
+        GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] S5 out=" + nodes.size());
+        // [GTSWN-REVEAL-PROBE] S6
+        GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] S6 send");
         GTSWNPacketHandler.NETWORK
             .sendTo(new PacketSyncNodeReveal(nodes, world.getTotalWorldTime(), REVEAL_DURATION_TICKS), player);
     }

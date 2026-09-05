@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.network;
 import net.minecraft.entity.player.EntityPlayerMP;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -51,6 +52,8 @@ public class PacketRequestNodeReveal implements IMessage {
             if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(11);
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
             if (player != null) {
+                // [GTSWN-REVEAL-PROBE] S1
+                GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] S1 enqueue " + player.getCommandSenderName());
                 NodeRevealRequestQueue.enqueue(player);
             }
             return null;

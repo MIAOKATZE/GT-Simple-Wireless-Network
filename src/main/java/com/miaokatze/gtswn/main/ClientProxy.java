@@ -206,7 +206,7 @@ public class ClientProxy extends CommonProxy {
      * 线程安全与类加载安全模式同 {@link #handleSyncDeviceTerminalData}：onMessage 运行
      * 在 Netty 网络线程，用 {@link Minecraft#func_152344_a(Runnable)} 切主线程；
      * 维度在主线程取客户端当前世界（服务端围绕请求玩家当前位置查询，玩家必在同维），
-     * 过期锚点由 {@code acceptReveal} 用客户端世界 tick 计算（服务端时钟不同源不可比较）。
+     * 过期锚点由 {@code acceptReveal} 用客户端墙钟（收包时刻 + durationTicks×50ms）计算。
      */
     @Override
     public void handleSyncNodeReveal(PacketSyncNodeReveal msg) {
@@ -222,6 +222,9 @@ public class ClientProxy extends CommonProxy {
                 }
                 WirelessNodeRevealRenderer
                     .acceptReveal(world.provider.dimensionId, serverTotalWorldTime, durationTicks, nodes);
+                // [GTSWN-REVEAL-PROBE] C4
+                GTSimpleWirelessNetwork.LOG
+                    .info("[GTSWN-REVEAL] C4 accept dim=" + world.provider.dimensionId + " n=" + nodes.size());
             });
     }
 

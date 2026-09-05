@@ -41,7 +41,7 @@ public class PacketSyncNodeReveal implements IMessage {
     /** 入选节点（服务端已按 tap 模式过滤；客户端只读） */
     private final List<RevealedNode> nodes = new ArrayList<>();
 
-    /** 服务端本维世界 tick（契约保留字段，不参与客户端过期计算——客户端以自身 theWorld tick + durationTicks 为锚） */
+    /** 服务端本维世界 tick（契约保留字段，不参与客户端过期计算——客户端以收包墙钟 + durationTicks×50ms 为锚） */
     private long serverTotalWorldTime;
 
     /** 显形时长（tick，服务端权威 1200t=60s） */
@@ -157,6 +157,10 @@ public class PacketSyncNodeReveal implements IMessage {
             if (ctx.side.isServer()) {
                 return null;
             }
+            // [GTSWN-REVEAL-PROBE] C3
+            GTSimpleWirelessNetwork.LOG.info(
+                "[GTSWN-REVEAL] C3 recv count=" + msg.getNodes()
+                    .size());
             // 委托给 @SidedProxy：服务端调用 CommonProxy 空实现，客户端调用 ClientProxy 实际处理
             GTSimpleWirelessNetwork.proxy.handleSyncNodeReveal(msg);
             return null;

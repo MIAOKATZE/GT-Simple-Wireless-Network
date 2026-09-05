@@ -632,6 +632,9 @@ public class WirelessEnergyTap extends Item {
     @Override
     public void onPlayerStoppedUsing(ItemStack stack, World world, EntityPlayer player, int remaining) {
         int ticksUsed = getMaxItemUseDuration(stack) - remaining;
+        // [GTSWN-REVEAL-PROBE] C1
+        GTSimpleWirelessNetwork.LOG
+            .info("[GTSWN-REVEAL] C1 release ticksUsed=" + ticksUsed + " isRemote=" + world.isRemote);
         // 未蓄满：静默取消
         if (ticksUsed < MAX_CHARGE_DURATION_TICKS) {
             return;
@@ -640,6 +643,8 @@ public class WirelessEnergyTap extends Item {
         if (world.isRemote) {
             ItemStack held = player.getCurrentEquippedItem();
             if (held != null && held.getItem() == this) {
+                // [GTSWN-REVEAL-PROBE] C2
+                GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] C2 send disc11");
                 GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestNodeReveal());
             }
         }
