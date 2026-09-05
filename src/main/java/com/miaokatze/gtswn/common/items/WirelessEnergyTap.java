@@ -5,7 +5,6 @@ import java.util.List;
 
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.EnumAction;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -21,9 +20,6 @@ import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.covers.WirelessNodeRegistry;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
-import com.miaokatze.gtswn.network.PacketRequestNodeReveal;
 
 import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
@@ -43,8 +39,8 @@ import gregtech.common.covers.Cover;
  * 一个便携式的无线网络分接设备，允许玩家将任意能量容器连接到GT无线网络。
  * 功能特性：
  * - 右键空气：切换手持模式（能源/动力），更新材质
- * - 对空按住不动 0.5 秒后开始蓄力（客户端动作动画切为拉弓），约 2.5 秒蓄满，松手触发扫描：
- * 向服务端请求显形周围已绑定的链路节点（客户端发请求，服务端查询回发）
+ * - Alt + 右键按下：即时触发节点显形扫描（客户端 {@code RevealTriggerHandler} 监听
+ * MouseEvent 后发包，服务端查询回包，穿墙显示 60 秒；v1.7.23 起替代蓄力路径）
  * - 右键能量容器：赋予或取消无线连接状态
  * - Shift + 右键能量容器：切换输入/输出模式
  * - 自动读取目标能量容器的电压等级
@@ -65,24 +61,6 @@ public class WirelessEnergyTap extends Item {
 
     /** 绑定提示最大显示次数 / Max bind notify times */
     private static final int MAX_BIND_NOTIFY = 10;
-
-    /**
-     * 蓄力宽限期（tick）：10t = 0.5 秒。右击后按住不动的阶段——此期间客户端动作动画为
-     * {@code none}（无拉弓姿态），松手直接走「未蓄满静默取消」既有语义；有效蓄力从宽限期
-     * 结束后才开始感知。
-     * Grace period (ticks): 0.5 s hold-still before charging is perceived.
-     */
-    private static final int GRACE_TICKS = 10;
-
-    /** 有效蓄力时长（tick）：40t = 2 秒，宽限期结束后的蓄力窗口 / Effective charge window (ticks) */
-    private static final int CHARGE_TICKS = 40;
-
-    /**
-     * 节点显形蓄力总时长（tick）= 宽限 + 有效蓄力 = 50t = 2.5 秒，与原版弓箭同款蓄力路径
-     * （{@code setItemInUse} → {@code onPlayerStoppedUsing}），蓄满后释放才触发显形请求。
-     * Total use duration (ticks) = grace + charge = 50 ticks (2.5 s), vanilla bow-style use path.
-     */
-    private static final int MAX_CHARGE_DURATION_TICKS = GRACE_TICKS + CHARGE_TICKS;
 
     /** 两个材质图标 */
     private net.minecraft.util.IIcon[] icons = new net.minecraft.util.IIcon[2];
@@ -562,10 +540,8 @@ public class WirelessEnergyTap extends Item {
      * <p>
      * Shift 分支（切换模式）：行为与原版保持一致——客户端直接 return，服务端 canTrigger 冷却检查
      * 通过后 toggle 模式 + chat 提示。
-     * 非 Shift 分支（节点显形蓄力）：改为双端进入物品使用状态（原版弓箭同款蓄力路径，
-     * vanilla 同步机制保证双端 {@code onPlayerStoppedUsing} 都会被回调），本方法不消耗冷却
-     * （服务端 {@code NodeRevealRequestQueue} 主线程 drain 时经
-     * {@link #tryConsumeRevealCooldown} 统一消费）。
+     * 非 Shift 分支：无操作（v1.7.23 起节点显形扫描改由客户端 {@code RevealTriggerHandler}
+     * 的 Alt+右键触发，本方法不再承担蓄力路径）。
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
@@ -589,65 +565,8 @@ public class WirelessEnergyTap extends Item {
             return stack;
         }
 
-        // 非 Shift：双端进入蓄力状态（vanilla 弓箭同款），释放时经 onPlayerStoppedUsing 触发显形请求
-        player.setItemInUse(stack, getMaxItemUseDuration(stack));
+        // 非 Shift：无操作（v1.7.23 起 Alt+右键即时扫描由客户端 RevealTriggerHandler 处理）
         return stack;
-    }
-
-    /**
-     * 蓄力总时长（tick）：50t = 2.5 秒（宽限 10t + 有效蓄力 40t，见
-     * {@link #GRACE_TICKS} / {@link #CHARGE_TICKS}）。
-     */
-    @Override
-    public int getMaxItemUseDuration(ItemStack stack) {
-        return MAX_CHARGE_DURATION_TICKS;
-    }
-
-    /**
-     * 蓄力动作动画（v1.7.21 动态分派）：宽限期内 {@code none}（无拉弓姿态），有效蓄力期
-     * {@code bow}（原版拉弓视觉）。判定经 {@code GTSimpleWirelessNetwork.proxy} 虚分派——
-     * 服务端默认实现恒返回 {@code none}（无副作用），客户端由 {@code ClientProxy} 覆写读取
-     * 使用时长；本类共用路径零客户端类直接引用（专用服类加载安全）。
-     */
-    @Override
-    public EnumAction getItemUseAction(ItemStack stack) {
-        return GTSimpleWirelessNetwork.proxy.getTapUseAction(stack, MAX_CHARGE_DURATION_TICKS, GRACE_TICKS);
-    }
-
-    /**
-     * 释放蓄力（双端回调，原版弓箭同款路径）：
-     * <ul>
-     * <li>{@code ticksUsed < 50}：未蓄满（含 0.5 秒宽限期内松手），静默取消（无 chat、不发包、不耗冷却）。</li>
-     * <li>{@code ticksUsed >= 50} 且客户端侧：防御当前手持仍为本物品（防换槽）后发送
-     * {@link PacketRequestNodeReveal}（disc 11），服务端队列 drain 完成全部校验与回包。</li>
-     * <li>服务端侧：不做事（手持/冷却/查询全部由服务端主线程 drain 统一处理；
-     * {@code world.isRemote} 守卫保证双端回调只发一次包）。</li>
-     * </ul>
-     * <p>
-     * 4 参语义（vanilla {@code ItemBow} 同款）：{@code remaining} 为剩余使用 tick，
-     * {@code ticksUsed = 50 - remaining}。满档后继续持蓄会使 {@code itemInUseCount} 转负，
-     * 释放时 {@code max - count} 仍 ≥ 50，同样触发一次（无双重触发路径：本物品未覆写
-     * {@code onItemUseFinish}，满档自动结算不引入额外入口）。
-     */
-    @Override
-    public void onPlayerStoppedUsing(ItemStack stack, World world, EntityPlayer player, int remaining) {
-        int ticksUsed = getMaxItemUseDuration(stack) - remaining;
-        // [GTSWN-REVEAL-PROBE] C1
-        GTSimpleWirelessNetwork.LOG
-            .info("[GTSWN-REVEAL] C1 release ticksUsed=" + ticksUsed + " isRemote=" + world.isRemote);
-        // 未蓄满：静默取消
-        if (ticksUsed < MAX_CHARGE_DURATION_TICKS) {
-            return;
-        }
-        // 服务端不做事；客户端防御换槽后发显形请求
-        if (world.isRemote) {
-            ItemStack held = player.getCurrentEquippedItem();
-            if (held != null && held.getItem() == this) {
-                // [GTSWN-REVEAL-PROBE] C2
-                GTSimpleWirelessNetwork.LOG.info("[GTSWN-REVEAL] C2 send disc11");
-                GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestNodeReveal());
-            }
-        }
     }
 
     /**

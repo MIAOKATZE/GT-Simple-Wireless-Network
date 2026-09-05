@@ -99,7 +99,7 @@ item.wirelessEnergyTap.desc=Connect energy containers to GT wireless network
 gtswn.tooltip.tap.mode.input=Current Mode: Energy Link (Input)
 gtswn.tooltip.tap.mode.output=Current Mode: Power Link (Output)
 gtswn.tooltip.tap.laser_pipe_cost=Binding Laser Source/Target Hatches consumes a Laser Vacuum Pipe
-gtswn.tooltip.tap.reveal=Hold right-click in air: after a 0.5s hold-still, charge for ~2s, then release to scan: reveals Link Nodes bound in the current mode within 64 blocks for 60 seconds (Energy=§eyellow§r, Power=§5purple§r)
+gtswn.tooltip.tap.reveal=Alt+Right-click: instantly scan nearby link nodes (revealed through walls for 60s)
 gtswn.chat.tap.mode.input=§a[Link Terminal] Switched to Energy Link mode
 gtswn.chat.tap.mode.output=§a[Link Terminal] Switched to Power Link mode
 gtswn.chat.tap.not_energy_container=§c[Link Terminal] Not an energy container

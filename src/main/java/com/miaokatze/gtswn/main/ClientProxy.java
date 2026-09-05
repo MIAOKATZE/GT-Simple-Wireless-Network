@@ -2,7 +2,6 @@ package com.miaokatze.gtswn.main;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.EnumAction;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
@@ -10,6 +9,7 @@ import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
+import com.miaokatze.gtswn.client.RevealTriggerHandler;
 import com.miaokatze.gtswn.client.WirelessNodeRevealRenderer;
 import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
 import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
@@ -66,6 +66,9 @@ public class ClientProxy extends CommonProxy {
         // 节点显形渲染器（RenderWorldLastEvent 穿墙线框 + WorldEvent.Unload 清缓存）：
         // 包 12 显形回包经 handleSyncNodeReveal 切主线程写缓存后由此绘制
         MinecraftForge.EVENT_BUS.register(new WirelessNodeRevealRenderer());
+        // v1.7.23：Alt+右键即时显形触发器（MouseEvent 按下沿 + Alt 按住 + 手持链路终端 →
+        // 发 disc 11 并取消原版右键；替代 v1.7.20~v1.7.22 的右击空气蓄力路径）
+        MinecraftForge.EVENT_BUS.register(new RevealTriggerHandler());
         ClientRegistry.bindTileEntitySpecialRenderer(TileEntityNetworkInfoPanel.class, new RenderNetworkInfoPanel());
 
         // v1.6.1 问题 1：注册量子节点 ISBRH（线缆形态：小核心 + 朝 AE 网格宿主的连接臂）。
@@ -280,30 +283,6 @@ public class ClientProxy extends CommonProxy {
     public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {
         Minecraft.getMinecraft()
             .displayGuiScreen(new GuiNetworkInfoPanel(panel));
-    }
-
-    /**
-     * 链路终端蓄力动作动画的客户端判定（v1.7.21 手感调整，虚分派自
-     * {@code WirelessEnergyTap.getItemUseAction}，服务端默认实现见
-     * {@code CommonProxy#getTapUseAction}）。
-     * <p>
-     * 判定：{@code stack} 为玩家当前正在使用的物品栈（{@code player.getItemInUse()}）且
-     * 已使用时长 {@code maxDurationTicks - player.getItemInUseCount()} 仍在宽限期内
-     * （{@code < graceTicks}）→ {@code none}（无拉弓姿态）；否则 {@code bow}
-     * （原版拉弓视觉，与 v1.7.20 常驻行为一致）。
-     * <p>
-     * 【类加载安全】本方法在 ClientProxy 中，仅客户端被 @SidedProxy 机制加载，
-     * 可安全引用 {@code Minecraft.getMinecraft().thePlayer}。
-     * 未在游戏内（{@code thePlayer == null}）时退回 {@code none}（无渲染上下文，无动画语义）。
-     */
-    @Override
-    public EnumAction getTapUseAction(ItemStack stack, int maxDurationTicks, int graceTicks) {
-        EntityPlayer player = Minecraft.getMinecraft().thePlayer;
-        if (player == null) {
-            return EnumAction.none;
-        }
-        int elapsedTicks = maxDurationTicks - player.getItemInUseCount();
-        return stack == player.getItemInUse() && elapsedTicks < graceTicks ? EnumAction.none : EnumAction.bow;
     }
 
     @Override
