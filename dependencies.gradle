@@ -37,16 +37,16 @@ dependencies {
     // Minimal dependency set for current source usage.
     // Sources reference only GregTech API types (gregtech.api.*), so keep GT5-Unofficial.
     // User has an external hard backup of the original file, so this file is intentionally simplified.
-    // 依赖版本适配 GT5U beta-2 (5.09.54.20) — 2026-07-09 升级
-    api("com.github.GTNewHorizons:GT5-Unofficial:5.09.54.20") { transitive = false }
+    // 依赖版本适配 GTNH 2.9.0-beta-3 基线（GT5U 5.09.54.133）— 2026-09-06 升级
+    api("com.github.GTNewHorizons:GT5-Unofficial:5.09.54.133") { transitive = false }
 
     // Some GregTech base classes reference interfaces/types from other mods (AE2, ModularUI, GTNHLib)
     // that are only needed at compile-time to satisfy types. Add them as compileOnlyApi so they
     // do not become runtime/published transitive dependencies.
-    api("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1000-GTNH:dev")
+    api("com.github.GTNewHorizons:Applied-Energistics-2-Unofficial:rv3-beta-1050-GTNH:dev")
     api("com.github.GTNewHorizons:ModularUI:1.3.4:dev") { transitive = false }
-    api("com.github.GTNewHorizons:ModularUI2:2.3.79-1.7.10:dev") { transitive = false }
-    api("com.github.GTNewHorizons:GTNHLib:0.11.23:dev") { transitive = false }
+    api("com.github.GTNewHorizons:ModularUI2:2.3.88-1.7.10:dev") { transitive = false }
+    api("com.github.GTNewHorizons:GTNHLib:0.11.46:dev") { transitive = false }
 
     // StructureLib is required for multiblock machine structure definitions and building.
     api("com.github.GTNewHorizons:StructureLib:1.4.42:dev") { transitive = false }
@@ -76,7 +76,7 @@ dependencies {
     compileOnly("com.github.GTNewHorizons:Baubles-Expanded:2.2.6-GTNH:dev") { transitive = false }
 
     // WAILA: compileOnly — v1.6.2 可选软集成（量子节点在线/离线状态显示），无 WAILA 时不加载相关类
-    compileOnly("com.github.GTNewHorizons:waila:1.19.30:dev") { transitive = false }
+    compileOnly("com.github.GTNewHorizons:waila:1.19.34:dev") { transitive = false }
 
     // BetterQuesting: compileOnly — 任务注入软集成（BQ 缺席时静默降级，零新增运行时依赖）
     // 全部 BQ 类型引用收敛于 crossmod/bq/BqQuestInjector；preInit 探测见 crossmod/bq/BqCompat

@@ -17,6 +17,7 @@ import gregtech.api.render.TextureFactory;
 public class TextureManager {
 
     // --- 无线能量监视器材质图标 ---
+    // [GT-compat] BlockIcons.custom(String) 在 beta-3 标记 @Deprecated 但未删除，此处保持单参形态以兼容 beta1/beta2/beta3 三版本编译
     /** 无线能量监视器正面材质（红石信号关闭） */
     public static final IIconContainer TEX_WIRELESS_MONITOR_OFF = Textures.BlockIcons
         .custom("gtswn:Wireless_Energy_Monitor_OFF");

@@ -4,12 +4,12 @@ import net.minecraft.block.Block;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.IItemContainer;
 
 import cpw.mods.fml.common.registry.GameRegistry;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
-import gregtech.api.util.GTLog;
 
 /**
  * 模组物品统一索引枚举
@@ -157,7 +157,7 @@ public enum GTSWNItemList implements IItemContainer {
     @Override
     public void sanityCheck() {
         if (mHasNotBeenSet && !mWarned) {
-            GTLog.err.println("Warning: Item '" + name() + "' has not been set!");
+            GTSimpleWirelessNetwork.LOG.warn("Warning: Item '" + name() + "' has not been set!");
             mWarned = true;
         }
     }
