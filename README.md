@@ -5,7 +5,7 @@
   <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg"></a>
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
-  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1&2" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1%262-orange.svg"></a>
+  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1&2&3" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1%262-orange.svg"></a>
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.7.25" src="https://img.shields.io/badge/Release-1.7.25-green.svg"></a>
 </p>
 
@@ -23,7 +23,8 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 | GTNH         | GTSWN  | 维护 / Maintenance |
 | ------------ | ------ | :--------------: |
-| 2.9.0 beta-1&2 | 1.0.0+ |        ✔️        |
+| 2.9.0 beta-1&2&3 | **1.8.0 +**（当前 / current） |        ✔️        |
+| 2.9.0 beta-1&2 | 1.0.0~1.7.25| ✔️ |
 | 2.8.4        | 0.2.0  |        ❌️        |
 
 当前版本 / Current release：**1.7.25** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
