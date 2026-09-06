@@ -6,7 +6,10 @@ import gregtech.api.metatileentity.implementations.MTEBasicMachine;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 import gregtech.common.tileentities.generators.MTELightningRod;
 import gregtech.common.tileentities.generators.MTESolarGenerator;
+import gregtech.common.tileentities.machines.multi.MTEDieselEngineLegacy;
+import gregtech.common.tileentities.machines.multi.MTEExtremeCombustionEngine;
 import gregtech.common.tileentities.machines.multi.MTEFusionComputer;
+import gregtech.common.tileentities.machines.multi.MTELargeCombustionEngine;
 import gregtech.common.tileentities.machines.multi.MTELargeNaquadahReactor;
 import gregtech.common.tileentities.machines.multi.turbines.MTELargeTurbineBase;
 import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
@@ -61,9 +64,15 @@ public final class DeviceMachineTypes {
 
     /**
      * 发电分类谓词（powerType=1）：发电常规机 / 太阳能 / 避雷针 / 大型涡轮 / XL 涡轮 /
-     * 聚变计算机 / 镭反应堆 / GTSR 巨型蒸汽轮机（软检测）。仅用于
+     * 聚变计算机 / 镭反应堆 / 内燃引擎家族 / GTSR 巨型蒸汽轮机（软检测）。仅用于
      * {@link DeviceTerminalDataStore.MachineRecord} 的 powerType 分类与 GUI「发电」筛选，
      * 不影响可绑定范围（D1）。
+     * <p>
+     * 内燃引擎家族（v1.8.2 补录，5.09.54.133 已核实）：<code>getNominalOutput</code> 输出模式
+     * 恰为四类——大型/极大型内燃引擎（{@code MTEExtendedPowerMultiBlockBase} 系，运行期
+     * {@code lEUt = getNominalOutput()} 正值=发电）与大型/极大型柴油遗留机
+     * （{@code MTEEnhancedMultiBlockBase} 系，{@code mEUt = getNominalOutput()} 正值=发电）。
+     * 不在词条时会被真双零兜底按耗电方向误记（幅值腿恒记 in）。
      */
     public static boolean isGeneratorMachine(IMetaTileEntity mte) {
         return mte instanceof MTEBasicGenerator || mte instanceof MTESolarGenerator
@@ -72,6 +81,9 @@ public final class DeviceMachineTypes {
             || mte instanceof MTEXLTurbineBase
             || mte instanceof MTEFusionComputer
             || mte instanceof MTELargeNaquadahReactor
+            || mte instanceof MTELargeCombustionEngine
+            || mte instanceof MTEExtremeCombustionEngine
+            || mte instanceof MTEDieselEngineLegacy
             || (GTSR_MEGA_STEAM_TURBINE != null && GTSR_MEGA_STEAM_TURBINE.isInstance(mte));
     }
 }

@@ -23,6 +23,7 @@ import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.IMachineProgress;
+import gregtech.api.metatileentity.MetaTileEntity;
 import gregtech.api.metatileentity.implementations.MTEBasicMachine;
 import gregtech.api.metatileentity.implementations.MTEExtendedPowerMultiBlockBase;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
@@ -500,7 +501,9 @@ public class DeviceSampleScheduler {
     /**
      * 采样接线（仅 RUNNING 态由调用方进入）：控制器基座读双均值，MTE 为多方块时叠加双路 hatch
      * 聚合，兜底幅值按代际字段取绝对值（扩展电力多方块 |lEUt|、其余多方块 |mEUt|、单方块耗电
-     * 常规机 MTEBasicMachine |mEUt|、其余机型 0 = 永不兜底），全部交给 {@link #collectEuFlow}
+     * 常规机 MTEBasicMachine |mEUt|、单方块发电家族 maxEUOutput() 名义输出——MTEBasicGenerator
+     * 不以 mEUt 记账发电、燃料直入基座缓冲，无线动力覆盖板 decreaseStoredEU 直扣缓冲绕过均值记账、
+     * 其余机型 0 = 永不兜底），全部交给 {@link #collectEuFlow}
      * 判定（同时传入特殊机器权威 provider 读数 {@link DeviceSpecialPowerProvider#readAuthoritativeEut}：
      * 真双零时命中注册类按权威字段符号定方向并替代白名单兜底，未命中/失败/为 0 走原白名单兜底）；
      * 白名单兜底方向由调用方传入的发电白名单结果（isGenerator）决定，本方法不重复推断。
@@ -525,8 +528,18 @@ public class DeviceSampleScheduler {
             controllerOut = container.getAverageElectricOutput();
         }
         if (!(mte instanceof MTEMultiBlockBase)) {
-            // 单机 / 发电机 / 太阳能 / 避雷针：getter 即采集起点；耗电常规机按 |mEUt| 兜底（其余机型幅值 0）
-            long fallbackEut = mte instanceof MTEBasicMachine ? absEut(((MTEBasicMachine) mte).mEUt) : 0L;
+            // 单机：耗电常规机按 |mEUt| 兜底；发电家族（柴油/燃气/蒸汽涡轮等发电常规机、太阳能、
+            // 避雷针）按 maxEUOutput() 名义输出兜底——MTEBasicGenerator 不以 mEUt 记账发电（燃料经
+            // increaseStoredEnergyUnits 直入基座缓冲），且无线动力覆盖板 decreaseStoredEU 直扣缓冲
+            // 绕过记账，getter 双均值恒 0
+            long fallbackEut;
+            if (mte instanceof MTEBasicMachine) {
+                fallbackEut = absEut(((MTEBasicMachine) mte).mEUt);
+            } else if (isGenerator) {
+                fallbackEut = ((MetaTileEntity) mte).maxEUOutput();
+            } else {
+                fallbackEut = 0L;
+            }
             long[] flow = collectEuFlow(
                 hasContainer,
                 controllerIn,
