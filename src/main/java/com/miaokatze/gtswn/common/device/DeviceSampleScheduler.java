@@ -49,11 +49,11 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  * （version++ 由 store 内部保证），下一台继续</li>
  * <li>有效机器 → 读三态（停机/运行/待机统一口径，isAllowedToWork/isActive 经基座
  * BaseMetaTileEntity 委托）、EU 方向统一采集（{@link #readEuFlow}：基座 getter 读双 5-tick
- * 网络流量均值，多方块叠加双路 hatch 聚合并按引用去重；getter 与 hatch 聚合合计仍双零时，
- * 特殊机器权威 provider（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}）先于白名单
- * 兜底介入，命中注册类按权威字段符号定方向（正=发电→out / 负=消耗→in），未命中/失败/为 0
- * 再按发电白名单方向以 |mEUt|/|lEUt| 幅值兜底，兜底方向不由数值符号决定；in/out=实际网络流量，
- * 非运行态三通道全写 0）、
+ * 网络流量均值，多方块叠加双路 hatch 聚合并按引用去重；getter 与 hatch 聚合合计仍双零时进入
+ * <b>预选词条/数值链</b>（读到非零即停）：发电词条幅值（方向由 isGeneratorMachine 词条决定，
+ * 不由数值符号）→ 特殊机器权威 provider（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}
+ * 符号值，正=发电→out / 负=消耗→in，词条幅值缺失如 LNR 时接管）→ 耗电词条幅值（仅非发电，
+ * 无线喂电常规机 |mEUt| 消费腿）；in/out=实际网络流量，非运行态三通道全写 0）、
  * 功率分类（发电谓词刷新 powerType 0/1）、配方双侧快照
  * （v1.7.2：输入侧因 GT5U 无公开 lastRecipe 入口暂置空，输出侧经公有 mOutputItems/
  * mOutputFluids 采集；仅运行中，非运行置空串）→ 对含该键的所有活跃终端各自 MachineRecord
@@ -415,22 +415,24 @@ public class DeviceSampleScheduler {
      * {@code getAverageElectricInput()} / {@code getAverageElectricOutput()} 仅在 GT5U
      * BaseMetaTileEntity 网络路径（injectEnergyUnits→Input / drainEnergyUnits、handleEUOutput→Output）
      * 累加，采集优先序 = 控制器双均值 → 多方块双路 hatch 聚合（同一 hatch 基座按引用去重）→
-     * 真双零时先检查 {@code DeviceMachineTypes.isGeneratorMachine} 共享词条：命中即用既有
-     * {@code fallbackEut} 幅值和词条方向；仅未命中词条才读取 provider 权威符号值。
-     * getter 与 hatch 聚合合计仍双零（RUNNING 真双零，典型如记账绕过型无线馈电）时才进入后两层。
-     * 白名单兜底的方向<b>不由数值符号、不由结构推断</b>：由调用方按
+     * 真双零时进入<b>预选词条/数值链</b>（读到非零即停）：① 发电词条幅值（方向由
+     * {@code isGeneratorMachine} 词条决定）→ ② provider 权威符号值 → ③ 耗电词条幅值（仅非发电）。
+     * getter 与 hatch 聚合合计仍双零（RUNNING 真双零，典型如记账绕过型无线馈电）时才进入后三层。
+     * 词条幅值的方向<b>不由数值符号、不由结构推断</b>：由调用方按
      * {@code DeviceMachineTypes.isGeneratorMachine} 白名单传入 isGenerator（与 powerType 同源同值）；
-     * provider 层方向由权威字段符号决定（正=发电→out、负=消耗→in），命中注册类时替代白名单兜底。
+     * provider 层方向由权威字段符号决定（正=发电→out、负=消耗→in）——词条命中但幅值缺失
+     * （如 LNR 不维护 mEUt、权威值只在 trueOutput）时由 provider 接管（v1.8.3 数值链）。
      * <ol>
      * <li>基座实现 IBasicEnergyContainer → 控制器双均值即采集起点（单机 / 发电机 / 太阳能 /
      * 避雷针天然走此路）</li>
      * <li>多方块 → in += Σ 能量仓平均输入、out += Σ 动态仓平均输出（两路样本入参，
      * 同一 hatch tile 按引用去重）；聚合先于兜底——聚合任一路非零即压制兜底；
      * 单方块不提前返回，同样可进兜底门</li>
-     * <li>真双零门：命中 {@code isGeneratorMachine} 共享词条即用 fallbackEut 幅值按词条方向
-     * 写 out（幅值为 0 保持双零，不咨询 provider）；未命中词条才按 provider 符号写 out/in，
-     * provider=0 再落回耗电白名单 fallbackEut</li>
-     * <li>fallbackEut 为调用方取好的幅值恒 ≥0；0 表示无幅值可用，零写不兜底</li>
+     * <li>真双零数值链：① isGenerator 且 fallbackEut&gt;0 → out=fallbackEut（词条方向）；
+     * ② providerEut&gt;0 → out / providerEut&lt;0 → in=|providerEut|（符号定方向）；
+     * ③ !isGenerator 且 fallbackEut&gt;0 → in=fallbackEut（耗电腿，无线喂电常规机）；
+     * 全链零则保持双零</li>
+     * <li>fallbackEut 为调用方取好的幅值恒 ≥0；0 表示该词条无幅值可用（数值链继续下一词条）</li>
      * </ol>
      *
      * @param hasContainer  tile 是否实现 IBasicEnergyContainer（false 时两控制器读数不参与）
@@ -442,7 +444,7 @@ public class DeviceSampleScheduler {
      * @param isGenerator   调用方发电白名单判定结果（true → 白名单兜底记 output，false → 记 input）
      * @param fallbackEut   白名单兜底幅值 |mEUt|/|lEUt|（调用方保证 ≥0；0 = 该机无兜底幅值）
      * @param providerEut   特殊机器权威带符号 EU/t（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}
-     *                      读取；0 = 未命中/失败/权威值为 0，白名单兜底照常）
+     *                      数值链读取；0 = 未命中/失败/权威值全 0，数值链继续下一词条）
      * @return {@code {in, out}}，均 ≥0（in = 网络流入、out = 网络流出，net = out − in 由调用方计算）
      */
     public static long[] collectEuFlow(boolean hasContainer, long controllerIn, long controllerOut,
@@ -456,19 +458,18 @@ public class DeviceSampleScheduler {
             out += sumDedupByIdentity(hatchOut);
         }
         if (in == 0L && out == 0L) {
-            // 真双零门：共享发电词条优先，幅值取既有机型字段且方向由词条决定。
-            // 仅缺词条时才咨询 provider；其正负号分别记 out/in，0 表示无权威数值并继续原兜底。
-            if (isGenerator) {
-                // 词条命中即锁定该分支：幅值为 0 也不得改走 provider。
-                if (fallbackEut > 0L) {
-                    out = fallbackEut;
-                }
+            // 真双零门 = 预选词条/数值链（读到非零即停）：
+            // ① 发电词条幅值（方向由词条 isGenerator 决定，不经数值符号）；
+            // ② provider 权威符号值（正→out / 负→取幅→in）——词条命中但幅值缺失（如 LNR |mEUt| 恒 0、
+            // 权威值只在 trueOutput）时放行 provider，修复 v1.8.1 起 LNR 读不到输出的回归；
+            // ③ 耗电词条幅值（仅未命中发电词条：无线喂电常规机的 |mEUt| 消费腿）。
+            if (isGenerator && fallbackEut > 0L) {
+                out = fallbackEut;
             } else if (providerEut > 0L) {
                 out = providerEut;
             } else if (providerEut < 0L) {
                 in = absEut(providerEut);
-            } else if (fallbackEut > 0L) {
-                // 未命中词条且 provider=0 时保留原耗电兜底方向。
+            } else if (!isGenerator && fallbackEut > 0L) {
                 in = fallbackEut;
             }
         }
@@ -505,7 +506,8 @@ public class DeviceSampleScheduler {
      * 不以 mEUt 记账发电、燃料直入基座缓冲，无线动力覆盖板 decreaseStoredEU 直扣缓冲绕过均值记账、
      * 其余机型 0 = 永不兜底），全部交给 {@link #collectEuFlow}
      * 判定（同时传入特殊机器权威 provider 读数 {@link DeviceSpecialPowerProvider#readAuthoritativeEut}：
-     * 真双零时命中注册类按权威字段符号定方向并替代白名单兜底，未命中/失败/为 0 走原白名单兜底）；
+     * 真双零门内按预选词条/数值链定值——发电词条幅值 → provider 符号值 → 耗电词条幅值，读到非零即停；
+     * v1.8.3 起词条命中机器也读 provider，幅值缺失时由权威字段接管，修复 LNR 显示 0 的回归）；
      * 白名单兜底方向由调用方传入的发电白名单结果（isGenerator）决定，本方法不重复推断。
      * 两路 = GT5U MTEMultiBlockBase public 字段 {@code mEnergyHatches}/{@code mDynamoHatches}
      * （字段声明即 new ArrayList 非 null，字段直读恒成功）与 Tectech TTMultiblockBase public 方法
@@ -515,10 +517,11 @@ public class DeviceSampleScheduler {
      * GoodGenerator/Tectech 类，TT 侧只走反射。
      */
     private static EuFlowReading readEuFlow(IMetaTileEntity mte, IGregTechTileEntity gtTE, boolean isGenerator) {
-        // 特殊机器权威 provider（任务2 接入点，优先序第 3 层）：仅 RUNNING 态读一次；注册类
-        // （LNR trueOutput / DysonSwarm euPerTick）权威字段带符号值，未注册/失败恒 0（内部全静默）
-        // 共享发电词条命中时 provider 不参与，避免特殊 provider 覆盖既有机型字段语义。
-        long providerEut = isGenerator ? 0L : DeviceSpecialPowerProvider.readAuthoritativeEut(mte);
+        // 特殊机器权威 provider（数值链，采集优先序第 3 层）：仅 RUNNING 态读一次；注册类
+        // （LNR trueOutput / DysonSwarm euPerTick）按预选字段数值链读到非零即停，未注册/失败/全链
+        // 零恒 0（内部全静默）。v1.8.3 起词条命中机器同样读取 provider：真双零门内发电词条幅值
+        // 缺失（如 LNR |mEUt| 恒 0）时由 provider 符号值接管（见 collectEuFlow 数值链）。
+        long providerEut = DeviceSpecialPowerProvider.readAuthoritativeEut(mte);
         boolean hasContainer = gtTE instanceof IBasicEnergyContainer;
         long controllerIn = 0L;
         long controllerOut = 0L;

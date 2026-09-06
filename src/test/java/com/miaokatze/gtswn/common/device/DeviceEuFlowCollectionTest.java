@@ -192,10 +192,11 @@ public class DeviceEuFlowCollectionTest {
     // ==================== 特殊机器权威 provider 门（任务2） ====================
 
     /**
-     * provider 层（collectEuFlow 第 3 优先层，真双零门内、白名单兜底之前，9 参重载直测）：
-     * 正值=发电→out、负值=消耗→in=|值|（方向由权威字段符号决定，与 isGenerator 白名单冲突时
-     * 以符号为准，替代白名单兜底对该注册类的命中）；providerEut=0（未命中/字段缺失/异常/权威值
-     * 为 0）→ 原白名单兜底照常（不编造数值）；getter/hatch 已有流量（非双零）→ provider 不介入。
+     * provider 层（真双零门数值链第 2 词条，v1.8.3 起词条命中机器同样按链咨询）：
+     * 正值=发电→out、负值=消耗→in=|值|（方向由权威字段符号决定）；发电词条幅值仍居链首
+     * （幅值>0 时 provider 不介入）；词条命中但幅值缺失（=0，如 LNR |mEUt| 恒 0、权威值只在
+     * trueOutput）时由 provider 接管；providerEut=0（未命中/字段缺失/异常/权威值全 0）→ 数值链
+     * 继续下一词条（耗电腿，仅非发电）；getter/hatch 已有流量（非双零）→ provider 不介入。
      */
     @Test
     public void specialProviderSignDecidesDirectionOnDoubleZero() {
@@ -208,21 +209,29 @@ public class DeviceEuFlowCollectionTest {
         assertArrayEquals(
             new long[] { 800L, 0L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 0L, -800L));
-        // 共享发电词条优先：即使 provider 有冲突值也只用既有幅值；provider 不得介入
+        // 数值链第 1 词条优先：发电词条幅值 > 0 时即使 provider 有冲突值也只用既有幅值
         assertArrayEquals(
             new long[] { 0L, 500L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 500L, -800L));
-        // 词条命中但既有幅值为 0：保持双零，不回退 provider
+        // v1.8.3 链语义（LNR 修复）：词条命中但幅值缺失（=0）→ provider 正值接管 → out
         assertArrayEquals(
-            new long[] { 0L, 0L },
+            new long[] { 0L, 800L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 0L, 800L));
-        // providerEut=0：未命中/失败/权威值为 0 → 原白名单兜底照常（耗电→in / 发电→out）
+        // 链语义补充：词条命中幅值缺失 + provider 负值 → 按符号记 in（不因词条命中而丢弃权威值）
+        assertArrayEquals(
+            new long[] { 800L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 0L, -800L));
+        // providerEut=0：未命中/失败/权威值全 0 → 数值链继续下一词条（耗电→in / 发电词条幅值已在链首消耗）
         assertArrayEquals(
             new long[] { 500L, 0L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 500L, 0L));
         assertArrayEquals(
             new long[] { 0L, 320L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 320L, 0L));
+        // 词条命中 + 幅值缺失 + provider 也 0 → 全链零保持双零（不编造数值）
+        assertArrayEquals(
+            new long[] { 0L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 0L, 0L));
         // getter/hatch 已有流量（非双零）：provider 不介入（权威值不叠加、不重复计数）
         List<EuFlowSample> inOnly = Arrays.asList(new EuFlowSample(new Object(), 250L));
         assertArrayEquals(
