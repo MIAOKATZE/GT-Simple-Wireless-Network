@@ -6,7 +6,7 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1&2&3" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1%262-orange.svg"></a>
-  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.7.25" src="https://img.shields.io/badge/Release-1.7.25-green.svg"></a>
+  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.8.3" src="https://img.shields.io/badge/Release-1.8.3-green.svg"></a>
 </p>
 
 一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和链路终端覆盖板（能源/动力）——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
@@ -27,7 +27,7 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 | 2.9.0 beta-1&2 | 1.0.0~1.7.25| ✔️ |
 | 2.8.4        | 0.2.0  |        ❌️        |
 
-当前版本 / Current release：**1.7.25** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
+当前版本 / Current release：**1.8.3** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
 
 ***
 
@@ -258,6 +258,7 @@ A handheld GT machine monitor (**implemented, under active iteration**): bind an
 - **采样与均值 / Sampling & Averages**: 每 `deviceSampleIntervalSeconds`（默认 10 秒）采样一次；平均列为 60 点滚动均值，瞬时 EU/t 取最新采样点。/ Machines are sampled every `deviceSampleIntervalSeconds` (default 10s); the average column is a 60-point rolling mean, instant EU/t is the latest sample.
 - **配方悬浮 / Recipe Hover**: 行悬浮 ≥0.5 秒查看当前执行配方（输出快照，近似）；「显示配方」开关可临时用配方文本替换两列功率数值。/ Hover a row ≥0.5s to view the current recipe (output snapshot, approximate); the "Show recipe" toggle temporarily replaces the two power columns with the recipe text.
 - **功率 provider / Authoritative Power Providers**: 对大型硅岩反应堆、戴森云等实时输出不写入标准功率字段的机器，读取其权威实时功率并区分消耗/产出；这类机器不写入标准词条。/ For machines such as the Large Naquadah Reactor and Dyson Swarm whose realtime output is not written to standard power fields, the terminal reads the authoritative realtime power and distinguishes consumption from generation instead of relying on standard entries.
+- **发电识别覆盖 / Generation Recognition**: v1.8.2/1.8.3 起，发电识别覆盖内燃引擎家族（大型/极大型内燃引擎、柴油遗留机）、单方块发电机（含被无线动力覆盖板收割的场景，按名义输出显示）与权威 provider 机器，发电/耗电方向与数值均正确显示。/ Since v1.8.2/1.8.3, generation recognition covers the combustion engine family (Large/Extreme Combustion Engine, Diesel Engine legacies), single-block generators (including when harvested by a wireless Power cover, shown as nominal output), and authoritative-provider machines — generation/consumption direction and values are displayed correctly.
 - **配置 / Configs**: `deviceSampleIntervalSeconds`（默认 10，最小 1）采样间隔；`deviceTeleportXPCost`（默认 3，最小 1）传送消耗经验等级；`deviceTerminalMaxMachines`（默认 1024，最小 16）单终端绑定上限。/ `deviceSampleIntervalSeconds` (default 10, min 1) sampling interval; `deviceTeleportXPCost` (default 3, min 1) teleport XP-level cost; `deviceTerminalMaxMachines` (default 1024, min 16) per-terminal binding cap.
 - **合成 / Crafting**: LV 级有序配方（v1.7.8 起）：LV 传感器 ×2 + LV 发射器 ×2 + 钢板 ×3 + 电脑屏幕覆盖板 ×1 + 末影珍珠 ×1 → 设备信息终端 ×1。/ LV-tier shaped recipe (since v1.7.8): LV Sensor ×2 + LV Emitter ×2 + Steel Plate ×3 + Computer Screen Cover ×1 + Ender Pearl ×1 → Device Info Terminal ×1.
 
@@ -287,6 +288,16 @@ A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Netwo
 
 ***
 
+## 客户端命令 / Client Commands
+
+无需 OP 或作弊，仅作用于本地客户端，支持 Tab 补全。/ No OP or cheats required; client-side only, with Tab completion.
+
+- **`/gtswn HudXOffset [值]`** / **`/gtswn HudYOffset [值]`** — 调整便携监测终端 HUD 的水平/垂直偏移（整数，±500；Y 正值向上）。/ Adjust the portable monitor HUD horizontal/vertical offset (integer, ±500; positive Y is up).
+- **`/gtswn HudScale [值]`** — 调整便携监测终端 HUD 缩放（0.2–5.0）。/ Adjust the portable monitor HUD scale (0.2–5.0).
+- **行为 / Behavior**: 带参数时校验后立即生效并写入 `config/gtswn/gtswn_network.cfg`（保留注释）；无参数时显示当前值。/ With a value: validated, applied instantly and written to `config/gtswn/gtswn_network.cfg` (comments preserved); without a value: shows the current value.
+
+***
+
 ## 技术栈 / Tech Stack
 
 - Java：Jabel（现代 Java 语法，编译为 Java 8 字节码）/ Java: Jabel (modern Java syntax, compiled to Java 8 bytecode)
@@ -296,5 +307,5 @@ A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Netwo
 
 ## 许可证 / License
 
-BSD 3-Clause，详见 LICENSE 文件。
-BSD 3-Clause — see the LICENSE file.
+AGPL-3.0，详见 LICENSE 文件。
+AGPL-3.0 — see the LICENSE file.
