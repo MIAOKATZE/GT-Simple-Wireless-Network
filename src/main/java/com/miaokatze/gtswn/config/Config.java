@@ -38,6 +38,9 @@ public class Config {
     /** 网络信息屏历史数据保留配置类目名（v1.5.15 新增） */
     private static final String CATEGORY_NETWORK_INFO = "network_info";
 
+    /** gtswn_network.cfg 的启动时路径，供客户端命令运行时写回使用。 */
+    private static File networkConfigFile;
+
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
     // 此配置仅用于在基准值基础上进行微调。
@@ -245,6 +248,7 @@ public class Config {
      * @param configFile 配置文件对象 (config/gtswn/gtswn_network.cfg)
      */
     public static void synchronizeNetworkConfiguration(File configFile) {
+        networkConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
 
         // 下行损耗系数 / Downlink loss ratio
@@ -385,6 +389,50 @@ public class Config {
 
         if (configuration.hasChanged()) {
             configuration.save();
+        }
+    }
+
+    /**
+     * 持久化客户端运行时 HUD 参数。
+     *
+     * @return 保存成功返回 true；配置文件路径未初始化或保存失败返回 false
+     */
+    public static boolean saveHudConfiguration() {
+        if (networkConfigFile == null) {
+            return false;
+        }
+        try {
+            Configuration configuration = new Configuration(networkConfigFile);
+            configuration.setCategoryComment(CATEGORY_HUD, "HUD 显示参数（偏移与缩放）\\nHUD display parameters (offset & scale)");
+            configuration.getInt(
+                "HudXOffset",
+                CATEGORY_HUD,
+                hudXOffset,
+                -500,
+                500,
+                "HUD 水平偏移（像素）/ HUD horizontal offset (pixels)");
+            configuration.getInt(
+                "HudYOffset",
+                CATEGORY_HUD,
+                hudYOffset,
+                -500,
+                500,
+                "HUD 垂直偏移（像素）/ HUD vertical offset (pixels)");
+            configuration.getFloat("HudScale", CATEGORY_HUD, hudScale, 0.2f, 5.0f, "HUD 缩放比例 / HUD scale ratio");
+            configuration
+                .get("HudXOffset", CATEGORY_HUD, hudXOffset, "HUD 水平偏移（像素）/ HUD horizontal offset (pixels)", -500, 500)
+                .set(hudXOffset);
+            configuration
+                .get("HudYOffset", CATEGORY_HUD, hudYOffset, "HUD 垂直偏移（像素）/ HUD vertical offset (pixels)", -500, 500)
+                .set(hudYOffset);
+            configuration.get("HudScale", CATEGORY_HUD, (double) hudScale, "HUD 缩放比例 / HUD scale ratio", 0.2, 5.0)
+                .set((double) hudScale);
+            if (configuration.hasChanged()) {
+                configuration.save();
+            }
+            return true;
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 

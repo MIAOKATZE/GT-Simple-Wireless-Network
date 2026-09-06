@@ -204,10 +204,18 @@ public class DeviceEuFlowCollectionTest {
         assertArrayEquals(
             new long[] { 0L, 600L },
             DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 500L, 600L));
-        // 真双零 + provider 负值（消耗型权威字段）→ in=|值|，白名单即使判定发电也不写 out
+        // 真双零 + provider 负值（未命中共享发电词条）→ in=|值|，符号决定消耗方向
         assertArrayEquals(
             new long[] { 800L, 0L },
-            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 0L, -800L));
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), false, 0L, -800L));
+        // 共享发电词条优先：即使 provider 有冲突值也只用既有幅值；provider 不得介入
+        assertArrayEquals(
+            new long[] { 0L, 500L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 500L, -800L));
+        // 词条命中但既有幅值为 0：保持双零，不回退 provider
+        assertArrayEquals(
+            new long[] { 0L, 0L },
+            DeviceSampleScheduler.collectEuFlow(true, 0L, 0L, true, emptySamples(), emptySamples(), true, 0L, 800L));
         // providerEut=0：未命中/失败/权威值为 0 → 原白名单兜底照常（耗电→in / 发电→out）
         assertArrayEquals(
             new long[] { 500L, 0L },

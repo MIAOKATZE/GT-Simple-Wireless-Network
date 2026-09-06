@@ -5,6 +5,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
+import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
@@ -18,6 +19,7 @@ import com.miaokatze.gtswn.client.gui.GuiQuantumTerminal;
 import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.client.render.RenderNetworkQuantumNode;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
+import com.miaokatze.gtswn.common.command.CommandGTSWNClient;
 import com.miaokatze.gtswn.common.hud.HudController;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
@@ -54,6 +56,8 @@ public class ClientProxy extends CommonProxy {
     public void init(FMLInitializationEvent event) {
         // 调用父类的 init 方法，确保通用逻辑正常执行
         super.init(event);
+
+        ClientCommandHandler.instance.registerCommand(new CommandGTSWNClient());
 
         // 注册 HUD 渲染器到 Forge 事件总线（仅在客户端）
         // 注意：RenderGameOverlayEvent 是 Forge 事件，必须注册到 MinecraftForge.EVENT_BUS

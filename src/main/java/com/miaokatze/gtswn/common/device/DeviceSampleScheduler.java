@@ -414,7 +414,8 @@ public class DeviceSampleScheduler {
      * {@code getAverageElectricInput()} / {@code getAverageElectricOutput()} 仅在 GT5U
      * BaseMetaTileEntity 网络路径（injectEnergyUnits→Input / drainEnergyUnits、handleEUOutput→Output）
      * 累加，采集优先序 = 控制器双均值 → 多方块双路 hatch 聚合（同一 hatch 基座按引用去重）→
-     * 特殊机器权威 provider（任务2）→ 白名单 |mEUt|/|lEUt| 幅值兜底；
+     * 真双零时先检查 {@code DeviceMachineTypes.isGeneratorMachine} 共享词条：命中即用既有
+     * {@code fallbackEut} 幅值和词条方向；仅未命中词条才读取 provider 权威符号值。
      * getter 与 hatch 聚合合计仍双零（RUNNING 真双零，典型如记账绕过型无线馈电）时才进入后两层。
      * 白名单兜底的方向<b>不由数值符号、不由结构推断</b>：由调用方按
      * {@code DeviceMachineTypes.isGeneratorMachine} 白名单传入 isGenerator（与 powerType 同源同值）；
@@ -425,12 +426,10 @@ public class DeviceSampleScheduler {
      * <li>多方块 → in += Σ 能量仓平均输入、out += Σ 动态仓平均输出（两路样本入参，
      * 同一 hatch tile 按引用去重）；聚合先于兜底——聚合任一路非零即压制兜底；
      * 单方块不提前返回，同样可进兜底门</li>
-     * <li>provider 门（任务2 接入点，先于白名单兜底）：真双零且 providerEut&gt;0 → 记 out、
-     * providerEut&lt;0 → 记 |providerEut| 入 in（方向由权威字段符号决定，与白名单无关）；
-     * providerEut=0（未命中注册类 / 字段缺失 / 反射异常 / 权威值为 0）不编造数值，落回下一门</li>
-     * <li>兜底门：仍双零且 providerEut=0 且 fallbackEut&gt;0 →
-     * isGenerator ? out=fallbackEut : in=fallbackEut（fallbackEut 为调用方取好的幅值恒 ≥0；
-     * fallbackEut=0 表示无幅值可用，零写不兜底）</li>
+     * <li>真双零门：命中 {@code isGeneratorMachine} 共享词条即用 fallbackEut 幅值按词条方向
+     * 写 out（幅值为 0 保持双零，不咨询 provider）；未命中词条才按 provider 符号写 out/in，
+     * provider=0 再落回耗电白名单 fallbackEut</li>
+     * <li>fallbackEut 为调用方取好的幅值恒 ≥0；0 表示无幅值可用，零写不兜底</li>
      * </ol>
      *
      * @param hasContainer  tile 是否实现 IBasicEnergyContainer（false 时两控制器读数不参与）
@@ -456,19 +455,20 @@ public class DeviceSampleScheduler {
             out += sumDedupByIdentity(hatchOut);
         }
         if (in == 0L && out == 0L) {
-            // 真双零门（任务2）：provider 优先于白名单兜底——命中注册类且权威值非零时按符号定方向
-            // （正=发电→out、负=消耗→in，替代白名单兜底对该类的命中）；0=不编造数值，落回原兜底
-            if (providerEut > 0L) {
+            // 真双零门：共享发电词条优先，幅值取既有机型字段且方向由词条决定。
+            // 仅缺词条时才咨询 provider；其正负号分别记 out/in，0 表示无权威数值并继续原兜底。
+            if (isGenerator) {
+                // 词条命中即锁定该分支：幅值为 0 也不得改走 provider。
+                if (fallbackEut > 0L) {
+                    out = fallbackEut;
+                }
+            } else if (providerEut > 0L) {
                 out = providerEut;
             } else if (providerEut < 0L) {
                 in = absEut(providerEut);
             } else if (fallbackEut > 0L) {
-                // 白名单兜底：方向由发电白名单决定，不由数值符号决定；幅值恒 ≥0
-                if (isGenerator) {
-                    out = fallbackEut;
-                } else {
-                    in = fallbackEut;
-                }
+                // 未命中词条且 provider=0 时保留原耗电兜底方向。
+                in = fallbackEut;
             }
         }
         return new long[] { in, out };
@@ -514,7 +514,8 @@ public class DeviceSampleScheduler {
     private static EuFlowReading readEuFlow(IMetaTileEntity mte, IGregTechTileEntity gtTE, boolean isGenerator) {
         // 特殊机器权威 provider（任务2 接入点，优先序第 3 层）：仅 RUNNING 态读一次；注册类
         // （LNR trueOutput / DysonSwarm euPerTick）权威字段带符号值，未注册/失败恒 0（内部全静默）
-        long providerEut = DeviceSpecialPowerProvider.readAuthoritativeEut(mte);
+        // 共享发电词条命中时 provider 不参与，避免特殊 provider 覆盖既有机型字段语义。
+        long providerEut = isGenerator ? 0L : DeviceSpecialPowerProvider.readAuthoritativeEut(mte);
         boolean hasContainer = gtTE instanceof IBasicEnergyContainer;
         long controllerIn = 0L;
         long controllerOut = 0L;
