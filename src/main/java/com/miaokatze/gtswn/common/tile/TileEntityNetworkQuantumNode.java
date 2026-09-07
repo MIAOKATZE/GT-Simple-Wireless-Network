@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.tile;
 
+import java.io.IOException;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -13,6 +14,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
+import net.minecraft.util.Vec3;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -32,6 +34,7 @@ import appeng.api.AEApi;
 import appeng.api.exceptions.ExistingConnectionException;
 import appeng.api.exceptions.FailedConnection;
 import appeng.api.exceptions.SecurityConnectionException;
+import appeng.api.implementations.parts.IPartCable;
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridConnection;
@@ -48,13 +51,26 @@ import appeng.api.networking.events.MENetworkPowerStatusChange;
 import appeng.api.networking.events.MENetworkPowerStorage;
 import appeng.api.networking.events.MENetworkSecurityChange;
 import appeng.api.networking.events.MENetworkStorageEvent;
+import appeng.api.parts.BusSupport;
+import appeng.api.parts.IFacadeContainer;
+import appeng.api.parts.IPart;
+import appeng.api.parts.IPartHost;
+import appeng.api.parts.IPartItem;
+import appeng.api.parts.LayerFlags;
+import appeng.api.parts.SelectedPart;
 import appeng.api.util.AECableType;
+import appeng.api.util.AEColor;
 import appeng.api.util.DimensionalCoord;
 import appeng.core.worlddata.WorldData;
 import appeng.me.GridAccessException;
+import appeng.me.GridConnection;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
+import appeng.parts.CableBusContainer;
 import appeng.tile.networking.TileController;
+import appeng.util.Platform;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 /**
  * ME 网络量子节点 TileEntity（T4：AE 网络桥接核心，规划 plan_20260722152445.md §3/§5.2/§9）。
@@ -72,8 +88,13 @@ import appeng.tile.networking.TileController;
  * 连接存活则跳过，否则按自然加载状态和 D7（锚点破坏离线）规则尝试重建；
  * 本节点不主动申请 ForgeChunkManager Ticket，节点与锚点持续工作依赖服务器或其他模组提供的区块加载；
  * invalidate/onChunkUnload 先显式 destroy 桥接连接再走 proxy 生命周期，防止网格残留幽灵节点。
+ * <p>
+ * v1.8.5：原生接收 AE2 部件——TE 组合模式实现 {@link IPartHost}，持有
+ * {@link CableBusContainer}（仿 TileCableBus）。节点无中心线缆概念：IPartCable 拒绝、
+ * 其余按「可挂普通线缆（{@code BusSupport.CABLE}）」语义接收，装入的部件 GridNode 与宿主
+ * proxy 节点直连（GridConnection UNKNOWN 方向，与容器对中心线缆侧部件的建连等价）。
  */
-public class TileEntityNetworkQuantumNode extends TileEntity implements IGridProxyable {
+public class TileEntityNetworkQuantumNode extends TileEntity implements IGridProxyable, IPartHost {
 
     static {
         // O2-B08：向 quantum 侧注册节点类——grid.getMachines 需具体 Class（无法纯接口化），
@@ -109,6 +130,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /** 同步 NBT 键名：服务端真实节点连接方向位掩码（v1.6.24 新增，仅 description packet 用，不持久化） */
     private static final String NBT_SYNC_SIDES = "sides";
 
+    /** v1.8.5：部件容器持久化子标签键名（与现有 anchorDim/proxy 等键零冲突；空容器不写该键） */
+    private static final String NBT_PART_CONTAINER = "partContainer";
+
+    /** v1.8.5：部件客户端同步键名（容器流字节，仅 description packet 用，不持久化） */
+    private static final String NBT_SYNC_CB_PARTS = "cbParts";
+
     // ==================== 锚点字段（T3 已有，NBT 持久化） ====================
 
     /** 锚点控制器维度 ID（未设置时为 Integer.MIN_VALUE，见 {@link #hasAnchor()}） */
@@ -129,6 +156,17 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 区块加载时 worldObj 可能尚未设置，暂存 proxy NBT 父标签，待世界可用后再恢复 */
     private NBTTagCompound pendingProxyNBT = null;
+
+    // ==================== AE2 部件容器（v1.8.5，仿 TileCableBus.cb） ====================
+
+    /**
+     * AE2 部件容器（v1.8.5）。
+     * <p>
+     * 非 final：{@link #clearContainer()} 需整容器换新（仿 TileCableBus.clearContainer
+     * setCableBus(new CableBusContainer(this)) 与 fmp/CableBusPart.clearContainer）。
+     * 客户端实例经 description packet 的 "cbParts" 流字节填充；服务端实例为权威。
+     */
+    private CableBusContainer partContainer = new CableBusContainer(this);
 
     // ==================== 桥接运行时状态（不持久化） ====================
 
@@ -315,6 +353,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * 
      * 量子节点到锚点控制器的桥接连接方向无关（createGridConnection 无方向，
      * GridConnection.getDirection 返回 ForgeDirection.UNKNOWN），天然不进掩码，不会画向控制器的臂。
+     * <p>
+     * v1.8.5：v1.8.5 部件宿主追加——宿主面已装有 AE2 部件的方向并入位（仅服务端计算处单点，
+     * S35 "sides" 链、比对、客户端重绘全自动生效）。语义对齐 AE2 PartCable.java:294-315：
+     * 朝同容器部件画短臂与网格连接无关（connections 已含该方向时按网格臂先置位，位或幂等）。
+     * 消费方复核：掩码仅有 {@link #getConnectedSidesMask()}（RenderNetworkQuantumNode 画臂）一个
+     * 消费端，不影响碰撞/射线/逻辑路径。
      *
      * @return 6-bit 方向掩码（bit = direction ordinal；节点/代理不可用或客户端返回 0）
      */
@@ -330,6 +374,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         for (IGridConnection c : node.getConnections()) {
             ForgeDirection d = c.getDirection(node);
             if (d != null && d != ForgeDirection.UNKNOWN) {
+                mask |= 1 << d.ordinal();
+            }
+        }
+        // 宿主面部件并入位（无中心线缆概念，getPart 仅按 6 侧面查）
+        for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
+            if (this.partContainer.getPart(d) != null) {
                 mask |= 1 << d.ordinal();
             }
         }
@@ -432,6 +482,196 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // AE2 安全系统回调，不做破坏
     }
 
+    // ==================== IPartHost 实现（v1.8.5，宿主面自实现 + 其余委托容器） ====================
+
+    /** 是否装有 AE2 部件/外观（双端可查：服务端为权威容器，客户端经 cbParts 流同步） */
+    public boolean hasParts() {
+        return !this.partContainer.isEmpty();
+    }
+
+    /** 部件容器公开入口（方块碰撞/射线与 ISBRH 渲染消费，仿 TileCableBus.getCableBus） */
+    public CableBusContainer getPartContainer() {
+        return this.partContainer;
+    }
+
+    @Override
+    public TileEntity getTile() {
+        return this;
+    }
+
+    // getLocation() 由上方 IGridProxyable 实现兼任（同签名 DimensionalCoord getLocation()）
+
+    @Override
+    public void markForUpdate() {
+        if (worldObj != null) {
+            worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+        }
+    }
+
+    @Override
+    public void markForSave() {
+        markDirty();
+    }
+
+    @Override
+    public boolean isBlocked(ForgeDirection side) {
+        // 本节点非 FMP 宿主，无微方块遮挡概念
+        return false;
+    }
+
+    @Override
+    public void partChanged() {
+        notifyNeighbors();
+    }
+
+    @Override
+    public void notifyNeighbors() {
+        // 仿 TileCableBus.notifyNeighbors：isLoading 防护避免 addToWorld 批量装载期间的通知风暴
+        if (worldObj != null && worldObj.blockExists(xCoord, yCoord, zCoord) && !CableBusContainer.isLoading()) {
+            Platform.notifyBlocksOfNeighbors(worldObj, xCoord, yCoord, zCoord);
+        }
+    }
+
+    @Override
+    public void cleanup() {
+        // 关键防护：必须保持 no-op。AE2 wrenchLogic 拆掉最后一个部件时会调 host.cleanup()
+        // （PartPlacement.java:165-167），TileCableBus 原版实现是 setBlock(AIR)——那会连量子节点
+        // 本体一起删掉。本节点的删除只能走「潜行+量子终端」受控路径，部件拆光后节点必须原样保留。
+    }
+
+    @Override
+    public IFacadeContainer getFacadeContainer() {
+        return this.partContainer.getFacadeContainer();
+    }
+
+    @Override
+    public IPart getPart(ForgeDirection side) {
+        return this.partContainer.getPart(side);
+    }
+
+    @Override
+    public void removePart(ForgeDirection side, boolean suppressUpdate) {
+        // 纯委托：part.removeFromWorld → 部件 GridNode.destroy 连带销毁其全部连接（含与宿主
+        // proxy 节点的直连），零记账；容器内部再补 update/mark/partChanged
+        this.partContainer.removePart(side, suppressUpdate);
+    }
+
+    @Override
+    public SelectedPart selectPart(Vec3 pos) {
+        return this.partContainer.selectPart(pos);
+    }
+
+    @Override
+    public boolean isEmpty() {
+        return this.partContainer.isEmpty();
+    }
+
+    @Override
+    public Set<LayerFlags> getLayerFlags() {
+        return this.partContainer.getLayerFlags();
+    }
+
+    @Override
+    public boolean hasRedstone(ForgeDirection side) {
+        return this.partContainer.hasRedstone(side);
+    }
+
+    @Override
+    public boolean isInWorld() {
+        return worldObj != null && !isInvalid();
+    }
+
+    @Override
+    public AEColor getColor() {
+        return this.partContainer.getColor();
+    }
+
+    @Override
+    public void clearContainer() {
+        // 换新容器（仿 TileCableBus/fmp：旧容器连同部件整体丢弃）
+        this.partContainer = new CableBusContainer(this);
+    }
+
+    @Override
+    public boolean canAddPart(ItemStack is, ForgeDirection side) {
+        // ① 线缆部件拒绝：节点无中心线缆概念（容器 :111-146 对无中心宿主会放行线缆，须在宿主面拦下）
+        if (is != null && is.getItem() instanceof IPartItem) {
+            ItemStack probe = is.copy();
+            probe.stackSize = 1;
+            IPart part = ((IPartItem) is.getItem()).createPartFromItemStack(probe);
+            if (part instanceof IPartCable) {
+                return false;
+            }
+            // ② 普通线缆语义：不支持挂上 BusSupport.CABLE 的部件拒绝（容器 :139 对中心线缆的同型检查）
+            if (part != null && !part.canBePlacedOn(BusSupport.CABLE)) {
+                return false;
+            }
+        }
+        // ③ 委托容器原生判定（无中心线缆时容器 :137-144 对 side 部件按「该面无占用」放行）
+        return this.partContainer.canAddPart(is, side);
+    }
+
+    @Override
+    public ForgeDirection addPart(ItemStack is, ForgeDirection side, EntityPlayer player) {
+        // 先委托容器装入（返回实际装入面；容器内部仅在有中心线缆时才建连——本节点无中心）
+        ForgeDirection placed = this.partContainer.addPart(is, side, player);
+        if (placed == null || placed == ForgeDirection.UNKNOWN) {
+            return placed;
+        }
+        // 部件节点 ↔ 宿主 proxy 节点直连（与容器 :230-245 中心↔侧面建连逐行等价）；
+        // appeng.me.GridConnection 公开构造器，与 tryConnect 桥接同一套安全/自重/重复校验
+        if (worldObj != null && !worldObj.isRemote) {
+            IPart part = this.partContainer.getPart(placed);
+            if (part != null) {
+                IGridNode proxyNode = getProxy().getNode();
+                IGridNode partNode = part.getGridNode();
+                if (proxyNode != null && partNode != null) {
+                    try {
+                        new GridConnection(proxyNode, partNode, ForgeDirection.UNKNOWN);
+                    } catch (FailedConnection e) {
+                        // 建连失败回滚（仿容器 :237-243）：拆掉装入的部件，防止其游离在宿主网络之外
+                        this.partContainer.removePart(placed, false);
+                        return null;
+                    }
+                }
+            }
+        }
+        return placed;
+    }
+
+    /**
+     * v1.8.5：重载后补齐 proxy↔部件连接。放置路径在 addPart 建连；区块卸载/重启后
+     * 容器只重建部件节点（其 addToWorld 仅在中心线缆存在时连线），故在此每 tick 对账：
+     * 未互连即建，FailedConnection 留待下一 tick 重试。空容器/客户端零开销早退。
+     */
+    private void rewirePartConnections() {
+        if (worldObj == null || worldObj.isRemote || !hasParts()) {
+            return;
+        }
+        IGridNode proxyNode = getProxy().getNode();
+        if (proxyNode == null) {
+            return;
+        }
+        for (ForgeDirection side : ForgeDirection.values()) {
+            if (side == ForgeDirection.UNKNOWN) {
+                continue;
+            }
+            IPart part = this.partContainer.getPart(side);
+            if (part == null) {
+                continue;
+            }
+            IGridNode partNode = part.getGridNode();
+            if (partNode == null || findDirectConnection(proxyNode, partNode) != null) {
+                continue;
+            }
+            try {
+                new GridConnection(proxyNode, partNode, ForgeDirection.UNKNOWN);
+            } catch (FailedConnection e) {
+                // 单一部件建连失败不阻断其余面（安全终端未授权等），下一 tick 重试
+            }
+        }
+    }
+
     // ==================== AE2 网络节点生命周期（仿 TileEntityNetworkInfoPanel） ====================
 
     @Override
@@ -444,6 +684,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     @Override
     public void invalidate() {
+        // v1.8.5：先拆部件（销毁部件 GridNode 及其全部连接），再断桥接连接，最后走 proxy 生命周期
+        this.partContainer.removeFromWorld();
         // 断桥接连接必须先于 proxy 生命周期：显式 destroy 防止网格残留幽灵节点
         destroyBridgeConnection();
         super.invalidate();
@@ -456,7 +698,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     @Override
     public void onChunkUnload() {
-        // 同 invalidate：先断桥接连接再走 proxy 生命周期
+        // 同 invalidate：先拆部件，再断桥接连接，最后走 proxy 生命周期
+        this.partContainer.removeFromWorld();
         destroyBridgeConnection();
         super.onChunkUnload();
         if (gridProxy != null) {
@@ -490,6 +733,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             getProxy().onReady();
             aeProxyReady = true;
         }
+        // v1.8.5：部件容器入世（仿 TileCableBus.onReady→cb.addToWorld）：为每个部件
+        // setPartHostInfo + addToWorld（创建部件 GridNode）；幂等（inWorld 时早退）。
+        // 空白节点（无锚点）在上方早退，部件保持惰性——锚点写入后自动激活。
+        this.partContainer.addToWorld();
+        // v1.8.5：重载重连——容器 addToWorld 只重建部件 GridNode（原生逻辑仅连中心线缆，
+        // 本节点无中心），proxy↔部件连接不补则重载后部件成孤立单节点网格（无电无频道）
+        rewirePartConnections();
         // v1.6.4 任务4：每 tick 比对在线状态（不受下方 20t 维护窗口限制），
         // 变化即 markBlockForUpdate 推送 S35，材质切换延迟 ≤1t
         boolean linkedNow = isLinked();
@@ -1013,6 +1263,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 this.pendingProxyNBT = tag;
             }
         }
+        // v1.8.5：部件容器恢复（hasKey 门控，v1.8.3 旧 NBT 无该键时零影响）；
+        // 子标签隔离——容器键（def:N/extra:N/facade 键）不与现有键冲突；
+        // 容器内部 addPart 此时 inWorld=false 不触网，updateEntity 再统一 addToWorld
+        if (tag.hasKey(NBT_PART_CONTAINER)) {
+            this.partContainer.readFromNBT(tag.getCompoundTag(NBT_PART_CONTAINER));
+        }
     }
 
     @Override
@@ -1031,6 +1287,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (gridProxy != null) {
             gridProxy.writeToNBT(tag);
         }
+        // v1.8.5：部件容器持久化——子标签隔离；空容器不写任何键
+        // （= v1.8.3 字节一致不变式：无部件的存量节点 NBT 与旧版逐字节相同）
+        if (!this.partContainer.isEmpty()) {
+            NBTTagCompound cbTag = new NBTTagCompound();
+            this.partContainer.writeToNBT(cbTag);
+            tag.setTag(NBT_PART_CONTAINER, cbTag);
+        }
     }
 
     // ==================== 在线状态同步（v1.6.4 任务4：驱动客户端状态材质渲染） ====================
@@ -1043,6 +1306,19 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         tag.setBoolean(NBT_SYNC_LINKED, isLinked());
         // v1.6.24：追加同步服务端真实连接方向掩码（客户端按位移位重建方向并只对置位方向画臂）
         tag.setInteger(NBT_SYNC_SIDES, computeConnectedSidesMask());
+        // v1.8.5：追加同步部件容器流字节（镜像 AEBaseTile.getDescriptionPacket 的
+        // writeToStream→setByteArray 机制；空容器不写键，与 linked/sides 零冲突）
+        if (!this.partContainer.isEmpty()) {
+            ByteBuf stream = Unpooled.buffer();
+            try {
+                this.partContainer.writeToStream(stream);
+                byte[] bytes = new byte[stream.readableBytes()];
+                stream.readBytes(bytes);
+                tag.setByteArray(NBT_SYNC_CB_PARTS, bytes);
+            } catch (IOException e) {
+                GTSimpleWirelessNetwork.LOG.warn("[量子节点] 部件容器流序列化失败 @ ({},{},{})", xCoord, yCoord, zCoord, e);
+            }
+        }
         return new S35PacketUpdateTileEntity(xCoord, yCoord, zCoord, 1, tag);
     }
 
@@ -1061,6 +1337,15 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);
         // v1.6.24：追加读取连接方向掩码（键缺失时 getInteger 默认 0，天然安全）
         this.clientConnectedSides = tag.getInteger(NBT_SYNC_SIDES);
+        // v1.8.5：对称读回部件容器流（镜像 TileCableBus.readFromStream_TileCableBus；
+        // 容器内部按流差异增删部件——客户端容器不建网格节点，仅渲染/选框用）
+        if (tag.hasKey(NBT_SYNC_CB_PARTS)) {
+            try {
+                this.partContainer.readFromStream(Unpooled.wrappedBuffer(tag.getByteArray(NBT_SYNC_CB_PARTS)));
+            } catch (IOException e) {
+                GTSimpleWirelessNetwork.LOG.warn("[量子节点] 部件容器流反序列化失败 @ ({},{},{})", xCoord, yCoord, zCoord, e);
+            }
+        }
         // 1.7.10 客户端收 S35 不自动重渲染：markBlockForUpdate → RenderGlobal 标脏，下帧按新图标重绘
         if (worldObj != null) {
             worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);

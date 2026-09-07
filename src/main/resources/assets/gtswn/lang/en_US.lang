@@ -455,3 +455,6 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=The Device Info Terminal is you
 # BQ quests END
 gtswn.reveal.scan.result=Reveal scan: %s wireless link node(s) revealed
 gtswn.reveal.scan.empty=Reveal scan: no wireless link node found
+gtswn.chat.quantum.swap_done=§a[Quantum Terminal] Bare cable parts migrated in place into a quantum node (%d), node ready
+gtswn.chat.quantum.swap_partial=§e[Quantum Terminal] Migration finished: %d remounted, %d could not be remounted and dropped in place
+gtswn.chat.quantum.swap_failed=§c[Quantum Terminal] In-place replacement failed, all parts dropped in place

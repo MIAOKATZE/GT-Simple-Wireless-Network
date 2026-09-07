@@ -1,5 +1,9 @@
 package com.miaokatze.gtswn.network;
 
+import net.minecraftforge.common.MinecraftForge;
+
+import com.miaokatze.gtswn.client.QuantumTerminalBusSwapHandler;
+
 import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.common.network.simpleimpl.SimpleNetworkWrapper;
 import cpw.mods.fml.relauncher.Side;
@@ -35,6 +39,9 @@ import cpw.mods.fml.relauncher.Side;
  * <li>12 = {@link PacketSyncNodeReveal}（S→C 节点显形同步：count 封顶 256 + N×{x,y,z,type} +
  * 服务端本维 world tick + durationTicks=1200；空列表语义=客户端清缓存；
  * 客户端经 @SidedProxy 切主线程写 WirelessNodeRevealRenderer 缓存）</li>
+ * <li>13 = {@link PacketQuantumTerminalSwapBus}（C→S 量子终端「裸部件 cable-bus 原位替换」：
+ * x/y/z/命中面；Netty 入队→本类内聚 ServerTickEvent(END) 主线程 drain，校验+迁移+回滚；
+ * 配套客户端拦截处理器 {@link QuantumTerminalBusSwapHandler} 一并在此注册）</li>
  * </ul>
  */
 public class GTSWNPacketHandler {
@@ -101,5 +108,15 @@ public class GTSWNPacketHandler {
         NETWORK.registerMessage(PacketRequestNodeReveal.Handler.class, PacketRequestNodeReveal.class, 11, Side.SERVER);
         // 12: 服务端→客户端 节点显形同步（客户端 Handler 双端类型经 @SidedProxy 委托）
         NETWORK.registerMessage(PacketSyncNodeReveal.Handler.class, PacketSyncNodeReveal.class, 12, Side.CLIENT);
+        // 13: 客户端→服务端 量子终端裸部件 bus 原位替换（Netty 入队→本包类内聚主线程 drain）
+        NETWORK.registerMessage(
+            PacketQuantumTerminalSwapBus.Handler.class,
+            PacketQuantumTerminalSwapBus.class,
+            13,
+            Side.SERVER);
+        // 包 13 配套：主线程排水器（双端注册安全，客户端队列恒空）+ 客户端右击拦截处理器
+        // （HIGHEST 先于 AE2 PartPlacement 的 LOW；处理器类无 client-only 引用，服务端 isRemote 早退）
+        PacketQuantumTerminalSwapBus.register();
+        MinecraftForge.EVENT_BUS.register(new QuantumTerminalBusSwapHandler());
     }
 }

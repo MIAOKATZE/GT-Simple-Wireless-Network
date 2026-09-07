@@ -455,3 +455,6 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=设备信息终端是你的机�
 # BQ quests END
 gtswn.reveal.scan.result=显形扫描：显现 %s 个无线链路节点
 gtswn.reveal.scan.empty=显形扫描：未发现无线链路节点
+gtswn.chat.quantum.swap_done=§a[量子终端] 裸线缆部件已原地迁入量子节点（%d 件），节点即插即用
+gtswn.chat.quantum.swap_partial=§e[量子终端] 部件迁移完成：%d 件成功挂载，%d 件无法挂载已弹回原地
+gtswn.chat.quantum.swap_failed=§c[量子终端] 原位替换失败，全部部件已弹回原地

@@ -1,22 +1,37 @@
 package com.miaokatze.gtswn.common.block;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.List;
 
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockContainer;
 import net.minecraft.block.material.Material;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.IIconRegister;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.IIcon;
+import net.minecraft.util.MovingObjectPosition;
+import net.minecraft.util.Vec3;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.register.CreativeTabManager;
+
+import appeng.api.parts.PartItemStack;
+import appeng.api.parts.SelectedPart;
+import appeng.util.LookDirection;
+import appeng.util.Platform;
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
 
 /**
  * ME 网络量子节点（T1 存根，桥接逻辑 T4 实现）
@@ -30,6 +45,9 @@ import com.miaokatze.gtswn.register.CreativeTabManager;
  * <p>
  * v1.6.4 任务4：状态材质——世界内按 TE 在线状态渲染（在线动画 / 离线静态），
  * 物品栏与破坏粒子等无世界上下文路径恒显示在线动画图标。
+ * <p>
+ * v1.8.5：AE2 部件宿主方块面——右键部件交互、核心∪部件碰撞/选框/射线
+ * （仿 AEBaseBlock :188-333）、破坏/受控销毁弹射部件掉落、中键取部件、红石与邻居转发。
  */
 public class BlockNetworkQuantumNode extends BlockContainer {
 
@@ -47,6 +65,12 @@ public class BlockNetworkQuantumNode extends BlockContainer {
 
     /** 离线静态图标（ME_Network_Quantum_Node_OFF.png，16x16 单帧，无 mcmeta） */
     private IIcon iconOffline;
+
+    /** 核心包围盒下界（5/16，与构造器 setBlockBounds 一致；v1.8.5 碰撞/射线复用） */
+    private static final float CORE_MIN = 0.3125F;
+
+    /** 核心包围盒上界（11/16） */
+    private static final float CORE_MAX = 0.6875F;
 
     /**
      * 构造函数：初始化量子节点方块的基础属性
@@ -68,6 +92,9 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         // v1.6.1 问题 1：线缆形态——小核心包围盒（5/16~11/16，仿 AE 线缆核心），
         // 选中框/碰撞箱即核心大小，连接臂仅作渲染延伸（见 RenderNetworkQuantumNode）
         setBlockBounds(0.3125F, 0.3125F, 0.3125F, 0.6875F, 0.6875F, 0.6875F);
+        // v1.8.5：零光阻（仿 BlockCableBus :89-97）——非整方块 + 部件贴面渲染需要，
+        // 否则节点占位的面会把相邻方块的贴面剔除成黑洞
+        setLightOpacity(0);
     }
 
     // ==================== v1.6.1 问题 1：线缆形态渲染（非整方块） ====================
@@ -151,40 +178,53 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     }
 
     /**
-     * 右键显示节点桥接状态（T4，规划 §3「右键显示状态」）。
+     * 右键处理（T4 状态提示 + v1.8.5 部件交互/受控销毁）。
      * <p>
-     * 客户端直接返回 true（等待服务端权威消息，与服务端返回 true 保持 C08 交互一致）；
-     * 服务端以 {@link TileEntityNetworkQuantumNode#isLinked()} 为权威在线判据，离线时按
-     * {@link TileEntityNetworkQuantumNode#getOfflineReasonKey()} 给出原因提示。
+     * v1.8.5 优先级：①装有部件时先尝试命中部件交互（仿 BlockCableBus.onActivated :387-391，
+     * hitX/Y/Z 即局部坐标）；②Shift+右击且手持量子终端 → 销毁节点（弹射部件掉落后 setBlockToAir，
+     * 仿 breakBlock 链 cb.getDrops :891-908）；③状态提示（客户端直接返回 true，服务端以
+     * {@link TileEntityNetworkQuantumNode#isLinked()} 为权威在线判据，离线时按
+     * {@link TileEntityNetworkQuantumNode#getOfflineReasonKey()} 给出原因提示）。
      * 瞬态说明：连接刚断开而 20tick 维护循环尚未刷新原因缓存时（≤1 秒窗口），
      * 离线原因可能仍为 NONE，此时按通用离线键提示，避免误报在线。
      */
     @Override
     public boolean onBlockActivated(World world, int x, int y, int z, EntityPlayer player, int side, float hitX,
         float hitY, float hitZ) {
-        // v1.6.2：Shift+右击仅当手持量子终端时销毁节点（无掉落），pop 音效仿 AE 扳手回收
-        if (player.isSneaking()) {
-            ItemStack held = player.getHeldItem();
-            if (held != null && held.getItem() instanceof ItemNetworkQuantumTerminal) {
-                if (!world.isRemote) {
-                    world.setBlockToAir(x, y, z);
-                    world.playSoundEffect(
-                        x + 0.5D,
-                        y + 0.5D,
-                        z + 0.5D,
-                        "random.pop",
-                        0.2F,
-                        ((world.rand.nextFloat() - world.rand.nextFloat()) * 0.7F + 1.0F) * 2.0F);
-                    player.addChatComponentMessage(new ChatComponentTranslation("gtswn.chat.quantum.node_destroyed"));
-                }
+        TileEntity tile = world.getTileEntity(x, y, z);
+        if (tile instanceof TileEntityNetworkQuantumNode) {
+            TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) tile;
+            // v1.8.5：命中部件已处理则直接结束（部件 GUI/开关等由 AE2 部件自身接管）
+            if (node.hasParts() && node.getPartContainer()
+                .activate(player, Vec3.createVectorHelper(hitX, hitY, hitZ))) {
                 return true;
             }
-            // 潜行但手持非终端：落入下方状态提示分支，不破坏方块
+            // v1.6.2：Shift+右击仅当手持量子终端时销毁节点（本体无掉落），pop 音效仿 AE 扳手回收
+            if (player.isSneaking()) {
+                ItemStack held = player.getHeldItem();
+                if (held != null && held.getItem() instanceof ItemNetworkQuantumTerminal) {
+                    if (!world.isRemote) {
+                        // v1.8.5：部件掉落由 breakBlock 统一弹射（setBlockToAir 必经），
+                        // 此处不手动弹射，否则与 breakBlock 各掉一份翻倍
+                        world.setBlockToAir(x, y, z);
+                        world.playSoundEffect(
+                            x + 0.5D,
+                            y + 0.5D,
+                            z + 0.5D,
+                            "random.pop",
+                            0.2F,
+                            ((world.rand.nextFloat() - world.rand.nextFloat()) * 0.7F + 1.0F) * 2.0F);
+                        player
+                            .addChatComponentMessage(new ChatComponentTranslation("gtswn.chat.quantum.node_destroyed"));
+                    }
+                    return true;
+                }
+                // 潜行但手持非终端：落入下方状态提示分支，不破坏方块
+            }
         }
         if (world.isRemote) {
             return true;
         }
-        TileEntity tile = world.getTileEntity(x, y, z);
         if (!(tile instanceof TileEntityNetworkQuantumNode)) {
             return false;
         }
@@ -200,5 +240,274 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         }
         player.addChatComponentMessage(new ChatComponentTranslation(key));
         return true;
+    }
+
+    // ==================== v1.8.5：AE2 部件方块面（碰撞/选框/射线/掉落/红石/邻居） ====================
+
+    /** 取本方块 TE（类型不符/缺失返回 null，所有部件面方法共用） */
+    private TileEntityNetworkQuantumNode getNodeTE(IBlockAccess world, int x, int y, int z) {
+        TileEntity te = world.getTileEntity(x, y, z);
+        return te instanceof TileEntityNetworkQuantumNode ? (TileEntityNetworkQuantumNode) te : null;
+    }
+
+    /**
+     * 核心盒 ∪ 部件容器盒（全部为方块内局部坐标 0-1，仿 TileCableBus.getSelectedBoundingBoxesFromPool
+     * :238-241 取 ignoreConnections=false, includeFacades=true；调用方自行加 x/y/z 偏移）。
+     */
+    private List<AxisAlignedBB> getCoreAndPartBoxes(TileEntityNetworkQuantumNode node, Entity e, boolean visual) {
+        List<AxisAlignedBB> boxes = new ArrayList<>();
+        boxes.add(AxisAlignedBB.getBoundingBox(CORE_MIN, CORE_MIN, CORE_MIN, CORE_MAX, CORE_MAX, CORE_MAX));
+        for (AxisAlignedBB bb : node.getPartContainer()
+            .getSelectedBoundingBoxesFromPool(false, true, e, visual)) {
+            boxes.add(AxisAlignedBB.getBoundingBox(bb.minX, bb.minY, bb.minZ, bb.maxX, bb.maxY, bb.maxZ));
+        }
+        return boxes;
+    }
+
+    /** 把方块包围盒恢复为核心盒（构造器初值；v1.8.5 射线/选框遍历每步后调用） */
+    private void restoreCoreBounds() {
+        setBlockBounds(CORE_MIN, CORE_MIN, CORE_MIN, CORE_MAX, CORE_MAX, CORE_MAX);
+    }
+
+    /**
+     * v1.8.5：碰撞箱 = 核心盒 ∪ 部件盒（仿 AEBaseBlock.addCollisionBoxesToList :188-209）。
+     * <p>
+     * 空容器（无部件）直接走 super——与 v1.8.3 现状逐字节一致（仅核心盒）。
+     */
+    @Override
+    @SuppressWarnings("unchecked")
+    public void addCollisionBoxesToList(World world, int x, int y, int z, AxisAlignedBB mask, List output, Entity e) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node == null || !node.hasParts()) {
+            super.addCollisionBoxesToList(world, x, y, z, mask, output, e);
+            return;
+        }
+        for (AxisAlignedBB bb : getCoreAndPartBoxes(node, e, false)) {
+            AxisAlignedBB abs = AxisAlignedBB
+                .getBoundingBox(bb.minX + x, bb.minY + y, bb.minZ + z, bb.maxX + x, bb.maxY + y, bb.maxZ + z);
+            if (mask == null || mask.intersectsWith(abs)) {
+                output.add(abs);
+            }
+        }
+    }
+
+    /**
+     * v1.8.5：选框（仿 AEBaseBlock.getSelectedBoundingBoxFromPool :213-279）。
+     * <p>
+     * 客户端用玩家视线在逐盒射线上取最近命中盒作为选框（避免多盒并集撑满整格）；
+     * 空容器走 super——与 v1.8.3 现状一致（核心盒）。
+     */
+    @Override
+    @SideOnly(Side.CLIENT)
+    public AxisAlignedBB getSelectedBoundingBoxFromPool(World world, int x, int y, int z) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node == null || !node.hasParts()) {
+            return super.getSelectedBoundingBoxFromPool(world, x, y, z);
+        }
+        EntityPlayer player = Minecraft.getMinecraft().thePlayer;
+        if (player != null) {
+            LookDirection ld = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
+            AxisAlignedBB best = null;
+            double lastDist = 0.0D;
+            for (AxisAlignedBB bb : getCoreAndPartBoxes(node, player, true)) {
+                setBlockBounds(
+                    (float) bb.minX,
+                    (float) bb.minY,
+                    (float) bb.minZ,
+                    (float) bb.maxX,
+                    (float) bb.maxY,
+                    (float) bb.maxZ);
+                MovingObjectPosition r = super.collisionRayTrace(world, x, y, z, ld.getA(), ld.getB());
+                restoreCoreBounds();
+                if (r != null) {
+                    double dx = ld.getA().xCoord - r.hitVec.xCoord;
+                    double dy = ld.getA().yCoord - r.hitVec.yCoord;
+                    double dz = ld.getA().zCoord - r.hitVec.zCoord;
+                    double dist = dx * dx + dy * dy + dz * dz;
+                    if (best == null || lastDist > dist) {
+                        lastDist = dist;
+                        best = bb;
+                    }
+                }
+            }
+            if (best != null) {
+                return best.setBounds(
+                    best.minX + x,
+                    best.minY + y,
+                    best.minZ + z,
+                    best.maxX + x,
+                    best.maxY + y,
+                    best.maxZ + z);
+            }
+        }
+        // 后备（无玩家视线/无命中）：全盒并集（仿 AEBaseBlock :260-275）
+        AxisAlignedBB union = AxisAlignedBB.getBoundingBox(16.0D, 16.0D, 16.0D, 0.0D, 0.0D, 0.0D);
+        for (AxisAlignedBB bb : getCoreAndPartBoxes(node, null, false)) {
+            union.setBounds(
+                Math.min(union.minX, bb.minX),
+                Math.min(union.minY, bb.minY),
+                Math.min(union.minZ, bb.minZ),
+                Math.max(union.maxX, bb.maxX),
+                Math.max(union.maxY, bb.maxY),
+                Math.max(union.maxZ, bb.maxZ));
+        }
+        return union
+            .setBounds(union.minX + x, union.minY + y, union.minZ + z, union.maxX + x, union.maxY + y, union.maxZ + z);
+    }
+
+    /**
+     * v1.8.5：逐盒射线取最近命中（仿 AEBaseBlock.collisionRayTrace :287-333）。
+     * <p>
+     * AE2 PartPlacement.place :73 依赖宿主本方法把视线定位到具体部件面。
+     * 空容器走 super——与 v1.8.3 现状一致（核心盒射线）。遍历后恢复核心盒
+     * （而非 AE2 的满盒复位）：本方块碰撞/选框以 blockBounds 为权威，必须还原。
+     */
+    @Override
+    public MovingObjectPosition collisionRayTrace(World world, int x, int y, int z, Vec3 a, Vec3 b) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node == null || !node.hasParts()) {
+            return super.collisionRayTrace(world, x, y, z, a, b);
+        }
+        MovingObjectPosition best = null;
+        double lastDist = 0.0D;
+        for (AxisAlignedBB bb : getCoreAndPartBoxes(node, null, true)) {
+            setBlockBounds(
+                (float) bb.minX,
+                (float) bb.minY,
+                (float) bb.minZ,
+                (float) bb.maxX,
+                (float) bb.maxY,
+                (float) bb.maxZ);
+            MovingObjectPosition r = super.collisionRayTrace(world, x, y, z, a, b);
+            restoreCoreBounds();
+            if (r != null) {
+                double dx = a.xCoord - r.hitVec.xCoord;
+                double dy = a.yCoord - r.hitVec.yCoord;
+                double dz = a.zCoord - r.hitVec.zCoord;
+                double dist = dx * dx + dy * dy + dz * dz;
+                if (best == null || lastDist > dist) {
+                    lastDist = dist;
+                    best = r;
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * v1.8.5：方块被移除（挖掘/爆炸/指令）时弹射部件掉落（仿 AEBaseTileBlock.breakBlock →
+     * te.getDrops → Platform.spawnDrops 链）。节点本体仍不掉落（getDrops 保持空，现状）。
+     * vanilla 在 super.breakBlock 内才移除 TE，此时尚可读取容器。
+     */
+    @Override
+    public void breakBlock(World world, int x, int y, int z, Block block, int meta) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node != null && node.hasParts()) {
+            List<ItemStack> drops = new ArrayList<>();
+            node.getPartContainer()
+                .getDrops(drops);
+            Platform.spawnDrops(world, x, y, z, drops);
+        }
+        super.breakBlock(world, x, y, z, block, meta);
+    }
+
+    /**
+     * v1.8.5：创造中键取部件物品（仿 BlockCableBus.getPickBlock :212-225）。
+     * 未命中部件时走 super（GTNH patch 默认 null → 调用方回退到方块物品，与现状一致）。
+     */
+    @Override
+    public ItemStack getPickBlock(MovingObjectPosition target, World world, int x, int y, int z, EntityPlayer player) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node != null && node.hasParts() && target != null && target.hitVec != null) {
+            Vec3 local = target.hitVec.addVector(-x, -y, -z);
+            SelectedPart sp = node.getPartContainer()
+                .selectPart(local);
+            if (sp.part != null) {
+                return sp.part.getItemStack(PartItemStack.Pick);
+            }
+            if (sp.facade != null) {
+                return sp.facade.getItemStack();
+            }
+        }
+        return super.getPickBlock(target, world, x, y, z, player);
+    }
+
+    /** v1.8.5：节点本体永不被替换放置（部件挂节点、不占节点位） */
+    @Override
+    public boolean isReplaceable(IBlockAccess world, int x, int y, int z) {
+        return false;
+    }
+
+    /** v1.8.5：部件可能输出红石（仿 BlockCableBus.canProvidePower；空部件时 weak=0，净效果与现状一致） */
+    @Override
+    public boolean canProvidePower() {
+        return true;
+    }
+
+    @Override
+    public int isProvidingWeakPower(IBlockAccess world, int x, int y, int z, int side) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node != null && node.hasParts()) {
+            return node.getPartContainer()
+                .isProvidingWeakPower(
+                    ForgeDirection.getOrientation(side)
+                        .getOpposite());
+        }
+        return 0;
+    }
+
+    @Override
+    public int isProvidingStrongPower(IBlockAccess world, int x, int y, int z, int side) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node != null && node.hasParts()) {
+            return node.getPartContainer()
+                .isProvidingStrongPower(
+                    ForgeDirection.getOrientation(side)
+                        .getOpposite());
+        }
+        return 0;
+    }
+
+    /** v1.8.5：红石连接判定（仿 BlockCableBus.canConnectRedstone :189-199 的 side→方向映射） */
+    @Override
+    public boolean canConnectRedstone(IBlockAccess world, int x, int y, int z, int side) {
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node != null && node.hasParts()) {
+            switch (side) {
+                case -1:
+                case 4:
+                    return node.getPartContainer()
+                        .canConnectRedstone(EnumSet.of(ForgeDirection.UP, ForgeDirection.DOWN));
+                case 0:
+                    return node.getPartContainer()
+                        .canConnectRedstone(EnumSet.of(ForgeDirection.NORTH));
+                case 1:
+                    return node.getPartContainer()
+                        .canConnectRedstone(EnumSet.of(ForgeDirection.EAST));
+                case 2:
+                    return node.getPartContainer()
+                        .canConnectRedstone(EnumSet.of(ForgeDirection.SOUTH));
+                case 3:
+                    return node.getPartContainer()
+                        .canConnectRedstone(EnumSet.of(ForgeDirection.WEST));
+                default:
+                    return false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * v1.8.5：邻居变化转发部件容器（仿 BlockCableBus.onNeighborBlockChange :104-107，
+     * 含红石缓存失效与部件 onNeighborChanged）；无部件时零开销。
+     */
+    @Override
+    public void onNeighborBlockChange(World world, int x, int y, int z, Block neighbor) {
+        super.onNeighborBlockChange(world, x, y, z, neighbor);
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node != null && node.hasParts()) {
+            node.getPartContainer()
+                .onNeighborChanged();
+        }
     }
 }

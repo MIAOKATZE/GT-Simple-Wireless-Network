@@ -108,6 +108,14 @@ public class QuantumNodeHighlightRenderer {
         if (world.getTileEntity(target.blockX, target.blockY, target.blockZ) instanceof TileController) {
             return;
         }
+        // v1.8.5：指向「裸部件 cable-bus」时为换体目标——预览框画在 bus 方块本位（换体真实
+        // 落点，部件重挂后节点在该格），判定与 QuantumTerminalBusSwapHandler 拦截同源，
+        // 保证「显示预览 ⇔ 右击触发换体」；不再画到命中面外移的相邻格（那里什么都不会放）
+        if (QuantumTerminalBusSwapHandler.findSwapTargetFace(player, target.blockX, target.blockY, target.blockZ)
+            != null) {
+            drawPreviewBox(event, target.blockX, target.blockY, target.blockZ);
+            return;
+        }
         // 条件 6：放置目标点 = 命中方块沿命中面外移一格，且该位置可替换
         final ForgeDirection face = ForgeDirection.getOrientation(target.sideHit);
         final int px = target.blockX + face.offsetX;

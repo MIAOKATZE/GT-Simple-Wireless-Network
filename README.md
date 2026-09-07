@@ -1,3 +1,5 @@
+<p align="center"><img src="images/GTSWN.png" alt="GTSWN" width="836"></p>
+
 <h1 align="center">GT-Simple-Wireless-Network</h1>
 <p align="center"><strong><em>GTNH 无线电网模组</em></strong><br><strong><em>GTNH Wireless Energy Network Mod</em></strong></p>
 

@@ -12,6 +12,9 @@ import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
+import appeng.client.render.BusRenderHelper;
+import appeng.client.render.BusRenderer;
+import appeng.client.render.RenderBlocksWorkaround;
 import cpw.mods.fml.client.registry.ISimpleBlockRenderingHandler;
 import cpw.mods.fml.client.registry.RenderingRegistry;
 
@@ -96,6 +99,22 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
                 double[] b = ARM_BOUNDS[d.ordinal()];
                 renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
                 renderer.renderStandardBlock(block, x, y, z);
+            }
+        }
+        // v1.8.5：AE2 部件原生渲染（镜像 RendererCableBus.renderInWorld :40-53）——
+        // 换 BusRenderer 的 RenderBlocksWorkaround 驱动 CableRenderHelper 渲染容器内全部部件；
+        // hasParts()=false 时零开销，行为与 v1.8.3 完全一致
+        if (self instanceof TileEntityNetworkQuantumNode) {
+            TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) self;
+            if (node.hasParts()) {
+                RenderBlocksWorkaround rbw = BusRenderer.INSTANCE.getRenderer();
+                rbw.renderAllFaces = true;
+                rbw.overrideBlockTexture = renderer.overrideBlockTexture;
+                BusRenderHelper.instances.get()
+                    .setPass(0);
+                node.getPartContainer()
+                    .renderStatic(world, x, y, z);
+                rbw.renderAllFaces = false;
             }
         }
         return true;

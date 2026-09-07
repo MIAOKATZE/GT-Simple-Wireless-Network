@@ -313,19 +313,30 @@ public class ItemNetworkQuantumTerminal extends Item {
             nodeBlock.stepSound.getPitch() * 0.8F);
         TileEntity te = world.getTileEntity(x, y, z);
         if (te instanceof TileEntityNetworkQuantumNode) {
-            TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) te;
-            NBTTagCompound tag = stack.stackTagCompound;
-            node.setAnchor(
-                tag.getInteger(NBT_ANCHOR_DIM),
-                tag.getInteger(NBT_ANCHOR_X),
-                tag.getInteger(NBT_ANCHOR_Y),
-                tag.getInteger(NBT_ANCHOR_Z));
-            // AE2 标准 owner 模式（AEBaseItemBlock 放置路径会 setOwner，本路径绕过必须手动补）：
-            // 否则节点 GridNode.playerID 恒为 -1，带安全终端的网络上 securityCheck 恒失败，
-            // 连网络主人自己的网络也桥接不上
-            node.setPlacer(player);
+            // v1.8.5：锚点 + owner 写入抽取为 {@link #applyAnchorToNode}，与裸 bus 原位替换路径共用
+            applyAnchorToNode(stack, (TileEntityNetworkQuantumNode) te, player);
         }
         sendMessage(player, "gtswn.chat.quantum.node_placed");
+    }
+
+    /**
+     * 把终端绑定锚点写入量子节点并补 AE2 owner（v1.8.5 自 placeQuantumNode 抽取的公共辅助，
+     * 供 {@code PacketQuantumTerminalSwapBus} 裸 bus 原位替换路径复用，勿复制粘贴）。
+     * <p>
+     * 锚点原样写入终端绑定的 dim/xyz：跨维度放置时节点离线判定由 T4 桥接逻辑处理（D6 v1
+     * 不支持跨维度）；锚点控制器已失效时节点同样离线（D7）。本方法不做锚点有效性预校验。
+     * owner 语义：AE2 标准 owner 模式（AEBaseItemBlock 放置路径会 setOwner，绕过路径必须手动补）：
+     * 否则节点 GridNode.playerID 恒为 -1，带安全终端的网络上 securityCheck 恒失败，
+     * 连网络主人自己的网络也桥接不上。
+     */
+    public static void applyAnchorToNode(ItemStack stack, TileEntityNetworkQuantumNode node, EntityPlayer player) {
+        NBTTagCompound tag = stack.stackTagCompound;
+        node.setAnchor(
+            tag.getInteger(NBT_ANCHOR_DIM),
+            tag.getInteger(NBT_ANCHOR_X),
+            tag.getInteger(NBT_ANCHOR_Y),
+            tag.getInteger(NBT_ANCHOR_Z));
+        node.setPlacer(player);
     }
 
     // ==================== 状态判定与 NBT 工具 ====================
@@ -412,8 +423,13 @@ public class ItemNetworkQuantumTerminal extends Item {
         return stack.stackTagCompound;
     }
 
-    /** 服务端向玩家发送本地化聊天提示（仅服务端调用） */
-    private static void sendMessage(EntityPlayer player, String key, Object... args) {
+    /**
+     * 服务端向玩家发送本地化聊天提示（仅服务端调用）。
+     * <p>
+     * v1.8.5 起 public：{@code PacketQuantumTerminalSwapBus} 主线程 drain 复用同一
+     * {@code gtswn.chat.*} 风格提示（勿另建重复的 ChatComponentText 装配）。
+     */
+    public static void sendMessage(EntityPlayer player, String key, Object... args) {
         player.addChatMessage(new ChatComponentText(StatCollector.translateToLocalFormatted(key, args)));
     }
 
