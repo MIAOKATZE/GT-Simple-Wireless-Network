@@ -280,22 +280,26 @@ public class CommonProxy {
     @SuppressWarnings({ "unused" })
     public void serverStarting(FMLServerStartingEvent event) {
         event.registerServerCommand(new CommandGTSWN());
-        // BQ 任务注入：@Mod 已声明 after:betterquesting，此刻 BQ 的 default load 已同步完成；
-        // 注入器幂等 get-or-create。守卫必须在调用方：BQ 缺席时 BqQuestInjector 类链接
-        // 即会触发 BQ 类型解析，先经零 BQ 引用的 BqCompat 短路才能保证注入器类根本不加载。
-        if (BqCompat.isBqLoaded()) {
-            BqQuestInjector.inject();
-        }
     }
 
     /**
      * 服务器已启动阶段（v1.5.15 新增）。
      * <p>
      * 在此阶段所有世界已加载，可安全获取 overworld 并执行 WorldSavedData 清理。
-     * 用于清理超过 {@link Config#keepHistoryDays} 天未采样的网络信息屏历史数据集，避免内存泄漏。
+     * 用于清理超过 {@link Config#keepHistoryDays} 天未采样的网络信息屏历史数据集，避免内存泄漏；
+     * 同时是 BQ 任务注入的挂载点（见方法体内说明）。
      */
     @SuppressWarnings({ "unused" })
     public void serverStarted(FMLServerStartedEvent event) {
+        // BQ 任务注入（FMLServerStartedEvent 时点，专用服兼容）：整波 ServerStarting——含 BQ
+        // default load 与专用服（GTNH 2.9.0-beta-3：BQ 3.8.84 + dreamcraft）在更晚波次因
+        // "Modpack has been updated" 触发的整库重载——已全部结束，注入不再被同波次覆盖；
+        // 此刻 tick 未启动、无玩家登录，进度回填安全。守卫必须在调用方：BQ 缺席时
+        // BqQuestInjector 类链接即会触发 BQ 类型解析，先经零 BQ 引用的 BqCompat 短路
+        // 才能保证注入器类根本不加载。
+        if (BqCompat.isBqLoaded()) {
+            BqQuestInjector.inject();
+        }
         // 仅在配置启用清理时执行（keepHistoryDays=0 表示永不清理）
         if (Config.keepHistoryDays <= 0) {
             return;

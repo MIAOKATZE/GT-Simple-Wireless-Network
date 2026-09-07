@@ -49,26 +49,34 @@ import cpw.mods.fml.common.Loader;
  * 且只在 {@link BqCompat#isBqLoaded()} 为 true 时才会被类加载
  * （BQ 缺席环境下本类永不加载，无需 @Optional 字节码剥离）。
  * <p>
- * 挂载点：CommonProxy.serverStarting。@Mod 声明 after:betterquesting
- * 保证 BQ 的 default load（clear 后从 config 重载）已同步完成，
- * 本注入器在其后做幂等追加，不会被清库。
- * <p>
- * 流程（照抄 BQ 官方装载路径 QuestCommandDefaults.load 的同构形状）：
- * <ol>
- * <li>读 assets/gtswn/bqquests/index.json 清单（规避 1.7.10 jar 目录枚举）</li>
- * <li>逐文件 Gson 解析 → NBTConverter.JSONtoNBT_Object(format=true)</li>
- * <li>任务与任务线幂等 get-or-create 装载（get(id)==null 才 new + readFromNBT）</li>
- * <li>QuestLineEntry 挂线（未挂才 put）与 QuestLineDatabase.setOrderIndex</li>
- * <li>版本戳对账（世界目录 gtswn-injected.json vs Tags.VERSION）：不一致时执行
- * 「定义刷新」——快照进度→重读定义→merge 回填，完成/领取状态保留，
- * 挂线坐标同步替换；老世界无版本戳视为待升级刷一次。
- * 由此实现「新任务覆盖老任务」：发新版只需替换 jar，玩家免手动迁移</li>
- * <li>剪枝（无条件执行）：线上存在但 index.json 清单中已删除的任务，摘线并移出
- * 任务数据库——删除操作同样自动传播到所有世界</li>
- * <li>进度回填：QuestProgress 目录逐玩家 merge=true 重放（对抗 default load
- * 对"库内不存在任务"进度的静默丢弃，见设计文档第 2 节）</li>
- * <li>同步四连（NetSettingSync / NetQuestSync.quickSync / NetChapterSync / markDirty）</li>
- * </ol>
+ * 挂载点：CommonProxy.serverStarted（FMLServerStartedEvent）。专用服场景
+ * （GTNH 2.9.0-beta-3：BQ 3.8.84 + dreamcraft）中，dreamcraft 会在同波次更晚的
+ * FMLServerStartingEvent 因 "Modpack has been updated" 整库重载默认任务库，
+ * serverStarting 波次内的注入会被整体覆盖；FMLServerStartedEvent 时整波
+ * ServerStarting（含 BQ default load 与任何第三方整库重载）已结束、tick 未启动、
+ * 无玩家登录，且 BQ 全源码零 FMLServerStartedEvent 订阅，该时点无清库者。
+ * 
+ * @Mod 的 after:betterquesting 保留为纯排序纵深防御。
+ *      <p>
+ *      流程（照抄 BQ 官方装载路径 QuestCommandDefaults.load 的同构形状）：
+ *      <ol>
+ *      <li>读 assets/gtswn/bqquests/index.json 清单（规避 1.7.10 jar 目录枚举）</li>
+ *      <li>逐文件 Gson 解析 → NBTConverter.JSONtoNBT_Object(format=true)</li>
+ *      <li>任务与任务线幂等 get-or-create 装载（get(id)==null 才 new + readFromNBT）</li>
+ *      <li>QuestLineEntry 挂线（未挂才 put）与 QuestLineDatabase.setOrderIndex（初排序，
+ *      最终序由下方前排有序收尾统一覆盖）</li>
+ *      <li>版本戳对账（世界目录 gtswn-injected.json vs Tags.VERSION）：不一致时执行
+ *      「定义刷新」——快照进度→重读定义→merge 回填，完成/领取状态保留，
+ *      挂线坐标同步替换；老世界无版本戳视为待升级刷一次。
+ *      由此实现「新任务覆盖老任务」：发新版只需替换 jar，玩家免手动迁移</li>
+ *      <li>剪枝（无条件执行）：线上存在但 index.json 清单中已删除的任务，摘线并移出
+ *      任务数据库——删除操作同样自动传播到所有世界</li>
+ *      <li>进度回填：QuestProgress 目录逐玩家 merge=true 重放（对抗 default load
+ *      对"库内不存在任务"进度的静默丢弃，见设计文档第 2 节）</li>
+ *      <li>前排有序收尾（条款10）：MIAO 常量表 gtsr→gtswn→gtit 对库内存在线依序
+ *      setOrderIndex(i) 覆盖为最终序，必须先于同步四连执行</li>
+ *      <li>同步四连（NetSettingSync / NetQuestSync.quickSync / NetChapterSync / markDirty）</li>
+ *      </ol>
  */
 public final class BqQuestInjector {
 
@@ -78,10 +86,24 @@ public final class BqQuestInjector {
     /** 世界侧版本戳文件名（位于 BQ_Settings.curWorldDir 下），记录最近一次注入所用定义版本 */
     private static final String STAMP_FILE_NAME = "gtswn-injected.json";
 
+    /**
+     * MIAO 任务包前排有序表（BQ任务整合规范 §6 条款10，2026-09-07 拍板）：
+     * 线 UUID 高 32 位 pack 标识按展示顺序 gtsr→gtswn→gtit。注入收尾对表内
+     * 库内存在的线依序 {@code setOrderIndex(i)}（i=存在线序位，缺线无空洞），
+     * 幂等且与跨 mod 注入次序无关（每个注入器收尾都跑全表，最后执行者定最终序）；
+     * 未登记 orderIndex 的线沉底（QuestLineDatabase 缺省 -1）。禁用
+     * {@code setOrderedEntries}（其首行整库 clear）。
+     */
+    private static final long[] FRONT_ROW_HIGH_PREFIXES = { 0x47545352L, // "GTSR"
+        0x4754574EL, // "GTWN"（本包）
+        0x47544954L // "GTIT"
+    };
+
     private BqQuestInjector() {}
 
     /**
-     * 任务注入入口（serverStarting，BQ default load 之后）。
+     * 任务注入入口（serverStarted，整波 ServerStarting 含 BQ default load 与任何
+     * 第三方整库重载已结束之后）。
      * <p>
      * 双哨兵加固：BqCompat 探测标志 + Loader.isModLoaded 二次确认；
      * {@code BQ_Settings.curWorldDir != null} 表示 BQ 已完成世界装载流程，
@@ -108,6 +130,7 @@ public final class BqQuestInjector {
                 return;
             }
             int questCount = 0;
+            int skippedCount = 0;
             int refreshedCount = 0;
             int prunedCount = 0;
             // 版本戳对账：版本变化（含老世界无戳）→ 刷新全部已存在任务的定义与挂线坐标
@@ -118,10 +141,14 @@ public final class BqQuestInjector {
                         .getAsJsonObject(),
                     refresh);
                 questCount += r[0];
-                refreshedCount += r[1];
-                prunedCount += r[2];
+                skippedCount += r[1];
+                refreshedCount += r[2];
+                prunedCount += r[3];
             }
             restoreProgress();
+            // 前排有序收尾（规范 §6 条款10）：覆盖装载阶段的初排序为 MIAO 前排最终序；
+            // 必须在同步四连之前执行，客户端顺序经 NetChapterSync order 列表自动镜像
+            int frontRowCount = applyFrontRowOrder();
             if (refresh) {
                 writeStamp(Tags.VERSION);
             }
@@ -130,13 +157,18 @@ public final class BqQuestInjector {
             NetQuestSync.quickSync(null, true, true);
             NetChapterSync.sendSync(null, null);
             SaveLoadHandler.INSTANCE.markDirty();
+            // 注入计数日志（条款9）：正常热重启应全为跳过；新建>0 即疑似被第三方
+            // 整库重载覆盖后由本注入器自愈重建（专用服 dreamcraft 重载场景的判定锚点）
             GTSimpleWirelessNetwork.LOG.info(
-                "[BQ] 任务注入完成：{} 条任务线，{} 个新任务，{} 个定义刷新{}，{} 个已删除任务清理",
+                "[BQ] 任务注入完成：{} 条任务线，任务 新建 {}/跳过 {}/刷新 {}/删除 {}，前排有序 {} 条{}{}",
                 lines.size(),
                 questCount,
+                skippedCount,
                 refreshedCount,
-                refresh ? "（对齐版本 " + Tags.VERSION + "）" : "",
-                prunedCount);
+                prunedCount,
+                frontRowCount,
+                refresh ? "，定义对齐版本 " + Tags.VERSION : "",
+                questCount > 0 ? "（新建>0：疑似被第三方整库重载覆盖后自愈重建）" : "");
         } catch (Throwable t) {
             GTSimpleWirelessNetwork.LOG.error("[BQ] 任务注入失败（不影响 GTSWN 主功能）", t);
         }
@@ -159,7 +191,7 @@ public final class BqQuestInjector {
      *
      * @param lineSpec index.json 中该线的声明对象
      * @param refresh  是否对已存在任务执行定义刷新
-     * @return int[]{本次新建任务数, 本次刷新定义任务数, 本次剪枝删除任务数}
+     * @return int[]{本次新建任务数, 本次跳过任务数, 本次刷新定义任务数, 本次剪枝删除任务数}
      */
     private static int[] loadQuestLine(JsonObject lineSpec, boolean refresh) {
         UUID lineId = new UUID(
@@ -178,7 +210,7 @@ public final class BqQuestInjector {
                     .getAsString());
             if (lineTag == null) {
                 GTSimpleWirelessNetwork.LOG.warn("[BQ] 任务线定义文件缺失，跳过该线: {}", lineSpec.get("lineFile"));
-                return new int[] { 0, 0, 0 };
+                return new int[] { 0, 0, 0, 0 };
             }
             line = new QuestLine();
             line.readFromNBT(lineTag);
@@ -189,6 +221,7 @@ public final class BqQuestInjector {
         QuestLineDatabase.INSTANCE.setOrderIndex(lineId, orderIndex);
 
         int created = 0;
+        int skipped = 0;
         int refreshed = 0;
         Set<UUID> expected = new HashSet<>();
         JsonArray entries = lineSpec.getAsJsonArray("entries");
@@ -214,6 +247,9 @@ public final class BqQuestInjector {
                 // 版本升级：重读定义（名称/描述/前置/奖励/任务），玩家进度保留
                 refreshDefinition(existing, questTag);
                 refreshed++;
+            } else {
+                // 幂等命中：定义已存在且无需刷新，跳过不重读（重读会 reset 任务级进度）
+                skipped++;
             }
             // 任务必须挂线（/bq_admin purge_hidden_quests 会清未挂线任务）：未挂才 put；
             // 已挂线且刷新中则替换条目以同步编辑器坐标
@@ -255,7 +291,7 @@ public final class BqQuestInjector {
             GTSimpleWirelessNetwork.LOG
                 .info("[BQ] 任务线 {} 装载：线新建={}，新任务={}，刷新定义={}", lineId, lineCreated, created, refreshed);
         }
-        return new int[] { created, refreshed, pruned };
+        return new int[] { created, skipped, refreshed, pruned };
     }
 
     /**
@@ -345,6 +381,40 @@ public final class BqQuestInjector {
                 GTSimpleWirelessNetwork.LOG.warn("[BQ] 进度回填跳过无法解析的文件: {}", f.getName(), t);
             }
         }
+    }
+
+    /**
+     * 前排有序规则收尾（BQ任务整合规范 §6 条款10）：按 {@link #FRONT_ROW_HIGH_PREFIXES}
+     * 顺序对任务线库中实际存在的线依序 {@code setOrderIndex(i)}（i=存在线序位），
+     * 覆盖装载阶段 index.json 的初排序，收敛为 MIAO 前排最终序。
+     *
+     * @return 本次实际重排的线数
+     */
+    private static int applyFrontRowOrder() {
+        int applied = 0;
+        for (long prefix : FRONT_ROW_HIGH_PREFIXES) {
+            UUID lineId = findLineIdByHighPrefix(prefix);
+            if (lineId != null) {
+                QuestLineDatabase.INSTANCE.setOrderIndex(lineId, applied);
+                applied++;
+            }
+        }
+        return applied;
+    }
+
+    /**
+     * 在任务线库中查找高 32 位等于指定 pack 标识的线
+     * （线 UUID 高位约定为 ASCII4&lt;&lt;32，如 gtswn=0x4754574E00000000）。
+     *
+     * @return 命中的线 UUID，库内不存在返回 null
+     */
+    private static UUID findLineIdByHighPrefix(long highPrefix) {
+        for (UUID id : QuestLineDatabase.INSTANCE.keySet()) {
+            if ((id.getMostSignificantBits() >>> 32) == highPrefix) {
+                return id;
+            }
+        }
+        return null;
     }
 
     /**
