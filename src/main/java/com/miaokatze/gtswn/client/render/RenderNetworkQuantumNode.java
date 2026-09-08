@@ -1,5 +1,8 @@
 package com.miaokatze.gtswn.client.render;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+
 import net.minecraft.block.Block;
 import net.minecraft.client.renderer.RenderBlocks;
 import net.minecraft.client.renderer.Tessellator;
@@ -11,10 +14,12 @@ import net.minecraftforge.common.util.ForgeDirection;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.client.render.BusRenderHelper;
 import appeng.client.render.BusRenderer;
 import appeng.client.render.RenderBlocksWorkaround;
+import appeng.parts.CableBusContainer;
 import cpw.mods.fml.client.registry.ISimpleBlockRenderingHandler;
 import cpw.mods.fml.client.registry.RenderingRegistry;
 
@@ -43,6 +48,32 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
 
     /** 由 {@link #register()} 赋值；默认 -1 代表未注册（服务端不会走到渲染路径） */
     private static int renderId = -1;
+
+    /**
+     * v1.8.6：AE2 部件原生渲染总开关。renderStatic 签名探针全部未命中、或渲染入口类抛
+     * LinkageError（宿主 AE2U 过老）时永久关闭并 log-once；关闭后核心 + 连接臂照常渲染
+     * （= v1.8.3 行为），任何 AE2U 版本下不再产生崩溃面。
+     */
+    private static volatile boolean ae2PartRenderEnabled = true;
+
+    /** v1.8.6：AE2 部件静态渲染抛异常时仅记首帧（避免区块重建期刷屏；不据此永久关闭渲染） */
+    private static volatile boolean renderExceptionLogged = false;
+
+    /** v1.8.6：反射解析缓存的 renderStatic（探针命中后恒定；volatile 保证跨区块构建线程可见） */
+    private static volatile Method renderStaticMethod;
+
+    /**
+     * v1.8.6：{@code CableBusContainer.renderStatic} 候选签名探针序：
+     * ① 4 参 (IBlockAccess,double,double,double)：仅 AE2U rv3-beta-1050+（GTNH 2.9.0 beta-3 基线）；
+     * ② 3 参 (double,double,double)：rv3-beta-1000 及更早（内部经 CableRenderHelper +
+     * Minecraft.getMinecraft().theWorld，与该版本 AE2 原生 RendererCableBus 渲染路径逐字等价）。
+     */
+    private static final Class<?>[][] RENDER_STATIC_SIGNATURES = {
+        // spotless:off
+        { IBlockAccess.class, double.class, double.class, double.class },
+        { double.class, double.class, double.class },
+        // spotless:on
+    };
 
     /** 核心包围盒边界（5/16 ~ 11/16，与 BlockNetworkQuantumNode 构造器中的 setBlockBounds 一致） */
     private static final double C0 = 0.3125D;
@@ -103,19 +134,14 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
         }
         // v1.8.5：AE2 部件原生渲染（镜像 RendererCableBus.renderInWorld :40-53）——
         // 换 BusRenderer 的 RenderBlocksWorkaround 驱动 CableRenderHelper 渲染容器内全部部件；
-        // hasParts()=false 时零开销，行为与 v1.8.3 完全一致
-        if (self instanceof TileEntityNetworkQuantumNode) {
-            TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) self;
-            if (node.hasParts()) {
-                RenderBlocksWorkaround rbw = BusRenderer.INSTANCE.getRenderer();
-                rbw.renderAllFaces = true;
-                rbw.overrideBlockTexture = renderer.overrideBlockTexture;
-                BusRenderHelper.instances.get()
-                    .setPass(0);
-                node.getPartContainer()
-                    .renderStatic(world, x, y, z);
-                rbw.renderAllFaces = false;
-            }
+        // hasParts()=false 时零开销，行为与 v1.8.3 完全一致。
+        // v1.8.6：4 参 renderStatic(IBlockAccess,double,double,double) 仅 AE2U rv3-beta-1050+ 存在，
+        // rv3-beta-1000（玩家 GTNH 2.9.5 实机）只有 3 参变体，直调即 NoSuchMethodError 客户端崩溃
+        // （crash-2026-09-08_09.48.53：容器含部件的节点构建区块网格时炸在 ：116）——改为反射签名
+        // 探针 + LinkageError 兜底：任一 AE2U 版本最坏降级为不画部件（= v1.8.3 行为），绝不崩溃。
+        if (self instanceof TileEntityNetworkQuantumNode && ae2PartRenderEnabled
+            && ((TileEntityNetworkQuantumNode) self).hasParts()) {
+            renderPartsReflective(world, x, y, z, (TileEntityNetworkQuantumNode) self, renderer);
         }
         return true;
     }
@@ -163,6 +189,78 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
     @Override
     public boolean shouldRender3DInInventory(int modelId) {
         return true;
+    }
+
+    /**
+     * v1.8.6：部件原生渲染主体（v1.8.5 直调块的兼容安全版）。
+     * <p>
+     * 整体捕获 {@link LinkageError}：若宿主 AE2U 更老致 BusRenderer/RenderBlocksWorkaround
+     * 成员缺失（beta-1000 实机已被崩溃堆栈证明可达，此处仅防更早世代漂移），永久关闭部件渲染
+     * 并 log-once。AE2 部件自身渲染异常（{@link InvocationTargetException}）按帧跳过、仅记首帧
+     * ——其在 AE2 原生线缆总线上可独立复现观察，不在本 mod 崩溃面上掩盖；finally 恢复共享
+     * rbw.renderAllFaces，防止异常路径污染 AE2 后续总线渲染状态。
+     */
+    private static void renderPartsReflective(IBlockAccess world, int x, int y, int z,
+        TileEntityNetworkQuantumNode node, RenderBlocks renderer) {
+        try {
+            RenderBlocksWorkaround rbw = BusRenderer.INSTANCE.getRenderer();
+            rbw.renderAllFaces = true;
+            rbw.overrideBlockTexture = renderer.overrideBlockTexture;
+            BusRenderHelper.instances.get()
+                .setPass(0);
+            try {
+                invokeRenderStatic(node.getPartContainer(), world, x, y, z);
+            } finally {
+                rbw.renderAllFaces = false;
+            }
+        } catch (LinkageError e) {
+            ae2PartRenderEnabled = false;
+            GTSimpleWirelessNetwork.LOG.warn("[量子节点] AE2 部件渲染类不兼容，部件渲染永久降级关闭（核心与连接臂不受影响）", e);
+        } catch (InvocationTargetException e) {
+            if (!renderExceptionLogged) {
+                renderExceptionLogged = true;
+                GTSimpleWirelessNetwork.LOG.warn("[量子节点] AE2 部件静态渲染异常（后续同类静默跳过；核心与连接臂不受影响）", e.getCause());
+            }
+        }
+    }
+
+    /**
+     * v1.8.6：反射分发 {@code CableBusContainer.renderStatic}。
+     * <p>
+     * 首次调用按 {@link #RENDER_STATIC_SIGNATURES} 探针序解析并静态缓存；两签名皆无
+     * （未知 AE2U 版本）时永久关闭部件渲染并 log-once。多区块构建线程并发解析幂等
+     * （getMethod 结果恒定，volatile 回写保证可见）。{@code setAccessible(true)} 后仍拒访
+     * 属正常运行不可达，防御性记录。
+     */
+    private static void invokeRenderStatic(CableBusContainer container, IBlockAccess world, int x, int y, int z)
+        throws InvocationTargetException {
+        Method method = renderStaticMethod;
+        if (method == null) {
+            for (Class<?>[] signature : RENDER_STATIC_SIGNATURES) {
+                try {
+                    method = CableBusContainer.class.getMethod("renderStatic", signature);
+                    method.setAccessible(true);
+                    break;
+                } catch (NoSuchMethodException ignored) {
+                    // 尝试下一候选签名
+                }
+            }
+            if (method == null) {
+                ae2PartRenderEnabled = false;
+                GTSimpleWirelessNetwork.LOG.warn("[量子节点] AE2U 无可识别的 CableBusContainer.renderStatic 签名，部件渲染降级关闭");
+                return;
+            }
+            renderStaticMethod = method;
+        }
+        try {
+            if (method.getParameterTypes().length == 4) {
+                method.invoke(container, world, (double) x, (double) y, (double) z);
+            } else {
+                method.invoke(container, (double) x, (double) y, (double) z);
+            }
+        } catch (IllegalAccessException e) {
+            GTSimpleWirelessNetwork.LOG.warn("[量子节点] renderStatic 反射调用被拒绝", e);
+        }
     }
 
     @Override
