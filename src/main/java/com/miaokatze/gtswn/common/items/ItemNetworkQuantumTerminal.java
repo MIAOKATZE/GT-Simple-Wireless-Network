@@ -296,8 +296,10 @@ public class ItemNetworkQuantumTerminal extends Item {
     /**
      * 放置量子节点（手势 4 主体）：setBlock → 写 TE 锚点 → 提示。
      * <p>
-     * 锚点原样写入终端绑定的 dim/xyz：跨维度放置时节点离线判定由 T4 桥接逻辑处理（D6 v1
-     * 不支持跨维度）；锚点控制器已失效时节点同样离线（D7）。本方法不做锚点有效性预校验。
+     * 锚点原样写入终端绑定的 dim/xyz：跨维度放置自 v1.6.10 起已支持——节点侧按锚点维度解析
+     * world（tryConnect 经 DimensionManager.getWorld(anchorDim)），锚点维度未加载或其区块未加载
+     * 时节点离线（ANCHOR_UNREACHABLE，自然加载策略，非跨维度限制）；锚点控制器已失效时节点同样
+     * 离线（D7）。本方法不做锚点有效性预校验。
      */
     private void placeQuantumNode(ItemStack stack, EntityPlayer player, World world, int x, int y, int z) {
         Block nodeBlock = BlockRegistrar.networkQuantumNode;
@@ -323,8 +325,10 @@ public class ItemNetworkQuantumTerminal extends Item {
      * 把终端绑定锚点写入量子节点并补 AE2 owner（v1.8.5 自 placeQuantumNode 抽取的公共辅助，
      * 供 {@code PacketQuantumTerminalSwapBus} 裸 bus 原位替换路径复用，勿复制粘贴）。
      * <p>
-     * 锚点原样写入终端绑定的 dim/xyz：跨维度放置时节点离线判定由 T4 桥接逻辑处理（D6 v1
-     * 不支持跨维度）；锚点控制器已失效时节点同样离线（D7）。本方法不做锚点有效性预校验。
+     * 锚点原样写入终端绑定的 dim/xyz：跨维度放置自 v1.6.10 起已支持——节点侧按锚点维度解析
+     * world（tryConnect 经 DimensionManager.getWorld(anchorDim)），锚点维度未加载或其区块未加载
+     * 时节点离线（ANCHOR_UNREACHABLE，自然加载策略，非跨维度限制）；锚点控制器已失效时节点同样
+     * 离线（D7）。本方法不做锚点有效性预校验。
      * owner 语义：AE2 标准 owner 模式（AEBaseItemBlock 放置路径会 setOwner，绕过路径必须手动补）：
      * 否则节点 GridNode.playerID 恒为 -1，带安全终端的网络上 securityCheck 恒失败，
      * 连网络主人自己的网络也桥接不上。
