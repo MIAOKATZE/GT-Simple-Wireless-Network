@@ -19,7 +19,7 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * 瞬时 EU/t、平均 EU/t（v1.7.2 宿主「显示配方」开启时该两列区临时替换为单条配方行——
  * 输入侧前2项 " → " 输出侧前2项，灰字 ellipsis，排序仍按数值——排序在宿主侧基于 Entry
  * 原始字段完成）、位置 {@code dim(x,y,z)}、行右侧传送小按钮
- * {@code ✦N}（N={@code Config.deviceTeleportXPCost}，客户端经验等级不足时红字）。
+ * {@code ✦N}（N={@code Config.deviceTeleportXPCost}，0=免费时只显示图标无数字，经验不足时红字）。
  * v1.7.2 全行文字加粗 §l（{@code applyBold} 与既有 § 颜色码共存，ellipsis 去码截断防花屏）。
  * <p>
  * 交互（UI 只发包不直改服务端权威数据）：点击传送按钮 → 宿主 sendTeleport（包 10 action 3）；
@@ -233,16 +233,16 @@ class GuiDeviceEntryList {
         String posText = entry.dim + "(" + entry.x + "," + entry.y + "," + entry.z + ")";
         font.drawString(applyBold(ellipsis(font, posText, POS_WIDTH)), x + COL_POS_X, textY, GtswnGuiPalette.TEXT_BODY);
 
-        // 传送按钮（仅视觉，点击由 mouseClicked 处理）：✦N，N=传送经验消耗；
+        // 传送按钮（仅视觉，点击由 mouseClicked 处理）：✦N，N=传送经验消耗；配置 0=免费时只画 ✦ 图标不显示数字；
         // 客户端经验等级足够=绿字，不足=红字（服务端动作队列仍会权威复查）
         int btnX = x + TP_BTN_X;
         int btnY = y + 3;
         int btnH = slotHeight - 6;
         GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.CHIP_NORMAL, 4, btnX, btnY, TP_BTN_W, btnH, host.guiZLevel());
-        String tpText = "\u2726" + host.teleportCost();
+        int tpCost = host.teleportCost();
+        String tpText = tpCost > 0 ? "\u2726" + tpCost : "\u2726";
         int tpW = font.getStringWidth(tpText);
-        int tpColor = host.clientPlayerLevel() >= host.teleportCost() ? GtswnGuiPalette.STATE_ONLINE
-            : GtswnGuiPalette.STATE_OFFLINE;
+        int tpColor = host.clientPlayerLevel() >= tpCost ? GtswnGuiPalette.STATE_ONLINE : GtswnGuiPalette.STATE_OFFLINE;
         font.drawString(applyBold(tpText), btnX + (TP_BTN_W - tpW) / 2, btnY + 3, tpColor);
     }
 

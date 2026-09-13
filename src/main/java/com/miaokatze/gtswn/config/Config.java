@@ -157,9 +157,10 @@ public class Config {
     public static int deviceSampleIntervalSeconds = 10;
 
     // 设备信息终端传送经验等级消耗 / Device info terminal teleport XP level cost
-    // 从终端列表传送到机器位置时扣除的经验等级。设为下限 1 仍会消耗。
-    // XP levels deducted when teleporting to a machine from the terminal list. Minimum 1 still costs levels.
-    // 默认 3，范围 1~1000 / Default 3, range 1-1000
+    // 从终端列表传送到机器位置时扣除的经验等级。0 = 传送免费，GUI 传送按钮只显示图标不显示数字。
+    // XP levels deducted when teleporting to a machine from the terminal list. 0 = free,
+    // the GUI teleport button then shows the icon only, without the number.
+    // 默认 3，范围 0~1000 / Default 3, range 0-1000
     public static int deviceTeleportXPCost = 3;
 
     // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
@@ -219,10 +220,11 @@ public class Config {
             "deviceTeleportXPCost",
             Configuration.CATEGORY_GENERAL,
             deviceTeleportXPCost,
-            1,
+            0,
             1000,
             "设备信息终端传送经验等级消耗 / Device info terminal teleport XP level cost\n"
-                + "默认 3，范围 1~1000 / Default 3, range 1-1000");
+                + "默认 3，范围 0~1000；0 = 传送免费且 GUI 按钮只显示图标 / Default 3, range 0-1000; "
+                + "0 = free, icon-only button");
 
         // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
         deviceTerminalMaxMachines = configuration.getInt(

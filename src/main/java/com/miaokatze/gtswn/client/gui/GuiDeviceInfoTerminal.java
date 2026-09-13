@@ -780,7 +780,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         }
     }
 
-    /** @return 传送按钮经验消耗（Config.deviceTeleportXPCost；服务端动作队列仍权威复查） */
+    /** @return 传送按钮经验消耗（Config.deviceTeleportXPCost，0=免费且按钮只显示图标；服务端动作队列仍权威复查） */
     int teleportCost() {
         return Config.deviceTeleportXPCost;
     }
