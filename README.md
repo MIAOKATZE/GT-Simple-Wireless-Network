@@ -7,8 +7,8 @@
   <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg"></a>
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
-  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1&2&3" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1%262-orange.svg"></a>
-  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.8.3" src="https://img.shields.io/badge/Release-1.8.3-green.svg"></a>
+  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta-1&2&3" src="https://img.shields.io/badge/GTNH-2.9.0%20beta--1%262%263-orange.svg"></a>
+  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.8.8" src="https://img.shields.io/badge/Release-1.8.8-green.svg"></a>
 </p>
 
 一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和链路终端覆盖板（能源/动力）——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
@@ -29,7 +29,7 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 | 2.9.0 beta-1&2 | 1.0.0~1.7.25| ✔️ |
 | 2.8.4        | 0.2.0  |        ❌️        |
 
-当前版本 / Current release：**1.8.3** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
+当前版本 / Current release：**1.8.8** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
 
 ***
 
@@ -149,7 +149,7 @@ Both the **Wireless Energy Monitor** (block) and **Portable Wireless Network Mon
 
 A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
 
-- **显形扫描反馈 / Reveal Scan Feedback**: 显形扫描完成后会在聊天框提示显现的节点数量；未发现节点时提示“未发现”。/ After a reveal scan completes, the chat reports the number of nodes revealed; if none are found, it reports “none found”.
+- **显形扫描反馈 / Reveal Scan Feedback**: 手持链路终端 **Alt+右键** 触发显形扫描（v1.7.23 起，替代旧版长按蓄力），立即扫描周围链路节点并穿墙线框显示 60 秒；完成后会在聊天框提示显现的节点数量，未发现节点时提示“未发现”。/ Hold the link terminal and press **Alt+right-click** to trigger the reveal scan (since v1.7.23, replacing the old hold-to-charge gesture) — nearby nodes are revealed immediately as wall-penetrating wireframes for 60 seconds; after it completes, the chat reports the number of nodes revealed, or “none found”.
 - **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
 
 <p align="center"><img src="images/Portable_Wireless_Network_Tap_E.png" alt="能源模式九宫格辅助线 / Grid highlight (Energy mode)" width="200"><img src="images/Portable_Wireless_Network_Tap_P.png" alt="动力模式九宫格辅助线 / Grid highlight (Power mode)" width="200"><br><em>九宫格辅助线 / Grid Highlight</em></p>
@@ -229,9 +229,9 @@ As of v1.6.9, the GUI is streamlined into a compact layout (120×92) showing onl
 
 ### 过载保护 / Overload Protection
 
-当量子节点带入的频道总数超过控制器结构容量（`(n×6 − sharedFaces) × 32`）时，整个控制器结构 **TNT 级爆炸**；达到 95% 阈值时向节点放置者发送聊天警告。
+当量子节点带入的频道总数超过控制器结构容量（`(n×6 − sharedFaces) × 32`）时，先启动 **3 分钟宽限倒计时**（v1.6.19 起，剩余 3/2/1 分钟与 10 秒处各公告一次，期间频道恢复即自动取消）；到期仍超限，整个控制器结构才会 **TNT 级爆炸**；达到 95% 阈值时向节点放置者发送聊天警告。
 
-When the total channels brought in by Quantum Nodes exceed the controller structure capacity (`(n×6 − sharedFaces) × 32`), the entire structure **detonates in a TNT-level explosion**; a chat warning is sent to the node's placer at the 95% threshold.
+When the total channels brought in by Quantum Nodes exceed the controller structure capacity (`(n×6 − sharedFaces) × 32`), a **3-minute grace countdown** starts first (since v1.6.19, announced once each at 3/2/1 minutes and 10 seconds remaining, and auto-cancelled if channels recover); only when it expires while still overloaded does the entire structure **detonate in a TNT-level explosion**. A chat warning is sent to the node's placer at the 95% threshold.
 
 ### 量子化控制器强化 / Hardened Controller
 
@@ -253,7 +253,7 @@ A handheld GT machine monitor (**implemented, under active iteration**): bind an
 |---|---|
 | 右击可工作机器 / Right-click a working machine | 绑定到本终端（放置机器时背包含终端自动绑定 / auto-bound on placement if a terminal is in the placer's inventory） |
 | 右击空气 / Right-click air | 打开终端界面 / Open the terminal GUI |
-| Shift+右击（机器/空气均可）/ Shift+right-click (machine or air) | 全域扫描开关（20 秒倒计时可取消；团队 = GTNHLib Team 管理员/官员/成员并集）/ Team-wide scan toggle (20s countdown, cancellable; team = GTNHLib Team owners/officers/members) |
+| Shift+右击（机器/空气均可）/ Shift+right-click (machine or air) | 全域扫描开关（5 秒倒计时可取消；团队 = GTNHLib Team 管理员/官员/成员并集）/ Team-wide scan toggle (5s countdown, cancellable; team = GTNHLib Team owners/officers/members) |
 | Ctrl+点击条目 / Ctrl+click a row | 远程解绑（无确认）/ Remote unbind (no confirmation) |
 | 点击行内 ✦ 按钮 / Click the ✦ button on a row | 传送到机器（消耗经验等级，3 秒冷却）/ Teleport to the machine (costs XP levels, 3s cooldown) |
 
