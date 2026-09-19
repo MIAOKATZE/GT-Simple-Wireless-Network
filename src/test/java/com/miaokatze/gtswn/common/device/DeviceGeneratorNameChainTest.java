@@ -6,15 +6,21 @@ import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 /**
- * 发电白名单名称链谓词纯 JVM 单测（v1.8.9 S6）：直测 package-private
- * {@link DeviceMachineTypes#nameChainHitsGenerator(Class)}。
+ * 发电白名单名称链谓词纯 JVM 单测：直测 package-private
+ * {@link DeviceMachineTypes#nameChainHitsGenerator(Class)} 的全部判定分支
+ * （12 包含 / 12 排除 / 继承链命中 / 排除优先 / null / 深度上限）。
+ * <p>
+ * 【为何不含符号层闸门用例】长功率符号层的可信条件是<b>结构前置条件</b>
+ * （正 {@code lEUt} 须机器结构含动态仓，见 {@code DeviceMachineTypes} 类注释），
+ * 该判定位于 {@code DeviceSampleScheduler.readEuFlow} 的多方块分支，入参是真实
+ * {@code IMetaTileEntity} / {@code MTEMultiBlockBase}，需要 Minecraft 与 GT 类加载，
+ * 本套纯 JVM 单测无法覆盖（limited 项，改由实机验证）。
  * <p>
  * 【测试路线选择】桩类为测试文件内的私有静态嵌套类，simple name 与白名单/排除集
  * 条目精确相等（嵌套类 {@code getSimpleName()} 即声明名），不 extends 任何真实
  * MTE——真实基类（MTEMultiBlockBase 等）的上溯链验证需要 MC 类加载参与，且谓词
  * 逻辑只依赖 simple name 与 {@code getSuperclass()} 形状，与桩的实际父类无关；
- * 因此以纯名称链入口覆盖全部判定分支（包含命中 / 继承链命中 / 排除命中 /
- * 排除优先于包含 / null / 深度上限），成本最低且真实触达判定代码。
+ * 因此以纯名称链入口覆盖全部判定分支，成本最低且真实触达判定代码。
  * 谓词对 null 入参与 {@code Object} 根自然终止的行为一并断言。
  */
 public class DeviceGeneratorNameChainTest {

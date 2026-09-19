@@ -41,6 +41,33 @@ import gregtech.common.tileentities.machines.multi.xlturbines.MTEXLTurbineBase;
  * 只读 {@code Class#getSimpleName()} 与 {@code getSuperclass()}，不 Class.forName、
  * 不触发额外类加载、不读注解、不遍历接口；排除名优先级高于包含名，链上任意层级命中
  * 排除名即判非发电</li>
+ * <li>长功率符号层闸门为<b>结构前置条件</b>，不用名称名单：符号约定前提是 {@code lEUt} 为电量语义，但参考树
+ * （5.09.54.133）穷举发现有 4 个 {@code extends MTEExtendedPowerMultiBlockBase}（或其 TT /
+ * GT++ 派生基类）的子类把继承来的 {@code lEUt} 只当<b>非电量 display 值</b>写，正数却不向网络
+ * 输出一丝 EU——{@code MTEThermalBoiler}（:168 蒸汽 {@code amount/进度/2}、:170 高压蒸汽
+ * {@code amount/进度}，单位 mB/t；:180 无水归零）、
+ * {@code gtPlusPlus .../production/MTEThermalBoilerLegacy}（:188,190，:186 上游注释自证
+ * "Purely for display reasons, we don't actually make any EU"）、
+ * {@code MTELargeBoilerBase}（:380,388 由燃料值算出；:357 归零；现役 Bronze/Steel/Titanium/
+ * TungstenSteel 大锅炉全部 extends 此类，注意排除集里的 {@code MTELargeBoiler:63} 是
+ * {@code MTEEnhancedMultiBlockBase} 另一条链、根本不写 lEUt）、
+ * {@code gtPlusPlus .../processing/advanced/MTEAdvHeatExchanger}（:271 蒸汽系数量，:285-305
+ * 反乘 1:160 换算蒸汽）。故不设名称名单，改用结构闸门：
+ * <b>正 {@code lEUt} 只有当机器结构确含动态仓时才采信，负 {@code lEUt} 恒为耗电量照常采信</b>
+ * （判定见 {@code DeviceSampleScheduler.readEuFlow} 的 {@code hasDynamoHatch} /
+ * {@code longPowerTrusted}）。结构证据：上述 4 类的结构定义 {@code atLeast(...)} 均未注册任何
+ * Dynamo 元素（ThermalBoiler :313/:327/:340；LargeBoilerBase :161-177；ThermalBoilerLegacy :331；
+ * AdvHeatExchanger 只有自定义冷热仓 :76-99），而 {@code gregtech/api/util/HatchElementBuilder.java
+ * :122-171} 的 adder 由 {@code atLeast} 枚举出的元素 {@code adder().rebrand()} 经 {@code orElse}
+ * 归并而来 ⇒ 只覆盖被枚举的元素，合法结构里动态仓恒为空；反之真发电机结构必含 Dynamo
+ * （{@code MTEUniversalChemicalFuelEngine.java:113} shape 字符 'G' + {@code :129 'G' =
+ * Dynamo.newAny(...)}；{@code goodgenerator .../MTEUniversalChemicalFuelEngineLegacy.java:123}；
+ * {@code MTELargeCombustionEngine.java:95}、{@code MTELargeTurbineBase.java:79}、
+ * {@code MTELargeRocketEngine.java:156 Dynamo.or(TTDynamo)}）。允许 Dynamo 的储能/输电机全都不写
+ * lEUt（{@code MTEActiveTransformer} 无 lEUt 写入、{@code MTEPowerSubStation.java:554} 恒置 0、
+ * {@code MTETeslaTower} 同）⇒ 名称侧无需任何排除，穷举结论为<b>最小名称排除集 = 空集</b>。
+ * 发电排除集与符号层彻底解耦：GG 大聚变 {@code MTELargeFusionComputer} 虽在排除集（判非发电），
+ * 其负 lEUt 是真实 EU 耗电量 ⇒ 负值腿照常可信，真双零时符号层按耗电腿记入</li>
  * </ul>
  */
 public final class DeviceMachineTypes {
@@ -79,8 +106,10 @@ public final class DeviceMachineTypes {
                 "MTELargeSemifluidGenerator",
                 // gtPlusPlus/xmod/gregtech/common/tileentities/machines/multi/production/MTENuclearReactor.java:65
                 "MTENuclearReactor",
-                // gtnhintergalactic/tile/multi/TileEntityDysonSwarm.java:65（extends TTMultiblockBase，发电记账走
-                // setPowerFlow）
+                // gtnhintergalactic/tile/multi/TileEntityDysonSwarm.java:65——extends TTMultiblockBase；权威值只在
+                // :197 private long euPerTick（:276 按模组数×每模组功率×功率因子算，:547/:554 NBT 读写），
+                // 入网经 :307-308 addEnergyOutput_EM(euPerTick, 1)，且全类不写 lEUt/mEUt ⇒ 符号层与词条
+                // 幅值都取不到，幅值只能由 provider 字段链（DeviceSpecialPowerProvider）给
                 "TileEntityDysonSwarm",
                 // goodgenerator/blocks/tileEntity/AntimatterGenerator.java:63——已知非目标：该类只维护私有
                 // euLastCycle（:73、:204、getter :330），无 lEUt/mEUt 记账 ⇒ 名称链只得 powerType 方向，
@@ -90,6 +119,13 @@ public final class DeviceMachineTypes {
     /**
      * 发电白名单——精确 simple-name 排除集（12 项，优先级高于包含集，链上命中即判非发电）。
      * 多为「名字带 Generator/Turbine/Reactor 字样但实为耗电/输电/储能/蒸汽锅炉」的陷阱类。
+     * <p>
+     * 本集合只服务发电分类（powerType 方向），与长功率符号层闸门解耦：符号层的前提是
+     * {@code MTEExtendedPowerMultiBlockBase.lEUt} 为电量语义，闸门按<b>结构前置条件</b>判定
+     * （正 lEUt 须结构含动态仓，见类注释与 {@code DeviceSampleScheduler.readEuFlow}），
+     * 不按本集合成员清零；本集合多数成员本就不是扩展电力多方块子类（符号层
+     * {@code instanceof} 首条件已挡住），或 lEUt 为真实电量（如 GG 大聚变
+     * {@code MTELargeFusionComputer}，其负 lEUt 由符号层正确记入耗电腿）。
      */
     private static final Set<String> EXCLUDED_GENERATOR_CLASS_NAMES = Collections.unmodifiableSet(
         new HashSet<>(
@@ -97,9 +133,12 @@ public final class DeviceMachineTypes {
                 // gregtech/common/tileentities/machines/multi/MTEWormholeGenerator.java:86——无 EU 记账
                 "MTEWormholeGenerator",
                 // goodgenerator/blocks/tileEntity/base/MTELargeFusionComputer.java:81——聚变控制器本身纯耗电：
-                // :241-242 产能时强制 lEUt 取负、:321 decreaseStoredEnergyUnits(-lEUt) 扣能、:561 面板键
-                // gg.infodata.fusion.req 显示为「需求功率」，全类无 Dynamo 仓与 addEnergyOutput；
-                // 聚变的 EU 回报经等离子产物在别处兑现，不由本控制器入网
+                // 运行时权威 lEUt 由继承的 MTEExtendedPowerMultiBlockBase.java:108-113 setEnergyUsage 强制
+                // 写为负（:241-242 只是 loadNBTData（:237 起、:239 注释 Migration code）的旧档符号迁移，
+                // 不是产能时写负），:321 decreaseStoredEnergyUnits(-lEUt, true) 按需求功率扣能、
+                // :561 面板键 gg.infodata.fusion.req 显示 formatNumber(-lEUt)「需求功率」，全类无 Dynamo
+                // 仓与 addEnergyOutput；聚变的 EU 回报经等离子产物在别处兑现，不由本控制器入网。注：其
+                // lEUt 为真实 EU 耗电量（负值）⇒ 结构闸门下负 lEUt 恒可信，真双零时符号层正确记入耗电腿
                 "MTELargeFusionComputer",
                 // tectech/thing/metaTileEntity/multi/bec/MTEBECGenerator.java:52——lEUt 负（耗电维持 BEC）
                 "MTEBECGenerator",
@@ -119,7 +158,12 @@ public final class DeviceMachineTypes {
                 "MTEPowerSubStation",
                 // gregtech/common/tileentities/machines/multi/MTELargeBoiler.java:63——mEUt 为燃料消耗值非 EU
                 "MTELargeBoiler",
-                // gregtech/common/tileentities/machines/multi/MTEThermalBoiler.java:58——同 Boiler 族
+                // gregtech/common/tileentities/machines/multi/MTEThermalBoiler.java:58——同 Boiler 族；且它是
+                // MTEExtendedPowerMultiBlockBase 子类却把 lEUt 复用为「产汽量」（:168 蒸汽
+                // amount/进度/2、:170 高压蒸汽 amount/进度、:180 无水时归 0），全类不写 EU ⇒
+                // 除名链一票否决外，其正 lEUt 还会被 readEuFlow 的结构闸门（结构无动态仓 ⇒ 正长功率
+                // 不采信，见类注释）清零；同族的 MTEThermalBoilerLegacy / MTELargeBoilerBase 与
+                // MTEAdvHeatExchanger 同样由该结构闸门拦下，不再依赖名称名单
                 "MTEThermalBoiler")));
 
     /** 名称链上溯深度上限：防御异常类层级/生成代理导致无上溯终止；正常 GT MTE 链远浅于此值。 */
@@ -197,24 +241,31 @@ public final class DeviceMachineTypes {
     /**
      * 名称链谓词（package-private 仅供 {@code DeviceGeneratorNameChainTest} 以纯 JVM 桩类
      * 直测，不放宽为公开 API）：从 {@code clazz} 起沿 {@code getSuperclass()} 上溯，
-     * 每层先查排除集（命中立即 false，即使更下层已命中包含集），再查包含集（命中记
-     * 候选后继续上溯验证排除优先）；深度上限 {@link #NAME_CHAIN_MAX_DEPTH} 防无上溯
-     * 终止，{@code Object} 根（superclass 为 null）自然终止；null 入参返回 false。
+     * 排除名一票否决 + 包含名命中，两者经同一链遍历入口 {@link #nameChainHitsAnyName}
+     * 各扫一遍（{@code 包含命中 && !排除命中}）；语义与「逐层先查排除、命中立即返回
+     * false；否则记录包含候选后继续上溯」完全等价——排除在链上任意层级（同深度上限内）
+     * 命中即整条链为 false，与包含名先后无关。
      * 全程只调用 {@code getSimpleName()}，不 Class.forName、不触发额外类加载、不读注解、
      * 不遍历接口。
      */
     static boolean nameChainHitsGenerator(Class<?> clazz) {
-        boolean includedHit = false;
+        return nameChainHitsAnyName(clazz, GENERATOR_CLASS_NAMES)
+            && !nameChainHitsAnyName(clazz, EXCLUDED_GENERATOR_CLASS_NAMES);
+    }
+
+    /**
+     * 名称链遍历唯一实现（private）：从 {@code clazz} 起沿 {@code getSuperclass()} 上溯，逐段
+     * 等值比对 {@code getSimpleName()} 与 {@code names}，任意层命中即 true；深度上限
+     * {@link #NAME_CHAIN_MAX_DEPTH} 防无上溯终止，{@code Object} 根（superclass 为 null）自然
+     * 终止；null 入参返回 false。
+     */
+    private static boolean nameChainHitsAnyName(Class<?> clazz, Set<String> names) {
         int depth = 0;
         for (Class<?> c = clazz; c != null && depth < NAME_CHAIN_MAX_DEPTH; c = c.getSuperclass(), depth++) {
-            String simpleName = c.getSimpleName();
-            if (EXCLUDED_GENERATOR_CLASS_NAMES.contains(simpleName)) {
-                return false;
-            }
-            if (!includedHit && GENERATOR_CLASS_NAMES.contains(simpleName)) {
-                includedHit = true;
+            if (names.contains(c.getSimpleName())) {
+                return true;
             }
         }
-        return includedHit;
+        return false;
     }
 }
