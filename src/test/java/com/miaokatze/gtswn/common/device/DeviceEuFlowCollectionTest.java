@@ -20,16 +20,17 @@ import com.miaokatze.gtswn.common.device.DeviceSampleScheduler.EuFlowSample;
  * 只触 {@link DeviceSampleScheduler#collectEuFlow} 纯算法核、
  * {@link DeviceTerminalDataStore.MachineRecord} 数据类与 NBT 数据标签，不启世界）。
  * <p>
- * 覆盖口径：getter 对采集（单机直读）、多方块 hatch 双路聚合按引用去重且聚合非零压制兜底、
+ * 覆盖口径：getter 对采集（单机直读）、多方块 hatch 三路聚合按引用去重且聚合非零压制兜底、
  * 真双零兜底门（in==0 &amp;&amp; out==0 &amp;&amp; fallbackEut&gt;0）方向由发电白名单决定
  * （单方块耗电→in、发电机→out，方向不由数值符号决定）、fallbackEut=0/负幅值零写、
- * 控制器均值非零不兜底、特殊机器权威 provider 门（任务2：真双零时正值→out/负值→in，
+ * 控制器均值非零不兜底、特殊机器权威 provider 门（真双零时正值→out/负值→in，
  * 0 落回白名单兜底，getter/hatch 非零不介入）、停机/待机三通道写 0、旧档 NBT 缺新键兼容与
- * 负 net 回环、net FIFO 均值线性（恒有 {@code avg == outAvg − inAvg}）；v1.8.4 数值链扩为四层，
+ * 负 net 回环、net FIFO 均值线性（恒有 {@code avg == outAvg − inAvg}）；v1.8.9 起数值链扩为四层，
  * 另覆盖<b>长功率符号权威层</b>（仅多方块带符号 lEUt：正→out / 负→in，发电词条幅值优先、
  * 单机忽略、getter/hatch 非零压制、{@code signedLongPower=0} 时链序逐位退化为原三层链、
  * Long.MIN_VALUE 钳 Long.MAX_VALUE）与 tEff 万分度效率工具（{@code applyEfficiency} 的
- * 哨兵/零/正常/饱和四例，{@code readEfficiencyScale} 的字段命中、继承链命中与 -1 降级哨兵）。
+ * 哨兵/零/正常/饱和四例，{@code readEfficiencyScale} 的字段命中、继承链命中与 -1 降级哨兵；
+ * 二者位于 {@code readEuFlow} 的结构闸门需 MC/GT 类加载，本套纯 JVM 用例覆盖不到）。
  */
 public class DeviceEuFlowCollectionTest {
 
@@ -312,8 +313,8 @@ public class DeviceEuFlowCollectionTest {
 
     /**
      * 链序 ① 优先于 ②：发电词条幅值与符号层同时可得时白名单幅值胜出。
-     * 必要保护：GT5U goodgenerator MTELargeFusionComputer 产能时把 lEUt 写成<b>负</b>
-     * （该家族 :241-242 强制取负、:561 显示取 -lEUt），符号层若抢先即把发电多方块误判为耗电。
+     * 必要性：词条命中机器的方向已与 powerType 分类同源绑定（同一谓词驱动筛选与兜底），
+     * 若让符号层抢先，同一次采样里"筛选说发电、数值说耗电"就会自相矛盾。
      */
     @Test
     public void generatorWhitelistAmplitudeBeatsSignLayer() {
