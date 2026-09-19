@@ -73,9 +73,6 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 滚轮触发追加轮询的最小间隔（tick）：限频防滚轮连击形成请求洪峰（G5-3） */
     private static final int EXTRA_POLL_INTERVAL_TICKS = 10;
 
-    /** 悬浮出 tooltip 的停留门槛（毫秒） */
-    private static final long HOVER_TOOLTIP_DELAY_MS = 500L;
-
     /** 悬浮配方文本换行宽度（像素，≈200px；v1.7.2 起用 listFormattedStringToWidth 按像素分行） */
     private static final int TOOLTIP_WRAP_WIDTH = 200;
 
@@ -629,15 +626,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     }
 
     /**
-     * 行机器名列悬浮 ≥0.5s：显示当前执行配方（v1.7.2 双侧：标题 +「输入:」行 +「输出:」行，
+     * 行机器名列悬浮立即显示当前执行配方（v1.7.2 双侧：标题 +「输入:」行 +「输出:」行，
      * 单侧最多 4 项超限补「 等...」，{@code listFormattedStringToWidth} 按 ≈200px 像素分行，
      * 替代旧 48 字符硬切）。
      */
     private void drawHoverTooltip(int mouseX, int mouseY) {
-        if (this.entryList == null || this.entryList.hoverElapsedMillis() < HOVER_TOOLTIP_DELAY_MS) {
-            return;
-        }
-        Entry hovered = this.entryList.hoveredEntry();
+        Entry hovered = this.entryList == null ? null : this.entryList.hoveredEntry();
         if (hovered == null) {
             return;
         }

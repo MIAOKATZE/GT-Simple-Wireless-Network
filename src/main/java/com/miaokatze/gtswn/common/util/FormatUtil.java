@@ -48,12 +48,17 @@ public class FormatUtil {
      * <p>
      * 合并自 MTE 与 HUD 的同名方法（实现完全一致）。
      *
-     * @param value 要格式化的 BigInteger 值
-     * @return 格式化后的字符串（例如：269,835,880），null 返回 "0"
+     * @param value 要格式化的 BigInteger 值（可正可负）
+     * @return 格式化后的字符串（例如：269,835,880 / -123,456），null 返回 "0"
      */
     public static String formatNormal(BigInteger value) {
         if (value == null) return "0";
-        return insertThousandSeparators(value.toString());
+        // insertThousandSeparators 的契约要求入参为无符号数字串，故先取绝对值插入分隔符，
+        // 负号只在末尾结果前置一次（此前直传带符号串会把负号计入分组，产出 "-,123,456"）。
+        String digits = insertThousandSeparators(
+            value.abs()
+                .toString());
+        return value.signum() < 0 ? "-" + digits : digits;
     }
 
     /**
@@ -267,9 +272,10 @@ public class FormatUtil {
         int dec = Math.max(0, Math.min(6, decimals));
         String fmt = "%." + dec + "f%s";
 
-        // 使用绝对值判断量级，负数前缀负号
+        // 量级判断与除法全程使用绝对值，符号只在最后一步前置一次；
+        // 否则 String.format 生成的 result 已自带 "-"，再前置会变成 "--1.23M"。
         BigInteger absValue = value.abs();
-        double d = value.doubleValue();
+        double d = absValue.doubleValue();
 
         String result;
         if (absValue.compareTo(BigInteger.valueOf(1_000_000_000_000_000L)) >= 0) {

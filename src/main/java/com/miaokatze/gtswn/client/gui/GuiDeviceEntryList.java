@@ -25,9 +25,9 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * 交互（UI 只发包不直改服务端权威数据）：点击传送按钮 → 宿主 sendTeleport（包 10 action 3）；
  * Ctrl+点击行任意处 → 宿主 sendUnbind（包 10 action 2，无确认）；其余列表区点击一律消费防穿透。
  * <p>
- * 悬浮（v1.7.2 Tooltip 收敛到机器名列）：鼠标停在行上<b>且 X 在机器名列区间内</b>才计时，
- * 换行或移出机器名列即重置时间戳（{@link #hoverIndex} / {@link #hoverStartMillis}），
- * 宿主 drawScreen 末尾按 ≥0.5s 询问 {@link #hoverElapsedMillis()} 画配方 tooltip。
+ * 悬浮（v1.7.2 Tooltip 收敛到机器名列）：鼠标停在行上<b>且 X 在机器名列区间内</b>即为悬浮，
+ * 换行或移出机器名列即清除悬浮下标（{@link #hoverIndex}），
+ * 宿主 drawScreen 末尾经 {@link #hoveredEntry()} 取当前悬浮行立即画配方 tooltip。
  * <p>
  * 宿主依赖与 {@code GuiAEMonitorList} 相同：GuiScreen 的 {@code mc}/{@code fontRendererObj}
  * 跨包 protected 不可直引，经宿主包私有访问器（{@code client()} / {@code font()} / {@code fillRect()}）
@@ -110,13 +110,10 @@ class GuiDeviceEntryList {
     /** 是否正在拖拽滚动条 */
     private boolean draggingScrollbar = false;
 
-    // ==================== 悬浮计时（配方 tooltip 用） ====================
+    // ==================== 悬浮行（配方 tooltip 用） ====================
 
-    /** 当前悬浮行下标（-1=无；换行即重置时间戳） */
+    /** 当前悬浮行下标（-1=无；换行或移出机器名列即清除） */
     private int hoverIndex = -1;
-
-    /** 进入当前悬浮行的墙钟时间戳（毫秒） */
-    private long hoverStartMillis = 0L;
 
     GuiDeviceEntryList(GuiDeviceInfoTerminal host, int left, int top) {
         this.host = host;
@@ -131,7 +128,7 @@ class GuiDeviceEntryList {
     // ==================== 外部绘制入口 ====================
 
     /**
-     * 绘制整个列表：背景、可见行、滚动条；并维护悬浮行计时。
+     * 绘制整个列表：背景、可见行、滚动条；并维护悬浮行。
      *
      * @param mouseX       鼠标 X（屏幕坐标）
      * @param mouseY       鼠标 Y（屏幕坐标）
@@ -140,7 +137,7 @@ class GuiDeviceEntryList {
     void draw(int mouseX, int mouseY, float partialTicks) {
         List<Entry> entries = host.sortedEntries();
         clampScroll();
-        // 鼠标离开列表区即清除悬浮（时间戳随 hoverIndex=-1 一并作废）
+        // 鼠标离开列表区即清除悬浮
         if (mouseX < listLeft || mouseX > listRight || mouseY < listTop || mouseY > listBottom) {
             hoverIndex = -1;
         }
@@ -177,21 +174,18 @@ class GuiDeviceEntryList {
         FontRenderer font = host.font();
         int textY = y + 6;
 
-        // 悬浮计时（v1.7.2 Tooltip 收敛到机器名列）：命中本行且 X 在机器名列区间内才计时，
-        // 换行重置时间戳；行内移出机器名列立即作废计时（不出 tooltip）
+        // 悬浮命中（v1.7.2 Tooltip 收敛到机器名列）：命中本行且 X 在机器名列区间内才记悬浮，
+        // 换行即切换；行内移出机器名列立即清除（不出 tooltip）
         boolean inRow = mouseX >= listLeft && mouseX <= listRight && mouseY >= y && mouseY < y + slotHeight;
         boolean inNameCol = mouseX >= listLeft + COL_NAME_X && mouseX < listLeft + COL_NAME_X + NAME_WIDTH;
         if (inRow && inNameCol) {
-            if (hoverIndex != index) {
-                hoverIndex = index;
-                hoverStartMillis = System.currentTimeMillis();
-            }
+            hoverIndex = index;
         } else if (hoverIndex == index) {
             hoverIndex = -1;
         }
 
         // 行 hover 高亮（贴图化新增视觉项，契约 §3 #13 / §6 ④）：鼠标在行矩形内先画 row_hover 底再画内容；
-        // 仅视觉，不改上方 inRow/inNameCol 命中与 tooltip 计时判定
+        // 仅视觉，不改上方 inRow/inNameCol 命中与 tooltip 悬浮判定
         if (inRow) {
             GtswnGuiDrawing
                 .drawNineSlice(GtswnGuiTextures.ROW_HOVER, 4, listLeft, y, listWidth, slotHeight, host.guiZLevel());
@@ -265,11 +259,6 @@ class GuiDeviceEntryList {
             return null;
         }
         return entries.get(hoverIndex);
-    }
-
-    /** @return 当前行已悬浮毫秒数（无悬浮返回 0；宿主按 ≥500ms 门槛出 tooltip） */
-    long hoverElapsedMillis() {
-        return hoverIndex < 0 ? 0L : System.currentTimeMillis() - hoverStartMillis;
     }
 
     // ==================== 背景与裁剪（仿 GuiAEMonitorList） ====================

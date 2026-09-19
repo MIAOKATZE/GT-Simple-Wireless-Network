@@ -9,8 +9,8 @@ import gregtech.common.tileentities.machines.multi.MTELargeNaquadahReactor;
 /**
  * 特殊机器权威功率 provider（预选词条/数值链版）：对「实时输出不在标准流量词条」的机器，按
  * <b>预选字段数值链</b>读取权威实时功率，读到非零即停。EU 方向统一采集优先序 =
- * 基座/controller getter → hatch 聚合 → 真双零门内数值链（发电词条幅值 → 本 provider 符号值 →
- * 耗电词条幅值，见 {@link DeviceSampleScheduler#collectEuFlow}）。
+ * 基座/controller getter → hatch 聚合 → 真双零门内数值链（发电词条幅值 → 长功率符号权威层 →
+ * 本 provider 符号值 → 耗电词条幅值，见 {@link DeviceSampleScheduler#collectEuFlow}）。
  * <p>
  * 【GT5U 5.09.54.133 已核实事实（beta-3 复核）】
  * <ul>

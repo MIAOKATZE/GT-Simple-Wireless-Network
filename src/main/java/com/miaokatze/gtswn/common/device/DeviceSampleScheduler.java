@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.device;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -51,7 +52,9 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  * BaseMetaTileEntity 委托）、EU 方向统一采集（{@link #readEuFlow}：基座 getter 读双 5-tick
  * 网络流量均值，多方块叠加双路 hatch 聚合并按引用去重；getter 与 hatch 聚合合计仍双零时进入
  * <b>预选词条/数值链</b>（读到非零即停）：发电词条幅值（方向由 isGeneratorMachine 词条决定，
- * 不由数值符号）→ 特殊机器权威 provider（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}
+ * 不由数值符号）→ 多方块长功率符号权威层（{@code MTEExtendedPowerMultiBlockBase.lEUt} 原符号，
+ * 正=发电→out / 负=耗电→in；仅「多方块 + 长功率」生效，单机与普通多方块不介入，幅值经
+ * {@code tEff} 万分度效率修正）→ 特殊机器权威 provider（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}
  * 符号值，正=发电→out / 负=消耗→in，词条幅值缺失如 LNR 时接管）→ 耗电词条幅值（仅非发电，
  * 无线喂电常规机 |mEUt| 消费腿）；in/out=实际网络流量，非运行态三通道全写 0）、
  * 功率分类（发电谓词刷新 powerType 0/1）、配方双侧快照
@@ -80,6 +83,22 @@ public class DeviceSampleScheduler {
 
     /** RUNNING 真双零诊断日志限频间隔（tick/键，600t = 30s 每键至多 1 条） */
     private static final long ZERO_FLOW_LOG_INTERVAL_TICKS = 600L;
+
+    /**
+     * 万分度效率字段名（GT5U UCFE 家族自持字段，非基类契约：
+     * MTEUniversalChemicalFuelEngine.java:76 {@code private long tEff}，字段名在
+     * MTEUniversalChemicalFuelEngineLegacy.java:62 同形，故按名反射而非 import）
+     */
+    private static final String EFFICIENCY_FIELD_NAME = "tEff";
+
+    /** 效率字段沿 {@code getClass()→getSuperclass()} 向上查找的最大层数（防御超深链与畸形继承） */
+    private static final int EFFICIENCY_FIELD_MAX_DEPTH = 8;
+
+    /** 万分度基数：GT5U 效率以 10000 = 100% 记账（UCFE {@code addAutoEnergy} :299 即 powerFlow*tEff/10000） */
+    private static final long EFFICIENCY_SCALE_BASE = 10000L;
+
+    /** {@link #readEfficiencyScale} 的「无字段/不可读」哨兵；{@link #applyEfficiency} 见此值原样返回不缩放 */
+    private static final long NO_EFFICIENCY_SCALE = -1L;
 
     /** 采样工作队列（去重；仅服务端主线程访问） */
     private final LinkedHashSet<String> workQueue = new LinkedHashSet<>();
@@ -391,65 +410,60 @@ public class DeviceSampleScheduler {
     }
 
     /**
-     * 无特殊机器权威值的等价重载（providerEut=0，既有单测与调用点兼容）：行为与真双零时
-     * provider 未命中完全一致，全部语义见
-     * {@link #collectEuFlow(boolean, long, long, boolean, List, List, boolean, long, long)}。
-     */
-    public static long[] collectEuFlow(boolean hasContainer, long controllerIn, long controllerOut,
-        boolean isMultiBlock, List<EuFlowSample> hatchIn, List<EuFlowSample> hatchOut, boolean isGenerator,
-        long fallbackEut) {
-        return collectEuFlow(
-            hasContainer,
-            controllerIn,
-            controllerOut,
-            isMultiBlock,
-            hatchIn,
-            hatchOut,
-            isGenerator,
-            fallbackEut,
-            0L);
-    }
-
-    /**
      * EU 方向统一采集纯算法（零 Minecraft 类加载，单测直测）。语义 = <b>实际网络流量</b>：
      * {@code getAverageElectricInput()} / {@code getAverageElectricOutput()} 仅在 GT5U
      * BaseMetaTileEntity 网络路径（injectEnergyUnits→Input / drainEnergyUnits、handleEUOutput→Output）
      * 累加，采集优先序 = 控制器双均值 → 多方块双路 hatch 聚合（同一 hatch 基座按引用去重）→
-     * 真双零时进入<b>预选词条/数值链</b>（读到非零即停）：① 发电词条幅值（方向由
-     * {@code isGeneratorMachine} 词条决定）→ ② provider 权威符号值 → ③ 耗电词条幅值（仅非发电）。
-     * getter 与 hatch 聚合合计仍双零（RUNNING 真双零，典型如记账绕过型无线馈电）时才进入后三层。
-     * 词条幅值的方向<b>不由数值符号、不由结构推断</b>：由调用方按
-     * {@code DeviceMachineTypes.isGeneratorMachine} 白名单传入 isGenerator（与 powerType 同源同值）；
-     * provider 层方向由权威字段符号决定（正=发电→out、负=消耗→in）——词条命中但幅值缺失
-     * （如 LNR 不维护 mEUt、权威值只在 trueOutput）时由 provider 接管（v1.8.3 数值链）。
+     * 真双零时进入<b>预选词条/数值链</b>。getter 与 hatch 聚合合计仍双零（RUNNING 真双零，典型如
+     * 记账绕过型无线馈电）时才进入下方四层链（逐层读到非零即停，全链零则保持双零）。
+     * <p>
+     * <b>四层链序 + 每层方向来源</b>：
      * <ol>
-     * <li>基座实现 IBasicEnergyContainer → 控制器双均值即采集起点（单机 / 发电机 / 太阳能 /
-     * 避雷针天然走此路）</li>
-     * <li>多方块 → in += Σ 能量仓平均输入、out += Σ 动态仓平均输出（两路样本入参，
-     * 同一 hatch tile 按引用去重）；聚合先于兜底——聚合任一路非零即压制兜底；
-     * 单方块不提前返回，同样可进兜底门</li>
-     * <li>真双零数值链：① isGenerator 且 fallbackEut&gt;0 → out=fallbackEut（词条方向）；
-     * ② providerEut&gt;0 → out / providerEut&lt;0 → in=|providerEut|（符号定方向）；
-     * ③ !isGenerator 且 fallbackEut&gt;0 → in=fallbackEut（耗电腿，无线喂电常规机）；
-     * 全链零则保持双零</li>
-     * <li>fallbackEut 为调用方取好的幅值恒 ≥0；0 表示该词条无幅值可用（数值链继续下一词条）</li>
+     * <li>① 发电词条幅值：{@code isGenerator} 且 {@code fallbackEut} 大于 0 → out。方向来源 =
+     * {@code DeviceMachineTypes.isGeneratorMachine} 白名单<b>词条</b>（与 powerType 同源同值），
+     * 不经数值符号、不经结构推断。词条必须居首：词条命中机器的方向已与 powerType 分类绑定，
+     * 符号层 ② 只兜「未列名」的长功率多方块（防新引擎族漏录）；反之把符号不可靠的机型误列词条
+     * 会直接倒退——GT5U goodgenerator {@code MTELargeFusionComputer} 即实测为<b>纯耗电</b>控制器
+     * （:241-242 强制 {@code lEUt} 取负、:321 {@code decreaseStoredEnergyUnits(-lEUt)} 扣能、
+     * :561 面板键 {@code gg.infodata.fusion.req} 显示为需求功率，全类无 Dynamo 仓与
+     * {@code addEnergyOutput}），故它进排除集而非包含集</li>
+     * <li>② 长功率符号权威层：仅 {@code isMultiBlock} 且 {@code signedLongPower} 非 0 时生效，
+     * 正 → out、负 → in=幅值。方向来源 = GT5U 多方块<b>带符号</b> {@code lEUt} 的符号
+     * （MTEExtendedPowerMultiBlockBase.java:28 字段声明；:53-57 正 {@code lEUt → addEnergyOutput}、
+     * 负 {@code lEUt → drainEnergyInput}；:108-113 {@code setEnergyUsage} 把消耗强制写为负；
+     * 耗电实证 MTEAssemblyLine.java:367,397；发电经 TTMultiblockBase.java:494-504
+     * {@code setPowerFlow} 写入正 {@code lEUt}，UCFE 构造 {@code useLongPower=true}
+     * MTEUniversalChemicalFuelEngine.java:85,90）</li>
+     * <li>③ 特殊机器权威 provider：{@code providerEut} 正 → out、负 → in=幅值。方向来源 = 注册
+     * provider 权威字段符号（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}）——词条命中但
+     * 幅值缺失（如 LNR 不维护 mEUt、权威值只在 trueOutput）时接管（v1.8.3 数值链）</li>
+     * <li>④ 耗电词条幅值（耗电腿）：{@code !isGenerator} 且 {@code fallbackEut} 大于 0 → in。
+     * 方向来源 = 白名单判定为<b>非发电</b>（无线喂电常规机 {@code |mEUt|}）</li>
      * </ol>
+     * 符号层<b>只作用于「多方块 + 长功率 {@code lEUt}」</b>：普通多方块 {@code mEUt} 与单方块
+     * {@code MTEBasicMachine.mEUt} 的正负语义不可靠（后者正数即<b>耗电</b>，
+     * MTEBasicMachine.java:136,608,726-727,739,751 与 :751 处配方取负），故单机与普通多方块调用方
+     * 恒传 {@code signedLongPower = 0}。幅值层面的 tEff 效率修正在 {@link #readEuFlow} 取数处完成，
+     * 不进入本方法的方向语义。
      *
-     * @param hasContainer  tile 是否实现 IBasicEnergyContainer（false 时两控制器读数不参与）
-     * @param controllerIn  控制器基座 getAverageElectricInput()
-     * @param controllerOut 控制器基座 getAverageElectricOutput()
-     * @param isMultiBlock  MTE 是否 MTEMultiBlockBase（false 时两路 hatch 样本不参与聚合）
-     * @param hatchIn       输入方向 hatch 样本（可含两路重复；isMultiBlock=false 时可 null）
-     * @param hatchOut      输出方向 hatch 样本（同上）
-     * @param isGenerator   调用方发电白名单判定结果（true → 白名单兜底记 output，false → 记 input）
-     * @param fallbackEut   白名单兜底幅值 |mEUt|/|lEUt|（调用方保证 ≥0；0 = 该机无兜底幅值）
-     * @param providerEut   特殊机器权威带符号 EU/t（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}
-     *                      数值链读取；0 = 未命中/失败/权威值全 0，数值链继续下一词条）
+     * @param hasContainer    tile 是否实现 IBasicEnergyContainer（false 时两控制器读数不参与）
+     * @param controllerIn    控制器基座 getAverageElectricInput()
+     * @param controllerOut   控制器基座 getAverageElectricOutput()
+     * @param isMultiBlock    MTE 是否 MTEMultiBlockBase（false 时两路 hatch 样本与符号层均不参与）
+     * @param hatchIn         输入方向 hatch 样本（可含两路重复；isMultiBlock=false 时可 null）
+     * @param hatchOut        输出方向 hatch 样本（同上）
+     * @param isGenerator     调用方发电白名单判定结果（true → 白名单兜底记 output，false → 记 input）
+     * @param fallbackEut     白名单兜底幅值 |mEUt|/|lEUt|（调用方保证 ≥0 且已按效率修正；0 = 该机无兜底幅值）
+     * @param providerEut     特殊机器权威带符号 EU/t（{@link DeviceSpecialPowerProvider#readAuthoritativeEut}
+     *                        数值链读取；0 = 未命中/失败/权威值全 0，数值链继续下一词条）
+     * @param signedLongPower 多方块长功率<b>带符号</b>幅值（{@code MTEExtendedPowerMultiBlockBase.lEUt}
+     *                        原符号、幅值已按效率修正；0 = 不适用，即单机 / 普通多方块 / 长功率字段为 0，
+     *                        此时符号层整体跳过，链序与未引入符号层时逐位一致）
      * @return {@code {in, out}}，均 ≥0（in = 网络流入、out = 网络流出，net = out − in 由调用方计算）
      */
     public static long[] collectEuFlow(boolean hasContainer, long controllerIn, long controllerOut,
         boolean isMultiBlock, List<EuFlowSample> hatchIn, List<EuFlowSample> hatchOut, boolean isGenerator,
-        long fallbackEut, long providerEut) {
+        long fallbackEut, long providerEut, long signedLongPower) {
         long in = hasContainer ? controllerIn : 0L;
         long out = hasContainer ? controllerOut : 0L;
         if (isMultiBlock) {
@@ -458,13 +472,20 @@ public class DeviceSampleScheduler {
             out += sumDedupByIdentity(hatchOut);
         }
         if (in == 0L && out == 0L) {
-            // 真双零门 = 预选词条/数值链（读到非零即停）：
-            // ① 发电词条幅值（方向由词条 isGenerator 决定，不经数值符号）；
-            // ② provider 权威符号值（正→out / 负→取幅→in）——词条命中但幅值缺失（如 LNR |mEUt| 恒 0、
+            // 真双零门 = 预选词条/数值链四层（读到非零即停）：
+            // ① 发电词条幅值（方向由词条 isGenerator 决定，不经数值符号）；词条命中机器方向已与
+            // powerType 分类绑定，故词条居首；② 长功率符号权威层（仅多方块带符号 lEUt：正→out /
+            // 负→取幅→in）只兜未列名的长功率多方块；幅值缺失（signedLongPower=0，即单机/普通
+            // 多方块/字段为 0）时 ② 整层跳过；
+            // ③ provider 权威符号值（正→out / 负→取幅→in）——词条命中但幅值缺失（如 LNR |mEUt| 恒 0、
             // 权威值只在 trueOutput）时放行 provider，修复 v1.8.1 起 LNR 读不到输出的回归；
-            // ③ 耗电词条幅值（仅未命中发电词条：无线喂电常规机的 |mEUt| 消费腿）。
+            // ④ 耗电词条幅值（仅未命中发电词条：无线喂电常规机的 |mEUt| 消费腿）。
             if (isGenerator && fallbackEut > 0L) {
                 out = fallbackEut;
+            } else if (isMultiBlock && signedLongPower > 0L) {
+                out = signedLongPower;
+            } else if (isMultiBlock && signedLongPower < 0L) {
+                in = absEut(signedLongPower);
             } else if (providerEut > 0L) {
                 out = providerEut;
             } else if (providerEut < 0L) {
@@ -505,10 +526,17 @@ public class DeviceSampleScheduler {
      * 常规机 MTEBasicMachine |mEUt|、单方块发电家族 maxEUOutput() 名义输出——MTEBasicGenerator
      * 不以 mEUt 记账发电、燃料直入基座缓冲，无线动力覆盖板 decreaseStoredEU 直扣缓冲绕过均值记账、
      * 其余机型 0 = 永不兜底），全部交给 {@link #collectEuFlow}
-     * 判定（同时传入特殊机器权威 provider 读数 {@link DeviceSpecialPowerProvider#readAuthoritativeEut}：
-     * 真双零门内按预选词条/数值链定值——发电词条幅值 → provider 符号值 → 耗电词条幅值，读到非零即停；
+     * 判定（同时传入特殊机器权威 provider 读数 {@link DeviceSpecialPowerProvider#readAuthoritativeEut}
+     * 与多方块带符号长功率 {@code signedLongPower}：真双零门内按四层预选词条/数值链定值——
+     * 发电词条幅值 → <b>长功率符号权威层</b> → provider 符号值 → 耗电词条幅值，读到非零即停；
      * v1.8.3 起词条命中机器也读 provider，幅值缺失时由权威字段接管，修复 LNR 显示 0 的回归）；
      * 白名单兜底方向由调用方传入的发电白名单结果（isGenerator）决定，本方法不重复推断。
+     * <p>
+     * <b>符号与效率的取数位置</b>：{@code signedLongPower} 只在「MTE + MTEExtendedPowerMultiBlockBase」
+     * 分支取（原样带符号的 {@code lEUt}），单机与普通多方块恒传 0——{@code mEUt} 系字段符号不可靠，
+     * 见 {@link #collectEuFlow} 链序说明。效率修正（UCFE 家族 {@code tEff} 万分度，
+     * {@link #readEfficiencyScale}/{@link #applyEfficiency}）<b>只发生在取幅值处</b>（兜底幅值与
+     * 符号层幅值各自缩放，符号原样保留），不写回方向语义、不进 collectEuFlow。
      * 两路 = GT5U MTEMultiBlockBase public 字段 {@code mEnergyHatches}/{@code mDynamoHatches}
      * （字段声明即 new ArrayList 非 null，字段直读恒成功）与 Tectech TTMultiblockBase public 方法
      * {@code getExoticAndNormalEnergyHatchList()}/{@code getExoticDynamoHatches()} 反射
@@ -520,7 +548,8 @@ public class DeviceSampleScheduler {
         // 特殊机器权威 provider（数值链，采集优先序第 3 层）：仅 RUNNING 态读一次；注册类
         // （LNR trueOutput / DysonSwarm euPerTick）按预选字段数值链读到非零即停，未注册/失败/全链
         // 零恒 0（内部全静默）。v1.8.3 起词条命中机器同样读取 provider：真双零门内发电词条幅值
-        // 缺失（如 LNR |mEUt| 恒 0）时由 provider 符号值接管（见 collectEuFlow 数值链）。
+        // 缺失（如 LNR |mEUt| 恒 0）时由 provider 符号值接管（见 collectEuFlow 四层数值链；
+        // LNR 为单方块，signedLongPower 恒 0，符号层不抢先）。
         long providerEut = DeviceSpecialPowerProvider.readAuthoritativeEut(mte);
         boolean hasContainer = gtTE instanceof IBasicEnergyContainer;
         long controllerIn = 0L;
@@ -552,7 +581,9 @@ public class DeviceSampleScheduler {
                 null,
                 isGenerator,
                 fallbackEut,
-                providerEut);
+                providerEut,
+                // 单机恒不启用符号层：mEUt/maxEUOutput 无「正=发电」符号约定（MTEBasicMachine 正数即耗电）
+                0L);
             return new EuFlowReading(flow[0], flow[1], controllerIn, controllerOut, 0, 0);
         }
         MTEMultiBlockBase multi = (MTEMultiBlockBase) mte;
@@ -568,9 +599,24 @@ public class DeviceSampleScheduler {
         // 路 B：TT 反射（两路均无条件尝试；返回值只表本路是否拿到 List，不再作兜底门）
         collectExoticHatchSamples(multi, hatchIn, "getExoticAndNormalEnergyHatchList", true);
         collectExoticHatchSamples(multi, hatchOut, "getExoticDynamoHatches", false);
-        // 兜底幅值：多方块代际功率字段（扩展电力多方块记 lEUt，其余记 mEUt），取绝对值恒 ≥0
-        long fallbackEut = absEut(
-            mte instanceof MTEExtendedPowerMultiBlockBase ? ((MTEExtendedPowerMultiBlockBase) mte).lEUt : multi.mEUt);
+        // 兜底幅值与符号层入参：扩展电力多方块（MTEExtendedPowerMultiBlockBase，lEUt 为 long 且
+        // GT5U 约定「正=发电 / 负=耗电」，MTEExtendedPowerMultiBlockBase.java:28,53-57,108-113）
+        // 取带符号原值 rawLongPower，其余多方块无可靠符号约定（mEUt 正数可为耗电）⇒ rawLongPower=0，
+        // 符号层整体跳过。tEff 万分度效率仅对扩展电力多方块探测（UCFE 家族），兜底幅值与符号层
+        // 幅值都在此处缩放（方向语义不感知效率）。注：goodgenerator 大聚变 MTELargeFusionComputer
+        // 是扩展电力多方块但产能时强制 lEUt 取负（:241-242）且本身纯耗电，已在 DeviceMachineTypes
+        // 排除集 → isGenerator=false → 符号层 ② 据 lEUt<0 正确记入耗电腿。
+        boolean longPower = mte instanceof MTEExtendedPowerMultiBlockBase;
+        long rawLongPower = longPower ? ((MTEExtendedPowerMultiBlockBase) mte).lEUt : 0L;
+        long efficiencyScale = longPower ? readEfficiencyScale(mte) : NO_EFFICIENCY_SCALE;
+        long fallbackEut = applyEfficiency(absEut(longPower ? rawLongPower : multi.mEUt), efficiencyScale);
+        // 符号层入参：符号原样保留，仅幅值按效率修正（-幅值不会出现负溢出：入参已过 absEut 钳位）
+        long signedLongPower = 0L;
+        if (rawLongPower > 0L) {
+            signedLongPower = applyEfficiency(absEut(rawLongPower), efficiencyScale);
+        } else if (rawLongPower < 0L) {
+            signedLongPower = -applyEfficiency(absEut(rawLongPower), efficiencyScale);
+        }
         long[] flow = collectEuFlow(
             hasContainer,
             controllerIn,
@@ -580,7 +626,8 @@ public class DeviceSampleScheduler {
             hatchOut,
             isGenerator,
             fallbackEut,
-            providerEut);
+            providerEut,
+            signedLongPower);
         return new EuFlowReading(flow[0], flow[1], controllerIn, controllerOut, hatchIn.size(), hatchOut.size());
     }
 
@@ -591,6 +638,97 @@ public class DeviceSampleScheduler {
      */
     private static long absEut(long signed) {
         return signed == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(signed);
+    }
+
+    /**
+     * 读取万分度效率标尺（GT5U UCFE 家族自持字段 {@code tEff}，
+     * MTEUniversalChemicalFuelEngine.java:76 声明 {@code private long tEff}、:336-341
+     * {@code calculateEfficiency} 无促进剂时 {@code tEff = 0}、上限
+     * {@code EFFICIENCY_CEILING=1.5D}（:73）⇒ 最大 15000；:299 {@code addAutoEnergy} 的真实
+     * EU/t = {@code getPowerFlow() * tEff / 10000}，故 tEff=0 即真实 0 输出）。
+     * <p>
+     * 沿 {@code getClass()→getSuperclass()} 向上逐层 {@code getDeclaredFields()} 找同名
+     * <b>数值</b>字段（≤ {@value #EFFICIENCY_FIELD_MAX_DEPTH} 层，{@code null} 安全，
+     * {@code setAccessible(true)} 读私有字段），命中负值视为「未初始化/不适用」。
+     * <p>
+     * 本方法只对传入对象做字段探测，<b>长功率机器门在调用处</b>（{@link #readEuFlow} 的
+     * {@code mte instanceof MTEExtendedPowerMultiBlockBase} 三元）：效率缩放与符号层同样只允许
+     * 作用于「多方块 + 长功率 {@code lEUt}」，普通多方块与单机的 {@code mEUt} 一律传
+     * {@link #NO_EFFICIENCY_SCALE} 原样不缩放。门放在调用处而非本方法内，是为了让纯算法
+     * （反射取标尺、按标尺缩放）可像 {@link #collectEuFlow} 一样被零 Minecraft 类加载的单测直测。
+     * 未找到字段 / 字段非数值 / 反射不可读一律返回 {@link #NO_EFFICIENCY_SCALE}（-1）哨兵表示
+     * 「不缩放」，且任何异常都静默降级、绝不抛穿采样（与
+     * {@link #collectExoticHatchSamples} 同一容错口径）。
+     *
+     * @param mte 被测 MTE（仅 {@code MTEExtendedPowerMultiBlockBase} 实例由调用处传入）
+     * @return 万分度效率标尺（≥0，10000 = 100%）；-1 = 不适用，调用方不缩放
+     */
+    static long readEfficiencyScale(Object mte) {
+        if (mte == null) {
+            return NO_EFFICIENCY_SCALE;
+        }
+        try {
+            Class<?> type = mte.getClass();
+            for (int depth = 0; type != null && depth < EFFICIENCY_FIELD_MAX_DEPTH; depth++) {
+                for (Field field : type.getDeclaredFields()) {
+                    if (!EFFICIENCY_FIELD_NAME.equals(field.getName())) {
+                        continue;
+                    }
+                    field.setAccessible(true);
+                    Object value = field.get(mte);
+                    // Boolean / 引用类型同名字段不算数值：继续向上层找（不中断整条链）
+                    if (value instanceof Number) {
+                        long perTenK = ((Number) value).longValue();
+                        return perTenK >= 0L ? perTenK : NO_EFFICIENCY_SCALE;
+                    }
+                }
+                type = type.getSuperclass();
+            }
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError ignored) {
+            // 字段不可访问 / 强封装拒绝 / 类初始化异常：本机器按「不缩放」降级，不抛穿采样
+            return NO_EFFICIENCY_SCALE;
+        }
+        return NO_EFFICIENCY_SCALE;
+    }
+
+    /**
+     * 按万分度标尺缩放功率幅值（只在 {@link #readEuFlow} 取幅值处调用，不进方向语义）：
+     * <ul>
+     * <li>{@code scalePerTenK} 为负（{@link #NO_EFFICIENCY_SCALE} 哨兵）→ 原值返回（不缩放）</li>
+     * <li>{@code scalePerTenK} 为 0 或幅值非正 → 0（UCFE 无促进剂时 {@code tEff=0} 即真实 0 输出，
+     * MTEUniversalChemicalFuelEngine.java:338）</li>
+     * <li>其余 → 乘标尺除 10000，按「高低位拆分」避免中间乘积溢出后<b>假性饱和</b>
+     * （直接 {@code magnitude*scale} 在 1e15×15000 时就溢出，而真实商 1.5e15 完全放得下）；
+     * 真实商确实溢出时饱和钳 {@code Long.MAX_VALUE}，不回绕为负</li>
+     * </ul>
+     *
+     * @param magnitude    非负幅值（调用方已 {@link #absEut}）；负值按 0 防御
+     * @param scalePerTenK 万分度标尺（{@link #readEfficiencyScale} 结果，-1 = 不缩放）
+     * @return 缩放后幅值，恒 ≥0，最大 {@code Long.MAX_VALUE}
+     */
+    static long applyEfficiency(long magnitude, long scalePerTenK) {
+        if (scalePerTenK < 0L) {
+            return magnitude;
+        }
+        if (magnitude <= 0L || scalePerTenK == 0L) {
+            return 0L;
+        }
+        long high = magnitude / EFFICIENCY_SCALE_BASE;
+        long low = magnitude % EFFICIENCY_SCALE_BASE;
+        // 真实商 ≥ high*scale：该乘积溢出即真实结果必溢出，饱和；否则乘积精确可用
+        if (high > Long.MAX_VALUE / scalePerTenK) {
+            return Long.MAX_VALUE;
+        }
+        long scaledHigh = high * scalePerTenK;
+        long scaledLow = 0L;
+        if (low > 0L) {
+            if (low > Long.MAX_VALUE / scalePerTenK) {
+                // 标尺畸形巨大（远超 15000 上限）：整条读数不可信，按饱和上报而非编造中间值
+                return Long.MAX_VALUE;
+            }
+            scaledLow = low * scalePerTenK / EFFICIENCY_SCALE_BASE;
+        }
+        return scaledHigh > Long.MAX_VALUE - scaledLow ? Long.MAX_VALUE : scaledHigh + scaledLow;
     }
 
     /**
