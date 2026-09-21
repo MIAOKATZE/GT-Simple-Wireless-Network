@@ -6,6 +6,7 @@ import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.StatCollector;
 
 import com.miaokatze.gtswn.config.Config;
 
@@ -77,12 +78,16 @@ public class CommandGTSWNClient extends CommandBase {
         } catch (IllegalArgumentException e) {
             sender.addChatMessage(
                 new ChatComponentText(
-                    "Invalid value for " + subcommand + "; expected " + expectedRange(subcommand) + "."));
+                    StatCollector.translateToLocalFormatted(
+                        "gtswn.command.hud.invalid_value",
+                        subcommand,
+                        expectedRange(subcommand))));
             return;
         }
 
         if (!Config.saveHudConfiguration()) {
-            sender.addChatMessage(new ChatComponentText("Failed to save HUD configuration."));
+            sender
+                .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.hud.save_failed")));
             return;
         }
         sender.addChatMessage(new ChatComponentText(subcommand + " = " + getValue(subcommand)));
@@ -99,6 +104,6 @@ public class CommandGTSWNClient extends CommandBase {
     }
 
     private static String expectedRange(String subcommand) {
-        return SUBCMD_SCALE.equals(subcommand) ? "a number in [0.2, 5.0]" : "an integer in [-500, 500]";
+        return SUBCMD_SCALE.equals(subcommand) ? "[0.2, 5.0]" : "[-500, 500]";
     }
 }

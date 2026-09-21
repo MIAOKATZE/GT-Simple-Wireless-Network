@@ -37,11 +37,6 @@ public final class QuantumNetworkStatsCache {
     private static final Map<AnchorKey, CacheEntry> CACHE = new HashMap<>();
     private static long lastPruneBucket = Long.MIN_VALUE;
 
-    private static long cacheHits;
-    private static long cacheMisses;
-    private static long rawComputations;
-    private static long rawComputationNanos;
-
     private QuantumNetworkStatsCache() {}
 
     /**
@@ -63,17 +58,14 @@ public final class QuantumNetworkStatsCache {
         long revision = registry.getRevision();
         CacheEntry cached = CACHE.get(key);
         if (cached != null && cached.bucket == bucket && cached.revision == revision && cached.grid == grid) {
-            cacheHits++;
             // v1.6.19：性能审计——缓存命中计数
             PerformanceAudit.recordStatsHit();
             cached.lastAccessBucket = bucket;
             return cached.snapshot;
         }
 
-        cacheMisses++;
         // v1.6.19：性能审计——缓存未命中计数
         PerformanceAudit.recordStatsMiss();
-        long started = System.nanoTime();
         // v1.6.23：性能审计——统计原始计算切片（gtswn.statsRaw：洪泛+频道公式+网格遍历总时长）
         long sliceT0 = PerformanceAudit.startSlice();
         try {
@@ -110,8 +102,6 @@ public final class QuantumNetworkStatsCache {
 
             Snapshot snapshot = new Snapshot(totalChannels, usedChannels, quantumNodeCount, structure);
             CACHE.put(key, new CacheEntry(grid, bucket, revision, snapshot));
-            rawComputations++;
-            rawComputationNanos += System.nanoTime() - started;
             return snapshot;
         } finally {
             PerformanceAudit.endSlice(PerformanceAudit.SLICE_GTSWN_STATS_RAW, sliceT0);
@@ -122,26 +112,6 @@ public final class QuantumNetworkStatsCache {
     public static void clear() {
         CACHE.clear();
         lastPruneBucket = Long.MIN_VALUE;
-        cacheHits = 0L;
-        cacheMisses = 0L;
-        rawComputations = 0L;
-        rawComputationNanos = 0L;
-    }
-
-    /** 每秒由 ServerTick 低频输出一次 DEBUG 统计并归零。 */
-    public static String consumeDebugStats() {
-        String result = "statsHit=" + cacheHits
-            + ", statsMiss="
-            + cacheMisses
-            + ", rawCompute="
-            + rawComputations
-            + ", rawComputeMs="
-            + (rawComputationNanos / 1000000L);
-        cacheHits = 0L;
-        cacheMisses = 0L;
-        rawComputations = 0L;
-        rawComputationNanos = 0L;
-        return result;
     }
 
     private static void prune(long currentBucket) {

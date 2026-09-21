@@ -8,8 +8,6 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wirele
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
-
 /**
  * 物品注册器
  * 负责模组内所有普通物品（非机器方块）的注册与初始化逻辑
@@ -20,7 +18,6 @@ public class ItemRegistrar {
      * 初始化并注册所有物品
      */
     public static void init() {
-        GTSimpleWirelessNetwork.LOG.info("开始通过 ItemRegistrar 注册物品...");
         BlockRegistrar.init();
         registerTestCoin();
         registerPortableWirelessNetworkMonitor();
@@ -29,7 +26,6 @@ public class ItemRegistrar {
         registerWirelessEnergyTap();
         registerGTswnCoverEnergyWireless();
         registerGTswnCoverDynamoWireless();
-        GTSimpleWirelessNetwork.LOG.info("物品注册完成。");
     }
 
     /**

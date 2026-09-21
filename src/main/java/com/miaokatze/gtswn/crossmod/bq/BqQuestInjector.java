@@ -445,7 +445,6 @@ public final class BqQuestInjector {
         InputStream is = BqQuestInjector.class.getClassLoader()
             .getResourceAsStream(path);
         if (is == null) {
-            GTSimpleWirelessNetwork.LOG.warn("[BQ] 资源不存在: {}", path);
             return null;
         }
         try (BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8), 32768)) {

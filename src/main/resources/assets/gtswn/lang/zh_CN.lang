@@ -458,3 +458,5 @@ gtswn.reveal.scan.empty=显形扫描：未发现无线链路节点
 gtswn.chat.quantum.swap_done=§a[量子终端] 裸线缆部件已原地迁入量子节点（%d 件），节点即插即用
 gtswn.chat.quantum.swap_partial=§e[量子终端] 部件迁移完成：%d 件成功挂载，%d 件无法挂载已弹回原地
 gtswn.chat.quantum.swap_failed=§c[量子终端] 原位替换失败，全部部件已弹回原地
+gtswn.command.hud.save_failed=§cHUD 配置保存失败：配置文件不可写或已损坏，详见服务端日志。
+gtswn.command.hud.invalid_value=§c%s 取值无效；期望范围 %s。

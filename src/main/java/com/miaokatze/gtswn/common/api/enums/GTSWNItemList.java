@@ -4,7 +4,6 @@ import net.minecraft.block.Block;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.IItemContainer;
 
@@ -45,8 +44,6 @@ public enum GTSWNItemList implements IItemContainer {
     private ItemStack mStack;
     // 标记该条目是否已经被初始化赋值
     private boolean mHasNotBeenSet = true;
-    // 警告标志，防止重复输出警告
-    private boolean mWarned = false;
 
     /**
      * 通过 Item 对象设置当前枚举对应的物品
@@ -152,14 +149,6 @@ public enum GTSWNItemList implements IItemContainer {
         // 添加到创造模式标签页
         CreativeTabManager.addItemToTab(get(1));
         return this;
-    }
-
-    @Override
-    public void sanityCheck() {
-        if (mHasNotBeenSet && !mWarned) {
-            GTSimpleWirelessNetwork.LOG.warn("Warning: Item '" + name() + "' has not been set!");
-            mWarned = true;
-        }
     }
 
     /**

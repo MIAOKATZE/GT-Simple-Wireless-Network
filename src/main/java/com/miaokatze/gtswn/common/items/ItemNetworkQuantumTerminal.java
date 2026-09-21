@@ -114,8 +114,6 @@ public class ItemNetworkQuantumTerminal extends Item {
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
-        GTSimpleWirelessNetwork.LOG
-            .debug("[量子终端] onItemUseFirst 进入 @ ({},{},{}) side={} 玩家={}", x, y, z, side, player.getCommandSenderName());
         // 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
         if (world.isRemote) {
             return false;
@@ -123,7 +121,6 @@ public class ItemNetworkQuantumTerminal extends Item {
         TileEntity te = world.getTileEntity(x, y, z);
         if (te instanceof TileController) {
             boolean result = handleControllerClick(stack, player, world, (TileController) te, x, y, z);
-            GTSimpleWirelessNetwork.LOG.debug("[量子终端] handleControllerClick 返回 {}", result);
             return result;
         }
         return handleBlockClick(stack, player, world, x, y, z, side);
@@ -227,8 +224,6 @@ public class ItemNetworkQuantumTerminal extends Item {
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
-        GTSimpleWirelessNetwork.LOG
-            .debug("[量子终端] onItemRightClick 进入 玩家={} isRemote={}", player.getCommandSenderName(), world.isRemote);
         if (world.isRemote) {
             if (player.isSneaking() && isBound(stack)) {
                 LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));

@@ -5,6 +5,8 @@ import java.util.Arrays;
 
 import net.minecraftforge.common.config.Configuration;
 
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+
 /**
  * 模组配置管理类
  * <p>
@@ -434,6 +436,7 @@ public class Config {
             }
             return true;
         } catch (RuntimeException e) {
+            GTSimpleWirelessNetwork.LOG.error("[配置] 保存 HUD 配置失败（配置文件不可写或已损坏，客户端 HUD 参数未持久化）", e);
             return false;
         }
     }

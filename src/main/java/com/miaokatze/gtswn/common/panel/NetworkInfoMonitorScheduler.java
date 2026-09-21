@@ -7,6 +7,8 @@ import java.util.UUID;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.common.misc.WirelessNetworkManager;
@@ -43,6 +45,12 @@ public class NetworkInfoMonitorScheduler {
 
     /** 上次采样的世界 tick（用于 100t 间隔判定） */
     private long lastSampleTick = -1L;
+
+    /** 采样异常日志的冷却窗口（JVM 单调纳秒，30 秒）：与 world/tick 解耦，保留「仍在复发」信号。 */
+    private static final long LOG_COOLDOWN_NANOS = 30_000_000_000L;
+
+    /** 上次输出时刻（{@link System#nanoTime} 原点，0 表示尚未输出过 ⇒ 首次必然输出）。 */
+    private static long lastLoggedNanos = 0L;
 
     /**
      * 服务器 tick 事件处理（END phase 执行，避免与方块 updateEntity 冲突）。
@@ -111,7 +119,11 @@ public class NetworkInfoMonitorScheduler {
                 store.markDirty();
             } catch (Exception e) {
                 // 单个 dataSet 采样异常不影响其他 dataSet
-                e.printStackTrace();
+                long now = System.nanoTime();
+                if (lastLoggedNanos == 0L || now - lastLoggedNanos >= LOG_COOLDOWN_NANOS) {
+                    lastLoggedNanos = now;
+                    GTSimpleWirelessNetwork.LOG.error("[网络信息屏] 单个数据集采样异常（不影响其他数据集）", e);
+                }
             }
         }
     }

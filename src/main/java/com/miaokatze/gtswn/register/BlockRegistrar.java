@@ -14,7 +14,6 @@ import com.miaokatze.gtswn.common.items.ItemBlockNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.registry.GameRegistry;
 
@@ -26,7 +25,6 @@ public class BlockRegistrar {
     public static Block networkQuantumNode;
 
     public static void init() {
-        GTSimpleWirelessNetwork.LOG.info("Registering GTSWN blocks...");
         networkInfoPanel = new BlockNetworkInfoPanel();
         networkInfoPanelExtender = new BlockNetworkInfoPanelExtender();
         networkQuantumNode = new BlockNetworkQuantumNode();
@@ -47,6 +45,5 @@ public class BlockRegistrar {
         GameRegistry.registerTileEntity(TileEntityNetworkInfoPanel.class, "gtswn.network_info_panel");
         GameRegistry.registerTileEntity(TileEntityNetworkInfoPanelExtender.class, "gtswn.network_info_panel_extender");
         GameRegistry.registerTileEntity(TileEntityNetworkQuantumNode.class, "gtswn.network_quantum_node");
-        GTSimpleWirelessNetwork.LOG.info("GTSWN blocks registered.");
     }
 }

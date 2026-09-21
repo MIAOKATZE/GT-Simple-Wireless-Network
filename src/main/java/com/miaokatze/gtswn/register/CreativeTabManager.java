@@ -7,8 +7,6 @@ import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
-
 /**
  * 创造模式物品栏管理器
  * 负责管理模组专属的创造模式标签页，包括图标设置、名称显示以及物品列表的维护。
@@ -77,7 +75,6 @@ public class CreativeTabManager {
      * 建议在物品注册完成后调用此方法
      */
     public static void initCreativeTab() {
-        GTSimpleWirelessNetwork.LOG.info("正在初始化创造模式物品栏，当前包含 " + itemsToAdd.size() + " 个物品");
         // 这里可以在需要时添加额外的初始化逻辑
     }
 

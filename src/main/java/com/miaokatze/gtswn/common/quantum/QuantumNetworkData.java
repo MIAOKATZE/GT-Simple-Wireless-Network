@@ -70,10 +70,6 @@ public class QuantumNetworkData {
 
     private static final Map<AnchorKey, FullCacheEntry> FULL_CACHE = new HashMap<>();
     private static long lastFullCachePruneBucket = Long.MIN_VALUE;
-    private static long fullCacheHits;
-    private static long fullCacheMisses;
-    private static long fullAssemblies;
-    private static long fullAssemblyNanos;
 
     // ==================== NBT 键名（单源于 ItemNetworkQuantumTerminal，规划 §5.1） ====================
     // B2-14：删除原「不改 T1-T4 已完成文件」纪律下的冗余字符串副本，改引物品侧 public 常量；
@@ -252,14 +248,11 @@ public class QuantumNetworkData {
         if (cached != null && cached.bucket == bucket
             && cached.revision == registry.getRevision()
             && cached.grid == grid) {
-            fullCacheHits++;
             cached.lastAccessBucket = bucket;
             // v1.6.20：缓存与命中返回共享同一对象（装配完成后无服务端修改点，客户端反序列化自建副本）
             // SWN-OPT-13：entries 已在入缓存前冻结为 unmodifiableList，命中返回的即冻结实例
             return cached.data;
         }
-        fullCacheMisses++;
-        long assemblyStarted = System.nanoTime();
         data.online = true;
 
         // 5-6. 总频道、已用频道和量子节点数共享同一份主线程统计快照。
@@ -278,8 +271,6 @@ public class QuantumNetworkData {
         if (!Config.quantumTerminalAssembleFullData) {
             data.entries = Collections.unmodifiableList(data.entries);
             FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data));
-            fullAssemblies++;
-            fullAssemblyNanos += System.nanoTime() - assemblyStarted;
             return data;
         }
         long qT0 = PerformanceAudit.startSlice();
@@ -357,8 +348,6 @@ public class QuantumNetworkData {
         // SWN-OPT-13：入缓存前冻结 entries，把「无修改点」约定升级为运行期强制
         data.entries = Collections.unmodifiableList(data.entries);
         FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data));
-        fullAssemblies++;
-        fullAssemblyNanos += System.nanoTime() - assemblyStarted;
         return data;
     }
 
@@ -366,26 +355,6 @@ public class QuantumNetworkData {
     public static void clearCache() {
         FULL_CACHE.clear();
         lastFullCachePruneBucket = Long.MIN_VALUE;
-        fullCacheHits = 0L;
-        fullCacheMisses = 0L;
-        fullAssemblies = 0L;
-        fullAssemblyNanos = 0L;
-    }
-
-    /** 每秒由 ServerTick 低频输出一次 DEBUG 统计并归零。 */
-    public static String consumeDebugStats() {
-        String result = "fullHit=" + fullCacheHits
-            + ", fullMiss="
-            + fullCacheMisses
-            + ", fullAssemble="
-            + fullAssemblies
-            + ", fullAssembleMs="
-            + (fullAssemblyNanos / 1000000L);
-        fullCacheHits = 0L;
-        fullCacheMisses = 0L;
-        fullAssemblies = 0L;
-        fullAssemblyNanos = 0L;
-        return result;
     }
 
     private static void pruneFullCache(long currentBucket) {

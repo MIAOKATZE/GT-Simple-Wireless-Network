@@ -171,12 +171,10 @@ public class CommonProxy {
         FMLCommonHandler.instance()
             .bus()
             .register(scheduler);
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 无线 EU 监控调度器已注册到事件总线。");
 
         // B07（O2-B07 拆环后半）：注入 network 侧广播端口——TEPanel 推送不再直引 GTSWNPacketHandler，
         // tile→network 依赖归零（推送域 O2-04 拆出后只持端口，O2-22/23 广播裁剪在端口实现内落点）
         TileEntityNetworkInfoPanel.setBroadcastPort(new NetworkPanelBroadcastPort());
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 信息屏广播端口已注入（tile→network 拆环闭合）。");
 
         // 注册量子化控制器事件处理器（T2）：
         // - Forge 事件总线：右键拦截 / 挖掘减速 / 邻接通知 / 破坏出册
@@ -187,7 +185,6 @@ public class CommonProxy {
         FMLCommonHandler.instance()
             .bus()
             .register(quantumHandler);
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 量子化控制器事件处理器已注册到双事件总线。");
 
         // 注册设备信息终端事件处理器（阶段 B）：
         // - Forge 事件总线：机器放置登记/自动绑定、破坏出册级联解绑
@@ -198,7 +195,6 @@ public class CommonProxy {
         FMLCommonHandler.instance()
             .bus()
             .register(deviceHandler);
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 设备信息终端事件处理器已注册到双事件总线。");
 
         // 注册设备信息终端调度器与扫描管理器（阶段 C）：
         // - DeviceSampleScheduler（FML 总线 ServerTickEvent END）：每 tick 排空包 8 请求队列
@@ -210,7 +206,6 @@ public class CommonProxy {
             .bus()
             .register(new DeviceSampleScheduler());
         DeviceScanManager.register();
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 设备信息终端采样调度器与扫描管理器已注册到事件总线。");
 
         // v1.6.30：注册链路节点覆盖板物品掉落抑制监听（覆盖板由终端物品免费创建，掉落=无限复制）
         MinecraftForge.EVENT_BUS.register(new CoverDropSuppressionHandler());
@@ -219,7 +214,6 @@ public class CommonProxy {
         FMLCommonHandler.instance()
             .bus()
             .register(new PerformanceAudit.ServerTickListener());
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 性能审计 tick 结算监听已注册到事件总线。");
 
         // v1.6.2：WAILA 软集成——检测到 WAILA 才经 IMC 注册量子节点状态显示，无 WAILA 不影响运行
         if (Loader.isModLoaded("Waila")) {
@@ -233,7 +227,9 @@ public class CommonProxy {
         // 当前量子节点不再申请或主动强制加载区块。
         ForgeChunkManager
             .setForcedChunkLoadingCallback(GTSimpleWirelessNetwork.instance, new QuantumChunkLoaderCallback());
-        GTSimpleWirelessNetwork.LOG.info("[2/3] 量子节点旧版 Ticket 清理 callback 已注册。");
+        // 日志治理 I2：本方法内 7 项接线确认合并为方法体末尾这一条汇总（注册调用与顺序一律不动）
+        GTSimpleWirelessNetwork.LOG.info(
+            "[2/3] 事件接线完成：无线 EU 监控调度器 / 信息屏广播端口注入（tile→network 拆环） / 量子化控制器事件处理器 / 设备信息终端事件处理器 / 设备采样调度器与扫描管理器 / 性能审计 tick 结算监听 / 旧版 Ticket 清理 callback，共 7 项已注册。");
     }
 
     /**

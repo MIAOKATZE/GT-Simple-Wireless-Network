@@ -3,9 +3,11 @@ package com.miaokatze.gtswn.common.device;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.item.ItemStack;
@@ -86,9 +88,6 @@ public class DeviceSampleScheduler {
     /** 单项显示名长度封顶（字符，截断后再拼 xN/nL 后缀） */
     private static final int RECIPE_PART_NAME_CAP = 24;
 
-    /** RUNNING 真双零诊断日志限频间隔（tick/键，600t = 30s 每键至多 1 条） */
-    private static final long ZERO_FLOW_LOG_INTERVAL_TICKS = 600L;
-
     /**
      * 万分度效率字段名（GT5U UCFE 家族自持字段，非基类契约：
      * MTEUniversalChemicalFuelEngine.java:76 {@code private long tEff}，字段名在
@@ -123,10 +122,10 @@ public class DeviceSampleScheduler {
     private final Map<String, Map<UUID, FifoState>> fifoStates = new HashMap<>();
 
     /**
-     * RUNNING 真双零诊断日志的按键限频表：机器键 → 上次输出 tick（仅服务端主线程访问，不落盘）。
+     * RUNNING 真双零诊断的按键去重表：已输出过的键不再输出（N1 永久去重；仅服务端主线程访问，不落盘）。
      * 机器自愈解绑时随 {@link #fifoStates} 一并清除。
      */
-    private final Map<String, Long> zeroFlowLogTicks = new HashMap<>();
+    private final Set<String> zeroFlowLoggedKeys = new HashSet<>();
 
     /** runningSum 会话缓存条目：上次推进后的三通道 (sum, sumIn, sumOut) 与 (idx, count)，须与记录状态一致才可增量推进 */
     private static final class FifoState {
@@ -223,7 +222,7 @@ public class DeviceSampleScheduler {
                 store.removeKeyFromAll(key);
                 // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
                 this.fifoStates.remove(key);
-                this.zeroFlowLogTicks.remove(key);
+                this.zeroFlowLoggedKeys.remove(key);
                 continue;
             }
             World world = server.worldServerForDimension(pos[0]);
@@ -246,7 +245,7 @@ public class DeviceSampleScheduler {
                 store.removeKeyFromAll(key);
                 // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
                 this.fifoStates.remove(key);
-                this.zeroFlowLogTicks.remove(key);
+                this.zeroFlowLoggedKeys.remove(key);
                 continue;
             }
             // 三态经基座委托（BaseMetaTileEntity 实现 IMachineProgress），cast 基座而非 mte
@@ -264,9 +263,9 @@ public class DeviceSampleScheduler {
                 EuFlowReading reading = readEuFlow(mte, gtTE, isGenerator);
                 euIn = reading.in;
                 euOut = reading.out;
-                // 限频诊断（不改采样结果与控制流）：RUNNING 且含兜底后仍真双零，每键 600t 至多 1 条
+                // 永久去重诊断（不改采样结果与控制流）：RUNNING 且含兜底后仍真双零，每键进程内至多 1 条
                 if (euIn == 0L && euOut == 0L) {
-                    logZeroFlowDiagnostic(key, mte, reading, overworld.getTotalWorldTime());
+                    logZeroFlowDiagnostic(key, mte, reading);
                 }
             }
             // 功率分类（0=耗电 / 1=发电），随采样持续刷新（含旧档补齐）
@@ -704,7 +703,7 @@ public class DeviceSampleScheduler {
         // AdvHeatExchanger :81-97 尽管同样 extends GTPPMultiBlockBase，字段依旧恒空）⇒ 三路之或对它们
         // 与两路时逐位一致，判不可信不变。
         // 链路走向（上述 4 类，RUNNING 且主路径真双零）：正 lEUt 不采信、兜底幅值同置 0、无 provider、
-        // 非发电 ⇒ 四层链全落空，写双零并由既有 RUNNING 双零限频诊断记录，不再产出任何方向的假读数
+        // 非发电 ⇒ 四层链全落空，写双零并由既有 RUNNING 双零去重诊断记录，不再产出任何方向的假读数
         // （宁缺不伪：GUI 显示 0 并有日志可查，胜过编造一个方向的读数）。
         // 注：闸门只看结构、与发电排除集解耦——goodgenerator MTELargeFusionComputer
         // （:81 extends TTMultiblockBase 且 :161,167 useLongPower=true；运行时 lEUt 由继承的
@@ -847,16 +846,14 @@ public class DeviceSampleScheduler {
     }
 
     /**
-     * RUNNING 真双零限频诊断（不改采样结果与控制流）：每键 {@value #ZERO_FLOW_LOG_INTERVAL_TICKS}t
-     * 至多 1 条，输出 mte 类名 / 控制器双均值原值 / 三路 hatch 样本数，辅助定位兜底后仍双零的
+     * RUNNING 真双零诊断（不改采样结果与控制流）：每键进程内至多 1 条（永久去重；
+     * 键随机器解绑清除），输出 mte 类名 / 控制器双均值原值 / 三路 hatch 样本数，辅助定位兜底后仍双零的
      * 残余机器（读数全 0 且无可用兜底幅值）。仅由 RUNNING 态且含兜底后仍 in==0 && out==0 时调用。
      */
-    private void logZeroFlowDiagnostic(String key, IMetaTileEntity mte, EuFlowReading reading, long tick) {
-        Long last = this.zeroFlowLogTicks.get(key);
-        if (last != null && tick - last.longValue() < ZERO_FLOW_LOG_INTERVAL_TICKS) {
+    private void logZeroFlowDiagnostic(String key, IMetaTileEntity mte, EuFlowReading reading) {
+        if (!this.zeroFlowLoggedKeys.add(key)) {
             return;
         }
-        this.zeroFlowLogTicks.put(key, Long.valueOf(tick));
         GTSimpleWirelessNetwork.LOG.info(
             "[设备终端] RUNNING 双零流量诊断：key={} mte={} controllerIn={} controllerOut={} hatchIn样本数={} hatchOut样本数={}",
             key,

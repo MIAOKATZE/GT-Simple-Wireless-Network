@@ -48,6 +48,12 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
     /** 玩家 UUID → (终端 UUID → 发送进度)（仅主线程访问；登出清理防残留） */
     private static final Map<UUID, Map<UUID, SentState>> SENT = new HashMap<>();
 
+    /** 本类异常日志的冷却窗口（JVM 单调纳秒，30 秒）：抑制刷屏同时保留「仍在复发」信号。 */
+    private static final long LOG_COOLDOWN_NANOS = 30_000_000_000L;
+
+    /** 上次输出时刻（{@link System#nanoTime} 原点，0 表示尚未输出过 ⇒ 首次必然输出）。 */
+    private static long lastLoggedNanos = 0L;
+
     private DeviceTerminalRequestQueue() {}
 
     /** 单终端发送进度：批次版本 + 已发页数 + 整批发完标记（版本跳过的零发包判据） */
@@ -150,7 +156,11 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
             state.complete = to >= entryTotal;
         } catch (Throwable t) {
             // 装配异常：本条丢弃（客户端 GUI 等下个轮询周期重试），不中断本 tick 后续请求
-            com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG.error("[设备终端] 请求装配异常（本条丢弃）", t);
+            long now = System.nanoTime();
+            if (lastLoggedNanos == 0L || now - lastLoggedNanos >= LOG_COOLDOWN_NANOS) {
+                lastLoggedNanos = now;
+                com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG.error("[设备终端] 请求装配异常（本条丢弃）", t);
+            }
         }
     }
 

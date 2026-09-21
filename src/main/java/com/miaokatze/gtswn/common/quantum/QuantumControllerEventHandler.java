@@ -26,7 +26,6 @@ import net.minecraftforge.event.world.ExplosionEvent;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.WirelessEURequestQueue;
 
 import appeng.api.implementations.items.INetworkToolItem;
@@ -96,8 +95,15 @@ public class QuantumControllerEventHandler {
     /** 上一次处理的服务器实例，用于切换存档时清理运行期缓存。 */
     private MinecraftServer lastCacheServer;
 
-    /** 连接过滤实际触发 AE2 updateState 的次数，仅用于每秒 DEBUG 汇总。 */
-    private static long filterUpdates;
+    /** 本类异常日志的冷却窗口（JVM 单调纳秒，30 秒）：抑制刷屏同时保留「仍在复发」信号。 */
+    private static final long LOG_COOLDOWN_NANOS = 30_000_000_000L;
+
+    /**
+     * 上次输出时刻（{@link System#nanoTime} 原点，0 表示尚未输出过 ⇒ 首次必然输出）。
+     * 刻意不用 per-world 的 getTotalWorldTime：跨维度时间轴错位会让冷却判定整条失效。
+     * static 系有意取舍：多世界共用一条冷却窗口，某世界持续报错时其余世界的新异常在窗口内被静默。
+     */
+    private static long lastLoggedNanos = 0L;
 
     // ==================== 1. 右键交互全量拦截（D2-A） ====================
 
@@ -139,12 +145,6 @@ public class QuantumControllerEventHandler {
             return;
         }
         // 非能源相关物品/空手 → 全量拦截
-        GTSimpleWirelessNetwork.LOG.debug(
-            "[量子化] 拦截非能源相关物品/空手右键已量子化控制器 @ ({},{},{}) 玩家={}",
-            event.x,
-            event.y,
-            event.z,
-            event.entityPlayer.getCommandSenderName());
         event.setCanceled(true);
         // 冷却防刷屏：同一玩家 2 秒内仅提示一次
         // B2-05：写入与清理（onServerTick→pruneBlockedMsgCooldowns，overworld tick 基准）统一时钟域——
@@ -363,18 +363,14 @@ public class QuantumControllerEventHandler {
                 sweepWorld(world);
             } catch (Throwable t) {
                 // 单世界巡检异常不影响其他世界与主循环
-                com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG
-                    .error("[量子化] 世界 " + world.provider.dimensionId + " 巡检异常", t);
+                long now = System.nanoTime();
+                if (lastLoggedNanos == 0L || now - lastLoggedNanos >= LOG_COOLDOWN_NANOS) {
+                    lastLoggedNanos = now;
+                    com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG
+                        .error("[量子化] 世界 " + world.provider.dimensionId + " 巡检异常", t);
+                }
             }
         }
-        if (GTSimpleWirelessNetwork.LOG.isDebugEnabled()) {
-            GTSimpleWirelessNetwork.LOG.debug(
-                "[量子性能] {} ; {} ; filterUpdate={}",
-                QuantumNetworkStatsCache.consumeDebugStats(),
-                QuantumNetworkData.consumeDebugStats(),
-                filterUpdates);
-        }
-        filterUpdates = 0L;
     }
 
     /** 清理右键拦截提示冷却表中超过保留窗口未再触发的条目（SWN-OPT-12） */
@@ -544,7 +540,6 @@ public class QuantumControllerEventHandler {
         EnumSet<ForgeDirection> copy = EnumSet.noneOf(ForgeDirection.class);
         copy.addAll(desired);
         proxy.setValidSides(copy);
-        filterUpdates++;
         // v1.6.19：性能审计——连接过滤实际更新计数
         PerformanceAudit.recordControllerFilterUpdate();
     }

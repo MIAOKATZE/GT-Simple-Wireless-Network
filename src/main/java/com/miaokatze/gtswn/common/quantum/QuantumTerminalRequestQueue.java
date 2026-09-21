@@ -27,6 +27,12 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
 
     private static final QuantumTerminalRequestQueue INSTANCE = new QuantumTerminalRequestQueue();
 
+    /** 本类异常日志的冷却窗口（JVM 单调纳秒，30 秒）：抑制刷屏同时保留「仍在复发」信号。 */
+    private static final long LOG_COOLDOWN_NANOS = 30_000_000_000L;
+
+    /** 上次输出时刻（{@link System#nanoTime} 原点，0 表示尚未输出过 ⇒ 首次必然输出）。 */
+    private static long lastLoggedNanos = 0L;
+
     private QuantumTerminalRequestQueue() {}
 
     /** Netty 线程入队（仅缓存玩家引用，主线程 drain 时再校验在线/手持） */
@@ -82,7 +88,11 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
             PerformanceAudit.recordTerminalReply();
         } catch (Throwable t) {
             // 装配读世界/网格可能抛异常（网格解体、区块竞争等）：回发离线快照兜底，保证 GUI 不卡在「...」
-            GTSimpleWirelessNetwork.LOG.error("[量子终端] 装配网络数据异常，回发离线快照", t);
+            long now = System.nanoTime();
+            if (lastLoggedNanos == 0L || now - lastLoggedNanos >= LOG_COOLDOWN_NANOS) {
+                lastLoggedNanos = now;
+                GTSimpleWirelessNetwork.LOG.error("[量子终端] 装配网络数据异常，回发离线快照", t);
+            }
             try {
                 QuantumNetworkData fallback = QuantumNetworkData.offlineFromStack(player.getHeldItem());
                 if (fallback == null) {

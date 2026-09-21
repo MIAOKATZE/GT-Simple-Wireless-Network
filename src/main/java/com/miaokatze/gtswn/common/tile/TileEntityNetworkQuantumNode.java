@@ -124,6 +124,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private static int connectsThisTick = 0;
     private static long connectBudgetTick = Long.MIN_VALUE;
 
+    /** 本类异常日志的冷却窗口（JVM 单调纳秒，30 秒）：抑制刷屏同时保留「仍在复发」信号。 */
+    private static final long LOG_COOLDOWN_NANOS = 30_000_000_000L;
+
+    /** 上次输出时刻（{@link System#nanoTime} 原点，0 表示尚未输出过 ⇒ 首次必然输出）。 */
+    private static long lastLoggedNanos = 0L;
+
     /** 同步 NBT 键名：桥接在线状态（仅 description packet 用，不持久化） */
     private static final String NBT_SYNC_LINKED = "linked";
 
@@ -1282,8 +1288,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // v1.6.13 任务1：持久化同步在线状态，用于区块加载/磁盘读取后恢复 clientLinked
         tag.setBoolean(NBT_SYNC_LINKED, isLinked());
-        GTSimpleWirelessNetwork.LOG
-            .debug("[量子节点] writeToNBT 写入同步状态 @ ({},{},{}) linked={}", xCoord, yCoord, zCoord, isLinked());
         if (gridProxy != null) {
             gridProxy.writeToNBT(tag);
         }
@@ -1316,7 +1320,11 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 stream.readBytes(bytes);
                 tag.setByteArray(NBT_SYNC_CB_PARTS, bytes);
             } catch (IOException e) {
-                GTSimpleWirelessNetwork.LOG.warn("[量子节点] 部件容器流序列化失败 @ ({},{},{})", xCoord, yCoord, zCoord, e);
+                long now = System.nanoTime();
+                if (lastLoggedNanos == 0L || now - lastLoggedNanos >= LOG_COOLDOWN_NANOS) {
+                    lastLoggedNanos = now;
+                    GTSimpleWirelessNetwork.LOG.warn("[量子节点] 部件容器流序列化失败 @ ({},{},{})", xCoord, yCoord, zCoord, e);
+                }
             }
         }
         return new S35PacketUpdateTileEntity(xCoord, yCoord, zCoord, 1, tag);

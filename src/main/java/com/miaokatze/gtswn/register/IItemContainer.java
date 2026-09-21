@@ -59,9 +59,4 @@ public interface IItemContainer {
     default IItemContainer setAndRegister(Item item, String registerName, boolean shouldRegister) {
         return this;
     }
-
-    /**
-     * 安全检查
-     */
-    default void sanityCheck() {}
 }

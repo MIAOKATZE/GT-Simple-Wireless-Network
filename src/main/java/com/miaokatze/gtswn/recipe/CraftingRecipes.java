@@ -29,33 +29,58 @@ import gregtech.api.util.GTOreDictUnificator;
  */
 public class CraftingRecipes {
 
+    /** 工作台合成配方总数，仅用于注册汇总日志的分母 */
+    private static final int RECIPE_TOTAL = 7;
+
     /**
      * 初始化所有工作台合成配方
      * <p>
      * 建议在 postInit 阶段调用
      */
     public static void init() {
-        GTSimpleWirelessNetwork.LOG.info("开始注册工作台合成配方...");
         registerAllRecipes();
-        GTSimpleWirelessNetwork.LOG.info("工作台合成配方注册完成。");
     }
 
     /**
      * 注册所有配方
+     * <p>
+     * 注册顺序与配方内容不变；逐件回执合并为方法体最后一句的带数量汇总。
      */
     private static void registerAllRecipes() {
+        int registered = 0;
         // 便携无线监测终端
-        addPortableMonitorRecipe();
+        if (addPortableMonitorRecipe()) {
+            registered++;
+        }
         // 无线能量监视器（工作台版）
-        addWirelessEnergyMonitorRecipe();
+        if (addWirelessEnergyMonitorRecipe()) {
+            registered++;
+        }
         // 无线网络链路终端
-        addWirelessEnergyTapRecipe();
-        addNetworkInfoPanelRecipe();
-        addNetworkInfoPanelExtenderRecipe();
+        if (addWirelessEnergyTapRecipe()) {
+            registered++;
+        }
+        if (addNetworkInfoPanelRecipe()) {
+            registered++;
+        }
+        if (addNetworkInfoPanelExtenderRecipe()) {
+            registered++;
+        }
         // ME 网络量子终端
-        addQuantumTerminalRecipe();
+        if (addQuantumTerminalRecipe()) {
+            registered++;
+        }
         // 设备信息终端
-        addDeviceInfoTerminalRecipe();
+        if (addDeviceInfoTerminalRecipe()) {
+            registered++;
+        }
+        GTSimpleWirelessNetwork.LOG.info(
+            "[配方] 工作台合成配方注册完成：" + RECIPE_TOTAL
+                + " 条中成功 "
+                + registered
+                + " 条、跳过 "
+                + (RECIPE_TOTAL - registered)
+                + " 条。");
     }
 
     /**
@@ -66,7 +91,7 @@ public class CraftingRecipes {
      * LV接收器 | 电脑屏幕覆盖板 | LV接收器
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
-    private static void addPortableMonitorRecipe() {
+    private static boolean addPortableMonitorRecipe() {
         // 获取原材料
         ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
@@ -94,7 +119,7 @@ public class CraftingRecipes {
             .getRecipeList()
             .add(recipe);
 
-        GTSimpleWirelessNetwork.LOG.info("已添加便携无线监测终端合成配方");
+        return true;
     }
 
     /**
@@ -105,7 +130,7 @@ public class CraftingRecipes {
      * LV发射器 | 电脑屏幕覆盖板 | LV发射器
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
-    private static void addWirelessEnergyTapRecipe() {
+    private static boolean addWirelessEnergyTapRecipe() {
         // 获取原材料
         ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
@@ -133,7 +158,7 @@ public class CraftingRecipes {
             .getRecipeList()
             .add(recipe);
 
-        GTSimpleWirelessNetwork.LOG.info("已添加无线网络链路终端合成配方");
+        return true;
     }
 
     /**
@@ -144,7 +169,7 @@ public class CraftingRecipes {
      * LV接收器 | LV机械外壳 | LV接收器
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
-    private static void addWirelessEnergyMonitorRecipe() {
+    private static boolean addWirelessEnergyMonitorRecipe() {
         // 获取原材料
         ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
@@ -172,7 +197,7 @@ public class CraftingRecipes {
             .getRecipeList()
             .add(recipe);
 
-        GTSimpleWirelessNetwork.LOG.info("已添加无线能量监视器合成配方");
+        return true;
     }
 
     /**
@@ -183,7 +208,7 @@ public class CraftingRecipes {
      * 玻璃块 | 无线能量监视器(MTE) | 玻璃块
      * LV传感器 | 玻璃块 | LV传感器
      */
-    private static void addNetworkInfoPanelRecipe() {
+    private static boolean addNetworkInfoPanelRecipe() {
         ItemStack lvSensor = ItemList.Sensor_LV.get(1); // LV传感器（接收器）
         // 原版玻璃块：通配符meta(32767=WILDCARD_VALUE)接受普通玻璃+染色玻璃
         // 不用 GTOreDictUnificator.get(OrePrefixes.glass, Materials.Glass, 1)，因 glass 是 selfReferencing 自引用前缀会返回 null
@@ -205,7 +230,7 @@ public class CraftingRecipes {
             .getRecipeList()
             .add(recipe);
 
-        GTSimpleWirelessNetwork.LOG.info("已添加网络信息屏合成配方");
+        return true;
     }
 
     /**
@@ -218,7 +243,7 @@ public class CraftingRecipes {
      * <p>
      * 输出 2 个拓展屏
      */
-    private static void addNetworkInfoPanelExtenderRecipe() {
+    private static boolean addNetworkInfoPanelExtenderRecipe() {
         ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
         // 原版玻璃块：通配符meta(32767=WILDCARD_VALUE)接受普通玻璃+染色玻璃
         // 不用 GTOreDictUnificator.get(OrePrefixes.glass, Materials.Glass, 1)，因 glass 是 selfReferencing 自引用前缀会返回 null
@@ -241,7 +266,7 @@ public class CraftingRecipes {
             .getRecipeList()
             .add(recipe);
 
-        GTSimpleWirelessNetwork.LOG.info("已添加网络信息拓展屏合成配方");
+        return true;
     }
 
     /**
@@ -252,7 +277,7 @@ public class CraftingRecipes {
      * LV发射器 | 电脑屏幕覆盖板 | LV发射器
      * 钢板 | 末影珍珠 | 钢板
      */
-    private static void addDeviceInfoTerminalRecipe() {
+    private static boolean addDeviceInfoTerminalRecipe() {
         ItemStack lvSensor = ItemList.Sensor_LV.get(1); // LV传感器
         ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢板
@@ -279,7 +304,7 @@ public class CraftingRecipes {
             .getRecipeList()
             .add(recipe);
 
-        GTSimpleWirelessNetwork.LOG.info("已添加设备信息终端合成配方");
+        return true;
     }
 
     /**
@@ -294,7 +319,7 @@ public class CraftingRecipes {
      * AE2 方块经 GameRegistry.findItem 解耦（项目无 AE2 方块 OreDict 先例），
      * GT metaitem.01:32680 经 findItem + meta（动态注册 meta，无 ItemList 静态映射）。
      */
-    private static void addQuantumTerminalRecipe() {
+    private static boolean addQuantumTerminalRecipe() {
         // A = AE2 福鲁伊克斯方块（appliedenergistics2:tile.BlockFluix）
         Item fluixItem = GameRegistry.findItem("appliedenergistics2", "tile.BlockFluix");
         // B = GT metaitem.01:32680（gregtech:gt.metaitem.01 的 meta 32680）
@@ -305,7 +330,7 @@ public class CraftingRecipes {
         // 防御性校验：AE2/GT 未加载时 findItem 返回 null，跳过注册避免 NPE
         if (fluixItem == null || gtMetaItem == null || controllerItem == null) {
             GTSimpleWirelessNetwork.LOG.warn("[配方] ME 网络量子终端合成配方注册跳过：AE2/GT 物品缺失");
-            return;
+            return false;
         }
 
         ItemStack fluix = new ItemStack(fluixItem, 1, 0);
@@ -327,6 +352,6 @@ public class CraftingRecipes {
         CraftingManager.getInstance()
             .getRecipeList()
             .add(recipe);
-        GTSimpleWirelessNetwork.LOG.info("已添加 ME 网络量子终端合成配方");
+        return true;
     }
 }
