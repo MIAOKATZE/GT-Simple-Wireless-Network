@@ -25,8 +25,7 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 
 | GTNH         | GTSWN  | 维护 / Maintenance |
 | ------------ | ------ | :--------------: |
-| 2.9.0 beta-3&RC-1 | **1.8.13 +**（当前 / current） |        ✔️        |
-| 2.9.0 beta-1&2&3 | 1.8.0~1.8.12 |        ✔️        |
+| 2.9.0 beta-1&2&3&RC-1 | **1.8.0 +** （当前 / current） |        ✔️        |
 | 2.9.0 beta-1&2 | 1.0.0~1.7.25| ✔️ |
 | 2.8.4        | 0.2.0  |        ❌️        |
 
