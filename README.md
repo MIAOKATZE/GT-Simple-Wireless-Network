@@ -160,6 +160,8 @@ A portable item that connects any machine to the wireless EU network. Shift+righ
 
 Both are **void covers** — they have no recipe and exist only as NBT-driven attachments placed by the Wireless Energy Tap. Their behavior is governed entirely by NBT parameters assigned on right-click; bare cover items without these parameters are inert. All NBT parameters persist across save/load.
 
+- **配置复制 / Config Copying**: 自 v1.8.14 起，复制粘贴工具（GT5U 覆盖板工具、物质操纵者等）能否复制链路节点配置由 `gtswn_network.cfg` 的 `AllowCopyPasteTool` 控制（默认关闭；开启后复制带链路节点的机器时配置随之回填）。/ Since v1.8.14, whether copy-paste tools (GT5U cover tool, MatterManipulator, etc.) can copy link node configs is controlled by `AllowCopyPasteTool` in `gtswn_network.cfg` (default off; when enabled, copied machines carry their link node configs).
+
 #### 链路终端（能源） / Link Terminal (Energy)
 
 作为一个**虚拟电源**——内部维护电容量缓冲池，像导线一样持续向被绑定机器输入 EU。

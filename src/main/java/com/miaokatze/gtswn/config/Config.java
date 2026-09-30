@@ -23,6 +23,7 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
  *     DownlinkLossEU / UplinkLossEU   // 上下行损耗
  *     InteractionRateTicks            // 链路节点交互间隔（基础值）
  *     BufferRedundancyTicks           // 链路节点缓冲冗余（与基础值共同决定缓存量）
+ *     AllowCopyPasteTool              // 链路节点是否允许配置复制粘贴工具（默认 false）
  * }
  * hud {
  *     HudXOffset / HudYOffset / HudScale  // HUD 偏移与缩放
@@ -86,6 +87,22 @@ public class Config {
     // Warning: too small a value leaves insufficient buffer between interactions; machines may lose power.
     // 默认 200 / Default 200
     public static int bufferRedundancyTicks = 200;
+
+    // 链路节点是否允许配置复制粘贴工具 / Whether link nodes allow copy-paste config tools
+    // GT5U 的 Cover.allowsCopyPasteTool 开关：GT5U 覆盖板复制工具、物质操纵者（MatterManipulator）
+    // 等外部复制工具在回填覆盖板配置前都会检查此开关。
+    // false（默认）：工具拒绝复制本覆盖板配置（与 GT5U 原版无线覆盖板一致）；复制带链路节点的机器时，
+    // 节点覆盖板会装上并入册，但 V/A 等配置不回填，需手动重配。
+    // true：允许复制与回填配置；复制出的节点携带源节点的 V/A 等配置及缓冲池剩余电量。
+    // GT5U's Cover.allowsCopyPasteTool switch: the GT5U cover tool and external copy tools such as
+    // MatterManipulator check this before restoring cover config onto the pasted cover.
+    // false (default): tools refuse to copy this cover's config (same as GT5U's own wireless covers);
+    // copying a machine with a link node installs the cover and registers the node, but leaves it
+    // unconfigured (no V/A) for manual setup.
+    // true: config is copied and restored; the copied node carries the source node's V/A config
+    // and remaining buffer EU.
+    // 需重启生效 / Requires restart
+    public static boolean allowCopyPasteTool = false;
 
     // HUD 水平偏移 / HUD horizontal offset
     // 正值 = HUD 向右移动，负值 = HUD 向左移动 / positive = shift right, negative = shift left
@@ -324,6 +341,20 @@ public class Config {
                 + "voltage × amperage × (base + redundancy) EU (tick-equivalent, default 600+200=800).\n"
                 + "Warning: too small a value leaves insufficient buffer between interactions; machines may lose power.\n"
                 + "默认 200 / Default 200, range 0-60000");
+
+        // 链路节点是否允许配置复制粘贴工具 / Whether link nodes allow copy-paste config tools
+        allowCopyPasteTool = configuration.getBoolean(
+            "AllowCopyPasteTool",
+            Configuration.CATEGORY_GENERAL,
+            allowCopyPasteTool,
+            "链路节点是否允许配置复制粘贴工具 / Whether link nodes allow copy-paste config tools\n"
+                + "GT5U 覆盖板复制工具、物质操纵者等外部复制工具回填覆盖板配置前检查此开关。\n"
+                + "false（默认）：拒绝复制本覆盖板配置（与 GT5U 原版无线覆盖板一致），复制出的链路节点需手动重配。\n"
+                + "true：复制并回填 V/A 等配置与缓冲池剩余电量。\n"
+                + "External copy tools (GT5U cover tool, MatterManipulator, ...) check this before restoring cover config.\n"
+                + "false (default): refuse to copy this cover's config (same as GT5U's own wireless covers); copied nodes stay unconfigured.\n"
+                + "true: copy and restore V/A config and remaining buffer EU.\n"
+                + "需重启生效 / Requires restart");
 
         // === HUD 显示参数类目（独立顶层 hud 类目，与 general 平级） ===
         // 配置项：HudXOffset / HudYOffset / HudScale
