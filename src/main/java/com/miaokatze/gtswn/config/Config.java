@@ -3,7 +3,9 @@ package com.miaokatze.gtswn.config;
 import java.io.File;
 import java.util.Arrays;
 
+import net.minecraftforge.common.config.ConfigCategory;
 import net.minecraftforge.common.config.Configuration;
+import net.minecraftforge.common.config.Property;
 
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -404,6 +406,10 @@ public class Config {
         // 控制 hud 类目内 key 的显示顺序：X偏移 → Y偏移 → 缩放
         configuration.setCategoryPropertyOrder(CATEGORY_HUD, Arrays.asList("HudXOffset", "HudYOffset", "HudScale"));
 
+        // v1.8.15 及更早版本 saveHudConfiguration 的 get 参数序 bug 会把 HUD 值写进垃圾类目，
+        // 此处加载时一次性迁移回 [hud] 并清理垃圾类目（详见 migrateLegacyHudCategories）。
+        migrateLegacyHudCategories(configuration);
+
         // === 网络信息屏历史数据保留配置类目（v1.5.15 新增，独立顶层 network_info 类目） ===
         configuration.setCategoryComment(
             CATEGORY_NETWORK_INFO,
@@ -438,29 +444,16 @@ public class Config {
         }
         try {
             Configuration configuration = new Configuration(networkConfigFile);
-            configuration.setCategoryComment(CATEGORY_HUD, "HUD 显示参数（偏移与缩放）\\nHUD display parameters (offset & scale)");
-            configuration.getInt(
-                "HudXOffset",
-                CATEGORY_HUD,
-                hudXOffset,
-                -500,
-                500,
-                "HUD 水平偏移（像素）/ HUD horizontal offset (pixels)");
-            configuration.getInt(
-                "HudYOffset",
-                CATEGORY_HUD,
-                hudYOffset,
-                -500,
-                500,
-                "HUD 垂直偏移（像素）/ HUD vertical offset (pixels)");
-            configuration.getFloat("HudScale", CATEGORY_HUD, hudScale, 0.2f, 5.0f, "HUD 缩放比例 / HUD scale ratio");
+            configuration.setCategoryComment(CATEGORY_HUD, "HUD 显示参数（偏移与缩放）\nHUD display parameters (offset & scale)");
+            // 注意：Configuration.get 的参数序是 (category, key, ...)，与 getInt(name, category, ...) 相反；
+            // v1.8.15 及更早版本此处两个参数颠倒，值被写进垃圾类目而非 [hud]（迁移清理见 migrateLegacyHudCategories）。
             configuration
-                .get("HudXOffset", CATEGORY_HUD, hudXOffset, "HUD 水平偏移（像素）/ HUD horizontal offset (pixels)", -500, 500)
+                .get(CATEGORY_HUD, "HudXOffset", hudXOffset, "HUD 水平偏移（像素）/ HUD horizontal offset (pixels)", -500, 500)
                 .set(hudXOffset);
             configuration
-                .get("HudYOffset", CATEGORY_HUD, hudYOffset, "HUD 垂直偏移（像素）/ HUD vertical offset (pixels)", -500, 500)
+                .get(CATEGORY_HUD, "HudYOffset", hudYOffset, "HUD 垂直偏移（像素）/ HUD vertical offset (pixels)", -500, 500)
                 .set(hudYOffset);
-            configuration.get("HudScale", CATEGORY_HUD, (double) hudScale, "HUD 缩放比例 / HUD scale ratio", 0.2, 5.0)
+            configuration.get(CATEGORY_HUD, "HudScale", (double) hudScale, "HUD 缩放比例 / HUD scale ratio", 0.2, 5.0)
                 .set((double) hudScale);
             if (configuration.hasChanged()) {
                 configuration.save();
@@ -469,6 +462,73 @@ public class Config {
         } catch (RuntimeException e) {
             GTSimpleWirelessNetwork.LOG.error("[配置] 保存 HUD 配置失败（配置文件不可写或已损坏，客户端 HUD 参数未持久化）", e);
             return false;
+        }
+    }
+
+    /**
+     * 迁移 v1.8.15 及更早版本 {@link #saveHudConfiguration} 参数序 bug 产生的垃圾类目。
+     * <p>
+     * 旧实现把 {@link Configuration#get} 的 category 与 key 两个参数颠倒（get 的参数序为
+     * {@code (category, key, ...)}，与 {@code getInt(name, category, ...)} 相反），每次保存都把 HUD 值
+     * 写进垃圾类目 {@code [HudXOffset]/[HudYOffset]/[HudScale]}（其下属性键名为 hud），而 [hud] 类目
+     * 始终停留在首次加载落盘的默认值，客户端重启后 HUD 位置随之归位。此处在加载时把垃圾类目中的值
+     * 迁移回 [hud] 类目并删除垃圾类目（一次性，删除后不再触发）。
+     */
+    private static void migrateLegacyHudCategories(Configuration configuration) {
+        String[] legacyCategoryNames = { "HudXOffset", "HudYOffset", "HudScale" };
+        for (String legacyName : legacyCategoryNames) {
+            if (!configuration.hasCategory(legacyName)) {
+                continue;
+            }
+            ConfigCategory legacyCategory = configuration.getCategory(legacyName);
+            Property legacyProperty = legacyCategory.get(CATEGORY_HUD);
+            if (legacyProperty != null) {
+                try {
+                    switch (legacyName) {
+                        case "HudXOffset":
+                            hudXOffset = Math.max(-500, Math.min(500, legacyProperty.getInt(hudXOffset)));
+                            configuration
+                                .get(
+                                    CATEGORY_HUD,
+                                    "HudXOffset",
+                                    hudXOffset,
+                                    "HUD 水平偏移（像素）/ HUD horizontal offset (pixels)",
+                                    -500,
+                                    500)
+                                .set(hudXOffset);
+                            break;
+                        case "HudYOffset":
+                            hudYOffset = Math.max(-500, Math.min(500, legacyProperty.getInt(hudYOffset)));
+                            configuration
+                                .get(
+                                    CATEGORY_HUD,
+                                    "HudYOffset",
+                                    hudYOffset,
+                                    "HUD 垂直偏移（像素）/ HUD vertical offset (pixels)",
+                                    -500,
+                                    500)
+                                .set(hudYOffset);
+                            break;
+                        default:
+                            hudScale = (float) Math.max(0.2, Math.min(5.0, legacyProperty.getDouble(hudScale)));
+                            configuration
+                                .get(
+                                    CATEGORY_HUD,
+                                    "HudScale",
+                                    (double) hudScale,
+                                    "HUD 缩放比例 / HUD scale ratio",
+                                    0.2,
+                                    5.0)
+                                .set((double) hudScale);
+                            break;
+                    }
+                    GTSimpleWirelessNetwork.LOG
+                        .info("[配置] 已把旧版参数序 bug 产生的垃圾类目 [{}] 中的 HUD 值迁移回 [{}] 类目", legacyName, CATEGORY_HUD);
+                } catch (RuntimeException e) {
+                    GTSimpleWirelessNetwork.LOG.warn("[配置] 旧版垃圾类目 [{}] 中的 HUD 值无法解析，跳过迁移", legacyName, e);
+                }
+            }
+            configuration.removeCategory(legacyCategory);
         }
     }
 
