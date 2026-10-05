@@ -64,7 +64,8 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
 
     /**
      * v1.8.6：{@code CableBusContainer.renderStatic} 候选签名探针序：
-     * ① 4 参 (IBlockAccess,double,double,double)：仅 AE2U rv3-beta-1050+（GTNH 2.9.0 beta-3 基线）；
+     * ① 4 参 (IBlockAccess,double,double,double)：仅 AE2U rv3-beta-1050+（GTNH 2.9.0 beta1-3 &amp; RC1-2 基线中 beta-3
+     * 及以上世代；RC-2 的 AE2U 1080 签名未变）；
      * ② 3 参 (double,double,double)：rv3-beta-1000 及更早（内部经 CableRenderHelper +
      * Minecraft.getMinecraft().theWorld，与该版本 AE2 原生 RendererCableBus 渲染路径逐字等价）。
      */
