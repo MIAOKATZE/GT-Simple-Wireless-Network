@@ -9,6 +9,7 @@ import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
+import com.miaokatze.gtswn.client.LinkNodeDismantleTriggerHandler;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
 import com.miaokatze.gtswn.client.RevealTriggerHandler;
 import com.miaokatze.gtswn.client.WirelessNodeRevealRenderer;
@@ -81,6 +82,9 @@ public class ClientProxy extends CommonProxy {
         // v1.7.23：Alt+右键即时显形触发器（MouseEvent 按下沿 + Alt 按住 + 手持链路终端 →
         // 发 disc 11 并取消原版右键；替代 v1.7.20~v1.7.22 的右击空气蓄力路径）
         MinecraftForge.EVENT_BUS.register(new RevealTriggerHandler());
+        // v1.8.22：Alt+扳手左键拆机标记触发器（MouseEvent 左键按下沿 + Alt 按住 + 手持 GT 扳手 →
+        // 发 disc 14，不取消事件——挖掘照常继续，服务端 BreakEvent 按标记走静默清除路径）
+        MinecraftForge.EVENT_BUS.register(new LinkNodeDismantleTriggerHandler());
         ClientRegistry.bindTileEntitySpecialRenderer(TileEntityNetworkInfoPanel.class, new RenderNetworkInfoPanel());
 
         // v1.6.1 问题 1：注册量子节点 ISBRH（线缆形态：小核心 + 朝 AE 网格宿主的连接臂）。

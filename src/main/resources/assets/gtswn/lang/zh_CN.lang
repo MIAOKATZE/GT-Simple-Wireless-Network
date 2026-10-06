@@ -133,6 +133,7 @@ gtswn.chat.tap.no_cover_support=§c[链路终端] 机器不支持覆盖板
 gtswn.chat.tap.bind_notify=§e[链路终端] 绑定的是机器拥有者的电网，请确认团队已经共享了电网（该信息还会出现 %d 次）。
 gtswn.chat.tap.laser_missing_pipe=§c[链路终端] 背包缺少激光真空管！绑定激光源仓/靶仓需消耗 1 根激光真空管。
 gtswn.chat.tap.laser_consumed=§a[链路终端] 已消耗 1 根激光真空管。
+gtswn.chat.linknode.dismantle_hint=§e[链路终端] 按住 Shift 或 Alt 再用扳手拆除，可静默移除机器上的链路节点覆盖板
 
 # Wireless Cover Right-Click Config
 gtswn.chat.cover.energy_config=GTswn链路节点（能源）配置:

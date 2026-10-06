@@ -16,6 +16,7 @@ import com.miaokatze.gtswn.common.command.CommandGTSWN;
 import com.miaokatze.gtswn.common.covers.CoverDropSuppressionHandler;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
+import com.miaokatze.gtswn.common.covers.LinkNodeCoverBreakEventHandler;
 import com.miaokatze.gtswn.common.device.DeviceEventHandler;
 import com.miaokatze.gtswn.common.device.DeviceSampleScheduler;
 import com.miaokatze.gtswn.common.device.DeviceScanManager;
@@ -34,6 +35,7 @@ import com.miaokatze.gtswn.loader.ItemLoader;
 import com.miaokatze.gtswn.loader.MachineLoader;
 import com.miaokatze.gtswn.network.DeviceTerminalActionQueue;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.LinkNodeDismantleMarkerQueue;
 import com.miaokatze.gtswn.network.NetworkPanelBroadcastPort;
 import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
@@ -144,6 +146,9 @@ public class CommonProxy {
         // 节点显形请求队列自宿主 tick 监听注册——包 11 显形请求（手持/冷却/注册表查询/模式过滤）
         // 由 ServerTickEvent(END) 主线程排空（照 DeviceTerminalActionQueue 同址注册模式）
         NodeRevealRequestQueue.register();
+        // v1.8.22：Alt 拆机标记队列自宿主 tick 监听注册——包 14 标记（Map 写入 + TTL 时间基准）
+        // 由 ServerTickEvent(END) 主线程排空（照 NodeRevealRequestQueue 同址注册模式）
+        LinkNodeDismantleMarkerQueue.register();
         NetworkRegistry.INSTANCE.registerGuiHandler(GTSimpleWirelessNetwork.instance, new GTSWNGuiHandler());
         // BQ 任务注入集成（PoC）：preInit 反射探测（BqCompat 无任何 BQ 类型引用，缺席时静默）
         BqCompat.detect();
@@ -209,6 +214,9 @@ public class CommonProxy {
 
         // v1.6.30：注册链路节点覆盖板物品掉落抑制监听（覆盖板由终端物品免费创建，掉落=无限复制）
         MinecraftForge.EVENT_BUS.register(new CoverDropSuppressionHandler());
+        // v1.8.22：注册链路节点覆盖板拆机分流监听（Alt+扳手拆机=静默清除全部链路节点覆盖板，
+        // 潜行拆除走原版静默路径，无修饰键扳手拆机前 10 次聊天提示）
+        MinecraftForge.EVENT_BUS.register(new LinkNodeCoverBreakEventHandler());
 
         // v1.6.19：注册性能审计 tick 结算监听（ServerTickEvent END；开关关闭时完全静默）
         FMLCommonHandler.instance()
@@ -227,9 +235,9 @@ public class CommonProxy {
         // 当前量子节点不再申请或主动强制加载区块。
         ForgeChunkManager
             .setForcedChunkLoadingCallback(GTSimpleWirelessNetwork.instance, new QuantumChunkLoaderCallback());
-        // 日志治理 I2：本方法内 7 项接线确认合并为方法体末尾这一条汇总（注册调用与顺序一律不动）
+        // 日志治理 I2：本方法内 8 项接线确认合并为方法体末尾这一条汇总（注册调用与顺序一律不动）
         GTSimpleWirelessNetwork.LOG.info(
-            "[2/3] 事件接线完成：无线 EU 监控调度器 / 信息屏广播端口注入（tile→network 拆环） / 量子化控制器事件处理器 / 设备信息终端事件处理器 / 设备采样调度器与扫描管理器 / 性能审计 tick 结算监听 / 旧版 Ticket 清理 callback，共 7 项已注册。");
+            "[2/3] 事件接线完成：无线 EU 监控调度器 / 信息屏广播端口注入（tile→network 拆环） / 量子化控制器事件处理器 / 设备信息终端事件处理器 / 设备采样调度器与扫描管理器 / 覆盖板掉落抑制与拆机分流监听 / 性能审计 tick 结算监听 / 旧版 Ticket 清理 callback，共 8 项已注册。");
     }
 
     /**

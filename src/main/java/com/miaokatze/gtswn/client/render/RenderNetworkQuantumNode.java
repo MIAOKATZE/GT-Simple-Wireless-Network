@@ -16,6 +16,7 @@ import org.lwjgl.opengl.GL11;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
+import appeng.api.parts.IPart;
 import appeng.client.render.BusRenderHelper;
 import appeng.client.render.BusRenderer;
 import appeng.client.render.RenderBlocksWorkaround;
@@ -123,12 +124,17 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
         // 六向：v1.6.24 起不再判邻居是否为 IGridHost 宿主，改为读本 TE 经 S35 同步的连接方向位掩码，
         // 只对置位方向画臂（self 为 null 或非本 TE 类型时 mask=0 不画臂，安全降级）
         TileEntity self = world.getTileEntity(x, y, z);
-        int mask = (self instanceof TileEntityNetworkQuantumNode)
-            ? ((TileEntityNetworkQuantumNode) self).getConnectedSidesMask()
-            : 0;
+        TileEntityNetworkQuantumNode node = (self instanceof TileEntityNetworkQuantumNode)
+            ? (TileEntityNetworkQuantumNode) self
+            : null;
+        int mask = (node != null) ? node.getConnectedSidesMask() : 0;
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
             if (((mask >> d.ordinal()) & 1) != 0) {
-                double[] b = ARM_BOUNDS[d.ordinal()];
+                // v1.8.22：clone 后按部件让位钳制——ARM_BOUNDS 是共享静态表，不得原地改写
+                double[] b = ARM_BOUNDS[d.ordinal()].clone();
+                if (!clampArmToPart(node, d, b)) {
+                    continue; // 该向部件占满半边（len>=8）：臂完全让位不画
+                }
                 renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
                 renderer.renderStandardBlock(block, x, y, z);
             }
@@ -143,6 +149,60 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
         if (self instanceof TileEntityNetworkQuantumNode && ae2PartRenderEnabled
             && ((TileEntityNetworkQuantumNode) self).hasParts()) {
             renderPartsReflective(world, x, y, z, (TileEntityNetworkQuantumNode) self, renderer);
+        }
+        return true;
+    }
+
+    /**
+     * v1.8.22：按该面部件的 {@code cableConnectionRenderTo()} 钳制连接臂外端
+     * （镜像 AE2 原生 PartCable.java:295-316 的「长度半边」让位规则）。
+     * <p>
+     * 量子节点的连接臂原先固定画满整格（0.0/1.0），与同面部件（面板/接口/总线/锚）自绘的
+     * plate/plug 共面重叠——双绘导致贴图闪烁与 z-fighting。本方法按部件申报的线缆连接
+     * 长度收缩臂外端：正向侧（max 边 1.0）→ {@code (16-len)/16}，负向侧（min 边 0.0）→
+     * {@code len/16}，臂截面（C0~C1）不变。
+     * <ul>
+     * <li>面板 len=3 → 臂外端 13/16；ME 接口 len=4 → 12/16；总线 len=5 → 11/16</li>
+     * <li>纯贴面锚 len=0 → 钳制值恰为 1.0/0.0，与原生满格臂（同款 tie）逐值相等</li>
+     * <li>len &gt;= 8：部件已占满半边，臂完全让位（返回 false，调用侧不画）</li>
+     * </ul>
+     * 方向上同时有网格连接与部件时按部件钳制（部件优先，AE2 原生语义：部件 plate 的
+     * 渲染不可被总线臂穿透）。无部件方向返回 true 且 bounds 原样（满格臂不变）。
+     *
+     * @param node   本量子节点 TE（客户端容器已经 S35 同步，可为 null——null 时不钳制）
+     * @param d      臂方向
+     * @param bounds 待钳制的 {minX,minY,minZ,maxX,maxY,maxZ}（调用侧传入 clone 副本）
+     * @return true = 按（可能钳制后的）bounds 画臂；false = 该向不画臂
+     */
+    private static boolean clampArmToPart(TileEntityNetworkQuantumNode node, ForgeDirection d, double[] bounds) {
+        if (node == null) {
+            return true;
+        }
+        IPart part = node.getPart(d);
+        if (part == null) {
+            return true;
+        }
+        int len = part.cableConnectionRenderTo();
+        if (len >= 8) {
+            return false;
+        }
+        int axis;
+        boolean positive;
+        if (d.offsetX != 0) {
+            axis = 0;
+            positive = d.offsetX > 0;
+        } else if (d.offsetY != 0) {
+            axis = 1;
+            positive = d.offsetY > 0;
+        } else {
+            axis = 2;
+            positive = d.offsetZ > 0;
+        }
+        // bounds 布局 {minX,minY,minZ,maxX,maxY,maxZ}：min 边索引 = axis，max 边索引 = axis+3
+        if (positive) {
+            bounds[axis + 3] = (16 - len) / 16.0D;
+        } else {
+            bounds[axis] = len / 16.0D;
         }
         return true;
     }

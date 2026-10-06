@@ -161,6 +161,7 @@ A portable item that connects any machine to the wireless EU network. Shift+righ
 Both are **void covers** — they have no recipe and exist only as NBT-driven attachments placed by the Wireless Energy Tap. Their behavior is governed entirely by NBT parameters assigned on right-click; bare cover items without these parameters are inert. All NBT parameters persist across save/load.
 
 - **配置复制 / Config Copying**: 自 v1.8.14 起，复制粘贴工具（GT5U 覆盖板工具、物质操纵者等）能否复制链路节点配置由 `gtswn_network.cfg` 的 `AllowCopyPasteTool` 控制（默认关闭；开启后复制带链路节点的机器时配置随之回填）。/ Since v1.8.14, whether copy-paste tools (GT5U cover tool, MatterManipulator, etc.) can copy link node configs is controlled by `AllowCopyPasteTool` in `gtswn_network.cfg` (default off; when enabled, copied machines carry their link node configs).
+- **链路节点静默清除 / Silent Link Node Removal**: 自 v1.8.22 起，拆除带链路节点覆盖板的机器时**按住 Shift 或 Alt 再用扳手左键拆除**，即可静默移除机器上的全部链路节点覆盖板（节点出册、剩余缓冲 EU 返还无线电网，不掉落不占背包）；机器上的其他覆盖板保持原版行为不受影响；生存模式下前 10 次无修饰键扳手拆除会有聊天提示引导。/ Since v1.8.22, when wrench-dismantling a machine carrying link node covers, **hold Shift or Alt** while left-clicking with the wrench to silently remove all link node covers on it (nodes unregistered, remaining buffer EU returned to the wireless network — no drops, no inventory space used); other covers on the machine keep their vanilla behavior, and in survival mode the first 10 unmodified wrench dismantles show a chat hint.
 
 #### 链路终端（能源） / Link Terminal (Energy)
 

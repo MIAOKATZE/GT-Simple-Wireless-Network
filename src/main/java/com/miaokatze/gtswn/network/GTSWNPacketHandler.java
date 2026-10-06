@@ -42,6 +42,9 @@ import cpw.mods.fml.relauncher.Side;
  * <li>13 = {@link PacketQuantumTerminalSwapBus}（C→S 量子终端「裸部件 cable-bus 原位替换」：
  * x/y/z/命中面；Netty 入队→本类内聚 ServerTickEvent(END) 主线程 drain，校验+迁移+回滚；
  * 配套客户端拦截处理器 {@link QuantumTerminalBusSwapHandler} 一并在此注册）</li>
+ * <li>14 = {@link PacketAltDismantleMarker}（C→S Alt+扳手左键拆机标记，无字段；
+ * Handler 仅入队 LinkNodeDismantleMarkerQueue，ServerTick END 主线程写 20t TTL 标记，
+ * 供覆盖板拆机事件处理器在 BlockEvent.BreakEvent 中走静默清除路径）</li>
  * </ul>
  */
 public class GTSWNPacketHandler {
@@ -114,6 +117,10 @@ public class GTSWNPacketHandler {
             PacketQuantumTerminalSwapBus.class,
             13,
             Side.SERVER);
+        // 14: 客户端→服务端 Alt+扳手左键拆机标记（无字段；Netty 入队→LinkNodeDismantleMarkerQueue
+        // 主线程写 20t TTL 标记，BlockEvent.BreakEvent 消费走链路节点静默清除路径）
+        NETWORK
+            .registerMessage(PacketAltDismantleMarker.Handler.class, PacketAltDismantleMarker.class, 14, Side.SERVER);
         // 包 13 配套：主线程排水器（双端注册安全，客户端队列恒空）+ 客户端右击拦截处理器
         // （HIGHEST 先于 AE2 PartPlacement 的 LOW；处理器类无 client-only 引用，服务端 isRemote 早退）
         PacketQuantumTerminalSwapBus.register();
