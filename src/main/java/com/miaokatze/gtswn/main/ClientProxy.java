@@ -45,8 +45,12 @@ public class ClientProxy extends CommonProxy {
      * HUD 业务控制器唯一实例（O2-B10：原 WirelessMonitorHUD 的 static 可变态收编为
      * HudState 实例，本字段即「唯一 static 持有点 = ClientProxy 注册处」；
      * 渲染器与 EU 回包路径经构造/本字段共享同一实例）。
+     * <p>
+     * 【v1.8.18】不在字段初始化器构造：@SidedProxy 实例构造先于 preInit 配置加载，
+     * 而 HudState 数据集容量按 {@code Config.hudUpdateInterval} 计算，须等配置就绪。
+     * 三个使用点（渲染注册 / EU 回包 / 模式切换）均不早于 {@link #init}。
      */
-    private final HudController hudController = new HudController();
+    private HudController hudController;
 
     /**
      * 初始化阶段 (Init)
@@ -56,6 +60,10 @@ public class ClientProxy extends CommonProxy {
     public void init(FMLInitializationEvent event) {
         // 调用父类的 init 方法，确保通用逻辑正常执行
         super.init(event);
+
+        // 【v1.8.18】preInit 已完成配置加载，此时构造才能让 HUD 数据集容量读到
+        // 用户配置的检测间隔（字段初始化器会先于 preInit 执行，只能拿到编译期默认值）
+        this.hudController = new HudController();
 
         ClientCommandHandler.instance.registerCommand(new CommandGTSWNClient());
 

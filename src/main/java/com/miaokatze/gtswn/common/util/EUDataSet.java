@@ -21,7 +21,8 @@ import com.miaokatze.gtswn.common.util.FormatUtil.Measurement;
  * <li>实例类（非 static）：每个 MTE 实例持有自己的 dataSet；HUD 持有 static 单例。</li>
  * <li>内部使用 {@link ArrayList}，<b>index 0 = 最旧，index size-1 = 最新</b>，
  * O(1) 追加，NBT 序列化时顺序自然。</li>
- * <li>固定容量 {@value #CAPACITY}（0s 首检 + 60 次 100t 检测 = 300s）。</li>
+ * <li>默认容量 61（0s 首检 + 60 次 100t = 300s，MTE 检测器与信息屏口径）；HUD（便携终端）
+ * 按配置检测间隔动态容量（hudCapacityFor，满载窗口恒 300s）。</li>
  * <li>满载时新数据淘汰最旧数据（FIFO 老化），保持窗口恒定。</li>
  * <li>使用 {@link BigDecimal} 精确计算 EU/t 斜率，避免 double 精度损失。</li>
  * </ul>
@@ -30,14 +31,43 @@ import com.miaokatze.gtswn.common.util.FormatUtil.Measurement;
  */
 public class EUDataSet {
 
-    /** 数据集固定容量（61 个采样点 = 0s 首检 + 60 次 100t 检测 = 300s） */
+    /** 数据集固定容量（61 个采样点 = 0s 首检 + 60 次 100t 检测 = 300s）；HUD 侧经 hudCapacityFor 按配置间隔动态容量，不使用此默认值 */
     public static final int CAPACITY = 61;
 
     /** 长期静默阈值（tick 差值）：300s = 6000 ticks，与满载容量等价 */
     public static final long LONG_SILENT_THRESHOLD_TICKS = 6000L;
 
-    /** 内部存储：index 0 = 最旧，index size-1 = 最新 */
-    private final List<Measurement> data = new ArrayList<>(CAPACITY);
+    /** 实例容量（HUD 按配置频率动态容量，MTE 检测器与信息屏用默认 CAPACITY） */
+    private final int capacity;
+
+    /** 默认构造：使用类默认容量 {@link #CAPACITY}（MTE 检测器与信息屏口径） */
+    public EUDataSet() {
+        this(CAPACITY);
+    }
+
+    /**
+     * 自定义容量构造（HUD 按配置频率动态容量）。
+     *
+     * @param capacity 容量；&lt;2 时取 2 保证首末斜率可算
+     */
+    public EUDataSet(int capacity) {
+        this.capacity = Math.max(2, capacity);
+    }
+
+    /**
+     * 按检测间隔计算 HUD 数据集容量：固定 300s 时间窗（LONG_SILENT_THRESHOLD_TICKS=6000t），
+     * 容量 = 窗口 tick 数 / 间隔 + 1（首检点）。默认 50t → 121 点。
+     * 防御：interval &lt;= 0 返回类默认口径 CAPACITY（配置夹取 1-600 后实际不可达）。
+     */
+    public static int hudCapacityFor(int intervalTicks) {
+        if (intervalTicks <= 0) {
+            return CAPACITY;
+        }
+        return (int) (LONG_SILENT_THRESHOLD_TICKS / intervalTicks) + 1;
+    }
+
+    /** 内部存储：index 0 = 最旧，index size-1 = 最新（初始容量仅为性能提示，实际容量由 capacity 决定） */
+    private final List<Measurement> data = new ArrayList<>();
 
     /**
      * 长期静默状态标志。
@@ -120,7 +150,7 @@ public class EUDataSet {
         }
 
         // === 正常模式：满载时淘汰最旧数据（FIFO 老化） ===
-        if (data.size() >= CAPACITY) {
+        if (data.size() >= capacity) {
             data.remove(0);
         }
         data.add(new Measurement(tick, value));
@@ -161,7 +191,7 @@ public class EUDataSet {
     /**
      * 当前数据量。
      *
-     * @return 数据点数量（0 ~ {@link #CAPACITY}）
+     * @return 数据点数量（0 ~ capacity）
      */
     public int size() {
         return data.size();
@@ -284,7 +314,7 @@ public class EUDataSet {
      * <ol>
      * <li>清空 data</li>
      * <li>按 0..count-1 顺序 add（保持最旧在前、最新在后）</li>
-     * <li>若 count &gt; {@link #CAPACITY}，只加载最后 CAPACITY 个（丢弃最旧的溢出部分）</li>
+     * <li>若 count &gt; capacity，只加载最后 capacity 个（丢弃最旧的溢出部分）</li>
      * </ol>
      * 兼容性：旧存档的 measurementHistory 格式与本格式一致，可直接加载。
      *
@@ -309,10 +339,10 @@ public class EUDataSet {
             return;
         }
 
-        // 计算实际加载起点：若 count > CAPACITY，跳过前面溢出部分，只加载最后 CAPACITY 个
+        // 计算实际加载起点：若 count > capacity，跳过前面溢出部分，只加载最后 capacity 个
         int startIndex = 0;
-        if (count > CAPACITY) {
-            startIndex = count - CAPACITY;
+        if (count > capacity) {
+            startIndex = count - capacity;
         }
 
         // 按 0..count-1 顺序 add，保持最旧在前、最新在后

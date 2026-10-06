@@ -106,6 +106,18 @@ public class Config {
     // 需重启生效 / Requires restart
     public static boolean allowCopyPasteTool = false;
 
+    // 便携无线网络监测终端 HUD 检测间隔（tick）/ Portable wireless network monitor HUD detection interval (ticks)
+    // 数值越小检测与发包越频繁 / Smaller value = more frequent detection and packet sending
+    // 仅影响便携终端 HUD，不影响无线能量监视器（MTE）与网络信息屏（它们固定 100t）
+    // Only affects the portable terminal HUD; the wireless energy monitor (MTE) and network
+    // info panel are unaffected (fixed 100t).
+    // 警告：过小的值会高频向服务端发包并触发服务端持有校验背包扫描，增加负担。
+    // Warning: too small a value sends packets to the server at high frequency and triggers
+    // server-side held-item validation inventory scans, increasing load.
+    // 默认 50 ticks = 2.5 秒 / Default 50 ticks = 2.5 seconds
+    // 需重启生效 / Requires restart
+    public static int hudUpdateInterval = 50;
+
     // HUD 水平偏移 / HUD horizontal offset
     // 正值 = HUD 向右移动，负值 = HUD 向左移动 / positive = shift right, negative = shift left
     // 默认 0 = 无偏移 / Default 0 = no offset
@@ -357,6 +369,22 @@ public class Config {
                 + "false (default): refuse to copy this cover's config (same as GT5U's own wireless covers); copied nodes stay unconfigured.\n"
                 + "true: copy and restore V/A config and remaining buffer EU.\n"
                 + "需重启生效 / Requires restart");
+
+        // 便携无线网络监测终端 HUD 检测间隔（tick）/ Portable wireless network monitor HUD detection interval (ticks)
+        hudUpdateInterval = configuration.getInt(
+            "HudUpdateInterval",
+            Configuration.CATEGORY_GENERAL,
+            hudUpdateInterval,
+            1,
+            600,
+            "便携无线网络监测终端 HUD 检测间隔（tick）/ Portable wireless network monitor HUD detection interval (ticks)\n"
+                + "数值越小检测与发包越频繁；仅影响便携终端 HUD，不影响无线能量监视器（MTE）与网络信息屏（它们固定 100t）。\n"
+                + "警告：过小的值会高频向服务端发包并触发服务端持有校验背包扫描，增加负担。\n"
+                + "Smaller value = more frequent detection and packet sending. Only affects the portable terminal HUD;\n"
+                + "the wireless energy monitor (MTE) and network info panel stay fixed at 100t.\n"
+                + "Warning: too small a value sends packets to the server at high frequency and triggers server-side\n"
+                + "held-item validation inventory scans, increasing load.\n"
+                + "默认 50 ticks = 2.5 秒，范围 1-600，需重启生效 / Default 50 ticks = 2.5 seconds, range 1-600, requires restart");
 
         // === HUD 显示参数类目（独立顶层 hud 类目，与 general 平级） ===
         // 配置项：HudXOffset / HudYOffset / HudScale

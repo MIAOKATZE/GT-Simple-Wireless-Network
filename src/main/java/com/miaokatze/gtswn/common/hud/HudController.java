@@ -12,6 +12,7 @@ import net.minecraft.util.StatCollector;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
+import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestWirelessEU;
 
@@ -30,9 +31,6 @@ import baubles.api.BaublesApi;
  */
 public final class HudController {
 
-    /** HUD 更新间隔（ticks），每 100 ticks（5 秒）更新一次（与 MTE 统一） */
-    private static final int UPDATE_INTERVAL = 100;
-
     /** 背包遍历间隔（ticks），每 20 ticks（1 秒）检查一次 */
     private static final int INVENTORY_CHECK_INTERVAL = 20;
 
@@ -40,7 +38,7 @@ public final class HudController {
 
     /**
      * 每渲染帧驱动（原 onRenderOverlay ①-④ 段逐字搬迁，tick 口径不变：
-     * 背包扫描 20t、数据集更新 100t、gap 检测 10s 真实时间）。
+     * 背包扫描 20t、数据集更新按配置（默认 50t）、gap 检测 10s 真实时间）。
      *
      * @param player 客户端玩家实体
      * @return true = 继续 GL 绘制；false = 本帧不渲染
@@ -138,8 +136,9 @@ public final class HudController {
         }
         state.lastUpdateRealTimeMs = currentRealTimeMs;
 
-        // ④ 每 UPDATE_INTERVAL ticks 更新一次缓存
-        if (currentTick - state.lastUpdateTick >= UPDATE_INTERVAL) {
+        // ④ 每 Config.hudUpdateInterval ticks 更新一次缓存（默认 50t=2.5s，可配置 1-600t），
+        // 仅便携 HUD，MTE/信息屏不受影响（固定 100t）
+        if (currentTick - state.lastUpdateTick >= Config.hudUpdateInterval) {
             updateCache(currentTick, uuid);
         }
         return true;
@@ -355,7 +354,7 @@ public final class HudController {
     private String formatHUDStatus() {
         // 便携式冷启动：size < 2 时无法计算斜率，显示"网络状态：计算中..."
         // v1.3.2 修正：原阈值 size < 6 为 v1.3.0 前 600t 间隔的过时逻辑，
-        // 现检测间隔 100t 且静默压缩后 size 恒为 2，故与 MTE formatEUTStatus 统一为 size < 2
+        // 现检测间隔可配置（默认 50t）且静默压缩后 size 恒为 2，故与 MTE formatEUTStatus 统一为 size < 2
         // 颜色：标题青色 §b（与其他状态行一致），"计算中"橙黄 §6 警示
         if (state.dataSet.size() < 2) {
             return "§b" + StatCollector.translateToLocal("gtswn.hud.network.status")

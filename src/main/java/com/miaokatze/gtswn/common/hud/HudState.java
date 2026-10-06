@@ -5,6 +5,7 @@ import java.util.UUID;
 import net.minecraft.util.StatCollector;
 
 import com.miaokatze.gtswn.common.util.EUDataSet;
+import com.miaokatze.gtswn.config.Config;
 
 /**
  * 便携监测终端 HUD 状态值对象（O2-B10：原 {@code WirelessMonitorHUD} 的 11 个 static 可变态
@@ -38,11 +39,12 @@ final class HudState {
     /**
      * EU 测量数据集（替代原 measurementHistory 列表）。
      * <p>
-     * 容量 61（0s 首检 + 60 次 100t 检测 = 300s），FIFO 老化，
+     * 容量按 Config.hudUpdateInterval 动态（hudCapacityFor：6000t/间隔+1，默认 50t → 121 点，
+     * 满载窗口恒 300s），FIFO 老化，
      * 内部使用 BigDecimal 精确计算 EU/t 斜率。原 static 单例 → HudState 实例单例：HUD 全局唯一。
      * </p>
      */
-    final EUDataSet dataSet = new EUDataSet();
+    final EUDataSet dataSet = new EUDataSet(EUDataSet.hudCapacityFor(Config.hudUpdateInterval));
 
     /** 缓存的 EU/t 文本 */
     String cachedEUTText = "";

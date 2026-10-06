@@ -71,7 +71,7 @@ gtswn.tooltip.monitor.owner.bound=§bOwner: §f%s§r
 gtswn.tooltip.monitor.usage=§eRight-click§f to toggle HUD mode
 gtswn.tooltip.monitor.baubles.equip=§fCan be equipped in any §bBaubles slot§f
 # Portable mechanism description (v1.3.0, 3-line brief form)
-gtswn.tooltip.monitor.mechanism.line1=§bStatus: §fevery §e5s§f, §a300s§f window average§r
+gtswn.tooltip.monitor.mechanism.line1=§bStatus: §fevery §e2.5s§f (default, configurable), §a300s§f window average§r
 gtswn.tooltip.monitor.mechanism.line2=§bSilent: §fwith §7silent§f/§8long-term-silent§f(≥§a300s§f) detection§r
 gtswn.tooltip.monitor.mechanism.line3=§bCold Start: §fRejoin triggers, §edataset resets on logout§r
 

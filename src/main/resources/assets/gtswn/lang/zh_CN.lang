@@ -71,7 +71,7 @@ gtswn.tooltip.monitor.owner.bound=§b拥有者: §f%s§r
 gtswn.tooltip.monitor.usage=§e右键§f切换 HUD 模式
 gtswn.tooltip.monitor.baubles.equip=§f可在 §bBaubles 饰品栏§f任意槽位装备
 # 便携式机制说明（v1.3.0 新增，3 行简略形式）
-gtswn.tooltip.monitor.mechanism.line1=§b电网状态: §f每§e5秒§f检测，§a300秒§f窗口均值§r
+gtswn.tooltip.monitor.mechanism.line1=§b电网状态: §f每§e2.5秒§f检测(默认，可配置)，§a300秒§f窗口均值§r
 gtswn.tooltip.monitor.mechanism.line2=§b静默判定: §f含§7静默§f/§8长期静默§f(≥§a300秒§f)判定§r
 gtswn.tooltip.monitor.mechanism.line3=§b冷启动: §f退出重进触发，§e数据集随退出重置§r
 
