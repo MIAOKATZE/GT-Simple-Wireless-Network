@@ -27,9 +27,6 @@ import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
-import gregtech.api.metatileentity.BaseMetaTileEntity;
-import gregtech.api.metatileentity.implementations.MTEBasicMachineWithRecipe;
-import gregtech.api.recipe.RecipeMaps;
 import gregtech.api.util.GTUtility;
 import gregtech.common.covers.Cover;
 
@@ -306,32 +303,23 @@ public class WirelessEnergyTap extends Item {
                 return;
             }
 
-            // 3. 获取安培，默认2A，不低于2A
+            // 3. 获取安培；实测 ≤ 1（空箱/等级不匹配）兜底 3A，不抬升实测值
             long amperage = container.getInputAmperage();
             if (amperage <= 1) {
-                amperage = 2;
+                amperage = 3;
             }
 
-            // 激光仓专属安培（源仓=maxAmperesOut()、靶仓=maxAmperesIn()，恒>1，2A 兜底不生效）
+            // 激光仓专属安培（源仓=maxAmperesOut()、靶仓=maxAmperesIn()，恒>1，3A 兜底不生效）
             if (laserHatch) {
                 amperage = LaserHatchUtil.getLaserAmperage(laserMte);
             }
 
-            // 4. 检查是否为单方块电弧炉(通过配方表精确识别),如果是则强制 4A
-            // Check if machine is a single-block arc furnace (via recipe map), force 4A if so
-            if (te instanceof BaseMetaTileEntity bmte) {
-                if (bmte.getMetaTileEntity() instanceof MTEBasicMachineWithRecipe mte
-                    && mte.getRecipeMap() == RecipeMaps.arcFurnaceRecipes) {
-                    amperage = 4;
-                }
-            }
-
-            // 5. 计算电容量 = 电压 × 安培 × 800 tick
+            // 4. 计算电容量 = 电压 × 安培 × 800 tick
             // Calculate cover capacity = voltage × amperage × 800 ticks
             // SWN-BUG-06+SWN-OPT-17：公式收敛至 CoverMaths.bufferCapacity 单源（与能源覆盖板实配共享）
             long coverCapacity = CoverMaths.bufferCapacity(voltage, amperage);
 
-            // 6. 输出检测信息到聊天
+            // 5. 输出检测信息到聊天
             player.addChatMessage(
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.machine_detected")));
             player.addChatMessage(
