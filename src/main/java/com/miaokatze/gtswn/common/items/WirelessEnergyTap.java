@@ -27,6 +27,7 @@ import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
+import gregtech.api.metatileentity.implementations.MTEBasicBatteryBuffer;
 import gregtech.api.util.GTUtility;
 import gregtech.common.covers.Cover;
 
@@ -303,8 +304,15 @@ public class WirelessEnergyTap extends Item {
                 return;
             }
 
-            // 3. 获取安培；实测 ≤ 1（空箱/等级不匹配）兜底 3A，不抬升实测值
+            // 3. 获取安培；电池箱按槽位容量；其余机器实测 ≤ 1（等级不匹配等）兜底 3A，不抬升实测值
             long amperage = container.getInputAmperage();
+
+            // 电池箱安培按槽位容量 = 槽数×1，最小 2A，与已放入电池数无关 / Battery buffer amperage = slots × 1, minimum 2A, regardless of
+            // inserted cells
+            if (laserMte instanceof MTEBasicBatteryBuffer batteryBuffer) {
+                amperage = Math.max(batteryBuffer.getSizeInventory(), 2);
+            }
+
             if (amperage <= 1) {
                 amperage = 3;
             }

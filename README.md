@@ -171,7 +171,7 @@ Acts as a **virtual power source** — maintains an internal capacity buffer and
 - **电容量 / Capacity**: `V × A × 800` ticks（配置时计算；立即补满至容量）/ `V × A × 800` ticks (computed on configuration; immediately refilled to capacity)
 - **每 tick 行为 / Per-tick behavior**: 每 tick 向被绑定机器注入 `min(V × A, machine_needed, storedEU)` EU——表现得像真实导线 / Injects `min(V × A, machine_needed, storedEU)` EU per tick into the bound machine — behaves like a real cable
 - **补满 / Refill**: 每 600 ticks 从无线电网扣除 `(capacity − storedEU) × (1 + downlink loss)` EU 补满缓冲池 / Every 600 ticks, deducts `(capacity − storedEU) × (1 + downlink loss)` EU from the wireless network to refill the buffer
-- **安培检测 / Amperage detection**: 读取机器实测输入安培（电池箱 = 2×可充电节数，4 节 = 8A）；实测 ≤ 1（空箱/等级不匹配）时兜底 3A / Reads the machine's actual input amperage (battery buffer = 2× chargeable slots, e.g. 4 = 8A); falls back to 3A when measured ≤ 1
+- **安培检测 / Amperage detection**: 电池箱按槽位容量 = 槽数×1、最小 2A（1/4/9/16 槽 → 2/4/9/16A），与已放入电池数无关；其余机器实测 ≤ 1 时兜底 3A / Battery buffers use slot capacity = slots × 1 with a 2A minimum (1/4/9/16 slots → 2/4/9/16A), independent of inserted batteries; other machines fall back to 3A when measured ≤ 1
 - **卸载 / Unload**: 覆盖板移除时，剩余缓冲按 `(1 − uplink loss)` 比率返还电网 / On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
 
 #### 链路终端（动力） / Link Terminal (Power)
