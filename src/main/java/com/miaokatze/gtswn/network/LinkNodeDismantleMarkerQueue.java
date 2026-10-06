@@ -15,9 +15,9 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
 /**
- * Alt 拆机标记待处理队列（v1.8.22，照 {@link NodeRevealRequestQueue} 的
- * 「Netty 入队 → 主线程 drain」模式）：包 14 的 Map 写入与时间基准读取全部归位
- * 服务端主线程。
+ * Alt 拆机标记待处理队列（v1.8.22 起；v1.8.23 入队来源改为客户端持续标记包，照
+ * {@link NodeRevealRequestQueue} 的「Netty 入队 → 主线程 drain」模式）：包 14 的
+ * Map 写入与时间基准读取全部归位服务端主线程。
  * <p>
  * 设计取舍（与 NodeRevealRequestQueue 一致）：
  * <ul>
@@ -25,10 +25,11 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * （1.7.10 该事件挂 FML 总线），{@code CommonProxy.preInit} 与既有队列同址注册一次</li>
  * <li><b>主线程 Map</b>：{@link #MARKED} 只由主线程 drain 写 / {@link #isMarked} 读
  * （消费方覆盖板拆机事件处理器亦在服务端主线程），无并发竞争面</li>
- * <li><b>TTL 20t</b>：值 = overworld {@code getTotalWorldTime()} + 20。客户端按下沿发包，
- * 服务端同 tick 或下一 tick drain 写入，随后的挖掘进度（扳手秒拆 / 硬方块若干 tick）
- * 内触发的 BlockEvent.BreakEvent 都能命中；20t 后自动失效，玩家松开 Alt 再挖即回到
- * 普通路径，不会把一次按键错误地放大成长期状态</li>
+ * <li><b>TTL 20t</b>：值 = overworld {@code getTotalWorldTime()} + 20。客户端按住
+ * Alt+扳手期间每 5t 持续发包（v1.8.23 起为持续标记，取代 v1.8.22 的按下沿单发），
+ * 标记最迟在拆除动作前 5t 已入表，END phase drain 写入与即时破坏无同 tick 竞态；
+ * 20t 后自动失效，玩家松开 Alt 约 1 秒后再挖即回到普通路径，不会把一次按键错误地
+ * 放大成长期状态</li>
  * <li><b>在线复验</b>：drain 时 playerNetServerHandler 为空（已断线）的条目直接丢弃</li>
  * </ul>
  * 空 Map 常态零开销：无标记时 drain 仅一次空队列 poll + 空遍历。
