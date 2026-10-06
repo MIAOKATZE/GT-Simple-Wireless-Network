@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.world.World;
-import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 
@@ -16,7 +15,6 @@ import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.IMachineSet;
-import appeng.tile.networking.TileController;
 
 /**
  * 主线程量子网络频道统计缓存。
@@ -80,13 +78,11 @@ public final class QuantumNetworkStatsCache {
             // v1.6.23：性能审计——其中 AE2 网格部分单独切片（ae2.gridQuery）
             int usedChannels = 0;
             int quantumNodeCount = 0;
-            // v1.8.15：UNKNOWN→TileController 桥接连接计数（face 模型下每条独占 32 通道，见下）
-            int bridgeFaceCount = 0;
             long qT0 = PerformanceAudit.startSlice();
             try {
                 // O2-B08：节点类经 QuantumNodeTypes 注册表取用（quantum→tile 拆环，grid.getMachines
                 // 需具体 Class）；未注册（理论不可达——TE 注册期即加载）按零节点处理。
-                // usedChannels 口径不动：单节点取其全部连接的 max（桥接 ≥ 邻接）
+                // usedChannels 口径：单节点取其全部连接的 max
                 Class<? extends IGridHost> nodeClass = QuantumNodeTypes.nodeClass();
                 if (nodeClass != null) {
                     IMachineSet nodes = grid.getMachines(nodeClass);
@@ -95,18 +91,6 @@ public final class QuantumNetworkStatsCache {
                         int nodeMax = 0;
                         for (IGridConnection connection : node.getConnections()) {
                             nodeMax = Math.max(nodeMax, connection.getUsedChannels());
-                            // 桥接判定走纯谓词（可单测）：仅 UNKNOWN 且对端为 TileController 计入；
-                            // 每条桥接只在节点侧遍历一次，gtswn 节点互连不满足对端判定，无重复计数。
-                            // 经 Object 转接 instanceof：IGridHost 静态类型直查会连带解析
-                            // TileController 全部父类型链（AE2 功率基类引用了本仓编译类路径外的
-                            // RotaryCraft API，javac 报「无法访问 AdvancedShaftPowerReceiver」）。
-                            Object otherMachine = connection.getOtherSide(node)
-                                .getMachine();
-                            if (QuantumChannelFormula.isBridgeConnection(
-                                connection.getDirection(node) == ForgeDirection.UNKNOWN,
-                                otherMachine instanceof TileController)) {
-                                bridgeFaceCount++;
-                            }
                         }
                         usedChannels += nodeMax;
                     }
@@ -115,14 +99,9 @@ public final class QuantumNetworkStatsCache {
                 PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_GRID_QUERY, qT0);
             }
 
-            // v1.8.15：总公式在调用侧补桥接项——face 模型（AE2 ≥1073 + PathingCalculationMixin）
-            // 下每条无方向控制器桥接独占一个 32 通道 face。门控与 mixin 共用同一探针谓词，
-            // 保证「mixin 生效」与「公式补项」同侧；computeTotalChannels 本体与 javadoc 不动
-            // （计划 §3.4.3）。computeTotalChannels 调用移到桥接计数之后（桥接数由节点遍历得出）。
-            int totalChannels = QuantumChannelFormula.totalChannels(
-                QuantumControllerRegistry.computeTotalChannels(structure),
-                bridgeFaceCount,
-                Ae2PathingCompat.hasControllerFaceModel());
+            // v1.8.19：总预算单一口径——只由量子化控制器结构暴露面数决定，
+            // 不随量子节点/桥接连接数膨胀（删除 v1.8.15 桥接镜像项）
+            int totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
 
             Snapshot snapshot = new Snapshot(totalChannels, usedChannels, quantumNodeCount, structure);
             CACHE.put(key, new CacheEntry(grid, bucket, revision, snapshot));
