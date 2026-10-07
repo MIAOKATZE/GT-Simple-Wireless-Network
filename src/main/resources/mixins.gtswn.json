@@ -7,7 +7,9 @@
   "target": "@env(DEFAULT)",
   "compatibilityLevel": "JAVA_8",
   "mixins": [
-    "ae2.PathingCalculationMixin"
+    "ae2.PathingCalculationMixin",
+    "ae2.QuantumIncorporationGridNodeMixin",
+    "minecraft.QuantumIncorporationIdentityMixin"
   ],
   "client": [
     "minecraft.HeldChargeSyncMixin"

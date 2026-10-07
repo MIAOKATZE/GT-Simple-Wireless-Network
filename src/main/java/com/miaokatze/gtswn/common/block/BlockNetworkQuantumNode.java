@@ -60,11 +60,16 @@ public class BlockNetworkQuantumNode extends BlockContainer {
      */
     public static int renderId = -1;
 
-    /** 在线动画图标（ME_Network_Quantum_Node.png，16x64 四帧竖条，mcmeta frametime=10） */
+    /** 在线动画图标（32px、32 帧，mcmeta frametime=2） */
     private IIcon iconOnline;
 
-    /** 离线静态图标（ME_Network_Quantum_Node_OFF.png，16x16 单帧，无 mcmeta） */
+    /** 离线静态图标（32px 单帧，无 mcmeta） */
     private IIcon iconOffline;
+
+    private IIcon iconOnlineOpaque;
+    private IIcon iconOnlineTranslucent;
+    private IIcon iconOfflineOpaque;
+    private IIcon iconOfflineTranslucent;
 
     /** 核心包围盒下界（5/16，与构造器 setBlockBounds 一致；v1.8.5 碰撞/射线复用） */
     private static final float CORE_MIN = 0.3125F;
@@ -120,14 +125,38 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         return renderId;
     }
 
+    /** Forge 分别编译实体与透明区块网格，部件也跟随对应 pass。 */
+    @Override
+    public int getRenderBlockPass() {
+        return 1;
+    }
+
+    @Override
+    public boolean canRenderInPass(int pass) {
+        return pass == 0 || pass == 1;
+    }
+
     // ==================== v1.6.4 任务4：状态材质（在线动画 / 离线静态） ====================
 
     @Override
     public void registerBlockIcons(IIconRegister register) {
         this.iconOnline = register.registerIcon("gtswn:ME_Network_Quantum_Node");
         this.iconOffline = register.registerIcon("gtswn:ME_Network_Quantum_Node_OFF");
+        this.iconOnlineOpaque = register.registerIcon("gtswn:ME_Network_Quantum_Node_opaque");
+        this.iconOnlineTranslucent = register.registerIcon("gtswn:ME_Network_Quantum_Node_translucent");
+        this.iconOfflineOpaque = register.registerIcon("gtswn:ME_Network_Quantum_Node_OFF_opaque");
+        this.iconOfflineTranslucent = register.registerIcon("gtswn:ME_Network_Quantum_Node_OFF_translucent");
         // 兼容第三方直接读 blockIcon 字段的路径（WAILA/NEI 图标等）
         this.blockIcon = this.iconOnline;
+    }
+
+    /** 无世界上下文时取在线层；常规 getIcon 仍提供合成图供粒子和第三方使用。 */
+    @SideOnly(Side.CLIENT)
+    public IIcon getLayerIcon(boolean online, int pass) {
+        if (online) {
+            return pass == 1 ? this.iconOnlineTranslucent : this.iconOnlineOpaque;
+        }
+        return pass == 1 ? this.iconOfflineTranslucent : this.iconOfflineOpaque;
     }
 
     /** 世界内渲染图标（ISBRH renderStandardBlock → RenderBlocks.getBlockIcon → 本方法）：在线动画 / 离线静态 */

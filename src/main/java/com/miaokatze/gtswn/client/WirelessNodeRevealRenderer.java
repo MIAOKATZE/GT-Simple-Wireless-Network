@@ -193,11 +193,12 @@ public final class WirelessNodeRevealRenderer {
         if (altColor) {
             GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
         } else {
-            final boolean isDynamo = node.type == WirelessNodeIndexCodec.TYPE_DYNAMO;
+            final boolean isDynamo = node.type == WirelessNodeIndexCodec.TYPE_DYNAMO || node.type == 3;
+            final boolean isController = node.type == 4;
             GL11.glColor4f(
-                (isDynamo ? DYNAMO_RED : ENERGY_RED) / 255.0f,
-                (isDynamo ? DYNAMO_GREEN : ENERGY_GREEN) / 255.0f,
-                (isDynamo ? DYNAMO_BLUE : ENERGY_BLUE) / 255.0f,
+                (isController ? 255 : isDynamo ? DYNAMO_RED : ENERGY_RED) / 255.0f,
+                (isController ? 48 : isDynamo ? DYNAMO_GREEN : ENERGY_GREEN) / 255.0f,
+                (isController ? 48 : isDynamo ? DYNAMO_BLUE : ENERGY_BLUE) / 255.0f,
                 1.0f);
         }
 

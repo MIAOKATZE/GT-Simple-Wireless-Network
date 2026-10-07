@@ -138,6 +138,10 @@ public class QuantumNodeHighlightRenderer {
      * @param pz    放置目标点 Z
      */
     private static void drawPreviewBox(DrawBlockHighlightEvent event, int px, int py, int pz) {
+        drawBox(event, px, py, pz, false);
+    }
+
+    static void drawBox(DrawBlockHighlightEvent event, int px, int py, int pz, boolean incorporation) {
         final EntityPlayer player = event.player;
         // 摄像机相对坐标（插值，避免视角移动时预览盒抖动）
         final double camX = player.lastTickPosX + (player.posX - player.lastTickPosX) * (double) event.partialTicks;
@@ -145,11 +149,13 @@ public class QuantumNodeHighlightRenderer {
         final double camZ = player.lastTickPosZ + (player.posZ - player.lastTickPosZ) * (double) event.partialTicks;
 
         // 核心盒（方块局部 5/16~11/16），微扩张防 Z-fighting，再平移到视角相对坐标
-        AxisAlignedBB box = AxisAlignedBB.getBoundingBox(CORE_MIN, CORE_MIN, CORE_MIN, CORE_MAX, CORE_MAX, CORE_MAX);
+        AxisAlignedBB box = incorporation ? AxisAlignedBB.getBoundingBox(0, 0, 0, 1, 1, 1)
+            : AxisAlignedBB.getBoundingBox(CORE_MIN, CORE_MIN, CORE_MIN, CORE_MAX, CORE_MAX, CORE_MAX);
         box = box.expand(0.002D, 0.002D, 0.002D);
         box = box.getOffsetBoundingBox(px - camX, py - camY, pz - camZ);
 
         GL11.glPushMatrix();
+        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
 
         // === OpenGL 状态准备（与 WirelessTapHighlightRenderer 相同惯例） ===
         GL11.glEnable(GL11.GL_BLEND);
@@ -168,7 +174,11 @@ public class QuantumNodeHighlightRenderer {
         GL11.glDepthMask(false);
         GL11.glDisable(GL11.GL_CULL_FACE);
         tess.startDrawingQuads();
-        tess.setColorRGBA_F(RED, GREEN, BLUE, FILL_ALPHA);
+        tess.setColorRGBA_F(
+            incorporation ? 0.67F : RED,
+            incorporation ? 0.2F : GREEN,
+            BLUE,
+            incorporation ? 0.16F : FILL_ALPHA);
         addQuad(
             tess,
             box.minX,
@@ -260,7 +270,7 @@ public class QuantumNodeHighlightRenderer {
         // === 2. 线框（12 条边：底面 4 + 顶面 4 + 立柱 4，同 WirelessTapHighlightRenderer 画法） ===
         // 底面 4 条边（LINE_STRIP 连续绘制）
         tess.startDrawing(GL11.GL_LINE_STRIP);
-        tess.setColorRGBA_F(RED, GREEN, BLUE, LINE_ALPHA);
+        tess.setColorRGBA_F(incorporation ? 0.67F : RED, incorporation ? 0.2F : GREEN, BLUE, LINE_ALPHA);
         tess.addVertex(box.minX, box.minY, box.minZ);
         tess.addVertex(box.maxX, box.minY, box.minZ);
         tess.addVertex(box.maxX, box.minY, box.maxZ);
@@ -270,7 +280,7 @@ public class QuantumNodeHighlightRenderer {
 
         // 顶面 4 条边
         tess.startDrawing(GL11.GL_LINE_STRIP);
-        tess.setColorRGBA_F(RED, GREEN, BLUE, LINE_ALPHA);
+        tess.setColorRGBA_F(incorporation ? 0.67F : RED, incorporation ? 0.2F : GREEN, BLUE, LINE_ALPHA);
         tess.addVertex(box.minX, box.maxY, box.minZ);
         tess.addVertex(box.maxX, box.maxY, box.minZ);
         tess.addVertex(box.maxX, box.maxY, box.maxZ);
@@ -280,7 +290,7 @@ public class QuantumNodeHighlightRenderer {
 
         // 4 条立柱（连接底面与顶面）
         tess.startDrawing(GL11.GL_LINES);
-        tess.setColorRGBA_F(RED, GREEN, BLUE, LINE_ALPHA);
+        tess.setColorRGBA_F(incorporation ? 0.67F : RED, incorporation ? 0.2F : GREEN, BLUE, LINE_ALPHA);
         tess.addVertex(box.minX, box.minY, box.minZ);
         tess.addVertex(box.minX, box.maxY, box.minZ);
         tess.addVertex(box.maxX, box.minY, box.minZ);
@@ -295,6 +305,7 @@ public class QuantumNodeHighlightRenderer {
         GL20.glUseProgram(program); // 恢复 shader
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glDisable(GL11.GL_BLEND);
+        GL11.glPopAttrib();
         GL11.glPopMatrix(); // 恢复模型视图矩阵
     }
 

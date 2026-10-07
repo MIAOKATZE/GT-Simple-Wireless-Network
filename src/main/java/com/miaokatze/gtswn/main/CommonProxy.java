@@ -438,6 +438,12 @@ public class CommonProxy {
         // 服务端空实现：此包只发往客户端
     }
 
+    public boolean isQuantumIncorporationMode() {
+        return false;
+    }
+
+    public void handleQuantumIncorporationClick(int x, int y, int z, boolean remove) {}
+
     public void openQuantumTerminalGui() {}
 
     /**

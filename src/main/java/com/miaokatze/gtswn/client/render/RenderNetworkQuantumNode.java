@@ -9,10 +9,12 @@ import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.IIcon;
 import net.minecraft.world.IBlockAccess;
+import net.minecraftforge.client.MinecraftForgeClient;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -82,6 +84,12 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
 
     private static final double C1 = 0.6875D;
 
+    /** 与选定05预览一致的微倒角，仅改变静态视觉网格，碰撞与射线仍为原核心盒。 */
+    private static final double BEVEL = 0.012D;
+
+    private static final double[][] CORE_RING = { { C0 + BEVEL, C0 }, { C1 - BEVEL, C0 }, { C1, C0 + BEVEL },
+        { C1, C1 - BEVEL }, { C1 - BEVEL, C1 }, { C0 + BEVEL, C1 }, { C0, C1 - BEVEL }, { C0, C0 + BEVEL } };
+
     /**
      * 六向连接臂包围盒 {minX,minY,minZ,maxX,maxY,maxZ}，按 {@link ForgeDirection} ordinal 排列
      * （DOWN/UP/NORTH/SOUTH/WEST/EAST），臂从核心延伸至对应方块面。
@@ -118,9 +126,13 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
         if (world == null) {
             return false;
         }
-        // 核心：renderBounds 取自方块 setBlockBounds 设定的小核心包围盒
-        renderer.setRenderBoundsFromBlock(block);
-        renderer.renderStandardBlock(block, x, y, z);
+        int pass = MinecraftForgeClient.getRenderPass();
+        if (pass != 0 && pass != 1) {
+            return false;
+        }
+        IIcon originalOverride = renderer.overrideBlockTexture;
+        double[] originalBounds = { renderer.renderMinX, renderer.renderMinY, renderer.renderMinZ, renderer.renderMaxX,
+            renderer.renderMaxY, renderer.renderMaxZ };
         // 六向：v1.6.24 起不再判邻居是否为 IGridHost 宿主，改为读本 TE 经 S35 同步的连接方向位掩码，
         // 只对置位方向画臂（self 为 null 或非本 TE 类型时 mask=0 不画臂，安全降级）
         TileEntity self = world.getTileEntity(x, y, z);
@@ -128,29 +140,59 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
             ? (TileEntityNetworkQuantumNode) self
             : null;
         int mask = (node != null) ? node.getConnectedSidesMask() : 0;
-        for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
-            if (((mask >> d.ordinal()) & 1) != 0) {
-                // v1.8.22：clone 后按部件让位钳制——ARM_BOUNDS 是共享静态表，不得原地改写
-                double[] b = ARM_BOUNDS[d.ordinal()].clone();
-                if (!clampArmToPart(node, d, b)) {
-                    continue; // 该向部件占满半边（len>=8）：臂完全让位不画
+        try {
+            // 裂纹覆盖纹理只画一次；一般路径显式选层，不让 common 方块引用客户端 pass 状态。
+            if (originalOverride == null || pass == 0) {
+                IIcon icon = originalOverride != null ? originalOverride
+                    : ((BlockNetworkQuantumNode) block).getLayerIcon(node != null && node.isLinkedClient(), pass);
+                renderer.overrideBlockTexture = icon;
+                double[][] arms = new double[6][];
+                int visibleArms = 0;
+                for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
+                    if (((mask >> d.ordinal()) & 1) != 0) {
+                        // v1.8.22：clone 后按部件让位钳制——ARM_BOUNDS 是共享静态表，不得原地改写
+                        double[] b = ARM_BOUNDS[d.ordinal()].clone();
+                        if (!clampArmToPart(node, d, b)) {
+                            continue; // 该向部件占满半边（len>=8）：臂完全让位不画
+                        }
+                        arms[d.ordinal()] = b;
+                        visibleArms |= 1 << d.ordinal();
+                    }
                 }
-                renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
-                renderer.renderStandardBlock(block, x, y, z);
+                int brightness = block.getMixedBrightnessForBlock(world, x, y, z);
+                renderCore(icon, x, y, z, brightness, false, visibleArms);
+                for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
+                    double[] b = arms[d.ordinal()];
+                    if (b != null) {
+                        renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
+                        renderArm(block, renderer, icon, x, y, z, brightness, d.getOpposite());
+                    }
+                }
             }
+            // AE 容器只能接收调用方原覆盖纹理，不能继承节点私有分层图标。
+            renderer.overrideBlockTexture = originalOverride;
+            // v1.8.5：AE2 部件原生渲染（镜像 RendererCableBus.renderInWorld :40-53）——
+            // 换 BusRenderer 的 RenderBlocksWorkaround 驱动 CableRenderHelper 渲染容器内全部部件；
+            // hasParts()=false 时零开销，行为与 v1.8.3 完全一致。
+            // v1.8.6：4 参 renderStatic(IBlockAccess,double,double,double) 仅 AE2U rv3-beta-1050+ 存在，
+            // rv3-beta-1000（玩家 GTNH 2.9.5 实机）只有 3 参变体，直调即 NoSuchMethodError 客户端崩溃
+            // （crash-2026-09-08_09.48.53：容器含部件的节点构建区块网格时炸在 ：116）——改为反射签名
+            // 探针 + LinkageError 兜底：任一 AE2U 版本最坏降级为不画部件（= v1.8.3 行为），绝不崩溃。
+            if (self instanceof TileEntityNetworkQuantumNode && ae2PartRenderEnabled
+                && ((TileEntityNetworkQuantumNode) self).hasParts()) {
+                renderPartsReflective(world, x, y, z, (TileEntityNetworkQuantumNode) self, renderer, pass);
+            }
+            return true;
+        } finally {
+            renderer.overrideBlockTexture = originalOverride;
+            renderer.setRenderBounds(
+                originalBounds[0],
+                originalBounds[1],
+                originalBounds[2],
+                originalBounds[3],
+                originalBounds[4],
+                originalBounds[5]);
         }
-        // v1.8.5：AE2 部件原生渲染（镜像 RendererCableBus.renderInWorld :40-53）——
-        // 换 BusRenderer 的 RenderBlocksWorkaround 驱动 CableRenderHelper 渲染容器内全部部件；
-        // hasParts()=false 时零开销，行为与 v1.8.3 完全一致。
-        // v1.8.6：4 参 renderStatic(IBlockAccess,double,double,double) 仅 AE2U rv3-beta-1050+ 存在，
-        // rv3-beta-1000（玩家 GTNH 2.9.5 实机）只有 3 参变体，直调即 NoSuchMethodError 客户端崩溃
-        // （crash-2026-09-08_09.48.53：容器含部件的节点构建区块网格时炸在 ：116）——改为反射签名
-        // 探针 + LinkageError 兜底：任一 AE2U 版本最坏降级为不画部件（= v1.8.3 行为），绝不崩溃。
-        if (self instanceof TileEntityNetworkQuantumNode && ae2PartRenderEnabled
-            && ((TileEntityNetworkQuantumNode) self).hasParts()) {
-            renderPartsReflective(world, x, y, z, (TileEntityNetworkQuantumNode) self, renderer);
-        }
-        return true;
     }
 
     /**
@@ -214,36 +256,147 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
      */
     @Override
     public void renderInventoryBlock(Block block, int metadata, int modelId, RenderBlocks renderer) {
-        renderer.setRenderBounds(C0, C0, C0, C1, C1, C1);
-        IIcon icon = block.getIcon(0, metadata);
         Tessellator tess = Tessellator.instance;
-        // 物品渲染原点在 (-0.5,-0.5,-0.5)，先平移使核心居中
-        GL11.glTranslatef(-0.5F, -0.5F, -0.5F);
-        tess.startDrawingQuads();
-        tess.setNormal(0.0F, -1.0F, 0.0F);
-        renderer.renderFaceYNeg(block, 0.0D, 0.0D, 0.0D, icon);
-        tess.draw();
-        tess.startDrawingQuads();
-        tess.setNormal(0.0F, 1.0F, 0.0F);
-        renderer.renderFaceYPos(block, 0.0D, 0.0D, 0.0D, icon);
-        tess.draw();
-        tess.startDrawingQuads();
-        tess.setNormal(0.0F, 0.0F, -1.0F);
-        renderer.renderFaceZNeg(block, 0.0D, 0.0D, 0.0D, icon);
-        tess.draw();
-        tess.startDrawingQuads();
-        tess.setNormal(0.0F, 0.0F, 1.0F);
-        renderer.renderFaceZPos(block, 0.0D, 0.0D, 0.0D, icon);
-        tess.draw();
-        tess.startDrawingQuads();
-        tess.setNormal(-1.0F, 0.0F, 0.0F);
-        renderer.renderFaceXNeg(block, 0.0D, 0.0D, 0.0D, icon);
-        tess.draw();
-        tess.startDrawingQuads();
-        tess.setNormal(1.0F, 0.0F, 0.0F);
-        renderer.renderFaceXPos(block, 0.0D, 0.0D, 0.0D, icon);
-        tess.draw();
-        GL11.glTranslatef(0.5F, 0.5F, 0.5F);
+        GL11.glPushAttrib(
+            GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT | GL11.GL_DEPTH_BUFFER_BIT);
+        GL11.glPushMatrix();
+        try {
+            GL11.glTranslatef(-0.5F, -0.5F, -0.5F);
+            GL11.glEnable(GL11.GL_ALPHA_TEST);
+            GL11.glAlphaFunc(GL11.GL_GREATER, 0.01F);
+            GL11.glDisable(GL11.GL_BLEND);
+            int layers = renderer.overrideBlockTexture == null ? 2 : 1;
+            for (int pass = 0; pass < layers; pass++) {
+                if (pass == 1) {
+                    GL11.glEnable(GL11.GL_BLEND);
+                    GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                    GL11.glDepthMask(false);
+                }
+                IIcon icon = renderer.overrideBlockTexture != null ? renderer.overrideBlockTexture
+                    : ((BlockNetworkQuantumNode) block).getLayerIcon(true, pass);
+                tess.startDrawingQuads();
+                renderCore(icon, 0, 0, 0, 0, true, 0);
+                tess.draw();
+            }
+        } finally {
+            GL11.glPopMatrix();
+            GL11.glPopAttrib();
+        }
+    }
+
+    /** 八边截面与预览的 xz 微倒角柱完全一致；UV 仍取原中央 3/8，未拉伸成整张纹理。 */
+    private static void renderCore(IIcon icon, double x, double y, double z, int brightness, boolean inventory,
+        int connectedArms) {
+        for (int i = 0; i < CORE_RING.length; i++) {
+            double[] a = CORE_RING[i];
+            double[] b = CORE_RING[(i + 1) % CORE_RING.length];
+            double dx = b[0] - a[0], dz = b[1] - a[1];
+            double length = Math.sqrt(dx * dx + dz * dz);
+            // 相接核心面和臂内端都不绘制，避免透明材料在同一平面重复混合。
+            int side = i == 0 ? 2 : i == 2 ? 5 : i == 4 ? 3 : i == 6 ? 4 : -1;
+            if (side < 0 || (connectedArms & (1 << side)) == 0) {
+                coreFace(
+                    icon,
+                    x,
+                    y,
+                    z,
+                    brightness,
+                    inventory,
+                    dz / length,
+                    0,
+                    -dx / length,
+                    new double[][] { { a[0], C0, a[1] }, { a[0], C1, a[1] }, { b[0], C1, b[1] }, { b[0], C0, b[1] } });
+            }
+            // Tessellator 的四边形批次：三角形重复末顶点，八片共同覆盖上下八边形。
+            if ((connectedArms & 1) == 0) {
+                coreFace(
+                    icon,
+                    x,
+                    y,
+                    z,
+                    brightness,
+                    inventory,
+                    0,
+                    -1,
+                    0,
+                    new double[][] { { .5D, C0, .5D }, { a[0], C0, a[1] }, { b[0], C0, b[1] }, { b[0], C0, b[1] } });
+            }
+            if ((connectedArms & 2) == 0) {
+                coreFace(
+                    icon,
+                    x,
+                    y,
+                    z,
+                    brightness,
+                    inventory,
+                    0,
+                    1,
+                    0,
+                    new double[][] { { .5D, C1, .5D }, { b[0], C1, b[1] }, { a[0], C1, a[1] }, { a[0], C1, a[1] } });
+            }
+        }
+    }
+
+    private static void renderArm(Block block, RenderBlocks renderer, IIcon icon, int x, int y, int z, int brightness,
+        ForgeDirection inward) {
+        Tessellator tess = Tessellator.instance;
+        tess.setBrightness(brightness);
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
+            if (side == inward) {
+                continue;
+            }
+            float shade = side == ForgeDirection.UP ? 1F
+                : side == ForgeDirection.DOWN ? .5F : side.offsetX != 0 ? .6F : .8F;
+            tess.setColorOpaque_F(shade, shade, shade);
+            switch (side) {
+                case DOWN:
+                    renderer.renderFaceYNeg(block, x, y, z, icon);
+                    break;
+                case UP:
+                    renderer.renderFaceYPos(block, x, y, z, icon);
+                    break;
+                case NORTH:
+                    renderer.renderFaceZNeg(block, x, y, z, icon);
+                    break;
+                case SOUTH:
+                    renderer.renderFaceZPos(block, x, y, z, icon);
+                    break;
+                case WEST:
+                    renderer.renderFaceXNeg(block, x, y, z, icon);
+                    break;
+                case EAST:
+                    renderer.renderFaceXPos(block, x, y, z, icon);
+                    break;
+                default:
+                    break;
+            }
+        }
+    }
+
+    private static void coreFace(IIcon icon, double x, double y, double z, int brightness, boolean inventory, double nx,
+        double ny, double nz, double[][] vertices) {
+        Tessellator tess = Tessellator.instance;
+        if (inventory) {
+            tess.setNormal((float) nx, (float) ny, (float) nz);
+            tess.setColorOpaque_F(1F, 1F, 1F);
+        } else {
+            tess.setBrightness(brightness);
+            float shade = (float) (ny > 0 ? 1 : ny < 0 ? .5D : .6D * Math.abs(nx) + .8D * Math.abs(nz));
+            tess.setColorOpaque_F(shade, shade, shade);
+        }
+        for (double[] vertex : vertices) {
+            double u = ny != 0 || Math.abs(nz) >= Math.abs(nx) ? vertex[0] : vertex[2];
+            if (ny == 0 && (Math.abs(nx) > Math.abs(nz) ? nx > 0 : nz < 0)) {
+                u = 1 - u;
+            }
+            double v = ny != 0 ? vertex[2] : 1 - vertex[1];
+            tess.addVertexWithUV(
+                x + vertex[0],
+                y + vertex[1],
+                z + vertex[2],
+                icon.getInterpolatedU(u * 16),
+                icon.getInterpolatedV(v * 16));
+        }
     }
 
     /** 物品栏中以 3D 渲染（核心小方块） */
@@ -262,17 +415,20 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
      * rbw.renderAllFaces，防止异常路径污染 AE2 后续总线渲染状态。
      */
     private static void renderPartsReflective(IBlockAccess world, int x, int y, int z,
-        TileEntityNetworkQuantumNode node, RenderBlocks renderer) {
+        TileEntityNetworkQuantumNode node, RenderBlocks renderer, int pass) {
         try {
             RenderBlocksWorkaround rbw = BusRenderer.INSTANCE.getRenderer();
+            boolean originalAllFaces = rbw.renderAllFaces;
+            IIcon originalTexture = rbw.overrideBlockTexture;
             rbw.renderAllFaces = true;
             rbw.overrideBlockTexture = renderer.overrideBlockTexture;
             BusRenderHelper.instances.get()
-                .setPass(0);
+                .setPass(pass);
             try {
                 invokeRenderStatic(node.getPartContainer(), world, x, y, z);
             } finally {
-                rbw.renderAllFaces = false;
+                rbw.renderAllFaces = originalAllFaces;
+                rbw.overrideBlockTexture = originalTexture;
             }
         } catch (LinkageError e) {
             ae2PartRenderEnabled = false;

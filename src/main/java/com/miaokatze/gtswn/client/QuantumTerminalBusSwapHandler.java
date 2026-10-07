@@ -79,6 +79,9 @@ public class QuantumTerminalBusSwapHandler {
      * 共用本判定，保证「显示换体预览 ⇔ 右击触发换体」不出现两者不一致。
      */
     public static ForgeDirection findSwapTargetFace(EntityPlayer player, int x, int y, int z) {
+        if (com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode()) {
+            return null;
+        }
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) {
             return null;

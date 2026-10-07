@@ -10,6 +10,7 @@ import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.LinkNodeDismantleTriggerHandler;
+import com.miaokatze.gtswn.client.QuantumIncorporationClientHandler;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
 import com.miaokatze.gtswn.client.RevealTriggerHandler;
 import com.miaokatze.gtswn.client.WirelessNodeRevealRenderer;
@@ -56,6 +57,16 @@ public class ClientProxy extends CommonProxy {
      */
     private HudController hudController;
 
+    @Override
+    public boolean isQuantumIncorporationMode() {
+        return QuantumIncorporationClientHandler.isAltDown();
+    }
+
+    @Override
+    public void handleQuantumIncorporationClick(int x, int y, int z, boolean remove) {
+        QuantumIncorporationClientHandler.requestIncorporation(x, y, z, remove);
+    }
+
     /**
      * 初始化阶段 (Init)
      * 在此阶段注册客户端特定的事件处理器，如 HUD 渲染器。
@@ -89,6 +100,11 @@ public class ClientProxy extends CommonProxy {
         // v1.7.23：Alt+右键即时显形触发器（MouseEvent 按下沿 + Alt 按住 + 手持链路终端 →
         // 发 disc 11 并取消原版右键；替代 v1.7.20~v1.7.22 的右击空气蓄力路径）
         MinecraftForge.EVENT_BUS.register(new RevealTriggerHandler());
+        QuantumIncorporationClientHandler incorporation = new QuantumIncorporationClientHandler();
+        MinecraftForge.EVENT_BUS.register(incorporation);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(incorporation);
         // v1.8.23：Alt+扳手左键拆机持续标记触发器（ClientTickEvent END + Alt 按住 + 手持 GT 扳手
         // → 每 5t 重发 disc 14；v1.8.22 MouseEvent 按下沿版与即时破坏同 tick 竞态失效。
         // 1.7.10 的 TickEvent 挂 FML 总线，不在 Forge 总线）

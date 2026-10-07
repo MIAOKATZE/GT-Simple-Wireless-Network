@@ -483,3 +483,10 @@ gtswn.nei.monitor_battery.shapeless=无序合成示例
 gtswn.nei.monitor_battery.charge=电量保留
 gtswn.nei.monitor_battery.return=旧电池返回背包，满则掉落
 gtswn.nei.monitor_battery.tool=撬棍按原生规则消耗耐久或电量
+
+gtswn.tooltip.quantum_terminal.usage.incorporate=§dAlt+右击完整 AE 方块：量子并入（排除线缆部件）
+gtswn.tooltip.quantum_terminal.usage.release=§dAlt+Shift+右击：解除量子并入
+gtswn.chat.quantum.incorporation_removed=§a[量子终端] 已解除量子并入，恢复普通 AE 连接
+gtswn.chat.quantum.incorporation_added=§d[量子终端] 已量子并入，Alt+Shift+右击可解除
+gtswn.chat.quantum.incorporation_offline=§c[量子终端] 绑定的量子控制器未加载或已失效，无法并入
+gtswn.tooltip.quantum_terminal.usage.reveal=§dAlt+对空气长按右键 1 秒：显形节点（黄）/并入（紫）/控制器（红）

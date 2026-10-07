@@ -483,3 +483,10 @@ gtswn.nei.monitor_battery.shapeless=Shapeless recipe example
 gtswn.nei.monitor_battery.charge=Charge is preserved
 gtswn.nei.monitor_battery.return=Old battery returns to inventory, or drops if full
 gtswn.nei.monitor_battery.tool=Crowbar uses its native durability or energy cost
+
+gtswn.tooltip.quantum_terminal.usage.incorporate=§dAlt+Right-click a full AE block: quantum incorporation (excludes cable parts)
+gtswn.tooltip.quantum_terminal.usage.release=§dAlt+Shift+Right-click: release quantum incorporation
+gtswn.chat.quantum.incorporation_removed=§a[Quantum Terminal] Incorporation removed. Physical AE connections restored.
+gtswn.chat.quantum.incorporation_added=§d[Quantum Terminal] Quantum incorporation complete. Alt+Shift+Right-click to release.
+gtswn.chat.quantum.incorporation_offline=§c[Quantum Terminal] Bound quantum controller is unloaded or invalid. Cannot incorporate.
+gtswn.tooltip.quantum_terminal.usage.reveal=§dHold Alt+Right-click in air for 1s: reveal nodes (yellow), incorporated blocks (purple), controllers (red)

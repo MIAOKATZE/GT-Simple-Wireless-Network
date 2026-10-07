@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Set;
 
 import net.minecraft.block.Block;
+import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
@@ -11,6 +12,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.IIcon;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
@@ -18,6 +20,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
@@ -30,6 +33,8 @@ import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
 import appeng.util.LookDirection;
 import appeng.util.Platform;
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
 
 /**
  * ME 网络量子终端（T3 手势逻辑完整实现，规划 plan_20260722152445.md §2 D3 / §5.1 / §7）。
@@ -41,6 +46,8 @@ import appeng.util.Platform;
  * <li>Shift+右击已量子化控制器 = 取消量子化并解绑（整结构出册 + 恢复全方向可连接 + 清除终端锚点）</li>
  * <li>右击普通方块（已绑定）= 在点击面放置「ME 网络量子节点」（D4 不消耗物品）</li>
  * <li>Shift+右击空气 = 打开终端 GUI（v1.6.2：有且仅有此路径开 GUI，见 onItemRightClick 射线守卫）</li>
+ * <li>Alt+右击完整 AE 方块 = 量子并入；Alt+Shift+右击 = 解除并入</li>
+ * <li>Alt+对空气长按右键 20 tick = 显形量子网络，由客户端手势处理器发送自定义包</li>
  * </ul>
  * <p>
  * 双端模型（1.7.10 机制，已核实）：客户端 {@code onItemUseFirst} 返回 true 会拦截 C08 包
@@ -48,11 +55,40 @@ import appeng.util.Platform;
  * 客户端继续走 onBlockActivated 镜像并发 C08，服务端在 processPlayerBlockPlacement 中
  * 再次调用 onItemUseFirst。AE2 的 AEBaseTileBlock.onBlockActivated 整体被
  * {@code !w.isRemote} 门控（客户端直接落到基类 onActivated 返回 false），故客户端放行
- * 不会开出控制器 GUI。因此本物品客户端无条件 return false，全部业务逻辑仅在服务端执行。
+ * 不会开出控制器 GUI。普通模式客户端 return false；Alt 模式拦截原版交互并发送并入包，
+ * 全部世界修改仍由服务端执行。
  * <p>
  * NBT 结构（§5.1）：QT_Bound(byte) / QT_AnchorDim / QT_AnchorX/Y/Z(int) / QT_BoundName(string)。
  */
 public class ItemNetworkQuantumTerminal extends Item {
+
+    @SideOnly(Side.CLIENT)
+    private IIcon incorporationIcon;
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public void registerIcons(IIconRegister register) {
+        super.registerIcons(register);
+        incorporationIcon = register.registerIcon("gtswn:ME_Network_Quantum_Terminal_Alt");
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public IIcon getIconFromDamage(int damage) {
+        return GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode() ? incorporationIcon : itemIcon;
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public IIcon getIcon(ItemStack stack, int pass) {
+        return getIconFromDamage(stack.getItemDamage());
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public boolean hasEffect(ItemStack stack, int pass) {
+        return GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode() || super.hasEffect(stack, pass);
+    }
 
     // ==================== NBT 键名（规划 §5.1） ====================
     // B2-14：以下五键为全仓唯一定义（QuantumNetworkData 改引此处），
@@ -87,7 +123,7 @@ public class ItemNetworkQuantumTerminal extends Item {
         setMaxStackSize(1);
     }
 
-    // v1.6.2：终端固定单材质（用户定夺：未绑定/绑定不再区分图标），无 registerIcons/getIconIndex 覆写
+    // 未绑定/绑定共用图标；Alt 模式切换到同帧内容、更短帧间隔的动画。
 
     /**
      * v1.6.2 修复：Shift+右击量子节点收回时不再误开终端 GUI。
@@ -100,7 +136,8 @@ public class ItemNetworkQuantumTerminal extends Item {
      */
     @Override
     public boolean doesSneakBypassUse(World world, int x, int y, int z, EntityPlayer player) {
-        return world.getBlock(x, y, z) == BlockRegistrar.networkQuantumNode;
+        return (world.isRemote && GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode())
+            || world.getBlock(x, y, z) == BlockRegistrar.networkQuantumNode;
     }
 
     // ==================== 手势 1-4：右击方块（onItemUseFirst） ====================
@@ -114,8 +151,15 @@ public class ItemNetworkQuantumTerminal extends Item {
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
-        // 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
+        // 普通模式放行 C08；Alt 模式发送独立包，阻止节点放置与原版机器交互。
         if (world.isRemote) {
+            if (GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode()) {
+                GTSimpleWirelessNetwork.proxy.handleQuantumIncorporationClick(x, y, z, player.isSneaking());
+                return true;
+            }
+            return false;
+        }
+        if (QuantumIncorporationRegistry.isIncorporated(world, x, y, z)) {
             return false;
         }
         TileEntity te = world.getTileEntity(x, y, z);
@@ -225,6 +269,9 @@ public class ItemNetworkQuantumTerminal extends Item {
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         if (world.isRemote) {
+            if (GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode()) {
+                return stack;
+            }
             if (player.isSneaking() && isBound(stack)) {
                 LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
                 MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), true);
@@ -461,5 +508,8 @@ public class ItemNetworkQuantumTerminal extends Item {
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.place"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.pickup"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.gui"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.incorporate"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.release"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.reveal"));
     }
 }

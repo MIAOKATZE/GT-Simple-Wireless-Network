@@ -125,5 +125,26 @@ public class GTSWNPacketHandler {
         // （HIGHEST 先于 AE2 PartPlacement 的 LOW；处理器类无 client-only 引用，服务端 isRemote 早退）
         PacketQuantumTerminalSwapBus.register();
         MinecraftForge.EVENT_BUS.register(new QuantumTerminalBusSwapHandler());
+        NETWORK.registerMessage(
+            PacketQuantumIncorporation.Handler.class,
+            PacketQuantumIncorporation.class,
+            15,
+            Side.SERVER);
+        NETWORK.registerMessage(
+            PacketRequestQuantumReveal.Handler.class,
+            PacketRequestQuantumReveal.class,
+            16,
+            Side.SERVER);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new PacketQuantumIncorporation.Drain());
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new PacketRequestQuantumReveal.Drain());
+        com.miaokatze.gtswn.common.quantum.QuantumIncorporationEvents incorporationEvents = new com.miaokatze.gtswn.common.quantum.QuantumIncorporationEvents();
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(incorporationEvents);
+        MinecraftForge.EVENT_BUS.register(incorporationEvents);
     }
 }
