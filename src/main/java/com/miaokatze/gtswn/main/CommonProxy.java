@@ -12,6 +12,7 @@ import net.minecraftforge.common.ForgeChunkManager;
 import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.Tags;
+import com.miaokatze.gtswn.common.charging.MonitorChargingHandler;
 import com.miaokatze.gtswn.common.command.CommandGTSWN;
 import com.miaokatze.gtswn.common.covers.CoverDropSuppressionHandler;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
@@ -246,6 +247,9 @@ public class CommonProxy {
      */
     @SuppressWarnings({ "unused" })
     public void postInit(FMLPostInitializationEvent event) {
+        FMLCommonHandler.instance()
+            .bus()
+            .register(new MonitorChargingHandler());
         GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册合成配方...");
         try {
             CraftingRecipes.init();

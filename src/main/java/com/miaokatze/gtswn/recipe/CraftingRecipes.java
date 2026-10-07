@@ -47,6 +47,7 @@ public class CraftingRecipes {
      * 注册顺序与配方内容不变；逐件回执合并为方法体最后一句的带数量汇总。
      */
     private static void registerAllRecipes() {
+        GameRegistry.addRecipe(new MonitorBatteryRecipe());
         int registered = 0;
         // 便携无线监测终端
         if (addPortableMonitorRecipe()) {

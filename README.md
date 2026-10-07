@@ -56,6 +56,9 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 - **饰品支持 / Baubles Support**: 可放入任意 Baubles 饰品栏；HUD 扫描顺序：主手 → Baubles → 背包 / Can be placed in any Baubles accessory slot; HUD scans main hand → Baubles → inventory
 - **服务器兼容 / Server Compatible**: 通过客户端请求 / 服务端响应的网络同步，在专用服务器上正确显示 EU / Correctly displays EU on dedicated servers via client-request / server-response network synchronization
+- **随身电池与充电 / Portable Battery Charging**: 与兼容的 GT 或 IC2 电池无序合成，为同一个终端增加电池容量并继承电池余量；已绑定的终端每 10 秒按配置的下行损耗从无线电网补满缓存，再以电池 Tier 的 1A 为背包、装备栏和 Baubles 内的电力物品充电。替换电池时旧电池保留终端当前余量 / Shapeless-craft with a compatible GT or IC2 battery to add capacity to the same terminal and inherit its charge; a bound terminal refills from the wireless grid every 10 seconds with configured downlink loss, then charges electric items in the inventory, armor slots, and Baubles at 1 A for the battery tier. Replacing the battery returns the old one with the terminal's current charge.
+- **充电 HUD / Charging HUD**: 安装电池后可显示缺少缓存、待机中、充电中、充电完毕状态。使用 `/gtswn hud charge|eu|instant|average on|off` 分别开关充电、电量、瞬时功率与平均功率行；命令会保存到 `gtswn_network.cfg` 的 `[hud]` 类目 / With a battery installed, the HUD can show missing cache, idle, charging, and charge complete. Use `/gtswn hud charge|eu|instant|average on|off` to toggle the charge, energy, instantaneous power, and average power rows; settings are saved in the `[hud]` category of `gtswn_network.cfg`.
+- **主手同步保护 / Held-Item Sync Protection**: 充电数据更新会合并回主手物品栈，避免单纯的电量同步替换正在使用的物品引用 / Charge-only updates merge into the held stack to avoid replacing the active item reference during use.
 
 <p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" alt="便携监测终端 HUD：科学计数模式—充电状态 / Portable monitor HUD: scientific notation — charging" width="400"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" alt="便携监测终端 HUD：科学计数模式—放电状态 / Portable monitor HUD: scientific notation — discharging" width="400"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
 
@@ -145,9 +148,9 @@ Both the **Wireless Energy Monitor** (block) and **Portable Wireless Network Mon
 
 ### 无线网络链路终端 / Wireless Energy Tap
 
-便携物品，将任意机器连接到无线 EU 网络。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。绑定激光源仓/靶仓时需消耗 1 根激光真空管。
+便携物品，将任意机器连接到跨维度共享的无线 EU 网络，链路节点支持跨维度供电与回传。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。绑定激光源仓/靶仓时需消耗 1 根激光真空管。
 
-A portable item that connects any machine to the wireless EU network. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
+A portable item that connects any machine to the wireless EU network shared across dimensions. Link nodes support cross-dimension energy delivery and return. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
 
 - **显形扫描反馈 / Reveal Scan Feedback**: 手持链路终端 **Alt+右键** 触发显形扫描（v1.7.23 起，替代旧版长按蓄力），立即扫描周围链路节点并穿墙线框显示 60 秒；完成后会在聊天框提示显现的节点数量，未发现节点时提示“未发现”。/ Hold the link terminal and press **Alt+right-click** to trigger the reveal scan (since v1.7.23, replacing the old hold-to-charge gesture) — nearby nodes are revealed immediately as wall-penetrating wireframes for 60 seconds; after it completes, the chat reports the number of nodes revealed, or “none found”.
 - **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
@@ -216,7 +219,7 @@ Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emi
 - **远程桥接 / Remote Bridge**: 经虚拟桥接接入锚点控制器 ME 网络，相邻 AE2 设备直接入网。/ Bridges into the anchored controller's ME grid via a virtual connection; adjacent AE2 devices join the network directly.
 - **无频道上限 / No Channel Limit**: 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。/ Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels.
 - **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default 10.0 AE/t).
-- **单维度 / Single-Dimension**: v1 不支持跨维度桥接。/ v1 does not support cross-dimension bridging.
+- **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
 
 ### 量子终端界面 / Quantum Terminal GUI
 

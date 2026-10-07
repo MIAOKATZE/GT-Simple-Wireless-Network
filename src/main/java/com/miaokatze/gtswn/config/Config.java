@@ -139,6 +139,11 @@ public class Config {
     // 默认 1.0 = 默认大小 / Default 1.0 = default size
     public static float hudScale = 1.0f;
 
+    public static boolean hudChargeEnabled = true;
+    public static boolean hudEUEnabled = true;
+    public static boolean hudInstantEnabled = true;
+    public static boolean hudAverageEnabled = true;
+
     // AE2 监控采样间隔（tick）/ AE2 monitor sample interval (ticks)
     // 数值越小采样越频繁，但会增加服务器负担 / Smaller value = more frequent sampling, higher server load
     // 默认 100 ticks = 5 秒 / Default 100 ticks = 5 seconds
@@ -432,7 +437,24 @@ public class Config {
                 + "范围 0.2-5.0，默认 1.0 / Range 0.2-5.0, Default 1.0");
 
         // 控制 hud 类目内 key 的显示顺序：X偏移 → Y偏移 → 缩放
-        configuration.setCategoryPropertyOrder(CATEGORY_HUD, Arrays.asList("HudXOffset", "HudYOffset", "HudScale"));
+        hudChargeEnabled = configuration
+            .getBoolean("HudChargeEnabled", CATEGORY_HUD, hudChargeEnabled, "显示充电状态 / Show charging status");
+        hudEUEnabled = configuration
+            .getBoolean("HudEUEnabled", CATEGORY_HUD, hudEUEnabled, "显示电网电量 / Show network energy");
+        hudInstantEnabled = configuration
+            .getBoolean("HudInstantEnabled", CATEGORY_HUD, hudInstantEnabled, "显示瞬时功率 / Show instantaneous power");
+        hudAverageEnabled = configuration
+            .getBoolean("HudAverageEnabled", CATEGORY_HUD, hudAverageEnabled, "显示平均功率 / Show average power");
+        configuration.setCategoryPropertyOrder(
+            CATEGORY_HUD,
+            Arrays.asList(
+                "HudXOffset",
+                "HudYOffset",
+                "HudScale",
+                "HudChargeEnabled",
+                "HudEUEnabled",
+                "HudInstantEnabled",
+                "HudAverageEnabled"));
 
         // v1.8.15 及更早版本 saveHudConfiguration 的 get 参数序 bug 会把 HUD 值写进垃圾类目，
         // 此处加载时一次性迁移回 [hud] 并清理垃圾类目（详见 migrateLegacyHudCategories）。
@@ -483,6 +505,14 @@ public class Config {
                 .set(hudYOffset);
             configuration.get(CATEGORY_HUD, "HudScale", (double) hudScale, "HUD 缩放比例 / HUD scale ratio", 0.2, 5.0)
                 .set((double) hudScale);
+            configuration.get(CATEGORY_HUD, "HudChargeEnabled", hudChargeEnabled)
+                .set(hudChargeEnabled);
+            configuration.get(CATEGORY_HUD, "HudEUEnabled", hudEUEnabled)
+                .set(hudEUEnabled);
+            configuration.get(CATEGORY_HUD, "HudInstantEnabled", hudInstantEnabled)
+                .set(hudInstantEnabled);
+            configuration.get(CATEGORY_HUD, "HudAverageEnabled", hudAverageEnabled)
+                .set(hudAverageEnabled);
             if (configuration.hasChanged()) {
                 configuration.save();
             }

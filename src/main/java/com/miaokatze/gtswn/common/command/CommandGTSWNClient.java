@@ -24,7 +24,7 @@ public class CommandGTSWNClient extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/gtswn <HudXOffset|HudYOffset|HudScale> [value]";
+        return "/gtswn <HudXOffset|HudYOffset|HudScale> [value] | /gtswn hud <charge|eu|instant|average> <on|off>";
     }
 
     @Override
@@ -35,13 +35,23 @@ public class CommandGTSWNClient extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCMD_X, SUBCMD_Y, SUBCMD_SCALE);
+            return getListOfStringsMatchingLastWord(args, SUBCMD_X, SUBCMD_Y, SUBCMD_SCALE, "hud");
+        }
+        if (args.length == 2 && "hud".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "charge", "eu", "instant", "average");
+        }
+        if (args.length == 3 && "hud".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "on", "off");
         }
         return null;
     }
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
+        if (args.length > 0 && "hud".equalsIgnoreCase(args[0])) {
+            processLineToggle(sender, args);
+            return;
+        }
         if (args.length < 1 || args.length > 2) {
             throw new WrongUsageException(getCommandUsage(sender));
         }
@@ -101,6 +111,30 @@ public class CommandGTSWNClient extends CommandBase {
             return Integer.toString(Config.hudYOffset);
         }
         return Float.toString(Config.hudScale);
+    }
+
+    private void processLineToggle(ICommandSender sender, String[] args) {
+        if (args.length != 3 || !("on".equalsIgnoreCase(args[2]) || "off".equalsIgnoreCase(args[2]))) {
+            throw new WrongUsageException(getCommandUsage(sender));
+        }
+        boolean enabled = "on".equalsIgnoreCase(args[2]);
+        if ("charge".equalsIgnoreCase(args[1])) {
+            Config.hudChargeEnabled = enabled;
+        } else if ("eu".equalsIgnoreCase(args[1])) {
+            Config.hudEUEnabled = enabled;
+        } else if ("instant".equalsIgnoreCase(args[1])) {
+            Config.hudInstantEnabled = enabled;
+        } else if ("average".equalsIgnoreCase(args[1])) {
+            Config.hudAverageEnabled = enabled;
+        } else {
+            throw new WrongUsageException(getCommandUsage(sender));
+        }
+        if (!Config.saveHudConfiguration()) {
+            sender
+                .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.hud.save_failed")));
+            return;
+        }
+        sender.addChatMessage(new ChatComponentText("hud " + args[1] + " = " + (enabled ? "on" : "off")));
     }
 
     private static String expectedRange(String subcommand) {

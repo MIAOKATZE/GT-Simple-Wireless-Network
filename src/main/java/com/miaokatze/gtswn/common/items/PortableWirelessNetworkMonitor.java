@@ -13,6 +13,7 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.charging.MonitorBattery;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import baubles.api.BaubleType;
@@ -57,6 +58,21 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         // 设置最大堆叠数量为 1（便携式设备通常不可堆叠）
         setMaxStackSize(1);
         // v1.2.1 移除 setHasSubtypes(true)：本物品无子类型（damage 仅用于材质切换，不需要 NBT 子类型分支）
+    }
+
+    @Override
+    public boolean hasContainerItem(ItemStack stack) {
+        return MonitorBattery.hasBattery(stack);
+    }
+
+    @Override
+    public ItemStack getContainerItem(ItemStack stack) {
+        return MonitorBattery.remove(stack);
+    }
+
+    @Override
+    public boolean doesContainerItemLeaveCraftingGrid(ItemStack stack) {
+        return true;
     }
 
     /**
@@ -276,6 +292,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
      */
     @Override
     public void addInformation(ItemStack aStack, EntityPlayer aPlayer, List<String> aList, boolean aF3_H) {
+        MonitorBattery.addTooltip(aStack, aList);
         // 确保 NBT 已初始化
         if (aStack.stackTagCompound == null) {
             aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));

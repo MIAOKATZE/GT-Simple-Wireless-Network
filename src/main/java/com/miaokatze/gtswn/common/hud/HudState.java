@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.hud;
 
 import java.util.UUID;
 
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
 import com.miaokatze.gtswn.common.util.EUDataSet;
@@ -23,6 +24,8 @@ final class HudState {
 
     /** HUD 显示模式（0=关闭，1=常规计数，2=科学计数） */
     int displayMode = 0;
+
+    ItemStack monitorStack = null;
 
     /** 缓存的拥有者 UUID（用于 HUD 显示） */
     String cachedOwnerUUID = null;
@@ -100,6 +103,7 @@ final class HudState {
      * </p>
      */
     void clearCache() {
+        this.monitorStack = null;
         setCachedOwnerUUID(null);
         // 重置服务端同步缓存，避免跨存档/世界切换时残留旧值
         this.syncedEuStr = null;
@@ -121,6 +125,8 @@ final class HudState {
      * 仅重置 syncedEuStr、cachedEUText、cachedEUTText、lastUpdateTick 等 UI 状态。
      */
     void resetUiForWorldSwitch() {
+        this.monitorStack = null;
+        this.lastInventoryCheckTick = Long.MIN_VALUE / 2;
         // 保留 dataSet（用户确认），只重置 UI 状态
         this.syncedEuStr = null;
         this.cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")

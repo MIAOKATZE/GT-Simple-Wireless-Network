@@ -9,6 +9,7 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
+import com.miaokatze.gtswn.common.charging.MonitorBattery;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
@@ -61,6 +62,7 @@ public final class HudController {
         if (currentTick - state.lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
             // 单次背包扫描（主手 → Baubles → 主背包）：owner 与 HUD 模式同源返回，绑定口径一致
             MonitorScanResult scan = scanMonitorInInventory(player);
+            state.monitorStack = scan.stack;
             String newOwnerUUID = scan.ownerUUID;
 
             // 如果找到了已绑定的监测终端，使用其 NBT 中的 HUD 模式
@@ -172,18 +174,45 @@ public final class HudController {
         return state.cachedRealtimeEUTText;
     }
 
+    public boolean hasBattery() {
+        return state.monitorStack != null && MonitorBattery.hasBattery(state.monitorStack);
+    }
+
+    public String chargeText() {
+        String status;
+        switch (MonitorBattery.getStatus(state.monitorStack)) {
+            case 2:
+                status = "charging";
+                break;
+            case 3:
+                status = "complete";
+                break;
+            case 1:
+                status = "idle";
+                break;
+            default:
+                status = "empty";
+                break;
+        }
+        return "\u00A7b" + StatCollector.translateToLocal("gtswn.hud.charge.label")
+            + ": \u00A7f"
+            + StatCollector.translateToLocal("gtswn.hud.charge." + status);
+    }
+
     /**
      * 单次背包扫描的复合结果（合并原三重同构扫描，见《全局调查-优化建议》OPT-7）。
      * <p>
      * 主手 → Baubles 饰品栏 → 主背包一次遍历，返回第一个「已绑定」便携监测终端的
      * 拥有者 UUID 与 HUD 模式；未找到已绑定终端时 ownerUUID 为 null、hudMode 为 0。
      * <p>
-     * B2-16：删除零消费的 {@code stack} 死字段（唯一调用方只读 ownerUUID/hudMode）。
+     * 保留终端栈供充电状态读取，扫描时随背包同步更新引用。
      */
     private static final class MonitorScanResult {
 
         /** 未找到已绑定监测终端时的空结果（hudMode=0 与既有默认语义一致） */
-        static final MonitorScanResult NONE = new MonitorScanResult(null, 0);
+        static final MonitorScanResult NONE = new MonitorScanResult(null, 0, null);
+
+        final ItemStack stack;
 
         /** 拥有者 UUID 字符串（仅已绑定时非 null） */
         final String ownerUUID;
@@ -191,9 +220,10 @@ public final class HudController {
         /** 监测终端 NBT 中的 HUD 显示模式（0=关闭，1=常规计数，2=科学计数） */
         final int hudMode;
 
-        MonitorScanResult(String ownerUUID, int hudMode) {
+        MonitorScanResult(String ownerUUID, int hudMode, ItemStack stack) {
             this.ownerUUID = ownerUUID;
             this.hudMode = hudMode;
+            this.stack = stack;
         }
     }
 
@@ -253,7 +283,8 @@ public final class HudController {
         }
         return new MonitorScanResult(
             PortableWirelessNetworkMonitor.getOwnerUUID(stack),
-            PortableWirelessNetworkMonitor.getHudMode(stack));
+            PortableWirelessNetworkMonitor.getHudMode(stack),
+            stack);
     }
 
     /**

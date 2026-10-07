@@ -8,5 +8,8 @@
   "compatibilityLevel": "JAVA_8",
   "mixins": [
     "ae2.PathingCalculationMixin"
+  ],
+  "client": [
+    "minecraft.HeldChargeSyncMixin"
   ]
 }
