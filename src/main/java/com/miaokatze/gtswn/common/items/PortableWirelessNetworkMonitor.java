@@ -14,11 +14,15 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.charging.MonitorBattery;
+import com.miaokatze.gtswn.common.charging.MonitorElectricItemManager;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import baubles.api.BaubleType;
 import baubles.api.IBauble;
 import cpw.mods.fml.common.Optional;
+import gregtech.api.enums.GTValues;
+import ic2.api.item.IElectricItemManager;
+import ic2.api.item.ISpecialElectricItem;
 
 /**
  * 便携式无线网络监测终端
@@ -30,7 +34,59 @@ import cpw.mods.fml.common.Optional;
  * - Shift + 右击覆盖绑定为当前玩家（无论是否已绑定）
  */
 @Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles")
-public class PortableWirelessNetworkMonitor extends Item implements IBauble {
+public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISpecialElectricItem {
+
+    @Override
+    public boolean canProvideEnergy(ItemStack stack) {
+        return false;
+    }
+
+    @Override
+    public Item getChargedItem(ItemStack stack) {
+        return this;
+    }
+
+    @Override
+    public Item getEmptyItem(ItemStack stack) {
+        return this;
+    }
+
+    @Override
+    public double getMaxCharge(ItemStack stack) {
+        if (!MonitorBattery.hasBattery(stack)) return 0;
+        double capacity = MonitorBattery.data(stack)
+            .getDouble("Capacity");
+        return Double.isFinite(capacity) ? Math.max(0, capacity) : 0;
+    }
+
+    @Override
+    public int getTier(ItemStack stack) {
+        return MonitorBattery.hasBattery(stack) ? MonitorBattery.data(stack)
+            .getInteger("Tier") : 0;
+    }
+
+    @Override
+    public double getTransferLimit(ItemStack stack) {
+        if (!MonitorBattery.hasBattery(stack)) return 0;
+        int tier = getTier(stack);
+        return tier >= 0 && tier < GTValues.V.length ? GTValues.V[tier] : 0;
+    }
+
+    @Override
+    public IElectricItemManager getManager(ItemStack stack) {
+        return MonitorElectricItemManager.INSTANCE;
+    }
+
+    @Override
+    public boolean showDurabilityBar(ItemStack stack) {
+        return MonitorBattery.hasBattery(stack) && getMaxCharge(stack) > 0;
+    }
+
+    @Override
+    public double getDurabilityForDisplay(ItemStack stack) {
+        double capacity = getMaxCharge(stack);
+        return capacity > 0 ? 1 - getManager(stack).getCharge(stack) / capacity : 0;
+    }
 
     /** NBT 键名：存储拥有者的 UUID 字符串（public：WirelessMonitorHUD 绑定判定/owner 提取共用，C-3） */
     public static final String NBT_OWNER_UUID = "OwnerUUID";
@@ -339,5 +395,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble {
         aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.usage"));
         // Baubles 饰品栏装备提示（Baubles 为可选依赖，文案中保留原名便于玩家识别）
         aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.baubles.equip"));
+        String chargeTooltip = MonitorElectricItemManager.getChargeTooltip(aStack);
+        if (chargeTooltip != null && !chargeTooltip.isEmpty()) aList.add(chargeTooltip);
     }
 }

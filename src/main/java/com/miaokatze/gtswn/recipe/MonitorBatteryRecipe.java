@@ -4,12 +4,13 @@ import net.minecraft.inventory.InventoryCrafting;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.IRecipe;
 import net.minecraft.world.World;
+import net.minecraftforge.oredict.OreDictionary;
 
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.charging.MonitorBattery;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 
-/** Pure dynamic shapeless recipe: exactly one monitor and one rechargeable battery. */
+/** Pure dynamic shapeless recipe for installing, replacing or removing the battery. */
 public final class MonitorBatteryRecipe implements IRecipe {
 
     public static ItemStack[] inputs(InventoryCrafting inventory) {
@@ -20,11 +21,33 @@ public final class MonitorBatteryRecipe implements IRecipe {
             if (stack == null) continue;
             if (stack.getItem() instanceof PortableWirelessNetworkMonitor && monitor == null && stack.stackSize == 1) {
                 monitor = stack;
-            } else if (MonitorBattery.isBattery(stack) && battery == null) {
+            } else if (battery == null && (MonitorBattery.isBattery(stack) || isCrowbar(stack))) {
                 battery = stack;
             } else return null;
         }
-        return monitor == null || battery == null ? null : new ItemStack[] { monitor, battery };
+        if (monitor == null || battery == null) return null;
+        if (!MonitorBattery.isBattery(battery) && !MonitorBattery.hasBattery(monitor)) return null;
+        return new ItemStack[] { monitor, battery };
+    }
+
+    public static boolean isCrowbar(ItemStack stack) {
+        if (stack == null || stack.stackSize != 1) return false;
+        boolean gtTool = false;
+        for (Class<?> type = stack.getItem()
+            .getClass(); type != null; type = type.getSuperclass()) {
+            if ("gregtech.api.items.MetaGeneratedTool".equals(type.getName())) {
+                gtTool = true;
+                break;
+            }
+        }
+        if (!gtTool) return false;
+        // GT's usability check may initialise tool NBT, so inspect a detached copy during preview.
+        ItemStack probe = stack.copy();
+        for (int id : OreDictionary.getOreIDs(probe)) {
+            if ("craftingToolCrowbar".equals(OreDictionary.getOreName(id))) return probe.getItem()
+                .hasContainerItem(probe);
+        }
+        return false;
     }
 
     @Override
@@ -35,7 +58,9 @@ public final class MonitorBatteryRecipe implements IRecipe {
     @Override
     public ItemStack getCraftingResult(InventoryCrafting inventory) {
         ItemStack[] inputs = inputs(inventory);
-        return inputs == null ? null : MonitorBattery.install(inputs[0], inputs[1]);
+        if (inputs == null) return null;
+        if (MonitorBattery.isBattery(inputs[1])) return MonitorBattery.install(inputs[0], inputs[1]);
+        return MonitorBattery.withoutBattery(inputs[0]);
     }
 
     @Override

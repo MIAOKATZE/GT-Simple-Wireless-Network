@@ -89,7 +89,7 @@ public class FakeRechargeableBattery extends Item implements IElectricItem, ISpe
 
         @Override
         public String getToolTip(ItemStack stack) {
-            return "";
+            return getCharge(stack) + "/1000 EU";
         }
     };
 

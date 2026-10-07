@@ -24,6 +24,7 @@ import org.junit.Test;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.recipe.MonitorBatteryRecipe;
 
+import ic2.api.item.IElectricItemManager;
 import ic2.test.FakeRechargeableBattery;
 
 public class MonitorBatteryRecipeTest {
@@ -50,6 +51,115 @@ public class MonitorBatteryRecipeTest {
         ids.func_148746_a(TOOL, 31004);
         SINGLE_USE.rechargeable = false;
         TOOL.providesEnergy = false;
+    }
+
+    @Test
+    public void toolFromAnotherModCannotRemoveBattery() {
+        ItemStack fakeCrowbar = new ItemStack(TOOL);
+        ItemStack installed = MonitorBattery.install(monitor(), battery(123));
+        ItemStack before = installed.copy();
+        assertFalse(new MonitorBatteryRecipe().matches(matrix(installed, fakeCrowbar), null));
+        assertNull(new MonitorBatteryRecipe().getCraftingResult(matrix(installed, fakeCrowbar)));
+        assertTrue(ItemStack.areItemStacksEqual(before, installed));
+    }
+
+    @Test
+    public void nativeTooltipReadsLiveCacheWithoutChangingNestedBatteryOrTerminal() {
+        ItemStack installed = MonitorBattery.install(monitor(), battery(700));
+        MonitorBattery.data(installed)
+            .setDouble("Charge", 321);
+        ItemStack before = installed.copy();
+        assertEquals("321.0/1000 EU", MonitorElectricItemManager.getChargeTooltip(installed));
+        assertNull(
+            MONITOR.getManager(installed)
+                .getToolTip(installed));
+        assertTrue(ItemStack.areItemStacksEqual(before, installed));
+        assertNull(
+            MONITOR.getManager(monitor())
+                .getToolTip(monitor()));
+        assertNull(MonitorElectricItemManager.getChargeTooltip(monitor()));
+    }
+
+    @Test
+    public void removingBatteryPreservesTerminalMetadataAndReturnsLiveChargeWithoutMutation() {
+        assertNull(MonitorBattery.withoutBattery(monitor()));
+        for (double charge : new double[] { 0, 321, 1000 }) {
+            ItemStack installed = MonitorBattery.install(monitor(), battery(700));
+            MonitorBattery.data(installed)
+                .setDouble("Charge", charge);
+            ItemStack before = installed.copy();
+            ItemStack empty = MonitorBattery.withoutBattery(installed);
+            assertFalse(MonitorBattery.hasBattery(empty));
+            assertTrue(ItemStack.areItemStacksEqual(monitor(), empty));
+            ItemStack returned = MONITOR.getContainerItem(installed);
+            assertEquals(
+                charge,
+                MonitorBattery.manager(returned)
+                    .getCharge(returned),
+                0);
+            assertTrue(ItemStack.areItemStacksEqual(before, installed));
+            assertFalse(MONITOR.hasContainerItem(empty));
+            assertNull(MONITOR.getContainerItem(empty));
+            assertFalse(new MonitorBatteryRecipe().matches(matrix(installed, new ItemStack(new Item())), null));
+        }
+    }
+
+    @Test
+    public void nativeManagerUsesTheSameCacheAndPureSimulation() {
+        ItemStack stack = MonitorBattery.install(monitor(), battery(456));
+        IElectricItemManager manager = MONITOR.getManager(stack);
+        ItemStack before = stack.copy();
+        assertEquals(32, manager.charge(stack, 100, 1, false, true), 0);
+        assertEquals(544, manager.charge(stack, Double.POSITIVE_INFINITY, 1, true, true), 0);
+        assertEquals(0, manager.charge(stack, 100, 0, true, true), 0);
+        assertEquals(0, manager.discharge(stack, 100, 1, true, true, false), 0);
+        assertEquals(100, manager.discharge(stack, 100, 1, true, false, true), 0);
+        assertTrue(ItemStack.areItemStacksEqual(before, stack));
+        assertEquals(544, manager.charge(stack, 10000, 1, true, false), 0);
+        assertEquals(1000, manager.getCharge(stack), 0);
+        assertEquals(123, manager.discharge(stack, 123, 1, true, false, false), 0);
+        assertEquals(877, manager.getCharge(stack), 0);
+        assertEquals(
+            877,
+            MonitorBattery.manager(MONITOR.getContainerItem(stack))
+                .getCharge(MONITOR.getContainerItem(stack)),
+            0);
+        assertEquals(1000, MONITOR.getMaxCharge(stack), 0);
+        assertEquals(1, MONITOR.getTier(stack));
+        assertFalse(MONITOR.canProvideEnergy(stack));
+        assertTrue(MONITOR.showDurabilityBar(stack));
+        assertEquals(0.123, MONITOR.getDurabilityForDisplay(stack), 0.00001);
+        assertEquals(
+            "owner",
+            stack.getTagCompound()
+                .getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID));
+        assertEquals(
+            "kept",
+            stack.getTagCompound()
+                .getString("OtherModData"));
+    }
+
+    @Test
+    public void emptyMonitorAndInvalidAmountsCannotCreateOrExtractEnergy() {
+        ItemStack empty = monitor();
+        IElectricItemManager manager = MONITOR.getManager(empty);
+        ItemStack before = empty.copy();
+        assertEquals(0, manager.charge(empty, 100, Integer.MAX_VALUE, true, false), 0);
+        assertEquals(0, manager.discharge(empty, 100, Integer.MAX_VALUE, true, false, false), 0);
+        assertFalse(manager.canUse(empty, 0));
+        assertFalse(MONITOR.showDurabilityBar(empty));
+        assertEquals(0, MONITOR.getMaxCharge(empty), 0);
+        assertTrue(ItemStack.areItemStacksEqual(before, empty));
+        ItemStack installed = MonitorBattery.install(empty, battery(456));
+        ItemStack installedBefore = installed.copy();
+        assertEquals(0, manager.charge(installed, -1, 1, true, false), 0);
+        assertEquals(0, manager.charge(installed, Double.NaN, 1, true, false), 0);
+        assertEquals(0, manager.discharge(installed, -1, 1, true, false, false), 0);
+        assertFalse(manager.use(installed, Double.NaN, null));
+        assertFalse(manager.use(installed, 457, null));
+        assertTrue(ItemStack.areItemStacksEqual(installedBefore, installed));
+        assertTrue(manager.use(installed, 123, null));
+        assertEquals(333, manager.getCharge(installed), 0);
     }
 
     @Test

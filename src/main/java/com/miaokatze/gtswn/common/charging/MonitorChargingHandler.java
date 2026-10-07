@@ -42,8 +42,9 @@ public final class MonitorChargingHandler {
     public void onCraft(ItemCraftedEvent event) {
         if (event.player.worldObj.isRemote || !(event.craftMatrix instanceof InventoryCrafting)) return;
         ItemStack[] inputs = MonitorBatteryRecipe.inputs((InventoryCrafting) event.craftMatrix);
-        if (inputs == null
-            || !ItemStack.areItemStacksEqual(MonitorBattery.install(inputs[0], inputs[1]), event.crafting)) return;
+        if (inputs == null || !ItemStack.areItemStacksEqual(
+            new MonitorBatteryRecipe().getCraftingResult((InventoryCrafting) event.craftMatrix),
+            event.crafting)) return;
         ItemStack old = MonitorBattery.remove(inputs[0]);
         if (old == null) return;
         // Consume this remainder before vanilla's container-item pass; automation still uses that pass.

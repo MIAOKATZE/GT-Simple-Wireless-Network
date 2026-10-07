@@ -72,7 +72,7 @@ dependencies {
     // 走 Gradle 默认 JUnit4 探测（junit 在 test 运行时类路径即生效）。
     testImplementation("junit:junit:4.13.2")
     testRuntimeOnly("net.industrial-craft:industrialcraft-2:2.2.828-experimental:api") { transitive = false }
-    testRuntimeOnly("com.github.GTNewHorizons:Baubles-Expanded:2.2.24-GTNH:dev") { transitive = false }
+    testImplementation("com.github.GTNewHorizons:Baubles-Expanded:2.2.24-GTNH:dev") { transitive = false }
 
     // Baubles-Expanded: compileOnly — 可选依赖，运行时由玩家自行安装 Baubles
     compileOnly("com.github.GTNewHorizons:Baubles-Expanded:2.2.24-GTNH:dev") { transitive = false }

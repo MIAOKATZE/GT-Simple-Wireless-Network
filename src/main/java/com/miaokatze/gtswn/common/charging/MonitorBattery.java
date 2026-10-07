@@ -113,6 +113,14 @@ public final class MonitorBattery {
         return battery;
     }
 
+    public static ItemStack withoutBattery(ItemStack monitor) {
+        if (!hasBattery(monitor)) return null;
+        ItemStack result = monitor.copy();
+        result.getTagCompound()
+            .removeTag(NBT_BATTERY);
+        return result;
+    }
+
     public static int getStatus(ItemStack stack) {
         if (!hasBattery(stack) || data(stack).getDouble("Charge") <= 0) return 0;
         return data(stack).getInteger("Status");
@@ -125,17 +133,8 @@ public final class MonitorBattery {
             if (battery != null) lines.add(
                 StatCollector
                     .translateToLocalFormatted("gtswn.tooltip.monitor.battery.name", battery.getDisplayName()));
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.tooltip.monitor.battery.cache",
-                    String.format("%,.0f", data.getDouble("Charge")),
-                    String.format("%,.0f", data.getDouble("Capacity"))));
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.tooltip.monitor.battery.tier",
-                    GTValues.VN[data.getInteger("Tier")]));
         }
-        for (String suffix : new String[] { "install", "replace", "refill", "targets" }) {
+        for (String suffix : new String[] { "install", "replace", "remove", "refill", "targets" }) {
             lines.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.charging." + suffix));
         }
     }

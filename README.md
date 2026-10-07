@@ -8,7 +8,7 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta1-3 & RC1-2" src="https://img.shields.io/badge/GTNH-2.9.0%20beta1--3%20%26%20RC1--2-orange.svg"></a>
-  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Release 1.8.8" src="https://img.shields.io/badge/Release-1.8.8-green.svg"></a>
+  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
 一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和链路终端覆盖板（能源/动力）——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
@@ -29,7 +29,11 @@ A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, an
 | 2.9.0 beta-1&2 | 1.0.0~1.7.25| ✔️ |
 | 2.8.4        | 0.2.0  |        ❌️        |
 
-当前版本 / Current release：**1.8.8** — 下载 / Downloads：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
+下载最新版本 / Download the latest version：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
+
+将发布页的生产 jar 放入客户端与服务端的 `mods/`，替换旧版，保留一个 GTSWN jar；不要安装 `-dev.jar` 或 `-sources.jar`。当前开发基线为 GTNH **2.9.0-RC-2**，旧版本兼容范围见上表。依赖 GT5U、GTNHLib、StructureLib、ModularUI、ModularUI2、AE2；NEI、Baubles、WAILA、BetterQuesting 提供额外集成。
+
+Place the release jar in both client and server `mods/`, replacing the old version and keeping one GTSWN jar. Do not install `-dev.jar` or `-sources.jar`. The current development baseline is GTNH **2.9.0-RC-2**; see the table for older compatibility. Requires GT5U, GTNHLib, StructureLib, ModularUI, ModularUI2 and AE2; NEI, Baubles, WAILA and BetterQuesting provide extra integrations.
 
 ***
 
@@ -50,15 +54,13 @@ A single-block machine that displays real-time (per 5 seconds) wireless network 
 
 ## 便携无线监测终端 / Portable Wireless Network Monitor
 
-背包内（含任意 Baubles 饰品栏）自动显示 HUD 的手持设备。实时显示无线电网能量、EU/t 变化率和 GT 风格功率等级——无需放置任何方块。通过 C→S→C 网络包同步，在单人世界和专用服务器中均可正常使用。
+放在背包或任意 Baubles 饰品栏即可显示电网 HUD，无需放置方块。首次右击绑定玩家，之后右击切换关闭/常规/科学计数；Shift+右击重新绑定。
 
-A handheld device that displays a HUD overlay when in inventory (including any Baubles accessory slot). Shows real-time wireless network energy, EU/t change rate, and GT-style power tier — all without placing any block. Works correctly on both single-player and dedicated servers via C→S→C network packet synchronization.
+Carry it in inventory or any Baubles slot for a wireless grid HUD, without placing blocks. First right-click binds it to you; further right-clicks cycle Off/Normal/Scientific. Sneak-right-click rebinds it.
 
-- **饰品支持 / Baubles Support**: 可放入任意 Baubles 饰品栏；HUD 扫描顺序：主手 → Baubles → 背包 / Can be placed in any Baubles accessory slot; HUD scans main hand → Baubles → inventory
-- **服务器兼容 / Server Compatible**: 通过客户端请求 / 服务端响应的网络同步，在专用服务器上正确显示 EU / Correctly displays EU on dedicated servers via client-request / server-response network synchronization
-- **随身电池与充电 / Portable Battery Charging**: 与兼容的 GT 或 IC2 电池无序合成，为同一个终端增加电池容量并继承电池余量；已绑定的终端每 10 秒按配置的下行损耗从无线电网补满缓存，再以电池 Tier 的 1A 为背包、装备栏和 Baubles 内的电力物品充电。替换电池时旧电池保留终端当前余量 / Shapeless-craft with a compatible GT or IC2 battery to add capacity to the same terminal and inherit its charge; a bound terminal refills from the wireless grid every 10 seconds with configured downlink loss, then charges electric items in the inventory, armor slots, and Baubles at 1 A for the battery tier. Replacing the battery returns the old one with the terminal's current charge.
-- **充电 HUD / Charging HUD**: 安装电池后可显示缺少缓存、待机中、充电中、充电完毕状态。使用 `/gtswn hud charge|eu|instant|average on|off` 分别开关充电、电量、瞬时功率与平均功率行；命令会保存到 `gtswn_network.cfg` 的 `[hud]` 类目 / With a battery installed, the HUD can show missing cache, idle, charging, and charge complete. Use `/gtswn hud charge|eu|instant|average on|off` to toggle the charge, energy, instantaneous power, and average power rows; settings are saved in the `[hud]` category of `gtswn_network.cfg`.
-- **主手同步保护 / Held-Item Sync Protection**: 充电数据更新会合并回主手物品栈，避免单纯的电量同步替换正在使用的物品引用 / Charge-only updates merge into the held stack to avoid replacing the active item reference during use.
+- **安装与换电池 / Install or replace**：终端 + 兼容 GT/IC2 电池无序合成，继承新电池电量；旧电池带着终端剩余电量返还，背包满则掉落。仍是同一个终端 / Shapeless-craft terminal + compatible GT/IC2 battery. The new battery retains its charge; the old one returns with the terminal’s remaining energy, dropping if inventory is full. No separate terminal variants.
+- **充电 / Charging**：在背包或饰品栏中，每 10 秒从已绑定的无线电网补满缓存并计算下行损耗，以电池电压级的每目标 1A 为背包、装备和饰品栏电力物品充电。HUD 显示缺少缓存/待机中/充电中/充电完毕 / In inventory or Baubles, refills from the bound grid every 10 seconds with downlink loss, and charges inventory, armor and accessory items at 1A per target for the battery tier. HUD states: buffer empty / standby / charging / complete.
+- **拆卸与查看 / Remove and inspect**：带电池终端 + GT5U 撬棍无序合成，可取回保留余量的电池；NEI 提供安装、替换、拆卸示例。电量使用 GT/IC2 原生 Tooltip 与电量条显示；充电更新避免打断手持工具操作 / Shapeless-craft a battery-equipped terminal + GT5U crowbar to recover the charged battery. NEI shows install/replace/remove examples. Native GT/IC2 energy tooltips and charge bars show the buffer; charge updates preserve held-tool use.
 
 <p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" alt="便携监测终端 HUD：科学计数模式—充电状态 / Portable monitor HUD: scientific notation — charging" width="400"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" alt="便携监测终端 HUD：科学计数模式—放电状态 / Portable monitor HUD: scientific notation — discharging" width="400"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
 
@@ -66,32 +68,29 @@ A handheld device that displays a HUD overlay when in inventory (including any B
 
 ## 网络信息屏与拓展屏 / Network Info Panel & Extender
 
-网络信息屏，多方块显示面板，可视化无线电网能量趋势（8 个嵌套时间窗口：5 分钟 / 1 小时 / 8 小时 / 24 小时 / 7 天 / 1 月 / 3 月 / 1 年）。由主屏和拓展屏组成，可拼接成任意矩形尺寸的连续屏幕。采用 Fritsch-Carlson 单调三次 Hermite 样条曲线平滑渲染趋势，支持多屏间按玩家 UUID 共享数据。
+网络信息屏与拓展屏拼成连续矩形大屏，显示无线电网能量趋势。支持 5 分钟、1 小时、8 小时、24 小时、7 天、1 月、3 月、1 年八个时间窗口；同一玩家的多块 EU 信息屏共享历史数据。
 
-**Network Info Panel** — A multi-block display panel that visualizes wireless network energy trends over 8 nested time windows (5m/1h/8h/24h/7d/1M/3M/1Y). Composed of a main panel and extender panels, it forms a contiguous screen of arbitrary rectangular size. Uses Fritsch-Carlson monotone cubic Hermite spline curves for smooth trend rendering and supports per-player data sharing across multiple screens.
+**Network Info Panel** and extenders form a continuous rectangular screen showing wireless energy trends. Eight time windows cover 5m/1h/8h/24h/7d/1M/3M/1Y; EU panels belonging to the same player share history.
 
 <p align="center"><img src="images/Network Info Panel_CN.png" alt="网络信息屏（中文） / Network Info Panel (CN)" width="300"><img src="images/Network Info Panel_EN.png" alt="网络信息屏（英文） / Network Info Panel (EN)" width="300"><br><img src="images/Network Info Panel_L_CN.png" alt="大型网络信息屏（中文） / Large Network Info Panel (CN)" width="300"><img src="images/Network Info Panel_L_EN.png" alt="大型网络信息屏（英文） / Large Network Info Panel (EN)" width="300"><br><em>网络全天候检测示意图 / Network All-Weather Monitoring</em></p>
 
-
 - **多方块屏幕 / Multi-block Screen**: 主屏 + 拓展屏构成连续填充矩形；拓展屏自动附着到相邻主屏 / Main panel + extender panels form a contiguous filled rectangle; extender screens automatically attach to adjacent main screens
-- **8 时间窗口 / 8 Time Windows**: 5m / 1h / 8h / 24h / 7d / 1M(28d) / 3M(84d) / 1Y(336d) 数据集，各 61 点 FIFO，**自然比例**均值流入链（12→8→3→7→4→3→4）；窗口写满后自动淘汰最旧数据，无需手动清理 / 5m / 1h / 8h / 24h / 7d / 1M(28d) / 3M(84d) / 1Y(336d) datasets, each 61-point FIFO with **natural-ratio** mean-value inflow chain (12→8→3→7→4→3→4); windows fill up and drop oldest automatically, no manual cleanup needed
-- **请求驱动采样 / Request-Driven Sampling**: v1.5.17 起，信息屏每 tick 通过 `updateRequestTick` 通知数据集"我在线"，调度器只对 5 分钟内有请求的数据集采样；超时自动停止采样，无需安全网清理 / Since v1.5.17, the panel notifies datasets via `updateRequestTick` every tick ("I'm online"), and the scheduler only samples datasets requested within the last 5 minutes; sampling stops automatically on timeout, no safety-net cleanup needed
-- **样条曲线 / Spline Curves**: Fritsch-Carlson 单调三次 Hermite 样条，平滑度可配置（0-12 → 4-26 段）/ Fritsch-Carlson monotone cubic Hermite spline with configurable smoothing (0-12 → 4-26 segments)
+
 - **玩家共享 / Per-Player Sharing**: 数据集绑定玩家 UUID；多块屏幕显示同一数据 / Datasets bound to player UUID; multiple screens display the same data
-- **可配置背景 / Configurable Background**: 屏幕背景色可自定义；清除后禁用 TESR 填充 / Customizable screen background color; clear to disable TESR fill
+- **外观 / Appearance**：可配置背景、线色、线宽、曲线平滑度与字号 / Configure background, line colors, thickness, smoothing and text size.
 - **显示模式 / Display Modes**: 常规计数 (1,234,567) / 科学计数 (1.23E6) / 公制计数 (1.23K)，**默认科学计数** / Normal counting (1,234,567) / Scientific notation (1.23E6) / Metric notation (1.23K), **scientific by default**
 
 ### AE 走势图 / AE Chart
 
-AE 走势图，绑定 AE 网络中的特定物品或流体，可视化其存量与变化率趋势。双 Y 轴显示（左=存量蓝、右=变化率橙），支持 8 时间窗口（5m/1h/8h/24h/7d/1M/3M/1Y），与 EU 走势图共用相同的自然比例流入链。手持物品/流体右键信息屏即可绑定。简报区**居中显示且可缩放**（复用 `briefRatio`），显示当前存量、实时变化速率、平均变化速率（基于 61 点首尾差值法）。
+手持物品或流体右键信息屏，绑定 AE 网络中的存量与变化率。蓝色左轴显示存量，橙色右轴显示变化率；支持八个时间窗口和可缩放简报。
 
-**AE Chart** — Bind a specific item or fluid from the AE network to visualize its stock and change rate trends over time. Dual Y-axis display (left = stock blue, right = change rate orange), supports 8 time windows (5m/1h/8h/24h/7d/1M/3M/1Y) sharing the same natural-ratio inflow chain as the EU Chart. Right-click the panel with an item/fluid in hand to bind. Brief area is **centered & scalable** (reusing `briefRatio`), showing current stock, realtime change rate, and average change rate (first-last delta method over the 61-point window).
+**AE Chart** — Right-click the panel with an item or fluid to track its AE-network stock and rate. The blue left axis shows stock, orange right axis shows rate; eight time windows and a scalable brief are available.
 
 <p align="center"><img src="images/Network Info Panel_AE1.png" alt="AE 走势图 / AE Chart" width="450"><br><em>AE 走势图 / AE Chart</em></p>
 
 - **双 Y 轴 / Dual Y-Axis**: 左轴 = 存量（蓝），右轴 = 变化率（橙，与无线电网 EU/t 线颜色一致）/ Left axis = stock (blue), right axis = change rate (orange, consistent with wireless EU network EU/t line color)
-- **居中简报 / Centered Brief**: v1.5.17 起简报文字居中绘制，GUI 的 `+/-` 按钮复用 `briefRatio` 控制字号（与 EU 走势图一致），点击时长标签按钮切换 8 时间窗口 / Since v1.5.17, brief text is drawn centered; the GUI `+/-` buttons reuse `briefRatio` for font size (same as the EU chart), and clicking the time-span label cycles the 8 time windows
-- **简报区 / Brief Area**: 当前存量 + 实时变化率 + 平均变化率（61 点首尾差值）/ Current stock + realtime change rate + average change rate (61-point first-last delta)
+- **操作 / Controls**：`+/-` 调整简报字号，时长按钮切换时间窗口 / Use `+/-` to resize the brief and the time-span button to switch windows.
+- **简报 / Brief**：显示当前存量、实时变化率与平均变化率 / Shows stock, realtime rate and average rate.
 - **可配置 / Configurable**: Y 轴上下限、线宽、样条平滑度、背景色、线色、线条可见性开关 / Y-axis min/max, line thickness, spline smoothing, background color, line color, line visibility toggles
 
 ### AE 实时监测 / AE Realtime Monitor
@@ -102,11 +101,10 @@ AE 实时监测，同时监控多个 AE 物品/流体，可滚动列表显示。
 
 <p align="center"><img src="images/Network Info Panel_AE2.png" alt="AE 实时监测 / AE Realtime Monitor" width="450"><br><em>AE 实时监测 / AE Realtime Monitor</em></p>
 
-- **可滚动列表 / Scrollable List**: 自定义 GUI 滚动列表，支持滚轮、拖拽与滚动条 / Custom GUI scroll list with mouse wheel, drag, and scrollbar support
-- **单项数据 / Per-Item Data**: 图标 + 名称 + 存量 + 实时变化率 + 300s 平均变化率（首尾差值）/ Icon + name + stock + realtime rate + 300s average rate (first-last delta)
+- **列表 / List**：支持滚轮、拖拽和滚动条 / Supports mouse wheel, dragging and scrollbar.
+
 - **格子模式 / Grid Mode**: 紧凑格子布局备选，单元格大小可配置 / Alternative compact grid layout with configurable cell size
 - **在线状态 / Online Status**: 深绿色文字表示该 AE 物品在线并被监视 / Deep green text indicates the AE item is online and being monitored
-
 
 ***
 
@@ -134,11 +132,11 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 
 ***
 
-## 电网状态计算机制 / Network Status Calculation Mechanism
+## 电网读数 / Grid Readings
 
-**无线能量监视器**（方块）与**便携式无线网络监测终端**（物品）共享统一的电网状态计算机制。EU/t 基于 300 秒滚动窗口（61 点 FIFO，100t 采样间隔，BigDecimal 精确计算）的首末两点斜率计算。近零速率有特殊标签（`<1EU`、`静默`、`长期静默`），重载处理在冷启动重建期间维持红石输出。详见 [Wiki](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/wiki)。
+监视器与便携终端显示电网储量、瞬时变化率和窗口平均变化率。默认平均窗口为 300 秒；接近零时显示 `<1EU`、静默或长期静默。它反映电网净变化，不代表单台机器的功率。
 
-Both the **Wireless Energy Monitor** (block) and **Portable Wireless Network Monitor** (item) share a unified network status calculation mechanism. EU/t is computed via first-last slope over a 300s rolling window (61-point FIFO, 100t sampling interval, BigDecimal precision). Special labels are shown for near-zero rates (`<1EU`, `Silent`, `Long-Term Silent`), and reload handling preserves redstone output during cold-start rebuilds. See the [Wiki](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/wiki) for full details.
+Monitors and portable terminals show grid energy, instantaneous rate and window-average rate (300 seconds by default). Near-zero readings display `<1EU`, Silent or Long-Term Silent. These describe net grid change, rather than an individual machine’s power.
 
 ***
 
@@ -152,43 +150,20 @@ Both the **Wireless Energy Monitor** (block) and **Portable Wireless Network Mon
 
 A portable item that connects any machine to the wireless EU network shared across dimensions. Link nodes support cross-dimension energy delivery and return. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
 
-- **显形扫描反馈 / Reveal Scan Feedback**: 手持链路终端 **Alt+右键** 触发显形扫描（v1.7.23 起，替代旧版长按蓄力），立即扫描周围链路节点并穿墙线框显示 60 秒；完成后会在聊天框提示显现的节点数量，未发现节点时提示“未发现”。/ Hold the link terminal and press **Alt+right-click** to trigger the reveal scan (since v1.7.23, replacing the old hold-to-charge gesture) — nearby nodes are revealed immediately as wall-penetrating wireframes for 60 seconds; after it completes, the chat reports the number of nodes revealed, or “none found”.
+- **显形 / Reveal**：手持终端 Alt+右键，穿墙显示附近链路节点 60 秒，聊天框报告数量 / Alt+right-click reveals nearby link nodes through walls for 60 seconds and reports the count.
 - **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
 
 <p align="center"><img src="images/Portable_Wireless_Network_Tap_E.png" alt="能源模式九宫格辅助线 / Grid highlight (Energy mode)" width="200"><img src="images/Portable_Wireless_Network_Tap_P.png" alt="动力模式九宫格辅助线 / Grid highlight (Power mode)" width="200"><br><em>九宫格辅助线 / Grid Highlight</em></p>
 
-### 链路终端（能源/动力） / Link Terminal (Energy/Power)
+### 链路节点 / Link Nodes
 
-两种覆盖板均为**虚空覆盖板**——无合成配方，仅作为由无线网络链路终端右击附着的 NBT 驱动覆盖板存在。其行为完全由右击赋予的 NBT 参数决定；裸覆盖板无参数时无效。所有 NBT 参数跨存档/退出持久化。
+右击机器自动安装对应覆盖板，无需单独合成。裸覆盖板没有配置不能工作；机器仍需保持区块加载。能源模式持续从缓存向机器供电，动力模式收集发电机输出并回传电网，覆盖板所在面不再向真实导线重复输出。
 
-Both are **void covers** — they have no recipe and exist only as NBT-driven attachments placed by the Wireless Energy Tap. Their behavior is governed entirely by NBT parameters assigned on right-click; bare cover items without these parameters are inert. All NBT parameters persist across save/load.
+Right-click a machine to install the appropriate cover; no separate recipe is needed. Bare covers without configuration do not work, and machine chunks must remain loaded. Energy mode powers the machine from its buffer; Power mode collects generator output and returns it to the grid, blocking duplicate cable output on the covered face.
 
-- **配置复制 / Config Copying**: 自 v1.8.14 起，复制粘贴工具（GT5U 覆盖板工具、物质操纵者等）能否复制链路节点配置由 `gtswn_network.cfg` 的 `AllowCopyPasteTool` 控制（默认关闭；开启后复制带链路节点的机器时配置随之回填）。/ Since v1.8.14, whether copy-paste tools (GT5U cover tool, MatterManipulator, etc.) can copy link node configs is controlled by `AllowCopyPasteTool` in `gtswn_network.cfg` (default off; when enabled, copied machines carry their link node configs).
-- **链路节点静默清除 / Silent Link Node Removal**: 自 v1.8.22 起（v1.8.23 修复 Alt 路径并细分提示语义），拆除带链路节点覆盖板的机器时用扳手左键拆除并配合修饰键分流：**Shift 拆机 = 拆下机器上的全部覆盖板**——GT5U 原版潜行拆机路径，普通覆盖板照常掉落，链路节点覆盖板因不可物品化被静默消除（节点出册、剩余缓冲 EU 返还无线电网，不掉落不占背包）；**Alt 拆机 = 精确静默移除链路节点覆盖板**——只动链路节点，其他覆盖板保持原版行为不受影响，按住 Alt 即持续生效（松开后 1 秒内残留，期间无 Alt 拆机也走静默清除）；生存模式下前 10 次无修饰键扳手拆除会有聊天提示引导细分语义。/ Since v1.8.22 (v1.8.23 fixes the Alt path and splits the hint semantics), wrench-dismantling a machine carrying link node covers branches by modifier: **Shift dismantle = removes ALL covers** on the machine — the vanilla GT5U sneak path drops regular covers as items while link node covers are silently consumed (nodes unregistered, remaining buffer EU returned to the wireless network — no drops, no inventory space used); **Alt dismantle = precisely removes only the link node covers** — other covers keep their vanilla behavior, and holding Alt takes effect continuously (residual for up to 1 second after release, during which unmodified dismantles also take the silent path); in survival mode the first 10 unmodified wrench dismantles show a chat hint explaining both paths.
-
-#### 链路终端（能源） / Link Terminal (Energy)
-
-作为一个**虚拟电源**——内部维护电容量缓冲池，像导线一样持续向被绑定机器输入 EU。
-
-Acts as a **virtual power source** — maintains an internal capacity buffer and continuously injects EU into the bound machine like a real cable.
-
-- **电容量 / Capacity**: `V × A × 800` ticks（配置时计算；立即补满至容量）/ `V × A × 800` ticks (computed on configuration; immediately refilled to capacity)
-- **每 tick 行为 / Per-tick behavior**: 每 tick 向被绑定机器注入 `min(V × A, machine_needed, storedEU)` EU——表现得像真实导线 / Injects `min(V × A, machine_needed, storedEU)` EU per tick into the bound machine — behaves like a real cable
-- **补满 / Refill**: 每 600 ticks 从无线电网扣除 `(capacity − storedEU) × (1 + downlink loss)` EU 补满缓冲池 / Every 600 ticks, deducts `(capacity − storedEU) × (1 + downlink loss)` EU from the wireless network to refill the buffer
-- **安培检测 / Amperage detection**: 电池箱按槽位容量 = 槽数×1、最小 2A（1/4/9/16 槽 → 2/4/9/16A），与已放入电池数无关；其余机器实测 ≤ 1 时兜底 3A / Battery buffers use slot capacity = slots × 1 with a 2A minimum (1/4/9/16 slots → 2/4/9/16A), independent of inserted batteries; other machines fall back to 3A when measured ≤ 1
-- **卸载 / Unload**: 覆盖板移除时，剩余缓冲按 `(1 − uplink loss)` 比率返还电网 / On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
-
-#### 链路终端（动力） / Link Terminal (Power)
-
-作为一个**虚拟导线**——读取机器的输出存入内部缓冲池，并周期性上送到无线电网。电容量固定为 `2^63 − 1`。
-
-Acts as a **virtual cable** — drains the machine's output into an internal buffer and uploads to the wireless network periodically. Capacity is fixed at `2^63 − 1` (GT5U MAX Battery).
-
-- **电容量 / Capacity**: `Long.MAX_VALUE`（2^63 − 1）/ `Long.MAX_VALUE` (2^63 − 1)
-- **每 tick 行为 / Per-tick behavior**: 读取机器的 `getOutputVoltage()` / `getOutputAmperage()`；若 V > 0，取 `min(available, V × A)` EU 入缓冲池（尊重 `getMinimumStoredEU()`）。非输出机器（V = 0）跳过，避免抽干不产电的机器 / Reads `getOutputVoltage()` / `getOutputAmperage()` from the machine; if V > 0, drains `min(available, V × A)` EU into the buffer (respecting `getMinimumStoredEU()`). Non-output machines (V = 0) are skipped to avoid draining energy from machines that don't produce any.
-- **阻断 / Blocking**: `letsEnergyOut() = false` 阻止机器从覆盖板所在侧面输出到真实导线，防止双重消耗 / `letsEnergyOut() = false` blocks the machine from outputting to real cables on the cover's side, preventing double consumption
-- **上送 / Upload**: 每 600 ticks 将缓冲池按 `(1 − uplink loss)` 比率上送无线电网 / Every 600 ticks, the buffer is uploaded to the wireless network at `(1 − uplink loss)` rate
-- **卸载 / Unload**: 覆盖板移除时，剩余缓冲按 `(1 − uplink loss)` 比率返还电网 / On cover removal, remaining buffer is returned to the network at `(1 − uplink loss)` rate
+- **损耗与周期 / Loss and interval**：默认每 600 tick（30 秒）与电网交互，下行损耗 15%、上行 0%；可在 `gtswn_network.cfg` 配置。拆除覆盖板时剩余缓存按上行损耗返还 / Grid interaction defaults to every 600 ticks (30 seconds), with 15% downlink loss and 0% uplink loss. Configure these in `gtswn_network.cfg`; removing a cover returns its remaining buffer with uplink loss.
+- **拆机 / Dismantling**：扳手左键配合 Shift 拆除全部覆盖板；配合 Alt 静默清除链路节点，其他覆盖板保持原行为。链路节点不掉落物品，剩余电量回到电网 / Wrench-left-click with Shift removes all covers; with Alt silently clears link nodes while other covers retain their usual behavior. Link nodes leave no item drops and return their remaining energy to the grid.
+- **配置复制 / Copying settings**：`AllowCopyPasteTool` 默认关闭；开启后 GT 覆盖板工具、物质操纵者等可复制节点配置 / `AllowCopyPasteTool` is off by default; enable it to copy node settings with GT cover tools or MatterManipulator.
 
 ***
 
@@ -198,7 +173,7 @@ Acts as a **virtual cable** — drains the machine's output into an internal buf
 
 为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
 
-Adds a "quantum" remote-access mechanism to AE2 networks. The Quantum Terminal quantizes a formed ME controller structure and binds its network; the Quantum Node acts as a remote access point that bridges into the anchored controller's grid via a virtual GridConnection — bypassing vanilla cable distance limits so adjacent AE2 devices join directly.
+The Quantum Terminal binds a formed ME controller structure. Quantum Nodes connect distant AE2 devices to that network, bypassing cable distance limits.
 
 量子终端可通过 LV 级工作台配方合成（福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1）；量子节点无独立配方——已绑定终端右击空地放置，Shift+右击销毁（无掉落）。
 
@@ -221,29 +196,17 @@ Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emi
 - **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default 10.0 AE/t).
 - **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
 
-### 量子终端界面 / Quantum Terminal GUI
-
-v1.6.9 起精简为紧凑布局（120×92），仅显示三类核心信息：
-
-As of v1.6.9, the GUI is streamlined into a compact layout (120×92) showing only three core items:
-
-| 项目 / Item | 说明 / Description |
-|---|---|
-| 控制器坐标 + 维度 / Controller Pos + Dim | 锚点坐标与维度 / Anchor coordinates and dimension |
-| 量子节点数量 / Quantum Node Count | 网络中量子节点数量 / Number of Quantum Nodes in the network |
-| 频道 / Channels | `已用 / 总数 (百分比%)`，过载时红色高亮 / `used / total (pct%)`, red highlight when overloaded |
-
 ### 过载保护 / Overload Protection
 
-当量子节点带入的频道总数超过控制器结构容量（`(n×6 − sharedFaces) × 32`）时，先启动 **3 分钟宽限倒计时**（v1.6.19 起，剩余 3/2/1 分钟与 10 秒处各公告一次，期间频道恢复即自动取消）；到期仍超限，整个控制器结构才会 **TNT 级爆炸**；达到 95% 阈值时向节点放置者发送聊天警告。
+量子节点带入的频道超过控制器容量时，启动 **3 分钟宽限倒计时**；期间频道恢复即取消，否则到期后控制器结构会 **爆炸**。达到 95% 容量时聊天警告。AE2 开启无限频道时无此限制。
 
-When the total channels brought in by Quantum Nodes exceed the controller structure capacity (`(n×6 − sharedFaces) × 32`), a **3-minute grace countdown** starts first (since v1.6.19, announced once each at 3/2/1 minutes and 10 seconds remaining, and auto-cancelled if channels recover); only when it expires while still overloaded does the entire structure **detonate in a TNT-level explosion**. A chat warning is sent to the node's placer at the 95% threshold.
+Exceeding controller channel capacity starts a **3-minute grace countdown**. Restoring capacity cancels it; otherwise the controller structure **explodes** at expiry. A chat warning appears at 95% capacity. This limit does not apply with AE2 infinite channels enabled.
 
 ### 量子化控制器强化 / Hardened Controller
 
-量子化后的 ME 控制器获得等效硬度（挖掘速度降至 1/1000）与等效防爆（400000），且对爆炸事件自动移除受影响方块——防止被意外破坏或爆破。
+量子化控制器难以挖掘且有防爆强化；用终端 Shift+右击取消量子化后再拆除。
 
-Quantized ME controllers gain equivalent hardness (mining speed × 1/1000) and equivalent blast resistance (400000), and are automatically removed from explosion-affected block lists — preventing accidental breakage or blasting.
+Quantized controllers resist mining and explosions. Sneak-right-click with the terminal to dequantize before dismantling.
 
 ***
 
@@ -251,24 +214,24 @@ Quantized ME controllers gain equivalent hardness (mining speed × 1/1000) and e
 
 <p align="center"><img src="images/Device_Info_Terminal.png" alt="设备信息终端物品 / Device Info Terminal item" width="180"><img src="images/Device_Info_Terminal_UI.png" alt="设备信息终端界面 / Device Info Terminal GUI" width="500"><br><em>设备信息终端物品（左）与界面（右） / Device Info Terminal item (left) & GUI (right)</em></p>
 
-手持式 GT 机器监控终端（**已实装，持续迭代**）：绑定任意可工作 GT 机器（单方块/多方块），在滚动列表中实时查看三态（运行/待机/停机）、瞬时 EU/t、60 点平均 EU/t、位置与当前执行配方；支持五列排序（服务端 NBT 持久化）、**四种计数法（常规/科学计数/千位分隔/电压等级）**、行内经验传送与 Ctrl+点击远程解绑。
+绑定可工作 GT 机器，在列表中查看运行/待机/停机、瞬时与平均 EU/t、位置及当前配方。支持排序、四种计数法、消耗经验的传送与远程解绑。
 
-A handheld GT machine monitor (**implemented, under active iteration**): bind any working GT machine (single-block or multiblock) and review its tri-state (Running/Idle/Stopped), instant EU/t, 60-point average EU/t, position and current recipe in a scrolling list; five-column sorting (persisted to server NBT), **four notations (normal / scientific / thousands-separated / voltage tier)**, in-row XP-cost teleport and Ctrl+click remote unbind are supported.
+Bind working GT machines to view Running/Idle/Stopped status, instantaneous and average EU/t, location and current recipe. Supports sorting, four number formats, XP-cost teleport and remote unbinding.
 
 | 手势 / Gesture | 行为 / Behavior |
 |---|---|
 | 右击可工作机器 / Right-click a working machine | 绑定到本终端（放置机器时背包含终端自动绑定 / auto-bound on placement if a terminal is in the placer's inventory） |
 | 右击空气 / Right-click air | 打开终端界面 / Open the terminal GUI |
-| Shift+右击（机器/空气均可）/ Shift+right-click (machine or air) | 全域扫描开关（5 秒倒计时可取消；团队 = GTNHLib Team 管理员/官员/成员并集）/ Team-wide scan toggle (5s countdown, cancellable; team = GTNHLib Team owners/officers/members) |
+| Shift+右击（机器/空气）/ Shift+right-click (machine or air) | 扫描当前维度已加载区块中的本人及团队机器，5 秒倒计时可取消 / Scan your and your team’s machines in loaded chunks of the current dimension; cancellable 5-second countdown |
 | Ctrl+点击条目 / Ctrl+click a row | 远程解绑（无确认）/ Remote unbind (no confirmation) |
 | 点击行内 ✦ 按钮 / Click the ✦ button on a row | 传送到机器（消耗经验等级，3 秒冷却）/ Teleport to the machine (costs XP levels, 3s cooldown) |
 
 - **采样与均值 / Sampling & Averages**: 每 `deviceSampleIntervalSeconds`（默认 10 秒）采样一次；平均列为 60 点滚动均值，瞬时 EU/t 取最新采样点。/ Machines are sampled every `deviceSampleIntervalSeconds` (default 10s); the average column is a 60-point rolling mean, instant EU/t is the latest sample.
-- **配方悬浮 / Recipe Hover**: 鼠标进入行内机器名列即显示当前执行配方（无悬浮延迟；输出快照，近似）；「显示配方」开关可临时用配方文本替换两列功率数值。/ Entering a row's name column shows the current recipe immediately (no hover delay; output snapshot, approximate); the "Show recipe" toggle temporarily replaces the two power columns with the recipe text.
-- **功率 provider / Authoritative Power Providers**: 对大型硅岩反应堆、戴森云等实时输出不写入标准功率字段的机器，读取其权威实时功率并区分消耗/产出；这类机器不写入标准词条。/ For machines such as the Large Naquadah Reactor and Dyson Swarm whose realtime output is not written to standard power fields, the terminal reads the authoritative realtime power and distinguishes consumption from generation instead of relying on standard entries.
-- **发电识别覆盖 / Generation Recognition**: v1.8.2/1.8.3 起覆盖内燃引擎家族、单方块发电机（含被无线动力覆盖板收割的场景）与权威 provider 机器；v1.8.9 起再补两环——① 分类谓词按**精确类名继承链**匹配（Tectech/GoodGenerator/GT++/GI 的引擎·涡轮·核反应堆·戴森云·反物质等 12 类，含通用化学燃料引擎；12 类"名字像发电机但实为耗电/输电/储能/锅炉"的机型——含 goodgenerator 大聚变控制器，纯耗电——显式排除且优先），② 真双零兜底新增**长功率符号权威层**（多方块 `lEUt` 正=发电、负=耗电，方向不再依赖逐机型清单）并按 UCFE 家族万分度 `tEff` 修正幅值。v1.8.10 补结构闸门：正的 `lEUt` 仅当该多方块结构确含动态（Dynamo）输出仓时才采信为发电——四类把 `lEUt` 当 display 值写产汽量的锅炉/热交换器合法结构里收不下动态仓，故整体判不可信、写双零并交由限频诊断记录，宁可无读数也不造假读数；负的 `lEUt` 恒为耗电量，照常采信。v1.8.11 分类口径收口：聚变计算机两侧（GT5U 小聚变 Mk1-3 与 GT++ Adv Mk4/Mk5、goodgenerator 大聚变）在控制器层面都是净耗电（扣能、无 `addEnergyOutput`，EU 回报由等离子产物在下游机器兑现），不再计入「发电」筛选——与终端「按机器实际进出网 EU 记账」的三量口径统一。/ Since v1.8.2/1.8.3 the terminal covers the combustion engine family, single-block generators (including when harvested by a wireless Power cover) and authoritative-provider machines; v1.8.9 adds two more layers — (1) classification matches the **exact class-name inheritance chain** (12 Tectech/GoodGenerator/GT++/GI engine, turbine, nuclear-reactor, Dyson-swarm and antimatter classes, the Universal Chemical Fuel Engine included; 12 "generator-named but actually consuming/transmitting/storing/boiler" classes, the goodgenerator large fusion computer (a pure consumer) among them, are excluded with priority), and (2) a **long-power sign-authority layer** inside the true-double-zero fallback (multiblock `lEUt` positive = generating, negative = consuming, so direction no longer hinges on a per-machine list), with magnitudes corrected by the UCFE-family per-ten-thousand `tEff`. v1.8.10 adds a structural gate: a positive `lEUt` is only trusted as generation when the multiblock's valid structure actually contains a Dynamo output hatch — the four classes that write steam output into `lEUt` for display purposes cannot host a Dynamo hatch, so they are judged untrusted and report a double zero left to the rate-limited diagnostic; a blank reading beats a fabricated one. A negative `lEUt` is always real consumption and stays trusted. v1.8.11 closes the classification: both fusion computer families (GT5U small fusion Mk1-3, GT++ Adv Mk4/Mk5 and the goodgenerator large fusion computer) are net consumers at controller level — they only drain EU and never call `addEnergyOutput`, with their EU return realised downstream from the plasma output — so they no longer count towards the "generating" filter, matching the terminal's account-by-actual-in/out convention.
-- **负值显示 / Negative Readings**: 瞬时 EU/t 可为负（耗电侧），四种计数法对负值符号各只出现一次、分组分隔符不再吞进符号位。/ Instant EU/t can be negative (consumption side); all four notations emit the sign exactly once and keep the grouping separator off the sign position.
-- **配置 / Configs**: `deviceSampleIntervalSeconds`（默认 10，最小 1）采样间隔；`deviceTeleportXPCost`（默认 3，最小 0，0=免费且按钮只显示图标）传送消耗经验等级；`deviceTerminalMaxMachines`（默认 1024，最小 16）单终端绑定上限。/ `deviceSampleIntervalSeconds` (default 10, min 1) sampling interval; `deviceTeleportXPCost` (default 3, min 0; 0 = free, icon-only button) teleport XP-level cost; `deviceTerminalMaxMachines` (default 1024, min 16) per-terminal binding cap.
+- **配方 / Recipe**：悬浮机器名称查看当前配方；“显示配方”开关可直接在列表展示 / Hover a machine name for its current recipe; the Show Recipe toggle displays it in the list.
+
+- **发电与耗电 / Generation and consumption**：支持常见 GTNH 发电机的实时功率，耗电读数带负号；聚变控制器按自身消耗计入耗电，等离子产物的发电由下游机器统计 / Supports realtime power from common GTNH generators; consumption is negative. Fusion controllers count their own consumption, while energy from plasma products is measured at downstream generators.
+
+- **配置 / Configuration**：默认每 10 秒采样，绑定上限 1024 台，传送花费 3 级经验；均可在配置文件调整 / Defaults: sample every 10 seconds, bind up to 1024 machines, teleport for 3 XP levels. All are configurable.
 - **合成 / Crafting**: LV 级有序配方（v1.7.8 起）：LV 传感器 ×2 + LV 发射器 ×2 + 钢板 ×3 + 电脑屏幕覆盖板 ×1 + 末影珍珠 ×1 → 设备信息终端 ×1。/ LV-tier shaped recipe (since v1.7.8): LV Sensor ×2 + LV Emitter ×2 + Steel Plate ×3 + Computer Screen Cover ×1 + Ender Pearl ×1 → Device Info Terminal ×1.
 
 ***
@@ -281,7 +244,7 @@ A handheld GT machine monitor (**implemented, under active iteration**): bind an
 
 A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Network (简易无线网络)** quest line of 13 quests — from the Wireless Energy Monitor and pocket HUD through the Link Terminal and its covers and wall-sized info panels, ending with ME network quantization and the Device Info Terminal. Everything is LV-era tech. Quest line and per-quest names/descriptions are localized in both Chinese and English.
 
-- **自动装载 / Auto Deployment**: 新世界由注入器按任务行 UUID 幂等装载；老世界进档（serverStarting）时按版本戳自动对齐最新定义，进度保留；已从清单移除的任务自动剪枝。/ The injector idempotently loads the pack into new worlds by quest-line UUID; existing worlds auto-align to the latest definitions on server start via the version stamp, keeping progress, and removed quests are pruned automatically.
+- **更新 / Updates**：任务线自动装载；换新版 jar 后老世界同步任务定义并保留进度 / The quest line loads automatically; replacing the jar updates existing worlds’ definitions while keeping progress.
 
 ***
 
@@ -291,9 +254,9 @@ A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Netwo
 
 - **`/gtswn global_energy_trans <fromUUID> <toUUID>`** — 一次性将 fromUUID 网络的所有 EU 迁移到 toUUID 网络。用于玩家换账户（正版转第三方等）导致 UUID 变化后迁移 EU。/ One-time transfer of all EU from one UUID's network to another. Use when a player's UUID changes (e.g., premium → third-party account).
 
-- **`/gtswn global_energy_join <memberUUID> <leaderUUID>`** — 通过 GT5U 团队系统（`SpaceProjectManager`）将玩家的网络永久加入另一个玩家的网络。加入后，成员的无线 EU 操作自动解析到队长的网络。/ Permanently join a player's network into another player's network via GT5U's team system (`SpaceProjectManager`). After joining, the member's wireless EU operations automatically resolve to the leader's network.
+- **`/gtswn global_energy_join <memberUUID> <leaderUUID>`** — 将成员的无线 EU 网络永久并入队长网络 / Permanently join the member’s wireless EU network to the leader’s.
 
-- **`/gtswn cleanup_info_data <all|player>`** — 清理网络信息屏历史数据集（v1.5.15 起）：`all` 清理所有超过 `keepHistoryDays` 天未采样的数据集；`player` 清理指定在线玩家的全部数据集。/ Clean up Network Info Panel history datasets (since v1.5.15): `all` removes datasets unsampled for more than `keepHistoryDays` days; `player` removes all datasets of the specified online player.
+- **`/gtswn cleanup_info_data <all|player>`** — 清理过期信息屏历史，或指定在线玩家的全部历史 / Clean expired panel history, or all history for a selected online player.
 
 ***
 
@@ -303,16 +266,10 @@ A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Netwo
 
 - **`/gtswn HudXOffset [值]`** / **`/gtswn HudYOffset [值]`** — 调整便携监测终端 HUD 的水平/垂直偏移（整数，±500；Y 正值向上）。/ Adjust the portable monitor HUD horizontal/vertical offset (integer, ±500; positive Y is up).
 - **`/gtswn HudScale [值]`** — 调整便携监测终端 HUD 缩放（0.2–5.0）。/ Adjust the portable monitor HUD scale (0.2–5.0).
-- **行为 / Behavior**: 带参数时校验后立即生效并写入 `config/gtswn/gtswn_network.cfg`（保留注释）；无参数时显示当前值。/ With a value: validated, applied instantly and written to `config/gtswn/gtswn_network.cfg` (comments preserved); without a value: shows the current value.
+- **`/gtswn hud <charge|eu|instant|average> <on|off>`** — 分别开关充电、电量、瞬时与平均功率行 / Toggle the charge, energy, instantaneous and average power rows.
+- 带参数时立即生效并保存到 `config/gtswn/gtswn_network.cfg`；偏移/缩放命令无参数时显示当前值，四行开关也可在 `[hud]` 配置 / Values apply immediately and save to `config/gtswn/gtswn_network.cfg`. Offset/scale commands without values show current settings; row toggles are also configurable in `[hud]`.
 
 ***
-
-## 技术栈 / Tech Stack
-
-- Java：Jabel（现代 Java 语法，编译为 Java 8 字节码）/ Java: Jabel (modern Java syntax, compiled to Java 8 bytecode)
-- Minecraft 1.7.10 / Forge 10.13.4.1614
-- 依赖 / Dependencies: GT5-Unofficial, GTNHLib, StructureLib, ModularUI, ModularUI2, Applied Energistics 2（硬依赖 / hard dependency）
-- 可选集成 / Optional integrations: NEI, IC2, Baubles, WAILA, BetterQuesting
 
 ## 许可证 / License
 
