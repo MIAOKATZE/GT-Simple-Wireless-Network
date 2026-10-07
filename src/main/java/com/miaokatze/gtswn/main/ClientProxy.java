@@ -26,6 +26,7 @@ import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.crossmod.nei.NEIGTSWNConfig;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncNodeReveal;
@@ -34,6 +35,7 @@ import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
 import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 
 /**
@@ -62,6 +64,10 @@ public class ClientProxy extends CommonProxy {
     public void init(FMLInitializationEvent event) {
         // 调用父类的 init 方法，确保通用逻辑正常执行
         super.init(event);
+
+        if (Loader.isModLoaded("NotEnoughItems")) {
+            MinecraftForge.EVENT_BUS.register(new NEIGTSWNConfig());
+        }
 
         // 【v1.8.18】preInit 已完成配置加载，此时构造才能让 HUD 数据集容量读到
         // 用户配置的检测间隔（字段初始化器会先于 preInit 执行，只能拿到编译期默认值）
