@@ -37,6 +37,33 @@ public class Config {
     /** gtswn_network.cfg 中 HUD 参数的独立类目名（与 general 平级） */
     private static final String CATEGORY_HUD = "hud";
 
+    private static final String CATEGORY_CLIENT = "client";
+    public static String quantumParticleQuality = "high";
+
+    public static double quantumParticleDensity() {
+        return "low".equals(quantumParticleQuality) ? 0D : "medium".equals(quantumParticleQuality) ? .5D : 1D;
+    }
+
+    public static boolean setQuantumParticleQuality(String quality) {
+        quantumParticleQuality = quality;
+        if (networkConfigFile == null) return false;
+        try {
+            Configuration configuration = new Configuration(networkConfigFile);
+            configuration
+                .get(
+                    CATEGORY_CLIENT,
+                    "QuantumParticleQuality",
+                    "high",
+                    "Client particle density: low=off, medium=half, high=default")
+                .set(quality);
+            configuration.save();
+            return true;
+        } catch (RuntimeException e) {
+            GTSimpleWirelessNetwork.LOG.error("Could not save client quantum particle quality", e);
+            return false;
+        }
+    }
+
     /** AE2 网络监视配置类目名 */
     private static final String CATEGORY_AE2 = "ae2";
 
@@ -290,6 +317,15 @@ public class Config {
     public static void synchronizeNetworkConfiguration(File configFile) {
         networkConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
+        Property qualityProperty = configuration.get(
+            CATEGORY_CLIENT,
+            "QuantumParticleQuality",
+            "high",
+            "量子粒子密度（仅客户端）：low=关闭，medium=减半，high=默认\nClient particle density: low=off, medium=half, high=default");
+        String quality = qualityProperty.getString()
+            .toLowerCase(java.util.Locale.ROOT);
+        quantumParticleQuality = "low".equals(quality) || "medium".equals(quality) ? quality : "high";
+        qualityProperty.set(quantumParticleQuality);
 
         // 下行损耗系数 / Downlink loss ratio
         // 能源覆盖板从无线网络取电时，机器收到的 EU 不变，电网按 (1 + 此值) 倍率扣除。

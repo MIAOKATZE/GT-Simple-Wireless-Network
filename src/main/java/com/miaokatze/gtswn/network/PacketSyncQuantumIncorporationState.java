@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -42,6 +43,7 @@ public final class PacketSyncQuantumIncorporationState implements IMessage {
             buf.writeShort(position.local);
             buf.writeLong(position.identityMost);
             buf.writeLong(position.identityLeast);
+            buf.writeByte(position.color);
         }
     }
 
@@ -54,9 +56,16 @@ public final class PacketSyncQuantumIncorporationState implements IMessage {
         chunkX = buf.readInt();
         chunkZ = buf.readInt();
         int count = buf.readInt();
-        if (count < 0 || count > MAX_ENTRIES || buf.readableBytes() != count * 18) return;
+        if (count < 0 || count > MAX_ENTRIES || buf.readableBytes() != count * 19) return;
         for (int i = 0; i < count; i++) {
-            positions.add(new Position(buf.readUnsignedShort(), buf.readLong(), buf.readLong()));
+            int local = buf.readUnsignedShort();
+            long most = buf.readLong(), least = buf.readLong();
+            int color = buf.readUnsignedByte();
+            if (!QuantumNetworkColor.isValid(color)) {
+                positions.clear();
+                return;
+            }
+            positions.add(new Position(local, most, least, color));
         }
         valid = true;
     }
@@ -85,13 +94,19 @@ public final class PacketSyncQuantumIncorporationState implements IMessage {
     public static final class Position {
 
         public final int local;
+        public final int color;
         public final long identityMost, identityLeast;
 
         public Position(int local, UUID identity) {
-            this(local, identity.getMostSignificantBits(), identity.getLeastSignificantBits());
+            this(local, identity, QuantumNetworkColor.DEFAULT);
         }
 
-        private Position(int local, long identityMost, long identityLeast) {
+        public Position(int local, UUID identity, int color) {
+            this(local, identity.getMostSignificantBits(), identity.getLeastSignificantBits(), color);
+        }
+
+        private Position(int local, long identityMost, long identityLeast, int color) {
+            this.color = QuantumNetworkColor.normalize(color);
             this.local = local;
             this.identityMost = identityMost;
             this.identityLeast = identityLeast;

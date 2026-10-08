@@ -24,7 +24,7 @@ public class CommandGTSWNClient extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/gtswn <HudXOffset|HudYOffset|HudScale> [value] | /gtswn hud <charge|eu|instant|average> <on|off>";
+        return "/gtswn <HudXOffset|HudYOffset|HudScale> [value] | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn quality <low|medium|high>";
     }
 
     @Override
@@ -35,7 +35,10 @@ public class CommandGTSWNClient extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCMD_X, SUBCMD_Y, SUBCMD_SCALE, "hud");
+            return getListOfStringsMatchingLastWord(args, SUBCMD_X, SUBCMD_Y, SUBCMD_SCALE, "hud", "quality");
+        }
+        if (args.length == 2 && "quality".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "low", "medium", "high");
         }
         if (args.length == 2 && "hud".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, "charge", "eu", "instant", "average");
@@ -48,6 +51,10 @@ public class CommandGTSWNClient extends CommandBase {
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
+        if (args.length > 0 && "quality".equalsIgnoreCase(args[0])) {
+            processQuality(sender, args);
+            return;
+        }
         if (args.length > 0 && "hud".equalsIgnoreCase(args[0])) {
             processLineToggle(sender, args);
             return;
@@ -111,6 +118,26 @@ public class CommandGTSWNClient extends CommandBase {
             return Integer.toString(Config.hudYOffset);
         }
         return Float.toString(Config.hudScale);
+    }
+
+    private void processQuality(ICommandSender sender, String[] args) {
+        if (args.length == 1) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    StatCollector
+                        .translateToLocalFormatted("gtswn.command.quality.current", Config.quantumParticleQuality)));
+            return;
+        }
+        if (args.length != 2 || !("low".equalsIgnoreCase(args[1]) || "medium".equalsIgnoreCase(args[1])
+            || "high".equalsIgnoreCase(args[1]))) {
+            throw new WrongUsageException("/gtswn quality <low|medium|high>");
+        }
+        String quality = args[1].toLowerCase(java.util.Locale.ROOT);
+        boolean saved = Config.setQuantumParticleQuality(quality);
+        sender.addChatMessage(
+            new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.command.quality.updated", quality)));
+        if (!saved) sender
+            .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.quality.save_failed")));
     }
 
     private void processLineToggle(ICommandSender sender, String[] args) {

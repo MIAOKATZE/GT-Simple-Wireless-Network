@@ -21,7 +21,9 @@ import net.minecraftforge.event.world.WorldEvent;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.QuantumParticleDirections.Direction;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.config.Config;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -66,7 +68,7 @@ public final class QuantumVoxelParticleHandler {
             currentWorld = world;
         }
         if (world == null || minecraft.thePlayer == null) return;
-        if (minecraft.gameSettings.particleSetting >= 2) {
+        if (minecraft.gameSettings.particleSetting >= 2 || Config.quantumParticleDensity() == 0) {
             particles.clear();
             return;
         }
@@ -107,7 +109,8 @@ public final class QuantumVoxelParticleHandler {
                 // The authoritative incorporation cache already enforces complete block bounds.
                 directions = QuantumParticleDirections.openFaces(airMask(world, tile));
             }
-            double chance = minecraft.gameSettings.particleSetting == 1 ? .055D : .12D;
+            double chance = (minecraft.gameSettings.particleSetting == 1 ? .055D : .12D)
+                * Config.quantumParticleDensity();
             // Each available direction gets its own roll, so another air face increases emission.
             int first = directions.size() == 0 ? 0 : world.rand.nextInt(directions.size());
             for (int j = 0; j < directions.size() && remaining > 0 && particles.size() < MAX_PARTICLES; j++) {
@@ -177,7 +180,8 @@ public final class QuantumVoxelParticleHandler {
         Entity camera = minecraft.renderViewEntity;
         if (particles.isEmpty() || currentWorld != minecraft.theWorld
             || camera == null
-            || minecraft.gameSettings.particleSetting >= 2) return;
+            || minecraft.gameSettings.particleSetting >= 2
+            || Config.quantumParticleDensity() == 0) return;
         double cameraX = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * event.partialTicks;
         double cameraY = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * event.partialTicks;
         double cameraZ = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * event.partialTicks;
@@ -212,6 +216,16 @@ public final class QuantumVoxelParticleHandler {
         Tessellator tessellator = Tessellator.instance;
         tessellator.startDrawingQuads();
         for (Particle particle : particles) {
+            int rgb = QuantumNetworkColor.rgb(
+                particle.node ? ((TileEntityNetworkQuantumNode) particle.source).getColorIndex()
+                    : QuantumIncorporationClientState.colorIndex(
+                        currentWorld,
+                        particle.source.xCoord,
+                        particle.source.yCoord,
+                        particle.source.zCoord));
+            float red = ((rgb >> 16) & 255) / 255F;
+            float green = ((rgb >> 8) & 255) / 255F;
+            float blue = (rgb & 255) / 255F;
             double progress = (particle.age + partialTicks) / particle.lifetime;
             float alpha = (float) (Math.min(1, (particle.age + partialTicks + 1) / 3) * (1 - progress));
             double radius = particle.radius * (glow ? 1.65D : 1D);
@@ -220,7 +234,7 @@ public final class QuantumVoxelParticleHandler {
             double z = particle.previousZ + (particle.z - particle.previousZ) * partialTicks;
             for (int side = 0; side < CUBE_FACES.length; side++) {
                 float shade = FACE_SHADE[side];
-                tessellator.setColorRGBA_F(.66F * shade, .28F * shade, shade, alpha * (glow ? .14F : .65F));
+                tessellator.setColorRGBA_F(red * shade, green * shade, blue * shade, alpha * (glow ? .14F : .65F));
                 for (int corner : CUBE_FACES[side]) {
                     tessellator.addVertex(
                         x + ((corner & 1) == 0 ? -radius : radius),
@@ -250,17 +264,20 @@ public final class QuantumVoxelParticleHandler {
             mask = node ? ((TileEntityNetworkQuantumNode) source).getConnectedSidesMask() & 63 : 0;
             lifetime = 16 + world.rand.nextInt(13);
             radius = .018D + world.rand.nextDouble() * .022D;
-            double length = Math
-                .sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+            double[] vector = QuantumParticleDirections.sample(direction, world.rand);
             double speed = .018D + world.rand.nextDouble() * .025D;
-            vx = direction.x / length * speed;
-            vy = direction.y / length * speed;
-            vz = direction.z / length * speed;
-            // Node starts at its center; incorporated cubes start across their actual exposed face.
+            vx = vector[0] * speed;
+            vy = vector[1] * speed;
+            vz = vector[2] * speed;
+            // Randomize node origin and face positions independently so neighboring emitters do not form rows.
             x = source.xCoord + .5D;
             y = source.yCoord + .5D;
             z = source.zCoord + .5D;
-            if (!node) {
+            if (node) {
+                x += (world.rand.nextDouble() - .5D) * .18D;
+                y += (world.rand.nextDouble() - .5D) * .18D;
+                z += (world.rand.nextDouble() - .5D) * .18D;
+            } else {
                 x += direction.x == 0 ? (world.rand.nextDouble() - .5D) * .86D : direction.x * .515D;
                 y += direction.y == 0 ? (world.rand.nextDouble() - .5D) * .86D : direction.y * .515D;
                 z += direction.z == 0 ? (world.rand.nextDouble() - .5D) * .86D : direction.z * .515D;

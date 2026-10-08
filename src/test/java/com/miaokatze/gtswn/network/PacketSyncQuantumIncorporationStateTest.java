@@ -25,7 +25,7 @@ public class PacketSyncQuantumIncorporationStateTest {
             23,
             Arrays.asList(
                 new PacketSyncQuantumIncorporationState.Position(0, first),
-                new PacketSyncQuantumIncorporationState.Position(65535, replacement)));
+                new PacketSyncQuantumIncorporationState.Position(65535, replacement, 14)));
         ByteBuf buffer = Unpooled.buffer();
         try {
             original.toBytes(buffer);
@@ -55,6 +55,14 @@ public class PacketSyncQuantumIncorporationStateTest {
                 replacement.getLeastSignificantBits(),
                 decoded.getPositions()
                     .get(1).identityLeast);
+            assertEquals(
+                14,
+                decoded.getPositions()
+                    .get(1).color);
+            assertEquals(
+                0,
+                decoded.getPositions()
+                    .get(0).color);
             assertEquals(0, buffer.readableBytes());
         } finally {
             buffer.release();
@@ -78,6 +86,29 @@ public class PacketSyncQuantumIncorporationStateTest {
                 .writeInt(3)
                 .writeInt(1)
                 .writeShort(7);
+            decoded.fromBytes(buffer);
+            assertFalse(decoded.isValid());
+            assertTrue(
+                decoded.getPositions()
+                    .isEmpty());
+        } finally {
+            buffer.release();
+        }
+    }
+
+    @Test
+    public void rejectsInvalidPaletteIndex() {
+        ByteBuf buffer = Unpooled.buffer();
+        try {
+            buffer.writeInt(0)
+                .writeInt(0)
+                .writeInt(0)
+                .writeInt(1)
+                .writeShort(0)
+                .writeLong(1)
+                .writeLong(2)
+                .writeByte(16);
+            PacketSyncQuantumIncorporationState decoded = new PacketSyncQuantumIncorporationState();
             decoded.fromBytes(buffer);
             assertFalse(decoded.isValid());
             assertTrue(

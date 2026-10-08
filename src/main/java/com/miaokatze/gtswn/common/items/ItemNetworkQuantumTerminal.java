@@ -19,9 +19,11 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.client.render.QuantumTintedTextures;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
@@ -47,7 +49,7 @@ import cpw.mods.fml.relauncher.SideOnly;
  * <li>Shift+右击已量子化控制器 = 取消量子化并解绑（整结构出册 + 恢复全方向可连接 + 清除终端锚点）</li>
  * <li>右击普通方块（已绑定）= 在点击面放置「ME 网络量子节点」（D4 不消耗物品）</li>
  * <li>Shift+右击空气 = 打开终端 GUI（v1.6.2：有且仅有此路径开 GUI，见 onItemRightClick 射线守卫）</li>
- * <li>Alt+右击完整 AE 方块 = 量子并入；Alt+Shift+右击 = 解除并入</li>
+ * <li>Alt+右击完整 AE 方块 = 量子并入；再次 Alt+右击已并入方块 = 解除并入</li>
  * <li>Alt+对空气长按右键 20 tick = 显形量子网络，由客户端手势处理器发送自定义包</li>
  * </ul>
  * <p>
@@ -66,11 +68,20 @@ public class ItemNetworkQuantumTerminal extends Item {
     @SideOnly(Side.CLIENT)
     private IIcon incorporationIcon;
 
+    @SideOnly(Side.CLIENT)
+    private IIcon[] colorIcons;
+
+    @SideOnly(Side.CLIENT)
+    private IIcon[] incorporationColorIcons;
+
     @Override
     @SideOnly(Side.CLIENT)
     public void registerIcons(IIconRegister register) {
         super.registerIcons(register);
         incorporationIcon = register.registerIcon("gtswn:ME_Network_Quantum_Terminal_Alt");
+        colorIcons = QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Terminal", "items");
+        incorporationColorIcons = QuantumTintedTextures
+            .register(register, "gtswn:ME_Network_Quantum_Terminal_Alt", "items");
     }
 
     @Override
@@ -81,8 +92,16 @@ public class ItemNetworkQuantumTerminal extends Item {
 
     @Override
     @SideOnly(Side.CLIENT)
+    public IIcon getIconIndex(ItemStack stack) {
+        return getIcon(stack, 0);
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
     public IIcon getIcon(ItemStack stack, int pass) {
-        return getIconFromDamage(stack.getItemDamage());
+        return QuantumTintedTextures.select(
+            GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode() ? incorporationColorIcons : colorIcons,
+            QuantumNetworkColor.get(stack));
     }
 
     @Override
@@ -165,7 +184,7 @@ public class ItemNetworkQuantumTerminal extends Item {
         // 普通模式放行 C08；Alt 模式发送独立包，阻止节点放置与原版机器交互。
         if (world.isRemote) {
             if (GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode()) {
-                GTSimpleWirelessNetwork.proxy.handleQuantumIncorporationClick(x, y, z, player.isSneaking());
+                GTSimpleWirelessNetwork.proxy.handleQuantumIncorporationClick(x, y, z, false);
                 return true;
             }
             return false;
@@ -283,7 +302,7 @@ public class ItemNetworkQuantumTerminal extends Item {
             if (GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode()) {
                 return stack;
             }
-            if (player.isSneaking() && isBound(stack)) {
+            if (player.isSneaking()) {
                 LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
                 MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), true);
                 if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) {
@@ -291,9 +310,6 @@ public class ItemNetworkQuantumTerminal extends Item {
                 }
             }
             return stack;
-        }
-        if (player.isSneaking() && !isBound(stack)) {
-            sendMessage(player, "gtswn.chat.quantum.need_bind");
         }
         return stack;
     }
@@ -393,6 +409,7 @@ public class ItemNetworkQuantumTerminal extends Item {
             tag.getInteger(NBT_ANCHOR_X),
             tag.getInteger(NBT_ANCHOR_Y),
             tag.getInteger(NBT_ANCHOR_Z));
+        node.setColorIndex(QuantumNetworkColor.resolve(stack));
         node.setPlacer(player);
     }
 
@@ -432,6 +449,7 @@ public class ItemNetworkQuantumTerminal extends Item {
         tag.setInteger(NBT_ANCHOR_Y, y);
         tag.setInteger(NBT_ANCHOR_Z, z);
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
+        QuantumNetworkColor.bind(stack, world, x, y, z);
     }
 
     /**
@@ -513,6 +531,11 @@ public class ItemNetworkQuantumTerminal extends Item {
             list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.unbound"));
         }
         // 空行分隔 + 逐手势操作说明（v1.6.2：五行完整手势表）
+        list.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.tooltip.quantum_terminal.color",
+                StatCollector
+                    .translateToLocal("gtswn.color." + QuantumNetworkColor.name(QuantumNetworkColor.get(stack)))));
         list.add("");
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.controller"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.dequantize"));

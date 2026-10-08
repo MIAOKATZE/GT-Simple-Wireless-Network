@@ -22,6 +22,7 @@ import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.client.render.QuantumTintedTextures;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.register.CreativeTabManager;
@@ -70,6 +71,12 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     private IIcon iconOnlineTranslucent;
     private IIcon iconOfflineOpaque;
     private IIcon iconOfflineTranslucent;
+
+    @SideOnly(Side.CLIENT)
+    private IIcon[][] colorLayerIcons;
+
+    @SideOnly(Side.CLIENT)
+    private IIcon[][] colorCompositeIcons;
 
     /** 核心包围盒下界（5/16，与构造器 setBlockBounds 一致；v1.8.5 碰撞/射线复用） */
     private static final float CORE_MIN = 0.3125F;
@@ -139,6 +146,7 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     // ==================== v1.6.4 任务4：状态材质（在线动画 / 离线静态） ====================
 
     @Override
+    @SideOnly(Side.CLIENT)
     public void registerBlockIcons(IIconRegister register) {
         this.iconOnline = register.registerIcon("gtswn:ME_Network_Quantum_Node");
         this.iconOffline = register.registerIcon("gtswn:ME_Network_Quantum_Node_OFF");
@@ -148,9 +156,22 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         this.iconOfflineTranslucent = register.registerIcon("gtswn:ME_Network_Quantum_Node_OFF_translucent");
         // 兼容第三方直接读 blockIcon 字段的路径（WAILA/NEI 图标等）
         this.blockIcon = this.iconOnline;
+        colorLayerIcons = new IIcon[][] {
+            QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node_opaque", "blocks"),
+            QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node_translucent", "blocks"),
+            QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node_OFF_opaque", "blocks"),
+            QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node_OFF_translucent", "blocks") };
+        colorCompositeIcons = new IIcon[][] {
+            QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node", "blocks"),
+            QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node_OFF", "blocks") };
     }
 
     /** 无世界上下文时取在线层；常规 getIcon 仍提供合成图供粒子和第三方使用。 */
+    @SideOnly(Side.CLIENT)
+    public IIcon getLayerIcon(boolean online, int pass, int colorIndex) {
+        return QuantumTintedTextures.select(colorLayerIcons[(online ? 0 : 2) + (pass == 1 ? 1 : 0)], colorIndex);
+    }
+
     @SideOnly(Side.CLIENT)
     public IIcon getLayerIcon(boolean online, int pass) {
         if (online) {
@@ -161,20 +182,24 @@ public class BlockNetworkQuantumNode extends BlockContainer {
 
     /** 世界内渲染图标（ISBRH renderStandardBlock → RenderBlocks.getBlockIcon → 本方法）：在线动画 / 离线静态 */
     @Override
+    @SideOnly(Side.CLIENT)
     public IIcon getIcon(IBlockAccess world, int x, int y, int z, int side) {
         // v1.6.13 任务1：防御 TE 为空或类型不符
         if (world == null) {
             return this.iconOffline;
         }
         TileEntity te = world.getTileEntity(x, y, z);
-        if (te instanceof TileEntityNetworkQuantumNode && ((TileEntityNetworkQuantumNode) te).isLinkedClient()) {
-            return this.iconOnline;
+        if (te instanceof TileEntityNetworkQuantumNode) {
+            TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) te;
+            return QuantumTintedTextures
+                .select(colorCompositeIcons[node.isLinkedClient() ? 0 : 1], node.getColorIndex());
         }
         return this.iconOffline;
     }
 
     /** 物品栏/破坏粒子等无世界上下文路径：恒显示在线动画图标 */
     @Override
+    @SideOnly(Side.CLIENT)
     public IIcon getIcon(int side, int meta) {
         return this.iconOnline;
     }

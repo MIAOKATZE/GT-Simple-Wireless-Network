@@ -114,7 +114,11 @@ public final class QuantumIncorporationVisualSync {
             int y = QuantumControllerRegistry.unpackY(entry.position);
             int z = QuantumControllerRegistry.unpackZ(entry.position);
             if (y >= 0 && y < 256 && QuantumIncorporationRegistry.isIncorporated(watchers.world, x, y, z)) {
-                positions.add(new Position((y << 8) | ((z & 15) << 4) | (x & 15), UUID.fromString(entry.identity())));
+                positions.add(
+                    new Position(
+                        (y << 8) | ((z & 15) << 4) | (x & 15),
+                        UUID.fromString(entry.identity()),
+                        entry.getColorIndex()));
             }
         }
         return new PacketSyncQuantumIncorporationState(

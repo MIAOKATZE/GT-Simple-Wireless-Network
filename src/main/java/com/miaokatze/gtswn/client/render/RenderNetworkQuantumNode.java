@@ -145,7 +145,10 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
             // 裂纹覆盖纹理只画一次；一般路径显式选层，不让 common 方块引用客户端 pass 状态。
             if (originalOverride == null || pass == 0) {
                 IIcon icon = originalOverride != null ? originalOverride
-                    : ((BlockNetworkQuantumNode) block).getLayerIcon(node != null && node.isLinkedClient(), pass);
+                    : ((BlockNetworkQuantumNode) block).getLayerIcon(
+                        node != null && node.isLinkedClient(),
+                        pass,
+                        node == null ? 0 : node.getColorIndex());
                 renderer.overrideBlockTexture = icon;
                 double[][] arms = new double[6][];
                 int visibleArms = 0;

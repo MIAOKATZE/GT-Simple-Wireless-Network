@@ -15,9 +15,9 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.inventory.InventoryCrafting;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.util.ChatComponentTranslation;
 
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.util.InventoryHintReminder;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.recipe.MonitorBatteryRecipe;
 
@@ -65,7 +65,7 @@ public final class MonitorChargingHandler {
         if (Loader.isModLoaded("Baubles")) collectBaubles(player, targets, monitors);
         active.put(player, !monitors.isEmpty());
         if (monitors.isEmpty()) return;
-        remind(player);
+        if (player.ticksExisted % 20 == 0) remind(player, monitors);
         Set<ItemStack> charged = Collections.newSetFromMap(new IdentityHashMap<ItemStack, Boolean>());
         // Rotate priority when several terminals share finite caches.
         int first = Math.floorMod(player.ticksExisted, monitors.size());
@@ -155,18 +155,12 @@ public final class MonitorChargingHandler {
         }
     }
 
-    private static void remind(EntityPlayer player) {
-        NBTTagCompound root = player.getEntityData();
-        if (!root.hasKey(EntityPlayer.PERSISTED_NBT_TAG, 10))
-            root.setTag(EntityPlayer.PERSISTED_NBT_TAG, new NBTTagCompound());
-        NBTTagCompound persisted = root.getCompoundTag(EntityPlayer.PERSISTED_NBT_TAG);
-        int count = persisted.getInteger("GTSWNChargeHintCount");
-        if (count >= 3) return;
-        int held = persisted.getInteger("GTSWNMonitorHeldTicks");
-        if (held >= count * 12000) {
-            player.addChatMessage(new ChatComponentTranslation("gtswn.chat.monitor.charging_hint"));
-            persisted.setInteger("GTSWNChargeHintCount", count + 1);
+    private static void remind(EntityPlayer player, List<ItemStack> monitors) {
+        // Any installed battery demonstrates that the player already knows this feature.
+        for (ItemStack monitor : monitors) {
+            if (MonitorBattery.hasBattery(monitor)) return;
         }
-        persisted.setInteger("GTSWNMonitorHeldTicks", held + 1);
+        InventoryHintReminder
+            .remind(player, "GTSWNChargeHintCount", "GTSWNMonitorHeldTicks", "gtswn.chat.monitor.charging_hint");
     }
 }

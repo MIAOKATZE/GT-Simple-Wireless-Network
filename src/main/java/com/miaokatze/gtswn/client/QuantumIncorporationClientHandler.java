@@ -33,9 +33,10 @@ public final class QuantumIncorporationClientHandler {
 
     public static void requestIncorporation(int x, int y, int z, boolean remove) {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.theWorld != null && isHoldingTerminal(mc)
-            && QuantumIncorporationRegistry.isEligible(mc.theWorld, x, y, z)) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketQuantumIncorporation(x, y, z, remove));
+        // Client machine proxies, bounds and synchronization can lag. Eligibility and toggle state
+        // are checked on the server, including removal while the anchor or machine is offline.
+        if (mc.theWorld != null && isHoldingTerminal(mc)) {
+            GTSWNPacketHandler.NETWORK.sendToServer(new PacketQuantumIncorporation(x, y, z, false));
         }
     }
 
@@ -51,7 +52,7 @@ public final class QuantumIncorporationClientHandler {
         event.setCanceled(true);
         MovingObjectPosition hit = mc.objectMouseOver;
         if (hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-            requestIncorporation(hit.blockX, hit.blockY, hit.blockZ, mc.thePlayer.isSneaking());
+            requestIncorporation(hit.blockX, hit.blockY, hit.blockZ, false);
             TerminalRevealCharge.cancel();
         } else {
             // An entity is not air and cannot start the reveal gesture.
@@ -65,7 +66,7 @@ public final class QuantumIncorporationClientHandler {
             || !isAltDown()
             || !isHoldingTerminal(Minecraft.getMinecraft())) return;
         event.setCanceled(true);
-        requestIncorporation(event.x, event.y, event.z, event.entityPlayer.isSneaking());
+        requestIncorporation(event.x, event.y, event.z, false);
     }
 
     @SubscribeEvent
@@ -78,9 +79,10 @@ public final class QuantumIncorporationClientHandler {
         if (!isAltDown() || !isHoldingTerminal(Minecraft.getMinecraft())
             || event.target == null
             || event.target.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return;
-        if (!event.player.isSneaking() && !ItemNetworkQuantumTerminal.isBound(event.player.getHeldItem())) return;
         int x = event.target.blockX, y = event.target.blockY, z = event.target.blockZ;
-        if (QuantumIncorporationRegistry.isEligible(event.player.worldObj, x, y, z)) {
+        if (QuantumIncorporationClientState.registered(event.player.worldObj, x, y, z)
+            || (ItemNetworkQuantumTerminal.isBound(event.player.getHeldItem())
+                && QuantumIncorporationRegistry.isEligible(event.player.worldObj, x, y, z))) {
             QuantumNodeHighlightRenderer.drawBox(event, x, y, z, true);
         }
     }

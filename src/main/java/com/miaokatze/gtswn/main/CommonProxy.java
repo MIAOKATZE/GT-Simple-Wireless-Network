@@ -27,6 +27,7 @@ import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.QuantumChunkLoaderCallback;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalColorHintHandler;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.crossmod.bq.BqCompat;
@@ -192,6 +193,9 @@ public class CommonProxy {
         FMLCommonHandler.instance()
             .bus()
             .register(quantumHandler);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(new QuantumTerminalColorHintHandler());
 
         // 注册设备信息终端事件处理器（阶段 B）：
         // - Forge 事件总线：机器放置登记/自动绑定、破坏出册级联解绑

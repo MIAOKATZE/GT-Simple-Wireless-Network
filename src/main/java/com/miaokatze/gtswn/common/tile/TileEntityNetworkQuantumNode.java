@@ -23,6 +23,8 @@ import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.AnchorKey;
 import com.miaokatze.gtswn.common.quantum.AnchorReachability;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorSync;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
 import com.miaokatze.gtswn.common.quantum.QuantumNodeTypes;
 import com.miaokatze.gtswn.common.quantum.QuantumOverloadCountdown;
@@ -242,11 +244,30 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * @param y   锚点控制器 Y 坐标
      * @param z   锚点控制器 Z 坐标
      */
+    private int colorIndex;
+    private boolean colorTracked;
+
+    public int getColorIndex() {
+        return colorIndex;
+    }
+
+    public void setColorIndex(int index) {
+        index = QuantumNetworkColor.normalize(index);
+        if (colorIndex == index) return;
+        colorIndex = index;
+        markDirty();
+        if (worldObj != null) worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
     public void setAnchor(int dim, int x, int y, int z) {
+        QuantumNetworkColorSync.untrack(this);
+        colorTracked = false;
         this.anchorDim = dim;
         this.anchorX = x;
         this.anchorY = y;
         this.anchorZ = z;
+        QuantumNetworkColorSync.track(this);
+        colorTracked = worldObj != null && !worldObj.isRemote;
         // 标记 TE 数据已修改，确保锚点写入随区块保存落盘
         markDirty();
     }
@@ -690,6 +711,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     @Override
     public void invalidate() {
+        QuantumNetworkColorSync.untrack(this);
+        colorTracked = false;
         // v1.8.5：先拆部件（销毁部件 GridNode 及其全部连接），再断桥接连接，最后走 proxy 生命周期
         this.partContainer.removeFromWorld();
         // 断桥接连接必须先于 proxy 生命周期：显式 destroy 防止网格残留幽灵节点
@@ -704,6 +727,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     @Override
     public void onChunkUnload() {
+        QuantumNetworkColorSync.untrack(this);
+        colorTracked = false;
         // 同 invalidate：先拆部件，再断桥接连接，最后走 proxy 生命周期
         this.partContainer.removeFromWorld();
         destroyBridgeConnection();
@@ -731,6 +756,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // v1.6.19：性能审计——本节点单 tick 耗时采样起点（开关关闭时零开销）
         long auditT0 = PerformanceAudit.start();
         // ===== proxy 就绪流程（照样板：暂存 NBT 重放 → onReady 一次性调用） =====
+        if (!colorTracked) {
+            QuantumNetworkColorSync.track(this);
+            colorTracked = true;
+        }
+        if (worldObj.getTotalWorldTime() % 20 == 0 && DimensionManager.getWorld(anchorDim) != null) {
+            setColorIndex(QuantumNetworkColor.resolve(anchorDim, anchorX, anchorY, anchorZ));
+        }
         if (pendingProxyNBT != null) {
             getProxy().readFromNBT(pendingProxyNBT);
             pendingProxyNBT = null;
@@ -1246,6 +1278,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
+        this.colorIndex = QuantumNetworkColor.normalize(tag.getInteger("color"));
         if (tag.hasKey(NBT_ANCHOR_DIM)) {
             this.anchorDim = tag.getInteger(NBT_ANCHOR_DIM);
             this.anchorX = tag.getInteger(NBT_ANCHOR_X);
@@ -1280,6 +1313,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     @Override
     public void writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
+        tag.setInteger("color", colorIndex);
         if (hasAnchor()) {
             tag.setInteger(NBT_ANCHOR_DIM, this.anchorDim);
             tag.setInteger(NBT_ANCHOR_X, this.anchorX);
@@ -1307,6 +1341,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public Packet getDescriptionPacket() {
         // ①chunk 初次同步（S21/S26 携带）②服务端 markBlockForUpdate 触发的 S35 单点更新
         NBTTagCompound tag = new NBTTagCompound();
+        tag.setInteger("color", colorIndex);
         tag.setBoolean(NBT_SYNC_LINKED, isLinked());
         // v1.6.24：追加同步服务端真实连接方向掩码（客户端按位移位重建方向并只对置位方向画臂）
         tag.setInteger(NBT_SYNC_SIDES, computeConnectedSidesMask());
@@ -1342,6 +1377,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             GTSimpleWirelessNetwork.LOG.warn("[量子节点] onDataPacket 读取 NBT 失败");
             return;
         }
+        this.colorIndex = QuantumNetworkColor.normalize(tag.getInteger("color"));
         this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);
         // v1.6.24：追加读取连接方向掩码（键缺失时 getInteger 默认 0，天然安全）
         this.clientConnectedSides = tag.getInteger(NBT_SYNC_SIDES);

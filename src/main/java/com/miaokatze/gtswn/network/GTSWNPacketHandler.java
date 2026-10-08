@@ -140,6 +140,12 @@ public class GTSWNPacketHandler {
             PacketSyncQuantumIncorporationState.class,
             17,
             Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketSetQuantumNetworkColor.Handler.class,
+            PacketSetQuantumNetworkColor.class,
+            18,
+            Side.SERVER);
+        PacketSetQuantumNetworkColor.register();
         com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync visualSync = new com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync();
         MinecraftForge.EVENT_BUS.register(visualSync);
         cpw.mods.fml.common.FMLCommonHandler.instance()

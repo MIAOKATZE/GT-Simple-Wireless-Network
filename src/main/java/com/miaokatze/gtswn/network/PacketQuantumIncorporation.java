@@ -36,6 +36,7 @@ import io.netty.buffer.ByteBuf;
 public class PacketQuantumIncorporation implements IMessage {
 
     private int x, y, z;
+    // Retained for the existing packet layout; clients cannot choose the server toggle state.
     private boolean remove;
     private static final Map<UUID, Job> PENDING = new ConcurrentHashMap<>();
 
@@ -100,7 +101,8 @@ public class PacketQuantumIncorporation implements IMessage {
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
         if (!world.blockExists(message.x, message.y, message.z)
             || player.getDistanceSq(message.x + 0.5, message.y + 0.5, message.z + 0.5) > 64) return;
-        LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
+        // Platform.getEyeOffset uses the client's eye-position convention; MP posY is feet.
+        LookDirection look = Platform.getPlayerRay(player, (float) (player.posY + player.getEyeHeight()));
         MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), false);
         if (hit == null || hit.blockX != message.x || hit.blockY != message.y || hit.blockZ != message.z) return;
         if (!world.canMineBlock(player, message.x, message.y, message.z)
@@ -109,7 +111,8 @@ public class PacketQuantumIncorporation implements IMessage {
             return;
         }
         QuantumIncorporationRegistry registry = QuantumIncorporationRegistry.get(world);
-        if (message.remove) {
+        // Alt is a toggle. The authoritative registry decides even if the client cache is stale.
+        if (QuantumIncorporationRegistry.isIncorporated(world, message.x, message.y, message.z)) {
             if (registry.remove(world, message.x, message.y, message.z, player))
                 tell(player, "gtswn.chat.quantum.incorporation_removed");
             else tell(player, "gtswn.chat.quantum.no_permission");

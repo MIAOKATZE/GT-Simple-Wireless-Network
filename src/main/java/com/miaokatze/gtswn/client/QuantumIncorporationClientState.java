@@ -55,6 +55,7 @@ public final class QuantumIncorporationClientState {
                 (packet.getChunkZ() << 4) + ((local >>> 4) & 15),
                 world.getTotalWorldTime(),
                 position);
+            state.color = position.color;
             state.tile(world);
             replacement.put(local, state);
         }
@@ -84,6 +85,15 @@ public final class QuantumIncorporationClientState {
         return state != null && state.tile(world) != null;
     }
 
+    public static int colorIndex(World world, int x, int y, int z) {
+        useWorld(world);
+        if (world == null || !world.isRemote || y < 0 || y >= 256) return 0;
+        Map<Integer, State> chunk = CHUNKS.get(chunkKey(x >> 4, z >> 4));
+        if (chunk == null) return 0;
+        State state = chunk.get((y << 8) | ((z & 15) << 4) | (x & 15));
+        return state == null || state.tile(world) == null ? 0 : state.color;
+    }
+
     @SubscribeEvent
     public void unloadChunk(ChunkEvent.Unload event) {
         if (event.world == currentWorld)
@@ -100,6 +110,7 @@ public final class QuantumIncorporationClientState {
         private final int x, y, z;
         private final long receivedTick;
         private final long identityMost, identityLeast;
+        private int color;
         private TileEntity bound;
         private boolean invalid;
 

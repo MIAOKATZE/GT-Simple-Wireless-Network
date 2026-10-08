@@ -36,6 +36,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
     private final Map<Long, Entry> entries = new HashMap<>();
     private final Map<Long, Map<Long, Entry>> chunks = new HashMap<>();
+    private final Map<AnchorKey, Map<Long, Entry>> sources = new HashMap<>();
     private ArrayList<Entry> maintenanceOrder;
     private int cursor;
     private static long budgetTick = Long.MIN_VALUE;
@@ -107,6 +108,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         entry.ax = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X);
         entry.ay = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y);
         entry.az = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z);
+        entry.color = QuantumNetworkColor.resolve(entry.dim, entry.ax, entry.ay, entry.az);
         ((QuantumIncorporationIdentity) tile).gtswn$setIncorporationIdentity(entry.identity);
         tile.markDirty();
         entries.put(key, entry);
@@ -149,6 +151,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private void index(Entry entry) {
+        sources.computeIfAbsent(new AnchorKey(entry.dim, entry.ax, entry.ay, entry.az), ignored -> new HashMap<>())
+            .put(entry.position, entry);
         chunks.computeIfAbsent(entryChunk(entry), ignored -> new HashMap<>())
             .put(entry.position, entry);
     }
@@ -188,12 +192,24 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             forget(world, entry, false);
             return;
         }
+        int latestColor = entry.getColorIndex();
+        if (entry.color != latestColor) {
+            entry.color = latestColor;
+            markDirty();
+            QuantumIncorporationVisualSync.changed(world, x, y, z);
+        }
         maintain(world, entry);
     }
 
     private void forget(World world, Entry entry, boolean restore) {
         entry.disconnect();
         entries.remove(entry.position);
+        AnchorKey source = new AnchorKey(entry.dim, entry.ax, entry.ay, entry.az);
+        Map<Long, Entry> indexed = sources.get(source);
+        if (indexed != null) {
+            indexed.remove(entry.position);
+            if (indexed.isEmpty()) sources.remove(source);
+        }
         long chunkKey = entryChunk(entry);
         Map<Long, Entry> chunk = chunks.get(chunkKey);
         if (chunk != null) {
@@ -340,6 +356,27 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
     }
 
+    public void recolor(World world, int dimension, java.util.Set<Long> members, int color) {
+        java.util.Set<Long> changedChunks = new java.util.HashSet<>();
+        for (long pos : members) {
+            Map<Long, Entry> indexed = sources.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(pos),
+                    QuantumControllerRegistry.unpackY(pos),
+                    QuantumControllerRegistry.unpackZ(pos)));
+            if (indexed == null) continue;
+            for (Entry entry : indexed.values()) {
+                entry.color = color;
+                changedChunks.add(entryChunk(entry));
+            }
+        }
+        if (changedChunks.isEmpty()) return;
+        markDirty();
+        for (long chunk : changedChunks)
+            QuantumIncorporationVisualSync.changed(world, (int) (chunk >> 32) << 4, 0, (int) chunk << 4);
+    }
+
     public void unload() {
         for (Entry entry : snapshot()) entry.disconnect();
     }
@@ -348,6 +385,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     public void readFromNBT(NBTTagCompound tag) {
         entries.clear();
         chunks.clear();
+        sources.clear();
         maintenanceOrder = null;
         NBTTagList list = tag.getTagList("entries", 10);
         for (int i = 0; i < list.tagCount(); i++) {
@@ -362,6 +400,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             e.ax = n.getInteger("x");
             e.ay = n.getInteger("y");
             e.az = n.getInteger("z");
+            e.color = QuantumNetworkColor.normalize(n.getInteger("color"));
             if (!e.identity.isEmpty()) {
                 entries.put(e.position, e);
                 index(e);
@@ -383,6 +422,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             n.setInteger("x", e.ax);
             n.setInteger("y", e.ay);
             n.setInteger("z", e.az);
+            n.setInteger("color", e.color);
             list.appendTag(n);
         }
         tag.setTag("entries", list);
@@ -392,6 +432,15 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         public long position;
         public int dim, ax, ay, az;
+        private int color;
+
+        public int getColorIndex() {
+            WorldServer anchor = DimensionManager.getWorld(dim);
+            return anchor == null ? color
+                : QuantumNetworkColorRegistry.get(anchor)
+                    .color(ax, ay, az);
+        }
+
         private String block, tileClass, identity, owner;
         private IGridConnection connection;
         private IGridNode local, target;

@@ -14,6 +14,8 @@ import org.lwjgl.opengl.GL11;
 import org.lwjgl.opengl.GL20;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.tile.networking.TileController;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -23,7 +25,7 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
  * <p>
  * 监听 {@link DrawBlockHighlightEvent}，当玩家手持<b>已绑定</b>的
  * {@link ItemNetworkQuantumTerminal} 且准星指向可放置位置时，在放置目标点绘制
- * 量子节点小核心（5/16~11/16）的青色预览盒（线框 + 半透明填充），效果仿 AE 放置线缆的预览。
+ * 量子节点小核心（5/16~11/16）的网络颜色预览盒（线框 + 半透明填充），效果仿 AE 放置线缆的预览。
  * <p>
  * 【条件一致性】预览条件逐项对齐服务端
  * {@code ItemNetworkQuantumTerminal.onItemUseFirst / handleBlockClick} 的真实放置条件，
@@ -48,16 +50,7 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
  */
 public class QuantumNodeHighlightRenderer {
 
-    // ==================== 预览盒外观（青色系，量子主题） ====================
-
-    /** 红色分量 */
-    private static final float RED = 0.2F;
-
-    /** 绿色分量 */
-    private static final float GREEN = 0.9F;
-
-    /** 蓝色分量 */
-    private static final float BLUE = 1.0F;
+    // ==================== 预览盒外观 ====================
 
     /** 线框透明度 */
     private static final float LINE_ALPHA = 0.6F;
@@ -84,6 +77,7 @@ public class QuantumNodeHighlightRenderer {
      */
     @SubscribeEvent
     public void onDrawBlockHighlight(DrawBlockHighlightEvent event) {
+        if (GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode()) return;
         // 条件 1：手持物品必须是 ME 网络量子终端
         if (event.currentItem == null || !(event.currentItem.getItem() instanceof ItemNetworkQuantumTerminal)) {
             return;
@@ -143,6 +137,13 @@ public class QuantumNodeHighlightRenderer {
 
     static void drawBox(DrawBlockHighlightEvent event, int px, int py, int pz, boolean incorporation) {
         final EntityPlayer player = event.player;
+        int index = incorporation && QuantumIncorporationClientState.registered(player.worldObj, px, py, pz)
+            ? QuantumIncorporationClientState.colorIndex(player.worldObj, px, py, pz)
+            : QuantumNetworkColor.get(player.getHeldItem());
+        int rgb = QuantumNetworkColor.rgb(index);
+        float red = (rgb >> 16 & 255) / 255F;
+        float green = (rgb >> 8 & 255) / 255F;
+        float blue = (rgb & 255) / 255F;
         // 摄像机相对坐标（插值，避免视角移动时预览盒抖动）
         final double camX = player.lastTickPosX + (player.posX - player.lastTickPosX) * (double) event.partialTicks;
         final double camY = player.lastTickPosY + (player.posY - player.lastTickPosY) * (double) event.partialTicks;
@@ -174,11 +175,7 @@ public class QuantumNodeHighlightRenderer {
         GL11.glDepthMask(false);
         GL11.glDisable(GL11.GL_CULL_FACE);
         tess.startDrawingQuads();
-        tess.setColorRGBA_F(
-            incorporation ? 0.67F : RED,
-            incorporation ? 0.2F : GREEN,
-            BLUE,
-            incorporation ? 0.16F : FILL_ALPHA);
+        tess.setColorRGBA_F(red, green, blue, incorporation ? 0.16F : FILL_ALPHA);
         addQuad(
             tess,
             box.minX,
@@ -270,7 +267,7 @@ public class QuantumNodeHighlightRenderer {
         // === 2. 线框（12 条边：底面 4 + 顶面 4 + 立柱 4，同 WirelessTapHighlightRenderer 画法） ===
         // 底面 4 条边（LINE_STRIP 连续绘制）
         tess.startDrawing(GL11.GL_LINE_STRIP);
-        tess.setColorRGBA_F(incorporation ? 0.67F : RED, incorporation ? 0.2F : GREEN, BLUE, LINE_ALPHA);
+        tess.setColorRGBA_F(red, green, blue, LINE_ALPHA);
         tess.addVertex(box.minX, box.minY, box.minZ);
         tess.addVertex(box.maxX, box.minY, box.minZ);
         tess.addVertex(box.maxX, box.minY, box.maxZ);
@@ -280,7 +277,7 @@ public class QuantumNodeHighlightRenderer {
 
         // 顶面 4 条边
         tess.startDrawing(GL11.GL_LINE_STRIP);
-        tess.setColorRGBA_F(incorporation ? 0.67F : RED, incorporation ? 0.2F : GREEN, BLUE, LINE_ALPHA);
+        tess.setColorRGBA_F(red, green, blue, LINE_ALPHA);
         tess.addVertex(box.minX, box.maxY, box.minZ);
         tess.addVertex(box.maxX, box.maxY, box.minZ);
         tess.addVertex(box.maxX, box.maxY, box.maxZ);
@@ -290,7 +287,7 @@ public class QuantumNodeHighlightRenderer {
 
         // 4 条立柱（连接底面与顶面）
         tess.startDrawing(GL11.GL_LINES);
-        tess.setColorRGBA_F(incorporation ? 0.67F : RED, incorporation ? 0.2F : GREEN, BLUE, LINE_ALPHA);
+        tess.setColorRGBA_F(red, green, blue, LINE_ALPHA);
         tess.addVertex(box.minX, box.minY, box.minZ);
         tess.addVertex(box.minX, box.maxY, box.minZ);
         tess.addVertex(box.maxX, box.minY, box.minZ);

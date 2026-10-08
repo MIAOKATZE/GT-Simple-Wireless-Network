@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.client;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 
 /** Immutable, precomputed direction policy in Forge's DOWN/UP/NORTH/SOUTH/WEST/EAST order. */
 public final class QuantumParticleDirections {
@@ -40,6 +41,27 @@ public final class QuantumParticleDirections {
 
     public static List<Direction> openFaces(int airMask) {
         return AIR_FACES.get(airMask & 63);
+    }
+
+    /** Uniform solid-angle cone around an allowed face or diagonal, rather than parallel rays. */
+    public static double[] sample(Direction direction, Random random) {
+        double length = Math.sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+        double x = direction.x / length;
+        double y = direction.y / length;
+        double z = direction.z / length;
+        // Face cones stay inside their outward sector; diagonal cones keep clear of the six axes.
+        double cosine = 1 - random.nextDouble() * (direction.side < 0 ? .06D : .28D);
+        double sine = Math.sqrt(1 - cosine * cosine);
+        double angle = random.nextDouble() * Math.PI * 2;
+        double basisLength = Math.sqrt(x * x + z * z);
+        double ux = basisLength == 0 ? 1 : z / basisLength;
+        double uz = basisLength == 0 ? 0 : -x / basisLength;
+        double vx = y * uz;
+        double vy = z * ux - x * uz;
+        double vz = -y * ux;
+        double a = Math.cos(angle) * sine;
+        double b = Math.sin(angle) * sine;
+        return new double[] { x * cosine + ux * a + vx * b, y * cosine + vy * b, z * cosine + uz * a + vz * b };
     }
 
     public static final class Direction {
