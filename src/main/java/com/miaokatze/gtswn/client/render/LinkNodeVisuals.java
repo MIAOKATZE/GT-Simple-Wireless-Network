@@ -19,7 +19,7 @@ public final class LinkNodeVisuals {
     }
 
     public static boolean pulseActive(double seconds, boolean low) {
-        return phase(seconds, low ? 12 : 8) < (low ? 7 : 5);
+        return phase(seconds, low ? 12 : 10) < (low ? 7 : 5);
     }
 
     private static double phase(double seconds, double period) {
@@ -27,7 +27,7 @@ public final class LinkNodeVisuals {
     }
 
     public static double brightness(Cell cell, double seconds, boolean low, boolean energy) {
-        double p = phase(seconds, low ? 12 : 8);
+        double p = phase(seconds, low ? 12 : 10);
         double active = low ? 7 : 5;
         if (p < active) {
             double band = (energy ? 3 - cell.ring : cell.ring) / 3D;
@@ -35,10 +35,31 @@ public final class LinkNodeVisuals {
             return Math.max(0, 1 - Math.abs(p - arrival) / .65);
         }
         if (low) return 0;
-        // Random-looking slow individual flashes are exclusive to the pulse's idle interval.
-        double seed = cell.q * 31 + cell.r * 53;
-        double wave = Math.sin(seconds * 2.1 + seed) * Math.sin(seconds * .79 + seed * .71);
-        return Math.max(0, (wave - .62) / .38);
+        // Independent per-cell flash schedules avoid the spatial bands produced by linear phases.
+        int seed = ((cell.q + 3) * 7 + cell.r + 3) ^ (int) Math.floor(seconds / 10) * 0x9E3779B9;
+        double idle = p - active;
+        double light = 0;
+        for (int flash = 0; flash < 2; flash++) {
+            int event = seed ^ (flash + 1) * 0x85EBCA6B;
+            if (randomUnit(event) >= .6) continue;
+            double duration = .75 + randomUnit(event ^ 0xC2B2AE35) * .4;
+            double start = randomUnit(event ^ 0x27D4EB2F) * (5 - duration);
+            double progress = (idle - start) / duration;
+            if (progress > 0 && progress < 1) {
+                double envelope = Math.sin(progress * Math.PI);
+                light = Math.max(light, envelope * envelope);
+            }
+        }
+        return light;
+    }
+
+    private static double randomUnit(int seed) {
+        seed ^= seed >>> 16;
+        seed *= 0x85EBCA6B;
+        seed ^= seed >>> 13;
+        seed *= 0xC2B2AE35;
+        seed ^= seed >>> 16;
+        return (seed >>> 8) / 16777216D;
     }
 
     public static double surfaceDepth(Cell cell, double depth, double relief) {
