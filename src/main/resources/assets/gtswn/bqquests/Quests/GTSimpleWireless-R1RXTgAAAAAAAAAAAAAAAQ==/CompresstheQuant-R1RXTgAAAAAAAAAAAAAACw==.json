@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "With a bound terminal, right-click any ground to plant a Quantum Node.\n\nEach node bridges into the anchored controller's grid through a virtual connection, so adjacent AE2 devices join the network directly — §2vanilla cable distance limits simply do not apply§r. Each connection carries dense-cable capacity: §332 channels§r, and the node itself consumes none. Idle draw is §110 AE/t§r by default.\n\nNodes §2support cross-dimension bridging§r. The anchor dimension and chunk must already be loaded; nodes do not load the anchor themselves. Shift+right-click a node with the terminal to destroy it.",
+      "desc:8": "§3§lPreparation and use§r\nBind the ME Quantum Terminal to a quantized controller, then right-click the target position to place a Quantum Node. It connects adjacent AE2 devices to the anchor network through a virtual bridge. Tick this quest after understanding placement and bridging.\n\n§3§lChannels and power draw§r\nEach bridge uses a dense connection carrying up to §132§r channels; the node itself consumes no channel. Default idle draw is §110 AE/t§r. §2Virtual bridging supports cross-dimension connections without ordinary cable routing distance limits§r.\n\n§3§lChunk loading and removal§r\n§cThe anchor dimension and chunk must already be loaded; Quantum Nodes do not load their anchor.§r Shift-right-click a node with the Quantum Terminal to remove it.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

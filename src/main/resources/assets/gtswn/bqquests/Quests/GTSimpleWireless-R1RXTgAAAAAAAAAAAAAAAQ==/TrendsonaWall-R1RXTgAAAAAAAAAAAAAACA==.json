@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Network Info Panel renders your network history as smooth curves on a wall-sized multi-block screen.\n\nIt does not just record §6EU wireless network status§r — connected to an ME network, it also tracks §dreal-time and historical item changes§r inside it.\n\nHow it works: EU wireless readings follow the placing player's own wireless network; for the ME side, right-click the panel while holding an §1item or fluid cell§r to configure what to monitor. You can also open its terminal for more detailed settings.\n\nIts edge: §2extremely low performance and memory consumption§r while recording up to §2a full year§r of network history — §38 nested time windows (5m/1h/8h/24h/7d/1M/3M/1Y)§r on a §161-point FIFO§r, drawn as Fritsch-Carlson splines. All screens placed by the same player share one dataset.",
+      "desc:8": "§3§lPurpose and quest§r\nThe Network Info Panel displays wireless EU data and real-time changes and history curves for ME items and fluids. This quest requires crafting §11§r panel. EU history is shared by the placing player's UUID; AE monitoring data is recorded separately for each panel position.\n\n§3§lPreparation and use§r\nRight-click with an empty hand to open configuration. ME monitoring requires a connection to the ME network. Right-click with an item or a recognized filled fluid container to bind a chart target or add or remove live monitoring entries, depending on the active tab. Keep the panel chunk loaded.\n\n§3§lHistory recording§r\nHistory offers §18§r time windows: §15 minutes, 1 hour, 8 hours, 24 hours, 7 days, 1 month, 3 months and 1 year§r. Each window retains its own §161§r FIFO data points. Several curve styles are available, with Fritsch–Carlson splines as the default.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -35,8 +35,13 @@
   "rewards:9": {},
   "tasks:9": {
     "0:10": {
+      "allowAnvil:1": 0,
+      "allowCraft:1": 1,
+      "allowCraftedFromStatistics:1": 0,
+      "allowSmelt:1": 1,
+      "ignoreNBT:1": 1,
       "index:3": 0,
-      "taskID:8": "bq_standard:crafting",
+      "partialMatch:1": 1,
       "requiredItems:9": {
         "0:10": {
           "Count:3": 1,
@@ -45,12 +50,7 @@
           "id:8": "gtswn:NetworkInfoPanel_GTswn"
         }
       },
-      "ignoreNBT:1": 1,
-      "partialMatch:1": 1,
-      "allowCraft:1": 1,
-      "allowSmelt:1": 1,
-      "allowAnvil:1": 0,
-      "allowCraftedFromStatistics:1": 0
+      "taskID:8": "bq_standard:crafting"
     }
   }
 }

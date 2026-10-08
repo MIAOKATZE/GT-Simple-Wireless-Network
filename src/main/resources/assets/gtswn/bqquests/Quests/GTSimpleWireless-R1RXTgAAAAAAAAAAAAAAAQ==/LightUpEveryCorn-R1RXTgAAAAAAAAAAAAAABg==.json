@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 5
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lPreparation and use§r\nSwitch the Link Terminal to Energy mode and right-click a cover-compatible position on a supported GT base energy container. Energy mode shows a yellow §13 × 3§r guide grid. Binding a laser hatch consumes §11§r Laser Vacuum Pipe. Tick this quest after understanding the binding procedure.\n\n§3§lBuffer and power delivery§r\nThe cover injects up to §1V × A EU§r per tick and refills from the wireless grid at each interaction interval. Capacity is V × A × (interaction ticks + redundancy ticks) EU. The defaults are §1600§r interaction ticks and §1200§r redundancy ticks, giving §1V × A × 800 EU§r. Default downlink loss is §115%§r; it and the interaction interval are configurable in config/gtswn/gtswn_network.cfg.\n\n§3§lRemoval and remaining energy§r\nWhen the cover is removed, its remaining buffer is credited to the wireless grid at (§11§r − uplink loss fraction). §cThe remainder returns to the grid rather than as a player item; keep the machine chunk loaded.§r",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "gtswn:GTswn_Cover_Energy_Wireless"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§1§lLight Up Every Corner",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 6,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

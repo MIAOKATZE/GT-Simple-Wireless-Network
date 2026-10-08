@@ -1,0 +1,37 @@
+{
+  "preRequisites:9": {},
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lPurpose and operation§r\nGTSWN provides wireless EU transfer, wireless network monitoring, network info panels, ME quantum bridging and device status management. Wireless energy features serve supported GT energy containers; ME quantum features require AE2.\n\n§3§lChapter route§r\nThis chapter contains §114§r quests: start with the Wireless Energy Monitor and Portable Wireless Network Monitor, then configure the Link Terminal and its energy and power covers, and continue to info panels, the ME Quantum Terminal and the Device Info Terminal. Tick this quest after reading.\n\n§3§lOperating requirements§r\nThe relevant machines, panels and quantum anchors need their chunks loaded. ME bridging also requires channel capacity management and AE network power; material and power requirements vary by feature.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "gtswn:wirelessEnergyTap"
+      },
+      "isMain:1": 1,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§2§lEverything Under Control",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 1,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

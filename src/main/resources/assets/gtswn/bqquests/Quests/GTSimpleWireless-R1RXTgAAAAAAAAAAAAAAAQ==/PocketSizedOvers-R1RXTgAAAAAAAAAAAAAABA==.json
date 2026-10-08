@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The Portable Wireless Network Monitor puts your grid in your pocket.\n\nThe first right-click binds it to you; further right-clicks cycle the HUD Off, Normal and Scientific. Sneak-right-click §drebinds it to the player holding it§r.\n\nIt also works from any §dBaubles§r accessory slot, and shows live EU, EU/t rate and a GT-style power tier on servers as well as in single player.\n\n§6Portable charging:§r shapelessly craft this terminal with one rechargeable battery to install it. It remains the same item, without separate variants. Battery capacity and voltage tier determine the buffer and charging rate; the new battery's existing charge enters the buffer immediately. While carried in inventory or a Baubles slot, a partly empty buffer requests a full refill from the bound wireless grid every §110 seconds (200 ticks)§r. The grid also pays the downlink loss: supplied EU × (1 + downlink loss fraction).\n\nCompatible electric tools in inventory, armor and Baubles slots are charged simultaneously, at §11A × battery voltage per tool§r, limited by the remaining buffer. Charging preserves held-tool use and mining, avoiding interruptions caused by charge updates.\n\nTo replace the battery, shapelessly craft the equipped terminal with a new battery. The new battery retains its own charge. The old battery inherits the remaining terminal buffer and returns to inventory, or drops on the ground if inventory is full. A chat tip appears on first acquisition, then after §110§r and §120 minutes§r of continued possession, for §13 tips§r in total.\n\nA terminal with a battery adds a charging status above the three existing HUD lines: Buffer empty, Standby, Charging, and Fully charged. After charging ends with no new demand for §11 second§r, Fully charged appears for §15 seconds§r before Standby; new demand resumes Charging immediately.\n\nToggle the charging line with §3/gtswn hud charge on/off§r. Toggle energy, instantaneous rate and average rate with §3/gtswn hud eu on/off§r, §3/gtswn hud instant on/off§r and §3/gtswn hud average on/off§r. All four lines have configuration options; commands save the corresponding settings.\n\n§6Remove the battery:§r shapelessly craft a battery-equipped terminal with a §3GT5U crowbar§r to obtain the same terminal without a battery. The old battery retains the remaining buffer charge and returns to inventory, or drops if inventory is full. No replacement battery is needed to remove the installed one.\n\n§3NEI§r shows only §1two examples§r: installing a GT small lithium battery and removing it with a GT5U crowbar. They use the native crafting-table layout, with the monitor as the tab icon. Actual installation and replacement still accept compatible GT/IC2 rechargeable batteries, rather than only the small lithium example. An equipped terminal uses §3native GT/IC2 energy tooltips and a charge bar§r to show its buffer, making remaining charge and capacity easy to inspect.",
+      "desc:8": "§3§lMonitoring and binding§r\nThe first right-click binds the Portable Wireless Network Monitor to the current player. Later right-clicks cycle the HUD through Off, Normal and Scientific; sneak-right-click rebinds it to the current player. In inventory or a Baubles slot, it displays the bound grid's EU, instantaneous and average EU/t, and power tier. This quest requires crafting §11§r monitor and ticking the confirmation.\n\n§3§lBattery installation and charging§r\nShapelessly craft the monitor with a compatible GT/IC2 rechargeable battery to install it; the item remains the same monitor. Battery capacity and voltage tier determine its buffer and charging rate, and the new battery's charge enters the buffer. While carried in inventory or a Baubles slot with a partly empty buffer, it requests a full refill every §1200 ticks (10 seconds)§r. The grid pays supplied EU × (§11§r + downlink loss fraction).\n\n§3§lTool charging and battery replacement§r\nCompatible electric tools in inventory, armor and Baubles slots charge simultaneously at §11A × battery voltage§r per tool, limited by the remaining buffer. Charge updates preserve held-tool use and mining. Shapelessly craft with a new battery to replace the installed one: the new battery retains its own charge, while the old battery receives the remaining monitor buffer and returns to inventory, or drops if inventory is full. Tips appear on first acquisition and after §110§r and §120 minutes§r of continued possession, for §13§r tips in total.\n\n§3§lCharging status and settings§r\nA battery-equipped monitor adds a charging status line: Buffer empty, Standby, Charging and Charging complete. After §11 second§r without new charging demand, Charging complete appears for about §15 seconds§r before Standby; new demand resumes Charging immediately. Use /gtswn hud charge on/off to toggle the charging line; the eu, instant and average subcommands control the energy, instantaneous and average lines. All four lines have configuration options, and commands save their corresponding settings.\n\n§3§lBattery removal and recipe lookup§r\nShapelessly craft a battery-equipped monitor with a GT5U crowbar to remove its battery. The old battery retains the remaining buffer charge and returns to inventory, or drops if inventory is full. NEI provides §12§r crafting-table examples: installing a GT small lithium battery and removing it with a GT5U crowbar. Installation and replacement accept compatible batteries beyond that example. An equipped monitor shows its buffer through GT/IC2 energy tooltips and a charge bar.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -35,8 +35,13 @@
   "rewards:9": {},
   "tasks:9": {
     "0:10": {
+      "allowAnvil:1": 0,
+      "allowCraft:1": 1,
+      "allowCraftedFromStatistics:1": 0,
+      "allowSmelt:1": 1,
+      "ignoreNBT:1": 1,
       "index:3": 0,
-      "taskID:8": "bq_standard:crafting",
+      "partialMatch:1": 1,
       "requiredItems:9": {
         "0:10": {
           "Count:3": 1,
@@ -45,12 +50,7 @@
           "id:8": "gtswn:PortableWirelessNetworkMonitor_GTswn"
         }
       },
-      "ignoreNBT:1": 1,
-      "partialMatch:1": 1,
-      "allowCraft:1": 1,
-      "allowSmelt:1": 1,
-      "allowAnvil:1": 0,
-      "allowCraftedFromStatistics:1": 0
+      "taskID:8": "bq_standard:crafting"
     },
     "1:10": {
       "index:3": 1,

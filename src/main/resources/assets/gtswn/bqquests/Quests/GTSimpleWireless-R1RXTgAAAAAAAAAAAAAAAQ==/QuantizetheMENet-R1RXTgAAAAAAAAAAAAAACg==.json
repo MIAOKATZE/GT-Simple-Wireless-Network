@@ -1,0 +1,69 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 1
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lPreparation and quantization§r\nThis quest requires crafting §11§r ME Network Quantum Terminal. Right-click a formed, online controller structure supplied with AE network power. Once its proxy is ready, the connected controller structure is quantized, the terminal binds to its anchor, and channel capacity is recorded.\n\n§3§lConnections and power§r\nUse the bound terminal to place Quantum Nodes and bridge devices into the ME network. The quantized controller filters ordinary connections while retaining controllers in the same structure, energy acceptors or energy components, and Quartz Fibre facing the controller. Maintain a valid AE power path. Shift-right-click air to open the terminal interface and choose from §116§r network colors, with purple as the default. Only the central particles on the terminal itself change color; Quantum Nodes and incorporated devices bound to that network follow its color, helping distinguish multiple networks.\n\n§3§lChannel overload§r\n§cExceeding channel capacity starts a 3-minute countdown; remaining overloaded until it ends detonates the controller structure.§r Returning within capacity cancels the countdown. With AE2 infinite channels enabled, §2channel caps and overload explosions do not apply§r.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "gtswn:MENetworkQuantumTerminal_GTswn"
+      },
+      "isMain:1": 1,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§d§lQuantize the ME Network",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 10,
+  "rewards:9": {
+    "0:10": {
+      "index:3": 0,
+      "rewardID:8": "bq_standard:item",
+      "rewards:9": {
+        "0:10": {
+          "Count:3": 2,
+          "Damage:2": 32680,
+          "OreDict:8": "",
+          "id:8": "gregtech:gt.metaitem.01"
+        }
+      }
+    }
+  },
+  "tasks:9": {
+    "0:10": {
+      "allowAnvil:1": 0,
+      "allowCraft:1": 1,
+      "allowCraftedFromStatistics:1": 0,
+      "allowSmelt:1": 1,
+      "ignoreNBT:1": 1,
+      "index:3": 0,
+      "partialMatch:1": 1,
+      "requiredItems:9": {
+        "0:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:MENetworkQuantumTerminal_GTswn"
+        }
+      },
+      "taskID:8": "bq_standard:crafting"
+    }
+  }
+}

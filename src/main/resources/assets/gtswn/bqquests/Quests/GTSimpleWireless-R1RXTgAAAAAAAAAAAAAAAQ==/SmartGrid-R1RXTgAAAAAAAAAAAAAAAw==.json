@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "Place your Wireless Energy Monitor, give it LV power, and right-click it to open the GUI.\n\nThe redstone mode button cycles §1five modes§r: Off, High Level (signal when EU is above §1Param1§r), Low Level (below §1Param1§r), High-Hysteresis (output above §1Param1§r, cancel only below §1Param2§r) and Low-Hysteresis. Output is full strength §115§r. The anchor toggle switches what is measured: wireless energy storage or EU/t status. Param values are typed in directly, scientific notation like §11.5E6§r works.\n\nEnergy refreshes every §15 seconds§r over a §1300 second window§r; redstone reacts every §12 ticks§r. Wire the output into a comparator circuit and let the grid guard itself.",
+      "desc:8": "§3§lPreparation and use§r\nPlace the Wireless Energy Monitor and right-click to open its interface; no power connection is needed. The measurement anchor selects wireless stored EU, §15-second§r average EU/t or instantaneous EU/t. Parameters accept direct entry and scientific notation, such as §11.5E6§r.\n\n§3§lRedstone control§r\nThe redstone button offers §15§r modes: Off; output above Param1; output below Param1; High-Hysteresis (enable above Param1, disable below Param2); and Low-Hysteresis (enable below Param2, disable above Param1). Signal strength is §115§r, with checks every §12 ticks§r. Data updates every §1100 ticks§r over a §1300-second§r history window.\n\n§3§lQuest requirements§r\nObtain §11§r comparator and tick the quest after understanding the measurement target and threshold directions. The comparator is §2detected without consumption§r; the quest does not automatically check the redstone circuit or parameter settings.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -52,8 +52,13 @@
       "taskID:8": "bq_standard:checkbox"
     },
     "1:10": {
+      "autoConsume:1": 0,
+      "consume:1": 0,
+      "groupDetect:1": 0,
+      "ignoreNBT:1": 1,
       "index:3": 1,
-      "taskID:8": "bq_standard:retrieval",
+      "partialMatch:1": 1,
+      "requireOnlyOneItem:1": 0,
       "requiredItems:9": {
         "0:10": {
           "Count:3": 1,
@@ -62,12 +67,7 @@
           "id:8": "minecraft:comparator"
         }
       },
-      "consume:1": 0,
-      "autoConsume:1": 0,
-      "ignoreNBT:1": 1,
-      "partialMatch:1": 1,
-      "groupDetect:1": 0,
-      "requireOnlyOneItem:1": 0
+      "taskID:8": "bq_standard:retrieval"
     }
   }
 }

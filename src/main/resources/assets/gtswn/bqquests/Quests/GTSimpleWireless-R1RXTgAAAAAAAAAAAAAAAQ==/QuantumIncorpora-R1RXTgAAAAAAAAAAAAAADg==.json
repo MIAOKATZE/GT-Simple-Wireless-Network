@@ -1,0 +1,56 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 10
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lPreparation and quest§r\nThis quest detects §11§r Quantum Incorporation Anchor and §2does not consume it§r. The LV Assembler recipe uses §11§r Basic Coated Circuit Board, §11§r LV Emitter, §11§r LV Sensor, §12§r Steel Plates, §11§r Ender Pearl and §14§r Fine Copper Wires to produce §116§r anchors in §110 seconds§r at §130 EU/t§r.\n\n§3§lIncorporation and removal§r\nFirst bind the Quantum Terminal to a quantized controller. Hold Alt while aiming at a full AE2 block or GT ME hatch/bus to preview eligibility, then Alt-right-click to incorporate it into the bound ME network, consuming §11§r anchor. Alt-right-click it again to remove incorporation without consuming another anchor; Creative mode consumes none. Cable parts such as panels and buses are unsupported. §cIncorporation hardens the device against explosions and isolates it from external AE cable connections, including Quantum Nodes.§r The original device uses channels normally; the terminal interface shows incorporated-device count and actual channel use.\n\n§3§lLocating members and operation§r\nHold Alt and hold right-click in air for §11 second§r to reveal the Quantum Nodes, incorporated devices and quantized controllers configured with this terminal for §115 seconds§r. Chat confirms that only members configured with this terminal are shown. Repeat the action during that period to reveal all nearby loaded quantum members, with outlines colored by their respective network. §cKeep the anchor and member chunks loaded.§r Incorporated AE devices retain their normal power draw; there is currently no additional AE fee for incorporation.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "gtswn:QuantumIncorporationAnchor_GTswn"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§d§lQuantum Incorporation Anchor",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 14,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "autoConsume:1": 0,
+      "consume:1": 0,
+      "groupDetect:1": 0,
+      "ignoreNBT:1": 1,
+      "index:3": 0,
+      "partialMatch:1": 1,
+      "requireOnlyOneItem:1": 0,
+      "requiredItems:9": {
+        "0:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:QuantumIncorporationAnchor_GTswn"
+        }
+      },
+      "taskID:8": "bq_standard:retrieval"
+    }
+  }
+}
