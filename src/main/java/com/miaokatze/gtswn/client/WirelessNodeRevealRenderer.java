@@ -87,7 +87,7 @@ public final class WirelessNodeRevealRenderer {
      *
      * @param dimension            显形所在维度（调用方取客户端当前维度）
      * @param serverTotalWorldTime 服务端下发的时间锚点（仅契约保留，不参与过期计算）
-     * @param durationTicks        显形时长（tick，服务端权威 1200t=60s，1t=50ms）
+     * @param durationTicks        显形时长（tick，服务端权威 300t=15s，1t=50ms）
      * @param revealedNodes        入选节点（null 视为空 = 清缓存）
      */
     public static void acceptReveal(int dimension, long serverTotalWorldTime, int durationTicks,

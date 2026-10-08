@@ -11,7 +11,9 @@ import net.minecraftforge.common.MinecraftForge;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.LinkNodeDismantleTriggerHandler;
 import com.miaokatze.gtswn.client.QuantumIncorporationClientHandler;
+import com.miaokatze.gtswn.client.QuantumIncorporationClientState;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
+import com.miaokatze.gtswn.client.QuantumVoxelParticleHandler;
 import com.miaokatze.gtswn.client.RevealTriggerHandler;
 import com.miaokatze.gtswn.client.WirelessNodeRevealRenderer;
 import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
@@ -31,6 +33,7 @@ import com.miaokatze.gtswn.crossmod.nei.NEIGTSWNConfig;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncNodeReveal;
+import com.miaokatze.gtswn.network.PacketSyncQuantumIncorporationState;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
@@ -67,6 +70,16 @@ public class ClientProxy extends CommonProxy {
         QuantumIncorporationClientHandler.requestIncorporation(x, y, z, remove);
     }
 
+    @Override
+    public void handleSyncQuantumIncorporationState(PacketSyncQuantumIncorporationState message) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World receivedWorld = minecraft.theWorld;
+        minecraft.func_152344_a(
+            () -> {
+                if (minecraft.theWorld == receivedWorld) QuantumIncorporationClientState.accept(receivedWorld, message);
+            });
+    }
+
     /**
      * 初始化阶段 (Init)
      * 在此阶段注册客户端特定的事件处理器，如 HUD 渲染器。
@@ -97,11 +110,15 @@ public class ClientProxy extends CommonProxy {
         // 节点显形渲染器（RenderWorldLastEvent 穿墙线框 + WorldEvent.Unload 清缓存）：
         // 包 12 显形回包经 handleSyncNodeReveal 切主线程写缓存后由此绘制
         MinecraftForge.EVENT_BUS.register(new WirelessNodeRevealRenderer());
-        // v1.7.23：Alt+右键即时显形触发器（MouseEvent 按下沿 + Alt 按住 + 手持链路终端 →
-        // 发 disc 11 并取消原版右键；替代 v1.7.20~v1.7.22 的右击空气蓄力路径）
+        // 两个终端共享 Alt+右击空气蓄力，由既有量子手势处理器的 FML Tick 推进。
         MinecraftForge.EVENT_BUS.register(new RevealTriggerHandler());
         QuantumIncorporationClientHandler incorporation = new QuantumIncorporationClientHandler();
         MinecraftForge.EVENT_BUS.register(incorporation);
+        MinecraftForge.EVENT_BUS.register(new QuantumIncorporationClientState());
+        MinecraftForge.EVENT_BUS.register(QuantumVoxelParticleHandler.INSTANCE);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(QuantumVoxelParticleHandler.INSTANCE);
         FMLCommonHandler.instance()
             .bus()
             .register(incorporation);

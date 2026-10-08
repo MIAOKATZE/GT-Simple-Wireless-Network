@@ -48,7 +48,7 @@ import gregtech.common.covers.Cover;
  * <li>AUQ 裁决过滤：按 tap 当前 OutputMode（true=动力）单色，只留对应 type</li>
  * <li>修剪集回传 {@link WirelessNodeRegistry#prune}</li>
  * <li>组 {@link PacketSyncNodeReveal}（服务端 {@code world.getTotalWorldTime()}，
- * durationTicks=1200）回发；入选为空也照发（客户端语义 = 清缓存）</li>
+ * durationTicks=300）回发；入选为空也照发（客户端语义 = 清缓存）</li>
  * </ol>
  */
 public final class NodeRevealRequestQueue {
@@ -79,8 +79,8 @@ public final class NodeRevealRequestQueue {
     /** 单次显形入选上限（防异常大索引下包体暴涨） */
     public static final int REVEAL_LIMIT = 256;
 
-    /** 显形持续时长（tick，60s），服务端权威下发给客户端渲染缓存 */
-    public static final int REVEAL_DURATION_TICKS = 1200;
+    /** 显形持续时长（tick，15s），服务端权威下发给客户端渲染缓存 */
+    public static final int REVEAL_DURATION_TICKS = 300;
 
     private NodeRevealRequestQueue() {}
 

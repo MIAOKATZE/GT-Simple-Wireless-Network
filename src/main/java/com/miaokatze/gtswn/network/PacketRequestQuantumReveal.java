@@ -124,7 +124,8 @@ public class PacketRequestQuantumReveal implements IMessage {
         Collections.sort(nodes, Comparator.comparingDouble(n -> player.getDistanceSq(n.x + 0.5, n.y + 0.5, n.z + 0.5)));
         if (nodes.size() > PacketSyncNodeReveal.MAX_NODES) nodes.subList(PacketSyncNodeReveal.MAX_NODES, nodes.size())
             .clear();
-        GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncNodeReveal(nodes, now, 1200), player);
+        GTSWNPacketHandler.NETWORK
+            .sendTo(new PacketSyncNodeReveal(nodes, now, NodeRevealRequestQueue.REVEAL_DURATION_TICKS), player);
         player.addChatMessage(
             new ChatComponentTranslation(
                 nodes.isEmpty() ? "gtswn.reveal.scan.empty" : "gtswn.reveal.scan.result",

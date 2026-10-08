@@ -5,6 +5,7 @@ import java.util.List;
 
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.EnumAction;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -37,8 +38,7 @@ import gregtech.common.covers.Cover;
  * 一个便携式的无线网络分接设备，允许玩家将任意能量容器连接到GT无线网络。
  * 功能特性：
  * - 右键空气：切换手持模式（能源/动力），更新材质
- * - Alt + 右键按下：即时触发节点显形扫描（客户端 {@code RevealTriggerHandler} 监听
- * MouseEvent 后发包，服务端查询回包，穿墙显示 60 秒；v1.7.23 起替代蓄力路径）
+ * - Alt + 对空气长按右键 1 秒：蓄力扫描节点，穿墙显示 15 秒
  * - 右键能量容器：赋予或取消无线连接状态
  * - Shift + 右键能量容器：切换输入/输出模式
  * - 自动读取目标能量容器的电压等级
@@ -79,9 +79,17 @@ public class WirelessEnergyTap extends Item {
         setHasSubtypes(true);
     }
 
-    /**
-     * 确保 ItemStack 的 NBT 标签已创建
-     */
+    @Override
+    public EnumAction getItemUseAction(ItemStack stack) {
+        return EnumAction.bow;
+    }
+
+    @Override
+    public int getMaxItemUseDuration(ItemStack stack) {
+        return 72000;
+    }
+
+    /** 确保 ItemStack 的 NBT 标签已创建 */
     private void ensureNBT(ItemStack aStack) {
         if (aStack.stackTagCompound == null) {
             aStack.stackTagCompound = new NBTTagCompound();
@@ -536,8 +544,7 @@ public class WirelessEnergyTap extends Item {
      * <p>
      * Shift 分支（切换模式）：行为与原版保持一致——客户端直接 return，服务端 canTrigger 冷却检查
      * 通过后 toggle 模式 + chat 提示。
-     * 非 Shift 分支：无操作（v1.7.23 起节点显形扫描改由客户端 {@code RevealTriggerHandler}
-     * 的 Alt+右键触发，本方法不再承担蓄力路径）。
+     * 非 Shift 分支：无操作；Alt 蓄力由客户端 {@code RevealTriggerHandler} 处理。
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
@@ -561,7 +568,7 @@ public class WirelessEnergyTap extends Item {
             return stack;
         }
 
-        // 非 Shift：无操作（v1.7.23 起 Alt+右键即时扫描由客户端 RevealTriggerHandler 处理）
+        // 非 Shift：无操作；Alt 蓄力由客户端 RevealTriggerHandler 处理。
         return stack;
     }
 

@@ -15,7 +15,7 @@ import io.netty.buffer.ByteBuf;
  * 字段布局：{@code count}（封顶 {@value #MAX_NODES}，读写双侧截断）+ N ×
  * {x(int), y(int), z(int), type(byte：0=能源 / 1=动力，客户端按此着色)} +
  * {@code serverTotalWorldTime}（long，服务端本维世界 tick）+
- * {@code durationTicks}（int，显形时长 1200t=60s）。
+ * {@code durationTicks}（int，显形时长 300t=15s）。
  * <p>
  * <b>count=0（空列表）语义 = 客户端清缓存</b>（无可见节点 / 全被过滤时服务端也照发）。
  * <p>
@@ -42,7 +42,7 @@ public class PacketSyncNodeReveal implements IMessage {
     /** 服务端本维世界 tick（契约保留字段，不参与客户端过期计算——客户端以收包墙钟 + durationTicks×50ms 为锚） */
     private long serverTotalWorldTime;
 
-    /** 显形时长（tick，服务端权威 1200t=60s） */
+    /** 显形时长（tick，服务端权威 300t=15s） */
     private int durationTicks;
 
     /** Forge 反射无参构造（反序列化时必需） */

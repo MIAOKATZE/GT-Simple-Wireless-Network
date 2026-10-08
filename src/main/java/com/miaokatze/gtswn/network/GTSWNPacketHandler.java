@@ -37,7 +37,7 @@ import cpw.mods.fml.relauncher.Side;
  * Handler 仅入队 NodeRevealRequestQueue，ServerTick END 主线程复验手持/存活/冷却后
  * 查询 WirelessNodeRegistry 并按 tap 模式过滤回发）</li>
  * <li>12 = {@link PacketSyncNodeReveal}（S→C 节点显形同步：count 封顶 256 + N×{x,y,z,type} +
- * 服务端本维 world tick + durationTicks=1200；空列表语义=客户端清缓存；
+ * 服务端本维 world tick + durationTicks=300；空列表语义=客户端清缓存；
  * 客户端经 @SidedProxy 切主线程写 WirelessNodeRevealRenderer 缓存）</li>
  * <li>13 = {@link PacketQuantumTerminalSwapBus}（C→S 量子终端「裸部件 cable-bus 原位替换」：
  * x/y/z/命中面；Netty 入队→本类内聚 ServerTickEvent(END) 主线程 drain，校验+迁移+回滚；
@@ -135,6 +135,16 @@ public class GTSWNPacketHandler {
             PacketRequestQuantumReveal.class,
             16,
             Side.SERVER);
+        NETWORK.registerMessage(
+            PacketSyncQuantumIncorporationState.Handler.class,
+            PacketSyncQuantumIncorporationState.class,
+            17,
+            Side.CLIENT);
+        com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync visualSync = new com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync();
+        MinecraftForge.EVENT_BUS.register(visualSync);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(visualSync);
         cpw.mods.fml.common.FMLCommonHandler.instance()
             .bus()
             .register(new PacketQuantumIncorporation.Drain());

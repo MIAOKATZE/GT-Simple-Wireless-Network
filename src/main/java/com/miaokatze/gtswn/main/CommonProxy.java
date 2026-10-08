@@ -42,6 +42,7 @@ import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
 import com.miaokatze.gtswn.network.PacketSyncAEMonitorData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncNodeReveal;
+import com.miaokatze.gtswn.network.PacketSyncQuantumIncorporationState;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 import com.miaokatze.gtswn.network.PanelActionQueue;
@@ -441,6 +442,8 @@ public class CommonProxy {
     public boolean isQuantumIncorporationMode() {
         return false;
     }
+
+    public void handleSyncQuantumIncorporationState(PacketSyncQuantumIncorporationState message) {}
 
     public void handleQuantumIncorporationClick(int x, int y, int z, boolean remove) {}
 

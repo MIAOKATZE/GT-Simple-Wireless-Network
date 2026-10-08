@@ -7,6 +7,7 @@ import net.minecraft.block.Block;
 import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.EnumAction;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -88,6 +89,16 @@ public class ItemNetworkQuantumTerminal extends Item {
     @SideOnly(Side.CLIENT)
     public boolean hasEffect(ItemStack stack, int pass) {
         return GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode() || super.hasEffect(stack, pass);
+    }
+
+    @Override
+    public EnumAction getItemUseAction(ItemStack stack) {
+        return EnumAction.bow;
+    }
+
+    @Override
+    public int getMaxItemUseDuration(ItemStack stack) {
+        return 72000;
     }
 
     // ==================== NBT 键名（规划 §5.1） ====================

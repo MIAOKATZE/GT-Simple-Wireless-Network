@@ -9,7 +9,7 @@ import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.IIcon;
 import net.minecraft.world.IBlockAccess;
-import net.minecraftforge.client.MinecraftForgeClient;
+import net.minecraftforge.client.ForgeHooksClient;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import org.lwjgl.opengl.GL11;
@@ -126,7 +126,8 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
         if (world == null) {
             return false;
         }
-        int pass = MinecraftForgeClient.getRenderPass();
+        // 区块网格使用 world pass；实体 pass 在这里可能尚未设置，Angelica 也分别维护二者。
+        int pass = ForgeHooksClient.getWorldRenderPass();
         if (pass != 0 && pass != 1) {
             return false;
         }

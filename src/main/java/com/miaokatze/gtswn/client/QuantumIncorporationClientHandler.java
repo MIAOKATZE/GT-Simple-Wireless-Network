@@ -8,13 +8,11 @@ import net.minecraftforge.client.event.MouseEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 
 import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketQuantumIncorporation;
-import com.miaokatze.gtswn.network.PacketRequestQuantumReveal;
 
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -22,9 +20,6 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 
 /** Client-only Alt gestures. No world scan: only the pointed block is tested. */
 public final class QuantumIncorporationClientHandler {
-
-    private int heldTicks;
-    private boolean scanArmed;
 
     public static boolean isAltDown() {
         return Keyboard.isCreated()
@@ -48,8 +43,7 @@ public final class QuantumIncorporationClientHandler {
     public void onMouse(MouseEvent event) {
         if (event.button != 1) return;
         if (!event.buttonstate) {
-            scanArmed = false;
-            heldTicks = 0;
+            TerminalRevealCharge.cancel();
             return;
         }
         Minecraft mc = Minecraft.getMinecraft();
@@ -58,11 +52,10 @@ public final class QuantumIncorporationClientHandler {
         MovingObjectPosition hit = mc.objectMouseOver;
         if (hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
             requestIncorporation(hit.blockX, hit.blockY, hit.blockZ, mc.thePlayer.isSneaking());
-            scanArmed = false;
+            TerminalRevealCharge.cancel();
         } else {
             // An entity is not air and cannot start the reveal gesture.
-            scanArmed = hit == null || hit.typeOfHit == MovingObjectPosition.MovingObjectType.MISS;
-            heldTicks = 0;
+            TerminalRevealCharge.start(mc);
         }
     }
 
@@ -77,21 +70,7 @@ public final class QuantumIncorporationClientHandler {
 
     @SubscribeEvent
     public void onTick(TickEvent.ClientTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || !scanArmed) return;
-        Minecraft mc = Minecraft.getMinecraft();
-        MovingObjectPosition hit = mc.objectMouseOver;
-        if (!isAltDown() || !isHoldingTerminal(mc)
-            || !Mouse.isButtonDown(1)
-            || (hit != null && hit.typeOfHit != MovingObjectPosition.MovingObjectType.MISS)) {
-            scanArmed = false;
-            heldTicks = 0;
-            return;
-        }
-        if (++heldTicks >= 20) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestQuantumReveal());
-            scanArmed = false;
-            heldTicks = 0;
-        }
+        if (event.phase == TickEvent.Phase.END) TerminalRevealCharge.tick();
     }
 
     @SubscribeEvent

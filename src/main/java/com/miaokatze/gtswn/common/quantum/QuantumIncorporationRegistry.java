@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.quantum;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -25,6 +26,8 @@ import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.parts.IPartHost;
 import appeng.tile.networking.TileController;
+import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
 /** Original blocks and tile entities remain intact; only an AE grid edge is added. */
 public class QuantumIncorporationRegistry extends WorldSavedData {
@@ -32,6 +35,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     private static final String DATA_NAME = "gtswn_quantum_incorporation";
 
     private final Map<Long, Entry> entries = new HashMap<>();
+    private final Map<Long, Map<Long, Entry>> chunks = new HashMap<>();
     private ArrayList<Entry> maintenanceOrder;
     private int cursor;
     private static long budgetTick = Long.MIN_VALUE;
@@ -50,6 +54,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         if (!world.blockExists(x, y, z)) return false;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (!(tile instanceof IGridHost) || tile instanceof IPartHost || tile instanceof TileController) return false;
+        // GT's base tile implements IGridHost even for machines without any ME capability.
+        // Inspect the actual machine class; querying its proxy on the client can create one.
+        if (tile instanceof IGregTechTileEntity
+            && !(((IGregTechTileEntity) tile).getMetaTileEntity() instanceof IGridHost)) return false;
         Block block = world.getBlock(x, y, z);
         block.setBlockBoundsBasedOnState(world, x, y, z);
         // Full cubes include transparent machines; opaqueCube would reject valid AE machines.
@@ -72,8 +80,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
     /** Called by the AE directional gate; UNKNOWN internal and quantum edges stay untouched. */
     public static boolean blocksPhysicalConnection(IGridNode node) {
-        if (node == null || !(node.getMachine() instanceof TileEntity)) return false;
-        TileEntity tile = (TileEntity) node.getMachine();
+        TileEntity tile = nodeTile(node);
+        if (tile == null) return false;
         World world = tile.getWorldObj();
         if (world == null || world.isRemote) return false;
         Entry entry = get(world).entries.get(QuantumControllerRegistry.pack(tile.xCoord, tile.yCoord, tile.zCoord));
@@ -102,8 +110,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         ((QuantumIncorporationIdentity) tile).gtswn$setIncorporationIdentity(entry.identity);
         tile.markDirty();
         entries.put(key, entry);
+        index(entry);
         maintenanceOrder = null;
         markDirty();
+        QuantumIncorporationVisualSync.changed(world, x, y, z);
         disconnectExternal(tile, null);
         maintain(world, entry);
         return true;
@@ -121,6 +131,26 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
     public Iterable<Entry> snapshot() {
         return new ArrayList<>(entries.values());
+    }
+
+    public Iterable<Entry> snapshotChunk(int chunkX, int chunkZ) {
+        Map<Long, Entry> chunk = chunks.get(chunkKey(chunkX, chunkZ));
+        return chunk == null ? Collections.emptyList() : new ArrayList<>(chunk.values());
+    }
+
+    private static long chunkKey(int chunkX, int chunkZ) {
+        return ((long) chunkX << 32) | (chunkZ & 0xffffffffL);
+    }
+
+    private static long entryChunk(Entry entry) {
+        return chunkKey(
+            QuantumControllerRegistry.unpackX(entry.position) >> 4,
+            QuantumControllerRegistry.unpackZ(entry.position) >> 4);
+    }
+
+    private void index(Entry entry) {
+        chunks.computeIfAbsent(entryChunk(entry), ignored -> new HashMap<>())
+            .put(entry.position, entry);
     }
 
     public void sweep(World world) {
@@ -164,11 +194,18 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     private void forget(World world, Entry entry, boolean restore) {
         entry.disconnect();
         entries.remove(entry.position);
+        long chunkKey = entryChunk(entry);
+        Map<Long, Entry> chunk = chunks.get(chunkKey);
+        if (chunk != null) {
+            chunk.remove(entry.position);
+            if (chunk.isEmpty()) chunks.remove(chunkKey);
+        }
         maintenanceOrder = null;
         markDirty();
         int x = QuantumControllerRegistry.unpackX(entry.position),
             y = QuantumControllerRegistry.unpackY(entry.position),
             z = QuantumControllerRegistry.unpackZ(entry.position);
+        QuantumIncorporationVisualSync.changed(world, x, y, z);
         if (!world.blockExists(x, y, z)) return;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile != null
@@ -185,6 +222,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             z = QuantumControllerRegistry.unpackZ(entry.position);
         TileEntity tile = world.getTileEntity(x, y, z);
         if (!(tile instanceof IGridHost)) return;
+        long isolationTick = world.getTotalWorldTime();
+        if (entry.lastIsolation == Long.MIN_VALUE || isolationTick - entry.lastIsolation >= 20) {
+            disconnectExternal(tile, entry.connection);
+            entry.lastIsolation = isolationTick;
+        }
         WorldServer anchor = DimensionManager.getWorld(entry.dim);
         // Never load worlds or chunks just to keep an incorporated machine connected.
         if (anchor == null || !anchor.blockExists(entry.ax, entry.ay, entry.az)) {
@@ -212,11 +254,6 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             && entry.target == target
             && node.getConnections()
                 .contains(entry.connection)) {
-            long isolationTick = world.getTotalWorldTime();
-            if (isolationTick - entry.lastIsolation >= 20) {
-                disconnectExternal(tile, entry.connection);
-                entry.lastIsolation = isolationTick;
-            }
             return;
         }
         long now = net.minecraft.server.MinecraftServer.getServer()
@@ -254,14 +291,50 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         return result;
     }
 
+    /** AE proxies owned by GT machines expose the MTE, rather than its tile, as their machine. */
+    private static TileEntity nodeTile(IGridNode node) {
+        if (node == null) return null;
+        Object machine = node.getMachine();
+        TileEntity tile;
+        boolean located = false;
+        if (machine instanceof TileEntity) {
+            tile = (TileEntity) machine;
+        } else if (machine instanceof IMetaTileEntity) {
+            IGregTechTileEntity base = ((IMetaTileEntity) machine).getBaseMetaTileEntity();
+            if (!(base instanceof TileEntity) || base.getMetaTileEntity() != machine) return null;
+            tile = (TileEntity) base;
+        } else {
+            // Other proxy owners may locate their tile through the grid block. Coordinates alone
+            // are insufficient: only a node actually exposed by this tile belongs to it.
+            if (node.getGridBlock() == null) return null;
+            appeng.api.util.DimensionalCoord location = node.getGridBlock()
+                .getLocation();
+            World world = location == null ? null : location.getWorld();
+            if (world == null || !world.blockExists(location.x, location.y, location.z)) return null;
+            tile = world.getTileEntity(location.x, location.y, location.z);
+            located = true;
+        }
+        if (tile == null || !(tile instanceof IGridHost)) return null;
+        World world = tile.getWorldObj();
+        if (world == null || world.isRemote
+            || !world.blockExists(tile.xCoord, tile.yCoord, tile.zCoord)
+            || world.getTileEntity(tile.xCoord, tile.yCoord, tile.zCoord) != tile) return null;
+        // A tile or its currently attached MTE proves ownership, including private internal nodes.
+        if (!located) return tile;
+        for (IGridNode owned : nodes((IGridHost) tile)) {
+            if (owned == node) return tile;
+        }
+        return null;
+    }
+
     private static void disconnectExternal(TileEntity tile, IGridConnection preserve) {
         for (IGridNode node : nodes((IGridHost) tile)) {
             ArrayList<IGridConnection> connections = new ArrayList<>();
             for (IGridConnection connection : node.getConnections()) connections.add(connection);
             for (IGridConnection connection : connections) {
                 if (connection != preserve
-                    && (connection.getDirection(node) != ForgeDirection.UNKNOWN || connection.getOtherSide(node)
-                        .getMachine() != tile))
+                    && (connection.getDirection(node) != ForgeDirection.UNKNOWN || connection.getOtherSide(node) == null
+                        || nodeTile(connection.getOtherSide(node)) != tile))
                     connection.destroy();
             }
         }
@@ -274,6 +347,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         entries.clear();
+        chunks.clear();
         maintenanceOrder = null;
         NBTTagList list = tag.getTagList("entries", 10);
         for (int i = 0; i < list.tagCount(); i++) {
@@ -288,7 +362,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             e.ax = n.getInteger("x");
             e.ay = n.getInteger("y");
             e.az = n.getInteger("z");
-            if (!e.identity.isEmpty()) entries.put(e.position, e);
+            if (!e.identity.isEmpty()) {
+                entries.put(e.position, e);
+                index(e);
+            }
         }
     }
 
@@ -319,8 +396,12 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private IGridConnection connection;
         private IGridNode local, target;
         private long nextAttempt;
-        private long lastIsolation;
+        private long lastIsolation = Long.MIN_VALUE;
         private int backoff = 20;
+
+        public String identity() {
+            return identity;
+        }
 
         private void disconnect() {
             if (connection != null) connection.destroy();
