@@ -24,7 +24,7 @@ public class CommandGTSWNClient extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/gtswn <HudXOffset|HudYOffset|HudScale> [value] | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn quality <low|medium|high>";
+        return "/gtswn <HudXOffset|HudYOffset|HudScale> [value] | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn quality <low|medium|high> | /gtswn cover <opacity|depth|relief> <value>";
     }
 
     @Override
@@ -35,7 +35,10 @@ public class CommandGTSWNClient extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCMD_X, SUBCMD_Y, SUBCMD_SCALE, "hud", "quality");
+            return getListOfStringsMatchingLastWord(args, SUBCMD_X, SUBCMD_Y, SUBCMD_SCALE, "hud", "quality", "cover");
+        }
+        if (args.length == 2 && "cover".equalsIgnoreCase(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "opacity", "depth", "relief");
         }
         if (args.length == 2 && "quality".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, "low", "medium", "high");
@@ -51,6 +54,21 @@ public class CommandGTSWNClient extends CommandBase {
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
+        if (args.length > 0 && "cover".equalsIgnoreCase(args[0])) {
+            if (args.length != 3) throw new WrongUsageException("/gtswn cover <opacity|depth|relief> <value>");
+            try {
+                String property = args[1].toLowerCase(java.util.Locale.ROOT);
+                double value = "1/8".equals(args[2]) ? .125
+                    : "1/16".equals(args[2]) ? .0625 : Double.parseDouble(args[2]);
+                boolean saved = Config.setLinkNodeVisual(property, value);
+                sender.addChatMessage(new ChatComponentText("cover " + property + " = " + value));
+                if (!saved) sender.addChatMessage(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.command.quality.save_failed")));
+            } catch (IllegalArgumentException e) {
+                throw new WrongUsageException("opacity: 0.05..1; depth: 1/16 or 1/8; relief: -1..1");
+            }
+            return;
+        }
         if (args.length > 0 && "quality".equalsIgnoreCase(args[0])) {
             processQuality(sender, args);
             return;

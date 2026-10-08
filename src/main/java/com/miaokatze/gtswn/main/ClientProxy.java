@@ -10,6 +10,7 @@ import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.LinkNodeDismantleTriggerHandler;
+import com.miaokatze.gtswn.client.LinkNodeVisualHandler;
 import com.miaokatze.gtswn.client.QuantumIncorporationClientHandler;
 import com.miaokatze.gtswn.client.QuantumIncorporationClientState;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
@@ -116,6 +117,10 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(incorporation);
         MinecraftForge.EVENT_BUS.register(new QuantumIncorporationClientState());
         MinecraftForge.EVENT_BUS.register(QuantumVoxelParticleHandler.INSTANCE);
+        MinecraftForge.EVENT_BUS.register(LinkNodeVisualHandler.INSTANCE);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(LinkNodeVisualHandler.INSTANCE);
         FMLCommonHandler.instance()
             .bus()
             .register(QuantumVoxelParticleHandler.INSTANCE);

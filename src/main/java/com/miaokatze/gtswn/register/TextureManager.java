@@ -34,6 +34,8 @@ public class TextureManager {
         .custom("gtswn:covers/wireless_connector_output");
 
     // 材质缓存表，用于存储已创建的 ITexture 实例以提高性能
+    public static final IIconContainer TEX_LINK_NODE_CLEAR = Textures.BlockIcons.custom("gtswn:covers/link_node_clear");
+
     private static final Map<String, ITexture> textureCache = new HashMap<>();
 
     /**
