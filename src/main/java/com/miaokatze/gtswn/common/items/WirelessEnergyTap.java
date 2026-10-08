@@ -1,6 +1,7 @@
 
 package com.miaokatze.gtswn.common.items;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.creativetab.CreativeTabs;
@@ -11,6 +12,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.IChatComponent;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -19,6 +21,7 @@ import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.covers.WirelessNodeRegistry;
+import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 
@@ -186,13 +189,13 @@ public class WirelessEnergyTap extends Item {
      * Notify player after successful bind: cover binds to machine owner's grid, confirm team shared grid.
      * Shown first MAX_BIND_NOTIFY times, then suppressed. Count stored in tap NBT.
      */
-    private void notifyBindOwner(ItemStack stack, EntityPlayer player) {
+    private void notifyBindOwner(ItemStack stack, List<IChatComponent> messages) {
         ensureNBT(stack);
         int count = stack.stackTagCompound.getInteger(NBT_BIND_NOTIFY_COUNT);
         if (count >= MAX_BIND_NOTIFY) return;
         int remaining = MAX_BIND_NOTIFY - count;
         String msg = String.format(StatCollector.translateToLocal("gtswn.chat.tap.bind_notify"), remaining);
-        player.addChatMessage(new ChatComponentText(msg));
+        messages.add(new ChatComponentText(msg));
         stack.stackTagCompound.setInteger(NBT_BIND_NOTIFY_COUNT, count + 1);
     }
 
@@ -383,32 +386,35 @@ public class WirelessEnergyTap extends Item {
 
                 // 4. 找到刚附着的覆盖板并配置它
                 Cover placedCover = coverable.getCoverAtSide(targetSide);
-                if (placedCover instanceof GTswn_Cover_EnergyWireless) {
-                    // v1.2.1 改进：使用 Math.toIntExact 替代 (int) 强转，溢出时抛出异常暴露问题而非静默截断
-                    // GT 电压/安培实际不会超出 int 范围（MAX 级约 2^30），此处 toIntExact 安全
-                    ((GTswn_Cover_EnergyWireless) placedCover)
-                        .configure(Math.toIntExact(voltage), Math.toIntExact(amperage));
-                    // D3 兜底自愈：placeCover+configure 成功即入册（能源节点，幂等）
-                    WirelessNodeRegistry.get(world)
-                        .register(world, x, y, z, WirelessNodeRegistry.TYPE_ENERGY);
+                if (!(placedCover instanceof GTswn_Cover_EnergyWireless energyCover)) {
+                    player.addChatMessage(
+                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
+                    return;
                 }
+                // v1.2.1 改进：使用 Math.toIntExact 替代 (int) 强转，溢出时抛出异常暴露问题而非静默截断
+                // GT 电压/安培实际不会超出 int 范围（MAX 级约 2^30），此处 toIntExact 安全
+                energyCover.configure(Math.toIntExact(voltage), Math.toIntExact(amperage));
+                // D3 兜底自愈：placeCover+configure 成功即入册（能源节点，幂等）
+                WirelessNodeRegistry.get(world)
+                    .register(world, x, y, z, WirelessNodeRegistry.TYPE_ENERGY);
 
                 // 5. 提示成功
-                player.addChatMessage(
-                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
-                player.addChatMessage(
-                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
-                player.addChatMessage(
+                List<IChatComponent> messages = new ArrayList<>();
+                messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
+                messages
+                    .add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
+                messages.add(
                     new ChatComponentText(
                         StatCollector.translateToLocal("gtswn.chat.tap.voltage_tier") + voltage + " EU/t"));
-                player.addChatMessage(
+                messages.add(
                     new ChatComponentText(
                         StatCollector.translateToLocal("gtswn.chat.tap.amperage_tier") + amperage + " A"));
-                player.addChatMessage(
+                messages.add(
                     new ChatComponentText(
                         StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
                 // 6. 绑定提示(前 MAX_BIND_NOTIFY 次)
-                notifyBindOwner(stack, player);
+                notifyBindOwner(stack, messages);
+                AnimationQualityHints.linkSuccess(player, messages);
             } else {
                 player.addChatMessage(
                     new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
@@ -476,19 +482,23 @@ public class WirelessEnergyTap extends Item {
 
         // 配置覆盖板:无需参数
         Cover placedCover = coverable.getCoverAtSide(targetSide);
-        if (placedCover instanceof GTswn_Cover_DynamoWireless) {
-            ((GTswn_Cover_DynamoWireless) placedCover).configure();
-            // D3 兜底自愈：placeCover+configure 成功即入册（动力节点，幂等）
-            WirelessNodeRegistry.get(world)
-                .register(world, x, y, z, WirelessNodeRegistry.TYPE_DYNAMO);
+        if (!(placedCover instanceof GTswn_Cover_DynamoWireless dynamoCover)) {
+            player.addChatMessage(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
+            return;
         }
+        dynamoCover.configure();
+        // D3 兜底自愈：placeCover+configure 成功即入册（动力节点，幂等）
+        WirelessNodeRegistry.get(world)
+            .register(world, x, y, z, WirelessNodeRegistry.TYPE_DYNAMO);
 
         // 只输出简洁成功信息
-        player.addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
-        player.addChatMessage(
-            new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
+        List<IChatComponent> messages = new ArrayList<>();
+        messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
+        messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
         // 绑定提示(前 MAX_BIND_NOTIFY 次)
-        notifyBindOwner(stack, player);
+        notifyBindOwner(stack, messages);
+        AnimationQualityHints.linkSuccess(player, messages);
     }
 
     /**
