@@ -269,14 +269,14 @@ public class CommonProxy {
             // 注册无线能量覆盖板（输入）-用我们自己的纹理！
             CoverRegistry.registerCover(
                 GTswn_Cover_Energy_Wireless.get(1),
-                TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_INPUT),
+                TextureFactory.of(TextureManager.TEX_LINK_NODE_CLEAR),
                 context -> new GTswn_Cover_EnergyWireless(context),
                 GTSWN_LINK_TERMINAL_PLACER);
 
             // 注册无线动力覆盖板（输出）-用我们自己的纹理！
             CoverRegistry.registerCover(
                 GTswn_Cover_Dynamo_Wireless.get(1),
-                TextureFactory.of(TextureManager.TEX_WIRELESS_CONNECTOR_OUTPUT),
+                TextureFactory.of(TextureManager.TEX_LINK_NODE_CLEAR),
                 context -> new GTswn_Cover_DynamoWireless(context),
                 GTSWN_LINK_TERMINAL_PLACER);
 

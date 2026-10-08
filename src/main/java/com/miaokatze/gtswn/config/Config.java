@@ -39,6 +39,32 @@ public class Config {
 
     private static final String CATEGORY_CLIENT = "client";
     public static String quantumParticleQuality = "high";
+    public static float linkNodeOpacity = .48F;
+    public static double linkNodeDepth = 1 / 8D;
+    public static double linkNodeRelief = .65D;
+
+    public static boolean setLinkNodeVisual(String name, double value) {
+        if (!Double.isFinite(value)) throw new IllegalArgumentException();
+        if ("opacity".equals(name) && value >= .05 && value <= 1) linkNodeOpacity = (float) value;
+        else if ("depth".equals(name) && (value == 1 / 16D || value == 1 / 8D)) linkNodeDepth = value;
+        else if ("relief".equals(name) && value >= -1 && value <= 1) linkNodeRelief = value;
+        else throw new IllegalArgumentException();
+        if (networkConfigFile == null) return false;
+        try {
+            Configuration configuration = new Configuration(networkConfigFile);
+            configuration.get(CATEGORY_CLIENT, "LinkNodeOpacity", .48D)
+                .set((double) linkNodeOpacity);
+            configuration.get(CATEGORY_CLIENT, "LinkNodeDepth", 1 / 8D)
+                .set(linkNodeDepth);
+            configuration.get(CATEGORY_CLIENT, "LinkNodeRelief", .65D)
+                .set(linkNodeRelief);
+            configuration.save();
+            return true;
+        } catch (RuntimeException e) {
+            GTSimpleWirelessNetwork.LOG.error("Could not save link node visuals", e);
+            return false;
+        }
+    }
 
     public static double quantumParticleDensity() {
         return "low".equals(quantumParticleQuality) ? 0D : "medium".equals(quantumParticleQuality) ? .5D : 1D;
@@ -331,6 +357,19 @@ public class Config {
             .toLowerCase(java.util.Locale.ROOT);
         quantumParticleQuality = "low".equals(quality) || "medium".equals(quality) ? quality : "high";
         qualityProperty.set(quantumParticleQuality);
+        linkNodeOpacity = configuration
+            .getFloat("LinkNodeOpacity", CATEGORY_CLIENT, .48F, .05F, 1F, "Transparent link node shell opacity");
+        double configuredDepth = configuration
+            .get(CATEGORY_CLIENT, "LinkNodeDepth", 1 / 8D, "Visual thickness: 0.0625 or 0.125 blocks")
+            .getDouble();
+        linkNodeDepth = configuredDepth == 1 / 16D ? 1 / 16D : 1 / 8D;
+        linkNodeRelief = configuration.getFloat(
+            "LinkNodeRelief",
+            CATEGORY_CLIENT,
+            .65F,
+            -1F,
+            1F,
+            "Honeycomb relief: negative=concave, positive=convex");
 
         // 下行损耗系数 / Downlink loss ratio
         // 能源覆盖板从无线网络取电时，机器收到的 EU 不变，电网按 (1 + 此值) 倍率扣除。
