@@ -96,6 +96,9 @@ final class TerminalOrbitAnimation {
     }
 
     static double[] position(int tick, int period, int particle) {
+        // The normal orbit holds each pose for four ticks; Alt retains a pose every tick.
+        tick = Math.floorMod(tick, period);
+        if (period == 80) tick = tick / 4 * 4;
         double angle = 2 * Math.PI * tick / period + Math.PI * 1.18 + particle * Math.PI;
         return new double[] { 7.5 + 3 * Math.cos(angle), 8.5 + 2 * Math.sin(angle) };
     }
@@ -104,9 +107,9 @@ final class TerminalOrbitAnimation {
         double coverage = 0;
         for (int particle = 0; particle < 2; particle++) {
             double[] center = position(tick, period, particle);
-            // Compact pixel-art light: a solid core, with fractional edge coverage as it crosses pixels.
-            double distance = Math.hypot(x - center[0], y - center[1]);
-            coverage = Math.max(coverage, Math.min(1, Math.max(0, 1.5 - distance)));
+            // A five-pixel cross has a crisp dark rim and a single bright center.
+            int distance = Math.abs(x - (int) Math.round(center[0])) + Math.abs(y - (int) Math.round(center[1]));
+            coverage = Math.max(coverage, distance == 0 ? 1 : distance == 1 ? 0.45 : 0);
         }
         return coverage;
     }
@@ -114,8 +117,8 @@ final class TerminalOrbitAnimation {
     private static int blend(int background, int color, double coverage) {
         int result = background & 0xFF000000;
         for (int shift = 0; shift <= 16; shift += 8) {
-            int channel = (int) Math
-                .round((background >> shift & 255) * (1 - coverage) + (color >> shift & 255) * coverage);
+            int base = color >> shift & 255;
+            int channel = (int) Math.round(coverage == 1 ? base + (255 - base) * 0.2 : base * coverage);
             result |= channel << shift;
         }
         return result;

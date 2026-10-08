@@ -362,13 +362,13 @@ public class WirelessEnergyTap extends Item {
                     return;
                 }
 
-                // 激光仓绑定：消耗 1 根激光真空管（失败终止附着，不扣管）
-                if (laserHatch && !LaserHatchUtil.consumeLaserPipe(player)) {
+                // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
+                if (laserHatch && !player.capabilities.isCreativeMode && !LaserHatchUtil.consumeLaserPipe(player)) {
                     player.addChatMessage(
                         new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
                     return;
                 }
-                if (laserHatch) {
+                if (laserHatch && !player.capabilities.isCreativeMode) {
                     player.addChatMessage(
                         new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
                 }
@@ -451,16 +451,15 @@ public class WirelessEnergyTap extends Item {
             return;
         }
 
-        // 激光仓绑定：消耗 1 根激光真空管（失败终止附着，不扣管）
-        // Laser hatch binding: consumes 1 Laser Vacuum Pipe (abort on missing pipe, no consumption on failure)
+        // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
         IMetaTileEntity mte = (coverable instanceof IGregTechTileEntity igte) ? igte.getMetaTileEntity() : null;
         boolean laserHatch = mte != null && LaserHatchUtil.isLaserHatch(mte);
-        if (laserHatch && !LaserHatchUtil.consumeLaserPipe(player)) {
+        if (laserHatch && !player.capabilities.isCreativeMode && !LaserHatchUtil.consumeLaserPipe(player)) {
             player.addChatMessage(
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
             return;
         }
-        if (laserHatch) {
+        if (laserHatch && !player.capabilities.isCreativeMode) {
             player
                 .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
         }

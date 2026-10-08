@@ -141,6 +141,41 @@ public class QuantumTintedTexturesTest {
         assertEquals(7, loaded.getFrameTimeSingle(1));
     }
 
+    @Test
+    public void twentyFourPixelAnchorLoadsAllFramesWithStableAlphaAndVisiblePulse() throws Exception {
+        ResourceLocation location = new ResourceLocation("gtswn", "textures/items/Quantum_Incorporation_Anchor.png");
+        IResource resource = new ResourceManager(null).getResource(location);
+        BufferedImage image;
+        try (InputStream input = resource.getInputStream()) {
+            image = ImageIO.read(input);
+        }
+        assertEquals(24, image.getWidth());
+        assertEquals(384, image.getHeight());
+        AnimationMetadataSection metadata = (AnimationMetadataSection) resource.getMetadata("animation");
+        assertEquals(2, metadata.getFrameTime());
+        TextureAtlasSprite sprite = new TextureAtlasSprite("anchor_24px") {};
+        BufferedImage[] mipmaps = new BufferedImage[5];
+        mipmaps[0] = image;
+        sprite.loadSprite(mipmaps, metadata, false);
+        assertEquals(24, sprite.getIconWidth());
+        assertEquals(24, sprite.getIconHeight());
+        assertEquals(16, sprite.getFrameCount());
+        for (int frame = 0; frame < 16; frame++) {
+            int[] pixels = sprite.getFrameTextureData(frame)[0];
+            assertEquals(24 * 24, pixels.length);
+            int changed = 0;
+            for (int y = 0; y < 24; y++) {
+                for (int x = 0; x < 24; x++) {
+                    int first = image.getRGB(x, y);
+                    int pixel = pixels[y * 24 + x];
+                    assertEquals(first >>> 24, pixel >>> 24);
+                    if ((first >>> 24) > 0 && pixel != first) changed++;
+                }
+            }
+            if (frame == 8) assertTrue(changed >= 24);
+        }
+    }
+
     static final class ResourceManager implements IResourceManager {
 
         private static final Gson GSON = new GsonBuilder()

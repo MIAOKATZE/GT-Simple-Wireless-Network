@@ -192,10 +192,11 @@ public final class WirelessNodeRevealRenderer {
         // 量子成员统一使用网络调色的暗色；链路节点保留类型色与白色的 500ms 交替。
         if (node.type >= 2) {
             int rgb = com.miaokatze.gtswn.common.quantum.QuantumNetworkColor.rgb(node.colorIndex);
+            float brightness = altColor ? 0.75f : 0.35f;
             GL11.glColor4f(
-                ((rgb >> 16) & 255) / 255.0f * 0.55f,
-                ((rgb >> 8) & 255) / 255.0f * 0.55f,
-                (rgb & 255) / 255.0f * 0.55f,
+                ((rgb >> 16) & 255) / 255.0f * brightness,
+                ((rgb >> 8) & 255) / 255.0f * brightness,
+                (rgb & 255) / 255.0f * brightness,
                 1.0f);
         } else if (altColor) {
             GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);

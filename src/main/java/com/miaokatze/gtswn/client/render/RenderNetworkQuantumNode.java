@@ -80,15 +80,12 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
     };
 
     /** 核心包围盒边界（5/16 ~ 11/16，与 BlockNetworkQuantumNode 构造器中的 setBlockBounds 一致） */
-    private static final double C0 = 0.3125D;
+    private static final double C0 = QuantumNodeGeometry.CORE_MIN;
 
-    private static final double C1 = 0.6875D;
+    private static final double C1 = QuantumNodeGeometry.CORE_MAX;
 
     /** 与选定05预览一致的微倒角，仅改变静态视觉网格，碰撞与射线仍为原核心盒。 */
-    private static final double BEVEL = 0.012D;
-
-    private static final double[][] CORE_RING = { { C0 + BEVEL, C0 }, { C1 - BEVEL, C0 }, { C1, C0 + BEVEL },
-        { C1, C1 - BEVEL }, { C1 - BEVEL, C1 }, { C0 + BEVEL, C1 }, { C0, C1 - BEVEL }, { C0, C0 + BEVEL } };
+    private static final double[][] CORE_RING = QuantumNodeGeometry.CORE_RING;
 
     /**
      * 六向连接臂包围盒 {minX,minY,minZ,maxX,maxY,maxZ}，按 {@link ForgeDirection} ordinal 排列
@@ -96,14 +93,20 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
      */
     private static final double[][] ARM_BOUNDS = {
         // spotless:off
-        { C0, 0.0D, C0, C1, C0,  C1  }, // DOWN
-        { C0, C1,   C0, C1, 1.0D, C1 }, // UP
-        { C0, C0,   0.0D, C1, C1,  C0 }, // NORTH
-        { C0, C0,   C1,   C1, C1, 1.0D }, // SOUTH
-        { 0.0D, C0, C0,   C0, C1,  C1 }, // WEST
-        { C1, C0,   C0, 1.0D, C1,  C1 }, // EAST
+        QuantumNodeGeometry.armBounds(0), // DOWN
+        QuantumNodeGeometry.armBounds(1), // UP
+        QuantumNodeGeometry.armBounds(2), // NORTH
+        QuantumNodeGeometry.armBounds(3), // SOUTH
+        QuantumNodeGeometry.armBounds(4), // WEST
+        QuantumNodeGeometry.armBounds(5), // EAST
         // spotless:on
     };
+
+    /** Immutable joint meshes shared by both render layers, generated once. */
+    private static final double[][][][] CONNECTION_RINGS = { QuantumNodeGeometry.connectionRing(0),
+        QuantumNodeGeometry.connectionRing(1), QuantumNodeGeometry.connectionRing(2),
+        QuantumNodeGeometry.connectionRing(3), QuantumNodeGeometry.connectionRing(4),
+        QuantumNodeGeometry.connectionRing(5) };
 
     /** 申请 renderId 并注册本 ISBRH（仅客户端，由 ClientProxy.init 调用） */
     public static void register() {
@@ -291,6 +294,14 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
     /** 八边截面与预览的 xz 微倒角柱完全一致；UV 仍取原中央 3/8，未拉伸成整张纹理。 */
     private static void renderCore(IIcon icon, double x, double y, double z, int brightness, boolean inventory,
         int connectedArms) {
+        // Keep the exposed core face around each thinner arm, without drawing the internal joint twice.
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
+            if ((connectedArms & (1 << side.ordinal())) != 0) {
+                for (double[][] face : CONNECTION_RINGS[side.ordinal()]) {
+                    coreFace(icon, x, y, z, brightness, inventory, side.offsetX, side.offsetY, side.offsetZ, face);
+                }
+            }
+        }
         for (int i = 0; i < CORE_RING.length; i++) {
             double[] a = CORE_RING[i];
             double[] b = CORE_RING[(i + 1) % CORE_RING.length];

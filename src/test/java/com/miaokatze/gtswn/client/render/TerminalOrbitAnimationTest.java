@@ -78,16 +78,68 @@ public class TerminalOrbitAnimationTest {
     }
 
     @Test
-    public void orbitsAreOpposedAndAdvanceUniformlyAcrossLoopSeam() {
+    public void orbitsAreOpposedAndHoldNormalPosesAcrossLoopSeam() {
         for (int period : new int[] { 80, 16 }) {
-            double expected = 2 * Math.sin(Math.PI / period);
             for (int tick = 0; tick < period; tick++) {
                 double[] first = TerminalOrbitAnimation.position(tick, period, 0);
                 double[] second = TerminalOrbitAnimation.position(tick, period, 1);
                 double[] next = TerminalOrbitAnimation.position((tick + 1) % period, period, 0);
                 assertEquals(15, first[0] + second[0], 1e-12);
                 assertEquals(17, first[1] + second[1], 1e-12);
-                assertEquals(expected, Math.hypot((next[0] - first[0]) / 3, (next[1] - first[1]) / 2), 1e-12);
+                double step = Math.hypot((next[0] - first[0]) / 3, (next[1] - first[1]) / 2);
+                if (period == 80 && tick % 4 != 3) assertEquals(0, step, 0);
+                else assertTrue(step > 0.2);
+            }
+            org.junit.Assert.assertArrayEquals(
+                TerminalOrbitAnimation.position(0, period, 0),
+                TerminalOrbitAnimation.position(period, period, 0),
+                0);
+        }
+    }
+
+    @Test
+    public void realSpritesHaveCrispCompactParticlesAndNormalPausesWhileAltAdvances() throws Exception {
+        QuantumTintedTexturesTest.ResourceManager resources = new QuantumTintedTexturesTest.ResourceManager(null);
+        for (String name : new String[] { "ME_Network_Quantum_Terminal", "ME_Network_Quantum_Terminal_Alt" }) {
+            ResourceLocation location = new ResourceLocation("gtswn", "textures/items/" + name + ".png");
+            QuantumTintedTextures.ColorSprite[] sprites = new QuantumTintedTextures.ColorSprite[2];
+            for (int color = 0; color < sprites.length; color++) {
+                sprites[color] = new QuantumTintedTextures.ColorSprite(
+                    "test_crisp_" + name + color,
+                    "gtswn:" + name,
+                    "items",
+                    color,
+                    true,
+                    null);
+                assertFalse(sprites[color].load(resources, location));
+            }
+            boolean normal = name.endsWith("Terminal");
+            int period = normal ? 80 : 16;
+            for (int tick = 0; tick < period; tick++) {
+                int[] purple = sprites[0].getFrameTextureData(tick)[0];
+                int[] white = sprites[1].getFrameTextureData(tick)[0];
+                int changed = 0, brightCenters = 0;
+                boolean moved = false;
+                int[] next = sprites[0].getFrameTextureData((tick + 1) % period)[0];
+                int[] nextWhite = sprites[1].getFrameTextureData((tick + 1) % period)[0];
+                for (int y = 5; y <= 12; y++) {
+                    for (int x = 3; x <= 12; x++) {
+                        int index = y * 16 + x;
+                        if (purple[index] != white[index]) {
+                            changed++;
+                            // Solid colors give every particle a bright center and an unblended dark rim.
+                            int blue = purple[index] & 255;
+                            assertTrue(blue == 255 || blue == 115);
+                            if (blue == 255) brightCenters++;
+                        }
+                        // Compare the two tint masks, since the source screen keeps its own animation timing.
+                        moved |= (purple[index] != white[index]) != (next[index] != nextWhite[index]);
+                    }
+                }
+                assertEquals(10, changed);
+                assertEquals(2, brightCenters);
+                if (normal && tick % 4 != 3) assertFalse(moved);
+                if (!normal) assertTrue(moved);
             }
         }
     }
