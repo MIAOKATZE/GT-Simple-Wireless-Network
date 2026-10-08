@@ -443,6 +443,8 @@ public class CommonProxy {
         // 服务端空实现：此包只发往客户端
     }
 
+    public void handleLinkNodeInstalled(com.miaokatze.gtswn.network.PacketLinkNodeInstalled msg) {}
+
     public boolean isQuantumIncorporationMode() {
         return false;
     }

@@ -9,15 +9,25 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.world.World;
 
+import com.cleanroommc.modularui.api.drawable.IKey;
+import com.cleanroommc.modularui.value.sync.DoubleSyncValue;
+import com.cleanroommc.modularui.value.sync.LongSyncValue;
+import com.cleanroommc.modularui.value.sync.PanelSyncManager;
+import com.cleanroommc.modularui.widgets.layout.Flow;
+import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
+import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
+import com.miaokatze.gtswn.network.PacketLinkNodeInstalled;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.relauncher.Side;
 import gregtech.api.covers.CoverContext;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
+import gregtech.api.modularui2.CoverGuiData;
 import gregtech.common.covers.Cover;
+import gregtech.common.gui.modularui.cover.base.CoverBaseGui;
 
 /**
  * 无线链路节点覆盖板抽象基类
@@ -49,6 +59,9 @@ public abstract class GTswnCoverWirelessBase extends Cover {
 
     /** 是否已配置 / Whether the cover has been configured */
     protected boolean configured = false;
+
+    /** Installation events are transient and are never restored from NBT. */
+    private transient boolean installationBroadcast;
 
     /**
      * v1.7.21 节点显形修复（旧世界空索引自愈）：构造即挂起延迟注册。
@@ -145,6 +158,136 @@ public abstract class GTswnCoverWirelessBase extends Cover {
         return true;
     }
 
+    public abstract double getAmperage();
+
+    /** Server-side validation is mandatory because the GUI value allows client updates. */
+    public abstract void setAmperage(double value);
+
+    protected abstract long getDisplayVoltage();
+
+    protected abstract long getDisplayCapacity();
+
+    protected abstract long getRemainingTicks();
+
+    @Override
+    protected com.gtnewhorizons.modularui.api.screen.ModularWindow createWindow(
+        gregtech.api.gui.modularui.CoverUIBuildContext context) {
+        return new gregtech.common.gui.mui1.cover.CoverUIFactory<GTswnCoverWirelessBase>(context) {
+
+            @Override
+            protected GTswnCoverWirelessBase adaptCover(Cover candidate) {
+                return candidate instanceof GTswnCoverWirelessBase wireless ? wireless : null;
+            }
+
+            @Override
+            protected int getGUIWidth() {
+                return 260;
+            }
+
+            @Override
+            protected int getGUIHeight() {
+                return 145;
+            }
+
+            @Override
+            protected boolean doesBindPlayerInventory() {
+                return false;
+            }
+
+            @Override
+            protected void addUIWidgets(com.gtnewhorizons.modularui.api.screen.ModularWindow.Builder builder) {
+                builder.widget(
+                    new com.gtnewhorizons.modularui.common.widget.TextWidget(
+                        net.minecraft.util.StatCollector.translateToLocal("gtswn.gui.cover.current")).setPos(10, 28));
+                builder.widget(
+                    new com.gtnewhorizons.modularui.common.widget.textfield.NumericWidget()
+                        .setGetter(() -> getCover() == null ? 0.1 : getCover().getAmperage())
+                        .setSetter(value -> ifCoverValid(cover -> cover.setAmperage(value)))
+                        .setBounds(0.1, Double.MAX_VALUE)
+                        .setValidator(value -> CoverMaths.validAmperage(value) ? value : 0.1)
+                        .setScrollValues(0.1, 1, 10)
+                        .setFocusOnGuiOpen(true)
+                        .setPos(130, 25)
+                        .setSize(110, 14));
+                addReadOnly(builder, "gtswn.gui.cover.voltage", cover -> cover.getDisplayVoltage(), " EU/t", 48);
+                addReadOnly(builder, "gtswn.gui.cover.capacity", cover -> cover.getDisplayCapacity(), " EU", 66);
+                addReadOnly(builder, "gtswn.gui.cover.stored", cover -> cover.storedEU, " EU", 84);
+                addReadOnly(builder, "gtswn.gui.cover.next", cover -> cover.getRemainingTicks(), " ticks", 102);
+            }
+
+            private void addReadOnly(com.gtnewhorizons.modularui.api.screen.ModularWindow.Builder builder, String label,
+                java.util.function.ToLongFunction<GTswnCoverWirelessBase> getter, String unit, int y) {
+                builder.widget(
+                    com.gtnewhorizons.modularui.common.widget.TextWidget
+                        .dynamicString(
+                            getCoverString(
+                                cover -> net.minecraft.util.StatCollector.translateToLocal(label) + " "
+                                    + getter.applyAsLong(cover)
+                                    + unit))
+                        .setPos(10, y));
+            }
+        }.createWindow();
+    }
+
+    @Override
+    protected CoverBaseGui<?> getCoverGui() {
+        return new CoverBaseGui<GTswnCoverWirelessBase>(this) {
+
+            @Override
+            protected String getGuiId() {
+                return "cover.gtswn_wireless";
+            }
+
+            @Override
+            public void addUIWidgets(PanelSyncManager syncManager, Flow column, CoverGuiData data) {
+                column.child(
+                    Flow.row()
+                        .coverChildren()
+                        .childPadding(4)
+                        .child(
+                            IKey.lang("gtswn.gui.cover.current")
+                                .asWidget())
+                        .child(
+                            new TextFieldWidget().size(100, 16)
+                                .numbersDouble(
+                                    value -> CoverMaths.validAmperage(value) ? value : CoverMaths.MIN_AMPERAGE)
+                                .value(new DoubleSyncValue(cover::getAmperage, cover::setAmperage).allowC2S())
+                                .setFocusOnGuiOpen(true)));
+                column.child(
+                    IKey.lang("gtswn.gui.cover.current_hint")
+                        .asWidget());
+                addReadOnly(
+                    syncManager,
+                    column,
+                    "voltage",
+                    "gtswn.gui.cover.voltage",
+                    cover::getDisplayVoltage,
+                    " EU/t");
+                addReadOnly(
+                    syncManager,
+                    column,
+                    "capacity",
+                    "gtswn.gui.cover.capacity",
+                    cover::getDisplayCapacity,
+                    " EU");
+                addReadOnly(syncManager, column, "stored", "gtswn.gui.cover.stored", () -> cover.storedEU, " EU");
+                addReadOnly(syncManager, column, "next", "gtswn.gui.cover.next", cover::getRemainingTicks, " ticks");
+            }
+
+            private void addReadOnly(PanelSyncManager syncManager, Flow column, String id, String label,
+                java.util.function.LongSupplier getter, String unit) {
+                LongSyncValue value = new LongSyncValue(getter);
+                syncManager.syncValue(id, value);
+                column.child(
+                    IKey.dynamic(
+                        () -> net.minecraft.util.StatCollector.translateToLocal(label) + " "
+                            + value.getLongValue()
+                            + unit)
+                        .asWidget());
+            }
+        };
+    }
+
     /**
      * 从机器获取拥有者 UUID
      * <p>
@@ -179,7 +322,7 @@ public abstract class GTswnCoverWirelessBase extends Cover {
             ICoverable tileEntity = coveredTile.get();
             UUID owner = getOwner(tileEntity);
             if (owner != null) {
-                long actualAdded = (long) (this.storedEU * (1.0 - Config.uplinkLossEU));
+                long actualAdded = CoverMaths.afterUplinkLoss(this.storedEU, Config.uplinkLossEU);
                 if (actualAdded > 0) {
                     addEUToGlobalEnergyMap(owner, actualAdded);
                 }
@@ -238,6 +381,11 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     @Override
     public void onPlayerAttach(EntityPlayer player, ItemStack coverItem) {
         registerIntoNodeIndex();
+        ICoverable host = coveredTile.get();
+        if (!installationBroadcast && host != null && host.getWorld() != null && !host.getWorld().isRemote) {
+            installationBroadcast = true;
+            PacketLinkNodeInstalled.broadcast(host, getSide(), this instanceof GTswn_Cover_EnergyWireless);
+        }
     }
 
     /**

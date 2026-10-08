@@ -37,18 +37,93 @@ Place the release jar in both client and server `mods/`, replacing the old versi
 
 ***
 
-## 无线能量监视器 / Wireless Energy Monitor
+## 无线网络链路终端与覆盖板 / Wireless Energy Tap & Covers
 
-<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" alt="无线能量监视器（中文界面） / Wireless Energy Monitor (CN interface)" width="700"><br><img src="images/Wireless_Energy_Monitor_EN.png" alt="无线能量监视器（英文界面） / Wireless Energy Monitor (EN interface)" width="700"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
+<p align="center"><img src="images/Wireless_Link_Nodes_Showcase.png" alt="无线网络链路终端与覆盖板 / Wireless Energy Tap and Covers" width="800"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
 
-**无线能量监视器 / Wireless Energy Monitor** — 单方块机器，实时显示无线电网能量状态（每五秒），具备高级红石控制（可以以电网容量或者电网状态为指标）。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。其还可以连接工业信息屏。
+### 无线网络链路终端 / Wireless Energy Tap
 
-A single-block machine that displays real-time (per 5 seconds) wireless network energy status with advanced redstone control (can be measured by the wireless capacity or the wireless status). Supports 5 redstone modes (Off/High/Low/High-Hysteresis/Low-Hysteresis) with parametric threshold settings. Dynamic texture switching reflects redstone output state. It can also be connected to the Industrial Information Panel.
+便携物品，将任意机器连接到跨维度共享的无线 EU 网络，链路节点支持跨维度供电与回传。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。绑定激光源仓/靶仓时需消耗 1 根激光真空管。
 
-- **显示模式 / Display Modes**: 常规计数 / 科学计数（Normal counting (1,234,567 EU) / Scientific notation (1.235×10^6 EU)）
-- **智能 EU/t / Smart EU/t**: 实时变化率，GT 风格安培数 + 电压等级显示（如 "2A HV"）/ Real-time change rate with GT-style amperage + voltage tier display (e.g., "2A HV")
+A portable item that connects any machine to the wireless EU network shared across dimensions. Link nodes support cross-dimension energy delivery and return. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
 
-<p align="center"><img src="images/Wireless_Energy_Monitor_UI_CN.png" alt="无线能量监视器界面（中文） / Wireless Energy Monitor UI (CN)" width="400"><br><img src="images/Wireless_Energy_Monitor_UI_EN.png" alt="无线能量监视器界面（英文） / Wireless Energy Monitor UI (EN)" width="400"><br><em>中文界面 (up) & English interface (down)</em></p>
+- **显形 / Reveal**：手持终端 Alt+右键，穿墙显示附近链路节点 60 秒，聊天框报告数量 / Alt+right-click reveals nearby link nodes through walls for 60 seconds and reports the count.
+- **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
+
+<p align="center"><img src="images/Wireless_Tap_Grid_Energy.png" alt="能源模式九宫格辅助线 / Grid highlight (Energy mode)" width="300"><img src="images/Wireless_Tap_Grid_Power.png" alt="动力模式九宫格辅助线 / Grid highlight (Power mode)" width="300"><br><em>九宫格辅助线 / Grid Highlight</em></p>
+
+### 链路节点 / Link Nodes
+
+右击机器自动安装对应覆盖板，无需单独合成。裸覆盖板没有配置不能工作；机器仍需保持区块加载。能源模式持续从缓存向机器供电，动力模式收集发电机输出并回传电网，覆盖板所在面不再向真实导线重复输出。
+
+Right-click a machine to install the appropriate cover; no separate recipe is needed. Bare covers without configuration do not work, and machine chunks must remain loaded. Energy mode powers the machine from its buffer; Power mode collects generator output and returns it to the grid, blocking duplicate cable output on the covered face.
+
+- **电流设置 / Current setting**：Shift+右击覆盖板打开界面，只允许编辑电流（A），最小为 0.1 A；其余参数只读 / Shift+right-click a cover to open its GUI. Only amperage (A) is editable, with a minimum of 0.1 A; all other settings are read-only.
+- **安装动画 / Installation animation**：新安装的覆盖板会由内向外逐渐显现蜂窝，动画结束后才开始显示粒子效果；Low、Medium、High 三档均有渐显动画，后续粒子遵循当前画质设置 / Newly installed covers reveal their honeycomb from the center outward before particles start. Low, Medium and High all include this reveal; subsequent particles follow the selected quality setting.
+- **损耗与周期 / Loss and interval**：默认每 600 tick（30 秒）与电网交互，下行损耗 15%、上行 0%；可在 `gtswn_network.cfg` 配置。拆除覆盖板时剩余缓存按上行损耗返还 / Grid interaction defaults to every 600 ticks (30 seconds), with 15% downlink loss and 0% uplink loss. Configure these in `gtswn_network.cfg`; removing a cover returns its remaining buffer with uplink loss.
+- **拆机 / Dismantling**：扳手左键配合 Shift 拆除全部覆盖板；配合 Alt 静默清除链路节点，其他覆盖板保持原行为。链路节点不掉落物品，剩余电量回到电网 / Wrench-left-click with Shift removes all covers; with Alt silently clears link nodes while other covers retain their usual behavior. Link nodes leave no item drops and return their remaining energy to the grid.
+- **配置复制 / Copying settings**：`AllowCopyPasteTool` 默认关闭；开启后 GT 覆盖板工具、物质操纵者等可复制节点配置 / `AllowCopyPasteTool` is off by default; enable it to copy node settings with GT cover tools or MatterManipulator.
+
+***
+
+## ME 网络量子终端与节点 / ME Network Quantum Terminal & Node
+
+<p align="center"><img src="images/ME_Network_Quantum_Node.png" alt="不同颜色的量子网络、量子节点与设备并入场景 / Colored quantum networks, nodes and incorporated devices" width="800"><br><em>量子节点与量子并入：多网络调色展示 / Quantum Nodes and incorporation: multiple network colors</em></p>
+
+为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
+
+The Quantum Terminal binds a formed ME controller structure. Quantum Nodes connect distant AE2 devices to that network, bypassing cable distance limits.
+
+量子终端可通过 LV 级工作台配方合成（福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1）；量子节点无独立配方——已绑定终端右击空地放置，Shift+右击销毁（无掉落）。
+
+Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emitter ×4 + ME Controller ×1); the Quantum Node has no recipe — place it with a bound terminal by right-clicking ground, and destroy it with shift+right-click (no drops).
+
+### 量子终端 / Quantum Terminal
+
+| 手势 / Gesture | 行为 / Behavior |
+|---|---|
+| 右击控制器 / Right-click controller | 量子化并绑定整结构（已量子化则改绑）/ Quantize & bind the entire structure (rebinds if already quantized) |
+| Shift+右击控制器 / Shift+right-click controller | 取消量子化并解绑 / Dequantize & unbind |
+| 右击空地（已绑定）/ Right-click ground (bound) | 放置量子节点 / Place a Quantum Node |
+| Shift+右击节点 / Shift+right-click node | 销毁节点（无掉落）/ Destroy the node (no drops) |
+| Shift+右击空气 / Shift+right-click air | 打开终端界面 / Open terminal GUI |
+| Alt+右击完整 AE 方块 / Alt+right-click a full AE block | 消耗一个量子并入锚点接入已绑定网络；再次操作解除并入 / Consume one Quantum Incorporation Anchor to join the bound network; repeat to remove incorporation |
+| Alt+对空气长按右键 1 秒 / Hold Alt+right-click air for 1 second | 显形附近已加载区块中的当前网络 15 秒；同一终端、维度与网络在显形期间再次操作可显形附近全部量子网络 / Reveal the current network in nearby loaded chunks for 15 seconds; repeat during the reveal with the same terminal, dimension and network to reveal all nearby quantum networks |
+
+终端界面提供 16 色调色，颜色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
+
+The terminal GUI offers 16 network colors, synchronized across the quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close.
+
+### 量子节点 / Quantum Node
+
+- **远程桥接 / Remote Bridge**: 经虚拟桥接接入锚点控制器 ME 网络，相邻 AE2 设备直接入网。/ Bridges into the anchored controller's ME grid via a virtual connection; adjacent AE2 devices join the network directly.
+- **连接容量 / Connection Capacity**: 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。/ Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels.
+- **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认实际扣除 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default actual draw: 10.0 AE/t).
+- **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
+
+### 量子并入与锚点 / Quantum Incorporation & Anchor
+
+已绑定的量子终端可将完整 AE 方块和支持 ME 网络的 GT 仓室直接并入网络。每次成功并入消耗一个**量子并入锚点**，再次 Alt+右击解除并入；AE 线缆、总线等部件及控制器不适用。设备保留原方块、功能与库存。
+
+A bound Quantum Terminal can incorporate full AE blocks and ME-capable GT hatches directly into its network. Each successful incorporation consumes one **Quantum Incorporation Anchor**; Alt+right-click again to remove it. AE cable/bus parts and controllers are excluded. Devices keep their original block, functions and inventory.
+
+- **合成 / Crafting**：LV 组装机每批产出 16 个锚点：基础涂层电路板 ×1、LV 发射器 ×1、LV 传感器 ×1、钢板 ×2、末影珍珠 ×1、细铜线 ×4。/ An LV assembler produces 16 anchors per batch from Basic Coated Circuit Board ×1, LV Emitter ×1, LV Sensor ×1, Steel Plate ×2, Ender Pearl ×1 and Fine Copper Wire ×4.
+- **隔离与强化 / Isolation & Protection**：并入设备阻断物理 AE 连接，避免相邻网络串网，并获得挖掘与爆炸防护；先解除并入再拆除。/ Incorporated devices block physical AE connections to prevent adjacent networks from merging, and resist mining and explosions. Remove incorporation before dismantling.
+- **额外耗电 / Additional Power**：每个有效并入连接默认额外实际扣除 **50 AE/t**，由 `config/gtswn/gtswn_ae.cfg` 的 `quantumIncorporationIdlePowerUsage` 配置，重启应用。这 50 AE/t 不含设备原生功耗与频道耗电，两者仍由 AE 独立计算；解除并入、连接失效或区块卸载后释放附加功耗。缺电不会免除耗电需求。/ Each valid incorporation connection adds an actual **50 AE/t** by default, configured by `quantumIncorporationIdlePowerUsage` in `config/gtswn/gtswn_ae.cfg` and applied after restart. This excludes native device and channel power, which AE calculates independently. Removing incorporation, invalidating the connection or unloading the chunk releases the surcharge. An unpowered grid retains the demand.
+
+节点与并入附加费抵消 AE 配置的耗电倍率，实际分别扣除 10 和额外 50 AE/t；原设备及频道的原生倍率计费保持不变。/ The node draw and incorporation surcharge compensate for AE's configured power multiplier, drawing 10 and an additional 50 AE/t respectively. Native device and channel power still use AE's normal multiplier.
+
+### 过载保护 / Overload Protection
+
+量子节点带入的频道超过控制器容量时，启动 **3 分钟宽限倒计时**；期间频道恢复即取消，否则到期后控制器结构会 **爆炸**。达到 95% 容量时聊天警告。AE2 开启无限频道时无此限制。
+
+Exceeding controller channel capacity starts a **3-minute grace countdown**. Restoring capacity cancels it; otherwise the controller structure **explodes** at expiry. A chat warning appears at 95% capacity. This limit does not apply with AE2 infinite channels enabled.
+
+### 量子化控制器强化 / Hardened Controller
+
+量子化控制器难以挖掘且有防爆强化；用终端 Shift+右击取消量子化后再拆除。
+
+Quantized controllers resist mining and explosions. Sneak-right-click with the terminal to dequantize before dismantling.
 
 ***
 
@@ -63,6 +138,21 @@ Carry it in inventory or any Baubles slot for a wireless grid HUD, without placi
 - **拆卸与查看 / Remove and inspect**：带电池终端 + GT5U 撬棍无序合成，可取回保留余量的电池；NEI 提供小型锂电池安装与拆卸两条示例。电量使用 GT/IC2 原生 Tooltip 与电量条显示；充电更新避免打断手持工具操作 / Shapeless-craft a battery-equipped terminal + GT5U crowbar to recover the charged battery. NEI shows two small lithium battery examples: installation and removal. Native GT/IC2 energy tooltips and charge bars show the buffer; charge updates preserve held-tool use.
 
 <p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" alt="便携监测终端 HUD：科学计数模式—充电状态 / Portable monitor HUD: scientific notation — charging" width="400"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" alt="便携监测终端 HUD：科学计数模式—放电状态 / Portable monitor HUD: scientific notation — discharging" width="400"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
+
+***
+
+## 无线能量监视器 / Wireless Energy Monitor
+
+<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" alt="无线能量监视器（中文界面） / Wireless Energy Monitor (CN interface)" width="700"><br><img src="images/Wireless_Energy_Monitor_EN.png" alt="无线能量监视器（英文界面） / Wireless Energy Monitor (EN interface)" width="700"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
+
+**无线能量监视器 / Wireless Energy Monitor** — 单方块机器，实时显示无线电网能量状态（每五秒），具备高级红石控制（可以以电网容量或者电网状态为指标）。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。其还可以连接工业信息屏。
+
+A single-block machine that displays real-time (per 5 seconds) wireless network energy status with advanced redstone control (can be measured by the wireless capacity or the wireless status). Supports 5 redstone modes (Off/High/Low/High-Hysteresis/Low-Hysteresis) with parametric threshold settings. Dynamic texture switching reflects redstone output state. It can also be connected to the Industrial Information Panel.
+
+- **显示模式 / Display Modes**: 常规计数 / 科学计数（Normal counting (1,234,567 EU) / Scientific notation (1.235×10^6 EU)）
+- **智能 EU/t / Smart EU/t**: 实时变化率，GT 风格安培数 + 电压等级显示（如 "2A HV"）/ Real-time change rate with GT-style amperage + voltage tier display (e.g., "2A HV")
+
+<p align="center"><img src="images/Wireless_Energy_Monitor_UI_CN.png" alt="无线能量监视器界面（中文） / Wireless Energy Monitor UI (CN)" width="400"><br><img src="images/Wireless_Energy_Monitor_UI_EN.png" alt="无线能量监视器界面（英文） / Wireless Energy Monitor UI (EN)" width="400"><br><em>中文界面 (up) & English interface (down)</em></p>
 
 ***
 
@@ -137,96 +227,6 @@ The Wireless Energy Monitor features a 5-mode redstone control system:
 监视器与便携终端显示电网储量、瞬时变化率和窗口平均变化率。默认平均窗口为 300 秒；接近零时显示 `<1EU`、静默或长期静默。它反映电网净变化，不代表单台机器的功率。
 
 Monitors and portable terminals show grid energy, instantaneous rate and window-average rate (300 seconds by default). Near-zero readings display `<1EU`, Silent or Long-Term Silent. These describe net grid change, rather than an individual machine’s power.
-
-***
-
-## 无线网络链路终端与覆盖板 / Wireless Energy Tap & Covers
-
-<p align="center"><img src="images/README-Portable_Wireless_Network_Tap.jpg" alt="无线网络链路终端与覆盖板 / Wireless Energy Tap and Covers" width="400"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
-
-### 无线网络链路终端 / Wireless Energy Tap
-
-便携物品，将任意机器连接到跨维度共享的无线 EU 网络，链路节点支持跨维度供电与回传。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。绑定激光源仓/靶仓时需消耗 1 根激光真空管。
-
-A portable item that connects any machine to the wireless EU network shared across dimensions. Link nodes support cross-dimension energy delivery and return. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
-
-- **显形 / Reveal**：手持终端 Alt+右键，穿墙显示附近链路节点 60 秒，聊天框报告数量 / Alt+right-click reveals nearby link nodes through walls for 60 seconds and reports the count.
-- **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
-
-<p align="center"><img src="images/Portable_Wireless_Network_Tap_E.png" alt="能源模式九宫格辅助线 / Grid highlight (Energy mode)" width="200"><img src="images/Portable_Wireless_Network_Tap_P.png" alt="动力模式九宫格辅助线 / Grid highlight (Power mode)" width="200"><br><em>九宫格辅助线 / Grid Highlight</em></p>
-
-### 链路节点 / Link Nodes
-
-右击机器自动安装对应覆盖板，无需单独合成。裸覆盖板没有配置不能工作；机器仍需保持区块加载。能源模式持续从缓存向机器供电，动力模式收集发电机输出并回传电网，覆盖板所在面不再向真实导线重复输出。
-
-Right-click a machine to install the appropriate cover; no separate recipe is needed. Bare covers without configuration do not work, and machine chunks must remain loaded. Energy mode powers the machine from its buffer; Power mode collects generator output and returns it to the grid, blocking duplicate cable output on the covered face.
-
-- **损耗与周期 / Loss and interval**：默认每 600 tick（30 秒）与电网交互，下行损耗 15%、上行 0%；可在 `gtswn_network.cfg` 配置。拆除覆盖板时剩余缓存按上行损耗返还 / Grid interaction defaults to every 600 ticks (30 seconds), with 15% downlink loss and 0% uplink loss. Configure these in `gtswn_network.cfg`; removing a cover returns its remaining buffer with uplink loss.
-- **拆机 / Dismantling**：扳手左键配合 Shift 拆除全部覆盖板；配合 Alt 静默清除链路节点，其他覆盖板保持原行为。链路节点不掉落物品，剩余电量回到电网 / Wrench-left-click with Shift removes all covers; with Alt silently clears link nodes while other covers retain their usual behavior. Link nodes leave no item drops and return their remaining energy to the grid.
-- **配置复制 / Copying settings**：`AllowCopyPasteTool` 默认关闭；开启后 GT 覆盖板工具、物质操纵者等可复制节点配置 / `AllowCopyPasteTool` is off by default; enable it to copy node settings with GT cover tools or MatterManipulator.
-
-***
-
-## ME 网络量子终端与节点 / ME Network Quantum Terminal & Node
-
-<p align="center"><img src="images/ME_Network_Quantum_Terminal.png" alt="ME 网络量子终端 / ME Network Quantum Terminal" width="180"><br><em>ME 网络量子终端 / ME Network Quantum Terminal</em></p>
-
-<p align="center"><img src="images/ME_Network_Quantum_Node.png" alt="不同颜色的量子网络、量子节点与设备并入场景 / Colored quantum networks, nodes and incorporated devices" width="800"><br><em>量子节点与量子并入：多网络调色展示 / Quantum Nodes and incorporation: multiple network colors</em></p>
-
-为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
-
-The Quantum Terminal binds a formed ME controller structure. Quantum Nodes connect distant AE2 devices to that network, bypassing cable distance limits.
-
-量子终端可通过 LV 级工作台配方合成（福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1）；量子节点无独立配方——已绑定终端右击空地放置，Shift+右击销毁（无掉落）。
-
-Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emitter ×4 + ME Controller ×1); the Quantum Node has no recipe — place it with a bound terminal by right-clicking ground, and destroy it with shift+right-click (no drops).
-
-### 量子终端 / Quantum Terminal
-
-| 手势 / Gesture | 行为 / Behavior |
-|---|---|
-| 右击控制器 / Right-click controller | 量子化并绑定整结构（已量子化则改绑）/ Quantize & bind the entire structure (rebinds if already quantized) |
-| Shift+右击控制器 / Shift+right-click controller | 取消量子化并解绑 / Dequantize & unbind |
-| 右击空地（已绑定）/ Right-click ground (bound) | 放置量子节点 / Place a Quantum Node |
-| Shift+右击节点 / Shift+right-click node | 销毁节点（无掉落）/ Destroy the node (no drops) |
-| Shift+右击空气 / Shift+right-click air | 打开终端界面 / Open terminal GUI |
-| Alt+右击完整 AE 方块 / Alt+right-click a full AE block | 消耗一个量子并入锚点接入已绑定网络；再次操作解除并入 / Consume one Quantum Incorporation Anchor to join the bound network; repeat to remove incorporation |
-| Alt+对空气长按右键 1 秒 / Hold Alt+right-click air for 1 second | 显形附近已加载区块中的当前网络 15 秒；同一终端、维度与网络在显形期间再次操作可显形附近全部量子网络 / Reveal the current network in nearby loaded chunks for 15 seconds; repeat during the reveal with the same terminal, dimension and network to reveal all nearby quantum networks |
-
-终端界面提供 16 色调色，颜色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
-
-The terminal GUI offers 16 network colors, synchronized across the quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close.
-
-### 量子节点 / Quantum Node
-
-- **远程桥接 / Remote Bridge**: 经虚拟桥接接入锚点控制器 ME 网络，相邻 AE2 设备直接入网。/ Bridges into the anchored controller's ME grid via a virtual connection; adjacent AE2 devices join the network directly.
-- **连接容量 / Connection Capacity**: 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。/ Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels.
-- **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认实际扣除 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default actual draw: 10.0 AE/t).
-- **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
-
-### 量子并入与锚点 / Quantum Incorporation & Anchor
-
-已绑定的量子终端可将完整 AE 方块和支持 ME 网络的 GT 仓室直接并入网络。每次成功并入消耗一个**量子并入锚点**，再次 Alt+右击解除并入；AE 线缆、总线等部件及控制器不适用。设备保留原方块、功能与库存。
-
-A bound Quantum Terminal can incorporate full AE blocks and ME-capable GT hatches directly into its network. Each successful incorporation consumes one **Quantum Incorporation Anchor**; Alt+right-click again to remove it. AE cable/bus parts and controllers are excluded. Devices keep their original block, functions and inventory.
-
-- **合成 / Crafting**：LV 组装机每批产出 16 个锚点：基础涂层电路板 ×1、LV 发射器 ×1、LV 传感器 ×1、钢板 ×2、末影珍珠 ×1、细铜线 ×4。/ An LV assembler produces 16 anchors per batch from Basic Coated Circuit Board ×1, LV Emitter ×1, LV Sensor ×1, Steel Plate ×2, Ender Pearl ×1 and Fine Copper Wire ×4.
-- **隔离与强化 / Isolation & Protection**：并入设备阻断物理 AE 连接，避免相邻网络串网，并获得挖掘与爆炸防护；先解除并入再拆除。/ Incorporated devices block physical AE connections to prevent adjacent networks from merging, and resist mining and explosions. Remove incorporation before dismantling.
-- **额外耗电 / Additional Power**：每个有效并入连接默认额外实际扣除 **50 AE/t**，由 `config/gtswn/gtswn_ae.cfg` 的 `quantumIncorporationIdlePowerUsage` 配置，重启应用。这 50 AE/t 不含设备原生功耗与频道耗电，两者仍由 AE 独立计算；解除并入、连接失效或区块卸载后释放附加功耗。缺电不会免除耗电需求。/ Each valid incorporation connection adds an actual **50 AE/t** by default, configured by `quantumIncorporationIdlePowerUsage` in `config/gtswn/gtswn_ae.cfg` and applied after restart. This excludes native device and channel power, which AE calculates independently. Removing incorporation, invalidating the connection or unloading the chunk releases the surcharge. An unpowered grid retains the demand.
-
-节点与并入附加费抵消 AE 配置的耗电倍率，实际分别扣除 10 和额外 50 AE/t；原设备及频道的原生倍率计费保持不变。/ The node draw and incorporation surcharge compensate for AE's configured power multiplier, drawing 10 and an additional 50 AE/t respectively. Native device and channel power still use AE's normal multiplier.
-
-### 过载保护 / Overload Protection
-
-量子节点带入的频道超过控制器容量时，启动 **3 分钟宽限倒计时**；期间频道恢复即取消，否则到期后控制器结构会 **爆炸**。达到 95% 容量时聊天警告。AE2 开启无限频道时无此限制。
-
-Exceeding controller channel capacity starts a **3-minute grace countdown**. Restoring capacity cancels it; otherwise the controller structure **explodes** at expiry. A chat warning appears at 95% capacity. This limit does not apply with AE2 infinite channels enabled.
-
-### 量子化控制器强化 / Hardened Controller
-
-量子化控制器难以挖掘且有防爆强化；用终端 Shift+右击取消量子化后再拆除。
-
-Quantized controllers resist mining and explosions. Sneak-right-click with the terminal to dequantize before dismantling.
 
 ***
 
