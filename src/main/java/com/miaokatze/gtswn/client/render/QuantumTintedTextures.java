@@ -37,6 +37,15 @@ public final class QuantumTintedTextures {
     }
 
     private static IIcon[] register(IIconRegister register, String sourceName, String folder, boolean terminal) {
+        return register(register, sourceName, folder, terminal, false, false);
+    }
+
+    public static IIcon[] registerConnection(IIconRegister register, String sourceName, boolean translucent) {
+        return register(register, sourceName, "blocks", false, true, translucent);
+    }
+
+    private static IIcon[] register(IIconRegister register, String sourceName, String folder, boolean terminal,
+        boolean connection, boolean translucent) {
         IIcon[] variants = new IIcon[QuantumNetworkColor.COUNT];
         IIcon original = register.registerIcon(sourceName);
         variants[0] = original;
@@ -45,11 +54,11 @@ public final class QuantumTintedTextures {
             return variants;
         }
         TextureMap atlas = (TextureMap) register;
-        for (int i = terminal ? 0 : 1; i < variants.length; i++) {
-            String name = sourceName + "_color_" + i;
+        for (int i = terminal || connection ? 0 : 1; i < variants.length; i++) {
+            String name = sourceName + (connection ? "_connection_color_" : "_color_") + i;
             TextureAtlasSprite existing = atlas.getTextureExtry(name);
             if (existing == null) {
-                existing = new ColorSprite(name, sourceName, folder, i, terminal, original);
+                existing = new ColorSprite(name, sourceName, folder, i, terminal, connection, translucent, original);
                 atlas.setTextureEntry(name, existing);
             }
             variants[i] = existing;
@@ -68,6 +77,9 @@ public final class QuantumTintedTextures {
         private final ResourceLocation source;
         private final int color;
         private final boolean terminal;
+        private final boolean connection;
+        private final boolean translucent;
+        private final int colorIndex;
         private final IIcon fallback;
         private boolean loaded;
 
@@ -76,8 +88,16 @@ public final class QuantumTintedTextures {
         }
 
         ColorSprite(String name, String sourceName, String folder, int index, boolean terminal, IIcon fallback) {
+            this(name, sourceName, folder, index, terminal, false, false, fallback);
+        }
+
+        ColorSprite(String name, String sourceName, String folder, int index, boolean terminal, boolean connection,
+            boolean translucent, IIcon fallback) {
             super(name);
             this.terminal = terminal;
+            this.connection = connection;
+            this.translucent = translucent;
+            this.colorIndex = index;
             this.fallback = fallback;
             ResourceLocation sourceIcon = new ResourceLocation(sourceName);
             source = new ResourceLocation(
@@ -108,7 +128,10 @@ public final class QuantumTintedTextures {
                         recolored = animation.image;
                         metadata = animation.metadata;
                     } else {
-                        recolored = recolor(image, color);
+                        BufferedImage material = connection ? QuantumConnectionMaterial.create(image, translucent)
+                            : image;
+                        recolored = connection && colorIndex == QuantumNetworkColor.DEFAULT ? material
+                            : recolor(material, color);
                     }
                     int mipLevels = 32 - Integer.numberOfLeadingZeros(image.getWidth());
                     BufferedImage[] mipmaps = new BufferedImage[mipLevels];

@@ -168,11 +168,18 @@ public class RenderNetworkQuantumNode implements ISimpleBlockRenderingHandler {
                 }
                 int brightness = block.getMixedBrightnessForBlock(world, x, y, z);
                 renderCore(icon, x, y, z, brightness, false, visibleArms);
+                IIcon connectionIcon = originalOverride != null ? originalOverride
+                    : ((BlockNetworkQuantumNode) block).getConnectionLayerIcon(
+                        node != null && node.isLinkedClient(),
+                        pass,
+                        node == null ? 0 : node.getColorIndex());
+                // RenderBlocks face methods prefer the override over the supplied icon.
+                renderer.overrideBlockTexture = connectionIcon;
                 for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
                     double[] b = arms[d.ordinal()];
                     if (b != null) {
                         renderer.setRenderBounds(b[0], b[1], b[2], b[3], b[4], b[5]);
-                        renderArm(block, renderer, icon, x, y, z, brightness, d.getOpposite());
+                        renderArm(block, renderer, connectionIcon, x, y, z, brightness, d.getOpposite());
                     }
                 }
             }

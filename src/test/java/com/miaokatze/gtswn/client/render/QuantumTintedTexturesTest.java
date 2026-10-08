@@ -151,6 +151,20 @@ public class QuantumTintedTexturesTest {
         }
         assertEquals(24, image.getWidth());
         assertEquals(384, image.getHeight());
+        int minX = 24, minY = 24, maxX = -1, maxY = -1;
+        for (int y = 0; y < 24; y++) {
+            for (int x = 0; x < 24; x++) {
+                if (image.getRGB(x, y) >>> 24 == 0) continue;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x);
+                maxY = Math.max(maxY, y);
+            }
+        }
+        assertEquals(15, maxX - minX + 1);
+        assertEquals(15, maxY - minY + 1);
+        assertEquals(4, minX);
+        assertEquals(4, minY);
         AnimationMetadataSection metadata = (AnimationMetadataSection) resource.getMetadata("animation");
         assertEquals(2, metadata.getFrameTime());
         TextureAtlasSprite sprite = new TextureAtlasSprite("anchor_24px") {};

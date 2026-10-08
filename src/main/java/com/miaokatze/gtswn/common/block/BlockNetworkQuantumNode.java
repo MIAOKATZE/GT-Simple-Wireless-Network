@@ -76,6 +76,9 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     private IIcon[][] colorLayerIcons;
 
     @SideOnly(Side.CLIENT)
+    private IIcon[][] connectionLayerIcons;
+
+    @SideOnly(Side.CLIENT)
     private IIcon[][] colorCompositeIcons;
 
     /** 核心包围盒下界（5/16，与构造器 setBlockBounds 一致；v1.8.5 碰撞/射线复用） */
@@ -164,6 +167,16 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         colorCompositeIcons = new IIcon[][] {
             QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node", "blocks"),
             QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Node_OFF", "blocks") };
+        connectionLayerIcons = new IIcon[][] {
+            QuantumTintedTextures.registerConnection(register, "gtswn:ME_Network_Quantum_Node_opaque", false),
+            QuantumTintedTextures.registerConnection(register, "gtswn:ME_Network_Quantum_Node_translucent", true),
+            QuantumTintedTextures.registerConnection(register, "gtswn:ME_Network_Quantum_Node_OFF_opaque", false),
+            QuantumTintedTextures.registerConnection(register, "gtswn:ME_Network_Quantum_Node_OFF_translucent", true) };
+    }
+
+    @SideOnly(Side.CLIENT)
+    public IIcon getConnectionLayerIcon(boolean online, int pass, int colorIndex) {
+        return QuantumTintedTextures.select(connectionLayerIcons[(online ? 0 : 2) + (pass == 1 ? 1 : 0)], colorIndex);
     }
 
     /** 无世界上下文时取在线层；常规 getIcon 仍提供合成图供粒子和第三方使用。 */

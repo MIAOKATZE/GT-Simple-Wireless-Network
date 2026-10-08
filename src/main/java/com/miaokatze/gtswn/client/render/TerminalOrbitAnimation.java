@@ -9,6 +9,8 @@ import java.util.List;
 
 import net.minecraft.client.resources.data.AnimationMetadataSection;
 
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
+
 /** Rebuilds only the terminal screen's particles; casing and lamp keep their source timing. */
 final class TerminalOrbitAnimation {
 
@@ -51,6 +53,17 @@ final class TerminalOrbitAnimation {
                 background[y - 5][x - 3] = samples[count / 2];
             }
         }
+        int[][][] particles = new int[2][4][5];
+        for (int particle = 0; particle < 2; particle++) {
+            int left = particle == 0 ? 3 : 8, top = particle == 0 ? 6 : 8;
+            for (int y = 0; y < 4; y++) {
+                for (int x = 0; x < 5; x++) {
+                    if (oldParticleMask(source, left + x, top + y, 0)) {
+                        particles[particle][y][x] = tint(source.getRGB(left + x, top + y), color);
+                    }
+                }
+            }
+        }
         BufferedImage result = new BufferedImage(16, timeline.size() * 16, BufferedImage.TYPE_INT_ARGB);
         for (int tick = 0; tick < timeline.size(); tick++) {
             int frame = timeline.get(tick);
@@ -61,8 +74,17 @@ final class TerminalOrbitAnimation {
                         if (oldParticleMask(source, x, y, frame)) {
                             pixel = (pixel & 0xFF000000) | (background[y - 5][x - 3] & 0xFFFFFF);
                         }
-                        double coverage = coverage(x, y, tick, timeline.size());
-                        if (coverage > 0) pixel = blend(pixel, color, coverage);
+                        for (int particle = 0; particle < 2; particle++) {
+                            double[] center = position(tick, timeline.size(), particle);
+                            int localX = x - (int) Math.round(center[0] - 2);
+                            int localY = y - (int) Math.round(center[1] - 1.5);
+                            if (localX >= 0 && localX < 5
+                                && localY >= 0
+                                && localY < 4
+                                && particles[particle][localY][localX] != 0) {
+                                pixel = (pixel & 0xFF000000) | (particles[particle][localY][localX] & 0xFFFFFF);
+                            }
+                        }
                     }
                     result.setRGB(x, tick * 16 + y, pixel);
                 }
@@ -80,7 +102,7 @@ final class TerminalOrbitAnimation {
         if (oldParticle(pixel)) return true;
         // The original particles also have pale pink glints next to their saturated core.
         int r = pixel >> 16 & 255, g = pixel >> 8 & 255, b = pixel & 255;
-        if (r < 216 || g < 135 || b < 224) return false;
+        if (r < 224 || g < 135 || b < 224) return false;
         for (int dy = -1; dy <= 1; dy++) {
             for (int dx = -1; dx <= 1; dx++) {
                 if (insideScreen(x + dx, y + dy) && oldParticle(source.getRGB(x + dx, frame * 16 + y + dy)))
@@ -99,28 +121,29 @@ final class TerminalOrbitAnimation {
         // The normal orbit holds each pose for four ticks; Alt retains a pose every tick.
         tick = Math.floorMod(tick, period);
         if (period == 80) tick = tick / 4 * 4;
-        double angle = 2 * Math.PI * tick / period + Math.PI * 1.18 + particle * Math.PI;
-        return new double[] { 7.5 + 3 * Math.cos(angle), 8.5 + 2 * Math.sin(angle) };
+        double angle = 2 * Math.PI * tick / period + Math.PI * 1.15 + particle * Math.PI;
+        return new double[] { 7.5 + 2.5 * Math.cos(angle), 8.5 + 2 * Math.sin(angle) };
     }
 
     static double coverage(int x, int y, int tick, int period) {
-        double coverage = 0;
+        String[][] masks = { { ".###.", "#####", ".####", "..##." }, { ".##..", "####.", "#####", ".###." } };
         for (int particle = 0; particle < 2; particle++) {
             double[] center = position(tick, period, particle);
-            // A five-pixel cross has a crisp dark rim and a single bright center.
-            int distance = Math.abs(x - (int) Math.round(center[0])) + Math.abs(y - (int) Math.round(center[1]));
-            coverage = Math.max(coverage, distance == 0 ? 1 : distance == 1 ? 0.45 : 0);
+            int localX = x - (int) Math.round(center[0] - 2);
+            int localY = y - (int) Math.round(center[1] - 1.5);
+            if (localX >= 0 && localX < 5 && localY >= 0 && localY < 4 && masks[particle][localY].charAt(localX) == '#')
+                return 1;
         }
-        return coverage;
+        return 0;
     }
 
-    private static int blend(int background, int color, double coverage) {
-        int result = background & 0xFF000000;
-        for (int shift = 0; shift <= 16; shift += 8) {
-            int base = color >> shift & 255;
-            int channel = (int) Math.round(coverage == 1 ? base + (255 - base) * 0.2 : base * coverage);
-            result |= channel << shift;
-        }
-        return result;
+    private static int tint(int pixel, int color) {
+        if (color == QuantumNetworkColor.rgb(QuantumNetworkColor.DEFAULT)) return pixel;
+        float[] original = Color.RGBtoHSB(pixel >> 16 & 255, pixel >> 8 & 255, pixel & 255, null);
+        float[] target = Color.RGBtoHSB(color >> 16 & 255, color >> 8 & 255, color & 255, null);
+        // Preserve the source edge saturation and brightness, including pale corner glints.
+        float saturation = original[1] * target[1];
+        float brightness = original[2] * (0.35f + 0.65f * target[2]);
+        return (pixel & 0xFF000000) | (Color.HSBtoRGB(target[0], saturation, brightness) & 0xFFFFFF);
     }
 }
