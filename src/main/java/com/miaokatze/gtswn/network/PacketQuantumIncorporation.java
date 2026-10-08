@@ -18,6 +18,8 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.ItemQuantumIncorporationAnchor;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
+import com.miaokatze.gtswn.common.util.AnimationQualityHints;
+import com.miaokatze.gtswn.common.util.QualityHintCounter;
 
 import appeng.api.config.SecurityPermissions;
 import appeng.api.networking.IGridHost;
@@ -161,6 +163,7 @@ public class PacketQuantumIncorporation implements IMessage {
                 if (player.openContainer != player.inventoryContainer) player.openContainer.detectAndSendChanges();
             }
             tell(player, "gtswn.chat.quantum.incorporation_added");
+            AnimationQualityHints.show(player, QualityHintCounter.Kind.INCORPORATION);
         }
     }
 

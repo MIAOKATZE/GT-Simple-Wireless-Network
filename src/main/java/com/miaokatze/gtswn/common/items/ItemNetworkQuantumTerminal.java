@@ -25,6 +25,8 @@ import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.common.util.AnimationQualityHints;
+import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
@@ -376,7 +378,7 @@ public class ItemNetworkQuantumTerminal extends Item {
     private void placeQuantumNode(ItemStack stack, EntityPlayer player, World world, int x, int y, int z) {
         Block nodeBlock = BlockRegistrar.networkQuantumNode;
         // flag 3 = 通知客户端 + 触发邻接更新（邻接更新驱动连接过滤重算）
-        world.setBlock(x, y, z, nodeBlock, 0, 3);
+        if (!world.setBlock(x, y, z, nodeBlock, 0, 3)) return;
         // 与 ItemBlock 一致的放置音效
         world.playSoundEffect(
             x + 0.5D,
@@ -390,7 +392,9 @@ public class ItemNetworkQuantumTerminal extends Item {
             // v1.8.5：锚点 + owner 写入抽取为 {@link #applyAnchorToNode}，与裸 bus 原位替换路径共用
             applyAnchorToNode(stack, (TileEntityNetworkQuantumNode) te, player);
         }
+        if (!(te instanceof TileEntityNetworkQuantumNode)) return;
         sendMessage(player, "gtswn.chat.quantum.node_placed");
+        AnimationQualityHints.show(player, QualityHintCounter.Kind.NODE);
     }
 
     /**

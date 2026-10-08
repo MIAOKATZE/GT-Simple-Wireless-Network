@@ -15,6 +15,8 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.common.util.AnimationQualityHints;
+import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
@@ -298,6 +300,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
             nodeBlock.stepSound.func_150496_b(),
             (nodeBlock.stepSound.getVolume() + 1.0F) / 2.0F,
             nodeBlock.stepSound.getPitch() * 0.8F);
+        AnimationQualityHints.show(player, QualityHintCounter.Kind.NODE);
         if (remountFailed.isEmpty()) {
             ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_done", remounted);
         } else {
