@@ -456,7 +456,7 @@ betterquesting.quest.R1RXTgAAAAAAAAAAAAAADA.desc=§3§l查看频道§r%nShift+�
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.name=§6§l机器总账
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADQ.desc=§3§l准备与任务§r%n设备信息终端管理支持类型的 GT 工作机器。本题检索 §11§r 个终端，§2不消耗物品§r。工作台配方需要 §12§r 个 LV 传感器、§13§r 块钢板、§12§r 个 LV 发射器、§11§r 个屏幕覆盖板与 §11§r 颗末影珍珠。%n%n§3§l绑定与查看§r%n右击支持的机器进行绑定，右击空气打开列表。列表显示运行、待机、停机状态、瞬时 EU/t、§160§r 点滚动均值、位置与可读取的输出快照。输出摘要由缓存近似生成，不能视为完整配方。名称、状态、瞬时、均值、位置共 §15§r 列可排序；数字格式可选普通、科学、公制 K/M/G/T/P 或 GT 电压档。%n%n§3§l传送与扫描§r%n行内传送按钮默认消耗 §13 级经验§r，可配置为免费；Ctrl+点击可远程解绑。Shift+右击空气启动当前维度团队机器扫描，带 §15 秒§r逐秒倒计时，仅扫描已加载区块。放置者携带终端时，新放置的支持机器会自动绑定。
 betterquesting.quest.R1RXTgAAAAAAAAAAAAAADg.name=§d§l量子并入锚点
-betterquesting.quest.R1RXTgAAAAAAAAAAAAAADg.desc=§3§l准备与任务§r%n本题检索 §11§r 个量子并入锚点，§2不消耗物品§r。LV 组装机配方使用 §11§r 块基础涂层电路板、§11§r 个 LV 发射器、§11§r 个 LV 传感器、§12§r 块钢板、§11§r 个末影珍珠与 §14§r 根细铜线，以 §130 EU/t§r 运行 §110 秒§r，产出 §116§r 个锚点。%n%n§3§l量子并入与解除§r%n先将量子终端绑定到量子化控制器。按住 Alt 对准完整 AE2 方块或 GT ME 仓室预览是否可并入，再 Alt+右击将其并入所绑定的 ME 网络，扣除 §11§r 个锚点。再次 Alt+右击可解除并入，不再扣除锚点；创造模式不消耗锚点。不支持面板、总线等线缆部件。§c并入会使设备防爆硬化，并隔离外部 AE 线缆连接，包括量子节点。§r原设备仍按常规规则占用频道，终端界面可查看并入数量与实际占用频道。%n%n§3§l检索与运行§r%n按住 Alt 对空气长按右键 §11 秒§r，揭示本终端配置的量子节点、并入设备和量子化控制器，持续 §115 秒§r；聊天会注明只显示本终端配置的成员。在持续时间内再次执行，可揭示附近所有已加载的量子成员，框色按各自网络染色。§c锚点及成员所在区块需保持加载。§r并入的 AE 设备保留常规功耗，当前没有额外的 AE 并入附加费。
+betterquesting.quest.R1RXTgAAAAAAAAAAAAAADg.desc=§3§l准备与任务§r%n本题检索 §11§r 个量子并入锚点，§2不消耗物品§r。LV 组装机配方使用 §11§r 块基础涂层电路板、§11§r 个 LV 发射器、§11§r 个 LV 传感器、§12§r 块钢板、§11§r 个末影珍珠与 §14§r 根细铜线，以 §130 EU/t§r 运行 §110 秒§r，产出 §116§r 个锚点。%n%n§3§l量子并入与解除§r%n先将量子终端绑定到量子化控制器。按住 Alt 对准完整 AE2 方块或 GT ME 仓室预览是否可并入，再 Alt+右击将其并入所绑定的 ME 网络，扣除 §11§r 个锚点。再次 Alt+右击可解除并入，不再扣除锚点；创造模式不消耗锚点。不支持面板、总线等线缆部件。§c并入会使设备防爆硬化，并隔离外部 AE 线缆连接，包括量子节点。§r原设备仍按常规规则占用频道，终端界面可查看并入数量与实际占用频道。%n%n§3§l检索与运行§r%n按住 Alt 对空气长按右键 §11 秒§r，揭示本终端配置的量子节点、并入设备和量子化控制器，持续 §115 秒§r；聊天会注明只显示本终端配置的成员。在持续时间内再次执行，可揭示附近所有已加载的量子成员，框色按各自网络染色。§c锚点及成员所在区块需保持加载。§r每个有效并入方块默认从 AE 储能额外实际扣除 §150 AE/t§r，该附加费不受 AE 功耗倍率影响；不含原设备自身与频道功耗，这些原生功耗仍由 AE 自行计算。解除并入或连接失效后停止收取该附加费。
 # BQ quests END
 gtswn.reveal.scan.result=显形扫描：显现 %s 个无线链路节点
 gtswn.reveal.scan.empty=显形扫描：未发现无线链路节点
@@ -522,6 +522,7 @@ gtswn.chat.quantum.incorporation_offline=§c[量子终端] 绑定的量子控制
 item.QuantumIncorporationAnchor_GTswn.name=量子并入锚点
 gtswn.tooltip.quantum_anchor.usage=§d每次成功量子并入消耗 1 个锚点
 gtswn.tooltip.quantum_anchor.release=§7解除并入不消耗锚点，也不返还已消耗的锚点
+gtswn.tooltip.quantum_incorporation.power=§7每个有效并入方块额外消耗 §e%s AE/t§7，不额外占用频道
 gtswn.tooltip.quantum_terminal.usage.anchor=§7量子并入：每次成功消耗背包中 1 个量子并入锚点；解除不消耗
 gtswn.chat.quantum.incorporation_need_anchor=§c[量子终端] 背包中需要 1 个量子并入锚点，无法并入
 gtswn.tooltip.quantum_terminal.usage.reveal=§dAlt+对空气长按右键 1 秒：揭示本终端配置的节点 15 秒；期间再次查询揭示全部（按网络调色显示暗色框）

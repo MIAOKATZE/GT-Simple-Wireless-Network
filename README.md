@@ -169,7 +169,9 @@ Right-click a machine to install the appropriate cover; no separate recipe is ne
 
 ## ME 网络量子终端与节点 / ME Network Quantum Terminal & Node
 
-<p align="center"><img src="images/ME_Network_Quantum_Terminal.png" alt="ME 网络量子终端 / ME Network Quantum Terminal" width="240"> <img src="images/ME_Network_Quantum_Node.png" alt="ME 网络量子节点 / ME Network Quantum Node" width="400"><br><em>ME 网络量子终端（左）与量子节点（右）/ ME Network Quantum Terminal (left) & Quantum Node (right)</em></p>
+<p align="center"><img src="images/ME_Network_Quantum_Terminal.png" alt="ME 网络量子终端 / ME Network Quantum Terminal" width="180"><br><em>ME 网络量子终端 / ME Network Quantum Terminal</em></p>
+
+<p align="center"><img src="images/ME_Network_Quantum_Node.png" alt="不同颜色的量子网络、量子节点与设备并入场景 / Colored quantum networks, nodes and incorporated devices" width="800"><br><em>量子节点与量子并入：多网络调色展示 / Quantum Nodes and incorporation: multiple network colors</em></p>
 
 为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
 
@@ -188,13 +190,31 @@ Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emi
 | 右击空地（已绑定）/ Right-click ground (bound) | 放置量子节点 / Place a Quantum Node |
 | Shift+右击节点 / Shift+right-click node | 销毁节点（无掉落）/ Destroy the node (no drops) |
 | Shift+右击空气 / Shift+right-click air | 打开终端界面 / Open terminal GUI |
+| Alt+右击完整 AE 方块 / Alt+right-click a full AE block | 消耗一个量子并入锚点接入已绑定网络；再次操作解除并入 / Consume one Quantum Incorporation Anchor to join the bound network; repeat to remove incorporation |
+| Alt+对空气长按右键 1 秒 / Hold Alt+right-click air for 1 second | 显形附近已加载区块中的当前网络 15 秒；同一终端、维度与网络在显形期间再次操作可显形附近全部量子网络 / Reveal the current network in nearby loaded chunks for 15 seconds; repeat during the reveal with the same terminal, dimension and network to reveal all nearby quantum networks |
+
+终端界面提供 16 色调色，颜色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
+
+The terminal GUI offers 16 network colors, synchronized across the quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close.
 
 ### 量子节点 / Quantum Node
 
 - **远程桥接 / Remote Bridge**: 经虚拟桥接接入锚点控制器 ME 网络，相邻 AE2 设备直接入网。/ Bridges into the anchored controller's ME grid via a virtual connection; adjacent AE2 devices join the network directly.
-- **无频道上限 / No Channel Limit**: 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。/ Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels.
-- **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default 10.0 AE/t).
+- **连接容量 / Connection Capacity**: 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。/ Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels.
+- **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认实际扣除 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default actual draw: 10.0 AE/t).
 - **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
+
+### 量子并入与锚点 / Quantum Incorporation & Anchor
+
+已绑定的量子终端可将完整 AE 方块和支持 ME 网络的 GT 仓室直接并入网络。每次成功并入消耗一个**量子并入锚点**，再次 Alt+右击解除并入；AE 线缆、总线等部件及控制器不适用。设备保留原方块、功能与库存。
+
+A bound Quantum Terminal can incorporate full AE blocks and ME-capable GT hatches directly into its network. Each successful incorporation consumes one **Quantum Incorporation Anchor**; Alt+right-click again to remove it. AE cable/bus parts and controllers are excluded. Devices keep their original block, functions and inventory.
+
+- **合成 / Crafting**：LV 组装机每批产出 16 个锚点：基础涂层电路板 ×1、LV 发射器 ×1、LV 传感器 ×1、钢板 ×2、末影珍珠 ×1、细铜线 ×4。/ An LV assembler produces 16 anchors per batch from Basic Coated Circuit Board ×1, LV Emitter ×1, LV Sensor ×1, Steel Plate ×2, Ender Pearl ×1 and Fine Copper Wire ×4.
+- **隔离与强化 / Isolation & Protection**：并入设备阻断物理 AE 连接，避免相邻网络串网，并获得挖掘与爆炸防护；先解除并入再拆除。/ Incorporated devices block physical AE connections to prevent adjacent networks from merging, and resist mining and explosions. Remove incorporation before dismantling.
+- **额外耗电 / Additional Power**：每个有效并入连接默认额外实际扣除 **50 AE/t**，由 `config/gtswn/gtswn_ae.cfg` 的 `quantumIncorporationIdlePowerUsage` 配置，重启应用。这 50 AE/t 不含设备原生功耗与频道耗电，两者仍由 AE 独立计算；解除并入、连接失效或区块卸载后释放附加功耗。缺电不会免除耗电需求。/ Each valid incorporation connection adds an actual **50 AE/t** by default, configured by `quantumIncorporationIdlePowerUsage` in `config/gtswn/gtswn_ae.cfg` and applied after restart. This excludes native device and channel power, which AE calculates independently. Removing incorporation, invalidating the connection or unloading the chunk releases the surcharge. An unpowered grid retains the demand.
+
+节点与并入附加费抵消 AE 配置的耗电倍率，实际分别扣除 10 和额外 50 AE/t；原设备及频道的原生倍率计费保持不变。/ The node draw and incorporation surcharge compensate for AE's configured power multiplier, drawing 10 and an additional 50 AE/t respectively. Native device and channel power still use AE's normal multiplier.
 
 ### 过载保护 / Overload Protection
 
@@ -238,11 +258,11 @@ Bind working GT machines to view Running/Idle/Stopped status, instantaneous and 
 
 ## BQ 任务包 / BetterQuesting Quest Pack
 
-<p align="center"><img src="images/BetterQuest.png" alt="「简易无线网络」任务线总览（13 题，红连线分支树）/ GT Simple Wireless Network quest line overview (13 quests)" width="600"><br><em>「简易无线网络」任务线总览（13 题，红连线分支树） / "GT Simple Wireless Network" quest line (13 quests)</em></p>
+<p align="center"><img src="images/BetterQuest.png" alt="「简易无线网络」任务线总览（14 题，红连线分支树）/ GT Simple Wireless Network quest line overview (14 quests)" width="600"><br><em>「简易无线网络」任务线总览（14 题，红连线分支树） / "GT Simple Wireless Network" quest line (14 quests)</em></p>
 
-随模组内置 **简易无线网络（GT Simple Wireless Network）** 任务线：13 个任务从无线能量监视器与掌上 HUD 讲起，经链路终端与无线覆盖板、墙面信息屏，一直到 ME 网络量子化与设备信息终端——全部为 LV 时代科技。任务线与各任务的名称、描述均内置中英双语本地化。
+随模组内置 **简易无线网络（GT Simple Wireless Network）** 任务线：14 个任务从无线能量监视器与掌上 HUD 讲起，经链路终端与无线覆盖板、墙面信息屏，一直到 ME 网络量子化、量子并入锚点与网络调色，以及设备信息终端——全部为 LV 时代科技。任务线与各任务的名称、描述均内置中英双语本地化。
 
-A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Network (简易无线网络)** quest line of 13 quests — from the Wireless Energy Monitor and pocket HUD through the Link Terminal and its covers and wall-sized info panels, ending with ME network quantization and the Device Info Terminal. Everything is LV-era tech. Quest line and per-quest names/descriptions are localized in both Chinese and English.
+A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Network (简易无线网络)** quest line of 14 quests — from the Wireless Energy Monitor and pocket HUD through the Link Terminal and its covers and wall-sized info panels, ending with ME network quantization, Quantum Incorporation Anchors and network colors, and the Device Info Terminal. Everything is LV-era tech. Quest line and per-quest names/descriptions are localized in both Chinese and English.
 
 - **更新 / Updates**：任务线自动装载；换新版 jar 后老世界同步任务定义并保留进度 / The quest line loads automatically; replacing the jar updates existing worlds’ definitions while keeping progress.
 
@@ -267,6 +287,7 @@ A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Netwo
 - **`/gtswn HudXOffset [值]`** / **`/gtswn HudYOffset [值]`** — 调整便携监测终端 HUD 的水平/垂直偏移（整数，±500；Y 正值向上）。/ Adjust the portable monitor HUD horizontal/vertical offset (integer, ±500; positive Y is up).
 - **`/gtswn HudScale [值]`** — 调整便携监测终端 HUD 缩放（0.2–5.0）。/ Adjust the portable monitor HUD scale (0.2–5.0).
 - **`/gtswn hud <charge|eu|instant|average> <on|off>`** — 分别开关充电、电量、瞬时与平均功率行 / Toggle the charge, energy, instantaneous and average power rows.
+- **`/gtswn quality <low|medium|high>`** — 调整客户端量子粒子密度：low 关闭、medium 减半、high 默认，保存至配置项 `QuantumParticleQuality`。/ Set client quantum particle density: low off, medium half, high default; saved as `QuantumParticleQuality`.
 - 带参数时立即生效并保存到 `config/gtswn/gtswn_network.cfg`；偏移/缩放命令无参数时显示当前值，四行开关也可在 `[hud]` 配置 / Values apply immediately and save to `config/gtswn/gtswn_network.cfg`. Offset/scale commands without values show current settings; row toggles are also configurable in `[hud]`.
 
 ***

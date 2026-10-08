@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.quantum;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
@@ -10,6 +11,7 @@ import java.util.UUID;
 
 import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
@@ -21,18 +23,26 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
+import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.AEApi;
+import appeng.api.config.PowerMultiplier;
+import appeng.api.networking.GridFlags;
+import appeng.api.networking.GridNotification;
 import appeng.api.networking.IGrid;
+import appeng.api.networking.IGridBlock;
 import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.parts.IPartHost;
+import appeng.api.util.AECableType;
+import appeng.api.util.AEColor;
+import appeng.api.util.DimensionalCoord;
 import appeng.tile.networking.TileController;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
-/** Original blocks and tile entities remain intact; only an AE grid edge is added. */
+/** Original devices remain intact; a direct bridge and a separate idle-power leaf are added. */
 public class QuantumIncorporationRegistry extends WorldSavedData {
 
     private static final String DATA_NAME = "gtswn_quantum_incorporation";
@@ -67,15 +77,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             if (bridges == null) continue;
             for (Entry entry : bridges) {
                 IGridConnection edge = entry.connection;
-                if (edge == null || entry.local == null
-                    || entry.target == null
-                    || !entry.local.getConnections()
-                        .contains(edge)
-                    || !entry.target.getConnections()
-                        .contains(edge)
-                    || entry.target.getGrid() != grid
-                    || entry.local.getGrid() != grid
-                    || !seen.add(edge)) continue;
+                if (!entry.hasLiveConnections() || entry.target.getGrid() != grid || !seen.add(edge)) continue;
                 count++;
                 int used = edge.getUsedChannels();
                 channels += used;
@@ -206,7 +208,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
     }
 
-    /** Bounded round-robin inspection; sharing a two-edge-per-tick budget across every dimension. */
+    /** Bounded round-robin inspection; sharing a two-bridge-per-tick budget across every dimension. */
     public void tick(World world) {
         if (entries.isEmpty()) return;
         if (maintenanceOrder == null) maintenanceOrder = new ArrayList<>(entries.values());
@@ -309,12 +311,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             return;
         }
         IGridNode node = local.get(0);
-        if (entry.connection != null && entry.local == node
-            && entry.target == target
-            && node.getConnections()
-                .contains(entry.connection)) {
+        if (entry.local == node && entry.target == target && entry.hasLiveConnections()) {
             return;
         }
+        // An incomplete bridge must never stay online while waiting for a billed retry.
+        entry.disconnect();
         long now = net.minecraft.server.MinecraftServer.getServer()
             .getTickCounter();
         if (now < entry.nextAttempt) return;
@@ -324,21 +325,33 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
         if (connectionsThisTick >= 2) return;
         connectionsThisTick++;
-        entry.disconnect();
         disconnectExternal(tile, null);
+        boolean connected = false;
         try {
-            entry.connection = AEApi.instance()
-                .createGridConnection(node, target);
             entry.local = node;
             entry.target = target;
+            BillingLeaf billing = new BillingLeaf(entry, new DimensionalCoord(controller));
+            entry.billingNode = AEApi.instance()
+                .createGridNode(billing);
+            billing.node = entry.billingNode;
+            entry.billingNode.setPlayerID(target.getPlayerID());
+            entry.billingNode.updateState();
+            // Connecting to the controller keeps isolation of the original machine unchanged.
+            entry.billingConnection = AEApi.instance()
+                .createGridConnection(entry.billingNode, target);
+            entry.connection = AEApi.instance()
+                .createGridConnection(node, target);
             entry.backoff = 20;
             ACTIVE.computeIfAbsent(entry.anchorKey(), ignored -> Collections.newSetFromMap(new IdentityHashMap<>()))
                 .add(entry);
             invalidateStats();
+            connected = true;
         } catch (appeng.api.exceptions.FailedConnection failure) {
             // Security failures remain isolated and offline with bounded exponential retry.
             entry.nextAttempt = now + entry.backoff;
             entry.backoff = Math.min(200, entry.backoff * 2);
+        } finally {
+            if (!connected) entry.disconnect();
         }
     }
 
@@ -490,6 +503,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         private String block, tileClass, identity, owner;
         private IGridConnection connection;
+        private IGridConnection billingConnection;
+        private IGridNode billingNode;
         private IGridNode local, target;
         private long nextAttempt;
         private long lastIsolation = Long.MIN_VALUE;
@@ -503,15 +518,118 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             return identity;
         }
 
+        private boolean hasLiveConnections() {
+            return connection != null && billingConnection != null
+                && local != null
+                && target != null
+                && billingNode != null
+                && local.getConnections()
+                    .contains(connection)
+                && target.getConnections()
+                    .contains(connection)
+                && billingNode.getConnections()
+                    .contains(billingConnection)
+                && target.getConnections()
+                    .contains(billingConnection)
+                && target.getGrid() != null
+                && local.getGrid() == target.getGrid()
+                && billingNode.getGrid() == target.getGrid();
+        }
+
         private void disconnect() {
             Set<Entry> active = ACTIVE.get(anchorKey());
             boolean changed = active != null && active.remove(this);
             if (active != null && active.isEmpty()) ACTIVE.remove(anchorKey());
             if (connection != null) connection.destroy();
+            if (billingConnection != null) billingConnection.destroy();
+            if (billingNode != null) billingNode.destroy();
             connection = null;
+            billingConnection = null;
+            billingNode = null;
             local = null;
             target = null;
             if (changed) invalidateStats();
+        }
+    }
+
+    /** Runtime-only, channel-free surcharge; AE's energy cache owns all accounting. */
+    private static final class BillingLeaf implements IGridBlock, IGridHost {
+
+        private final DimensionalCoord location;
+        private final Entry entry;
+        // Compensate only our surcharge; the original device and channel draw retain AE's multiplier.
+        private final double idlePower = PowerMultiplier.CONFIG.divide(Config.quantumIncorporationIdlePowerUsage);
+        private IGridNode node;
+
+        private BillingLeaf(Entry entry, DimensionalCoord location) {
+            this.entry = entry;
+            this.location = location;
+        }
+
+        @Override
+        public double getIdlePowerUsage() {
+            return idlePower;
+        }
+
+        @Override
+        public EnumSet<GridFlags> getFlags() {
+            return EnumSet.noneOf(GridFlags.class);
+        }
+
+        @Override
+        public boolean isWorldAccessible() {
+            return false;
+        }
+
+        @Override
+        public DimensionalCoord getLocation() {
+            return location;
+        }
+
+        @Override
+        public AEColor getGridColor() {
+            return AEColor.Transparent;
+        }
+
+        @Override
+        public void onGridNotification(GridNotification notification) {}
+
+        @Override
+        public void setNetworkStatus(IGrid grid, int channelsInUse) {}
+
+        @Override
+        public EnumSet<ForgeDirection> getConnectableSides() {
+            return EnumSet.noneOf(ForgeDirection.class);
+        }
+
+        @Override
+        public IGridHost getMachine() {
+            return this;
+        }
+
+        @Override
+        public void gridChanged() {}
+
+        @Override
+        public ItemStack getMachineRepresentation() {
+            return null;
+        }
+
+        @Override
+        public IGridNode getGridNode(ForgeDirection direction) {
+            return node;
+        }
+
+        @Override
+        public AECableType getCableConnectionType(ForgeDirection direction) {
+            return AECableType.NONE;
+        }
+
+        @Override
+        public void securityBreak() {
+            // No physical block exists; tear down both edges through the single lifecycle owner.
+            if (entry.billingNode == node) entry.disconnect();
+            node = null;
         }
     }
 }

@@ -33,6 +33,7 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
 import appeng.api.AEApi;
+import appeng.api.config.PowerMultiplier;
 import appeng.api.exceptions.ExistingConnectionException;
 import appeng.api.exceptions.FailedConnection;
 import appeng.api.exceptions.SecurityConnectionException;
@@ -464,7 +465,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             // 全方向可邻接：相邻设备/线缆可普通邻接接入本节点
             gridProxy.setValidSides(EnumSet.allOf(ForgeDirection.class));
             // D5 → v1.6.1 问题 7：闲置功耗改读配置（默认 10 AE/t；v1.6.0 硬编码 16）
-            gridProxy.setIdlePowerUsage(Config.quantumNodeIdlePowerUsage);
+            // AE multiplies registered idle draw during extraction; preserve the configured actual cost.
+            gridProxy.setIdlePowerUsage(PowerMultiplier.CONFIG.divide(Config.quantumNodeIdlePowerUsage));
         }
         return gridProxy;
     }

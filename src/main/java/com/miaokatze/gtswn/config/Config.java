@@ -186,10 +186,15 @@ public class Config {
     // 默认 true / Default true
     public static boolean aeChartEnabled = true;
 
-    // ME 网络量子节点闲置功耗（AE/t）/ ME Network Quantum Node idle power usage (AE/t)（v1.6.1 问题 7）
-    // 每个已桥接的量子节点都会给锚点所属 ME 网络增加此功耗
-    // 默认 10 / Default 10；v1.6.0 硬编码为 16 / Hardcoded to 16 in v1.6.0
+    // 每个已桥接量子节点实际扣能（AE/t），不受 AE 全局功耗倍率影响；重启应用。
+    // Actual stored AE consumed per bridged quantum node per tick, independent of AE's power multiplier.
+    // 默认 10；重启应用 / Default 10; restart required
     public static double quantumNodeIdlePowerUsage = 10.0D;
+
+    // 每个有效量子并入方块额外实际扣能（AE/t），不受 AE 倍率影响，与原设备原生功耗独立叠加。
+    // Actual additional stored AE consumed per incorporated block per tick, independent of AE's multiplier.
+    // 默认 50；重启应用 / Default 50; restart required
+    public static double quantumIncorporationIdlePowerUsage = 50.0D;
 
     // 量子终端装配端是否枚举全量字段（O2-18）
     // GUI（v1.6.9 紧凑化 + O2-17 短回包）只消费 9 个字段；能量四项/存储字节/设备列表枚举
@@ -673,7 +678,7 @@ public class Config {
             "是否启用 AE2 走势图 / Enable AE2 chart\n" + "关闭后不再采集 AE 监控数据 / Disables AE monitoring data sampling when false\n"
                 + "默认 true / Default true");
 
-        // ME 网络量子节点闲置功耗（AE/t）/ ME Network Quantum Node idle power usage (AE/t)（v1.6.1 问题 7）
+        // ME 网络量子节点实际扣能（AE/t）/ Actual stored AE consumed per quantum node per tick
         // getFloat 返回 float， widening 赋值给 double 字段；默认值随字段初值 10.0
         quantumNodeIdlePowerUsage = configuration.getFloat(
             "quantumNodeIdlePowerUsage",
@@ -681,9 +686,19 @@ public class Config {
             (float) quantumNodeIdlePowerUsage,
             0.0F,
             10000.0F,
-            "ME 网络量子节点闲置功耗（AE/t）/ ME Network Quantum Node idle power usage (AE/t)\n"
-                + "每个已桥接的量子节点都会给锚点所属 ME 网络增加此功耗 / Each bridged quantum node adds this power draw to the anchor ME network\n"
-                + "默认 10 / Default 10；v1.6.0 硬编码为 16 / Hardcoded to 16 in v1.6.0");
+            "每个已桥接量子节点实际扣能（AE/t）/ Actual stored AE consumed per bridged quantum node per tick\n"
+                + "不受 AE 全局功耗倍率影响 / Independent of AE's global power multiplier\n"
+                + "默认 10；重启应用 / Default 10; restart required");
+
+        quantumIncorporationIdlePowerUsage = configuration.getFloat(
+            "quantumIncorporationIdlePowerUsage",
+            CATEGORY_AE2,
+            (float) quantumIncorporationIdlePowerUsage,
+            0.0F,
+            10000.0F,
+            "每个有效量子并入方块额外实际扣能（AE/t）/ Actual additional stored AE consumed per connected incorporated block per tick\n"
+                + "仅附加费用不受 AE 倍率影响；原设备与频道仍按 AE 原生规则计费 / Only this surcharge ignores AE's multiplier; device and channel draw follow native AE rules\n"
+                + "不额外占用频道；默认 50；重启应用 / No extra channels; default 50; restart required");
 
         // 量子终端装配端是否枚举全量字段 / Assemble full quantum terminal data (O2-18)
         quantumTerminalAssembleFullData = configuration.getBoolean(

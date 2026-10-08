@@ -8,6 +8,8 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
+import com.miaokatze.gtswn.config.Config;
+
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 
@@ -26,5 +28,9 @@ public class ItemQuantumIncorporationAnchor extends Item {
     public void addInformation(ItemStack stack, EntityPlayer player, List list, boolean advanced) {
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_anchor.usage"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_anchor.release"));
+        list.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.tooltip.quantum_incorporation.power",
+                Config.quantumIncorporationIdlePowerUsage));
     }
 }

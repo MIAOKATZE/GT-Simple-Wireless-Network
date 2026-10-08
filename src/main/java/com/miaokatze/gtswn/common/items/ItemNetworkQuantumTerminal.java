@@ -25,6 +25,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
@@ -546,6 +547,10 @@ public class ItemNetworkQuantumTerminal extends Item {
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.gui"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.incorporate"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.anchor"));
+        list.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.tooltip.quantum_incorporation.power",
+                Config.quantumIncorporationIdlePowerUsage));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.release"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.reveal"));
     }
