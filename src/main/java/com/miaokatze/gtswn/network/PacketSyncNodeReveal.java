@@ -15,7 +15,7 @@ import io.netty.buffer.ByteBuf;
  * 字段布局：{@code count}（封顶 {@value #MAX_NODES}，读写双侧截断）+ N ×
  * {x(int), y(int), z(int), type(byte：0=能源 / 1=动力，客户端按此着色)} +
  * {@code serverTotalWorldTime}（long，服务端本维世界 tick）+
- * {@code durationTicks}（int，显形时长 300t=15s）。
+ * {@code durationTicks}（int，显形时长 300t=15s），末尾可选 N 个网络调色索引 byte。
  * <p>
  * <b>count=0（空列表）语义 = 客户端清缓存</b>（无可见节点 / 全被过滤时服务端也照发）。
  * <p>
@@ -78,6 +78,8 @@ public class PacketSyncNodeReveal implements IMessage {
         }
         buf.writeLong(serverTotalWorldTime);
         buf.writeInt(durationTicks);
+        // Optional palette extension preserves the original position/type/timing prefix.
+        for (int i = 0; i < count; i++) buf.writeByte(nodes.get(i).colorIndex);
     }
 
     @Override
@@ -93,6 +95,13 @@ public class PacketSyncNodeReveal implements IMessage {
             }
             serverTotalWorldTime = buf.readLong();
             durationTicks = buf.readInt();
+            if (buf.readableBytes() > 0) {
+                if (buf.readableBytes() < nodes.size()) throw new IllegalArgumentException("Incomplete reveal palette");
+                for (int i = 0; i < nodes.size(); i++) {
+                    RevealedNode node = nodes.get(i);
+                    nodes.set(i, new RevealedNode(node.x, node.y, node.z, node.type, buf.readUnsignedByte()));
+                }
+            }
         } catch (Exception e) {
             // 包体损坏：退化为空列表惰性消息（客户端语义 = 清缓存，不抛异常）
             nodes.clear();
@@ -133,11 +142,19 @@ public class PacketSyncNodeReveal implements IMessage {
         /** 节点类型：0 = 能源无线 / 1 = 动力无线（客户端着色来源） */
         public final byte type;
 
+        /** Network palette index; irrelevant for wireless link entries. */
+        public final int colorIndex;
+
         public RevealedNode(int x, int y, int z, byte type) {
+            this(x, y, z, type, 0);
+        }
+
+        public RevealedNode(int x, int y, int z, byte type, int colorIndex) {
             this.x = x;
             this.y = y;
             this.z = z;
             this.type = type;
+            this.colorIndex = com.miaokatze.gtswn.common.quantum.QuantumNetworkColor.normalize(colorIndex);
         }
     }
 

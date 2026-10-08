@@ -90,11 +90,14 @@ public class QuantumNetworkData {
     public int totalChannels;
     public boolean channelsInfinite;
 
-    /** 已消耗频道 = Σ 各量子节点连接 usedChannels 的 max */
+    /** 已消耗频道 = Σ 各量子节点连接 max + 未重复计入的量子并入桥真实频道用量 */
     public int usedChannels;
 
     /** 网络中量子节点（TileEntityNetworkQuantumNode）数量（v1.6.9 新增，供终端 UI 紧凑显示） */
     public int quantumNodeCount;
+    /** 当前桥接在线的量子并入方块数及其真实桥接频道用量。 */
+    public int incorporationCount;
+    public int incorporationChannels;
 
     /** 网络平均能量消耗（AE/t，近 10 tick 平均） */
     public double avgPowerUsage;
@@ -263,6 +266,8 @@ public class QuantumNetworkData {
         data.totalChannels = stats.totalChannels;
         data.usedChannels = stats.usedChannels;
         data.quantumNodeCount = stats.quantumNodeCount;
+        data.incorporationCount = stats.incorporationCount;
+        data.incorporationChannels = stats.incorporationChannels;
 
         // 7-9. AE2 能量/存储/设备枚举读取（v1.6.23：归入 ae2.gridQuery 切片，区分 AE2 侧耗时）
         // O2-18：GUI（v1.6.9 紧凑化 + O2-17 短回包）已不消费这些字段，Config 门控默认跳过

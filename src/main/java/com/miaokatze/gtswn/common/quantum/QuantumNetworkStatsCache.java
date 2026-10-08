@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.quantum;
 
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
@@ -78,6 +79,7 @@ public final class QuantumNetworkStatsCache {
             // v1.6.23：性能审计——其中 AE2 网格部分单独切片（ae2.gridQuery）
             int usedChannels = 0;
             int quantumNodeCount = 0;
+            Set<IGridConnection> quantumConnections = Collections.newSetFromMap(new IdentityHashMap<>());
             long qT0 = PerformanceAudit.startSlice();
             try {
                 // O2-B08：节点类经 QuantumNodeTypes 注册表取用（quantum→tile 拆环，grid.getMachines
@@ -90,6 +92,7 @@ public final class QuantumNetworkStatsCache {
                     for (IGridNode node : nodes) {
                         int nodeMax = 0;
                         for (IGridConnection connection : node.getConnections()) {
+                            quantumConnections.add(connection);
                             nodeMax = Math.max(nodeMax, connection.getUsedChannels());
                         }
                         usedChannels += nodeMax;
@@ -102,8 +105,16 @@ public final class QuantumNetworkStatsCache {
             // v1.8.19：总预算单一口径——只由量子化控制器结构暴露面数决定，
             // 不随量子节点/桥接连接数膨胀（删除 v1.8.15 桥接镜像项）
             int totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
-
-            Snapshot snapshot = new Snapshot(totalChannels, usedChannels, quantumNodeCount, structure);
+            int[] incorporation = QuantumIncorporationRegistry
+                .incorporationStats(key.getDimension(), structure, grid, quantumConnections);
+            usedChannels += incorporation[2];
+            Snapshot snapshot = new Snapshot(
+                totalChannels,
+                usedChannels,
+                quantumNodeCount,
+                incorporation[0],
+                incorporation[1],
+                structure);
             CACHE.put(key, new CacheEntry(grid, bucket, revision, snapshot));
             return snapshot;
         } finally {
@@ -139,12 +150,17 @@ public final class QuantumNetworkStatsCache {
         public final int totalChannels;
         public final int usedChannels;
         public final int quantumNodeCount;
+        public final int incorporationCount;
+        public final int incorporationChannels;
         private final Set<Long> structure;
 
-        private Snapshot(int totalChannels, int usedChannels, int quantumNodeCount, Set<Long> structure) {
+        private Snapshot(int totalChannels, int usedChannels, int quantumNodeCount, int incorporationCount,
+            int incorporationChannels, Set<Long> structure) {
             this.totalChannels = totalChannels;
             this.usedChannels = usedChannels;
             this.quantumNodeCount = quantumNodeCount;
+            this.incorporationCount = incorporationCount;
+            this.incorporationChannels = incorporationChannels;
             // v1.6.20：直接包装洪泛返回的集合（构造后无人修改，消费者只读）免拷贝
             this.structure = Collections.unmodifiableSet(structure);
         }

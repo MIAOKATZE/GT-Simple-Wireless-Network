@@ -22,13 +22,21 @@ import cpw.mods.fml.client.FMLClientHandler;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
 
-/** Atlas variants recolor the purple material while preserving neutral casing, alpha and frame timing. */
+/** Atlas variants for node material and the terminal's two orbiting particles. */
 @SideOnly(Side.CLIENT)
 public final class QuantumTintedTextures {
 
     private QuantumTintedTextures() {}
 
     public static IIcon[] register(IIconRegister register, String sourceName, String folder) {
+        return register(register, sourceName, folder, false);
+    }
+
+    public static IIcon[] registerTerminal(IIconRegister register, String sourceName, String folder) {
+        return register(register, sourceName, folder, true);
+    }
+
+    private static IIcon[] register(IIconRegister register, String sourceName, String folder, boolean terminal) {
         IIcon[] variants = new IIcon[QuantumNetworkColor.COUNT];
         IIcon original = register.registerIcon(sourceName);
         variants[0] = original;
@@ -37,11 +45,11 @@ public final class QuantumTintedTextures {
             return variants;
         }
         TextureMap atlas = (TextureMap) register;
-        for (int i = 1; i < variants.length; i++) {
+        for (int i = terminal ? 0 : 1; i < variants.length; i++) {
             String name = sourceName + "_color_" + i;
             TextureAtlasSprite existing = atlas.getTextureExtry(name);
             if (existing == null) {
-                existing = new ColorSprite(name, sourceName, folder, i);
+                existing = new ColorSprite(name, sourceName, folder, i, terminal, original);
                 atlas.setTextureEntry(name, existing);
             }
             variants[i] = existing;
@@ -51,17 +59,26 @@ public final class QuantumTintedTextures {
 
     public static IIcon select(IIcon[] variants, int index) {
         IIcon variant = variants[QuantumNetworkColor.normalize(index)];
-        return variant instanceof ColorSprite && !((ColorSprite) variant).loaded ? variants[0] : variant;
+        return variant instanceof ColorSprite && !((ColorSprite) variant).loaded ? ((ColorSprite) variant).fallback
+            : variant;
     }
 
     static final class ColorSprite extends TextureAtlasSprite {
 
         private final ResourceLocation source;
         private final int color;
+        private final boolean terminal;
+        private final IIcon fallback;
         private boolean loaded;
 
         ColorSprite(String name, String sourceName, String folder, int index) {
+            this(name, sourceName, folder, index, false, null);
+        }
+
+        ColorSprite(String name, String sourceName, String folder, int index, boolean terminal, IIcon fallback) {
             super(name);
+            this.terminal = terminal;
+            this.fallback = fallback;
             ResourceLocation sourceIcon = new ResourceLocation(sourceName);
             source = new ResourceLocation(
                 sourceIcon.getResourceDomain(),
@@ -84,11 +101,18 @@ public final class QuantumTintedTextures {
                     if (image == null) {
                         throw new IOException("Invalid quantum texture");
                     }
-                    BufferedImage recolored = recolor(image, color);
+                    AnimationMetadataSection metadata = (AnimationMetadataSection) resource.getMetadata("animation");
+                    BufferedImage recolored;
+                    if (terminal) {
+                        TerminalOrbitAnimation animation = TerminalOrbitAnimation.create(image, metadata, color);
+                        recolored = animation.image;
+                        metadata = animation.metadata;
+                    } else {
+                        recolored = recolor(image, color);
+                    }
                     int mipLevels = 32 - Integer.numberOfLeadingZeros(image.getWidth());
                     BufferedImage[] mipmaps = new BufferedImage[mipLevels];
                     mipmaps[0] = recolored;
-                    AnimationMetadataSection metadata = (AnimationMetadataSection) resource.getMetadata("animation");
                     loadSprite(mipmaps, metadata, false);
                     loaded = true;
                     return false;

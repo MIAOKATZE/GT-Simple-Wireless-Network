@@ -5,21 +5,27 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
+import net.minecraftforge.common.DimensionManager;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
+import appeng.tile.networking.TileController;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -83,8 +89,27 @@ public class PacketRequestQuantumReveal implements IMessage {
             return;
         player.getEntityData()
             .setLong(key, requestTick);
+        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(held);
+        World anchorWorld = anchor == null ? null : DimensionManager.getWorld(anchor[0]);
+        if (anchorWorld == null || !anchorWorld.blockExists(anchor[1], anchor[2], anchor[3])
+            || !(anchorWorld.getTileEntity(anchor[1], anchor[2], anchor[3]) instanceof TileController)
+            || !QuantumControllerRegistry.get(anchorWorld)
+                .isQuantized(anchor[1], anchor[2], anchor[3])) {
+            player.addChatMessage(new ChatComponentTranslation("gtswn.reveal.quantum.unbound"));
+            return;
+        }
+        Set<Long> members = QuantumNetworkColorRegistry.get(anchorWorld)
+            .structure(anchorWorld, anchor[1], anchor[2], anchor[3]);
+        NBTTagCompound state = player.getEntityData();
+        String identity = anchor[0] + ":" + anchor[1] + ":" + anchor[2] + ":" + anchor[3];
+        long wallTime = System.currentTimeMillis();
+        boolean all = wallTime < state.getLong("GTSWN_QuantumRevealExpires")
+            && identity.equals(state.getString("GTSWN_QuantumRevealAnchor"))
+            && state.getInteger("GTSWN_QuantumRevealDimension") == world.provider.dimensionId;
         List<PacketSyncNodeReveal.RevealedNode> nodes = new ArrayList<>();
-        // A 64-block radius touches at most 9x9 chunk tile maps; no global world/TE sweep.
+        QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
+        QuantumIncorporationRegistry incorporations = QuantumIncorporationRegistry.get(world);
+        // A 64-block radius touches at most 9x9 loaded chunk maps; never load chunks for a scan.
         int minX = ((int) Math.floor(player.posX) - 64) >> 4, maxX = ((int) Math.floor(player.posX) + 64) >> 4;
         int minZ = ((int) Math.floor(player.posZ) - 64) >> 4, maxZ = ((int) Math.floor(player.posZ) + 64) >> 4;
         for (int cx = minX; cx <= maxX; cx++) for (int cz = minZ; cz <= maxZ; cz++) {
@@ -93,31 +118,53 @@ public class PacketRequestQuantumReveal implements IMessage {
             Chunk chunk = world.getChunkFromChunkCoords(cx, cz);
             for (Object object : chunk.chunkTileEntityMap.values()) {
                 TileEntity tile = (TileEntity) object;
-                if (tile instanceof TileEntityNetworkQuantumNode)
-                    add(nodes, player, tile.xCoord, tile.yCoord, tile.zCoord, (byte) 2);
-                else if (QuantumIncorporationRegistry.isIncorporated(world, tile.xCoord, tile.yCoord, tile.zCoord)) {
-                    add(nodes, player, tile.xCoord, tile.yCoord, tile.zCoord, (byte) 3);
-                }
+                if (tile instanceof TileEntityNetworkQuantumNode) {
+                    TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) tile;
+                    if (all || node.hasAnchor() && belongsToNetwork(
+                        anchor[0],
+                        members,
+                        node.getAnchorDim(),
+                        node.getAnchorX(),
+                        node.getAnchorY(),
+                        node.getAnchorZ())) {
+                        add(
+                            nodes,
+                            player,
+                            tile.xCoord,
+                            tile.yCoord,
+                            tile.zCoord,
+                            (byte) 2,
+                            node.hasAnchor() ? QuantumNetworkColor
+                                .resolve(node.getAnchorDim(), node.getAnchorX(), node.getAnchorY(), node.getAnchorZ())
+                                : node.getColorIndex());
+                    }
+                } else
+                    if (tile instanceof TileController && controllers.isQuantized(tile.xCoord, tile.yCoord, tile.zCoord)
+                        && (all || belongsToNetwork(
+                            anchor[0],
+                            members,
+                            world.provider.dimensionId,
+                            tile.xCoord,
+                            tile.yCoord,
+                            tile.zCoord))) {
+                                add(
+                                    nodes,
+                                    player,
+                                    tile.xCoord,
+                                    tile.yCoord,
+                                    tile.zCoord,
+                                    (byte) 4,
+                                    QuantumNetworkColorRegistry.get(world)
+                                        .color(tile.xCoord, tile.yCoord, tile.zCoord));
+                            }
             }
-        }
-        if (ItemNetworkQuantumTerminal.isBound(held) && held.getTagCompound()
-            .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM) == world.provider.dimensionId) {
-            int x = held.getTagCompound()
-                .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X);
-            int y = held.getTagCompound()
-                .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y);
-            int z = held.getTagCompound()
-                .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z);
-            if (world.blockExists(x, y, z) && QuantumControllerRegistry.get(world)
-                .isQuantized(x, y, z)) {
-                for (long position : QuantumControllerRegistry.floodControllers(world, x, y, z)) {
-                    add(
-                        nodes,
-                        player,
-                        QuantumControllerRegistry.unpackX(position),
-                        QuantumControllerRegistry.unpackY(position),
-                        QuantumControllerRegistry.unpackZ(position),
-                        (byte) 4);
+            for (QuantumIncorporationRegistry.Entry entry : incorporations.snapshotChunk(cx, cz)) {
+                int x = QuantumControllerRegistry.unpackX(entry.position);
+                int y = QuantumControllerRegistry.unpackY(entry.position);
+                int z = QuantumControllerRegistry.unpackZ(entry.position);
+                if (QuantumIncorporationRegistry.isIncorporated(world, x, y, z)
+                    && (all || belongsToNetwork(anchor[0], members, entry.dim, entry.ax, entry.ay, entry.az))) {
+                    add(nodes, player, x, y, z, (byte) 3, entry.getColorIndex());
                 }
             }
         }
@@ -126,15 +173,23 @@ public class PacketRequestQuantumReveal implements IMessage {
             .clear();
         GTSWNPacketHandler.NETWORK
             .sendTo(new PacketSyncNodeReveal(nodes, now, NodeRevealRequestQueue.REVEAL_DURATION_TICKS), player);
+        state.setLong("GTSWN_QuantumRevealExpires", wallTime + NodeRevealRequestQueue.REVEAL_DURATION_TICKS * 50L);
+        state.setString("GTSWN_QuantumRevealAnchor", identity);
+        state.setInteger("GTSWN_QuantumRevealDimension", world.provider.dimensionId);
         player.addChatMessage(
             new ChatComponentTranslation(
-                nodes.isEmpty() ? "gtswn.reveal.scan.empty" : "gtswn.reveal.scan.result",
+                all ? "gtswn.reveal.quantum.all" : "gtswn.reveal.quantum.configured",
                 nodes.size()));
     }
 
+    /** Controller structure membership, independent of palette and choice of binding controller. */
+    public static boolean belongsToNetwork(int anchorDimension, Set<Long> members, int dimension, int x, int y, int z) {
+        return anchorDimension == dimension && members.contains(QuantumControllerRegistry.pack(x, y, z));
+    }
+
     private static void add(List<PacketSyncNodeReveal.RevealedNode> nodes, EntityPlayerMP player, int x, int y, int z,
-        byte type) {
+        byte type, int colorIndex) {
         if (player.getDistanceSq(x + 0.5, y + 0.5, z + 0.5) <= 4096)
-            nodes.add(new PacketSyncNodeReveal.RevealedNode(x, y, z, type));
+            nodes.add(new PacketSyncNodeReveal.RevealedNode(x, y, z, type, colorIndex));
     }
 }

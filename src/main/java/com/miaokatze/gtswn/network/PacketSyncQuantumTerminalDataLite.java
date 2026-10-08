@@ -9,21 +9,20 @@ import cpw.mods.fml.common.network.simpleimpl.MessageContext;
 import io.netty.buffer.ByteBuf;
 
 /**
- * 服务端→客户端 短回包：量子终端轮询专用的 9 字段轻量同步（discriminator = 7，O2-17）。
+ * 服务端→客户端 短回包：量子终端轮询专用的 11 字段轻量同步（discriminator = 7，O2-17）。
  * <p>
  * 【为什么需要】v1.6.9 GUI 紧凑化后，{@link com.miaokatze.gtswn.client.gui.GuiQuantumTerminal}
- * 实际只消费 9 个字段（online / anchorDim+xyz / usedChannels / totalChannels /
- * quantumNodeCount / channelsInfinite），其余 15 字段 + entries 列表为死负载——
- * 全量包 6 每包 119B + ~10N（N=设备条目数，满配 128 条约 1.4KB），短包固定 30B：
- * N=0 时 -74.8%，满配 -97.9%，每开 GUI 玩家下行 2 包/s 负载同比例降。
+ * 实际只消费 11 个字段（online / anchorDim+xyz / usedChannels / totalChannels /
+ * quantumNodeCount / channelsInfinite / incorporationCount / incorporationChannels）。
+ * 短包固定 38B，省去能量、存储以及设备条目列表。
  * <p>
  * 【协议约定】与包 6 同 jar 双端发布，无版本偏斜窗口；包 6 类保留作协议回退位与
  * 未来 GUI 回扩位（GUI 打开首包回全量、后续短包的回扩设计），本包不再被包 5 请求
  * 路径之外的场景使用。序列化顺序：
  * online(1B) + anchorDim/X/Y/Z(4×4B) + usedChannels(4B) + totalChannels(4B)
- * + quantumNodeCount(4B) + channelsInfinite(1B) = 30B。
+ * + quantumNodeCount(4B) + channelsInfinite(1B) + incorporationCount/channels(2×4B) = 38B。
  * <p>
- * 【客户端重建】fromBytes 构造 {@link QuantumNetworkData} 仅填 9 字段，其余字段保持
+ * 【客户端重建】fromBytes 构造 {@link QuantumNetworkData} 仅填 11 字段，其余字段保持
  * 类默认值（0 / false / 空 entries）——GUI 零改动，未消费字段读到默认值与全量包
  * 中真实值的表现一致（GUI 不读它们）。
  * <p>
@@ -34,7 +33,7 @@ import io.netty.buffer.ByteBuf;
  */
 public class PacketSyncQuantumTerminalDataLite implements IMessage {
 
-    /** 网络快照数据（fromBytes 重建仅 9 字段；客户端经 getter 读取） */
+    /** 网络快照数据（fromBytes 重建仅 11 字段；客户端经 getter 读取） */
     private QuantumNetworkData data;
 
     /** Forge 反射无参构造（反序列化时必需） */
@@ -55,6 +54,8 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
         buf.writeInt(data.totalChannels);
         buf.writeInt(data.quantumNodeCount);
         buf.writeBoolean(data.channelsInfinite);
+        buf.writeInt(data.incorporationCount);
+        buf.writeInt(data.incorporationChannels);
     }
 
     @Override
@@ -69,10 +70,14 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
         d.totalChannels = buf.readInt();
         d.quantumNodeCount = buf.readInt();
         d.channelsInfinite = buf.readBoolean();
+        if (buf.readableBytes() >= 8) {
+            d.incorporationCount = buf.readInt();
+            d.incorporationChannels = buf.readInt();
+        }
         this.data = d;
     }
 
-    /** @return 网络快照数据（仅 9 字段有效，其余为类默认值） */
+    /** @return 网络快照数据（仅 11 字段有效，其余为类默认值） */
     public QuantumNetworkData getData() {
         return data;
     }

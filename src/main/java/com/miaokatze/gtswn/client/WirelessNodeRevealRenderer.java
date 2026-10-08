@@ -189,16 +189,22 @@ public final class WirelessNodeRevealRenderer {
         // 微扩张防 Z-fighting（线框与方块表面重叠导致的闪烁）
         box = box.expand(BOX_EXPAND, BOX_EXPAND, BOX_EXPAND);
 
-        // 颜色：500ms 相位交替——类型色（能源=黄 / 动力=紫，值域单一来源：WirelessNodeIndexCodec 常量）↔ 白
-        if (altColor) {
+        // 量子成员统一使用网络调色的暗色；链路节点保留类型色与白色的 500ms 交替。
+        if (node.type >= 2) {
+            int rgb = com.miaokatze.gtswn.common.quantum.QuantumNetworkColor.rgb(node.colorIndex);
+            GL11.glColor4f(
+                ((rgb >> 16) & 255) / 255.0f * 0.55f,
+                ((rgb >> 8) & 255) / 255.0f * 0.55f,
+                (rgb & 255) / 255.0f * 0.55f,
+                1.0f);
+        } else if (altColor) {
             GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
         } else {
-            final boolean isDynamo = node.type == WirelessNodeIndexCodec.TYPE_DYNAMO || node.type == 3;
-            final boolean isController = node.type == 4;
+            final boolean isDynamo = node.type == WirelessNodeIndexCodec.TYPE_DYNAMO;
             GL11.glColor4f(
-                (isController ? 255 : isDynamo ? DYNAMO_RED : ENERGY_RED) / 255.0f,
-                (isController ? 48 : isDynamo ? DYNAMO_GREEN : ENERGY_GREEN) / 255.0f,
-                (isController ? 48 : isDynamo ? DYNAMO_BLUE : ENERGY_BLUE) / 255.0f,
+                (isDynamo ? DYNAMO_RED : ENERGY_RED) / 255.0f,
+                (isDynamo ? DYNAMO_GREEN : ENERGY_GREEN) / 255.0f,
+                (isDynamo ? DYNAMO_BLUE : ENERGY_BLUE) / 255.0f,
                 1.0f);
         }
 

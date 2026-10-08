@@ -79,15 +79,17 @@ public class ItemNetworkQuantumTerminal extends Item {
     public void registerIcons(IIconRegister register) {
         super.registerIcons(register);
         incorporationIcon = register.registerIcon("gtswn:ME_Network_Quantum_Terminal_Alt");
-        colorIcons = QuantumTintedTextures.register(register, "gtswn:ME_Network_Quantum_Terminal", "items");
+        colorIcons = QuantumTintedTextures.registerTerminal(register, "gtswn:ME_Network_Quantum_Terminal", "items");
         incorporationColorIcons = QuantumTintedTextures
-            .register(register, "gtswn:ME_Network_Quantum_Terminal_Alt", "items");
+            .registerTerminal(register, "gtswn:ME_Network_Quantum_Terminal_Alt", "items");
     }
 
     @Override
     @SideOnly(Side.CLIENT)
     public IIcon getIconFromDamage(int damage) {
-        return GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode() ? incorporationIcon : itemIcon;
+        return QuantumTintedTextures.select(
+            GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode() ? incorporationColorIcons : colorIcons,
+            QuantumNetworkColor.DEFAULT);
     }
 
     @Override
@@ -543,6 +545,7 @@ public class ItemNetworkQuantumTerminal extends Item {
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.pickup"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.gui"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.incorporate"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.anchor"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.release"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.reveal"));
     }

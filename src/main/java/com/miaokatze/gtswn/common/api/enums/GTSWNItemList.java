@@ -33,6 +33,8 @@ public enum GTSWNItemList implements IItemContainer {
     Network_Info_Panel_Extender,
     // ME 网络量子终端（T1 存根：仅注册，手势逻辑 T3 实现）
     ME_Network_Quantum_Terminal,
+    // 量子并入耗材
+    Quantum_Incorporation_Anchor,
     // ME 网络量子节点（T1 存根：仅注册，桥接逻辑 T4 实现）
     ME_Network_Quantum_Node,
     // 设备信息终端（阶段 A：物品+绑定手势；采样/扫描/GUI 阶段 C-E 实现）

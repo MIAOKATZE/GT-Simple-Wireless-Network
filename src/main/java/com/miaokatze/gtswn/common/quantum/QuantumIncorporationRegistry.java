@@ -3,7 +3,9 @@ package com.miaokatze.gtswn.common.quantum;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.block.Block;
@@ -21,6 +23,7 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 import appeng.api.AEApi;
+import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
@@ -41,6 +44,46 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     private int cursor;
     private static long budgetTick = Long.MIN_VALUE;
     private static int connectionsThisTick;
+    /** Only live bridges, indexed across dimensions by their controller anchor. */
+    private static final Map<AnchorKey, Set<Entry>> ACTIVE = new HashMap<>();
+
+    private static void invalidateStats() {
+        QuantumNetworkStatsCache.clear();
+        QuantumNetworkData.clearCache();
+    }
+
+    /** Bounded by the controller structure and its connected incorporated blocks. */
+    static int[] incorporationStats(int dimension, Set<Long> structure, IGrid grid,
+        Set<IGridConnection> quantumConnections) {
+        int count = 0, channels = 0, additionalChannels = 0;
+        Set<IGridConnection> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (long position : structure) {
+            Set<Entry> bridges = ACTIVE.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(position),
+                    QuantumControllerRegistry.unpackY(position),
+                    QuantumControllerRegistry.unpackZ(position)));
+            if (bridges == null) continue;
+            for (Entry entry : bridges) {
+                IGridConnection edge = entry.connection;
+                if (edge == null || entry.local == null
+                    || entry.target == null
+                    || !entry.local.getConnections()
+                        .contains(edge)
+                    || !entry.target.getConnections()
+                        .contains(edge)
+                    || entry.target.getGrid() != grid
+                    || entry.local.getGrid() != grid
+                    || !seen.add(edge)) continue;
+                count++;
+                int used = edge.getUsedChannels();
+                channels += used;
+                if (!quantumConnections.contains(edge)) additionalChannels += used;
+            }
+        }
+        return new int[] { count, channels, additionalChannels };
+    }
 
     public QuantumIncorporationRegistry(String name) {
         super(name);
@@ -289,6 +332,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.local = node;
             entry.target = target;
             entry.backoff = 20;
+            ACTIVE.computeIfAbsent(entry.anchorKey(), ignored -> Collections.newSetFromMap(new IdentityHashMap<>()))
+                .add(entry);
+            invalidateStats();
         } catch (appeng.api.exceptions.FailedConnection failure) {
             // Security failures remain isolated and offline with bounded exponential retry.
             entry.nextAttempt = now + entry.backoff;
@@ -383,6 +429,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
+        for (Entry entry : entries.values()) entry.disconnect();
         entries.clear();
         chunks.clear();
         sources.clear();
@@ -448,15 +495,23 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private long lastIsolation = Long.MIN_VALUE;
         private int backoff = 20;
 
+        private AnchorKey anchorKey() {
+            return new AnchorKey(dim, ax, ay, az);
+        }
+
         public String identity() {
             return identity;
         }
 
         private void disconnect() {
+            Set<Entry> active = ACTIVE.get(anchorKey());
+            boolean changed = active != null && active.remove(this);
+            if (active != null && active.isEmpty()) ACTIVE.remove(anchorKey());
             if (connection != null) connection.destroy();
             connection = null;
             local = null;
             target = null;
+            if (changed) invalidateStats();
         }
     }
 }

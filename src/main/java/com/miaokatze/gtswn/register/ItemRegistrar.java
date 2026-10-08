@@ -5,6 +5,7 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Dyn
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.GTswn_Cover_Energy_Wireless;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quantum_Terminal;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Quantum_Incorporation_Anchor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.TestCoin;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
@@ -22,6 +23,8 @@ public class ItemRegistrar {
         registerTestCoin();
         registerPortableWirelessNetworkMonitor();
         registerMENetworkQuantumTerminal();
+        Quantum_Incorporation_Anchor
+            .setAndRegister(com.miaokatze.gtswn.common.items.ItemQuantumIncorporationAnchor::new);
         registerDeviceInfoTerminal();
         registerWirelessEnergyTap();
         registerGTswnCoverEnergyWireless();

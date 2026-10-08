@@ -141,14 +141,14 @@ public class QuantumTintedTexturesTest {
         assertEquals(7, loaded.getFrameTimeSingle(1));
     }
 
-    private static final class ResourceManager implements IResourceManager {
+    static final class ResourceManager implements IResourceManager {
 
         private static final Gson GSON = new GsonBuilder()
             .registerTypeAdapter(AnimationMetadataSection.class, new AnimationMetadataSectionSerializer())
             .create();
         private final String overrideAnimation;
 
-        private ResourceManager(String overrideAnimation) {
+        ResourceManager(String overrideAnimation) {
             this.overrideAnimation = overrideAnimation;
         }
 

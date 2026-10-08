@@ -359,6 +359,8 @@ gtswn.gui.quantum.channels=Channels
 gtswn.gui.quantum.controller_pos=Controller Pos
 gtswn.gui.quantum.dimension=Dimension
 gtswn.gui.quantum.node_count=Quantum Nodes
+gtswn.gui.quantum.incorporation_count=Incorporated blocks
+gtswn.gui.quantum.incorporation_channels=Incorporation channels
 
 # WAILA quantum node status (since v1.6.4 offline reason is not shown here; use right-click chat instead)
 gtswn.waila.quantum_node.online=§aDevice Online
@@ -513,6 +515,14 @@ gtswn.color.green=Green
 gtswn.color.red=Red
 gtswn.color.black=Black
 gtswn.chat.quantum.incorporation_removed=§a[Quantum Terminal] Incorporation removed. Physical AE connections restored.
-gtswn.chat.quantum.incorporation_added=§d[Quantum Terminal] Quantum incorporation complete. Alt+Shift+Right-click to release.
+gtswn.chat.quantum.incorporation_added=§d[Quantum Terminal] Quantum incorporation complete. Alt+Right-click again to release.
 gtswn.chat.quantum.incorporation_offline=§c[Quantum Terminal] Bound quantum controller is unloaded or invalid. Cannot incorporate.
-gtswn.tooltip.quantum_terminal.usage.reveal=§dHold Alt+Right-click in air for 1s: reveal for 15s (nodes yellow, incorporated blocks purple, controllers red)
+item.QuantumIncorporationAnchor_GTswn.name=Quantum Incorporation Anchor
+gtswn.tooltip.quantum_anchor.usage=§dConsumes 1 anchor per successful quantum incorporation
+gtswn.tooltip.quantum_anchor.release=§7Releasing consumes no anchors and does not refund spent anchors
+gtswn.tooltip.quantum_terminal.usage.anchor=§7Incorporation consumes 1 Quantum Incorporation Anchor from your inventory; release is free
+gtswn.chat.quantum.incorporation_need_anchor=§c[Quantum Terminal] You need 1 Quantum Incorporation Anchor in your inventory to incorporate.
+gtswn.tooltip.quantum_terminal.usage.reveal=§dHold Alt+Right-click in air for 1s: reveal configured nodes for 15s; repeat during that time to reveal all (dark network-colored outlines)
+gtswn.reveal.quantum.configured=Quantum reveal: %s target(s), only this terminal's configured nodes and network members; repeat within 15s to reveal all
+gtswn.reveal.quantum.all=Quantum reveal: %s target(s), all nearby quantum network members (15s)
+gtswn.reveal.quantum.unbound=Quantum reveal: bind a valid quantized ME Controller network first

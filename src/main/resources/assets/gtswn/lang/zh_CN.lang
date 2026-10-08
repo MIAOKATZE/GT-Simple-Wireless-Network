@@ -359,6 +359,8 @@ gtswn.gui.quantum.channels=频道
 gtswn.gui.quantum.controller_pos=控制器坐标
 gtswn.gui.quantum.dimension=维度
 gtswn.gui.quantum.node_count=量子节点
+gtswn.gui.quantum.incorporation_count=量子并入
+gtswn.gui.quantum.incorporation_channels=并入占用频道
 
 # WAILA 量子节点状态显示 (v1.6.4 起不显示离线原因，原因由右键聊天提示提供)
 gtswn.waila.quantum_node.online=§a设备在线
@@ -513,6 +515,14 @@ gtswn.color.green=绿色
 gtswn.color.red=红色
 gtswn.color.black=黑色
 gtswn.chat.quantum.incorporation_removed=§a[量子终端] 已解除量子并入，恢复普通 AE 连接
-gtswn.chat.quantum.incorporation_added=§d[量子终端] 已量子并入，Alt+Shift+右击可解除
+gtswn.chat.quantum.incorporation_added=§d[量子终端] 已量子并入，再次 Alt+右击可解除
 gtswn.chat.quantum.incorporation_offline=§c[量子终端] 绑定的量子控制器未加载或已失效，无法并入
-gtswn.tooltip.quantum_terminal.usage.reveal=§dAlt+对空气长按右键 1 秒：显形 15 秒（节点黄/并入紫/控制器红）
+item.QuantumIncorporationAnchor_GTswn.name=量子并入锚点
+gtswn.tooltip.quantum_anchor.usage=§d每次成功量子并入消耗 1 个锚点
+gtswn.tooltip.quantum_anchor.release=§7解除并入不消耗锚点，也不返还已消耗的锚点
+gtswn.tooltip.quantum_terminal.usage.anchor=§7量子并入：每次成功消耗背包中 1 个量子并入锚点；解除不消耗
+gtswn.chat.quantum.incorporation_need_anchor=§c[量子终端] 背包中需要 1 个量子并入锚点，无法并入
+gtswn.tooltip.quantum_terminal.usage.reveal=§dAlt+对空气长按右键 1 秒：揭示本终端配置的节点 15 秒；期间再次查询揭示全部（按网络调色显示暗色框）
+gtswn.reveal.quantum.configured=量子显形：显现 %s 个目标，仅本终端配置的节点及其网络成员；15 秒内再次查询可揭示全部
+gtswn.reveal.quantum.all=量子显形：显现 %s 个目标，揭示周围全部量子网络成员（15 秒）
+gtswn.reveal.quantum.unbound=量子显形：请先绑定有效的量子化 ME 控制器网络

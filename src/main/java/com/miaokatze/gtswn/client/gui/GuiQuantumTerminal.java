@@ -78,6 +78,15 @@ public class GuiQuantumTerminal extends GuiScreen {
     }
 
     @Override
+    protected void keyTyped(char typedChar, int keyCode) {
+        if (keyCode == mc.gameSettings.keyBindInventory.getKeyCode()) {
+            mc.displayGuiScreen(null);
+            return;
+        }
+        super.keyTyped(typedChar, keyCode);
+    }
+
+    @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
         GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.PANEL_QUANTUM, 4, guiLeft, guiTop, WIDTH, HEIGHT, zLevel);
@@ -133,7 +142,11 @@ public class GuiQuantumTerminal extends GuiScreen {
                 tr("gtswn.gui.quantum.node_count") + ": " + (data.online ? data.quantumNodeCount : 0),
                 80,
                 GtswnGuiPalette.TEXT_BODY);
-            drawLine(tr("gtswn.gui.quantum.channels") + ":", 98, GtswnGuiPalette.TEXT_BODY);
+            drawLine(
+                tr("gtswn.gui.quantum.incorporation_count") + ": " + (data.online ? data.incorporationCount : 0),
+                92,
+                GtswnGuiPalette.TEXT_BODY);
+            drawLine(tr("gtswn.gui.quantum.channels") + ":", 110, GtswnGuiPalette.TEXT_BODY);
             String channels = "0 / 0 (0%)";
             if (data.online) {
                 int percentage = data.totalChannels > 0 ? (int) (data.usedChannels * 100L / data.totalChannels) : 0;
@@ -142,19 +155,21 @@ public class GuiQuantumTerminal extends GuiScreen {
             }
             drawLine(
                 channels,
-                110,
+                122,
                 data.online && !data.channelsInfinite && data.usedChannels > data.totalChannels
                     ? GtswnGuiPalette.STATE_OVERLOAD
                     : GtswnGuiPalette.TEXT_BODY);
+            drawLine(tr("gtswn.gui.quantum.incorporation_channels") + ":", 140, GtswnGuiPalette.TEXT_BODY);
+            drawLine(Integer.toString(data.online ? data.incorporationChannels : 0), 152, GtswnGuiPalette.TEXT_BODY);
             if (!data.online) {
-                drawLine(tr("gtswn.gui.quantum.offline"), 128, GtswnGuiPalette.STATE_OVERLOAD);
+                drawLine(tr("gtswn.gui.quantum.offline"), 164, GtswnGuiPalette.STATE_OVERLOAD);
             }
         }
-        drawLine(tr("gtswn.gui.quantum.color_scope"), 157, GtswnGuiPalette.TEXT_BODY);
+        drawLine(tr("gtswn.gui.quantum.color_scope"), 181, GtswnGuiPalette.TEXT_BODY);
         drawLine(
             tr("gtswn.gui.quantum.color_current") + ": "
                 + tr("gtswn.color." + QuantumNetworkColor.name(QuantumNetworkColor.get(held))),
-            181,
+            199,
             GtswnGuiPalette.TEXT_TITLE);
     }
 

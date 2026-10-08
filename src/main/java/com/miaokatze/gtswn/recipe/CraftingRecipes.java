@@ -5,6 +5,7 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quan
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel_Extender;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Quantum_Incorporation_Anchor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
 
@@ -17,9 +18,12 @@ import net.minecraft.item.crafting.CraftingManager;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.registry.GameRegistry;
+import gregtech.api.enums.GTValues;
 import gregtech.api.enums.ItemList;
 import gregtech.api.enums.Materials;
 import gregtech.api.enums.OrePrefixes;
+import gregtech.api.enums.TierEU;
+import gregtech.api.recipe.RecipeMaps;
 import gregtech.api.util.GTOreDictUnificator;
 
 /**
@@ -39,6 +43,24 @@ public class CraftingRecipes {
      */
     public static void init() {
         registerAllRecipes();
+        registerQuantumIncorporationAnchorRecipe();
+    }
+
+    /** LV assembler recipe: one batch supplies sixteen successful incorporations. */
+    private static void registerQuantumIncorporationAnchorRecipe() {
+        GTValues.RA.stdBuilder()
+            .itemInputs(
+                ItemList.Circuit_Board_Coated_Basic.get(1),
+                ItemList.Emitter_LV.get(1),
+                ItemList.Sensor_LV.get(1),
+                GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 2),
+                new ItemStack(Items.ender_pearl, 1),
+                GTOreDictUnificator.get(OrePrefixes.wireFine, Materials.Copper, 4))
+            .itemOutputs(Quantum_Incorporation_Anchor.get(16))
+            .duration(200)
+            .eut(TierEU.RECIPE_LV)
+            .addTo(RecipeMaps.assemblerRecipes);
+        GTSimpleWirelessNetwork.LOG.info("[配方] 量子并入锚点 LV 组装机配方已注册：每次产出 16 个。");
     }
 
     /**

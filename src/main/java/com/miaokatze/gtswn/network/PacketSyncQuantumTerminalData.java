@@ -68,6 +68,8 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         buf.writeInt(data.quantumNodeCount);
         // v1.6.15：末尾追加无限频道标志，旧客户端会忽略多出的 1 字节
         buf.writeBoolean(data.channelsInfinite);
+        buf.writeInt(data.incorporationCount);
+        buf.writeInt(data.incorporationChannels);
     }
 
     @Override
@@ -109,6 +111,10 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         // v1.6.15：旧服务端没有该字段时保留默认 false
         if (buf.readableBytes() >= 1) {
             d.channelsInfinite = buf.readBoolean();
+        }
+        if (buf.readableBytes() >= 8) {
+            d.incorporationCount = buf.readInt();
+            d.incorporationChannels = buf.readInt();
         }
         this.data = d;
     }
