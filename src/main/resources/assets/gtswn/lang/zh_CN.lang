@@ -529,3 +529,10 @@ gtswn.tooltip.quantum_terminal.usage.reveal=§dAlt+对空气长按右键 1 秒�
 gtswn.reveal.quantum.configured=量子显形：显现 %s 个目标，仅本终端配置的节点及其网络成员；15 秒内再次查询可揭示全部
 gtswn.reveal.quantum.all=量子显形：显现 %s 个目标，揭示周围全部量子网络成员（15 秒）
 gtswn.reveal.quantum.unbound=量子显形：请先绑定有效的量子化 ME 控制器网络
+
+gtswn.gui.cover.current=电流 (A)
+gtswn.gui.cover.current_hint=最低 0.1 A，其余参数只读。
+gtswn.gui.cover.voltage=电压：
+gtswn.gui.cover.capacity=缓冲容量：
+gtswn.gui.cover.stored=已存能量：
+gtswn.gui.cover.next=距下次电网交互：

@@ -12,6 +12,7 @@ import net.minecraft.util.ChatComponentText;
 
 import com.google.common.io.ByteArrayDataInput;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 import com.miaokatze.gtswn.config.Config;
 
@@ -42,6 +43,10 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
     /** 电容量上限 = 太·终极电池容量 = 2^63-1 / Capacity = Long.MAX_VALUE (MAX Battery) */
     private static final long CAPACITY = Long.MAX_VALUE;
 
+    private double amperage = CoverMaths.MIN_AMPERAGE;
+    private boolean amperageConfigured;
+    private final CoverMaths.TickBudget tickBudget = new CoverMaths.TickBudget();
+
     private long ticksSinceLastUpload = 0L; // 距上次上传网络的tick计数 / Ticks since last network upload
 
     public GTswn_Cover_DynamoWireless(CoverContext context) {
@@ -57,6 +62,9 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
     @Override
     protected void readDataFromNbt(NBTBase nbt) {
         if (nbt instanceof NBTTagCompound tag) {
+            amperageConfigured = tag.hasKey("amperageDecimal");
+            amperage = CoverMaths.restoredAmperage(tag.getDouble("amperageDecimal"));
+            tickBudget.restore(tag.getDouble("fractionalEU"));
             // storedEU / configured 已由基类字段持有，这里直接读写（NBT 顺序无关）
             if (tag.hasKey("storedEU")) this.storedEU = tag.getLong("storedEU");
             if (tag.hasKey("configured")) this.configured = tag.getBoolean("configured");
@@ -70,11 +78,16 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
         storedEU = byteData.readLong();
         configured = byteData.readBoolean();
         ticksSinceLastUpload = byteData.readLong();
+        amperageConfigured = byteData.readBoolean();
+        amperage = CoverMaths.restoredAmperage(byteData.readDouble());
+        tickBudget.restore(byteData.readDouble());
     }
 
     @Override
     protected NBTBase saveDataToNbt() {
         NBTTagCompound tag = new NBTTagCompound();
+        if (amperageConfigured) tag.setDouble("amperageDecimal", amperage);
+        tag.setDouble("fractionalEU", tickBudget.remainder());
         tag.setLong("storedEU", storedEU);
         tag.setBoolean("configured", configured);
         tag.setLong("ticksSinceLastUpload", ticksSinceLastUpload);
@@ -87,6 +100,9 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
         byteBuf.writeLong(storedEU);
         byteBuf.writeBoolean(configured);
         byteBuf.writeLong(ticksSinceLastUpload);
+        byteBuf.writeBoolean(amperageConfigured);
+        byteBuf.writeDouble(amperage);
+        byteBuf.writeDouble(tickBudget.remainder());
     }
 
     @Override
@@ -116,13 +132,17 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
             if (bmte.getMetaTileEntity() instanceof MetaTileEntity mte) {
                 minStoredEU = mte.getMinimumStoredEU();
             }
-            long availableEU = currentEU - minStoredEU;
-            if (availableEU > 0) {
-                long euToTake = Math.min(availableEU, outputV * outputA);
-                if (bmte.decreaseStoredEU(euToTake, true)) {
+            long availableEU = currentEU > minStoredEU ? currentEU - Math.max(0, minStoredEU) : 0;
+            if (availableEU > 0 && this.storedEU < CAPACITY) {
+                long budget = tickBudget.peek(outputV, amperageConfigured ? Math.min(amperage, outputA) : outputA);
+                budget = Math.min(budget, CoverMaths.multiplySaturated(outputV, outputA));
+                long euToTake = Math.min(CAPACITY - this.storedEU, Math.min(availableEU, budget));
+                if (budget == 0) tickBudget.commit();
+                if (euToTake > 0 && bmte.decreaseStoredEU(euToTake, true)) {
                     // B2-06：饱和累加防回绕（复刻 MTEWirelessEnergyMonitor.safeAddStep 同式）——
                     // 名义电容对齐：理论上 ~90 天连续满输出会溢出 long
                     this.storedEU = safeAdd(this.storedEU, euToTake);
+                    tickBudget.commit();
                 }
             }
         }
@@ -135,7 +155,7 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
             if (this.storedEU > 0) {
                 UUID owner = getOwner(bmte);
                 if (owner != null) {
-                    long actualAdded = (long) (this.storedEU * (1.0 - Config.uplinkLossEU));
+                    long actualAdded = CoverMaths.afterUplinkLoss(this.storedEU, Config.uplinkLossEU);
                     if (actualAdded > 0 && addEUToGlobalEnergyMap(owner, actualAdded)) {
                         this.storedEU = 0;
                         // v1.6.19：性能审计——上行上传成功计数
@@ -206,4 +226,41 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
         }
         return value + step;
     }
+
+    private long hostAmperage() {
+        if (!(getTile() instanceof BaseMetaTileEntity bmte)) return 0;
+        IMetaTileEntity mte = bmte.getMetaTileEntity();
+        return LaserHatchUtil.isLaserHatch(mte) ? LaserHatchUtil.getLaserAmperage(mte) : bmte.getOutputAmperage();
+    }
+
+    @Override
+    public double getAmperage() {
+        return amperageConfigured ? amperage : Math.max(CoverMaths.MIN_AMPERAGE, hostAmperage());
+    }
+
+    @Override
+    public void setAmperage(double value) {
+        if (!configured || !CoverMaths.validAmperage(value)) return;
+        amperage = value;
+        amperageConfigured = true;
+        if (getTile() != null) getTile().markDirty();
+    }
+
+    @Override
+    protected long getDisplayVoltage() {
+        if (!(getTile() instanceof BaseMetaTileEntity bmte)) return 0;
+        IMetaTileEntity mte = bmte.getMetaTileEntity();
+        return LaserHatchUtil.isLaserHatch(mte) ? LaserHatchUtil.getLaserVoltage(mte) : bmte.getOutputVoltage();
+    }
+
+    @Override
+    protected long getDisplayCapacity() {
+        return CAPACITY;
+    }
+
+    @Override
+    protected long getRemainingTicks() {
+        return Math.max(0, Config.interactionRateTicks - ticksSinceLastUpload);
+    }
+
 }

@@ -529,3 +529,10 @@ gtswn.tooltip.quantum_terminal.usage.reveal=§dHold Alt+Right-click in air for 1
 gtswn.reveal.quantum.configured=Quantum reveal: %s target(s), only this terminal's configured nodes and network members; repeat within 15s to reveal all
 gtswn.reveal.quantum.all=Quantum reveal: %s target(s), all nearby quantum network members (15s)
 gtswn.reveal.quantum.unbound=Quantum reveal: bind a valid quantized ME Controller network first
+
+gtswn.gui.cover.current=Current (A)
+gtswn.gui.cover.current_hint=Minimum 0.1 A; other parameters are read-only.
+gtswn.gui.cover.voltage=Voltage:
+gtswn.gui.cover.capacity=Buffer capacity:
+gtswn.gui.cover.stored=Stored energy:
+gtswn.gui.cover.next=Next network interaction:

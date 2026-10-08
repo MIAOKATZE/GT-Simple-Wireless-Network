@@ -36,7 +36,8 @@ import io.netty.buffer.ByteBuf;
 public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
 
     private int voltage = 0;
-    private int amperage = 0;
+    private double amperage = CoverMaths.MIN_AMPERAGE;
+    private final CoverMaths.TickBudget tickBudget = new CoverMaths.TickBudget();
     private long capacity = 0L; // 电容量上限 = V × A ×（基础值+冗余值,默认 800）/ Capacity = V × A × (base + redundancy ticks, default
                                 // 800)
     private long ticksSinceLastRefill = 0L; // 距上次网络补满的tick计数 / Ticks since last network refill
@@ -56,8 +57,10 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
         if (nbt instanceof NBTTagCompound tag) {
             // storedEU / configured 已由基类字段持有，这里直接读写（NBT 顺序无关）
             if (tag.hasKey("voltage")) this.voltage = tag.getInteger("voltage");
-            if (tag.hasKey("amperage")) this.amperage = tag.getInteger("amperage");
-            if (tag.hasKey("capacity")) this.capacity = tag.getLong("capacity");
+            this.amperage = CoverMaths.restoredAmperage(
+                tag.hasKey("amperageDecimal") ? tag.getDouble("amperageDecimal") : tag.getInteger("amperage"));
+            tickBudget.restore(tag.getDouble("fractionalEU"));
+            this.capacity = CoverMaths.bufferCapacity(voltage, amperage);
             if (tag.hasKey("storedEU")) this.storedEU = tag.getLong("storedEU");
             if (tag.hasKey("configured")) this.configured = tag.getBoolean("configured");
             if (tag.hasKey("ticksSinceLastRefill")) this.ticksSinceLastRefill = tag.getLong("ticksSinceLastRefill");
@@ -68,18 +71,20 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
     protected void readDataFromPacket(ByteArrayDataInput byteData) {
         // 顺序必须与 writeDataToByteBuf 一致：voltage, amperage, capacity, storedEU, configured, ticksSinceLastRefill
         voltage = byteData.readInt();
-        amperage = byteData.readInt();
+        amperage = CoverMaths.restoredAmperage(byteData.readDouble());
         capacity = byteData.readLong();
         storedEU = byteData.readLong();
         configured = byteData.readBoolean();
         ticksSinceLastRefill = byteData.readLong();
+        tickBudget.restore(byteData.readDouble());
     }
 
     @Override
     protected NBTBase saveDataToNbt() {
         NBTTagCompound tag = new NBTTagCompound();
         tag.setInteger("voltage", voltage);
-        tag.setInteger("amperage", amperage);
+        tag.setDouble("amperageDecimal", amperage);
+        tag.setDouble("fractionalEU", tickBudget.remainder());
         tag.setLong("capacity", capacity);
         tag.setLong("storedEU", storedEU);
         tag.setBoolean("configured", configured);
@@ -91,11 +96,12 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
     protected void writeDataToByteBuf(ByteBuf byteBuf) {
         // 顺序必须与 readDataFromPacket 一致
         byteBuf.writeInt(voltage);
-        byteBuf.writeInt(amperage);
+        byteBuf.writeDouble(amperage);
         byteBuf.writeLong(capacity);
         byteBuf.writeLong(storedEU);
         byteBuf.writeBoolean(configured);
         byteBuf.writeLong(ticksSinceLastRefill);
+        byteBuf.writeDouble(tickBudget.remainder());
     }
 
     @Override
@@ -111,15 +117,22 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
 
         // 每 tick:像导线一样持续输入 V×A(从缓冲池扣)
         // Per tick: continuously inject V×A like a cable (deduct from buffer)
-        long euPerTick = (long) this.voltage * this.amperage;
-        if (this.storedEU > 0 && euPerTick > 0) {
+        if (this.storedEU > 0) {
             long currentEU = bmte.getStoredEUuncapped();
             long machineCapacity = bmte.getEUCapacity();
-            long neededEU = machineCapacity - currentEU;
+            long neededEU = machineCapacity > currentEU ? machineCapacity - Math.max(0, currentEU) : 0;
             if (neededEU > 0) {
-                long euToInput = Math.min(neededEU, Math.min(euPerTick, this.storedEU));
-                bmte.increaseStoredEnergyUnits(euToInput, true);
-                this.storedEU -= euToInput;
+                long euPerTick = tickBudget.peek(this.voltage, this.amperage);
+                if (euPerTick == 0) {
+                    // A live sub-EU work tick accumulates its fraction, but an idle/empty tick does not.
+                    tickBudget.commit();
+                } else {
+                    long euToInput = Math.min(neededEU, Math.min(euPerTick, this.storedEU));
+                    if (bmte.increaseStoredEnergyUnits(euToInput, true)) {
+                        this.storedEU -= euToInput;
+                        tickBudget.commit();
+                    }
+                }
             }
         }
 
@@ -147,11 +160,10 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
         if (needed <= 0) return;
         // 计算下行损耗:电网额外扣除 downlinkLossEU 倍
         // Downlink loss: network deducts (1 + downlinkLossEU) × needed
-        long lossEU = (long) (needed * Config.downlinkLossEU);
-        long totalDeducted = needed + lossEU;
+        java.math.BigInteger totalDeducted = CoverMaths.downlinkDeduction(needed, Config.downlinkLossEU);
         UUID owner = getOwner(bmte);
         if (owner == null) return;
-        if (addEUToGlobalEnergyMap(owner, -totalDeducted)) {
+        if (addEUToGlobalEnergyMap(owner, totalDeducted.negate())) {
             this.storedEU = this.capacity;
             // v1.6.19：性能审计——下行补满成功计数
             PerformanceAudit.recordWirelessDraw();
@@ -200,6 +212,7 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
      * @param amperage 安培数 (A)
      */
     public void configure(int voltage, int amperage) {
+        if (voltage <= 0 || !CoverMaths.validAmperage(amperage)) return;
         this.voltage = voltage;
         this.amperage = amperage;
         // 电容量 = V × A ×（基础值 + 冗余值）tick / Capacity = V × A × (base + redundancy) ticks
@@ -213,4 +226,34 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
             refillFromNetwork(bmte);
         }
     }
+
+    @Override
+    public double getAmperage() {
+        return amperage;
+    }
+
+    @Override
+    public void setAmperage(double value) {
+        if (!configured || !CoverMaths.validAmperage(value)) return;
+        amperage = value;
+        capacity = CoverMaths.bufferCapacity(voltage, amperage);
+        // Editing the limit neither discards stored EU nor resets the refill clock.
+        if (getTile() != null) getTile().markDirty();
+    }
+
+    @Override
+    protected long getDisplayVoltage() {
+        return voltage;
+    }
+
+    @Override
+    protected long getDisplayCapacity() {
+        return capacity;
+    }
+
+    @Override
+    protected long getRemainingTicks() {
+        return Math.max(0, Config.interactionRateTicks - ticksSinceLastRefill);
+    }
+
 }

@@ -3,7 +3,9 @@ package com.miaokatze.gtswn.client;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.client.Minecraft;
@@ -22,11 +24,13 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.client.render.LinkNodeInstallAnimation;
 import com.miaokatze.gtswn.client.render.LinkNodeVisuals;
 import com.miaokatze.gtswn.client.render.LinkNodeVisuals.Cell;
 import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.network.PacketLinkNodeInstalled;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -41,6 +45,8 @@ public final class LinkNodeVisualHandler {
     private final List<Source> visible = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
     private final TextureSet[][] textures = new TextureSet[2][2];
+    private final LinkNodeInstallAnimation installations = new LinkNodeInstallAnimation();
+    private final Map<String, PacketLinkNodeInstalled> installationTargets = new LinkedHashMap<>();
     private World world;
     private int discoveryCursor;
 
@@ -55,6 +61,7 @@ public final class LinkNodeVisualHandler {
             world = mc.theWorld;
         }
         if (world == null || mc.renderViewEntity == null || mc.isGamePaused()) return;
+        updateInstallations();
         Entity camera = mc.renderViewEntity;
         List<?> loaded = world.loadedTileEntityList;
         for (int i = 0, count = Math.min(192, loaded.size()); i < count; i++) {
@@ -86,16 +93,53 @@ public final class LinkNodeVisualHandler {
             return;
         }
         particles.removeIf(
-            particle -> !particle.source.valid() || ++particle.age >= particle.life
+            particle -> !particle.source.valid() || !particle.source.particlesReady(0)
+                || ++particle.age >= particle.life
                 || particle.source.host.getDistanceFrom(camera.posX, camera.posY, camera.posZ) > RANGE_SQUARED);
         int budget = 16;
         for (Source source : visible) {
             if (budget <= 0 || particles.size() >= 256) break;
+            if (!source.particlesReady(0)) continue;
             double chance = .28 * Config.quantumParticleDensity() * (mc.gameSettings.particleSetting == 1 ? .5 : 1);
             if (world.rand.nextDouble() < chance) {
                 particles.add(new Particle(source));
                 budget--;
             }
+        }
+    }
+
+    /** Called only on the client thread by the installation event packet. */
+    public void acceptInstallation(PacketLinkNodeInstalled message) {
+        World current = Minecraft.getMinecraft().theWorld;
+        if (!message.valid || current == null || current.provider.dimensionId != message.dimension) return;
+        if (world != current) {
+            clear();
+            world = current;
+        }
+        String key = LinkNodeInstallAnimation.key(message.x, message.y, message.z, message.side);
+        if (!installations.accept(key, message.nonce, world.getTotalWorldTime(), message.energy)) return;
+        installationTargets.put(key, message);
+        updateInstallations();
+    }
+
+    private void updateInstallations() {
+        long tick = world.getTotalWorldTime();
+        installations.prune(tick);
+        installationTargets.entrySet()
+            .removeIf(entry -> !installations.contains(entry.getKey()));
+        for (Map.Entry<String, PacketLinkNodeInstalled> entry : installationTargets.entrySet()) {
+            PacketLinkNodeInstalled target = entry.getValue();
+            if (!world.getChunkProvider()
+                .chunkExists(target.x >> 4, target.z >> 4)) continue;
+            TileEntity host = world.getTileEntity(target.x, target.y, target.z);
+            if (!(host instanceof ICoverable) || !present(host)) continue;
+            Object cover = ((ICoverable) host).getCoverAtSide(ForgeDirection.getOrientation(target.side));
+            if (!(cover instanceof GTswnCoverWirelessBase) || !((GTswnCoverWirelessBase) cover).isValid()) continue;
+            boolean energy = cover instanceof GTswn_Cover_EnergyWireless;
+            if (energy != target.energy) continue;
+            installations.resolve(entry.getKey(), cover, energy, tick);
+            // Avoid waiting for the normal rotating discovery budget after a real installation.
+            hosts.add(host);
         }
     }
 
@@ -133,6 +177,8 @@ public final class LinkNodeVisualHandler {
         hosts.clear();
         visible.clear();
         particles.clear();
+        installations.clear();
+        installationTargets.clear();
         discoveryCursor = 0;
         world = null;
     }
@@ -196,13 +242,13 @@ public final class LinkNodeVisualHandler {
                         tess.setColorRGBA_F(1, 1, 1, pass == 0 ? Config.linkNodeOpacity : 1);
                         previousType = type;
                     }
-                    surface(source, high);
+                    surface(source, high, pass == 0 ? Config.linkNodeOpacity : 1, event.partialTicks);
                 }
                 if (previousType >= 0) tess.draw();
             }
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            if (high) relief(seconds, eligible);
+            if (high) relief(seconds, eligible, event.partialTicks);
             if (!low && mc.gameSettings.particleSetting < 2) {
                 drawParticles(event.partialTicks, false, frustum);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
@@ -215,14 +261,20 @@ public final class LinkNodeVisualHandler {
         }
     }
 
-    private static void surface(Source source, boolean high) {
-        if (!high) {
+    private static void surface(Source source, boolean high, float opacity, float partial) {
+        double elapsed = source.installElapsed(partial);
+        if (!high && elapsed >= LinkNodeInstallAnimation.DURATION_TICKS) {
+            Tessellator.instance.setColorRGBA_F(1, 1, 1, opacity);
             quad(source, .001, -.5, -.5, .5, .5);
             return;
         }
         for (Cell cell : LinkNodeVisuals.CELLS) {
-            double depth = Math
-                .max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief));
+            float alpha = (float) LinkNodeInstallAnimation.alpha(cell.ring, elapsed);
+            if (alpha <= 0) continue;
+            Tessellator.instance.setColorRGBA_F(1, 1, 1, opacity * alpha);
+            double depth = high
+                ? Math.max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief))
+                : .001;
             for (int edge = 0; edge < 6; edge++) {
                 double angle = edge * Math.PI / 3, next = (edge + 1) * Math.PI / 3;
                 double u = cell.u + Math.cos(angle) * LinkNodeVisuals.CELL_RADIUS;
@@ -255,10 +307,11 @@ public final class LinkNodeVisualHandler {
                 source.host.zCoord + 2));
     }
 
-    private void relief(double seconds, List<Source> eligible) {
+    private void relief(double seconds, List<Source> eligible, float partial) {
         Tessellator tess = Tessellator.instance;
         tess.startDrawingQuads();
         for (Source source : eligible) {
+            double elapsed = source.installElapsed(partial);
             for (Cell cell : LinkNodeVisuals.CELLS) {
                 double depth = Math
                     .max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief));
@@ -267,7 +320,8 @@ public final class LinkNodeVisualHandler {
                     source.energy ? 1 : .87F,
                     source.energy ? .7F : .3F,
                     source.energy ? .14F : 1,
-                    (float) (Config.linkNodeOpacity * (.25 + light * .6)));
+                    (float) (Config.linkNodeOpacity * (.25 + light * .6)
+                        * LinkNodeInstallAnimation.alpha(cell.ring, elapsed)));
                 for (int edge = 0; edge < 6; edge++) {
                     double angle = edge * Math.PI / 3, next = (edge + 1) * Math.PI / 3;
                     double radius = LinkNodeVisuals.CELL_RADIUS * .93;
@@ -304,7 +358,8 @@ public final class LinkNodeVisualHandler {
         Tessellator tess = Tessellator.instance;
         tess.startDrawingQuads();
         for (Particle particle : particles) {
-            if (!particle.source.valid() || !inView(particle.source, frustum)) continue;
+            if (!particle.source.valid() || !particle.source.particlesReady(partial)
+                || !inView(particle.source, frustum)) continue;
             double progress = (particle.age + partial) / particle.life;
             double depth = LinkNodeVisuals.particleDepth(
                 Config.quantumParticleQuality,
@@ -349,12 +404,22 @@ public final class LinkNodeVisualHandler {
         private final int side;
         private final boolean energy;
         private final Object installedCover;
+        private final String installationKey;
 
         private Source(TileEntity host, int side, boolean energy) {
             this.host = host;
             this.side = side;
             this.energy = energy;
+            installationKey = LinkNodeInstallAnimation.key(host.xCoord, host.yCoord, host.zCoord, side);
             installedCover = ((ICoverable) host).getCoverAtSide(ForgeDirection.getOrientation(side));
+        }
+
+        private double installElapsed(float partial) {
+            return installations.elapsed(installationKey, installedCover, world.getTotalWorldTime(), partial);
+        }
+
+        private boolean particlesReady(float partial) {
+            return installElapsed(partial) >= LinkNodeInstallAnimation.DURATION_TICKS;
         }
 
         private boolean valid() {

@@ -293,6 +293,17 @@ public class ClientProxy extends CommonProxy {
     }
 
     @Override
+    public void handleLinkNodeInstalled(com.miaokatze.gtswn.network.PacketLinkNodeInstalled msg) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        net.minecraft.world.World receivedWorld = minecraft.theWorld;
+        minecraft.func_152344_a(() -> {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld) {
+                com.miaokatze.gtswn.client.LinkNodeVisualHandler.INSTANCE.acceptInstallation(msg);
+            }
+        });
+    }
+
+    @Override
     public void openQuantumTerminalGui() {
         Minecraft.getMinecraft()
             .displayGuiScreen(new GuiQuantumTerminal());
