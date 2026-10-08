@@ -80,7 +80,7 @@ public class LinkNodeVisualsTest {
             }
         }
         boolean idleFlash = false, idleVariety = false;
-        for (double t = 5; t < 8; t += .05) {
+        for (double t = 5; t < 10; t += .05) {
             double first = LinkNodeVisuals.brightness(LinkNodeVisuals.CELLS.get(0), t, false, true);
             for (LinkNodeVisuals.Cell cell : LinkNodeVisuals.CELLS) {
                 double brightness = LinkNodeVisuals.brightness(cell, t, false, true);
@@ -89,6 +89,57 @@ public class LinkNodeVisualsTest {
             }
         }
         assertTrue(idleFlash && idleVariety);
+    }
+
+    @Test
+    public void highAndMediumIdleLastsFiveSecondsAndResamplesBetweenCycles() {
+        assertFalse(LinkNodeVisuals.pulseActive(5, false));
+        assertFalse(LinkNodeVisuals.pulseActive(8, false));
+        assertFalse(LinkNodeVisuals.pulseActive(9.999, false));
+        assertTrue(LinkNodeVisuals.pulseActive(10, false));
+        int changed = 0;
+        boolean extendedIntervalLit = false;
+        for (double t = 5.1; t < 10; t += .13) {
+            for (LinkNodeVisuals.Cell cell : LinkNodeVisuals.CELLS) {
+                double first = LinkNodeVisuals.brightness(cell, t, false, true);
+                double next = LinkNodeVisuals.brightness(cell, t + 10, false, true);
+                if (Math.abs(first - next) > .25) changed++;
+                if (t >= 8 && first > .8) extendedIntervalLit = true;
+            }
+        }
+        assertTrue(changed > 100);
+        assertTrue(extendedIntervalLit);
+    }
+
+    @Test
+    public void idleFlashesDoNotFormSpatiallyCorrelatedColumns() {
+        // Linear q/r sine phases correlate every second cell along hex-grid columns.
+        // Measure brightness covariance across many cycles in all three grid directions.
+        for (int[] offset : new int[][] { { 2, 0 }, { 0, 2 }, { 2, -2 } }) {
+            double sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+            int samples = 0;
+            for (LinkNodeVisuals.Cell first : LinkNodeVisuals.CELLS) {
+                for (LinkNodeVisuals.Cell second : LinkNodeVisuals.CELLS) {
+                    if (second.q != first.q + offset[0] || second.r != first.r + offset[1]) continue;
+                    for (int cycle = 0; cycle < 80; cycle++) {
+                        for (double idle = .1; idle < 4.9; idle += .2) {
+                            double t = cycle * 10 + 5 + idle;
+                            double x = LinkNodeVisuals.brightness(first, t, false, true);
+                            double y = LinkNodeVisuals.brightness(second, t, false, true);
+                            sx += x;
+                            sy += y;
+                            sxx += x * x;
+                            syy += y * y;
+                            sxy += x * y;
+                            samples++;
+                        }
+                    }
+                }
+            }
+            double correlation = (sxy - sx * sy / samples)
+                / Math.sqrt((sxx - sx * sx / samples) * (syy - sy * sy / samples));
+            assertTrue("Correlated honeycomb column: " + correlation, Math.abs(correlation) < .2);
+        }
     }
 
     @Test
