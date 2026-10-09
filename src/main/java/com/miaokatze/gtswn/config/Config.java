@@ -39,34 +39,33 @@ public class Config {
 
     private static final String CATEGORY_CLIENT = "client";
     public static String quantumParticleQuality = "high";
+    public static boolean particlesEnabled = true;
     public static float linkNodeOpacity = .48F;
     public static double linkNodeDepth = 1 / 8D;
     public static double linkNodeRelief = .65D;
 
-    public static boolean setLinkNodeVisual(String name, double value) {
-        if (!Double.isFinite(value)) throw new IllegalArgumentException();
-        if ("opacity".equals(name) && value >= .05 && value <= 1) linkNodeOpacity = (float) value;
-        else if ("depth".equals(name) && (value == 1 / 16D || value == 1 / 8D)) linkNodeDepth = value;
-        else if ("relief".equals(name) && value >= -1 && value <= 1) linkNodeRelief = value;
-        else throw new IllegalArgumentException();
+    public static boolean setParticlesEnabled(boolean enabled) {
+        particlesEnabled = enabled;
         if (networkConfigFile == null) return false;
         try {
             Configuration configuration = new Configuration(networkConfigFile);
-            configuration.get(CATEGORY_CLIENT, "LinkNodeOpacity", .48D)
-                .set((double) linkNodeOpacity);
-            configuration.get(CATEGORY_CLIENT, "LinkNodeDepth", 1 / 8D)
-                .set(linkNodeDepth);
-            configuration.get(CATEGORY_CLIENT, "LinkNodeRelief", .65D)
-                .set(linkNodeRelief);
+            configuration
+                .get(
+                    CATEGORY_CLIENT,
+                    "ParticlesEnabled",
+                    true,
+                    "Enable decorative particles independently of animation quality")
+                .set(enabled);
             configuration.save();
             return true;
         } catch (RuntimeException e) {
-            GTSimpleWirelessNetwork.LOG.error("Could not save link node visuals", e);
+            GTSimpleWirelessNetwork.LOG.error("Could not save client particle toggle", e);
             return false;
         }
     }
 
     public static double quantumParticleDensity() {
+        if (!particlesEnabled) return 0D;
         return "low".equals(quantumParticleQuality) ? 0D : "medium".equals(quantumParticleQuality) ? .5D : 1D;
     }
 
@@ -348,6 +347,11 @@ public class Config {
     public static void synchronizeNetworkConfiguration(File configFile) {
         networkConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
+        particlesEnabled = configuration.getBoolean(
+            "ParticlesEnabled",
+            CATEGORY_CLIENT,
+            true,
+            "Enable decorative particles independently of animation quality");
         Property qualityProperty = configuration.get(
             CATEGORY_CLIENT,
             "QuantumParticleQuality",

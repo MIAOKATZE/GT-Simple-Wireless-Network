@@ -10,8 +10,10 @@ import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.Tessellator;
+import net.minecraft.client.renderer.culling.Frustrum;
 import net.minecraft.entity.Entity;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.World;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -37,7 +39,6 @@ public final class QuantumVoxelParticleHandler {
     private static final int EMISSION_BUDGET = 32;
     private static final int SOURCE_BUDGET = 128;
     private static final int DISCOVERY_BUDGET = 256;
-    private static final double RANGE_SQUARED = 48 * 48;
     private static final int[][] CUBE_FACES = { { 0, 1, 3, 2 }, { 4, 6, 7, 5 }, { 0, 4, 5, 1 }, { 2, 3, 7, 6 },
         { 0, 2, 6, 4 }, { 1, 5, 7, 3 } };
     private static final float[] FACE_SHADE = { .65F, 1F, .8F, .8F, .7F, .7F };
@@ -78,7 +79,7 @@ public final class QuantumVoxelParticleHandler {
         Iterator<Particle> iterator = particles.iterator();
         while (iterator.hasNext()) {
             Particle particle = iterator.next();
-            if (!particle.valid(world, viewer) || ++particle.age >= particle.lifetime) {
+            if (!particle.valid(world) || ++particle.age >= particle.lifetime) {
                 iterator.remove();
             } else {
                 particle.previousX = particle.x;
@@ -98,7 +99,6 @@ public final class QuantumVoxelParticleHandler {
         int count = Math.min(SOURCE_BUDGET, sources.size());
         for (int i = 0; i < count && remaining > 0 && particles.size() < MAX_PARTICLES; i++) {
             TileEntity tile = sources.get(Math.floorMod(sourceCursor++, sources.size()));
-            if (tile.getDistanceFrom(viewer.posX, viewer.posY, viewer.posZ) > RANGE_SQUARED) continue;
             boolean node = tile instanceof TileEntityNetworkQuantumNode;
             List<Direction> directions;
             if (node) {
@@ -185,6 +185,8 @@ public final class QuantumVoxelParticleHandler {
         double cameraX = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * event.partialTicks;
         double cameraY = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * event.partialTicks;
         double cameraZ = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * event.partialTicks;
+        Frustrum frustum = new Frustrum();
+        frustum.setPosition(cameraX, cameraY, cameraZ);
         float lightX = OpenGlHelper.lastBrightnessX;
         float lightY = OpenGlHelper.lastBrightnessY;
         // Outpost's mesh strategy: one state scope for the entire frame, alpha body + additive glow.
@@ -202,9 +204,9 @@ public final class QuantumVoxelParticleHandler {
             GL11.glDepthMask(false);
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240F, 240F);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            batch(event.partialTicks, false);
+            batch(event.partialTicks, false, frustum);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-            batch(event.partialTicks, true);
+            batch(event.partialTicks, true, frustum);
         } finally {
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, lightX, lightY);
             GL11.glPopMatrix();
@@ -212,7 +214,7 @@ public final class QuantumVoxelParticleHandler {
         }
     }
 
-    private void batch(float partialTicks, boolean glow) {
+    private void batch(float partialTicks, boolean glow, Frustrum frustum) {
         Tessellator tessellator = Tessellator.instance;
         tessellator.startDrawingQuads();
         for (Particle particle : particles) {
@@ -232,6 +234,9 @@ public final class QuantumVoxelParticleHandler {
             double x = particle.previousX + (particle.x - particle.previousX) * partialTicks;
             double y = particle.previousY + (particle.y - particle.previousY) * partialTicks;
             double z = particle.previousZ + (particle.z - particle.previousZ) * partialTicks;
+            if (!particle.valid(currentWorld) || !frustum.isBoundingBoxInFrustum(
+                AxisAlignedBB.getBoundingBox(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius)))
+                continue;
             for (int side = 0; side < CUBE_FACES.length; side++) {
                 float shade = FACE_SHADE[side];
                 tessellator.setColorRGBA_F(red * shade, green * shade, blue * shade, alpha * (glow ? .14F : .65F));
@@ -287,9 +292,8 @@ public final class QuantumVoxelParticleHandler {
             previousZ = z;
         }
 
-        private boolean valid(World world, Entity viewer) {
-            if (!present(world, source)
-                || source.getDistanceFrom(viewer.posX, viewer.posY, viewer.posZ) > RANGE_SQUARED) return false;
+        private boolean valid(World world) {
+            if (!present(world, source)) return false;
             if (node) {
                 TileEntityNetworkQuantumNode quantum = (TileEntityNetworkQuantumNode) source;
                 int currentMask = quantum.getConnectedSidesMask() & 63;

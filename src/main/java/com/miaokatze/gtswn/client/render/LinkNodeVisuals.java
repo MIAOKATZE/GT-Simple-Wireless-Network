@@ -84,7 +84,7 @@ public final class LinkNodeVisuals {
             }
             surface = Math.max(.001, surfaceDepth(nearest, depth, relief));
         }
-        return .01 + surface + (energy ? 1 - progress : progress) * .9;
+        return .01 + surface + (energy ? 1 - progress : progress) * .5;
     }
 
     public static double[] normal(int side) {

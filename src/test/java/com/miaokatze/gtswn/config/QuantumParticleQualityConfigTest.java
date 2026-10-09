@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.config;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -12,6 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import net.minecraft.command.ICommandSender;
+import net.minecraft.command.WrongUsageException;
 import net.minecraftforge.common.config.Configuration;
 
 import org.junit.After;
@@ -50,7 +52,7 @@ public class QuantumParticleQualityConfigTest {
     }
 
     @Test
-    public void coverCommandSettingsRoundTripAndInvalidValuesLeaveStateUnchanged() throws Exception {
+    public void particleTogglePersistsWithoutChangingQualityOrExistingVisualSettings() throws Exception {
         Field minecraftHome = FMLInjectionData.class.getDeclaredField("minecraftHome");
         minecraftHome.setAccessible(true);
         Object originalHome = minecraftHome.get(null);
@@ -62,42 +64,65 @@ public class QuantumParticleQualityConfigTest {
                 .set(123);
             initial.get("custom", "PreservedSetting", "keep-me")
                 .set("keep-me");
+            initial.get("client", "LinkNodeOpacity", .625D)
+                .set(.625D);
+            initial.get("client", "LinkNodeDepth", .0625D)
+                .set(.0625D);
+            initial.get("client", "LinkNodeRelief", -.75D)
+                .set(-.75D);
             initial.save();
             Config.synchronizeNetworkConfiguration(configFile);
+            assertTrue(Config.particlesEnabled);
             ICommandSender sender = (ICommandSender) Proxy.newProxyInstance(
                 ICommandSender.class.getClassLoader(),
                 new Class<?>[] { ICommandSender.class },
                 (proxy, method, args) -> null);
             CommandGTSWNClient command = new CommandGTSWNClient();
-            command.processCommand(sender, new String[] { "cover", "opacity", "0.625" });
-            command.processCommand(sender, new String[] { "cover", "depth", "1/16" });
-            command.processCommand(sender, new String[] { "cover", "relief", "-0.75" });
-            Config.linkNodeOpacity = 1;
-            Config.linkNodeDepth = .125;
-            Config.linkNodeRelief = 1;
-            Config.synchronizeNetworkConfiguration(configFile);
-            assertEquals(.625, Config.linkNodeOpacity, 0);
-            assertEquals(.0625, Config.linkNodeDepth, 0);
-            assertEquals(-.75, Config.linkNodeRelief, 0);
-            assertEquals(123, Config.hudXOffset);
-            assertSavedSettings(configFile, "high");
-            String[] properties = { "depth", "depth", "opacity", "opacity", "opacity", "opacity", "relief", "relief" };
-            double[] invalid = { .1, Double.NaN, Double.NaN, Double.POSITIVE_INFINITY, .01, 1.1, -1.01, 1.01 };
-            for (int i = 0; i < invalid.length; i++) {
+            String[] qualities = { "low", "medium", "high" };
+            double[] densities = { 0D, .5D, 1D };
+            for (int i = 0; i < qualities.length; i++) {
+                assertTrue(Config.setQuantumParticleQuality(qualities[i]));
+                command.processCommand(sender, new String[] { "particle", "off" });
+                assertFalse(Config.particlesEnabled);
+                assertEquals(qualities[i], Config.quantumParticleQuality);
+                assertEquals(0D, Config.quantumParticleDensity(), 0D);
+                Config.particlesEnabled = true;
+                Config.synchronizeNetworkConfiguration(configFile);
+                assertFalse(Config.particlesEnabled);
+                assertEquals(qualities[i], Config.quantumParticleQuality);
+                assertEquals(0D, Config.quantumParticleDensity(), 0D);
+                command.processCommand(sender, new String[] { "particle" });
+                assertFalse(Config.particlesEnabled);
+                command.processCommand(sender, new String[] { "particle", "on" });
+                Config.particlesEnabled = false;
+                Config.synchronizeNetworkConfiguration(configFile);
+                assertTrue(Config.particlesEnabled);
+                assertEquals(qualities[i], Config.quantumParticleQuality);
+                assertEquals(densities[i], Config.quantumParticleDensity(), 0D);
+                assertEquals(.625, Config.linkNodeOpacity, 0);
+                assertEquals(.0625, Config.linkNodeDepth, 0);
+                assertEquals(-.75, Config.linkNodeRelief, 0);
+                assertSavedSettings(configFile, qualities[i]);
+            }
+            for (String[] invalid : new String[][] { { "particle", "invalid" }, { "particle", "off", "extra" },
+                { "cover", "opacity", "0.5" } }) {
                 try {
-                    Config.setLinkNodeVisual(properties[i], invalid[i]);
-                    fail("Invalid cover value was accepted: " + properties[i] + "=" + invalid[i]);
-                } catch (IllegalArgumentException expected) {
-                    assertEquals(.625, Config.linkNodeOpacity, 0);
-                    assertEquals(.0625, Config.linkNodeDepth, 0);
-                    assertEquals(-.75, Config.linkNodeRelief, 0);
+                    command.processCommand(sender, invalid);
+                    fail("Invalid or removed command was accepted");
+                } catch (WrongUsageException expected) {
+                    assertTrue(Config.particlesEnabled);
+                    assertEquals("high", Config.quantumParticleQuality);
                 }
             }
-            Config.synchronizeNetworkConfiguration(configFile);
-            assertEquals(.625, Config.linkNodeOpacity, 0);
-            assertEquals(.0625, Config.linkNodeDepth, 0);
-            assertEquals(-.75, Config.linkNodeRelief, 0);
-            assertSavedSettings(configFile, "high");
+            assertTrue(
+                command.addTabCompletionOptions(sender, new String[] { "" })
+                    .contains("particle"));
+            assertFalse(
+                command.addTabCompletionOptions(sender, new String[] { "" })
+                    .contains("cover"));
+            assertTrue(
+                command.addTabCompletionOptions(sender, new String[] { "particle", "" })
+                    .contains("off"));
         } finally {
             minecraftHome.set(null, originalHome);
         }

@@ -159,6 +159,25 @@ public class LinkNodeVisualsTest {
     }
 
     @Test
+    public void particlesTravelHalfABlockFromTheirLocalSurfaceOnEveryFace() {
+        for (String quality : new String[] { "medium", "high" }) {
+            for (boolean energy : new boolean[] { false, true }) {
+                double surface = LinkNodeVisuals.particleDepth(quality, .1, -.1, .125, .65, energy, energy ? 1 : 0);
+                double far = LinkNodeVisuals.particleDepth(quality, .1, -.1, .125, .65, energy, energy ? 0 : 1);
+                assertEquals(.5, far - surface, 1e-12);
+                for (int side = 0; side < 6; side++) {
+                    double[] nearPoint = LinkNodeVisuals.point(side, .1, -.1, surface);
+                    double[] farPoint = LinkNodeVisuals.point(side, .1, -.1, far);
+                    double[] normal = LinkNodeVisuals.normal(side);
+                    for (int axis = 0; axis < 3; axis++) {
+                        assertEquals(normal[axis] * .5, farPoint[axis] - nearPoint[axis], 1e-12);
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     public void allFaceGeometryStaysOutsideHostAndWithinAllowedThickness() {
         for (int side = 0; side < 6; side++) {
             double[] normal = LinkNodeVisuals.normal(side);
