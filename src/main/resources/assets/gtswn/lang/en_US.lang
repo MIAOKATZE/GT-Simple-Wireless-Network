@@ -539,3 +539,7 @@ gtswn.gui.cover.voltage=Voltage:
 gtswn.gui.cover.capacity=Buffer capacity:
 gtswn.gui.cover.stored=Stored energy:
 gtswn.gui.cover.next=Next network interaction:
+
+gtswn.command.particle.current=Particle effects: %s
+gtswn.command.particle.updated=Particle effects set to %s
+gtswn.command.particle.save_failed=Particle effects changed, but could not save the configuration

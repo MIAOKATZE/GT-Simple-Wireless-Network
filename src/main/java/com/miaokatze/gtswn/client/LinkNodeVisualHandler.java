@@ -40,7 +40,6 @@ import gregtech.api.interfaces.tileentity.ICoverable;
 public final class LinkNodeVisualHandler {
 
     public static final LinkNodeVisualHandler INSTANCE = new LinkNodeVisualHandler();
-    private static final double RANGE_SQUARED = 32 * 32;
     private final Set<TileEntity> hosts = Collections.newSetFromMap(new IdentityHashMap<>());
     private final List<Source> visible = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
@@ -77,7 +76,6 @@ public final class LinkNodeVisualHandler {
             java.util.Comparator.comparingDouble(host -> host.getDistanceFrom(camera.posX, camera.posY, camera.posZ)));
         for (int i = 0, count = Math.min(128, candidates.size()); i < count; i++) {
             TileEntity host = candidates.get(i);
-            if (host.getDistanceFrom(camera.posX, camera.posY, camera.posZ) > RANGE_SQUARED) continue;
             for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
                 Object cover = ((ICoverable) host).getCoverAtSide(side);
                 if (cover instanceof GTswnCoverWirelessBase && ((GTswnCoverWirelessBase) cover).isValid()
@@ -94,13 +92,12 @@ public final class LinkNodeVisualHandler {
         }
         particles.removeIf(
             particle -> !particle.source.valid() || !particle.source.particlesReady(0)
-                || ++particle.age >= particle.life
-                || particle.source.host.getDistanceFrom(camera.posX, camera.posY, camera.posZ) > RANGE_SQUARED);
-        int budget = 16;
+                || ++particle.age >= particle.life);
+        int budget = 8;
         for (Source source : visible) {
-            if (budget <= 0 || particles.size() >= 256) break;
+            if (budget <= 0 || particles.size() >= 128) break;
             if (!source.particlesReady(0)) continue;
-            double chance = .28 * Config.quantumParticleDensity() * (mc.gameSettings.particleSetting == 1 ? .5 : 1);
+            double chance = .14 * Config.quantumParticleDensity() * (mc.gameSettings.particleSetting == 1 ? .5 : 1);
             if (world.rand.nextDouble() < chance) {
                 particles.add(new Particle(source));
                 budget--;
@@ -249,7 +246,7 @@ public final class LinkNodeVisualHandler {
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             if (high) relief(seconds, eligible, event.partialTicks);
-            if (!low && mc.gameSettings.particleSetting < 2) {
+            if (!low && Config.particlesEnabled && mc.gameSettings.particleSetting < 2) {
                 drawParticles(event.partialTicks, false, frustum);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
                 drawParticles(event.partialTicks, true, frustum);
@@ -377,7 +374,7 @@ public final class LinkNodeVisualHandler {
                 particle.source.energy ? 1 : .95F,
                 particle.source.energy ? .78F : .35F,
                 particle.source.energy ? .25F : 1,
-                alpha * (glow ? .22F : .82F));
+                alpha * (glow ? .22F : .82F) * .8F);
             cube(
                 particle.source.host.xCoord + point[0],
                 particle.source.host.yCoord + point[1],
@@ -443,7 +440,7 @@ public final class LinkNodeVisualHandler {
             double[] xy = LinkNodeVisuals.sampleColumn(world.rand);
             u = xy[0];
             v = xy[1];
-            radius = .024 + world.rand.nextDouble() * .02;
+            radius = (.024 + world.rand.nextDouble() * .02) * .7;
             life = 24 + world.rand.nextInt(17);
         }
     }

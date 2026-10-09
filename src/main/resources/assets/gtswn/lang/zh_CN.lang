@@ -539,3 +539,7 @@ gtswn.gui.cover.voltage=电压：
 gtswn.gui.cover.capacity=缓冲容量：
 gtswn.gui.cover.stored=已存能量：
 gtswn.gui.cover.next=距下次电网交互：
+
+gtswn.command.particle.current=粒子特效：%s
+gtswn.command.particle.updated=粒子特效已设为 %s
+gtswn.command.particle.save_failed=粒子特效已更改，但配置保存失败
