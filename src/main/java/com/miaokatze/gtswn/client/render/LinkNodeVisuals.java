@@ -113,6 +113,35 @@ public final class LinkNodeVisuals {
         return new double[] { n[0] * sign, n[1] * sign, n[2] * sign };
     }
 
+    /** Both endpoints are invisible, with eight-tick smooth entrance and exit windows. */
+    public static double particleAlpha(double age, double life) {
+        return smoothStep(age / 8) * smoothStep((life - age) / 8);
+    }
+
+    /** Incoming particles warm toward white; outgoing particles settle to their normal color. */
+    public static double particleColorMix(double age, double life, boolean energy) {
+        return .35 * (energy ? smoothStep(age / life) : 1 - smoothStep(age / 12));
+    }
+
+    /**
+     * The arrival glow rises during the exit window, peaking visibly near the surface before fading completely.
+     * Departure glow instead settles to normal in twelve ticks, leaving a normal middle and a faint distant end.
+     */
+    public static double particleGlowStrength(double age, double life, boolean energy) {
+        return energy ? 1 + 7 * smoothStep((age - (life - 12)) / 9) : 1 + 2 * (1 - smoothStep(age / 12));
+    }
+
+    /** Actual render opacity, retaining the original body/glow multipliers and overall transparency. */
+    public static double particleOpacity(double age, double life, boolean energy, boolean glow) {
+        double strength = glow ? particleGlowStrength(age, life, energy) : 1;
+        return Math.min(1, particleAlpha(age, life) * strength * (glow ? .22 : .82) * .8);
+    }
+
+    private static double smoothStep(double value) {
+        double t = Math.max(0, Math.min(1, value));
+        return t * t * (3 - 2 * t);
+    }
+
     public static int[] pixels(int size, double seconds, boolean energy, boolean emissive) {
         int[] pixels = new int[size * size];
         for (int y = 0; y < size; y++) {
