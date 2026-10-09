@@ -99,6 +99,14 @@ public final class QuantumVoxelParticleHandler {
         int count = Math.min(SOURCE_BUDGET, sources.size());
         for (int i = 0; i < count && remaining > 0 && particles.size() < MAX_PARTICLES; i++) {
             TileEntity tile = sources.get(Math.floorMod(sourceCursor++, sources.size()));
+            if (!withinRenderDistance(
+                tile.xCoord + .5D,
+                tile.yCoord + .5D,
+                tile.zCoord + .5D,
+                viewer.posX,
+                viewer.posY,
+                viewer.posZ,
+                Config.quantumRenderDistance)) continue;
             boolean node = tile instanceof TileEntityNetworkQuantumNode;
             List<Direction> directions;
             if (node) {
@@ -115,7 +123,9 @@ public final class QuantumVoxelParticleHandler {
             int first = directions.size() == 0 ? 0 : world.rand.nextInt(directions.size());
             for (int j = 0; j < directions.size() && remaining > 0 && particles.size() < MAX_PARTICLES; j++) {
                 Direction direction = directions.get((first + j) % directions.size());
-                if (world.rand.nextDouble() < chance) {
+                int emissions = emissionCount(chance, world.rand.nextDouble());
+                for (int emission = 0; emission < emissions && remaining > 0
+                    && particles.size() < MAX_PARTICLES; emission++) {
                     particles.add(new Particle(world, tile, direction, node));
                     remaining--;
                 }
@@ -204,9 +214,9 @@ public final class QuantumVoxelParticleHandler {
             GL11.glDepthMask(false);
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240F, 240F);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            batch(event.partialTicks, false, frustum);
+            batch(event.partialTicks, false, frustum, cameraX, cameraY, cameraZ);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-            batch(event.partialTicks, true, frustum);
+            batch(event.partialTicks, true, frustum, cameraX, cameraY, cameraZ);
         } finally {
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, lightX, lightY);
             GL11.glPopMatrix();
@@ -214,7 +224,26 @@ public final class QuantumVoxelParticleHandler {
         }
     }
 
-    private void batch(float partialTicks, boolean glow, Frustrum frustum) {
+    /** Stochastic rounding retains density above 100% rather than capping a probability. */
+    public static int emissionCount(double expected, double random) {
+        int whole = (int) Math.floor(expected);
+        return whole + (random < expected - whole ? 1 : 0);
+    }
+
+    public static double particleSizeMultiplier(int percent) {
+        return 1.5D * percent / 100D;
+    }
+
+    public static boolean withinRenderDistance(double x, double y, double z, double cameraX, double cameraY,
+        double cameraZ, int distance) {
+        double dx = x - cameraX;
+        double dy = y - cameraY;
+        double dz = z - cameraZ;
+        return dx * dx + dy * dy + dz * dz <= (double) distance * distance;
+    }
+
+    private void batch(float partialTicks, boolean glow, Frustrum frustum, double cameraX, double cameraY,
+        double cameraZ) {
         Tessellator tessellator = Tessellator.instance;
         tessellator.startDrawingQuads();
         for (Particle particle : particles) {
@@ -230,12 +259,16 @@ public final class QuantumVoxelParticleHandler {
             float blue = (rgb & 255) / 255F;
             double progress = (particle.age + partialTicks) / particle.lifetime;
             float alpha = (float) (Math.min(1, (particle.age + partialTicks + 1) / 3) * (1 - progress));
-            double radius = particle.radius * (glow ? 1.65D : 1D);
+            double radius = particle.radius * particleSizeMultiplier(Config.quantumParticleSizePercent)
+                * (glow ? 1.65D : 1D);
             double x = particle.previousX + (particle.x - particle.previousX) * partialTicks;
             double y = particle.previousY + (particle.y - particle.previousY) * partialTicks;
             double z = particle.previousZ + (particle.z - particle.previousZ) * partialTicks;
-            if (!particle.valid(currentWorld) || !frustum.isBoundingBoxInFrustum(
-                AxisAlignedBB.getBoundingBox(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius)))
+            if (!withinRenderDistance(x, y, z, cameraX, cameraY, cameraZ, Config.quantumRenderDistance)
+                || !particle.valid(currentWorld)
+                || !frustum.isBoundingBoxInFrustum(
+                    AxisAlignedBB
+                        .getBoundingBox(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius)))
                 continue;
             for (int side = 0; side < CUBE_FACES.length; side++) {
                 float shade = FACE_SHADE[side];

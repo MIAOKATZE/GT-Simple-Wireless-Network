@@ -15,7 +15,17 @@ public final class LinkNodeVisuals {
     private LinkNodeVisuals() {}
 
     public static int resolution(String quality) {
+        if ("old".equals(quality) || "oldplus".equals(quality)) return 16;
         return "low".equals(quality) ? 32 : 64;
+    }
+
+    public static boolean legacyMaterial(String material) {
+        return "old".equals(material) || "oldplus".equals(material);
+    }
+
+    /** High and Medium share the same textures, with High adding geometry. */
+    public static int textureIndex(String material) {
+        return "old".equals(material) ? 2 : "oldplus".equals(material) ? 3 : "low".equals(material) ? 0 : 1;
     }
 
     public static boolean pulseActive(double seconds, boolean low) {

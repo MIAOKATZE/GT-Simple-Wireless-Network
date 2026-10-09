@@ -38,55 +38,130 @@ public class Config {
     private static final String CATEGORY_HUD = "hud";
 
     private static final String CATEGORY_CLIENT = "client";
-    public static String quantumParticleQuality = "high";
-    public static boolean particlesEnabled = true;
+    public static boolean tapParticlesEnabled = true;
+    public static boolean quantumParticlesEnabled = true;
+    public static int tapParticleDensityPercent = 100;
+    public static int quantumParticleDensityPercent = 100;
+    public static int tapParticleSizePercent = 100;
+    public static int quantumParticleSizePercent = 100;
+    public static int tapRenderDistance = 64;
+    public static int quantumRenderDistance = 64;
+    public static String tapMaterial = "high";
     public static float linkNodeOpacity = .48F;
     public static double linkNodeDepth = 1 / 8D;
     public static double linkNodeRelief = .65D;
 
-    public static boolean setParticlesEnabled(boolean enabled) {
-        particlesEnabled = enabled;
-        if (networkConfigFile == null) return false;
-        try {
-            Configuration configuration = new Configuration(networkConfigFile);
-            configuration
-                .get(
-                    CATEGORY_CLIENT,
-                    "ParticlesEnabled",
-                    true,
-                    "Enable decorative particles independently of animation quality")
-                .set(enabled);
-            configuration.save();
-            return true;
-        } catch (RuntimeException e) {
-            GTSimpleWirelessNetwork.LOG.error("Could not save client particle toggle", e);
-            return false;
-        }
+    public static double tapParticleDensity() {
+        return tapParticlesEnabled ? tapParticleDensityPercent / 100D : 0D;
     }
 
     public static double quantumParticleDensity() {
-        if (!particlesEnabled) return 0D;
-        return "low".equals(quantumParticleQuality) ? 0D : "medium".equals(quantumParticleQuality) ? .5D : 1D;
+        return quantumParticlesEnabled ? quantumParticleDensityPercent / 100D : 0D;
     }
 
-    public static boolean setQuantumParticleQuality(String quality) {
-        quantumParticleQuality = quality;
+    public static boolean validTapMaterial(String material) {
+        return Arrays.asList("old", "oldplus", "low", "medium", "high")
+            .contains(material);
+    }
+
+    /** Save all independent visual options while retaining unrelated categories and properties. */
+    public static boolean saveParticleConfiguration() {
         if (networkConfigFile == null) return false;
         try {
             Configuration configuration = new Configuration(networkConfigFile);
-            configuration
-                .get(
-                    CATEGORY_CLIENT,
-                    "QuantumParticleQuality",
-                    "high",
-                    "Client particle density: low=off, medium=half, high=default")
-                .set(quality);
+            writeParticleConfiguration(configuration);
             configuration.save();
             return true;
         } catch (RuntimeException e) {
-            GTSimpleWirelessNetwork.LOG.error("Could not save client quantum particle quality", e);
+            GTSimpleWirelessNetwork.LOG.error("Could not save client particle settings", e);
             return false;
         }
+    }
+
+    private static void writeParticleConfiguration(Configuration configuration) {
+        configuration.get(CATEGORY_CLIENT, "TapParticlesEnabled", true)
+            .set(tapParticlesEnabled);
+        configuration.get(CATEGORY_CLIENT, "QuantumParticlesEnabled", true)
+            .set(quantumParticlesEnabled);
+        configuration.get(CATEGORY_CLIENT, "TapParticleDensityPercent", 100)
+            .set(tapParticleDensityPercent);
+        configuration.get(CATEGORY_CLIENT, "QuantumParticleDensityPercent", 100)
+            .set(quantumParticleDensityPercent);
+        configuration.get(CATEGORY_CLIENT, "TapParticleSizePercent", 100)
+            .set(tapParticleSizePercent);
+        configuration.get(CATEGORY_CLIENT, "QuantumParticleSizePercent", 100)
+            .set(quantumParticleSizePercent);
+        configuration.get(CATEGORY_CLIENT, "TapRenderDistance", 64)
+            .set(tapRenderDistance);
+        configuration.get(CATEGORY_CLIENT, "QuantumRenderDistance", 64)
+            .set(quantumRenderDistance);
+        configuration.get(CATEGORY_CLIENT, "TapMaterial", "high")
+            .set(tapMaterial);
+    }
+
+    public static boolean resetParticleConfiguration(boolean tap) {
+        if (tap) {
+            tapParticlesEnabled = true;
+            tapParticleDensityPercent = 100;
+            tapParticleSizePercent = 100;
+            tapRenderDistance = 64;
+            tapMaterial = "high";
+        } else {
+            quantumParticlesEnabled = true;
+            quantumParticleDensityPercent = 100;
+            quantumParticleSizePercent = 100;
+            quantumRenderDistance = 64;
+        }
+        return saveParticleConfiguration();
+    }
+
+    private static void readParticleConfiguration(Configuration configuration) {
+        // Legacy properties are read only as defaults for missing new properties: migration happens once.
+        boolean legacyEnabled = !configuration.hasKey(CATEGORY_CLIENT, "ParticlesEnabled")
+            || configuration.get(CATEGORY_CLIENT, "ParticlesEnabled", true)
+                .getBoolean();
+        String quality = configuration.hasKey(CATEGORY_CLIENT, "QuantumParticleQuality")
+            ? configuration.get(CATEGORY_CLIENT, "QuantumParticleQuality", "high")
+                .getString()
+                .toLowerCase(java.util.Locale.ROOT)
+            : "high";
+        if (!Arrays.asList("low", "medium", "high")
+            .contains(quality)) quality = "high";
+        int density = "low".equals(quality) ? 0 : "medium".equals(quality) ? 50 : 100;
+        tapParticlesEnabled = configuration
+            .getBoolean("TapParticlesEnabled", CATEGORY_CLIENT, legacyEnabled, "Enable link node decorative particles");
+        quantumParticlesEnabled = configuration.getBoolean(
+            "QuantumParticlesEnabled",
+            CATEGORY_CLIENT,
+            legacyEnabled,
+            "Enable quantum decorative particles");
+        tapParticleDensityPercent = configuration
+            .getInt("TapParticleDensityPercent", CATEGORY_CLIENT, density, 0, 200, "Link node particle density (%)");
+        quantumParticleDensityPercent = configuration
+            .getInt("QuantumParticleDensityPercent", CATEGORY_CLIENT, density, 0, 200, "Quantum particle density (%)");
+        tapParticleSizePercent = configuration.getInt(
+            "TapParticleSizePercent",
+            CATEGORY_CLIENT,
+            100,
+            10,
+            400,
+            "Link node particle size (%), 100 = 1.5 times original size");
+        quantumParticleSizePercent = configuration.getInt(
+            "QuantumParticleSizePercent",
+            CATEGORY_CLIENT,
+            100,
+            10,
+            400,
+            "Quantum particle size (%), 100 = 1.5 times original size");
+        tapRenderDistance = configuration
+            .getInt("TapRenderDistance", CATEGORY_CLIENT, 64, 1, 256, "Link node effect render distance (blocks)");
+        quantumRenderDistance = configuration
+            .getInt("QuantumRenderDistance", CATEGORY_CLIENT, 64, 1, 256, "Quantum particle render distance (blocks)");
+        tapMaterial = configuration.get(CATEGORY_CLIENT, "TapMaterial", quality)
+            .getString()
+            .toLowerCase(java.util.Locale.ROOT);
+        if (!validTapMaterial(tapMaterial)) tapMaterial = "high";
+        writeParticleConfiguration(configuration);
     }
 
     /** AE2 网络监视配置类目名 */
@@ -347,20 +422,7 @@ public class Config {
     public static void synchronizeNetworkConfiguration(File configFile) {
         networkConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
-        particlesEnabled = configuration.getBoolean(
-            "ParticlesEnabled",
-            CATEGORY_CLIENT,
-            true,
-            "Enable decorative particles independently of animation quality");
-        Property qualityProperty = configuration.get(
-            CATEGORY_CLIENT,
-            "QuantumParticleQuality",
-            "high",
-            "量子粒子密度（仅客户端）：low=关闭，medium=减半，high=默认\nClient particle density: low=off, medium=half, high=default");
-        String quality = qualityProperty.getString()
-            .toLowerCase(java.util.Locale.ROOT);
-        quantumParticleQuality = "low".equals(quality) || "medium".equals(quality) ? quality : "high";
-        qualityProperty.set(quantumParticleQuality);
+        readParticleConfiguration(configuration);
         linkNodeOpacity = configuration
             .getFloat("LinkNodeOpacity", CATEGORY_CLIENT, .48F, .05F, 1F, "Transparent link node shell opacity");
         double configuredDepth = configuration
