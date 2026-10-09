@@ -35,68 +35,25 @@ public class LinkNodeVisualsTest {
     }
 
     @Test
-    public void energyArrivalGetsVisiblyBrighterInsideFadeWindowBeforeVanishingAtSurface() {
+    public void particleBodyAndGlowOnlyFadeWithAConstantMiddleThroughoutAllLifetimes() {
         for (int life = 24; life <= 40; life++) {
-            double body = particleGlow(life / 2D, life, true);
-            double enteringFade = particleGlow(life - 8, life, true);
-            double nearSurface = particleGlow(life - 6, life, true);
-            assertTrue(enteringFade > body);
-            assertTrue(nearSurface > enteringFade * 1.25);
-            assertTrue(particleGlow(life - 4, life, true) > body * 2);
-            double peak = 0, peakAge = 0;
-            for (double age = 0; age <= life; age += .125) {
-                double glow = particleGlow(age, life, true);
-                if (glow > peak) {
-                    peak = glow;
-                    peakAge = age;
-                }
-            }
-            assertTrue(life - peakAge > 4 && life - peakAge < 8);
-            double distance = .5 * (1 - peakAge / life);
-            assertTrue(distance < .15);
-            for (double age = life - 4; age < life; age += .125) {
-                assertTrue(particleGlow(age + .125, life, true) < particleGlow(age, life, true));
-            }
-            assertEquals(0, particleGlow(life, life, true), 0);
-        }
-    }
-
-    @Test
-    public void dynamoDepartureIsBrightThenNormalThenFadesAtDistantEndpoint() {
-        for (int life = 24; life <= 40; life++) {
-            assertEquals(0, particleGlow(0, life, false), 0);
-            assertTrue(particleGlow(6, life, false) > particleGlow(12, life, false) * 1.5);
-            assertEquals(1, particleGlow(12, life, false), 0);
-            assertEquals(1, particleGlow(life - 8, life, false), 0);
-            assertEquals(.5, particleGlow(life - 4, life, false), 1e-12);
-            assertEquals(0, particleGlow(life, life, false), 0);
-            assertEquals(0, LinkNodeVisuals.particleColorMix(12, life, false), 0);
-        }
-    }
-
-    @Test
-    public void particleColorsAndRenderedGlowRemainBoundedThroughoutAllLifetimes() {
-        for (int life = 24; life <= 40; life++) {
-            double previousEnergyMix = 0, previousDynamoMix = .35;
-            for (double age = 0; age <= life; age += .125) {
-                double energyMix = LinkNodeVisuals.particleColorMix(age, life, true);
-                double dynamoMix = LinkNodeVisuals.particleColorMix(age, life, false);
-                assertTrue(energyMix >= previousEnergyMix && energyMix <= .35);
-                assertTrue(dynamoMix <= previousDynamoMix && dynamoMix >= 0);
-                previousEnergyMix = energyMix;
-                previousDynamoMix = dynamoMix;
-                for (boolean energy : new boolean[] { false, true }) {
-                    double alpha = particleGlow(age, life, energy) * .22 * .8;
-                    assertTrue(alpha >= 0 && alpha <= 1);
-                    assertEquals(alpha, LinkNodeVisuals.particleOpacity(age, life, energy, true), 1e-12);
-                    assertTrue(LinkNodeVisuals.particleOpacity(age, life, energy, false) <= .82 * .8);
+            for (boolean glow : new boolean[] { false, true }) {
+                double maximum = glow ? .176 : .656;
+                assertEquals(0, LinkNodeVisuals.particleOpacity(0, life, glow), 0);
+                assertEquals(0, LinkNodeVisuals.particleOpacity(life, life, glow), 0);
+                assertEquals(maximum / 2, LinkNodeVisuals.particleOpacity(4, life, glow), 1e-12);
+                assertEquals(maximum / 2, LinkNodeVisuals.particleOpacity(life - 4, life, glow), 1e-12);
+                for (double age = 0; age <= life; age += .125) {
+                    double opacity = LinkNodeVisuals.particleOpacity(age, life, glow);
+                    assertTrue(opacity >= 0 && opacity <= maximum + 1e-12);
+                    assertEquals(opacity, LinkNodeVisuals.particleOpacity(life - age, life, glow), 1e-12);
+                    if (age >= 8 && age <= life - 8) assertEquals(maximum, opacity, 1e-12);
+                    if (age >= life - 8 && age < life) {
+                        assertTrue(LinkNodeVisuals.particleOpacity(age + .125, life, glow) < opacity);
+                    }
                 }
             }
         }
-    }
-
-    private static double particleGlow(double age, double life, boolean energy) {
-        return LinkNodeVisuals.particleAlpha(age, life) * LinkNodeVisuals.particleGlowStrength(age, life, energy);
     }
 
     @Test
