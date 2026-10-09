@@ -11,6 +11,95 @@ import org.junit.Test;
 public class LinkNodeVisualsTest {
 
     @Test
+    public void particleEntranceAndExitEachUseEightSmoothTicks() {
+        for (int life = 24; life <= 40; life++) {
+            assertEquals(0, LinkNodeVisuals.particleAlpha(0, life), 0);
+            assertEquals(0, LinkNodeVisuals.particleAlpha(life, life), 0);
+            assertEquals(0, LinkNodeVisuals.particleAlpha(-1, life), 0);
+            assertEquals(0, LinkNodeVisuals.particleAlpha(life + 1, life), 0);
+            assertEquals(.5, LinkNodeVisuals.particleAlpha(4, life), 1e-12);
+            assertEquals(.5, LinkNodeVisuals.particleAlpha(life - 4, life), 1e-12);
+            assertEquals(1, LinkNodeVisuals.particleAlpha(8, life), 0);
+            assertEquals(1, LinkNodeVisuals.particleAlpha(life - 8, life), 0);
+            for (double age = .25; age <= 8; age += .25) {
+                assertTrue(LinkNodeVisuals.particleAlpha(age, life) > LinkNodeVisuals.particleAlpha(age - .25, life));
+                assertEquals(
+                    LinkNodeVisuals.particleAlpha(age, life),
+                    LinkNodeVisuals.particleAlpha(life - age, life),
+                    1e-12);
+            }
+            // Smoothstep has a flat tangent at both invisible endpoints and the full-opacity joins.
+            assertTrue(LinkNodeVisuals.particleAlpha(.001, life) / .001 < .001);
+            assertTrue((1 - LinkNodeVisuals.particleAlpha(7.999, life)) / .001 < .001);
+        }
+    }
+
+    @Test
+    public void energyArrivalGetsVisiblyBrighterInsideFadeWindowBeforeVanishingAtSurface() {
+        for (int life = 24; life <= 40; life++) {
+            double body = particleGlow(life / 2D, life, true);
+            double enteringFade = particleGlow(life - 8, life, true);
+            double nearSurface = particleGlow(life - 6, life, true);
+            assertTrue(enteringFade > body);
+            assertTrue(nearSurface > enteringFade * 1.25);
+            assertTrue(particleGlow(life - 4, life, true) > body * 2);
+            double peak = 0, peakAge = 0;
+            for (double age = 0; age <= life; age += .125) {
+                double glow = particleGlow(age, life, true);
+                if (glow > peak) {
+                    peak = glow;
+                    peakAge = age;
+                }
+            }
+            assertTrue(life - peakAge > 4 && life - peakAge < 8);
+            double distance = .5 * (1 - peakAge / life);
+            assertTrue(distance < .15);
+            for (double age = life - 4; age < life; age += .125) {
+                assertTrue(particleGlow(age + .125, life, true) < particleGlow(age, life, true));
+            }
+            assertEquals(0, particleGlow(life, life, true), 0);
+        }
+    }
+
+    @Test
+    public void dynamoDepartureIsBrightThenNormalThenFadesAtDistantEndpoint() {
+        for (int life = 24; life <= 40; life++) {
+            assertEquals(0, particleGlow(0, life, false), 0);
+            assertTrue(particleGlow(6, life, false) > particleGlow(12, life, false) * 1.5);
+            assertEquals(1, particleGlow(12, life, false), 0);
+            assertEquals(1, particleGlow(life - 8, life, false), 0);
+            assertEquals(.5, particleGlow(life - 4, life, false), 1e-12);
+            assertEquals(0, particleGlow(life, life, false), 0);
+            assertEquals(0, LinkNodeVisuals.particleColorMix(12, life, false), 0);
+        }
+    }
+
+    @Test
+    public void particleColorsAndRenderedGlowRemainBoundedThroughoutAllLifetimes() {
+        for (int life = 24; life <= 40; life++) {
+            double previousEnergyMix = 0, previousDynamoMix = .35;
+            for (double age = 0; age <= life; age += .125) {
+                double energyMix = LinkNodeVisuals.particleColorMix(age, life, true);
+                double dynamoMix = LinkNodeVisuals.particleColorMix(age, life, false);
+                assertTrue(energyMix >= previousEnergyMix && energyMix <= .35);
+                assertTrue(dynamoMix <= previousDynamoMix && dynamoMix >= 0);
+                previousEnergyMix = energyMix;
+                previousDynamoMix = dynamoMix;
+                for (boolean energy : new boolean[] { false, true }) {
+                    double alpha = particleGlow(age, life, energy) * .22 * .8;
+                    assertTrue(alpha >= 0 && alpha <= 1);
+                    assertEquals(alpha, LinkNodeVisuals.particleOpacity(age, life, energy, true), 1e-12);
+                    assertTrue(LinkNodeVisuals.particleOpacity(age, life, energy, false) <= .82 * .8);
+                }
+            }
+        }
+    }
+
+    private static double particleGlow(double age, double life, boolean energy) {
+        return LinkNodeVisuals.particleAlpha(age, life) * LinkNodeVisuals.particleGlowStrength(age, life, energy);
+    }
+
+    @Test
     public void highAndMediumShareProfileWhileLowAddsThirdRing() {
         assertEquals(64, LinkNodeVisuals.resolution("high"));
         assertEquals(64, LinkNodeVisuals.resolution("medium"));

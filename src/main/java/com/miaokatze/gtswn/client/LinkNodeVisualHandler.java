@@ -93,11 +93,11 @@ public final class LinkNodeVisualHandler {
         particles.removeIf(
             particle -> !particle.source.valid() || !particle.source.particlesReady(0)
                 || ++particle.age >= particle.life);
-        int budget = 8;
+        int budget = 12;
         for (Source source : visible) {
-            if (budget <= 0 || particles.size() >= 128) break;
+            if (budget <= 0 || particles.size() >= 192) break;
             if (!source.particlesReady(0)) continue;
-            double chance = .14 * Config.quantumParticleDensity() * (mc.gameSettings.particleSetting == 1 ? .5 : 1);
+            double chance = .21 * Config.quantumParticleDensity() * (mc.gameSettings.particleSetting == 1 ? .5 : 1);
             if (world.rand.nextDouble() < chance) {
                 particles.add(new Particle(source));
                 budget--;
@@ -368,13 +368,16 @@ public final class LinkNodeVisualHandler {
                 progress);
             double[] point = LinkNodeVisuals.point(particle.source.side, particle.u, particle.v, depth);
             double radius = particle.radius * (glow ? 1.85 : 1);
-            float alpha = (float) (Math.min(1, (particle.age + partial + 1) / 3)
-                * Math.min(1, (particle.life - particle.age - partial) / 4));
+            double age = particle.age + partial;
+            boolean energy = particle.source.energy;
+            double mix = LinkNodeVisuals.particleColorMix(age, particle.life, energy);
+            float alpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, energy, glow);
+            float red = energy ? 1 : .95F, green = energy ? .78F : .35F, blue = energy ? .25F : 1;
             tess.setColorRGBA_F(
-                particle.source.energy ? 1 : .95F,
-                particle.source.energy ? .78F : .35F,
-                particle.source.energy ? .25F : 1,
-                alpha * (glow ? .22F : .82F) * .8F);
+                (float) (red + (1 - red) * mix),
+                (float) (green + (1 - green) * mix),
+                (float) (blue + (1 - blue) * mix),
+                alpha);
             cube(
                 particle.source.host.xCoord + point[0],
                 particle.source.host.yCoord + point[1],
@@ -440,7 +443,7 @@ public final class LinkNodeVisualHandler {
             double[] xy = LinkNodeVisuals.sampleColumn(world.rand);
             u = xy[0];
             v = xy[1];
-            radius = (.024 + world.rand.nextDouble() * .02) * .7;
+            radius = .0238;
             life = 24 + world.rand.nextInt(17);
         }
     }
