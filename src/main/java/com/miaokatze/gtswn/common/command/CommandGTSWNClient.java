@@ -24,7 +24,10 @@ public class CommandGTSWNClient extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/gtswn <HudXOffset|HudYOffset|HudScale> [value] | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn quality <low|medium|high> | /gtswn particle <on|off>";
+        return "/gtswn <tap|quantum> [on|off|density <0..200>|size <10..400>|distance <1..256>|help|status|reset]"
+            + " | /gtswn tap material <old|oldplus|low|medium|high>"
+            + " | /gtswn <HudXOffset|HudYOffset|HudScale> [value]"
+            + " | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn <help|status|reset>";
     }
 
     @Override
@@ -37,36 +40,87 @@ public class CommandGTSWNClient extends CommandBase {
         if (args.length == 1) {
             return getListOfStringsMatchingLastWord(
                 args,
+                "tap",
+                "quantum",
+                "help",
+                "status",
+                "reset",
                 SUBCMD_X,
                 SUBCMD_Y,
                 SUBCMD_SCALE,
-                "hud",
-                "quality",
-                "particle");
+                "hud");
         }
-        if (args.length == 2 && "particle".equalsIgnoreCase(args[0])) {
-            return getListOfStringsMatchingLastWord(args, "on", "off");
+        if (args.length == 2 && isGroup(args[0])) {
+            return "tap".equalsIgnoreCase(args[0])
+                ? getListOfStringsMatchingLastWord(
+                    args,
+                    "on",
+                    "off",
+                    "density",
+                    "size",
+                    "distance",
+                    "material",
+                    "help",
+                    "status",
+                    "reset")
+                : getListOfStringsMatchingLastWord(
+                    args,
+                    "on",
+                    "off",
+                    "density",
+                    "size",
+                    "distance",
+                    "help",
+                    "status",
+                    "reset");
         }
-        if (args.length == 2 && "quality".equalsIgnoreCase(args[0])) {
-            return getListOfStringsMatchingLastWord(args, "low", "medium", "high");
+        if (args.length == 3 && isGroup(args[0])) {
+            if ("material".equalsIgnoreCase(args[1]) && "tap".equalsIgnoreCase(args[0])) {
+                return getListOfStringsMatchingLastWord(args, "old", "oldplus", "low", "medium", "high");
+            }
+            if ("density".equalsIgnoreCase(args[1]))
+                return getListOfStringsMatchingLastWord(args, "0", "50", "100", "200");
+            if ("size".equalsIgnoreCase(args[1]))
+                return getListOfStringsMatchingLastWord(args, "10", "50", "100", "200", "400");
+            if ("distance".equalsIgnoreCase(args[1]))
+                return getListOfStringsMatchingLastWord(args, "1", "32", "64", "128", "256");
         }
         if (args.length == 2 && "hud".equalsIgnoreCase(args[0])) {
             return getListOfStringsMatchingLastWord(args, "charge", "eu", "instant", "average");
         }
-        if (args.length == 3 && "hud".equalsIgnoreCase(args[0])) {
+        if (args.length == 3 && "hud".equalsIgnoreCase(args[0])
+            && java.util.Arrays.asList("charge", "eu", "instant", "average")
+                .contains(args[1].toLowerCase(java.util.Locale.ROOT))) {
             return getListOfStringsMatchingLastWord(args, "on", "off");
         }
-        return null;
+        return java.util.Collections.emptyList();
     }
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
-        if (args.length > 0 && "particle".equalsIgnoreCase(args[0])) {
-            processParticle(sender, args);
+        if (args.length == 0) {
+            message(sender, "gtswn.command.effects.guide");
             return;
         }
-        if (args.length > 0 && "quality".equalsIgnoreCase(args[0])) {
-            processQuality(sender, args);
+        if (isGroup(args[0])) {
+            processEffects(sender, args);
+            return;
+        }
+        if ("help".equalsIgnoreCase(args[0]) || "status".equalsIgnoreCase(args[0])
+            || "reset".equalsIgnoreCase(args[0])) {
+            if (args.length != 1) throw new WrongUsageException(getCommandUsage(sender));
+            if ("help".equalsIgnoreCase(args[0])) {
+                message(sender, "gtswn.command.effects.guide");
+                sender.addChatMessage(new ChatComponentText(getCommandUsage(sender)));
+            } else {
+                if ("reset".equalsIgnoreCase(args[0])) {
+                    boolean tapSaved = Config.resetParticleConfiguration(true);
+                    boolean quantumSaved = Config.resetParticleConfiguration(false);
+                    if (!tapSaved || !quantumSaved) message(sender, "gtswn.command.effects.save_failed");
+                }
+                showEffects(sender, true);
+                showEffects(sender, false);
+            }
             return;
         }
         if (args.length > 0 && "hud".equalsIgnoreCase(args[0])) {
@@ -77,7 +131,9 @@ public class CommandGTSWNClient extends CommandBase {
             throw new WrongUsageException(getCommandUsage(sender));
         }
 
-        String subcommand = args[0];
+        String subcommand = SUBCMD_X.equalsIgnoreCase(args[0]) ? SUBCMD_X
+            : SUBCMD_Y.equalsIgnoreCase(args[0]) ? SUBCMD_Y
+                : SUBCMD_SCALE.equalsIgnoreCase(args[0]) ? SUBCMD_SCALE : args[0];
         if (!SUBCMD_X.equals(subcommand) && !SUBCMD_Y.equals(subcommand) && !SUBCMD_SCALE.equals(subcommand)) {
             throw new WrongUsageException(getCommandUsage(sender));
         }
@@ -134,45 +190,76 @@ public class CommandGTSWNClient extends CommandBase {
         return Float.toString(Config.hudScale);
     }
 
-    private void processParticle(ICommandSender sender, String[] args) {
-        if (args.length == 1) {
-            sender.addChatMessage(
-                new ChatComponentText(
-                    StatCollector.translateToLocalFormatted(
-                        "gtswn.command.particle.current",
-                        Config.particlesEnabled ? "on" : "off")));
-            return;
-        }
-        if (args.length != 2 || !("on".equalsIgnoreCase(args[1]) || "off".equalsIgnoreCase(args[1]))) {
-            throw new WrongUsageException("/gtswn particle <on|off>");
-        }
-        boolean enabled = "on".equalsIgnoreCase(args[1]);
-        boolean saved = Config.setParticlesEnabled(enabled);
-        sender.addChatMessage(
-            new ChatComponentText(
-                StatCollector.translateToLocalFormatted("gtswn.command.particle.updated", enabled ? "on" : "off")));
-        if (!saved) sender.addChatMessage(
-            new ChatComponentText(StatCollector.translateToLocal("gtswn.command.particle.save_failed")));
+    private static boolean isGroup(String group) {
+        return "tap".equalsIgnoreCase(group) || "quantum".equalsIgnoreCase(group);
     }
 
-    private void processQuality(ICommandSender sender, String[] args) {
-        if (args.length == 1) {
-            sender.addChatMessage(
-                new ChatComponentText(
-                    StatCollector
-                        .translateToLocalFormatted("gtswn.command.quality.current", Config.quantumParticleQuality)));
+    private static void message(ICommandSender sender, String key, Object... values) {
+        sender.addChatMessage(new ChatComponentText(StatCollector.translateToLocalFormatted(key, values)));
+    }
+
+    private static void showEffects(ICommandSender sender, boolean tap) {
+        message(
+            sender,
+            "gtswn.command.effects.current",
+            tap ? "tap" : "quantum",
+            (tap ? Config.tapParticlesEnabled : Config.quantumParticlesEnabled) ? "on" : "off",
+            tap ? Config.tapParticleDensityPercent : Config.quantumParticleDensityPercent,
+            tap ? Config.tapParticleSizePercent : Config.quantumParticleSizePercent,
+            tap ? Config.tapRenderDistance : Config.quantumRenderDistance);
+        if (tap) message(sender, "gtswn.command.effects.material", Config.tapMaterial);
+    }
+
+    private void processEffects(ICommandSender sender, String[] args) {
+        boolean tap = "tap".equalsIgnoreCase(args[0]);
+        String usage = tap ? "gtswn.command.effects.tap_usage" : "gtswn.command.effects.quantum_usage";
+        String operation = args.length < 2 ? "status" : args[1].toLowerCase(java.util.Locale.ROOT);
+        if ("help".equals(operation) || "status".equals(operation)) {
+            if (args.length > 2) throw new WrongUsageException(usage);
+            showEffects(sender, tap);
+            message(sender, tap ? "gtswn.command.effects.tap_usage" : "gtswn.command.effects.quantum_usage");
             return;
         }
-        if (args.length != 2 || !("low".equalsIgnoreCase(args[1]) || "medium".equalsIgnoreCase(args[1])
-            || "high".equalsIgnoreCase(args[1]))) {
-            throw new WrongUsageException("/gtswn quality <low|medium|high>");
+        if ("on".equals(operation) || "off".equals(operation) || "reset".equals(operation)) {
+            if (args.length != 2) throw new WrongUsageException(usage);
+            if ("reset".equals(operation)) {
+                if (!Config.resetParticleConfiguration(tap)) message(sender, "gtswn.command.effects.save_failed");
+                showEffects(sender, tap);
+                return;
+            }
+            if (tap) Config.tapParticlesEnabled = "on".equals(operation);
+            else Config.quantumParticlesEnabled = "on".equals(operation);
+        } else if ("material".equals(operation) && tap) {
+            if (args.length != 3) throw new WrongUsageException(usage);
+            String material = args[2].toLowerCase(java.util.Locale.ROOT);
+            if (!Config.validTapMaterial(material)) throw new WrongUsageException(usage);
+            Config.tapMaterial = material;
+        } else if ("density".equals(operation) || "size".equals(operation) || "distance".equals(operation)) {
+            if (args.length != 3) throw new WrongUsageException(usage);
+            int minimum = "density".equals(operation) ? 0 : "size".equals(operation) ? 10 : 1;
+            int maximum = "density".equals(operation) ? 200 : "size".equals(operation) ? 400 : 256;
+            int value;
+            try {
+                value = Integer.parseInt(args[2]);
+                if (value < minimum || value > maximum) throw new IllegalArgumentException();
+            } catch (IllegalArgumentException exception) {
+                throw new WrongUsageException(usage);
+            }
+            if ("density".equals(operation)) {
+                if (tap) Config.tapParticleDensityPercent = value;
+                else Config.quantumParticleDensityPercent = value;
+            } else if ("size".equals(operation)) {
+                if (tap) Config.tapParticleSizePercent = value;
+                else Config.quantumParticleSizePercent = value;
+            } else {
+                if (tap) Config.tapRenderDistance = value;
+                else Config.quantumRenderDistance = value;
+            }
+        } else {
+            throw new WrongUsageException(usage);
         }
-        String quality = args[1].toLowerCase(java.util.Locale.ROOT);
-        boolean saved = Config.setQuantumParticleQuality(quality);
-        sender.addChatMessage(
-            new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.command.quality.updated", quality)));
-        if (!saved) sender
-            .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.command.quality.save_failed")));
+        if (!Config.saveParticleConfiguration()) message(sender, "gtswn.command.effects.save_failed");
+        showEffects(sender, tap);
     }
 
     private void processLineToggle(ICommandSender sender, String[] args) {

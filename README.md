@@ -59,7 +59,7 @@ A portable item that connects any machine to the wireless EU network shared acro
 Right-click a machine to install the appropriate cover; no separate recipe is needed. Bare covers without configuration do not work, and machine chunks must remain loaded. Energy mode powers the machine from its buffer; Power mode collects generator output and returns it to the grid, blocking duplicate cable output on the covered face.
 
 - **电流设置 / Current setting**：Shift+右击覆盖板打开界面，只允许编辑电流（A），最小为 0.1 A；其余参数只读 / Shift+right-click a cover to open its GUI. Only amperage (A) is editable, with a minimum of 0.1 A; all other settings are read-only.
-- **安装动画 / Installation animation**：新安装的覆盖板会由内向外逐渐显现蜂窝，动画结束后才开始显示粒子效果；Low、Medium、High 三档均有渐显动画，后续粒子遵循当前画质设置 / Newly installed covers reveal their honeycomb from the center outward before particles start. Low, Medium and High all include this reveal; subsequent particles follow the selected quality setting.
+- **安装动画 / Installation animation**：新安装的覆盖板会由内向外逐渐显现蜂窝，动画结束后才开始显示粒子效果；Low、Medium、High 使用蜂窝显现，old 系列使用平面渐显；粒子设置独立于材质 / Low, Medium and High reveal the honeycomb; the old series fades in as a flat surface. Particles are configured independently of material.
 - **损耗与周期 / Loss and interval**：默认每 600 tick（30 秒）与电网交互，下行损耗 15%、上行 0%；可在 `gtswn_network.cfg` 配置。拆除覆盖板时剩余缓存按上行损耗返还 / Grid interaction defaults to every 600 ticks (30 seconds), with 15% downlink loss and 0% uplink loss. Configure these in `gtswn_network.cfg`; removing a cover returns its remaining buffer with uplink loss.
 - **拆机 / Dismantling**：扳手左键配合 Shift 拆除全部覆盖板；配合 Alt 静默清除链路节点，其他覆盖板保持原行为。链路节点不掉落物品，剩余电量回到电网 / Wrench-left-click with Shift removes all covers; with Alt silently clears link nodes while other covers retain their usual behavior. Link nodes leave no item drops and return their remaining energy to the grid.
 - **配置复制 / Copying settings**：`AllowCopyPasteTool` 默认关闭；开启后 GT 覆盖板工具、物质操纵者等可复制节点配置 / `AllowCopyPasteTool` is off by default; enable it to copy node settings with GT cover tools or MatterManipulator.
@@ -287,7 +287,24 @@ A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Netwo
 - **`/gtswn HudXOffset [值]`** / **`/gtswn HudYOffset [值]`** — 调整便携监测终端 HUD 的水平/垂直偏移（整数，±500；Y 正值向上）。/ Adjust the portable monitor HUD horizontal/vertical offset (integer, ±500; positive Y is up).
 - **`/gtswn HudScale [值]`** — 调整便携监测终端 HUD 缩放（0.2–5.0）。/ Adjust the portable monitor HUD scale (0.2–5.0).
 - **`/gtswn hud <charge|eu|instant|average> <on|off>`** — 分别开关充电、电量、瞬时与平均功率行 / Toggle the charge, energy, instantaneous and average power rows.
-- **`/gtswn quality <low|medium|high>`** — 调整客户端量子粒子密度：low 关闭、medium 减半、high 默认，保存至配置项 `QuantumParticleQuality`。/ Set client quantum particle density: low off, medium half, high default; saved as `QuantumParticleQuality`.
+- **`/gtswn tap`** — 查看链路节点特效设置与用法；**`/gtswn quantum`** — 查看量子节点、量子并入特效设置与用法 / Show settings and usage for link nodes or quantum nodes and incorporation.
+- **`/gtswn <tap|quantum> <on|off>`** — 独立开关对应粒子，保留材质、安装动画和已设置的数值 / Toggle particles independently, retaining material, installation animation and numeric settings.
+- **`/gtswn <tap|quantum> density <0-200>`** — 粒子密度百分数，默认 100；0 关闭发射 / Particle density percentage, default 100; 0 stops emission.
+- **`/gtswn <tap|quantum> size <10-400>`** — 粒子大小百分数，默认 100，对应此前实际大小的 150% / Particle size percentage, default 100, equal to 150% of the previous physical size.
+- **`/gtswn <tap|quantum> distance <1-256>`** — 实际格数，默认 64；限制粒子发射与绘制，tap 同时限制材质绘制 / Distance in blocks, default 64; limits particle emission and drawing, and tap material drawing.
+- **`/gtswn tap material <old|oldplus|low|medium|high>`** — 仅链路节点支持，默认 high；材质不会改变粒子密度 / Link nodes only, default high; material does not change particle density.
+
+| 材质 / Material | 效果 / Appearance |
+|---|---|
+| `old` | 16×16 四帧旧覆盖面 / Original 16×16 four-frame cover |
+| `oldplus` | 保留的复杂 16×16 四帧旧款 / Preserved detailed 16×16 four-frame legacy variant |
+| `low` | 32×32 平面蜂窝 / Flat 32×32 honeycomb |
+| `medium` | 64×64 平面蜂窝 / Flat 64×64 honeycomb |
+| `high` | 64×64 蜂窝与立体凹凸 / 64×64 honeycomb with surface relief |
+
+- **`/gtswn <tap|quantum> <help|status|reset>`** — 用法、当前值或重置该组默认值；`/gtswn help`、`status`、`reset` 分别查看总帮助、两组状态、重置两组 / Usage, current values or reset that group; global help, status and reset cover both groups.
+- 首次升级自动将旧 `QuantumParticleQuality`、`ParticlesEnabled` 迁移为两组独立配置，保留旧开关与密度偏好；之后旧项不再覆盖新项。旧 `quality`、`particle` 指令已替换为以上分组指令 / The first upgrade migrates legacy quality and particle toggle preferences into independent group settings; legacy properties then stop overriding new ones. Group commands replace the former quality and particle commands.
+- 两组默认均开启，密度/大小为 100%，距离 64 格；密度受客户端粒子预算及原版粒子设置限制，不会强制加载区块 / Both groups default on with 100% density/size and 64-block distance. Density remains bounded by client particle budgets and vanilla particle settings; chunks are never force-loaded.
 - 带参数时立即生效并保存到 `config/gtswn/gtswn_network.cfg`；偏移/缩放命令无参数时显示当前值，四行开关也可在 `[hud]` 配置 / Values apply immediately and save to `config/gtswn/gtswn_network.cfg`. Offset/scale commands without values show current settings; row toggles are also configurable in `[hud]`.
 
 ***

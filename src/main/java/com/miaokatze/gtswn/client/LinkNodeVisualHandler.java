@@ -1,5 +1,8 @@
 package com.miaokatze.gtswn.client;
 
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -7,6 +10,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+
+import javax.imageio.ImageIO;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.OpenGlHelper;
@@ -30,6 +35,7 @@ import com.miaokatze.gtswn.client.render.LinkNodeVisuals.Cell;
 import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.PacketLinkNodeInstalled;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -43,7 +49,7 @@ public final class LinkNodeVisualHandler {
     private final Set<TileEntity> hosts = Collections.newSetFromMap(new IdentityHashMap<>());
     private final List<Source> visible = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
-    private final TextureSet[][] textures = new TextureSet[2][2];
+    private final TextureSet[][] textures = new TextureSet[4][2];
     private final LinkNodeInstallAnimation installations = new LinkNodeInstallAnimation();
     private final Map<String, PacketLinkNodeInstalled> installationTargets = new LinkedHashMap<>();
     private World world;
@@ -76,6 +82,7 @@ public final class LinkNodeVisualHandler {
             java.util.Comparator.comparingDouble(host -> host.getDistanceFrom(camera.posX, camera.posY, camera.posZ)));
         for (int i = 0, count = Math.min(128, candidates.size()); i < count; i++) {
             TileEntity host = candidates.get(i);
+            if (!withinDistance(host, camera.posX, camera.posY, camera.posZ)) continue;
             for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
                 Object cover = ((ICoverable) host).getCoverAtSide(side);
                 if (cover instanceof GTswnCoverWirelessBase && ((GTswnCoverWirelessBase) cover).isValid()
@@ -86,18 +93,19 @@ public final class LinkNodeVisualHandler {
             }
             if (visible.size() >= 128) break;
         }
-        if (Config.quantumParticleDensity() == 0 || mc.gameSettings.particleSetting >= 2) {
+        if (Config.tapParticleDensity() == 0 || mc.gameSettings.particleSetting >= 2) {
             particles.clear();
             return;
         }
         particles.removeIf(
             particle -> !particle.source.valid() || !particle.source.particlesReady(0)
+                || !withinDistance(particle.source.host, camera.posX, camera.posY, camera.posZ)
                 || ++particle.age >= particle.life);
         int budget = 12;
         for (Source source : visible) {
             if (budget <= 0 || particles.size() >= 192) break;
             if (!source.particlesReady(0)) continue;
-            double chance = .21 * Config.quantumParticleDensity() * (mc.gameSettings.particleSetting == 1 ? .5 : 1);
+            double chance = .21 * Config.tapParticleDensity() * (mc.gameSettings.particleSetting == 1 ? .5 : 1);
             if (world.rand.nextDouble() < chance) {
                 particles.add(new Particle(source));
                 budget--;
@@ -188,15 +196,19 @@ public final class LinkNodeVisualHandler {
         double x = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * event.partialTicks;
         double y = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * event.partialTicks;
         double z = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * event.partialTicks;
-        boolean low = "low".equals(Config.quantumParticleQuality);
-        boolean high = "high".equals(Config.quantumParticleQuality);
+        String material = Config.tapMaterial;
+        boolean high = "high".equals(material);
+        boolean legacy = LinkNodeVisuals.legacyMaterial(material);
+        int textureIndex = LinkNodeVisuals.textureIndex(material);
         double seconds = (world.getTotalWorldTime() + event.partialTicks) / 20D;
         Frustrum frustum = new Frustrum();
         frustum.setPosition(x, y, z);
         List<Source> eligible = new ArrayList<>();
         boolean[] activeTypes = new boolean[2];
         for (Source source : visible) {
-            if (!source.valid() || !front(source, camera) || !inView(source, frustum)) continue;
+            if (!source.valid() || !withinDistance(source.host, x, y, z)
+                || !front(source, camera)
+                || !inView(source, frustum)) continue;
             eligible.add(source);
             activeTypes[source.energy ? 0 : 1] = true;
         }
@@ -218,12 +230,13 @@ public final class LinkNodeVisualHandler {
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240, 240);
             for (int type = 0; type < 2; type++) {
                 if (!activeTypes[type]) continue;
-                TextureSet texture = textures[low ? 0 : 1][type];
-                if (texture == null) textures[low ? 0 : 1][type] = texture = new TextureSet(low ? 32 : 64, type == 0);
+                TextureSet texture = textures[textureIndex][type];
+                if (texture == null) textures[textureIndex][type] = texture = new TextureSet(material, type == 0);
                 texture.update(seconds);
             }
             // Keep back-to-front order across both materials. Adjacent matching materials share a batch.
             for (int pass = 0; pass < 2; pass++) {
+                if (legacy && pass == 1) continue;
                 GL11.glEnable(GL11.GL_TEXTURE_2D);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, pass == 0 ? GL11.GL_ONE_MINUS_SRC_ALPHA : GL11.GL_ONE);
                 Tessellator tess = Tessellator.instance;
@@ -232,21 +245,32 @@ public final class LinkNodeVisualHandler {
                     int type = source.energy ? 0 : 1;
                     if (type != previousType) {
                         if (previousType >= 0) tess.draw();
-                        TextureSet texture = textures[low ? 0 : 1][type];
+                        TextureSet texture = textures[textureIndex][type];
                         mc.getTextureManager()
                             .bindTexture(pass == 0 ? texture.baseLocation : texture.glowLocation);
                         tess.startDrawingQuads();
-                        tess.setColorRGBA_F(1, 1, 1, pass == 0 ? Config.linkNodeOpacity : 1);
+                        tess.setColorRGBA_F(1, 1, 1, pass == 0 && !legacy ? Config.linkNodeOpacity : 1);
                         previousType = type;
                     }
-                    surface(source, high, pass == 0 ? Config.linkNodeOpacity : 1, event.partialTicks);
+                    if (legacy) {
+                        tess.setColorRGBA_F(
+                            1,
+                            1,
+                            1,
+                            (float) Math.min(
+                                1,
+                                source.installElapsed(event.partialTicks) / LinkNodeInstallAnimation.DURATION_TICKS));
+                        quad(source, .001, -.5, -.5, .5, .5);
+                    } else {
+                        surface(source, high, pass == 0 ? Config.linkNodeOpacity : 1, event.partialTicks);
+                    }
                 }
                 if (previousType >= 0) tess.draw();
             }
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             if (high) relief(seconds, eligible, event.partialTicks);
-            if (!low && Config.particlesEnabled && mc.gameSettings.particleSetting < 2) {
+            if (Config.tapParticleDensity() > 0 && mc.gameSettings.particleSetting < 2) {
                 drawParticles(event.partialTicks, false, frustum);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
                 drawParticles(event.partialTicks, true, frustum);
@@ -304,6 +328,10 @@ public final class LinkNodeVisualHandler {
                 source.host.zCoord + 2));
     }
 
+    private static boolean withinDistance(TileEntity host, double x, double y, double z) {
+        return host.getDistanceFrom(x, y, z) <= (double) Config.tapRenderDistance * Config.tapRenderDistance;
+    }
+
     private void relief(double seconds, List<Source> eligible, float partial) {
         Tessellator tess = Tessellator.instance;
         tess.startDrawingQuads();
@@ -359,7 +387,7 @@ public final class LinkNodeVisualHandler {
                 || !inView(particle.source, frustum)) continue;
             double progress = (particle.age + partial) / particle.life;
             double depth = LinkNodeVisuals.particleDepth(
-                Config.quantumParticleQuality,
+                Config.tapMaterial,
                 particle.u,
                 particle.v,
                 Config.linkNodeDepth,
@@ -367,7 +395,15 @@ public final class LinkNodeVisualHandler {
                 particle.source.energy,
                 progress);
             double[] point = LinkNodeVisuals.point(particle.source.side, particle.u, particle.v, depth);
-            double radius = particle.radius * (glow ? 1.85 : 1);
+            double radius = particle.radius * 1.5 * Config.tapParticleSizePercent / 100D * (glow ? 1.85 : 1);
+            Entity camera = Minecraft.getMinecraft().renderViewEntity;
+            double cameraX = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * partial;
+            double cameraY = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * partial;
+            double cameraZ = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * partial;
+            double dx = particle.source.host.xCoord + point[0] - cameraX;
+            double dy = particle.source.host.yCoord + point[1] - cameraY;
+            double dz = particle.source.host.zCoord + point[2] - cameraZ;
+            if (dx * dx + dy * dy + dz * dz > (double) Config.tapRenderDistance * Config.tapRenderDistance) continue;
             double age = particle.age + partial;
             boolean energy = particle.source.energy;
             float alpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, glow);
@@ -446,13 +482,18 @@ public final class LinkNodeVisualHandler {
 
         private final int size;
         private final boolean energy;
+        private final String material;
+        private final int[] legacyFrames;
         private final DynamicTexture base, glow;
         private final ResourceLocation baseLocation, glowLocation;
         private long frame = Long.MIN_VALUE;
 
-        private TextureSet(int size, boolean energy) {
-            this.size = size;
+        private TextureSet(String material, boolean energy) {
+            this.material = material;
+            this.size = LinkNodeVisuals.resolution(material);
             this.energy = energy;
+            int size = this.size;
+            legacyFrames = "old".equals(material) || "oldplus".equals(material) ? loadLegacy(material, energy) : null;
             base = new DynamicTexture(size, size);
             glow = new DynamicTexture(size, size);
             baseLocation = Minecraft.getMinecraft()
@@ -464,9 +505,21 @@ public final class LinkNodeVisualHandler {
         }
 
         private void update(double seconds) {
-            long next = (long) Math.floor(seconds * (size == 32 ? 3 : 10));
+            long next = (long) Math.floor(seconds * (legacyFrames != null ? 2 : size == 32 ? 3 : 10));
             if (next == frame) return;
             frame = next;
+            if (LinkNodeVisuals.legacyMaterial(material)) {
+                int animationFrame = (int) Math.floorMod(next, 4);
+                int[] pixels = legacyFrames == null ? new int[size * size] : legacyFrames;
+                System.arraycopy(
+                    pixels,
+                    legacyFrames == null ? 0 : animationFrame * size * size,
+                    base.getTextureData(),
+                    0,
+                    size * size);
+                base.updateDynamicTexture();
+                return;
+            }
             System.arraycopy(
                 LinkNodeVisuals.pixels(size, seconds, energy, false),
                 0,
@@ -481,6 +534,26 @@ public final class LinkNodeVisualHandler {
                 size * size);
             base.updateDynamicTexture();
             glow.updateDynamicTexture();
+        }
+
+        private static int[] loadLegacy(String material, boolean energy) {
+            String path = ("old".equals(material) ? "textures/blocks/covers/" : "textures/covers/")
+                + "wireless_connector_"
+                + (energy ? "input" : "output")
+                + ".png";
+            try (InputStream stream = Minecraft.getMinecraft()
+                .getResourceManager()
+                .getResource(new ResourceLocation("gtswn", path))
+                .getInputStream()) {
+                BufferedImage image = ImageIO.read(stream);
+                if (image == null || image.getWidth() != 16 || image.getHeight() != 64) {
+                    throw new IOException("Expected 16x64 legacy link texture: " + path);
+                }
+                return image.getRGB(0, 0, 16, 64, null, 0, 16);
+            } catch (IOException e) {
+                GTSimpleWirelessNetwork.LOG.error("Could not load legacy link node texture " + path, e);
+                return null;
+            }
         }
     }
 }
