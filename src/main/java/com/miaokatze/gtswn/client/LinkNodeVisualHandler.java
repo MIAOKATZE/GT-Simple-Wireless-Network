@@ -370,14 +370,8 @@ public final class LinkNodeVisualHandler {
             double radius = particle.radius * (glow ? 1.85 : 1);
             double age = particle.age + partial;
             boolean energy = particle.source.energy;
-            double mix = LinkNodeVisuals.particleColorMix(age, particle.life, energy);
-            float alpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, energy, glow);
-            float red = energy ? 1 : .95F, green = energy ? .78F : .35F, blue = energy ? .25F : 1;
-            tess.setColorRGBA_F(
-                (float) (red + (1 - red) * mix),
-                (float) (green + (1 - green) * mix),
-                (float) (blue + (1 - blue) * mix),
-                alpha);
+            float alpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, glow);
+            tess.setColorRGBA_F(energy ? 1 : .95F, energy ? .78F : .35F, energy ? .25F : 1, alpha);
             cube(
                 particle.source.host.xCoord + point[0],
                 particle.source.host.yCoord + point[1],
