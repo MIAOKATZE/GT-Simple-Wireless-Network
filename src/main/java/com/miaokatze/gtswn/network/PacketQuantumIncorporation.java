@@ -14,6 +14,7 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
@@ -148,15 +149,21 @@ public class PacketQuantumIncorporation implements IMessage {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }
-        if (!player.capabilities.isCreativeMode && !com.miaokatze.gtswn.common.gui.TerminalSupplyStore
-            .available(player, com.miaokatze.gtswn.common.gui.TerminalSupplyStore.Kind.ANCHOR)) {
+        int suppliesBefore = TerminalSupplyStore.count(player, TerminalSupplyStore.Kind.ANCHOR);
+        if (!player.capabilities.isCreativeMode
+            && !TerminalSupplyStore.available(player, TerminalSupplyStore.Kind.ANCHOR)) {
             tell(player, "gtswn.chat.quantum.incorporation_need_anchor");
             return;
         }
         if (registry.add(world, message.x, message.y, message.z, held.getTagCompound(), player)) {
-            if (!player.capabilities.isCreativeMode) com.miaokatze.gtswn.common.gui.TerminalSupplyStore
-                .consume(player, com.miaokatze.gtswn.common.gui.TerminalSupplyStore.Kind.ANCHOR);
-            tell(player, "gtswn.chat.quantum.incorporation_added");
+            if (!player.capabilities.isCreativeMode)
+                TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.ANCHOR);
+            player.addChatMessage(
+                TerminalSupplyStore.appendRemaining(
+                    new ChatComponentTranslation("gtswn.chat.quantum.incorporation_added"),
+                    player,
+                    TerminalSupplyStore.Kind.ANCHOR,
+                    suppliesBefore));
             AnimationQualityHints.show(player, QualityHintCounter.Kind.INCORPORATION);
         }
     }
