@@ -36,8 +36,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * 设备信息终端异步扫描管理器（实施计划 C2 / 用户修正 M2 / v1.8.0 世界源扩展，
  * 注册于 CommonProxy.init 的 FML 总线）。
  * <p>
- * Shift+右击（{@code ItemDeviceInfoTerminal} onItemRightClick / onItemUse 服务端分支）调
- * {@link #toggleScan}：进行中 = 取消（聊天 scan.cancelled + 清理）；否则启动 5 秒逐秒倒计时
+ * Alt+Shift空气蓄力完成调用 {@link #startScan}，已有扫描保持运行；否则启动5秒逐秒倒计时
  * （5/4/3/2/1 五条 scan.countdown 提示，保留跨档补发；scan.start 即开始提示）。
  * <p>
  * 0 档执行（用户修正 M2 三段式 + v1.8.0 世界化）：
@@ -103,6 +102,13 @@ public final class DeviceScanManager {
             sendChat(player, "gtswn.device.chat.scan.cancelled");
             return;
         }
+        startScan(player, terminalId);
+    }
+
+    /** 幂等启动：重复蓄力不会取消现有任务。 */
+    public static void startScan(EntityPlayerMP player, UUID terminalId) {
+        UUID playerId = player.getUniqueID();
+        if (STATES.containsKey(playerId)) return;
         MinecraftServer server = MinecraftServer.getServer();
         World overworld = server == null ? null : server.worldServerForDimension(0);
         if (overworld == null) {

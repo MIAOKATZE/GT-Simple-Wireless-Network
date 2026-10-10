@@ -176,6 +176,7 @@ public final class NodeRevealRequestQueue {
             return;
         }
         WirelessEnergyTap tap = (WirelessEnergyTap) held.getItem();
+        if (!PacketTerminalGesture.consumeReveal(player)) return;
         boolean cooldownPass = tap.tryConsumeRevealCooldown(player);
         if (!cooldownPass) {
             // 4 tick 冷却中：静默丢弃（不回包）

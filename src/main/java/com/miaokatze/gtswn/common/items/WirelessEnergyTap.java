@@ -21,6 +21,7 @@ import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.covers.WirelessNodeRegistry;
+import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
@@ -41,7 +42,8 @@ import gregtech.common.covers.Cover;
  * 一个便携式的无线网络分接设备，允许玩家将任意能量容器连接到GT无线网络。
  * 功能特性：
  * - 右键空气：切换手持模式（能源/动力），更新材质
- * - Alt + 对空气长按右键 1 秒：蓄力扫描节点，穿墙显示 15 秒
+ * - Alt + 右击空气：打开终端容器界面
+ * - Alt + Shift + 对空气长按右键 1 秒：蓄力扫描节点，穿墙显示 15 秒
  * - 右键能量容器：赋予或取消无线连接状态
  * - Shift + 右键能量容器：切换输入/输出模式
  * - 自动读取目标能量容器的电压等级
@@ -334,7 +336,8 @@ public class WirelessEnergyTap extends Item {
                 }
 
                 // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
-                if (laserHatch && !player.capabilities.isCreativeMode && !LaserHatchUtil.consumeLaserPipe(player)) {
+                if (laserHatch && !player.capabilities.isCreativeMode
+                    && !TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.TUBE)) {
                     player.addChatMessage(
                         new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
                     return;
@@ -428,7 +431,8 @@ public class WirelessEnergyTap extends Item {
         // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
         IMetaTileEntity mte = (coverable instanceof IGregTechTileEntity igte) ? igte.getMetaTileEntity() : null;
         boolean laserHatch = mte != null && LaserHatchUtil.isLaserHatch(mte);
-        if (laserHatch && !player.capabilities.isCreativeMode && !LaserHatchUtil.consumeLaserPipe(player)) {
+        if (laserHatch && !player.capabilities.isCreativeMode
+            && !TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.TUBE)) {
             player.addChatMessage(
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
             return;
@@ -521,10 +525,11 @@ public class WirelessEnergyTap extends Item {
      * <p>
      * Shift 分支（切换模式）：行为与原版保持一致——客户端直接 return，服务端 canTrigger 冷却检查
      * 通过后 toggle 模式 + chat 提示。
-     * 非 Shift 分支：无操作；Alt 蓄力由客户端 {@code RevealTriggerHandler} 处理。
+     * Alt界面与Alt+Shift蓄力由客户端 {@code RevealTriggerHandler} 发送服务端意图。
      */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
+        if (!TerminalAirInteraction.isAir(player)) return stack;
         // 只有 shift+右键才切换模式（对着空气）
         if (player.isSneaking()) {
             // 只在服务端处理
@@ -545,7 +550,7 @@ public class WirelessEnergyTap extends Item {
             return stack;
         }
 
-        // 非 Shift：无操作；Alt 蓄力由客户端 RevealTriggerHandler 处理。
+        // Alt界面与Alt+Shift蓄力由客户端独立意图处理。
         return stack;
     }
 

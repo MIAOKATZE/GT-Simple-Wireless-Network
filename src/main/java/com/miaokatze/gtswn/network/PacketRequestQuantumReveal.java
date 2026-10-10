@@ -75,6 +75,7 @@ public class PacketRequestQuantumReveal implements IMessage {
         if (player.isDead || player.playerNetServerHandler == null) return;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
+        if (!PacketTerminalGesture.consumeReveal(player)) return;
         World world = player.worldObj;
         long now = world.getTotalWorldTime();
         long requestTick = net.minecraft.server.MinecraftServer.getServer()

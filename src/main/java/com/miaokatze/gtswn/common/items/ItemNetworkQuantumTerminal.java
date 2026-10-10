@@ -14,12 +14,12 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.IIcon;
-import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.client.render.QuantumTintedTextures;
+import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
@@ -37,7 +37,6 @@ import appeng.me.GridAccessException;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
-import appeng.util.LookDirection;
 import appeng.util.Platform;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
@@ -53,7 +52,7 @@ import cpw.mods.fml.relauncher.SideOnly;
  * <li>右击普通方块（已绑定）= 在点击面放置「ME 网络量子节点」（D4 不消耗物品）</li>
  * <li>Shift+右击空气 = 打开终端 GUI（v1.6.2：有且仅有此路径开 GUI，见 onItemRightClick 射线守卫）</li>
  * <li>Alt+右击完整 AE 方块 = 量子并入；再次 Alt+右击已并入方块 = 解除并入</li>
- * <li>Alt+对空气长按右键 20 tick = 显形量子网络，由客户端手势处理器发送自定义包</li>
+ * <li>Alt+Shift+对空气长按右键 20 tick = 显形量子网络，由客户端手势处理器发送自定义包</li>
  * </ul>
  * <p>
  * 双端模型（1.7.10 机制，已核实）：客户端 {@code onItemUseFirst} 返回 true 会拦截 C08 包
@@ -282,39 +281,11 @@ public class ItemNetworkQuantumTerminal extends Item {
 
     // ==================== 手势 5：右击空气（onItemRightClick） ====================
 
-    /**
-     * Shift+右击空气 = 打开终端 GUI（v1.6.2：有且仅有此路径开 GUI）。
-     * <p>
-     * 右击空气走 C08(side=255) 路径，双端均会调用本方法。v1.6.26 起改为<b>纯客户端本地打开</b>
-     * （proxy.openQuantumTerminalGui → displayGuiScreen，服务端不再 openGui）：FML 1.7.10
-     * OpenGuiHandler 会把服务端 windowId 无条件盖写进客户端 openContainer，而 GuiQuantumTerminal
-     * 是纯 GuiScreen（不替换 openContainer，即背包容器），旧路径导致会话级 windowId 污染
-     * （背包点击错乱/被静默丢弃，仅重登复位）与服务端容器泄漏。数据仍走包 5/6 轮询，与 Container 无关。
-     * <p>
-     * 【射线守卫】潜行持本物品右击<b>任意方块</b>时，客户端因 doesSneakBypassUse=false
-     * （量子节点除外）会跳过方块激活、落到 sendUseItem。客户端用玩家视线射线判定：
-     * 命中方块即视为方块交互（如 Shift+右击控制器取消量子化已由 onItemUseFirst 处理），
-     * 不开 GUI；仅视线落空（右击空气）才开 GUI。距离取与客户端一致的手长：创造 5.0 / 生存 4.5。
-     * <p>
-     * v1.6.11 hotfix：原 {@code player.rayTrace(reach, 1.0F)} 在 dedicated server 抛
-     * {@link NoSuchMethodError}（{@code EntityPlayer.rayTrace} 在服务端不可用），
-     * 改用 AE2 {@link appeng.util.Platform#getPlayerRay} + {@link net.minecraft.world.World#rayTraceBlocks}
-     * 标准视线检测（双端可用；v1.6.26 起仅客户端执行）。
-     */
+    /** Shift+右击空气由服务端打开容器；Alt组合由专用客户端手势处理器截获。 */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
-        if (world.isRemote) {
-            if (GTSimpleWirelessNetwork.proxy.isQuantumIncorporationMode()) {
-                return stack;
-            }
-            if (player.isSneaking()) {
-                LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
-                MovingObjectPosition hit = world.rayTraceBlocks(look.getA(), look.getB(), true);
-                if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) {
-                    GTSimpleWirelessNetwork.proxy.openQuantumTerminalGui();
-                }
-            }
-            return stack;
+        if (!world.isRemote && player.isSneaking() && TerminalAirInteraction.isAir(player)) {
+            player.openGui(GTSimpleWirelessNetwork.instance, GTSWNGuiHandler.QUANTUM_TERMINAL, world, 0, 0, 0);
         }
         return stack;
     }

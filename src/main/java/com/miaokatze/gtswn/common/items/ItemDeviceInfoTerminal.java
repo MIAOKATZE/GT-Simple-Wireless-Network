@@ -6,6 +6,7 @@ import java.util.UUID;
 import net.minecraft.creativetab.CreativeTabs;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.item.EnumAction;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -37,8 +38,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * <li>右击<b>GT 非加工机器</b> = not_machine 提示并拦截（不开其 GUI）；右击<b>非 GT 方块</b>
  * = 放行（等效空手交互）</li>
  * <li>右击空气 = 打开终端 GUI（阶段 E 客户端本地打开，本阶段服务端无操作）</li>
- * <li>Shift+右击（机器/空气均可）= 扫描开关（onItemRightClick 的 Shift 分支处理，
- * onItemUseFirst 对 Shift 一律放行防双 toggle 抵消）</li>
+ * <li>Alt+Shift+右击空气长按一秒 = 启动扫描；重复完成手势不会取消进行中的扫描</li>
  * </ul>
  * <p>
  * 判别式（统一口径 D1，{@link DeviceMachineTypes#isWorkingMachine}）：
@@ -119,9 +119,7 @@ public class ItemDeviceInfoTerminal extends Item {
      * 右击加工 GT 机器 = 绑定到本终端（onItemUseFirst 服务端权威处理并拦截，客户端放行）。
      * <p>
      * 客户端返回 false 让 C08 包发出（仿 {@link ItemNetworkQuantumTerminal} 先例）；
-     * Shift 一律放行（return false，终端等效空手）——扫描开关统一由
-     * {@link #onItemRightClick} 的 Shift 分支经 vanilla 回退路径触发（不在本方法拦截，
-     * 否则潜行右击机器时双路径各触发一次 toggle 相互抵消导致扫描无法启动）；
+     * Shift 一律放行（return false，终端等效空手），扫描由独立蓄力意图启动；
      * 非 Shift 才走绑定流程：非 GT 方块放行（不提示不拦截）；GT 非加工机器 → 聊天原因
      * 并拦截（不开其 GUI）；成功路径：登记表无该机器则补登（owner=点击者）→ 数据仓加绑定
      * （尊重 {@link Config#deviceTerminalMaxMachines} 上限，超限聊天拒绝）。
@@ -133,9 +131,7 @@ public class ItemDeviceInfoTerminal extends Item {
         if (world.isRemote) {
             return false;
         }
-        // ② Shift+右击机器：一律放行（终端等效空手，仿 ItemNetworkQuantumTerminal 先例）——
-        // 扫描开关统一走 onItemRightClick 的 Shift 分支，此处拦截会导致 vanilla 回退路径
-        // 再触发一次 toggle 相互抵消（扫描无法启动）
+        // ② Shift+右击机器一律放行；扫描只由已完成的空气蓄力手势触发。
         if (player.isSneaking()) {
             return false;
         }
@@ -193,39 +189,17 @@ public class ItemDeviceInfoTerminal extends Item {
 
     // ==================== 手势 2/3：右击空气（onItemRightClick） ====================
 
-    /**
-     * 右击空气手势。
-     * <ul>
-     * <li>Shift 分支 = 扫描开关（阶段 C 接线）：服务端移交 {@link DeviceScanManager}——
-     * 进行中=取消，否则 5s 逐秒倒计时后「主线程快照（当前维度） → 后台单线程过滤合并 → 结果队列 →
-     * ServerTick END 排水应用」</li>
-     * <li>普通分支 = 打开终端 GUI（阶段 E 接线）：客户端经 @SidedProxy 本地
-     * {@code displayGuiScreen} 打开（仿量子终端 v1.6.26 纯客户端路径，不触碰服务端容器）；
-     * 服务端同拍确保 DIT_UUID 存在并<b>显式 S2FPacketSetSlot 同步该槽位</b>——GUI 锚点解析
-     * 依赖客户端 NBT 的 UUID，而 1.7.10 原地 NBT 变更不会自动推送（见 LaserHatchUtil 先例），
-     * 同步后客户端 GUI 的逐 tick 只读重解析即可自动锚定</li>
-     * </ul>
-     */
+    /** 普通空气右击打开原本地界面；扫描改由Alt+Shift蓄力完成后启动。 */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         if (world.isRemote) {
-            // 客户端：非 Shift 右击空气 = 本地打开终端 GUI（Shift=扫描开关走服务端权威分支）
+            // 原纯GuiScreen保持本地打开，不污染背包容器windowId。
             if (!player.isSneaking()) {
                 GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalGui();
             }
             return stack;
         }
-        if (player.isSneaking()) {
-            // 扫描开关（服务端权威；终端 UUID 解析后移交 DeviceScanManager）
-            if (player instanceof EntityPlayerMP playerMP) {
-                DeviceScanManager.toggleScan(playerMP, getOrCreateTerminalId(stack));
-                // 首用生成 UUID 后立即同步手持槽（绑定锚点对客户端可见，理由同 onItemUseFirst）
-                syncHeldSlot(playerMP, stack);
-            }
-            return stack;
-        }
-        // 服务端非 Shift 分支：确保 DIT_UUID 存在（首用生成）并显式同步手持槽位到客户端
-        // （GUI 锚点/UI 偏好初始读取依赖客户端 NBT；同步动作包服务端写回的偏好也借此通道校正）
+        if (player.isSneaking()) return stack;
         getOrCreateTerminalId(stack);
         if (player instanceof EntityPlayerMP playerMP) {
             syncHeldSlot(playerMP, stack);
@@ -233,12 +207,21 @@ public class ItemDeviceInfoTerminal extends Item {
         return stack;
     }
 
-    /**
-     * 物品提示四行（阶段 F1）：开 UI / 绑定 / 扫描 / Ctrl 解绑与传送消耗。
-     * <p>
-     * 文案与灰字风格经 lang 键 {@code item.gtswn.deviceInfoTerminal.tooltip.l1-l4}（值自带
-     * §7/§f 颜色码，照量子终端 addInformation 手势表风格），双语文案由语言文件提供。
-     */
+    @Override
+    public EnumAction getItemUseAction(ItemStack stack) {
+        return EnumAction.bow;
+    }
+
+    @Override
+    public int getMaxItemUseDuration(ItemStack stack) {
+        return 72000;
+    }
+
+    public static void startChargedScan(EntityPlayerMP player, ItemStack stack) {
+        DeviceScanManager.startScan(player, getOrCreateTerminalId(stack));
+        syncHeldSlot(player, stack);
+    }
+
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean advanced) {
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l1"));

@@ -2,11 +2,9 @@ package com.miaokatze.gtswn.common.charging;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.WeakHashMap;
 
@@ -28,9 +26,9 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent.ItemCraftedEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.enums.GTValues;
+import gregtech.common.items.ItemGTToolbox;
 import gregtech.common.misc.WirelessNetworkManager;
 import ic2.api.item.IElectricItem;
-import ic2.api.item.IElectricItemManager;
 import ic2.api.item.ISpecialElectricItem;
 
 /** Server authoritative charging; empty players only pay for a scan once per second. */
@@ -58,15 +56,32 @@ public final class MonitorChargingHandler {
     public void onTick(TickEvent.PlayerTickEvent event) {
         EntityPlayer player = event.player;
         if (event.phase != TickEvent.Phase.END || player.worldObj.isRemote) return;
-        if (!Boolean.TRUE.equals(active.get(player)) && player.ticksExisted % 20 != 0) return;
+        if (!shouldScan(Boolean.TRUE.equals(active.get(player)), player.ticksExisted)) return;
         List<ItemStack> targets = new ArrayList<>();
         List<ItemStack> monitors = new ArrayList<>();
         collect(player.inventory, targets, monitors, true);
         if (Loader.isModLoaded("Baubles")) collectBaubles(player, targets, monitors);
-        active.put(player, !monitors.isEmpty());
+        active.put(
+            player,
+            monitors.stream()
+                .anyMatch(MonitorBattery::hasBattery));
         if (monitors.isEmpty()) return;
         if (player.ticksExisted % 20 == 0) remind(player, monitors);
-        Set<ItemStack> charged = Collections.newSetFromMap(new IdentityHashMap<ItemStack, Boolean>());
+        if (!Boolean.TRUE.equals(active.get(player))) return;
+        List<ChargingTarget> direct = new ArrayList<>();
+        List<ItemStack> toolboxes = new ArrayList<>();
+        Map<ItemStack, Boolean> charging = new IdentityHashMap<>();
+        Map<ItemStack, ChargingTarget> seen = new IdentityHashMap<>();
+        for (ItemStack target : targets) {
+            if (seen.containsKey(target)) continue;
+            if (target.getItem() instanceof ItemGTToolbox) {
+                if (!ToolboxCharging.canCharge(target, player.isSwingInProgress)) continue;
+                toolboxes.add(target);
+            }
+            ChargingTarget entry = new ChargingTarget(target, 1);
+            seen.put(target, entry);
+            direct.add(entry);
+        }
         // Rotate priority when several terminals share finite caches.
         int first = Math.floorMod(player.ticksExisted, monitors.size());
         for (int i = 0; i < monitors.size(); i++) {
@@ -74,31 +89,56 @@ public final class MonitorChargingHandler {
             if (!MonitorBattery.hasBattery(monitor)) continue;
             NBTTagCompound data = MonitorBattery.data(monitor);
             if (player.ticksExisted % 200 == 0) refill(monitor, data);
-            double cache = data.getDouble("Charge");
-            boolean charging = false;
-            if (cache > 0) {
-                int tier = data.getInteger("Tier");
-                if (tier < 0 || tier >= GTValues.V.length) continue;
-                int targetStart = targets.isEmpty() ? 0 : Math.floorMod(player.ticksExisted, targets.size());
-                for (int j = 0; j < targets.size() && cache > 0; j++) {
-                    ItemStack target = targets.get((targetStart + j) % targets.size());
-                    if (charged.contains(target)) continue;
-                    IElectricItemManager manager = MonitorBattery.manager(target);
-                    if (manager == null) continue;
-                    double offered = Math.min(cache, GTValues.V[tier]);
-                    double accepted = manager.charge(target, offered, tier, false, true);
-                    if (accepted <= 0 || !Double.isFinite(accepted)) continue;
-                    double received = manager.charge(target, Math.min(offered, accepted), tier, false, false);
-                    if (received > 0) {
-                        cache = Math.max(0, cache - received);
-                        charged.add(target);
-                        charging = true;
+            charging.put(monitor, chargeTargets(data, direct, player.ticksExisted));
+        }
+        // Read contents after all outer-manager battery writes, avoiding a stale handler overwriting the battery.
+        if (player.ticksExisted % ToolboxCharging.INTERVAL == 0 && !toolboxes.isEmpty()
+            && monitors.stream()
+                .filter(MonitorBattery::hasBattery)
+                .anyMatch(
+                    monitor -> MonitorBattery.data(monitor)
+                        .getDouble("Charge") > 0)) {
+            int boxStart = ToolboxCharging.firstBox(player.ticksExisted, toolboxes.size());
+            for (int b = 0; b < ToolboxCharging.selectedBoxes(toolboxes.size()); b++) {
+                ToolboxCharging box = new ToolboxCharging(toolboxes.get((boxStart + b) % toolboxes.size()));
+                boolean dirty = false;
+                for (int i = 0; i < monitors.size(); i++) {
+                    ItemStack monitor = monitors.get((first + i) % monitors.size());
+                    if (!MonitorBattery.hasBattery(monitor)) continue;
+                    if (chargeTargets(MonitorBattery.data(monitor), box.targets, player.ticksExisted)) {
+                        charging.put(monitor, true);
+                        dirty = true;
                     }
                 }
-                data.setDouble("Charge", cache);
+                if (dirty) box.save();
             }
-            updateStatus(data, charging);
         }
+        for (ItemStack monitor : monitors) {
+            if (MonitorBattery.hasBattery(monitor))
+                updateStatus(MonitorBattery.data(monitor), Boolean.TRUE.equals(charging.get(monitor)));
+        }
+    }
+
+    static boolean shouldScan(boolean hasInstalledBattery, int tick) {
+        return hasInstalledBattery || tick % 20 == 0;
+    }
+
+    private static boolean chargeTargets(NBTTagCompound data, List<ChargingTarget> targets, int tick) {
+        double cache = data.getDouble("Charge");
+        int tier = data.getInteger("Tier");
+        if (cache <= 0 || !Double.isFinite(cache) || tier < 0 || tier >= GTValues.V.length) return false;
+        boolean charging = false;
+        int start = targets.isEmpty() ? 0 : Math.floorMod(tick, targets.size());
+        for (int j = 0; j < targets.size() && cache > 0; j++) {
+            double received = targets.get((start + j) % targets.size())
+                .charge(cache, tier);
+            if (received > 0) {
+                cache = Math.max(0, cache - received);
+                charging = true;
+            }
+        }
+        if (charging) data.setDouble("Charge", cache);
+        return charging;
     }
 
     private static void collect(IInventory inventory, List<ItemStack> targets, List<ItemStack> monitors,
