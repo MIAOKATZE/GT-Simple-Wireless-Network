@@ -8,20 +8,21 @@ import net.minecraft.util.MovingObjectPosition;
 
 import org.lwjgl.input.Mouse;
 
+import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestNodeReveal;
 import com.miaokatze.gtswn.network.PacketRequestQuantumReveal;
+import com.miaokatze.gtswn.network.PacketTerminalGesture;
 
-/** Shared client-only charge gesture for both terminals. */
+/** 三种终端共享的 Alt+Shift+右击空气蓄力手势。 */
 public final class TerminalRevealCharge {
 
-    private static final int CHARGE_TICKS = 20;
+    private static final TerminalChargeProgress PROGRESS = new TerminalChargeProgress();
     private static EntityPlayer chargingPlayer;
     private static ItemStack chargingStack;
     private static int chargingSlot;
-    private static int heldTicks;
 
     private TerminalRevealCharge() {}
 
@@ -34,12 +35,17 @@ public final class TerminalRevealCharge {
         cancel();
         ItemStack held = mc.thePlayer == null ? null : mc.thePlayer.getHeldItem();
         if (mc.currentScreen != null || !isPointingAtAir(mc)
+            || mc.thePlayer == null
+            || !QuantumIncorporationClientHandler.isShiftDown()
+            || !QuantumIncorporationClientHandler.isAltDown()
             || held == null
-            || !(held.getItem() instanceof ItemNetworkQuantumTerminal || held.getItem() instanceof WirelessEnergyTap))
+            || !(held.getItem() instanceof ItemNetworkQuantumTerminal || held.getItem() instanceof WirelessEnergyTap
+                || held.getItem() instanceof ItemDeviceInfoTerminal))
             return;
         chargingPlayer = mc.thePlayer;
         chargingStack = held;
         chargingSlot = mc.thePlayer.inventory.currentItem;
+        PROGRESS.start();
         chargingPlayer.setItemInUse(held, held.getMaxItemUseDuration());
         // The mouse press is consumed by Forge, so explicitly keep vanilla's use state alive.
         KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), true);
@@ -53,6 +59,7 @@ public final class TerminalRevealCharge {
             || mc.currentScreen != null
             || chargingPlayer.isDead
             || !QuantumIncorporationClientHandler.isAltDown()
+            || !QuantumIncorporationClientHandler.isShiftDown()
             || !Mouse.isCreated()
             || !Mouse.isButtonDown(1)
             || chargingPlayer.inventory.currentItem != chargingSlot
@@ -62,23 +69,37 @@ public final class TerminalRevealCharge {
             cancel();
             return;
         }
-        if (++heldTicks >= CHARGE_TICKS) {
+        // END tick在玩家更新潜行包之后发开始意图，避免同帧Shift+右键被服务端拒绝。
+        TerminalChargeProgress.Step step = PROGRESS.tick(true);
+        if (step == TerminalChargeProgress.Step.BEGIN) {
+            GTSWNPacketHandler.NETWORK.sendToServer(new PacketTerminalGesture(PacketTerminalGesture.BEGIN_REVEAL));
+            return;
+        }
+        if (step == TerminalChargeProgress.Step.COMPLETE) {
             if (chargingStack.getItem() instanceof ItemNetworkQuantumTerminal) {
                 GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestQuantumReveal());
-            } else {
+            } else if (chargingStack.getItem() instanceof WirelessEnergyTap) {
                 GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestNodeReveal());
+            } else {
+                GTSWNPacketHandler.NETWORK.sendToServer(new PacketTerminalGesture(PacketTerminalGesture.SCAN_DEVICES));
             }
-            cancel();
+            clear(false);
         }
     }
 
     public static void cancel() {
+        clear(true);
+    }
+
+    private static void clear(boolean notifyServer) {
         if (chargingStack == null) return;
+        if (notifyServer && Minecraft.getMinecraft().thePlayer == chargingPlayer)
+            GTSWNPacketHandler.NETWORK.sendToServer(new PacketTerminalGesture(PacketTerminalGesture.CANCEL_REVEAL));
         if (chargingPlayer.getItemInUse() == chargingStack) chargingPlayer.clearItemInUse();
         Minecraft mc = Minecraft.getMinecraft();
         KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), false);
         chargingPlayer = null;
         chargingStack = null;
-        heldTicks = 0;
+        PROGRESS.cancel();
     }
 }

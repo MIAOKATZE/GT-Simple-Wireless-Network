@@ -26,6 +26,11 @@ public final class QuantumIncorporationClientHandler {
             && (Keyboard.isKeyDown(Keyboard.KEY_LMENU) || Keyboard.isKeyDown(Keyboard.KEY_RMENU));
     }
 
+    public static boolean isShiftDown() {
+        return Keyboard.isCreated()
+            && (Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
+    }
+
     private static boolean isHoldingTerminal(Minecraft mc) {
         ItemStack held = mc.thePlayer == null ? null : mc.thePlayer.getHeldItem();
         return mc.currentScreen == null && held != null && held.getItem() instanceof ItemNetworkQuantumTerminal;
@@ -35,7 +40,8 @@ public final class QuantumIncorporationClientHandler {
         Minecraft mc = Minecraft.getMinecraft();
         // Client machine proxies, bounds and synchronization can lag. Eligibility and toggle state
         // are checked on the server, including removal while the anchor or machine is offline.
-        if (mc.theWorld != null && isHoldingTerminal(mc)) {
+        if (mc.theWorld != null && isHoldingTerminal(mc)
+            && TerminalGestureRules.canIncorporate(isAltDown(), isShiftDown(), true)) {
             GTSWNPacketHandler.NETWORK.sendToServer(new PacketQuantumIncorporation(x, y, z, false));
         }
     }
@@ -52,9 +58,10 @@ public final class QuantumIncorporationClientHandler {
         event.setCanceled(true);
         MovingObjectPosition hit = mc.objectMouseOver;
         if (hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-            requestIncorporation(hit.blockX, hit.blockY, hit.blockZ, false);
+            if (TerminalGestureRules.canIncorporate(isAltDown(), isShiftDown(), true))
+                requestIncorporation(hit.blockX, hit.blockY, hit.blockZ, false);
             TerminalRevealCharge.cancel();
-        } else {
+        } else if (isShiftDown()) {
             // An entity is not air and cannot start the reveal gesture.
             TerminalRevealCharge.start(mc);
         }
@@ -66,6 +73,10 @@ public final class QuantumIncorporationClientHandler {
             || !isAltDown()
             || !isHoldingTerminal(Minecraft.getMinecraft())) return;
         event.setCanceled(true);
+        if (!TerminalGestureRules.canIncorporate(isAltDown(), isShiftDown(), true)) {
+            TerminalRevealCharge.cancel();
+            return;
+        }
         requestIncorporation(event.x, event.y, event.z, false);
     }
 
@@ -76,7 +87,8 @@ public final class QuantumIncorporationClientHandler {
 
     @SubscribeEvent
     public void onHighlight(DrawBlockHighlightEvent event) {
-        if (!isAltDown() || !isHoldingTerminal(Minecraft.getMinecraft())
+        if (!isAltDown() || isShiftDown()
+            || !isHoldingTerminal(Minecraft.getMinecraft())
             || event.target == null
             || event.target.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK) return;
         int x = event.target.blockX, y = event.target.blockY, z = event.target.blockZ;

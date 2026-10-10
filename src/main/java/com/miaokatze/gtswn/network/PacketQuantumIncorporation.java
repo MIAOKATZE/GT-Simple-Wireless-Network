@@ -15,7 +15,6 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
-import com.miaokatze.gtswn.common.items.ItemQuantumIncorporationAnchor;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
@@ -149,31 +148,17 @@ public class PacketQuantumIncorporation implements IMessage {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }
-        int anchorSlot = player.capabilities.isCreativeMode ? -1 : findAnchorSlot(player);
-        if (!player.capabilities.isCreativeMode && anchorSlot < 0) {
+        if (!player.capabilities.isCreativeMode && !com.miaokatze.gtswn.common.gui.TerminalSupplyStore
+            .available(player, com.miaokatze.gtswn.common.gui.TerminalSupplyStore.Kind.ANCHOR)) {
             tell(player, "gtswn.chat.quantum.incorporation_need_anchor");
             return;
         }
         if (registry.add(world, message.x, message.y, message.z, held.getTagCompound(), player)) {
-            if (anchorSlot >= 0) {
-                // The inventory check and registration run together on the server tick thread.
-                player.inventory.decrStackSize(anchorSlot, 1);
-                player.inventory.markDirty();
-                player.inventoryContainer.detectAndSendChanges();
-                if (player.openContainer != player.inventoryContainer) player.openContainer.detectAndSendChanges();
-            }
+            if (!player.capabilities.isCreativeMode) com.miaokatze.gtswn.common.gui.TerminalSupplyStore
+                .consume(player, com.miaokatze.gtswn.common.gui.TerminalSupplyStore.Kind.ANCHOR);
             tell(player, "gtswn.chat.quantum.incorporation_added");
             AnimationQualityHints.show(player, QualityHintCounter.Kind.INCORPORATION);
         }
-    }
-
-    private static int findAnchorSlot(EntityPlayerMP player) {
-        for (int slot = 0; slot < Math.min(36, player.inventory.mainInventory.length); slot++) {
-            ItemStack stack = player.inventory.mainInventory[slot];
-            if (stack != null && stack.stackSize > 0 && stack.getItem() instanceof ItemQuantumIncorporationAnchor)
-                return slot;
-        }
-        return -1;
     }
 
     private static boolean canBuild(IGridHost host, EntityPlayerMP player) {

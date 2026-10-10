@@ -47,7 +47,7 @@ Place the release jar in both client and server `mods/`, replacing the old versi
 
 A portable item that connects any machine to the wireless EU network shared across dimensions. Link nodes support cross-dimension energy delivery and return. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
 
-- **显形 / Reveal**：手持终端 Alt+右键，穿墙显示附近链路节点 60 秒，聊天框报告数量 / Alt+right-click reveals nearby link nodes through walls for 60 seconds and reports the count.
+- **终端界面与显形 / Terminal UI & Reveal**：Alt+右击空气打开界面；Alt+Shift+右击空气长按 1 秒，穿墙显示附近链路节点 15 秒，聊天框报告数量 / Alt+right-click in air opens the terminal UI; hold Alt+Shift+right-click in air for 1 second to reveal nearby link nodes through walls for 15 seconds and report the count.
 - **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
 
 <p align="center"><img src="images/Wireless_Tap_Grid_Energy.png" alt="能源模式九宫格辅助线 / Grid highlight (Energy mode)" width="300"><img src="images/Wireless_Tap_Grid_Power.png" alt="动力模式九宫格辅助线 / Grid highlight (Power mode)" width="300"><br><em>九宫格辅助线 / Grid Highlight</em></p>
@@ -88,11 +88,18 @@ Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emi
 | Shift+右击节点 / Shift+right-click node | 销毁节点（无掉落）/ Destroy the node (no drops) |
 | Shift+右击空气 / Shift+right-click air | 打开终端界面 / Open terminal GUI |
 | Alt+右击完整 AE 方块 / Alt+right-click a full AE block | 消耗一个量子并入锚点接入已绑定网络；再次操作解除并入 / Consume one Quantum Incorporation Anchor to join the bound network; repeat to remove incorporation |
-| Alt+对空气长按右键 1 秒 / Hold Alt+right-click air for 1 second | 显形附近已加载区块中的当前网络 15 秒；同一终端、维度与网络在显形期间再次操作可显形附近全部量子网络 / Reveal the current network in nearby loaded chunks for 15 seconds; repeat during the reveal with the same terminal, dimension and network to reveal all nearby quantum networks |
+| Alt+Shift+右击方块 / Alt+Shift+right-click a block | 取消方块目标操作，不进行并入 / Cancels the block-targeted action; does not incorporate |
+| Alt+Shift+对空气长按右键 1 秒 / Hold Alt+Shift+right-click air for 1 second | 显形附近已加载区块中的当前网络 15 秒；同一终端、维度与网络在显形期间再次操作可显形附近全部量子网络 / Reveal the current network in nearby loaded chunks for 15 seconds; repeat during the reveal with the same terminal, dimension and network to reveal all nearby quantum networks |
 
 终端界面提供 16 色调色，颜色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
 
-The terminal GUI offers 16 network colors, synchronized across the quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close.
+量子终端 GUI 的详情页保留 16 色网络调色及节点、并入和频道信息，特效页直接读写 `/gtswn quantum` 使用的客户端设置。链路终端共用这套双页界面：详情页显示玩家、维度、等级、团队负责人和电网 EU，特效页读写 `/gtswn tap` 使用的同一组设置；数值项左键增加、右键减少，取值范围与命令相同。两个界面都显示同一玩家的个人供给库：激光真空管和量子并入锚点各自最多储存 640 个，按玩家持久数据供所有该玩家的终端共享；Shift+点击背包中的耗材可存入最多 64 个，Shift+点击 ghost 供给槽可取出最多 64 个。普通左键可用光标堆叠存/取最多 64 个，右键存/取 1 个。
+
+The Quantum Terminal GUI keeps its 16-color palette and node, incorporation and channel details on the Details page; its Effects page reads and writes the same client settings used by `/gtswn quantum`. The Link Terminal uses the same two-page UI: Details shows the player, dimension, level, team lead and grid EU, while Effects uses the settings shared with `/gtswn tap`; left-click numeric controls to increase and right-click to decrease, within the same ranges as the commands. Both terminals show the player's personal supply store: up to 640 Laser Vacuum Pipes and 640 Quantum Incorporation Anchors, shared by all of that player's terminals and saved with player persistence data. Shift-click matching items in the inventory to store up to 64; shift-click the ghost supply slot to withdraw up to 64. Ordinary left-click transfers up to 64 with the cursor, and right-click transfers one.
+
+量子终端的 16 色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
+
+The terminal's 16-color selection synchronizes across its quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close the interface.
 
 ### 量子节点 / Quantum Node
 
@@ -135,6 +142,7 @@ Carry it in inventory or any Baubles slot for a wireless grid HUD, without placi
 
 - **安装与换电池 / Install or replace**：终端 + 兼容 GT/IC2 电池无序合成，继承新电池电量；旧电池带着终端剩余电量返还，背包满则掉落。仍是同一个终端 / Shapeless-craft terminal + compatible GT/IC2 battery. The new battery retains its charge; the old one returns with the terminal’s remaining energy, dropping if inventory is full. No separate terminal variants.
 - **充电 / Charging**：在背包或饰品栏中，每 10 秒从已绑定的无线电网补满缓存并计算下行损耗，以电池电压级的每目标 1A 为背包、装备和饰品栏电力物品充电。HUD 显示缺少缓存/待机中/充电中/充电完毕 / In inventory or Baubles, refills from the bound grid every 10 seconds with downlink loss, and charges inventory, armor and accessory items at 1A per target for the battery tier. HUD states: buffer empty / standby / charging / complete.
+- **工具箱内充电 / Toolbox charging**：装有电池的监测终端可直接给 GT 工具箱中受支持的电力工具充电，每 20 tick 轮转处理最多 2 个工具箱；工具箱电池槽仍由原充电路径处理。工具箱界面打开、工具箱破损动画或玩家挥动时跳过该箱，不递归进入嵌套工具箱 / A monitor with an installed battery can directly charge supported electric tools inside GT toolboxes, rotating through at most two boxes every 20 ticks. The toolbox battery slot keeps its existing charging path. A box is skipped while its GUI is open, its damage animation is active, or the player is swinging; nested toolboxes are not traversed.
 - **拆卸与查看 / Remove and inspect**：带电池终端 + GT5U 撬棍无序合成，可取回保留余量的电池；NEI 提供小型锂电池安装与拆卸两条示例。电量使用 GT/IC2 原生 Tooltip 与电量条显示；充电更新避免打断手持工具操作 / Shapeless-craft a battery-equipped terminal + GT5U crowbar to recover the charged battery. NEI shows two small lithium battery examples: installation and removal. Native GT/IC2 energy tooltips and charge bars show the buffer; charge updates preserve held-tool use.
 
 <p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" alt="便携监测终端 HUD：科学计数模式—充电状态 / Portable monitor HUD: scientific notation — charging" width="400"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" alt="便携监测终端 HUD：科学计数模式—放电状态 / Portable monitor HUD: scientific notation — discharging" width="400"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
@@ -242,7 +250,7 @@ Bind working GT machines to view Running/Idle/Stopped status, instantaneous and 
 |---|---|
 | 右击可工作机器 / Right-click a working machine | 绑定到本终端（放置机器时背包含终端自动绑定 / auto-bound on placement if a terminal is in the placer's inventory） |
 | 右击空气 / Right-click air | 打开终端界面 / Open the terminal GUI |
-| Shift+右击（机器/空气）/ Shift+right-click (machine or air) | 扫描当前维度已加载区块中的本人及团队机器，5 秒倒计时可取消 / Scan your and your team’s machines in loaded chunks of the current dimension; cancellable 5-second countdown |
+| Alt+Shift+对空气长按右键 1 秒 / Hold Alt+Shift+right-click in air for 1 second | 启动当前维度已加载区块中的本人及团队机器扫描，随后进入 5 秒倒计时；重复蓄力不会取消当前扫描 / Start scanning your and your team’s machines in loaded chunks of the current dimension, followed by a 5-second countdown; repeating the gesture does not cancel an active scan |
 | Ctrl+点击条目 / Ctrl+click a row | 远程解绑（无确认）/ Remote unbind (no confirmation) |
 | 点击行内 ✦ 按钮 / Click the ✦ button on a row | 传送到机器（消耗经验等级，3 秒冷却）/ Teleport to the machine (costs XP levels, 3s cooldown) |
 
