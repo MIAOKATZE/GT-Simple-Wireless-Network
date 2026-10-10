@@ -5,6 +5,8 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
+import net.minecraft.util.ChatComponentTranslation;
+import net.minecraft.util.IChatComponent;
 
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
@@ -67,6 +69,21 @@ public final class TerminalSupplyStore {
                 && stack.getItemDamage() == reference.getItemDamage()) return true;
         }
         return false;
+    }
+
+    /** Call only after success; preserve the last consumed supply's zero and capture delayed chat counts. */
+    public static IChatComponent appendRemaining(IChatComponent message, EntityPlayer player, Kind kind, int before) {
+        return appendRemaining(message, kind, before, count(player, kind));
+    }
+
+    static IChatComponent appendRemaining(IChatComponent message, Kind kind, int before, int remaining) {
+        if (before > 0) message.appendSibling(
+            new ChatComponentTranslation(
+                "gtswn.chat.terminal.preloaded_remaining",
+                new ChatComponentTranslation(
+                    kind == Kind.ANCHOR ? "gtswn.gui.terminal.anchor" : "gtswn.gui.terminal.tube"),
+                remaining));
+        return message;
     }
 
     /** Shared supply first; preserve the existing item+damage backpack consumption fallback. */

@@ -20,6 +20,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.client.render.QuantumTintedTextures;
 import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
+import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
@@ -234,7 +235,7 @@ public class ItemNetworkQuantumTerminal extends Item {
                 return true;
             }
             writeAnchor(stack, world, x, y, z);
-            sendMessage(player, "gtswn.chat.quantum.bound", x, y, z);
+            sendBindingMessage(player, "gtswn.chat.quantum.bound", x, y, z);
             return true;
         }
         // 手势 1：右击未量子化控制器 = 量子化整结构并绑定
@@ -312,9 +313,9 @@ public class ItemNetworkQuantumTerminal extends Item {
         writeAnchor(stack, world, x, y, z);
         int totalChannels = QuantumControllerRegistry.computeTotalChannels(structure);
         if (QuantumControllerRegistry.isChannelsInfinite()) {
-            sendMessage(player, "gtswn.chat.quantum.quantized_infinite", structure.size());
+            sendBindingMessage(player, "gtswn.chat.quantum.quantized_infinite", structure.size());
         } else {
-            sendMessage(player, "gtswn.chat.quantum.quantized", structure.size(), totalChannels);
+            sendBindingMessage(player, "gtswn.chat.quantum.quantized", structure.size(), totalChannels);
         }
     }
 
@@ -484,6 +485,15 @@ public class ItemNetworkQuantumTerminal extends Item {
      */
     public static void sendMessage(EntityPlayer player, String key, Object... args) {
         player.addChatMessage(new ChatComponentText(StatCollector.translateToLocalFormatted(key, args)));
+    }
+
+    private static void sendBindingMessage(EntityPlayer player, String key, Object... args) {
+        player.addChatMessage(
+            TerminalSupplyStore.appendRemaining(
+                new ChatComponentText(StatCollector.translateToLocalFormatted(key, args)),
+                player,
+                TerminalSupplyStore.Kind.ANCHOR,
+                TerminalSupplyStore.count(player, TerminalSupplyStore.Kind.ANCHOR)));
     }
 
     // ==================== Tooltip（§7） ====================

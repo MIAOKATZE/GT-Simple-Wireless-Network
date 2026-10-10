@@ -266,8 +266,10 @@ public class GuiQuantumTerminal extends GuiContainer {
     protected void drawGuiContainerForegroundLayer(int mouseX, int mouseY) {
         fontRendererObj.drawString(tr("container.inventory"), 10, 138, GtswnGuiPalette.TEXT_BODY);
         String label = tr(terminalContainer.quantum ? "gtswn.gui.terminal.anchor" : "gtswn.gui.terminal.tube");
-        fontRendererObj.drawString(fontRendererObj.trimStringToWidth(label, 103), 184, 144, GtswnGuiPalette.TEXT_BODY);
-        drawRect(262, 160, 280, 178, 0xFF241B31);
+        drawSupplyText(label, 178, 165, 97);
+        drawSupplyText(tr("gtswn.gui.terminal.preload"), 184, 188, 108);
+        drawSupplyText(tr("gtswn.gui.terminal.capacity"), 184, 202, 108);
+        drawRect(278, 160, 296, 178, 0xFF241B31);
         ItemStack icon = terminalContainer.getSlot(0)
             .getStack();
         boolean empty = icon == null;
@@ -275,13 +277,13 @@ public class GuiQuantumTerminal extends GuiContainer {
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT);
         try {
             if (icon != null) {
-                itemRender.renderItemAndEffectIntoGUI(fontRendererObj, mc.getTextureManager(), icon, 263, 161);
-                if (empty) drawRect(263, 161, 279, 177, 0xA0241B31);
+                itemRender.renderItemAndEffectIntoGUI(fontRendererObj, mc.getTextureManager(), icon, 279, 161);
+                if (empty) drawRect(279, 161, 295, 177, 0xA0241B31);
                 else itemRender.renderItemOverlayIntoGUI(
                     fontRendererObj,
                     mc.getTextureManager(),
                     icon,
-                    263,
+                    279,
                     161,
                     Integer.toString(terminalContainer.supplyCount));
             }
@@ -289,6 +291,18 @@ public class GuiQuantumTerminal extends GuiContainer {
             GL11.glPopAttrib();
         }
         GL11.glDisable(GL11.GL_LIGHTING);
+    }
+
+    private void drawSupplyText(String text, int x, int y, int maxWidth) {
+        float scale = Math.min(1.0F, (float) maxWidth / Math.max(1, fontRendererObj.getStringWidth(text)));
+        GL11.glPushMatrix();
+        try {
+            GL11.glTranslatef(x, y, 0);
+            GL11.glScalef(scale, scale, 1);
+            fontRendererObj.drawString(text, 0, 0, GtswnGuiPalette.TEXT_BODY);
+        } finally {
+            GL11.glPopMatrix();
+        }
     }
 
     private void drawLinkDetails() {

@@ -45,7 +45,7 @@ public class ContainerTerminal extends Container {
         terminal = player.getHeldItem();
         heldIndex = player.inventory.currentItem;
         Arrays.fill(sent, -1);
-        addSlotToContainer(new Slot(new InventoryBasic("supply", false, 1), 0, 263, 161) {
+        addSlotToContainer(new Slot(new InventoryBasic("supply", false, 1), 0, 279, 161) {
 
             @Override
             public boolean isItemValid(ItemStack stack) {

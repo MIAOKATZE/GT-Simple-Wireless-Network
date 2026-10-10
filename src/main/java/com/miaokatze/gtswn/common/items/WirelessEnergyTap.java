@@ -335,6 +335,7 @@ public class WirelessEnergyTap extends Item {
                     return;
                 }
 
+                int suppliesBefore = TerminalSupplyStore.count(player, TerminalSupplyStore.Kind.TUBE);
                 // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
                 if (laserHatch && !player.capabilities.isCreativeMode
                     && !TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.TUBE)) {
@@ -371,7 +372,12 @@ public class WirelessEnergyTap extends Item {
 
                 // 5. 提示成功
                 List<IChatComponent> messages = new ArrayList<>();
-                messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
+                messages.add(
+                    TerminalSupplyStore.appendRemaining(
+                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")),
+                        player,
+                        TerminalSupplyStore.Kind.TUBE,
+                        suppliesBefore));
                 messages
                     .add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
                 messages.add(
@@ -428,6 +434,7 @@ public class WirelessEnergyTap extends Item {
             return;
         }
 
+        int suppliesBefore = TerminalSupplyStore.count(player, TerminalSupplyStore.Kind.TUBE);
         // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
         IMetaTileEntity mte = (coverable instanceof IGregTechTileEntity igte) ? igte.getMetaTileEntity() : null;
         boolean laserHatch = mte != null && LaserHatchUtil.isLaserHatch(mte);
@@ -466,7 +473,12 @@ public class WirelessEnergyTap extends Item {
 
         // 只输出简洁成功信息
         List<IChatComponent> messages = new ArrayList<>();
-        messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")));
+        messages.add(
+            TerminalSupplyStore.appendRemaining(
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")),
+                player,
+                TerminalSupplyStore.Kind.TUBE,
+                suppliesBefore));
         messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
         // 绑定提示(前 MAX_BIND_NOTIFY 次)
         notifyBindOwner(stack, messages);
