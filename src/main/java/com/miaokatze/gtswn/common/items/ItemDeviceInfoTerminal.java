@@ -227,6 +227,8 @@ public class ItemDeviceInfoTerminal extends Item {
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l1"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l2"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l3"));
+        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.details"));
+        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.repeat"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l4"));
     }
 

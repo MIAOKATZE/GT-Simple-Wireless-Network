@@ -528,5 +528,6 @@ public class ItemNetworkQuantumTerminal extends Item {
                 Config.quantumIncorporationIdlePowerUsage));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.release"));
         list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.reveal"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.reveal.repeat"));
     }
 }

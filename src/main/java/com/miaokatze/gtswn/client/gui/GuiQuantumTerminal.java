@@ -98,7 +98,7 @@ public class GuiQuantumTerminal extends GuiContainer {
     @Override
     protected void drawGuiContainerBackgroundLayer(float partialTicks, int mouseX, int mouseY) {
         GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.PANEL_QUANTUM, 4, guiLeft, guiTop, WIDTH, HEIGHT, zLevel);
-        for (int index = 1; index < terminalContainer.inventorySlots.size(); index++) {
+        for (int index = 0; index < terminalContainer.inventorySlots.size(); index++) {
             net.minecraft.inventory.Slot slot = terminalContainer.getSlot(index);
             drawRect(
                 guiLeft + slot.xDisplayPosition - 1,
@@ -268,19 +268,27 @@ public class GuiQuantumTerminal extends GuiContainer {
         String label = tr(terminalContainer.quantum ? "gtswn.gui.terminal.anchor" : "gtswn.gui.terminal.tube");
         fontRendererObj.drawString(fontRendererObj.trimStringToWidth(label, 103), 184, 144, GtswnGuiPalette.TEXT_BODY);
         drawRect(262, 160, 280, 178, 0xFF241B31);
-        ItemStack icon = terminalContainer.kind.reference();
+        ItemStack icon = terminalContainer.getSlot(0)
+            .getStack();
+        boolean empty = icon == null;
+        if (empty) icon = terminalContainer.kind.reference();
         GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_COLOR_BUFFER_BIT | GL11.GL_CURRENT_BIT);
         try {
             if (icon != null) {
                 itemRender.renderItemAndEffectIntoGUI(fontRendererObj, mc.getTextureManager(), icon, 263, 161);
-                if (terminalContainer.supplyCount == 0) drawRect(263, 161, 279, 177, 0xA0241B31);
+                if (empty) drawRect(263, 161, 279, 177, 0xA0241B31);
+                else itemRender.renderItemOverlayIntoGUI(
+                    fontRendererObj,
+                    mc.getTextureManager(),
+                    icon,
+                    263,
+                    161,
+                    Integer.toString(terminalContainer.supplyCount));
             }
         } finally {
             GL11.glPopAttrib();
         }
         GL11.glDisable(GL11.GL_LIGHTING);
-        fontRendererObj.drawString(terminalContainer.supplyCount + " / 640", 190, 186, GtswnGuiPalette.TEXT_TITLE);
-        fontRendererObj.drawString(tr("gtswn.gui.terminal.transfer"), 184, 203, GtswnGuiPalette.TEXT_BODY);
     }
 
     private void drawLinkDetails() {
