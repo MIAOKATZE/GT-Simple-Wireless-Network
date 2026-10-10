@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -45,7 +46,7 @@ import gregtech.common.covers.Cover;
  * <li>probe 三态：未加载区块 UNLOADED（跳过不修剪）；TE 非法 / 六面无本 mod 覆盖板 INVALID
  * （进修剪集）；记录 type 仍在 VALID；仅存另一 type → 先 unregister + register 实际 type
  * 自愈（同机双类型角落）再按实际 type VALID</li>
- * <li>AUQ 裁决过滤：按 tap 当前 OutputMode（true=动力）单色，只留对应 type</li>
+ * <li>首次按 tap 当前 OutputMode（true=动力）筛选；15 秒内再次扫描显示两类节点</li>
  * <li>修剪集回传 {@link WirelessNodeRegistry#prune}</li>
  * <li>组 {@link PacketSyncNodeReveal}（服务端 {@code world.getTotalWorldTime()}，
  * durationTicks=300）回发；入选为空也照发（客户端语义 = 清缓存）</li>
@@ -82,6 +83,8 @@ public final class NodeRevealRequestQueue {
     /** 显形持续时长（tick，15s），服务端权威下发给客户端渲染缓存 */
     public static final int REVEAL_DURATION_TICKS = 300;
 
+    private static final Map<EntityPlayerMP, LinkNodeRevealSession> REVEAL_SESSIONS = new WeakHashMap<>();
+
     private NodeRevealRequestQueue() {}
 
     /**
@@ -114,6 +117,12 @@ public final class NodeRevealRequestQueue {
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        long now = System.currentTimeMillis();
+        REVEAL_SESSIONS.entrySet()
+            .removeIf(
+                entry -> entry.getKey().playerNetServerHandler == null || entry.getKey().isDead
+                    || !entry.getValue()
+                        .isActive(entry.getKey().worldObj, now));
         drainNodeRegistrations();
         drain();
     }
@@ -182,40 +191,46 @@ public final class NodeRevealRequestQueue {
             // 4 tick 冷却中：静默丢弃（不回包）
             return;
         }
-        // AUQ 裁决：按 tap 当前模式单色过滤（true=动力 → 只发动力节点；false → 只发能源节点）
+        // 首次按当前模式显形；同一世界的 15 秒窗口内再次扫描同时显形两类节点。
         byte wantedType = WirelessEnergyTap.getOutputModeStatic(held) ? WirelessNodeRegistry.TYPE_DYNAMO
             : WirelessNodeRegistry.TYPE_ENERGY;
 
         World world = player.worldObj;
+        long now = System.currentTimeMillis();
+        LinkNodeRevealSession previous = REVEAL_SESSIONS.get(player);
+        boolean revealAll = previous != null && previous.isActive(world, now);
         WirelessNodeRegistry registry = WirelessNodeRegistry.get(world);
         Map<Long, Byte> snapshot = registry.snapshot(world);
         long centerPacked = WirelessNodeIndexCodec
             .pack((int) Math.floor(player.posX), (int) Math.floor(player.posY), (int) Math.floor(player.posZ));
 
-        // probe 期间的自愈登记（同机双类型角落：记录 type 失效 → 换绑实际 type 后按实际 type 入选）
-        Map<Long, Byte> healedTypes = new HashMap<>();
+        // 六面实际类型掩码：索引每台机器只存一种类型，显形不能因此遗漏另一类覆盖板。
+        Map<Long, Byte> actualTypeMasks = new HashMap<>();
         WirelessNodeIndexCodec.RadiusSelection selection = WirelessNodeIndexCodec.selectWithinRadius(
             snapshot,
             centerPacked,
             REVEAL_RADIUS_SQ,
             REVEAL_LIMIT,
-            new RevealProbe(world, registry, healedTypes));
+            new RevealProbe(world, registry, actualTypeMasks));
 
         // 修剪集回传注册表（INVALID 节点整批出册，最多一次 markDirty）
         registry.prune(world, selection.pruned);
 
         List<PacketSyncNodeReveal.RevealedNode> nodes = new ArrayList<>(selection.selected.size());
         for (WirelessNodeIndexCodec.SelectedNode node : selection.selected) {
-            Byte healed = healedTypes.get(node.packed);
-            byte effectiveType = healed != null ? healed.byteValue() : node.type;
-            if (effectiveType != wantedType) {
-                continue;
+            byte mask = LinkNodeRevealSession.visibleTypes(actualTypeMasks.get(node.packed), wantedType, revealAll);
+            for (byte type = WirelessNodeRegistry.TYPE_ENERGY; type <= WirelessNodeRegistry.TYPE_DYNAMO; type++) {
+                if ((mask & (1 << type)) == 0) continue;
+                nodes.add(new PacketSyncNodeReveal.RevealedNode(node.x, node.y, node.z, type));
+                if (nodes.size() >= REVEAL_LIMIT) break;
             }
-            nodes.add(new PacketSyncNodeReveal.RevealedNode(node.x, node.y, node.z, effectiveType));
+            if (nodes.size() >= REVEAL_LIMIT) break;
         }
 
         // 空列表也照发（客户端语义 = 清缓存）；时间基准取服务端本维世界 tick
         // 客户端按玩家语言渲染扫描反馈
+        REVEAL_SESSIONS.put(player, new LinkNodeRevealSession(world, now + REVEAL_DURATION_TICKS * 50L));
+
         if (!nodes.isEmpty()) {
             player.addChatMessage(new ChatComponentTranslation("gtswn.reveal.scan.result", nodes.size()));
         } else {
@@ -232,19 +247,19 @@ public final class NodeRevealRequestQueue {
      * <li>blockExists 但 TE 缺失或非 GT5U ICoverable → INVALID</li>
      * <li>六面扫描（{@code getCoverAtSide}）无 {@link GTswnCoverWirelessBase} → INVALID；
      * 有：记录 type 仍在 → VALID；只有另一 type → unregister + register(实际 type) 自愈后
-     * 按实际 type VALID（自愈结果记入 healedTypes，供入选集回填实际 type）</li>
+     * 按实际 type VALID；六面实际类型记入 actualTypeMasks，供显形筛选两类</li>
      * </ul>
      */
     private static final class RevealProbe implements WirelessNodeIndexCodec.Probe {
 
         private final World world;
         private final WirelessNodeRegistry registry;
-        private final Map<Long, Byte> healedTypes;
+        private final Map<Long, Byte> actualTypeMasks;
 
-        RevealProbe(World world, WirelessNodeRegistry registry, Map<Long, Byte> healedTypes) {
+        RevealProbe(World world, WirelessNodeRegistry registry, Map<Long, Byte> actualTypeMasks) {
             this.world = world;
             this.registry = registry;
-            this.healedTypes = healedTypes;
+            this.actualTypeMasks = actualTypeMasks;
         }
 
         @Override
@@ -257,25 +272,25 @@ public final class NodeRevealRequestQueue {
                 return WirelessNodeIndexCodec.ProbeResult.INVALID;
             }
             ICoverable coverable = (ICoverable) tileEntity;
-            // 六面扫描：type 值域只有 0/1，找到记录 type 即 VALID；否则记下唯一的"另一 type"
-            Byte otherType = null;
+            // 扫描全部六面，保留能源与动力两类覆盖板，避免同机双类型遗漏。
+            byte mask = 0;
             for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
                 Cover cover = coverable.getCoverAtSide(side);
                 if (cover instanceof GTswnCoverWirelessBase) {
-                    byte sideType = ((GTswnCoverWirelessBase) cover).nodeTypeId();
-                    if (sideType == type) {
-                        return WirelessNodeIndexCodec.ProbeResult.VALID;
-                    }
-                    otherType = sideType;
+                    mask |= 1 << ((GTswnCoverWirelessBase) cover).nodeTypeId();
                 }
             }
-            if (otherType == null) {
+            if (mask == 0) {
                 return WirelessNodeIndexCodec.ProbeResult.INVALID;
             }
-            // 自愈同机双类型角落：换绑实际 type 后仍入选（healedTypes 供入选集回填实际 type）
-            registry.unregister(world, x, y, z);
-            registry.register(world, x, y, z, otherType);
-            healedTypes.put(packed, otherType);
+            actualTypeMasks.put(packed, mask);
+            if ((mask & (1 << type)) == 0) {
+                byte actualType = (mask & (1 << WirelessNodeRegistry.TYPE_ENERGY)) != 0
+                    ? WirelessNodeRegistry.TYPE_ENERGY
+                    : WirelessNodeRegistry.TYPE_DYNAMO;
+                registry.unregister(world, x, y, z);
+                registry.register(world, x, y, z, actualType);
+            }
             return WirelessNodeIndexCodec.ProbeResult.VALID;
         }
     }

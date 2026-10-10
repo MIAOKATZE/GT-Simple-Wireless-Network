@@ -604,5 +604,6 @@ public class WirelessEnergyTap extends Item {
         list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.laser_pipe_cost"));
         // 蓄力显形提示 / Charge-and-release node reveal hint
         list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.reveal"));
+        list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.reveal.repeat"));
     }
 }

@@ -186,8 +186,9 @@ public final class WirelessNodeRevealRenderer {
         if (box == null) {
             return false;
         }
-        // 微扩张防 Z-fighting（线框与方块表面重叠导致的闪烁）
-        box = box.expand(BOX_EXPAND, BOX_EXPAND, BOX_EXPAND);
+        // 同机两类节点稍微错开线框，避免后一种颜色完全覆盖前一种。
+        double expand = node.type == 1 ? 0.03D : BOX_EXPAND;
+        box = box.expand(expand, expand, expand);
 
         // 量子成员统一使用网络调色的暗色；链路节点保留类型色与白色的 500ms 交替。
         if (node.type >= 2) {

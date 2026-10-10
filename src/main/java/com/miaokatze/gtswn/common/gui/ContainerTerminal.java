@@ -6,6 +6,7 @@ import java.math.MathContext;
 import java.util.Arrays;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.Container;
 import net.minecraft.inventory.ICrafting;
 import net.minecraft.inventory.InventoryBasic;
@@ -18,13 +19,14 @@ import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import gregtech.common.misc.WirelessNetworkManager;
 import gregtech.common.misc.spaceprojects.SpaceProjectManager;
 
-/** Supply clicks use the ordinary window transaction protocol, with server-only integer mutations. */
+/** A bounded real item slot, with matching client prediction and integer persistent reserves. */
 public class ContainerTerminal extends Container {
 
     public final boolean quantum;
     public final TerminalSupplyStore.Kind kind;
     private final EntityPlayer owner;
     private final ItemStack terminal;
+    private final ItemStack supplyReference;
     private final int heldIndex;
     private final int[] values = new int[80];
     private final int[] sent = new int[80];
@@ -32,9 +34,14 @@ public class ContainerTerminal extends Container {
     public int supplyCount;
 
     public ContainerTerminal(EntityPlayer player, boolean quantum) {
+        this(player, quantum, (quantum ? TerminalSupplyStore.Kind.ANCHOR : TerminalSupplyStore.Kind.TUBE).reference());
+    }
+
+    ContainerTerminal(EntityPlayer player, boolean quantum, ItemStack reference) {
         this.owner = player;
         this.quantum = quantum;
         kind = quantum ? TerminalSupplyStore.Kind.ANCHOR : TerminalSupplyStore.Kind.TUBE;
+        supplyReference = reference == null ? null : reference.copy();
         terminal = player.getHeldItem();
         heldIndex = player.inventory.currentItem;
         Arrays.fill(sent, -1);
@@ -42,12 +49,12 @@ public class ContainerTerminal extends Container {
 
             @Override
             public boolean isItemValid(ItemStack stack) {
-                return false;
+                return matchesSupply(stack);
             }
 
             @Override
             public boolean canTakeStack(EntityPlayer player) {
-                return false;
+                return true;
             }
         });
         for (int row = 0; row < 3; row++) {
@@ -55,6 +62,8 @@ public class ContainerTerminal extends Container {
                 addPlayerSlot(column + row * 9 + 9, 10 + column * 18, 150 + row * 18);
         }
         for (int column = 0; column < 9; column++) addPlayerSlot(column, 10 + column * 18, 208);
+        if (!player.worldObj.isRemote) supplyCount = TerminalSupplyStore.count(player, kind);
+        refreshSupplySlot();
     }
 
     private void addPlayerSlot(int index, int x, int y) {
@@ -88,55 +97,118 @@ public class ContainerTerminal extends Container {
         if (!canInteractWith(player) || (mode == 2 && button == heldIndex)) return null;
         if (slot > 0 && slot < inventorySlots.size() && getSlot(slot).getSlotIndex() == heldIndex) return null;
         if (slot != 0) return super.slotClick(slot, button, mode, player);
-        if (player.worldObj.isRemote || (mode != 0 && mode != 1) || (button != 0 && button != 1)) return null;
-        int count = TerminalSupplyStore.count(player, kind);
+        if ((mode != 0 && mode != 1) || (button != 0 && button != 1)) return null;
+        if (mode == 1) return transferStackInSlot(player, 0);
+        supplyCount = currentSupplyCount();
+        refreshSupplySlot();
+        try {
+            return clickSupply(button, player);
+        } finally {
+            syncSupplyTransaction();
+        }
+    }
+
+    private ItemStack clickSupply(int button, EntityPlayer player) {
+        ItemStack before = getSlot(0).getStack();
+        before = before == null ? null : before.copy();
+        int count = currentSupplyCount();
         ItemStack cursor = player.inventory.getItemStack();
-        if (mode == 0 && cursor != null) {
-            if (!kind.matches(cursor)) return null;
+        if (cursor != null) {
+            if (!matchesSupply(cursor)) return before;
             int moved = Math
                 .min(Math.min(button == 1 ? 1 : 64, cursor.stackSize), TerminalSupplyStore.CAPACITY - count);
-            if (moved <= 0) return null;
+            if (moved <= 0) return before;
             cursor.stackSize -= moved;
             if (cursor.stackSize == 0) player.inventory.setItemStack(null);
-            TerminalSupplyStore.set(player, kind, count + moved);
+            setSupplyCount(count + moved);
         } else if (count > 0 && cursor == null) {
-            ItemStack withdrawn = kind.reference();
+            ItemStack withdrawn = supplyReference == null ? null : supplyReference.copy();
             if (withdrawn == null) return null;
             withdrawn.stackSize = Math.min(count, Math.min(64, withdrawn.getMaxStackSize()));
-            if (mode == 0) {
-                if (button == 1) withdrawn.stackSize = 1;
-                player.inventory.setItemStack(withdrawn);
-                TerminalSupplyStore.set(player, kind, count - withdrawn.stackSize);
-            } else {
-                TerminalSupplyStore.set(
-                    player,
-                    kind,
-                    SupplyInventoryTransfer.withdraw(player.inventory, kind.reference(), count, heldIndex));
-            }
+            if (button == 1) withdrawn.stackSize = 1;
+            player.inventory.setItemStack(withdrawn);
+            setSupplyCount(count - withdrawn.stackSize);
         }
         player.inventory.markDirty();
-        detectAndSendChanges();
-        return null;
+        // Vanilla confirms this pre-click slot snapshot; the cursor is already predicted on both sides.
+        return before;
     }
 
     @Override
     public ItemStack transferStackInSlot(EntityPlayer player, int slot) {
-        if (player.worldObj.isRemote || !canInteractWith(player) || slot <= 0 || slot >= inventorySlots.size())
-            return null;
+        if (!canInteractWith(player) || slot < 0 || slot >= inventorySlots.size()) return null;
+        try {
+            transferSupply(player, slot);
+        } finally {
+            syncSupplyTransaction();
+        }
+        // Returning null intentionally avoids vanilla's repeated shift-click dispatch.
+        return null;
+    }
+
+    private void transferSupply(EntityPlayer player, int slot) {
+        int count = currentSupplyCount();
+        if (slot == 0) {
+            if (player.inventory.getItemStack() == null)
+                setSupplyCount(SupplyInventoryTransfer.withdraw(player.inventory, supplyReference, count, heldIndex));
+            return;
+        }
         Slot source = getSlot(slot);
         ItemStack stack = source.getStack();
-        if (!source.canTakeStack(player) || !kind.matches(stack)) return null;
-        int count = TerminalSupplyStore.count(player, kind);
-        TerminalSupplyStore.set(
-            player,
-            kind,
+        if (!source.canTakeStack(player) || !matchesSupply(stack)) return;
+        setSupplyCount(
             SupplyInventoryTransfer
-                .deposit(player.inventory, source.getSlotIndex(), kind.reference(), count, heldIndex));
-        return null;
+                .deposit(player.inventory, source.getSlotIndex(), supplyReference, count, heldIndex));
+    }
+
+    protected void syncSupplyTransaction() {
+        if (owner.worldObj.isRemote) return;
+        supplyCount = TerminalSupplyStore.count(owner, kind);
+        refreshSupplySlot();
+        if (owner instanceof EntityPlayerMP player) {
+            // Accepted C0E transactions suppress vanilla's S2F replies. Explicitly send both
+            // slots and cursor here, before that guard, including unchanged/full inventories.
+            player.sendContainerAndContentsToPlayer(this, getInventory());
+            player.sendProgressBarUpdate(this, 0, supplyCount);
+        }
+    }
+
+    private int currentSupplyCount() {
+        return owner.worldObj.isRemote ? supplyCount : TerminalSupplyStore.count(owner, kind);
+    }
+
+    private void setSupplyCount(int count) {
+        supplyCount = Math.max(0, Math.min(TerminalSupplyStore.CAPACITY, count));
+        TerminalSupplyStore.set(owner, kind, supplyCount);
+        refreshSupplySlot();
+    }
+
+    private void refreshSupplySlot() {
+        ItemStack stack = supplyReference == null ? null : supplyReference.copy();
+        if (stack != null) stack.stackSize = Math.min(supplyCount, Math.min(64, stack.getMaxStackSize()));
+        getSlot(0).putStack(stack == null || stack.stackSize == 0 ? null : stack);
+    }
+
+    private boolean matchesSupply(ItemStack stack) {
+        return SupplyInventoryTransfer.matches(stack, supplyReference);
+    }
+
+    @Override
+    public boolean canDragIntoSlot(Slot slot) {
+        return slot.slotNumber != 0 && slot.getSlotIndex() != heldIndex;
+    }
+
+    @Override
+    public boolean func_94530_a(ItemStack stack, Slot slot) {
+        return slot.slotNumber != 0 && slot.getSlotIndex() != heldIndex;
     }
 
     @Override
     public void detectAndSendChanges() {
+        if (!owner.worldObj.isRemote) {
+            supplyCount = TerminalSupplyStore.count(owner, kind);
+            refreshSupplySlot();
+        }
         super.detectAndSendChanges();
         if (owner.worldObj.isRemote) return;
         values[0] = TerminalSupplyStore.count(owner, kind);
@@ -170,7 +242,10 @@ public class ContainerTerminal extends Container {
     public void updateProgressBar(int id, int value) {
         if (id < 0 || id >= values.length) return;
         values[id] = value;
-        if (id == 0) supplyCount = Math.max(0, Math.min(TerminalSupplyStore.CAPACITY, value));
+        if (id == 0) {
+            supplyCount = Math.max(0, Math.min(TerminalSupplyStore.CAPACITY, value));
+            refreshSupplySlot();
+        }
     }
 
     public String team() {
