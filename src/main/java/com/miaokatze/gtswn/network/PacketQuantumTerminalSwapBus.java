@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.network;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.block.Block;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
@@ -11,12 +12,15 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumBusReplacement;
+import com.miaokatze.gtswn.common.quantum.QuantumBusTarget;
+import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
+import appeng.api.AEApi;
 import appeng.api.util.DimensionalCoord;
 import appeng.tile.networking.TileCableBus;
 import appeng.util.Platform;
@@ -31,9 +35,9 @@ import io.netty.buffer.ByteBuf;
 /**
  * 客户端→服务端 请求包：量子终端「裸部件 cable-bus 原位替换为量子节点」（discriminator = 13，v1.8.5）。
  * <p>
- * 字段：x/y/z（目标裸 bus 方块坐标）+ side（{@code block.collisionRayTrace} 真实命中面，
+ * 字段：x/y/z（原始点击坐标）+ side（有效点击面）+ removeCore（显式移除意图）。
  * 客户端 {@code QuantumTerminalBusSwapHandler} 以 HIGHEST 优先级先于 AE2 PartPlacement 拦截并取消
- * 原版交互后发送本包；AE2 对部件的原生交互/放置因事件被取消而完全不触发）。
+ * 原版交互后发送本包；AE2 对部件的原生交互/放置因事件被取消而完全不触发。
  * <p>
  * 线程模式与包 5/8/10/11 一致：Handler 运行在 Netty 网络线程，不得触世界；此处仅入队
  * {@link PacketQuantumTerminalSwapBus.SwapJob}，由本类内聚的 {@code ServerTickEvent(END)} 排水器
@@ -62,8 +66,14 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
     private int y;
     private int z;
     private int side;
+    private boolean removeCore;
 
     public PacketQuantumTerminalSwapBus(int x, int y, int z, int side) {
+        this(x, y, z, side, false);
+    }
+
+    public PacketQuantumTerminalSwapBus(int x, int y, int z, int side, boolean removeCore) {
+        this.removeCore = removeCore;
         this.x = x;
         this.y = y;
         this.z = z;
@@ -76,6 +86,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         this.y = buf.readInt();
         this.z = buf.readInt();
         this.side = buf.readInt();
+        this.removeCore = buf.readBoolean();
     }
 
     @Override
@@ -84,6 +95,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         buf.writeInt(this.y);
         buf.writeInt(this.z);
         buf.writeInt(this.side);
+        buf.writeBoolean(this.removeCore);
     }
 
     // ==================== 主线程排水（队列 + ServerTickEvent END） ====================
@@ -96,8 +108,10 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         final int y;
         final int z;
         final int side;
+        final boolean removeCore;
 
-        SwapJob(EntityPlayerMP player, int x, int y, int z, int side) {
+        SwapJob(EntityPlayerMP player, int x, int y, int z, int side, boolean removeCore) {
+            this.removeCore = removeCore;
             this.player = player;
             this.x = x;
             this.y = y;
@@ -142,7 +156,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         public IMessage onMessage(PacketQuantumTerminalSwapBus msg, MessageContext ctx) {
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
             if (player != null) {
-                QUEUE.add(new SwapJob(player, msg.x, msg.y, msg.z, msg.side));
+                QUEUE.add(new SwapJob(player, msg.x, msg.y, msg.z, msg.side, msg.removeCore));
             }
             return null;
         }
@@ -155,41 +169,56 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
      */
     private static void handleSwap(SwapJob job) {
         EntityPlayerMP player = job.player;
+        handleInteraction(player, job.x, job.y, job.z, job.side, job.removeCore);
+    }
+
+    /** Main-thread entry shared by the packet and the ordinary item/block interaction path. */
+    public static boolean handleInteraction(EntityPlayer player, int clickX, int clickY, int clickZ, int side) {
+        return handleInteraction(player, clickX, clickY, clickZ, side, player.isSneaking());
+    }
+
+    private static boolean handleInteraction(EntityPlayer player, int clickX, int clickY, int clickZ, int side,
+        boolean removeCore) {
         World world = player.worldObj;
-        int x = job.x;
-        int y = job.y;
-        int z = job.z;
+        if (removeCore != player.isSneaking()) return false;
+        if (world.isRemote || side < 0 || side >= 6) return false;
+        int x = clickX;
+        int y = clickY;
+        int z = clickZ;
         // 距离守卫：防伪造包隔空拆机器（客户端真实命中 ≤ 手长 + 部件外扩，8 格上限极宽裕）
         if (player.getDistanceSq(x + 0.5D, y + 0.5D, z + 0.5D) > MAX_INTERACT_DISTANCE_SQ) {
-            return;
+            return false;
         }
         // 手持复验（镜像 ItemNetworkQuantumTerminal.onItemUseFirst：仅服务端权威、非潜行、已绑定）
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) {
-            return;
+            return false;
         }
-        if (player.isSneaking()) {
-            return;
+        if (QuantumIncorporationRegistry.isIncorporated(world, x, y, z)) return false;
+        TileEntity clickedTile = world.getTileEntity(x, y, z);
+        if (removeCore) {
+            if (clickedTile instanceof TileEntityNetworkQuantumNode) {
+                removeCore(player, (TileEntityNetworkQuantumNode) clickedTile);
+                return true;
+            }
+            return false;
         }
-        if (!ItemNetworkQuantumTerminal.isBound(held)) {
-            // 事件已在客户端取消，无法「放行」，改发绑定提示（任务 B2 未绑定→false/提示 的提示分支）
-            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.need_bind");
-            return;
-        }
-        // 目标复验：仍为无中心线缆的裸 TileCableBus（cast 源表达式保持 TileEntity 静态类型，
-        // 避免 javac 解析 AEBaseTile 上不在编译 classpath 的可选接口）
-        TileEntity te = world.getTileEntity(x, y, z);
-        if (!(te instanceof TileCableBus)) {
-            return;
-        }
-        TileCableBus bus = (TileCableBus) (TileEntity) te;
-        if (bus.getPart(ForgeDirection.UNKNOWN) != null) {
-            // 有中心线缆 = AE2 原生域（客户端拦截条件的服务端镜像复验）
-            return;
-        }
+        if (!ItemNetworkQuantumTerminal.isBound(held)) return false;
+        QuantumBusTarget target = QuantumBusTarget.resolve(world, x, y, z, side);
+        if (target == null) return false;
+        if (QuantumIncorporationRegistry.isIncorporated(world, target.x, target.y, target.z)) return true;
+        x = target.x;
+        y = target.y;
+        z = target.z;
+        if (player.getDistanceSq(x + 0.5D, y + 0.5D, z + 0.5D) > MAX_INTERACT_DISTANCE_SQ) return true;
+        return replaceBus(player, held, world, target.bus, x, y, z);
+    }
+
+    private static boolean replaceBus(EntityPlayer player, ItemStack held, World world, TileCableBus bus, int x, int y,
+        int z) {
         if (!Platform.hasPermissions(new DimensionalCoord(world, x, y, z), player)) {
             ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.no_permission");
-            return;
+            return true;
         }
         int partCount = 0;
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
@@ -198,7 +227,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
             }
         }
         if (partCount == 0) {
-            return;
+            return false;
         }
         Block originalBlock = world.getBlock(x, y, z);
         int originalMetadata = world.getBlockMetadata(x, y, z);
@@ -249,7 +278,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         }
         if (!replaced) {
             ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_failed");
-            return;
+            return true;
         }
         node.markForSave();
         node.markForUpdate();
@@ -264,5 +293,89 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
             nodeBlock.stepSound.getPitch() * 0.8F);
         AnimationQualityHints.show(player, QualityHintCounter.Kind.NODE);
         ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_done", partCount);
+        return true;
+    }
+
+    private static void removeCore(EntityPlayer player, TileEntityNetworkQuantumNode node) {
+        World world = player.worldObj;
+        int x = node.xCoord;
+        int y = node.yCoord;
+        int z = node.zCoord;
+        if (!Platform.hasPermissions(new DimensionalCoord(world, x, y, z), player)) {
+            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.no_permission");
+            return;
+        }
+        boolean removed = false;
+        try {
+            if (!node.hasParts()) {
+                removed = world.setBlockToAir(x, y, z);
+            } else {
+                Block nativeBlock = AEApi.instance()
+                    .definitions()
+                    .blocks()
+                    .multiPart()
+                    .maybeBlock()
+                    .get();
+                // AE2's factory supplies the combined tile class, including its integration layers.
+                TileEntity nativeTile = nativeBlock.createTileEntity(world, 0);
+                if (!(nativeTile instanceof TileCableBus)) {
+                    throw new IllegalStateException("AE2 multipart factory did not create a cable bus");
+                }
+                TileCableBus bus = (TileCableBus) nativeTile;
+                bus.setWorldObj(world);
+                bus.xCoord = x;
+                bus.yCoord = y;
+                bus.zCoord = z;
+                Block originalBlock = world.getBlock(x, y, z);
+                int originalMetadata = world.getBlockMetadata(x, y, z);
+                removed = QuantumBusReplacement.removeCore(node, bus, new QuantumBusReplacement.Placement() {
+
+                    @Override
+                    public boolean install() {
+                        if (!world.setBlock(x, y, z, nativeBlock, 0, 2)
+                            || !(world.getTileEntity(x, y, z) instanceof TileCableBus)) return false;
+                        world.setTileEntity(x, y, z, bus);
+                        return world.getBlock(x, y, z) == nativeBlock && world.getTileEntity(x, y, z) == bus;
+                    }
+
+                    @Override
+                    public void restore() {
+                        if (world.getBlock(x, y, z) != originalBlock
+                            || world.getBlockMetadata(x, y, z) != originalMetadata) {
+                            if (!world.setBlock(x, y, z, originalBlock, originalMetadata, 2)) {
+                                throw new IllegalStateException("Cannot restore original quantum node block");
+                            }
+                        }
+                        node.validate();
+                        world.setTileEntity(x, y, z, node);
+                        if (world.getTileEntity(x, y, z) != node) {
+                            throw new IllegalStateException("Cannot restore original quantum node tile");
+                        }
+                        node.markForSave();
+                        node.markForUpdate();
+                        node.notifyNeighbors();
+                    }
+                });
+                if (removed) {
+                    bus.markForSave();
+                    bus.markForUpdate();
+                    bus.notifyNeighbors();
+                }
+            }
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.error("[量子终端移除] 核心移除失败，尝试恢复原宿主", t);
+        }
+        if (!removed) {
+            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_failed");
+            return;
+        }
+        world.playSoundEffect(
+            x + 0.5D,
+            y + 0.5D,
+            z + 0.5D,
+            "random.pop",
+            0.2F,
+            ((world.rand.nextFloat() - world.rand.nextFloat()) * 0.7F + 1.0F) * 2.0F);
+        ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.node_destroyed");
     }
 }

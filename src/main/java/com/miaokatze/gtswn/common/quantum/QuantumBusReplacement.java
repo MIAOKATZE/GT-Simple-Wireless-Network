@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.quantum;
 
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
@@ -46,6 +47,41 @@ public final class QuantumBusReplacement {
                     }
                 } finally {
                     restorer.gtswn$setCableBus(container);
+                    placement.restore();
+                }
+            }
+        }
+    }
+
+    /** Remove only the quantum core; the original parts stay live in a native AE2 host. */
+    public static boolean removeCore(TileEntityNetworkQuantumNode original, TileCableBus bus, Placement placement) {
+        CableBusContainer container = original.getPartContainer();
+        if (container.isEmpty() || container.getPart(ForgeDirection.UNKNOWN) != null) {
+            return false;
+        }
+        TileCableBusAccessor target = (TileCableBusAccessor) (Object) bus;
+        NBTTagCompound proxyState = original.snapshotProxyForReplacement();
+        boolean committed = false;
+        try {
+            try {
+                container.setHost(bus);
+                for (ForgeDirection side : ForgeDirection.values()) {
+                    IPart part = container.getPart(side);
+                    if (part != null) {
+                        part.setPartHostInfo(side, container, bus);
+                    }
+                }
+            } finally {
+                target.gtswn$setCableBus(container);
+            }
+            committed = placement.install();
+            return committed;
+        } finally {
+            if (!committed) {
+                try {
+                    original.adoptPartContainer(container);
+                } finally {
+                    original.restoreProxyAfterReplacement(proxyState);
                     placement.restore();
                 }
             }

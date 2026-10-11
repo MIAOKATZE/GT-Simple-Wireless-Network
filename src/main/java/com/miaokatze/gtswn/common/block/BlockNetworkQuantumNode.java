@@ -25,6 +25,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.client.render.QuantumTintedTextures;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.network.PacketQuantumTerminalSwapBus;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
 import appeng.api.parts.PartItemStack;
@@ -247,9 +248,8 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     /**
      * 右键处理（T4 状态提示 + v1.8.5 部件交互/受控销毁）。
      * <p>
-     * v1.8.5 优先级：①装有部件时先尝试命中部件交互（仿 BlockCableBus.onActivated :387-391，
-     * hitX/Y/Z 即局部坐标）；②Shift+右击且手持量子终端 → 销毁节点（弹射部件掉落后 setBlockToAir，
-     * 仿 breakBlock 链 cb.getDrops :891-908）；③状态提示（客户端直接返回 true，服务端以
+     * 优先级：①Shift+量子终端撤去核心并保留原位部件；②命中部件的原生交互；
+     * ③状态提示（客户端直接返回 true，服务端以
      * {@link TileEntityNetworkQuantumNode#isLinked()} 为权威在线判据，离线时按
      * {@link TileEntityNetworkQuantumNode#getOfflineReasonKey()} 给出原因提示）。
      * 瞬态说明：连接刚断开而 20tick 维护循环尚未刷新原因缓存时（≤1 秒窗口），
@@ -261,33 +261,19 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile instanceof TileEntityNetworkQuantumNode) {
             TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) tile;
-            // v1.8.5：命中部件已处理则直接结束（部件 GUI/开关等由 AE2 部件自身接管）
+            // The controlled terminal gesture takes precedence over any part activation.
+            ItemStack held = player.getHeldItem();
+            if (player.isSneaking() && held != null && held.getItem() instanceof ItemNetworkQuantumTerminal) {
+                if (!world.isRemote) {
+                    PacketQuantumTerminalSwapBus.handleInteraction(player, x, y, z, side);
+                }
+                return true;
+            }
             if (node.hasParts() && node.getPartContainer()
                 .activate(player, Vec3.createVectorHelper(hitX, hitY, hitZ))) {
                 return true;
             }
-            // v1.6.2：Shift+右击仅当手持量子终端时销毁节点（本体无掉落），pop 音效仿 AE 扳手回收
-            if (player.isSneaking()) {
-                ItemStack held = player.getHeldItem();
-                if (held != null && held.getItem() instanceof ItemNetworkQuantumTerminal) {
-                    if (!world.isRemote) {
-                        // v1.8.5：部件掉落由 breakBlock 统一弹射（setBlockToAir 必经），
-                        // 此处不手动弹射，否则与 breakBlock 各掉一份翻倍
-                        world.setBlockToAir(x, y, z);
-                        world.playSoundEffect(
-                            x + 0.5D,
-                            y + 0.5D,
-                            z + 0.5D,
-                            "random.pop",
-                            0.2F,
-                            ((world.rand.nextFloat() - world.rand.nextFloat()) * 0.7F + 1.0F) * 2.0F);
-                        player
-                            .addChatComponentMessage(new ChatComponentTranslation("gtswn.chat.quantum.node_destroyed"));
-                    }
-                    return true;
-                }
-                // 潜行但手持非终端：落入下方状态提示分支，不破坏方块
-            }
+
         }
         if (world.isRemote) {
             return true;
