@@ -30,6 +30,7 @@ import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+import com.miaokatze.gtswn.network.PacketQuantumTerminalSwapBus;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
 import appeng.api.networking.pathing.ControllerState;
@@ -202,6 +203,9 @@ public class ItemNetworkQuantumTerminal extends Item {
             boolean result = handleControllerClick(stack, player, world, (TileController) te, x, y, z);
             return result;
         }
+        if (PacketQuantumTerminalSwapBus.handleInteraction(player, x, y, z, side)) {
+            return true;
+        }
         return handleBlockClick(stack, player, world, x, y, z, side);
     }
 
@@ -266,6 +270,7 @@ public class ItemNetworkQuantumTerminal extends Item {
         if (!isBound(stack)) {
             return false;
         }
+        if (side < 0 || side >= 6) return false;
         // 放置位置 = 点击面偏移格
         ForgeDirection face = ForgeDirection.getOrientation(side);
         int nx = x + face.offsetX;

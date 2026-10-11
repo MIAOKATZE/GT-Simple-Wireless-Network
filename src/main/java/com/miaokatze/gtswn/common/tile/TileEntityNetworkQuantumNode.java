@@ -543,6 +543,20 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
     }
 
+    /** Save proxy security/owner data before replacement can invalidate its live GridNode. */
+    public NBTTagCompound snapshotProxyForReplacement() {
+        if (pendingProxyNBT != null) return pendingProxyNBT;
+        if (gridProxy == null) return null;
+        NBTTagCompound tag = new NBTTagCompound();
+        gridProxy.writeToNBT(tag);
+        return tag.hasKey("proxy") ? tag : null;
+    }
+
+    /** The normal first-tick proxy initialization restores the saved node data after rollback. */
+    public void restoreProxyAfterReplacement(NBTTagCompound tag) {
+        if (tag != null) this.pendingProxyNBT = tag;
+    }
+
     @Override
     public TileEntity getTile() {
         return this;

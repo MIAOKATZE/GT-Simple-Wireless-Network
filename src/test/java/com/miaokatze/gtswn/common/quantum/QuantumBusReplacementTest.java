@@ -19,9 +19,12 @@ import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.mixins.ae2.TileCableBusAccessor;
 
 import appeng.api.implementations.parts.IPartCable;
+import appeng.api.networking.IGridConnection;
+import appeng.api.networking.IGridNode;
 import appeng.api.parts.IPart;
 import appeng.api.parts.IPartHost;
 import appeng.api.parts.PartItemStack;
+import appeng.me.helpers.AENetworkProxy;
 import appeng.parts.CableBusContainer;
 import appeng.tile.networking.TileCableBus;
 import io.netty.buffer.ByteBuf;
@@ -288,5 +291,194 @@ public class QuantumBusReplacementTest {
         assertFalse(QuantumBusReplacement.replace(bus, node, forbidden));
         assertSame(container, bus.getCableBus());
         assertTrue(node.isEmpty());
+    }
+
+    @Test
+    public void removingCoreRetainsSixLivePartsAndDestroysOnlyQuantumBridge() throws Exception {
+        Bus seed = new Bus();
+        Parts container = new Parts(seed);
+        seed.container = container;
+        PartState[] parts = new PartState[6];
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
+            parts[side.ordinal()] = new PartState();
+            container.put(side, parts[side.ordinal()].part);
+        }
+        TileEntityNetworkQuantumNode node = new TileEntityNetworkQuantumNode();
+        node.setAnchor(-1, 10, 20, 30);
+        node.adoptPartContainer(container);
+        Field inWorld = CableBusContainer.class.getDeclaredField("inWorld");
+        inWorld.setAccessible(true);
+        inWorld.setBoolean(container, true);
+        AtomicInteger bridgeDestroyed = new AtomicInteger();
+        IGridConnection bridge = (IGridConnection) Proxy.newProxyInstance(
+            IGridConnection.class.getClassLoader(),
+            new Class<?>[] { IGridConnection.class },
+            (proxy, method, args) -> {
+                if (method.getName()
+                    .equals("destroy")) bridgeDestroyed.incrementAndGet();
+                return null;
+            });
+        Field connection = TileEntityNetworkQuantumNode.class.getDeclaredField("connection");
+        connection.setAccessible(true);
+        connection.set(node, bridge);
+        NBTTagCompound expectedInventory = new NBTTagCompound();
+        container.writeToNBT(expectedInventory);
+        Bus nativeBus = new Bus();
+        assertTrue(QuantumBusReplacement.removeCore(node, nativeBus, new QuantumBusReplacement.Placement() {
+
+            public boolean install() {
+                assertTrue(node.isEmpty());
+                node.invalidate();
+                node.onChunkUnload();
+                return true;
+            }
+
+            public void restore() {
+                fail("Successful removal must not roll back");
+            }
+        }));
+        assertEquals(1, bridgeDestroyed.get());
+        assertNull(connection.get(node));
+        assertSame(container, nativeBus.getCableBus());
+        assertTrue(inWorld.getBoolean(container));
+        NBTTagCompound actualInventory = new NBTTagCompound();
+        nativeBus.getCableBus()
+            .writeToNBT(actualInventory);
+        assertEquals(expectedInventory, actualInventory);
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
+            PartState state = parts[side.ordinal()];
+            assertSame(state.part, nativeBus.getPart(side));
+            assertSame(nativeBus, state.tile);
+            assertSame(container, state.host);
+            assertEquals(0, state.destructiveCalls.get());
+        }
+    }
+
+    @Test
+    public void failedCoreRemovalRestoresOriginalPartsAnchorAndProxyNbt() throws Exception {
+        for (int mode = 0; mode < 3; mode++) {
+            Bus seed = new Bus();
+            Parts container = new LegacyParts(seed);
+            seed.container = container;
+            PartState state = new PartState();
+            container.put(ForgeDirection.WEST, state.part);
+            TileEntityNetworkQuantumNode node = new TileEntityNetworkQuantumNode();
+            node.setAnchor(7, 10, 20, 30);
+            node.adoptPartContainer(container);
+            state.failRebind = mode == 2;
+            Field pending = TileEntityNetworkQuantumNode.class.getDeclaredField("pendingProxyNBT");
+            pending.setAccessible(true);
+            NBTTagCompound owner = new NBTTagCompound();
+            owner.setInteger("playerID", 47);
+            pending.set(node, owner);
+            Bus nativeBus = new Bus();
+            AtomicInteger restored = new AtomicInteger();
+            final int failure = mode;
+            try {
+                assertFalse(QuantumBusReplacement.removeCore(node, nativeBus, new QuantumBusReplacement.Placement() {
+
+                    public boolean install() {
+                        node.invalidate();
+                        if (failure == 1) throw new IllegalStateException("installation");
+                        return false;
+                    }
+
+                    public void restore() {
+                        assertTrue(nativeBus.isEmpty());
+                        nativeBus.invalidate();
+                        node.validate();
+                        restored.incrementAndGet();
+                    }
+                }));
+                assertEquals(0, mode);
+            } catch (IllegalStateException expected) {
+                assertTrue(mode > 0);
+            }
+            assertEquals(1, restored.get());
+            assertSame(container, node.getPartContainer());
+            assertSame(state.part, node.getPart(ForgeDirection.WEST));
+            assertSame(node, state.tile);
+            assertSame(owner, pending.get(node));
+            assertEquals(7, node.getAnchorDim());
+            assertEquals(10, node.getAnchorX());
+            assertEquals(20, node.getAnchorY());
+            assertEquals(30, node.getAnchorZ());
+            assertFalse(node.isInvalid());
+            assertEquals(0, state.destructiveCalls.get());
+        }
+    }
+
+    @Test
+    public void emptyNodeDoesNotEnterTheNativeContainerTransfer() {
+        TileEntityNetworkQuantumNode node = new TileEntityNetworkQuantumNode();
+        assertFalse(QuantumBusReplacement.removeCore(node, new Bus(), new QuantumBusReplacement.Placement() {
+
+            public boolean install() {
+                fail();
+                return false;
+            }
+
+            public void restore() {
+                fail();
+            }
+        }));
+        assertTrue(node.isEmpty());
+    }
+
+    @Test
+    public void failedRemovalSavesLiveProxyOwnerBeforeInvalidation() throws Exception {
+        Bus seed = new Bus();
+        Parts container = new Parts(seed);
+        seed.container = container;
+        container.put(ForgeDirection.UP, new PartState().part);
+        TileEntityNetworkQuantumNode node = new TileEntityNetworkQuantumNode();
+        node.adoptPartContainer(container);
+        AtomicInteger destroyed = new AtomicInteger();
+        IGridNode gridNode = (IGridNode) Proxy.newProxyInstance(
+            IGridNode.class.getClassLoader(),
+            new Class<?>[] { IGridNode.class },
+            (proxy, method, args) -> {
+                if (method.getName()
+                    .equals("saveToNBT")) {
+                    NBTTagCompound data = new NBTTagCompound();
+                    data.setInteger("playerID", 47);
+                    data.setLong("securityKey", 987654321L);
+                    ((NBTTagCompound) args[1]).setTag((String) args[0], data);
+                } else if (method.getName()
+                    .equals("destroy")) destroyed.incrementAndGet();
+                return null;
+            });
+        AENetworkProxy proxy = new AENetworkProxy(node, "proxy", null, true);
+        Field liveNode = AENetworkProxy.class.getDeclaredField("node");
+        liveNode.setAccessible(true);
+        liveNode.set(proxy, gridNode);
+        Field gridProxy = TileEntityNetworkQuantumNode.class.getDeclaredField("gridProxy");
+        gridProxy.setAccessible(true);
+        gridProxy.set(node, proxy);
+        assertFalse(QuantumBusReplacement.removeCore(node, new Bus(), new QuantumBusReplacement.Placement() {
+
+            public boolean install() {
+                node.invalidate();
+                return false;
+            }
+
+            public void restore() {
+                node.validate();
+            }
+        }));
+        assertEquals(1, destroyed.get());
+        assertNull(liveNode.get(proxy));
+        Field pending = TileEntityNetworkQuantumNode.class.getDeclaredField("pendingProxyNBT");
+        pending.setAccessible(true);
+        NBTTagCompound restored = (NBTTagCompound) pending.get(node);
+        assertEquals(
+            47,
+            restored.getCompoundTag("proxy")
+                .getInteger("playerID"));
+        assertEquals(
+            987654321L,
+            restored.getCompoundTag("proxy")
+                .getLong("securityKey"));
+        assertSame(proxy, gridProxy.get(node));
     }
 }
