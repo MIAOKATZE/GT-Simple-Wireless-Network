@@ -523,6 +523,26 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         return this.partContainer;
     }
 
+    /** 接管原生 bus 的活容器；不拆部件、不重建库存或 GridNode。 */
+    public void adoptPartContainer(CableBusContainer container) {
+        if (!this.partContainer.isEmpty()) {
+            throw new IllegalStateException("Quantum node already has parts");
+        }
+        try {
+            container.setHost(this);
+            // AE2 <=1050 does not refresh part tile references in setHost.
+            for (ForgeDirection side : ForgeDirection.values()) {
+                IPart part = container.getPart(side);
+                if (part != null) {
+                    part.setPartHostInfo(side, container, this);
+                }
+            }
+        } finally {
+            // setHost 的部件回调可能抛异常，仍保留容器所有权供调用方回滚。
+            this.partContainer = container;
+        }
+    }
+
     @Override
     public TileEntity getTile() {
         return this;

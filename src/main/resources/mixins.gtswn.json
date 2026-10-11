@@ -9,6 +9,7 @@
   "mixins": [
     "ae2.PathingCalculationMixin",
     "ae2.QuantumIncorporationGridNodeMixin",
+    "ae2.TileCableBusAccessor",
     "minecraft.QuantumIncorporationIdentityMixin"
   ],
   "client": [
