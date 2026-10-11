@@ -1,9 +1,5 @@
 package com.miaokatze.gtswn.network;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.block.Block;
@@ -14,14 +10,13 @@ import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.quantum.QuantumBusReplacement;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
-import appeng.api.parts.IPart;
-import appeng.api.parts.PartItemStack;
 import appeng.api.util.DimensionalCoord;
 import appeng.tile.networking.TileCableBus;
 import appeng.util.Platform;
@@ -48,16 +43,9 @@ import io.netty.buffer.ByteBuf;
  * 服务端迁移语义（镜像 {@code ItemNetworkQuantumTerminal.onItemUseFirst} 绑定校验 + 手势 4 锚点写入）：
  * <ol>
  * <li>复验：手持已绑定量子终端、目标仍为无中心线缆（getPart(UNKNOWN)==null）的 {@link TileCableBus}；</li>
- * <li>收集全部面部件 {@code part.getItemStack(PartItemStack.Wrench).copy()} + {@code part.getDrops(…,true)}
- * （AE2 wrench 双路语义：部件设置随物品 NBT 保留，升级/透视/配置卡单独弹出，重挂时经
- * IPartItem 的 ItemStack 构造器回读）；</li>
- * <li>逐面 {@code host.removePart(side,false)}（不掉落；末件移除后容器已空 → 显式 {@code cleanup()}
- * 置空气——DIFF：AE2 是在 wrenchLogic 中显式调 cleanup，removePart 本身不自动触发）；</li>
- * <li>{@code setBlock(量子节点, 0, 3)} + 锚点/owner 写入（复用终端抽取的
- * {@link ItemNetworkQuantumTerminal#applyAnchorToNode}，与手势 4 逐字段一致）；</li>
- * <li>按原面 {@code node.addPart(stack, side, player)} 重挂（proxy 未就绪由每 tick
- * rewirePartConnections 自动补连）；</li>
- * <li>任何一步失败：已移除/未挂上的部件按 wrench 掉落物弹回原地，绝不隐形丢件，全程中文状态提示。</li>
+ * <li>整体接管原生 CableBusContainer，保留每个 IPart、库存和 GridNode；</li>
+ * <li>先隔离旧宿主的生命周期，再原位放置带锚点/owner 的量子节点；</li>
+ * <li>安装失败时回挂同一个容器和原 TileCableBus，不产生拆卸掉落物。</li>
  * </ol>
  */
 public class PacketQuantumTerminalSwapBus implements IMessage {
@@ -163,8 +151,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
     // ==================== 服务端迁移主体（主线程） ====================
 
     /**
-     * 执行原位替换。任一环节失败即回滚：已移除部件按 wrench 掉落物弹回原地并提示，
-     * 绝不留隐形丢件；目标格被第三方改变的竞态（发包后 setBlock 前）一律静默放弃。
+     * 执行原位替换。安装失败即恢复原方块、宿主及活容器；成功后才通知邻居。
      */
     private static void handleSwap(SwapJob job) {
         EntityPlayerMP player = job.player;
@@ -204,94 +191,69 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
             ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.no_permission");
             return;
         }
-        // a. 收集全部面部件迁移 ItemStack（wrench 语义，copy 脱钩原部件内部引用）；
-        // 镜像 PartPlacement.wrenchLogic 双路：升级/透视/配置卡由 part.getDrops 单独给出，
-        // 不收集即静默销毁（AEBasePart.getItemStack 仅含部件自身）
-        Map<ForgeDirection, ItemStack> migration = new LinkedHashMap<>();
-        List<ItemStack> extraDrops = new ArrayList<>();
+        int partCount = 0;
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
-            IPart part = bus.getPart(d);
-            if (part != null) {
-                ItemStack is = part.getItemStack(PartItemStack.Wrench);
-                if (is != null) {
-                    migration.put(d, is.copy());
-                }
-                part.getDrops(extraDrops, true);
+            if (bus.getPart(d) != null) {
+                partCount++;
             }
         }
-        if (migration.isEmpty()) {
+        if (partCount == 0) {
             return;
         }
-        // b. 逐面移除（removePart(false) 不掉落；末件后容器空 → 显式 cleanup 置空气 + setBlockToAir 兜底）
-        List<ItemStack> removed = new ArrayList<>();
-        try {
-            for (ForgeDirection d : migration.keySet()) {
-                bus.removePart(d, false);
-                removed.add(migration.get(d));
-            }
-        } catch (Throwable t) {
-            GTSimpleWirelessNetwork.LOG.error("[量子终端替换] 部件移除失败，已移除件弹回原地", t);
-            Platform.spawnDrops(world, x, y, z, removed);
-            Platform.spawnDrops(world, x, y, z, extraDrops);
-            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_failed");
-            return;
-        }
-        if (!bus.isEmpty()) {
-            // 个别部件无 ItemStack（理论不可达）：拒绝换体，防 setBlock 吞掉残部
-            Platform.spawnDrops(world, x, y, z, removed);
-            Platform.spawnDrops(world, x, y, z, extraDrops);
-            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_failed");
-            return;
-        }
-        if (!world.isRemote) {
-            // 镜像 AE2 PartPlacement.wrenchLogic 的末件清理（TileCableBus.cleanup → setBlock(AIR)）
-            bus.cleanup();
-        }
-        if (!world.isAirBlock(x, y, z)) {
-            world.setBlockToAir(x, y, z);
-        }
-        // c. 原位放置量子节点（flag 3 = 通知客户端 + 邻接更新，镜像手势 4）
+        Block originalBlock = world.getBlock(x, y, z);
+        int originalMetadata = world.getBlockMetadata(x, y, z);
         Block nodeBlock = BlockRegistrar.networkQuantumNode;
-        if (!world.setBlock(x, y, z, nodeBlock, 0, 3)) {
-            Platform.spawnDrops(world, x, y, z, removed);
-            Platform.spawnDrops(world, x, y, z, extraDrops);
-            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_failed");
-            return;
-        }
-        TileEntity placedTe = world.getTileEntity(x, y, z);
-        if (!(placedTe instanceof TileEntityNetworkQuantumNode)) {
-            Platform.spawnDrops(world, x, y, z, removed);
-            Platform.spawnDrops(world, x, y, z, extraDrops);
-            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_failed");
-            return;
-        }
-        // d. 锚点 + owner 写入（复用终端抽取辅助，与手势 4 placeQuantumNode 逐字段一致）
-        TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) placedTe;
+        TileEntityNetworkQuantumNode node = new TileEntityNetworkQuantumNode();
+        node.setWorldObj(world);
+        node.xCoord = x;
+        node.yCoord = y;
+        node.zCoord = z;
         ItemNetworkQuantumTerminal.applyAnchorToNode(held, node, player);
-        // e. 按原面重挂部件（proxy 未就绪时内部建连跳过，rewirePartConnections 每 tick 补连）
-        int remounted = 0;
-        List<ItemStack> remountFailed = new ArrayList<>();
-        for (Map.Entry<ForgeDirection, ItemStack> e : migration.entrySet()) {
-            boolean ok = false;
-            try {
-                ok = node.addPart(e.getValue(), e.getKey(), player) != null;
-            } catch (Throwable t) {
-                GTSimpleWirelessNetwork.LOG.error("[量子终端替换] 部件重挂异常 side={}", e.getKey(), t);
-            }
-            if (ok) {
-                remounted++;
-            } else {
-                remountFailed.add(e.getValue());
-            }
+        boolean replaced;
+        try {
+            replaced = QuantumBusReplacement.replace(bus, node, new QuantumBusReplacement.Placement() {
+
+                @Override
+                public boolean install() {
+                    // 不先通知邻居：旧 bus 已隔离，默认新节点为空，不会在换 TE 时销毁原部件。
+                    if (!world.setBlock(x, y, z, nodeBlock, 0, 2)
+                        || !(world.getTileEntity(x, y, z) instanceof TileEntityNetworkQuantumNode)) {
+                        return false;
+                    }
+                    world.setTileEntity(x, y, z, node);
+                    return world.getBlock(x, y, z) == nodeBlock && world.getTileEntity(x, y, z) == node;
+                }
+
+                @Override
+                public void restore() {
+                    if (world.getBlock(x, y, z) != originalBlock
+                        || world.getBlockMetadata(x, y, z) != originalMetadata) {
+                        if (!world.setBlock(x, y, z, originalBlock, originalMetadata, 2)) {
+                            throw new IllegalStateException("Cannot restore original cable bus block");
+                        }
+                    }
+                    // World.setTileEntity rejects invalid tiles; setBlock invalidated the original host.
+                    bus.validate();
+                    world.setTileEntity(x, y, z, bus);
+                    if (world.getTileEntity(x, y, z) != bus) {
+                        throw new IllegalStateException("Cannot restore original cable bus tile");
+                    }
+                    bus.markForSave();
+                    bus.markForUpdate();
+                    bus.notifyNeighbors();
+                }
+            });
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.error("[量子终端替换] 整容器迁移失败，尝试恢复原宿主", t);
+            replaced = false;
         }
-        // f. 失败件弹回原地 + 状态提示（沿用 gtswn.chat.* 风格）；
-        // 升级/透视/配置卡无论重挂成败一律按 wrench 语义弹出（与 AE2 扳手拆件一致）
-        if (!remountFailed.isEmpty()) {
-            Platform.spawnDrops(world, x, y, z, remountFailed);
+        if (!replaced) {
+            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_failed");
+            return;
         }
-        if (!extraDrops.isEmpty()) {
-            Platform.spawnDrops(world, x, y, z, extraDrops);
-        }
+        node.markForSave();
+        node.markForUpdate();
+        node.notifyNeighbors();
         // 与手势 4 一致的放置音效
         world.playSoundEffect(
             x + 0.5D,
@@ -301,11 +263,6 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
             (nodeBlock.stepSound.getVolume() + 1.0F) / 2.0F,
             nodeBlock.stepSound.getPitch() * 0.8F);
         AnimationQualityHints.show(player, QualityHintCounter.Kind.NODE);
-        if (remountFailed.isEmpty()) {
-            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_done", remounted);
-        } else {
-            ItemNetworkQuantumTerminal
-                .sendMessage(player, "gtswn.chat.quantum.swap_partial", remounted, remountFailed.size());
-        }
+        ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.swap_done", partCount);
     }
 }
