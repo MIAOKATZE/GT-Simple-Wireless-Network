@@ -37,7 +37,8 @@ public class ClientEffectsLocalizationTest {
                 assertNotNull(template);
                 String hint = String.format(Locale.ROOT, template, 9);
                 assertTrue(hint.contains("/gtswn " + ("link".equals(kind) ? "tap" : "quantum")));
-                assertTrue(hint.contains("150%"));
+                assertTrue(hint.contains("100%"));
+                assertFalse(hint.contains("150%"));
                 assertTrue(hint.contains("64"));
             }
         }
