@@ -21,6 +21,8 @@ public class ChargingTargetTest {
         assertEquals(0, target.charge(1000, 1), 0);
         assertEquals(32, item.delegate.getCharge(stack), 0);
         assertEquals(1, item.calls);
+        assertEquals(1, item.actualCalls);
+        assertEquals(0, item.simulatedCalls);
         assertEquals(1, item.lookups);
     }
 
@@ -41,6 +43,8 @@ public class ChargingTargetTest {
         ChargingTarget target = new ChargingTarget(stack, 1);
         for (int i = 0; i < 43; i++) assertEquals(0, target.charge(1000, 1), 0);
         assertEquals(1, item.calls);
+        assertEquals(1, item.actualCalls);
+        assertEquals(0, item.simulatedCalls);
         assertEquals(1, item.lookups);
     }
 
@@ -67,6 +71,29 @@ public class ChargingTargetTest {
     }
 
     @Test
+    public void nestedFullTargetProbesOnceAndNeverActuallyCharges() {
+        CountingBattery item = new CountingBattery();
+        ItemStack stack = new ItemStack(item);
+        FakeRechargeableBattery.setCharge(stack, 1000);
+        ChargingTarget target = new ChargingTarget(stack, 20);
+        for (int i = 0; i < 43; i++) assertEquals(0, target.charge(1000, 1), 0);
+        assertEquals(1, item.simulatedCalls);
+        assertEquals(0, item.actualCalls);
+        assertEquals(1000, item.delegate.getCharge(stack), 0);
+    }
+
+    @Test
+    public void invalidTierOrEmptyCacheNeverCallsManager() {
+        CountingBattery item = new CountingBattery();
+        ChargingTarget target = new ChargingTarget(new ItemStack(item), 1);
+        assertEquals(0, target.charge(0, 1), 0);
+        assertEquals(0, target.charge(-1, 1), 0);
+        assertEquals(0, target.charge(1000, -1), 0);
+        assertEquals(0, target.charge(1000, Integer.MAX_VALUE), 0);
+        assertEquals(0, item.calls);
+    }
+
+    @Test
     public void terminalsWithoutInstalledBatteryOnlyScanOncePerSecond() {
         int idle = 0;
         int active = 0;
@@ -81,6 +108,8 @@ public class ChargingTargetTest {
     private static class CountingBattery extends FakeRechargeableBattery {
 
         int calls;
+        int actualCalls;
+        int simulatedCalls;
         int lookups;
         double minimum;
         final IElectricItemManager delegate = super.getManager(null);
@@ -89,6 +118,8 @@ public class ChargingTargetTest {
             @Override
             public double charge(ItemStack stack, double amount, int tier, boolean ignore, boolean simulate) {
                 calls++;
+                if (simulate) simulatedCalls++;
+                else actualCalls++;
                 return amount < minimum ? 0 : delegate.charge(stack, amount, tier, ignore, simulate);
             }
 
