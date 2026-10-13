@@ -28,8 +28,6 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.enums.GTValues;
 import gregtech.common.items.ItemGTToolbox;
 import gregtech.common.misc.WirelessNetworkManager;
-import ic2.api.item.IElectricItem;
-import ic2.api.item.ISpecialElectricItem;
 
 /** Server authoritative charging; empty players only pay for a scan once per second. */
 public final class MonitorChargingHandler {
@@ -151,8 +149,7 @@ public final class MonitorChargingHandler {
                 // InventoryPlayer's last four slots are armour: terminals draw only in bag/baubles.
                 if (includeMonitors && (!(inventory instanceof net.minecraft.entity.player.InventoryPlayer) || i < 36))
                     monitors.add(stack);
-            } else if (stack.getItem() instanceof IElectricItem || stack.getItem() instanceof ISpecialElectricItem)
-                targets.add(stack);
+            } else if (ItemCharging.supports(stack)) targets.add(stack);
         }
     }
 

@@ -7,10 +7,28 @@ import net.minecraft.item.ItemStack;
 
 import org.junit.Test;
 
+import appeng.api.config.PowerUnits;
 import ic2.api.item.IElectricItemManager;
 import ic2.test.FakeRechargeableBattery;
 
 public class ChargingTargetTest {
+
+    @Test
+    public void nativeAeTargetChargesWithoutOptionalElectricInterfaces() {
+        double euRatio = PowerUnits.EU.conversionRatio;
+        double aeRatio = PowerUnits.AE.conversionRatio;
+        try {
+            PowerUnits.EU.conversionRatio = 2;
+            PowerUnits.AE.conversionRatio = 1;
+            FakeAePowerItem item = new FakeAePowerItem();
+            ItemStack stack = new ItemStack(item);
+            assertEquals(32, new ChargingTarget(stack, 1).charge(1000, 1), 0);
+            assertEquals(64, item.getAECurrentPower(stack), 0);
+        } finally {
+            PowerUnits.EU.conversionRatio = euRatio;
+            PowerUnits.AE.conversionRatio = aeRatio;
+        }
+    }
 
     @Test
     public void directChargeKeepsNormalTransferAndOnlyOneTerminalPaysPerTick() {

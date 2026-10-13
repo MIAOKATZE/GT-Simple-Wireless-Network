@@ -9,10 +9,29 @@ import net.minecraft.nbt.NBTTagCompound;
 
 import org.junit.Test;
 
+import appeng.api.config.PowerUnits;
 import gregtech.common.items.ItemGTToolbox;
 import ic2.test.FakeRechargeableBattery;
 
 public class ToolboxChargingTest {
+
+    @Test
+    public void nativeAeToolIsCollectedInsideToolbox() {
+        Inventory inventory = new Inventory();
+        FakeAePowerItem item = new FakeAePowerItem();
+        item.capacity = 10000;
+        inventory.stored[4] = new ItemStack(item);
+        ToolboxCharging box = new ToolboxCharging(inventory);
+        assertEquals(1, box.targets.size());
+        assertEquals(
+            640,
+            box.targets.get(0)
+                .charge(1000, 1),
+            0);
+        assertEquals(0, item.getAECurrentPower(inventory.stored[4]), 0);
+        box.save();
+        assertEquals(PowerUnits.EU.convertTo(PowerUnits.AE, 640), item.getAECurrentPower(inventory.stored[4]), 0);
+    }
 
     @Test
     public void openBrokenOrSwingingToolboxDoesNotCharge() {
