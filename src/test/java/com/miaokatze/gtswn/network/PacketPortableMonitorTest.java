@@ -16,6 +16,51 @@ import io.netty.buffer.Unpooled;
 public class PacketPortableMonitorTest {
 
     @Test
+    public void removalUsesStablePanelIdentityAndReceivesExplicitAcknowledgement() {
+        PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(UUID.randomUUID(), 93, 1, 15);
+        request.targetPanel = UUID.randomUUID();
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            request.toBytes(bytes);
+            assertEquals(64, bytes.readableBytes());
+            PacketRequestPortableMonitor decoded = new PacketRequestPortableMonitor();
+            decoded.fromBytes(bytes);
+            assertTrue(decoded.valid);
+            assertEquals(request.targetPanel, decoded.targetPanel);
+            assertEquals(15, decoded.value); // Index is incidental; the server removes only targetPanel.
+            bytes.clear();
+            PacketSyncPortableMonitor response = new PacketSyncPortableMonitor(request.terminalId, request.sequence, 0);
+            response.result = 2;
+            response.toBytes(bytes);
+            PacketSyncPortableMonitor acknowledgement = new PacketSyncPortableMonitor();
+            acknowledgement.fromBytes(bytes);
+            assertTrue(acknowledgement.valid);
+            assertEquals(2, acknowledgement.result);
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
+    public void absentRemovalIdentityAndVersion56AreRejected() {
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            new PacketRequestPortableMonitor(UUID.randomUUID(), 1, 1, 0).toBytes(bytes);
+            PacketRequestPortableMonitor decoded = new PacketRequestPortableMonitor();
+            decoded.fromBytes(bytes);
+            assertFalse(decoded.valid);
+            bytes.clear();
+            new PacketRequestPortableMonitor(UUID.randomUUID(), 1, 0, 0).toBytes(bytes);
+            bytes.setInt(0, 0x50574d56);
+            bytes.setByte(4, 56);
+            decoded.fromBytes(bytes);
+            assertFalse(decoded.valid);
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
     public void bothPinnedGraphsKeepReceivingHistoryAfterGuiClosesInTextMode() {
         java.util.Set<String> pins = new java.util.HashSet<>(
             Arrays.asList(PortableMonitorRequestQueue.EU_GRAPH, PortableMonitorRequestQueue.AE_GRAPH));

@@ -24,6 +24,7 @@ public final class DeviceSteamAdapter {
     }
 
     public static byte energyKind(IMetaTileEntity machine) {
+        if (machine == null) return EU;
         if (machine instanceof MetaTileEntity && ((MetaTileEntity) machine).isSteampowered()) return STEAM;
         for (Class<?> type = machine.getClass(); type != null; type = type.getSuperclass()) {
             String name = type.getSimpleName();
@@ -35,5 +36,16 @@ public final class DeviceSteamAdapter {
             if (name.contains("Turbine") && name.contains("Steam")) return MIXED;
         }
         return EU;
+    }
+
+    /** Capability rather than sampled fluid activity: an EU recipe using steam is not a steam power channel. */
+    public static boolean supportsSteamChannel(IMetaTileEntity machine) {
+        if (machine == null) return false;
+        if (energyKind(machine) != EU) return true;
+        for (Class<?> type = machine.getClass(); type != null; type = type.getSuperclass()) {
+            String name = type.getSimpleName();
+            if (name.equals("MTEBoiler") || name.equals("MTEHeatExchanger")) return true;
+        }
+        return false;
     }
 }

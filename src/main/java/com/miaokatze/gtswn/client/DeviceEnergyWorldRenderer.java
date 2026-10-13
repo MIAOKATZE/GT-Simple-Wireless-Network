@@ -58,6 +58,9 @@ public final class DeviceEnergyWorldRenderer {
     public int lastRenderedLayers;
     public int lastFilledBatches;
     public int lastLineBatches;
+    public int lastVisibleLayers;
+    /** 0 rendered, 1 no world/player, 2 inactive, 3 stale, 4 no layers, 5 outside range/frustum. */
+    public int lastRenderSkipReason;
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
@@ -68,7 +71,7 @@ public final class DeviceEnergyWorldRenderer {
             return;
         }
         DeviceTerminalVisualConfig.load();
-        UUID held = DeviceTerminalVisualizationState.heldTerminalId();
+        UUID held = DeviceTerminalVisualizationState.visualizationTerminalId();
         if (!DeviceTerminalVisualConfig.enabled || !DeviceTerminalVisualizationState.active(held)) {
             clear();
             return;
@@ -115,7 +118,7 @@ public final class DeviceEnergyWorldRenderer {
             if (!device.loaded) continue;
             Entry entry = device.entry;
             if (entry.energyKind != 1) add(device, false);
-            if (entry.energyKind != 0) add(device, true);
+            if (device.steamCapable) add(device, true);
         }
         if (cursor < source.size()) return;
         maxElectric = buildElectricMax;
@@ -161,8 +164,14 @@ public final class DeviceEnergyWorldRenderer {
     @SubscribeEvent
     public void render(RenderWorldLastEvent event) {
         lastRenderedLayers = lastFilledBatches = lastLineBatches = 0;
+        lastVisibleLayers = visible.size();
         Minecraft mc = Minecraft.getMinecraft();
-        if (!renderable(mc) || visible.isEmpty()) return;
+        lastRenderSkipReason = renderGate(mc);
+        if (lastRenderSkipReason != 0) return;
+        if (visible.isEmpty()) {
+            lastRenderSkipReason = 4;
+            return;
+        }
         Entity camera = mc.renderViewEntity == null ? mc.thePlayer : mc.renderViewEntity;
         double x = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * event.partialTicks;
         double y = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * event.partialTicks;
@@ -178,27 +187,18 @@ public final class DeviceEnergyWorldRenderer {
             if (dx * dx + dy * dy + dz * dz <= range * range && frustum.isBoundingBoxInFrustum(visual.box))
                 drawn.add(visual);
         }
-        if (drawn.isEmpty()) return;
+        if (drawn.isEmpty()) {
+            lastRenderSkipReason = 5;
+            return;
+        }
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPushMatrix();
         try {
-            GL11.glDisable(GL11.GL_TEXTURE_2D);
-            GL11.glDisable(GL11.GL_LIGHTING);
-            GL11.glDisable(GL11.GL_FOG);
-            GL11.glDisable(GL11.GL_CULL_FACE);
-            // Vanilla's inherited GREATER 0.1 alpha test otherwise discards genuinely translucent heat faces.
-            GL11.glDisable(GL11.GL_ALPHA_TEST);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GL11.glDepthMask(false);
-            GL11.glDepthFunc(GL11.GL_LEQUAL);
-            if (DeviceTerminalVisualConfig.depthTest) GL11.glEnable(GL11.GL_DEPTH_TEST);
-            else GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glColor4f(1F, 1F, 1F, 1F);
+            DeviceEnergyRenderState.begin(DeviceTerminalVisualConfig.depthTest);
             Tessellator tess = Tessellator.instance;
-            tess.startDrawingQuads();
+            DeviceEnergyRenderState.start(tess, GL11.GL_QUADS);
             int batchLayers = 0;
             // Device groups are cached nearest-first; reverse groups for translucent far-to-near compositing.
             // Within a mixed device, EU fills first and the distinct steam top slab fills last.
@@ -215,7 +215,7 @@ public final class DeviceEnergyWorldRenderer {
             lastRenderedLayers = drawn.size();
             // A bounded edge batch supplies shape detail; the filled color layer is the primary visual.
             GL11.glLineWidth(Math.max(1F, mc.displayHeight / 720F));
-            tess.startDrawing(GL11.GL_LINES);
+            DeviceEnergyRenderState.start(tess, GL11.GL_LINES);
             int outlines = 0;
             for (Visual visual : drawn) {
                 if (outlines >= OUTLINE_BUDGET) break;
@@ -237,7 +237,7 @@ public final class DeviceEnergyWorldRenderer {
         if (batchLayers == FILL_LAYER_BUDGET) {
             tess.draw();
             lastFilledBatches++;
-            tess.startDrawingQuads();
+            DeviceEnergyRenderState.start(tess, GL11.GL_QUADS);
             batchLayers = 0;
         }
         tess.setColorRGBA_F(visual.red, visual.green, visual.blue, visual.alpha);
@@ -246,12 +246,14 @@ public final class DeviceEnergyWorldRenderer {
     }
 
     private boolean renderable(Minecraft mc) {
-        return mc.theWorld != null && mc.thePlayer != null
-            && DeviceTerminalVisualConfig.enabled
-            && terminal != null
-            && DeviceTerminalVisualizationState.active(terminal)
-            && terminal.equals(DeviceTerminalVisualizationState.heldTerminalId())
-            && DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis());
+        return renderGate(mc) == 0;
+    }
+
+    private int renderGate(Minecraft mc) {
+        if (mc.theWorld == null || mc.thePlayer == null) return 1;
+        if (!DeviceTerminalVisualConfig.enabled || terminal == null
+            || !terminal.equals(DeviceTerminalVisualizationState.visualizationTerminalId())) return 2;
+        return DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis()) ? 0 : 3;
     }
 
     private static void fill(Tessellator t, AxisAlignedBB box, double cx, double cy, double cz) {
@@ -339,6 +341,8 @@ public final class DeviceEnergyWorldRenderer {
         sourceGeneration = Long.MIN_VALUE;
         ticks = 0;
         lastRenderedLayers = lastFilledBatches = lastLineBatches = 0;
+        lastVisibleLayers = 0;
+        lastRenderSkipReason = 2;
     }
 
     static final class Visual {

@@ -21,6 +21,23 @@ public final class GtswnGuiDrawing {
 
     private GtswnGuiDrawing() {}
 
+    /** Resize the existing industrial panel; repeat its warning strip at its original pixel pitch. */
+    public static void drawNetworkPanel(int x, int y, int w, int h, float z) {
+        drawNineSlice(GtswnGuiTextures.PANEL_NETWORK_INFO, 8, x, y, w, h, z);
+        int sourceWidth = GtswnGuiTextures.PANEL_NETWORK_INFO_W - 16;
+        for (int offset = 8; offset < w - 8; offset += sourceWidth) {
+            drawRegion(
+                GtswnGuiTextures.PANEL_NETWORK_INFO,
+                x + offset,
+                y + h - 8,
+                8,
+                GtswnGuiTextures.PANEL_NETWORK_INFO_H - 8,
+                Math.min(sourceWidth, w - 8 - offset),
+                8,
+                z);
+        }
+    }
+
     /** 绑定 gtswn GUI 贴图（经 TextureManager，等价原版 GuiButton 的 bindTexture 用法） */
     public static void bind(ResourceLocation rl) {
         Minecraft.getMinecraft()

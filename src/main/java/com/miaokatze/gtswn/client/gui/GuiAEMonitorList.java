@@ -4,7 +4,6 @@ import java.math.BigInteger;
 import java.util.function.IntConsumer;
 import java.util.function.Supplier;
 
-import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.fluids.FluidStack;
@@ -69,6 +68,9 @@ class GuiAEMonitorList {
     private int scrollOffset = 0;
     /** 是否正在拖拽滚动条 */
     private boolean draggingScrollbar = false;
+    private final int[] clip;
+    private final java.nio.IntBuffer previousClip = org.lwjgl.BufferUtils.createIntBuffer(16);
+    private boolean previousScissor;
 
     GuiAEMonitorList(GuiNetworkInfoPanel host, TileEntityNetworkInfoPanel panel, int left, int top, int xSize,
         Supplier<Object[]> entries, IntConsumer removeCallback) {
@@ -82,6 +84,7 @@ class GuiAEMonitorList {
         this.listWidth = xSize - 16;
         this.listHeight = top + 270 - listTop;
         this.listBottom = listTop + listHeight;
+        clip = host.framebufferClip(listLeft, listTop, listWidth, listHeight);
     }
 
     // ==================== 外部绘制入口 ====================
@@ -223,22 +226,17 @@ class GuiAEMonitorList {
      * OpenGL 的 scissor 坐标以屏幕左下角为原点，单位是像素，因此需要按 GUI 缩放比例转换。
      */
     private void enableListScissor() {
-        ScaledResolution sr = new ScaledResolution(
-            host.client(),
-            host.client().displayWidth,
-            host.client().displayHeight);
-        int scale = sr.getScaleFactor();
-        int sx = listLeft * scale;
-        int sy = host.client().displayHeight - listBottom * scale;
-        int sw = listWidth * scale;
-        int sh = listHeight * scale;
+        previousScissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
+        previousClip.clear();
+        GL11.glGetInteger(GL11.GL_SCISSOR_BOX, previousClip);
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        GL11.glScissor(sx, sy, sw, sh);
+        GL11.glScissor(clip[0], clip[1], clip[2], clip[3]);
     }
 
     /** 关闭剪刀测试，恢复普通绘制。 */
     private void disableListScissor() {
-        GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(previousClip.get(0), previousClip.get(1), previousClip.get(2), previousClip.get(3));
+        if (!previousScissor) GL11.glDisable(GL11.GL_SCISSOR_TEST);
     }
 
     // ==================== 滚动条 ====================

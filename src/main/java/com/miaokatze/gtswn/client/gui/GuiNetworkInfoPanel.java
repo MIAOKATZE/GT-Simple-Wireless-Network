@@ -37,6 +37,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private int top;
     private final int xSize = 430;
     private final int ySize = 285;
+    private GuiCanvas canvas;
+    private int screenWidth, screenHeight;
     // AE 标签页按钮 ID 常量
     private static final int TAB_EU = 100;
     private static final int TAB_AE_CHART = 101;
@@ -106,8 +108,18 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     }
 
     @Override
+    public void setWorldAndResolution(net.minecraft.client.Minecraft client, int width, int height) {
+        screenWidth = width;
+        screenHeight = height;
+        super.setWorldAndResolution(client, width, height);
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public void initGui() {
+        canvas = new GuiCanvas(screenWidth, screenHeight, xSize, ySize);
+        width = canvas.width;
+        height = canvas.height;
         buttonList.clear();
         textFields.clear();
         left = (width - xSize) / 2;
@@ -580,6 +592,16 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        org.lwjgl.opengl.GL11.glPushMatrix();
+        try {
+            org.lwjgl.opengl.GL11.glScalef(canvas.scale, canvas.scale, 1);
+            drawCanvas(canvas.mouse(mouseX), canvas.mouse(mouseY), partialTicks);
+        } finally {
+            org.lwjgl.opengl.GL11.glPopMatrix();
+        }
+    }
+
+    private void drawCanvas(int mouseX, int mouseY, float partialTicks) {
         // 移除 drawDefaultBackground()，避免 AE 实时监控等标签页出现巨大 dirt 背景；
         // 面板背景由 drawPanelBackground() 统一绘制。
         drawPanelBackground();
@@ -818,16 +840,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
      * 色值琥珀化（GtswnGuiPalette.DIVIDER，契约 §5）。继续不调用 drawDefaultBackground。
      */
     private void drawPanelBackground() {
-        GtswnGuiDrawing.bind(GtswnGuiTextures.PANEL_NETWORK_INFO);
-        GtswnGuiDrawing.drawRegion(
-            GtswnGuiTextures.PANEL_NETWORK_INFO,
-            left,
-            top,
-            0,
-            0,
-            GtswnGuiTextures.PANEL_NETWORK_INFO_W,
-            GtswnGuiTextures.PANEL_NETWORK_INFO_H,
-            this.zLevel);
+        GtswnGuiDrawing.drawNetworkPanel(left, top, xSize, ySize, this.zLevel);
         // 3 条区域分隔线（y+48/96/144，仍代码绘制）
         drawRect(left + 8, top + 48, left + xSize - 8, top + 49, GtswnGuiPalette.DIVIDER);
         drawRect(left + 8, top + 96, left + xSize - 8, top + 97, GtswnGuiPalette.DIVIDER);
@@ -840,6 +853,14 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         field.setText(value == null ? "" : value);
         textFields.add(field);
         return field;
+    }
+
+    int[] framebufferClip(int x, int y, int w, int h) {
+        net.minecraft.client.gui.ScaledResolution resolution = new net.minecraft.client.gui.ScaledResolution(
+            mc,
+            mc.displayWidth,
+            mc.displayHeight);
+        return canvas.scissor(x, y, w, h, resolution.getScaleFactor(), mc.displayWidth, mc.displayHeight);
     }
 
     private void drawChartSettings() {

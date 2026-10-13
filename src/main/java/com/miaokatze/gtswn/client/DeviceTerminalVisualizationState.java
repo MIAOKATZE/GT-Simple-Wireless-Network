@@ -15,6 +15,9 @@ import com.miaokatze.gtswn.network.PacketDeviceTerminalVisualAction;
 public final class DeviceTerminalVisualizationState {
 
     private static UUID terminalId;
+    private static String terminalToken;
+    private static int inventorySlot = -1;
+    private static int lastInventoryScanTick = Integer.MIN_VALUE;
     private static ItemStack cachedHeld;
     private static String cachedHeldToken;
     private static UUID cachedHeldId;
@@ -31,8 +34,11 @@ public final class DeviceTerminalVisualizationState {
             if (!id.equals(terminalId)) {
                 lastClickTick = lastTeleportTick = lastFeedbackTick = Long.MIN_VALUE;
                 retryAtTick = Long.MIN_VALUE;
+                inventorySlot = -1;
+                lastInventoryScanTick = Integer.MIN_VALUE;
             }
             terminalId = id;
+            terminalToken = id.toString();
         } else if (id.equals(terminalId)) clear();
     }
 
@@ -55,7 +61,41 @@ public final class DeviceTerminalVisualizationState {
     }
 
     public static boolean isActiveHeld() {
-        return active(heldTerminalId());
+        return active(heldTerminalId()) && ItemDeviceInfoTerminal.isVisualizationEnabled(cachedHeld)
+            && isActiveInventory();
+    }
+
+    /** Rendering uses the ACK-selected terminal in the main inventory; travel still requires that terminal in hand. */
+    public static UUID visualizationTerminalId() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (terminalId == null || mc.thePlayer == null
+            || mc.theWorld == null
+            || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0) return null;
+        ItemStack[] inventory = mc.thePlayer.inventory.mainInventory;
+        if (inventorySlot >= 0 && inventorySlot < inventory.length && matchesActive(inventory[inventorySlot]))
+            return terminalId;
+        inventorySlot = -1;
+        int now = mc.thePlayer.ticksExisted;
+        if (lastInventoryScanTick != Integer.MIN_VALUE && now >= lastInventoryScanTick
+            && now - lastInventoryScanTick < 20) return null;
+        lastInventoryScanTick = now;
+        // Only a slot replacement/move performs this bounded scan; unchanged frames do one slot check.
+        for (int i = 0; i < inventory.length; i++) if (matchesActive(inventory[i])) {
+            inventorySlot = i;
+            return terminalId;
+        }
+        inventorySlot = -1;
+        return null;
+    }
+
+    private static boolean matchesActive(ItemStack stack) {
+        return ItemDeviceInfoTerminal.isVisualizationEnabled(stack)
+            && terminalToken.equals(stack.stackTagCompound.getString(ItemDeviceInfoTerminal.NBT_UUID));
+    }
+
+    public static boolean isActiveInventory() {
+        return visualizationTerminalId() != null;
     }
 
     public static String currentTargetKey() {
@@ -67,15 +107,25 @@ public final class DeviceTerminalVisualizationState {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld == null || mc.thePlayer == null
             || mc.currentScreen != null
-            || !isActiveHeld()
             || QuantumIncorporationClientHandler.isShiftDown()
             || mc.thePlayer.isSneaking()
             || QuantumIncorporationClientHandler.isAltDown()) return false;
+        UUID heldId = heldTerminalId();
+        if (!ItemDeviceInfoTerminal.isVisualizationEnabled(mc.thePlayer.getHeldItem()) || heldId == null) return false;
         // Consumed press events must not leave vanilla's use key held, which would re-enter block activation.
         KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), false);
         long now = mc.theWorld.getTotalWorldTime();
         if (lastClickTick == now) return true;
         lastClickTick = now;
+        if (!isActiveHeld()) {
+            // Consume the enabled terminal's pending-selection click; ACK remains mandatory for rendering/travel.
+            if (lastFeedbackTick == Long.MIN_VALUE || now - lastFeedbackTick >= 20L) {
+                GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(heldId));
+                mc.thePlayer.addChatMessage(new ChatComponentTranslation("gtswn.device.visual.sync_pending"));
+                lastFeedbackTick = now;
+            }
+            return true;
+        }
         String target = currentTargetKey();
         if (target == null) {
             if (lastFeedbackTick == Long.MIN_VALUE || now - lastFeedbackTick >= 40L) {
@@ -94,6 +144,9 @@ public final class DeviceTerminalVisualizationState {
 
     public static void clear() {
         terminalId = null;
+        terminalToken = null;
+        inventorySlot = -1;
+        lastInventoryScanTick = Integer.MIN_VALUE;
         lastClickTick = lastTeleportTick = lastFeedbackTick = Long.MIN_VALUE;
         retryAtTick = Long.MIN_VALUE;
         cachedHeld = null;

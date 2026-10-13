@@ -15,12 +15,13 @@ import io.netty.buffer.ByteBuf;
 /** Bounded selection and pin intent; coordinates and screen credentials only come from server item NBT. */
 public final class PacketRequestPortableMonitor implements IMessage {
 
-    public static final int PROTOCOL_MAGIC = 0x50574d56;
+    public static final int PROTOCOL_MAGIC = 0x50574d57;
 
     public UUID terminalId;
     public int sequence;
     public int action;
     public int value;
+    public UUID targetPanel = new UUID(0, 0);
     public boolean valid;
     public int selected = -1;
     public boolean charts;
@@ -42,14 +43,15 @@ public final class PacketRequestPortableMonitor implements IMessage {
     @Override
     public void fromBytes(ByteBuf buf) {
         valid = false;
-        if (buf.readableBytes() < 48 || buf.readableBytes() > MAX_BYTES) return;
+        if (buf.readableBytes() < 64 || buf.readableBytes() > MAX_BYTES) return;
         try {
             if (buf.readInt() != PROTOCOL_MAGIC) return;
-            if (buf.readUnsignedByte() != 56) return;
+            if (buf.readUnsignedByte() != 57) return;
             terminalId = new UUID(buf.readLong(), buf.readLong());
             sequence = buf.readInt();
             action = buf.readInt();
             value = buf.readInt();
+            targetPanel = new UUID(buf.readLong(), buf.readLong());
             selected = buf.readInt();
             charts = buf.readBoolean();
             knownRenderVersion = buf.readLong();
@@ -66,7 +68,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
                     .add(key);
             }
             valid = action >= 0 && action <= 2
-                && (action != 1 || value >= 0 && value < 16)
+                && (action != 1 || !targetPanel.equals(new UUID(0, 0)))
                 && (action != 2 || value >= 0 && value <= 2)
                 && selected >= -1
                 && selected < 16
@@ -79,12 +81,14 @@ public final class PacketRequestPortableMonitor implements IMessage {
     @Override
     public void toBytes(ByteBuf buf) {
         buf.writeInt(PROTOCOL_MAGIC);
-        buf.writeByte(56);
+        buf.writeByte(57);
         buf.writeLong(terminalId.getMostSignificantBits());
         buf.writeLong(terminalId.getLeastSignificantBits());
         buf.writeInt(sequence);
         buf.writeInt(action);
         buf.writeInt(value);
+        buf.writeLong(targetPanel.getMostSignificantBits());
+        buf.writeLong(targetPanel.getLeastSignificantBits());
         buf.writeInt(selected);
         buf.writeBoolean(charts);
         buf.writeLong(knownRenderVersion);

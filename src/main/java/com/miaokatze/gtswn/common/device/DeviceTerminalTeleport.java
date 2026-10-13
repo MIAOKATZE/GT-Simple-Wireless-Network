@@ -1,9 +1,12 @@
 package com.miaokatze.gtswn.common.device;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.Blocks;
 import net.minecraft.server.MinecraftServer;
@@ -24,6 +27,7 @@ public final class DeviceTerminalTeleport {
 
     private static final Map<UUID, Long> LAST = new HashMap<>();
     private static final long COOLDOWN_TICKS = 60;
+    private static final int MAX_LANDING_BODY_BLOCKS = 256;
 
     private DeviceTerminalTeleport() {}
 
@@ -86,7 +90,7 @@ public final class DeviceTerminalTeleport {
             || server.getConfigurationManager()
                 .func_152612_a(player.getCommandSenderName()) != player)
             return outcome(Status.UNAVAILABLE_PLAYER);
-        if (!holdsTerminal(player, terminalId)) return outcome(Status.INVALID_TARGET);
+        if (!holdsTerminal(player, terminalId, visual)) return outcome(Status.INVALID_TARGET);
         if (visual && !com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.isEnabled(player, terminalId))
             return outcome(Status.INACTIVE);
         if (key == null || key.isEmpty()) return outcome(Status.NO_TARGET);
@@ -137,7 +141,7 @@ public final class DeviceTerminalTeleport {
         Long last = LAST.get(player.getUniqueID());
         if (last != null && now >= last && now - last < COOLDOWN_TICKS)
             return new Outcome(Status.COOLDOWN, (int) (COOLDOWN_TICKS - (now - last)));
-        double[] landing = safeLanding(target, (IGregTechTileEntity) tile, record, player);
+        double[] landing = safeLanding(target, ((IGregTechTileEntity) tile).getFrontFacing(), record, player);
         if (landing == null) return outcome(Status.UNSAFE);
         int cost = DeviceTerminalSettings.get(player.worldObj)
             .teleportCost();
@@ -169,17 +173,58 @@ public final class DeviceTerminalTeleport {
         else player.addChatMessage(new ChatComponentTranslation(key));
     }
 
-    private static double[] safeLanding(World world, IGregTechTileEntity tile,
-        DeviceTerminalDataStore.MachineRecord record, EntityPlayerMP player) {
-        ForgeDirection front = tile.getFrontFacing();
-        int[][] candidates = {
-            { record.x + (front == null ? 0 : front.offsetX), record.y + (front == null ? 1 : front.offsetY),
-                record.z + (front == null ? 0 : front.offsetZ) },
-            { record.x, record.y + 1, record.z }, { record.x + 1, record.y, record.z },
-            { record.x - 1, record.y, record.z }, { record.x, record.y, record.z + 1 },
-            { record.x, record.y, record.z - 1 } };
-        for (int[] position : candidates) {
-            int x = position[0], y = position[1], z = position[2];
+    // At most 45 front cells and 75 cells above the controller; no structure/world scan.
+    static double[] safeLanding(World world, ForgeDirection front, DeviceTerminalDataStore.MachineRecord record,
+        EntityPlayerMP player) {
+        double feetY = player.posY - player.yOffset;
+        if (!Double.isFinite(player.posX) || !Double.isFinite(feetY)
+            || !Double.isFinite(player.posZ)
+            || !Float.isFinite(player.width)
+            || !Float.isFinite(player.height)
+            || player.width <= 0
+            || player.height <= 0) return null;
+        List<LandingCandidate> candidates = new ArrayList<>(120);
+        if (front != null && front != ForgeDirection.UNKNOWN) {
+            for (int normal = 1; normal <= 3; normal++) {
+                for (int lateral = -2; lateral <= 2; lateral++) {
+                    for (int vertical = -1; vertical <= 1; vertical++) {
+                        int x = record.x + front.offsetX * normal;
+                        int y = record.y + front.offsetY * normal;
+                        int z = record.z + front.offsetZ * normal;
+                        if (front.offsetY == 0) {
+                            x -= front.offsetZ * lateral;
+                            y += vertical;
+                            z += front.offsetX * lateral;
+                        } else {
+                            x += lateral;
+                            z += vertical;
+                        }
+                        candidates.add(new LandingCandidate(x, y, z, true, player.posX, feetY, player.posZ));
+                    }
+                }
+            }
+        }
+        for (int height = 1; height <= 3; height++) {
+            for (int x = -2; x <= 2; x++) {
+                for (int z = -2; z <= 2; z++) {
+                    candidates.add(
+                        new LandingCandidate(
+                            record.x + x,
+                            record.y + height,
+                            record.z + z,
+                            false,
+                            player.posX,
+                            feetY,
+                            player.posZ));
+                }
+            }
+        }
+        candidates.sort((left, right) -> {
+            int distanceOrder = Double.compare(left.distanceSquared, right.distanceSquared);
+            return distanceOrder != 0 ? distanceOrder : Boolean.compare(right.front, left.front);
+        });
+        for (LandingCandidate candidate : candidates) {
+            int x = candidate.x, y = candidate.y, z = candidate.z;
             if (y < 1 || y + player.height >= world.getActualHeight()
                 || Math.abs((long) x) >= 29999984
                 || Math.abs((long) z) >= 29999984
@@ -200,12 +245,10 @@ public final class DeviceTerminalTeleport {
                 }
             }
             if (!chunksLoaded) continue;
-            if (!world.getBlock(x, y - 1, z)
+            if ((!player.capabilities.isFlying && !world.getBlock(x, y - 1, z)
                 .getMaterial()
-                .isSolid() || world.getBlock(x, y - 1, z) == Blocks.cactus
-                || world.getBlock(x, y, z) == Blocks.fire
-                || world.getBlock(x, y + 1, z) == Blocks.fire
-                || world.isAnyLiquid(box)
+                .isSolid()) || world.getBlock(x, y - 1, z) == Blocks.cactus
+                || bodyIsHazardous(world, box)
                 || !world.getCollidingBoundingBoxes(player, box)
                     .isEmpty())
                 continue;
@@ -214,8 +257,56 @@ public final class DeviceTerminalTeleport {
         return null;
     }
 
-    private static boolean holdsTerminal(EntityPlayerMP player, UUID terminalId) {
+    private static boolean bodyIsHazardous(World world, AxisAlignedBB box) {
+        int minX = (int) Math.floor(box.minX), maxX = (int) Math.floor(box.maxX);
+        int minY = (int) Math.floor(box.minY), maxY = (int) Math.floor(box.maxY);
+        int minZ = (int) Math.floor(box.minZ), maxZ = (int) Math.floor(box.maxZ);
+        long spanX = (long) maxX - minX + 1, spanY = (long) maxY - minY + 1, spanZ = (long) maxZ - minZ + 1;
+        if (spanX <= 0 || spanY <= 0
+            || spanZ <= 0
+            || spanX > MAX_LANDING_BODY_BLOCKS
+            || spanY > MAX_LANDING_BODY_BLOCKS
+            || spanZ > MAX_LANDING_BODY_BLOCKS
+            || spanX * spanY * spanZ > MAX_LANDING_BODY_BLOCKS) return true;
+        // All horizontal chunks were checked before this read; avoid native isAnyLiquid's negative-coordinate margin.
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    Block block = world.getBlock(x, y, z);
+                    if (block == Blocks.fire || block == Blocks.cactus
+                        || block.getMaterial()
+                            .isLiquid()
+                        || block.isBurning(world, x, y, z)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static final class LandingCandidate {
+
+        final int x, y, z;
+        final boolean front;
+        final double distanceSquared;
+
+        LandingCandidate(int x, int y, int z, boolean front, double playerX, double playerY, double playerZ) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.front = front;
+            double dx = x + 0.5 - playerX, dy = y - playerY, dz = z + 0.5 - playerZ;
+            distanceSquared = dx * dx + dy * dy + dz * dz;
+        }
+    }
+
+    private static boolean holdsTerminal(EntityPlayerMP player, UUID terminalId, boolean heldOnly) {
         if (terminalId == null) return false;
+        if (heldOnly) {
+            net.minecraft.item.ItemStack held = player.getHeldItem();
+            return held != null && held.getItem() instanceof com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal
+                && com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.isVisualizationEnabled(held)
+                && terminalId.equals(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(held));
+        }
         for (net.minecraft.item.ItemStack stack : player.inventory.mainInventory) {
             if (stack != null && stack.getItem() instanceof com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal
                 && terminalId.equals(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(stack)))

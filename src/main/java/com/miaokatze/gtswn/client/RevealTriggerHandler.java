@@ -36,6 +36,8 @@ public class RevealTriggerHandler {
         if (TerminalGestureRules.canToggleVisualization(device, alt, shift)) {
             event.setCanceled(true);
             TerminalRevealCharge.cancel();
+            net.minecraft.client.settings.KeyBinding
+                .setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), false);
             java.util.UUID id = ItemDeviceInfoTerminal.readTerminalId(held);
             GTSWNPacketHandler.NETWORK
                 .sendToServer(PacketDeviceTerminalVisualAction.toggle(id == null ? new java.util.UUID(0L, 0L) : id));

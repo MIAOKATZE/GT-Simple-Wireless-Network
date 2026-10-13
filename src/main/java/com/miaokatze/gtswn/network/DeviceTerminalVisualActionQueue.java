@@ -50,17 +50,19 @@ public final class DeviceTerminalVisualActionQueue {
     private static final class Session {
 
         final UUID terminalId;
+        final String terminalToken;
         final String playerName;
-        final int dimension;
-        final int slot;
-        long expires;
+        int dimension;
+        int slot;
+        int pendingAcks = 2;
+        int lastAckTick = Integer.MIN_VALUE;
 
-        Session(EntityPlayerMP player, UUID id, long now) {
+        Session(EntityPlayerMP player, UUID id, int inventorySlot, long now) {
             terminalId = id;
+            terminalToken = id.toString();
             playerName = player.getCommandSenderName();
             dimension = player.dimension;
-            slot = player.inventory.currentItem;
-            expires = now + SESSION_TTL_TICKS;
+            slot = inventorySlot;
         }
     }
 
@@ -98,16 +100,34 @@ public final class DeviceTerminalVisualActionQueue {
         drain();
     }
 
-    /** Per-player O(1) lifecycle check keeps hand changes immediate without scanning the whole session table. */
+    /** Cached-slot checks stop lost terminals immediately; restoration/selection scans run once a second. */
     @SubscribeEvent
     public void onPlayerTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END || event.player.worldObj.isRemote
             || !(event.player instanceof EntityPlayerMP)) return;
         EntityPlayerMP player = (EntityPlayerMP) event.player;
         Session session = SESSIONS.get(player.getUniqueID());
-        if (session != null && !validHeld(player, session)) {
+        if (session != null && !validInventory(player, session)) {
             SESSIONS.remove(player.getUniqueID());
             if (player.playerNetServerHandler != null) acknowledge(player, session.terminalId, false);
+        }
+        if (!player.isDead && player.getHealth() > 0 && player.playerNetServerHandler != null) {
+            session = SESSIONS.get(player.getUniqueID());
+            if (session != null && session.dimension != player.dimension) {
+                session.dimension = player.dimension;
+                session.pendingAcks = 2;
+                acknowledge(player, session.terminalId, true);
+                DeviceTerminalRequestQueue.invalidate(player);
+            }
+            if (player.ticksExisted % 20 == 0) {
+                selectSession(player, player.worldObj.getTotalWorldTime());
+                session = SESSIONS.get(player.getUniqueID());
+                // Bounded retries cover login/dimension packet ordering without continuous mode heartbeats.
+                if (session != null && session.pendingAcks > 0 && session.lastAckTick != player.ticksExisted) {
+                    session.pendingAcks--;
+                    acknowledge(player, session.terminalId, true);
+                }
+            }
         }
     }
 
@@ -170,8 +190,6 @@ public final class DeviceTerminalVisualActionQueue {
             if (actual == null) {
                 if (held.stackTagCompound != null) held.stackTagCompound.removeTag(ItemDeviceInfoTerminal.NBT_UUID);
                 actual = ItemDeviceInfoTerminal.getOrCreateTerminalId(held);
-                player.playerNetServerHandler
-                    .sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, held));
             }
         } else if (actual == null || !actual.equals(message.terminalId)) {
             rejectTravel(player, message, DeviceTerminalTeleport.Status.INVALID_TARGET);
@@ -190,14 +208,25 @@ public final class DeviceTerminalVisualActionQueue {
         }
         DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), actual);
         if (message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE) {
-            Session current = SESSIONS.remove(player.getUniqueID());
-            if (current != null && current.terminalId.equals(actual)) {
+            boolean enabled = !ItemDeviceInfoTerminal.isVisualizationEnabled(held);
+            if (enabled && !SESSIONS.containsKey(player.getUniqueID()) && SESSIONS.size() >= MAX_SESSIONS) {
+                player.playerNetServerHandler
+                    .sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, held));
                 acknowledge(player, actual, false);
-            } else if (SESSIONS.size() < MAX_SESSIONS) {
-                SESSIONS.put(player.getUniqueID(), new Session(player, actual, now));
-                acknowledge(player, actual, true);
-                DeviceTerminalRequestQueue.invalidate(player);
-            } else acknowledge(player, actual, false);
+                return;
+            }
+            ItemDeviceInfoTerminal.setVisualizationEnabled(held, enabled);
+            player.inventory.markDirty();
+            player.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, held));
+            if (!enabled) {
+                Session current = SESSIONS.get(player.getUniqueID());
+                if (current != null && current.terminalId.equals(actual)) {
+                    SESSIONS.remove(player.getUniqueID());
+                    DeviceTerminalRequestQueue.invalidate(player);
+                }
+                acknowledge(player, actual, false);
+            }
+            selectSession(player, now);
         } else if (message.action == PacketDeviceTerminalVisualAction.ACTION_VISUAL_TELEPORT) {
             report(
                 player,
@@ -236,7 +265,7 @@ public final class DeviceTerminalVisualActionQueue {
             EntityPlayerMP player = server.getConfigurationManager()
                 .func_152612_a(session.playerName);
             if (player == null || !entry.getKey()
-                .equals(player.getUniqueID()) || !validHeld(player, session) || now > session.expires) {
+                .equals(player.getUniqueID()) || !validInventory(player, session)) {
                 sessions.remove();
                 if (player != null && entry.getKey()
                     .equals(player.getUniqueID()) && player.playerNetServerHandler != null)
@@ -250,21 +279,49 @@ public final class DeviceTerminalVisualActionQueue {
         }
     }
 
-    private static boolean validHeld(EntityPlayerMP player, Session session) {
+    private static boolean matches(ItemStack stack, Session session) {
+        return ItemDeviceInfoTerminal.isVisualizationEnabled(stack)
+            && session.terminalToken.equals(stack.stackTagCompound.getString(ItemDeviceInfoTerminal.NBT_UUID));
+    }
+
+    private static boolean validInventory(EntityPlayerMP player, Session session) {
+        if (player.isDead || player.getHealth() <= 0) return false;
+        ItemStack[] inventory = player.inventory.mainInventory;
+        if (session.slot >= 0 && session.slot < inventory.length && matches(inventory[session.slot], session))
+            return true;
+        // A moved stack is found once and cached; an actually missing stack removes the session immediately.
+        for (int i = 0; i < inventory.length; i++) if (matches(inventory[i], session)) {
+            session.slot = i;
+            return true;
+        }
+        return false;
+    }
+
+    private static void selectSession(EntityPlayerMP player, long now) {
+        Session current = SESSIONS.get(player.getUniqueID());
         ItemStack held = player.getHeldItem();
-        return !player.isDead && player.getHealth() > 0
-            && player.dimension == session.dimension
-            && player.inventory.currentItem == session.slot
-            && held != null
-            && held.getItem() instanceof ItemDeviceInfoTerminal
-            && session.terminalId.equals(ItemDeviceInfoTerminal.readTerminalId(held));
+        // A nonterminal hand keeps the current enabled terminal, rather than arbitrarily switching bindings.
+        if (!ItemDeviceInfoTerminal.isVisualizationEnabled(held) && current != null && validInventory(player, current))
+            return;
+        int selected = ItemDeviceInfoTerminal.findEnabledTerminalSlot(
+            player.inventory.mainInventory,
+            player.inventory.currentItem,
+            current == null ? null : current.terminalId);
+        if (selected < 0) return;
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(player.inventory.mainInventory[selected]);
+        if (current != null && current.terminalId.equals(id)) return;
+        if (current == null && SESSIONS.size() >= MAX_SESSIONS) return;
+        if (current != null) acknowledge(player, current.terminalId, false);
+        SESSIONS.put(player.getUniqueID(), new Session(player, id, selected, now));
+        DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), id);
+        DeviceTerminalRequestQueue.invalidate(player);
+        acknowledge(player, id, true);
     }
 
     /** Vanilla C08 is never a second travel intent. Only packet24 selects a bound visual target. */
     public static boolean shouldConsumeVanillaUse(EntityPlayerMP player, ItemStack stack) {
-        return !player.isSneaking() && stack != null
-            && stack.getItem() instanceof ItemDeviceInfoTerminal
-            && isEnabled(player, ItemDeviceInfoTerminal.readTerminalId(stack));
+        return !player.isSneaking() && ItemDeviceInfoTerminal.isVisualizationEnabled(stack)
+            && ItemDeviceInfoTerminal.readTerminalId(stack) != null;
     }
 
     public static boolean isEnabled(EntityPlayerMP player, UUID id) {
@@ -272,25 +329,23 @@ public final class DeviceTerminalVisualActionQueue {
         MinecraftServer server = MinecraftServer.getServer();
         if (session == null || id == null
             || !id.equals(session.terminalId)
-            || !validHeld(player, session)
+            || !validInventory(player, session)
             || server == null
             || server.worldServerForDimension(0) == null
             || player.playerNetServerHandler == null
             || server.getConfigurationManager()
                 .func_152612_a(player.getCommandSenderName()) != player)
             return false;
-        long now = server.worldServerForDimension(0)
-            .getTotalWorldTime();
-        return now <= session.expires;
+        return true;
     }
 
-    /** Existing data polling refreshes the lease; no new heartbeat packets are introduced. */
+    /** Retained for data callers; an enabled inventory terminal now owns the persistent session. */
     public static void refresh(EntityPlayerMP player, UUID id) {
-        if (!isEnabled(player, id)) return;
-        Session session = SESSIONS.get(player.getUniqueID());
-        session.expires = MinecraftServer.getServer()
-            .worldServerForDimension(0)
-            .getTotalWorldTime() + SESSION_TTL_TICKS;
+        // An enabled held terminal can request an immediate selection ACK through the existing data protocol.
+        ItemStack held = player.getHeldItem();
+        if (id != null && ItemDeviceInfoTerminal.isVisualizationEnabled(held)
+            && id.equals(ItemDeviceInfoTerminal.readTerminalId(held)))
+            selectSession(player, player.worldObj.getTotalWorldTime());
     }
 
     private static void rejectTravel(EntityPlayerMP player, PacketDeviceTerminalVisualAction message,
@@ -315,6 +370,8 @@ public final class DeviceTerminalVisualActionQueue {
     }
 
     private static void acknowledge(EntityPlayerMP player, UUID id, boolean enabled) {
+        Session session = SESSIONS.get(player.getUniqueID());
+        if (enabled && session != null && session.terminalId.equals(id)) session.lastAckTick = player.ticksExisted;
         GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncDeviceTerminalVisualState(id, enabled), player);
     }
 

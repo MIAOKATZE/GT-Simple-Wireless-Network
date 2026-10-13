@@ -185,7 +185,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     @Override
     public void updateScreen() {
         cost.updateCursorCounter();
-        if (pollTicks++ % 20 == 0 && !com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.isActiveHeld()) {
+        if (pollTicks++ % 20 == 0) {
             GTSWNPacketHandler.NETWORK.sendToServer(
                 DeviceTerminalClientCache
                     .requestMetadata(com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.heldTerminalId()));
@@ -330,7 +330,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
-        drawRect(left, top, left + panelWidth, top + panelHeight, 0xFF151A20);
+        GtswnGuiDrawing.drawNetworkPanel(left, top, panelWidth, panelHeight, zLevel);
         drawCenteredString(fontRendererObj, tr("title"), left + panelWidth / 2, top + 8, GtswnGuiPalette.TEXT_TITLE);
         if (tab == 0) {
             int legendY = top + 50 + rowGap * 6;

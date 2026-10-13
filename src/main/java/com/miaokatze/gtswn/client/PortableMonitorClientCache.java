@@ -83,7 +83,9 @@ public final class PortableMonitorClientCache {
         if (!cache.inFlight && cache.action == 0 && cache.selected < 0 && !cache.hasPins) return;
         long now = System.currentTimeMillis();
         if (now < nextGlobalRequest || cache.inFlight && now - cache.sentAt < 5000
-            || cache.action == 0 && !cache.dirty && now - cache.sentAt < Math.max(1000, Config.hudUpdateInterval * 50L))
+            || !cache.inFlight && cache.action == 0
+                && !cache.dirty
+                && now - cache.sentAt < Math.max(1000, Config.hudUpdateInterval * 50L))
             return;
         if (!cache.inFlight) {
             PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(
@@ -91,6 +93,7 @@ public final class PortableMonitorClientCache {
                 ++nextSequence,
                 cache.action,
                 cache.value);
+            request.targetPanel = cache.targetPanel;
             request.selected = cache.selected;
             if (cache.selected >= 0 && cache.snapshot != null && cache.selected < cache.snapshot.panels.size()) {
                 PacketSyncPortableMonitor.Panel selected = cache.snapshot.panels.get(cache.selected);
@@ -124,15 +127,38 @@ public final class PortableMonitorClientCache {
         GTSWNPacketHandler.NETWORK.sendToServer(cache.request);
     }
 
-    public static void action(ItemStack stack, int action, int value) {
+    public static boolean action(ItemStack stack, int action, int value) {
         session();
         UUID id = MonitorBindings.id(stack);
-        if (id == null) return;
+        if (id == null) return false;
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
-        if (cache.action != 0) return;
+        if (busy(cache)) return false;
+        if (action == 1) {
+            if (cache.snapshot == null || value < 0 || value >= cache.snapshot.panels.size()) return false;
+            cache.targetPanel = cache.snapshot.panels.get(value).binding.panelId;
+        } else cache.targetPanel = new UUID(0, 0);
         cache.action = action;
         cache.value = value;
+        cache.result = 0;
         poll(stack);
+        return true;
+    }
+
+    private static boolean busy(Cached cache) {
+        return cache.action != 0 || cache.inFlight && cache.request.action != 0;
+    }
+
+    public static boolean canMutate(ItemStack stack) {
+        EntityPlayer player = Minecraft.getMinecraft().thePlayer;
+        return player != null && PortableWirelessNetworkMonitor.isMonitorBound(stack)
+            && player.getUniqueID()
+                .toString()
+                .equals(PortableWirelessNetworkMonitor.getOwnerUUID(stack));
+    }
+
+    public static int mutationStatus(ItemStack stack) {
+        Cached cache = CACHE.get(MonitorBindings.id(stack));
+        return cache == null ? 0 : busy(cache) ? 4 : cache.result;
     }
 
     public static void viewing(ItemStack stack, int index) {
@@ -178,6 +204,22 @@ public final class PortableMonitorClientCache {
                 }
         }
         cache.snapshot = response;
+        if (cache.request.action != 0) {
+            cache.result = response.result;
+            if (cache.stack != null && cache.stack.stackTagCompound != null)
+                cache.stack.stackTagCompound.setInteger(PortableWirelessNetworkMonitor.NBT_HUD_MODE, response.hudMode);
+            if (cache.request.action == 1 && (response.result == 1 || response.result == 3)) {
+                String prefix = response.terminalId + "/" + cache.request.targetPanel + "/";
+                List<String> retained = new ArrayList<>(Arrays.asList(Config.hudPinnedEntries));
+                if (retained.removeIf(entry -> entry.startsWith(prefix))) {
+                    Config.hudPinnedEntries = retained.toArray(new String[0]);
+                    Config.saveHudConfiguration();
+                }
+                cache.views.remove(cache.request.targetPanel);
+                cache.viewVersions.remove(cache.request.targetPanel);
+                cache.viewSources.remove(cache.request.targetPanel);
+            }
+        }
         cache.receivedAt = System.currentTimeMillis();
         cache.inFlight = false;
     }
@@ -266,6 +308,31 @@ public final class PortableMonitorClientCache {
         PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
         row.key = tab == 0 ? PortableMonitorRequestQueue.EU_GRAPH : PortableMonitorRequestQueue.AE_GRAPH;
         return togglePin(terminal, panel, row);
+    }
+
+    /** Local subscriptions remain editable when remote live content is unavailable. */
+    public static List<PacketSyncPortableMonitor.Row> managementRows(UUID terminal,
+        PacketSyncPortableMonitor.Panel panel, String[] pins, boolean fresh, String unavailable) {
+        Map<String, PacketSyncPortableMonitor.Row> rows = new java.util.LinkedHashMap<>();
+        Map<String, PacketSyncPortableMonitor.Row> metadata = new HashMap<>();
+        for (PacketSyncPortableMonitor.Row row : panel.rows) if (row.kind != 0) {
+            metadata.put(row.key, row);
+            if (fresh && panel.detail && panel.state == 0) rows.put(row.key, row);
+        }
+        String prefix = terminal + "/" + panel.binding.panelId + "/";
+        for (String pin : pins) {
+            if (!pin.startsWith(prefix)) continue;
+            String key = pin.substring(prefix.length());
+            if (key.equals("eu") || key.startsWith("$chart:") || rows.containsKey(key)) continue;
+            PacketSyncPortableMonitor.Row withdrawn = new PacketSyncPortableMonitor.Row();
+            withdrawn.key = key;
+            PacketSyncPortableMonitor.Row previous = metadata.get(key);
+            withdrawn.name = previous == null ? key : previous.name;
+            withdrawn.kind = key.startsWith("fluid:") ? 2 : 1;
+            withdrawn.amount = unavailable;
+            rows.put(key, withdrawn);
+        }
+        return new ArrayList<>(rows.values());
     }
 
     public static List<PinnedLine> pinnedLines(ItemStack stack) {
@@ -444,7 +511,8 @@ public final class PortableMonitorClientCache {
     private static final class Cached {
 
         PacketSyncPortableMonitor snapshot;
-        int sequence, action, value;
+        int sequence, action, value, result;
+        UUID targetPanel = new UUID(0, 0);
         long sentAt, receivedAt;
         boolean inFlight;
         boolean dirty;

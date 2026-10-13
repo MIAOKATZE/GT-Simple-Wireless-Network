@@ -57,6 +57,9 @@ public class ItemDeviceInfoTerminal extends Item {
     /** 终端实例 UUID（string，首用生成后常驻） */
     public static final String NBT_UUID = "DIT_UUID";
 
+    /** Persistent visual preference; only the server's toggle action writes this value. */
+    public static final String NBT_VISUAL_ENABLED = "DIT_VisualEnabled";
+
     /** GUI 排序列偏好（string：NAME / STATE / INST / AVG / POS，默认 AVG） */
     public static final String NBT_SORT_COLUMN = "DIT_SortCol";
 
@@ -113,6 +116,37 @@ public class ItemDeviceInfoTerminal extends Item {
         setCreativeTab(CreativeTabs.tabMisc);
         // 绑定类设备不可堆叠（每台终端持有独立 DIT_UUID）
         setMaxStackSize(1);
+    }
+
+    public static boolean isVisualizationEnabled(ItemStack stack) {
+        return stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal
+            && stack.stackTagCompound != null
+            && stack.stackTagCompound.getBoolean(NBT_VISUAL_ENABLED);
+    }
+
+    public static void setVisualizationEnabled(ItemStack stack, boolean enabled) {
+        ensureNBT(stack).setBoolean(NBT_VISUAL_ENABLED, enabled);
+    }
+
+    /** Held enabled terminal wins, then the current enabled UUID, then a stable inventory-slot fallback. */
+    public static int findEnabledTerminalSlot(ItemStack[] inventory, int heldSlot, UUID preferred) {
+        if (heldSlot >= 0 && heldSlot < inventory.length
+            && isVisualizationEnabled(inventory[heldSlot])
+            && readTerminalId(inventory[heldSlot]) != null) return heldSlot;
+        String token = preferred == null ? null : preferred.toString();
+        int fallback = -1;
+        for (int i = 0; i < inventory.length; i++) {
+            ItemStack stack = inventory[i];
+            if (!isVisualizationEnabled(stack) || readTerminalId(stack) == null) continue;
+            if (token != null && token.equals(stack.stackTagCompound.getString(NBT_UUID))) return i;
+            if (fallback < 0) fallback = i;
+        }
+        return fallback;
+    }
+
+    @Override
+    public boolean hasEffect(ItemStack stack, int pass) {
+        return isVisualizationEnabled(stack) || super.hasEffect(stack, pass);
     }
 
     // ==================== 手势 1：右击机器 = 绑定（onItemUseFirst，服务端权威） ====================

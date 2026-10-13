@@ -87,7 +87,6 @@ public final class PortableMonitorRequestQueue {
         boolean owner = player.getUniqueID()
             .toString()
             .equals(PortableWirelessNetworkMonitor.getOwnerUUID(stack));
-        if (request.action != 0 && !owner) return;
         PacketSyncPortableMonitor previous = actionReplay.get(player);
         if (request.action != 0 && previous != null
             && previous.terminalId.equals(request.terminalId)
@@ -95,16 +94,23 @@ public final class PortableMonitorRequestQueue {
             GTSWNPacketHandler.NETWORK.sendTo(previous, player);
             return;
         }
-        if (request.action == 1) MonitorBindings.remove(stack, request.value);
-        if (request.action == 2)
+        int result = request.action == 0 ? 0 : owner ? 1 : 2;
+        if (request.action == 1 && owner && !MonitorBindings.remove(stack, request.targetPanel)) result = 3;
+        if (request.action == 2 && owner)
             stack.stackTagCompound.setInteger(PortableWirelessNetworkMonitor.NBT_HUD_MODE, request.value);
-        if (request.action != 0) player.inventory.markDirty();
+        if (request.action != 0 && owner) {
+            player.inventory.markDirty();
+            player.inventoryContainer.detectAndSendChanges();
+        }
         PacketSyncPortableMonitor response = new PacketSyncPortableMonitor(
             request.terminalId,
             request.sequence,
             PortableWirelessNetworkMonitor.getHudMode(stack));
+        response.result = result;
+        List<MonitorBindings.Binding> bindings = MonitorBindings.read(stack);
+        int selected = Math.min(request.selected, bindings.size() - 1);
         int panelIndex = 0;
-        for (MonitorBindings.Binding binding : MonitorBindings.read(stack)) {
+        for (MonitorBindings.Binding binding : bindings) {
             PacketSyncPortableMonitor.Panel data = new PacketSyncPortableMonitor.Panel();
             data.binding = binding;
             World world = DimensionManager.getWorld(binding.dimension);
@@ -120,7 +126,7 @@ public final class PortableMonitorRequestQueue {
                     if (!binding.panelId.equals(panel.getPortableMonitorId())) data.state = 3;
                     else {
                         Set<String> pins = request.pins.getOrDefault(binding.panelId, java.util.Collections.emptySet());
-                        boolean detail = request.selected == panelIndex;
+                        boolean detail = selected == panelIndex;
                         data.ownerName = panel.getOwnerName();
                         if (detail || !pins.isEmpty())
                             fill(data, panel, detail, pins, request.charts, request.knownRenderVersion);

@@ -68,6 +68,14 @@ public final class MonitorBindings {
         write(stack, list);
     }
 
+    /** Idempotent identity removal: a stale UI index cannot delete the screen that shifted into its slot. */
+    public static boolean remove(ItemStack stack, UUID panelId) {
+        List<Binding> list = read(stack);
+        boolean removed = list.removeIf(binding -> binding.panelId.equals(panelId));
+        if (removed) write(stack, list);
+        return removed;
+    }
+
     public static void clear(ItemStack stack) {
         if (stack.stackTagCompound != null) {
             stack.stackTagCompound.removeTag(PANELS);

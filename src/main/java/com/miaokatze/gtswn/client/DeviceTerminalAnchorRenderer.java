@@ -15,6 +15,7 @@ import java.util.PriorityQueue;
 import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.culling.Frustrum;
@@ -30,12 +31,15 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import gregtech.api.GregTechAPI;
+import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
 /** Bound-machine travel markers. All snapshot work is sliced on client ticks; render reads cached text only. */
@@ -88,6 +92,9 @@ public final class DeviceTerminalAnchorRenderer {
     private int scanDimension;
     private int scanRange;
     private int scanLimit;
+    private final HudText hudHint = new HudText();
+    private final HudText hudNotice = new HudText();
+    private final HudText hudCount = new HudText();
     private double scanX;
     private double scanY;
     private double scanZ;
@@ -103,17 +110,17 @@ public final class DeviceTerminalAnchorRenderer {
             DeviceTerminalVisualizationState.clear();
             return;
         }
-        UUID held = DeviceTerminalVisualizationState.heldTerminalId();
+        UUID held = DeviceTerminalVisualizationState.visualizationTerminalId();
         if (!DeviceTerminalVisualizationState.active(held)) {
-            if (terminal != null && !terminal.equals(held)) DeviceTerminalVisualizationState.clear();
             reset();
             return;
         }
         if (terminal != null && !terminal.equals(held)) reset();
         terminal = held;
         DeviceTerminalVisualConfig.load();
-        // One world-mode poller, also while a settings/name editor screen keeps the session open.
-        if (ticks % 20 == 0 || DeviceTerminalClientCache.hasMorePending(terminal) && ticks % 5 == 0) {
+        // Screens poll their own terminal UUID; persistent inventory mode needs no GUI-time network lease.
+        if (mc.currentScreen == null
+            && (ticks % 20 == 0 || DeviceTerminalClientCache.hasMorePending(terminal) && ticks % 5 == 0)) {
             GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(terminal));
         }
         ticks++;
@@ -255,6 +262,16 @@ public final class DeviceTerminalAnchorRenderer {
             && (entry.metaTileId < 0 || ((IGregTechTileEntity) tile).getMetaTileID() == entry.metaTileId);
         anchor.available = fresh && matchingMachine;
         anchor.loaded = matchingMachine;
+        IMetaTileEntity machine = matchingMachine ? ((IGregTechTileEntity) tile).getMetaTileEntity()
+            : entry.metaTileId >= 0 && entry.metaTileId < GregTechAPI.METATILEENTITIES.length
+                ? GregTechAPI.METATILEENTITIES[entry.metaTileId]
+                : null;
+        if (machine != anchor.capabilityMachine) {
+            boolean steamCapable = DeviceSteamAdapter.supportsSteamChannel(machine);
+            if (steamCapable != anchor.steamCapable) anchor.textDirty = true;
+            anchor.steamCapable = steamCapable;
+            anchor.capabilityMachine = machine;
+        }
         String status = !fresh ? "stale" : !loaded ? "unloaded" : !anchor.available ? "missing" : "";
         int appearance = DeviceTerminalVisualConfig.appearanceKey();
         String language = mc.gameSettings.language;
@@ -289,7 +306,7 @@ public final class DeviceTerminalAnchorRenderer {
                             "gtswn.device.visual.power.eu",
                             metric(entry.instIn),
                             metric(entry.instOut)));
-                    if (entry.energyKind != 0) addLine(
+                    if (anchor.steamCapable) addLine(
                         anchor,
                         mc,
                         StatCollector.translateToLocalFormatted(
@@ -598,26 +615,53 @@ public final class DeviceTerminalAnchorRenderer {
             : DeviceTerminalClientCache.hasMorePending(terminal) ? tr("loading")
                 : visible.isEmpty() ? tr("empty")
                     : target == null ? ""
-                        : tr("teleport") + (DeviceTerminalVisualConfig.showLabelName ? " " + target.name : "");
-        String hint = tr("hint");
-        int y = sr.getScaledHeight() / 2 + 28;
-        mc.fontRenderer
-            .drawStringWithShadow(hint, (sr.getScaledWidth() - mc.fontRenderer.getStringWidth(hint)) / 2, y, 0xDDDDDD);
-        if (!notice.isEmpty()) mc.fontRenderer.drawStringWithShadow(
-            notice,
-            (sr.getScaledWidth() - mc.fontRenderer.getStringWidth(notice)) / 2,
-            y + 11,
-            target == null ? 0xBBBBBB : 0xFFD68D);
+                        : tr(DeviceTerminalVisualizationState.isActiveHeld() ? "teleport" : "hold_terminal")
+                            + (DeviceTerminalVisualConfig.showLabelName ? " " + target.name : "");
+        String hint = tr(DeviceTerminalVisualizationState.isActiveHeld() ? "hint" : "inventory_hint");
         DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(terminal);
         String count = StatCollector.translateToLocalFormatted(
             "gtswn.device.visual.count",
             visible.size(),
             snapshot == null ? 0 : snapshot.entries.size());
-        mc.fontRenderer.drawStringWithShadow(
-            count,
-            (sr.getScaledWidth() - mc.fontRenderer.getStringWidth(count)) / 2,
-            y + 22,
-            0xBBBBBB);
+        int availableWidth = Math.max(32, sr.getScaledWidth() - 16);
+        hudHint.update(mc.fontRenderer, hint, availableWidth);
+        hudNotice.update(mc.fontRenderer, notice, availableWidth);
+        hudCount.update(mc.fontRenderer, count, availableWidth);
+        int rows = hudHint.lines.size() + hudNotice.lines.size() + hudCount.lines.size();
+        int y = Math.max(8, Math.min(sr.getScaledHeight() / 2 + 28, sr.getScaledHeight() - 8 - rows * 11));
+        y = hudHint.draw(mc.fontRenderer, sr.getScaledWidth(), y, 0xDDDDDD);
+        y = hudNotice.draw(mc.fontRenderer, sr.getScaledWidth(), y, target == null ? 0xBBBBBB : 0xFFD68D);
+        hudCount.draw(mc.fontRenderer, sr.getScaledWidth(), y, 0xBBBBBB);
+    }
+
+    /** Wrapping changes only with text, viewport or font mode; unchanged frames reuse line widths. */
+    private static final class HudText {
+
+        String text;
+        int width;
+        FontRenderer font;
+        boolean unicode;
+        List<String> lines = java.util.Collections.emptyList();
+        int[] widths = new int[0];
+
+        void update(FontRenderer renderer, String value, int maxWidth) {
+            boolean unicodeNow = renderer.getUnicodeFlag();
+            if (Objects.equals(text, value) && width == maxWidth && font == renderer && unicode == unicodeNow) return;
+            text = value;
+            width = maxWidth;
+            font = renderer;
+            unicode = unicodeNow;
+            lines = value.isEmpty() ? java.util.Collections.emptyList()
+                : renderer.listFormattedStringToWidth(value, maxWidth);
+            widths = new int[lines.size()];
+            for (int i = 0; i < lines.size(); i++) widths[i] = renderer.getStringWidth(lines.get(i));
+        }
+
+        int draw(FontRenderer renderer, int viewportWidth, int y, int color) {
+            for (int i = 0; i < lines.size(); i++, y += 11)
+                renderer.drawStringWithShadow(lines.get(i), (viewportWidth - widths[i]) / 2, y, color);
+            return y;
+        }
     }
 
     private boolean canRender(Minecraft mc) {
@@ -626,7 +670,7 @@ public final class DeviceTerminalAnchorRenderer {
             && mc.currentScreen == null
             && terminal != null
             && DeviceTerminalVisualizationState.active(terminal)
-            && terminal.equals(DeviceTerminalVisualizationState.heldTerminalId());
+            && terminal.equals(DeviceTerminalVisualizationState.visualizationTerminalId());
     }
 
     private static double eyeY(Minecraft mc) {
@@ -689,6 +733,8 @@ public final class DeviceTerminalAnchorRenderer {
         final List<String> lines = new ArrayList<>();
         boolean available;
         boolean loaded;
+        boolean steamCapable;
+        IMetaTileEntity capabilityMachine;
         boolean textDirty = true;
         String status;
         String language;

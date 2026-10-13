@@ -20,10 +20,12 @@ public final class PacketSyncPortableMonitor implements IMessage {
     public static final int MAX_TOTAL_ROWS = MAX_ROWS + PacketRequestPortableMonitor.MAX_PINS;
     public static final int MAX_SAMPLES = 61;
     public static final int MAX_BYTES = 1024 * 1024;
-    private static final int PROTOCOL = 56;
+    private static final int PROTOCOL = 57;
     public UUID terminalId;
     public int sequence;
     public int hudMode;
+    /** 0 snapshot, 1 mutation applied, 2 current terminal owner required, 3 target no longer bound. */
+    public int result;
     public boolean valid;
     public final List<Panel> panels = new ArrayList<>();
 
@@ -40,13 +42,14 @@ public final class PacketSyncPortableMonitor implements IMessage {
     public void fromBytes(ByteBuf buf) {
         valid = false;
         panels.clear();
-        if (buf.readableBytes() > MAX_BYTES || buf.readableBytes() < 30) return;
+        if (buf.readableBytes() > MAX_BYTES || buf.readableBytes() < 31) return;
         try {
             if (buf.readInt() != PacketRequestPortableMonitor.PROTOCOL_MAGIC) return;
             if (buf.readUnsignedByte() != PROTOCOL) return;
             terminalId = new UUID(buf.readLong(), buf.readLong());
             sequence = buf.readInt();
             hudMode = count(buf.readInt(), 2);
+            result = count(buf.readUnsignedByte(), 3);
             int count = count(buf.readUnsignedByte(), MonitorBindings.MAX_PANELS);
             int totalRows = 0;
             int fullPanels = 0;
@@ -117,6 +120,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
         buf.writeLong(terminalId.getLeastSignificantBits());
         buf.writeInt(sequence);
         buf.writeInt(hudMode);
+        buf.writeByte(result);
         buf.writeByte(panels.size());
         for (Panel panel : panels) {
             MonitorBindings.Binding b = panel.binding;
