@@ -34,12 +34,13 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 /** Bound-machine travel markers. All snapshot work is sliced on client ticks; render reads cached text only. */
 public final class DeviceTerminalAnchorRenderer {
 
-    public static final DeviceTerminalAnchorRenderer INSTANCE = new DeviceTerminalAnchorRenderer();
     private static final int WORK_PER_TICK = 64;
     private static final int LABELS_PER_FRAME = 64;
     private static final Comparator<Anchor> NEAREST = Comparator.comparingDouble((Anchor anchor) -> anchor.distance)
         .thenComparing(anchor -> anchor.entry.key);
     private static final String[] STATES = { "idle", "running", "stopped" };
+    // The constructor creates a queue using NEAREST, so initialize its dependencies first.
+    public static final DeviceTerminalAnchorRenderer INSTANCE = new DeviceTerminalAnchorRenderer();
     private final List<Anchor> visible = new ArrayList<>();
     private final PriorityQueue<Anchor> building = new PriorityQueue<>(NEAREST.reversed());
     private DeviceTerminalClientCache.Snapshot scanning;
