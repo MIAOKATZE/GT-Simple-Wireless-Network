@@ -22,7 +22,7 @@ public class PacketPortableMonitorTest {
         ByteBuf bytes = Unpooled.buffer();
         try {
             request.toBytes(bytes);
-            assertEquals(64, bytes.readableBytes());
+            assertEquals(80, bytes.readableBytes());
             PacketRequestPortableMonitor decoded = new PacketRequestPortableMonitor();
             decoded.fromBytes(bytes);
             assertTrue(decoded.valid);
@@ -61,6 +61,29 @@ public class PacketPortableMonitorTest {
     }
 
     @Test
+    public void version57PacketsAreRejectedBeforeReadingNewIdentityAndPaletteFields() {
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            new PacketRequestPortableMonitor(UUID.randomUUID(), 1, 0, 0).toBytes(bytes);
+            bytes.setInt(0, 0x50574d57);
+            bytes.setByte(4, 57);
+            PacketRequestPortableMonitor request = new PacketRequestPortableMonitor();
+            request.fromBytes(bytes);
+            assertFalse(request.valid);
+            bytes.clear();
+            new PacketSyncPortableMonitor(UUID.randomUUID(), 1, 0).toBytes(bytes);
+            bytes.setInt(0, 0x50574d57);
+            bytes.setByte(4, 57);
+            PacketSyncPortableMonitor snapshot = new PacketSyncPortableMonitor();
+            snapshot.fromBytes(bytes);
+            assertFalse(snapshot.valid);
+            assertTrue(snapshot.panels.isEmpty());
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
     public void bothPinnedGraphsKeepReceivingHistoryAfterGuiClosesInTextMode() {
         java.util.Set<String> pins = new java.util.HashSet<>(
             Arrays.asList(PortableMonitorRequestQueue.EU_GRAPH, PortableMonitorRequestQueue.AE_GRAPH));
@@ -74,6 +97,7 @@ public class PacketPortableMonitorTest {
     public void requestContainsOnlyBoundSelectionAndExplicitPinKeys() {
         PacketRequestPortableMonitor original = new PacketRequestPortableMonitor(UUID.randomUUID(), 42, 0, 0);
         original.selected = 3;
+        original.selectedPanel = UUID.randomUUID();
         original.charts = true;
         original.knownRenderVersion = 88;
         UUID panel = UUID.randomUUID();
@@ -85,6 +109,7 @@ public class PacketPortableMonitorTest {
             decoded.fromBytes(buffer);
             assertTrue(decoded.valid);
             assertEquals(3, decoded.selected);
+            assertEquals(original.selectedPanel, decoded.selectedPanel);
             assertTrue(decoded.charts);
             assertEquals(original.pins, decoded.pins);
             assertEquals(42, decoded.sequence);
@@ -192,6 +217,17 @@ public class PacketPortableMonitorTest {
         panel.rows.add(row);
         panel.euChart = new double[] { 0, .5, 1 };
         original.panels.add(panel);
+        original.bindingRevision = 8;
+        panel.aeWindow = "8h";
+        panel.displayMode = 2;
+        panel.palette = new com.miaokatze.gtswn.common.panel.TrendLinePalette(
+            false,
+            0x123456,
+            0x345678,
+            0x56789a,
+            0x789abc,
+            0x9abcde,
+            0xbcdef0);
         PacketSyncPortableMonitor.Panel unloaded = new PacketSyncPortableMonitor.Panel();
         unloaded.binding = new MonitorBindings.Binding(12, 1, 2, 3, UUID.randomUUID());
         unloaded.state = 1;
@@ -204,6 +240,12 @@ public class PacketPortableMonitorTest {
             assertTrue(decoded.valid);
             assertEquals(terminal, decoded.terminalId);
             assertEquals(27, decoded.sequence);
+            assertEquals(8, decoded.bindingRevision);
+            assertEquals("8h", decoded.panels.get(0).aeWindow);
+            assertEquals(2, decoded.panels.get(0).displayMode);
+            assertFalse(decoded.panels.get(0).palette.enabled);
+            assertEquals(0x345678, decoded.panels.get(0).palette.energyUp);
+            assertEquals(0xbcdef0, decoded.panels.get(0).palette.rateDown);
             assertEquals(-1, decoded.panels.get(0).binding.dimension);
             assertEquals(panel.binding.panelId, decoded.panels.get(0).binding.panelId);
             assertEquals("测试玩家", decoded.panels.get(0).ownerName);

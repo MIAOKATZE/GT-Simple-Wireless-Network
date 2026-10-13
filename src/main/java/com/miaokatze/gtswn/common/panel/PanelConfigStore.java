@@ -44,6 +44,7 @@ public final class PanelConfigStore {
     private int trendLineSmoothing = 2;
     // 走势线样条类型：0=过点样条（Fritsch-Carlson 单调 Hermite，默认），1=拟合样条，2=折线样条，3=数字样条
     private int trendLineSplineType = 0;
+    private TrendLinePalette trendLinePalette = TrendLinePalette.DEFAULT;
     private String screenBackgroundColor = ""; // 默认无背景色，TESR 不绘制背景填充
 
     // === AE 图表配置字段（v1.5.4）===
@@ -112,6 +113,7 @@ public final class PanelConfigStore {
                 screenBackgroundColor = cleanColorText(value);
             }
         }
+        applyTrendPalette(lines);
         dirty.markChanged();
     }
 
@@ -255,6 +257,67 @@ public final class PanelConfigStore {
                 return false;
         }
         return true;
+    }
+
+    private void applyTrendPalette(String[] lines) {
+        NBTTagCompound tag = new NBTTagCompound();
+        writeTrendPalette(tag);
+        for (String line : lines) {
+            int split = line.indexOf('=');
+            if (split <= 0) continue;
+            String key = line.substring(0, split);
+            String value = line.substring(split + 1)
+                .trim();
+            if ("trendDirectionColors".equals(key)) tag.setBoolean(key, Boolean.parseBoolean(value));
+            else if ("energyFlatColor".equals(key) || "energyUpColor".equals(key)
+                || "energyDownColor".equals(key)
+                || "rateFlatColor".equals(key)
+                || "rateUpColor".equals(key)
+                || "rateDownColor".equals(key)) {
+                    String raw = value.replace("#", "");
+                    String color = cleanColorText(raw);
+                    if (raw.isEmpty() || raw.length() == 6 && color.length() == 6) tag.setString(key, color);
+                }
+        }
+        readTrendPalette(tag);
+    }
+
+    public TrendLinePalette getTrendLinePalette() {
+        return trendLinePalette;
+    }
+
+    private void writeTrendPalette(NBTTagCompound tag) {
+        tag.setBoolean("trendDirectionColors", trendLinePalette.enabled);
+        tag.setString("energyFlatColor", colorText(trendLinePalette.energyFlat));
+        tag.setString("energyUpColor", colorText(trendLinePalette.energyUp));
+        tag.setString("energyDownColor", colorText(trendLinePalette.energyDown));
+        tag.setString("rateFlatColor", colorText(trendLinePalette.rateFlat));
+        tag.setString("rateUpColor", colorText(trendLinePalette.rateUp));
+        tag.setString("rateDownColor", colorText(trendLinePalette.rateDown));
+    }
+
+    private void readTrendPalette(NBTTagCompound tag) {
+        TrendLinePalette defaults = TrendLinePalette.DEFAULT;
+        trendLinePalette = new TrendLinePalette(
+            !tag.hasKey("trendDirectionColors") || tag.getBoolean("trendDirectionColors"),
+            paletteColor(tag, "energyFlatColor", defaults.energyFlat),
+            paletteColor(tag, "energyUpColor", defaults.energyUp),
+            paletteColor(tag, "energyDownColor", defaults.energyDown),
+            paletteColor(tag, "rateFlatColor", defaults.rateFlat),
+            paletteColor(tag, "rateUpColor", defaults.rateUp),
+            paletteColor(tag, "rateDownColor", defaults.rateDown));
+    }
+
+    public static String colorText(int color) {
+        String hex = Integer.toHexString(color & 0xFFFFFF)
+            .toUpperCase(java.util.Locale.ROOT);
+        return "000000".substring(hex.length()) + hex;
+    }
+
+    private static int paletteColor(NBTTagCompound tag, String key, int fallback) {
+        String text = cleanColorText(tag.getString(key));
+        Integer color = text.length() == 6 ? parseOptionalColor(text) : null;
+        return color == null ? fallback : color;
     }
 
     // ==================== EU 显示配置 Getter / Setter ====================
@@ -458,7 +521,12 @@ public final class PanelConfigStore {
         showBriefStatus = !tag.hasKey("showBriefStatus") || tag.getBoolean("showBriefStatus");
         showChartEnergy = !tag.hasKey("showChartEnergy") || tag.getBoolean("showChartEnergy");
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
-        trackingWindow = tag.getInteger("trackingWindow");
+        trackingWindow = tag.hasKey("trackingWindow")
+            ? clampInt(
+                tag.getInteger("trackingWindow"),
+                NetworkInfoDataSet.WINDOW_5_MIN,
+                NetworkInfoDataSet.WINDOW_1_YEAR)
+            : NetworkInfoDataSet.WINDOW_5_MIN;
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 1, 0, 2);
         readChartConfig(tag);
@@ -490,7 +558,12 @@ public final class PanelConfigStore {
         showBriefStatus = !tag.hasKey("showBriefStatus") || tag.getBoolean("showBriefStatus");
         showChartEnergy = !tag.hasKey("showChartEnergy") || tag.getBoolean("showChartEnergy");
         showChartStatus = !tag.hasKey("showChartStatus") || tag.getBoolean("showChartStatus");
-        trackingWindow = tag.getInteger("trackingWindow");
+        trackingWindow = tag.hasKey("trackingWindow")
+            ? clampInt(
+                tag.getInteger("trackingWindow"),
+                NetworkInfoDataSet.WINDOW_5_MIN,
+                NetworkInfoDataSet.WINDOW_1_YEAR)
+            : NetworkInfoDataSet.WINDOW_5_MIN;
         briefRatio = tag.hasKey("briefRatio") ? tag.getInteger("briefRatio") : 28;
         displayMode = clampInt(tag.hasKey("displayMode") ? tag.getInteger("displayMode") : 1, 0, 2);
         readChartConfig(tag);
@@ -531,6 +604,7 @@ public final class PanelConfigStore {
     // ==================== 私有 NBT 段与解析工具（逐字搬迁）====================
 
     private void writeChartConfig(NBTTagCompound tag) {
+        writeTrendPalette(tag);
         tag.setString("energyAxisMin", energyAxisMin);
         tag.setString("energyAxisMax", energyAxisMax);
         tag.setString("eutAxisMin", eutAxisMin);
@@ -544,6 +618,7 @@ public final class PanelConfigStore {
     }
 
     private void readChartConfig(NBTTagCompound tag) {
+        readTrendPalette(tag);
         energyAxisMin = tag.hasKey("energyAxisMin") ? tag.getString("energyAxisMin") : "";
         energyAxisMax = tag.hasKey("energyAxisMax") ? tag.getString("energyAxisMax") : "";
         eutAxisMin = tag.hasKey("eutAxisMin") ? tag.getString("eutAxisMin") : "";

@@ -205,7 +205,7 @@ class GuiDeviceEntryList {
             GtswnGuiPalette.TEXT_BODY);
         if (entry.linkNodeType != 0) drawLinkIcon(x + COL_NAME_X + NAME_WIDTH - 9, textY, entry.linkNodeType);
 
-        // 状态列：三态色字（lang 键自带 §6/§a/§c 颜色码，覆盖默认色参数）
+        // 状态列：包含忽略状态；lang 值自带颜色码。
         font.drawString(applyBold(host.stateText(entry.state)), x + COL_STATE_X, textY, GtswnGuiPalette.TEXT_BODY);
 
         // 瞬时 / 平均区（v1.7.2 配方改单条覆盖）：显示配方开启且有配方 → 只画一条，
@@ -213,7 +213,8 @@ class GuiDeviceEntryList {
         // 关闭时两列恢复数值显示（排序始终按 Entry 原始数值，与显示无关）
         String recipeIn = entry.recipeIn == null ? "" : entry.recipeIn.trim();
         String recipeOut = entry.recipeOut == null ? "" : entry.recipeOut.trim();
-        boolean recipeOverride = host.showRecipeEnabled() && (!recipeIn.isEmpty() || !recipeOut.isEmpty());
+        boolean recipeOverride = entry.state != 3 && host.showRecipeEnabled()
+            && (!recipeIn.isEmpty() || !recipeOut.isEmpty());
         if (recipeOverride) {
             String line = recipeLine(recipeIn, recipeOut, 2);
             font.drawString(
@@ -269,6 +270,7 @@ class GuiDeviceEntryList {
     }
 
     private static int amountColor(Entry entry, double value) {
+        if (entry.state == 3) return GtswnGuiPalette.TEXT_MUTED;
         if (entry.energyKind == 1 && value != 0D) return value > 0D ? 0xFFBFC5CA : 0xFF858B90;
         return eutColor(value);
     }
@@ -447,16 +449,20 @@ class GuiDeviceEntryList {
                 host.openNameEditor(entries.get(row), mouseX, mouseY);
                 return true;
             }
+            if (GuiScreen.isCtrlKeyDown()) {
+                hoverIndex = -1;
+                host.sendUnbind(entries.get(row).key);
+                return true;
+            }
+            if (button == 0 && GuiScreen.isShiftKeyDown()) {
+                hoverIndex = -1;
+                host.cycleRecognition(entries.get(row).key);
+                return true;
+            }
             if (mouseX >= listLeft + TP_BTN_X && mouseX <= listLeft + TP_BTN_X + TP_BTN_W) {
                 // 传送按钮：发包 action 3（服务端 3s 冷却 + 经验复查扣减权威执行）
                 hoverIndex = -1;
                 host.sendTeleport(entries.get(row).key);
-                return true;
-            }
-            if (GuiScreen.isCtrlKeyDown()) {
-                // Ctrl+点击行任意处：远程解绑（action 2，无确认）
-                hoverIndex = -1;
-                host.sendUnbind(entries.get(row).key);
                 return true;
             }
         }

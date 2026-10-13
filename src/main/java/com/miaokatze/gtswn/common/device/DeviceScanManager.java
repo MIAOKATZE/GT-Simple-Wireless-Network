@@ -41,6 +41,48 @@ public final class DeviceScanManager {
 
     /** 玩家 UUID → 扫描状态（仅服务端主线程访问） */
     private static final Map<UUID, ScanState> STATES = new HashMap<>();
+    private static final Map<UUID, ForceWindow> FORCE_WINDOWS = new java.util.LinkedHashMap<>();
+    public static final int FORCE_WINDOW_TICKS = 300;
+
+    private static final class ForceWindow {
+
+        final UUID terminalId;
+        final long expires;
+
+        ForceWindow(UUID terminalId, long expires) {
+            this.terminalId = terminalId;
+            this.expires = expires;
+        }
+    }
+
+    static boolean consumeForceWindow(UUID playerId, UUID terminalId, long now) {
+        ForceWindow window = FORCE_WINDOWS.get(playerId);
+        if (window == null) return false;
+        if (now >= window.expires) {
+            FORCE_WINDOWS.remove(playerId);
+            return false;
+        }
+        if (!terminalId.equals(window.terminalId)) return false;
+        FORCE_WINDOWS.remove(playerId);
+        return true;
+    }
+
+    static void openForceWindow(UUID playerId, UUID terminalId, long now) {
+        FORCE_WINDOWS.values()
+            .removeIf(window -> now >= window.expires);
+        if (!FORCE_WINDOWS.containsKey(playerId) && FORCE_WINDOWS.size() >= 4096) FORCE_WINDOWS.remove(
+            FORCE_WINDOWS.keySet()
+                .iterator()
+                .next());
+        FORCE_WINDOWS.put(playerId, new ForceWindow(terminalId, now + FORCE_WINDOW_TICKS));
+    }
+
+    public static void clear() {
+        for (ScanState state : STATES.values()) state.cancelled = true;
+        STATES.clear();
+        FORCE_WINDOWS.clear();
+        RESULTS.clear();
+    }
 
     /** 后台合并结果队列（后台线程生产，主线程排水消费） */
     private static final ConcurrentLinkedQueue<ScanResult> RESULTS = new ConcurrentLinkedQueue<>();
@@ -89,10 +131,11 @@ public final class DeviceScanManager {
         if (overworld == null) {
             return;
         }
-        ScanState fresh = new ScanState(player, terminalId);
+        boolean force = consumeForceWindow(playerId, terminalId, overworld.getTotalWorldTime());
+        ScanState fresh = new ScanState(player, terminalId, force);
         STATES.put(playerId, fresh);
         // 开始提示（性能口径文案：后台执行不卡服务器；后续 5/4/3/2/1 逐秒提示）
-        sendChat(player, "gtswn.device.chat.scan.start");
+        sendChat(player, force ? "gtswn.device.chat.scan.force" : "gtswn.device.chat.scan.start");
         executeScan(fresh);
     }
 
@@ -118,6 +161,7 @@ public final class DeviceScanManager {
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!event.player.worldObj.isRemote) {
+            FORCE_WINDOWS.remove(event.player.getUniqueID());
             ScanState state = STATES.remove(event.player.getUniqueID());
             if (state != null) {
                 state.cancelled = true;
@@ -152,6 +196,24 @@ public final class DeviceScanManager {
                     .getOrCreateTerminal(state.terminalId).boundKeys);
             // B 源世界快照（主线程，玩家当前维度）：仅提取不可变描述
             List<Candidate> worldCandidates = snapshotWorldCandidates(server, dimension);
+            Set<String> ignored = new HashSet<>();
+            DeviceTerminalDataStore scanStore = DeviceTerminalDataStore.get(overworld);
+            DeviceTerminalDataStore.TerminalData terminal = scanStore.getOrCreateTerminal(state.terminalId);
+            for (Map.Entry<String, DeviceTerminalDataStore.RecognitionOverride> entry : new ArrayList<>(
+                terminal.recognitionOverrides.entrySet())) {
+                int[] pos = KeyFormat.parse(entry.getKey());
+                if (pos == null) continue;
+                int liveMeta = -1;
+                World loaded = net.minecraftforge.common.DimensionManager.getWorld(pos[0]);
+                if (loaded != null && loaded.getChunkProvider()
+                    .chunkExists(pos[1] >> 4, pos[3] >> 4)) {
+                    TileEntity tile = loaded.getTileEntity(pos[1], pos[2], pos[3]);
+                    if (tile instanceof IGregTechTileEntity) liveMeta = ((IGregTechTileEntity) tile).getMetaTileID();
+                }
+                if (scanStore.recognitionMode(state.terminalId, entry.getKey(), liveMeta)
+                    == DeviceTerminalRecognitionMode.IGNORE) ignored.add(entry.getKey());
+            }
+            final Set<String> ignoredCopy = ignored;
             final Set<UUID> teamCopy = team;
             final Map<String, DeviceEntry> registryCopy = registry;
             final Set<String> boundCopy = bound;
@@ -159,7 +221,16 @@ public final class DeviceScanManager {
             final int capacity = Math.max(0, Config.deviceTerminalMaxMachines - boundCopy.size());
             executor().execute(() -> {
                 try {
-                    RESULTS.add(mergeScan(state, dimension, teamCopy, registryCopy, boundCopy, worldCopy, capacity));
+                    RESULTS.add(
+                        mergeScan(
+                            state,
+                            dimension,
+                            teamCopy,
+                            registryCopy,
+                            boundCopy,
+                            worldCopy,
+                            capacity,
+                            ignoredCopy));
                 } catch (Throwable t) {
                     // 后台纯内存运算异常：仅丢弃结果（状态由排水侧超时无果自然残留至登出/取消清理，
                     // 此处无法安全触碰主线程 Map）
@@ -228,8 +299,27 @@ public final class DeviceScanManager {
      */
     private static ScanResult mergeScan(ScanState state, int dimension, Set<UUID> team,
         Map<String, DeviceEntry> registry, Set<String> bound, List<Candidate> worldCandidates, int capacity) {
+        return mergeScan(
+            state,
+            dimension,
+            team,
+            registry,
+            bound,
+            worldCandidates,
+            capacity,
+            java.util.Collections.emptySet());
+    }
+
+    private static ScanResult mergeScan(ScanState state, int dimension, Set<UUID> team,
+        Map<String, DeviceEntry> registry, Set<String> bound, List<Candidate> worldCandidates, int capacity,
+        Set<String> ignored) {
         List<Candidate> candidates = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        int ignoredFiltered = 0;
+        Set<String> ignoredInScope = new HashSet<>();
+        for (Candidate candidate : worldCandidates)
+            if (candidate.workingMachine && team.contains(candidate.ownerUuid) && ignored.contains(candidate.key))
+                ignoredInScope.add(candidate.key);
         // 归属过滤计数（v1.7.15）：owner∉团队（含无主/defaultUuid）被跳过的机器数，仅用于
         // complete 后的 skipped_owner 提示，帮助玩家定位「扫描显示多但录入少」的归属原因
         int ownerFiltered = 0;
@@ -248,6 +338,10 @@ public final class DeviceScanManager {
                 continue;
             }
             seen.add(key);
+            if (!state.forceIncludeIgnored && ignored.contains(key)) {
+                ignoredFiltered++;
+                continue;
+            }
             String localName = entry.getValue().localName;
             candidates.add(
                 new Candidate(
@@ -273,6 +367,10 @@ public final class DeviceScanManager {
                 continue;
             }
             seen.add(key);
+            if (!state.forceIncludeIgnored && ignored.contains(key)) {
+                ignoredFiltered++;
+                continue;
+            }
             candidates.add(candidate);
         }
         // 截断必须在 A∪B 去重与排序之后统一执行：A 优先仅作用于 key 冲突去重，
@@ -281,7 +379,7 @@ public final class DeviceScanManager {
         if (candidates.size() > capacity) {
             candidates = new ArrayList<>(candidates.subList(0, capacity));
         }
-        return new ScanResult(state, team.size(), ownerFiltered, candidates);
+        return new ScanResult(state, team.size(), ownerFiltered, candidates, ignoredFiltered, ignoredInScope.size());
     }
 
     // ==================== 结果排水（主线程） ====================
@@ -315,25 +413,51 @@ public final class DeviceScanManager {
                     String localName = candidate.localName;
                     byte powerType = candidate.generator ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
                         : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
-                    if (candidate.fromWorld) {
-                        // 世界源新键：主线程现查 TE（登记表此前未收录）→ 补登记 + 取实时名
-                        World world = server.worldServerForDimension(candidate.dim);
-                        if (world == null || world.getChunkProvider() == null
-                            || !world.getChunkProvider()
-                                .chunkExists(candidate.x >> 4, candidate.z >> 4)) {
-                            // 区块未加载：跳过（不强加载区块）
-                            continue;
-                        }
+                    int metaTileId = -1;
+                    byte capabilities = DeviceSteamAdapter.legacyCapabilityMask((byte) 0, powerType);
+                    byte energyKind = DeviceSteamAdapter.EU;
+                    byte linkNodes = 0;
+                    World world = net.minecraftforge.common.DimensionManager.getWorld(candidate.dim);
+                    boolean loaded = world != null && world.getChunkProvider() != null
+                        && world.getChunkProvider()
+                            .chunkExists(candidate.x >> 4, candidate.z >> 4);
+                    if (loaded) {
                         TileEntity te = world.getTileEntity(candidate.x, candidate.y, candidate.z);
                         IGregTechTileEntity gtTE = te instanceof IGregTechTileEntity ? (IGregTechTileEntity) te : null;
-                        IMetaTileEntity mte = gtTE != null ? gtTE.getMetaTileEntity() : null;
-                        if (!DeviceMachineTypes.isWorkingMachine(mte)) {
-                            // 5 秒倒计时期间机器被替换 / 移除：跳过
-                            continue;
-                        }
+                        IMetaTileEntity mte = gtTE == null ? null : gtTE.getMetaTileEntity();
+                        if (!DeviceMachineTypes.isWorkingMachine(mte)) continue;
+                        metaTileId = gtTE.getMetaTileID();
+                        capabilities = DeviceSteamAdapter.capabilityMask(mte);
+                        energyKind = DeviceSteamAdapter.energyKind(capabilities);
+                        linkNodes = DeviceMachineIdentity.linkNodeType(mte);
+                        powerType = (capabilities & DeviceSteamAdapter.EU_OUT) != 0
+                            || (energyKind == DeviceSteamAdapter.STEAM
+                                && (capabilities & DeviceSteamAdapter.STEAM_OUT) != 0)
+                                    ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                                    : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
                         localName = mte.getLocalName();
-                        registry.register(candidate.key, candidate.ownerUuid, localName);
+                        if (candidate.fromWorld) registry.register(candidate.key, candidate.ownerUuid, localName);
+                    } else if (candidate.fromWorld) continue;
+                    else {
+                        DeviceTerminalDataStore.RecognitionOverride override = store
+                            .getOrCreateTerminal(state.terminalId).recognitionOverrides.get(candidate.key);
+                        if (override != null && override.metaTileId >= 0
+                            && override.metaTileId < gregtech.api.GregTechAPI.METATILEENTITIES.length) {
+                            IMetaTileEntity prototype = gregtech.api.GregTechAPI.METATILEENTITIES[override.metaTileId];
+                            if (DeviceMachineTypes.isWorkingMachine(prototype)) {
+                                metaTileId = override.metaTileId;
+                                capabilities = DeviceSteamAdapter.capabilityMask(prototype);
+                                energyKind = DeviceSteamAdapter.energyKind(capabilities);
+                                powerType = (capabilities & DeviceSteamAdapter.EU_OUT) != 0
+                                    || (energyKind == DeviceSteamAdapter.STEAM
+                                        && (capabilities & DeviceSteamAdapter.STEAM_OUT) != 0)
+                                            ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                                            : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
+                            }
+                        }
                     }
+                    byte mode = store.recognitionMode(state.terminalId, candidate.key, metaTileId);
+                    if (!state.forceIncludeIgnored && mode == DeviceTerminalRecognitionMode.IGNORE) continue;
                     if (store.addBinding(
                         state.terminalId,
                         candidate.key,
@@ -342,11 +466,19 @@ public final class DeviceScanManager {
                         candidate.x,
                         candidate.y,
                         candidate.z,
-                        powerType) == DeviceTerminalDataStore.AddResult.SUCCESS) {
+                        powerType,
+                        metaTileId,
+                        energyKind,
+                        linkNodes,
+                        capabilities) == DeviceTerminalDataStore.AddResult.SUCCESS) {
                         added++;
                     }
                 }
                 sendChat(player, "gtswn.device.chat.scan.complete", added, result.teamSize);
+                if (!state.forceIncludeIgnored) {
+                    openForceWindow(player.getUniqueID(), state.terminalId, overworld.getTotalWorldTime());
+                    sendChat(player, "gtswn.device.chat.scan.ignored", result.totalIgnored, 15);
+                }
                 if (result.ownerFiltered > 0) {
                     // 归属跳过明细（v1.7.15）：让「扫描显示多但录入少」的归属原因对玩家可见
                     sendChat(player, "gtswn.device.chat.scan.skipped_owner", result.ownerFiltered);
@@ -433,6 +565,7 @@ public final class DeviceScanManager {
 
         /** 目标终端实例 UUID */
         final UUID terminalId;
+        final boolean forceIncludeIgnored;
 
         /** 已提交后台（倒计时结束） */
         boolean running;
@@ -441,6 +574,11 @@ public final class DeviceScanManager {
         boolean cancelled;
 
         ScanState(EntityPlayerMP player, UUID terminalId) {
+            this(player, terminalId, false);
+        }
+
+        ScanState(EntityPlayerMP player, UUID terminalId, boolean forceIncludeIgnored) {
+            this.forceIncludeIgnored = forceIncludeIgnored;
             this.player = player;
             this.terminalId = terminalId;
         }
@@ -457,11 +595,20 @@ public final class DeviceScanManager {
 
         /** 归属过滤跳过数（owner∉团队，含无主/defaultUuid；0=不发 skipped_owner 提示） */
         final int ownerFiltered;
+        final int ignoredFiltered;
+        final int totalIgnored;
 
         /** 候选机器（已过滤排序截断，纯内存副本） */
         final List<Candidate> candidates;
 
         ScanResult(ScanState state, int teamSize, int ownerFiltered, List<Candidate> candidates) {
+            this(state, teamSize, ownerFiltered, candidates, 0, 0);
+        }
+
+        ScanResult(ScanState state, int teamSize, int ownerFiltered, List<Candidate> candidates, int ignoredFiltered,
+            int totalIgnored) {
+            this.ignoredFiltered = ignoredFiltered;
+            this.totalIgnored = totalIgnored;
             this.state = state;
             this.teamSize = teamSize;
             this.ownerFiltered = ownerFiltered;

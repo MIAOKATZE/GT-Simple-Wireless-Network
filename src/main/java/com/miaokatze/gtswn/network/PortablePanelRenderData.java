@@ -19,10 +19,12 @@ public final class PortablePanelRenderData {
         "aeTrendLineThickness", "aeTrendLineSmoothing", "aeTrendLineSplineType", "aeMonitorFontSize",
         "aeMonitorRenderMode", "aeMonitorIconSize" };
     private static final String[] BOOLS = { "showBriefEnergy", "showBriefStatus", "showChartEnergy", "showChartStatus",
-        "showAEBrief", "showAEChartAmount", "showAEChartRate", "aeMonitorBold", "portableCold", "portableLongSilent" };
+        "showAEBrief", "showAEChartAmount", "showAEChartRate", "aeMonitorBold", "portableCold", "portableLongSilent",
+        "trendDirectionColors" };
     private static final String[] STRINGS = { "energyAxisMin", "energyAxisMax", "eutAxisMin", "eutAxisMax",
         "chartBackgroundColor", "screenBackgroundColor", "aeChartBackgroundColor", "aeAxisMin", "aeAxisMax",
-        "aeLineColor" };
+        "aeLineColor", "energyFlatColor", "energyUpColor", "energyDownColor", "rateFlatColor", "rateUpColor",
+        "rateDownColor" };
 
     public NBTTagCompound config = new NBTTagCompound();
     public String chartKey = "";
@@ -32,7 +34,8 @@ public final class PortablePanelRenderData {
 
     public void write(ByteBuf buf) {
         for (String key : INTS) buf.writeInt(config.getInteger(key));
-        for (String key : BOOLS) buf.writeBoolean(config.getBoolean(key));
+        for (String key : BOOLS)
+            buf.writeBoolean("trendDirectionColors".equals(key) && !config.hasKey(key) || config.getBoolean(key));
         for (String key : STRINGS) PacketSyncPortableMonitor.writeString(buf, config.getString(key), 64);
         PacketSyncPortableMonitor.writeString(buf, chartKey, 256);
         PacketSyncPortableMonitor.writeString(buf, currentEnergy, 4096);

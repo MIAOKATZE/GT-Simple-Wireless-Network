@@ -16,7 +16,9 @@
     "gregtech.DeviceSteamInputMixin",
     "gregtech.DeviceSteamMachineMixin",
     "gregtech.DeviceSteamOutputMixin",
-    "gregtech.DeviceSteamGeneratorMixin"
+    "gregtech.DeviceSteamGeneratorMixin",
+    "gregtech.DeviceSteamBoilerMixin",
+    "gregtech.DeviceSteamRecipeMixin"
   ],
   "client": [
     "minecraft.HeldChargeSyncMixin"

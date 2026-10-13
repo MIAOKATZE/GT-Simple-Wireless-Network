@@ -21,14 +21,15 @@ import org.lwjgl.input.Keyboard;
 
 import com.miaokatze.gtswn.client.gui.GuiPortableMonitor;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.common.hud.PortableMonitorPins;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.panel.TrendLinePalette;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestPortableMonitor;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor;
-import com.miaokatze.gtswn.network.PortableMonitorRequestQueue;
 
 import baubles.api.BaublesApi;
 import cpw.mods.fml.client.registry.ClientRegistry;
@@ -66,11 +67,17 @@ public final class PortableMonitorClientCache {
 
     public static void poll(ItemStack stack) {
         session();
+        stack = currentStack(stack);
         UUID id = MonitorBindings.id(stack);
         if (id == null || sessionPlayer == null) return;
         if (CACHE.size() >= 32 && !CACHE.containsKey(id)) CACHE.clear();
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
         cache.stack = stack;
+        long revision = MonitorBindings.revision(stack);
+        if (revision != cache.bindingRevision) {
+            cache.bindingRevision = revision;
+            cache.dirty = true;
+        }
         int pinsHash = Arrays.hashCode(Config.hudPinnedEntries);
         if (pinsHash != cache.pinsHash) {
             cache.pinsHash = pinsHash;
@@ -97,6 +104,7 @@ public final class PortableMonitorClientCache {
             request.selected = cache.selected;
             if (cache.selected >= 0 && cache.snapshot != null && cache.selected < cache.snapshot.panels.size()) {
                 PacketSyncPortableMonitor.Panel selected = cache.snapshot.panels.get(cache.selected);
+                request.selectedPanel = selected.binding.panelId;
                 if (selected.render != null) request.knownRenderVersion = selected.renderVersion;
             }
             request.charts = Config.hudRenderMode == 2;
@@ -222,6 +230,17 @@ public final class PortableMonitorClientCache {
         }
         cache.receivedAt = System.currentTimeMillis();
         cache.inFlight = false;
+        if (response.bindingRevision < cache.bindingRevision) cache.dirty = true;
+        if (cache.request.selected >= 0 && !cache.request.selectedPanel.equals(new UUID(0, 0))) {
+            boolean retained = false;
+            for (PacketSyncPortableMonitor.Panel panel : response.panels)
+                if (panel.binding.panelId.equals(cache.request.selectedPanel)) retained = true;
+            if (!retained) cache.dirty = true;
+        }
+        if (cache.selected >= response.panels.size()) {
+            cache.selected = response.panels.isEmpty() ? 0 : response.panels.size() - 1;
+            cache.dirty = true;
+        }
     }
 
     private static ItemStack findMonitor(EntityPlayer player) {
@@ -236,6 +255,31 @@ public final class PortableMonitorClientCache {
         for (ItemStack stack : player.inventory.mainInventory)
             if (PortableWirelessNetworkMonitor.isMonitorBound(stack)) return stack;
         return null;
+    }
+
+    /** Inventory synchronization can replace an ItemStack while a screen still holds its old reference. */
+    public static ItemStack currentStack(ItemStack previous) {
+        EntityPlayer player = Minecraft.getMinecraft().thePlayer;
+        if (player == null) return previous;
+        UUID id = MonitorBindings.id(previous);
+        if (id == null) {
+            ItemStack held = player.getHeldItem();
+            return PortableWirelessNetworkMonitor.isMonitorBound(held)
+                && PortableWirelessNetworkMonitor.isMonitorBound(previous)
+                && PortableWirelessNetworkMonitor.getOwnerUUID(held)
+                    .equals(PortableWirelessNetworkMonitor.getOwnerUUID(previous)) ? held : previous;
+        }
+        ItemStack held = player.getHeldItem();
+        if (id.equals(MonitorBindings.id(held))) return held;
+        try {
+            IInventory baubles = BaublesApi.getBaubles(player);
+            if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
+                ItemStack stack = baubles.getStackInSlot(i);
+                if (id.equals(MonitorBindings.id(stack))) return stack;
+            }
+        } catch (NoClassDefFoundError ignored) {}
+        for (ItemStack stack : player.inventory.mainInventory) if (id.equals(MonitorBindings.id(stack))) return stack;
+        return previous;
     }
 
     public static PortablePanelView view(ItemStack stack, int index) {
@@ -277,45 +321,59 @@ public final class PortableMonitorClientCache {
 
     public static boolean pinned(UUID terminal, PacketSyncPortableMonitor.Panel panel,
         PacketSyncPortableMonitor.Row row) {
-        return Arrays.asList(Config.hudPinnedEntries)
-            .contains(pinKey(terminal, panel, row));
+        return PortableMonitorPins
+            .selected(Config.hudPinnedEntries, terminal + "/" + panel.binding.panelId + "/", row.key);
     }
 
     public static boolean togglePin(UUID terminal, PacketSyncPortableMonitor.Panel panel,
         PacketSyncPortableMonitor.Row row) {
-        List<String> entries = new ArrayList<>(Arrays.asList(Config.hudPinnedEntries));
-        String key = pinKey(terminal, panel, row);
-        if (!entries.remove(key)) {
-            if (entries.size() >= PacketRequestPortableMonitor.MAX_PINS) return false;
-            entries.add(key);
-        }
-        Config.hudPinnedEntries = entries.toArray(new String[0]);
+        String[] entries = PortableMonitorPins.toggle(
+            Config.hudPinnedEntries,
+            terminal + "/" + panel.binding.panelId + "/",
+            row.key,
+            PacketRequestPortableMonitor.MAX_PINS);
+        if (entries == null) return false;
+        Config.hudPinnedEntries = entries;
         Cached cache = CACHE.get(terminal);
         if (cache != null) cache.dirty = true;
         return Config.saveHudConfiguration();
     }
 
     public static boolean graphPinned(UUID terminal, PacketSyncPortableMonitor.Panel panel, int tab) {
-        return Arrays.asList(Config.hudPinnedEntries)
-            .contains(
-                terminal + "/"
-                    + panel.binding.panelId
-                    + "/"
-                    + (tab == 0 ? PortableMonitorRequestQueue.EU_GRAPH : PortableMonitorRequestQueue.AE_GRAPH));
+        return PortableMonitorPins.selected(
+            Config.hudPinnedEntries,
+            terminal + "/" + panel.binding.panelId + "/",
+            PortableMonitorPins.plot(tab));
     }
 
     public static boolean toggleGraph(UUID terminal, PacketSyncPortableMonitor.Panel panel, int tab) {
         PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
-        row.key = tab == 0 ? PortableMonitorRequestQueue.EU_GRAPH : PortableMonitorRequestQueue.AE_GRAPH;
+        row.key = PortableMonitorPins.plot(tab);
         return togglePin(terminal, panel, row);
     }
 
     /** Local subscriptions remain editable when remote live content is unavailable. */
     public static List<PacketSyncPortableMonitor.Row> managementRows(UUID terminal,
         PacketSyncPortableMonitor.Panel panel, String[] pins, boolean fresh, String unavailable) {
+        return managementRows(terminal, panel, pins, fresh, unavailable, 2);
+    }
+
+    public static List<PacketSyncPortableMonitor.Row> managementRows(UUID terminal,
+        PacketSyncPortableMonitor.Panel panel, String[] pins, boolean fresh, String unavailable, int tab) {
         Map<String, PacketSyncPortableMonitor.Row> rows = new java.util.LinkedHashMap<>();
         Map<String, PacketSyncPortableMonitor.Row> metadata = new HashMap<>();
-        for (PacketSyncPortableMonitor.Row row : panel.rows) if (row.kind != 0) {
+        if (tab < 2) {
+            for (String key : new String[] { PortableMonitorPins.title(tab), PortableMonitorPins.plot(tab) }) {
+                PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
+                row.key = key;
+                row.kind = 3;
+                row.name = StatCollector
+                    .translateToLocal("gtswn.monitor.pin." + (key.endsWith(":title") ? "title" : "plot"));
+                rows.put(key, row);
+            }
+            if (tab == 1) return new ArrayList<>(rows.values());
+        }
+        for (PacketSyncPortableMonitor.Row row : panel.rows) if (tab == 0 ? row.kind == 0 : row.kind != 0) {
             metadata.put(row.key, row);
             if (fresh && panel.detail && panel.state == 0) rows.put(row.key, row);
         }
@@ -323,12 +381,13 @@ public final class PortableMonitorClientCache {
         for (String pin : pins) {
             if (!pin.startsWith(prefix)) continue;
             String key = pin.substring(prefix.length());
-            if (key.equals("eu") || key.startsWith("$chart:") || rows.containsKey(key)) continue;
+            if (PortableMonitorPins.component(key) || rows.containsKey(key)
+                || (tab == 0 ? !key.equals("eu") : key.equals("eu"))) continue;
             PacketSyncPortableMonitor.Row withdrawn = new PacketSyncPortableMonitor.Row();
             withdrawn.key = key;
             PacketSyncPortableMonitor.Row previous = metadata.get(key);
             withdrawn.name = previous == null ? key : previous.name;
-            withdrawn.kind = key.startsWith("fluid:") ? 2 : 1;
+            withdrawn.kind = key.equals("eu") ? 0 : key.startsWith("fluid:") ? 2 : 1;
             withdrawn.amount = unavailable;
             rows.put(key, withdrawn);
         }
@@ -351,26 +410,24 @@ public final class PortableMonitorClientCache {
         List<PinnedLine> lines = new ArrayList<>();
         for (PacketSyncPortableMonitor.Panel panel : snapshot.panels) {
             String prefix = snapshot.terminalId + "/" + panel.binding.panelId + "/";
-            if (panel.state != 0 || stale(stack)) {
-                for (String key : Config.hudPinnedEntries) {
-                    if (key.startsWith(prefix)) lines.add(
-                        new PinnedLine(
-                            "\u00a77" + panel.binding.label()
-                                + " \u00a76"
-                                + stateText(panel.state == 0 ? 4 : panel.state),
-                            new double[0]));
-                }
-                continue;
-            }
+            boolean unavailable = panel.state != 0 || stale(stack);
+            String status = "\u00a77" + panel.binding.label()
+                + " \u00a76"
+                + stateText(panel.state == 0 ? 4 : panel.state);
             for (PacketSyncPortableMonitor.Row row : panel.rows) {
                 if (!pinned(snapshot.terminalId, panel, row)) continue;
-                String text = pinnedRowText(row);
+                String text = unavailable ? status : pinnedRowText(row, panel.displayMode);
                 if (text != null) lines.add(
-                    new PinnedLine(
-                        "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + text,
-                        row.kind == 0 ? panel.euChart : panel.aeChart));
+                    new PinnedLine("\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + text, new double[0]));
             }
-            for (int graph = 0; graph < 2; graph++) if (graphPinned(snapshot.terminalId, panel, graph)) {
+            for (String pin : Config.hudPinnedEntries) {
+                if (!pin.startsWith(prefix) || PortableMonitorPins.component(pin.substring(prefix.length()))) continue;
+                String key = pin.substring(prefix.length());
+                boolean present = false;
+                for (PacketSyncPortableMonitor.Row row : panel.rows) if (row.key.equals(key)) present = true;
+                if (!present) lines.add(new PinnedLine(status, new double[0]));
+            }
+            for (int graph = 0; graph < 2; graph++) {
                 PacketSyncPortableMonitor.Row value = null;
                 for (PacketSyncPortableMonitor.Row row : panel.rows)
                     if (graph == 0 ? row.kind == 0 : row.key.equals(panel.chartKey)) {
@@ -379,18 +436,26 @@ public final class PortableMonitorClientCache {
                     }
                 String name = graph == 0 ? "EU / EU/t"
                     : value == null ? "AE" : value.name + " / " + (value.kind == 2 ? "mB/min" : "/min");
-                String current = value == null ? "..."
-                    : value.kind == 0 ? energyAmount(value.amount) + " EU"
-                        : value.amount + (value.kind == 2 ? " mB" : "");
-                lines.add(
+                if (PortableMonitorPins.selected(Config.hudPinnedEntries, prefix, PortableMonitorPins.title(graph)))
+                    lines.add(
+                        new PinnedLine(
+                            unavailable ? status
+                                : "\u00a73[" + (snapshot.panels.indexOf(panel) + 1)
+                                    + "] "
+                                    + name
+                                    + " ["
+                                    + (graph == 0 ? panel.window : panel.aeWindow)
+                                    + "]",
+                            new double[0]));
+                if (graphPinned(snapshot.terminalId, panel, graph)) lines.add(
                     new PinnedLine(
-                        "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + name + " \u00a7f" + current,
-                        graph == 0 ? panel.euChart : panel.aeChart,
-                        graph == 0 ? panel.euRateChart : panel.aeRateChart,
+                        unavailable ? status : "",
+                        unavailable ? new double[0] : graph == 0 ? panel.euChart : panel.aeChart,
+                        unavailable ? new double[0] : graph == 0 ? panel.euRateChart : panel.aeRateChart,
                         value == null ? 0 : value.rate,
-                        current + " "
-                            + (value == null ? ""
-                                : rate(value.rate, graph == 0 ? "EU/t" : value.kind == 2 ? "mB/min" : "/min"))));
+                        "",
+                        panel.palette,
+                        graph == 0));
             }
         }
         cache.renderSnapshot = snapshot;
@@ -401,21 +466,25 @@ public final class PortableMonitorClientCache {
 
     /** Viewer always presents complete content, independently of HUD field switches. */
     public static String viewerRowText(PacketSyncPortableMonitor.Row row) {
-        if (row.kind == 0) return "\u00a7bEU: \u00a7f" + energyAmount(row.amount)
+        return viewerRowText(row, 1);
+    }
+
+    public static String viewerRowText(PacketSyncPortableMonitor.Row row, int displayMode) {
+        if (row.kind == 0) return "\u00a7bEU: \u00a7f" + amount(row.amount, displayMode)
             + " | "
             + StatCollector.translateToLocal("gtswn.monitor.field.instant")
             + ": "
-            + rate(row.rate, "EU/t")
+            + rate(row.rate, "EU/t", displayMode)
             + " | "
             + StatCollector.translateToLocal("gtswn.monitor.field.average")
             + ": "
-            + rate(row.average, "EU/t");
+            + rate(row.average, "EU/t", displayMode);
         return "\u00a7b" + row.name
             + ": \u00a7f"
-            + row.amount
+            + amount(row.amount, displayMode)
             + (row.kind == 2 ? " mB" : "")
             + " "
-            + rate(row.rate, row.kind == 2 ? "mB/min" : "/min");
+            + rate(row.rate, row.kind == 2 ? "mB/min" : "/min", displayMode);
     }
 
     /** Explicit field options make the EU text formatter independently testable without a client world. */
@@ -438,22 +507,44 @@ public final class PortableMonitorClientCache {
         }
     }
 
-    private static String pinnedRowText(PacketSyncPortableMonitor.Row row) {
-        String amount = row.amount;
+    private static String pinnedRowText(PacketSyncPortableMonitor.Row row, int displayMode) {
+        String amount = amount(row.amount, displayMode);
         if (row.kind == 0) {
-            return pinnedEUText(
-                row,
-                Config.hudEUEnabled,
-                Config.hudInstantEnabled,
-                Config.hudAverageEnabled,
-                Config.hudCompact,
-                Config.hudTierEnabled,
-                StatCollector.translateToLocal("gtswn.monitor.field.instant"),
-                StatCollector.translateToLocal("gtswn.monitor.field.average"));
+            List<String> fields = new ArrayList<>();
+            if (Config.hudEUEnabled) fields.add("\u00a7bEU: \u00a7f" + amount);
+            if (Config.hudInstantEnabled) fields.add(
+                StatCollector.translateToLocal("gtswn.monitor.field.instant") + ": "
+                    + rate(row.rate, "EU/t", displayMode));
+            if (Config.hudAverageEnabled) fields.add(
+                StatCollector.translateToLocal("gtswn.monitor.field.average") + ": "
+                    + rate(row.average, "EU/t", displayMode));
+            if (fields.isEmpty()) return null;
+            if (Config.hudTierEnabled && (Config.hudInstantEnabled || Config.hudAverageEnabled))
+                fields.add(GTTierUtil.formatGTPower(Config.hudInstantEnabled ? row.rate : row.average));
+            return String.join(" | ", fields);
         }
         return "\u00a7b" + row.name
             + (Config.hudAEAmountEnabled ? ": \u00a7f" + amount + (row.kind == 2 ? " mB" : "") : "")
-            + (Config.hudAERateEnabled ? " " + rate(row.rate, row.kind == 2 ? "mB/min" : "/min") : "");
+            + (Config.hudAERateEnabled ? " " + rate(row.rate, row.kind == 2 ? "mB/min" : "/min", displayMode) : "");
+    }
+
+    public static String amount(String value, int displayMode) {
+        try {
+            BigInteger number = new BigInteger(value);
+            return displayMode == 1 ? FormatUtil.formatScientific(number)
+                : displayMode == 2 ? FormatUtil.formatMetric(number) : FormatUtil.formatNormal(number);
+        } catch (NumberFormatException ignored) {
+            return value;
+        }
+    }
+
+    public static String rate(double value, String unit, int displayMode) {
+        double number = Math.abs(value);
+        return (value > 0 ? "\u00a7a+" : value < 0 ? "\u00a7c-" : "\u00a77")
+            + (displayMode == 1 ? FormatUtil.formatScientificDouble(number)
+                : displayMode == 2 ? FormatUtil.formatMetricDouble(number, 2) : FormatUtil.formatNormalDouble(number))
+            + " "
+            + unit;
     }
 
     public static String gridStatus(PacketSyncPortableMonitor.Panel panel, PacketSyncPortableMonitor.Row row) {
@@ -484,6 +575,8 @@ public final class PortableMonitorClientCache {
         public final boolean graph;
         public final double change;
         public final String currentText;
+        public final TrendLinePalette palette;
+        public final boolean euGraph;
 
         PinnedLine(String text, double[] chart) {
             this.text = text;
@@ -492,6 +585,8 @@ public final class PortableMonitorClientCache {
             this.graph = false;
             this.change = 0;
             this.currentText = "";
+            this.palette = TrendLinePalette.DEFAULT;
+            this.euGraph = true;
         }
 
         public PinnedLine(String text, double[] chart, double[] rates, double change) {
@@ -499,12 +594,19 @@ public final class PortableMonitorClientCache {
         }
 
         public PinnedLine(String text, double[] chart, double[] rates, double change, String currentText) {
+            this(text, chart, rates, change, currentText, TrendLinePalette.DEFAULT, true);
+        }
+
+        public PinnedLine(String text, double[] chart, double[] rates, double change, String currentText,
+            TrendLinePalette palette, boolean euGraph) {
             this.text = text;
             this.chart = chart;
             this.rateChart = rates;
             this.change = change;
             this.graph = true;
             this.currentText = currentText;
+            this.palette = palette;
+            this.euGraph = euGraph;
         }
     }
 
@@ -514,6 +616,7 @@ public final class PortableMonitorClientCache {
         int sequence, action, value, result;
         UUID targetPanel = new UUID(0, 0);
         long sentAt, receivedAt;
+        long bindingRevision = Long.MIN_VALUE;
         boolean inFlight;
         boolean dirty;
         int selected = -1;

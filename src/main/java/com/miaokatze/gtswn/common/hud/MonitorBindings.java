@@ -19,6 +19,7 @@ public final class MonitorBindings {
     public static final int MAX_PANELS = 16;
     private static final String ID = "MonitorId";
     private static final String PANELS = "MonitorPanels";
+    private static final String REVISION = "MonitorRevision";
 
     private MonitorBindings() {}
 
@@ -38,6 +39,15 @@ public final class MonitorBindings {
             stack.stackTagCompound.setString(ID, id.toString());
         }
         return id;
+    }
+
+    public static long revision(ItemStack stack) {
+        return stack == null || stack.stackTagCompound == null ? 0 : stack.stackTagCompound.getLong(REVISION);
+    }
+
+    public static void synchronize(EntityPlayer player) {
+        player.inventory.markDirty();
+        if (player.inventoryContainer != null) player.inventoryContainer.detectAndSendChanges();
     }
 
     public static List<Binding> read(ItemStack stack) {
@@ -80,6 +90,7 @@ public final class MonitorBindings {
         if (stack.stackTagCompound != null) {
             stack.stackTagCompound.removeTag(PANELS);
             stack.stackTagCompound.removeTag(ID);
+            stack.stackTagCompound.removeTag(REVISION);
         }
     }
 
@@ -109,7 +120,7 @@ public final class MonitorBindings {
         list.add(
             new Binding(panel.getWorldObj().provider.dimensionId, panel.xCoord, panel.yCoord, panel.zCoord, panelId));
         write(stack, list);
-        player.inventory.markDirty();
+        synchronize(player);
         player.addChatMessage(new ChatComponentTranslation("gtswn.monitor.bind.added", list.size()));
         return true;
     }
@@ -126,6 +137,7 @@ public final class MonitorBindings {
             list.appendTag(tag);
         }
         stack.stackTagCompound.setTag(PANELS, list);
+        stack.stackTagCompound.setLong(REVISION, revision(stack) + 1);
     }
 
     public static final class Binding {

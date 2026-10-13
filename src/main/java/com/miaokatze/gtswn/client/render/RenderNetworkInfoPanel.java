@@ -27,6 +27,7 @@ import org.lwjgl.opengl.GL11;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
+import com.miaokatze.gtswn.common.panel.TrendLinePalette;
 import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -1083,7 +1084,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 ENERGY_COLOR,
                 panel.getTrendLineThickness(),
                 panel.getTrendLineSmoothing(),
-                panel.getTrendLineSplineType());
+                panel.getTrendLineSplineType(),
+                panel.getTrendLinePalette(),
+                false);
         }
         if (eutValues != null) {
             drawSeries(
@@ -1096,7 +1099,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 EUT_COLOR,
                 panel.getTrendLineThickness(),
                 panel.getTrendLineSmoothing(),
-                panel.getTrendLineSplineType());
+                panel.getTrendLineSplineType(),
+                panel.getTrendLinePalette(),
+                true);
         }
     }
 
@@ -1141,6 +1146,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     private void drawSeries(double[] values, double[] range, int x, int y, int w, int h, int color, int thickness,
         int smoothing, int splineType) {
+        drawSeries(values, range, x, y, w, h, color, thickness, smoothing, splineType, null, false);
+    }
+
+    private void drawSeries(double[] values, double[] range, int x, int y, int w, int h, int color, int thickness,
+        int smoothing, int splineType, TrendLinePalette palette, boolean rate) {
         if (values == null || values.length < 2 || h <= 2 || range == null) {
             return;
         }
@@ -1176,15 +1186,28 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
         GL11.glDisable(GL11.GL_TEXTURE_2D);
         GL11.glLineWidth(thickness);
-        setColor(color);
-        GL11.glBegin(GL11.GL_LINE_STRIP);
+        boolean directional = palette != null && palette.enabled;
+        // One batch; both endpoints of a segment receive its direction colour.
+        // Direction comes from the final spline path before screen Y is inverted.
+        GL11.glBegin(directional ? GL11.GL_LINES : GL11.GL_LINE_STRIP);
         double denom = values.length - 1;
-        for (int i = 0; i < path.length; i++) {
-            double normalized = path[i][1];
-            // 配合 range() 自动模式预留的 10% 冗余，正常数据下曲线会落在绘图区内
-            double px = x + path[i][0] / denom * w;
-            double py = y + h - normalized * h;
-            if (Double.isFinite(px) && Double.isFinite(py)) GL11.glVertex3d(px, py, 0.0D);
+        if (!directional) {
+            setColor(palette == null ? color : palette.segmentColor(0, 0, rate));
+            for (double[] point : path) {
+                double px = x + point[0] / denom * w;
+                double py = y + h - point[1] * h;
+                if (Double.isFinite(px) && Double.isFinite(py)) GL11.glVertex3d(px, py, 0.0D);
+            }
+        } else for (int i = 1; i < path.length; i++) {
+            double px0 = x + path[i - 1][0] / denom * w;
+            double py0 = y + h - path[i - 1][1] * h;
+            double px1 = x + path[i][0] / denom * w;
+            double py1 = y + h - path[i][1] * h;
+            if (!Double.isFinite(px0) || !Double.isFinite(py0) || !Double.isFinite(px1) || !Double.isFinite(py1))
+                continue;
+            setColor(palette.segmentColor(path[i - 1][1], path[i][1], rate));
+            GL11.glVertex3d(px0, py0, 0.0D);
+            GL11.glVertex3d(px1, py1, 0.0D);
         }
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);

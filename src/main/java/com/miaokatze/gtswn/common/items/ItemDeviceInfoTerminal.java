@@ -23,6 +23,7 @@ import com.miaokatze.gtswn.common.device.DeviceScanManager;
 import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore.AddResult;
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -34,13 +35,14 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * <p>
  * 手势表：
  * <ul>
- * <li>右击<b>加工 GT 机器</b> = 绑定到本终端：onItemUseFirst 服务端权威
+ * <li>可视化关闭时右击<b>加工 GT 机器</b> = 绑定到本终端：onItemUseFirst 服务端权威
  * （客户端返回 false 放行让 C08 包发出、服务端返回 true 拦截，仿
  * {@link ItemNetworkQuantumTerminal#onItemUseFirst} 先例；登记表无则补登 owner=点击者）</li>
  * <li>右击<b>GT 非加工机器</b> = not_machine 提示并拦截（不开其 GUI）；右击<b>非 GT 方块</b>
  * = 放行（等效空手交互）</li>
- * <li>右击空气 = 打开终端 GUI（阶段 E 客户端本地打开，本阶段服务端无操作）</li>
- * <li>Shift+右击 = 设置；Alt+右击空气长按一秒 = 扫描</li>
+ * <li>可视化开启时普通右击瞄准绑定机器或标记 = 传送；没有目标 = 打开终端列表</li>
+ * <li>右击空气 = 打开终端 GUI；Shift+右击机器循环当前终端识别方式，Shift+右击空地打开设置</li>
+ * <li>Alt+右击长按一秒 = 扫描（允许瞄准方块）；Shift+Alt+右击切换可视化</li>
  * </ul>
  * <p>
  * 判别式（统一口径 D1，{@link DeviceMachineTypes#isWorkingMachine}）：
@@ -155,7 +157,7 @@ public class ItemDeviceInfoTerminal extends Item {
      * 右击加工 GT 机器 = 绑定到本终端（onItemUseFirst 服务端权威处理并拦截，客户端放行）。
      * <p>
      * 客户端返回 false 让 C08 包发出（仿 {@link ItemNetworkQuantumTerminal} 先例）；
-     * Shift 打开客户端设置并拦截机器交互，扫描由独立蓄力意图启动；
+     * Shift 机器识别意图与设置由客户端分流并拦截机器交互，扫描由独立蓄力意图启动；
      * 非 Shift 才走绑定流程：非 GT 方块放行（不提示不拦截）；GT 非加工机器 → 聊天原因
      * 并拦截（不开其 GUI）；成功路径：登记表无该机器则补登（owner=点击者）→ 数据仓加绑定
      * （尊重 {@link Config#deviceTerminalMaxMachines} 上限，超限聊天拒绝）。
@@ -163,7 +165,7 @@ public class ItemDeviceInfoTerminal extends Item {
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
-        // ① 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
+        // Client visual/modifier intents consume use before native block activation/C08; ordinary binding sends C08.
         if (world.isRemote) {
             if (GTSimpleWirelessNetwork.proxy.handleDeviceVisualizationRightClick()) return true;
             if (player.isSneaking()) GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
@@ -172,9 +174,14 @@ public class ItemDeviceInfoTerminal extends Item {
         if (player instanceof EntityPlayerMP visualPlayer
             && com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.shouldConsumeVanillaUse(visualPlayer, stack))
             return true;
-        // Shift settings must not activate the underlying machine.
+        // Native/server callers retain the same mode action; the normal client sends an explicit action before C08.
         if (player.isSneaking()) {
             ensureTerminalIdSynced(player, stack);
+            TileEntity clicked = world.getTileEntity(x, y, z);
+            if (player instanceof EntityPlayerMP modePlayer && clicked instanceof IGregTechTileEntity
+                && DeviceMachineTypes.isWorkingMachine(((IGregTechTileEntity) clicked).getMetaTileEntity()))
+                DeviceTerminalRecognitionMode
+                    .cycle(modePlayer, stack, DeviceRegistryData.makeKey(world.provider.dimensionId, x, y, z));
             return true;
         }
         // ③ 非 GT 方块：放行（等效空手交互，不提示不拦截）
@@ -208,11 +215,14 @@ public class ItemDeviceInfoTerminal extends Item {
             x,
             y,
             z,
-            DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                : DeviceTerminalDataStore.POWER_TYPE_CONSUME,
+            (DeviceMachineTypes.isGeneratorMachine(mte)
+                || (DeviceSteamAdapter.energyKind(mte) == DeviceSteamAdapter.STEAM
+                    && DeviceSteamAdapter.isSteamProducer(mte))) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                        : DeviceTerminalDataStore.POWER_TYPE_CONSUME,
             ((IGregTechTileEntity) te).getMetaTileID(),
             DeviceSteamAdapter.energyKind(mte),
-            DeviceMachineIdentity.linkNodeType(mte));
+            DeviceMachineIdentity.linkNodeType(mte),
+            DeviceSteamAdapter.capabilityMask(mte));
         switch (result) {
             case SUCCESS:
                 sendMessage(player, "gtswn.device.chat.bound", localName);
@@ -231,7 +241,7 @@ public class ItemDeviceInfoTerminal extends Item {
 
     // ==================== 手势 2/3：右击空气（onItemRightClick） ====================
 
-    /** Normal right-click opens the list; Shift opens settings; Alt charge starts scanning. */
+    /** Plain visual clicks travel when aimed or open the list; Shift opens settings; Alt charges a scan. */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         if (world.isRemote) {
@@ -392,7 +402,7 @@ public class ItemDeviceInfoTerminal extends Item {
     }
 
     /** Reusing unchanged NBT must not replace the client's held stack/re-equip the terminal on each right-click. */
-    private static UUID ensureTerminalIdSynced(EntityPlayer player, ItemStack stack) {
+    public static UUID ensureTerminalIdSynced(EntityPlayer player, ItemStack stack) {
         UUID before = readTerminalId(stack);
         if (before != null) return before;
         if (stack.stackTagCompound != null) stack.stackTagCompound.removeTag(NBT_UUID);

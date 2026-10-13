@@ -341,7 +341,7 @@ public class Config {
     // XP levels deducted when teleporting to a machine from the terminal list. 0 = free,
     // the GUI teleport button then shows the icon only, without the number.
     // 默认 3，范围 0~1000 / Default 3, range 0-1000
-    public static int deviceTeleportXPCost = 3;
+    public static int deviceTeleportXPCost = 1;
 
     // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
     // 右击绑定 / 放置自动绑定 / 扫描录入共用此上限，超限拒绝并聊天提示。

@@ -189,6 +189,25 @@ public class DeviceSampleScheduler {
                 continue;
             }
             // 三态经基座委托（BaseMetaTileEntity 实现 IMachineProgress），cast 基座而非 mte
+            int liveMetaTileId = gtTE.getMetaTileID();
+            if (activeTerminals == null) {
+                store = DeviceTerminalDataStore.get(overworld);
+                activeTerminals = new ArrayList<>();
+                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : store.getActiveTerminals())
+                    if (DeviceTerminalDataStore.isTerminalActive(entry.getKey())) activeTerminals.add(entry);
+            }
+            boolean observable = false;
+            for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
+                if (entry.getValue().boundKeys.contains(key)
+                    && store.recognitionMode(entry.getKey(), key, liveMetaTileId)
+                        != DeviceTerminalRecognitionMode.IGNORE)
+                    observable = true;
+            }
+            if (!observable) {
+                DeviceFlowMonitor.forget(mte);
+                this.fifoStates.remove(key);
+                continue;
+            }
             IMachineProgress progress = (IMachineProgress) gtTE;
             // 三态统一口径：!isAllowedToWork→停机 / isActive→运行 / 其余待机
             int state = !progress.isAllowedToWork() ? DeviceTerminalDataStore.STATE_STOPPED
@@ -200,15 +219,16 @@ public class DeviceSampleScheduler {
             DeviceFlowMonitor.Reading observed = DeviceFlowMonitor
                 .watch(mte, Math.max(200L, (long) Config.deviceSampleIntervalSeconds * 60L));
             byte evidenceKind = observed == null ? (byte) 3 : observed.warmedUp() ? (byte) 0 : (byte) 2;
+            byte realEvidenceKind = evidenceKind;
             double[] interval = observed == null ? new double[4] : observed.consumeInterval();
             long euIn = observed == null ? 0L : observed.average(0);
             long euOut = observed == null ? 0L : observed.average(1);
             long steamIn = observed == null ? 0L : observed.average(2);
             long steamOut = observed == null ? 0L : observed.average(3);
-            byte energyKind = DeviceSteamAdapter.energyKind(mte);
-            if (energyKind == DeviceSteamAdapter.EU && observed != null && observed.hasSteamActivity()) {
-                energyKind = DeviceSteamAdapter.MIXED;
-            }
+            byte originalCapabilities = DeviceSteamAdapter.capabilityMask(mte);
+            byte capabilities = DeviceSteamAdapter
+                .observedCapabilities(originalCapabilities, euIn, euOut, steamIn, steamOut, interval);
+            byte energyKind = DeviceSteamAdapter.energyKind(capabilities);
             // Provider values are explicitly modeled; no recipe-demand or hatch-network fallback is used.
             if (state == DeviceTerminalDataStore.STATE_RUNNING && energyKind != DeviceSteamAdapter.STEAM
                 && euIn == 0
@@ -227,25 +247,16 @@ public class DeviceSampleScheduler {
                     }
                 }
             }
-            byte powerType = isGenerator || (energyKind == DeviceSteamAdapter.STEAM && isSteamProducer(mte))
-                ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
+            byte powerType = isGenerator
+                || (energyKind == DeviceSteamAdapter.STEAM && DeviceSteamAdapter.isSteamProducer(mte))
+                    ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                    : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
             int metaTileId = gtTE.getMetaTileID();
             byte linkNodeType = DeviceMachineIdentity.linkNodeType(mte);
             String localName = mte.getLocalName();
             String recipeIn = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeInputSnapshot(mte) : "";
             String recipeOut = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeOutputSnapshot(mte) : "";
             // 分发到含该键的所有活跃终端
-            if (activeTerminals == null) {
-                DeviceTerminalDataStore dataStore = DeviceTerminalDataStore.get(overworld);
-                activeTerminals = new ArrayList<>();
-                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : dataStore.getActiveTerminals()) {
-                    if (DeviceTerminalDataStore.isTerminalActive(entry.getKey())) {
-                        activeTerminals.add(entry);
-                    }
-                }
-                store = DeviceTerminalDataStore.get(overworld);
-            }
             for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
                 DeviceTerminalDataStore.TerminalData data = entry.getValue();
                 if (!data.boundKeys.contains(key)) {
@@ -258,22 +269,63 @@ public class DeviceSampleScheduler {
                     data.records.put(key, record);
                 }
                 // 增量均值：输入/输出双通道共用 (idx, count) 滚动；净值由下游派生。
+                byte recognitionMode = store.recognitionMode(entry.getKey(), key, metaTileId);
+                if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE) {
+                    if (record.recognitionMode != recognitionMode
+                        || record.state != DeviceTerminalDataStore.STATE_IGNORED) {
+                        record.resetRecognition(recognitionMode, DeviceSteamAdapter.capabilityMask(mte));
+                        data.version++;
+                    }
+                    Map<UUID, FifoState> ignoredStates = this.fifoStates.get(key);
+                    if (ignoredStates != null) ignoredStates.remove(entry.getKey());
+                    continue;
+                }
+                byte effectiveCapabilities = DeviceTerminalRecognitionMode.effectiveCapabilities(
+                    recognitionMode,
+                    recognitionMode == DeviceTerminalRecognitionMode.OTHER ? originalCapabilities : capabilities,
+                    powerType);
+                boolean onlySteam = recognitionMode == DeviceTerminalRecognitionMode.OTHER
+                    && DeviceSteamAdapter.energyKind(effectiveCapabilities) == DeviceSteamAdapter.STEAM;
+                boolean onlyEu = recognitionMode == DeviceTerminalRecognitionMode.OTHER && !onlySteam;
+                long sampleEuIn = onlySteam ? 0 : euIn, sampleEuOut = onlySteam ? 0 : euOut;
+                long sampleSteamIn = onlyEu ? 0 : steamIn, sampleSteamOut = onlyEu ? 0 : steamOut;
+                double[] sampleInterval = { onlySteam ? 0 : interval[0], onlySteam ? 0 : interval[1],
+                    onlyEu ? 0 : interval[2], onlyEu ? 0 : interval[3] };
+                byte sampleEvidence = onlySteam ? realEvidenceKind : evidenceKind;
+                if (record.recognitionWarmup) {
+                    record.recognitionWarmup = false;
+                    Map<UUID, FifoState> warmStates = this.fifoStates.get(key);
+                    if (warmStates != null) warmStates.remove(entry.getKey());
+                    sampleEuIn = sampleEuOut = sampleSteamIn = sampleSteamOut = 0;
+                    java.util.Arrays.fill(sampleInterval, 0);
+                    sampleEvidence = 2;
+                }
+                if (recognitionMode == DeviceTerminalRecognitionMode.OTHER)
+                    effectiveCapabilities = record.learnOverrideDirections(
+                        originalCapabilities,
+                        effectiveCapabilities,
+                        sampleEuIn,
+                        sampleEuOut,
+                        sampleSteamIn,
+                        sampleSteamOut,
+                        sampleInterval);
+                record.recognitionMode = recognitionMode;
                 double nextInAvg = record.inAvg, nextOutAvg = record.outAvg;
                 double nextSteamInAvg = record.steamAvgIn, nextSteamOutAvg = record.steamAvgOut;
-                if (evidenceKind <= 1) {
+                if (sampleEvidence <= 1) {
                     FifoState window = fifoState(key, entry.getKey(), record);
                     double runningSumIn = FifoMath
-                        .push(record.fifoIn, record.idx, record.count, window.sumIn, interval[0]);
+                        .push(record.fifoIn, record.idx, record.count, window.sumIn, sampleInterval[0]);
                     double runningSumOut = FifoMath
-                        .push(record.fifoOut, record.idx, record.count, window.sumOut, interval[1]);
-                    record.fifoIn[record.idx] = interval[0];
-                    record.fifoOut[record.idx] = interval[1];
+                        .push(record.fifoOut, record.idx, record.count, window.sumOut, sampleInterval[1]);
+                    record.fifoIn[record.idx] = sampleInterval[0];
+                    record.fifoOut[record.idx] = sampleInterval[1];
                     double sumSteamIn = FifoMath
-                        .push(record.fifoSteamIn, record.idx, record.count, window.sumSteamIn, interval[2]);
+                        .push(record.fifoSteamIn, record.idx, record.count, window.sumSteamIn, sampleInterval[2]);
                     double sumSteamOut = FifoMath
-                        .push(record.fifoSteamOut, record.idx, record.count, window.sumSteamOut, interval[3]);
-                    record.fifoSteamIn[record.idx] = interval[2];
-                    record.fifoSteamOut[record.idx] = interval[3];
+                        .push(record.fifoSteamOut, record.idx, record.count, window.sumSteamOut, sampleInterval[3]);
+                    record.fifoSteamIn[record.idx] = sampleInterval[2];
+                    record.fifoSteamOut[record.idx] = sampleInterval[3];
                     window.sumSteamIn = sumSteamIn;
                     window.sumSteamOut = sumSteamOut;
                     record.idx = (record.idx + 1) % DeviceTerminalDataStore.FIFO_SIZE;
@@ -289,20 +341,23 @@ public class DeviceSampleScheduler {
                     nextSteamInAvg = FifoMath.avg(sumSteamIn, record.count);
                     nextSteamOutAvg = FifoMath.avg(sumSteamOut, record.count);
                 }
-                byte nextEnergyKind = energyKind == DeviceSteamAdapter.EU
-                    && record.energyKind == DeviceSteamAdapter.MIXED
-                    && record.metaTileId == metaTileId ? DeviceSteamAdapter.MIXED : energyKind;
+                byte nextCapabilities = recognitionMode == DeviceTerminalRecognitionMode.AUTO
+                    && record.metaTileId == metaTileId
+                        ? (byte) (effectiveCapabilities
+                            | (record.capabilityMask & (DeviceSteamAdapter.supportsSteamChannel(mte) ? 15 : 3)))
+                        : effectiveCapabilities;
+                byte nextEnergyKind = DeviceSteamAdapter.energyKind(nextCapabilities);
                 if (record.applySample(
                     state,
                     powerType,
                     metaTileId,
                     nextEnergyKind,
-                    evidenceKind,
+                    sampleEvidence,
                     linkNodeType,
-                    euIn,
-                    euOut,
-                    steamIn,
-                    steamOut,
+                    sampleEuIn,
+                    sampleEuOut,
+                    sampleSteamIn,
+                    sampleSteamOut,
                     nextInAvg,
                     nextOutAvg,
                     nextSteamInAvg,
@@ -313,7 +368,8 @@ public class DeviceSampleScheduler {
                     pos[3],
                     localName,
                     recipeIn,
-                    recipeOut)) data.version++;
+                    recipeOut,
+                    nextCapabilities)) data.version++;
                 anyRecordWritten = true;
             }
         }
@@ -351,14 +407,6 @@ public class DeviceSampleScheduler {
     // ==================== 采样读取工具 ====================
 
     // ==================== EU 方向统一采集（纯算法核 + 采样接线） ====================
-
-    private static boolean isSteamProducer(IMetaTileEntity machine) {
-        for (Class<?> type = machine.getClass(); type != null; type = type.getSuperclass()) {
-            String name = type.getSimpleName();
-            if (name.contains("Boiler") || name.equals("MTEAdvHeatExchanger")) return true;
-        }
-        return false;
-    }
 
     private static long absEut(long signed) {
         return signed == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(signed);

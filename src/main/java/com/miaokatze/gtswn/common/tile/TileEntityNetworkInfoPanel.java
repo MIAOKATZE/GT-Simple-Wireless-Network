@@ -652,6 +652,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return store.getChartBackgroundColorText();
     }
 
+    public com.miaokatze.gtswn.common.panel.TrendLinePalette getTrendLinePalette() {
+        return store.getTrendLinePalette();
+    }
+
     public int getTrendLineThickness() {
         return store.getTrendLineThickness();
     }

@@ -89,6 +89,7 @@ public final class DeviceFlowMonitor {
     public static void tick(Object server, long tick) {
         if (serverIdentity != server || tick < now) {
             TRACKED.clear();
+            DeviceScanManager.clear();
             current = null;
             serverIdentity = server;
             serverThread = Thread.currentThread();
@@ -128,6 +129,7 @@ public final class DeviceFlowMonitor {
         serverThread = null;
         com.miaokatze.gtswn.network.DeviceTerminalActionQueue.clear();
         DeviceTerminalDataStore.clearActiveTerminals();
+        DeviceScanManager.clear();
     }
 
     public static void forget(Object controller) {

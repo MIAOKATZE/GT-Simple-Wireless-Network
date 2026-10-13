@@ -55,7 +55,7 @@ public final class DeviceSteamOutputTransaction
         int before = fluid.amount;
         boolean steam = DeviceSteamAdapter.isSteam(fluid);
         boolean result = delegate.storePartial(id, fluid, total, perParallel);
-        if (steam) accepted += Math.max(0, before - fluid.amount);
+        if (steam) accepted = DeviceFlowMonitor.saturatingAdd(accepted, Math.max(0L, (long) before - fluid.amount));
         return result;
     }
 

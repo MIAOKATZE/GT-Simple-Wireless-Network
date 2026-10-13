@@ -184,7 +184,8 @@ public final class DeviceMachineTypes {
 
     /**
      * D1 工作机器判别式（绑定 / 放置登记 / 采样自愈 / 世界扫描统一口径）：
-     * {@code MTEBasicMachine ∥ MTEMultiBlockBase ∥ MTEBasicGenerator ∥ MTESolarGenerator ∥ MTELightningRod}。
+     * {@code MTEBasicMachine ∥ MTEMultiBlockBase ∥ MTEBasicGenerator ∥ MTESolarGenerator ∥ MTELightningRod}
+     * 加明确支持蒸汽动力的家族（包括继承 {@code MTEBasicTank} 的单方块锅炉）。
      * <p>
      * 注意 {@code mte} 可能为 null（TE 摘除瞬间），直接返回 false。
      */
@@ -192,7 +193,8 @@ public final class DeviceMachineTypes {
         return mte instanceof MTEBasicMachine || mte instanceof MTEMultiBlockBase
             || mte instanceof MTEBasicGenerator
             || mte instanceof MTESolarGenerator
-            || mte instanceof MTELightningRod;
+            || mte instanceof MTELightningRod
+            || DeviceSteamAdapter.supportsSteamChannel(mte);
     }
 
     /**

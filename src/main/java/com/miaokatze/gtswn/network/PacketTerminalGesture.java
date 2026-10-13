@@ -85,9 +85,12 @@ public final class PacketTerminalGesture implements IMessage {
             CHARGES.remove(player.getUniqueID());
             return;
         }
-        if (player.isDead || player.playerNetServerHandler == null || !TerminalAirInteraction.isAir(player)) return;
+        if (player.isDead || player.playerNetServerHandler == null) return;
         ItemStack held = player.getHeldItem();
         if (held == null) return;
+        boolean device = held.getItem() instanceof ItemDeviceInfoTerminal;
+        // Device scans may begin and remain charged while looking at blocks. Other reveal gestures stay air-only.
+        if (device ? player.isSneaking() : !TerminalAirInteraction.isAir(player)) return;
         if (request.action == SCAN_DEVICES) {
             if (held.getItem() instanceof ItemDeviceInfoTerminal && consumeReveal(player)) {
                 ItemDeviceInfoTerminal.startChargedScan(player, held);
@@ -147,11 +150,11 @@ public final class PacketTerminalGesture implements IMessage {
 
         private boolean valid() {
             return !player.isDead && player.playerNetServerHandler != null
-                && (stack.getItem() instanceof ItemDeviceInfoTerminal || player.isSneaking())
+                && (stack.getItem() instanceof ItemDeviceInfoTerminal ? !player.isSneaking() : player.isSneaking())
                 && player.dimension == dimension
                 && player.inventory.currentItem == slot
                 && player.getHeldItem() == stack
-                && TerminalAirInteraction.isAir(player);
+                && (stack.getItem() instanceof ItemDeviceInfoTerminal || TerminalAirInteraction.isAir(player));
         }
     }
 }

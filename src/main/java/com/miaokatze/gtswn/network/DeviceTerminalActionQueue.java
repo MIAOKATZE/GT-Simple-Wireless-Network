@@ -11,6 +11,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRequestQueue;
 import com.miaokatze.gtswn.common.device.DeviceTerminalSettings;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
@@ -33,6 +34,7 @@ public final class DeviceTerminalActionQueue {
     private static final int MAX_PENDING = 1024;
     private static final int MAX_PLAYER_PENDING = 16;
     private static final int TICK_BUDGET = 64;
+    private static long cycleSequence;
 
     private DeviceTerminalActionQueue() {}
 
@@ -48,16 +50,29 @@ public final class DeviceTerminalActionQueue {
     /** Netty 线程入队：包 10 动作载荷（fromBytes 后线程封闭，可直接引用传递） */
     public static void enqueue(EntityPlayerMP player, byte action, byte column, byte direction, byte countMode,
         String key) {
-        if (player == null || action < 0 || action > PacketDeviceTerminalAction.ACTION_SET_TELEPORT_COST) return;
+        enqueue(player, action, column, direction, countMode, key, null);
+    }
+
+    public static void enqueue(EntityPlayerMP player, byte action, byte column, byte direction, byte countMode,
+        String key, UUID terminalId) {
+        if (player == null || action < 0
+            || action > PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION
+            || (action == PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION && terminalId == null)) return;
         UUID id = player.getUniqueID();
-        String token = id + ":" + action + ":" + (action == 2 || action == 3 ? key : "");
+        String token = id + ":"
+            + action
+            + ":"
+            + (action == 2 || action == 3 || action == 5 ? key : "")
+            + ":"
+            + terminalId;
         synchronized (PENDING) {
+            if (action == PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION) token += ":" + (++cycleSequence);
             int count = PENDING_COUNTS.getOrDefault(id, 0);
             if (!PENDING.containsKey(token)) {
                 if (PENDING.size() >= MAX_PENDING || count >= MAX_PLAYER_PENDING) return;
                 PENDING_COUNTS.put(id, count + 1);
             }
-            PENDING.put(token, new Action(player, action, column, direction, countMode, key));
+            PENDING.put(token, new Action(player, action, column, direction, countMode, key, terminalId));
         }
     }
 
@@ -129,12 +144,21 @@ public final class DeviceTerminalActionQueue {
 
     private static void apply(EntityPlayerMP player, Action action) {
         if (!isOnline(player)) return;
-        ItemStack stack = findTerminalStack(player);
+        if (action.action == PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION) {
+            ItemStack held = player.getHeldItem();
+            if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)) return;
+            UUID heldId = ItemDeviceInfoTerminal.readTerminalId(held);
+            boolean bootstrap = new UUID(0, 0).equals(action.terminalId);
+            if (bootstrap ? heldId != null : !action.terminalId.equals(heldId)) return;
+            DeviceTerminalRecognitionMode.cycle(player, held, action.key);
+            return;
+        }
+        ItemStack stack = findTerminalStack(player, action.terminalId);
         if (stack == null) {
             // 发送者已不持有终端：静默丢弃
             return;
         }
-        UUID terminalId = ItemDeviceInfoTerminal.getOrCreateTerminalId(stack);
+        UUID terminalId = ItemDeviceInfoTerminal.ensureTerminalIdSynced(player, stack);
         // 会话内新获得终端补登记活跃索引（否则采样调度跳过直到重登）
         DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
         switch (action.action) {
@@ -182,7 +206,8 @@ public final class DeviceTerminalActionQueue {
                 return;
         }
         if (action.action == PacketDeviceTerminalAction.ACTION_UNBIND
-            || action.action == PacketDeviceTerminalAction.ACTION_TELEPORT) {
+            || action.action == PacketDeviceTerminalAction.ACTION_TELEPORT
+            || action.action == PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION) {
             // 仅数据 / 界面语义变化动作失效重发（排序 / 计数法客户端已本地应用且不改 TerminalData，
             // 无条件失效会在修复批次重开条件前引发同版本整包重发 NPE，且常态下也无谓全量重同步）
             DeviceTerminalRequestQueue.invalidate(player);
@@ -228,13 +253,15 @@ public final class DeviceTerminalActionQueue {
     }
 
     /** 物品栏首台设备信息终端（手持优先，其次主背包扫描；与请求队列同款解析规则） */
-    private static ItemStack findTerminalStack(EntityPlayerMP player) {
+    private static ItemStack findTerminalStack(EntityPlayerMP player, UUID requested) {
         ItemStack held = player.getHeldItem();
-        if (held != null && held.getItem() instanceof ItemDeviceInfoTerminal) {
+        if (held != null && held.getItem() instanceof ItemDeviceInfoTerminal
+            && (requested == null || requested.equals(ItemDeviceInfoTerminal.readTerminalId(held)))) {
             return held;
         }
         for (ItemStack stack : player.inventory.mainInventory) {
-            if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal) {
+            if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal
+                && (requested == null || requested.equals(ItemDeviceInfoTerminal.readTerminalId(stack)))) {
                 return stack;
             }
         }
@@ -250,8 +277,11 @@ public final class DeviceTerminalActionQueue {
         final byte direction;
         final byte countMode;
         final String key;
+        final UUID terminalId;
 
-        Action(EntityPlayerMP player, byte action, byte column, byte direction, byte countMode, String key) {
+        Action(EntityPlayerMP player, byte action, byte column, byte direction, byte countMode, String key,
+            UUID terminalId) {
+            this.terminalId = terminalId;
             this.player = player;
             this.action = action;
             this.column = column;

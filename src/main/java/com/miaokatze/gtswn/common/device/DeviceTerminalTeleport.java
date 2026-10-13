@@ -26,7 +26,7 @@ import gregtech.api.util.GTUtility;
 public final class DeviceTerminalTeleport {
 
     private static final Map<UUID, Long> LAST = new HashMap<>();
-    private static final long COOLDOWN_TICKS = 60;
+    public static final int COOLDOWN_TICKS = 10;
     private static final int MAX_LANDING_BODY_BLOCKS = 256;
 
     private DeviceTerminalTeleport() {}
@@ -125,16 +125,16 @@ public final class DeviceTerminalTeleport {
             if (!Double.isFinite(distance)
                 || distance > DeviceTerminalVisualRules.MAX_RANGE * DeviceTerminalVisualRules.MAX_RANGE)
                 return outcome(Status.TOO_FAR);
-            if (!DeviceTerminalVisualRules.isAimedAt(
+            if (!DeviceTerminalVisualRules.isAimedAtMachine(
                 player.posX,
                 eyeY,
                 player.posZ,
                 look.xCoord,
                 look.yCoord,
                 look.zCoord,
-                record.x + 0.5,
-                record.y + DeviceTerminalVisualRules.MARKER_Y,
-                record.z + 0.5)) return outcome(Status.NOT_AIMED);
+                record.x,
+                record.y,
+                record.z)) return outcome(Status.NOT_AIMED);
         }
         long now = server.worldServerForDimension(0)
             .getTotalWorldTime();

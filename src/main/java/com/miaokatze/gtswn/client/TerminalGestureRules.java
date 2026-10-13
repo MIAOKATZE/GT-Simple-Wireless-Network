@@ -6,7 +6,7 @@ public final class TerminalGestureRules {
     private TerminalGestureRules() {}
 
     public static boolean canCharge(boolean deviceTerminal, boolean alt, boolean shift, boolean air) {
-        return alt && air && (deviceTerminal ? !shift : shift);
+        return alt && (deviceTerminal ? !shift : shift && air);
     }
 
     public static boolean canToggleVisualization(boolean deviceTerminal, boolean alt, boolean shift) {

@@ -32,6 +32,7 @@ import net.minecraftforge.event.world.WorldEvent;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
@@ -48,7 +49,7 @@ public final class DeviceTerminalAnchorRenderer {
     private static final int WORK_PER_TICK = 32;
     private static final Comparator<Anchor> NEAREST = Comparator.comparingDouble((Anchor anchor) -> anchor.distance)
         .thenComparing(anchor -> anchor.entry.key);
-    private static final String[] STATES = { "idle", "running", "stopped" };
+    private static final String[] STATES = { "idle", "running", "stopped", "ignored" };
     // The constructor creates a queue using NEAREST, so initialize its dependencies first.
     public static final DeviceTerminalAnchorRenderer INSTANCE = new DeviceTerminalAnchorRenderer();
     private final List<Anchor> visible = new ArrayList<>();
@@ -182,11 +183,15 @@ public final class DeviceTerminalAnchorRenderer {
                 Entry previous = boundIdentity.get(entry.key);
                 buildingIdentity.put(entry.key, entry);
                 if (previous == null || previous.metaTileId != entry.metaTileId
-                    || previous.energyKind != entry.energyKind) buildStructureChanged = true;
+                    || previous.energyKind != entry.energyKind
+                    || previous.capabilityMask != entry.capabilityMask
+                    || previous.recognitionMode != entry.recognitionMode) buildStructureChanged = true;
             }
             if (entry.dim != scanDimension) continue;
             double distance = distance(entry, scanX, scanY, scanZ);
-            if (!Double.isFinite(distance) || distance > scanRange * scanRange) continue;
+            // Keep sources whose heat halo reaches the range boundary; label and travel selection retain scanRange.
+            double sourceRange = scanRange + DeviceEnergyVisualMath.MAX_ACTIVE_RADIUS + 1.1D;
+            if (!Double.isFinite(distance) || distance > sourceRange * sourceRange) continue;
             Anchor anchor = cached.get(entry.key);
             if (anchor == null) {
                 anchor = new Anchor(entry, distance);
@@ -234,6 +239,8 @@ public final class DeviceTerminalAnchorRenderer {
 
     private static boolean equivalent(Entry a, Entry b) {
         return a.state == b.state && a.energyKind == b.energyKind
+            && a.capabilityMask == b.capabilityMask
+            && a.recognitionMode == b.recognitionMode
             && a.evidenceKind == b.evidenceKind
             && a.instIn == b.instIn
             && a.instOut == b.instOut
@@ -267,11 +274,16 @@ public final class DeviceTerminalAnchorRenderer {
                 ? GregTechAPI.METATILEENTITIES[entry.metaTileId]
                 : null;
         if (machine != anchor.capabilityMachine) {
-            boolean steamCapable = DeviceSteamAdapter.supportsSteamChannel(machine);
-            if (steamCapable != anchor.steamCapable) anchor.textDirty = true;
-            anchor.steamCapable = steamCapable;
+            anchor.actualSteamCapable = DeviceSteamAdapter.supportsSteamChannel(machine);
             anchor.capabilityMachine = machine;
         }
+        // AUTO rejects recipe-only steam; OTHER uses the server's terminal-local channel without that live gate.
+        boolean ignored = ignored(entry);
+        boolean steamCapable = !ignored
+            && (entry.capabilityMask & (DeviceSteamAdapter.STEAM_IN | DeviceSteamAdapter.STEAM_OUT)) != 0
+            && (entry.recognitionMode != DeviceTerminalRecognitionMode.AUTO || anchor.actualSteamCapable);
+        if (steamCapable != anchor.steamCapable) anchor.textDirty = true;
+        anchor.steamCapable = steamCapable;
         String status = !fresh ? "stale" : !loaded ? "unloaded" : !anchor.available ? "missing" : "";
         int appearance = DeviceTerminalVisualConfig.appearanceKey();
         String language = mc.gameSettings.language;
@@ -289,33 +301,33 @@ public final class DeviceTerminalAnchorRenderer {
         if (!anchor.available) {
             addLine(anchor, mc, tr(!fresh ? "stale" : !loaded ? "unloaded" : "missing"));
         } else {
-            if (DeviceTerminalVisualConfig.showLabelState) {
+            if (ignored || DeviceTerminalVisualConfig.showLabelState) {
                 addLine(
                     anchor,
                     mc,
                     StatCollector
-                        .translateToLocal("gtswn.device.gui.state." + STATES[Math.max(0, Math.min(2, entry.state))]));
+                        .translateToLocal("gtswn.device.gui.state." + STATES[Math.max(0, Math.min(3, entry.state))]));
             }
             if (DeviceTerminalVisualConfig.showLabelPower) {
-                if (entry.evidenceKind >= 2) addLine(anchor, mc, tr("power.unknown"));
+                if (!ignored && entry.evidenceKind >= 2) addLine(anchor, mc, tr("power.unknown"));
                 else {
                     if (entry.energyKind != 1) addLine(
                         anchor,
                         mc,
                         StatCollector.translateToLocalFormatted(
                             "gtswn.device.visual.power.eu",
-                            metric(entry.instIn),
-                            metric(entry.instOut)));
-                    if (anchor.steamCapable) addLine(
+                            metric(ignored ? 0 : entry.instIn),
+                            metric(ignored ? 0 : entry.instOut)));
+                    if (anchor.steamCapable || (ignored && entry.energyKind == DeviceSteamAdapter.STEAM)) addLine(
                         anchor,
                         mc,
                         StatCollector.translateToLocalFormatted(
                             "gtswn.device.visual.power.steam",
-                            metric(entry.steamInstIn),
-                            metric(entry.steamInstOut)));
+                            metric(ignored ? 0 : entry.steamInstIn),
+                            metric(ignored ? 0 : entry.steamInstOut)));
                 }
             }
-            if (DeviceTerminalVisualConfig.showLabelRecipe) {
+            if (!ignored && DeviceTerminalVisualConfig.showLabelRecipe) {
                 String recipe = entry.recipeOut.isEmpty() ? entry.recipeIn : entry.recipeOut;
                 if (!recipe.isEmpty()) addLine(anchor, mc, recipe);
             }
@@ -334,6 +346,10 @@ public final class DeviceTerminalAnchorRenderer {
 
     private static String metric(long value) {
         return FormatUtil.formatMetric(BigInteger.valueOf(value), 1);
+    }
+
+    private static boolean ignored(Entry entry) {
+        return entry.state == 3;
     }
 
     private Anchor select(Minecraft mc) {
@@ -359,6 +375,9 @@ public final class DeviceTerminalAnchorRenderer {
                 look.xCoord,
                 look.yCoord,
                 look.zCoord);
+            if (com.miaokatze.gtswn.common.device.DeviceTerminalVisualRules
+                .isAimedAtMachineBody(x, y, z, look.xCoord, look.yCoord, look.zCoord, entry.x, entry.y, entry.z))
+                alignment = 1D;
             if (DeviceTerminalAnchorMath.targetable(distance, alignment, range())
                 && DeviceTerminalAnchorMath.betterTarget(
                     alignment,
@@ -456,10 +475,11 @@ public final class DeviceTerminalAnchorRenderer {
                 double scale = 5D
                     * Math.max(.027D, Math.min(.15D, .027D + Math.sqrt(distance(entry, x, y, z)) * .001D));
                 boolean selected = anchor == target;
+                boolean ignored = ignored(entry);
                 tess.setColorRGBA_F(
-                    selected ? 1F : .35F,
-                    selected ? .82F : .9F,
-                    selected ? .35F : .95F,
+                    ignored ? .55F : selected ? 1F : .35F,
+                    ignored ? .55F : selected ? .82F : .9F,
+                    ignored ? .55F : selected ? .35F : .95F,
                     anchor.available ? .95F : .5F);
                 markerEdge(
                     tess,
@@ -580,11 +600,16 @@ public final class DeviceTerminalAnchorRenderer {
             float scale = labelScale(entry, x, y, z);
             GL11.glScalef(-scale, -scale, scale);
             boolean selected = anchor == target;
+            boolean ignored = ignored(entry);
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             if (labelBudget && DeviceTerminalVisualConfig.showLabels && !anchor.lines.isEmpty()) {
                 int half = anchor.width / 2 + 4;
                 int bottom = 12 + anchor.lines.size() * 10;
-                GL11.glColor4f(selected ? 0.17F : 0.04F, selected ? 0.13F : 0.055F, 0.07F, selected ? 0.85F : 0.68F);
+                GL11.glColor4f(
+                    ignored ? .07F : selected ? .17F : .04F,
+                    ignored ? .07F : selected ? .13F : .055F,
+                    .07F,
+                    selected ? .85F : .68F);
                 GL11.glBegin(GL11.GL_QUADS);
                 GL11.glVertex2d(-half, 7);
                 GL11.glVertex2d(-half, bottom);
@@ -595,7 +620,10 @@ public final class DeviceTerminalAnchorRenderer {
                 GL11.glColor4f(1F, 1F, 1F, 1F);
                 int textY = 9;
                 for (int i = 0; i < anchor.lines.size(); i++) {
-                    mc.fontRenderer.drawString(anchor.lines.get(i), -anchor.lineWidths.get(i) / 2, textY, 0xEEEEEE);
+                    String line = anchor.lines.get(i);
+                    if (ignored) line = net.minecraft.util.EnumChatFormatting.getTextWithoutFormattingCodes(line);
+                    mc.fontRenderer
+                        .drawString(line, -anchor.lineWidths.get(i) / 2, textY, ignored ? 0x999999 : 0xEEEEEE);
                     textY += 10;
                 }
             }
@@ -734,6 +762,7 @@ public final class DeviceTerminalAnchorRenderer {
         boolean available;
         boolean loaded;
         boolean steamCapable;
+        boolean actualSteamCapable;
         IMetaTileEntity capabilityMachine;
         boolean textDirty = true;
         String status;

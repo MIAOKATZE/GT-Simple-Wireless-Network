@@ -19,20 +19,18 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
-/** Filled thermal layers over the anchor renderer's bounded, already observed devices. */
+/** Bounded radial thermal volumes over the anchor renderer's already observed devices. */
 public final class DeviceEnergyWorldRenderer {
 
     private static final int WORK_PER_TICK = 32;
     private static final int OUTLINE_BUDGET = 64;
-    // 320 * 24 vertices * 8 ints = 61,440: fits Forge's default 65,536-int raw buffer.
-    // A larger single batch repeatedly grows and is then shrunk by native Tessellator.draw().
-    private static final int FILL_LAYER_BUDGET = 320;
     private static final int[] LEGEND_COLORS = { 0xFF6E36, 0x44EA77, 0xC2C2C2, 0x707070 };
     private final List<Visual> visible = new ArrayList<>(1024);
     private final List<Visual> building = new ArrayList<>(1024);
@@ -59,6 +57,8 @@ public final class DeviceEnergyWorldRenderer {
     public int lastFilledBatches;
     public int lastLineBatches;
     public int lastVisibleLayers;
+    public int lastRenderedVertices;
+    public int lastMaxBatchVertices;
     /** 0 rendered, 1 no world/player, 2 inactive, 3 stale, 4 no layers, 5 outside range/frustum. */
     public int lastRenderSkipReason;
 
@@ -103,9 +103,10 @@ public final class DeviceEnergyWorldRenderer {
         if (source != null) advance();
         if (ticks % 5 == 0) {
             for (Visual visual : visible) {
+                visual.previousRadius = visual.radius;
                 visual.intensity = DeviceEnergyVisualMath
                     .smooth(visual.intensity, visual.target, DeviceTerminalVisualConfig.smoothing);
-                visual.updateColor();
+                visual.updateAppearance();
             }
         }
         if (!java.util.Objects.equals(legendLanguage, mc.gameSettings.language)) updateLegend(mc);
@@ -117,8 +118,14 @@ public final class DeviceEnergyWorldRenderer {
             DeviceTerminalAnchorRenderer.Anchor device = source.get(cursor);
             if (!device.loaded) continue;
             Entry entry = device.entry;
-            if (entry.energyKind != 1) add(device, false);
-            if (device.steamCapable) add(device, true);
+            if (ignored(entry)) {
+                // Ignored machines stay locatable regardless of energy filters, with one small gray core.
+                building.add(new Visual(device, false, false, 0D, true));
+                continue;
+            }
+            int channels = channels(entry, device.steamCapable);
+            if ((channels & (DeviceSteamAdapter.EU_IN | DeviceSteamAdapter.EU_OUT)) != 0) add(device, false);
+            if ((channels & (DeviceSteamAdapter.STEAM_IN | DeviceSteamAdapter.STEAM_OUT)) != 0) add(device, true);
         }
         if (cursor < source.size()) return;
         maxElectric = buildElectricMax;
@@ -126,8 +133,10 @@ public final class DeviceEnergyWorldRenderer {
         for (Visual visual : building) {
             visual.target = DeviceEnergyVisualMath.intensity(visual.magnitude, visual.steam ? maxSteam : maxElectric);
             Visual previous = (visual.steam ? steamPrevious : electricPrevious).get(visual.device.entry.key);
-            visual.intensity = previous == null ? visual.target : previous.intensity;
-            visual.updateColor();
+            visual.intensity = visual.ignored ? 0D : previous == null ? visual.target : previous.intensity;
+            visual.updateAppearance();
+            visual.previousRadius = visual.ignored ? 0D : previous == null ? visual.radius : previous.previousRadius;
+            visual.updateBounds();
         }
         visible.clear();
         visible.addAll(building);
@@ -141,6 +150,20 @@ public final class DeviceEnergyWorldRenderer {
         updateLegend(Minecraft.getMinecraft());
     }
 
+    static boolean ignored(Entry entry) {
+        return entry.state == 3 || entry.recognitionMode == 2;
+    }
+
+    static int channels(Entry entry, boolean observedSteam) {
+        if (ignored(entry)) return 0;
+        int capabilities = entry.capabilityMask;
+        // AUTO keeps the observed machine capability guard for old or stale MIXED snapshots.
+        // An explicit OTHER choice uses the server's effective channel even for an ordinary EU machine.
+        if (entry.recognitionMode == 0 && !observedSteam)
+            capabilities &= ~(DeviceSteamAdapter.STEAM_IN | DeviceSteamAdapter.STEAM_OUT);
+        return capabilities;
+    }
+
     private void add(DeviceTerminalAnchorRenderer.Anchor device, boolean steam) {
         Entry entry = device.entry;
         double input = DeviceEnergyVisualMath.weighted(
@@ -151,7 +174,11 @@ public final class DeviceEnergyWorldRenderer {
             steam ? entry.steamInstOut : entry.instOut,
             steam ? entry.steamAvgOut : entry.avgOut,
             DeviceTerminalVisualConfig.averageWeight);
-        boolean producer = output > input || output == input && entry.powerType == 1;
+        boolean producesAtRest = steam
+            ? (entry.capabilityMask & DeviceSteamAdapter.STEAM_OUT) != 0
+                && (entry.capabilityMask & DeviceSteamAdapter.STEAM_IN) == 0
+            : entry.powerType == 1;
+        boolean producer = output > input || output == input && producesAtRest;
         if (!DeviceTerminalVisualConfig.visible(steam, producer)) return;
         // Balanced input/output is still activity: net-zero must not hide a working device.
         double magnitude = Math.max(0D, Math.max(input, output));
@@ -164,6 +191,7 @@ public final class DeviceEnergyWorldRenderer {
     @SubscribeEvent
     public void render(RenderWorldLastEvent event) {
         lastRenderedLayers = lastFilledBatches = lastLineBatches = 0;
+        lastRenderedVertices = lastMaxBatchVertices = 0;
         lastVisibleLayers = visible.size();
         Minecraft mc = Minecraft.getMinecraft();
         lastRenderSkipReason = renderGate(mc);
@@ -180,12 +208,15 @@ public final class DeviceEnergyWorldRenderer {
         frustum.setPosition(x, y, z);
         drawn.clear();
         int range = DeviceTerminalVisualConfig.range;
+        double radiusProgress = (ticks % 5 + event.partialTicks) / 5D;
         for (Visual visual : visible) {
             Entry entry = visual.device.entry;
             if (!visual.device.loaded || entry.dim != mc.theWorld.provider.dimensionId) continue;
-            double dx = entry.x + .5D - x, dy = entry.y + .5D - y, dz = entry.z + .5D - z;
-            if (dx * dx + dy * dy + dz * dz <= range * range && frustum.isBoundingBoxInFrustum(visual.box))
-                drawn.add(visual);
+            visual.renderRadius = DeviceEnergyVisualMath
+                .interpolateRadius(visual.previousRadius, visual.radius, radiusProgress);
+            double dx = visual.centerX - x, dy = visual.centerY - y, dz = visual.centerZ - z;
+            if (DeviceEnergyVisualMath.withinRange(dx, dy, dz, range, visual.extent)
+                && frustum.isBoundingBoxInFrustum(visual.box)) drawn.add(visual);
         }
         if (drawn.isEmpty()) {
             lastRenderSkipReason = 5;
@@ -199,19 +230,20 @@ public final class DeviceEnergyWorldRenderer {
             DeviceEnergyRenderState.begin(DeviceTerminalVisualConfig.depthTest);
             Tessellator tess = Tessellator.instance;
             DeviceEnergyRenderState.start(tess, GL11.GL_QUADS);
-            int batchLayers = 0;
+            int batchVertices = 0;
             // Device groups are cached nearest-first; reverse groups for translucent far-to-near compositing.
             // Within a mixed device, EU fills first and the distinct steam top slab fills last.
             for (int i = drawn.size() - 1; i >= 0; i--) {
                 Visual visual = drawn.get(i);
                 if (visual.steam && i > 0 && drawn.get(i - 1).device == visual.device) {
                     Visual electric = drawn.get(--i);
-                    batchLayers = fillLayer(tess, electric, x, y, z, batchLayers);
+                    batchVertices = fillLayer(tess, electric, x, y, z, batchVertices);
                 }
-                batchLayers = fillLayer(tess, visual, x, y, z, batchLayers);
+                batchVertices = fillLayer(tess, visual, x, y, z, batchVertices);
             }
             tess.draw();
             lastFilledBatches++;
+            lastMaxBatchVertices = Math.max(lastMaxBatchVertices, batchVertices);
             lastRenderedLayers = drawn.size();
             // A bounded edge batch supplies shape detail; the filled color layer is the primary visual.
             GL11.glLineWidth(Math.max(1F, mc.displayHeight / 720F));
@@ -221,7 +253,7 @@ public final class DeviceEnergyWorldRenderer {
                 if (outlines >= OUTLINE_BUDGET) break;
                 if (visual.neutral || visual.intensity < .85D) continue;
                 tess.setColorRGBA_F(visual.red, visual.green, visual.blue, visual.alpha * .6F);
-                outline(tess, visual.box, x, y, z);
+                outline(tess, visual.coreBox, x, y, z);
                 outlines++;
             }
             tess.draw();
@@ -233,16 +265,39 @@ public final class DeviceEnergyWorldRenderer {
         }
     }
 
-    private int fillLayer(Tessellator tess, Visual visual, double x, double y, double z, int batchLayers) {
-        if (batchLayers == FILL_LAYER_BUDGET) {
+    private int fillLayer(Tessellator tess, Visual visual, double x, double y, double z, int batchVertices) {
+        int vertices = DeviceEnergyVisualMath.vertices(visual.renderRadius > 0D);
+        if (DeviceEnergyVisualMath.startsNewBatch(batchVertices, vertices)) {
             tess.draw();
             lastFilledBatches++;
+            lastMaxBatchVertices = Math.max(lastMaxBatchVertices, batchVertices);
             DeviceEnergyRenderState.start(tess, GL11.GL_QUADS);
-            batchLayers = 0;
+            batchVertices = 0;
+        }
+        if (visual.renderRadius > 0D) {
+            // Two octahedral isosurfaces give a radial envelope with a weaker outer falloff.
+            // Degenerate quads keep core and halo geometry in the same fixed-buffer draw batch.
+            tess.setColorRGBA_F(visual.red, visual.green, visual.blue, visual.alpha * .25F);
+            halo(tess, visual, visual.renderRadius, x, y, z);
+            tess.setColorRGBA_F(visual.red, visual.green, visual.blue, visual.alpha * .45F);
+            halo(tess, visual, visual.renderRadius * .64D, x, y, z);
         }
         tess.setColorRGBA_F(visual.red, visual.green, visual.blue, visual.alpha);
-        fill(tess, visual.box, x, y, z);
-        return batchLayers + 1;
+        fill(tess, visual.coreBox, x, y, z);
+        lastRenderedVertices += vertices;
+        return batchVertices + vertices;
+    }
+
+    private static void halo(Tessellator t, Visual visual, double radius, double cx, double cy, double cz) {
+        double x = visual.centerX - cx, y = visual.centerY - cy, z = visual.centerZ - cz;
+        for (int side = 0; side < 4; side++) {
+            double ax = side == 0 ? radius : side == 2 ? -radius : 0D;
+            double az = side == 1 ? radius : side == 3 ? -radius : 0D;
+            double bx = side == 3 ? radius : side == 1 ? -radius : 0D;
+            double bz = side == 0 ? radius : side == 2 ? -radius : 0D;
+            face(t, x, y + radius, z, x + ax, y, z + az, x + bx, y, z + bz, x + bx, y, z + bz);
+            face(t, x, y - radius, z, x + bx, y, z + bz, x + ax, y, z + az, x + ax, y, z + az);
+        }
     }
 
     private boolean renderable(Minecraft mc) {
@@ -341,6 +396,7 @@ public final class DeviceEnergyWorldRenderer {
         sourceGeneration = Long.MIN_VALUE;
         ticks = 0;
         lastRenderedLayers = lastFilledBatches = lastLineBatches = 0;
+        lastRenderedVertices = lastMaxBatchVertices = 0;
         lastVisibleLayers = 0;
         lastRenderSkipReason = 2;
     }
@@ -348,13 +404,20 @@ public final class DeviceEnergyWorldRenderer {
     static final class Visual {
 
         final DeviceTerminalAnchorRenderer.Anchor device;
+        final AxisAlignedBB coreBox;
         final AxisAlignedBB box;
+        final double centerX, centerY, centerZ;
         final boolean steam;
         final boolean producer;
         final boolean neutral;
+        final boolean ignored;
         final double magnitude;
         double target;
         double intensity;
+        double radius;
+        double previousRadius;
+        double renderRadius;
+        double extent;
         float red, green, blue, alpha;
 
         Visual(DeviceTerminalAnchorRenderer.Anchor device, boolean steam, boolean producer, double magnitude,
@@ -362,12 +425,21 @@ public final class DeviceEnergyWorldRenderer {
             this.device = device;
             this.steam = steam;
             this.producer = producer;
-            this.magnitude = magnitude;
-            this.neutral = neutral;
-            box = steam && device.entry.energyKind == 2 ? device.steamBounds : device.heatBounds;
+            ignored = DeviceEnergyWorldRenderer.ignored(device.entry);
+            this.magnitude = ignored ? 0D : magnitude;
+            this.neutral = ignored || neutral;
+            coreBox = steam && device.entry.energyKind == 2 ? device.steamBounds : device.heatBounds;
+            centerX = (coreBox.minX + coreBox.maxX) * .5D;
+            centerY = (coreBox.minY + coreBox.maxY) * .5D;
+            centerZ = (coreBox.minZ + coreBox.maxZ) * .5D;
+            box = AxisAlignedBB
+                .getBoundingBox(coreBox.minX, coreBox.minY, coreBox.minZ, coreBox.maxX, coreBox.maxY, coreBox.maxZ);
         }
 
-        void updateColor() {
+        void updateAppearance() {
+            if (ignored) previousRadius = 0D;
+            radius = neutral ? 0D : DeviceEnergyVisualMath.radius(intensity);
+            updateBounds();
             float strength = (float) intensity;
             if (neutral) {
                 red = green = blue = .42F;
@@ -381,6 +453,22 @@ public final class DeviceEnergyWorldRenderer {
                 blue = producer ? .13F + .13F * strength : .07F;
             }
             alpha = (float) DeviceTerminalVisualConfig.opacity * (.25F + .75F * strength);
+        }
+
+        void updateBounds() {
+            double envelope = Math.max(previousRadius, radius);
+            box.setBounds(
+                Math.min(coreBox.minX, centerX - envelope),
+                Math.min(coreBox.minY, centerY - envelope),
+                Math.min(coreBox.minZ, centerZ - envelope),
+                Math.max(coreBox.maxX, centerX + envelope),
+                Math.max(coreBox.maxY, centerY + envelope),
+                Math.max(coreBox.maxZ, centerZ + envelope));
+            // The enclosing sphere also includes the unchanged machine core at zero activity.
+            double halfX = (coreBox.maxX - coreBox.minX) * .5D;
+            double halfY = (coreBox.maxY - coreBox.minY) * .5D;
+            double halfZ = (coreBox.maxZ - coreBox.minZ) * .5D;
+            extent = Math.max(envelope, Math.sqrt(halfX * halfX + halfY * halfY + halfZ * halfZ));
         }
     }
 }

@@ -8,13 +8,12 @@ import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
-import com.miaokatze.gtswn.network.PacketDeviceTerminalVisualAction;
 import com.miaokatze.gtswn.network.PacketTerminalGesture;
 
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
-/** Link: Alt opens UI, Alt+Shift charges. Device: Alt charges in air. */
+/** Link: Alt opens UI, Alt+Shift charges in air. Device gestures share mouse/Forge/item dispatch. */
 public class RevealTriggerHandler {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
@@ -30,30 +29,12 @@ public class RevealTriggerHandler {
         if (held == null
             || !(held.getItem() instanceof WirelessEnergyTap || held.getItem() instanceof ItemDeviceInfoTerminal))
             return;
-        boolean device = held.getItem() instanceof ItemDeviceInfoTerminal;
-        boolean alt = QuantumIncorporationClientHandler.isAltDown();
-        boolean shift = QuantumIncorporationClientHandler.isShiftDown();
-        if (TerminalGestureRules.canToggleVisualization(device, alt, shift)) {
-            event.setCanceled(true);
-            TerminalRevealCharge.cancel();
-            net.minecraft.client.settings.KeyBinding
-                .setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), false);
-            java.util.UUID id = ItemDeviceInfoTerminal.readTerminalId(held);
-            GTSWNPacketHandler.NETWORK
-                .sendToServer(PacketDeviceTerminalVisualAction.toggle(id == null ? new java.util.UUID(0L, 0L) : id));
-            return;
-        }
-        if (device && DeviceTerminalVisualizationState.handleRightClick()) {
-            event.setCanceled(true);
-            TerminalRevealCharge.cancel();
-            return;
-        }
-        if (!alt || !TerminalRevealCharge.isPointingAtAir(mc)) return;
         if (held.getItem() instanceof ItemDeviceInfoTerminal) {
-            event.setCanceled(true);
-            TerminalRevealCharge.start(mc);
+            if (DeviceTerminalVisualizationState.handleRightClick()) event.setCanceled(true);
             return;
         }
+        boolean alt = QuantumIncorporationClientHandler.isAltDown();
+        if (!alt || !TerminalRevealCharge.isPointingAtAir(mc)) return;
         if (!QuantumIncorporationClientHandler.isShiftDown()) {
             if (held.getItem() instanceof WirelessEnergyTap) {
                 event.setCanceled(true);

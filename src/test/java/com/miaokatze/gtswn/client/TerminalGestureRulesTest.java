@@ -8,11 +8,12 @@ import org.junit.Test;
 public class TerminalGestureRulesTest {
 
     @Test
-    public void deviceScanUsesAltWithoutRequiringShift() {
+    public void deviceScanUsesAltWithoutShiftAndAcceptsBlockOrEntityAim() {
         assertTrue(TerminalGestureRules.canCharge(true, true, false, true));
         assertFalse(TerminalGestureRules.canCharge(true, true, true, true));
         assertFalse(TerminalGestureRules.canCharge(true, false, true, true));
-        assertFalse(TerminalGestureRules.canCharge(true, true, false, false));
+        assertTrue(TerminalGestureRules.canCharge(true, true, false, false));
+        assertFalse(TerminalGestureRules.canCharge(true, true, true, false));
     }
 
     @Test

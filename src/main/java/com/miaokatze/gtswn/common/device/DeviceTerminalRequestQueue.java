@@ -185,7 +185,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                 // 发送者已不持有终端（GUI 关闭后残留轮询）：静默丢弃
                 return;
             }
-            UUID terminalId = ItemDeviceInfoTerminal.getOrCreateTerminalId(stack);
+            UUID terminalId = ItemDeviceInfoTerminal.ensureTerminalIdSynced(player, stack);
             World overworld = server == null ? null : server.worldServerForDimension(0);
             if (overworld == null) {
                 return;
@@ -323,7 +323,9 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                         record.steamAvgOut,
                         record.displayName,
                         record.nameColor,
-                        record.nameBold));
+                        record.nameBold,
+                        record.capabilityMask,
+                        record.recognitionMode));
             }
             index++;
         }

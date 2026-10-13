@@ -140,6 +140,15 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
      */
     @Override
     public ItemStack onItemRightClick(ItemStack aStack, World aWorld, EntityPlayer aPlayer) {
+        // Item callbacks run on both sides; credentials and modes are authored once by the server.
+        if (aWorld.isRemote) {
+            if (aPlayer.isSneaking() && isMonitorBound(aStack)
+                && aPlayer.getUniqueID()
+                    .toString()
+                    .equals(getOwnerUUID(aStack)))
+                GTSimpleWirelessNetwork.proxy.openPortableMonitorGui(aStack);
+            return aStack;
+        }
         // 确保 NBT 已初始化
         ensureNBT(aStack);
 
@@ -148,8 +157,8 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
             if (isMonitorBound(aStack) && aPlayer.getUniqueID()
                 .toString()
                 .equals(getOwnerUUID(aStack))) {
-                if (!aWorld.isRemote) com.miaokatze.gtswn.common.hud.MonitorBindings.ensureId(aStack);
-                if (aWorld.isRemote) GTSimpleWirelessNetwork.proxy.openPortableMonitorGui(aStack);
+                com.miaokatze.gtswn.common.hud.MonitorBindings.ensureId(aStack);
+                com.miaokatze.gtswn.common.hud.MonitorBindings.synchronize(aPlayer);
             } else {
                 updateOwner(aStack, aPlayer);
             }
@@ -234,6 +243,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
         // 默认 HUD 模式为关闭
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, 0);
         if (!aPlayer.worldObj.isRemote) com.miaokatze.gtswn.common.hud.MonitorBindings.ensureId(aStack);
+        com.miaokatze.gtswn.common.hud.MonitorBindings.synchronize(aPlayer);
 
         // 向玩家发送提示信息（B2-08：onItemRightClick 双端各执行一次，无服务端门会双发；
         // 仅服务端权威转发，与 TestCoin 绑定提示范式对齐）
@@ -260,6 +270,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
         // 重置 HUD 模式为关闭
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, 0);
         if (!aPlayer.worldObj.isRemote) com.miaokatze.gtswn.common.hud.MonitorBindings.ensureId(aStack);
+        com.miaokatze.gtswn.common.hud.MonitorBindings.synchronize(aPlayer);
 
         // 发送提示信息（B2-08：仅服务端权威转发，避免双端镜像双发）
         if (!aPlayer.worldObj.isRemote) {
@@ -279,6 +290,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
 
         // 更新 HUD 模式（两端都执行）
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, newMode);
+        com.miaokatze.gtswn.common.hud.MonitorBindings.synchronize(aPlayer);
 
         // 仅在客户端同步到 HUD 管理器（O2-B10：改经 @SidedProxy 发意图，消除本类对客户端类
         // WirelessMonitorHUD 的字节码引用——items→hud 拆环；CommonProxy 空实现，ClientProxy
@@ -289,7 +301,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
         }
 
         // 仅在客户端发送提示信息
-        if (aPlayer.worldObj.isRemote) {
+        if (!aPlayer.worldObj.isRemote) {
             String modeKey;
             switch (newMode) {
                 case 0:

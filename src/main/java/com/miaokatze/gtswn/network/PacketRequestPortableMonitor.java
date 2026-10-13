@@ -15,7 +15,8 @@ import io.netty.buffer.ByteBuf;
 /** Bounded selection and pin intent; coordinates and screen credentials only come from server item NBT. */
 public final class PacketRequestPortableMonitor implements IMessage {
 
-    public static final int PROTOCOL_MAGIC = 0x50574d57;
+    public static final int PROTOCOL_MAGIC = 0x50574d58;
+    public static final int PROTOCOL = 58;
 
     public UUID terminalId;
     public int sequence;
@@ -24,6 +25,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
     public UUID targetPanel = new UUID(0, 0);
     public boolean valid;
     public int selected = -1;
+    public UUID selectedPanel = new UUID(0, 0);
     public boolean charts;
     public long knownRenderVersion;
     public final Map<UUID, Set<String>> pins = new HashMap<>();
@@ -43,16 +45,18 @@ public final class PacketRequestPortableMonitor implements IMessage {
     @Override
     public void fromBytes(ByteBuf buf) {
         valid = false;
-        if (buf.readableBytes() < 64 || buf.readableBytes() > MAX_BYTES) return;
+        pins.clear();
+        if (buf.readableBytes() < 80 || buf.readableBytes() > MAX_BYTES) return;
         try {
             if (buf.readInt() != PROTOCOL_MAGIC) return;
-            if (buf.readUnsignedByte() != 57) return;
+            if (buf.readUnsignedByte() != PROTOCOL) return;
             terminalId = new UUID(buf.readLong(), buf.readLong());
             sequence = buf.readInt();
             action = buf.readInt();
             value = buf.readInt();
             targetPanel = new UUID(buf.readLong(), buf.readLong());
             selected = buf.readInt();
+            selectedPanel = new UUID(buf.readLong(), buf.readLong());
             charts = buf.readBoolean();
             knownRenderVersion = buf.readLong();
             int count = buf.readUnsignedShort();
@@ -81,7 +85,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
     @Override
     public void toBytes(ByteBuf buf) {
         buf.writeInt(PROTOCOL_MAGIC);
-        buf.writeByte(57);
+        buf.writeByte(PROTOCOL);
         buf.writeLong(terminalId.getMostSignificantBits());
         buf.writeLong(terminalId.getLeastSignificantBits());
         buf.writeInt(sequence);
@@ -90,6 +94,8 @@ public final class PacketRequestPortableMonitor implements IMessage {
         buf.writeLong(targetPanel.getMostSignificantBits());
         buf.writeLong(targetPanel.getLeastSignificantBits());
         buf.writeInt(selected);
+        buf.writeLong(selectedPanel.getMostSignificantBits());
+        buf.writeLong(selectedPanel.getLeastSignificantBits());
         buf.writeBoolean(charts);
         buf.writeLong(knownRenderVersion);
         int count = 0;

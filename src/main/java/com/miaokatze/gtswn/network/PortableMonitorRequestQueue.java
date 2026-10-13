@@ -20,11 +20,13 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.common.hud.PortableMonitorPins;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.panel.AEMonitorDataSet;
 import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
+import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -65,12 +67,16 @@ public final class PortableMonitorRequestQueue {
         serverTick++;
         int remaining = 16;
         for (Map.Entry<UUID, Request> entry : PENDING.entrySet()) {
-            if (remaining-- <= 0) break;
             Request request = entry.getValue();
-            if (!PENDING.remove(entry.getKey(), request)) continue;
             EntityPlayerMP player = request.player;
-            if (player.playerNetServerHandler == null || player.worldObj == null
-                || serverTick < nextAllowed.getOrDefault(player, 0L)) continue;
+            if (player.playerNetServerHandler == null || player.worldObj == null) {
+                PENDING.remove(entry.getKey(), request);
+                continue;
+            }
+            // A valid single-flight action must survive the cooldown, not wait for a transport retry.
+            if (serverTick < nextAllowed.getOrDefault(player, 0L)) continue;
+            if (remaining-- <= 0) break;
+            if (!PENDING.remove(entry.getKey(), request)) continue;
             nextAllowed.put(player, serverTick + 20);
             try {
                 process(player, request.message);
@@ -94,21 +100,23 @@ public final class PortableMonitorRequestQueue {
             GTSWNPacketHandler.NETWORK.sendTo(previous, player);
             return;
         }
+        // Older retries must never remove a screen rebound after a later acknowledged action.
+        if (request.action != 0 && previous != null && request.sequence - previous.sequence <= 0) return;
         int result = request.action == 0 ? 0 : owner ? 1 : 2;
         if (request.action == 1 && owner && !MonitorBindings.remove(stack, request.targetPanel)) result = 3;
         if (request.action == 2 && owner)
             stack.stackTagCompound.setInteger(PortableWirelessNetworkMonitor.NBT_HUD_MODE, request.value);
         if (request.action != 0 && owner) {
-            player.inventory.markDirty();
-            player.inventoryContainer.detectAndSendChanges();
+            MonitorBindings.synchronize(player);
         }
         PacketSyncPortableMonitor response = new PacketSyncPortableMonitor(
             request.terminalId,
             request.sequence,
             PortableWirelessNetworkMonitor.getHudMode(stack));
         response.result = result;
+        response.bindingRevision = MonitorBindings.revision(stack);
         List<MonitorBindings.Binding> bindings = MonitorBindings.read(stack);
-        int selected = Math.min(request.selected, bindings.size() - 1);
+        int selected = selectedIndex(request, bindings);
         int panelIndex = 0;
         for (MonitorBindings.Binding binding : bindings) {
             PacketSyncPortableMonitor.Panel data = new PacketSyncPortableMonitor.Panel();
@@ -140,6 +148,16 @@ public final class PortableMonitorRequestQueue {
         GTSWNPacketHandler.NETWORK.sendTo(response, player);
     }
 
+    static int selectedIndex(PacketRequestPortableMonitor request, List<MonitorBindings.Binding> bindings) {
+        if (request.selected < 0) return -1;
+        if (!request.selectedPanel.equals(new UUID(0, 0))) {
+            for (int i = 0; i < bindings.size(); i++)
+                if (bindings.get(i).panelId.equals(request.selectedPanel)) return i;
+            return -1;
+        }
+        return Math.min(request.selected, bindings.size() - 1);
+    }
+
     private static ItemStack find(EntityPlayerMP player, UUID id) {
         ItemStack held = player.getHeldItem();
         if (id.equals(MonitorBindings.id(held))) return held;
@@ -159,9 +177,13 @@ public final class PortableMonitorRequestQueue {
         data.detail = detail;
         data.ownerName = panel.getOwnerName();
         data.window = panel.getWindowName();
+        data.aeWindow = WindowLabel.of(panel.getAETrackingWindow())
+            .shortName();
+        data.displayMode = panel.getDisplayMode();
+        data.palette = panel.getTrendLinePalette();
         data.tab = panel.getCurrentTab();
         data.aeConnected = panel.isAEConnected();
-        boolean needsEU = detail || requestedPins.contains("eu") || requestedPins.contains(EU_GRAPH);
+        boolean needsEU = detail || requestedPins.contains("eu");
         if (needsEU) {
             String exactEnergy = panel.getCachedEu()
                 .toString();
@@ -200,7 +222,8 @@ public final class PortableMonitorRequestQueue {
         String chartKey = panel.getChartItem() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartItem())
             : panel.getChartFluid() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartFluid()) : null;
         data.chartKey = chartKey == null ? "" : chartKey;
-        if (requestedPins.contains(AE_GRAPH)) {
+        if (requestedPins.contains(AE_GRAPH) || requestedPins.contains(PortableMonitorPins.AE_TITLE)
+            || requestedPins.contains(PortableMonitorPins.AE_PLOT)) {
             addItem(data, keys, set, panel.getChartItem(), true, requestedPins, false);
             addFluid(data, keys, set, panel.getChartFluid(), true, requestedPins, false);
         }
@@ -222,11 +245,11 @@ public final class PortableMonitorRequestQueue {
     }
 
     public static boolean needsEUChart(boolean detail, Set<String> pins, boolean legacyCharts) {
-        return detail || pins.contains(EU_GRAPH) || legacyCharts && pins.contains("eu");
+        return detail || pins.contains(EU_GRAPH) || pins.contains(PortableMonitorPins.EU_PLOT);
     }
 
     public static boolean needsAEChart(boolean detail, Set<String> pins) {
-        return detail || pins.contains(AE_GRAPH);
+        return detail || pins.contains(AE_GRAPH) || pins.contains(PortableMonitorPins.AE_PLOT);
     }
 
     private static RenderCache renderCache(TileEntityNetworkInfoPanel panel, AEMonitorDataSet set, String chartKey) {

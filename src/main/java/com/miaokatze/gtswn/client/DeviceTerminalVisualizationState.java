@@ -4,12 +4,22 @@ import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.ChatComponentTranslation;
+import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.MovingObjectPosition;
+import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.device.DeviceMachineTypes;
+import com.miaokatze.gtswn.common.device.DeviceRegistryData;
+import com.miaokatze.gtswn.common.device.DeviceTerminalTeleport;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalVisualAction;
+
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
 /** Server ACK is the only source of an enabled travel session. */
 public final class DeviceTerminalVisualizationState {
@@ -22,6 +32,9 @@ public final class DeviceTerminalVisualizationState {
     private static String cachedHeldToken;
     private static UUID cachedHeldId;
     private static long lastClickTick = Long.MIN_VALUE;
+    private static World lastClickWorld;
+    private static EntityPlayer lastClickPlayer;
+    private static ItemStack lastClickStack;
     private static long lastTeleportTick = Long.MIN_VALUE;
     private static long lastFeedbackTick = Long.MIN_VALUE;
     private static long retryAtTick = Long.MIN_VALUE;
@@ -102,44 +115,78 @@ public final class DeviceTerminalVisualizationState {
         return isActiveHeld() ? DeviceTerminalAnchorRenderer.INSTANCE.currentTargetKey() : null;
     }
 
-    /** Used by MouseEvent, Forge interaction events and the item fallback; all ordinary mode clicks are consumed. */
+    /** Mouse, Forge block/air events and item callbacks share one intent for each native right-click tick. */
     public static boolean handleRightClick() {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.theWorld == null || mc.thePlayer == null
-            || mc.currentScreen != null
-            || QuantumIncorporationClientHandler.isShiftDown()
-            || mc.thePlayer.isSneaking()
-            || QuantumIncorporationClientHandler.isAltDown()) return false;
-        UUID heldId = heldTerminalId();
-        if (!ItemDeviceInfoTerminal.isVisualizationEnabled(mc.thePlayer.getHeldItem()) || heldId == null) return false;
-        // Consumed press events must not leave vanilla's use key held, which would re-enter block activation.
-        KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), false);
+        if (mc.theWorld == null || mc.thePlayer == null) return false;
+        ItemStack held = mc.thePlayer.getHeldItem();
+        if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)) return false;
         long now = mc.theWorld.getTotalWorldTime();
-        if (lastClickTick == now) return true;
+        // Native rightClickMouse continues to RIGHT_CLICK_AIR after a canceled block event, even if we opened a GUI.
+        if (lastClickTick == now && lastClickWorld == mc.theWorld
+            && lastClickPlayer == mc.thePlayer
+            && lastClickStack == held) return true;
+        if (mc.currentScreen != null) return false;
+        boolean alt = QuantumIncorporationClientHandler.isAltDown();
+        boolean shift = QuantumIncorporationClientHandler.isShiftDown() || (!alt && mc.thePlayer.isSneaking());
+        if (!alt && !shift && !ItemDeviceInfoTerminal.isVisualizationEnabled(held)) return false;
         lastClickTick = now;
-        if (!isActiveHeld()) {
-            // Consume the enabled terminal's pending-selection click; ACK remains mandatory for rendering/travel.
+        lastClickWorld = mc.theWorld;
+        lastClickPlayer = mc.thePlayer;
+        lastClickStack = held;
+        TerminalRevealCharge.cancel();
+        KeyBinding.setKeyBindState(mc.gameSettings.keyBindUseItem.getKeyCode(), false);
+        if (TerminalGestureRules.canToggleVisualization(true, alt, shift)) {
+            UUID id = heldTerminalId();
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(PacketDeviceTerminalVisualAction.toggle(id == null ? new UUID(0L, 0L) : id));
+            return true;
+        }
+        if (TerminalGestureRules.canCharge(true, alt, shift, TerminalRevealCharge.isPointingAtAir(mc))) {
+            TerminalRevealCharge.start(mc);
+            return true;
+        }
+        if (shift) {
+            String machine = aimedWorkingMachineKey(mc);
+            if (machine == null) GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
+            else {
+                UUID id = heldTerminalId();
+                GTSWNPacketHandler.NETWORK.sendToServer(
+                    PacketDeviceTerminalAction.cycleRecognition(id == null ? new UUID(0L, 0L) : id, machine));
+            }
+            return true;
+        }
+        UUID heldId = heldTerminalId();
+        if (heldId == null || !isActiveHeld()) {
+            // List polling restores missing metadata/ACK while this press remains a single GUI intent.
             if (lastFeedbackTick == Long.MIN_VALUE || now - lastFeedbackTick >= 20L) {
                 GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(heldId));
-                mc.thePlayer.addChatMessage(new ChatComponentTranslation("gtswn.device.visual.sync_pending"));
                 lastFeedbackTick = now;
             }
+            GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalGui();
             return true;
         }
         String target = currentTargetKey();
         if (target == null) {
-            if (lastFeedbackTick == Long.MIN_VALUE || now - lastFeedbackTick >= 40L) {
-                mc.thePlayer.addChatMessage(new ChatComponentTranslation("gtswn.device.visual.aim_first"));
-                lastFeedbackTick = now;
-            }
+            GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalGui();
             return true;
         }
         if (retryAtTick != Long.MIN_VALUE && now < retryAtTick) return true;
         lastTeleportTick = now;
-        retryAtTick = now + 60L;
+        retryAtTick = now + DeviceTerminalTeleport.COOLDOWN_TICKS;
         GTSWNPacketHandler.NETWORK.sendToServer(PacketDeviceTerminalVisualAction.teleport(terminalId, target));
         DeviceTerminalAnchorRenderer.INSTANCE.clearTarget();
         return true;
+    }
+
+    private static String aimedWorkingMachineKey(Minecraft mc) {
+        MovingObjectPosition hit = mc.objectMouseOver;
+        if (hit == null || hit.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK
+            || !mc.theWorld.blockExists(hit.blockX, hit.blockY, hit.blockZ)) return null;
+        TileEntity tile = mc.theWorld.getTileEntity(hit.blockX, hit.blockY, hit.blockZ);
+        if (!(tile instanceof IGregTechTileEntity)
+            || !DeviceMachineTypes.isWorkingMachine(((IGregTechTileEntity) tile).getMetaTileEntity())) return null;
+        return DeviceRegistryData.makeKey(mc.theWorld.provider.dimensionId, hit.blockX, hit.blockY, hit.blockZ);
     }
 
     public static void clear() {
@@ -148,6 +195,9 @@ public final class DeviceTerminalVisualizationState {
         inventorySlot = -1;
         lastInventoryScanTick = Integer.MIN_VALUE;
         lastClickTick = lastTeleportTick = lastFeedbackTick = Long.MIN_VALUE;
+        lastClickWorld = null;
+        lastClickPlayer = null;
+        lastClickStack = null;
         retryAtTick = Long.MIN_VALUE;
         cachedHeld = null;
         cachedHeldToken = null;

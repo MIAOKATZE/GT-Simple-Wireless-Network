@@ -40,4 +40,42 @@ public final class DeviceTerminalVisualRules {
             alignment(eyeX, eyeY, eyeZ, lookX, lookY, lookZ, targetX, targetY, targetZ),
             MAX_RANGE);
     }
+
+    /**
+     * Travel accepts the marker cone or a ray through the bound machine's unit block, using the same eye on both ends.
+     */
+    public static boolean isAimedAtMachine(double eyeX, double eyeY, double eyeZ, double lookX, double lookY,
+        double lookZ, int blockX, int blockY, int blockZ) {
+        double dx = blockX + 0.5D - eyeX, dy = blockY + MARKER_Y - eyeY, dz = blockZ + 0.5D - eyeZ;
+        double distance = dx * dx + dy * dy + dz * dz;
+        if (!Double.isFinite(distance) || distance <= 0D || distance > MAX_RANGE * MAX_RANGE) return false;
+        return isAimedAt(eyeX, eyeY, eyeZ, lookX, lookY, lookZ, blockX + 0.5D, blockY + MARKER_Y, blockZ + 0.5D)
+            || isAimedAtMachineBody(eyeX, eyeY, eyeZ, lookX, lookY, lookZ, blockX, blockY, blockZ);
+    }
+
+    /** Allocation-free ray/slab test; the 0.05-block margin only tolerates native look/position packet ordering. */
+    public static boolean isAimedAtMachineBody(double eyeX, double eyeY, double eyeZ, double lookX, double lookY,
+        double lookZ, int blockX, int blockY, int blockZ) {
+        double length = Math.sqrt(lookX * lookX + lookY * lookY + lookZ * lookZ);
+        if (!Double.isFinite(eyeX) || !Double.isFinite(eyeY)
+            || !Double.isFinite(eyeZ)
+            || !Double.isFinite(length)
+            || length <= 0D) return false;
+        double dx = lookX / length, dy = lookY / length, dz = lookZ / length;
+        double minX = blockX - 0.05D, maxX = blockX + 1.05D;
+        double minY = blockY - 0.05D, maxY = blockY + 1.05D;
+        double minZ = blockZ - 0.05D, maxZ = blockZ + 1.05D;
+        boolean parallelX = Math.abs(dx) < 1E-12D, parallelY = Math.abs(dy) < 1E-12D, parallelZ = Math.abs(dz) < 1E-12D;
+        if ((parallelX && (eyeX < minX || eyeX > maxX)) || (parallelY && (eyeY < minY || eyeY > maxY))
+            || (parallelZ && (eyeZ < minZ || eyeZ > maxZ))) return false;
+        double nearX = parallelX ? Double.NEGATIVE_INFINITY : Math.min((minX - eyeX) / dx, (maxX - eyeX) / dx);
+        double farX = parallelX ? Double.POSITIVE_INFINITY : Math.max((minX - eyeX) / dx, (maxX - eyeX) / dx);
+        double nearY = parallelY ? Double.NEGATIVE_INFINITY : Math.min((minY - eyeY) / dy, (maxY - eyeY) / dy);
+        double farY = parallelY ? Double.POSITIVE_INFINITY : Math.max((minY - eyeY) / dy, (maxY - eyeY) / dy);
+        double nearZ = parallelZ ? Double.NEGATIVE_INFINITY : Math.min((minZ - eyeZ) / dz, (maxZ - eyeZ) / dz);
+        double farZ = parallelZ ? Double.POSITIVE_INFINITY : Math.max((minZ - eyeZ) / dz, (maxZ - eyeZ) / dz);
+        double near = Math.max(0D, Math.max(nearX, Math.max(nearY, nearZ)));
+        double far = Math.min(MAX_RANGE, Math.min(farX, Math.min(farY, farZ)));
+        return near <= far;
+    }
 }

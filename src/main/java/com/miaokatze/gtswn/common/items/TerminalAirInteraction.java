@@ -4,6 +4,8 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.util.MovingObjectPosition;
 
+import com.miaokatze.gtswn.common.device.DeviceTerminalVisualRules;
+
 import appeng.util.LookDirection;
 import appeng.util.Platform;
 
@@ -13,7 +15,10 @@ public final class TerminalAirInteraction {
     private TerminalAirInteraction() {}
 
     public static boolean isAir(EntityPlayer player) {
-        LookDirection look = Platform.getPlayerRay(player, Platform.getEyeOffset(player));
+        // Forge SP's default eye height is .12, while MP's is 1.62. AE's getEyeOffset is client-only.
+        float eyeY = (float) DeviceTerminalVisualRules
+            .eyeY(player.posY, player.yOffset, player.getEyeHeight(), player.getDefaultEyeHeight());
+        LookDirection look = Platform.getPlayerRay(player, eyeY);
         MovingObjectPosition hit = player.worldObj.rayTraceBlocks(look.getA(), look.getB(), true);
         if (hit != null && hit.typeOfHit != MovingObjectPosition.MovingObjectType.MISS) return false;
         for (Object object : player.worldObj.getEntitiesWithinAABBExcludingEntity(

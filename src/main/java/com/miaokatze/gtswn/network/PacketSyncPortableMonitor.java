@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.common.panel.TrendLinePalette;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
@@ -20,10 +21,11 @@ public final class PacketSyncPortableMonitor implements IMessage {
     public static final int MAX_TOTAL_ROWS = MAX_ROWS + PacketRequestPortableMonitor.MAX_PINS;
     public static final int MAX_SAMPLES = 61;
     public static final int MAX_BYTES = 1024 * 1024;
-    private static final int PROTOCOL = 57;
+    private static final int PROTOCOL = PacketRequestPortableMonitor.PROTOCOL;
     public UUID terminalId;
     public int sequence;
     public int hudMode;
+    public long bindingRevision;
     /** 0 snapshot, 1 mutation applied, 2 current terminal owner required, 3 target no longer bound. */
     public int result;
     public boolean valid;
@@ -42,13 +44,14 @@ public final class PacketSyncPortableMonitor implements IMessage {
     public void fromBytes(ByteBuf buf) {
         valid = false;
         panels.clear();
-        if (buf.readableBytes() > MAX_BYTES || buf.readableBytes() < 31) return;
+        if (buf.readableBytes() > MAX_BYTES || buf.readableBytes() < 39) return;
         try {
             if (buf.readInt() != PacketRequestPortableMonitor.PROTOCOL_MAGIC) return;
             if (buf.readUnsignedByte() != PROTOCOL) return;
             terminalId = new UUID(buf.readLong(), buf.readLong());
             sequence = buf.readInt();
             hudMode = count(buf.readInt(), 2);
+            bindingRevision = buf.readLong();
             result = count(buf.readUnsignedByte(), 3);
             int count = count(buf.readUnsignedByte(), MonitorBindings.MAX_PANELS);
             int totalRows = 0;
@@ -65,6 +68,16 @@ public final class PacketSyncPortableMonitor implements IMessage {
                 panel.tab = count(buf.readUnsignedByte(), 2);
                 panel.ownerName = readString(buf, 128);
                 panel.window = readString(buf, 32);
+                panel.aeWindow = readString(buf, 32);
+                panel.displayMode = count(buf.readUnsignedByte(), 2);
+                panel.palette = new TrendLinePalette(
+                    buf.readBoolean(),
+                    buf.readInt() & 0xffffff,
+                    buf.readInt() & 0xffffff,
+                    buf.readInt() & 0xffffff,
+                    buf.readInt() & 0xffffff,
+                    buf.readInt() & 0xffffff,
+                    buf.readInt() & 0xffffff);
                 panel.chartKey = readString(buf, 256);
                 panel.currentEnergy = readString(buf, 4096);
                 panel.aeConnected = buf.readBoolean();
@@ -120,6 +133,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
         buf.writeLong(terminalId.getLeastSignificantBits());
         buf.writeInt(sequence);
         buf.writeInt(hudMode);
+        buf.writeLong(bindingRevision);
         buf.writeByte(result);
         buf.writeByte(panels.size());
         for (Panel panel : panels) {
@@ -134,6 +148,15 @@ public final class PacketSyncPortableMonitor implements IMessage {
             buf.writeByte(panel.tab);
             writeString(buf, panel.ownerName, 128);
             writeString(buf, panel.window, 32);
+            writeString(buf, panel.aeWindow, 32);
+            buf.writeByte(panel.displayMode);
+            buf.writeBoolean(panel.palette.enabled);
+            buf.writeInt(panel.palette.energyFlat);
+            buf.writeInt(panel.palette.energyUp);
+            buf.writeInt(panel.palette.energyDown);
+            buf.writeInt(panel.palette.rateFlat);
+            buf.writeInt(panel.palette.rateUp);
+            buf.writeInt(panel.palette.rateDown);
             writeString(buf, panel.chartKey, 256);
             writeString(buf, panel.currentEnergy, 4096);
             buf.writeBoolean(panel.aeConnected);
@@ -211,7 +234,9 @@ public final class PacketSyncPortableMonitor implements IMessage {
         public MonitorBindings.Binding binding;
         /** 0 ready, 1 unloaded, 2 missing, 3 replaced. */
         public int state, tab;
-        public String ownerName = "", window = "";
+        public String ownerName = "", window = "", aeWindow = "";
+        public int displayMode;
+        public TrendLinePalette palette = TrendLinePalette.DEFAULT;
         public String chartKey = "";
         public String currentEnergy = "";
         public boolean aeConnected;

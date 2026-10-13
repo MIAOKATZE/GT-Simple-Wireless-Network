@@ -39,7 +39,6 @@ public final class GuiPortableMonitor extends GuiScreen {
     private float panX, panY;
     private int dragX, dragY;
     private final java.nio.IntBuffer oldScissorBox = org.lwjgl.BufferUtils.createIntBuffer(16);
-    private PacketSyncPortableMonitor.Row footerRow;
     private boolean manualTab, pinManager;
     private boolean handlingButtonClick, rebuildPending;
     private GuiCanvas canvas;
@@ -110,7 +109,6 @@ public final class GuiPortableMonitor extends GuiScreen {
         }
         buttonList.clear();
         fields.clear();
-        footerRow = null;
         add(3, panelWidth - 58, 7, 50, tr("close"));
         add(2, panelWidth - 135, 7, 70, tr(settings ? "viewer" : "settings"));
         if (settings) {
@@ -161,7 +159,7 @@ public final class GuiPortableMonitor extends GuiScreen {
         add(7, 12 + tabWidth, 59, tabWidth - 3, tr("ae.chart"));
         add(8, 12 + tabWidth * 2, 59, tabWidth - 3, tr("ae.list"));
         add(4, 12 + tabWidth * 3, 59, tabWidth - 3, tr("remove"));
-        add(5, 12, panelHeight - 28, 155, tr("mode." + currentMode()));
+        add(5, 12, panelHeight - 28, 155, tr(currentMode() == 0 ? "hud.off" : "hud.on"));
         boolean mutable = PortableMonitorClientCache.canMutate(stack)
             && PortableMonitorClientCache.mutationStatus(stack) != 4;
         for (Object candidate : buttonList) {
@@ -174,34 +172,16 @@ public final class GuiPortableMonitor extends GuiScreen {
         }
         add(
             45,
-            tab == 2 || pinManager ? 12 : 142,
+            12,
             82,
-            tab == 2 || pinManager ? panelWidth - 24 : panelWidth - 262,
+            tab == 2 || pinManager ? panelWidth - 24 : panelWidth - 126,
             tr(pinManager ? "graph.native" : "graph.manage"));
         if (!pinManager) {
-            PacketSyncPortableMonitor.Panel current = panel();
-            PacketSyncPortableMonitor data = PortableMonitorClientCache.snapshot(stack);
-            boolean graph = current != null && data != null
-                && PortableMonitorClientCache.graphPinned(data.terminalId, current, tab);
-            if (tab != 2) add(40, 12, 82, 126, (graph ? "\u2611 " : "\u2610 ") + tr("graph.pin"));
             if (tab != 2) {
                 add(41, panelWidth - 108, 82, 28, "-");
                 add(42, panelWidth - 76, 82, 28, "+");
                 add(43, panelWidth - 44, 82, 32, "1:1");
             }
-            if (tab != 2 && current != null && data != null) for (PacketSyncPortableMonitor.Row row : current.rows) {
-                if (tab == 0 ? row.kind == 0 : row.key.equals(current.chartKey)) {
-                    footerRow = row;
-                    break;
-                }
-            }
-            if (footerRow != null) add(
-                44,
-                panelWidth - 126,
-                panelHeight - 28,
-                114,
-                (PortableMonitorClientCache.pinned(data.terminalId, current, footerRow) ? "\u2611 " : "\u2610 ")
-                    + tr("pin.short"));
         }
         buildRows();
     }
@@ -229,20 +209,21 @@ public final class GuiPortableMonitor extends GuiScreen {
             panel,
             Config.hudPinnedEntries,
             !PortableMonitorClientCache.stale(stack),
-            tr("pins.unavailable"));
+            tr("pins.unavailable"),
+            tab);
         int pages = Math.max(1, (rows.size() + visibleRows - 1) / visibleRows);
         page = Math.min(page, pages - 1);
         for (int i = page * visibleRows; i < Math.min(rows.size(), (page + 1) * visibleRows); i++) {
             PacketSyncPortableMonitor.Row row = rows.get(i);
             shownRows.add(row);
             String label = (PortableMonitorClientCache.pinned(snapshot.terminalId, panel, row) ? "\u2611 " : "\u2610 ")
-                + (row.kind == 0 ? tr("pin.short") : PortableMonitorClientCache.viewerRowText(row));
+                + (row.kind == 3 ? row.name : PortableMonitorClientCache.viewerRowText(row, panel.displayMode));
             add(
                 100 + shownRows.size() - 1,
-                row.kind == 0 ? panelWidth - 88 : 12,
+                12,
                 137 + (shownRows.size() - 1) * 20,
-                row.kind == 0 ? 76 : panelWidth - 24,
-                fontRendererObj.trimStringToWidth(label, row.kind == 0 ? 68 : panelWidth - 34));
+                panelWidth - 24,
+                fontRendererObj.trimStringToWidth(label, panelWidth - 34));
         }
     }
 
@@ -254,12 +235,8 @@ public final class GuiPortableMonitor extends GuiScreen {
             return;
         }
         // Resolve the current server-authored slot reference, including delayed MonitorId synchronization.
-        ItemStack held = mc.thePlayer.getHeldItem();
-        if (held != null && held.getItem() instanceof PortableWirelessNetworkMonitor
-            && (MonitorBindings.id(stack) == null || MonitorBindings.id(stack)
-                .equals(MonitorBindings.id(held)))) {
-            stack.stackTagCompound = held.stackTagCompound;
-        }
+        ItemStack currentStack = PortableMonitorClientCache.currentStack(stack);
+        if (currentStack != stack) stack.stackTagCompound = currentStack.stackTagCompound;
         PortableMonitorClientCache.viewing(stack, selected);
         PortableMonitorClientCache.poll(stack);
         PacketSyncPortableMonitor data = PortableMonitorClientCache.snapshot(stack);
@@ -303,23 +280,15 @@ public final class GuiPortableMonitor extends GuiScreen {
             tab = button.id - 6;
             page = 0;
             manualTab = true;
-            pinManager = false;
         } else if (button.id == 4 && panel != null) PortableMonitorClientCache.action(stack, 1, selected);
-        else if (button.id == 5) PortableMonitorClientCache.action(stack, 2, (currentMode() + 1) % 3);
+        else if (button.id == 5) PortableMonitorClientCache.action(stack, 2, currentMode() == 0 ? 1 : 0);
         else if (button.id == 9) page = Math.max(0, page - 1);
         else if (button.id == 10) page++;
-        else if (button.id == 40 && panel != null && snapshot != null) {
-            notice = PortableMonitorClientCache.toggleGraph(snapshot.terminalId, panel, tab) ? "" : tr("save.failed");
-            enablePinnedHud();
-        } else if (button.id == 41) chartZoom = Math.max(1, chartZoom / 1.25f);
+        else if (button.id == 41) chartZoom = Math.max(1, chartZoom / 1.25f);
         else if (button.id == 42) chartZoom = Math.min(4, chartZoom * 1.25f);
         else if (button.id == 43) {
             chartZoom = 1;
             panX = panY = 0;
-        } else if (button.id == 44 && footerRow != null && panel != null && snapshot != null) {
-            notice = PortableMonitorClientCache.togglePin(snapshot.terminalId, panel, footerRow) ? ""
-                : tr("save.failed");
-            enablePinnedHud();
         } else if (button.id == 45) {
             pinManager = !pinManager;
             page = 0;
@@ -391,7 +360,10 @@ public final class GuiPortableMonitor extends GuiScreen {
                 Config.hudRenderMode = (Config.hudRenderMode + 1) % 3;
                 break;
             case 29:
-                Config.hudPinnedEntries = new String[0];
+                String prefix = MonitorBindings.id(stack) + "/";
+                Config.hudPinnedEntries = java.util.Arrays.stream(Config.hudPinnedEntries)
+                    .filter(pin -> !pin.startsWith(prefix))
+                    .toArray(String[]::new);
                 break;
             default:
                 return;
@@ -606,6 +578,14 @@ public final class GuiPortableMonitor extends GuiScreen {
                     || mouseY < button.yPosition
                     || mouseY >= button.yPosition + button.height) continue;
                 PacketSyncPortableMonitor.Row row = shownRows.get(index);
+                if (row.kind == 3) {
+                    drawHoveringText(
+                        java.util.Arrays.asList(row.name, tr("pin.components.hint")),
+                        mouseX,
+                        mouseY,
+                        fontRendererObj);
+                    break;
+                }
                 String unit = row.kind == 0 ? "EU/t" : row.kind == 2 ? "mB/min" : "/min";
                 List<String> tooltip = new ArrayList<>();
                 tooltip.add(row.name + ": " + row.amount + (row.kind == 2 ? " mB" : row.kind == 0 ? " EU" : ""));

@@ -34,8 +34,7 @@ public final class TerminalRevealCharge {
     public static void start(Minecraft mc) {
         cancel();
         ItemStack held = mc.thePlayer == null ? null : mc.thePlayer.getHeldItem();
-        if (mc.currentScreen != null || !isPointingAtAir(mc)
-            || mc.thePlayer == null
+        if (mc.currentScreen != null || mc.thePlayer == null
             || !QuantumIncorporationClientHandler.isAltDown()
             || held == null
             || !(held.getItem() instanceof ItemNetworkQuantumTerminal || held.getItem() instanceof WirelessEnergyTap
@@ -72,8 +71,7 @@ public final class TerminalRevealCharge {
             || !Mouse.isButtonDown(1)
             || chargingPlayer.inventory.currentItem != chargingSlot
             || chargingPlayer.getHeldItem() != chargingStack
-            || chargingPlayer.getItemInUse() != chargingStack
-            || !isPointingAtAir(mc)) {
+            || chargingPlayer.getItemInUse() != chargingStack) {
             cancel();
             return;
         }

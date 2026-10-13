@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.network;
 
+import java.util.UUID;
+
 import net.minecraft.entity.player.EntityPlayerMP;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
@@ -41,6 +43,7 @@ public class PacketDeviceTerminalAction implements IMessage {
 
     /** OP-only server-wide persisted teleport experience cost; key is a decimal integer. */
     public static final byte ACTION_SET_TELEPORT_COST = 4;
+    public static final byte ACTION_CYCLE_RECOGNITION = 5;
 
     /** 排序列：机器名 */
     public static final byte COLUMN_NAME = 0;
@@ -92,6 +95,7 @@ public class PacketDeviceTerminalAction implements IMessage {
 
     /** 目标机器键（动作 2/3 用，dim:x:y:z） */
     private String key = "";
+    private UUID terminalId;
 
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketDeviceTerminalAction() {}
@@ -104,6 +108,17 @@ public class PacketDeviceTerminalAction implements IMessage {
         this.key = key == null ? "" : key;
     }
 
+    public static PacketDeviceTerminalAction cycleRecognition(UUID terminalId, String key) {
+        PacketDeviceTerminalAction packet = new PacketDeviceTerminalAction(
+            ACTION_CYCLE_RECOGNITION,
+            (byte) 0,
+            (byte) 0,
+            (byte) 0,
+            key);
+        packet.terminalId = terminalId;
+        return packet;
+    }
+
     @Override
     public void toBytes(ByteBuf buf) {
         buf.writeByte(action);
@@ -111,6 +126,10 @@ public class PacketDeviceTerminalAction implements IMessage {
         buf.writeByte(direction);
         buf.writeByte(countMode);
         ByteBufUtils.writeUTF8String(buf, key);
+        if (action == ACTION_CYCLE_RECOGNITION) {
+            buf.writeLong(terminalId.getMostSignificantBits());
+            buf.writeLong(terminalId.getLeastSignificantBits());
+        }
     }
 
     @Override
@@ -122,6 +141,7 @@ public class PacketDeviceTerminalAction implements IMessage {
             countMode = buf.readByte();
             String readKey = ByteBufUtils.readUTF8String(buf);
             key = readKey != null && readKey.length() <= MAX_KEY_LEN ? readKey : "";
+            terminalId = action == ACTION_CYCLE_RECOGNITION ? new UUID(buf.readLong(), buf.readLong()) : null;
         } catch (Exception e) {
             // 坏包退化为无动作（action 超界由队列侧忽略）
             action = -1;
@@ -142,7 +162,7 @@ public class PacketDeviceTerminalAction implements IMessage {
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
             if (player != null) {
                 DeviceTerminalActionQueue
-                    .enqueue(player, msg.action, msg.column, msg.direction, msg.countMode, msg.key);
+                    .enqueue(player, msg.action, msg.column, msg.direction, msg.countMode, msg.key, msg.terminalId);
             }
             return null;
         }

@@ -47,6 +47,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
     /** 机器状态：停机（!isAllowedToWork） */
     public static final int STATE_STOPPED = 2;
+    public static final int STATE_IGNORED = 3;
 
     /** 功率分类：耗电（旧档缺省值） */
     public static final byte POWER_TYPE_CONSUME = 0;
@@ -136,6 +137,23 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
     public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
         byte powerType, int metaTileId, byte energyKind, byte linkNodeType) {
+        return addBinding(
+            terminalId,
+            key,
+            localName,
+            dim,
+            x,
+            y,
+            z,
+            powerType,
+            metaTileId,
+            energyKind,
+            linkNodeType,
+            DeviceSteamAdapter.legacyCapabilityMask(energyKind, powerType));
+    }
+
+    public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
+        byte powerType, int metaTileId, byte energyKind, byte linkNodeType, byte capabilityMask) {
         TerminalData data = getOrCreateTerminal(terminalId);
         if (data.boundKeys.contains(key)) {
             return AddResult.ALREADY_BOUND;
@@ -148,12 +166,14 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         record.name = localName;
         record.metaTileId = metaTileId;
         record.energyKind = energyKind;
+        record.capabilityMask = (byte) (capabilityMask & 15);
         record.linkNodeType = linkNodeType;
         record.powerType = powerType == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
         record.dim = dim;
         record.x = x;
         record.y = y;
         record.z = z;
+        record.resetRecognition(recognitionMode(terminalId, key, metaTileId), capabilityMask);
         data.records.put(key, record);
         data.version++;
         markDirty();
@@ -165,6 +185,47 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      *
      * @return true=已解除（version++ + markDirty）；false=绑定不存在（不 dirty）
      */
+    public byte recognitionMode(UUID terminalId, String key, int metaTileId) {
+        TerminalData data = getOrCreateTerminal(terminalId);
+        RecognitionOverride override = data.recognitionOverrides.get(key);
+        if (override == null) return DeviceTerminalRecognitionMode.AUTO;
+        if (metaTileId >= 0 && override.metaTileId != metaTileId) {
+            data.recognitionOverrides.remove(key);
+            MachineRecord record = data.records.get(key);
+            if (record != null) record.resetRecognition(DeviceTerminalRecognitionMode.AUTO, record.capabilityMask);
+            data.version++;
+            markDirty();
+            return DeviceTerminalRecognitionMode.AUTO;
+        }
+        return override.mode;
+    }
+
+    public byte cycleRecognition(UUID terminalId, String key, int metaTileId, byte originalCapabilities) {
+        if (KeyFormat.parse(key) == null || metaTileId < 0) return -1;
+        TerminalData data = getOrCreateTerminal(terminalId);
+        byte mode = DeviceTerminalRecognitionMode.next(recognitionMode(terminalId, key, metaTileId));
+        if (mode != DeviceTerminalRecognitionMode.AUTO && !data.recognitionOverrides.containsKey(key)
+            && data.recognitionOverrides.size() >= DeviceTerminalRecognitionMode.MAX_OVERRIDES) return -1;
+        if (mode == DeviceTerminalRecognitionMode.AUTO) data.recognitionOverrides.remove(key);
+        else data.recognitionOverrides.put(key, new RecognitionOverride(metaTileId, mode));
+        MachineRecord record = data.records.get(key);
+        if (record != null) record.resetRecognition(mode, originalCapabilities);
+        data.version++;
+        markDirty();
+        return mode;
+    }
+
+    public static final class RecognitionOverride {
+
+        public final int metaTileId;
+        public final byte mode;
+
+        public RecognitionOverride(int metaTileId, byte mode) {
+            this.metaTileId = metaTileId;
+            this.mode = mode;
+        }
+    }
+
     public boolean removeBinding(UUID terminalId, String key) {
         TerminalData data = terminals.get(terminalId);
         if (data == null) {
@@ -299,6 +360,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         /** 机器键 → 采样记录 */
         public final Map<String, MachineRecord> records = new HashMap<>();
+        public final Map<String, RecognitionOverride> recognitionOverrides = new java.util.LinkedHashMap<>();
 
         /** 数据版本号（任一变更 +1，阶段 D5 请求排水防重发） */
         public long version;
@@ -325,6 +387,16 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 record.readFromNBT(entry.getCompoundTag("data"));
                 records.put(key, record);
             }
+            recognitionOverrides.clear();
+            NBTTagList overrides = tag.getTagList("recognitionOverrides", Constants.NBT.TAG_COMPOUND);
+            for (int i = 0; i < Math.min(overrides.tagCount(), DeviceTerminalRecognitionMode.MAX_OVERRIDES); i++) {
+                NBTTagCompound entry = overrides.getCompoundTagAt(i);
+                String key = entry.getString("key");
+                byte mode = entry.getByte("mode");
+                if (KeyFormat.parse(key) != null
+                    && (mode == DeviceTerminalRecognitionMode.OTHER || mode == DeviceTerminalRecognitionMode.IGNORE))
+                    recognitionOverrides.put(key, new RecognitionOverride(entry.getInteger("metaTileId"), mode));
+            }
             version = tag.getLong("version");
         }
 
@@ -347,6 +419,15 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 recs.appendTag(entryTag);
             }
             tag.setTag("records", recs);
+            NBTTagList overrides = new NBTTagList();
+            for (Map.Entry<String, RecognitionOverride> entry : recognitionOverrides.entrySet()) {
+                NBTTagCompound item = new NBTTagCompound();
+                item.setString("key", entry.getKey());
+                item.setInteger("metaTileId", entry.getValue().metaTileId);
+                item.setByte("mode", entry.getValue().mode);
+                overrides.appendTag(item);
+            }
+            tag.setTag("recognitionOverrides", overrides);
             tag.setLong("version", version);
         }
     }
@@ -371,6 +452,11 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         public final double[] fifoSteamOut = new double[FIFO_SIZE];
         public int metaTileId = -1;
         public byte energyKind;
+        public byte capabilityMask;
+        public byte recognitionMode;
+        /** Actual directions learned for a manual channel, independent of its initial idle fallback. */
+        public byte observedOverrideDirections;
+        public boolean recognitionWarmup;
         /** 0 observed, 1 provider model, 2 warming up, 3 unavailable. */
         public byte evidenceKind = 2;
         public byte linkNodeType;
@@ -421,12 +507,81 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         /** 当前执行配方输出侧描述（输出快照，近似；阶段 C 采样填充） */
         public String recipeOut = "";
 
+        public void resetRecognition(byte mode, byte originalCapabilities) {
+            recognitionMode = mode;
+            observedOverrideDirections = 0;
+            java.util.Arrays.fill(fifoIn, 0);
+            java.util.Arrays.fill(fifoOut, 0);
+            java.util.Arrays.fill(fifoSteamIn, 0);
+            java.util.Arrays.fill(fifoSteamOut, 0);
+            idx = count = 0;
+            instIn = instOut = steamInstIn = steamInstOut = 0;
+            inAvg = outAvg = steamAvgIn = steamAvgOut = 0;
+            recipeIn = recipeOut = "";
+            capabilityMask = DeviceTerminalRecognitionMode.effectiveCapabilities(mode, originalCapabilities, powerType);
+            energyKind = mode == DeviceTerminalRecognitionMode.IGNORE
+                ? DeviceSteamAdapter.energyKind(originalCapabilities)
+                : DeviceSteamAdapter.energyKind(capabilityMask);
+            state = mode == DeviceTerminalRecognitionMode.IGNORE ? STATE_IGNORED : STATE_IDLE;
+            evidenceKind = mode == DeviceTerminalRecognitionMode.IGNORE ? (byte) 0 : (byte) 2;
+            recognitionWarmup = mode != DeviceTerminalRecognitionMode.IGNORE;
+        }
+
+        public byte learnOverrideDirections(byte originalCapabilities, byte fallbackCapabilities, long electricIn,
+            long electricOut, long steamIn, long steamOut, double[] interval) {
+            int channel = DeviceSteamAdapter.energyKind(fallbackCapabilities) == DeviceSteamAdapter.STEAM ? 12 : 3;
+            int actual = 0;
+            if ((channel & DeviceSteamAdapter.EU_IN) != 0 && (electricIn > 0 || interval[0] > 0))
+                actual |= DeviceSteamAdapter.EU_IN;
+            if ((channel & DeviceSteamAdapter.EU_OUT) != 0 && (electricOut > 0 || interval[1] > 0))
+                actual |= DeviceSteamAdapter.EU_OUT;
+            if ((channel & DeviceSteamAdapter.STEAM_IN) != 0 && (steamIn > 0 || interval[2] > 0))
+                actual |= DeviceSteamAdapter.STEAM_IN;
+            if ((channel & DeviceSteamAdapter.STEAM_OUT) != 0 && (steamOut > 0 || interval[3] > 0))
+                actual |= DeviceSteamAdapter.STEAM_OUT;
+            observedOverrideDirections = (byte) ((observedOverrideDirections | actual) & channel);
+            int nativeRoles = originalCapabilities & channel;
+            if (nativeRoles != 0) return (byte) (nativeRoles | observedOverrideDirections);
+            return observedOverrideDirections != 0 ? observedOverrideDirections : fallbackCapabilities;
+        }
+
         /** Exact comparison of serialized fields; rolling FIFO bookkeeping alone does not invalidate network pages. */
         public boolean applySample(int nextState, byte nextPower, int meta, byte energy, byte evidence, byte nodes,
             long electricIn, long electricOut, long steamIn, long steamOut, double avgElectricIn, double avgElectricOut,
             double avgSteamIn, double avgSteamOut, int dimension, int px, int py, int pz, String localName,
             String inputRecipe, String outputRecipe) {
-            boolean changed = state != nextState || powerType != nextPower
+            return applySample(
+                nextState,
+                nextPower,
+                meta,
+                energy,
+                evidence,
+                nodes,
+                electricIn,
+                electricOut,
+                steamIn,
+                steamOut,
+                avgElectricIn,
+                avgElectricOut,
+                avgSteamIn,
+                avgSteamOut,
+                dimension,
+                px,
+                py,
+                pz,
+                localName,
+                inputRecipe,
+                outputRecipe,
+                DeviceSteamAdapter.legacyCapabilityMask(energy, nextPower));
+        }
+
+        public boolean applySample(int nextState, byte nextPower, int meta, byte energy, byte evidence, byte nodes,
+            long electricIn, long electricOut, long steamIn, long steamOut, double avgElectricIn, double avgElectricOut,
+            double avgSteamIn, double avgSteamOut, int dimension, int px, int py, int pz, String localName,
+            String inputRecipe, String outputRecipe, byte capabilities) {
+            capabilities = (byte) (capabilities & 15);
+            boolean changed = capabilityMask != capabilities || state != nextState
+                || powerType != nextPower
                 || metaTileId != meta
                 || energyKind != energy
                 || evidenceKind != evidence
@@ -446,6 +601,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 || !java.util.Objects.equals(name, localName)
                 || !java.util.Objects.equals(recipeIn, inputRecipe)
                 || !java.util.Objects.equals(recipeOut, outputRecipe);
+            capabilityMask = capabilities;
             state = nextState;
             powerType = nextPower;
             metaTileId = meta;
@@ -478,6 +634,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             readFifo(tag, "fifoSteamOut", fifoSteamOut);
             metaTileId = tag.hasKey("metaTileId") ? tag.getInteger("metaTileId") : -1;
             energyKind = tag.getByte("energyKind");
+            recognitionMode = tag.getByte("recognitionMode");
+            if (recognitionMode < 0 || recognitionMode > 2) recognitionMode = 0;
+            recognitionWarmup = recognitionMode != DeviceTerminalRecognitionMode.IGNORE;
+            observedOverrideDirections = recognitionMode == DeviceTerminalRecognitionMode.OTHER
+                ? (byte) (tag.getByte("observedOverrideDirections") & 15)
+                : 0;
             evidenceKind = 2;
             linkNodeType = tag.getByte("linkNodeType");
             instIn = tag.getLong("instIn");
@@ -495,6 +657,10 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             state = tag.getInteger("state");
             // v1.8.0 旧档兼容：缺 powerType 键时 getByte 返回 0（=耗电），非 1 值一律钳回耗电
             powerType = tag.getByte("powerType") == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
+            if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE)
+                resetRecognition(recognitionMode, DeviceSteamAdapter.legacyCapabilityMask(energyKind, powerType));
+            capabilityMask = tag.hasKey("capabilityMask") ? (byte) (tag.getByte("capabilityMask") & 15)
+                : DeviceSteamAdapter.legacyCapabilityMask(energyKind, powerType);
             name = tag.getString("name");
             String alias = DeviceTerminalNameRules.normalize(tag.getString("displayName"));
             displayName = alias == null ? "" : alias;
@@ -521,6 +687,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             writeFifo(tag, "fifoSteamOut", fifoSteamOut);
             tag.setInteger("metaTileId", metaTileId);
             tag.setByte("energyKind", energyKind);
+            tag.setByte("capabilityMask", capabilityMask);
+            tag.setByte("recognitionMode", recognitionMode);
+            tag.setByte("observedOverrideDirections", observedOverrideDirections);
             tag.setByte("linkNodeType", linkNodeType);
             tag.setLong("instIn", instIn);
             tag.setLong("instOut", instOut);
