@@ -32,10 +32,13 @@ public final class ChargeStackSync {
     static boolean isChargeOnlyUpdate(ItemStack current, ItemStack incoming) {
         if (current == null || incoming == null
             || current.getItem() != incoming.getItem()
-            || current.stackSize != incoming.stackSize
-            || !(current.getItem() instanceof IElectricItem)) {
+            || current.stackSize != incoming.stackSize) {
             return false;
         }
+        // RF charging can also update a damage bar (e.g. EnderIO's travel staff). Require the API to
+        // reproduce the entire incoming stack, including metadata and every non-energy NBT field.
+        if (ChargeStackReplay.matches(current, incoming)) return true;
+        if (!(current.getItem() instanceof IElectricItem)) return false;
         if (current.getItemDamage() != incoming.getItemDamage()) {
             if (isGtTool(
                 current.getItem()
