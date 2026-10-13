@@ -9,6 +9,11 @@ public final class DeviceTerminalVisualRules {
 
     private DeviceTerminalVisualRules() {}
 
+    /** Forge 1.7 clients use stance posY/defaultEye=.12, while MP uses feet posY/defaultEye=1.62. */
+    public static double eyeY(double posY, double yOffset, double eyeHeight, double defaultEyeHeight) {
+        return posY - yOffset + 1.62D + (eyeHeight - defaultEyeHeight);
+    }
+
     public static double alignment(double eyeX, double eyeY, double eyeZ, double lookX, double lookY, double lookZ,
         double targetX, double targetY, double targetZ) {
         double x = targetX - eyeX, y = targetY - eyeY, z = targetZ - eyeZ;

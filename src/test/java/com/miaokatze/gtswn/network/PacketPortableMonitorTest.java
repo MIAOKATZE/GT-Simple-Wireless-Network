@@ -16,10 +16,21 @@ import io.netty.buffer.Unpooled;
 public class PacketPortableMonitorTest {
 
     @Test
+    public void bothPinnedGraphsKeepReceivingHistoryAfterGuiClosesInTextMode() {
+        java.util.Set<String> pins = new java.util.HashSet<>(
+            Arrays.asList(PortableMonitorRequestQueue.EU_GRAPH, PortableMonitorRequestQueue.AE_GRAPH));
+        assertTrue(PortableMonitorRequestQueue.needsEUChart(false, pins, false));
+        assertTrue(PortableMonitorRequestQueue.needsAEChart(false, pins));
+        assertFalse(PortableMonitorRequestQueue.needsEUChart(false, java.util.Collections.emptySet(), false));
+        assertFalse(PortableMonitorRequestQueue.needsAEChart(false, java.util.Collections.emptySet()));
+    }
+
+    @Test
     public void requestContainsOnlyBoundSelectionAndExplicitPinKeys() {
         PacketRequestPortableMonitor original = new PacketRequestPortableMonitor(UUID.randomUUID(), 42, 0, 0);
         original.selected = 3;
         original.charts = true;
+        original.knownRenderVersion = 88;
         UUID panel = UUID.randomUUID();
         original.pins.put(panel, new java.util.HashSet<>(Arrays.asList("eu", "fluid:water")));
         ByteBuf buffer = Unpooled.buffer();
@@ -32,8 +43,86 @@ public class PacketPortableMonitorTest {
             assertTrue(decoded.charts);
             assertEquals(original.pins, decoded.pins);
             assertEquals(42, decoded.sequence);
+            assertEquals(88, decoded.knownRenderVersion);
         } finally {
             buffer.release();
+        }
+    }
+
+    @Test
+    public void fullRendererPayloadRetainsExactEuPowerAeRatesAndScreenStyle() {
+        PacketSyncPortableMonitor packet = new PacketSyncPortableMonitor(UUID.randomUUID(), 1, 1);
+        PacketSyncPortableMonitor.Panel panel = new PacketSyncPortableMonitor.Panel();
+        panel.binding = new MonitorBindings.Binding(0, 1, 2, 3, UUID.randomUUID());
+        panel.detail = true;
+        panel.render = new PortablePanelRenderData();
+        panel.renderVersion = 123;
+        panel.render.config.setBoolean("showChartEnergy", true);
+        panel.render.config.setBoolean("showChartStatus", true);
+        panel.render.config.setInteger("trendLineSplineType", 3);
+        panel.render.config.setInteger("trackingWindow", 6);
+        panel.render.config.setString("energyAxisMin", "1e20");
+        panel.render.config.setString("aeLineColor", "00FF77");
+        panel.render.chartKey = "fluid:water";
+        panel.chartKey = "fluid:water";
+        java.math.BigInteger energy = new java.math.BigInteger("100000000000000000001");
+        panel.currentEnergy = energy.toString();
+        panel.render.currentEnergy = energy.toString();
+        panel.render.eu.add(new com.miaokatze.gtswn.common.panel.NetworkInfoSample(100, 10, energy, -42.5));
+        panel.render.ae.add(new com.miaokatze.gtswn.common.panel.AEMonitorSample(200, 20, 1500, -12.25));
+        panel.euRateChart = new double[] { 0, 1 };
+        panel.aeRateChart = new double[] { 1, .25 };
+        packet.panels.add(panel);
+        ByteBuf buf = Unpooled.buffer();
+        try {
+            packet.toBytes(buf);
+            PacketSyncPortableMonitor decoded = new PacketSyncPortableMonitor();
+            decoded.fromBytes(buf);
+            assertTrue(decoded.valid);
+            PacketSyncPortableMonitor.Panel view = decoded.panels.get(0);
+            assertEquals(energy, view.render.eu.get(0).eu);
+            assertEquals(-42.5, view.render.eu.get(0).eut, 0);
+            assertEquals(-12.25, view.render.ae.get(0).rate, 0);
+            assertEquals(1500, view.render.ae.get(0).amount);
+            assertEquals(3, view.render.config.getInteger("trendLineSplineType"));
+            assertEquals(6, view.render.config.getInteger("trackingWindow"));
+            assertEquals("1e20", view.render.config.getString("energyAxisMin"));
+            assertEquals("00FF77", view.render.config.getString("aeLineColor"));
+            assertEquals(panel.currentEnergy, view.currentEnergy);
+            assertArrayEquals(panel.euRateChart, view.euRateChart, 0);
+            assertArrayEquals(panel.aeRateChart, view.aeRateChart, 0);
+        } finally {
+            buf.release();
+        }
+    }
+
+    @Test
+    public void oldProtocolIsRejectedAndUnchangedDetailCanOmitFullBody() {
+        ByteBuf old = Unpooled.buffer()
+            .writeZero(48);
+        try {
+            PacketRequestPortableMonitor request = new PacketRequestPortableMonitor();
+            request.fromBytes(old);
+            assertFalse(request.valid);
+        } finally {
+            old.release();
+        }
+        PacketSyncPortableMonitor packet = new PacketSyncPortableMonitor(UUID.randomUUID(), 1, 1);
+        PacketSyncPortableMonitor.Panel panel = new PacketSyncPortableMonitor.Panel();
+        panel.binding = new MonitorBindings.Binding(0, 0, 64, 0, UUID.randomUUID());
+        panel.detail = true;
+        panel.renderVersion = 99;
+        packet.panels.add(panel);
+        ByteBuf buf = Unpooled.buffer();
+        try {
+            packet.toBytes(buf);
+            PacketSyncPortableMonitor decoded = new PacketSyncPortableMonitor();
+            decoded.fromBytes(buf);
+            assertTrue(decoded.valid);
+            assertEquals(99, decoded.panels.get(0).renderVersion);
+            assertNull(decoded.panels.get(0).render);
+        } finally {
+            buf.release();
         }
     }
 
@@ -52,6 +141,7 @@ public class PacketPortableMonitorTest {
         row.name = "水";
         row.amount = "20000000000";
         row.kind = 2;
+        row.monitored = true;
         row.rate = -200.5;
         row.average = 12.25;
         panel.rows.add(row);
@@ -74,6 +164,7 @@ public class PacketPortableMonitorTest {
             assertEquals("测试玩家", decoded.panels.get(0).ownerName);
             assertEquals(-200.5, decoded.panels.get(0).rows.get(0).rate, 0);
             assertEquals(12.25, decoded.panels.get(0).rows.get(0).average, 0);
+            assertTrue(decoded.panels.get(0).rows.get(0).monitored);
             assertArrayEquals(panel.euChart, decoded.panels.get(0).euChart, 0);
             assertEquals(1, decoded.panels.get(1).state);
         } finally {

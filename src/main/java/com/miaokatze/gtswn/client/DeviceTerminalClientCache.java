@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
@@ -65,10 +66,26 @@ public final class DeviceTerminalClientCache {
         return cached != null && cached.snapshot != null && now - cached.receivedAt < freshMillis;
     }
 
+    public static PacketRequestDeviceTerminalData requestMetadata(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        long version = cached == null ? -1L
+            : cached.pendingPages == null ? cached.version : Math.max(cached.version, cached.pendingVersion);
+        boolean complete = cached != null && cached.snapshot != null && cached.pendingPages == null;
+        return new PacketRequestDeviceTerminalData(terminalId, version, complete);
+    }
+
     /**
      * 接收单页（主线程）：同 version 分页累积，整批到齐整体替换 / 未到齐提交连续前缀。
      */
     public static void receivePage(UUID terminalId, long version, int pageIndex, int pageTotal, List<Entry> page) {
+        if (terminalId != null && pageIndex == -1) {
+            Cached cached = CACHE.get(terminalId);
+            if (cached != null && cached.snapshot != null
+                && cached.pendingPages == null
+                && version == cached.version
+                && pageTotal == cached.pageTotal) cached.receivedAt = System.currentTimeMillis();
+            return;
+        }
         if (terminalId == null || pageTotal <= 0 || pageIndex < 0 || pageIndex >= pageTotal) {
             return;
         }

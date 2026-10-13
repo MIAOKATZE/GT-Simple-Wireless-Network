@@ -13,6 +13,8 @@ import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
+import com.miaokatze.gtswn.client.PortablePanelView;
+import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.config.Config;
@@ -32,6 +34,13 @@ public final class GuiPortableMonitor extends GuiScreen {
     private final List<PacketSyncPortableMonitor.Row> shownRows = new ArrayList<>();
     private PacketSyncPortableMonitor lastSnapshot;
     private boolean lastStale;
+    private final RenderNetworkInfoPanel fullRenderer = new RenderNetworkInfoPanel();
+    private float chartZoom = 1;
+    private float panX, panY;
+    private int dragX, dragY;
+    private final java.nio.IntBuffer oldScissorBox = org.lwjgl.BufferUtils.createIntBuffer(16);
+    private PacketSyncPortableMonitor.Row footerRow;
+    private boolean manualTab, pinManager;
 
     public GuiPortableMonitor(ItemStack stack) {
         this.stack = stack;
@@ -48,8 +57,8 @@ public final class GuiPortableMonitor extends GuiScreen {
 
     @Override
     public void initGui() {
-        panelWidth = Math.min(560, width - 16);
-        panelHeight = Math.min(330, height - 16);
+        panelWidth = Math.min(960, width - 16);
+        panelHeight = Math.min(620, height - 16);
         left = (width - panelWidth) / 2;
         top = (height - panelHeight) / 2;
         visibleRows = Math.max(1, Math.min(8, (panelHeight - 174) / 20));
@@ -63,6 +72,7 @@ public final class GuiPortableMonitor extends GuiScreen {
     private void rebuild() {
         buttonList.clear();
         fields.clear();
+        footerRow = null;
         add(3, panelWidth - 58, 7, 50, tr("close"));
         add(2, panelWidth - 135, 7, 70, tr(settings ? "viewer" : "settings"));
         if (settings) {
@@ -114,8 +124,34 @@ public final class GuiPortableMonitor extends GuiScreen {
         add(8, 12 + tabWidth * 2, 59, tabWidth - 3, tr("ae.list"));
         add(4, 12 + tabWidth * 3, 59, tabWidth - 3, tr("remove"));
         add(5, 12, panelHeight - 28, 155, tr("mode." + currentMode()));
-        add(9, panelWidth - 88, panelHeight - 28, 32, "<");
-        add(10, panelWidth - 48, panelHeight - 28, 32, ">");
+        if (tab == 2 && pinManager) {
+            add(9, panelWidth - 88, panelHeight - 28, 32, "<");
+            add(10, panelWidth - 48, panelHeight - 28, 32, ">");
+        }
+        if (tab == 2) add(45, 12, 82, 145, tr(pinManager ? "graph.native" : "graph.manage"));
+        if (!(tab == 2 && pinManager)) {
+            PacketSyncPortableMonitor.Panel current = panel();
+            PacketSyncPortableMonitor data = PortableMonitorClientCache.snapshot(stack);
+            boolean graph = current != null && data != null
+                && PortableMonitorClientCache.graphPinned(data.terminalId, current, tab);
+            if (tab != 2) add(40, 12, 82, 145, (graph ? "\u2611 " : "\u2610 ") + tr("graph.pin"));
+            add(41, panelWidth - 108, 82, 28, "-");
+            add(42, panelWidth - 76, 82, 28, "+");
+            add(43, panelWidth - 44, 82, 32, "1:1");
+            if (tab != 2 && current != null && data != null) for (PacketSyncPortableMonitor.Row row : current.rows) {
+                if (tab == 0 ? row.kind == 0 : row.key.equals(current.chartKey)) {
+                    footerRow = row;
+                    break;
+                }
+            }
+            if (footerRow != null) add(
+                44,
+                panelWidth - 126,
+                panelHeight - 28,
+                114,
+                (PortableMonitorClientCache.pinned(data.terminalId, current, footerRow) ? "\u2611 " : "\u2610 ")
+                    + tr("pin.short"));
+        }
         buildRows();
     }
 
@@ -136,6 +172,7 @@ public final class GuiPortableMonitor extends GuiScreen {
         PacketSyncPortableMonitor.Panel panel = panel();
         PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.snapshot(stack);
         if (panel == null || !panel.detail || panel.state != 0 || PortableMonitorClientCache.stale(stack)) return;
+        if (tab != 2 || !pinManager) return;
         List<PacketSyncPortableMonitor.Row> rows = new ArrayList<>();
         for (PacketSyncPortableMonitor.Row row : panel.rows)
             if (tab == 0 ? row.kind == 0 : row.kind != 0) rows.add(row);
@@ -176,6 +213,8 @@ public final class GuiPortableMonitor extends GuiScreen {
         if (data != lastSnapshot || stale != lastStale) {
             lastSnapshot = data;
             lastStale = stale;
+            PacketSyncPortableMonitor.Panel current = panel();
+            if (!manualTab && current != null && current.detail) tab = current.tab;
             if (!settings) rebuild();
         }
         for (GuiTextField field : fields) field.updateCursorCounter();
@@ -204,14 +243,32 @@ public final class GuiPortableMonitor extends GuiScreen {
             if (snapshot != null && !snapshot.panels.isEmpty())
                 selected = Math.floorMod(selected + (button.id == 0 ? -1 : 1), snapshot.panels.size());
             page = 0;
+            chartZoom = 1;
+            panX = panY = 0;
         } else if (button.id >= 6 && button.id <= 8) {
             tab = button.id - 6;
             page = 0;
+            manualTab = true;
         } else if (button.id == 4 && panel != null) PortableMonitorClientCache.action(stack, 1, selected);
         else if (button.id == 5) PortableMonitorClientCache.action(stack, 2, (currentMode() + 1) % 3);
         else if (button.id == 9) page = Math.max(0, page - 1);
         else if (button.id == 10) page++;
-        else if (button.id >= 100 && button.id < 100 + shownRows.size() && panel != null && snapshot != null) {
+        else if (button.id == 40 && panel != null && snapshot != null) {
+            notice = PortableMonitorClientCache.toggleGraph(snapshot.terminalId, panel, tab) ? "" : tr("save.failed");
+            if (currentMode() == 0) PortableMonitorClientCache.action(stack, 2, 1);
+        } else if (button.id == 41) chartZoom = Math.max(1, chartZoom / 1.25f);
+        else if (button.id == 42) chartZoom = Math.min(4, chartZoom * 1.25f);
+        else if (button.id == 43) {
+            chartZoom = 1;
+            panX = panY = 0;
+        } else if (button.id == 44 && footerRow != null && panel != null && snapshot != null) {
+            notice = PortableMonitorClientCache.togglePin(snapshot.terminalId, panel, footerRow) ? ""
+                : tr("save.failed");
+            if (currentMode() == 0) PortableMonitorClientCache.action(stack, 2, 1);
+        } else if (button.id == 45) {
+            pinManager = !pinManager;
+            page = 0;
+        } else if (button.id >= 100 && button.id < 100 + shownRows.size() && panel != null && snapshot != null) {
             notice = PortableMonitorClientCache.togglePin(snapshot.terminalId, panel, shownRows.get(button.id - 100))
                 ? ""
                 : tr("save.failed");
@@ -315,11 +372,17 @@ public final class GuiPortableMonitor extends GuiScreen {
     @Override
     protected void mouseClicked(int x, int y, int button) {
         super.mouseClicked(x, y, button);
+        dragX = x;
+        dragY = y;
         for (GuiTextField field : fields) field.mouseClicked(x, y, button);
     }
 
     @Override
     protected void keyTyped(char character, int key) {
+        if (key == PortableMonitorClientCache.keyCode()) {
+            mc.displayGuiScreen(null);
+            return;
+        }
         if (key == 1) {
             super.keyTyped(character, key);
             return;
@@ -333,9 +396,53 @@ public final class GuiPortableMonitor extends GuiScreen {
         super.handleMouseInput();
         int wheel = Mouse.getEventDWheel();
         if (wheel != 0 && !settings) {
-            page = Math.max(0, page + (wheel < 0 ? 1 : -1));
+            if (!(tab == 2 && pinManager))
+                chartZoom = Math.max(1, Math.min(4, chartZoom * (wheel > 0 ? 1.15f : 1 / 1.15f)));
+            else page = Math.max(0, page + (wheel < 0 ? 1 : -1));
             rebuild();
         }
+    }
+
+    @Override
+    protected void mouseClickMove(int x, int y, int button, long time) {
+        if (!settings && !(tab == 2 && pinManager) && button == 0 && y >= top + 107 && y < top + panelHeight - 34) {
+            panX += x - dragX;
+            panY += y - dragY;
+            dragX = x;
+            dragY = y;
+        }
+    }
+
+    private void drawFullChart(PortablePanelView view) {
+        int x = left + 12, y = top + 107, w = panelWidth - 24, h = panelHeight - 144;
+        drawRect(x, y, x + w, y + h, 0xffedf1f4);
+        float fit = Math.min(w / 640f, h / 400f), scale = fit * chartZoom;
+        float maxX = Math.max(0, (640 * scale - w) / 2), maxY = Math.max(0, (400 * scale - h) / 2);
+        panX = Math.max(-maxX, Math.min(maxX, panX));
+        panY = Math.max(-maxY, Math.min(maxY, panY));
+        net.minecraft.client.gui.ScaledResolution resolution = new net.minecraft.client.gui.ScaledResolution(
+            mc,
+            mc.displayWidth,
+            mc.displayHeight);
+        int factor = resolution.getScaleFactor();
+        boolean scissor = GL11.glIsEnabled(GL11.GL_SCISSOR_TEST);
+        oldScissorBox.clear();
+        GL11.glGetInteger(GL11.GL_SCISSOR_BOX, oldScissorBox);
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(x * factor, mc.displayHeight - (y + h) * factor, w * factor, h * factor);
+        GL11.glPushMatrix();
+        GL11.glTranslatef(x + (w - 640 * scale) / 2 + panX, y + (h - 400 * scale) / 2 + panY, 0);
+        GL11.glScalef(scale, scale, 1);
+        view.selectTab(tab);
+        try {
+            fullRenderer.drawPortablePanel(view, 640, 400);
+        } finally {
+            GL11.glPopMatrix();
+            GL11.glScissor(oldScissorBox.get(0), oldScissorBox.get(1), oldScissorBox.get(2), oldScissorBox.get(3));
+            if (!scissor) GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        }
+        if (tab == 0 && (!view.energyAvailable() || !view.energySeriesAvailable())) fontRendererObj
+            .drawString(fontRendererObj.trimStringToWidth(tr("graph.precision"), w - 8), x + 4, y + h - 12, 0xcc6622);
     }
 
     @Override
@@ -366,37 +473,11 @@ public final class GuiPortableMonitor extends GuiScreen {
                 : "[" + (selected + 1) + "/" + data.panels.size() + "] " + panel.binding.label();
             drawCenteredString(fontRendererObj, title, width / 2, top + 39, 0xffffff);
             if (panel != null && panel.detail && panel.state == 0 && !PortableMonitorClientCache.stale(stack)) {
-                fontRendererObj.drawString(
-                    fontRendererObj.trimStringToWidth(
-                        panel.ownerName + " | "
-                            + panel.window
-                            + " | AE "
-                            + tr(panel.aeConnected ? "connected" : "disconnected"),
-                        panelWidth - 24),
-                    left + 12,
-                    top + 85,
-                    0xaaaaaa);
-                if (tab != 2) drawChart(
-                    tab == 0 ? panel.euChart : panel.aeChart,
-                    left + 12,
-                    top + 100,
-                    panelWidth - 24,
-                    28,
-                    0x5ddfd2);
-                else fontRendererObj.drawString(tr("pin.hint"), left + 12, top + 111, 0x9dd8d8);
-                if (tab == 0 && !shownRows.isEmpty()) {
-                    PacketSyncPortableMonitor.Row eu = shownRows.get(0);
-                    List<String> info = new ArrayList<>();
-                    info.add(tr("field.eu") + ": \u00a7f" + PortableMonitorClientCache.energyAmount(eu.amount) + " EU");
-                    info.add(tr("field.instant") + ": " + PortableMonitorClientCache.rate(eu.rate, "EU/t"));
-                    info.add(tr("field.average") + ": " + PortableMonitorClientCache.rate(eu.average, "EU/t"));
-                    info.add(tr("grid.status") + ": " + PortableMonitorClientCache.gridStatus(panel, eu));
-                    for (int i = 0; i < info.size(); i++) fontRendererObj.drawString(
-                        fontRendererObj.trimStringToWidth(info.get(i), i < 2 ? panelWidth - 116 : panelWidth - 24),
-                        left + 12,
-                        top + 139 + i * 12,
-                        0xffffff);
-                }
+                if (!(tab == 2 && pinManager)) {
+                    PortablePanelView view = PortableMonitorClientCache.view(stack, selected);
+                    if (view != null) drawFullChart(view);
+                    else drawCenteredString(fontRendererObj, tr("state.4"), width / 2, top + 119, 0xffaa55);
+                } else fontRendererObj.drawString(tr("pin.hint"), left + 12, top + 111, 0x9dd8d8);
             } else if (panel != null) drawCenteredString(
                 fontRendererObj,
                 PortableMonitorClientCache.stateText(panel.state == 0 ? 4 : panel.state),
@@ -404,7 +485,7 @@ public final class GuiPortableMonitor extends GuiScreen {
                 top + 104,
                 0xffaa55);
             else drawCenteredString(fontRendererObj, tr("bind.hint"), width / 2, top + 102, 0xaaaaaa);
-            fontRendererObj
+            if (tab == 2 && pinManager) fontRendererObj
                 .drawString(tr("page") + " " + (page + 1), left + panelWidth - 155, top + panelHeight - 22, 0xaaaaaa);
         }
         if (!notice.isEmpty()) drawCenteredString(fontRendererObj, notice, width / 2, top + panelHeight - 43, 0xffcc77);

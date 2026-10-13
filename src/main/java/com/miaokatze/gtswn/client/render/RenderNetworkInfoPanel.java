@@ -1,8 +1,11 @@
 package com.miaokatze.gtswn.client.render;
 
 import java.math.BigInteger;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
@@ -29,6 +32,58 @@ import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 
 public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
+
+    private TileEntityNetworkInfoPanel portableOwner;
+    private PortableCache portableCache;
+    private PortableCache activePortable;
+
+    /** Original complete panel drawing in GUI coordinates. World TESR paths remain unchanged. */
+    public void drawPortablePanel(TileEntityNetworkInfoPanel panel, int width, int height) {
+        if (panel != portableOwner) {
+            portableOwner = panel;
+            portableCache = new PortableCache(panel);
+        }
+        GL11.glPushAttrib(
+            GL11.GL_ENABLE_BIT | GL11.GL_DEPTH_BUFFER_BIT
+                | GL11.GL_COLOR_BUFFER_BIT
+                | GL11.GL_CURRENT_BIT
+                | GL11.GL_LINE_BIT
+                | GL11.GL_TEXTURE_BIT
+                | GL11.GL_LIGHTING_BIT);
+        GL11.glDepthFunc(GL11.GL_LEQUAL);
+        activePortable = portableCache;
+        try {
+            drawPanel(panel, width, height);
+        } finally {
+            activePortable = null;
+            GL11.glPopAttrib();
+        }
+    }
+
+    private static final class PortableCache {
+
+        final double[] energy, power, amounts, rates;
+        final IdentityHashMap<double[], CachedRange> ranges = new IdentityHashMap<>();
+        final IdentityHashMap<double[], Map<Integer, double[][]>> paths = new IdentityHashMap<>();
+
+        PortableCache(TileEntityNetworkInfoPanel panel) {
+            energy = energyValues(panel.getCachedSamples());
+            power = eutValues(panel.getCachedSamples());
+            List<AEMonitorSample> samples = panel.getAEChartSamples();
+            amounts = new double[samples.size()];
+            rates = new double[samples.size()];
+            for (int i = 0; i < samples.size(); i++) {
+                amounts[i] = samples.get(i).amount;
+                rates[i] = samples.get(i).rate;
+            }
+        }
+    }
+
+    private static final class CachedRange {
+
+        Double min, max;
+        double[] value;
+    }
 
     private static final int ENERGY_COLOR = 0x1F6FFF;
     private static final int EUT_COLOR = 0xFF7A18;
@@ -226,6 +281,13 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
         List<AEMonitorSample> samples = panel.getAEChartSamples();
         AEMonitorSample newest = samples.isEmpty() ? null : samples.get(samples.size() - 1);
+        if (activePortable != null) {
+            String key = item != null ? TileEntityNetworkInfoPanel.getAEKey(item)
+                : TileEntityNetworkInfoPanel.getAEKey(fluid);
+            AEMonitorSample live = panel.getAEMonitorLatest()
+                .get(key);
+            if (live != null) newest = live;
+        }
         int displayMode = panel.getDisplayMode();
 
         // 第2行：当前存量
@@ -291,9 +353,9 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                         0x777777);
                 } else {
                     // 分别提取存量与变化率序列
-                    double[] amounts = new double[samples.size()];
-                    double[] rates = new double[samples.size()];
-                    for (int i = 0; i < samples.size(); i++) {
+                    double[] amounts = activePortable == null ? new double[samples.size()] : activePortable.amounts;
+                    double[] rates = activePortable == null ? new double[samples.size()] : activePortable.rates;
+                    if (activePortable == null) for (int i = 0; i < samples.size(); i++) {
                         AEMonitorSample s = samples.get(i);
                         amounts[i] = s.amount;
                         rates[i] = s.rate;
@@ -385,12 +447,12 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             fillRect(x - 4, ty, 4, Math.max(1, thickness), TICK_COLOR);
             fillRect(x + w, ty, 4, Math.max(1, thickness), TICK_COLOR);
             if (amountRange != null) {
-                double value = amountRange[0] + (amountRange[1] - amountRange[0]) * i / 4.0D;
+                double value = axisValue(amountRange, i);
                 String label = formatAEChartAxis(value, displayMode);
                 font.drawString(label, x - 8 - font.getStringWidth(label), ty - 4, AXIS_COLOR);
             }
             if (rateRange != null) {
-                double value = rateRange[0] + (rateRange[1] - rateRange[0]) * i / 4.0D;
+                double value = axisValue(rateRange, i);
                 String label = formatAEChartAxis(value, displayMode);
                 font.drawString(label, x + w + 8, ty - 4, 0xFF7A18);
             }
@@ -999,8 +1061,12 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             return;
         }
 
-        double[] energyValues = panel.isShowChartEnergy() ? energyValues(samples) : null;
-        double[] eutValues = panel.isShowChartStatus() ? eutValues(samples) : null;
+        double[] energyValues = panel.isShowChartEnergy()
+            ? activePortable == null ? energyValues(samples) : activePortable.energy
+            : null;
+        double[] eutValues = panel.isShowChartStatus()
+            ? activePortable == null ? eutValues(samples) : activePortable.power
+            : null;
         double[] energyRange = energyValues == null ? null
             : range(energyValues, panel.getEnergyAxisMin(), panel.getEnergyAxisMax());
         double[] eutRange = eutValues == null ? null : range(eutValues, panel.getEutAxisMin(), panel.getEutAxisMax());
@@ -1047,12 +1113,12 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             fillRect(x - 4, ty, 4, Math.max(1, thickness), TICK_COLOR);
             fillRect(x + w, ty, 4, Math.max(1, thickness), TICK_COLOR);
             if (energyRange != null) {
-                double value = energyRange[0] + (energyRange[1] - energyRange[0]) * i / 4.0D;
+                double value = axisValue(energyRange, i);
                 String label = formatAxisValue(value, displayMode);
                 font.drawString(label, x - 8 - font.getStringWidth(label), ty - 4, ENERGY_COLOR);
             }
             if (eutRange != null) {
-                double value = eutRange[0] + (eutRange[1] - eutRange[0]) * i / 4.0D;
+                double value = axisValue(eutRange, i);
                 font.drawString(formatAxisValue(value, displayMode), x + w + 8, ty - 4, EUT_COLOR);
             }
         }
@@ -1078,27 +1144,34 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         if (values == null || values.length < 2 || h <= 2 || range == null) {
             return;
         }
-        double min = range[0];
-        double max = range[1];
         // smoothing 配置映射为样条分段数（仅默认过点样条使用）：0=线性(1段)，1..12 → 4..26 段
         int segments = smoothing <= 0 ? 1 : smoothing * 2 + 2;
         // 样条类型分派：0=过点样条（Fritsch-Carlson 单调 Hermite，默认）、1=拟合样条（Chaikin 切角，
         // 平滑强度决定切角轮数）、2=折线样条（每段单段插值即直线直连）、3=数字样条（阶跃保持方块波形）
         double[][] path;
-        switch (splineType) {
-            case 1:
-                path = chaikinPath(values, fitIterations(smoothing));
-                break;
-            case 2:
-                path = monotoneCubicPath(values, 1);
-                break;
-            case 3:
-                path = stepPath(values);
-                break;
-            case 0:
-            default:
-                path = monotoneCubicPath(values, segments);
-                break;
+        int pathKey = splineType * 16 + smoothing;
+        Map<Integer, double[][]> savedPaths = activePortable == null ? null
+            : activePortable.paths.computeIfAbsent(range, ignored -> new HashMap<>());
+        path = savedPaths == null ? null : savedPaths.get(pathKey);
+        if (path == null) {
+            double[] safeValues = normalizedValues(values, range);
+            if (safeValues == null) return;
+            switch (splineType) {
+                case 1:
+                    path = chaikinPath(safeValues, fitIterations(smoothing));
+                    break;
+                case 2:
+                    path = monotoneCubicPath(safeValues, 1);
+                    break;
+                case 3:
+                    path = stepPath(safeValues);
+                    break;
+                case 0:
+                default:
+                    path = monotoneCubicPath(safeValues, segments);
+                    break;
+            }
+            if (savedPaths != null) savedPaths.put(pathKey, path);
         }
 
         GL11.glDisable(GL11.GL_TEXTURE_2D);
@@ -1107,11 +1180,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         GL11.glBegin(GL11.GL_LINE_STRIP);
         double denom = values.length - 1;
         for (int i = 0; i < path.length; i++) {
-            double normalized = (path[i][1] - min) / (max - min);
+            double normalized = path[i][1];
             // 配合 range() 自动模式预留的 10% 冗余，正常数据下曲线会落在绘图区内
             double px = x + path[i][0] / denom * w;
             double py = y + h - normalized * h;
-            GL11.glVertex3d(px, py, 0.0D);
+            if (Double.isFinite(px) && Double.isFinite(py)) GL11.glVertex3d(px, py, 0.0D);
         }
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -1134,37 +1207,77 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         return values;
     }
 
-    private static double[] range(double[] values, Double customMin, Double customMax) {
-        double min = values[0];
-        double max = values[0];
+    private double[] range(double[] values, Double customMin, Double customMax) {
+        if (activePortable == null) return rawRange(values, customMin, customMax);
+        CachedRange cached = activePortable.ranges.get(values);
+        if (cached == null || !Objects.equals(cached.min, customMin) || !Objects.equals(cached.max, customMax)) {
+            cached = new CachedRange();
+            cached.min = customMin;
+            cached.max = customMax;
+            cached.value = rawRange(values, customMin, customMax);
+            activePortable.ranges.put(values, cached);
+        }
+        return cached.value;
+    }
+
+    private static double[] rawRange(double[] values, Double customMin, Double customMax) {
+        double min = Double.POSITIVE_INFINITY;
+        double max = Double.NEGATIVE_INFINITY;
         // 扫描样品求真实数据范围
         for (double value : values) {
+            if (!Double.isFinite(value)) continue;
             min = Math.min(min, value);
             max = Math.max(max, value);
         }
+        if (!Double.isFinite(min) || !Double.isFinite(max)) return null;
         // 用户自定义覆盖对应边界（null 表示该端走自动模式）
-        if (customMin != null) {
+        if (customMin != null && Double.isFinite(customMin)) {
             min = customMin.doubleValue();
         }
-        if (customMax != null) {
+        if (customMax != null && Double.isFinite(customMax)) {
             max = customMax.doubleValue();
         }
         // 退化兜底：跨度近乎 0 或反转时，用 center ± 0.5 作为可视范围
         // 合成范围不再追加冗余，保持与旧版一致的退化行为
         if (Math.abs(max - min) < 0.000001D || max < min) {
-            double center = (max + min) / 2.0D;
-            min = center - 0.5D;
-            max = center + 0.5D;
+            double center = max * .5 + min * .5;
+            double padding = Math.max(.5, Math.ulp(center) * 2);
+            min = center - padding;
+            max = center + padding;
+            if (!Double.isFinite(min)) min = -Double.MAX_VALUE;
+            if (!Double.isFinite(max)) max = Double.MAX_VALUE;
             return new double[] { min, max };
         }
         // 自动模式（两端均未自定义）应用上下 10% 冗余，避免曲线贴边
         // 冗余基于数据跨度计算：newMin = min - span*0.1，newMax = max + span*0.1
         if (customMin == null && customMax == null) {
-            double span = max - min;
-            min = min - span * 0.1D;
-            max = max + span * 0.1D;
+            double padding = max * .1 - min * .1;
+            min = Math.max(-Double.MAX_VALUE, min - padding);
+            max = Math.min(Double.MAX_VALUE, max + padding);
         }
         return new double[] { min, max };
+    }
+
+    private static double axisValue(double[] range, int step) {
+        if (step == 0) return range[0];
+        if (step == 4) return range[1];
+        double fraction = step / 4.0;
+        return range[0] * (1 - fraction) + range[1] * fraction;
+    }
+
+    /** Normalize before spline math so even opposite finite MAX_VALUE endpoints cannot overflow. */
+    private static double[] normalizedValues(double[] values, double[] range) {
+        double[] normalized = new double[values.length];
+        double span = range[1] - range[0];
+        double scale = Math.max(Math.abs(range[0]), Math.abs(range[1]));
+        for (int i = 0; i < values.length; i++) {
+            if (!Double.isFinite(values[i])) return null;
+            double numerator = values[i] - range[0];
+            normalized[i] = Double.isFinite(span) && Double.isFinite(numerator) ? numerator / span
+                : (values[i] / scale - range[0] / scale) / (range[1] / scale - range[0] / scale);
+            if (!Double.isFinite(normalized[i])) return null;
+        }
+        return normalized;
     }
 
     /**

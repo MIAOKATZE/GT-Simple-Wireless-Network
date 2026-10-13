@@ -97,6 +97,7 @@ public class ClientProxy extends CommonProxy {
         // 【v1.8.18】preInit 已完成配置加载，此时构造才能让 HUD 数据集容量读到
         // 用户配置的检测间隔（字段初始化器会先于 preInit 执行，只能拿到编译期默认值）
         this.hudController = new HudController();
+        com.miaokatze.gtswn.client.PortableMonitorClientCache.registerKey();
         FMLCommonHandler.instance()
             .bus()
             .register(new com.miaokatze.gtswn.client.PortableMonitorClientCache.TickListener());
@@ -365,6 +366,16 @@ public class ClientProxy extends CommonProxy {
     }
 
     @Override
+    public boolean isDeviceTerminalVisualizationActive() {
+        return com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.isActiveHeld();
+    }
+
+    @Override
+    public boolean handleDeviceVisualizationRightClick() {
+        return com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.handleRightClick();
+    }
+
+    @Override
     public void handleSyncDeviceTerminalSettings(com.miaokatze.gtswn.network.PacketSyncDeviceTerminalSettings message) {
         Minecraft minecraft = Minecraft.getMinecraft();
         World receivedWorld = minecraft.theWorld;
@@ -392,7 +403,19 @@ public class ClientProxy extends CommonProxy {
         World receivedWorld = minecraft.theWorld;
         minecraft.func_152344_a(() -> {
             if (receivedWorld != null && receivedWorld == minecraft.theWorld) {
-                com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.apply(message.terminalId, message.enabled);
+                if (message.hasResult) {
+                    com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.handleResult(
+                        message.terminalId,
+                        message.result,
+                        message.targetKey,
+                        message.cooldownTicks,
+                        message.x,
+                        message.y,
+                        message.z);
+                } else {
+                    com.miaokatze.gtswn.client.DeviceTerminalVisualizationState
+                        .apply(message.terminalId, message.enabled);
+                }
             }
         });
     }

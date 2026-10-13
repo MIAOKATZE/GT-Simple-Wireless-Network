@@ -9,14 +9,17 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.event.world.ChunkEvent;
 
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.config.Config;
 
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
+import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
@@ -33,6 +36,41 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * 挂载 MTE，事件内可直接判别；旁路放置的漏登由终端右击绑定补登兜底。
  */
 public class DeviceEventHandler {
+
+    /** Fixed 36-slot reconciliation once per second; no world or historical-terminal scan. */
+    @SubscribeEvent
+    public void onHeldTerminalInventoryTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || event.player.worldObj.isRemote
+            || event.player.worldObj.getTotalWorldTime() % 20 != 0
+            || !(event.player instanceof net.minecraft.entity.player.EntityPlayerMP)) return;
+        net.minecraft.server.MinecraftServer server = net.minecraft.server.MinecraftServer.getServer();
+        if (server == null || server.getConfigurationManager()
+            .func_152612_a(event.player.getCommandSenderName()) != event.player) return;
+        Set<UUID> ids = new java.util.HashSet<>();
+        for (ItemStack stack : event.player.inventory.mainInventory) {
+            if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal) {
+                UUID id = ItemDeviceInfoTerminal.readTerminalId(stack);
+                if (id != null) ids.add(id);
+            }
+        }
+        DeviceTerminalDataStore.synchronizeHeldTerminals(event.player.getUniqueID(), ids);
+    }
+
+    /** Guard server vanilla interaction before block activation; custom travel remains packet24-only. */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onVisualVanillaInteraction(PlayerInteractEvent event) {
+        if (event.world.isRemote || !(event.entityPlayer instanceof net.minecraft.entity.player.EntityPlayerMP)
+            || (event.action != PlayerInteractEvent.Action.RIGHT_CLICK_AIR
+                && event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK))
+            return;
+        net.minecraft.entity.player.EntityPlayerMP player = (net.minecraft.entity.player.EntityPlayerMP) event.entityPlayer;
+        if (com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue
+            .shouldConsumeVanillaUse(player, player.getHeldItem())) {
+            event.useBlock = cpw.mods.fml.common.eventhandler.Event.Result.DENY;
+            event.useItem = cpw.mods.fml.common.eventhandler.Event.Result.DENY;
+            event.setCanceled(true);
+        }
+    }
 
     // ==================== 放置：登记 + 自动绑定 ====================
 

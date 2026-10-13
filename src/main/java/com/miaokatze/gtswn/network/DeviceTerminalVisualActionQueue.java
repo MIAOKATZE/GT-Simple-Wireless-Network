@@ -32,6 +32,7 @@ public final class DeviceTerminalVisualActionQueue {
     private static final Map<UUID, Integer> COUNTS = new HashMap<>();
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
     private static final Map<UUID, Rate> RATES = new HashMap<>();
+    private static long lastErrorNanos;
 
     private static final class Pending {
 
@@ -135,15 +136,33 @@ public final class DeviceTerminalVisualActionQueue {
             try {
                 apply(player, pending.message, now);
             } catch (RuntimeException invalid) {
-                GTSimpleWirelessNetwork.LOG.warn("[DeviceVisual] invalid action discarded", invalid);
+                long clock = System.nanoTime();
+                if (lastErrorNanos == 0 || clock - lastErrorNanos >= 30_000_000_000L) {
+                    lastErrorNanos = clock;
+                    GTSimpleWirelessNetwork.LOG.error(
+                        "[DeviceVisual] action failed for " + pending.playerId + " target " + pending.message.key,
+                        invalid);
+                }
+                if (pending.message.action == PacketDeviceTerminalVisualAction.ACTION_VISUAL_TELEPORT) report(
+                    player,
+                    pending.message.terminalId,
+                    pending.message.key,
+                    new DeviceTerminalTeleport.Outcome(DeviceTerminalTeleport.Status.ERROR, 0));
             }
         }
     }
 
     private static void apply(EntityPlayerMP player, PacketDeviceTerminalVisualAction message, long now) {
-        if (player.isDead || player.getHealth() <= 0 || !message.valid()) return;
+        if (!message.valid()) return;
+        if (player.isDead || player.getHealth() <= 0) {
+            rejectTravel(player, message, DeviceTerminalTeleport.Status.UNAVAILABLE_PLAYER);
+            return;
+        }
         ItemStack held = player.getHeldItem();
-        if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)) return;
+        if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)) {
+            rejectTravel(player, message, DeviceTerminalTeleport.Status.INACTIVE);
+            return;
+        }
         UUID actual = ItemDeviceInfoTerminal.readTerminalId(held);
         if (message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE
             && PacketDeviceTerminalVisualAction.NEW_TERMINAL.equals(message.terminalId)) {
@@ -154,8 +173,21 @@ public final class DeviceTerminalVisualActionQueue {
                 player.playerNetServerHandler
                     .sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, held));
             }
-        } else if (actual == null || !actual.equals(message.terminalId)) return;
-        if (actual == null || !rateAllowed(player.getUniqueID(), message.action, now)) return;
+        } else if (actual == null || !actual.equals(message.terminalId)) {
+            rejectTravel(player, message, DeviceTerminalTeleport.Status.INVALID_TARGET);
+            return;
+        }
+        if (actual == null) return;
+        if (!rateAllowed(player.getUniqueID(), message.action, now)) {
+            if (message.action == PacketDeviceTerminalVisualAction.ACTION_VISUAL_TELEPORT) report(
+                player,
+                actual,
+                message.key,
+                new DeviceTerminalTeleport.Outcome(DeviceTerminalTeleport.Status.COOLDOWN, 5));
+            else if (message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE)
+                acknowledge(player, actual, isEnabled(player, actual));
+            return;
+        }
         DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), actual);
         if (message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE) {
             Session current = SESSIONS.remove(player.getUniqueID());
@@ -167,7 +199,11 @@ public final class DeviceTerminalVisualActionQueue {
                 DeviceTerminalRequestQueue.invalidate(player);
             } else acknowledge(player, actual, false);
         } else if (message.action == PacketDeviceTerminalVisualAction.ACTION_VISUAL_TELEPORT) {
-            DeviceTerminalTeleport.attempt(player, actual, message.key, true);
+            report(
+                player,
+                actual,
+                message.key,
+                DeviceTerminalTeleport.attemptDetailed(player, actual, message.key, true));
         } else {
             DeviceTerminalDataStore store = DeviceTerminalDataStore.get(player.worldObj);
             DeviceTerminalDataStore.TerminalData data = store.getTerminal(actual);
@@ -224,6 +260,13 @@ public final class DeviceTerminalVisualActionQueue {
             && session.terminalId.equals(ItemDeviceInfoTerminal.readTerminalId(held));
     }
 
+    /** Vanilla C08 is never a second travel intent. Only packet24 selects a bound visual target. */
+    public static boolean shouldConsumeVanillaUse(EntityPlayerMP player, ItemStack stack) {
+        return !player.isSneaking() && stack != null
+            && stack.getItem() instanceof ItemDeviceInfoTerminal
+            && isEnabled(player, ItemDeviceInfoTerminal.readTerminalId(stack));
+    }
+
     public static boolean isEnabled(EntityPlayerMP player, UUID id) {
         Session session = SESSIONS.get(player.getUniqueID());
         MinecraftServer server = MinecraftServer.getServer();
@@ -248,6 +291,27 @@ public final class DeviceTerminalVisualActionQueue {
         session.expires = MinecraftServer.getServer()
             .worldServerForDimension(0)
             .getTotalWorldTime() + SESSION_TTL_TICKS;
+    }
+
+    private static void rejectTravel(EntityPlayerMP player, PacketDeviceTerminalVisualAction message,
+        DeviceTerminalTeleport.Status status) {
+        if (message.action == PacketDeviceTerminalVisualAction.ACTION_VISUAL_TELEPORT)
+            report(player, message.terminalId, message.key, new DeviceTerminalTeleport.Outcome(status, 0));
+    }
+
+    private static void report(EntityPlayerMP player, UUID terminal, String key,
+        DeviceTerminalTeleport.Outcome result) {
+        DeviceTerminalTeleport.feedback(player, result);
+        GTSWNPacketHandler.NETWORK.sendTo(
+            new PacketSyncDeviceTerminalVisualState(
+                terminal,
+                result.status.code,
+                key,
+                result.cooldownTicks,
+                result.succeeded() ? player.posX : 0,
+                result.succeeded() ? player.posY : 0,
+                result.succeeded() ? player.posZ : 0),
+            player);
     }
 
     private static void acknowledge(EntityPlayerMP player, UUID id, boolean enabled) {

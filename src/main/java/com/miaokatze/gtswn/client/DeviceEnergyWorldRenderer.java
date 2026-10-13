@@ -1,7 +1,6 @@
 package com.miaokatze.gtswn.client;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,9 +8,9 @@ import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.culling.Frustrum;
 import net.minecraft.entity.Entity;
-import net.minecraft.item.ItemStack;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
@@ -20,24 +19,45 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
-import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.util.FormatUtil;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
-import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
-/** Bounded client heat view of already bound devices; no world enumeration or per-frame networking. */
+/** Filled thermal layers over the anchor renderer's bounded, already observed devices. */
 public final class DeviceEnergyWorldRenderer {
 
-    private final List<Visual> visible = new ArrayList<>();
-    private final Map<String, Double> smoothed = new HashMap<>();
+    private static final int WORK_PER_TICK = 32;
+    private static final int OUTLINE_BUDGET = 64;
+    // 320 * 24 vertices * 8 ints = 61,440: fits Forge's default 65,536-int raw buffer.
+    // A larger single batch repeatedly grows and is then shrunk by native Tessellator.draw().
+    private static final int FILL_LAYER_BUDGET = 320;
+    private static final int[] LEGEND_COLORS = { 0xFF6E36, 0x44EA77, 0xC2C2C2, 0x707070 };
+    private final List<Visual> visible = new ArrayList<>(1024);
+    private final List<Visual> building = new ArrayList<>(1024);
+    private final List<Visual> drawn = new ArrayList<>(1024);
+    private final Map<String, Visual> electricPrevious = new HashMap<>();
+    private final Map<String, Visual> steamPrevious = new HashMap<>();
+    private List<DeviceTerminalAnchorRenderer.Anchor> source;
     private UUID terminal;
+    private long sourceGeneration = Long.MIN_VALUE;
+    private long buildGeneration;
+    private long buildEpoch;
+    private int cursor;
     private int ticks;
+    private int appearance;
+    private int buildAppearance;
     private double maxElectric;
     private double maxSteam;
+    private double buildElectricMax;
+    private double buildSteamMax;
+    private String[] legendLines = new String[0];
+    private int legendWidth;
+    private String legendLanguage;
+    public int lastRenderedLayers;
+    public int lastFilledBatches;
+    public int lastLineBatches;
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
@@ -48,311 +68,256 @@ public final class DeviceEnergyWorldRenderer {
             return;
         }
         DeviceTerminalVisualConfig.load();
-        ItemStack stack = mc.thePlayer.getHeldItem();
-        if (!DeviceTerminalVisualConfig.enabled || !DeviceTerminalVisualizationState.isActiveHeld()
-            || stack == null
-            || !(stack.getItem() instanceof ItemDeviceInfoTerminal)) {
+        UUID held = DeviceTerminalVisualizationState.heldTerminalId();
+        if (!DeviceTerminalVisualConfig.enabled || !DeviceTerminalVisualizationState.active(held)) {
             clear();
             return;
         }
-        UUID id = ItemDeviceInfoTerminal.readTerminalId(stack);
-        if (id == null || !id.equals(terminal)) {
+        if (!held.equals(terminal)) {
             clear();
-            terminal = id;
+            terminal = held;
         }
-        // Existing data request queue coalesces this with the GUI's poll and reuses its page/version cursor.
-        if (ticks++ % 20 == 0 && mc.currentScreen == null) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
+        DeviceTerminalAnchorRenderer worldView = DeviceTerminalAnchorRenderer.INSTANCE;
+        ticks++;
+        // Networking and World/TileEntity checks belong exclusively to the shared anchor world view.
+        int settings = DeviceTerminalVisualConfig.appearanceKey();
+        if (source != null && (buildEpoch != worldView.dataEpoch() || buildAppearance != settings)) {
+            source = null;
+            building.clear();
         }
-        if (id == null || ticks % 5 != 0) return;
-        DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(id);
-        if (snapshot == null || !DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis())) {
-            visible.clear();
-            smoothed.clear();
-            return;
+        if (source == null && worldView.viewReady()
+            && (sourceGeneration != worldView.viewGeneration() || settings != appearance)) {
+            source = new ArrayList<>(worldView.observedDevices());
+            buildGeneration = worldView.viewGeneration();
+            buildEpoch = worldView.dataEpoch();
+            buildAppearance = settings;
+            cursor = 0;
+            building.clear();
+            buildElectricMax = 0D;
+            buildSteamMax = 0D;
         }
-        List<Entry> candidates = new ArrayList<>();
-        double distanceLimit = DeviceTerminalVisualConfig.range * DeviceTerminalVisualConfig.range;
-        for (Entry entry : snapshot.entries) {
-            if (entry.dim == mc.theWorld.provider.dimensionId && distanceSquared(entry, mc.thePlayer) <= distanceLimit
-                && mc.theWorld.blockExists(entry.x, entry.y, entry.z)) candidates.add(entry);
-        }
-        // Closest machines remain useful even for terminals with many distant bindings.
-        candidates.sort(Comparator.comparingDouble(entry -> distanceSquared(entry, mc.thePlayer)));
-        if (candidates.size() > DeviceTerminalVisualConfig.maxDevices) {
-            candidates = candidates.subList(0, DeviceTerminalVisualConfig.maxDevices);
-        }
-        List<Visual> next = new ArrayList<>();
-        double electricMax = 0D;
-        double steamMax = 0D;
-        for (Entry entry : candidates) {
-            if (entry.energyKind != 1) {
-                Visual visual = create(entry, false);
-                if (visual != null) {
-                    next.add(visual);
-                    electricMax = Math.max(electricMax, Math.abs(visual.value));
-                }
-            }
-            if (entry.energyKind != 0) {
-                Visual visual = create(entry, true);
-                if (visual != null) {
-                    next.add(visual);
-                    steamMax = Math.max(steamMax, Math.abs(visual.value));
-                }
+        // A soft camera/order rebuild never pauses or restarts an already bounded thermal build.
+        if (source != null) advance();
+        if (ticks % 5 == 0) {
+            for (Visual visual : visible) {
+                visual.intensity = DeviceEnergyVisualMath
+                    .smooth(visual.intensity, visual.target, DeviceTerminalVisualConfig.smoothing);
+                visual.updateColor();
             }
         }
-        Map<String, Double> newSmoothed = new HashMap<>();
-        maxElectric = electricMax;
-        maxSteam = steamMax;
-        for (Visual visual : next) {
-            double target = DeviceEnergyVisualMath.intensity(visual.value, visual.steam ? steamMax : electricMax);
-            String key = visual.entry.key + (visual.steam ? ":steam" : ":eu");
-            Double previous = smoothed.get(key);
-            visual.intensity = previous == null ? target
-                : DeviceEnergyVisualMath.smooth(previous, target, DeviceTerminalVisualConfig.smoothing);
-            newSmoothed.put(key, visual.intensity);
-        }
-        smoothed.clear();
-        smoothed.putAll(newSmoothed);
-        // Transparent boxes are drawn from far to near.
-        next.sort(
-            Comparator.comparingDouble((Visual value) -> distanceSquared(value.entry, mc.thePlayer))
-                .reversed());
-        visible.clear();
-        visible.addAll(next);
+        if (!java.util.Objects.equals(legendLanguage, mc.gameSettings.language)) updateLegend(mc);
     }
 
-    private static Visual create(Entry entry, boolean steam) {
-        double value = DeviceEnergyVisualMath.weighted(
-            steam ? entry.steamInstNet() : entry.instNet(),
-            steam ? entry.steamAvgNet() : entry.avgNet(),
+    private void advance() {
+        int end = Math.min(source.size(), cursor + WORK_PER_TICK);
+        for (; cursor < end; cursor++) {
+            DeviceTerminalAnchorRenderer.Anchor device = source.get(cursor);
+            if (!device.loaded) continue;
+            Entry entry = device.entry;
+            if (entry.energyKind != 1) add(device, false);
+            if (entry.energyKind != 0) add(device, true);
+        }
+        if (cursor < source.size()) return;
+        maxElectric = buildElectricMax;
+        maxSteam = buildSteamMax;
+        for (Visual visual : building) {
+            visual.target = DeviceEnergyVisualMath.intensity(visual.magnitude, visual.steam ? maxSteam : maxElectric);
+            Visual previous = (visual.steam ? steamPrevious : electricPrevious).get(visual.device.entry.key);
+            visual.intensity = previous == null ? visual.target : previous.intensity;
+            visual.updateColor();
+        }
+        visible.clear();
+        visible.addAll(building);
+        electricPrevious.clear();
+        steamPrevious.clear();
+        for (Visual visual : visible)
+            (visual.steam ? steamPrevious : electricPrevious).put(visual.device.entry.key, visual);
+        sourceGeneration = buildGeneration;
+        appearance = buildAppearance;
+        source = null;
+        updateLegend(Minecraft.getMinecraft());
+    }
+
+    private void add(DeviceTerminalAnchorRenderer.Anchor device, boolean steam) {
+        Entry entry = device.entry;
+        double input = DeviceEnergyVisualMath.weighted(
+            steam ? entry.steamInstIn : entry.instIn,
+            steam ? entry.steamAvgIn : entry.avgIn,
             DeviceTerminalVisualConfig.averageWeight);
-        if (value == 0D || !DeviceTerminalVisualConfig.visible(steam, value > 0D)) return null;
-        return new Visual(entry, steam, value);
+        double output = DeviceEnergyVisualMath.weighted(
+            steam ? entry.steamInstOut : entry.instOut,
+            steam ? entry.steamAvgOut : entry.avgOut,
+            DeviceTerminalVisualConfig.averageWeight);
+        boolean producer = output > input || output == input && entry.powerType == 1;
+        if (!DeviceTerminalVisualConfig.visible(steam, producer)) return;
+        // Balanced input/output is still activity: net-zero must not hide a working device.
+        double magnitude = Math.max(0D, Math.max(input, output));
+        Visual visual = new Visual(device, steam, producer, magnitude, entry.evidenceKind >= 2 || magnitude == 0D);
+        building.add(visual);
+        if (steam) buildSteamMax = Math.max(buildSteamMax, magnitude);
+        else buildElectricMax = Math.max(buildElectricMax, magnitude);
     }
 
     @SubscribeEvent
     public void render(RenderWorldLastEvent event) {
+        lastRenderedLayers = lastFilledBatches = lastLineBatches = 0;
         Minecraft mc = Minecraft.getMinecraft();
-        ItemStack held = mc.thePlayer == null ? null : mc.thePlayer.getHeldItem();
-        if (!DeviceTerminalVisualConfig.enabled || !DeviceTerminalVisualizationState.isActiveHeld()
-            || visible.isEmpty()
-            || mc.theWorld == null
-            || held == null
-            || !(held.getItem() instanceof ItemDeviceInfoTerminal)
-            || terminal == null
-            || !terminal.equals(ItemDeviceInfoTerminal.readTerminalId(held))
-            || !DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis())) return;
+        if (!renderable(mc) || visible.isEmpty()) return;
         Entity camera = mc.renderViewEntity == null ? mc.thePlayer : mc.renderViewEntity;
         double x = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * event.partialTicks;
         double y = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * event.partialTicks;
         double z = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * event.partialTicks;
         Frustrum frustum = new Frustrum();
         frustum.setPosition(x, y, z);
+        drawn.clear();
+        int range = DeviceTerminalVisualConfig.range;
+        for (Visual visual : visible) {
+            Entry entry = visual.device.entry;
+            if (!visual.device.loaded || entry.dim != mc.theWorld.provider.dimensionId) continue;
+            double dx = entry.x + .5D - x, dy = entry.y + .5D - y, dz = entry.z + .5D - z;
+            if (dx * dx + dy * dy + dz * dz <= range * range && frustum.isBoundingBoxInFrustum(visual.box))
+                drawn.add(visual);
+        }
+        if (drawn.isEmpty()) return;
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPushMatrix();
         try {
-            GL11.glTranslated(-x, -y, -z);
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glDisable(GL11.GL_LIGHTING);
             GL11.glDisable(GL11.GL_FOG);
             GL11.glDisable(GL11.GL_CULL_FACE);
+            // Vanilla's inherited GREATER 0.1 alpha test otherwise discards genuinely translucent heat faces.
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GL11.glDepthMask(false);
+            GL11.glDepthFunc(GL11.GL_LEQUAL);
             if (DeviceTerminalVisualConfig.depthTest) GL11.glEnable(GL11.GL_DEPTH_TEST);
             else GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glLineWidth(Math.max(1F, mc.displayHeight / 540F));
-            for (Visual visual : visible) {
-                Entry entry = visual.entry;
-                if (entry.dim != mc.theWorld.provider.dimensionId
-                    || distanceSquared(entry, mc.thePlayer)
-                        > DeviceTerminalVisualConfig.range * DeviceTerminalVisualConfig.range
-                    || !mc.theWorld.blockExists(entry.x, entry.y, entry.z)) continue;
-                double expand = visual.steam && entry.energyKind == 2 ? 0.035D : 0.006D;
-                AxisAlignedBB box = AxisAlignedBB.getBoundingBox(
-                    entry.x - expand,
-                    entry.y - expand,
-                    entry.z - expand,
-                    entry.x + 1D + expand,
-                    entry.y + 1D + expand,
-                    entry.z + 1D + expand);
-                if (!frustum.isBoundingBoxInFrustum(box)) continue;
-                draw(visual, box, visual.steam && entry.energyKind == 2);
+            GL11.glColor4f(1F, 1F, 1F, 1F);
+            Tessellator tess = Tessellator.instance;
+            tess.startDrawingQuads();
+            int batchLayers = 0;
+            // Device groups are cached nearest-first; reverse groups for translucent far-to-near compositing.
+            // Within a mixed device, EU fills first and the distinct steam top slab fills last.
+            for (int i = drawn.size() - 1; i >= 0; i--) {
+                Visual visual = drawn.get(i);
+                if (visual.steam && i > 0 && drawn.get(i - 1).device == visual.device) {
+                    Visual electric = drawn.get(--i);
+                    batchLayers = fillLayer(tess, electric, x, y, z, batchLayers);
+                }
+                batchLayers = fillLayer(tess, visual, x, y, z, batchLayers);
             }
+            tess.draw();
+            lastFilledBatches++;
+            lastRenderedLayers = drawn.size();
+            // A bounded edge batch supplies shape detail; the filled color layer is the primary visual.
+            GL11.glLineWidth(Math.max(1F, mc.displayHeight / 720F));
+            tess.startDrawing(GL11.GL_LINES);
+            int outlines = 0;
+            for (Visual visual : drawn) {
+                if (outlines >= OUTLINE_BUDGET) break;
+                if (visual.neutral || visual.intensity < .85D) continue;
+                tess.setColorRGBA_F(visual.red, visual.green, visual.blue, visual.alpha * .6F);
+                outline(tess, visual.box, x, y, z);
+                outlines++;
+            }
+            tess.draw();
+            lastLineBatches = outlines == 0 ? 0 : 1;
         } finally {
             GL11.glPopMatrix();
+            GL11.glPopClientAttrib();
             GL11.glPopAttrib();
         }
     }
 
-    private static void draw(Visual visual, AxisAlignedBB box, boolean outlineOnly) {
-        float strength = (float) visual.intensity;
-        boolean producer = visual.value > 0D;
-        float red;
-        float green;
-        float blue;
-        if (visual.steam) {
-            // Steam production lightens with flow; steam consumption darkens toward coal black.
-            red = green = blue = producer ? 0.38F + strength * 0.42F : 0.22F - strength * 0.20F;
-        } else {
-            red = producer ? 0.06F : 0.55F + 0.45F * strength;
-            green = producer ? 0.40F + 0.60F * strength : 0.18F + 0.13F * strength;
-            blue = producer ? 0.13F + 0.13F * strength : 0.07F;
+    private int fillLayer(Tessellator tess, Visual visual, double x, double y, double z, int batchLayers) {
+        if (batchLayers == FILL_LAYER_BUDGET) {
+            tess.draw();
+            lastFilledBatches++;
+            tess.startDrawingQuads();
+            batchLayers = 0;
         }
-        float alpha = (float) DeviceTerminalVisualConfig.opacity * (0.20F + 0.80F * strength);
-        if (!outlineOnly) {
-            GL11.glColor4f(red, green, blue, alpha * 0.65F);
-            GL11.glBegin(GL11.GL_QUADS);
-            face(
-                box.minX,
-                box.minY,
-                box.minZ,
-                box.maxX,
-                box.minY,
-                box.minZ,
-                box.maxX,
-                box.maxY,
-                box.minZ,
-                box.minX,
-                box.maxY,
-                box.minZ);
-            face(
-                box.minX,
-                box.minY,
-                box.maxZ,
-                box.maxX,
-                box.minY,
-                box.maxZ,
-                box.maxX,
-                box.maxY,
-                box.maxZ,
-                box.minX,
-                box.maxY,
-                box.maxZ);
-            face(
-                box.minX,
-                box.minY,
-                box.minZ,
-                box.minX,
-                box.minY,
-                box.maxZ,
-                box.minX,
-                box.maxY,
-                box.maxZ,
-                box.minX,
-                box.maxY,
-                box.minZ);
-            face(
-                box.maxX,
-                box.minY,
-                box.minZ,
-                box.maxX,
-                box.minY,
-                box.maxZ,
-                box.maxX,
-                box.maxY,
-                box.maxZ,
-                box.maxX,
-                box.maxY,
-                box.minZ);
-            face(
-                box.minX,
-                box.minY,
-                box.minZ,
-                box.maxX,
-                box.minY,
-                box.minZ,
-                box.maxX,
-                box.minY,
-                box.maxZ,
-                box.minX,
-                box.minY,
-                box.maxZ);
-            face(
-                box.minX,
-                box.maxY,
-                box.minZ,
-                box.maxX,
-                box.maxY,
-                box.minZ,
-                box.maxX,
-                box.maxY,
-                box.maxZ,
-                box.minX,
-                box.maxY,
-                box.maxZ);
-            GL11.glEnd();
-        }
-        GL11.glColor4f(red, green, blue, Math.min(1F, alpha * 1.7F + 0.12F));
-        GL11.glBegin(GL11.GL_LINES);
+        tess.setColorRGBA_F(visual.red, visual.green, visual.blue, visual.alpha);
+        fill(tess, visual.box, x, y, z);
+        return batchLayers + 1;
+    }
+
+    private boolean renderable(Minecraft mc) {
+        return mc.theWorld != null && mc.thePlayer != null
+            && DeviceTerminalVisualConfig.enabled
+            && terminal != null
+            && DeviceTerminalVisualizationState.active(terminal)
+            && terminal.equals(DeviceTerminalVisualizationState.heldTerminalId())
+            && DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis());
+    }
+
+    private static void fill(Tessellator t, AxisAlignedBB box, double cx, double cy, double cz) {
+        double x0 = box.minX - cx, x1 = box.maxX - cx, y0 = box.minY - cy, y1 = box.maxY - cy, z0 = box.minZ - cz,
+            z1 = box.maxZ - cz;
+        face(t, x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0);
+        face(t, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1);
+        face(t, x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0);
+        face(t, x1, y0, z0, x1, y0, z1, x1, y1, z1, x1, y1, z0);
+        face(t, x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1);
+        face(t, x0, y1, z0, x1, y1, z0, x1, y1, z1, x0, y1, z1);
+    }
+
+    private static void face(Tessellator t, double x0, double y0, double z0, double x1, double y1, double z1, double x2,
+        double y2, double z2, double x3, double y3, double z3) {
+        t.addVertex(x0, y0, z0);
+        t.addVertex(x1, y1, z1);
+        t.addVertex(x2, y2, z2);
+        t.addVertex(x3, y3, z3);
+    }
+
+    private static void outline(Tessellator t, AxisAlignedBB b, double cx, double cy, double cz) {
+        double x0 = b.minX - cx, x1 = b.maxX - cx, y0 = b.minY - cy, y1 = b.maxY - cy, z0 = b.minZ - cz,
+            z1 = b.maxZ - cz;
         for (int side = 0; side < 2; side++) {
-            double y = side == 0 ? box.minY : box.maxY;
-            edge(box.minX, y, box.minZ, box.maxX, y, box.minZ);
-            edge(box.maxX, y, box.minZ, box.maxX, y, box.maxZ);
-            edge(box.maxX, y, box.maxZ, box.minX, y, box.maxZ);
-            edge(box.minX, y, box.maxZ, box.minX, y, box.minZ);
+            double y = side == 0 ? y0 : y1;
+            edge(t, x0, y, z0, x1, y, z0);
+            edge(t, x1, y, z0, x1, y, z1);
+            edge(t, x1, y, z1, x0, y, z1);
+            edge(t, x0, y, z1, x0, y, z0);
         }
-        edge(box.minX, box.minY, box.minZ, box.minX, box.maxY, box.minZ);
-        edge(box.maxX, box.minY, box.minZ, box.maxX, box.maxY, box.minZ);
-        edge(box.maxX, box.minY, box.maxZ, box.maxX, box.maxY, box.maxZ);
-        edge(box.minX, box.minY, box.maxZ, box.minX, box.maxY, box.maxZ);
-        GL11.glEnd();
+        edge(t, x0, y0, z0, x0, y1, z0);
+        edge(t, x1, y0, z0, x1, y1, z0);
+        edge(t, x1, y0, z1, x1, y1, z1);
+        edge(t, x0, y0, z1, x0, y1, z1);
     }
 
-    private static void face(double x1, double y1, double z1, double x2, double y2, double z2, double x3, double y3,
-        double z3, double x4, double y4, double z4) {
-        GL11.glVertex3d(x1, y1, z1);
-        GL11.glVertex3d(x2, y2, z2);
-        GL11.glVertex3d(x3, y3, z3);
-        GL11.glVertex3d(x4, y4, z4);
+    private static void edge(Tessellator t, double x0, double y0, double z0, double x1, double y1, double z1) {
+        t.addVertex(x0, y0, z0);
+        t.addVertex(x1, y1, z1);
     }
 
-    private static void edge(double x1, double y1, double z1, double x2, double y2, double z2) {
-        GL11.glVertex3d(x1, y1, z1);
-        GL11.glVertex3d(x2, y2, z2);
-    }
-
-    private static double distanceSquared(Entry entry, Entity player) {
-        double x = entry.x + 0.5D - player.posX;
-        double y = entry.y + 0.5D - player.posY;
-        double z = entry.z + 0.5D - player.posZ;
-        return x * x + y * y + z * z;
+    private void updateLegend(Minecraft mc) {
+        legendLanguage = mc.gameSettings.language;
+        String[] keys = { "consumer", "generator", "steam.producer", "steam.consumer" };
+        legendLines = new String[6];
+        legendWidth = 0;
+        for (int i = 0; i < 4; i++) legendLines[i] = StatCollector.translateToLocal("gtswn.device.settings." + keys[i]);
+        legendLines[4] = StatCollector.translateToLocalFormatted(
+            "gtswn.device.settings.maximum.eu",
+            FormatUtil.formatMetricDouble(maxElectric, 1));
+        legendLines[5] = StatCollector.translateToLocalFormatted(
+            "gtswn.device.settings.maximum.steam",
+            FormatUtil.formatMetricDouble(maxSteam, 1));
+        for (String line : legendLines) legendWidth = Math.max(legendWidth, mc.fontRenderer.getStringWidth(line));
     }
 
     @SubscribeEvent
     public void legend(RenderGameOverlayEvent.Post event) {
-        if (event.type != RenderGameOverlayEvent.ElementType.TEXT || visible.isEmpty()) return;
         Minecraft mc = Minecraft.getMinecraft();
-        ItemStack held = mc.thePlayer == null ? null : mc.thePlayer.getHeldItem();
-        if (!DeviceTerminalVisualConfig.enabled || !DeviceTerminalVisualizationState.isActiveHeld()
+        if (event.type != RenderGameOverlayEvent.ElementType.TEXT || !renderable(mc)
             || mc.gameSettings.hideGUI
-            || held == null
-            || !(held.getItem() instanceof ItemDeviceInfoTerminal)
-            || terminal == null
-            || !terminal.equals(ItemDeviceInfoTerminal.readTerminalId(held))
-            || !DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis())) return;
-        ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
-        String[] keys = { "consumer", "generator", "steam.producer", "steam.consumer" };
-        int[] colors = { 0xFF6E36, 0x44EA77, 0xC2C2C2, 0x707070 };
-        String[] lines = new String[6];
-        int textWidth = 0;
-        for (int i = 0; i < keys.length; i++) {
-            lines[i] = StatCollector.translateToLocal("gtswn.device.settings." + keys[i]);
-            textWidth = Math.max(textWidth, mc.fontRenderer.getStringWidth(lines[i]));
-        }
-        lines[4] = StatCollector.translateToLocalFormatted(
-            "gtswn.device.settings.maximum.eu",
-            FormatUtil.formatMetricDouble(maxElectric, 1));
-        lines[5] = StatCollector.translateToLocalFormatted(
-            "gtswn.device.settings.maximum.steam",
-            FormatUtil.formatMetricDouble(maxSteam, 1));
-        for (String line : lines) textWidth = Math.max(textWidth, mc.fontRenderer.getStringWidth(line));
-        int x = resolution.getScaledWidth() - textWidth - 8;
-        for (int i = 0; i < lines.length; i++) {
-            mc.fontRenderer.drawStringWithShadow(lines[i], x, 70 + i * 11, i < 4 ? colors[i] : 0xDDDDDD);
-        }
+            || visible.isEmpty()) return;
+        int x = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaledWidth() - legendWidth - 8;
+        for (int i = 0; i < legendLines.length; i++)
+            mc.fontRenderer.drawStringWithShadow(legendLines[i], x, 70 + i * 11, i < 4 ? LEGEND_COLORS[i] : 0xDDDDDD);
     }
 
     @SubscribeEvent
@@ -365,22 +330,53 @@ public final class DeviceEnergyWorldRenderer {
 
     private void clear() {
         visible.clear();
-        smoothed.clear();
+        building.clear();
+        drawn.clear();
+        electricPrevious.clear();
+        steamPrevious.clear();
+        source = null;
         terminal = null;
+        sourceGeneration = Long.MIN_VALUE;
         ticks = 0;
+        lastRenderedLayers = lastFilledBatches = lastLineBatches = 0;
     }
 
-    private static final class Visual {
+    static final class Visual {
 
-        final Entry entry;
+        final DeviceTerminalAnchorRenderer.Anchor device;
+        final AxisAlignedBB box;
         final boolean steam;
-        final double value;
+        final boolean producer;
+        final boolean neutral;
+        final double magnitude;
+        double target;
         double intensity;
+        float red, green, blue, alpha;
 
-        Visual(Entry entry, boolean steam, double value) {
-            this.entry = entry;
+        Visual(DeviceTerminalAnchorRenderer.Anchor device, boolean steam, boolean producer, double magnitude,
+            boolean neutral) {
+            this.device = device;
             this.steam = steam;
-            this.value = value;
+            this.producer = producer;
+            this.magnitude = magnitude;
+            this.neutral = neutral;
+            box = steam && device.entry.energyKind == 2 ? device.steamBounds : device.heatBounds;
+        }
+
+        void updateColor() {
+            float strength = (float) intensity;
+            if (neutral) {
+                red = green = blue = .42F;
+                alpha = (float) DeviceTerminalVisualConfig.opacity * .18F;
+                return;
+            }
+            if (steam) red = green = blue = producer ? .38F + strength * .42F : .22F - strength * .20F;
+            else {
+                red = producer ? .06F : .55F + .45F * strength;
+                green = producer ? .4F + .6F * strength : .18F + .13F * strength;
+                blue = producer ? .13F + .13F * strength : .07F;
+            }
+            alpha = (float) DeviceTerminalVisualConfig.opacity * (.25F + .75F * strength);
         }
     }
 }

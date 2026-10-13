@@ -1,14 +1,22 @@
 package com.miaokatze.gtswn.client;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
+import java.nio.IntBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.culling.Frustrum;
 import net.minecraft.client.renderer.entity.RenderManager;
 import net.minecraft.entity.Entity;
@@ -24,7 +32,6 @@ import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
-import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -34,14 +41,33 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 /** Bound-machine travel markers. All snapshot work is sliced on client ticks; render reads cached text only. */
 public final class DeviceTerminalAnchorRenderer {
 
-    private static final int WORK_PER_TICK = 64;
-    private static final int LABELS_PER_FRAME = 64;
+    private static final int WORK_PER_TICK = 32;
     private static final Comparator<Anchor> NEAREST = Comparator.comparingDouble((Anchor anchor) -> anchor.distance)
         .thenComparing(anchor -> anchor.entry.key);
     private static final String[] STATES = { "idle", "running", "stopped" };
     // The constructor creates a queue using NEAREST, so initialize its dependencies first.
     public static final DeviceTerminalAnchorRenderer INSTANCE = new DeviceTerminalAnchorRenderer();
     private final List<Anchor> visible = new ArrayList<>();
+    private final List<Anchor> drawn = new ArrayList<>(512);
+    public int lastRenderedMarkers;
+    public int lastRenderedLabels;
+    public int lastMarkerBatches;
+    public int lastProjectedLabels;
+    private final FloatBuffer modelviewBuffer = ByteBuffer.allocateDirect(16 * Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer();
+    private final FloatBuffer projectionBuffer = ByteBuffer.allocateDirect(16 * Float.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer();
+    private final IntBuffer viewportBuffer = ByteBuffer.allocateDirect(16 * Integer.BYTES)
+        .order(ByteOrder.nativeOrder())
+        .asIntBuffer();
+    private final float[] labelModelview = new float[16];
+    private final float[] labelProjection = new float[16];
+    private final double[] labelTransform = new double[16];
+    private final int[] labelViewport = new int[4];
+    private final double[] candidateRectangle = new double[4];
+    private final double[] acceptedRectangles = new double[64 * 4];
     private final PriorityQueue<Anchor> building = new PriorityQueue<>(NEAREST.reversed());
     private DeviceTerminalClientCache.Snapshot scanning;
     private DeviceTerminalClientCache.Snapshot displayed;
@@ -49,6 +75,15 @@ public final class DeviceTerminalAnchorRenderer {
     private Anchor target;
     private int cursor;
     private int refreshCursor;
+    private int availabilityRemaining;
+    private int nextAvailabilityTick;
+    private long viewGeneration;
+    private long dataEpoch;
+    private boolean buildStructureChanged;
+    private boolean buildSnapshotChanged;
+    private final Map<String, Anchor> cached = new HashMap<>();
+    private Map<String, Entry> boundIdentity = new HashMap<>();
+    private Map<String, Entry> buildingIdentity = new HashMap<>();
     private int ticks;
     private int scanDimension;
     private int scanRange;
@@ -77,19 +112,28 @@ public final class DeviceTerminalAnchorRenderer {
         if (terminal != null && !terminal.equals(held)) reset();
         terminal = held;
         DeviceTerminalVisualConfig.load();
-        if (mc.currentScreen == null
-            && (ticks % 20 == 0 || DeviceTerminalClientCache.hasMorePending(terminal) && ticks % 5 == 0)) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
+        // One world-mode poller, also while a settings/name editor screen keeps the session open.
+        if (ticks % 20 == 0 || DeviceTerminalClientCache.hasMorePending(terminal) && ticks % 5 == 0) {
+            GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(terminal));
         }
         ticks++;
         DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(terminal);
         if (snapshot != null && scanning == null && (snapshot != displayed || moved(mc))) begin(snapshot, mc);
         if (scanning != null) advance(mc);
         else if (!visible.isEmpty()) {
+            if (ticks >= nextAvailabilityTick) {
+                availabilityRemaining = visible.size();
+                nextAvailabilityTick = ticks + 20;
+            }
             boolean fresh = DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis());
-            for (int i = 0; i < Math.min(WORK_PER_TICK, visible.size()); i++) {
+            int budget = Math.min(WORK_PER_TICK, availabilityRemaining);
+            for (int i = 0; i < budget; i++) {
                 if (refreshCursor >= visible.size()) refreshCursor = 0;
-                update(visible.get(refreshCursor++), mc, fresh);
+                Anchor anchor = visible.get(refreshCursor++);
+                boolean wasLoaded = anchor.loaded;
+                update(anchor, mc, fresh);
+                if (wasLoaded != anchor.loaded) viewGeneration++;
+                availabilityRemaining--;
             }
         }
         target = select(mc);
@@ -98,21 +142,23 @@ public final class DeviceTerminalAnchorRenderer {
     private boolean moved(Minecraft mc) {
         return scanDimension != mc.theWorld.provider.dimensionId || scanRange != range()
             || scanLimit != limit()
-            || DeviceTerminalAnchorMath.distanceSquared(
-                scanX,
-                scanY,
-                scanZ,
-                mc.thePlayer.posX,
-                mc.thePlayer.posY + mc.thePlayer.getEyeHeight(),
-                mc.thePlayer.posZ) > 4D;
+            || DeviceTerminalAnchorMath
+                .distanceSquared(scanX, scanY, scanZ, mc.thePlayer.posX, eyeY(mc), mc.thePlayer.posZ) > 4D;
     }
 
     private void begin(DeviceTerminalClientCache.Snapshot snapshot, Minecraft mc) {
+        if (moved(mc)) viewGeneration++;
+        buildStructureChanged = false;
+        buildSnapshotChanged = snapshot != displayed;
+        if (buildSnapshotChanged) {
+            buildingIdentity.clear();
+            buildStructureChanged = snapshot.entries.size() != boundIdentity.size();
+        }
         scanning = snapshot;
         cursor = 0;
         building.clear();
         scanX = mc.thePlayer.posX;
-        scanY = mc.thePlayer.posY + mc.thePlayer.getEyeHeight();
+        scanY = eyeY(mc);
         scanZ = mc.thePlayer.posZ;
         scanDimension = mc.theWorld.provider.dimensionId;
         scanRange = range();
@@ -124,16 +170,47 @@ public final class DeviceTerminalAnchorRenderer {
         boolean fresh = DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis());
         for (; cursor < end; cursor++) {
             Entry entry = scanning.entries.get(cursor);
+            // Compare the full binding topology, not a camera-dependent nearest subset.
+            if (buildSnapshotChanged) {
+                Entry previous = boundIdentity.get(entry.key);
+                buildingIdentity.put(entry.key, entry);
+                if (previous == null || previous.metaTileId != entry.metaTileId
+                    || previous.energyKind != entry.energyKind) buildStructureChanged = true;
+            }
             if (entry.dim != scanDimension) continue;
             double distance = distance(entry, scanX, scanY, scanZ);
             if (!Double.isFinite(distance) || distance > scanRange * scanRange) continue;
-            Anchor anchor = new Anchor(entry, distance);
+            Anchor anchor = cached.get(entry.key);
+            if (anchor == null) {
+                anchor = new Anchor(entry, distance);
+            } else {
+                anchor.distance = distance;
+                if (!equivalent(anchor.entry, entry)) {
+                    anchor.textDirty = true;
+                    viewGeneration++;
+                }
+                anchor.entry = entry;
+            }
             if (building.size() == scanLimit && NEAREST.compare(anchor, building.peek()) >= 0) continue;
             update(anchor, mc, fresh);
             building.offer(anchor);
             if (building.size() > scanLimit) building.poll();
         }
         if (cursor == scanning.entries.size()) {
+            boolean selectionChanged = visible.size() != building.size();
+            if (!selectionChanged) for (Anchor candidate : building) {
+                if (cached.get(candidate.entry.key) != candidate) {
+                    selectionChanged = true;
+                    break;
+                }
+            }
+            if (selectionChanged) viewGeneration++;
+            if (buildStructureChanged) dataEpoch++;
+            if (buildSnapshotChanged) {
+                Map<String, Entry> oldIdentity = boundIdentity;
+                boundIdentity = buildingIdentity;
+                buildingIdentity = oldIdentity;
+            }
             visible.clear();
             visible.addAll(building);
             visible.sort(NEAREST);
@@ -141,7 +218,32 @@ public final class DeviceTerminalAnchorRenderer {
             scanning = null;
             building.clear();
             refreshCursor = 0;
+            availabilityRemaining = 0;
+            nextAvailabilityTick = ticks + 20;
+            cached.clear();
+            for (Anchor anchor : visible) cached.put(anchor.entry.key, anchor);
         }
+    }
+
+    private static boolean equivalent(Entry a, Entry b) {
+        return a.state == b.state && a.energyKind == b.energyKind
+            && a.evidenceKind == b.evidenceKind
+            && a.instIn == b.instIn
+            && a.instOut == b.instOut
+            && a.avgIn == b.avgIn
+            && a.avgOut == b.avgOut
+            && a.steamInstIn == b.steamInstIn
+            && a.steamInstOut == b.steamInstOut
+            && a.steamAvgIn == b.steamAvgIn
+            && a.steamAvgOut == b.steamAvgOut
+            && a.nameColor == b.nameColor
+            && a.nameBold == b.nameBold
+            && a.metaTileId == b.metaTileId
+            && a.powerType == b.powerType
+            && Objects.equals(a.displayName, b.displayName)
+            && Objects.equals(a.recipeIn, b.recipeIn)
+            && Objects.equals(a.recipeOut, b.recipeOut)
+            && Objects.equals(a.name, b.name);
     }
 
     private static void update(Anchor anchor, Minecraft mc, boolean fresh) {
@@ -149,9 +251,22 @@ public final class DeviceTerminalAnchorRenderer {
         boolean loaded = entry.dim == mc.theWorld.provider.dimensionId
             && mc.theWorld.blockExists(entry.x, entry.y, entry.z);
         TileEntity tile = loaded ? mc.theWorld.getTileEntity(entry.x, entry.y, entry.z) : null;
-        anchor.available = fresh && tile instanceof IGregTechTileEntity
+        boolean matchingMachine = tile instanceof IGregTechTileEntity
             && (entry.metaTileId < 0 || ((IGregTechTileEntity) tile).getMetaTileID() == entry.metaTileId);
+        anchor.available = fresh && matchingMachine;
+        anchor.loaded = matchingMachine;
+        String status = !fresh ? "stale" : !loaded ? "unloaded" : !anchor.available ? "missing" : "";
+        int appearance = DeviceTerminalVisualConfig.appearanceKey();
+        String language = mc.gameSettings.language;
+        if (!anchor.textDirty && status.equals(anchor.status)
+            && appearance == anchor.appearance
+            && Objects.equals(language, anchor.language)) return;
+        anchor.textDirty = false;
+        anchor.status = status;
+        anchor.appearance = appearance;
+        anchor.language = language;
         anchor.lines.clear();
+        anchor.lineWidths.clear();
         anchor.name = DeviceTerminalNames.localName(entry);
         if (DeviceTerminalVisualConfig.showLabelName) addLine(anchor, mc, anchor.name);
         if (!anchor.available) {
@@ -189,7 +304,11 @@ public final class DeviceTerminalAnchorRenderer {
             }
         }
         anchor.width = 0;
-        for (String line : anchor.lines) anchor.width = Math.max(anchor.width, mc.fontRenderer.getStringWidth(line));
+        for (String line : anchor.lines) {
+            int width = mc.fontRenderer.getStringWidth(line);
+            anchor.lineWidths.add(width);
+            anchor.width = Math.max(anchor.width, width);
+        }
     }
 
     private static void addLine(Anchor anchor, Minecraft mc, String line) {
@@ -204,7 +323,7 @@ public final class DeviceTerminalAnchorRenderer {
         if (!canRender(mc) || !DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis())) return null;
         Vec3 look = mc.thePlayer.getLookVec();
         double x = mc.thePlayer.posX;
-        double y = mc.thePlayer.posY + mc.thePlayer.getEyeHeight();
+        double y = eyeY(mc);
         double z = mc.thePlayer.posZ;
         Anchor best = null;
         double bestAlignment = -1D;
@@ -239,6 +358,37 @@ public final class DeviceTerminalAnchorRenderer {
         return best;
     }
 
+    public void clearTarget() {
+        target = null;
+    }
+
+    List<Anchor> observedDevices() {
+        return visible;
+    }
+
+    long viewGeneration() {
+        return viewGeneration;
+    }
+
+    long dataEpoch() {
+        return dataEpoch;
+    }
+
+    boolean viewReady() {
+        return scanning == null;
+    }
+
+    public void invalidatePosition() {
+        target = null;
+        scanning = null;
+        displayed = null;
+        building.clear();
+        visible.clear();
+        cached.clear();
+        viewGeneration++;
+        dataEpoch++;
+    }
+
     public String currentTargetKey() {
         target = select(Minecraft.getMinecraft());
         return target == null ? null : target.entry.key;
@@ -246,6 +396,7 @@ public final class DeviceTerminalAnchorRenderer {
 
     @SubscribeEvent
     public void render(RenderWorldLastEvent event) {
+        lastRenderedMarkers = lastRenderedLabels = lastMarkerBatches = lastProjectedLabels = 0;
         Minecraft mc = Minecraft.getMinecraft();
         if (!canRender(mc) || visible.isEmpty()) return;
         Entity camera = mc.renderViewEntity == null ? mc.thePlayer : mc.renderViewEntity;
@@ -254,7 +405,12 @@ public final class DeviceTerminalAnchorRenderer {
         double z = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * event.partialTicks;
         Frustrum frustum = new Frustrum();
         frustum.setPosition(x, y, z);
+        drawn.clear();
+        if (target != null && drawable(target, mc, frustum, x, y, z)) drawn.add(target);
+        for (Anchor anchor : visible) if (anchor != target && drawable(anchor, mc, frustum, x, y, z)) drawn.add(anchor);
+        if (drawn.isEmpty()) return;
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+        GL11.glPushClientAttrib(GL11.GL_CLIENT_VERTEX_ARRAY_BIT);
         GL11.glMatrixMode(GL11.GL_MODELVIEW);
         GL11.glPushMatrix();
         try {
@@ -264,53 +420,150 @@ public final class DeviceTerminalAnchorRenderer {
             GL11.glDisable(GL11.GL_LIGHTING);
             GL11.glDisable(GL11.GL_FOG);
             GL11.glDisable(GL11.GL_CULL_FACE);
+            GL11.glDisable(GL11.GL_ALPHA_TEST);
+            GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            int labels = 0;
-            if (target != null && drawable(target, mc, frustum, x, y, z)) {
-                draw(target, mc, x, y, z, true);
-                labels++;
+            GL11.glColor4f(1F, 1F, 1F, 1F);
+            GL11.glLineWidth(Math.max(1F, mc.displayHeight / 720F));
+            // All diamonds share one vertex/color batch rather than one matrix and draw call per device.
+            double yaw = Math.toRadians(RenderManager.instance.playerViewY);
+            double pitch = Math.toRadians(RenderManager.instance.playerViewX);
+            double rx = Math.cos(yaw), rz = Math.sin(yaw);
+            double ux = -Math.sin(yaw) * Math.sin(pitch), uy = Math.cos(pitch), uz = Math.cos(yaw) * Math.sin(pitch);
+            Tessellator tess = Tessellator.instance;
+            tess.startDrawing(GL11.GL_LINES);
+            for (Anchor anchor : drawn) {
+                Entry entry = anchor.entry;
+                double px = entry.x + .5D - x, py = entry.y + 1.6D - y, pz = entry.z + .5D - z;
+                double scale = 5D
+                    * Math.max(.027D, Math.min(.15D, .027D + Math.sqrt(distance(entry, x, y, z)) * .001D));
+                boolean selected = anchor == target;
+                tess.setColorRGBA_F(
+                    selected ? 1F : .35F,
+                    selected ? .82F : .9F,
+                    selected ? .35F : .95F,
+                    anchor.available ? .95F : .5F);
+                markerEdge(
+                    tess,
+                    px + ux * scale,
+                    py + uy * scale,
+                    pz + uz * scale,
+                    px + rx * scale,
+                    py,
+                    pz + rz * scale);
+                markerEdge(
+                    tess,
+                    px + rx * scale,
+                    py,
+                    pz + rz * scale,
+                    px - ux * scale,
+                    py - uy * scale,
+                    pz - uz * scale);
+                markerEdge(
+                    tess,
+                    px - ux * scale,
+                    py - uy * scale,
+                    pz - uz * scale,
+                    px - rx * scale,
+                    py,
+                    pz - rz * scale);
+                markerEdge(
+                    tess,
+                    px - rx * scale,
+                    py,
+                    pz - rz * scale,
+                    px + ux * scale,
+                    py + uy * scale,
+                    pz + uz * scale);
             }
-            for (Anchor anchor : visible) {
-                if (anchor == target || !drawable(anchor, mc, frustum, x, y, z)) continue;
-                draw(anchor, mc, x, y, z, labels++ < LABELS_PER_FRAME);
+            tess.draw();
+            lastMarkerBatches = 1;
+            lastRenderedMarkers = drawn.size();
+            int budget = Math.max(8, Math.min(64, DeviceTerminalVisualConfig.labelBudget));
+            if (DeviceTerminalVisualConfig.showLabels) {
+                readLabelTransform();
+                for (Anchor anchor : drawn) {
+                    if (lastRenderedLabels >= budget || lastProjectedLabels >= 64) break;
+                    if (anchor.lines.isEmpty()) continue;
+                    lastProjectedLabels++;
+                    Entry entry = anchor.entry;
+                    boolean projected = DeviceTerminalLabelLayout.project(
+                        labelTransform,
+                        labelViewport,
+                        entry.x + .5D - x,
+                        entry.y + 1.6D - y,
+                        entry.z + .5D - z,
+                        rx,
+                        rz,
+                        ux,
+                        uy,
+                        uz,
+                        labelScale(entry, x, y, z),
+                        anchor.width / 2 + 4,
+                        12 + anchor.lines.size() * 10,
+                        candidateRectangle);
+                    // The selected label owns its rectangle before any nearest-neighbour candidate.
+                    if (anchor != target && (!projected || !DeviceTerminalLabelLayout
+                        .fits(candidateRectangle, acceptedRectangles, lastRenderedLabels, 3D))) continue;
+                    drawLabel(anchor, mc, x, y, z, true);
+                    if (!projected) {
+                        // A selected billboard straddling the eye plane still draws, without allowing overlap.
+                        lastRenderedLabels++;
+                        break;
+                    }
+                    System.arraycopy(candidateRectangle, 0, acceptedRectangles, lastRenderedLabels * 4, 4);
+                    lastRenderedLabels++;
+                }
             }
         } finally {
             GL11.glPopMatrix();
+            GL11.glPopClientAttrib();
             GL11.glPopAttrib();
         }
     }
 
+    private void readLabelTransform() {
+        modelviewBuffer.clear();
+        projectionBuffer.clear();
+        viewportBuffer.clear();
+        GL11.glGetFloat(GL11.GL_MODELVIEW_MATRIX, modelviewBuffer);
+        GL11.glGetFloat(GL11.GL_PROJECTION_MATRIX, projectionBuffer);
+        GL11.glGetInteger(GL11.GL_VIEWPORT, viewportBuffer);
+        for (int i = 0; i < 16; i++) {
+            labelModelview[i] = modelviewBuffer.get(i);
+            labelProjection[i] = projectionBuffer.get(i);
+        }
+        for (int i = 0; i < 4; i++) labelViewport[i] = viewportBuffer.get(i);
+        DeviceTerminalLabelLayout.combine(labelModelview, labelProjection, labelTransform);
+    }
+
+    private static float labelScale(Entry entry, double x, double y, double z) {
+        return (float) Math.max(.027D, Math.min(.15D, .027D + Math.sqrt(distance(entry, x, y, z)) * .001D));
+    }
+
+    private static void markerEdge(Tessellator tess, double x0, double y0, double z0, double x1, double y1, double z1) {
+        tess.addVertex(x0, y0, z0);
+        tess.addVertex(x1, y1, z1);
+    }
+
     private static boolean drawable(Anchor anchor, Minecraft mc, Frustrum frustum, double x, double y, double z) {
         Entry entry = anchor.entry;
-        return entry.dim == mc.theWorld.provider.dimensionId
-            && distance(entry, x, y + mc.thePlayer.getEyeHeight(), z) <= range() * range()
+        return entry.dim == mc.theWorld.provider.dimensionId && distance(entry, x, eyeY(mc), z) <= range() * range()
             && frustum.isBoundingBoxInFrustum(anchor.bounds);
     }
 
-    private void draw(Anchor anchor, Minecraft mc, double x, double y, double z, boolean labelBudget) {
+    private void drawLabel(Anchor anchor, Minecraft mc, double x, double y, double z, boolean labelBudget) {
         Entry entry = anchor.entry;
         GL11.glPushMatrix();
         try {
             GL11.glTranslated(entry.x + 0.5D - x, entry.y + 1.6D - y, entry.z + 0.5D - z);
             GL11.glRotatef(-RenderManager.instance.playerViewY, 0F, 1F, 0F);
             GL11.glRotatef(RenderManager.instance.playerViewX, 1F, 0F, 0F);
-            float scale = (float) Math
-                .max(0.027D, Math.min(0.15D, 0.027D + Math.sqrt(distance(entry, x, y, z)) * 0.001D));
+            float scale = labelScale(entry, x, y, z);
             GL11.glScalef(-scale, -scale, scale);
             boolean selected = anchor == target;
             GL11.glDisable(GL11.GL_TEXTURE_2D);
-            GL11.glColor4f(
-                selected ? 1F : 0.35F,
-                selected ? 0.82F : 0.9F,
-                selected ? 0.35F : 0.95F,
-                anchor.available ? 0.95F : 0.5F);
-            GL11.glBegin(GL11.GL_LINE_LOOP);
-            GL11.glVertex2d(0D, -5D);
-            GL11.glVertex2d(5D, 0D);
-            GL11.glVertex2d(0D, 5D);
-            GL11.glVertex2d(-5D, 0D);
-            GL11.glEnd();
             if (labelBudget && DeviceTerminalVisualConfig.showLabels && !anchor.lines.isEmpty()) {
                 int half = anchor.width / 2 + 4;
                 int bottom = 12 + anchor.lines.size() * 10;
@@ -324,8 +577,8 @@ public final class DeviceTerminalAnchorRenderer {
                 GL11.glEnable(GL11.GL_TEXTURE_2D);
                 GL11.glColor4f(1F, 1F, 1F, 1F);
                 int textY = 9;
-                for (String line : anchor.lines) {
-                    mc.fontRenderer.drawString(line, -mc.fontRenderer.getStringWidth(line) / 2, textY, 0xEEEEEE);
+                for (int i = 0; i < anchor.lines.size(); i++) {
+                    mc.fontRenderer.drawString(anchor.lines.get(i), -anchor.lineWidths.get(i) / 2, textY, 0xEEEEEE);
                     textY += 10;
                 }
             }
@@ -376,6 +629,14 @@ public final class DeviceTerminalAnchorRenderer {
             && terminal.equals(DeviceTerminalVisualizationState.heldTerminalId());
     }
 
+    private static double eyeY(Minecraft mc) {
+        return com.miaokatze.gtswn.common.device.DeviceTerminalVisualRules.eyeY(
+            mc.thePlayer.posY,
+            mc.thePlayer.yOffset,
+            mc.thePlayer.getEyeHeight(),
+            mc.thePlayer.getDefaultEyeHeight());
+    }
+
     private static int range() {
         return Math.max(8, Math.min(128, DeviceTerminalVisualConfig.range));
     }
@@ -402,6 +663,7 @@ public final class DeviceTerminalAnchorRenderer {
 
     private void reset() {
         visible.clear();
+        drawn.clear();
         building.clear();
         scanning = null;
         displayed = null;
@@ -410,21 +672,50 @@ public final class DeviceTerminalAnchorRenderer {
         cursor = 0;
         ticks = 0;
         refreshCursor = 0;
+        availabilityRemaining = 0;
+        nextAvailabilityTick = 0;
+        boundIdentity.clear();
+        buildingIdentity.clear();
+        cached.clear();
+        viewGeneration++;
+        dataEpoch++;
     }
 
-    private static final class Anchor {
+    static final class Anchor {
 
-        final Entry entry;
-        final double distance;
+        Entry entry;
+        double distance;
         final AxisAlignedBB bounds;
         final List<String> lines = new ArrayList<>();
         boolean available;
+        boolean loaded;
+        boolean textDirty = true;
+        String status;
+        String language;
+        int appearance;
+        final List<Integer> lineWidths = new ArrayList<>();
+        final AxisAlignedBB heatBounds;
+        final AxisAlignedBB steamBounds;
         String name;
         int width;
 
         Anchor(Entry entry, double distance) {
             this.entry = entry;
             this.distance = distance;
+            heatBounds = AxisAlignedBB.getBoundingBox(
+                entry.x - 0.012D,
+                entry.y - 0.012D,
+                entry.z - 0.012D,
+                entry.x + 1.012D,
+                entry.y + 1.012D,
+                entry.z + 1.012D);
+            steamBounds = AxisAlignedBB.getBoundingBox(
+                entry.x - 0.035D,
+                entry.y + 0.72D,
+                entry.z - 0.035D,
+                entry.x + 1.035D,
+                entry.y + 1.04D,
+                entry.z + 1.035D);
             this.bounds = AxisAlignedBB
                 .getBoundingBox(entry.x - 1D, entry.y, entry.z - 1D, entry.x + 2D, entry.y + 3D, entry.z + 2D);
         }

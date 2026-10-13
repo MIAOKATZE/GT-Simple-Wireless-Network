@@ -26,7 +26,6 @@ import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
-import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
@@ -238,8 +237,9 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         if (this.extraPollCooldown > 0) {
             this.extraPollCooldown--;
         }
-        if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
+        if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0
+            && !com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.isActiveHeld()) {
+            GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
         }
     }
 
@@ -798,6 +798,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      * 滚轮连击被限频；批次已到齐时客户端侧零发包（服务端版本跳过之外再省一道）。
      */
     private void requestPendingPages() {
+        if (com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.isActiveHeld()) return;
         if (this.extraPollCooldown > 0 || this.anchor == null) {
             return;
         }
@@ -805,7 +806,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             return;
         }
         this.extraPollCooldown = EXTRA_POLL_INTERVAL_TICKS;
-        GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
+        GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
     }
 
     @Override

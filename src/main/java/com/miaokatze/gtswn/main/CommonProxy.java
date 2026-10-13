@@ -472,6 +472,14 @@ public class CommonProxy {
 
     public void openDeviceInfoTerminalSettingsGui() {}
 
+    public boolean isDeviceTerminalVisualizationActive() {
+        return false;
+    }
+
+    public boolean handleDeviceVisualizationRightClick() {
+        return false;
+    }
+
     public void handleSyncDeviceTerminalVisualState(
         com.miaokatze.gtswn.network.PacketSyncDeviceTerminalVisualState message) {}
 

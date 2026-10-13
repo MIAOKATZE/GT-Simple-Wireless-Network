@@ -112,6 +112,16 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         return new ArrayList<>(terminals.entrySet());
     }
 
+    /** O(actual held terminals), independent of historical save size. */
+    public List<Map.Entry<UUID, TerminalData>> getActiveTerminals() {
+        List<Map.Entry<UUID, TerminalData>> active = new ArrayList<>();
+        for (UUID id : ACTIVE_TERMINALS) {
+            TerminalData data = terminals.get(id);
+            if (data != null) active.add(new java.util.AbstractMap.SimpleImmutableEntry<>(id, data));
+        }
+        return active;
+    }
+
     /**
      * 加绑定（右击机器 / 放置自动绑定 / 扫描录入统一入口）。
      * <p>
@@ -219,58 +229,60 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
     /** 在线玩家持有的终端 UUID 并集（阶段 C 采样调度判定用） */
     private static final Set<UUID> ACTIVE_TERMINALS = new HashSet<>();
+    private static final Map<UUID, Integer> HOLDER_COUNTS = new HashMap<>();
 
     /**
      * 玩家登录：登记其背包内全部终端 UUID（重复登录先清旧映射）。
      */
     public static void onPlayerLoggedIn(UUID playerId, Set<UUID> terminalIds) {
-        PLAYER_TERMINALS.put(playerId, new HashSet<>(terminalIds));
-        ACTIVE_TERMINALS.addAll(terminalIds);
+        synchronizeHeldTerminals(playerId, terminalIds);
     }
 
-    /**
-     * 玩家登出：移除其终端映射；无人再持有的终端退出活跃集（克隆物品可能多人共享同 UUID）。
-     */
     public static void onPlayerLoggedOut(UUID playerId) {
         Set<UUID> removed = PLAYER_TERMINALS.remove(playerId);
-        if (removed == null) {
-            return;
-        }
-        for (UUID terminalId : removed) {
-            if (!isHeldByOthers(terminalId)) {
-                ACTIVE_TERMINALS.remove(terminalId);
-            }
-        }
+        if (removed != null) for (UUID id : removed) removeHolder(id);
     }
 
-    /** 终端是否仍被某个在线玩家持有 */
-    private static boolean isHeldByOthers(UUID terminalId) {
-        for (Set<UUID> held : PLAYER_TERMINALS.values()) {
-            if (held.contains(terminalId)) {
-                return true;
+    /** Inventory reconciliation drops terminals put in chests or on the ground, rather than sampling until logout. */
+    public static void synchronizeHeldTerminals(UUID playerId, Set<UUID> actual) {
+        Set<UUID> held = PLAYER_TERMINALS.computeIfAbsent(playerId, ignored -> new HashSet<>());
+        java.util.Iterator<UUID> iterator = held.iterator();
+        while (iterator.hasNext()) {
+            UUID id = iterator.next();
+            if (!actual.contains(id)) {
+                iterator.remove();
+                removeHolder(id);
             }
         }
-        return false;
+        for (UUID id : actual) if (held.add(id)) addHolder(id);
+        if (held.isEmpty()) PLAYER_TERMINALS.remove(playerId);
     }
 
-    /**
-     * 主线程观测补登记：请求 / 动作排水发现玩家持有某终端时调用。
-     * <p>
-     * 会话内新获得的终端（创造拿取 / 合成 / PlaceEvent 新建 UUID）未走登录扫描，
-     * 若不补入活跃索引，采样调度会一直跳过它直到重登。
-     */
+    private static void addHolder(UUID id) {
+        HOLDER_COUNTS.put(id, HOLDER_COUNTS.getOrDefault(id, 0) + 1);
+        ACTIVE_TERMINALS.add(id);
+    }
+
+    private static void removeHolder(UUID id) {
+        int count = HOLDER_COUNTS.getOrDefault(id, 1) - 1;
+        if (count <= 0) {
+            HOLDER_COUNTS.remove(id);
+            ACTIVE_TERMINALS.remove(id);
+        } else HOLDER_COUNTS.put(id, count);
+    }
+
     public static void ensureActiveTerminal(UUID playerId, UUID terminalId) {
-        Set<UUID> held = PLAYER_TERMINALS.get(playerId);
-        if (held == null) {
-            held = new HashSet<>();
-            PLAYER_TERMINALS.put(playerId, held);
-        }
-        if (held.add(terminalId)) {
-            ACTIVE_TERMINALS.add(terminalId);
-        }
+        Set<UUID> held = PLAYER_TERMINALS.computeIfAbsent(playerId, ignored -> new HashSet<>());
+        if (held.add(terminalId)) addHolder(terminalId);
     }
 
     /** 终端是否活跃（在线玩家持有；阶段 C 采样调度入口判定） */
+    public static void clearActiveTerminals() {
+        PLAYER_TERMINALS.clear();
+        ACTIVE_TERMINALS.clear();
+        HOLDER_COUNTS.clear();
+    }
+
     public static boolean isTerminalActive(UUID terminalId) {
         return ACTIVE_TERMINALS.contains(terminalId);
     }
@@ -408,6 +420,55 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         /** 当前执行配方输出侧描述（输出快照，近似；阶段 C 采样填充） */
         public String recipeOut = "";
+
+        /** Exact comparison of serialized fields; rolling FIFO bookkeeping alone does not invalidate network pages. */
+        public boolean applySample(int nextState, byte nextPower, int meta, byte energy, byte evidence, byte nodes,
+            long electricIn, long electricOut, long steamIn, long steamOut, double avgElectricIn, double avgElectricOut,
+            double avgSteamIn, double avgSteamOut, int dimension, int px, int py, int pz, String localName,
+            String inputRecipe, String outputRecipe) {
+            boolean changed = state != nextState || powerType != nextPower
+                || metaTileId != meta
+                || energyKind != energy
+                || evidenceKind != evidence
+                || linkNodeType != nodes
+                || instIn != electricIn
+                || instOut != electricOut
+                || steamInstIn != steamIn
+                || steamInstOut != steamOut
+                || Double.compare(inAvg, avgElectricIn) != 0
+                || Double.compare(outAvg, avgElectricOut) != 0
+                || Double.compare(steamAvgIn, avgSteamIn) != 0
+                || Double.compare(steamAvgOut, avgSteamOut) != 0
+                || dim != dimension
+                || x != px
+                || y != py
+                || z != pz
+                || !java.util.Objects.equals(name, localName)
+                || !java.util.Objects.equals(recipeIn, inputRecipe)
+                || !java.util.Objects.equals(recipeOut, outputRecipe);
+            state = nextState;
+            powerType = nextPower;
+            metaTileId = meta;
+            energyKind = energy;
+            evidenceKind = evidence;
+            linkNodeType = nodes;
+            instIn = electricIn;
+            instOut = electricOut;
+            steamInstIn = steamIn;
+            steamInstOut = steamOut;
+            inAvg = avgElectricIn;
+            outAvg = avgElectricOut;
+            steamAvgIn = avgSteamIn;
+            steamAvgOut = avgSteamOut;
+            dim = dimension;
+            x = px;
+            y = py;
+            z = pz;
+            name = localName;
+            recipeIn = inputRecipe;
+            recipeOut = outputRecipe;
+            return changed;
+        }
 
         void readFromNBT(NBTTagCompound tag) {
             // 迁移语义：旧存储型净通道 fifo/avg 及其 NBT 键故意忽略；缺双通道键按 0，窗口自然回填。

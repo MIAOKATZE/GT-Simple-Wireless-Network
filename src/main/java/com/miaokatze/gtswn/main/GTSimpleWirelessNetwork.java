@@ -89,6 +89,7 @@ public class GTSimpleWirelessNetwork {
         AnimationQualityHints.clear();
         com.miaokatze.gtswn.common.device.DeviceFlowMonitor.clear();
         com.miaokatze.gtswn.common.device.DeviceTerminalSettings.clear();
+        com.miaokatze.gtswn.common.device.DeviceTerminalRequestQueue.clear();
     }
 
     /**

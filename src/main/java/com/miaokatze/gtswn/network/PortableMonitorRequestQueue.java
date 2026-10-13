@@ -3,7 +3,7 @@ package com.miaokatze.gtswn.network;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +35,10 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 
 /** At most one pending request/player, 256 globally, 16 serviced/tick, 20t/player. */
 public final class PortableMonitorRequestQueue {
+
+    public static final String EU_GRAPH = "$chart:eu", AE_GRAPH = "$chart:ae";
+    private static final Map<TileEntityNetworkInfoPanel, RenderCache> RENDER_CACHE = new WeakHashMap<>();
+    private static long nextRenderVersion;
 
     private static final ConcurrentHashMap<UUID, Request> PENDING = new ConcurrentHashMap<>();
     private final Map<EntityPlayerMP, Long> nextAllowed = new WeakHashMap<>();
@@ -118,7 +122,8 @@ public final class PortableMonitorRequestQueue {
                         Set<String> pins = request.pins.getOrDefault(binding.panelId, java.util.Collections.emptySet());
                         boolean detail = request.selected == panelIndex;
                         data.ownerName = panel.getOwnerName();
-                        if (detail || !pins.isEmpty()) fill(data, panel, detail, pins, request.charts);
+                        if (detail || !pins.isEmpty())
+                            fill(data, panel, detail, pins, request.charts, request.knownRenderVersion);
                     }
                 }
             }
@@ -144,14 +149,17 @@ public final class PortableMonitorRequestQueue {
     }
 
     private static void fill(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel, boolean detail,
-        Set<String> requestedPins, boolean charts) {
+        Set<String> requestedPins, boolean charts, long knownRenderVersion) {
         data.detail = detail;
         data.ownerName = panel.getOwnerName();
         data.window = panel.getWindowName();
         data.tab = panel.getCurrentTab();
         data.aeConnected = panel.isAEConnected();
-        boolean needsEU = detail || requestedPins.contains("eu");
+        boolean needsEU = detail || requestedPins.contains("eu") || requestedPins.contains(EU_GRAPH);
         if (needsEU) {
+            String exactEnergy = panel.getCachedEu()
+                .toString();
+            data.currentEnergy = exactEnergy.length() <= 4096 ? exactEnergy : "";
             PacketSyncPortableMonitor.Row eu = new PacketSyncPortableMonitor.Row();
             eu.key = "eu";
             eu.name = "EU";
@@ -160,8 +168,6 @@ public final class PortableMonitorRequestQueue {
             if (eu.amount.length() > 512)
                 eu.amount = com.miaokatze.gtswn.common.util.FormatUtil.formatScientific(panel.getCachedEu());
             List<NetworkInfoSample> samples = panel.getCachedSamples();
-            List<BigDecimal> euValues = new ArrayList<>();
-            if (detail || charts) for (NetworkInfoSample sample : samples) euValues.add(new BigDecimal(sample.eu));
             if (!samples.isEmpty()) {
                 NetworkInfoSample newest = samples.get(samples.size() - 1);
                 data.sampleTime = newest.timeMs;
@@ -174,53 +180,140 @@ public final class PortableMonitorRequestQueue {
                         .doubleValue();
                 }
             }
-            if (detail || requestedPins.contains("eu")) data.rows.add(eu);
-            if (detail || charts && requestedPins.contains("eu")) data.euChart = normalize(euValues);
+            eu.rate = panel.getCachedEut();
+            if (needsEU) data.rows.add(eu);
         }
-        if (!detail && requestedPins.stream()
-            .allMatch("eu"::equals)) return;
         AEMonitorDataSet set = AEMonitorDataStore.get(panel.getWorldObj())
             .getIfPresent(panel.getAEMonitorDataKey());
-        Set<String> keys = new HashSet<>();
-        addItem(data, keys, set, panel.getChartItem(), detail, requestedPins);
-        addFluid(data, keys, set, panel.getChartFluid(), detail, requestedPins);
-        for (ItemStack item : panel.getMonitoredItems()) addItem(data, keys, set, item, detail, requestedPins);
-        for (FluidStack fluid : panel.getMonitoredFluids()) addFluid(data, keys, set, fluid, detail, requestedPins);
+        Map<String, PacketSyncPortableMonitor.Row> keys = new HashMap<>();
+        addItem(data, keys, set, panel.getChartItem(), detail, requestedPins, false);
+        addFluid(data, keys, set, panel.getChartFluid(), detail, requestedPins, false);
+        for (ItemStack item : panel.getMonitoredItems()) addItem(data, keys, set, item, detail, requestedPins, true);
+        for (FluidStack fluid : panel.getMonitoredFluids())
+            addFluid(data, keys, set, fluid, detail, requestedPins, true);
         String chartKey = panel.getChartItem() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartItem())
             : panel.getChartFluid() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartFluid()) : null;
-        List<BigDecimal> aeValues = new ArrayList<>();
-        if ((detail || charts && !requestedPins.isEmpty()) && set != null && chartKey != null) {
-            for (AEMonitorSample sample : set.query(chartKey, panel.getAETrackingWindow())) {
-                aeValues.add(BigDecimal.valueOf(sample.amount));
-            }
+        data.chartKey = chartKey == null ? "" : chartKey;
+        if (requestedPins.contains(AE_GRAPH)) {
+            addItem(data, keys, set, panel.getChartItem(), true, requestedPins, false);
+            addFluid(data, keys, set, panel.getChartFluid(), true, requestedPins, false);
         }
-        if (detail || charts) data.aeChart = normalize(aeValues);
+        boolean euGraph = needsEUChart(detail, requestedPins, charts);
+        boolean aeGraph = needsAEChart(detail, requestedPins);
+        if (euGraph || aeGraph) {
+            RenderCache cache = renderCache(panel, set, chartKey);
+            if (euGraph) {
+                data.euChart = cache.euChart;
+                data.euRateChart = cache.euRateChart;
+            }
+            if (aeGraph) {
+                data.aeChart = cache.aeChart;
+                data.aeRateChart = cache.aeRateChart;
+            }
+            data.renderVersion = cache.version;
+            if (detail && knownRenderVersion != cache.version) data.render = cache.render;
+        }
     }
 
-    private static void addItem(PacketSyncPortableMonitor.Panel data, Set<String> keys, AEMonitorDataSet set,
-        ItemStack item, boolean detail, Set<String> pins) {
+    public static boolean needsEUChart(boolean detail, Set<String> pins, boolean legacyCharts) {
+        return detail || pins.contains(EU_GRAPH) || legacyCharts && pins.contains("eu");
+    }
+
+    public static boolean needsAEChart(boolean detail, Set<String> pins) {
+        return detail || pins.contains(AE_GRAPH);
+    }
+
+    private static RenderCache renderCache(TileEntityNetworkInfoPanel panel, AEMonitorDataSet set, String chartKey) {
+        net.minecraft.nbt.NBTTagCompound config = panel.getPortableRenderConfig();
+        List<NetworkInfoSample> eu = panel.getCachedSamples();
+        AEMonitorSample latest = set == null || chartKey == null ? null : set.newest(chartKey);
+        long fingerprint = config.hashCode();
+        fingerprint = fingerprint * 31 + eu.size();
+        if (!eu.isEmpty()) {
+            NetworkInfoSample first = eu.get(0), last = eu.get(eu.size() - 1);
+            fingerprint = fingerprint * 31 + first.timeMs;
+            fingerprint = fingerprint * 31 + first.tick;
+            fingerprint = fingerprint * 31 + last.timeMs;
+            fingerprint = fingerprint * 31 + last.tick;
+            fingerprint = fingerprint * 31 + last.eu.hashCode();
+            fingerprint = fingerprint * 31 + Double.doubleToLongBits(last.eut);
+        }
+        fingerprint = fingerprint * 31 + (chartKey == null ? 0 : chartKey.hashCode());
+        fingerprint = fingerprint * 31 + (latest == null ? 0 : latest.timeMs);
+        fingerprint = fingerprint * 31 + (latest == null ? 0 : latest.tick);
+        fingerprint = fingerprint * 31 + (latest == null ? 0 : latest.amount);
+        fingerprint = fingerprint * 31 + (latest == null ? 0 : Double.doubleToLongBits(latest.rate));
+        fingerprint = fingerprint * 31 + (panel.isAEConnected() ? 1 : 0);
+        RenderCache old = RENDER_CACHE.get(panel);
+        if (old != null && old.fingerprint == fingerprint) return old;
+        RenderCache cache = new RenderCache();
+        cache.fingerprint = fingerprint;
+        cache.version = ++nextRenderVersion;
+        cache.render.config = config;
+        cache.render.chartKey = chartKey == null ? "" : chartKey;
+        String currentEnergy = panel.getCachedEu()
+            .toString();
+        cache.render.currentEnergy = currentEnergy.length() <= 4096 ? currentEnergy : "";
+        List<BigDecimal> energy = new ArrayList<>(), power = new ArrayList<>(), amounts = new ArrayList<>(),
+            rates = new ArrayList<>();
+        for (NetworkInfoSample sample : eu) {
+            if (sample.eu.toString()
+                .length() <= 512) cache.render.eu.add(sample);
+            energy.add(new BigDecimal(sample.eu));
+            power.add(BigDecimal.valueOf(Double.isFinite(sample.eut) ? sample.eut : 0));
+        }
+        if (set != null && chartKey != null)
+            for (AEMonitorSample sample : set.query(chartKey, panel.getAETrackingWindow())) {
+                cache.render.ae.add(sample);
+                amounts.add(BigDecimal.valueOf(sample.amount));
+                rates.add(BigDecimal.valueOf(Double.isFinite(sample.rate) ? sample.rate : 0));
+            }
+        cache.euChart = normalize(energy);
+        cache.euRateChart = normalize(power);
+        cache.aeChart = normalize(amounts);
+        cache.aeRateChart = normalize(rates);
+        RENDER_CACHE.put(panel, cache);
+        return cache;
+    }
+
+    private static final class RenderCache {
+
+        long fingerprint, version;
+        final PortablePanelRenderData render = new PortablePanelRenderData();
+        double[] euChart, euRateChart, aeChart, aeRateChart;
+    }
+
+    private static void addItem(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
+        AEMonitorDataSet set, ItemStack item, boolean detail, Set<String> pins, boolean monitored) {
         if (item != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(item))))
-            addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(item), item.getDisplayName(), 1);
+            addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(item), item.getDisplayName(), 1, monitored);
     }
 
-    private static void addFluid(PacketSyncPortableMonitor.Panel data, Set<String> keys, AEMonitorDataSet set,
-        FluidStack fluid, boolean detail, Set<String> pins) {
+    private static void addFluid(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
+        AEMonitorDataSet set, FluidStack fluid, boolean detail, Set<String> pins, boolean monitored) {
         if (fluid != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(fluid))))
-            addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(fluid), fluid.getLocalizedName(), 2);
+            addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(fluid), fluid.getLocalizedName(), 2, monitored);
     }
 
-    private static void addRow(PacketSyncPortableMonitor.Panel data, Set<String> keys, AEMonitorDataSet set, String key,
-        String name, int kind) {
-        if (data.rows.size() >= PacketSyncPortableMonitor.MAX_ROWS || !keys.add(key)) return;
+    private static void addRow(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
+        AEMonitorDataSet set, String key, String name, int kind, boolean monitored) {
+        PacketSyncPortableMonitor.Row existing = keys.get(key);
+        if (existing != null) {
+            existing.monitored |= monitored;
+            return;
+        }
+        if (data.rows.size() >= PacketSyncPortableMonitor.MAX_ROWS) return;
         PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
         row.key = key;
         row.name = name;
         row.kind = kind;
+        row.monitored = monitored;
         AEMonitorSample latest = set == null ? null : set.newest(key);
         row.amount = latest == null ? "..." : Long.toString(latest.amount);
         row.rate = latest == null ? 0 : latest.rate;
         row.average = set == null ? 0 : set.averageRate300s(key);
         data.rows.add(row);
+        keys.put(key, row);
     }
 
     /** Normalize before conversion to double so arbitrary-size EU does not overflow charts. */

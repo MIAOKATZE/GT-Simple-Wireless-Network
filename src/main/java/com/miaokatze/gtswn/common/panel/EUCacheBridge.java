@@ -228,6 +228,15 @@ public final class EUCacheBridge {
         return cachedEu;
     }
 
+    public double getCachedEut() {
+        return cachedEut;
+    }
+
+    public int getPortableStatusBits() {
+        NetworkInfoDataSet data = getOwnerDataSet();
+        return (data == null || data.isColdStarting() ? 1 : 0) | (data != null && data.isLongTermSilent() ? 2 : 0);
+    }
+
     public String getCachedStatus() {
         return cachedStatus;
     }

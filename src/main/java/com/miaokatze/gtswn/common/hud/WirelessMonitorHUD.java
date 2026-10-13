@@ -15,7 +15,7 @@ import org.lwjgl.opengl.GL11;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.gui.GtswnGuiDrawing;
 import com.miaokatze.gtswn.client.gui.GtswnGuiTextures;
-import com.miaokatze.gtswn.client.gui.GuiPortableMonitor;
+import com.miaokatze.gtswn.client.gui.PortableMonitorCharts;
 import com.miaokatze.gtswn.config.Config;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -68,6 +68,14 @@ public class WirelessMonitorHUD extends Gui {
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
         int screenWidth = resolution.getScaledWidth();
         int screenHeight = resolution.getScaledHeight();
+        List<PortableMonitorClientCache.PinnedLine> all = PortableMonitorClientCache
+            .pinnedLines(this.controller.monitorStack());
+        boolean graph = false;
+        for (PortableMonitorClientCache.PinnedLine line : all) if (line.graph) {
+            graph = true;
+            break;
+        }
+        int rowHeight = graph ? 48 : Config.hudRenderMode == 1 ? 16 : 12;
 
         // 饱食度图标位置：x = screenWidth / 2 + 91, y = screenHeight - 39
         // HUD 显示在饱食度上方 15 像素处
@@ -79,7 +87,8 @@ public class WirelessMonitorHUD extends Gui {
             + (Config.hudInstantEnabled ? 1 : 0)
             + (Config.hudAverageEnabled ? 1 : 0)
             + (Config.hudEUEnabled ? 1 : 0);
-        scale = Math.min(scale, (screenHeight - 8f) / Math.max(12, basicRows * 12 + 4));
+        scale = Math
+            .min(scale, (screenHeight - 8f) / Math.max(12, basicRows * 12 + (all.isEmpty() ? 0 : rowHeight) + 4));
         int maxWidth = Math.min(Config.hudPanelWidth, Math.max(1, (int) ((screenWidth - 8) / scale) - 4));
         int hudX = Math.max(
             (int) Math.ceil(4 + 2 * scale),
@@ -110,9 +119,6 @@ public class WirelessMonitorHUD extends Gui {
         if (Config.hudInstantEnabled) lines.add(this.controller.realtimeEutText());
         if (Config.hudAverageEnabled) lines.add(this.controller.eutText());
         if (Config.hudEUEnabled) lines.add(this.controller.euText());
-        List<PortableMonitorClientCache.PinnedLine> all = PortableMonitorClientCache
-            .pinnedLines(this.controller.monitorStack());
-        int rowHeight = Config.hudRenderMode == 2 ? 28 : Config.hudRenderMode == 1 ? 16 : 12;
         int count = Math.min(
             Config.hudPinnedRows,
             Math.max(0, ((int) ((screenHeight - 8) / scale) - lines.size() * 12 - 4) / rowHeight));
@@ -132,10 +138,9 @@ public class WirelessMonitorHUD extends Gui {
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GtswnGuiDrawing.drawStretch(GtswnGuiTextures.HUD_BASE, hudX - 2, rowY - 2, maxWidth + 4, rowHeight, 0);
-            mc.fontRenderer
+            if (pin.graph) PortableMonitorCharts.drawCompact(pin, hudX, rowY, maxWidth, rowHeight, mc.fontRenderer);
+            else mc.fontRenderer
                 .drawStringWithShadow(mc.fontRenderer.trimStringToWidth(pin.text, maxWidth), hudX, rowY, 0xffffff);
-            if (Config.hudRenderMode == 2)
-                GuiPortableMonitor.drawChart(pin.chart, hudX + 2, rowY + 12, maxWidth - 4, 10, 0x57d8ca);
             rowY += rowHeight;
         }
         for (String line : lines) {

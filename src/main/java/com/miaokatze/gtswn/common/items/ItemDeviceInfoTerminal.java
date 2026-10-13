@@ -12,7 +12,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
 import net.minecraft.tileentity.TileEntity;
-import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
@@ -131,13 +131,16 @@ public class ItemDeviceInfoTerminal extends Item {
         float hitX, float hitY, float hitZ) {
         // ① 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
         if (world.isRemote) {
+            if (GTSimpleWirelessNetwork.proxy.handleDeviceVisualizationRightClick()) return true;
             if (player.isSneaking()) GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
             return false;
         }
+        if (player instanceof EntityPlayerMP visualPlayer
+            && com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.shouldConsumeVanillaUse(visualPlayer, stack))
+            return true;
         // Shift settings must not activate the underlying machine.
         if (player.isSneaking()) {
-            getOrCreateTerminalId(stack);
-            if (player instanceof EntityPlayerMP playerMP) syncHeldSlot(playerMP, stack);
+            ensureTerminalIdSynced(player, stack);
             return true;
         }
         // ③ 非 GT 方块：放行（等效空手交互，不提示不拦截）
@@ -159,12 +162,9 @@ public class ItemDeviceInfoTerminal extends Item {
         if (registry.getEntry(key) == null) {
             registry.register(key, player.getUniqueID(), localName);
         }
-        UUID terminalId = getOrCreateTerminalId(stack);
+        UUID terminalId = ensureTerminalIdSynced(player, stack);
         // 首用生成 UUID 后立即同步手持槽：GUI 锚点/客户端缓存键依赖客户端 NBT 的 UUID，
         // 1.7.10 原地 NBT 变更不自动推送（否则新终端扫描绑定后 GUI 因客户端 UUID 缺失永远空列表）
-        if (player instanceof EntityPlayerMP playerMP) {
-            syncHeldSlot(playerMP, stack);
-        }
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(world);
         AddResult result = store.addBinding(
             terminalId,
@@ -201,6 +201,7 @@ public class ItemDeviceInfoTerminal extends Item {
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         if (world.isRemote) {
+            if (GTSimpleWirelessNetwork.proxy.handleDeviceVisualizationRightClick()) return stack;
             // 原纯GuiScreen保持本地打开，不污染背包容器windowId。
             if (player.isSneaking()) {
                 GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
@@ -209,10 +210,10 @@ public class ItemDeviceInfoTerminal extends Item {
             }
             return stack;
         }
-        getOrCreateTerminalId(stack);
-        if (player instanceof EntityPlayerMP playerMP) {
-            syncHeldSlot(playerMP, stack);
-        }
+        if (player instanceof EntityPlayerMP visualPlayer
+            && com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.shouldConsumeVanillaUse(visualPlayer, stack))
+            return stack;
+        ensureTerminalIdSynced(player, stack);
         return stack;
     }
 
@@ -227,8 +228,7 @@ public class ItemDeviceInfoTerminal extends Item {
     }
 
     public static void startChargedScan(EntityPlayerMP player, ItemStack stack) {
-        DeviceScanManager.startScan(player, getOrCreateTerminalId(stack));
-        syncHeldSlot(player, stack);
+        DeviceScanManager.startScan(player, ensureTerminalIdSynced(player, stack));
     }
 
     @Override
@@ -357,8 +357,18 @@ public class ItemDeviceInfoTerminal extends Item {
         player.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, stack));
     }
 
+    /** Reusing unchanged NBT must not replace the client's held stack/re-equip the terminal on each right-click. */
+    private static UUID ensureTerminalIdSynced(EntityPlayer player, ItemStack stack) {
+        UUID before = readTerminalId(stack);
+        if (before != null) return before;
+        if (stack.stackTagCompound != null) stack.stackTagCompound.removeTag(NBT_UUID);
+        UUID created = getOrCreateTerminalId(stack);
+        if (player instanceof EntityPlayerMP playerMP) syncHeldSlot(playerMP, stack);
+        return created;
+    }
+
     /** 服务端向玩家发送本地化聊天提示（仅服务端调用） */
     private static void sendMessage(EntityPlayer player, String key, Object... args) {
-        player.addChatMessage(new ChatComponentText(StatCollector.translateToLocalFormatted(key, args)));
+        player.addChatMessage(new ChatComponentTranslation(key, args));
     }
 }

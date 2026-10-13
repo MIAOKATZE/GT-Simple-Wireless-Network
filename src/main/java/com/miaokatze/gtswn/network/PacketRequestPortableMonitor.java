@@ -15,6 +15,8 @@ import io.netty.buffer.ByteBuf;
 /** Bounded selection and pin intent; coordinates and screen credentials only come from server item NBT. */
 public final class PacketRequestPortableMonitor implements IMessage {
 
+    public static final int PROTOCOL_MAGIC = 0x50574d56;
+
     public UUID terminalId;
     public int sequence;
     public int action;
@@ -22,6 +24,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
     public boolean valid;
     public int selected = -1;
     public boolean charts;
+    public long knownRenderVersion;
     public final Map<UUID, Set<String>> pins = new HashMap<>();
     public static final int MAX_PINS = 128;
     public static final int MAX_BYTES = 40 * 1024;
@@ -39,14 +42,17 @@ public final class PacketRequestPortableMonitor implements IMessage {
     @Override
     public void fromBytes(ByteBuf buf) {
         valid = false;
-        if (buf.readableBytes() < 35 || buf.readableBytes() > MAX_BYTES) return;
+        if (buf.readableBytes() < 48 || buf.readableBytes() > MAX_BYTES) return;
         try {
+            if (buf.readInt() != PROTOCOL_MAGIC) return;
+            if (buf.readUnsignedByte() != 56) return;
             terminalId = new UUID(buf.readLong(), buf.readLong());
             sequence = buf.readInt();
             action = buf.readInt();
             value = buf.readInt();
             selected = buf.readInt();
             charts = buf.readBoolean();
+            knownRenderVersion = buf.readLong();
             int count = buf.readUnsignedShort();
             if (count > MAX_PINS) return;
             for (int i = 0; i < count; i++) {
@@ -72,6 +78,8 @@ public final class PacketRequestPortableMonitor implements IMessage {
 
     @Override
     public void toBytes(ByteBuf buf) {
+        buf.writeInt(PROTOCOL_MAGIC);
+        buf.writeByte(56);
         buf.writeLong(terminalId.getMostSignificantBits());
         buf.writeLong(terminalId.getLeastSignificantBits());
         buf.writeInt(sequence);
@@ -79,6 +87,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
         buf.writeInt(value);
         buf.writeInt(selected);
         buf.writeBoolean(charts);
+        buf.writeLong(knownRenderVersion);
         int count = 0;
         for (Set<String> keys : pins.values()) count += keys.size();
         if (count > MAX_PINS) throw new IllegalArgumentException("Too many monitor pins");

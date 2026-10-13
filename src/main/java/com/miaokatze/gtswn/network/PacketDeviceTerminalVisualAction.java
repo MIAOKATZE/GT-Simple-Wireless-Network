@@ -98,7 +98,7 @@ public final class PacketDeviceTerminalVisualAction implements IMessage {
         }
     }
 
-    private static String readBoundedUtf8(ByteBuf buffer, int characters) throws Exception {
+    static String readBoundedUtf8(ByteBuf buffer, int characters) throws Exception {
         int bytes = ByteBufUtils.readVarInt(buffer, 2);
         if (bytes < 0 || bytes > characters * 3 || bytes > buffer.readableBytes())
             throw new IllegalArgumentException("UTF8 length");

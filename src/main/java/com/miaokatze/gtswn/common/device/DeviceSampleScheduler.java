@@ -11,6 +11,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
+import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.config.Config;
@@ -127,7 +128,7 @@ public class DeviceSampleScheduler {
      */
     private void refillWorkQueue(World overworld) {
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(overworld);
-        for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : store.getAllTerminals()) {
+        for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : store.getActiveTerminals()) {
             if (!DeviceTerminalDataStore.isTerminalActive(entry.getKey())) {
                 continue;
             }
@@ -165,7 +166,7 @@ public class DeviceSampleScheduler {
                 this.fifoStates.remove(key);
                 continue;
             }
-            World world = server.worldServerForDimension(pos[0]);
+            World world = DimensionManager.getWorld(pos[0]);
             if (world == null || world.getChunkProvider() == null
                 || !world.getChunkProvider()
                     .chunkExists(pos[1] >> 4, pos[3] >> 4)) {
@@ -238,7 +239,7 @@ public class DeviceSampleScheduler {
             if (activeTerminals == null) {
                 DeviceTerminalDataStore dataStore = DeviceTerminalDataStore.get(overworld);
                 activeTerminals = new ArrayList<>();
-                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : dataStore.getAllTerminals()) {
+                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : dataStore.getActiveTerminals()) {
                     if (DeviceTerminalDataStore.isTerminalActive(entry.getKey())) {
                         activeTerminals.add(entry);
                     }
@@ -257,6 +258,8 @@ public class DeviceSampleScheduler {
                     data.records.put(key, record);
                 }
                 // 增量均值：输入/输出双通道共用 (idx, count) 滚动；净值由下游派生。
+                double nextInAvg = record.inAvg, nextOutAvg = record.outAvg;
+                double nextSteamInAvg = record.steamAvgIn, nextSteamOutAvg = record.steamAvgOut;
                 if (evidenceKind <= 1) {
                     FifoState window = fifoState(key, entry.getKey(), record);
                     double runningSumIn = FifoMath
@@ -281,30 +284,36 @@ public class DeviceSampleScheduler {
                     window.sumOut = runningSumOut;
                     window.idx = record.idx;
                     window.count = record.count;
-                    record.inAvg = FifoMath.avg(runningSumIn, record.count);
-                    record.outAvg = FifoMath.avg(runningSumOut, record.count);
-                    record.steamAvgIn = FifoMath.avg(sumSteamIn, record.count);
-                    record.steamAvgOut = FifoMath.avg(sumSteamOut, record.count);
+                    nextInAvg = FifoMath.avg(runningSumIn, record.count);
+                    nextOutAvg = FifoMath.avg(runningSumOut, record.count);
+                    nextSteamInAvg = FifoMath.avg(sumSteamIn, record.count);
+                    nextSteamOutAvg = FifoMath.avg(sumSteamOut, record.count);
                 }
-                record.instIn = euIn;
-                record.instOut = euOut;
-                record.steamInstIn = steamIn;
-                record.steamInstOut = steamOut;
-                record.energyKind = energyKind == DeviceSteamAdapter.EU && record.energyKind == DeviceSteamAdapter.MIXED
+                byte nextEnergyKind = energyKind == DeviceSteamAdapter.EU
+                    && record.energyKind == DeviceSteamAdapter.MIXED
                     && record.metaTileId == metaTileId ? DeviceSteamAdapter.MIXED : energyKind;
-                record.metaTileId = metaTileId;
-                record.evidenceKind = evidenceKind;
-                record.linkNodeType = linkNodeType;
-                record.state = state;
-                record.powerType = powerType;
-                record.name = localName;
-                record.dim = pos[0];
-                record.x = pos[1];
-                record.y = pos[2];
-                record.z = pos[3];
-                record.recipeIn = recipeIn;
-                record.recipeOut = recipeOut;
-                data.version++;
+                if (record.applySample(
+                    state,
+                    powerType,
+                    metaTileId,
+                    nextEnergyKind,
+                    evidenceKind,
+                    linkNodeType,
+                    euIn,
+                    euOut,
+                    steamIn,
+                    steamOut,
+                    nextInAvg,
+                    nextOutAvg,
+                    nextSteamInAvg,
+                    nextSteamOutAvg,
+                    pos[0],
+                    pos[1],
+                    pos[2],
+                    pos[3],
+                    localName,
+                    recipeIn,
+                    recipeOut)) data.version++;
                 anyRecordWritten = true;
             }
         }

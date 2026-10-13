@@ -127,6 +127,7 @@ public final class DeviceFlowMonitor {
         serverIdentity = null;
         serverThread = null;
         com.miaokatze.gtswn.network.DeviceTerminalActionQueue.clear();
+        DeviceTerminalDataStore.clearActiveTerminals();
     }
 
     public static void forget(Object controller) {

@@ -13,7 +13,6 @@ import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalVisualConfig;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
-import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 
 /** Terminal settings: local heat view preferences and OP-controlled server teleport fee. */
 public final class GuiDeviceTerminalSettings extends GuiScreen {
@@ -171,6 +170,12 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                 48 + rowGap * 4,
                 panelWidth - 24,
                 toggle("labels.depth", DeviceTerminalVisualConfig.labelDepthTest));
+            button(
+                48,
+                12,
+                48 + rowGap * 5,
+                panelWidth - 24,
+                label("labels.budget", Integer.toString(DeviceTerminalVisualConfig.labelBudget)));
         } else if (DeviceTerminalClientCache.canConfigure()) {
             button(30, panelWidth - 96, 84, 84, tr("apply"));
             ((GuiButton) buttonList.get(buttonList.size() - 1)).enabled = DeviceTerminalClientCache.canConfigure();
@@ -180,8 +185,10 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     @Override
     public void updateScreen() {
         cost.updateCursorCounter();
-        if (pollTicks++ % 20 == 0) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
+        if (pollTicks++ % 20 == 0 && !com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.isActiveHeld()) {
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                DeviceTerminalClientCache
+                    .requestMetadata(com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.heldTerminalId()));
         }
         int value = DeviceTerminalClientCache.teleportCost();
         boolean permission = DeviceTerminalClientCache.canConfigure();
@@ -212,7 +219,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                 mc.displayGuiScreen(null);
                 return;
             case 10:
-                DeviceTerminalVisualConfig.enabled = !DeviceTerminalVisualConfig.enabled;
+                DeviceTerminalVisualConfig.chooseHeatEnabled(!DeviceTerminalVisualConfig.enabled);
                 break;
             case 11:
                 DeviceTerminalVisualConfig.showConsumers = !DeviceTerminalVisualConfig.showConsumers;
@@ -280,6 +287,11 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
             case 47:
                 DeviceTerminalVisualConfig.labelDepthTest = !DeviceTerminalVisualConfig.labelDepthTest;
                 break;
+            case 48:
+                DeviceTerminalVisualConfig.labelBudget = next(
+                    DeviceTerminalVisualConfig.labelBudget,
+                    new int[] { 8, 16, 24, 32, 48, 64 });
+                break;
             case 30:
                 if (!DeviceTerminalClientCache.canConfigure()) return;
                 try {
@@ -297,7 +309,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
             default:
                 return;
         }
-        if (button.id >= 10 && button.id <= 20 || button.id >= 40 && button.id <= 47) DeviceTerminalVisualConfig.save();
+        if (button.id >= 10 && button.id <= 20 || button.id >= 40 && button.id <= 48) DeviceTerminalVisualConfig.save();
         rebuild();
     }
 
@@ -330,7 +342,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
             fontRendererObj.drawSplitString(
                 tr("labels.hint"),
                 left + 12,
-                top + 50 + rowGap * 5,
+                top + 50 + rowGap * 6,
                 panelWidth - 24,
                 GtswnGuiPalette.TEXT_MUTED);
         } else {

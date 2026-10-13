@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.item.ItemStack;
 import net.minecraftforge.client.event.MouseEvent;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
@@ -10,12 +11,13 @@ import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalVisualAction;
 import com.miaokatze.gtswn.network.PacketTerminalGesture;
 
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /** Link: Alt opens UI, Alt+Shift charges. Device: Alt charges in air. */
 public class RevealTriggerHandler {
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onMouse(MouseEvent event) {
         if (event.button != 1) return;
         if (!event.buttonstate) {
@@ -39,15 +41,10 @@ public class RevealTriggerHandler {
                 .sendToServer(PacketDeviceTerminalVisualAction.toggle(id == null ? new java.util.UUID(0L, 0L) : id));
             return;
         }
-        if (device && DeviceTerminalVisualizationState.isActiveHeld() && !alt && !shift) {
-            String target = DeviceTerminalVisualizationState.currentTargetKey();
-            if (target != null) {
-                event.setCanceled(true);
-                TerminalRevealCharge.cancel();
-                GTSWNPacketHandler.NETWORK.sendToServer(
-                    PacketDeviceTerminalVisualAction.teleport(ItemDeviceInfoTerminal.readTerminalId(held), target));
-                return;
-            }
+        if (device && DeviceTerminalVisualizationState.handleRightClick()) {
+            event.setCanceled(true);
+            TerminalRevealCharge.cancel();
+            return;
         }
         if (!alt || !TerminalRevealCharge.isPointingAtAir(mc)) return;
         if (held.getItem() instanceof ItemDeviceInfoTerminal) {
@@ -64,5 +61,14 @@ public class RevealTriggerHandler {
         }
         event.setCanceled(true);
         TerminalRevealCharge.start(mc);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onInteract(PlayerInteractEvent event) {
+        if (!event.world.isRemote || event.entityPlayer != Minecraft.getMinecraft().thePlayer
+            || (event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK
+                && event.action != PlayerInteractEvent.Action.RIGHT_CLICK_AIR))
+            return;
+        if (DeviceTerminalVisualizationState.handleRightClick()) event.setCanceled(true);
     }
 }

@@ -71,6 +71,21 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return portableMonitorId;
     }
 
+    /** Only the scalar display configuration; remote views never serialize proxy or inventory NBT. */
+    public NBTTagCompound getPortableRenderConfig() {
+        NBTTagCompound tag = new NBTTagCompound();
+        store.writeSync(tag);
+        int status = bridge.getPortableStatusBits();
+        tag.setBoolean("portableCold", (status & 1) != 0);
+        tag.setBoolean("portableLongSilent", (status & 2) != 0);
+        return tag;
+    }
+
+    /** Detached client preview only. No world binding, sampling or shared panel mutation. */
+    public void readPortableRenderConfig(NBTTagCompound tag) {
+        store.readSync(tag);
+    }
+
     private String ownerName = "";
 
     /**
@@ -563,6 +578,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** E4 门面：EU 缓存桥数据源（外部 12 文件调用面零改动） */
     public BigInteger getCachedEu() {
         return bridge.getCachedEu();
+    }
+
+    public double getCachedEut() {
+        return bridge.getCachedEut();
     }
 
     public String getCachedStatus() {

@@ -11,18 +11,27 @@ import java.util.Map;
 import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
+import org.lwjgl.input.Keyboard;
+
+import com.miaokatze.gtswn.client.gui.GuiPortableMonitor;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestPortableMonitor;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor;
+import com.miaokatze.gtswn.network.PortableMonitorRequestQueue;
 
+import baubles.api.BaublesApi;
+import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -33,6 +42,16 @@ public final class PortableMonitorClientCache {
     private static EntityPlayer sessionPlayer;
     private static int nextSequence;
     private static long nextGlobalRequest;
+    private static KeyBinding monitorKey;
+
+    public static void registerKey() {
+        monitorKey = new KeyBinding("gtswn.monitor.key.open", Keyboard.KEY_H, "gtswn.monitor.key.category");
+        ClientRegistry.registerKeyBinding(monitorKey);
+    }
+
+    public static int keyCode() {
+        return monitorKey == null ? Keyboard.KEY_H : monitorKey.getKeyCode();
+    }
 
     private PortableMonitorClientCache() {}
 
@@ -52,6 +71,16 @@ public final class PortableMonitorClientCache {
         if (CACHE.size() >= 32 && !CACHE.containsKey(id)) CACHE.clear();
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
         cache.stack = stack;
+        int pinsHash = Arrays.hashCode(Config.hudPinnedEntries);
+        if (pinsHash != cache.pinsHash) {
+            cache.pinsHash = pinsHash;
+            cache.hasPins = false;
+            for (String entry : Config.hudPinnedEntries) if (entry.startsWith(id + "/")) {
+                cache.hasPins = true;
+                break;
+            }
+        }
+        if (!cache.inFlight && cache.action == 0 && cache.selected < 0 && !cache.hasPins) return;
         long now = System.currentTimeMillis();
         if (now < nextGlobalRequest || cache.inFlight && now - cache.sentAt < 5000
             || cache.action == 0 && !cache.dirty && now - cache.sentAt < Math.max(1000, Config.hudUpdateInterval * 50L))
@@ -63,6 +92,10 @@ public final class PortableMonitorClientCache {
                 cache.action,
                 cache.value);
             request.selected = cache.selected;
+            if (cache.selected >= 0 && cache.snapshot != null && cache.selected < cache.snapshot.panels.size()) {
+                PacketSyncPortableMonitor.Panel selected = cache.snapshot.panels.get(cache.selected);
+                if (selected.render != null) request.knownRenderVersion = selected.renderVersion;
+            }
             request.charts = Config.hudRenderMode == 2;
             String prefix = id + "/";
             int pinCount = 0;
@@ -120,6 +153,11 @@ public final class PortableMonitorClientCache {
         public void tick(TickEvent.ClientTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
             session();
+            Minecraft mc = Minecraft.getMinecraft();
+            if (monitorKey != null && monitorKey.isPressed() && mc.currentScreen == null && mc.thePlayer != null) {
+                ItemStack terminal = findMonitor(mc.thePlayer);
+                if (terminal != null) mc.displayGuiScreen(new GuiPortableMonitor(terminal));
+            }
             for (Cached cache : CACHE.values()) {
                 if (cache.action != 0 || cache.inFlight && cache.request.action != 0) poll(cache.stack);
             }
@@ -130,9 +168,52 @@ public final class PortableMonitorClientCache {
         session();
         Cached cache = CACHE.get(response.terminalId);
         if (cache == null || !cache.inFlight || cache.sequence != response.sequence) return;
+        if (cache.snapshot != null) for (PacketSyncPortableMonitor.Panel panel : response.panels) {
+            if (panel.detail && panel.render == null)
+                for (PacketSyncPortableMonitor.Panel old : cache.snapshot.panels) {
+                    if (old.binding.panelId.equals(panel.binding.panelId) && old.renderVersion == panel.renderVersion) {
+                        panel.render = old.render;
+                        break;
+                    }
+                }
+        }
         cache.snapshot = response;
         cache.receivedAt = System.currentTimeMillis();
         cache.inFlight = false;
+    }
+
+    private static ItemStack findMonitor(EntityPlayer player) {
+        if (PortableWirelessNetworkMonitor.isMonitorBound(player.getHeldItem())) return player.getHeldItem();
+        try {
+            IInventory baubles = BaublesApi.getBaubles(player);
+            if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
+                ItemStack stack = baubles.getStackInSlot(i);
+                if (PortableWirelessNetworkMonitor.isMonitorBound(stack)) return stack;
+            }
+        } catch (NoClassDefFoundError ignored) {}
+        for (ItemStack stack : player.inventory.mainInventory)
+            if (PortableWirelessNetworkMonitor.isMonitorBound(stack)) return stack;
+        return null;
+    }
+
+    public static PortablePanelView view(ItemStack stack, int index) {
+        PacketSyncPortableMonitor snapshot = snapshot(stack);
+        if (snapshot == null || index < 0 || index >= snapshot.panels.size()) return null;
+        PacketSyncPortableMonitor.Panel panel = snapshot.panels.get(index);
+        if (!panel.detail || panel.render == null || panel.state != 0 || stale(stack)) return null;
+        Cached cache = CACHE.get(snapshot.terminalId);
+        PortablePanelView view = cache.views.get(panel.binding.panelId);
+        Long version = cache.viewVersions.get(panel.binding.panelId);
+        if (view == null || version == null || version != panel.renderVersion) {
+            view = new PortablePanelView(panel);
+            cache.views.put(panel.binding.panelId, view);
+            cache.viewVersions.put(panel.binding.panelId, panel.renderVersion);
+        }
+        if (cache.viewSources.get(panel.binding.panelId) != panel) {
+            view.updateLive(panel);
+            cache.viewSources.put(panel.binding.panelId, panel);
+        }
+        return view;
     }
 
     public static PacketSyncPortableMonitor snapshot(ItemStack stack) {
@@ -172,6 +253,21 @@ public final class PortableMonitorClientCache {
         return Config.saveHudConfiguration();
     }
 
+    public static boolean graphPinned(UUID terminal, PacketSyncPortableMonitor.Panel panel, int tab) {
+        return Arrays.asList(Config.hudPinnedEntries)
+            .contains(
+                terminal + "/"
+                    + panel.binding.panelId
+                    + "/"
+                    + (tab == 0 ? PortableMonitorRequestQueue.EU_GRAPH : PortableMonitorRequestQueue.AE_GRAPH));
+    }
+
+    public static boolean toggleGraph(UUID terminal, PacketSyncPortableMonitor.Panel panel, int tab) {
+        PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
+        row.key = tab == 0 ? PortableMonitorRequestQueue.EU_GRAPH : PortableMonitorRequestQueue.AE_GRAPH;
+        return togglePin(terminal, panel, row);
+    }
+
     public static List<PinnedLine> pinnedLines(ItemStack stack) {
         PacketSyncPortableMonitor snapshot = snapshot(stack);
         if (snapshot == null) return Collections.emptyList();
@@ -206,6 +302,28 @@ public final class PortableMonitorClientCache {
                     new PinnedLine(
                         "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + text,
                         row.kind == 0 ? panel.euChart : panel.aeChart));
+            }
+            for (int graph = 0; graph < 2; graph++) if (graphPinned(snapshot.terminalId, panel, graph)) {
+                PacketSyncPortableMonitor.Row value = null;
+                for (PacketSyncPortableMonitor.Row row : panel.rows)
+                    if (graph == 0 ? row.kind == 0 : row.key.equals(panel.chartKey)) {
+                        value = row;
+                        break;
+                    }
+                String name = graph == 0 ? "EU / EU/t"
+                    : value == null ? "AE" : value.name + " / " + (value.kind == 2 ? "mB/min" : "/min");
+                String current = value == null ? "..."
+                    : value.kind == 0 ? energyAmount(value.amount) + " EU"
+                        : value.amount + (value.kind == 2 ? " mB" : "");
+                lines.add(
+                    new PinnedLine(
+                        "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + name + " \u00a7f" + current,
+                        graph == 0 ? panel.euChart : panel.aeChart,
+                        graph == 0 ? panel.euRateChart : panel.aeRateChart,
+                        value == null ? 0 : value.rate,
+                        current + " "
+                            + (value == null ? ""
+                                : rate(value.rate, graph == 0 ? "EU/t" : value.kind == 2 ? "mB/min" : "/min"))));
             }
         }
         cache.renderSnapshot = snapshot;
@@ -295,10 +413,31 @@ public final class PortableMonitorClientCache {
 
         public final String text;
         public final double[] chart;
+        public final double[] rateChart;
+        public final boolean graph;
+        public final double change;
+        public final String currentText;
 
         PinnedLine(String text, double[] chart) {
             this.text = text;
             this.chart = chart;
+            this.rateChart = new double[0];
+            this.graph = false;
+            this.change = 0;
+            this.currentText = "";
+        }
+
+        public PinnedLine(String text, double[] chart, double[] rates, double change) {
+            this(text, chart, rates, change, "");
+        }
+
+        public PinnedLine(String text, double[] chart, double[] rates, double change, String currentText) {
+            this.text = text;
+            this.chart = chart;
+            this.rateChart = rates;
+            this.change = change;
+            this.graph = true;
+            this.currentText = currentText;
         }
     }
 
@@ -315,5 +454,10 @@ public final class PortableMonitorClientCache {
         PacketSyncPortableMonitor renderSnapshot;
         int renderOptions;
         List<PinnedLine> renderLines;
+        int pinsHash = Integer.MIN_VALUE;
+        boolean hasPins;
+        final Map<UUID, PortablePanelView> views = new HashMap<>();
+        final Map<UUID, Long> viewVersions = new HashMap<>();
+        final Map<UUID, PacketSyncPortableMonitor.Panel> viewSources = new HashMap<>();
     }
 }

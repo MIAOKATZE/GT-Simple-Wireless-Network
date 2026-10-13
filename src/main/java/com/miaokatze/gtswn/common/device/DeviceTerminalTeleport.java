@@ -27,61 +27,121 @@ public final class DeviceTerminalTeleport {
 
     private DeviceTerminalTeleport() {}
 
+    public enum Status {
+
+        SUCCESS(0),
+        INACTIVE(1),
+        INVALID_TARGET(2),
+        UNLOADED(3),
+        TOO_FAR(4),
+        NOT_AIMED(5),
+        UNSAFE(6),
+        NO_XP(7),
+        COOLDOWN(8),
+        UNAVAILABLE_PLAYER(9),
+        ERROR(10),
+        NO_TARGET(11),
+        STALE_TARGET(12);
+
+        public final byte code;
+
+        Status(int code) {
+            this.code = (byte) code;
+        }
+    }
+
+    public static final class Outcome {
+
+        public final Status status;
+        public final int cooldownTicks;
+
+        public Outcome(Status status, int cooldownTicks) {
+            this.status = status;
+            this.cooldownTicks = Math.max(0, Math.min(60, cooldownTicks));
+        }
+
+        public boolean succeeded() {
+            return status == Status.SUCCESS;
+        }
+    }
+
+    private static Outcome outcome(Status status) {
+        return new Outcome(status, 0);
+    }
+
     public static boolean attempt(EntityPlayerMP player, UUID terminalId, String key, boolean visual) {
+        Outcome result = attemptDetailed(player, terminalId, key, visual);
+        if (!result.succeeded()) feedback(player, result);
+        return result.succeeded();
+    }
+
+    public static Outcome attemptDetailed(EntityPlayerMP player, UUID terminalId, String key, boolean visual) {
         MinecraftServer server = MinecraftServer.getServer();
-        if (server == null || player == null || player.isDead || player.getHealth() <= 0 || player.isPlayerSleeping())
-            return false;
-        if (player.playerNetServerHandler == null || server.getConfigurationManager()
-            .func_152612_a(player.getCommandSenderName()) != player) return false;
-        if (!holdsTerminal(player, terminalId)) return false;
+        if (server == null || player == null
+            || player.isDead
+            || player.getHealth() <= 0
+            || player.isPlayerSleeping()
+            || player.playerNetServerHandler == null
+            || server.worldServerForDimension(0) == null
+            || server.getConfigurationManager()
+                .func_152612_a(player.getCommandSenderName()) != player)
+            return outcome(Status.UNAVAILABLE_PLAYER);
+        if (!holdsTerminal(player, terminalId)) return outcome(Status.INVALID_TARGET);
         if (visual && !com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.isEnabled(player, terminalId))
-            return false;
+            return outcome(Status.INACTIVE);
+        if (key == null || key.isEmpty()) return outcome(Status.NO_TARGET);
         DeviceTerminalDataStore.TerminalData data = DeviceTerminalDataStore.get(player.worldObj)
             .getTerminal(terminalId);
-        if (data == null || !data.boundKeys.contains(key)) return false;
+        if (data == null || !data.boundKeys.contains(key)) return outcome(Status.INVALID_TARGET);
         DeviceTerminalDataStore.MachineRecord record = data.records.get(key);
         int[] position = KeyFormat.parse(key);
         if (record == null || position == null
             || position[0] != record.dim
             || position[1] != record.x
             || position[2] != record.y
-            || position[3] != record.z) return false;
-        if (visual && player.dimension != record.dim) return false;
+            || position[3] != record.z) return outcome(Status.STALE_TARGET);
+        if (visual && player.dimension != record.dim) return outcome(Status.TOO_FAR);
         if (record.y < 0 || Math.abs((long) record.x) >= 29999984 || Math.abs((long) record.z) >= 29999984)
-            return false;
+            return outcome(Status.INVALID_TARGET);
         WorldServer target = DimensionManager.getWorld(record.dim);
-        if (target == null || record.y >= target.getActualHeight() || !loaded(target, record.x, record.z)) return false;
+        if (target == null || !loaded(target, record.x, record.z)) return outcome(Status.UNLOADED);
+        if (record.y >= target.getActualHeight()) return outcome(Status.STALE_TARGET);
         TileEntity tile = target.getTileEntity(record.x, record.y, record.z);
         if (!(tile instanceof IGregTechTileEntity) || tile.isInvalid()
             || !DeviceMachineTypes.isWorkingMachine(((IGregTechTileEntity) tile).getMetaTileEntity())
             || (record.metaTileId >= 0 && record.metaTileId != ((IGregTechTileEntity) tile).getMetaTileID()))
-            return false;
+            return outcome(Status.STALE_TARGET);
         if (visual) {
-            if (player.dimension != record.dim) return false;
             Vec3 look = player.getLookVec();
+            double eyeY = DeviceTerminalVisualRules
+                .eyeY(player.posY, player.yOffset, player.getEyeHeight(), player.getDefaultEyeHeight());
+            double dx = record.x + 0.5 - player.posX, dy = record.y + DeviceTerminalVisualRules.MARKER_Y - eyeY,
+                dz = record.z + 0.5 - player.posZ;
+            double distance = dx * dx + dy * dy + dz * dz;
+            if (!Double.isFinite(distance)
+                || distance > DeviceTerminalVisualRules.MAX_RANGE * DeviceTerminalVisualRules.MAX_RANGE)
+                return outcome(Status.TOO_FAR);
             if (!DeviceTerminalVisualRules.isAimedAt(
                 player.posX,
-                player.posY + player.getEyeHeight(),
+                eyeY,
                 player.posZ,
                 look.xCoord,
                 look.yCoord,
                 look.zCoord,
                 record.x + 0.5,
                 record.y + DeviceTerminalVisualRules.MARKER_Y,
-                record.z + 0.5)) return false;
+                record.z + 0.5)) return outcome(Status.NOT_AIMED);
         }
-        double[] landing = safeLanding(target, (IGregTechTileEntity) tile, record, player);
-        if (landing == null) return false;
         long now = server.worldServerForDimension(0)
             .getTotalWorldTime();
         Long last = LAST.get(player.getUniqueID());
-        if (last != null && now >= last && now - last < COOLDOWN_TICKS) return false;
+        if (last != null && now >= last && now - last < COOLDOWN_TICKS)
+            return new Outcome(Status.COOLDOWN, (int) (COOLDOWN_TICKS - (now - last)));
+        double[] landing = safeLanding(target, (IGregTechTileEntity) tile, record, player);
+        if (landing == null) return outcome(Status.UNSAFE);
         int cost = DeviceTerminalSettings.get(player.worldObj)
             .teleportCost();
-        if (player.experienceLevel < cost) {
-            player.addChatMessage(new ChatComponentTranslation("gtswn.device.chat.teleport.no_xp", cost));
-            return false;
-        }
+        if (player.experienceLevel < cost) return outcome(Status.NO_XP);
         boolean moved;
         if (player.dimension == record.dim) {
             player.mountEntity(null);
@@ -89,10 +149,24 @@ public final class DeviceTerminalTeleport {
                 .setPlayerLocation(landing[0], landing[1], landing[2], player.rotationYaw, player.rotationPitch);
             moved = true;
         } else moved = GTUtility.moveEntityToDimensionAtCoords(player, record.dim, landing[0], landing[1], landing[2]);
-        if (!moved) return false;
+        if (!moved) return outcome(Status.ERROR);
         player.addExperienceLevel(-cost);
         LAST.put(player.getUniqueID(), now);
-        return true;
+        return new Outcome(Status.SUCCESS, (int) COOLDOWN_TICKS);
+    }
+
+    public static void feedback(EntityPlayerMP player, Outcome result) {
+        if (player == null || player.playerNetServerHandler == null || result.succeeded()) return;
+        String key = "gtswn.device.visual.teleport." + result.status.name()
+            .toLowerCase(java.util.Locale.ROOT);
+        if (result.status == Status.NO_XP) player.addChatMessage(
+            new ChatComponentTranslation(
+                key,
+                DeviceTerminalSettings.get(player.worldObj)
+                    .teleportCost()));
+        else if (result.status == Status.COOLDOWN)
+            player.addChatMessage(new ChatComponentTranslation(key, (result.cooldownTicks + 19) / 20));
+        else player.addChatMessage(new ChatComponentTranslation(key));
     }
 
     private static double[] safeLanding(World world, IGregTechTileEntity tile,

@@ -20,6 +20,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
     public static final int MAX_TOTAL_ROWS = MAX_ROWS + PacketRequestPortableMonitor.MAX_PINS;
     public static final int MAX_SAMPLES = 61;
     public static final int MAX_BYTES = 1024 * 1024;
+    private static final int PROTOCOL = 56;
     public UUID terminalId;
     public int sequence;
     public int hudMode;
@@ -39,13 +40,16 @@ public final class PacketSyncPortableMonitor implements IMessage {
     public void fromBytes(ByteBuf buf) {
         valid = false;
         panels.clear();
-        if (buf.readableBytes() > MAX_BYTES || buf.readableBytes() < 25) return;
+        if (buf.readableBytes() > MAX_BYTES || buf.readableBytes() < 30) return;
         try {
+            if (buf.readInt() != PacketRequestPortableMonitor.PROTOCOL_MAGIC) return;
+            if (buf.readUnsignedByte() != PROTOCOL) return;
             terminalId = new UUID(buf.readLong(), buf.readLong());
             sequence = buf.readInt();
             hudMode = count(buf.readInt(), 2);
             int count = count(buf.readUnsignedByte(), MonitorBindings.MAX_PANELS);
             int totalRows = 0;
+            int fullPanels = 0;
             for (int i = 0; i < count; i++) {
                 Panel panel = new Panel();
                 panel.binding = new MonitorBindings.Binding(
@@ -58,6 +62,8 @@ public final class PacketSyncPortableMonitor implements IMessage {
                 panel.tab = count(buf.readUnsignedByte(), 2);
                 panel.ownerName = readString(buf, 128);
                 panel.window = readString(buf, 32);
+                panel.chartKey = readString(buf, 256);
+                panel.currentEnergy = readString(buf, 4096);
                 panel.aeConnected = buf.readBoolean();
                 panel.detail = buf.readBoolean();
                 panel.sampleTime = buf.readLong();
@@ -72,10 +78,19 @@ public final class PacketSyncPortableMonitor implements IMessage {
                     row.rate = finite(buf.readDouble());
                     row.average = finite(buf.readDouble());
                     row.kind = count(buf.readUnsignedByte(), 2);
+                    row.monitored = buf.readBoolean();
                     panel.rows.add(row);
                 }
                 panel.euChart = readChart(buf);
                 panel.aeChart = readChart(buf);
+                panel.euRateChart = readChart(buf);
+                panel.aeRateChart = readChart(buf);
+                panel.renderVersion = buf.readLong();
+                if (buf.readBoolean()) {
+                    if (!panel.detail || ++fullPanels > 1)
+                        throw new IllegalArgumentException("Portable full panel bound");
+                    panel.render = PortablePanelRenderData.read(buf);
+                }
                 panels.add(panel);
             }
             valid = !buf.isReadable();
@@ -88,10 +103,16 @@ public final class PacketSyncPortableMonitor implements IMessage {
     @Override
     public void toBytes(ByteBuf buf) {
         int totalRows = 0;
+        int fullPanels = 0;
         for (Panel panel : panels) totalRows += Math.min(MAX_ROWS, panel.rows.size());
+        for (Panel panel : panels) if (panel.render != null) {
+            if (!panel.detail || ++fullPanels > 1) throw new IllegalArgumentException("Portable full panel bound");
+        }
         if (panels.size() > MonitorBindings.MAX_PANELS || totalRows > MAX_TOTAL_ROWS) {
             throw new IllegalArgumentException("Portable monitor snapshot bound");
         }
+        buf.writeInt(PacketRequestPortableMonitor.PROTOCOL_MAGIC);
+        buf.writeByte(PROTOCOL);
         buf.writeLong(terminalId.getMostSignificantBits());
         buf.writeLong(terminalId.getLeastSignificantBits());
         buf.writeInt(sequence);
@@ -109,6 +130,8 @@ public final class PacketSyncPortableMonitor implements IMessage {
             buf.writeByte(panel.tab);
             writeString(buf, panel.ownerName, 128);
             writeString(buf, panel.window, 32);
+            writeString(buf, panel.chartKey, 256);
+            writeString(buf, panel.currentEnergy, 4096);
             buf.writeBoolean(panel.aeConnected);
             buf.writeBoolean(panel.detail);
             buf.writeLong(panel.sampleTime);
@@ -122,22 +145,28 @@ public final class PacketSyncPortableMonitor implements IMessage {
                 buf.writeDouble(finite(row.rate));
                 buf.writeDouble(finite(row.average));
                 buf.writeByte(row.kind);
+                buf.writeBoolean(row.monitored);
             }
             writeChart(buf, panel.euChart);
             writeChart(buf, panel.aeChart);
+            writeChart(buf, panel.euRateChart);
+            writeChart(buf, panel.aeRateChart);
+            buf.writeLong(panel.renderVersion);
+            buf.writeBoolean(panel.render != null);
+            if (panel.render != null) panel.render.write(buf);
         }
     }
 
-    private static int count(int value, int max) {
+    static int count(int value, int max) {
         if (value < 0 || value > max) throw new IllegalArgumentException("Portable monitor bound");
         return value;
     }
 
-    private static double finite(double value) {
+    static double finite(double value) {
         return Double.isFinite(value) ? value : 0;
     }
 
-    private static String readString(ByteBuf buf, int max) {
+    static String readString(ByteBuf buf, int max) {
         int size = count(buf.readUnsignedShort(), max * 4);
         byte[] data = new byte[size];
         buf.readBytes(data);
@@ -146,7 +175,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
         return text;
     }
 
-    private static void writeString(ByteBuf buf, String value, int max) {
+    static void writeString(ByteBuf buf, String value, int max) {
         String text = value == null ? "" : value;
         if (text.length() > max) text = text.substring(0, max);
         byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
@@ -179,11 +208,16 @@ public final class PacketSyncPortableMonitor implements IMessage {
         /** 0 ready, 1 unloaded, 2 missing, 3 replaced. */
         public int state, tab;
         public String ownerName = "", window = "";
+        public String chartKey = "";
+        public String currentEnergy = "";
         public boolean aeConnected;
         public boolean detail;
         public long sampleTime;
         public final List<Row> rows = new ArrayList<>();
         public double[] euChart = new double[0], aeChart = new double[0];
+        public double[] euRateChart = new double[0], aeRateChart = new double[0];
+        public long renderVersion;
+        public PortablePanelRenderData render;
     }
 
     public static final class Row {
@@ -192,6 +226,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
         public int kind;
         public String key = "", name = "", amount = "";
         public double rate, average;
+        public boolean monitored;
     }
 
     public static final class Handler implements IMessageHandler<PacketSyncPortableMonitor, IMessage> {
