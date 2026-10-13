@@ -69,6 +69,13 @@ public final class ChargeStackSync {
             .copy() : new NBTTagCompound();
         tag.removeTag("GT.ItemCharge");
         tag.removeTag("charge");
+        if (MonitorBattery.hasBattery(stack)) {
+            // Only live charging state is safe to merge; battery identity, capacity and tier remain significant.
+            NBTTagCompound battery = tag.getCompoundTag(MonitorBattery.NBT_BATTERY);
+            battery.removeTag("Charge");
+            battery.removeTag("Status");
+            battery.removeTag("Quiet");
+        }
         return tag;
     }
 
