@@ -17,6 +17,46 @@ import com.miaokatze.gtswn.common.hud.PortableMonitorPins;
 public class PortableMonitorSubscriptionsTest {
 
     @Test
+    public void newerInventoryCredentialsCannotSelectOldEightHourDetailAfterSlotReplacement() {
+        net.minecraft.item.ItemStack terminal = new net.minecraft.item.ItemStack(
+            new com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor());
+        terminal.stackTagCompound = new net.minecraft.nbt.NBTTagCompound();
+        terminal.stackTagCompound.setBoolean("Initialized", true);
+        terminal.stackTagCompound.setString(
+            "OwnerUUID",
+            UUID.randomUUID()
+                .toString());
+        terminal.stackTagCompound.setString(
+            "MonitorId",
+            UUID.randomUUID()
+                .toString());
+        UUID currentPanel = UUID.randomUUID();
+        net.minecraft.nbt.NBTTagCompound binding = new net.minecraft.nbt.NBTTagCompound();
+        binding.setString("id", currentPanel.toString());
+        net.minecraft.nbt.NBTTagList bindings = new net.minecraft.nbt.NBTTagList();
+        bindings.appendTag(binding);
+        terminal.stackTagCompound.setTag("MonitorPanels", bindings);
+        terminal.stackTagCompound.setLong("MonitorRevision", 3);
+        PacketSyncPortableMonitor previous = new PacketSyncPortableMonitor(MonitorBindings.id(terminal), 1, 1);
+        previous.bindingRevision = 1;
+        PacketSyncPortableMonitor.Panel old = new PacketSyncPortableMonitor.Panel();
+        old.binding = new MonitorBindings.Binding(0, 0, 0, 0, UUID.randomUUID());
+        old.window = "8h";
+        old.renderVersion = 42;
+        old.render = new PortablePanelRenderData();
+        previous.panels.add(old);
+        PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(MonitorBindings.id(terminal), 2, 0, 0);
+        request.selected = 0;
+        PortableMonitorClientCache.selectRequest(request, terminal, previous);
+        assertEquals(currentPanel, request.selectedPanel);
+        assertEquals(0, request.knownRenderVersion);
+        previous.bindingRevision = 4; // The server reply may precede the corresponding inventory update.
+        PortableMonitorClientCache.selectRequest(request, terminal, previous);
+        assertEquals(old.binding.panelId, request.selectedPanel);
+        assertEquals(42, request.knownRenderVersion);
+    }
+
+    @Test
     public void legacyPlotRemovalRetainsTitleAndAllOtherTerminalsWithoutCreatingValues() {
         String prefix = UUID.randomUUID() + "/" + UUID.randomUUID() + "/";
         String other = UUID.randomUUID() + "/" + UUID.randomUUID() + "/fluid:water";

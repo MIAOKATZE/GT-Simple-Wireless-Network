@@ -13,6 +13,120 @@ import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 public class PortablePanelViewTest {
 
     @Test
+    public void wireIconNbtChangesRefreshNativeListEvenWithCollidingNbtHashesAndUnchangedNumbers() throws Exception {
+        PacketSyncPortableMonitor.Panel first = namedIconPanel("Aa");
+        PortablePanelView view = new PortablePanelView(first);
+        net.minecraft.item.ItemStack original = view.getMonitoredItems()
+            .get(0);
+        PacketSyncPortableMonitor.Panel changed = namedIconPanel("BB");
+        assertEquals(
+            first.rows.get(0).icon.item.getTagCompound()
+                .hashCode(),
+            changed.rows.get(0).icon.item.getTagCompound()
+                .hashCode());
+        assertNotEquals(first.rows.get(0).icon.fingerprint(), changed.rows.get(0).icon.fingerprint());
+        view.updateLive(changed);
+        net.minecraft.item.ItemStack updated = view.getMonitoredItems()
+            .get(0);
+        assertNotSame(original, updated);
+        assertEquals(
+            "Aa",
+            original.getTagCompound()
+                .getString("Name"));
+        assertEquals(
+            "BB",
+            updated.getTagCompound()
+                .getString("Name"));
+        PacketSyncPortableMonitor.Panel unchanged = namedIconPanel("BB");
+        assertNotSame(changed.rows.get(0).icon, unchanged.rows.get(0).icon);
+        assertEquals(changed.rows.get(0).icon.fingerprint(), unchanged.rows.get(0).icon.fingerprint());
+        view.updateLive(unchanged);
+        assertSame(
+            updated,
+            view.getMonitoredItems()
+                .get(0));
+    }
+
+    private static PacketSyncPortableMonitor.Panel namedIconPanel(String name) throws Exception {
+        String registryName = "minecraft:gtswn_portable_nbt_fixture";
+        Object registered = net.minecraft.item.Item.itemRegistry.getObject(registryName);
+        net.minecraft.item.Item item;
+        if (registered instanceof net.minecraft.item.Item) item = (net.minecraft.item.Item) registered;
+        else {
+            item = new net.minecraft.item.Item();
+            java.lang.reflect.Method register = net.minecraft.item.Item.itemRegistry.getClass()
+                .getDeclaredMethod("addObjectRaw", int.class, String.class, Object.class);
+            register.setAccessible(true);
+            register.invoke(net.minecraft.item.Item.itemRegistry, 31890, registryName, item);
+        }
+        net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(item, 1, 4);
+        stack.setTagCompound(new net.minecraft.nbt.NBTTagCompound());
+        stack.getTagCompound()
+            .setString("Name", name);
+        PacketSyncPortableMonitor packet = new PacketSyncPortableMonitor(java.util.UUID.randomUUID(), 1, 1);
+        PacketSyncPortableMonitor.Panel panel = new PacketSyncPortableMonitor.Panel();
+        panel.binding = new com.miaokatze.gtswn.common.hud.MonitorBindings.Binding(
+            0,
+            0,
+            0,
+            0,
+            java.util.UUID.randomUUID());
+        panel.detail = true;
+        panel.render = new PortablePanelRenderData();
+        panel.render.currentEnergy = "0";
+        panel.currentEnergy = "0";
+        PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
+        row.key = "item:" + registryName + ":4";
+        row.kind = 1;
+        row.amount = "500";
+        row.rate = 2;
+        row.average = 3;
+        row.monitored = true;
+        row.icon = PortableMonitorIcon.of(stack);
+        panel.rows.add(row);
+        packet.panels.add(panel);
+        io.netty.buffer.ByteBuf bytes = io.netty.buffer.Unpooled.buffer();
+        try {
+            packet.toBytes(bytes);
+            PacketSyncPortableMonitor decoded = new PacketSyncPortableMonitor();
+            decoded.fromBytes(bytes);
+            assertTrue(decoded.valid);
+            return decoded.panels.get(0);
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
+    public void remoteConnectedStateDoesNotDependOnColdHistoryAndFalseRemainsOffline() throws Exception {
+        com.miaokatze.gtswn.test.FluidRegistryTestBootstrap.water(1000);
+        PacketSyncPortableMonitor.Panel panel = new PacketSyncPortableMonitor.Panel();
+        panel.render = new PortablePanelRenderData();
+        panel.render.config.setInteger("trackingWindow", 0);
+        panel.render.config.setInteger("aeTrackingWindow", 2);
+        panel.aeConnected = true;
+        PortablePanelView view = new PortablePanelView(panel);
+        java.lang.reflect.Method connected = RenderNetworkInfoPanel.class
+            .getDeclaredMethod("hasAEMonitorData", com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel.class);
+        connected.setAccessible(true);
+        assertTrue((boolean) connected.invoke(null, view));
+        assertEquals("5m", view.getWindowName());
+        assertEquals(2, view.getAETrackingWindow());
+        PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
+        row.key = "fluid:water";
+        row.kind = 2;
+        row.amount = "1000";
+        panel.rows.add(row);
+        panel.aeConnected = false;
+        view.updateLive(panel);
+        assertFalse((boolean) connected.invoke(null, view));
+        assertFalse(
+            view.getAEMonitorLatest()
+                .isEmpty());
+        assertEquals("5m", view.getWindowName());
+    }
+
+    @Test
     public void oversizedHistoryHidesOnlyUnsafeEnergyCurveAndKeepsExactLiveEnergyAndPower() {
         PacketSyncPortableMonitor.Panel panel = new PacketSyncPortableMonitor.Panel();
         panel.render = new PortablePanelRenderData();

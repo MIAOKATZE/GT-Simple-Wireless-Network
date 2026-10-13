@@ -16,6 +16,7 @@ import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.gui.GtswnGuiDrawing;
 import com.miaokatze.gtswn.client.gui.GtswnGuiTextures;
 import com.miaokatze.gtswn.client.gui.PortableMonitorCharts;
+import com.miaokatze.gtswn.client.gui.PortableMonitorIcons;
 import com.miaokatze.gtswn.config.Config;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -70,8 +71,6 @@ public class WirelessMonitorHUD extends Gui {
         int screenHeight = resolution.getScaledHeight();
         List<PortableMonitorClientCache.PinnedLine> all = PortableMonitorClientCache
             .pinnedLines(this.controller.monitorStack());
-        // Remote subscriptions are the selected content; keep the legacy overview only without any subscriptions.
-        boolean showOverview = all.isEmpty();
         boolean graph = false;
         for (PortableMonitorClientCache.PinnedLine line : all) if (line.graph) {
             graph = true;
@@ -85,10 +84,10 @@ public class WirelessMonitorHUD extends Gui {
         // Apply configured offsets: X positive = right (add directly);
         // Y positive = up (subtract to invert screen coords — screen Y points downward)
         float scale = Config.hudScale;
-        int basicRows = !showOverview ? 0
-            : (Config.hudChargeEnabled && this.controller.hasBattery() ? 1 : 0) + (Config.hudInstantEnabled ? 1 : 0)
-                + (Config.hudAverageEnabled ? 1 : 0)
-                + (Config.hudEUEnabled ? 1 : 0);
+        int basicRows = (Config.hudChargeEnabled && this.controller.hasBattery() ? 1 : 0)
+            + (Config.hudInstantEnabled ? 1 : 0)
+            + (Config.hudAverageEnabled ? 1 : 0)
+            + (Config.hudEUEnabled ? 1 : 0);
         scale = Math
             .min(scale, (screenHeight - 8f) / Math.max(12, basicRows * 12 + (all.isEmpty() ? 0 : largestRow) + 4));
         int maxWidth = Math.min(Config.hudPanelWidth, Math.max(1, (int) ((screenWidth - 8) / scale) - 4));
@@ -117,11 +116,10 @@ public class WirelessMonitorHUD extends Gui {
 
         // 自下向上紧凑排列；充电行位于原有三行上方。
         List<String> lines = new ArrayList<>();
-        if (showOverview && Config.hudChargeEnabled && this.controller.hasBattery())
-            lines.add(this.controller.chargeText());
-        if (showOverview && Config.hudInstantEnabled) lines.add(this.controller.realtimeEutText());
-        if (showOverview && Config.hudAverageEnabled) lines.add(this.controller.eutText());
-        if (showOverview && Config.hudEUEnabled) lines.add(this.controller.euText());
+        if (Config.hudChargeEnabled && this.controller.hasBattery()) lines.add(this.controller.chargeText());
+        if (Config.hudInstantEnabled) lines.add(this.controller.realtimeEutText());
+        if (Config.hudAverageEnabled) lines.add(this.controller.eutText());
+        if (Config.hudEUEnabled) lines.add(this.controller.euText());
         List<List<PortableMonitorClientCache.PinnedLine>> pages = PortableHudLayout.pages(
             all,
             Config.hudPinnedRows,
@@ -140,13 +138,21 @@ public class WirelessMonitorHUD extends Gui {
         GL11.glTranslatef(0, localTop - rowY, 0);
         for (PortableMonitorClientCache.PinnedLine pin : pinned) {
             int rowHeight = PortableHudLayout.height(pin, Config.hudRenderMode);
-            int rowWidth = PortableHudLayout.width(pin, mc.fontRenderer.getStringWidth(pin.text), maxWidth);
+            int rowWidth = PortableHudLayout
+                .width(pin, mc.fontRenderer.getStringWidth(pin.text), maxWidth, Config.hudRenderMode);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             GtswnGuiDrawing.drawStretch(GtswnGuiTextures.HUD_BASE, hudX - 2, rowY - 2, rowWidth + 4, rowHeight, 0);
             if (pin.graph) PortableMonitorCharts.drawCompact(pin, hudX, rowY, rowWidth, rowHeight, mc.fontRenderer);
-            else mc.fontRenderer
-                .drawStringWithShadow(mc.fontRenderer.trimStringToWidth(pin.text, maxWidth), hudX, rowY, 0xffffff);
+            else {
+                int column = PortableHudLayout.iconColumn(pin, Config.hudRenderMode);
+                if (column > 0 && rowWidth >= column) PortableMonitorIcons.draw(pin.icon, hudX, rowY, rowHeight);
+                mc.fontRenderer.drawStringWithShadow(
+                    mc.fontRenderer.trimStringToWidth(pin.text, Math.max(0, rowWidth - column)),
+                    hudX + column,
+                    rowY + (rowHeight - 8) / 2,
+                    0xffffff);
+            }
             rowY += rowHeight;
         }
         for (String line : lines) {

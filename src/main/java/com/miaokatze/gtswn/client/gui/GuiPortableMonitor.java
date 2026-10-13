@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.client.gui;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import net.minecraft.client.gui.GuiButton;
 import net.minecraft.client.gui.GuiScreen;
@@ -23,7 +24,7 @@ import com.miaokatze.gtswn.network.PacketSyncPortableMonitor;
 /** Remote content viewer plus all client HUD preferences. Shared screen configuration stays on site. */
 public final class GuiPortableMonitor extends GuiScreen {
 
-    private final ItemStack stack;
+    private ItemStack stack;
     private boolean settings;
     private int settingsPage;
     private String[] numericEdits;
@@ -40,6 +41,7 @@ public final class GuiPortableMonitor extends GuiScreen {
     private int dragX, dragY;
     private final java.nio.IntBuffer oldScissorBox = org.lwjgl.BufferUtils.createIntBuffer(16);
     private boolean manualTab, pinManager;
+    private UUID viewedPanel;
     private boolean handlingButtonClick, rebuildPending;
     private GuiCanvas canvas;
     private int[] graphScissor;
@@ -198,6 +200,17 @@ public final class GuiPortableMonitor extends GuiScreen {
         return data.panels.get(selected);
     }
 
+    private boolean followPanel(PacketSyncPortableMonitor.Panel current) {
+        if (current == null || current.binding.panelId.equals(viewedPanel)) return false;
+        viewedPanel = current.binding.panelId;
+        manualTab = false;
+        page = 0;
+        chartZoom = 1;
+        panX = panY = 0;
+        if (current.state == 0) tab = current.tab;
+        return true;
+    }
+
     private void buildRows() {
         shownRows.clear();
         PacketSyncPortableMonitor.Panel panel = panel();
@@ -230,21 +243,21 @@ public final class GuiPortableMonitor extends GuiScreen {
     @Override
     public void updateScreen() {
         super.updateScreen();
+        stack = PortableMonitorClientCache.currentStack(stack);
         if (!PortableWirelessNetworkMonitor.isMonitorBound(stack) || mc.thePlayer == null) {
             mc.displayGuiScreen(null);
             return;
         }
-        // Resolve the current server-authored slot reference, including delayed MonitorId synchronization.
-        ItemStack currentStack = PortableMonitorClientCache.currentStack(stack);
-        if (currentStack != stack) stack.stackTagCompound = currentStack.stackTagCompound;
         PortableMonitorClientCache.viewing(stack, selected);
         PortableMonitorClientCache.poll(stack);
         PacketSyncPortableMonitor data = PortableMonitorClientCache.snapshot(stack);
         boolean stale = PortableMonitorClientCache.stale(stack);
-        if (data != lastSnapshot || stale != lastStale) {
+        PacketSyncPortableMonitor.Panel current = panel();
+        boolean panelChanged = followPanel(current);
+        if (data != null && data.panels.isEmpty()) viewedPanel = null;
+        if (data != lastSnapshot || stale != lastStale || panelChanged) {
             lastSnapshot = data;
             lastStale = stale;
-            PacketSyncPortableMonitor.Panel current = panel();
             if (!manualTab && !pinManager && current != null && current.detail) tab = current.tab;
             if (!settings) rebuild();
         }
@@ -253,6 +266,7 @@ public final class GuiPortableMonitor extends GuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        stack = PortableMonitorClientCache.currentStack(stack);
         if (button.id == 3) {
             mc.displayGuiScreen(null);
             return;
@@ -273,9 +287,7 @@ public final class GuiPortableMonitor extends GuiScreen {
         if (button.id == 0 || button.id == 1) {
             if (snapshot != null && !snapshot.panels.isEmpty())
                 selected = Math.floorMod(selected + (button.id == 0 ? -1 : 1), snapshot.panels.size());
-            page = 0;
-            chartZoom = 1;
-            panX = panY = 0;
+            followPanel(panel());
         } else if (button.id >= 6 && button.id <= 8) {
             tab = button.id - 6;
             page = 0;

@@ -94,6 +94,7 @@ public final class DeviceSteamAdapter {
 
     public static byte capabilityMask(IMetaTileEntity machine) {
         if (machine == null) return 0;
+        if (DeviceDefaultRecognitionPolicy.isPassiveFacility(machine)) return (byte) (EU_IN | EU_OUT);
         int roles = STEAM_ROLES.get(machine.getClass());
         if (machine instanceof MetaTileEntity && ((MetaTileEntity) machine).isSteampowered()) roles |= STEAM_IN;
         // Boilers and exchangers reuse EU recipe/display fields without doing electric work.

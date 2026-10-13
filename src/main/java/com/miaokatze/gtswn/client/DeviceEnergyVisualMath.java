@@ -5,6 +5,10 @@ public final class DeviceEnergyVisualMath {
 
     public static final double MIN_ACTIVE_RADIUS = 1.1D;
     public static final double MAX_ACTIVE_RADIUS = 2.8D;
+    public static final int HEAT_SIZE_MIN = 1;
+    public static final int HEAT_SIZE_MAX = 1000;
+    public static final int HEAT_SIZE_DEFAULT = 10;
+    public static final double MAX_SCALED_RADIUS = MAX_ACTIVE_RADIUS * HEAT_SIZE_MAX;
     public static final int CORE_VERTICES = 24;
     public static final int HALO_VERTICES = 32;
     public static final int HALO_SHELLS = 2;
@@ -36,13 +40,27 @@ public final class DeviceEnergyVisualMath {
         return strength <= 0D ? 0D : MIN_ACTIVE_RADIUS + (MAX_ACTIVE_RADIUS - MIN_ACTIVE_RADIUS) * strength * strength;
     }
 
+    /** Size 1 preserves the original envelope; every legal multiplier keeps the same load curve. */
+    public static double radius(double intensity, int heatSize) {
+        return radius(intensity) * validHeatSize(heatSize);
+    }
+
+    public static int validHeatSize(int heatSize) {
+        return Math.max(HEAT_SIZE_MIN, Math.min(HEAT_SIZE_MAX, heatSize));
+    }
+
+    public static double sourceRange(double range, int heatSize) {
+        // Sources use the travel label center 1.1 blocks above the electric heat center.
+        return Math.max(0D, finite(range)) + MAX_ACTIVE_RADIUS * validHeatSize(heatSize) + 1.1D;
+    }
+
     public static int vertices(boolean halo) {
         return CORE_VERTICES + (halo ? HALO_SHELLS * HALO_VERTICES : 0);
     }
 
     public static double interpolateRadius(double previous, double next, double progress) {
-        double from = Math.max(0D, Math.min(MAX_ACTIVE_RADIUS, finite(previous)));
-        double to = Math.max(0D, Math.min(MAX_ACTIVE_RADIUS, finite(next)));
+        double from = Math.max(0D, Math.min(MAX_SCALED_RADIUS, finite(previous)));
+        double to = Math.max(0D, Math.min(MAX_SCALED_RADIUS, finite(next)));
         double fraction = Math.max(0D, Math.min(1D, finite(progress)));
         return from + (to - from) * fraction;
     }

@@ -116,7 +116,7 @@ public final class PortableMonitorRequestQueue {
         response.result = result;
         response.bindingRevision = MonitorBindings.revision(stack);
         List<MonitorBindings.Binding> bindings = MonitorBindings.read(stack);
-        int selected = selectedIndex(request, bindings);
+        int selected = selectedIndex(request, bindings, owner, result);
         int panelIndex = 0;
         for (MonitorBindings.Binding binding : bindings) {
             PacketSyncPortableMonitor.Panel data = new PacketSyncPortableMonitor.Panel();
@@ -135,9 +135,9 @@ public final class PortableMonitorRequestQueue {
                     else {
                         Set<String> pins = request.pins.getOrDefault(binding.panelId, java.util.Collections.emptySet());
                         boolean detail = selected == panelIndex;
-                        data.ownerName = panel.getOwnerName();
                         if (detail || !pins.isEmpty())
                             fill(data, panel, detail, pins, request.charts, request.knownRenderVersion);
+                        else fillSummary(data, panel);
                     }
                 }
             }
@@ -158,6 +158,19 @@ public final class PortableMonitorRequestQueue {
         return Math.min(request.selected, bindings.size() - 1);
     }
 
+    /** Only an acknowledged removal of the selected screen may select its remaining neighbour. */
+    static int selectedIndex(PacketRequestPortableMonitor request, List<MonitorBindings.Binding> bindings,
+        boolean owner, int result) {
+        int selected = selectedIndex(request, bindings);
+        if (selected < 0 && request.selected >= 0
+            && owner
+            && result == 1
+            && request.action == 1
+            && request.selectedPanel.equals(request.targetPanel)
+            && !bindings.isEmpty()) return Math.min(request.selected, bindings.size() - 1);
+        return selected;
+    }
+
     private static ItemStack find(EntityPlayerMP player, UUID id) {
         ItemStack held = player.getHeldItem();
         if (id.equals(MonitorBindings.id(held))) return held;
@@ -175,14 +188,7 @@ public final class PortableMonitorRequestQueue {
     private static void fill(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel, boolean detail,
         Set<String> requestedPins, boolean charts, long knownRenderVersion) {
         data.detail = detail;
-        data.ownerName = panel.getOwnerName();
-        data.window = panel.getWindowName();
-        data.aeWindow = WindowLabel.of(panel.getAETrackingWindow())
-            .shortName();
-        data.displayMode = panel.getDisplayMode();
-        data.palette = panel.getTrendLinePalette();
-        data.tab = panel.getCurrentTab();
-        data.aeConnected = panel.isAEConnected();
+        fillSummary(data, panel);
         boolean needsEU = detail || requestedPins.contains("eu");
         if (needsEU) {
             String exactEnergy = panel.getCachedEu()
@@ -242,6 +248,18 @@ public final class PortableMonitorRequestQueue {
             data.renderVersion = cache.version;
             if (detail && knownRenderVersion != cache.version) data.render = cache.render;
         }
+    }
+
+    /** Real loaded-screen state without reading rows, histories, stores or render caches. */
+    static void fillSummary(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel) {
+        data.ownerName = panel.getOwnerName();
+        data.window = panel.getWindowName();
+        data.aeWindow = WindowLabel.of(panel.getAETrackingWindow())
+            .shortName();
+        data.displayMode = panel.getDisplayMode();
+        data.palette = panel.getTrendLinePalette();
+        data.tab = panel.getCurrentTab();
+        data.aeConnected = panel.isAEConnected();
     }
 
     public static boolean needsEUChart(boolean detail, Set<String> pins, boolean legacyCharts) {
@@ -314,14 +332,20 @@ public final class PortableMonitorRequestQueue {
 
     private static void addItem(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
         AEMonitorDataSet set, ItemStack item, boolean detail, Set<String> pins, boolean monitored) {
-        if (item != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(item))))
+        if (item != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(item)))) {
             addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(item), item.getDisplayName(), 1, monitored);
+            PacketSyncPortableMonitor.Row row = keys.get(TileEntityNetworkInfoPanel.getAEKey(item));
+            if (row != null && row.icon == null) row.icon = PortableMonitorIcon.cached(item);
+        }
     }
 
     private static void addFluid(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
         AEMonitorDataSet set, FluidStack fluid, boolean detail, Set<String> pins, boolean monitored) {
-        if (fluid != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(fluid))))
+        if (fluid != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(fluid)))) {
             addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(fluid), fluid.getLocalizedName(), 2, monitored);
+            PacketSyncPortableMonitor.Row row = keys.get(TileEntityNetworkInfoPanel.getAEKey(fluid));
+            if (row != null && row.icon == null) row.icon = PortableMonitorIcon.cached(fluid);
+        }
     }
 
     private static void addRow(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,

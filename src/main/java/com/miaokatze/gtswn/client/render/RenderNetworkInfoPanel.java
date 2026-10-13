@@ -986,6 +986,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
 
     /** 客户端没有 AE gridProxy，通过是否存在监控数据推断在线状态 */
     private static boolean hasAEMonitorData(TileEntityNetworkInfoPanel panel) {
+        if (panel instanceof com.miaokatze.gtswn.client.PortablePanelView) return panel.isAEConnected();
         return !panel.getAEMonitorLatest()
             .isEmpty()
             || !panel.getAEChartSamples()

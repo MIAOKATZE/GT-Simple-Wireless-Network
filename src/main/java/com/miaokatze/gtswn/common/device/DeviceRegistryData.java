@@ -42,10 +42,17 @@ public class DeviceRegistryData extends WorldSavedData {
 
         /** 机器本地显示名（放置 / 补登时快照） */
         public String localName;
+        /** Last observed identity, allowing unloaded registry candidates to retain their default recognition policy. */
+        public final int metaTileId;
 
         public DeviceEntry(UUID owner, String localName) {
+            this(owner, localName, -1);
+        }
+
+        public DeviceEntry(UUID owner, String localName, int metaTileId) {
             this.owner = owner;
             this.localName = localName;
+            this.metaTileId = metaTileId;
         }
     }
 
@@ -72,8 +79,17 @@ public class DeviceRegistryData extends WorldSavedData {
      * @return true=新增条目；false=覆盖已有条目（均 markDirty）
      */
     public boolean register(String key, UUID owner, String localName) {
+        DeviceEntry existing = devices.get(key);
+        return register(key, owner, localName, existing == null ? -1 : existing.metaTileId);
+    }
+
+    public boolean register(String key, UUID owner, String localName, int metaTileId) {
         boolean isNew = devices.get(key) == null;
-        devices.put(key, new DeviceEntry(owner, localName));
+        DeviceEntry existing = devices.get(key);
+        if (existing != null && java.util.Objects.equals(existing.owner, owner)
+            && java.util.Objects.equals(existing.localName, localName)
+            && existing.metaTileId == metaTileId) return false;
+        devices.put(key, new DeviceEntry(owner, localName, metaTileId));
         markDirty();
         return isNew;
     }
@@ -122,7 +138,12 @@ public class DeviceRegistryData extends WorldSavedData {
                 continue;
             }
             try {
-                devices.put(key, new DeviceEntry(UUID.fromString(ownerStr), entry.getString("name")));
+                devices.put(
+                    key,
+                    new DeviceEntry(
+                        UUID.fromString(ownerStr),
+                        entry.getString("name"),
+                        entry.hasKey("metaTileId") ? entry.getInteger("metaTileId") : -1));
             } catch (IllegalArgumentException e) {
                 // 坏 UUID 数据跳过（不阻断其余条目加载）
             }
@@ -137,6 +158,7 @@ public class DeviceRegistryData extends WorldSavedData {
             entryTag.setString("key", entry.getKey());
             entryTag.setString("owner", entry.getValue().owner.toString());
             entryTag.setString("name", entry.getValue().localName == null ? "" : entry.getValue().localName);
+            entryTag.setInteger("metaTileId", entry.getValue().metaTileId);
             list.appendTag(entryTag);
         }
         tag.setTag("devices", list);

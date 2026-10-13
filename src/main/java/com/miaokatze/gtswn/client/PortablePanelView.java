@@ -70,11 +70,16 @@ public final class PortablePanelView extends TileEntityNetworkInfoPanel {
         this.source = source;
         long fingerprint = source.currentEnergy.hashCode() * 31L + (source.aeConnected ? 1 : 0);
         for (PacketSyncPortableMonitor.Row row : source.rows) {
+            if (row.key.equals(render.chartKey) && row.icon != null) {
+                chartItem = row.icon.item;
+                chartFluid = row.icon.fluid;
+            }
             fingerprint = fingerprint * 31 + row.key.hashCode();
             fingerprint = fingerprint * 31 + row.amount.hashCode();
             fingerprint = fingerprint * 31 + Double.doubleToLongBits(row.rate);
             fingerprint = fingerprint * 31 + Double.doubleToLongBits(row.average);
             fingerprint = fingerprint * 31 + (row.monitored ? 1 : 0);
+            fingerprint = fingerprint * 31 + (row.icon == null ? 0 : row.icon.fingerprint());
         }
         if (fingerprint == liveFingerprint) return;
         liveFingerprint = fingerprint;
@@ -101,8 +106,8 @@ public final class PortablePanelView extends TileEntityNetworkInfoPanel {
                     energyAvailable = false;
                 }
             } else {
-                ItemStack item = item(row.key);
-                FluidStack fluid = fluid(row.key);
+                ItemStack item = row.icon == null ? item(row.key) : row.icon.item;
+                FluidStack fluid = row.icon == null ? fluid(row.key) : row.icon.fluid;
                 if (row.monitored && item != null) items.add(item);
                 if (row.monitored && fluid != null) fluids.add(fluid);
                 try {

@@ -8,8 +8,22 @@ import java.util.List;
 import org.junit.Test;
 
 import com.miaokatze.gtswn.client.PortableMonitorClientCache.PinnedLine;
+import com.miaokatze.gtswn.network.PortableMonitorIcon;
 
 public class PortableHudLayoutTest {
+
+    @Test
+    public void iconColumnUsesExactlyOneRowOfHeightAndKeepsIndependentWidth() {
+        PinnedLine fluid = new PinnedLine(
+            "Water",
+            PortableMonitorIcon.of(com.miaokatze.gtswn.test.FluidRegistryTestBootstrap.water(1000)));
+        assertEquals(14, PortableHudLayout.iconColumn(fluid, 0));
+        assertEquals(18, PortableHudLayout.iconColumn(fluid, 1));
+        assertEquals(54, PortableHudLayout.width(fluid, 40, 240, 0));
+        assertEquals(58, PortableHudLayout.width(fluid, 40, 240, 1));
+        assertEquals(40, PortableHudLayout.width(new PinnedLine("Water", (PortableMonitorIcon) null), 40, 240, 0));
+        assertEquals(20, PortableHudLayout.width(fluid, 40, 20, 0));
+    }
 
     @Test
     public void plotDoesNotStretchListValuesAndMixedRowsKeepTheirOwnHeight() {

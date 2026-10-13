@@ -16,7 +16,7 @@ import io.netty.buffer.ByteBuf;
 public final class PacketRequestPortableMonitor implements IMessage {
 
     public static final int PROTOCOL_MAGIC = 0x50574d58;
-    public static final int PROTOCOL = 58;
+    public static final int PROTOCOL = 59;
 
     public UUID terminalId;
     public int sequence;

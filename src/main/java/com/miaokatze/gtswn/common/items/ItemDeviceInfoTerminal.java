@@ -200,9 +200,13 @@ public class ItemDeviceInfoTerminal extends Item {
         String key = DeviceRegistryData.makeKey(dim, x, y, z);
         String localName = mte.getLocalName();
         DeviceRegistryData registry = DeviceRegistryData.get(world);
-        if (registry.getEntry(key) == null) {
-            registry.register(key, player.getUniqueID(), localName);
-        }
+        DeviceRegistryData.DeviceEntry known = registry.getEntry(key);
+        if (known == null) {
+            registry.register(key, player.getUniqueID(), localName, ((IGregTechTileEntity) te).getMetaTileID());
+        } else if (known.metaTileId != ((IGregTechTileEntity) te).getMetaTileID()
+            || !java.util.Objects.equals(known.localName, localName)) {
+                registry.register(key, known.owner, localName, ((IGregTechTileEntity) te).getMetaTileID());
+            }
         UUID terminalId = ensureTerminalIdSynced(player, stack);
         // 首用生成 UUID 后立即同步手持槽：GUI 锚点/客户端缓存键依赖客户端 NBT 的 UUID，
         // 1.7.10 原地 NBT 变更不自动推送（否则新终端扫描绑定后 GUI 因客户端 UUID 缺失永远空列表）

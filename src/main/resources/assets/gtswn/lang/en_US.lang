@@ -761,3 +761,10 @@ gtswn.device.chat.scan.force=§a[Device Terminal] Forced scan includes ignored d
 gtswn.device.chat.scan.ignored=§7[Device Terminal] Skipped %s ignored devices. Charge another scan with the same terminal within %s seconds to include them.
 gtswn.device.recognition.eu=Electric
 gtswn.device.recognition.steam=Steam
+gtswn.device.settings.heat.size=Heat size multiplier
+gtswn.device.settings.heat.size.hint=1 = original maximum; 10 = 10×. Range: 1–1000. Apply/Enter saves; Esc discards unapplied edits.
+gtswn.device.settings.heat.size.invalid=Enter a whole number from 1 to 1000.
+gtswn.device.settings.labels.size=Label size
+gtswn.device.settings.labels.size.hint=10 = original size +50%. Range: 1–100. Apply/Enter saves; Esc discards unapplied edits.
+gtswn.device.settings.labels.size.invalid=Enter a whole number from 1 to 100.
+gtswn.device.settings.size.saved=Size saved.

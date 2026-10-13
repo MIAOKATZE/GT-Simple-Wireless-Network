@@ -203,6 +203,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             // 会话内新获得终端补登记活跃索引（否则采样调度跳过直到重登）
             DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
             // 版本跳过（D5 防轮询压力）：该版本整批已发完 → 零发包返回
+            store.refreshRecognitionDefaults(terminalId);
             state.prepareSnapshot(data, request.knownVersion, request.complete, request.hasClientState);
             if (state.complete) {
                 long keepAliveTicks = Math.max(20, Math.min(600, Config.deviceSampleIntervalSeconds * 20));

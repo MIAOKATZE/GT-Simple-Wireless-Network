@@ -186,27 +186,82 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      * @return true=已解除（version++ + markDirty）；false=绑定不存在（不 dirty）
      */
     public byte recognitionMode(UUID terminalId, String key, int metaTileId) {
+        return recognitionMode(terminalId, key, metaTileId, DeviceDefaultRecognitionPolicy.prototype(metaTileId));
+    }
+
+    public byte recognitionMode(UUID terminalId, String key, int metaTileId,
+        gregtech.api.interfaces.metatileentity.IMetaTileEntity machine) {
         TerminalData data = getOrCreateTerminal(terminalId);
+        MachineRecord record = data.records.get(key);
         RecognitionOverride override = data.recognitionOverrides.get(key);
-        if (override == null) return DeviceTerminalRecognitionMode.AUTO;
-        if (metaTileId >= 0 && override.metaTileId != metaTileId) {
+        boolean changedIdentity = override != null && metaTileId >= 0 && override.metaTileId != metaTileId;
+        if (changedIdentity) {
             data.recognitionOverrides.remove(key);
-            MachineRecord record = data.records.get(key);
-            if (record != null) record.resetRecognition(DeviceTerminalRecognitionMode.AUTO, record.capabilityMask);
+            override = null;
+        }
+        byte mode = override != null ? override.mode
+            : machine != null ? DeviceDefaultRecognitionPolicy.defaultMode(machine)
+                : !changedIdentity && record != null ? record.recognitionMode : DeviceTerminalRecognitionMode.AUTO;
+        boolean changedRecordIdentity = record != null && metaTileId >= 0 && record.metaTileId != metaTileId;
+        if (record != null && (record.recognitionMode != mode || changedIdentity
+            || changedRecordIdentity
+            || (mode == DeviceTerminalRecognitionMode.IGNORE && record.hasIgnoredResidual()))) {
+            byte originalCapabilities = machine != null ? DeviceSteamAdapter.capabilityMask(machine)
+                : record.capabilityMask;
+            record.resetRecognition(mode, originalCapabilities);
+            if (metaTileId >= 0) record.metaTileId = metaTileId;
+            if (machine != null && changedRecordIdentity) {
+                record.name = machine.getLocalName();
+                record.linkNodeType = DeviceMachineIdentity.linkNodeType(machine);
+                gregtech.api.interfaces.tileentity.IGregTechTileEntity liveTile = machine.getBaseMetaTileEntity();
+                if (liveTile != null && liveTile.getWorld() != null) {
+                    DeviceRegistryData registry = DeviceRegistryData.get(liveTile.getWorld());
+                    DeviceRegistryData.DeviceEntry known = registry.getEntry(key);
+                    if (known != null) registry.register(key, known.owner, record.name, metaTileId);
+                }
+                record.powerType = DeviceMachineTypes.isGeneratorMachine(machine)
+                    || (DeviceSteamAdapter.energyKind(originalCapabilities) == DeviceSteamAdapter.STEAM
+                        && (originalCapabilities & DeviceSteamAdapter.STEAM_OUT) != 0) ? POWER_TYPE_GENERATE
+                            : POWER_TYPE_CONSUME;
+            }
             data.version++;
             markDirty();
-            return DeviceTerminalRecognitionMode.AUTO;
+        } else if (changedIdentity) {
+            data.version++;
+            markDirty();
         }
-        return override.mode;
+        return mode;
+    }
+
+    /** Used before snapshots and after NBT loading; prototypes not yet registered are deferred. */
+    public void refreshRecognitionDefaults(UUID terminalId) {
+        TerminalData data = getTerminal(terminalId);
+        if (data == null) return;
+        for (Map.Entry<String, MachineRecord> entry : data.records.entrySet()) {
+            gregtech.api.interfaces.metatileentity.IMetaTileEntity machine = DeviceDefaultRecognitionPolicy
+                .prototype(entry.getValue().metaTileId);
+            if (machine != null) recognitionMode(terminalId, entry.getKey(), entry.getValue().metaTileId, machine);
+        }
     }
 
     public byte cycleRecognition(UUID terminalId, String key, int metaTileId, byte originalCapabilities) {
+        return cycleRecognition(
+            terminalId,
+            key,
+            metaTileId,
+            originalCapabilities,
+            DeviceDefaultRecognitionPolicy.prototype(metaTileId));
+    }
+
+    public byte cycleRecognition(UUID terminalId, String key, int metaTileId, byte originalCapabilities,
+        gregtech.api.interfaces.metatileentity.IMetaTileEntity machine) {
         if (KeyFormat.parse(key) == null || metaTileId < 0) return -1;
         TerminalData data = getOrCreateTerminal(terminalId);
-        byte mode = DeviceTerminalRecognitionMode.next(recognitionMode(terminalId, key, metaTileId));
-        if (mode != DeviceTerminalRecognitionMode.AUTO && !data.recognitionOverrides.containsKey(key)
+        byte baseMode = DeviceDefaultRecognitionPolicy.defaultMode(machine);
+        byte mode = DeviceTerminalRecognitionMode.next(recognitionMode(terminalId, key, metaTileId, machine));
+        if (mode != baseMode && !data.recognitionOverrides.containsKey(key)
             && data.recognitionOverrides.size() >= DeviceTerminalRecognitionMode.MAX_OVERRIDES) return -1;
-        if (mode == DeviceTerminalRecognitionMode.AUTO) data.recognitionOverrides.remove(key);
+        if (mode == baseMode) data.recognitionOverrides.remove(key);
         else data.recognitionOverrides.put(key, new RecognitionOverride(metaTileId, mode));
         MachineRecord record = data.records.get(key);
         if (record != null) record.resetRecognition(mode, originalCapabilities);
@@ -393,8 +448,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 NBTTagCompound entry = overrides.getCompoundTagAt(i);
                 String key = entry.getString("key");
                 byte mode = entry.getByte("mode");
-                if (KeyFormat.parse(key) != null
-                    && (mode == DeviceTerminalRecognitionMode.OTHER || mode == DeviceTerminalRecognitionMode.IGNORE))
+                if (KeyFormat.parse(key) != null && mode >= DeviceTerminalRecognitionMode.AUTO
+                    && mode <= DeviceTerminalRecognitionMode.IGNORE)
                     recognitionOverrides.put(key, new RecognitionOverride(entry.getInteger("metaTileId"), mode));
             }
             version = tag.getLong("version");
@@ -506,6 +561,23 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         /** 当前执行配方输出侧描述（输出快照，近似；阶段 C 采样填充） */
         public String recipeOut = "";
+
+        boolean hasIgnoredResidual() {
+            return state != STATE_IGNORED || capabilityMask != 0
+                || evidenceKind != 0
+                || idx != 0
+                || count != 0
+                || instIn != 0
+                || instOut != 0
+                || steamInstIn != 0
+                || steamInstOut != 0
+                || inAvg != 0
+                || outAvg != 0
+                || steamAvgIn != 0
+                || steamAvgOut != 0
+                || !recipeIn.isEmpty()
+                || !recipeOut.isEmpty();
+        }
 
         public void resetRecognition(byte mode, byte originalCapabilities) {
             recognitionMode = mode;
@@ -753,7 +825,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             try {
                 TerminalData data = new TerminalData();
                 data.readFromNBT(entry.getCompoundTag("data"));
-                terminals.put(UUID.fromString(id), data);
+                UUID terminalId = UUID.fromString(id);
+                terminals.put(terminalId, data);
+                refreshRecognitionDefaults(terminalId);
             } catch (IllegalArgumentException e) {
                 // 坏 UUID 数据跳过（不阻断其余终端加载）
             }

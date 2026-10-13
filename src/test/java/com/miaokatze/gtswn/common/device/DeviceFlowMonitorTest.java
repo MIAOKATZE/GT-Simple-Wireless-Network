@@ -166,4 +166,104 @@ public class DeviceFlowMonitorTest {
         DeviceFlowMonitor.tick(new Object(), 0);
         assertNotNull(DeviceFlowMonitor.watch(machine, 100));
     }
+
+    @Test
+    public void committedWirelessTransactionsHaveIndependentActualDirections() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(-200), true);
+        DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(400), true);
+        DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(-900), false);
+        DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.ZERO, true);
+        DeviceFlowMonitor.leave(previous);
+        assertEquals(10, reading.average(0));
+        assertEquals(20, reading.average(1));
+    }
+
+    @Test
+    public void outsideControllerWirelessBufferTransfersAreNotGenerationOrDoubleConsumption() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
+        DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(-1000), true);
+        DeviceFlowMonitor.energyChange(machine, 0, 1000, false);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        DeviceFlowMonitor.energyChange(machine, 1000, 800, false);
+        DeviceFlowMonitor.leave(previous);
+        assertEquals(10, reading.average(0));
+        assertEquals(0, reading.average(1));
+    }
+
+    @Test
+    public void equalWirelessProductionAndLocalConsumptionAreNeverAssumedToBeTransfers() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        DeviceFlowMonitor.energyChange(machine, 1000, 800, false);
+        DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(200), true);
+        DeviceFlowMonitor.leave(previous);
+        assertEquals(10, reading.average(0));
+        assertEquals(10, reading.average(1));
+    }
+
+    @Test
+    public void nestedWirelessTransactionsRestoreControllerAttribution() {
+        Object a = new Object(), b = new Object();
+        DeviceFlowMonitor.Reading first = DeviceFlowMonitor.watch(a, 100);
+        DeviceFlowMonitor.Reading second = DeviceFlowMonitor.watch(b, 100);
+        DeviceFlowMonitor.Reading outer = DeviceFlowMonitor.enter(a);
+        try {
+            DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(-200), true);
+            DeviceFlowMonitor.Reading inner = DeviceFlowMonitor.enter(b);
+            try {
+                DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(400), true);
+            } finally {
+                DeviceFlowMonitor.leave(inner);
+            }
+            DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(-200), true);
+        } finally {
+            DeviceFlowMonitor.leave(outer);
+        }
+        assertEquals(20, first.average(0));
+        assertEquals(0, first.average(1));
+        assertEquals(0, second.average(0));
+        assertEquals(20, second.average(1));
+    }
+
+    @Test
+    public void bigIntegerThresholdIsExactAndOrdinaryLongBucketsKeepTheirPrecision() throws Exception {
+        Object normal = new Object(), large = new Object();
+        DeviceFlowMonitor.Reading ordinary = DeviceFlowMonitor.watch(normal, 100);
+        DeviceFlowMonitor.Reading oversized = DeviceFlowMonitor.watch(large, 100);
+        java.math.BigInteger boundary = java.math.BigInteger.valueOf(Long.MAX_VALUE);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(normal);
+        DeviceFlowMonitor.wirelessTransaction(boundary, true);
+        DeviceFlowMonitor.leave(previous);
+        previous = DeviceFlowMonitor.enter(large);
+        DeviceFlowMonitor.wirelessTransaction(boundary.add(java.math.BigInteger.ONE), true);
+        DeviceFlowMonitor.leave(previous);
+        java.lang.reflect.Field extra = DeviceFlowMonitor.Reading.class.getDeclaredField("oversizedValues");
+        extra.setAccessible(true);
+        assertNull(extra.get(ordinary));
+        assertNotNull(extra.get(oversized));
+        assertEquals(Long.MAX_VALUE / 20, ordinary.average(1));
+        assertEquals((double) (Long.MAX_VALUE / 20), oversized.average(1), 1024);
+    }
+
+    @Test
+    public void enormousWirelessVolumeSaturatesInstantAndKeepsIntervalFinite() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 1000);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        java.math.BigInteger enormous = java.math.BigInteger.TEN.pow(400);
+        DeviceFlowMonitor.wirelessTransaction(enormous, true);
+        DeviceFlowMonitor.wirelessTransaction(enormous, true);
+        DeviceFlowMonitor.leave(previous);
+        assertEquals(Long.MAX_VALUE, reading.average(1));
+        DeviceFlowMonitor.tick(server, 120);
+        double rate = reading.consumeInterval()[1];
+        assertTrue(Double.isFinite(rate));
+        assertTrue(rate > 0);
+        assertEquals(0, reading.average(1));
+    }
 }

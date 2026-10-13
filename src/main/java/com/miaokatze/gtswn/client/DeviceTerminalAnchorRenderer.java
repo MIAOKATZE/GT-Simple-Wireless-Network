@@ -92,6 +92,8 @@ public final class DeviceTerminalAnchorRenderer {
     private int ticks;
     private int scanDimension;
     private int scanRange;
+    private int scanHeatSize;
+    private double scanSourceRange;
     private int scanLimit;
     private final HudText hudHint = new HudText();
     private final HudText hudNotice = new HudText();
@@ -149,6 +151,7 @@ public final class DeviceTerminalAnchorRenderer {
 
     private boolean moved(Minecraft mc) {
         return scanDimension != mc.theWorld.provider.dimensionId || scanRange != range()
+            || scanHeatSize != DeviceEnergyVisualMath.validHeatSize(DeviceTerminalVisualConfig.heatSize)
             || scanLimit != limit()
             || DeviceTerminalAnchorMath
                 .distanceSquared(scanX, scanY, scanZ, mc.thePlayer.posX, eyeY(mc), mc.thePlayer.posZ) > 4D;
@@ -170,6 +173,8 @@ public final class DeviceTerminalAnchorRenderer {
         scanZ = mc.thePlayer.posZ;
         scanDimension = mc.theWorld.provider.dimensionId;
         scanRange = range();
+        scanHeatSize = DeviceEnergyVisualMath.validHeatSize(DeviceTerminalVisualConfig.heatSize);
+        scanSourceRange = DeviceEnergyVisualMath.sourceRange(scanRange, scanHeatSize);
         scanLimit = limit();
     }
 
@@ -190,8 +195,7 @@ public final class DeviceTerminalAnchorRenderer {
             if (entry.dim != scanDimension) continue;
             double distance = distance(entry, scanX, scanY, scanZ);
             // Keep sources whose heat halo reaches the range boundary; label and travel selection retain scanRange.
-            double sourceRange = scanRange + DeviceEnergyVisualMath.MAX_ACTIVE_RADIUS + 1.1D;
-            if (!Double.isFinite(distance) || distance > sourceRange * sourceRange) continue;
+            if (!Double.isFinite(distance) || distance > scanSourceRange * scanSourceRange) continue;
             Anchor anchor = cached.get(entry.key);
             if (anchor == null) {
                 anchor = new Anchor(entry, distance);
@@ -285,7 +289,7 @@ public final class DeviceTerminalAnchorRenderer {
         if (steamCapable != anchor.steamCapable) anchor.textDirty = true;
         anchor.steamCapable = steamCapable;
         String status = !fresh ? "stale" : !loaded ? "unloaded" : !anchor.available ? "missing" : "";
-        int appearance = DeviceTerminalVisualConfig.appearanceKey();
+        long appearance = DeviceTerminalVisualConfig.appearanceKey();
         String language = mc.gameSettings.language;
         if (!anchor.textDirty && status.equals(anchor.status)
             && appearance == anchor.appearance
@@ -575,8 +579,12 @@ public final class DeviceTerminalAnchorRenderer {
         DeviceTerminalLabelLayout.combine(labelModelview, labelProjection, labelTransform);
     }
 
-    private static float labelScale(Entry entry, double x, double y, double z) {
-        return (float) Math.max(.027D, Math.min(.15D, .027D + Math.sqrt(distance(entry, x, y, z)) * .001D));
+    static float labelScale(Entry entry, double x, double y, double z) {
+        double original = Math.max(.027D, Math.min(.15D, .027D + Math.sqrt(distance(entry, x, y, z)) * .001D));
+        int size = Math.max(
+            DeviceTerminalVisualConfig.LABEL_SIZE_MIN,
+            Math.min(DeviceTerminalVisualConfig.LABEL_SIZE_MAX, DeviceTerminalVisualConfig.labelSize));
+        return (float) (original * 1.5D * size / DeviceTerminalVisualConfig.LABEL_SIZE_DEFAULT);
     }
 
     private static void markerEdge(Tessellator tess, double x0, double y0, double z0, double x1, double y1, double z1) {
@@ -586,8 +594,27 @@ public final class DeviceTerminalAnchorRenderer {
 
     private static boolean drawable(Anchor anchor, Minecraft mc, Frustrum frustum, double x, double y, double z) {
         Entry entry = anchor.entry;
-        return entry.dim == mc.theWorld.provider.dimensionId && distance(entry, x, eyeY(mc), z) <= range() * range()
-            && frustum.isBoundingBoxInFrustum(anchor.bounds);
+        if (entry.dim != mc.theWorld.provider.dimensionId || distance(entry, x, eyeY(mc), z) > range() * range())
+            return false;
+        if (frustum.isBoundingBoxInFrustum(anchor.bounds)) return true;
+        if (!DeviceTerminalVisualConfig.showLabels || anchor.lines.isEmpty()) return false;
+        updateLabelBounds(anchor, labelScale(entry, x, y, z));
+        return frustum.isBoundingBoxInFrustum(anchor.labelBounds);
+    }
+
+    static void updateLabelBounds(Anchor anchor, double scale) {
+        double half = anchor.width / 2D + 4D;
+        double bottom = 12D + anchor.lines.size() * 10D;
+        // A sphere about the billboard origin contains every corner for any camera yaw/pitch.
+        double radius = Math.sqrt(half * half + bottom * bottom) * scale;
+        Entry entry = anchor.entry;
+        anchor.labelBounds.setBounds(
+            entry.x + .5D - radius,
+            entry.y + 1.6D - radius,
+            entry.z + .5D - radius,
+            entry.x + .5D + radius,
+            entry.y + 1.6D + radius,
+            entry.z + .5D + radius);
     }
 
     private void drawLabel(Anchor anchor, Minecraft mc, double x, double y, double z, boolean labelBudget) {
@@ -758,6 +785,7 @@ public final class DeviceTerminalAnchorRenderer {
         Entry entry;
         double distance;
         final AxisAlignedBB bounds;
+        final AxisAlignedBB labelBounds;
         final List<String> lines = new ArrayList<>();
         boolean available;
         boolean loaded;
@@ -767,7 +795,7 @@ public final class DeviceTerminalAnchorRenderer {
         boolean textDirty = true;
         String status;
         String language;
-        int appearance;
+        long appearance;
         final List<Integer> lineWidths = new ArrayList<>();
         final AxisAlignedBB heatBounds;
         final AxisAlignedBB steamBounds;
@@ -793,6 +821,8 @@ public final class DeviceTerminalAnchorRenderer {
                 entry.z + 1.035D);
             this.bounds = AxisAlignedBB
                 .getBoundingBox(entry.x - 1D, entry.y, entry.z - 1D, entry.x + 2D, entry.y + 3D, entry.z + 2D);
+            labelBounds = AxisAlignedBB
+                .getBoundingBox(bounds.minX, bounds.minY, bounds.minZ, bounds.maxX, bounds.maxY, bounds.maxZ);
         }
     }
 }

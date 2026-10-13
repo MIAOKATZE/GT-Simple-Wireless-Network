@@ -8,6 +8,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
@@ -30,6 +31,7 @@ import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestPortableMonitor;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor;
+import com.miaokatze.gtswn.network.PortableMonitorIcon;
 
 import baubles.api.BaublesApi;
 import cpw.mods.fml.client.registry.ClientRegistry;
@@ -102,11 +104,7 @@ public final class PortableMonitorClientCache {
                 cache.value);
             request.targetPanel = cache.targetPanel;
             request.selected = cache.selected;
-            if (cache.selected >= 0 && cache.snapshot != null && cache.selected < cache.snapshot.panels.size()) {
-                PacketSyncPortableMonitor.Panel selected = cache.snapshot.panels.get(cache.selected);
-                request.selectedPanel = selected.binding.panelId;
-                if (selected.render != null) request.knownRenderVersion = selected.renderVersion;
-            }
+            selectRequest(request, stack, cache.snapshot);
             request.charts = Config.hudRenderMode == 2;
             String prefix = id + "/";
             int pinCount = 0;
@@ -137,13 +135,15 @@ public final class PortableMonitorClientCache {
 
     public static boolean action(ItemStack stack, int action, int value) {
         session();
+        stack = currentStack(stack);
         UUID id = MonitorBindings.id(stack);
         if (id == null) return false;
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
         if (busy(cache)) return false;
         if (action == 1) {
-            if (cache.snapshot == null || value < 0 || value >= cache.snapshot.panels.size()) return false;
-            cache.targetPanel = cache.snapshot.panels.get(value).binding.panelId;
+            PacketSyncPortableMonitor snapshot = snapshot(stack);
+            if (snapshot == null || value < 0 || value >= snapshot.panels.size()) return false;
+            cache.targetPanel = snapshot.panels.get(value).binding.panelId;
         } else cache.targetPanel = new UUID(0, 0);
         cache.action = action;
         cache.value = value;
@@ -152,11 +152,32 @@ public final class PortableMonitorClientCache {
         return true;
     }
 
+    /** Inventory S2F and snapshot replies can arrive on different ticks. Select from the newest credentials. */
+    public static void selectRequest(PacketRequestPortableMonitor request, ItemStack stack,
+        PacketSyncPortableMonitor snapshot) {
+        if (request.selected < 0) return;
+        List<MonitorBindings.Binding> bindings = MonitorBindings.read(stack);
+        if (snapshot != null && snapshot.bindingRevision >= MonitorBindings.revision(stack)) {
+            bindings = new ArrayList<>();
+            for (PacketSyncPortableMonitor.Panel panel : snapshot.panels) bindings.add(panel.binding);
+        }
+        if (bindings.isEmpty()) return;
+        request.selected = Math.min(request.selected, bindings.size() - 1);
+        request.selectedPanel = bindings.get(request.selected).panelId;
+        if (snapshot != null) for (PacketSyncPortableMonitor.Panel panel : snapshot.panels) {
+            if (panel.binding.panelId.equals(request.selectedPanel) && panel.render != null) {
+                request.knownRenderVersion = panel.renderVersion;
+                break;
+            }
+        }
+    }
+
     private static boolean busy(Cached cache) {
         return cache.action != 0 || cache.inFlight && cache.request.action != 0;
     }
 
     public static boolean canMutate(ItemStack stack) {
+        stack = currentStack(stack);
         EntityPlayer player = Minecraft.getMinecraft().thePlayer;
         return player != null && PortableWirelessNetworkMonitor.isMonitorBound(stack)
             && player.getUniqueID()
@@ -165,12 +186,14 @@ public final class PortableMonitorClientCache {
     }
 
     public static int mutationStatus(ItemStack stack) {
+        stack = currentStack(stack);
         Cached cache = CACHE.get(MonitorBindings.id(stack));
         return cache == null ? 0 : busy(cache) ? 4 : cache.result;
     }
 
     public static void viewing(ItemStack stack, int index) {
         session();
+        stack = currentStack(stack);
         UUID id = MonitorBindings.id(stack);
         if (id == null) return;
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
@@ -211,7 +234,6 @@ public final class PortableMonitorClientCache {
                     }
                 }
         }
-        cache.snapshot = response;
         if (cache.request.action != 0) {
             cache.result = response.result;
             if (cache.stack != null && cache.stack.stackTagCompound != null)
@@ -230,6 +252,20 @@ public final class PortableMonitorClientCache {
         }
         cache.receivedAt = System.currentTimeMillis();
         cache.inFlight = false;
+        cache.stack = currentStack(cache.stack);
+        if (response.bindingRevision < MonitorBindings.revision(cache.stack)) {
+            cache.dirty = true;
+            return;
+        }
+        cache.snapshot = response;
+        Set<UUID> retainedPanels = new HashSet<>();
+        for (PacketSyncPortableMonitor.Panel panel : response.panels) retainedPanels.add(panel.binding.panelId);
+        cache.views.keySet()
+            .retainAll(retainedPanels);
+        cache.viewVersions.keySet()
+            .retainAll(retainedPanels);
+        cache.viewSources.keySet()
+            .retainAll(retainedPanels);
         if (response.bindingRevision < cache.bindingRevision) cache.dirty = true;
         if (cache.request.selected >= 0 && !cache.request.selectedPanel.equals(new UUID(0, 0))) {
             boolean retained = false;
@@ -304,11 +340,14 @@ public final class PortableMonitorClientCache {
 
     public static PacketSyncPortableMonitor snapshot(ItemStack stack) {
         session();
+        stack = currentStack(stack);
         Cached cache = CACHE.get(MonitorBindings.id(stack));
-        return cache == null ? null : cache.snapshot;
+        return cache == null || cache.snapshot == null
+            || cache.snapshot.bindingRevision < MonitorBindings.revision(stack) ? null : cache.snapshot;
     }
 
     public static boolean stale(ItemStack stack) {
+        stack = currentStack(stack);
         Cached cache = CACHE.get(MonitorBindings.id(stack));
         return cache == null
             || System.currentTimeMillis() - cache.receivedAt > Math.max(10000, Config.hudUpdateInterval * 150L);
@@ -418,7 +457,9 @@ public final class PortableMonitorClientCache {
                 if (!pinned(snapshot.terminalId, panel, row)) continue;
                 String text = unavailable ? status : pinnedRowText(row, panel.displayMode);
                 if (text != null) lines.add(
-                    new PinnedLine("\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + text, new double[0]));
+                    new PinnedLine(
+                        row.kind == 0 ? "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + text : text,
+                        unavailable ? null : row.icon));
             }
             for (String pin : Config.hudPinnedEntries) {
                 if (!pin.startsWith(prefix) || PortableMonitorPins.component(pin.substring(prefix.length()))) continue;
@@ -577,6 +618,7 @@ public final class PortableMonitorClientCache {
         public final String currentText;
         public final TrendLinePalette palette;
         public final boolean euGraph;
+        public final PortableMonitorIcon icon;
 
         PinnedLine(String text, double[] chart) {
             this.text = text;
@@ -587,6 +629,19 @@ public final class PortableMonitorClientCache {
             this.currentText = "";
             this.palette = TrendLinePalette.DEFAULT;
             this.euGraph = true;
+            this.icon = null;
+        }
+
+        public PinnedLine(String text, PortableMonitorIcon icon) {
+            this.text = text;
+            this.chart = new double[0];
+            this.rateChart = new double[0];
+            this.graph = false;
+            this.change = 0;
+            this.currentText = "";
+            this.palette = TrendLinePalette.DEFAULT;
+            this.euGraph = true;
+            this.icon = icon;
         }
 
         public PinnedLine(String text, double[] chart, double[] rates, double change) {
@@ -607,6 +662,7 @@ public final class PortableMonitorClientCache {
             this.currentText = currentText;
             this.palette = palette;
             this.euGraph = euGraph;
+            this.icon = null;
         }
     }
 

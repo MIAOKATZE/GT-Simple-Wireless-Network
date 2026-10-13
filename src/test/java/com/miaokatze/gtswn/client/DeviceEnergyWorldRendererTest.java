@@ -3,11 +3,26 @@ package com.miaokatze.gtswn.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 public class DeviceEnergyWorldRendererTest {
+
+    private int previousHeatSize;
+
+    @Before
+    public void keepOriginalSizeForExistingCoreAndEnvelopeCases() {
+        previousHeatSize = DeviceTerminalVisualConfig.heatSize;
+        DeviceTerminalVisualConfig.heatSize = 1;
+    }
+
+    @After
+    public void restoreClientHeatSize() {
+        DeviceTerminalVisualConfig.heatSize = previousHeatSize;
+    }
 
     @Test
     public void boundsContainBothInterpolatedHeatRadiiWithoutChangingMachineCore() {
@@ -107,6 +122,52 @@ public class DeviceEnergyWorldRendererTest {
         assertEquals(visual.green, visual.blue, 0F);
         assertEquals(0, DeviceEnergyWorldRenderer.channels(entry((byte) 0, (byte) 1, (byte) 0, (byte) 3), false));
         assertEquals(0, DeviceEnergyWorldRenderer.channels(entry((byte) 0, (byte) 1, (byte) 2, (byte) 1), false));
+    }
+
+    @Test
+    public void largestLegalSizeKeepsFiniteEnvelopeAndOriginalCoreAtWorldEdge() {
+        DeviceTerminalVisualConfig.setHeatSize(1000);
+        Entry entry = new Entry(
+            "0:30000000:255:-30000000",
+            "Machine",
+            (byte) 1,
+            (byte) 0,
+            32L,
+            0L,
+            32D,
+            0D,
+            0,
+            30000000,
+            255,
+            -30000000,
+            "",
+            "");
+        DeviceTerminalAnchorRenderer.Anchor anchor = new DeviceTerminalAnchorRenderer.Anchor(entry, 0D);
+        DeviceEnergyWorldRenderer.Visual visual = new DeviceEnergyWorldRenderer.Visual(
+            anchor,
+            false,
+            false,
+            32D,
+            false);
+        visual.intensity = 1D;
+        visual.previousRadius = 28D;
+        visual.updateAppearance();
+        assertEquals(2800D, visual.radius, 0D);
+        assertEquals(2800D, visual.extent, 0D);
+        assertEquals(visual.centerX - 2800D, visual.box.minX, 0D);
+        assertEquals(visual.centerZ + 2800D, visual.box.maxZ, 0D);
+        assertTrue(Double.isFinite(visual.box.minX));
+        assertTrue(Double.isFinite(visual.box.maxY));
+        assertEquals(30000000D - .012D, visual.coreBox.minX, 0D);
+        assertEquals(30000000D - 1D, anchor.bounds.minX, 0D);
+        DeviceTerminalVisualConfig.setHeatSize(1);
+        visual.previousRadius = visual.radius;
+        visual.updateAppearance();
+        assertEquals(2.8D, visual.radius, 0D);
+        assertEquals(visual.centerX - 2800D, visual.box.minX, 0D);
+        visual.previousRadius = visual.radius;
+        visual.updateBounds();
+        assertEquals(visual.centerX - 2.8D, visual.box.minX, 0D);
     }
 
     private static Entry entry(byte kind, byte capabilities, byte mode, byte state) {

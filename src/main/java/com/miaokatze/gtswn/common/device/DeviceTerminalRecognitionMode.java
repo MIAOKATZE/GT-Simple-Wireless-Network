@@ -68,13 +68,15 @@ public final class DeviceTerminalRecognitionMode {
         }
         if (!DeviceMachineTypes.isWorkingMachine(machine)) return -1;
         UUID terminalId = ItemDeviceInfoTerminal.ensureTerminalIdSynced(player, terminal);
-        byte result = store.cycleRecognition(terminalId, key, metaTileId, DeviceSteamAdapter.capabilityMask(machine));
+        byte result = store
+            .cycleRecognition(terminalId, key, metaTileId, DeviceSteamAdapter.capabilityMask(machine), machine);
         if (result >= 0) {
             DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
             boolean watchedElsewhere = false;
             for (java.util.Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : store.getActiveTerminals()) {
                 if (entry.getValue().boundKeys.contains(key)
-                    && store.recognitionMode(entry.getKey(), key, metaTileId) != IGNORE) watchedElsewhere = true;
+                    && store.recognitionMode(entry.getKey(), key, metaTileId, machine) != IGNORE)
+                    watchedElsewhere = true;
             }
             if (!watchedElsewhere) DeviceFlowMonitor.forget(machine);
             DeviceTerminalRequestQueue.invalidate(player);

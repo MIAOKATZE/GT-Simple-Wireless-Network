@@ -9,6 +9,9 @@ import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
+import org.lwjgl.input.Keyboard;
+import org.lwjgl.opengl.GL11;
+
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalVisualConfig;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
@@ -18,7 +21,10 @@ import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
 public final class GuiDeviceTerminalSettings extends GuiScreen {
 
     private static final int WIDTH = 360;
-    private static final int HEIGHT = 276;
+    private static final int HEIGHT = 328;
+    private int screenWidth;
+    private int screenHeight;
+    private GuiCanvas canvas;
     private int left;
     private int top;
     private int panelWidth;
@@ -31,6 +37,13 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     private int shownCost = -1;
     private boolean shownPermission;
     private GuiTextField cost;
+    private GuiTextField heatSize;
+    private GuiTextField labelSize;
+    private String heatSizeNotice = "";
+    private String labelSizeNotice = "";
+    private boolean heatSizeInvalid;
+    private boolean labelSizeInvalid;
+    private boolean buttonsDirty;
     private final ItemStack stack;
 
     public GuiDeviceTerminalSettings() {
@@ -47,20 +60,53 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     }
 
     @Override
+    public void setWorldAndResolution(Minecraft client, int width, int height) {
+        screenWidth = width;
+        screenHeight = height;
+        super.setWorldAndResolution(client, width, height);
+    }
+
+    @Override
     public void initGui() {
         DeviceTerminalVisualConfig.load();
-        panelWidth = Math.min(WIDTH, width - 12);
-        panelHeight = Math.min(HEIGHT, height - 12);
+        if (screenWidth == 0 || screenHeight == 0) {
+            screenWidth = width;
+            screenHeight = height;
+        }
+        canvas = new GuiCanvas(screenWidth, screenHeight, WIDTH, HEIGHT);
+        width = canvas.width;
+        height = canvas.height;
+        panelWidth = WIDTH;
+        panelHeight = HEIGHT;
         columnWidth = (panelWidth - 36) / 2;
         rightColumn = 24 + columnWidth;
-        rowGap = Math.min(24, Math.max(16, (panelHeight - 126) / 6));
+        rowGap = 22;
         left = (width - panelWidth) / 2;
         top = (height - panelHeight) / 2;
+        String costDraft = cost == null ? Integer.toString(DeviceTerminalClientCache.teleportCost()) : cost.getText();
+        boolean costFocused = cost != null && cost.isFocused();
         cost = new GuiTextField(fontRendererObj, left + 12, top + 84, panelWidth - 120, 18);
         cost.setMaxStringLength(7);
         cost.setEnabled(DeviceTerminalClientCache.canConfigure());
-        shownCost = -1;
+        cost.setText(costDraft);
+        cost.setFocused(costFocused);
+        if (shownCost < 0) {
+            shownCost = DeviceTerminalClientCache.teleportCost();
+            shownPermission = DeviceTerminalClientCache.canConfigure();
+        }
+        heatSize = sizeField(heatSize, DeviceTerminalVisualConfig.heatSize);
+        labelSize = sizeField(labelSize, DeviceTerminalVisualConfig.labelSize);
         rebuild();
+    }
+
+    private GuiTextField sizeField(GuiTextField previous, int configuredValue) {
+        String draft = previous == null ? Integer.toString(configuredValue) : previous.getText();
+        boolean focused = previous != null && previous.isFocused();
+        GuiTextField field = new GuiTextField(fontRendererObj, left + rightColumn, top + 48 + rowGap * 6, 64, 18);
+        field.setMaxStringLength(10);
+        field.setText(draft);
+        field.setFocused(focused);
+        return field;
     }
 
     @SuppressWarnings("unchecked")
@@ -72,6 +118,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     }
 
     private void rebuild() {
+        buttonsDirty = false;
         buttonList.clear();
         int tabWidth = (panelWidth - 32) / 3;
         button(0, 12, 25, tabWidth, tr("tab.visual"));
@@ -131,6 +178,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                 48 + rowGap * 5,
                 columnWidth,
                 label("limit", Integer.toString(DeviceTerminalVisualConfig.maxDevices)));
+            button(21, rightColumn + 72, 48 + rowGap * 6, columnWidth - 72, tr("apply"));
         } else if (tab == 4) {
             button(40, 12, 48, panelWidth - 24, toggle("labels", DeviceTerminalVisualConfig.showLabels));
             button(41, 12, 48 + rowGap, columnWidth, toggle("labels.name", DeviceTerminalVisualConfig.showLabelName));
@@ -176,6 +224,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                 48 + rowGap * 5,
                 panelWidth - 24,
                 label("labels.budget", Integer.toString(DeviceTerminalVisualConfig.labelBudget)));
+            button(49, rightColumn + 72, 48 + rowGap * 6, columnWidth - 72, tr("apply"));
         } else if (DeviceTerminalClientCache.canConfigure()) {
             button(30, panelWidth - 96, 84, 84, tr("apply"));
             ((GuiButton) buttonList.get(buttonList.size() - 1)).enabled = DeviceTerminalClientCache.canConfigure();
@@ -185,6 +234,9 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     @Override
     public void updateScreen() {
         cost.updateCursorCounter();
+        heatSize.updateCursorCounter();
+        labelSize.updateCursorCounter();
+        if (buttonsDirty) rebuild();
         if (pollTicks++ % 20 == 0) {
             GTSWNPacketHandler.NETWORK.sendToServer(
                 DeviceTerminalClientCache
@@ -208,14 +260,19 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
             case 1:
             case 4:
                 tab = button.id;
+                heatSize.setFocused(false);
+                labelSize.setFocused(false);
+                cost.setFocused(false);
                 break;
             case 2:
+                if (!applyAllSizes()) return;
                 mc.displayGuiScreen(
                     new GuiDeviceInfoTerminal(
                         com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(stack),
                         stack));
                 return;
             case 3:
+                if (!applyAllSizes()) return;
                 mc.displayGuiScreen(null);
                 return;
             case 10:
@@ -259,6 +316,9 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                     DeviceTerminalVisualConfig.maxDevices,
                     new int[] { 64, 128, 256, 512 });
                 break;
+            case 21:
+                applySize(false);
+                break;
             case 40:
                 DeviceTerminalVisualConfig.showLabels = !DeviceTerminalVisualConfig.showLabels;
                 break;
@@ -292,6 +352,9 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                     DeviceTerminalVisualConfig.labelBudget,
                     new int[] { 8, 16, 24, 32, 48, 64 });
                 break;
+            case 49:
+                applySize(true);
+                break;
             case 30:
                 if (!DeviceTerminalClientCache.canConfigure()) return;
                 try {
@@ -310,17 +373,98 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                 return;
         }
         if (button.id >= 10 && button.id <= 20 || button.id >= 40 && button.id <= 48) DeviceTerminalVisualConfig.save();
-        rebuild();
+        // Native GuiScreen traverses buttonList while invoking this callback.
+        // Rebuild on the next update/draw so one click invokes one action.
+        buttonsDirty = true;
+    }
+
+    private Integer validatedSize(boolean labels) {
+        GuiTextField field = labels ? labelSize : heatSize;
+        int min = labels ? DeviceTerminalVisualConfig.LABEL_SIZE_MIN : DeviceTerminalVisualConfig.HEAT_SIZE_MIN;
+        int max = labels ? DeviceTerminalVisualConfig.LABEL_SIZE_MAX : DeviceTerminalVisualConfig.HEAT_SIZE_MAX;
+        Integer value = null;
+        try {
+            String input = field.getText()
+                .trim();
+            if (input.matches("[0-9]+")) {
+                int parsed = Integer.parseInt(input);
+                if (parsed >= min && parsed <= max) value = parsed;
+            }
+        } catch (NumberFormatException ignored) {}
+        if (value == null) {
+            if (labels) {
+                labelSizeNotice = tr("labels.size.invalid");
+                labelSizeInvalid = true;
+            } else {
+                heatSizeNotice = tr("heat.size.invalid");
+                heatSizeInvalid = true;
+            }
+        }
+        return value;
+    }
+
+    private boolean applySize(boolean labels) {
+        Integer value = validatedSize(labels);
+        if (value == null) return false;
+        if (labels) DeviceTerminalVisualConfig.setLabelSize(value);
+        else DeviceTerminalVisualConfig.setHeatSize(value);
+        DeviceTerminalVisualConfig.save();
+        sizeSaved(labels);
+        return true;
+    }
+
+    private void sizeSaved(boolean labels) {
+        if (labels) {
+            labelSizeNotice = tr("size.saved");
+            labelSizeInvalid = false;
+        } else {
+            heatSizeNotice = tr("size.saved");
+            heatSizeInvalid = false;
+        }
+    }
+
+    private boolean applyAllSizes() {
+        Integer heatValue = validatedSize(false);
+        Integer labelValue = validatedSize(true);
+        if (heatValue == null || labelValue == null) {
+            tab = heatValue == null ? 0 : 4;
+            buttonsDirty = true;
+            return false;
+        }
+        DeviceTerminalVisualConfig.setHeatSize(heatValue);
+        DeviceTerminalVisualConfig.setLabelSize(labelValue);
+        DeviceTerminalVisualConfig.save();
+        return true;
     }
 
     @Override
     protected void mouseClicked(int x, int y, int button) {
+        if (buttonsDirty) rebuild();
         super.mouseClicked(x, y, button);
         if (tab == 1) cost.mouseClicked(x, y, button);
+        if (tab == 0) heatSize.mouseClicked(x, y, button);
+        if (tab == 4) labelSize.mouseClicked(x, y, button);
     }
 
     @Override
     protected void keyTyped(char character, int keyCode) {
+        if (keyCode == Keyboard.KEY_ESCAPE) {
+            // The size hints explicitly identify Escape as discarding unapplied edits.
+            super.keyTyped(character, keyCode);
+            return;
+        }
+        GuiTextField activeSize = tab == 0 ? heatSize : tab == 4 ? labelSize : null;
+        if (activeSize != null && activeSize.isFocused()) {
+            if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
+                applySize(tab == 4);
+                return;
+            }
+            if (activeSize.textboxKeyTyped(character, keyCode)) {
+                if (tab == 0) heatSizeNotice = "";
+                else labelSizeNotice = "";
+                return;
+            }
+        }
         if (tab == 1 && cost.isFocused() && (Character.isDigit(character) || Character.isISOControl(character))) {
             if (cost.textboxKeyTyped(character, keyCode)) return;
         }
@@ -330,21 +474,59 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         drawDefaultBackground();
+        if (buttonsDirty) rebuild();
+        GL11.glPushAttrib(GL11.GL_TRANSFORM_BIT);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        try {
+            GL11.glScalef(canvas.scale, canvas.scale, 1F);
+            drawCanvas(canvas.mouse(mouseX), canvas.mouse(mouseY), partialTicks);
+        } finally {
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPopMatrix();
+            GL11.glPopAttrib();
+        }
+    }
+
+    private void drawSize(boolean labels) {
+        GuiTextField field = labels ? labelSize : heatSize;
+        drawString(
+            fontRendererObj,
+            fontRendererObj.trimStringToWidth(tr(labels ? "labels.size" : "heat.size"), columnWidth - 4),
+            left + 12,
+            top + 53 + rowGap * 6,
+            GtswnGuiPalette.TEXT_BODY);
+        field.drawTextBox();
+        fontRendererObj.drawSplitString(
+            tr(labels ? "labels.size.hint" : "heat.size.hint"),
+            left + 12,
+            top + 48 + rowGap * 6 + 22,
+            panelWidth - 24,
+            GtswnGuiPalette.TEXT_MUTED);
+        String notice = labels ? labelSizeNotice : heatSizeNotice;
+        boolean invalid = labels ? labelSizeInvalid : heatSizeInvalid;
+        drawString(
+            fontRendererObj,
+            notice,
+            left + 12,
+            top + 48 + rowGap * 6 + 45,
+            invalid ? GtswnGuiPalette.STATE_OFFLINE : GtswnGuiPalette.STATE_ONLINE);
+    }
+
+    private void drawCanvas(int mouseX, int mouseY, float partialTicks) {
         GtswnGuiDrawing.drawNetworkPanel(left, top, panelWidth, panelHeight, zLevel);
         drawCenteredString(fontRendererObj, tr("title"), left + panelWidth / 2, top + 8, GtswnGuiPalette.TEXT_TITLE);
         if (tab == 0) {
-            int legendY = top + 50 + rowGap * 6;
+            drawSize(false);
+            int legendY = top + 238;
             drawString(fontRendererObj, tr("legend.electric"), left + 12, legendY, 0xDF966A);
             drawString(fontRendererObj, tr("legend.steam"), left + 12, legendY + 11, 0xAEB6BC);
             fontRendererObj
                 .drawSplitString(tr("hint"), left + 12, legendY + 25, panelWidth - 24, GtswnGuiPalette.TEXT_MUTED);
         } else if (tab == 4) {
-            fontRendererObj.drawSplitString(
-                tr("labels.hint"),
-                left + 12,
-                top + 50 + rowGap * 6,
-                panelWidth - 24,
-                GtswnGuiPalette.TEXT_MUTED);
+            drawSize(true);
+            fontRendererObj
+                .drawSplitString(tr("labels.hint"), left + 12, top + 238, panelWidth - 24, GtswnGuiPalette.TEXT_MUTED);
         } else {
             drawString(fontRendererObj, tr("cost"), left + 12, top + 62, GtswnGuiPalette.TEXT_BODY);
             cost.drawTextBox();

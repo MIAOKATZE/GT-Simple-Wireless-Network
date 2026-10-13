@@ -44,8 +44,8 @@ public final class DeviceEnergyWorldRenderer {
     private long buildEpoch;
     private int cursor;
     private int ticks;
-    private int appearance;
-    private int buildAppearance;
+    private long appearance;
+    private long buildAppearance;
     private double maxElectric;
     private double maxSteam;
     private double buildElectricMax;
@@ -83,7 +83,7 @@ public final class DeviceEnergyWorldRenderer {
         DeviceTerminalAnchorRenderer worldView = DeviceTerminalAnchorRenderer.INSTANCE;
         ticks++;
         // Networking and World/TileEntity checks belong exclusively to the shared anchor world view.
-        int settings = DeviceTerminalVisualConfig.appearanceKey();
+        long settings = DeviceTerminalVisualConfig.appearanceKey();
         if (source != null && (buildEpoch != worldView.dataEpoch() || buildAppearance != settings)) {
             source = null;
             building.clear();
@@ -438,7 +438,7 @@ public final class DeviceEnergyWorldRenderer {
 
         void updateAppearance() {
             if (ignored) previousRadius = 0D;
-            radius = neutral ? 0D : DeviceEnergyVisualMath.radius(intensity);
+            radius = neutral ? 0D : DeviceEnergyVisualMath.radius(intensity, DeviceTerminalVisualConfig.heatSize);
             updateBounds();
             float strength = (float) intensity;
             if (neutral) {

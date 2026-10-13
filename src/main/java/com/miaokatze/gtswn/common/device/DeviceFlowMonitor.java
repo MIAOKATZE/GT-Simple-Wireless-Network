@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.device;
 
+import java.math.BigInteger;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -13,6 +14,7 @@ public final class DeviceFlowMonitor {
 
     public static final int MAX_TRACKED = 8192;
     private static final int WINDOW = 20;
+    private static final BigInteger LONG_MAX = BigInteger.valueOf(Long.MAX_VALUE);
     private static final Map<Object, Reading> TRACKED = new IdentityHashMap<>();
     private static long now;
     private static Object serverIdentity;
@@ -22,6 +24,8 @@ public final class DeviceFlowMonitor {
     public static final class Reading {
 
         private final long[][] values = new long[4][WINDOW];
+        /** Allocated only for transactions larger than the ordinary long bucket range. */
+        private double[][] oversizedValues;
         private final long[] ticks = new long[WINDOW];
         private long expires;
         private final double[] totals = new double[4];
@@ -38,16 +42,29 @@ public final class DeviceFlowMonitor {
         }
 
         private void add(int channel, double amount) {
+            add(channel, amount, false);
+        }
+
+        private void add(int channel, double amount, boolean oversized) {
             if (amount <= 0) return;
             if (channel >= 2) sawSteam = true;
             int slot = (int) Math.floorMod(now, (long) WINDOW);
             if (ticks[slot] != now) {
                 ticks[slot] = now;
                 for (long[] value : values) value[slot] = 0;
+                if (oversizedValues != null) for (double[] value : oversizedValues) value[slot] = 0;
             }
-            long bucketAmount = amount >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) amount;
-            values[channel][slot] = saturatingAdd(values[channel][slot], bucketAmount);
-            totals[channel] += amount;
+            amount = finiteAmount(amount);
+            if (oversizedValues != null && oversizedValues[channel][slot] > 0)
+                oversizedValues[channel][slot] = finiteAdd(oversizedValues[channel][slot], amount);
+            else if (oversized || amount > (double) Long.MAX_VALUE) {
+                if (oversizedValues == null) oversizedValues = new double[4][WINDOW];
+                oversizedValues[channel][slot] = finiteAdd(values[channel][slot], amount);
+            } else {
+                long bucketAmount = amount >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) amount;
+                values[channel][slot] = saturatingAdd(values[channel][slot], bucketAmount);
+            }
+            totals[channel] = finiteAdd(totals[channel], amount);
         }
 
         /** Since-last-sample volume divided by elapsed ticks, retaining periodic bursts in long-term averages. */
@@ -73,11 +90,20 @@ public final class DeviceFlowMonitor {
         public long average(int channel) {
             long quotient = 0;
             long remainder = 0;
+            double oversizedAverage = 0;
             for (int i = 0; i < WINDOW; i++) {
                 if (ticks[i] <= now && ticks[i] > now - WINDOW) {
-                    quotient += values[channel][i] / WINDOW;
-                    remainder += values[channel][i] % WINDOW;
+                    if (oversizedValues != null && oversizedValues[channel][i] > 0)
+                        oversizedAverage = finiteAdd(oversizedAverage, oversizedValues[channel][i] / WINDOW);
+                    else {
+                        quotient += values[channel][i] / WINDOW;
+                        remainder += values[channel][i] % WINDOW;
+                    }
                 }
+            }
+            if (oversizedAverage > 0) {
+                double average = finiteAdd(oversizedAverage, quotient + remainder / WINDOW);
+                return average >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) average;
             }
             return quotient + remainder / WINDOW;
         }
@@ -174,6 +200,16 @@ public final class DeviceFlowMonitor {
         if (active()) current.add(output ? 3 : 2, amount);
     }
 
+    /** Canonical committed transaction only: negative = actual controller withdrawal, positive = deposit. */
+    public static void wirelessTransaction(BigInteger signedAmount, boolean committed) {
+        if (!committed || !active() || signedAmount == null || signedAmount.signum() == 0) return;
+        BigInteger magnitude = signedAmount.abs();
+        current.add(
+            signedAmount.signum() < 0 ? 0 : 1,
+            finiteAmount(magnitude.doubleValue()),
+            magnitude.compareTo(LONG_MAX) > 0);
+    }
+
     /** EU buffer mutations during a monitored controller call: decrease = consumption, increase = production. */
     public static void energyChange(long before, long after, boolean steamStorage) {
         energyChange(null, before, after, steamStorage);
@@ -205,5 +241,13 @@ public final class DeviceFlowMonitor {
 
     static long saturatingAdd(long a, long b) {
         return b > Long.MAX_VALUE - a ? Long.MAX_VALUE : a + b;
+    }
+
+    static double finiteAmount(double amount) {
+        return Double.isNaN(amount) || amount <= 0 ? 0 : Math.min(amount, Double.MAX_VALUE);
+    }
+
+    static double finiteAdd(double a, double b) {
+        return a >= Double.MAX_VALUE - b ? Double.MAX_VALUE : a + b;
     }
 }

@@ -18,6 +18,14 @@ public final class PortableHudLayout {
         return line.graph ? maximum : Math.min(maximum, Math.max(1, textWidth));
     }
 
+    public static int iconColumn(PinnedLine line, int renderMode) {
+        return line.icon == null ? 0 : height(line, renderMode) + 2;
+    }
+
+    public static int width(PinnedLine line, int textWidth, int maximum, int renderMode) {
+        return width(line, textWidth + iconColumn(line, renderMode), maximum);
+    }
+
     public static List<List<PinnedLine>> pages(List<PinnedLine> lines, int rows, int availableHeight, int renderMode) {
         List<List<PinnedLine>> pages = new ArrayList<>();
         List<PinnedLine> page = new ArrayList<>();

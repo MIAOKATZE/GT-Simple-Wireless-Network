@@ -94,7 +94,7 @@ public class DeviceEventHandler {
         String localName = mte.getLocalName();
         // 登记 / 覆盖（重放同位机器刷新 owner 与显示名，幂等）
         DeviceRegistryData.get(event.world)
-            .register(key, event.player.getUniqueID(), localName);
+            .register(key, event.player.getUniqueID(), localName, ((IGregTechTileEntity) te).getMetaTileID());
         // 放置者背包内的终端逐台自动绑定 + 轻提示（同时补登记活跃索引，覆盖会话内新获得终端）
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(event.world);
         byte powerType = DeviceMachineTypes.isGeneratorMachine(mte)

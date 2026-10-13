@@ -64,6 +64,8 @@ public class DeviceSampleScheduler {
     /** runningSum 会话缓存条目：上次推进后的三通道 (sum, sumIn, sumOut) 与 (idx, count)，须与记录状态一致才可增量推进 */
     private static final class FifoState {
 
+        final int[] nonzero = new int[4];
+
         /** 流入通道（fifoIn）有效样本之和 */
         double sumIn;
 
@@ -199,7 +201,7 @@ public class DeviceSampleScheduler {
             boolean observable = false;
             for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
                 if (entry.getValue().boundKeys.contains(key)
-                    && store.recognitionMode(entry.getKey(), key, liveMetaTileId)
+                    && store.recognitionMode(entry.getKey(), key, liveMetaTileId, mte)
                         != DeviceTerminalRecognitionMode.IGNORE)
                     observable = true;
             }
@@ -269,7 +271,7 @@ public class DeviceSampleScheduler {
                     data.records.put(key, record);
                 }
                 // 增量均值：输入/输出双通道共用 (idx, count) 滚动；净值由下游派生。
-                byte recognitionMode = store.recognitionMode(entry.getKey(), key, metaTileId);
+                byte recognitionMode = store.recognitionMode(entry.getKey(), key, metaTileId, mte);
                 if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE) {
                     if (record.recognitionMode != recognitionMode
                         || record.state != DeviceTerminalDataStore.STATE_IGNORED) {
@@ -314,16 +316,40 @@ public class DeviceSampleScheduler {
                 double nextSteamInAvg = record.steamAvgIn, nextSteamOutAvg = record.steamAvgOut;
                 if (sampleEvidence <= 1) {
                     FifoState window = fifoState(key, entry.getKey(), record);
-                    double runningSumIn = FifoMath
-                        .push(record.fifoIn, record.idx, record.count, window.sumIn, sampleInterval[0]);
-                    double runningSumOut = FifoMath
-                        .push(record.fifoOut, record.idx, record.count, window.sumOut, sampleInterval[1]);
+                    double runningSumIn = FifoMath.pushScaled(
+                        record.fifoIn,
+                        record.idx,
+                        record.count,
+                        window.sumIn,
+                        sampleInterval[0],
+                        window.nonzero,
+                        0);
+                    double runningSumOut = FifoMath.pushScaled(
+                        record.fifoOut,
+                        record.idx,
+                        record.count,
+                        window.sumOut,
+                        sampleInterval[1],
+                        window.nonzero,
+                        1);
                     record.fifoIn[record.idx] = sampleInterval[0];
                     record.fifoOut[record.idx] = sampleInterval[1];
-                    double sumSteamIn = FifoMath
-                        .push(record.fifoSteamIn, record.idx, record.count, window.sumSteamIn, sampleInterval[2]);
-                    double sumSteamOut = FifoMath
-                        .push(record.fifoSteamOut, record.idx, record.count, window.sumSteamOut, sampleInterval[3]);
+                    double sumSteamIn = FifoMath.pushScaled(
+                        record.fifoSteamIn,
+                        record.idx,
+                        record.count,
+                        window.sumSteamIn,
+                        sampleInterval[2],
+                        window.nonzero,
+                        2);
+                    double sumSteamOut = FifoMath.pushScaled(
+                        record.fifoSteamOut,
+                        record.idx,
+                        record.count,
+                        window.sumSteamOut,
+                        sampleInterval[3],
+                        window.nonzero,
+                        3);
                     record.fifoSteamIn[record.idx] = sampleInterval[2];
                     record.fifoSteamOut[record.idx] = sampleInterval[3];
                     window.sumSteamIn = sumSteamIn;
@@ -336,10 +362,10 @@ public class DeviceSampleScheduler {
                     window.sumOut = runningSumOut;
                     window.idx = record.idx;
                     window.count = record.count;
-                    nextInAvg = FifoMath.avg(runningSumIn, record.count);
-                    nextOutAvg = FifoMath.avg(runningSumOut, record.count);
-                    nextSteamInAvg = FifoMath.avg(sumSteamIn, record.count);
-                    nextSteamOutAvg = FifoMath.avg(sumSteamOut, record.count);
+                    nextInAvg = FifoMath.scaledAvg(runningSumIn, record.count, DeviceTerminalDataStore.FIFO_SIZE);
+                    nextOutAvg = FifoMath.scaledAvg(runningSumOut, record.count, DeviceTerminalDataStore.FIFO_SIZE);
+                    nextSteamInAvg = FifoMath.scaledAvg(sumSteamIn, record.count, DeviceTerminalDataStore.FIFO_SIZE);
+                    nextSteamOutAvg = FifoMath.scaledAvg(sumSteamOut, record.count, DeviceTerminalDataStore.FIFO_SIZE);
                 }
                 byte nextCapabilities = recognitionMode == DeviceTerminalRecognitionMode.AUTO
                     && record.metaTileId == metaTileId
@@ -389,10 +415,10 @@ public class DeviceSampleScheduler {
         FifoState window = perKey != null ? perKey.get(terminalId) : null;
         if (window == null || window.idx != record.idx || window.count != record.count) {
             window = new FifoState();
-            window.sumIn = FifoMath.rebuildSum(record.fifoIn, record.count);
-            window.sumOut = FifoMath.rebuildSum(record.fifoOut, record.count);
-            window.sumSteamIn = FifoMath.rebuildSum(record.fifoSteamIn, record.count);
-            window.sumSteamOut = FifoMath.rebuildSum(record.fifoSteamOut, record.count);
+            window.sumIn = FifoMath.rebuildScaledSum(record.fifoIn, record.count, window.nonzero, 0);
+            window.sumOut = FifoMath.rebuildScaledSum(record.fifoOut, record.count, window.nonzero, 1);
+            window.sumSteamIn = FifoMath.rebuildScaledSum(record.fifoSteamIn, record.count, window.nonzero, 2);
+            window.sumSteamOut = FifoMath.rebuildScaledSum(record.fifoSteamOut, record.count, window.nonzero, 3);
             window.idx = record.idx;
             window.count = record.count;
             if (perKey == null) {

@@ -213,6 +213,28 @@ public final class DeviceScanManager {
                 if (scanStore.recognitionMode(state.terminalId, entry.getKey(), liveMeta)
                     == DeviceTerminalRecognitionMode.IGNORE) ignored.add(entry.getKey());
             }
+            // Loaded descriptors win over stale registry identity; all policy decisions remain on this thread.
+            scanStore.refreshRecognitionDefaults(state.terminalId);
+            Set<String> loadedKeys = new HashSet<>();
+            for (Candidate candidate : worldCandidates) {
+                loadedKeys.add(candidate.key);
+                if (scanStore.recognitionMode(state.terminalId, candidate.key, candidate.metaTileId)
+                    == DeviceTerminalRecognitionMode.IGNORE) ignored.add(candidate.key);
+                else ignored.remove(candidate.key);
+            }
+            for (Map.Entry<String, DeviceEntry> entry : registry.entrySet()) {
+                if (loadedKeys.contains(entry.getKey())) continue;
+                int metaTileId = entry.getValue().metaTileId;
+                DeviceTerminalDataStore.MachineRecord record = terminal.records.get(entry.getKey());
+                if (metaTileId < 0 && record != null) metaTileId = record.metaTileId;
+                if (scanStore.recognitionMode(state.terminalId, entry.getKey(), metaTileId)
+                    == DeviceTerminalRecognitionMode.IGNORE) ignored.add(entry.getKey());
+                else ignored.remove(entry.getKey());
+            }
+            for (Map.Entry<String, DeviceTerminalDataStore.MachineRecord> entry : terminal.records.entrySet())
+                if (!loadedKeys.contains(entry.getKey())
+                    && entry.getValue().recognitionMode == DeviceTerminalRecognitionMode.IGNORE)
+                    ignored.add(entry.getKey());
             final Set<String> ignoredCopy = ignored;
             final Set<UUID> teamCopy = team;
             final Map<String, DeviceEntry> registryCopy = registry;
@@ -284,7 +306,8 @@ public final class DeviceScanManager {
                     gtTE.getOwnerUuid(),
                     DeviceMachineTypes.isWorkingMachine(mte),
                     DeviceMachineTypes.isGeneratorMachine(mte),
-                    true));
+                    true,
+                    gtTE.getMetaTileID()));
         }
         return candidates;
     }
@@ -354,7 +377,8 @@ public final class DeviceScanManager {
                     null,
                     true,
                     false,
-                    false));
+                    false,
+                    entry.getValue().metaTileId));
         }
         // B) 世界源：D1 判别在快照时完成（workingMachine 标志），此处仅查标志（纯内存）
         for (Candidate candidate : worldCandidates) {
@@ -413,7 +437,7 @@ public final class DeviceScanManager {
                     String localName = candidate.localName;
                     byte powerType = candidate.generator ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
                         : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
-                    int metaTileId = -1;
+                    int metaTileId = candidate.metaTileId;
                     byte capabilities = DeviceSteamAdapter.legacyCapabilityMask((byte) 0, powerType);
                     byte energyKind = DeviceSteamAdapter.EU;
                     byte linkNodes = 0;
@@ -430,25 +454,29 @@ public final class DeviceScanManager {
                         capabilities = DeviceSteamAdapter.capabilityMask(mte);
                         energyKind = DeviceSteamAdapter.energyKind(capabilities);
                         linkNodes = DeviceMachineIdentity.linkNodeType(mte);
-                        powerType = (capabilities & DeviceSteamAdapter.EU_OUT) != 0
+                        powerType = DeviceMachineTypes.isGeneratorMachine(mte)
                             || (energyKind == DeviceSteamAdapter.STEAM
                                 && (capabilities & DeviceSteamAdapter.STEAM_OUT) != 0)
                                     ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
                                     : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
                         localName = mte.getLocalName();
-                        if (candidate.fromWorld) registry.register(candidate.key, candidate.ownerUuid, localName);
+                        DeviceEntry known = registry.getEntry(candidate.key);
+                        registry.register(
+                            candidate.key,
+                            known == null ? candidate.ownerUuid : known.owner,
+                            localName,
+                            metaTileId);
                     } else if (candidate.fromWorld) continue;
                     else {
                         DeviceTerminalDataStore.RecognitionOverride override = store
                             .getOrCreateTerminal(state.terminalId).recognitionOverrides.get(candidate.key);
-                        if (override != null && override.metaTileId >= 0
-                            && override.metaTileId < gregtech.api.GregTechAPI.METATILEENTITIES.length) {
-                            IMetaTileEntity prototype = gregtech.api.GregTechAPI.METATILEENTITIES[override.metaTileId];
+                        if (metaTileId < 0 && override != null) metaTileId = override.metaTileId;
+                        if (metaTileId >= 0 && metaTileId < gregtech.api.GregTechAPI.METATILEENTITIES.length) {
+                            IMetaTileEntity prototype = gregtech.api.GregTechAPI.METATILEENTITIES[metaTileId];
                             if (DeviceMachineTypes.isWorkingMachine(prototype)) {
-                                metaTileId = override.metaTileId;
                                 capabilities = DeviceSteamAdapter.capabilityMask(prototype);
                                 energyKind = DeviceSteamAdapter.energyKind(capabilities);
-                                powerType = (capabilities & DeviceSteamAdapter.EU_OUT) != 0
+                                powerType = DeviceMachineTypes.isGeneratorMachine(prototype)
                                     || (energyKind == DeviceSteamAdapter.STEAM
                                         && (capabilities & DeviceSteamAdapter.STEAM_OUT) != 0)
                                             ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
@@ -646,9 +674,16 @@ public final class DeviceScanManager {
 
         /** 是否世界源（true = 排水主线程需补登记 + 现查名） */
         final boolean fromWorld;
+        final int metaTileId;
 
         Candidate(String key, String localName, int dim, int x, int y, int z, UUID ownerUuid, boolean workingMachine,
             boolean generator, boolean fromWorld) {
+            this(key, localName, dim, x, y, z, ownerUuid, workingMachine, generator, fromWorld, -1);
+        }
+
+        Candidate(String key, String localName, int dim, int x, int y, int z, UUID ownerUuid, boolean workingMachine,
+            boolean generator, boolean fromWorld, int metaTileId) {
+            this.metaTileId = metaTileId;
             this.key = key;
             this.localName = localName;
             this.dim = dim;

@@ -16,6 +16,21 @@ import io.netty.buffer.Unpooled;
 public class PacketPortableMonitorTest {
 
     @Test
+    public void protocol58IsRejectedBeforeIconLayoutCanBeRead() {
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            new PacketSyncPortableMonitor(UUID.randomUUID(), 1, 1).toBytes(bytes);
+            bytes.setByte(4, 58);
+            PacketSyncPortableMonitor response = new PacketSyncPortableMonitor();
+            response.fromBytes(bytes);
+            assertFalse(response.valid);
+            assertTrue(response.panels.isEmpty());
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
     public void removalUsesStablePanelIdentityAndReceivesExplicitAcknowledgement() {
         PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(UUID.randomUUID(), 93, 1, 15);
         request.targetPanel = UUID.randomUUID();
@@ -285,6 +300,11 @@ public class PacketPortableMonitorTest {
 
     @Test
     public void maximumUtf8SnapshotRemainsBelowWireLimit() {
+        net.minecraftforge.fluids.FluidStack fluid = com.miaokatze.gtswn.test.FluidRegistryTestBootstrap.water(1000);
+        fluid.tag = new net.minecraft.nbt.NBTTagCompound();
+        fluid.tag.setString("identity", new String(new char[650]).replace('\0', 'x'));
+        PortableMonitorIcon icon = PortableMonitorIcon.of(fluid);
+        assertNotNull(icon);
         PacketSyncPortableMonitor original = new PacketSyncPortableMonitor(UUID.randomUUID(), 1, 1);
         String huge = new String(new char[1024]).replace('\0', '水');
         for (int i = 0; i < 16; i++) {
@@ -297,6 +317,7 @@ public class PacketPortableMonitorTest {
                 row.name = huge;
                 row.amount = huge;
                 row.kind = j == 0 ? 0 : 2;
+                row.icon = row.kind == 2 ? icon : null;
                 panel.rows.add(row);
             }
             panel.euChart = new double[61];

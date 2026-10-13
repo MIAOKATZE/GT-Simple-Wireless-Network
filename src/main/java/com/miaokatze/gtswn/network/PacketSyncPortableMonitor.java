@@ -14,7 +14,7 @@ import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
 import cpw.mods.fml.common.network.simpleimpl.MessageContext;
 import io.netty.buffer.ByteBuf;
 
-/** Bounded, read-only snapshots. No compressed NBT or world references cross the wire. */
+/** Bounded, read-only snapshots with small, uncompressed icon identities. */
 public final class PacketSyncPortableMonitor implements IMessage {
 
     public static final int MAX_ROWS = 514;
@@ -95,6 +95,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
                     row.average = finite(buf.readDouble());
                     row.kind = count(buf.readUnsignedByte(), 2);
                     row.monitored = buf.readBoolean();
+                    row.icon = PortableMonitorIcon.read(buf);
                     panel.rows.add(row);
                 }
                 panel.euChart = readChart(buf);
@@ -173,6 +174,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
                 buf.writeDouble(finite(row.average));
                 buf.writeByte(row.kind);
                 buf.writeBoolean(row.monitored);
+                PortableMonitorIcon.write(buf, row.icon);
             }
             writeChart(buf, panel.euChart);
             writeChart(buf, panel.aeChart);
@@ -256,6 +258,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
         public String key = "", name = "", amount = "";
         public double rate, average;
         public boolean monitored;
+        public PortableMonitorIcon icon;
     }
 
     public static final class Handler implements IMessageHandler<PacketSyncPortableMonitor, IMessage> {
