@@ -9,8 +9,6 @@ import gregtech.api.enums.ToolboxSlot;
 import gregtech.common.items.ItemGTToolbox;
 import gregtech.common.items.toolbox.ToolboxItemStackHandler;
 import gregtech.common.items.toolbox.ToolboxUtil;
-import ic2.api.item.IElectricItem;
-import ic2.api.item.ISpecialElectricItem;
 
 /** Only GT's dedicated toolbox is supported; no arbitrary nested inventory traversal. */
 final class ToolboxCharging {
@@ -67,8 +65,7 @@ final class ToolboxCharging {
             // The outer toolbox electric manager already charges its battery at the original per-tick rate.
             if (slot == inventory.batterySlot()) continue;
             ItemStack stack = inventory.get(slot);
-            if (stack != null && !inventory.isToolbox(stack)
-                && (stack.getItem() instanceof IElectricItem || stack.getItem() instanceof ISpecialElectricItem))
+            if (stack != null && !inventory.isToolbox(stack) && ItemCharging.supports(stack))
                 targets.add(new ChargingTarget(stack, INTERVAL));
         }
     }
