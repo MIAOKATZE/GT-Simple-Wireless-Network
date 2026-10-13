@@ -10,6 +10,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.event.world.ChunkEvent;
 
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.config.Config;
@@ -62,8 +63,18 @@ public class DeviceEventHandler {
             : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
         for (UUID terminalId : collectTerminalIds(event.player)) {
             DeviceTerminalDataStore.ensureActiveTerminal(event.player.getUniqueID(), terminalId);
-            DeviceTerminalDataStore.AddResult result = store
-                .addBinding(terminalId, key, localName, dim, event.x, event.y, event.z, powerType);
+            DeviceTerminalDataStore.AddResult result = store.addBinding(
+                terminalId,
+                key,
+                localName,
+                dim,
+                event.x,
+                event.y,
+                event.z,
+                powerType,
+                ((IGregTechTileEntity) te).getMetaTileID(),
+                DeviceSteamAdapter.energyKind(mte),
+                DeviceMachineIdentity.linkNodeType(mte));
             switch (result) {
                 case SUCCESS:
                     sendMessage(event.player, "gtswn.device.chat.auto_bound", localName);
@@ -90,6 +101,10 @@ public class DeviceEventHandler {
         if (event.world.isRemote) {
             return;
         }
+        TileEntity removedTile = event.world.getTileEntity(event.x, event.y, event.z);
+        if (removedTile instanceof IGregTechTileEntity) {
+            DeviceFlowMonitor.forget(((IGregTechTileEntity) removedTile).getMetaTileEntity());
+        }
         String key = DeviceRegistryData.makeKey(event.world.provider.dimensionId, event.x, event.y, event.z);
         DeviceRegistryData registry = DeviceRegistryData.get(event.world);
         if (registry.unregister(key)) {
@@ -99,6 +114,16 @@ public class DeviceEventHandler {
     }
 
     // ==================== 登录 / 登出：活跃终端索引 ====================
+
+    /** Loaded chunk lifecycle releases watched machine references immediately. No other chunks are queried. */
+    @SubscribeEvent
+    public void onChunkUnload(ChunkEvent.Unload event) {
+        if (event.world.isRemote) return;
+        for (Object tile : event.getChunk().chunkTileEntityMap.values()) {
+            if (tile instanceof IGregTechTileEntity)
+                DeviceFlowMonitor.forget(((IGregTechTileEntity) tile).getMetaTileEntity());
+        }
+    }
 
     /**
      * 玩家登录：扫描背包（含热栏）收集终端 UUID，登记活跃索引（阶段 C 采样调度只采活跃终端）。

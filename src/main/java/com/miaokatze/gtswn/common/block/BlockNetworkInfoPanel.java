@@ -103,6 +103,15 @@ public class BlockNetworkInfoPanel extends BlockContainer {
         }
         TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
         ItemStack heldItem = player.getHeldItem();
+        if (heldItem != null
+            && heldItem.getItem() instanceof com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor) {
+            if (player.isSneaking()) {
+                heldItem.getItem()
+                    .onItemRightClick(heldItem, world, player);
+                return true;
+            }
+            return com.miaokatze.gtswn.common.hud.MonitorBindings.bind(heldItem, player, panel);
+        }
         int currentTab = panel.getCurrentTab();
 
         // 仅当 AE 标签页激活且手持物品非空时，执行右键配置逻辑（仅服务端；客户端放行等待服务端处理）

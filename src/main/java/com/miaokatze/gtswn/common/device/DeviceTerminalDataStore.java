@@ -121,6 +121,11 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      */
     public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
         byte powerType) {
+        return addBinding(terminalId, key, localName, dim, x, y, z, powerType, -1, (byte) 0, (byte) 0);
+    }
+
+    public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
+        byte powerType, int metaTileId, byte energyKind, byte linkNodeType) {
         TerminalData data = getOrCreateTerminal(terminalId);
         if (data.boundKeys.contains(key)) {
             return AddResult.ALREADY_BOUND;
@@ -131,6 +136,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         data.boundKeys.add(key);
         MachineRecord record = new MachineRecord();
         record.name = localName;
+        record.metaTileId = metaTileId;
+        record.energyKind = energyKind;
+        record.linkNodeType = linkNodeType;
         record.powerType = powerType == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
         record.dim = dim;
         record.x = x;
@@ -159,6 +167,26 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             markDirty();
         }
         return removed;
+    }
+
+    /** Alias belongs to this terminal binding; the original machine name continues to be sampled independently. */
+    public boolean renameBinding(UUID terminalId, String key, String name, int color, boolean bold) {
+        String normalized = DeviceTerminalNameRules.normalize(name);
+        if (normalized == null || !DeviceTerminalNameRules.validColor(color)) return false;
+        TerminalData data = terminals.get(terminalId);
+        if (data == null || !data.boundKeys.contains(key)) return false;
+        MachineRecord record = data.records.get(key);
+        if (record == null) return false;
+        byte chosenColor = (byte) (normalized.isEmpty() ? DeviceTerminalNameRules.DEFAULT_COLOR : color);
+        boolean chosenBold = !normalized.isEmpty() && bold;
+        if (normalized.equals(record.displayName) && record.nameColor == chosenColor && record.nameBold == chosenBold)
+            return true;
+        record.displayName = normalized;
+        record.nameColor = chosenColor;
+        record.nameBold = chosenBold;
+        data.version++;
+        markDirty();
+        return true;
     }
 
     /**
@@ -323,10 +351,23 @@ public class DeviceTerminalDataStore extends WorldSavedData {
     public static final class MachineRecord {
 
         /** 流入方向 EU/t 环形缓冲；旧档缺键时保持全 0。 */
-        public final long[] fifoIn = new long[FIFO_SIZE];
+        public final double[] fifoIn = new double[FIFO_SIZE];
 
         /** 流出方向 EU/t 环形缓冲；旧档缺键时保持全 0。 */
-        public final long[] fifoOut = new long[FIFO_SIZE];
+        public final double[] fifoOut = new double[FIFO_SIZE];
+        public final double[] fifoSteamIn = new double[FIFO_SIZE];
+        public final double[] fifoSteamOut = new double[FIFO_SIZE];
+        public int metaTileId = -1;
+        public byte energyKind;
+        /** 0 observed, 1 provider model, 2 warming up, 3 unavailable. */
+        public byte evidenceKind = 2;
+        public byte linkNodeType;
+        public long instIn;
+        public long instOut;
+        public long steamInstIn;
+        public long steamInstOut;
+        public double steamAvgIn;
+        public double steamAvgOut;
 
         /** 环形写指针（下一个写入位，输入/输出双通道共用） */
         public int idx;
@@ -348,6 +389,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         /** 机器本地显示名（绑定 / 采样时刷新） */
         public String name = "";
+        public String displayName = "";
+        public byte nameColor = DeviceTerminalNameRules.DEFAULT_COLOR;
+        public boolean nameBold;
 
         /** 机器维度 */
         public int dim;
@@ -369,6 +413,18 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // 迁移语义：旧存储型净通道 fifo/avg 及其 NBT 键故意忽略；缺双通道键按 0，窗口自然回填。
             readFifo(tag, "fifoIn", fifoIn);
             readFifo(tag, "fifoOut", fifoOut);
+            readFifo(tag, "fifoSteamIn", fifoSteamIn);
+            readFifo(tag, "fifoSteamOut", fifoSteamOut);
+            metaTileId = tag.hasKey("metaTileId") ? tag.getInteger("metaTileId") : -1;
+            energyKind = tag.getByte("energyKind");
+            evidenceKind = 2;
+            linkNodeType = tag.getByte("linkNodeType");
+            instIn = tag.getLong("instIn");
+            instOut = tag.getLong("instOut");
+            steamInstIn = tag.getLong("steamInstIn");
+            steamInstOut = tag.getLong("steamInstOut");
+            steamAvgIn = tag.getDouble("steamAvgIn");
+            steamAvgOut = tag.getDouble("steamAvgOut");
             // 坏存档防御：idx 落到 [0, FIFO_SIZE)，count 落到 [0, FIFO_SIZE]，防采样越界 / 均值分母异常
             idx = ((tag.getInteger("idx") % FIFO_SIZE) + FIFO_SIZE) % FIFO_SIZE;
             count = Math.min(Math.max(tag.getInteger("count"), 0), FIFO_SIZE);
@@ -379,6 +435,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // v1.8.0 旧档兼容：缺 powerType 键时 getByte 返回 0（=耗电），非 1 值一律钳回耗电
             powerType = tag.getByte("powerType") == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
             name = tag.getString("name");
+            String alias = DeviceTerminalNameRules.normalize(tag.getString("displayName"));
+            displayName = alias == null ? "" : alias;
+            int color = tag.hasKey("nameColor") ? tag.getByte("nameColor") : DeviceTerminalNameRules.DEFAULT_COLOR;
+            nameColor = (byte) (!displayName.isEmpty() && DeviceTerminalNameRules.validColor(color) ? color
+                : DeviceTerminalNameRules.DEFAULT_COLOR);
+            nameBold = !displayName.isEmpty() && tag.getBoolean("nameBold");
             dim = tag.getInteger("dim");
             x = tag.getInteger("x");
             y = tag.getInteger("y");
@@ -394,6 +456,17 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // 不再写入存储型净通道 fifo/avg；净值由双通道派生。
             writeFifo(tag, "fifoIn", fifoIn);
             writeFifo(tag, "fifoOut", fifoOut);
+            writeFifo(tag, "fifoSteamIn", fifoSteamIn);
+            writeFifo(tag, "fifoSteamOut", fifoSteamOut);
+            tag.setInteger("metaTileId", metaTileId);
+            tag.setByte("energyKind", energyKind);
+            tag.setByte("linkNodeType", linkNodeType);
+            tag.setLong("instIn", instIn);
+            tag.setLong("instOut", instOut);
+            tag.setLong("steamInstIn", steamInstIn);
+            tag.setLong("steamInstOut", steamInstOut);
+            tag.setDouble("steamAvgIn", steamAvgIn);
+            tag.setDouble("steamAvgOut", steamAvgOut);
             tag.setInteger("idx", idx);
             tag.setInteger("count", count);
             tag.setDouble("inAvg", inAvg);
@@ -401,6 +474,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             tag.setInteger("state", state);
             tag.setByte("powerType", powerType);
             tag.setString("name", name == null ? "" : name);
+            tag.setString("displayName", displayName);
+            tag.setByte("nameColor", nameColor);
+            tag.setBoolean("nameBold", nameBold);
             tag.setInteger("dim", dim);
             tag.setInteger("x", x);
             tag.setInteger("y", y);
@@ -411,21 +487,21 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         }
 
         /** 读一条环形缓冲（键缺 / 旧档缺新键时 getTagList 返回空表 → 目标数组保持全 0；条目子键 "v"，三通道同构） */
-        private static void readFifo(NBTTagCompound tag, String key, long[] target) {
+        private static void readFifo(NBTTagCompound tag, String key, double[] target) {
             NBTTagList list = tag.getTagList(key, Constants.NBT.TAG_COMPOUND);
             int n = Math.min(list.tagCount(), target.length);
             for (int i = 0; i < n; i++) {
                 target[i] = list.getCompoundTagAt(i)
-                    .getLong("v");
+                    .getDouble("v");
             }
         }
 
         /** 写一条环形缓冲（条目子键 "v"，三通道同构） */
-        private static void writeFifo(NBTTagCompound tag, String key, long[] source) {
+        private static void writeFifo(NBTTagCompound tag, String key, double[] source) {
             NBTTagList list = new NBTTagList();
-            for (long value : source) {
+            for (double value : source) {
                 NBTTagCompound entry = new NBTTagCompound();
-                entry.setLong("v", value);
+                entry.setDouble("v", value);
                 list.appendTag(entry);
             }
             tag.setTag(key, list);

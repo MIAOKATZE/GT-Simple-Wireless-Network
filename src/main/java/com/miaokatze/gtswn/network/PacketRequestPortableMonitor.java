@@ -1,0 +1,108 @@
+package com.miaokatze.gtswn.network;
+
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+import cpw.mods.fml.common.network.simpleimpl.IMessage;
+import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
+import cpw.mods.fml.common.network.simpleimpl.MessageContext;
+import io.netty.buffer.ByteBuf;
+
+/** Bounded selection and pin intent; coordinates and screen credentials only come from server item NBT. */
+public final class PacketRequestPortableMonitor implements IMessage {
+
+    public UUID terminalId;
+    public int sequence;
+    public int action;
+    public int value;
+    public boolean valid;
+    public int selected = -1;
+    public boolean charts;
+    public final Map<UUID, Set<String>> pins = new HashMap<>();
+    public static final int MAX_PINS = 128;
+    public static final int MAX_BYTES = 40 * 1024;
+
+    public PacketRequestPortableMonitor() {}
+
+    public PacketRequestPortableMonitor(UUID terminalId, int sequence, int action, int value) {
+        this.terminalId = terminalId;
+        this.sequence = sequence;
+        this.action = action;
+        this.value = value;
+        valid = terminalId != null;
+    }
+
+    @Override
+    public void fromBytes(ByteBuf buf) {
+        valid = false;
+        if (buf.readableBytes() < 35 || buf.readableBytes() > MAX_BYTES) return;
+        try {
+            terminalId = new UUID(buf.readLong(), buf.readLong());
+            sequence = buf.readInt();
+            action = buf.readInt();
+            value = buf.readInt();
+            selected = buf.readInt();
+            charts = buf.readBoolean();
+            int count = buf.readUnsignedShort();
+            if (count > MAX_PINS) return;
+            for (int i = 0; i < count; i++) {
+                UUID panel = new UUID(buf.readLong(), buf.readLong());
+                int size = buf.readUnsignedShort();
+                if (size > 256 || size == 0) return;
+                byte[] bytes = new byte[size];
+                buf.readBytes(bytes);
+                String key = new String(bytes, StandardCharsets.UTF_8);
+                pins.computeIfAbsent(panel, ignored -> new HashSet<>())
+                    .add(key);
+            }
+            valid = action >= 0 && action <= 2
+                && (action != 1 || value >= 0 && value < 16)
+                && (action != 2 || value >= 0 && value <= 2)
+                && selected >= -1
+                && selected < 16
+                && !buf.isReadable();
+        } catch (RuntimeException invalid) {
+            pins.clear();
+        }
+    }
+
+    @Override
+    public void toBytes(ByteBuf buf) {
+        buf.writeLong(terminalId.getMostSignificantBits());
+        buf.writeLong(terminalId.getLeastSignificantBits());
+        buf.writeInt(sequence);
+        buf.writeInt(action);
+        buf.writeInt(value);
+        buf.writeInt(selected);
+        buf.writeBoolean(charts);
+        int count = 0;
+        for (Set<String> keys : pins.values()) count += keys.size();
+        if (count > MAX_PINS) throw new IllegalArgumentException("Too many monitor pins");
+        buf.writeShort(count);
+        for (Map.Entry<UUID, Set<String>> entry : pins.entrySet()) for (String key : entry.getValue()) {
+            byte[] bytes = key.getBytes(StandardCharsets.UTF_8);
+            if (bytes.length == 0 || bytes.length > 256) throw new IllegalArgumentException("Monitor pin key bound");
+            buf.writeLong(
+                entry.getKey()
+                    .getMostSignificantBits());
+            buf.writeLong(
+                entry.getKey()
+                    .getLeastSignificantBits());
+            buf.writeShort(bytes.length);
+            buf.writeBytes(bytes);
+        }
+    }
+
+    public static final class Handler implements IMessageHandler<PacketRequestPortableMonitor, IMessage> {
+
+        @Override
+        public IMessage onMessage(PacketRequestPortableMonitor message, MessageContext ctx) {
+            if (message.valid) PortableMonitorRequestQueue.enqueue(ctx.getServerHandler().playerEntity, message);
+            return null;
+        }
+    }
+}

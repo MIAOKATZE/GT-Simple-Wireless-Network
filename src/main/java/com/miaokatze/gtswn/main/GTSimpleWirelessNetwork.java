@@ -87,6 +87,8 @@ public class GTSimpleWirelessNetwork {
     @Mod.EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
         AnimationQualityHints.clear();
+        com.miaokatze.gtswn.common.device.DeviceFlowMonitor.clear();
+        com.miaokatze.gtswn.common.device.DeviceTerminalSettings.clear();
     }
 
     /**

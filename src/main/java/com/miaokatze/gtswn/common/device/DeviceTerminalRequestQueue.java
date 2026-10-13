@@ -111,6 +111,9 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
             if (overworld == null) {
                 return;
             }
+            DeviceTerminalSettings.get(overworld)
+                .sync(player);
+            com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.refresh(player, terminalId);
             DeviceTerminalDataStore store = DeviceTerminalDataStore.get(overworld);
             DeviceTerminalDataStore.TerminalData data = store.getOrCreateTerminal(terminalId);
             // 会话内新获得终端补登记活跃索引（否则采样调度跳过直到重登）
@@ -209,8 +212,8 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
                         record.name,
                         (byte) record.state,
                         record.powerType,
-                        latestSample(record, false),
-                        latestSample(record, true),
+                        record.instIn,
+                        record.instOut,
                         record.inAvg,
                         record.outAvg,
                         record.dim,
@@ -218,18 +221,22 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<EntityP
                         record.y,
                         record.z,
                         record.recipeIn,
-                        record.recipeOut));
+                        record.recipeOut,
+                        record.metaTileId,
+                        record.energyKind,
+                        record.evidenceKind,
+                        record.linkNodeType,
+                        record.steamInstIn,
+                        record.steamInstOut,
+                        record.steamAvgIn,
+                        record.steamAvgOut,
+                        record.displayName,
+                        record.nameColor,
+                        record.nameBold));
             }
             index++;
         }
         return batch;
-    }
-
-    /** FIFO 最新采样点（环形缓冲上一个写入位；无样本返回 0） */
-    private static long latestSample(DeviceTerminalDataStore.MachineRecord record, boolean output) {
-        if (record.count <= 0) return 0L;
-        long[] fifo = output ? record.fifoOut : record.fifoIn;
-        return fifo[(record.idx - 1 + DeviceTerminalDataStore.FIFO_SIZE) % DeviceTerminalDataStore.FIFO_SIZE];
     }
 
     /** 物品栏首台设备信息终端（手持优先，其次主背包扫描） */

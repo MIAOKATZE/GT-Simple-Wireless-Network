@@ -39,6 +39,9 @@ public class PacketDeviceTerminalAction implements IMessage {
     /** 动作：传送到指定机器 */
     public static final byte ACTION_TELEPORT = 3;
 
+    /** OP-only server-wide persisted teleport experience cost; key is a decimal integer. */
+    public static final byte ACTION_SET_TELEPORT_COST = 4;
+
     /** 排序列：机器名 */
     public static final byte COLUMN_NAME = 0;
 

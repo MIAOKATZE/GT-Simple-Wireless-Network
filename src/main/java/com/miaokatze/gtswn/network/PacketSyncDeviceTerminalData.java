@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -102,6 +103,17 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             buf.writeInt(entry.z);
             ByteBufUtils.writeUTF8String(buf, entry.recipeIn);
             ByteBufUtils.writeUTF8String(buf, entry.recipeOut);
+            buf.writeInt(entry.metaTileId);
+            buf.writeByte(entry.energyKind);
+            buf.writeByte(entry.evidenceKind);
+            buf.writeByte(entry.linkNodeType);
+            buf.writeLong(entry.steamInstIn);
+            buf.writeLong(entry.steamInstOut);
+            buf.writeDouble(entry.steamAvgIn);
+            buf.writeDouble(entry.steamAvgOut);
+            ByteBufUtils.writeUTF8String(buf, entry.displayName);
+            buf.writeByte(entry.nameColor);
+            buf.writeBoolean(entry.nameBold);
         }
     }
 
@@ -134,6 +146,17 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     int z = buf.readInt();
                     String recipeIn = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
                     String recipeOut = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
+                    int metaTileId = buf.readInt();
+                    byte energyKind = buf.readByte();
+                    byte evidenceKind = buf.readByte();
+                    byte linkNodeType = buf.readByte();
+                    long steamInstIn = buf.readLong();
+                    long steamInstOut = buf.readLong();
+                    double steamAvgIn = buf.readDouble();
+                    double steamAvgOut = buf.readDouble();
+                    String displayName = ByteBufUtils.readUTF8String(buf);
+                    byte nameColor = buf.readByte();
+                    boolean nameBold = buf.readBoolean();
                     // key 正则校验：非法键跳过该条（不阻断后续条目）
                     if (key == null || !KEY_PATTERN.matcher(key)
                         .matches()) {
@@ -154,7 +177,18 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                             y,
                             z,
                             recipeIn,
-                            recipeOut));
+                            recipeOut,
+                            metaTileId,
+                            energyKind,
+                            evidenceKind,
+                            linkNodeType,
+                            steamInstIn,
+                            steamInstOut,
+                            steamAvgIn,
+                            steamAvgOut,
+                            displayName,
+                            nameColor,
+                            nameBold));
                 } catch (Exception e) {
                     // 单条损坏（字符串长度越界等）：截断解析，保留已解析前缀
                     break;
@@ -260,8 +294,103 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         /** 当前执行配方输出侧描述（输出快照，近似，≤{@value #MAX_RECIPE_LEN} 字符） */
         public final String recipeOut;
 
+        public final String displayName;
+        public final byte nameColor;
+        public final boolean nameBold;
+        public final int metaTileId;
+        public final byte energyKind;
+        public final byte evidenceKind;
+        public final byte linkNodeType;
+        public final long steamInstIn;
+        public final long steamInstOut;
+        public final double steamAvgIn;
+        public final double steamAvgOut;
+
+        public long steamInstNet() {
+            return steamInstOut - steamInstIn;
+        }
+
+        public double steamAvgNet() {
+            return steamAvgOut - steamAvgIn;
+        }
+
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                -1,
+                (byte) 0,
+                (byte) 2,
+                (byte) 0,
+                0L,
+                0L,
+                0.0,
+                0.0);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte energyKind, byte evidenceKind, byte linkNodeType, long steamInstIn, long steamInstOut,
+            double steamAvgIn, double steamAvgOut) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                metaTileId,
+                energyKind,
+                evidenceKind,
+                linkNodeType,
+                steamInstIn,
+                steamInstOut,
+                steamAvgIn,
+                steamAvgOut,
+                "",
+                (byte) 15,
+                false);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte energyKind, byte evidenceKind, byte linkNodeType, long steamInstIn, long steamInstOut,
+            double steamAvgIn, double steamAvgOut, String displayName, byte nameColor, boolean nameBold) {
+            String normalized = DeviceTerminalNameRules.normalize(displayName);
+            this.displayName = normalized == null ? "" : normalized;
+            this.nameColor = (byte) (!this.displayName.isEmpty() && DeviceTerminalNameRules.validColor(nameColor)
+                ? nameColor
+                : DeviceTerminalNameRules.DEFAULT_COLOR);
+            this.nameBold = !this.displayName.isEmpty() && nameBold;
+            this.metaTileId = metaTileId;
+            this.energyKind = energyKind >= 0 && energyKind <= 2 ? energyKind : (byte) 0;
+            this.evidenceKind = evidenceKind >= 0 && evidenceKind <= 3 ? evidenceKind : (byte) 3;
+            this.linkNodeType = (byte) (linkNodeType & 3);
+            this.steamInstIn = Math.max(0, steamInstIn);
+            this.steamInstOut = Math.max(0, steamInstOut);
+            this.steamAvgIn = Double.isFinite(steamAvgIn) ? Math.max(0, steamAvgIn) : 0;
+            this.steamAvgOut = Double.isFinite(steamAvgOut) ? Math.max(0, steamAvgOut) : 0;
             this.key = key == null ? "" : key;
             this.name = truncate(name, MAX_NAME_LEN);
             this.state = state;

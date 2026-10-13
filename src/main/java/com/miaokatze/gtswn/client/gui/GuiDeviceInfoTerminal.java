@@ -15,12 +15,15 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
+import org.lwjgl.opengl.GL11;
+
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
+import com.miaokatze.gtswn.client.DeviceTerminalNames;
+import com.miaokatze.gtswn.client.DeviceTerminalVisualConfig;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
-import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
 import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
@@ -164,6 +167,8 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 滚动列表控件（initGui 创建） */
     private GuiDeviceEntryList entryList;
+    private GuiDeviceNameEditor nameEditor;
+    private float uiScale = 1.0F;
 
     /**
      * 构造：锚点 UUID + 初始 UI 偏好来源 stack（排序列/方向/计数法，只读）。
@@ -194,6 +199,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     @Override
     @SuppressWarnings("unchecked")
     public void initGui() {
+        DeviceTerminalVisualConfig.load();
+        // GuiScreen's native mouse handling uses width/height, so it shares this logical canvas.
+        uiScale = Math.min(1.0F, Math.min((width - 12.0F) / xSize, (height - 12.0F) / ySize));
+        uiScale = Math.max(0.1F, uiScale);
+        width = Math.round(width / uiScale);
+        height = Math.round(height / uiScale);
         this.guiLeft = (this.width - this.xSize) / 2;
         this.guiTop = (this.height - this.ySize) / 2;
         buttonList.clear();
@@ -209,6 +220,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         buttonList
             .add(new GtswnGuiButton(BTN_STATE_FILTER, this.guiLeft + 362, this.guiTop + 16, 80, 16, stateFilterText()));
         this.entryList = new GuiDeviceEntryList(this, this.guiLeft, this.guiTop);
+        if (nameEditor != null) nameEditor.relayout();
         refreshAnchor();
         refreshEntries();
     }
@@ -220,6 +232,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      */
     @Override
     public void updateScreen() {
+        if (nameEditor != null) nameEditor.update();
         refreshAnchor();
         refreshEntries();
         if (this.extraPollCooldown > 0) {
@@ -256,6 +269,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         this.anchorHeldSlot = player.inventory.currentItem;
         UUID resolved = resolveTerminalId();
         if (resolved != null && !resolved.equals(this.anchor)) {
+            closeNameEditor();
             this.anchor = resolved;
             this.displayedVersion = Long.MIN_VALUE;
             this.displayedEntryCount = -1;
@@ -332,6 +346,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             this.displayedEntryCount = snapshot.entries.size();
             this.sortDirty = false;
             List<Entry> copy = new ArrayList<>(snapshot.entries);
+            copy.removeIf(entry -> !matchesDisplayPreferences(entry));
             // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
             if (this.powerFilter != 0) {
                 copy.removeIf(entry -> !matchesPowerFilter(entry, this.powerFilter));
@@ -350,6 +365,32 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     }
 
     /** 功率筛选判定：1=仅耗电（powerType 0）/ 2=仅发电（powerType 1）；其余模式不筛。 */
+    private static boolean matchesDisplayPreferences(Entry entry) {
+        boolean electric = entry.energyKind != 1 && DeviceTerminalVisualConfig.visible(false, entry.powerType == 1);
+        boolean steamProducer = entry.steamInstNet() != 0L ? entry.steamInstNet() > 0L
+            : entry.steamAvgNet() != 0D ? entry.steamAvgNet() > 0D : entry.powerType == 1;
+        boolean steam = entry.energyKind != 0 && DeviceTerminalVisualConfig.visible(true, steamProducer);
+        return electric || steam;
+    }
+
+    static long instantValue(Entry entry) {
+        return entry.energyKind == 1 ? entry.steamInstNet() : entry.instNet();
+    }
+
+    static double averageValue(Entry entry) {
+        return entry.energyKind == 1 ? entry.steamAvgNet() : entry.avgNet();
+    }
+
+    String formatInstant(Entry entry) {
+        if (entry.energyKind == 1) return FormatUtil.formatMetric(BigInteger.valueOf(entry.steamInstNet()), 1) + " L/t";
+        return formatEUt(entry.instNet());
+    }
+
+    String formatAverage(Entry entry) {
+        if (entry.energyKind == 1) return FormatUtil.formatMetricDouble(entry.steamAvgNet(), 1) + " L/t";
+        return formatAvg(entry.avgNet());
+    }
+
     private static boolean matchesPowerFilter(Entry entry, int mode) {
         return mode == 1 ? entry.powerType == 0 : entry.powerType == 1;
     }
@@ -363,13 +404,14 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     private static int compareEntries(Entry a, Entry b, int column) {
         switch (column) {
             case PacketDeviceTerminalAction.COLUMN_NAME:
-                return a.name.compareToIgnoreCase(b.name);
+                return DeviceTerminalNames.plainName(a)
+                    .compareToIgnoreCase(DeviceTerminalNames.plainName(b));
             case PacketDeviceTerminalAction.COLUMN_STATE:
                 return Integer.compare(a.state, b.state);
             case PacketDeviceTerminalAction.COLUMN_INST:
-                return Long.compare(a.instNet(), b.instNet());
+                return Long.compare(instantValue(a), instantValue(b));
             case PacketDeviceTerminalAction.COLUMN_AVG:
-                return Double.compare(a.avgNet(), b.avgNet());
+                return Double.compare(averageValue(a), averageValue(b));
             case PacketDeviceTerminalAction.COLUMN_POS:
                 int c = Integer.compare(a.dim, b.dim);
                 if (c != 0) return c;
@@ -519,13 +561,30 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        drawPanelBackground();
-        drawTitle();
-        drawColumnHeaders();
-        super.drawScreen(mouseX, mouseY, partialTicks);
-        drawBody(mouseX, mouseY);
-        drawFooter();
-        drawHoverTooltip(mouseX, mouseY);
+        mouseX = (int) (mouseX / uiScale);
+        mouseY = (int) (mouseY / uiScale);
+        GL11.glPushAttrib(GL11.GL_TRANSFORM_BIT);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        try {
+            GL11.glScalef(uiScale, uiScale, 1.0F);
+            drawPanelBackground();
+            drawTitle();
+            drawColumnHeaders();
+            super.drawScreen(mouseX, mouseY, partialTicks);
+            drawBody(mouseX, mouseY);
+            drawFooter();
+            if (nameEditor == null) drawHoverTooltip(mouseX, mouseY);
+            else nameEditor.draw(mouseX, mouseY);
+        } finally {
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPopMatrix();
+            GL11.glPopAttrib();
+        }
+    }
+
+    float renderScale() {
+        return uiScale;
     }
 
     /**
@@ -631,6 +690,15 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      * 替代旧 48 字符硬切）。
      */
     private void drawHoverTooltip(int mouseX, int mouseY) {
+        if (this.entryList != null && this.entryList.hoveredTeleport()) {
+            drawHoveringText(
+                Collections.singletonList(
+                    StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.teleport_cost", teleportCost())),
+                mouseX,
+                mouseY,
+                this.fontRendererObj);
+            return;
+        }
         Entry hovered = this.entryList == null ? null : this.entryList.hoveredEntry();
         if (hovered == null) {
             return;
@@ -638,9 +706,34 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         String recipeIn = hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
         String recipeOut = hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();
-        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.input", hovered.instIn));
-        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.output", hovered.instOut));
-        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.net", hovered.instNet()));
+        lines.add(DeviceTerminalNames.localName(hovered));
+        lines.add(tr("gtswn.device.rename.hover"));
+        if (hovered.linkNodeType != 0) {
+            lines.add(
+                tr(
+                    "gtswn.device.gui.tooltip.link."
+                        + (hovered.linkNodeType == 3 ? "both" : hovered.linkNodeType == 1 ? "input" : "output")));
+        }
+        lines.add(
+            tr(
+                "gtswn.device.gui.tooltip.evidence." + (hovered.evidenceKind == 1 ? "model"
+                    : hovered.evidenceKind == 2 ? "warming" : hovered.evidenceKind == 3 ? "unavailable" : "measured")));
+        if (hovered.energyKind != 1) {
+            lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.input", hovered.instIn));
+            lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.output", hovered.instOut));
+            lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.net", hovered.instNet()));
+        }
+        if (hovered.energyKind != 0) {
+            lines.add(
+                StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.steam.input", hovered.steamInstIn));
+            lines.add(
+                StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.steam.output", hovered.steamInstOut));
+            lines.add(
+                StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.steam.net", hovered.steamInstNet()));
+            lines.add(
+                StatCollector
+                    .translateToLocalFormatted("gtswn.device.gui.tooltip.steam.average", hovered.steamAvgNet()));
+        }
         lines.add(tr("gtswn.device.gui.tooltip.recipe_title"));
         if (recipeIn.isEmpty() && recipeOut.isEmpty()) {
             lines.add(tr("gtswn.device.gui.tooltip.recipe_none"));
@@ -670,6 +763,10 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int button) {
+        if (nameEditor != null) {
+            nameEditor.mouseClicked(mouseX, mouseY, button);
+            return;
+        }
         super.mouseClicked(mouseX, mouseY, button);
         int column = headerColumnAt(mouseX, mouseY);
         if (column >= 0) {
@@ -683,6 +780,10 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     public void handleMouseInput() {
+        if (nameEditor != null) {
+            super.handleMouseInput();
+            return;
+        }
         if (this.entryList != null && this.entryList.handleMouseInput()) {
             // G5-3 翻页按需：滚轮在列表区滚动且服务端增量批次未到齐 → 限频追加请求接力续页
             requestPendingPages();
@@ -709,6 +810,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
+        if (nameEditor != null) return;
         super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
         if (this.entryList != null) {
             this.entryList.mouseClickMove(mouseX, mouseY, clickedMouseButton);
@@ -717,6 +819,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     protected void mouseMovedOrUp(int mouseX, int mouseY, int which) {
+        if (nameEditor != null) return;
         super.mouseMovedOrUp(mouseX, mouseY, which);
         if (this.entryList != null) {
             this.entryList.mouseReleased(mouseX, mouseY, which);
@@ -776,7 +879,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** @return 传送按钮经验消耗（Config.deviceTeleportXPCost，0=免费且按钮只显示图标；服务端动作队列仍权威复查） */
     int teleportCost() {
-        return Config.deviceTeleportXPCost;
+        return DeviceTerminalClientCache.teleportCost();
     }
 
     /** @return 客户端玩家当前经验等级（传送按钮红/绿显示用） */
@@ -834,5 +937,37 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 本地化工具（{@link GuiDeviceEntryList} 同包静态共用） */
     static String trStatic(String key) {
         return StatCollector.translateToLocal(key);
+    }
+
+    void openNameEditor(Entry entry, int mouseX, int mouseY) {
+        if (anchor == null) return;
+        closeNameEditor();
+        nameEditor = new GuiDeviceNameEditor(this, anchor, entry, mouseX, mouseY);
+    }
+
+    void closeNameEditor() {
+        if (nameEditor != null) {
+            nameEditor.close();
+            nameEditor = null;
+        }
+    }
+
+    void editorTooltip(List<String> lines, int mouseX, int mouseY) {
+        drawHoveringText(lines, mouseX, mouseY, fontRendererObj);
+    }
+
+    @Override
+    protected void keyTyped(char character, int keyCode) {
+        if (nameEditor != null) {
+            nameEditor.keyTyped(character, keyCode);
+            return;
+        }
+        super.keyTyped(character, keyCode);
+    }
+
+    @Override
+    public void onGuiClosed() {
+        closeNameEditor();
+        super.onGuiClosed();
     }
 }

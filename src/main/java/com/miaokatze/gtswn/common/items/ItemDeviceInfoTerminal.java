@@ -16,9 +16,11 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.device.DeviceMachineIdentity;
 import com.miaokatze.gtswn.common.device.DeviceMachineTypes;
 import com.miaokatze.gtswn.common.device.DeviceRegistryData;
 import com.miaokatze.gtswn.common.device.DeviceScanManager;
+import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore.AddResult;
 import com.miaokatze.gtswn.config.Config;
@@ -38,7 +40,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * <li>右击<b>GT 非加工机器</b> = not_machine 提示并拦截（不开其 GUI）；右击<b>非 GT 方块</b>
  * = 放行（等效空手交互）</li>
  * <li>右击空气 = 打开终端 GUI（阶段 E 客户端本地打开，本阶段服务端无操作）</li>
- * <li>Alt+Shift+右击空气长按一秒 = 启动扫描；重复完成手势不会取消进行中的扫描</li>
+ * <li>Shift+右击 = 设置；Alt+右击空气长按一秒 = 扫描</li>
  * </ul>
  * <p>
  * 判别式（统一口径 D1，{@link DeviceMachineTypes#isWorkingMachine}）：
@@ -119,7 +121,7 @@ public class ItemDeviceInfoTerminal extends Item {
      * 右击加工 GT 机器 = 绑定到本终端（onItemUseFirst 服务端权威处理并拦截，客户端放行）。
      * <p>
      * 客户端返回 false 让 C08 包发出（仿 {@link ItemNetworkQuantumTerminal} 先例）；
-     * Shift 一律放行（return false，终端等效空手），扫描由独立蓄力意图启动；
+     * Shift 打开客户端设置并拦截机器交互，扫描由独立蓄力意图启动；
      * 非 Shift 才走绑定流程：非 GT 方块放行（不提示不拦截）；GT 非加工机器 → 聊天原因
      * 并拦截（不开其 GUI）；成功路径：登记表无该机器则补登（owner=点击者）→ 数据仓加绑定
      * （尊重 {@link Config#deviceTerminalMaxMachines} 上限，超限聊天拒绝）。
@@ -129,11 +131,14 @@ public class ItemDeviceInfoTerminal extends Item {
         float hitX, float hitY, float hitZ) {
         // ① 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
         if (world.isRemote) {
+            if (player.isSneaking()) GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
             return false;
         }
-        // ② Shift+右击机器一律放行；扫描只由已完成的空气蓄力手势触发。
+        // Shift settings must not activate the underlying machine.
         if (player.isSneaking()) {
-            return false;
+            getOrCreateTerminalId(stack);
+            if (player instanceof EntityPlayerMP playerMP) syncHeldSlot(playerMP, stack);
+            return true;
         }
         // ③ 非 GT 方块：放行（等效空手交互，不提示不拦截）
         TileEntity te = world.getTileEntity(x, y, z);
@@ -170,7 +175,10 @@ public class ItemDeviceInfoTerminal extends Item {
             y,
             z,
             DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                : DeviceTerminalDataStore.POWER_TYPE_CONSUME);
+                : DeviceTerminalDataStore.POWER_TYPE_CONSUME,
+            ((IGregTechTileEntity) te).getMetaTileID(),
+            DeviceSteamAdapter.energyKind(mte),
+            DeviceMachineIdentity.linkNodeType(mte));
         switch (result) {
             case SUCCESS:
                 sendMessage(player, "gtswn.device.chat.bound", localName);
@@ -189,17 +197,18 @@ public class ItemDeviceInfoTerminal extends Item {
 
     // ==================== 手势 2/3：右击空气（onItemRightClick） ====================
 
-    /** 普通空气右击打开原本地界面；扫描改由Alt+Shift蓄力完成后启动。 */
+    /** Normal right-click opens the list; Shift opens settings; Alt charge starts scanning. */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         if (world.isRemote) {
             // 原纯GuiScreen保持本地打开，不污染背包容器windowId。
-            if (!player.isSneaking()) {
+            if (player.isSneaking()) {
+                GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
+            } else {
                 GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalGui();
             }
             return stack;
         }
-        if (player.isSneaking()) return stack;
         getOrCreateTerminalId(stack);
         if (player instanceof EntityPlayerMP playerMP) {
             syncHeldSlot(playerMP, stack);
@@ -227,6 +236,7 @@ public class ItemDeviceInfoTerminal extends Item {
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l1"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l2"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l3"));
+        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.visual"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.details"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.repeat"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l4"));

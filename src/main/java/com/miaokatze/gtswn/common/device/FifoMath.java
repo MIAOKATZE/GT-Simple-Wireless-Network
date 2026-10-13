@@ -63,4 +63,24 @@ public final class FifoMath {
     public static double avg(long runningSum, int count) {
         return count > 0 ? (double) runningSum / count : 0D;
     }
+
+    /** Fractional interval rates must survive persistence and the rolling average. */
+    public static double rebuildSum(double[] fifo, int count) {
+        int n = Math.min(Math.max(count, 0), fifo.length);
+        double sum = 0;
+        for (int i = 0; i < n; i++) sum += fifo[i];
+        return sum;
+    }
+
+    public static double push(double[] fifo, int idx, int count, double sum, double value) {
+        if (idx < 0 || idx >= fifo.length) return sum;
+        int n = Math.min(Math.max(count, 0), fifo.length);
+        boolean covered = idx < n;
+        boolean entering = !covered && idx == count && count < fifo.length;
+        return sum - (covered ? fifo[idx] : 0.0) + (covered || entering ? value : 0.0);
+    }
+
+    public static double avg(double sum, int count) {
+        return count > 0 ? sum / count : 0.0;
+    }
 }

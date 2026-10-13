@@ -24,6 +24,19 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  */
 public class DeviceTerminalClientCacheTest {
 
+    @Test
+    public void freshnessTracksServerSamplingWindowAndRejectsExpiredCache() {
+        UUID id = UUID.randomUUID();
+        DeviceTerminalClientCache.handleSettings(0, true, 60);
+        DeviceTerminalClientCache.receivePage(id, 1L, 0, 1, Collections.singletonList(entry("fresh")));
+        long now = System.currentTimeMillis();
+        assertTrue(DeviceTerminalClientCache.isFresh(id, now + 180000L));
+        assertFalse(DeviceTerminalClientCache.isFresh(id, now + 200000L));
+        assertEquals(0, DeviceTerminalClientCache.teleportCost());
+        assertTrue(DeviceTerminalClientCache.canConfigure());
+        DeviceTerminalClientCache.handleSettings(3, false, 10);
+    }
+
     /** 构造最小 Entry（仅 key 参与断言，其余字段取代表性常量） */
     private static Entry entry(String key) {
         return new Entry(key, key, (byte) 1, (byte) 0, 40L, 100L, 20D, 50D, 0, 1, 64, 1, "", "");

@@ -9,6 +9,7 @@ import net.minecraft.client.gui.ScaledResolution;
 import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.client.DeviceTerminalNames;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
@@ -114,6 +115,7 @@ class GuiDeviceEntryList {
 
     /** 当前悬浮行下标（-1=无；换行或移出机器名列即清除） */
     private int hoverIndex = -1;
+    private boolean hoverTeleport;
 
     GuiDeviceEntryList(GuiDeviceInfoTerminal host, int left, int top) {
         this.host = host;
@@ -135,6 +137,7 @@ class GuiDeviceEntryList {
      * @param partialTicks 部分刻
      */
     void draw(int mouseX, int mouseY, float partialTicks) {
+        hoverTeleport = false;
         List<Entry> entries = host.sortedEntries();
         clampScroll();
         // 鼠标离开列表区即清除悬浮
@@ -178,6 +181,7 @@ class GuiDeviceEntryList {
         // 换行即切换；行内移出机器名列立即清除（不出 tooltip）
         boolean inRow = mouseX >= listLeft && mouseX <= listRight && mouseY >= y && mouseY < y + slotHeight;
         boolean inNameCol = mouseX >= listLeft + COL_NAME_X && mouseX < listLeft + COL_NAME_X + NAME_WIDTH;
+        if (inRow && mouseX >= listLeft + TP_BTN_X && mouseX <= listLeft + TP_BTN_X + TP_BTN_W) hoverTeleport = true;
         if (inRow && inNameCol) {
             hoverIndex = index;
         } else if (hoverIndex == index) {
@@ -192,11 +196,14 @@ class GuiDeviceEntryList {
         }
 
         // 机器名列：超宽截断+省略号；v1.7.2 全行文字加粗 §l（applyBold 与颜色码共存）
+        String machineName = DeviceTerminalNames.localName(entry);
+        if (!DeviceTerminalNames.hasOverride(entry)) machineName = applyBold(machineName);
         font.drawString(
-            applyBold(ellipsis(font, entry.name, NAME_WIDTH)),
+            ellipsis(font, machineName, NAME_WIDTH - (entry.linkNodeType == 0 ? 0 : 11)),
             x + COL_NAME_X,
             textY,
             GtswnGuiPalette.TEXT_BODY);
+        if (entry.linkNodeType != 0) drawLinkIcon(x + COL_NAME_X + NAME_WIDTH - 9, textY, entry.linkNodeType);
 
         // 状态列：三态色字（lang 键自带 §6/§a/§c 颜色码，覆盖默认色参数）
         font.drawString(applyBold(host.stateText(entry.state)), x + COL_STATE_X, textY, GtswnGuiPalette.TEXT_BODY);
@@ -216,11 +223,15 @@ class GuiDeviceEntryList {
                 GtswnGuiPalette.TEXT_MUTED);
         } else {
             font.drawString(
-                applyBold(host.formatEUt(entry.instNet())),
+                applyBold(ellipsis(font, host.formatInstant(entry), COL_AVG_X - COL_INST_X - 3)),
                 x + COL_INST_X,
                 textY,
-                eutColor(entry.instNet()));
-            font.drawString(applyBold(host.formatAvg(entry.avgNet())), x + COL_AVG_X, textY, eutColor(entry.avgNet()));
+                amountColor(entry, GuiDeviceInfoTerminal.instantValue(entry)));
+            font.drawString(
+                applyBold(ellipsis(font, host.formatAverage(entry), COL_POS_X - COL_AVG_X - 3)),
+                x + COL_AVG_X,
+                textY,
+                amountColor(entry, GuiDeviceInfoTerminal.averageValue(entry)));
         }
 
         // 位置列：dim(x,y,z)
@@ -235,7 +246,12 @@ class GuiDeviceEntryList {
         GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.CHIP_NORMAL, 4, btnX, btnY, TP_BTN_W, btnH, host.guiZLevel());
         int tpCost = host.teleportCost();
         String tpText = tpCost > 0 ? "\u2726" + tpCost : "\u2726";
-        int tpW = font.getStringWidth(tpText);
+        if (tpCost >= 1000) {
+            tpText = "\u2726"
+                + com.miaokatze.gtswn.common.util.FormatUtil.formatMetric(java.math.BigInteger.valueOf(tpCost), 0);
+        }
+        if (font.getStringWidth(applyBold(tpText)) > TP_BTN_W - 2) tpText = "\u2726";
+        int tpW = font.getStringWidth(applyBold(tpText));
         int tpColor = host.clientPlayerLevel() >= tpCost ? GtswnGuiPalette.STATE_ONLINE : GtswnGuiPalette.STATE_OFFLINE;
         font.drawString(applyBold(tpText), btnX + (TP_BTN_W - tpW) / 2, btnY + 3, tpColor);
     }
@@ -244,6 +260,19 @@ class GuiDeviceEntryList {
      * EU/t 列着色（v1.7.11）：非零按功率分类着色（发电绿 / 耗电橙），零值回退中性色；
      * 瞬时 / 平均两列各自独立判零，排序仍按 Entry 原始数值不受影响。
      */
+    private void drawLinkIcon(int x, int y, byte flags) {
+        int input = (flags & 1) != 0 ? 0xFF55D1ED : 0xFF56616A;
+        int output = (flags & 2) != 0 ? 0xFFF0B04C : 0xFF56616A;
+        host.fillRect(x, y + 1, x + 3, y + 5, input);
+        host.fillRect(x + 5, y + 3, x + 8, y + 7, output);
+        host.fillRect(x + 2, y + 3, x + 6, y + 5, 0xFFCCD3D8);
+    }
+
+    private static int amountColor(Entry entry, double value) {
+        if (entry.energyKind == 1 && value != 0D) return value > 0D ? 0xFFBFC5CA : 0xFF858B90;
+        return eutColor(value);
+    }
+
     private static int eutColor(double value) {
         if (value > 0D) return GtswnGuiPalette.STATE_ONLINE;
         if (value < 0D) return GtswnGuiPalette.STATE_IDLE;
@@ -259,6 +288,10 @@ class GuiDeviceEntryList {
             return null;
         }
         return entries.get(hoverIndex);
+    }
+
+    boolean hoveredTeleport() {
+        return hoverTeleport;
     }
 
     // ==================== 背景与裁剪（仿 GuiAEMonitorList） ====================
@@ -283,11 +316,14 @@ class GuiDeviceEntryList {
             host.client(),
             host.client().displayWidth,
             host.client().displayHeight);
-        int scale = sr.getScaleFactor();
-        int sx = listLeft * scale;
-        int sy = host.client().displayHeight - listBottom * scale;
-        int sw = listWidth * scale;
-        int sh = listHeight * scale;
+        double scale = sr.getScaleFactor() * (double) host.renderScale();
+        int sx = (int) Math.floor(listLeft * scale);
+        int right = (int) Math.ceil(listRight * scale);
+        int bottom = (int) Math.ceil(listBottom * scale);
+        int top = (int) Math.floor(listTop * scale);
+        int sy = host.client().displayHeight - bottom;
+        int sw = right - sx;
+        int sh = bottom - top;
         GL11.glEnable(GL11.GL_SCISSOR_TEST);
         GL11.glScissor(sx, sy, sw, sh);
     }
@@ -404,6 +440,13 @@ class GuiDeviceEntryList {
         List<Entry> entries = host.sortedEntries();
         int row = (mouseY - listTop) / slotHeight + scrollOffset;
         if (row >= 0 && row < entries.size()) {
+            if (button == 0 && com.miaokatze.gtswn.client.QuantumIncorporationClientHandler.isAltDown()
+                && mouseX >= listLeft + COL_NAME_X
+                && mouseX < listLeft + COL_NAME_X + NAME_WIDTH) {
+                hoverIndex = -1;
+                host.openNameEditor(entries.get(row), mouseX, mouseY);
+                return true;
+            }
             if (mouseX >= listLeft + TP_BTN_X && mouseX <= listLeft + TP_BTN_X + TP_BTN_W) {
                 // 传送按钮：发包 action 3（服务端 3s 冷却 + 经验复查扣减权威执行）
                 hoverIndex = -1;

@@ -100,11 +100,10 @@ public final class PacketTerminalGesture implements IMessage {
                 player
                     .openGui(GTSimpleWirelessNetwork.instance, GTSWNGuiHandler.LINK_TERMINAL, player.worldObj, 0, 0, 0);
             }
-        } else if (player.isSneaking()
-            && (held.getItem() instanceof WirelessEnergyTap || held.getItem() instanceof ItemNetworkQuantumTerminal
-                || held.getItem() instanceof ItemDeviceInfoTerminal)) {
-                    CHARGES.putIfAbsent(player.getUniqueID(), new Charge(player, held));
-                }
+        } else if (held.getItem() instanceof ItemDeviceInfoTerminal || (player.isSneaking()
+            && (held.getItem() instanceof WirelessEnergyTap || held.getItem() instanceof ItemNetworkQuantumTerminal))) {
+                CHARGES.putIfAbsent(player.getUniqueID(), new Charge(player, held));
+            }
     }
 
     /** 一次性消费蓄力凭据；旧显形包本身不再足以触发显形。 */
@@ -148,7 +147,7 @@ public final class PacketTerminalGesture implements IMessage {
 
         private boolean valid() {
             return !player.isDead && player.playerNetServerHandler != null
-                && player.isSneaking()
+                && (stack.getItem() instanceof ItemDeviceInfoTerminal || player.isSneaking())
                 && player.dimension == dimension
                 && player.inventory.currentItem == slot
                 && player.getHeldItem() == stack

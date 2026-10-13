@@ -60,6 +60,17 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     private UUID ownerUUID;
+    private UUID portableMonitorId;
+
+    /** Persistent block identity, intentionally omitted from item placement data. */
+    public UUID getPortableMonitorId() {
+        if (portableMonitorId == null && worldObj != null && !worldObj.isRemote) {
+            portableMonitorId = UUID.randomUUID();
+            markDirty();
+        }
+        return portableMonitorId;
+    }
+
     private String ownerName = "";
 
     /**
@@ -881,6 +892,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
+        try {
+            portableMonitorId = UUID.fromString(tag.getString("PortableMonitorPanelId"));
+        } catch (IllegalArgumentException ignored) {
+            portableMonitorId = null;
+        }
         readPlacementData(tag);
         store.readFromNBT(tag);
         if (tag.hasKey("screen")) {
@@ -901,6 +917,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
+        if (portableMonitorId != null) tag.setString("PortableMonitorPanelId", portableMonitorId.toString());
         writePlacementData(tag);
         store.writeToNBT(tag);
         if (structure.getScreen() != null) {

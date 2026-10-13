@@ -52,7 +52,18 @@ public class PacketSyncDeviceTerminalDataTest {
             64,
             20,
             "",
-            "eu/t output");
+            "eu/t output",
+            1234,
+            (byte) 2,
+            (byte) 1,
+            (byte) 3,
+            80L,
+            20L,
+            0.08,
+            0.02,
+            "Generator alias",
+            (byte) 12,
+            true);
         List<Entry> entries = Arrays.asList(consume, generate);
         PacketSyncDeviceTerminalData original = new PacketSyncDeviceTerminalData(terminalId, 42L, 1, 3, 2, entries);
 
@@ -108,6 +119,19 @@ public class PacketSyncDeviceTerminalDataTest {
         assertEquals("eu/t output", second.recipeOut);
         assertEquals(900L, second.instNet());
         assertEquals(750.5D, second.avgNet(), 0D);
+        assertEquals("Generator alias", second.displayName);
+        assertEquals((byte) 12, second.nameColor);
+        assertTrue(second.nameBold);
+        assertEquals(1234, second.metaTileId);
+        assertEquals((byte) 2, second.energyKind);
+        assertEquals((byte) 1, second.evidenceKind);
+        assertEquals((byte) 3, second.linkNodeType);
+        assertEquals(80L, second.steamInstIn);
+        assertEquals(20L, second.steamInstOut);
+        assertEquals(-60L, second.steamInstNet());
+        assertEquals(0.08, second.steamAvgIn, 0.0);
+        assertEquals(0.02, second.steamAvgOut, 0.0);
+        assertEquals(-0.06, second.steamAvgNet(), 0.000001);
         assertTrue("字段序回归应保留两条目顺序", first.key.startsWith("-1:") && second.key.startsWith("0:"));
     }
 }

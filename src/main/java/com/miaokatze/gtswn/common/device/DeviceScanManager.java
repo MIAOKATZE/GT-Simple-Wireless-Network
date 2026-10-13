@@ -33,36 +33,11 @@ import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
 /**
- * 设备信息终端异步扫描管理器（实施计划 C2 / 用户修正 M2 / v1.8.0 世界源扩展，
- * 注册于 CommonProxy.init 的 FML 总线）。
- * <p>
- * Alt+Shift空气蓄力完成调用 {@link #startScan}，已有扫描保持运行；否则启动5秒逐秒倒计时
- * （5/4/3/2/1 五条 scan.countdown 提示，保留跨档补发；scan.start 即开始提示）。
- * <p>
- * 0 档执行（用户修正 M2 三段式 + v1.8.0 世界化）：
- * <ol>
- * <li><b>主线程快照</b>：团队成员 UUID 并集（GTNHLib TeamManager owners/officers/members，
- * NoClassDefFoundError/异常回退仅本人）+ 登记表条目副本（A 源）+ 该终端现绑定副本 +
- * 玩家当前维度 {@code world.loadedTileEntityList.toArray()} 快照（B 源）——B 源在主线程
- * 仅提取不可变描述（key/坐标/ownerUuid/getOwnerUuid/是否 D1 工作机器/是否发电），
- * <b>禁止把 TE/World/玩家实体交给后台线程</b>；跨维度边界：以 0 档触发时玩家所在维度为准</li>
- * <li><b>后台单线程 daemon executor</b>（静态懒建，命名 gtswn-device-scan）纯内存过滤合并：
- * A∪B 按 key 去重 − D1 不符 − owner∉团队 − 现绑定，截断至 {@link Config#deviceTerminalMaxMachines}
- * 上限；<b>零世界访问</b>（只做集合运算与字符串解析，回放不重查世界）</li>
- * <li><b>主线程排水</b>（ServerTickEvent END）：世界源新键现查 TE 补登记
- * {@link DeviceRegistryData}（owner+本地名，区块未加载跳过）后批量 addBinding 应用 +
- * 聊天 scan.complete（已录入 N 台（团队 M 人）），version++ 由 addBinding 内部保证</li>
- * </ol>
- * 清理路径三保险：取消（toggle 再按）/ 登出（PlayerLoggedOutEvent）/ 异常（快照与排水各自
- * try-catch 后移除状态，后台任务异常仅丢弃结果不落状态）。
+ * Charged scan entry point: snapshot on the server thread immediately, filter immutable descriptors in
+ * one background worker, then replay bindings on the server thread. Repeated requests do not restart a running scan.
+ * No live world or tile references reach the background worker; unloaded chunks are never forced to load.
  */
 public final class DeviceScanManager {
-
-    /**
-     * 倒计时六档剩余 tick（v1.8.0：{5,4,3,2,1,0} 秒逐秒提示 → tick {100,80,60,40,20,0}；
-     * 0 档=执行，开始提示由 scan.start 承担）
-     */
-    private static final int[] COUNTDOWN_TICKS = { 5 * 20, 4 * 20, 3 * 20, 2 * 20, 1 * 20, 0 };
 
     /** 玩家 UUID → 扫描状态（仅服务端主线程访问） */
     private static final Map<UUID, ScanState> STATES = new HashMap<>();
@@ -114,10 +89,11 @@ public final class DeviceScanManager {
         if (overworld == null) {
             return;
         }
-        ScanState fresh = new ScanState(player, terminalId, overworld.getTotalWorldTime() + COUNTDOWN_TICKS[0]);
+        ScanState fresh = new ScanState(player, terminalId);
         STATES.put(playerId, fresh);
         // 开始提示（性能口径文案：后台执行不卡服务器；后续 5/4/3/2/1 逐秒提示）
         sendChat(player, "gtswn.device.chat.scan.start");
+        executeScan(fresh);
     }
 
     // ==================== tick：倒计时推进 + 结果排水 ====================
@@ -135,9 +111,6 @@ public final class DeviceScanManager {
         if (overworld == null) {
             return;
         }
-        if (!STATES.isEmpty()) {
-            advanceCountdowns(overworld.getTotalWorldTime());
-        }
         drainResults(overworld);
     }
 
@@ -151,33 +124,6 @@ public final class DeviceScanManager {
             }
         }
     }
-
-    /**
-     * 倒计时推进：跨过未提示档位则各发一条聊天（逐秒 5/4/3/2/1，保留跨档补发）；
-     * 跨过 0 档执行扫描（每状态仅一次）。
-     * <p>
-     * 迭代快照副本：executeScan 的异常路径会从 STATES 移除条目，避免并发修改。
-     */
-    private static void advanceCountdowns(long now) {
-        for (ScanState state : new ArrayList<>(STATES.values())) {
-            if (state.running) {
-                continue;
-            }
-            long remaining = state.deadlineTick - now;
-            while (state.thresholdIndex < COUNTDOWN_TICKS.length
-                && remaining <= COUNTDOWN_TICKS[state.thresholdIndex]) {
-                int threshold = COUNTDOWN_TICKS[state.thresholdIndex];
-                state.thresholdIndex++;
-                if (threshold == 0) {
-                    executeScan(state);
-                    break;
-                }
-                sendChat(state.player, "gtswn.device.chat.scan.countdown", threshold / 20);
-            }
-        }
-    }
-
-    // ==================== 0 档执行：主线程快照 → 后台过滤 ====================
 
     /**
      * 主线程快照（团队 UUID 并集 + 登记表副本 + 现绑定副本 + 玩家当前维度世界源快照）后提交
@@ -488,22 +434,15 @@ public final class DeviceScanManager {
         /** 目标终端实例 UUID */
         final UUID terminalId;
 
-        /** 0 档执行时刻（overworld 总 tick） */
-        final long deadlineTick;
-
-        /** 下一个未提示档位下标（0 起：5/4/3/2/1 秒各发一条 scan.countdown，0 档=执行） */
-        int thresholdIndex = 0;
-
         /** 已提交后台（倒计时结束） */
         boolean running;
 
         /** 已取消（结果到达即丢弃） */
         boolean cancelled;
 
-        ScanState(EntityPlayerMP player, UUID terminalId, long deadlineTick) {
+        ScanState(EntityPlayerMP player, UUID terminalId) {
             this.player = player;
             this.terminalId = terminalId;
-            this.deadlineTick = deadlineTick;
         }
     }
 

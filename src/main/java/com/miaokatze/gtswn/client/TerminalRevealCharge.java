@@ -16,7 +16,7 @@ import com.miaokatze.gtswn.network.PacketRequestNodeReveal;
 import com.miaokatze.gtswn.network.PacketRequestQuantumReveal;
 import com.miaokatze.gtswn.network.PacketTerminalGesture;
 
-/** 三种终端共享的 Alt+Shift+右击空气蓄力手势。 */
+/** Quantum/link terminals use Alt+Shift; the device terminal charges with Alt. */
 public final class TerminalRevealCharge {
 
     private static final TerminalChargeProgress PROGRESS = new TerminalChargeProgress();
@@ -36,12 +36,16 @@ public final class TerminalRevealCharge {
         ItemStack held = mc.thePlayer == null ? null : mc.thePlayer.getHeldItem();
         if (mc.currentScreen != null || !isPointingAtAir(mc)
             || mc.thePlayer == null
-            || !QuantumIncorporationClientHandler.isShiftDown()
             || !QuantumIncorporationClientHandler.isAltDown()
             || held == null
             || !(held.getItem() instanceof ItemNetworkQuantumTerminal || held.getItem() instanceof WirelessEnergyTap
                 || held.getItem() instanceof ItemDeviceInfoTerminal))
             return;
+        if (!TerminalGestureRules.canCharge(
+            held.getItem() instanceof ItemDeviceInfoTerminal,
+            QuantumIncorporationClientHandler.isAltDown(),
+            QuantumIncorporationClientHandler.isShiftDown(),
+            isPointingAtAir(mc))) return;
         chargingPlayer = mc.thePlayer;
         chargingStack = held;
         chargingSlot = mc.thePlayer.inventory.currentItem;
@@ -59,7 +63,11 @@ public final class TerminalRevealCharge {
             || mc.currentScreen != null
             || chargingPlayer.isDead
             || !QuantumIncorporationClientHandler.isAltDown()
-            || !QuantumIncorporationClientHandler.isShiftDown()
+            || !TerminalGestureRules.canCharge(
+                chargingStack.getItem() instanceof ItemDeviceInfoTerminal,
+                QuantumIncorporationClientHandler.isAltDown(),
+                QuantumIncorporationClientHandler.isShiftDown(),
+                isPointingAtAir(mc))
             || !Mouse.isCreated()
             || !Mouse.isButtonDown(1)
             || chargingPlayer.inventory.currentItem != chargingSlot

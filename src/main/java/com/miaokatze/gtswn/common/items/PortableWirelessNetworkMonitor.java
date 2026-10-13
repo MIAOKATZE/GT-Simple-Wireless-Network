@@ -31,7 +31,8 @@ import ic2.api.item.ISpecialElectricItem;
  * 功能特性：
  * - 首次右击时自动绑定拥有者（玩家 UUID）
  * - 已绑定状态下右击显示拥有者的无线电网能量值
- * - Shift + 右击覆盖绑定为当前玩家（无论是否已绑定）
+ * - Shift + 右击自己的终端打开远程查看与 HUD 设置；其他绑定覆盖为当前玩家
+ * - 普通右击信息屏添加远程绑定（最多 16 个）
  */
 @Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles")
 public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISpecialElectricItem {
@@ -135,7 +136,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
      * 处理右击事件
      * - 未绑定时普通右击：绑定当前玩家为拥有者
      * - 已绑定时普通右击：切换 HUD 显示模式（关闭/常规/科学）
-     * - Shift + 右击：覆盖绑定为当前玩家
+     * - Shift + 右击：自己的终端打开查看/设置，其他绑定覆盖为当前玩家
      */
     @Override
     public ItemStack onItemRightClick(ItemStack aStack, World aWorld, EntityPlayer aPlayer) {
@@ -144,8 +145,14 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
 
         // 检测是否按住 Shift 键
         if (aPlayer.isSneaking()) {
-            // Shift + 右击：覆盖绑定为当前玩家
-            updateOwner(aStack, aPlayer);
+            if (isMonitorBound(aStack) && aPlayer.getUniqueID()
+                .toString()
+                .equals(getOwnerUUID(aStack))) {
+                if (!aWorld.isRemote) com.miaokatze.gtswn.common.hud.MonitorBindings.ensureId(aStack);
+                if (aWorld.isRemote) GTSimpleWirelessNetwork.proxy.openPortableMonitorGui(aStack);
+            } else {
+                updateOwner(aStack, aPlayer);
+            }
         } else {
             // 普通右击：检查是否已绑定
             if (isBound(aStack)) {
@@ -226,6 +233,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
         aStack.stackTagCompound.setString(NBT_OWNER_NAME, aPlayer.getCommandSenderName());
         // 默认 HUD 模式为关闭
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, 0);
+        if (!aPlayer.worldObj.isRemote) com.miaokatze.gtswn.common.hud.MonitorBindings.ensureId(aStack);
 
         // 向玩家发送提示信息（B2-08：onItemRightClick 双端各执行一次，无服务端门会双发；
         // 仅服务端权威转发，与 TestCoin 绑定提示范式对齐）
@@ -242,6 +250,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
      * 更新物品的拥有者为当前玩家（覆盖绑定）
      */
     private void updateOwner(ItemStack aStack, EntityPlayer aPlayer) {
+        com.miaokatze.gtswn.common.hud.MonitorBindings.clear(aStack);
         // 设置新拥有者（覆盖旧数据）
         UUID newOwnerUUID = aPlayer.getUniqueID();
         aStack.stackTagCompound.setString(NBT_OWNER_UUID, newOwnerUUID.toString());
@@ -250,6 +259,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
         aStack.stackTagCompound.setString(NBT_OWNER_NAME, aPlayer.getCommandSenderName());
         // 重置 HUD 模式为关闭
         aStack.stackTagCompound.setInteger(NBT_HUD_MODE, 0);
+        if (!aPlayer.worldObj.isRemote) com.miaokatze.gtswn.common.hud.MonitorBindings.ensureId(aStack);
 
         // 发送提示信息（B2-08：仅服务端权威转发，避免双端镜像双发）
         if (!aPlayer.worldObj.isRemote) {

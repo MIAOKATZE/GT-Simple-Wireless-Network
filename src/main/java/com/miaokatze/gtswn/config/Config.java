@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.config;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 import net.minecraftforge.common.config.ConfigCategory;
@@ -270,6 +271,15 @@ public class Config {
     public static boolean hudEUEnabled = true;
     public static boolean hudInstantEnabled = true;
     public static boolean hudAverageEnabled = true;
+    public static int hudPanelWidth = 220;
+    public static int hudPinnedRows = 4;
+    public static int hudRotationSeconds = 5;
+    public static int hudRenderMode = 0;
+    public static boolean hudCompact = false;
+    public static boolean hudTierEnabled = true;
+    public static boolean hudAEAmountEnabled = true;
+    public static boolean hudAERateEnabled = true;
+    public static String[] hudPinnedEntries = new String[0];
 
     // AE2 监控采样间隔（tick）/ AE2 monitor sample interval (ticks)
     // 数值越小采样越频繁，但会增加服务器负担 / Smaller value = more frequent sampling, higher server load
@@ -591,16 +601,29 @@ public class Config {
             .getBoolean("HudInstantEnabled", CATEGORY_HUD, hudInstantEnabled, "显示瞬时功率 / Show instantaneous power");
         hudAverageEnabled = configuration
             .getBoolean("HudAverageEnabled", CATEGORY_HUD, hudAverageEnabled, "显示平均功率 / Show average power");
+        hudPanelWidth = configuration.getInt("HudPanelWidth", CATEGORY_HUD, 220, 100, 600, "HUD width");
+        hudPinnedRows = configuration.getInt("HudPinnedRows", CATEGORY_HUD, 4, 1, 16, "Pinned row count");
+        hudRotationSeconds = configuration
+            .getInt("HudRotationSeconds", CATEGORY_HUD, 5, 1, 120, "Pinned page rotation seconds");
+        hudRenderMode = configuration.getInt("HudRenderMode", CATEGORY_HUD, 0, 0, 2, "0=text, 1=cards, 2=charts");
+        hudCompact = configuration.getBoolean("HudCompact", CATEGORY_HUD, false, "Compact network labels");
+        hudTierEnabled = configuration.getBoolean("HudTierEnabled", CATEGORY_HUD, true, "Show voltage tier");
+        hudAEAmountEnabled = configuration.getBoolean("HudAEAmountEnabled", CATEGORY_HUD, true, "Show AE amounts");
+        hudAERateEnabled = configuration.getBoolean("HudAERateEnabled", CATEGORY_HUD, true, "Show AE rates");
+        hudPinnedEntries = configuration.get(CATEGORY_HUD, "HudPinnedEntries", new String[0])
+            .getStringList();
+        if (hudPinnedEntries.length > 128) hudPinnedEntries = Arrays.copyOf(hudPinnedEntries, 128);
         configuration.setCategoryPropertyOrder(
             CATEGORY_HUD,
-            Arrays.asList(
-                "HudXOffset",
-                "HudYOffset",
-                "HudScale",
-                "HudChargeEnabled",
-                "HudEUEnabled",
-                "HudInstantEnabled",
-                "HudAverageEnabled"));
+            new ArrayList<>(
+                Arrays.asList(
+                    "HudXOffset",
+                    "HudYOffset",
+                    "HudScale",
+                    "HudChargeEnabled",
+                    "HudEUEnabled",
+                    "HudInstantEnabled",
+                    "HudAverageEnabled")));
 
         // v1.8.15 及更早版本 saveHudConfiguration 的 get 参数序 bug 会把 HUD 值写进垃圾类目，
         // 此处加载时一次性迁移回 [hud] 并清理垃圾类目（详见 migrateLegacyHudCategories）。
@@ -640,6 +663,26 @@ public class Config {
         }
         try {
             Configuration configuration = new Configuration(networkConfigFile);
+            configuration.get("general", "HudUpdateInterval", hudUpdateInterval)
+                .set(hudUpdateInterval);
+            configuration.get(CATEGORY_HUD, "HudPanelWidth", hudPanelWidth)
+                .set(hudPanelWidth);
+            configuration.get(CATEGORY_HUD, "HudPinnedRows", hudPinnedRows)
+                .set(hudPinnedRows);
+            configuration.get(CATEGORY_HUD, "HudRotationSeconds", hudRotationSeconds)
+                .set(hudRotationSeconds);
+            configuration.get(CATEGORY_HUD, "HudRenderMode", hudRenderMode)
+                .set(hudRenderMode);
+            configuration.get(CATEGORY_HUD, "HudCompact", hudCompact)
+                .set(hudCompact);
+            configuration.get(CATEGORY_HUD, "HudTierEnabled", hudTierEnabled)
+                .set(hudTierEnabled);
+            configuration.get(CATEGORY_HUD, "HudAEAmountEnabled", hudAEAmountEnabled)
+                .set(hudAEAmountEnabled);
+            configuration.get(CATEGORY_HUD, "HudAERateEnabled", hudAERateEnabled)
+                .set(hudAERateEnabled);
+            configuration.get(CATEGORY_HUD, "HudPinnedEntries", hudPinnedEntries)
+                .set(hudPinnedEntries);
             configuration.setCategoryComment(CATEGORY_HUD, "HUD 显示参数（偏移与缩放）\nHUD display parameters (offset & scale)");
             // 注意：Configuration.get 的参数序是 (category, key, ...)，与 getInt(name, category, ...) 相反；
             // v1.8.15 及更早版本此处两个参数颠倒，值被写进垃圾类目而非 [hud]（迁移清理见 migrateLegacyHudCategories）。
