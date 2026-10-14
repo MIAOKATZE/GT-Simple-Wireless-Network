@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.items;
 
 import java.math.BigInteger;
+import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.creativetab.CreativeTabs;
@@ -11,6 +12,7 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 
 import gregtech.common.misc.WirelessNetworkManager;
@@ -27,6 +29,15 @@ public class TestCoin extends Item {
 
     /** 每次操作的 EU 变化量 */
     private static final long EU_AMOUNT = 1_000_000L;
+
+    @Override
+    public void addInformation(ItemStack stack, EntityPlayer player, List<String> lines, boolean advanced) {
+        DeviceTooltip.state(lines);
+        DeviceTooltip.add(lines, "gtswn.tooltip.testcoin.state");
+        DeviceTooltip.description(lines, "gtswn.tooltip.testcoin.description");
+        DeviceTooltip.controls(lines, "gtswn.tooltip.testcoin.usage.add", "gtswn.tooltip.testcoin.usage.remove");
+        DeviceTooltip.finish(lines);
+    }
 
     /**
      * 构造函数：初始化测试硬币的基础属性

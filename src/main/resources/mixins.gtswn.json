@@ -10,12 +10,16 @@
     "ae2.PathingCalculationMixin",
     "ae2.QuantumIncorporationGridNodeMixin",
     "ae2.TileCableBusAccessor",
+    "ae2.CableBusStorageMixin",
+    "ae2.QuantumCableBusContainerMixin",
     "minecraft.QuantumIncorporationIdentityMixin",
+    "minecraft.QuantumChunkLifecycleMixin",
     "gregtech.DeviceControllerTickMixin",
     "gregtech.DeviceEnergyMutationMixin",
     "gregtech.DeviceWirelessTransactionMixin",
     "gregtech.CoverToolCopyMixin",
     "mm.GTAnalysisResultMixin",
+    "mm.AEAnalysisResultMixin",
     "mm.PendingBlockMixin"
   ],
   "client": [

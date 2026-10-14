@@ -9,6 +9,7 @@ import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
+import com.miaokatze.gtswn.client.DeviceTooltipHandler;
 import com.miaokatze.gtswn.client.LinkNodeDismantleTriggerHandler;
 import com.miaokatze.gtswn.client.LinkNodeVisualHandler;
 import com.miaokatze.gtswn.client.QuantumIncorporationClientHandler;
@@ -92,6 +93,7 @@ public class ClientProxy extends CommonProxy {
     public void init(FMLInitializationEvent event) {
         // 调用父类的 init 方法，确保通用逻辑正常执行
         super.init(event);
+        MinecraftForge.EVENT_BUS.register(new DeviceTooltipHandler());
 
         if (Loader.isModLoaded("NotEnoughItems")) {
             MinecraftForge.EVENT_BUS.register(new NEIGTSWNConfig());

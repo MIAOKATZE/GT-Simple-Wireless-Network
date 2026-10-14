@@ -127,14 +127,31 @@ public final class MonitorBattery {
     }
 
     public static void addTooltip(ItemStack stack, List<String> lines) {
+        addStateTooltip(stack, lines);
+        addDescriptionTooltip(lines);
+        addControlsTooltip(lines);
+    }
+
+    public static void addStateTooltip(ItemStack stack, List<String> lines) {
         if (hasBattery(stack)) {
             NBTTagCompound data = data(stack);
             ItemStack battery = ItemStack.loadItemStackFromNBT(data.getCompoundTag("Item"));
             if (battery != null) lines.add(
                 StatCollector
                     .translateToLocalFormatted("gtswn.tooltip.monitor.battery.name", battery.getDisplayName()));
+        } else {
+            lines.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.battery.none"));
         }
-        for (String suffix : new String[] { "install", "replace", "remove", "refill", "targets" }) {
+    }
+
+    public static void addDescriptionTooltip(List<String> lines) {
+        for (String suffix : new String[] { "refill", "targets" }) {
+            lines.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.charging." + suffix));
+        }
+    }
+
+    public static void addControlsTooltip(List<String> lines) {
+        for (String suffix : new String[] { "install", "replace", "remove" }) {
             lines.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.charging." + suffix));
         }
     }

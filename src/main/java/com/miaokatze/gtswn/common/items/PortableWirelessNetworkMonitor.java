@@ -15,6 +15,8 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.charging.MonitorBattery;
 import com.miaokatze.gtswn.common.charging.MonitorElectricItemManager;
+import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import baubles.api.BaubleType;
@@ -370,54 +372,41 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
      */
     @Override
     public void addInformation(ItemStack aStack, EntityPlayer aPlayer, List<String> aList, boolean aF3_H) {
-        MonitorBattery.addTooltip(aStack, aList);
-        // 确保 NBT 已初始化
-        if (aStack.stackTagCompound == null) {
+        DeviceTooltip.state(aList);
+        if (!isMonitorBound(aStack)) {
             aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
         } else {
-            // 检查是否已绑定
-            boolean isInitialized = aStack.stackTagCompound.getBoolean(NBT_INITIALIZED);
             String ownerName = aStack.stackTagCompound.getString(NBT_OWNER_NAME);
-
-            if (isInitialized && ownerName != null && !ownerName.isEmpty()) {
-                // 已绑定：显示拥有者名称（亮蓝色）
-                aList.add(StatCollector.translateToLocalFormatted("gtswn.tooltip.monitor.owner.bound", ownerName));
-
-                // 显示当前 HUD 模式
-                int hudMode = aStack.stackTagCompound.getInteger(NBT_HUD_MODE);
-                String modeKey;
-                switch (hudMode) {
-                    case 0:
-                        modeKey = "gtswn.tooltip.monitor.hud.mode.off";
-                        break;
-                    case 1:
-                        modeKey = "gtswn.tooltip.monitor.hud.mode.normal";
-                        break;
-                    case 2:
-                        modeKey = "gtswn.tooltip.monitor.hud.mode.scientific";
-                        break;
-                    default:
-                        modeKey = "gtswn.tooltip.monitor.hud.mode.off";
-                }
-                aList.add(StatCollector.translateToLocal(modeKey));
-            } else {
-                // 未绑定
-                aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
-            }
+            if (ownerName.isEmpty()) ownerName = getOwnerUUID(aStack);
+            aList.add(StatCollector.translateToLocalFormatted("gtswn.tooltip.monitor.owner.bound", ownerName));
         }
-
-        // 机制说明（3 行简略形式，v1.3.0 新增）
-        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.mechanism.line1"));
-        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.mechanism.line2"));
-        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.mechanism.line3"));
-
-        // 添加空行
-        aList.add("");
-        // 操作提示
-        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.usage"));
-        // Baubles 饰品栏装备提示（Baubles 为可选依赖，文案中保留原名便于玩家识别）
-        aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.baubles.equip"));
+        int mode = isMonitorBound(aStack) ? getHudMode(aStack) : 0;
+        String modeKey = mode == 1 ? "normal" : mode == 2 ? "scientific" : "off";
+        DeviceTooltip.add(aList, "gtswn.tooltip.monitor.hud.mode." + modeKey);
+        aList.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.tooltip.monitor.screens",
+                MonitorBindings.read(aStack)
+                    .size(),
+                MonitorBindings.MAX_PANELS));
+        MonitorBattery.addStateTooltip(aStack, aList);
         String chargeTooltip = MonitorElectricItemManager.getChargeTooltip(aStack);
         if (chargeTooltip != null && !chargeTooltip.isEmpty()) aList.add(chargeTooltip);
+        DeviceTooltip.description(
+            aList,
+            "gtswn.tooltip.monitor.description",
+            "gtswn.tooltip.monitor.mechanism.line1",
+            "gtswn.tooltip.monitor.mechanism.line2",
+            "gtswn.tooltip.monitor.mechanism.line3",
+            "gtswn.tooltip.monitor.baubles.equip");
+        MonitorBattery.addDescriptionTooltip(aList);
+        DeviceTooltip.controls(
+            aList,
+            "gtswn.tooltip.monitor.usage.bind",
+            "gtswn.tooltip.monitor.usage",
+            "gtswn.tooltip.monitor.usage.rebind",
+            "gtswn.tooltip.monitor.usage.key");
+        MonitorBattery.addControlsTooltip(aList);
+        DeviceTooltip.finish(aList);
     }
 }

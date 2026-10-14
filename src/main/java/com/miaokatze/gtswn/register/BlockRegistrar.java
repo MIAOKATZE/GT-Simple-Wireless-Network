@@ -11,6 +11,7 @@ import com.miaokatze.gtswn.common.block.BlockNetworkInfoPanel;
 import com.miaokatze.gtswn.common.block.BlockNetworkInfoPanelExtender;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemBlockNetworkInfoPanel;
+import com.miaokatze.gtswn.common.items.ItemBlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
@@ -32,8 +33,7 @@ public class BlockRegistrar {
         GameRegistry.registerBlock(networkInfoPanel, ItemBlockNetworkInfoPanel.class, "NetworkInfoPanel_GTswn");
         GameRegistry
             .registerBlock(networkInfoPanelExtender, ItemBlockNetworkInfoPanel.class, "NetworkInfoPanelExtender_GTswn");
-        // 量子节点无特殊 ItemBlock 需求，使用默认 ItemBlock 注册
-        GameRegistry.registerBlock(networkQuantumNode, "NetworkQuantumNode_GTswn");
+        GameRegistry.registerBlock(networkQuantumNode, ItemBlockNetworkQuantumNode.class, "NetworkQuantumNode_GTswn");
 
         Network_Info_Panel.set(new ItemStack(networkInfoPanel, 1, 0));
         Network_Info_Panel_Extender.set(new ItemStack(networkInfoPanelExtender, 1, 0));

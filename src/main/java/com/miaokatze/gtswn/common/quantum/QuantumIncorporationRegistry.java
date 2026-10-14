@@ -120,7 +120,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         if (entry == null) return false;
         TileEntity tile = world.getTileEntity(x, y, z);
         // A replacement must never inherit protection while waiting for the bounded maintenance sweep.
-        return tile != null
+        return tile != null && !tile.isInvalid()
+            && (entry.loadedTile == null || entry.loadedTile == tile)
             && entry.identity.equals(((QuantumIncorporationIdentity) tile).gtswn$getIncorporationIdentity());
     }
 
@@ -131,7 +132,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         World world = tile.getWorldObj();
         if (world == null || world.isRemote) return false;
         Entry entry = get(world).entries.get(QuantumControllerRegistry.pack(tile.xCoord, tile.yCoord, tile.zCoord));
-        return entry != null
+        return entry != null && !tile.isInvalid()
+            && (entry.loadedTile == null || entry.loadedTile == tile)
             && entry.identity.equals(((QuantumIncorporationIdentity) tile).gtswn$getIncorporationIdentity());
     }
 
@@ -141,6 +143,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         if (entries.containsKey(key)) return false;
         TileEntity tile = world.getTileEntity(x, y, z);
         Entry entry = new Entry();
+        entry.loadedTile = tile;
         entry.position = key;
         entry.block = Block.blockRegistry.getNameForObject(world.getBlock(x, y, z));
         entry.tileClass = tile.getClass()
@@ -201,6 +204,35 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         return true;
     }
 
+    /** Called after a real tile removal, including tools that bypass player break events. */
+    public void removed(World world, TileEntity tile) {
+        Entry entry = entries.get(QuantumControllerRegistry.pack(tile.xCoord, tile.yCoord, tile.zCoord));
+        if (entry == null || !entry.owns(tile)) return;
+        forget(world, entry, false);
+        ((QuantumIncorporationIdentity) tile).gtswn$setIncorporationIdentity("");
+    }
+
+    public void unloadTile(TileEntity tile) {
+        Entry entry = entries.get(QuantumControllerRegistry.pack(tile.xCoord, tile.yCoord, tile.zCoord));
+        if (entry == null || !entry.owns(tile)) return;
+        entry.disconnect();
+        entry.loadedTile = null;
+    }
+
+    /** Remove bindings in every loaded world even when their local machine chunk is unloaded. */
+    public void controllerRemoved(World world, int dimension, Set<Long> members) {
+        for (long position : members) {
+            Map<Long, Entry> anchored = sources.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(position),
+                    QuantumControllerRegistry.unpackY(position),
+                    QuantumControllerRegistry.unpackZ(position)));
+            if (anchored == null) continue;
+            for (Entry entry : new ArrayList<>(anchored.values())) forget(world, entry, true);
+        }
+    }
+
     public Iterable<Entry> snapshot() {
         return new ArrayList<>(entries.values());
     }
@@ -251,17 +283,21 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             z = QuantumControllerRegistry.unpackZ(entry.position);
         if (!world.blockExists(x, y, z)) {
             entry.disconnect();
+            entry.loadedTile = null;
             return;
         }
         TileEntity tile = world.getTileEntity(x, y, z);
-        if (tile == null || !entry.tileClass.equals(
-            tile.getClass()
-                .getName())
+        if (tile == null || tile.isInvalid()
+            || (entry.loadedTile != null && entry.loadedTile != tile)
+            || !entry.tileClass.equals(
+                tile.getClass()
+                    .getName())
             || !entry.block.equals(Block.blockRegistry.getNameForObject(world.getBlock(x, y, z)))
             || !entry.identity.equals(((QuantumIncorporationIdentity) tile).gtswn$getIncorporationIdentity())) {
             forget(world, entry, false);
             return;
         }
+        entry.loadedTile = tile;
         int latestColor = entry.getColorIndex();
         if (entry.color != latestColor) {
             entry.color = latestColor;
@@ -314,14 +350,14 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.lastIsolation = isolationTick;
         }
         WorldServer anchor = DimensionManager.getWorld(entry.dim);
+        if (anchor != null && !QuantumControllerRegistry.get(anchor)
+            .isQuantized(entry.ax, entry.ay, entry.az)) {
+            forget(world, entry, true);
+            return;
+        }
         // Never load worlds or chunks just to keep an incorporated machine connected.
         if (anchor == null || !anchor.blockExists(entry.ax, entry.ay, entry.az)) {
             entry.disconnect();
-            return;
-        }
-        if (!QuantumControllerRegistry.get(anchor)
-            .isQuantized(entry.ax, entry.ay, entry.az)) {
-            forget(world, entry, true);
             return;
         }
         TileEntity controller = anchor.getTileEntity(entry.ax, entry.ay, entry.az);
@@ -462,7 +498,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     public void unload() {
-        for (Entry entry : snapshot()) entry.disconnect();
+        for (Entry entry : snapshot()) {
+            entry.disconnect();
+            entry.loadedTile = null;
+        }
     }
 
     @Override
@@ -527,6 +566,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
 
         private String block, tileClass, identity, owner;
+        private TileEntity loadedTile;
         private IGridConnection connection;
         private IGridConnection billingConnection;
         private IGridNode billingNode;
@@ -541,6 +581,12 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         public String identity() {
             return identity;
+        }
+
+        private boolean owns(TileEntity tile) {
+            return loadedTile != null ? loadedTile == tile
+                : tile instanceof QuantumIncorporationIdentity
+                    && identity.equals(((QuantumIncorporationIdentity) tile).gtswn$getIncorporationIdentity());
         }
 
         private boolean hasLiveConnections() {
@@ -565,8 +611,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             Set<Entry> active = ACTIVE.get(anchorKey());
             boolean changed = active != null && active.remove(this);
             if (active != null && active.isEmpty()) ACTIVE.remove(anchorKey());
-            if (connection != null) connection.destroy();
-            if (billingConnection != null) billingConnection.destroy();
+            // An overridden tile invalidate may have destroyed its AE node before reaching our base hook.
+            if (connection != null && (containsConnection(local, connection) || containsConnection(target, connection)))
+                connection.destroy();
+            if (billingConnection != null && (containsConnection(billingNode, billingConnection)
+                || containsConnection(target, billingConnection))) billingConnection.destroy();
             if (billingNode != null) billingNode.destroy();
             connection = null;
             billingConnection = null;
@@ -574,6 +623,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             local = null;
             target = null;
             if (changed) invalidateStats();
+        }
+
+        private static boolean containsConnection(IGridNode node, IGridConnection connection) {
+            return node != null && node.getConnections()
+                .contains(connection);
         }
     }
 

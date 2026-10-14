@@ -56,7 +56,8 @@ public final class QuantumBusReplacement {
     /** Remove only the quantum core; the original parts stay live in a native AE2 host. */
     public static boolean removeCore(TileEntityNetworkQuantumNode original, TileCableBus bus, Placement placement) {
         CableBusContainer container = original.getPartContainer();
-        if (container.isEmpty() || container.getPart(ForgeDirection.UNKNOWN) != null) {
+        if (!original.hasParts() || (container.getPart(ForgeDirection.UNKNOWN) != null
+            && !(container.getPart(ForgeDirection.UNKNOWN) instanceof QuantumNodeCablePart))) {
             return false;
         }
         TileCableBusAccessor target = (TileCableBusAccessor) (Object) bus;
