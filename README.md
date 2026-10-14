@@ -149,6 +149,7 @@ Carry it in inventory or any Baubles slot for a wireless grid HUD. First right-c
 | Shift+右击未绑定或他人终端 / Shift+right-click an unbound or borrowed terminal | 将拥有者改绑为自己 / Bind ownership to yourself |
 
 - **真实屏幕来源 / Physical screen sources**：查看页的 EU、AE 走势、AE 库存按钮会选择已绑定且处于对应显示模式的真实信息屏；前后按钮逐屏切换，解绑只移除当前屏幕。原屏的计数法、时间窗口与走势颜色保留 / The EU, AE Chart and AE Inventory shortcuts select actual bound screens in the corresponding display mode. Previous/next browses screens; unbinding removes only the current screen. Native number formats, time windows and trend colors are retained.
+- **紧凑界面 / Compact viewer**：查看、设置与挂载管理页面统一缩小 15%，随屏幕比例适配并保留四周边距；完整图表与分页列表仍可使用 / The viewer, settings and pin manager are uniformly 15% smaller, scale to fit the screen and retain outer margins. Complete charts and paginated lists remain available.
 
 <p align="center"><img src="images/v1.8.62/portable-monitor-eu-chart.png" alt="便携终端远程查看 EU 走势 / Portable terminal viewing an EU chart" width="600"><br><em>随身查看原生 EU 走势 / Native EU chart on the go</em></p>
 
@@ -311,6 +312,7 @@ Bind supported GT working machines to view Running/Idle/Stopped status, actual E
 A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Network (简易无线网络)** quest line of 14 quests — from the Wireless Energy Monitor and pocket HUD through the Link Terminal and its covers and wall-sized info panels, ending with ME network quantization, Quantum Incorporation Anchors and network colors, and the Device Info Terminal. Everything is LV-era tech. Quest line and per-quest names/descriptions are localized in both Chinese and English.
 
 - **更新 / Updates**：任务线自动装载；换新版 jar 后老世界同步任务定义并保留进度 / The quest line loads automatically; replacing the jar updates existing worlds’ definitions while keeping progress.
+- **操作说明 / Updated guidance**：中英双语描述涵盖信息屏绑定、完整随身查看、AE 即时/平均挂载、设备扫描与可视化、忽略开关、安全传送及经验配置；14 个任务的身份、条件、奖励与前置保持一致 / Bilingual descriptions cover screen binding, complete portable views, AE instant/average pins, device scans and visualization, ignore switches, safe travel and experience settings. The 14 quest identities, conditions, rewards and prerequisites remain unchanged.
 
 ***
 

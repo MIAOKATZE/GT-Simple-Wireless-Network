@@ -73,7 +73,8 @@ public final class GuiPortableMonitor extends GuiScreen {
     public void initGui() {
         panelWidth = Math.max(430, Math.min(640, screenWidth - 16));
         panelHeight = Math.max(300, Math.min(420, screenHeight - 16));
-        canvas = new GuiCanvas(screenWidth, screenHeight, panelWidth, panelHeight);
+        // Preserve the full settings/chart layout and reduce its fitted outer frame by 15%.
+        canvas = new GuiCanvas(screenWidth, screenHeight, panelWidth, panelHeight, .85f);
         width = canvas.width;
         height = canvas.height;
         left = (width - panelWidth) / 2;

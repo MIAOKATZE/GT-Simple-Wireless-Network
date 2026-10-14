@@ -7,9 +7,14 @@ public final class GuiCanvas {
     public final int width, height;
 
     public GuiCanvas(int screenWidth, int screenHeight, int panelWidth, int panelHeight) {
+        this(screenWidth, screenHeight, panelWidth, panelHeight, 1f);
+    }
+
+    /** Shrink the entire fitted canvas while preserving one coordinate space for all controls. */
+    public GuiCanvas(int screenWidth, int screenHeight, int panelWidth, int panelHeight, float sizeFactor) {
         scale = Math.max(
             .01f,
-            Math.min(
+            sizeFactor * Math.min(
                 1f,
                 Math.min(
                     Math.max(1, screenWidth - 16) / (float) panelWidth,
