@@ -366,6 +366,8 @@ public class CommonProxy {
         // 服务端空实现：此包只发往客户端
     }
 
+    public void handleResponseEU(String euStr, long requestToken, Object sourceHandler) {}
+
     /**
      * 【hotfix v1.5.14】处理服务端→客户端 AE 监控数据同步包（客户端专用逻辑）。
      * <p>
@@ -458,6 +460,8 @@ public class CommonProxy {
     public void handleSyncQuantumIncorporationState(PacketSyncQuantumIncorporationState message) {}
 
     public void handleQuantumIncorporationClick(int x, int y, int z, boolean remove) {}
+
+    public void handleQuantumMigrationResult(long session, int result) {}
 
     public void openQuantumTerminalGui() {}
 

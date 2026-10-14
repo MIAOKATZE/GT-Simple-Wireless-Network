@@ -36,6 +36,27 @@ public final class HudController {
     private static final int INVENTORY_CHECK_INTERVAL = 20;
 
     private final HudState state = new HudState();
+    private final HudSession session = new HudSession();
+
+    public HudSession.Snapshot captureSession(Object world, Object player, Object connection) {
+        return session.capture(world, player, connection);
+    }
+
+    /** Main-thread lifecycle boundary; connection changes clear history, world changes revalidate its owner. */
+    public boolean synchronizeSession(Object world, Object player, Object connection) {
+        boolean preserveHistory = session.sameConnection(connection);
+        if (!session.change(world, player, connection)) return false;
+        state.resetForSession(preserveHistory);
+        return true;
+    }
+
+    public boolean unloadWorld(Object world) {
+        return session.ownsWorld(world) && synchronizeSession(null, null, session.connection());
+    }
+
+    public boolean disconnect(Object connection) {
+        return session.sameConnection(connection) && synchronizeSession(null, null, null);
+    }
 
     /**
      * 每渲染帧驱动（原 onRenderOverlay ①-④ 段逐字搬迁，tick 口径不变：
@@ -46,73 +67,35 @@ public final class HudController {
      */
     public boolean updateForFrame(EntityPlayer player) {
         Minecraft mc = Minecraft.getMinecraft();
+        Object connection = mc.getNetHandler() == null ? null
+            : mc.getNetHandler()
+                .getNetworkManager();
+        synchronizeSession(mc.theWorld, player, connection);
+        if (mc.theWorld == null || player == null || player.worldObj != mc.theWorld || connection == null) return false;
         if (state.samplingInterval != Config.hudUpdateInterval) {
             state.samplingInterval = Config.hudUpdateInterval;
             state.dataSet = new com.miaokatze.gtswn.common.util.EUDataSet(
                 com.miaokatze.gtswn.common.util.EUDataSet.hudCapacityFor(Config.hudUpdateInterval));
             state.syncedEuStr = null;
-            state.lastUpdateTick = 0;
-        }
-
-        // ① 检测世界切换：用户确认世界切换时保留数据集（维持 EU/t 连续性）
-        // 仅重置 UI 状态（syncedEuStr、cachedEUText、cachedEUTText、lastUpdateTick），不清空 dataSet
-        int worldId = mc.theWorld.provider.dimensionId;
-        if (worldId != state.currentWorldId) {
-            state.currentWorldId = worldId;
-            state.resetUiForWorldSwitch();
+            state.lastUpdateTick = Long.MIN_VALUE / 2;
         }
 
         // 获取世界时间
         long currentTick = mc.theWorld.getTotalWorldTime();
 
         // ② 每 INVENTORY_CHECK_INTERVAL ticks 检查一次背包（在 hudEnabled 检查之前执行）
-        if (currentTick - state.lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
+        if (currentTick < state.lastInventoryCheckTick
+            || currentTick - state.lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
             // 单次背包扫描（主手 → Baubles → 主背包）：owner 与 HUD 模式同源返回，绑定口径一致
             MonitorScanResult scan = scanMonitorInInventory(player);
-            state.monitorStack = scan.stack;
             String newOwnerUUID = scan.ownerUUID;
-
-            // 如果找到了已绑定的监测终端，使用其 NBT 中的 HUD 模式
-            if (newOwnerUUID != null && !newOwnerUUID.isEmpty()) {
-                int hudMode = scan.hudMode;
-
-                // 如果 HUD 模式或拥有者发生变化，更新缓存
-                if (!newOwnerUUID.equals(state.cachedOwnerUUID) || state.displayMode != hudMode) {
-                    // B2-04：换绑定账户时清空旧 owner 的数据集与 EU 显示残留——dataSet 属于旧 owner
-                    // 的网络快照，syncedEuStr 残留会在切换瞬间短暂显示旧 owner 余额；
-                    // 仅 HUD 模式变化（同 owner）不清，与上方世界切换保留 dataSet 语义（用户确认）不冲突
-                    boolean ownerChanged = !newOwnerUUID.equals(state.cachedOwnerUUID);
-                    if (ownerChanged) {
-                        state.dataSet.clear();
-                        state.syncedEuStr = null;
-                    }
-                    state.setCachedOwnerUUID(newOwnerUUID);
-                    state.displayMode = hudMode;
-                    state.hudEnabled = hudMode > 0;
-
-                    // 如果 HUD 开启，重置更新时间强制立即更新
-                    // 注：便携式随退出登录重置（用户确认），不再从物品 NBT 加载历史，
-                    // 靠 gap 检测和首次检测重建数据集
-                    if (state.hudEnabled) {
-                        state.lastUpdateTick = 0;
-
-                        // 立即更新一次缓存（解析失败时 parsedOwnerUuid 为 null，跳过，与原 try-catch 忽略语义一致）
-                        if (state.parsedOwnerUuid != null) {
-                            updateCache(currentTick, state.parsedOwnerUuid);
-                        }
-                    }
-                }
-            } else {
-                // 没找到监测终端，关闭 HUD
-                if (state.hudEnabled) {
-                    // 失去监视器：清空所有缓存（含 dataSet），避免跨存档污染
-                    state.hudEnabled = false;
-                    state.setCachedOwnerUUID(null);
-                    state.displayMode = 0;
-                    state.clearCache();
-                }
+            boolean selectionChanged = newOwnerUUID == null || !newOwnerUUID.equals(state.cachedOwnerUUID)
+                || state.displayMode != scan.hudMode;
+            if (selectionChanged) {
+                session.invalidateRequest();
+                state.lastUpdateTick = Long.MIN_VALUE / 2;
             }
-
+            state.selectMonitor(scan.stack, newOwnerUUID, scan.hudMode);
             state.lastInventoryCheckTick = currentTick;
         }
 
@@ -142,7 +125,7 @@ public final class HudController {
         if (state.lastUpdateRealTimeMs > 0 && currentRealTimeMs - state.lastUpdateRealTimeMs > 10000L) {
             // 长时重载/退出重进（>10秒真实时间）：清空数据集，强制首次检测
             state.dataSet.clear();
-            state.lastUpdateTick = 0; // 强制首次检测
+            state.lastUpdateTick = Long.MIN_VALUE / 2;
         }
         state.lastUpdateRealTimeMs = currentRealTimeMs;
 
@@ -160,11 +143,13 @@ public final class HudController {
      * 同 tick 执行，模式切换即时生效语义不变）。
      *
      * @param newMode   新 HUD 显示模式（0=关闭，1=常规计数，2=科学计数）
-     * @param ownerUUID 拥有者 UUID（null/空时不更新 owner 缓存，语义同原静态 setter）
+     * @param ownerUUID 拥有者 UUID；无有效拥有者时撤销 HUD 显示资格
      */
     public void applyHudToggle(int newMode, String ownerUUID) {
-        state.setEnabled(newMode > 0, ownerUUID);
-        state.setDisplayMode(newMode);
+        session.invalidateRequest();
+        state.selectMonitor(state.monitorStack, ownerUUID, newMode);
+        state.lastInventoryCheckTick = Long.MIN_VALUE / 2;
+        state.lastUpdateTick = Long.MIN_VALUE / 2;
     }
 
     /** 渲染只读：EU 总量文本（原 cachedEUText 静态字段读点收口为门面） */
@@ -326,10 +311,20 @@ public final class HudController {
      *
      * @param euStr 服务端传来的 {@code BigInteger.toString()} 字符串
      */
-    public void receiveSyncedEU(String euStr) {
+    public void receiveSyncedEU(String euStr, long requestToken, HudSession.Snapshot snapshot, Object world,
+        EntityPlayer player, Object connection) {
         if (euStr == null || euStr.isEmpty()) {
             return;
         }
+        if (!session.consume(snapshot, world, player, connection, requestToken) || !state.hudEnabled) return;
+        MonitorScanResult scan = scanMonitorInInventory(player);
+        if (scan.hudMode <= 0 || !java.util.Objects.equals(scan.ownerUUID, state.cachedOwnerUUID)) {
+            session.invalidateRequest();
+            state.selectMonitor(scan.stack, scan.ownerUUID, scan.hudMode);
+            state.lastUpdateTick = Long.MIN_VALUE / 2;
+            return;
+        }
+        state.monitorStack = scan.stack;
 
         // 解析服务端传来的 EU 字符串（异常时设为 ZERO，避免渲染崩溃）
         BigInteger wirelessEU;
@@ -382,7 +377,8 @@ public final class HudController {
     private void updateCache(long currentTick, UUID uuid) {
         // 向服务端发送 EU 请求包（仅当拥有者 UUID 有效时）
         if (state.cachedOwnerUUID != null && !state.cachedOwnerUUID.isEmpty()) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestWirelessEU(state.cachedOwnerUUID));
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(new PacketRequestWirelessEU(state.cachedOwnerUUID, session.request()));
         }
 
         // 首次进入（尚未收到服务端响应）时显示占位符，避免闪烁；

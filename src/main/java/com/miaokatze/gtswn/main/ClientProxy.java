@@ -76,6 +76,12 @@ public class ClientProxy extends CommonProxy {
     }
 
     @Override
+    public void handleQuantumMigrationResult(long session, int result) {
+        Minecraft.getMinecraft()
+            .func_152344_a(() -> QuantumIncorporationClientHandler.receiveMigrationResult(session, result));
+    }
+
+    @Override
     public void handleSyncQuantumIncorporationState(PacketSyncQuantumIncorporationState message) {
         Minecraft minecraft = Minecraft.getMinecraft();
         World receivedWorld = minecraft.theWorld;
@@ -102,6 +108,12 @@ public class ClientProxy extends CommonProxy {
         // 【v1.8.18】preInit 已完成配置加载，此时构造才能让 HUD 数据集容量读到
         // 用户配置的检测间隔（字段初始化器会先于 preInit 执行，只能拿到编译期默认值）
         this.hudController = new HudController();
+        com.miaokatze.gtswn.client.HudSessionLifecycle hudLifecycle = new com.miaokatze.gtswn.client.HudSessionLifecycle(
+            this.hudController);
+        MinecraftForge.EVENT_BUS.register(hudLifecycle);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(hudLifecycle);
         com.miaokatze.gtswn.client.PortableMonitorClientCache.registerKey();
         FMLCommonHandler.instance()
             .bus()
@@ -161,11 +173,7 @@ public class ClientProxy extends CommonProxy {
         RenderNetworkQuantumNode.register();
         BlockNetworkQuantumNode.renderId = RenderNetworkQuantumNode.INSTANCE.getRenderId();
 
-        // 注：原 PlayerLoggedOutEvent 监听器用于保存便携式 HUD 历史到物品 NBT，
-        // 已随 WirelessMonitorHUD.saveHistoryToItemStack 删除而移除（用户确认便携式随退出登录重置）。
-        // HUD 状态会在下次背包周期扫描（scanMonitorInInventory，每 20t）时自动重置：
-        // - 无监视器 → clearCache() 清空所有缓存
-        // - 有监视器 → 重新初始化，靠 gap 检测和首次检测重建数据集
+        // HUD lifecycle is client-owned; no history is written into terminal NBT on logout.
     }
 
     /**
@@ -181,10 +189,29 @@ public class ClientProxy extends CommonProxy {
      */
     @Override
     public void handleResponseEU(String euStr) {
-        // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
-        // O2-B10：EU 回包写入经控制器实例（原 WirelessMonitorHUD.receiveSyncedEU 静态入口随 B10 实例化）
-        Minecraft.getMinecraft()
-            .func_152344_a(() -> this.hudController.receiveSyncedEU(euStr));
+        // Legacy replies carry no request identity and cannot authorize writes into the current HUD.
+    }
+
+    @Override
+    public void handleResponseEU(String euStr, long requestToken, Object sourceHandler) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (hudController == null || !(sourceHandler instanceof net.minecraft.client.network.NetHandlerPlayClient))
+            return;
+        Object connection = ((net.minecraft.client.network.NetHandlerPlayClient) sourceHandler).getNetworkManager();
+        World receivedWorld = mc.theWorld;
+        EntityPlayer receivedPlayer = mc.thePlayer;
+        com.miaokatze.gtswn.common.hud.HudSession.Snapshot receivedSession = hudController
+            .captureSession(receivedWorld, receivedPlayer, connection);
+        if (receivedSession == null) return;
+        mc.func_152344_a(() -> {
+            Object activeConnection = mc.getNetHandler() == null ? null
+                : mc.getNetHandler()
+                    .getNetworkManager();
+            if (mc.theWorld != receivedWorld || mc.thePlayer != receivedPlayer || activeConnection != connection)
+                return;
+            hudController
+                .receiveSyncedEU(euStr, requestToken, receivedSession, mc.theWorld, mc.thePlayer, activeConnection);
+        });
     }
 
     /**

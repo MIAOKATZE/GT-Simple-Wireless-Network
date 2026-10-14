@@ -400,7 +400,7 @@ public class ItemNetworkQuantumTerminal extends Item {
      * {@code updateMeta()} 一致的状态判定路径：proxy 就绪 + 结构在线（formed 且无冲突，
      * CONTROLLER_ONLINE）+ 网络有电。
      */
-    private static boolean isControllerActive(TileController controller) {
+    public static boolean isControllerActive(TileController controller) {
         // 经 IGridProxyable 接口调用 getProxy()：源表达式先上溯为 TileEntity——
         // 直接从 TileController cast 会触发 javac 解析 AEPowerTile 上挂的
         // Mekanism/CoFH/RotaryCraft 可选接口（不在编译 classpath，报「无法访问」）
@@ -419,7 +419,7 @@ public class ItemNetworkQuantumTerminal extends Item {
     }
 
     /** 写入终端绑定锚点（含维度显示名），QT_Bound 置 1 */
-    private static void writeAnchor(ItemStack stack, World world, int x, int y, int z) {
+    public static void writeAnchor(ItemStack stack, World world, int x, int y, int z) {
         NBTTagCompound tag = ensureNBT(stack);
         tag.setByte(NBT_BOUND, (byte) 1);
         tag.setInteger(NBT_ANCHOR_DIM, world.provider.dimensionId);
@@ -533,6 +533,7 @@ public class ItemNetworkQuantumTerminal extends Item {
             list,
             "gtswn.tooltip.quantum_terminal.usage.controller",
             "gtswn.tooltip.quantum_terminal.usage.dequantize",
+            "gtswn.tooltip.quantum_terminal.usage.migrate",
             "gtswn.tooltip.quantum_terminal.usage.place",
             "gtswn.tooltip.quantum_terminal.usage.bus",
             "gtswn.tooltip.quantum_terminal.usage.pickup",

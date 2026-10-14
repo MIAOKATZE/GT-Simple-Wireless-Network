@@ -52,6 +52,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     private final Map<AnchorKey, Map<Long, Entry>> sources = new HashMap<>();
     private ArrayList<Entry> maintenanceOrder;
     private int cursor;
+    private long migrationRevision = -1L;
     private static long budgetTick = Long.MIN_VALUE;
     private static int connectionsThisTick;
     /** Only live bridges, indexed across dimensions by their controller anchor. */
@@ -92,8 +93,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     public static QuantumIncorporationRegistry get(World world) {
-        return SavedDataUtil
+        QuantumIncorporationRegistry data = SavedDataUtil
             .loadOrCreate(world, DATA_NAME, QuantumIncorporationRegistry.class, QuantumIncorporationRegistry::new);
+        if (!world.isRemote) data.applyPendingMigrations(world, QuantumMigrationJournal.get(world));
+        return data;
     }
 
     public static boolean isEligible(World world, int x, int y, int z) {
@@ -145,6 +148,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         Entry entry = new Entry();
         entry.loadedTile = tile;
         entry.position = key;
+        entry.lastAppliedMigration = QuantumMigrationJournal.get(world)
+            .currentSequence();
         entry.block = Block.blockRegistry.getNameForObject(world.getBlock(x, y, z));
         entry.tileClass = tile.getClass()
             .getName();
@@ -278,6 +283,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private void inspect(World world, Entry entry) {
+        applyPendingMigrations(world, QuantumMigrationJournal.get(world));
         int x = QuantumControllerRegistry.unpackX(entry.position),
             y = QuantumControllerRegistry.unpackY(entry.position),
             z = QuantumControllerRegistry.unpackZ(entry.position);
@@ -497,6 +503,42 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             QuantumIncorporationVisualSync.changed(world, (int) (chunk >> 32) << 4, 0, (int) chunk << 4);
     }
 
+    /** Includes registrations whose local chunks are unloaded; identity and owner never change. */
+    public void applyPendingMigrations(World world, QuantumMigrationJournal journal) {
+        if (migrationRevision == journal.currentSequence()) return;
+        Set<Long> changedChunks = new java.util.HashSet<>();
+        for (Entry entry : entries.values()) {
+            if (entry.lastAppliedMigration >= journal.currentSequence()) continue;
+            QuantumMigrationJournal.Resolution result = journal.resolve(entry.anchorKey(), entry.lastAppliedMigration);
+            if (!result.anchor.equals(entry.anchorKey())) {
+                entry.disconnect();
+                entry.dim = result.anchor.getDimension();
+                entry.ax = result.anchor.getX();
+                entry.ay = result.anchor.getY();
+                entry.az = result.anchor.getZ();
+                entry.nextAttempt = 0L;
+                entry.backoff = 20;
+                entry.color = entry.getColorIndex();
+                changedChunks.add(entryChunk(entry));
+            }
+            entry.lastAppliedMigration = result.sequence;
+            markDirty();
+        }
+        if (!changedChunks.isEmpty()) {
+            sources.clear();
+            for (Entry entry : entries.values()) index(entry);
+            invalidateStats();
+        }
+        migrationRevision = journal.currentSequence();
+        if (!changedChunks.isEmpty()) migrationVisualsChanged(world, changedChunks);
+    }
+
+    /** Visual snapshots may reenter get(); every binding and index must already reflect the committed revision. */
+    void migrationVisualsChanged(World world, Set<Long> changedChunks) {
+        for (long chunk : changedChunks)
+            QuantumIncorporationVisualSync.changed(world, (int) (chunk >> 32) << 4, 0, (int) chunk << 4);
+    }
+
     public void unload() {
         for (Entry entry : snapshot()) {
             entry.disconnect();
@@ -508,6 +550,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     public void readFromNBT(NBTTagCompound tag) {
         for (Entry entry : entries.values()) entry.disconnect();
         entries.clear();
+        migrationRevision = -1L;
         chunks.clear();
         sources.clear();
         maintenanceOrder = null;
@@ -516,6 +559,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             NBTTagCompound n = list.getCompoundTagAt(i);
             Entry e = new Entry();
             e.position = n.getLong("pos");
+            e.lastAppliedMigration = n.getLong("lastAppliedMigration");
             e.block = n.getString("block");
             e.tileClass = n.getString("tile");
             e.identity = n.getString("identity");
@@ -538,6 +582,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         for (Entry e : entries.values()) {
             NBTTagCompound n = new NBTTagCompound();
             n.setLong("pos", e.position);
+            n.setLong("lastAppliedMigration", e.lastAppliedMigration);
             n.setString("block", e.block);
             n.setString("tile", e.tileClass);
             n.setString("identity", e.identity);
@@ -557,6 +602,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         public long position;
         public int dim, ax, ay, az;
         private int color;
+        private long lastAppliedMigration;
 
         public int getColorIndex() {
             WorldServer anchor = DimensionManager.getWorld(dim);

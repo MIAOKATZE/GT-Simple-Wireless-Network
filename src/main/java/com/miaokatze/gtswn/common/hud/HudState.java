@@ -13,8 +13,7 @@ import com.miaokatze.gtswn.config.Config;
  * 收编为实例态，由 {@link HudController} 唯一持有，消除跨类 static 写入面）。
  *
  * <p>
- * 字段与字段级操作自 {@code WirelessMonitorHUD} 逐字搬迁，语义不变；
- * {@code clearCache} 的「世界切换不再调用、失去监视器/HUD 关闭时调用」口径随迁（见调用方注释）。
+ * 显示资格、采样节拍与文本均属于当前客户端会话；历史只允许同连接同拥有者跨维度沿用。
  * </p>
  */
 final class HudState {
@@ -59,48 +58,23 @@ final class HudState {
     long lastUpdateRealTimeMs = 0L;
 
     /** 上次更新的时间戳（游戏 tick） */
-    long lastUpdateTick = 0;
+    long lastUpdateTick = Long.MIN_VALUE / 2;
 
     /** 上次背包检查的时间戳（游戏 tick） */
-    long lastInventoryCheckTick = 0;
+    long lastInventoryCheckTick = Long.MIN_VALUE / 2;
 
     /** 缓存的无线电网能量值 */
     String cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
         + ": §f0 §b"
         + StatCollector.translateToLocal("gtswn.hud.eu.unit");
 
-    /** 当前世界 ID（用于检测世界切换） */
-    int currentWorldId = -1;
-
-    /**
-     * 设置 HUD 显示状态。
-     *
-     * @param enabled   是否启用 HUD
-     * @param ownerUUID 拥有者 UUID（可选）
-     */
-    void setEnabled(boolean enabled, String ownerUUID) {
-        this.hudEnabled = enabled;
-        if (ownerUUID != null && !ownerUUID.isEmpty()) {
-            setCachedOwnerUUID(ownerUUID);
-        }
-    }
-
-    /**
-     * 设置 HUD 显示模式。
-     *
-     * @param mode 显示模式（0=关闭，1=常规计数，2=科学计数）
-     */
-    void setDisplayMode(int mode) {
-        this.displayMode = mode;
-        // 重置更新时间，强制下次渲染时立即更新
-        this.lastUpdateTick = 0;
-    }
+    /** Only used while revalidating inventory after a world/player change on the same connection. */
+    String historyOwnerUUID;
 
     /**
      * 清空所有缓存数据（用于玩家失去监视器、HUD 关闭等场景）。
      * <p>
-     * 注意：世界切换不再调用此方法（见 {@link #resetUiForWorldSwitch()}），
-     * 用户确认世界切换时保留数据集以维持 EU/t 连续性。
+     * 断开连接、切换账户或失去终端时清空；不修改任何物品 NBT。
      * </p>
      */
     void clearCache() {
@@ -114,28 +88,41 @@ final class HudState {
         this.cachedEUTText = "";
         this.cachedRealtimeEUTText = "";
         this.dataSet.clear(); // 清空数据集
-        this.lastUpdateTick = 0; // 强制首次检测
+        this.lastUpdateTick = Long.MIN_VALUE / 2;
         this.lastUpdateRealTimeMs = 0; // 重置真实时间戳
-        this.lastInventoryCheckTick = 0;
+        this.lastInventoryCheckTick = Long.MIN_VALUE / 2;
         this.hudEnabled = false;
         this.displayMode = 0;
+        this.historyOwnerUUID = null;
     }
 
     /**
-     * 世界切换 UI 态重置（保留 {@link #dataSet}，用户确认维持 EU/t 连续性）：
-     * 仅重置 syncedEuStr、cachedEUText、cachedEUTText、lastUpdateTick 等 UI 状态。
+     * Always revoke display eligibility and sampling deadlines. Only a still-open connection may
+     * retain history while inventory is rechecked for the same owner in the next world.
      */
-    void resetUiForWorldSwitch() {
-        this.monitorStack = null;
-        this.lastInventoryCheckTick = Long.MIN_VALUE / 2;
-        // 保留 dataSet（用户确认），只重置 UI 状态
-        this.syncedEuStr = null;
-        this.cachedEUText = "§b" + StatCollector.translateToLocal("gtswn.hud.wireless.network")
-            + ": §f... §b"
-            + StatCollector.translateToLocal("gtswn.hud.eu.unit");
-        this.cachedEUTText = "";
-        this.cachedRealtimeEUTText = "";
-        this.lastUpdateTick = 0; // 强制下次更新
+    void resetForSession(boolean preserveHistory) {
+        EUDataSet history = this.dataSet;
+        String historyOwner = cachedOwnerUUID != null ? cachedOwnerUUID : historyOwnerUUID;
+        if (preserveHistory) this.dataSet = new EUDataSet(EUDataSet.hudCapacityFor(samplingInterval));
+        clearCache();
+        if (preserveHistory) {
+            this.dataSet = history;
+            this.historyOwnerUUID = historyOwner;
+        }
+    }
+
+    void selectMonitor(ItemStack stack, String owner, int mode) {
+        if (owner == null || owner.isEmpty() || mode <= 0) {
+            clearCache();
+            return;
+        }
+        String previous = cachedOwnerUUID != null ? cachedOwnerUUID : historyOwnerUUID;
+        if (!owner.equals(previous)) clearCache();
+        monitorStack = stack;
+        setCachedOwnerUUID(owner);
+        displayMode = mode;
+        hudEnabled = parsedOwnerUuid != null;
+        historyOwnerUUID = null;
     }
 
     /**

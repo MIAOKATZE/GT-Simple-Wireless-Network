@@ -43,6 +43,23 @@ public final class QuantumNetworkColorSync {
         }
     }
 
+    /** Snapshot before rebinding: replaceAnchor mutates the same source index. */
+    public static void migrateNodes(QuantumMigrationJournal journal, int dimension, Set<Long> members) {
+        Set<TileEntityNetworkQuantumNode> affected = new HashSet<>();
+        for (long position : members) {
+            Set<TileEntityNetworkQuantumNode> indexed = NODES.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(position),
+                    QuantumControllerRegistry.unpackY(position),
+                    QuantumControllerRegistry.unpackZ(position)));
+            if (indexed != null) affected.addAll(indexed);
+        }
+        for (TileEntityNetworkQuantumNode node : affected) if (!node.isInvalid()) QuantumNetworkMigration.finishStep(
+            "quantum node at " + node.xCoord + "," + node.yCoord + "," + node.zCoord,
+            () -> node.applyPendingMigrations(journal));
+    }
+
     public static void changed(int dimension, Set<Long> members, int index) {
         for (long position : members) {
             AnchorKey key = new AnchorKey(

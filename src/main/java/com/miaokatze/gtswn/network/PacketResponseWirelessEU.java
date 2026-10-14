@@ -20,6 +20,7 @@ public class PacketResponseWirelessEU implements IMessage {
 
     /** EU 字符串（{@code BigInteger.toString()}，自带符号与十进制） */
     private String euStr;
+    long requestToken;
 
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketResponseWirelessEU() {}
@@ -28,15 +29,33 @@ public class PacketResponseWirelessEU implements IMessage {
         this.euStr = euStr;
     }
 
+    public PacketResponseWirelessEU(String euStr, long requestToken) {
+        this.euStr = euStr;
+        this.requestToken = requestToken;
+    }
+
     @Override
     public void fromBytes(ByteBuf buf) {
         // 1.7.10 用 ByteBufUtils.readUTF8String 读写字符串
-        euStr = ByteBufUtils.readUTF8String(buf);
+        euStr = null;
+        requestToken = 0;
+        try {
+            String value = ByteBufUtils.readUTF8String(buf);
+            if (buf.readableBytes() != 0 && buf.readableBytes() != 8) return;
+            if (buf.isReadable()) {
+                requestToken = buf.readLong();
+                if (requestToken <= 0) return;
+            }
+            euStr = value;
+        } catch (RuntimeException invalid) {
+            euStr = null;
+        }
     }
 
     @Override
     public void toBytes(ByteBuf buf) {
         ByteBufUtils.writeUTF8String(buf, euStr);
+        if (requestToken != 0) buf.writeLong(requestToken);
     }
 
     /**
@@ -59,7 +78,8 @@ public class PacketResponseWirelessEU implements IMessage {
                 return null;
             }
             // 委托给 @SidedProxy：服务端调用 CommonProxy 空实现，客户端调用 ClientProxy 实际处理
-            GTSimpleWirelessNetwork.proxy.handleResponseEU(message.euStr);
+            if (message.euStr != null)
+                GTSimpleWirelessNetwork.proxy.handleResponseEU(message.euStr, message.requestToken, ctx.netHandler);
             return null;
         }
     }

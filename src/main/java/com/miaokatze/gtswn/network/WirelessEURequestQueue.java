@@ -34,8 +34,12 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
 
     /** Netty 线程入队（仅缓存玩家引用与拥有者 UUID，主线程 drain 时再查询回包） */
     public static void enqueue(EntityPlayerMP player, String ownerUUID) {
+        enqueue(player, ownerUUID, 0);
+    }
+
+    public static void enqueue(EntityPlayerMP player, String ownerUUID, long requestToken) {
         if (ownerUUID != null) {
-            INSTANCE.offer(player, new Request(player, ownerUUID));
+            INSTANCE.offer(player, new Request(player, ownerUUID, requestToken));
         }
     }
 
@@ -63,7 +67,8 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
                 return;
             }
             BigInteger eu = WirelessNetworkManager.getUserEU(UUID.fromString(request.ownerUUID));
-            GTSWNPacketHandler.NETWORK.sendTo(new PacketResponseWirelessEU(eu.toString()), request.player);
+            GTSWNPacketHandler.NETWORK
+                .sendTo(new PacketResponseWirelessEU(eu.toString(), request.requestToken), request.player);
         } catch (Throwable t) {
             // 玩家掉线/格式异常：静默丢弃，客户端下轮轮询
         }
@@ -127,10 +132,12 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
 
         private final EntityPlayerMP player;
         private final String ownerUUID;
+        private final long requestToken;
 
-        private Request(EntityPlayerMP player, String ownerUUID) {
+        private Request(EntityPlayerMP player, String ownerUUID, long requestToken) {
             this.player = player;
             this.ownerUUID = ownerUUID;
+            this.requestToken = requestToken;
         }
     }
 }

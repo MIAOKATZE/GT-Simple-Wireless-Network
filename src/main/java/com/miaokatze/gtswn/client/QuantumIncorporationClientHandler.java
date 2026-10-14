@@ -5,6 +5,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraftforge.client.event.DrawBlockHighlightEvent;
 import net.minecraftforge.client.event.MouseEvent;
+import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 
 import org.lwjgl.input.Keyboard;
@@ -20,6 +21,10 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 
 /** Client-only Alt gestures. No world scan: only the pointed block is tested. */
 public final class QuantumIncorporationClientHandler {
+
+    public static void receiveMigrationResult(long session, int result) {
+        QuantumMigrationCharge.receiveResult(session, result);
+    }
 
     public static boolean isAltDown() {
         return Keyboard.isCreated()
@@ -42,6 +47,7 @@ public final class QuantumIncorporationClientHandler {
         // are checked on the server, including removal while the anchor or machine is offline.
         if (mc.theWorld != null && isHoldingTerminal(mc)
             && TerminalGestureRules.canIncorporate(isAltDown(), isShiftDown(), true)) {
+            if (QuantumMigrationCharge.request(mc, x, y, z)) return;
             GTSWNPacketHandler.NETWORK.sendToServer(new PacketQuantumIncorporation(x, y, z, false));
         }
     }
@@ -51,6 +57,7 @@ public final class QuantumIncorporationClientHandler {
         if (event.button != 1) return;
         if (!event.buttonstate) {
             TerminalRevealCharge.cancel();
+            QuantumMigrationCharge.release();
             return;
         }
         Minecraft mc = Minecraft.getMinecraft();
@@ -82,7 +89,15 @@ public final class QuantumIncorporationClientHandler {
 
     @SubscribeEvent
     public void onTick(TickEvent.ClientTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) TerminalRevealCharge.tick();
+        if (event.phase == TickEvent.Phase.END) {
+            TerminalRevealCharge.tick();
+            QuantumMigrationCharge.tick();
+        }
+    }
+
+    @SubscribeEvent
+    public void onOverlay(RenderGameOverlayEvent.Post event) {
+        QuantumMigrationCharge.draw(event);
     }
 
     @SubscribeEvent
