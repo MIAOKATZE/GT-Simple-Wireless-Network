@@ -2,11 +2,15 @@ package com.miaokatze.gtswn.common.quantum;
 
 import java.util.ArrayDeque;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.UUID;
 
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
@@ -46,6 +50,10 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 已量子化控制器坐标集（long 打包值） */
     private final Set<Long> controllers = new HashSet<>();
 
+    private final Map<Long, String> identities = new HashMap<>();
+    private final Map<Long, TileEntity> loadedTiles = new HashMap<>();
+    private World world;
+
     /** 运行期结构 revision；不持久化，仅用于让统计缓存感知量子化结构变化。 */
     private long revision;
 
@@ -73,6 +81,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
         QuantumControllerRegistry data = SavedDataUtil
             .loadOrCreate(world, DATA_NAME, QuantumControllerRegistry.class, QuantumControllerRegistry::new);
         data.dimensionId = world.provider.dimensionId;
+        data.world = world;
         return data;
     }
 
@@ -106,6 +115,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 入册单个坐标（已存在则无效果）；修改后标记 dirty 触发落盘 */
     public void quantize(int x, int y, int z) {
         if (this.controllers.add(pack(x, y, z))) {
+            rememberIdentity(pack(x, y, z));
             this.revision++;
             markDirty();
         }
@@ -114,6 +124,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 批量入册（打包坐标集，通常为 floodControllers 的洪泛结果） */
     public void quantizeAll(Set<Long> packedCoords) {
         if (this.controllers.addAll(packedCoords)) {
+            for (long packed : packedCoords) rememberIdentity(packed);
             this.revision++;
             markDirty();
         }
@@ -121,15 +132,14 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     /** 出册单个坐标；不存在则无效果 */
     public void dequantize(int x, int y, int z) {
-        if (this.controllers.remove(pack(x, y, z))) {
-            this.revision++;
-            markDirty();
-        }
+        dequantize(pack(x, y, z));
     }
 
     /** 出册打包坐标（供 tick 巡检遍历打包值时直接使用） */
     public void dequantize(long packed) {
         if (this.controllers.remove(packed)) {
+            identities.remove(packed);
+            loadedTiles.remove(packed);
             this.revision++;
             markDirty();
         }
@@ -170,6 +180,89 @@ public class QuantumControllerRegistry extends WorldSavedData {
         return this.snapshot;
     }
 
+    /** Use the saved coordinate graph, including the missing member and unloaded chunks. */
+    public Set<Long> registeredStructure(long start) {
+        Set<Long> result = new HashSet<>();
+        if (!controllers.contains(start)) return result;
+        Queue<Long> queue = new ArrayDeque<>();
+        result.add(start);
+        queue.add(start);
+        while (!queue.isEmpty()) {
+            long current = queue.remove();
+            for (ForgeDirection direction : ForgeDirection.VALID_DIRECTIONS) {
+                long next = pack(
+                    unpackX(current) + direction.offsetX,
+                    unpackY(current) + direction.offsetY,
+                    unpackZ(current) + direction.offsetZ);
+                if (controllers.contains(next) && result.add(next)) queue.add(next);
+            }
+        }
+        return result;
+    }
+
+    private void rememberIdentity(long position) {
+        if (world == null || !world.blockExists(unpackX(position), unpackY(position), unpackZ(position))) return;
+        TileEntity tile = world.getTileEntity(unpackX(position), unpackY(position), unpackZ(position));
+        if (!(tile instanceof TileController) || !(tile instanceof QuantumControllerIdentity)) return;
+        QuantumControllerIdentity identity = (QuantumControllerIdentity) tile;
+        if (identity.gtswn$getControllerIdentity()
+            .isEmpty()) {
+            identity.gtswn$setControllerIdentity(
+                UUID.randomUUID()
+                    .toString());
+            tile.markDirty();
+        }
+        identities.put(position, identity.gtswn$getControllerIdentity());
+        loadedTiles.put(position, tile);
+    }
+
+    /** A missing identity in an old save is adopted once, without loading any chunks. */
+    public boolean isCurrentController(World world, long position) {
+        if (!controllers.contains(position)) return false;
+        int x = unpackX(position), y = unpackY(position), z = unpackZ(position);
+        if (!world.blockExists(x, y, z)) {
+            loadedTiles.remove(position);
+            return true;
+        }
+        TileEntity tile = world.getTileEntity(x, y, z);
+        if (!(tile instanceof TileController) || tile.isInvalid()) return false;
+        TileEntity previous = loadedTiles.get(position);
+        if (previous != null && previous != tile) return false;
+        String expected = identities.get(position);
+        if (expected == null) {
+            this.world = world;
+            rememberIdentity(position);
+            markDirty();
+            return true;
+        }
+        if (!(tile instanceof QuantumControllerIdentity)
+            || !expected.equals(((QuantumControllerIdentity) tile).gtswn$getControllerIdentity())) return false;
+        loadedTiles.put(position, tile);
+        return true;
+    }
+
+    public void unloadTile(TileEntity tile) {
+        long position = pack(tile.xCoord, tile.yCoord, tile.zCoord);
+        if (loadedTiles.get(position) == tile) loadedTiles.remove(position);
+    }
+
+    /** Late invalidation of an old object must not cancel a newly registered replacement. */
+    public boolean ownsController(TileEntity tile) {
+        long position = pack(tile.xCoord, tile.yCoord, tile.zCoord);
+        if (!controllers.contains(position)) return false;
+        TileEntity remembered = loadedTiles.get(position);
+        if (remembered != null) return remembered == tile;
+        String identity = identities.get(position);
+        if (identity != null) return tile instanceof QuantumControllerIdentity
+            && identity.equals(((QuantumControllerIdentity) tile).gtswn$getControllerIdentity());
+        return world != null && world.blockExists(tile.xCoord, tile.yCoord, tile.zCoord)
+            && world.getTileEntity(tile.xCoord, tile.yCoord, tile.zCoord) == tile;
+    }
+
+    public void unload() {
+        loadedTiles.clear();
+    }
+
     // ==================== 洪泛与频道公式（静态工具） ====================
 
     /**
@@ -183,6 +276,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
      */
     public static Set<Long> floodControllers(World world, int x, int y, int z) {
         Set<Long> visited = new HashSet<>();
+        if (!world.blockExists(x, y, z)) return visited;
         TileEntity start = world.getTileEntity(x, y, z);
         if (!(start instanceof TileController)) {
             return visited;
@@ -204,6 +298,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
                 if (visited.contains(np)) {
                     continue;
                 }
+                if (!world.blockExists(nx, ny, nz)) continue;
                 TileEntity te = world.getTileEntity(nx, ny, nz);
                 if (te instanceof TileController) {
                     visited.add(np);
@@ -257,6 +352,8 @@ public class QuantumControllerRegistry extends WorldSavedData {
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         this.controllers.clear();
+        this.identities.clear();
+        this.loadedTiles.clear();
         this.revision++;
         if (!tag.hasKey(NBT_CONTROLLERS)) {
             return;
@@ -267,6 +364,13 @@ public class QuantumControllerRegistry extends WorldSavedData {
         for (int i = 0; i + 3 < flat.length; i += 4) {
             // perWorldStorage 已按维度隔离，dim（flat[i]）仅作冗余记录，读取时忽略
             this.controllers.add(pack(flat[i + 1], flat[i + 2], flat[i + 3]));
+        }
+        NBTTagList list = tag.getTagList("identities", 10);
+        for (int i = 0; i < list.tagCount(); i++) {
+            NBTTagCompound value = list.getCompoundTagAt(i);
+            long position = value.getLong("pos");
+            String identity = value.getString("identity");
+            if (controllers.contains(position) && !identity.isEmpty()) identities.put(position, identity);
         }
     }
 
@@ -282,5 +386,13 @@ public class QuantumControllerRegistry extends WorldSavedData {
             flat[i++] = unpackZ(packed);
         }
         tag.setIntArray(NBT_CONTROLLERS, flat);
+        NBTTagList list = new NBTTagList();
+        for (Map.Entry<Long, String> entry : identities.entrySet()) {
+            NBTTagCompound value = new NBTTagCompound();
+            value.setLong("pos", entry.getKey());
+            value.setString("identity", entry.getValue());
+            list.appendTag(value);
+        }
+        tag.setTag("identities", list);
     }
 }

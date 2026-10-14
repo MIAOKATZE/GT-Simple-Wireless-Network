@@ -455,9 +455,10 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     @Override
     public void breakBlock(World world, int x, int y, int z, Block block, int meta) {
         TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
-        if (node != null && node.hasParts()) {
+        if (node != null) {
             List<ItemStack> drops = new ArrayList<>();
-            node.getPartContainer()
+            node.collectRecoveredPartDrops(drops);
+            if (node.hasParts()) node.getPartContainer()
                 .getDrops(drops);
             Platform.spawnDrops(world, x, y, z, drops);
         }

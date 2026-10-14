@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.machine;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +25,7 @@ import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 import com.miaokatze.gtswn.common.machine.widgets.ScientificTextFieldWidget;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
@@ -51,6 +53,7 @@ import gregtech.common.misc.WirelessNetworkManager;
  * <li>动态贴图切换（根据红石输出状态）</li>
  * </ul>
  */
+@IMetaTileEntity.SkipGenerateDescription
 public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExporter {
 
     // EU/t 计算相关
@@ -95,17 +98,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
 
     // 构造函数：用于注册
     public MTEWirelessEnergyMonitor(int aID, String aName, String aNameRegional) {
-        super(
-            aID,
-            aName,
-            aNameRegional,
-            new String[] { net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line1"),
-                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line2"),
-                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line3"),
-                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line4"),
-                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line5"),
-                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line6"),
-                net.minecraft.util.StatCollector.translateToLocal("gtswn.desc.wireless_monitor.line7") });
+        super(aID, aName, aNameRegional, new String[0]);
     }
 
     // 拷贝构造函数
@@ -118,7 +111,27 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         return new MTEWirelessEnergyMonitor(mName, mDescriptionArray);
     }
 
-    // getDescription() 已由 MTEMonitor 基类提供，无需重复实现
+    @Override
+    public String[] getDescription() {
+        // Item descriptions have no live world context; do not present the registration instance as a running machine.
+        List<String> lines = new ArrayList<>();
+        DeviceTooltip.state(lines);
+        DeviceTooltip.add(lines, "gtswn.tooltip.wireless_monitor.item_state");
+        DeviceTooltip.description(
+            lines,
+            "gtswn.desc.wireless_monitor.line1",
+            "gtswn.desc.wireless_monitor.line2",
+            "gtswn.desc.wireless_monitor.line4",
+            "gtswn.desc.wireless_monitor.line5",
+            "gtswn.desc.wireless_monitor.line6",
+            "gtswn.desc.wireless_monitor.line7");
+        DeviceTooltip.controls(
+            lines,
+            "gtswn.tooltip.wireless_monitor.usage.gui",
+            "gtswn.tooltip.wireless_monitor.usage.configure");
+        DeviceTooltip.finish(lines);
+        return lines.toArray(new String[0]);
+    }
 
     @Override
     public boolean allowPullStack(IGregTechTileEntity aBaseMetaTileEntity, int aIndex, ForgeDirection side,

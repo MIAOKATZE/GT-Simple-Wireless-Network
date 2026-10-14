@@ -27,6 +27,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -333,14 +334,7 @@ public class ItemNetworkQuantumTerminal extends Item {
      */
     private void dequantizeStructure(EntityPlayer player, World world, QuantumControllerRegistry registry, int x, int y,
         int z) {
-        Set<Long> structure = QuantumControllerRegistry.floodControllers(world, x, y, z);
-        for (long packed : structure) {
-            int cx = QuantumControllerRegistry.unpackX(packed);
-            int cy = QuantumControllerRegistry.unpackY(packed);
-            int cz = QuantumControllerRegistry.unpackZ(packed);
-            registry.dequantize(packed);
-            QuantumControllerEventHandler.restoreAllSides(world, cx, cy, cz);
-        }
+        QuantumControllerEventHandler.cancelStructure(world, QuantumControllerRegistry.pack(x, y, z));
         sendMessage(player, "gtswn.chat.quantum.dequantized");
     }
 
@@ -508,6 +502,7 @@ public class ItemNetworkQuantumTerminal extends Item {
      */
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean advanced) {
+        DeviceTooltip.state(list);
         if (isBound(stack)) {
             NBTTagCompound tag = stack.stackTagCompound;
             list.add(
@@ -517,32 +512,35 @@ public class ItemNetworkQuantumTerminal extends Item {
                     tag.getInteger(NBT_ANCHOR_X),
                     tag.getInteger(NBT_ANCHOR_Y),
                     tag.getInteger(NBT_ANCHOR_Z)));
-            // v1.6.1 问题 4a：已绑定时提示供电要求——量子化会过滤控制器连接面，
-            // 需先接入能源元件保持网络供电，否则量子化后网络断电停机
-            list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.power_requirement"));
         } else {
             list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.unbound"));
         }
-        // 空行分隔 + 逐手势操作说明（v1.6.2：五行完整手势表）
         list.add(
             StatCollector.translateToLocalFormatted(
                 "gtswn.tooltip.quantum_terminal.color",
                 StatCollector
                     .translateToLocal("gtswn.color." + QuantumNetworkColor.name(QuantumNetworkColor.get(stack)))));
-        list.add("");
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.controller"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.dequantize"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.place"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.pickup"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.gui"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.incorporate"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.anchor"));
+        DeviceTooltip.description(
+            list,
+            "gtswn.tooltip.quantum_terminal.description",
+            "gtswn.tooltip.quantum_terminal.power_requirement",
+            "gtswn.tooltip.quantum_terminal.usage.anchor");
         list.add(
             StatCollector.translateToLocalFormatted(
                 "gtswn.tooltip.quantum_incorporation.power",
                 Config.quantumIncorporationIdlePowerUsage));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.release"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.reveal"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.quantum_terminal.usage.reveal.repeat"));
+        DeviceTooltip.controls(
+            list,
+            "gtswn.tooltip.quantum_terminal.usage.controller",
+            "gtswn.tooltip.quantum_terminal.usage.dequantize",
+            "gtswn.tooltip.quantum_terminal.usage.place",
+            "gtswn.tooltip.quantum_terminal.usage.bus",
+            "gtswn.tooltip.quantum_terminal.usage.pickup",
+            "gtswn.tooltip.quantum_terminal.usage.gui",
+            "gtswn.tooltip.quantum_terminal.usage.incorporate",
+            "gtswn.tooltip.quantum_terminal.usage.release",
+            "gtswn.tooltip.quantum_terminal.usage.reveal",
+            "gtswn.tooltip.quantum_terminal.usage.reveal.repeat");
+        DeviceTooltip.finish(list);
     }
 }

@@ -17,6 +17,7 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.ChunkPosition;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
+import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
@@ -26,6 +27,7 @@ import net.minecraftforge.event.world.ExplosionEvent;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.network.WirelessEURequestQueue;
 
 import appeng.api.implementations.items.INetworkToolItem;
@@ -53,7 +55,7 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * <li>{@link #onBreakSpeed}：量子化控制器与量子节点挖掘减速至等效硬度 1000（黑曜石×20）</li>
  * <li>{@link #onBlockPlace}：方块放置时即时重算邻接已量子化控制器的连接过滤
  * （1.7.10 无 NeighborNotifyEvent，以 PlaceEvent 覆盖主路径）</li>
- * <li>{@link #onBlockBreak}：已量子化控制器被拆时出册清理（整结构逐块拆除逐块出册）</li>
+ * <li>真实方块实体移除时取消原控制器整结构的量子化</li>
  * <li>{@link #onServerTick}：每秒（20t）巡检——连接过滤兜底重算、失效坐标出册、
  * D8 新贴上控制器自动合并量子化</li>
  * </ul>
@@ -296,21 +298,41 @@ public class QuantumControllerEventHandler {
 
     // ==================== 4. 破坏出册清理 ====================
 
-    /**
-     * 已量子化控制器被拆时出册。整结构其余块保持量子化（逐块拆除逐块出册），
-     * 被破坏方块的 setValidSides 恢复已无意义（方块实体随方块一并销毁）。
-     * 量子节点方块被拆无需处理（其 TE 桥接生命周期由 T4 自理）。
-     */
-    @SubscribeEvent
-    public void onBlockBreak(BlockEvent.BreakEvent event) {
-        if (event.world.isRemote) {
-            return;
+    /** A BreakEvent can still be canceled; commit removal only from the actual tile lifecycle. */
+    public static void cancelStructure(World world, long brokenPosition) {
+        if (world == null || world.isRemote) return;
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        Set<Long> members = registry.registeredStructure(brokenPosition);
+        if (members.isEmpty()) return;
+        for (long member : members) {
+            registry.dequantize(member);
+            QuantumOverloadCountdown.check(
+                new AnchorKey(
+                    world.provider.dimensionId,
+                    QuantumControllerRegistry.unpackX(member),
+                    QuantumControllerRegistry.unpackY(member),
+                    QuantumControllerRegistry.unpackZ(member)),
+                0L,
+                false);
         }
-        TileEntity te = event.world.getTileEntity(event.x, event.y, event.z);
-        if (te instanceof TileController) {
-            QuantumControllerRegistry.get(event.world)
-                .dequantize(event.x, event.y, event.z);
+        for (WorldServer loaded : DimensionManager.getWorlds()) {
+            QuantumIncorporationRegistry.get(loaded)
+                .controllerRemoved(loaded, world.provider.dimensionId, members);
         }
+        TileEntityNetworkQuantumNode.disconnectAnchoredNodes(world.provider.dimensionId, members);
+        for (long member : members) {
+            int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
+                z = QuantumControllerRegistry.unpackZ(member);
+            if (!world.blockExists(x, y, z)) continue;
+            TileEntity tile = world.getTileEntity(x, y, z);
+            if (tile instanceof QuantumControllerIdentity) {
+                ((QuantumControllerIdentity) tile).gtswn$setControllerIdentity("");
+                tile.markDirty();
+            }
+            if (tile != null && !tile.isInvalid()) restoreAllSides(world, x, y, z);
+        }
+        QuantumNetworkStatsCache.clear();
+        QuantumNetworkData.clearCache();
     }
 
     // ==================== 5. 每秒巡检（兜底 + D8 自动合并） ====================
@@ -396,16 +418,17 @@ public class QuantumControllerEventHandler {
         PerformanceAudit.recordControllerSweep();
         // v1.6.20：允许面集合在循环外建一次复用，避免每控制器每次调用新建 EnumSet
         EnumSet<ForgeDirection> allowed = EnumSet.noneOf(ForgeDirection.class);
+        // Validate the entire old coordinate graph before any auto-merge can re-quantize a remnant.
+        for (long packed : all) {
+            if (registry.isQuantized(packed) && !registry.isCurrentController(world, packed)) {
+                cancelStructure(world, packed);
+            }
+        }
         for (long packed : all) {
             int x = QuantumControllerRegistry.unpackX(packed);
             int y = QuantumControllerRegistry.unpackY(packed);
             int z = QuantumControllerRegistry.unpackZ(packed);
-            TileEntity te = world.getTileEntity(x, y, z);
-            if (!(te instanceof TileController)) {
-                // TE 消失（拆除/卸载异常/NBT 重载旁路）→ 出册
-                registry.dequantize(packed);
-                continue;
-            }
+            if (!registry.isQuantized(packed) || !world.blockExists(x, y, z)) continue;
             // 连接过滤兜底重算
             applyConnectionFilter(world, x, y, z, allowed);
             // D8：6 邻接发现未入册控制器 → 整结构自动合并量子化
@@ -416,7 +439,7 @@ public class QuantumControllerEventHandler {
                 if (registry.isQuantized(nx, ny, nz)) {
                     continue;
                 }
-                if (world.getTileEntity(nx, ny, nz) instanceof TileController) {
+                if (world.blockExists(nx, ny, nz) && world.getTileEntity(nx, ny, nz) instanceof TileController) {
                     mergeNewStructure(registry, world, nx, ny, nz);
                     // 一次合并后跳出邻接扫描：同结构其余邻接已在洪泛集合内，
                     // 若仍存其他未入册邻接结构，下一轮巡检再处理
@@ -493,12 +516,14 @@ public class QuantumControllerEventHandler {
      * 避免每控制器每次调用新建 EnumSet；语义与自建版本逐点等价。
      */
     public static void applyConnectionFilter(World world, int x, int y, int z, EnumSet<ForgeDirection> allowed) {
+        if (!world.blockExists(x, y, z)) return;
         TileEntity te = world.getTileEntity(x, y, z);
         if (!(te instanceof TileController)) {
             return;
         }
         allowed.clear();
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
+            if (!world.blockExists(x + d.offsetX, y + d.offsetY, z + d.offsetZ)) continue;
             TileEntity neighbor = world.getTileEntity(x + d.offsetX, y + d.offsetY, z + d.offsetZ);
             if (neighbor instanceof TileController) {
                 allowed.add(d);
@@ -524,6 +549,7 @@ public class QuantumControllerEventHandler {
      * 若结构本身不合法，TileController.onNeighborChange 后续会自行修正 validSides，无需额外处理。
      */
     public static void restoreAllSides(World world, int x, int y, int z) {
+        if (!world.blockExists(x, y, z)) return;
         TileEntity te = world.getTileEntity(x, y, z);
         if (te instanceof TileController) {
             setValidSidesIfChanged(te, EnumSet.allOf(ForgeDirection.class));

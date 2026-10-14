@@ -6,7 +6,9 @@ import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.StatCollector;
+
+import com.miaokatze.gtswn.common.block.BlockNetworkInfoPanelExtender;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 
 public class ItemBlockNetworkInfoPanel extends ItemBlock {
 
@@ -34,7 +36,25 @@ public class ItemBlockNetworkInfoPanel extends ItemBlock {
     @Override
     @SuppressWarnings({ "rawtypes", "unchecked" })
     public void addInformation(ItemStack stack, EntityPlayer player, List lines, boolean advanced) {
-        lines.add(StatCollector.translateToLocal("item.gtswn.networkInfoPanel.tooltip.l1"));
-        lines.add(StatCollector.translateToLocal("item.gtswn.networkInfoPanel.tooltip.l2"));
+        boolean extender = field_150939_a instanceof BlockNetworkInfoPanelExtender;
+        DeviceTooltip.state(lines);
+        DeviceTooltip.add(lines, "gtswn.tooltip.panel.item_state");
+        if (extender) {
+            DeviceTooltip.description(lines, "gtswn.tooltip.extender.description", "gtswn.tooltip.extender.structure");
+            DeviceTooltip
+                .controls(lines, "gtswn.tooltip.extender.usage.place", "gtswn.tooltip.extender.usage.configure");
+        } else {
+            DeviceTooltip.description(
+                lines,
+                "item.gtswn.networkInfoPanel.tooltip.l1",
+                "item.gtswn.networkInfoPanel.tooltip.l2",
+                "gtswn.tooltip.panel.loaded");
+            DeviceTooltip.controls(
+                lines,
+                "gtswn.tooltip.panel.usage.gui",
+                "gtswn.tooltip.panel.usage.ae",
+                "gtswn.tooltip.panel.usage.remote");
+        }
+        DeviceTooltip.finish(lines);
     }
 }

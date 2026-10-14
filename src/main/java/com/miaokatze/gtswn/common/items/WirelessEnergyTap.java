@@ -24,6 +24,7 @@ import com.miaokatze.gtswn.common.covers.WirelessNodeRegistry;
 import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.CoverMaths;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 
 import cpw.mods.fml.relauncher.Side;
@@ -608,17 +609,22 @@ public class WirelessEnergyTap extends Item {
      */
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean f3_h) {
-        // 显示描述
-        list.add(StatCollector.translateToLocal("item.wirelessEnergyTap.desc"));
-        // 显示当前模式
-        boolean outputMode = getOutputMode(stack);
+        DeviceTooltip.state(list);
+        boolean outputMode = getOutputModeStatic(stack);
         String modeKey = outputMode ? "gtswn.tooltip.tap.mode.output" : "gtswn.tooltip.tap.mode.input";
-        list.add("");
         list.add(StatCollector.translateToLocal(modeKey));
-        // 激光仓绑定消耗提示 / Binding a laser hatch consumes a Laser Vacuum Pipe
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.laser_pipe_cost"));
-        // 蓄力显形提示 / Charge-and-release node reveal hint
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.reveal"));
-        list.add(StatCollector.translateToLocal("gtswn.tooltip.tap.reveal.repeat"));
+        DeviceTooltip.description(
+            list,
+            "item.wirelessEnergyTap.desc",
+            "gtswn.tooltip.tap.owner",
+            "gtswn.tooltip.tap.laser_pipe_cost");
+        DeviceTooltip.controls(
+            list,
+            "gtswn.tooltip.tap.usage.bind",
+            "gtswn.tooltip.tap.usage.mode",
+            "gtswn.tooltip.tap.usage.gui",
+            "gtswn.tooltip.tap.reveal",
+            "gtswn.tooltip.tap.reveal.repeat");
+        DeviceTooltip.finish(list);
     }
 }

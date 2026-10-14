@@ -13,7 +13,6 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
-import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.device.DeviceMachineIdentity;
@@ -24,6 +23,7 @@ import com.miaokatze.gtswn.common.device.DeviceScanManager;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore.AddResult;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -278,13 +278,27 @@ public class ItemDeviceInfoTerminal extends Item {
 
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean advanced) {
-        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l1"));
-        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l2"));
-        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l3"));
-        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.visual"));
-        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.details"));
-        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.repeat"));
-        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l4"));
+        DeviceTooltip.state(list);
+        DeviceTooltip.add(
+            list,
+            readTerminalId(stack) == null ? "gtswn.tooltip.device.new" : "gtswn.tooltip.device.initialized",
+            isVisualizationEnabled(stack) ? "gtswn.tooltip.device.visual.on" : "gtswn.tooltip.device.visual.off");
+        DeviceTooltip.description(
+            list,
+            "gtswn.tooltip.device.description",
+            "gtswn.tooltip.device.bindings",
+            "gtswn.tooltip.device.visual.inventory");
+        DeviceTooltip.controls(
+            list,
+            "item.gtswn.deviceInfoTerminal.tooltip.l1",
+            "item.gtswn.deviceInfoTerminal.tooltip.l2",
+            "item.gtswn.deviceInfoTerminal.tooltip.l3",
+            "item.gtswn.deviceInfoTerminal.tooltip.visual",
+            "item.gtswn.deviceInfoTerminal.tooltip.scan.details",
+            "item.gtswn.deviceInfoTerminal.tooltip.scan.repeat",
+            "item.gtswn.deviceInfoTerminal.tooltip.l4",
+            "gtswn.tooltip.device.usage.name");
+        DeviceTooltip.finish(list);
     }
 
     // ==================== NBT 读写工具（静态，GUI/事件/动作包共用） ====================

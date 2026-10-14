@@ -35,8 +35,16 @@ public class QuantumIncorporationEvents {
 
     @SubscribeEvent
     public void unload(WorldEvent.Unload event) {
-        if (!event.world.isRemote) QuantumIncorporationRegistry.get(event.world)
-            .unload();
+        if (!event.world.isRemote) {
+            QuantumTileLifecycle.worldUnloading(event.world);
+            QuantumIncorporationRegistry.get(event.world)
+                .unload();
+        }
+    }
+
+    @SubscribeEvent
+    public void load(WorldEvent.Load event) {
+        if (!event.world.isRemote) QuantumTileLifecycle.worldLoaded(event.world);
     }
 
     @SubscribeEvent

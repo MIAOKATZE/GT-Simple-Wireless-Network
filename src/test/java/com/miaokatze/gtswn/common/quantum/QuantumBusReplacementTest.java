@@ -27,6 +27,7 @@ import appeng.api.parts.PartItemStack;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.parts.CableBusContainer;
 import appeng.tile.networking.TileCableBus;
+import appeng.util.ReadOnlyCollection;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
@@ -310,14 +311,32 @@ public class QuantumBusReplacementTest {
         inWorld.setAccessible(true);
         inWorld.setBoolean(container, true);
         AtomicInteger bridgeDestroyed = new AtomicInteger();
+        java.util.List<IGridConnection> edges = new java.util.ArrayList<>();
+        IGridNode endpoint = (IGridNode) Proxy.newProxyInstance(
+            IGridNode.class.getClassLoader(),
+            new Class<?>[] { IGridNode.class },
+            (proxy, method, args) -> method.getName()
+                .equals("getConnections") ? new ReadOnlyCollection<>(edges) : null);
         IGridConnection bridge = (IGridConnection) Proxy.newProxyInstance(
             IGridConnection.class.getClassLoader(),
             new Class<?>[] { IGridConnection.class },
             (proxy, method, args) -> {
-                if (method.getName()
-                    .equals("destroy")) bridgeDestroyed.incrementAndGet();
+                switch (method.getName()) {
+                    case "a":
+                    case "b":
+                        return endpoint;
+                    case "equals":
+                        return proxy == args[0];
+                    case "hashCode":
+                        return System.identityHashCode(proxy);
+                    case "destroy":
+                        bridgeDestroyed.incrementAndGet();
+                        edges.remove(proxy);
+                        break;
+                }
                 return null;
             });
+        edges.add(bridge);
         Field connection = TileEntityNetworkQuantumNode.class.getDeclaredField("connection");
         connection.setAccessible(true);
         connection.set(node, bridge);
