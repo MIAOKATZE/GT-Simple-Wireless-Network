@@ -12,15 +12,14 @@ import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import appeng.api.networking.IGridNode;
 import appeng.me.GridNode;
 
-/** Keep orientation updates from reopening physical AE connections on incorporated blocks. */
+/** Block incorporated-device cable edges while preserving AE2 native checks for every other physical peer. */
 @Mixin(value = GridNode.class, remap = false)
 public abstract class QuantumIncorporationGridNodeMixin {
 
     @Inject(method = "canConnect", at = @At("HEAD"), cancellable = true, remap = false)
     private void gtswn$isolate(GridNode from, ForgeDirection direction, CallbackInfoReturnable<Boolean> result) {
         if (direction != ForgeDirection.UNKNOWN
-            && (QuantumIncorporationRegistry.blocksPhysicalConnection((IGridNode) (Object) this)
-                || QuantumIncorporationRegistry.blocksPhysicalConnection(from)))
+            && QuantumIncorporationRegistry.blocksCableConnection((IGridNode) (Object) this, from))
             result.setReturnValue(false);
     }
 }
