@@ -14,6 +14,7 @@ import com.miaokatze.gtswn.client.LinkNodeVisualHandler;
 import com.miaokatze.gtswn.client.QuantumIncorporationClientHandler;
 import com.miaokatze.gtswn.client.QuantumIncorporationClientState;
 import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
+import com.miaokatze.gtswn.client.QuantumTerminalBusSwapHandler;
 import com.miaokatze.gtswn.client.QuantumVoxelParticleHandler;
 import com.miaokatze.gtswn.client.RevealTriggerHandler;
 import com.miaokatze.gtswn.client.WirelessNodeRevealRenderer;
@@ -112,6 +113,8 @@ public class ClientProxy extends CommonProxy {
         MinecraftForge.EVENT_BUS.register(new WirelessTapHighlightRenderer());
         // v1.6.1 问题 2：注册量子节点放置预览框渲染器（手持已绑定量子终端瞄准可放置位置时画青色预览盒）
         MinecraftForge.EVENT_BUS.register(new QuantumNodeHighlightRenderer());
+        // HIGHEST 先于 AE2 部件交互；客户端预览与点击拦截器不注册到专用服务器。
+        MinecraftForge.EVENT_BUS.register(new QuantumTerminalBusSwapHandler());
         // 节点显形渲染器（RenderWorldLastEvent 穿墙线框 + WorldEvent.Unload 清缓存）：
         // 包 12 显形回包经 handleSyncNodeReveal 切主线程写缓存后由此绘制
         MinecraftForge.EVENT_BUS.register(new WirelessNodeRevealRenderer());

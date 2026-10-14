@@ -106,21 +106,7 @@ public final class PortableMonitorClientCache {
             request.selected = cache.selected;
             selectRequest(request, stack, cache.snapshot);
             request.charts = Config.hudRenderMode == 2;
-            String prefix = id + "/";
-            int pinCount = 0;
-            for (String entry : Config.hudPinnedEntries) {
-                if (!entry.startsWith(prefix) || pinCount >= PacketRequestPortableMonitor.MAX_PINS) continue;
-                int split = entry.indexOf('/', prefix.length());
-                if (split < 0) continue;
-                try {
-                    UUID panel = UUID.fromString(entry.substring(prefix.length(), split));
-                    String key = entry.substring(split + 1);
-                    if (key.isEmpty() || key.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 256) continue;
-                    request.pins.computeIfAbsent(panel, ignored -> new HashSet<>())
-                        .add(key);
-                    pinCount++;
-                } catch (IllegalArgumentException ignored) {}
-            }
+            subscribeRequest(request, Config.hudPinnedEntries);
             if (request.selected < 0 && request.pins.isEmpty() && request.action == 0) return;
             cache.sequence = request.sequence;
             cache.request = request;
@@ -169,6 +155,24 @@ public final class PortableMonitorClientCache {
                 request.knownRenderVersion = panel.renderVersion;
                 break;
             }
+        }
+    }
+
+    /** Collapse local AE field choices to one bounded native subscription per target. */
+    public static void subscribeRequest(PacketRequestPortableMonitor request, String[] entries) {
+        String prefix = request.terminalId + "/";
+        int pinCount = 0;
+        for (String entry : entries) {
+            if (!entry.startsWith(prefix) || pinCount >= PacketRequestPortableMonitor.MAX_PINS) continue;
+            int split = entry.indexOf('/', prefix.length());
+            if (split < 0) continue;
+            try {
+                UUID panel = UUID.fromString(entry.substring(prefix.length(), split));
+                String key = PortableMonitorPins.requestKey(entry.substring(split + 1));
+                if (key.isEmpty() || key.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 256) continue;
+                if (request.pins.computeIfAbsent(panel, ignored -> new HashSet<>())
+                    .add(key)) pinCount++;
+            } catch (IllegalArgumentException ignored) {}
         }
     }
 
@@ -374,10 +378,27 @@ public final class PortableMonitorClientCache {
 
     public static boolean togglePin(UUID terminal, PacketSyncPortableMonitor.Panel panel,
         PacketSyncPortableMonitor.Row row) {
+        return togglePin(terminal, panel, row.key);
+    }
+
+    public static boolean stockPinned(UUID terminal, PacketSyncPortableMonitor.Panel panel,
+        PacketSyncPortableMonitor.Row row, boolean average) {
+        return PortableMonitorPins.selected(
+            Config.hudPinnedEntries,
+            terminal + "/" + panel.binding.panelId + "/",
+            PortableMonitorPins.stock(row.key, average));
+    }
+
+    public static boolean toggleStockPin(UUID terminal, PacketSyncPortableMonitor.Panel panel,
+        PacketSyncPortableMonitor.Row row, boolean average) {
+        return togglePin(terminal, panel, PortableMonitorPins.stock(row.key, average));
+    }
+
+    private static boolean togglePin(UUID terminal, PacketSyncPortableMonitor.Panel panel, String key) {
         String[] entries = PortableMonitorPins.toggle(
             Config.hudPinnedEntries,
             terminal + "/" + panel.binding.panelId + "/",
-            row.key,
+            key,
             PacketRequestPortableMonitor.MAX_PINS);
         if (entries == null) return false;
         Config.hudPinnedEntries = entries;
@@ -427,7 +448,7 @@ public final class PortableMonitorClientCache {
         String prefix = terminal + "/" + panel.binding.panelId + "/";
         for (String pin : pins) {
             if (!pin.startsWith(prefix)) continue;
-            String key = pin.substring(prefix.length());
+            String key = PortableMonitorPins.requestKey(pin.substring(prefix.length()));
             if (PortableMonitorPins.component(key) || rows.containsKey(key)
                 || (tab == 0 ? !key.equals("eu") : key.equals("eu"))) continue;
             PacketSyncPortableMonitor.Row withdrawn = new PacketSyncPortableMonitor.Row();
@@ -464,19 +485,27 @@ public final class PortableMonitorClientCache {
             String status = "\u00a77" + panel.binding.label()
                 + " \u00a76"
                 + stateText(panel.state == 0 ? 4 : panel.state);
+            Set<String> presentKeys = new HashSet<>();
             for (PacketSyncPortableMonitor.Row row : panel.rows) {
+                presentKeys.add(row.key);
                 if (row.kind == 0 || !pinned(snapshot.terminalId, panel, row)) continue;
-                String text = unavailable ? status : pinnedRowText(row, panel.displayMode);
+                String text = unavailable ? status
+                    : pinnedStockText(
+                        row,
+                        panel.displayMode,
+                        Config.hudAEAmountEnabled,
+                        Config.hudAERateEnabled && stockPinned(snapshot.terminalId, panel, row, false),
+                        Config.hudAERateEnabled && stockPinned(snapshot.terminalId, panel, row, true),
+                        StatCollector.translateToLocal("gtswn.monitor.pin.stock.instant"),
+                        StatCollector.translateToLocal("gtswn.monitor.pin.stock.average"));
                 if (text != null) lines.add(
                     new PinnedLine(stockLabel + text, unavailable ? null : row.icon)
                         .grouped(PortableHudLayout.Group.AE_STOCK, source));
             }
             for (String pin : Config.hudPinnedEntries) {
                 if (!pin.startsWith(prefix) || PortableMonitorPins.component(pin.substring(prefix.length()))) continue;
-                String key = pin.substring(prefix.length());
-                boolean present = false;
-                for (PacketSyncPortableMonitor.Row row : panel.rows) if (row.key.equals(key)) present = true;
-                if (!present) lines.add(
+                String key = PortableMonitorPins.requestKey(pin.substring(prefix.length()));
+                if (presentKeys.add(key)) lines.add(
                     new PinnedLine((key.equals("eu") ? "" : stockLabel) + status, new double[0]).grouped(
                         key.equals("eu") ? PortableHudLayout.Group.EU_TREND : PortableHudLayout.Group.AE_STOCK,
                         source));
@@ -588,25 +617,14 @@ public final class PortableMonitorClientCache {
         return values;
     }
 
-    private static String pinnedRowText(PacketSyncPortableMonitor.Row row, int displayMode) {
-        String amount = amount(row.amount, displayMode);
-        if (row.kind == 0) {
-            List<String> fields = new ArrayList<>();
-            if (Config.hudEUEnabled) fields.add("\u00a7bEU: \u00a7f" + amount);
-            if (Config.hudInstantEnabled) fields.add(
-                StatCollector.translateToLocal("gtswn.monitor.field.instant") + ": "
-                    + rate(row.rate, "EU/t", displayMode));
-            if (Config.hudAverageEnabled) fields.add(
-                StatCollector.translateToLocal("gtswn.monitor.field.average") + ": "
-                    + rate(row.average, "EU/t", displayMode));
-            if (fields.isEmpty()) return null;
-            if (Config.hudTierEnabled && (Config.hudInstantEnabled || Config.hudAverageEnabled))
-                fields.add(GTTierUtil.formatGTPower(Config.hudInstantEnabled ? row.rate : row.average));
-            return String.join(" | ", fields);
-        }
+    /** Each AE target keeps one physical inventory row, with instant preceding the five-minute average. */
+    public static String pinnedStockText(PacketSyncPortableMonitor.Row row, int displayMode, boolean showAmount,
+        boolean instant, boolean average, String instantLabel, String averageLabel) {
+        String unit = row.kind == 2 ? "mB/min" : "/min";
         return "\u00a7b" + row.name
-            + (Config.hudAEAmountEnabled ? ": \u00a7f" + amount + (row.kind == 2 ? " mB" : "") : "")
-            + (Config.hudAERateEnabled ? " " + rate(row.rate, row.kind == 2 ? "mB/min" : "/min", displayMode) : "");
+            + (showAmount ? ": \u00a7f" + amount(row.amount, displayMode) + (row.kind == 2 ? " mB" : "") : "")
+            + (instant ? " | \u00a7b" + instantLabel + ": " + rate(row.rate, unit, displayMode) : "")
+            + (average ? " | \u00a7b" + averageLabel + ": " + rate(row.average, unit, displayMode) : "");
     }
 
     public static String amount(String value, int displayMode) {

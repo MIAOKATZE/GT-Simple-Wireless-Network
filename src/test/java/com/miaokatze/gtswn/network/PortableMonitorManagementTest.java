@@ -9,8 +9,33 @@ import org.junit.Test;
 
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.common.hud.PortableMonitorPins;
 
 public class PortableMonitorManagementTest {
+
+    @Test
+    public void twoStockFieldChoicesRemainOneCancellableTargetAfterItGoesOffline() {
+        UUID terminal = UUID.randomUUID();
+        PacketSyncPortableMonitor.Panel panel = new PacketSyncPortableMonitor.Panel();
+        panel.binding = new MonitorBindings.Binding(0, 0, 64, 0, UUID.randomUUID());
+        panel.state = 1;
+        String prefix = terminal + "/" + panel.binding.panelId + "/", key = "fluid:water";
+        String[] pins = { prefix + PortableMonitorPins.stock(key, false),
+            prefix + PortableMonitorPins.stock(key, true) };
+        List<PacketSyncPortableMonitor.Row> rows = PortableMonitorClientCache
+            .managementRows(terminal, panel, pins, false, "unavailable", 2);
+        assertEquals(1, rows.size());
+        assertEquals(key, rows.get(0).key);
+        assertEquals(2, rows.get(0).kind);
+        assertEquals("unavailable", rows.get(0).amount);
+        assertTrue(PortableMonitorPins.selected(pins, prefix, PortableMonitorPins.stock(rows.get(0).key, false)));
+        assertTrue(PortableMonitorPins.selected(pins, prefix, PortableMonitorPins.stock(rows.get(0).key, true)));
+        pins = PortableMonitorPins.toggle(pins, prefix, PortableMonitorPins.stock(key, false), 128);
+        rows = PortableMonitorClientCache.managementRows(terminal, panel, pins, false, "unavailable", 2);
+        assertEquals(1, rows.size());
+        assertFalse(PortableMonitorPins.selected(pins, prefix, PortableMonitorPins.stock(rows.get(0).key, false)));
+        assertTrue(PortableMonitorPins.selected(pins, prefix, PortableMonitorPins.stock(rows.get(0).key, true)));
+    }
 
     @Test
     public void chartOnlyItemIsSelectableAndOfflineRemovedSubscriptionsRemainCancellable() {

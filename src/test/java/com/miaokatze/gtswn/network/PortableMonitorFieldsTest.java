@@ -52,4 +52,38 @@ public class PortableMonitorFieldsTest {
         assertFalse(compact.contains("Instant"));
         assertFalse(compact.contains("Average"));
     }
+
+    @Test
+    public void stockRatesShareOneLineInInstantAverageOrderWithTheirOwnSigns() {
+        PacketSyncPortableMonitor.Row row = eu();
+        row.kind = 1;
+        row.name = "Iron";
+        String both = PortableMonitorClientCache.pinnedStockText(row, 0, true, true, true, "Instant", "Average (5m)");
+        assertTrue(both.startsWith("\u00a7bIron: \u00a7f"));
+        assertTrue(both.contains("Instant: \u00a7a+42.50 /min"));
+        assertTrue(both.contains("Average (5m): \u00a7c-8.25 /min"));
+        assertTrue(both.indexOf("Instant") < both.indexOf("Average"));
+        assertFalse(both.contains("\n"));
+        String average = PortableMonitorClientCache
+            .pinnedStockText(row, 0, false, false, true, "Instant", "Average (5m)");
+        assertFalse(average.contains("Instant"));
+        assertFalse(average.contains(row.amount));
+        assertTrue(average.contains("Average (5m): \u00a7c-8.25 /min"));
+    }
+
+    @Test
+    public void fluidStockRatesKeepMillibucketUnitsAndCanBeHiddenTogether() {
+        PacketSyncPortableMonitor.Row row = eu();
+        row.kind = 2;
+        row.name = "Water";
+        String both = PortableMonitorClientCache.pinnedStockText(row, 0, true, true, true, "Instant", "Average (5m)");
+        assertTrue(both.contains(" mB | "));
+        assertTrue(both.contains("Instant: \u00a7a+42.50 mB/min"));
+        assertTrue(both.contains("Average (5m): \u00a7c-8.25 mB/min"));
+        String amountOnly = PortableMonitorClientCache
+            .pinnedStockText(row, 0, true, false, false, "Instant", "Average (5m)");
+        assertTrue(amountOnly.endsWith(" mB"));
+        assertFalse(amountOnly.contains("Instant"));
+        assertFalse(amountOnly.contains("Average"));
+    }
 }

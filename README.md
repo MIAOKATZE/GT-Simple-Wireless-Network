@@ -1,4 +1,4 @@
-<p align="center"><img src="images/GTSWN.png" alt="GTSWN" width="836"></p>
+<p align="center"><img src="images/GTSWN.png" alt="GTSWN" width="600"></p>
 
 <h1 align="center">GT-Simple-Wireless-Network</h1>
 <p align="center"><strong><em>GTNH 无线电网模组</em></strong><br><strong><em>GTNH Wireless Energy Network Mod</em></strong></p>
@@ -39,7 +39,7 @@ Place the release jar in both client and server `mods/`, replacing the old versi
 
 ## 无线网络链路终端与覆盖板 / Wireless Energy Tap & Covers
 
-<p align="center"><img src="images/Wireless_Link_Nodes_Showcase.png" alt="无线网络链路终端与覆盖板 / Wireless Energy Tap and Covers" width="800"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
+<p align="center"><img src="images/Wireless_Link_Nodes_Showcase.png" alt="无线网络链路终端与覆盖板 / Wireless Energy Tap and Covers" width="600"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
 
 ### 无线网络链路终端 / Wireless Energy Tap
 
@@ -68,7 +68,7 @@ Right-click a machine to install the appropriate cover; no separate recipe is ne
 
 ## ME 网络量子终端与节点 / ME Network Quantum Terminal & Node
 
-<p align="center"><img src="images/ME_Network_Quantum_Node.png" alt="不同颜色的量子网络、量子节点与设备并入场景 / Colored quantum networks, nodes and incorporated devices" width="800"><br><em>量子节点与量子并入：多网络调色展示 / Quantum Nodes and incorporation: multiple network colors</em></p>
+<p align="center"><img src="images/ME_Network_Quantum_Node.png" alt="不同颜色的量子网络、量子节点与设备并入场景 / Colored quantum networks, nodes and incorporated devices" width="600"><br><em>量子节点与量子并入：多网络调色展示 / Quantum Nodes and incorporation: multiple network colors</em></p>
 
 为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
 
@@ -136,9 +136,33 @@ Quantized controllers resist mining and explosions. Sneak-right-click with the t
 
 ## 便携无线监测终端 / Portable Wireless Network Monitor
 
-放在背包或任意 Baubles 饰品栏即可显示电网 HUD，无需放置方块。首次右击绑定玩家，之后右击切换关闭/常规/科学计数；Shift+右击重新绑定。
+放在背包或任意 Baubles 饰品栏即可显示电网 HUD。首次右击绑定玩家，之后普通右击切换关闭/常规/科学计数；对自己的终端 Shift+右击，或按默认快捷键 **H**，打开远程查看与 HUD 设置。对信息屏普通右击可绑定多个物理屏幕，随身查看完整的原生屏幕内容。
 
-Carry it in inventory or any Baubles slot for a wireless grid HUD, without placing blocks. First right-click binds it to you; further right-clicks cycle Off/Normal/Scientific. Sneak-right-click rebinds it.
+Carry it in inventory or any Baubles slot for a wireless grid HUD. First right-click binds it to you; ordinary right-clicks then cycle Off/Normal/Scientific. Shift+right-click your own terminal, or press **H** by default, to open the remote viewer and HUD settings. Right-click physical info panels to bind multiple screens and view their complete native content on the go.
+
+| 手势 / Gesture | 行为 / Behavior |
+|---|---|
+| 普通右击空气 / Right-click air | 首次绑定自己；已绑定时切换 HUD 模式 / Bind yourself on first use; then cycle HUD modes |
+| 普通右击信息屏 / Right-click an info panel | 绑定该物理屏幕，最多 16 块 / Bind that physical screen, up to 16 |
+| Shift+右击自己的终端 / Shift+right-click your own terminal | 打开查看与设置 / Open viewer and settings |
+| H（默认，可改键）/ H (default, rebindable) | 打开随身终端的查看与设置 / Open the carried terminal's viewer and settings |
+| Shift+右击未绑定或他人终端 / Shift+right-click an unbound or borrowed terminal | 将拥有者改绑为自己 / Bind ownership to yourself |
+
+- **真实屏幕来源 / Physical screen sources**：查看页的 EU、AE 走势、AE 库存按钮会选择已绑定且处于对应显示模式的真实信息屏；前后按钮逐屏切换，解绑只移除当前屏幕。原屏的计数法、时间窗口与走势颜色保留 / The EU, AE Chart and AE Inventory shortcuts select actual bound screens in the corresponding display mode. Previous/next browses screens; unbinding removes only the current screen. Native number formats, time windows and trend colors are retained.
+- **紧凑界面 / Compact viewer**：查看、设置与挂载管理页面统一缩小 15%，随屏幕比例适配并保留四周边距；完整图表与分页列表仍可使用 / The viewer, settings and pin manager are uniformly 15% smaller, scale to fit the screen and retain outer margins. Complete charts and paginated lists remain available.
+
+<p align="center"><img src="images/v1.8.62/portable-monitor-eu-chart.png" alt="便携终端远程查看 EU 走势 / Portable terminal viewing an EU chart" width="600"><br><em>随身查看原生 EU 走势 / Native EU chart on the go</em></p>
+
+- **独立常驻 / Independent HUD subscriptions**：管理常驻页面可分别勾选图表标题、走势图与数字，简图可与电网概览、充电状态同时显示。EU 电量、瞬时、平均三个数字各占一行，同一屏幕的走势内容作为一个轮换组，不按三行重复计数；分类标题使用“EU走势”“AE走势” / Manage HUD entries to select chart titles, plots and values independently. Mini charts coexist with grid overview and charging status. EU energy, instantaneous rate and average rate occupy separate lines; one screen's trend content counts as one rotation group. Group headings are EU Trend and AE Trend.
+- **AE 库存 / AE Inventory**：每个物品或流体分别提供“即时”“平均”两个勾选项；两项同时开启时仍在同一行，即时在前、平均在后，平均窗口为 5 分钟。HUD 按“[AE库存] → 物品或流体图标 → 名称、存量与所选变化率”排列 / Each item or fluid has separate Instant and Average checkboxes. Selecting both keeps one row, with instant first and the five-minute average second. HUD rows place [AE Inventory], the item or fluid icon, then the name, stock and selected rates in order.
+
+<p align="center"><img src="images/v1.8.62/portable-monitor-ae-inventory.png" alt="便携终端查看 AE 库存 / Portable terminal viewing AE inventory" width="600"><br><em>AE 库存：图标、存量、即时与平均变化量 / AE inventory: icons, stock, instant and average changes</em></p>
+
+- **布局与显示 / Layout and display**：UI 可调整水平/垂直偏移、缩放、面板宽度、常驻组数、轮换秒数、刷新间隔与文本/卡片/曲线渲染，另可开关充电、电量、瞬时、平均、电压级及 AE 数量/变化率。原有 HUD 命令仍可用，见下方客户端命令 / The UI controls offsets, scale, panel width, pinned group count, rotation time, refresh interval and Text/Card/Curve rendering, plus charging, EU, instant, average, voltage tier and AE amount/rate switches. Existing HUD commands remain available below.
+
+<p align="center"><img src="images/v1.8.62/hud-visual-editor.png" alt="便携终端 HUD 布局与显示设置 / Portable HUD layout and display settings" width="600"><br><em>HUD 布局与显示设置 / HUD layout and display settings</em></p>
+
+<p align="center"><img src="images/v1.8.62/wireless-monitor-hud.png" alt="无线电网概览、走势图与 AE 库存共存的 HUD / HUD combining grid overview, trend charts and AE inventory" width="600"><br><em>电网概览、走势与 AE 库存常驻 / Grid overview, trends and pinned AE inventory</em></p>
 
 - **安装与换电池 / Install or replace**：终端 + 兼容 GT/IC2 电池无序合成，继承新电池电量；旧电池带着终端剩余电量返还，背包满则掉落。仍是同一个终端 / Shapeless-craft terminal + compatible GT/IC2 battery. The new battery retains its charge; the old one returns with the terminal’s remaining energy, dropping if inventory is full. No separate terminal variants.
 - **充电 / Charging**：在背包或饰品栏中，每 10 秒从已绑定的无线电网补满缓存并计算下行损耗，以电池电压级的每目标 1A 为背包、装备和饰品栏电力物品充电。HUD 显示缺少缓存/待机中/充电中/充电完毕 / In inventory or Baubles, refills from the bound grid every 10 seconds with downlink loss, and charges inventory, armor and accessory items at 1A per target for the battery tier. HUD states: buffer empty / standby / charging / complete.
@@ -151,7 +175,7 @@ Carry it in inventory or any Baubles slot for a wireless grid HUD, without placi
 
 ## 无线能量监视器 / Wireless Energy Monitor
 
-<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" alt="无线能量监视器（中文界面） / Wireless Energy Monitor (CN interface)" width="700"><br><img src="images/Wireless_Energy_Monitor_EN.png" alt="无线能量监视器（英文界面） / Wireless Energy Monitor (EN interface)" width="700"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
+<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" alt="无线能量监视器（中文界面） / Wireless Energy Monitor (CN interface)" width="600"><br><img src="images/Wireless_Energy_Monitor_EN.png" alt="无线能量监视器（英文界面） / Wireless Energy Monitor (EN interface)" width="600"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
 
 **无线能量监视器 / Wireless Energy Monitor** — 单方块机器，实时显示无线电网能量状态（每五秒），具备高级红石控制（可以以电网容量或者电网状态为指标）。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。其还可以连接工业信息屏。
 
@@ -176,6 +200,7 @@ A single-block machine that displays real-time (per 5 seconds) wireless network 
 
 - **玩家共享 / Per-Player Sharing**: 数据集绑定玩家 UUID；多块屏幕显示同一数据 / Datasets bound to player UUID; multiple screens display the same data
 - **外观 / Appearance**：可配置背景、线色、线宽、曲线平滑度与字号 / Configure background, line colors, thickness, smoothing and text size.
+- **走势分区颜色 / Trend region colors**：EU 储量与变化率可按平直、上升、下降设置分区颜色，并同步到便携终端查看与 HUD 简图 / Configure flat, rising and falling colors for EU energy and rate curves; the portable viewer and HUD mini charts use the same palette.
 - **显示模式 / Display Modes**: 常规计数 (1,234,567) / 科学计数 (1.23E6) / 公制计数 (1.23K)，**默认科学计数** / Normal counting (1,234,567) / Scientific notation (1.23E6) / Metric notation (1.23K), **scientific by default**
 
 ### AE 走势图 / AE Chart
@@ -242,24 +267,38 @@ Monitors and portable terminals show grid energy, instantaneous rate and window-
 
 <p align="center"><img src="images/Device_Info_Terminal.png" alt="设备信息终端物品 / Device Info Terminal item" width="180"><img src="images/Device_Info_Terminal_UI.png" alt="设备信息终端界面 / Device Info Terminal GUI" width="500"><br><em>设备信息终端物品（左）与界面（右） / Device Info Terminal item (left) & GUI (right)</em></p>
 
-绑定可工作 GT 机器，在列表中查看运行/待机/停机、瞬时与平均 EU/t、位置及当前配方。支持排序、四种计数法、消耗经验的传送与远程解绑。
+绑定支持的 GT 工作机器，在列表中查看运行/待机/停机、实际 EU 输入/输出、瞬时与平均 EU/t、位置及配方预览。支持排序、四种计数法、跟踪/忽略切换、机器改名、可视化热图与消耗经验的传送。
 
-Bind working GT machines to view Running/Idle/Stopped status, instantaneous and average EU/t, location and current recipe. Supports sorting, four number formats, XP-cost teleport and remote unbinding.
+Bind supported GT working machines to view Running/Idle/Stopped status, actual EU input/output, instantaneous and average EU/t, location and recipe previews. Supports sorting, four number formats, tracking/ignored switches, custom names, heat visualization and XP-cost teleportation.
 
 | 手势 / Gesture | 行为 / Behavior |
 |---|---|
-| 右击可工作机器 / Right-click a working machine | 绑定到本终端（放置机器时背包含终端自动绑定 / auto-bound on placement if a terminal is in the placer's inventory） |
-| 右击空气 / Right-click air | 打开终端界面 / Open the terminal GUI |
-| Alt+Shift+对空气长按右键 1 秒 / Hold Alt+Shift+right-click in air for 1 second | 启动当前维度已加载区块中的本人及团队机器扫描，随后进入 5 秒倒计时；重复蓄力不会取消当前扫描 / Start scanning your and your team’s machines in loaded chunks of the current dimension, followed by a 5-second countdown; repeating the gesture does not cancel an active scan |
+| 可视化关闭时右击可工作机器 / Right-click a working machine with visualization off | 绑定到本终端；携带终端放置支持的机器时自动绑定 / Bind to this terminal; supported machines placed while carrying a terminal bind automatically |
+| 普通右击空气，或在可视化模式下右击 / Right-click air, or right-click in visualization mode | 可视化开启且瞄准已绑定机器或标记时传送，否则打开列表 / With visualization enabled, teleport to an aimed bound machine or marker; otherwise open the list |
+| Shift+右击机器，或 Shift+点击列表设备 / Shift+right-click a machine, or Shift+click a list row | 在当前终端切换跟踪/忽略；未绑定机器只记录该开关 / Toggle tracking/ignored for this terminal; unbound machines only receive the preference |
+| Shift+右击空气或非机器 / Shift+right-click air or a non-machine | 打开设置 / Open settings |
+| Alt+长按右键约 1 秒（可瞄准方块）/ Hold Alt+right-click for about 1 second (blocks allowed) | 蓄力完成立即启动当前维度已加载区块中的本人及团队机器扫描；重复蓄力不取消扫描 / Start scanning your and your team's machines in loaded chunks of the current dimension immediately on charge completion; repeating does not cancel an active scan |
+| Shift+Alt+右击 / Shift+Alt+right-click | 开关并保存可视化状态 / Toggle and save visualization state |
+| Alt+左击列表机器名称 / Alt+left-click a machine name in the list | 编辑自定义名称、颜色与加粗 / Edit custom name, color and bold style |
 | Ctrl+点击条目 / Ctrl+click a row | 远程解绑（无确认）/ Remote unbind (no confirmation) |
-| 点击行内 ✦ 按钮 / Click the ✦ button on a row | 传送到机器（消耗经验等级，3 秒冷却）/ Teleport to the machine (costs XP levels, 3s cooldown) |
+| 点击行内 ✦ 按钮 / Click the ✦ button on a row | 传送到机器，默认消耗 1 级经验，冷却 10 tick（0.5 秒）/ Teleport to the machine, default cost 1 XP level, 10-tick (0.5s) cooldown |
 
 - **采样与均值 / Sampling & Averages**: 每 `deviceSampleIntervalSeconds`（默认 10 秒）采样一次；平均列为 60 点滚动均值，瞬时 EU/t 取最新采样点。/ Machines are sampled every `deviceSampleIntervalSeconds` (default 10s); the average column is a 60-point rolling mean, instant EU/t is the latest sample.
-- **配方 / Recipe**：悬浮机器名称查看当前配方；“显示配方”开关可直接在列表展示 / Hover a machine name for its current recipe; the Show Recipe toggle displays it in the list.
+- **配方与名称 / Recipe and names**：悬浮机器名称查看可读取的配方预览；“显示配方”开关可直接在列表展示。Alt+左击名称可改名、调色与加粗，并用于机器标签 / Hover a machine name for the available recipe preview; Show Recipe displays it in the list. Alt+left-click the name to rename it, choose its color and toggle bold, also used by world labels.
 
-- **发电与耗电 / Generation and consumption**：支持常见 GTNH 发电机的实时功率，耗电读数带负号；聚变控制器按自身消耗计入耗电，等离子产物的发电由下游机器统计 / Supports realtime power from common GTNH generators; consumption is negative. Fusion controllers count their own consumption, while energy from plasma products is measured at downstream generators.
+- **实际能量与链路 / Actual energy and links**：读数以实际 EU 消耗/产出为主，也覆盖机器直接与无线电网交易的路径；列表小图标标出链路节点输入、输出或双向。耗电读数带负号；聚变控制器按自身消耗计入耗电，等离子产物的发电由下游机器统计 / Readings prioritize actual EU consumed/produced, including machines that transact directly with the wireless grid. Small row icons identify link-node input, output or both. Consumption is negative. Fusion controllers count their own draw; plasma-product generation is measured downstream.
+- **跟踪与忽略 / Tracking and ignored**：开关仅影响当前终端的监测，储能设备与变压器默认忽略。普通扫描跳过忽略项；扫描完成后 15 秒内，对同一终端再次蓄力可强制纳入，仍保留忽略状态与灰色零值 / The switch affects this terminal's monitoring only. Energy storage and transformers default to ignored. Ordinary scans skip ignored machines; scan again with the same terminal within 15 seconds after completion to include them while keeping their ignored state and gray zero readings.
 
-- **配置 / Configuration**：默认每 10 秒采样，绑定上限 1024 台，传送花费 3 级经验；均可在配置文件调整 / Defaults: sample every 10 seconds, bind up to 1024 machines, teleport for 3 XP levels. All are configurable.
+- **常驻可视化 / Persistent visualization**：开启后物品带附魔光效，放回背包仍显示本终端已绑定机器的锚点；标签可分别显示名称、状态、实时 EU 输入/输出与配方。传送需要手持对应终端 / Enabling visualization adds an item glint and keeps this terminal's bound-machine anchors visible while it remains in inventory. Labels independently show names, status, live EU input/output and recipes. Hold the corresponding terminal to teleport.
+- **能量热图 / Energy heat view**：耗电用暖红色、发电用绿色，热区半径随瞬时与平均负载加权、平滑变化；显示范围、不透明度、遮挡、设备/标签上限等均可调整。热图尺寸倍率 **1–1000，默认 10**（原尺寸上限的 10 倍），标签尺寸 **1–100，默认 10**（原标签的 150%）/ Consumption uses warm red and generation green. Heat radii vary smoothly with weighted instantaneous and average load. Range, opacity, occlusion and device/label limits are configurable. Heat size multiplier: **1–1000, default 10** (10× the original radius limit); label size: **1–100, default 10** (150% of the original).
+
+<p align="center"><img src="images/v1.8.62/device-terminal-visualization.png" alt="设备终端已绑定机器标签与能量可视化 / Bound-machine labels and energy visualization" width="600"><br><em>已绑定设备的世界标签与可视化 / World labels and visualization for bound devices</em></p>
+
+- **安全传送 / Safe teleportation**：在机器前方与上方候选空地中选择离玩家最近的安全位置，飞行状态允许无地面支撑的空气落点；落点可用并传送成功后才扣经验 / Choose the nearest safe landing among candidates in front of and above the machine. Flying players may land in clear air without ground support. XP is charged only after a valid destination and successful teleport.
+- **配置与同步 / Configuration and sync**：默认每 10 秒采样、绑定上限 1024 台，传送消耗默认 1 级经验；已有配置保留。单人设置写入本地配置，多人由 OP 在全服页修改服务端配置并同步在线玩家，可设 0 免费。客户端与服务端使用相同版本 / Defaults: 10-second sampling, up to 1024 bindings and 1 XP level per teleport; existing configuration is retained. Singleplayer edits save locally; multiplayer OP edits on the Server tab save server configuration and sync online players. Set 0 for free travel. Use matching client and server versions.
+
+<p align="center"><img src="images/v1.8.62/device-terminal-settings.png" alt="设备终端热图、标签与全服设置 / Device terminal heat, label and server settings" width="600"><br><em>可视化、标签与传送设置 / Visualization, label and teleport settings</em></p>
+
 - **合成 / Crafting**: LV 级有序配方（v1.7.8 起）：LV 传感器 ×2 + LV 发射器 ×2 + 钢板 ×3 + 电脑屏幕覆盖板 ×1 + 末影珍珠 ×1 → 设备信息终端 ×1。/ LV-tier shaped recipe (since v1.7.8): LV Sensor ×2 + LV Emitter ×2 + Steel Plate ×3 + Computer Screen Cover ×1 + Ender Pearl ×1 → Device Info Terminal ×1.
 
 ***
@@ -273,6 +312,7 @@ Bind working GT machines to view Running/Idle/Stopped status, instantaneous and 
 A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Network (简易无线网络)** quest line of 14 quests — from the Wireless Energy Monitor and pocket HUD through the Link Terminal and its covers and wall-sized info panels, ending with ME network quantization, Quantum Incorporation Anchors and network colors, and the Device Info Terminal. Everything is LV-era tech. Quest line and per-quest names/descriptions are localized in both Chinese and English.
 
 - **更新 / Updates**：任务线自动装载；换新版 jar 后老世界同步任务定义并保留进度 / The quest line loads automatically; replacing the jar updates existing worlds’ definitions while keeping progress.
+- **操作说明 / Updated guidance**：中英双语描述涵盖信息屏绑定、完整随身查看、AE 即时/平均挂载、设备扫描与可视化、忽略开关、安全传送及经验配置；14 个任务的身份、条件、奖励与前置保持一致 / Bilingual descriptions cover screen binding, complete portable views, AE instant/average pins, device scans and visualization, ignore switches, safe travel and experience settings. The 14 quest identities, conditions, rewards and prerequisites remain unchanged.
 
 ***
 
