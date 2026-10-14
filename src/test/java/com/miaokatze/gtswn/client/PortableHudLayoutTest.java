@@ -112,15 +112,15 @@ public class PortableHudLayoutTest {
     }
 
     @Test
-    public void onlyFirstEnabledEUValueCarriesTheSourceNumber() {
+    public void enabledEUValuesHaveNoSourceNumber() {
         PacketSyncPortableMonitor.Row eu = new PacketSyncPortableMonitor.Row();
         eu.amount = "256";
         eu.rate = 32;
         eu.average = 16;
         List<String> values = PortableMonitorClientCache
-            .pinnedEUValueLines(eu, 0, true, true, true, false, "[1] ", "Instant", "Average");
+            .pinnedEUValueLines(eu, 0, true, true, true, false, "Instant", "Average");
         assertEquals(3, values.size());
-        assertTrue(
+        assertFalse(
             values.get(0)
                 .startsWith("[1] "));
         assertTrue(
@@ -135,13 +135,12 @@ public class PortableHudLayoutTest {
         assertFalse(
             values.get(2)
                 .contains("[1]"));
-        assertTrue(
-            PortableMonitorClientCache.pinnedEUValueLines(eu, 0, true, false, true, false, "[2] ", "Instant", "Average")
+        assertFalse(
+            PortableMonitorClientCache.pinnedEUValueLines(eu, 0, true, false, true, false, "Instant", "Average")
                 .get(0)
                 .startsWith("[2] "));
         assertTrue(
-            PortableMonitorClientCache
-                .pinnedEUValueLines(eu, 0, false, false, false, false, "[1] ", "Instant", "Average")
+            PortableMonitorClientCache.pinnedEUValueLines(eu, 0, false, false, false, false, "Instant", "Average")
                 .isEmpty());
     }
 

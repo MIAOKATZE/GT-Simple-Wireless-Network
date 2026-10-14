@@ -458,7 +458,6 @@ public final class PortableMonitorClientCache {
         for (PacketSyncPortableMonitor.Panel panel : snapshot.panels) {
             String prefix = snapshot.terminalId + "/" + panel.binding.panelId + "/";
             String source = panel.binding.panelId.toString();
-            String sourceLabel = "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] ";
             String stockLabel = "\u00a73[" + StatCollector.translateToLocal(PortableHudLayout.Group.AE_STOCK.labelKey)
                 + "] ";
             boolean unavailable = panel.state != 0 || stale(stack);
@@ -478,7 +477,7 @@ public final class PortableMonitorClientCache {
                 boolean present = false;
                 for (PacketSyncPortableMonitor.Row row : panel.rows) if (row.key.equals(key)) present = true;
                 if (!present) lines.add(
-                    new PinnedLine((key.equals("eu") ? sourceLabel : stockLabel) + status, new double[0]).grouped(
+                    new PinnedLine((key.equals("eu") ? "" : stockLabel) + status, new double[0]).grouped(
                         key.equals("eu") ? PortableHudLayout.Group.EU_TREND : PortableHudLayout.Group.AE_STOCK,
                         source));
             }
@@ -496,8 +495,7 @@ public final class PortableMonitorClientCache {
                 if (PortableMonitorPins.selected(Config.hudPinnedEntries, prefix, PortableMonitorPins.title(graph)))
                     lines.add(
                         new PinnedLine(
-                            unavailable ? status
-                                : sourceLabel + name + " [" + (graph == 0 ? panel.window : panel.aeWindow) + "]",
+                            unavailable ? status : name + " [" + (graph == 0 ? panel.window : panel.aeWindow) + "]",
                             new double[0]).grouped(group, source));
                 if (graphPinned(snapshot.terminalId, panel, graph)) lines.add(
                     new PinnedLine(
@@ -509,8 +507,7 @@ public final class PortableMonitorClientCache {
                         panel.palette,
                         graph == 0).grouped(group, source));
                 if (graph == 0 && value != null && pinned(snapshot.terminalId, panel, value)) {
-                    if (unavailable)
-                        lines.add(new PinnedLine(sourceLabel + status, new double[0]).grouped(group, source));
+                    if (unavailable) lines.add(new PinnedLine(status, new double[0]).grouped(group, source));
                     else for (String text : pinnedEUValueLines(
                         value,
                         panel.displayMode,
@@ -518,7 +515,6 @@ public final class PortableMonitorClientCache {
                         Config.hudInstantEnabled,
                         Config.hudAverageEnabled,
                         Config.hudTierEnabled,
-                        sourceLabel,
                         StatCollector.translateToLocal("gtswn.monitor.field.instant"),
                         StatCollector.translateToLocal("gtswn.monitor.field.average")))
                         lines.add(new PinnedLine(text, new double[0]).grouped(group, source));
@@ -574,9 +570,9 @@ public final class PortableMonitorClientCache {
         }
     }
 
-    /** Three physical EU value rows share one source; only the first selected row carries its screen number. */
+    /** Three physical EU value rows share one source without adding screen numbers to their text. */
     public static List<String> pinnedEUValueLines(PacketSyncPortableMonitor.Row row, int displayMode, boolean energy,
-        boolean instant, boolean average, boolean tier, String sourceLabel, String instantLabel, String averageLabel) {
+        boolean instant, boolean average, boolean tier, String instantLabel, String averageLabel) {
         List<String> values = new ArrayList<>();
         if (instant) values.add(
             "\u00a7b" + instantLabel
@@ -589,7 +585,6 @@ public final class PortableMonitorClientCache {
                 + rate(row.average, "EU/t", displayMode)
                 + (tier && !instant ? " " + GTTierUtil.formatGTPower(row.average) : ""));
         if (energy) values.add("\u00a7bEU: \u00a7f" + amount(row.amount, displayMode));
-        if (!values.isEmpty()) values.set(0, sourceLabel + values.get(0));
         return values;
     }
 

@@ -15,13 +15,12 @@ import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalSettings;
 
-/** Per-save, server-authoritative settings; local client configuration cannot change teleport cost. */
+/** Config-file authority: local config in singleplayer, server config in multiplayer. */
 public final class DeviceTerminalSettings extends WorldSavedData {
 
     public static final String DATA_NAME = "gtswn_device_terminal_settings";
     public static final int MAX_TELEPORT_COST = 1000000;
     private static final Map<UUID, String> SENT = new HashMap<>();
-    private int teleportCost = Math.max(0, Math.min(MAX_TELEPORT_COST, Config.deviceTeleportXPCost));
 
     public DeviceTerminalSettings(String name) {
         super(name);
@@ -38,24 +37,26 @@ public final class DeviceTerminalSettings extends WorldSavedData {
     }
 
     public int teleportCost() {
-        return teleportCost;
+        return Math.max(0, Math.min(MAX_TELEPORT_COST, Config.deviceTeleportXPCost));
     }
 
     public static boolean canEdit(EntityPlayerMP player) {
         MinecraftServer server = MinecraftServer.getServer();
-        return server != null && server.getConfigurationManager()
-            .func_152596_g(player.getGameProfile());
+        return server != null && (server.isSinglePlayer() && player.getCommandSenderName()
+            .equals(server.getServerOwner()) || server.getConfigurationManager()
+                .func_152596_g(player.getGameProfile()));
     }
 
     public boolean setTeleportCost(EntityPlayerMP player, int value) {
         if (!canEdit(player) || value < 0 || value > MAX_TELEPORT_COST) return false;
-        if (teleportCost != value) {
-            teleportCost = value;
-            markDirty();
-            MinecraftServer server = MinecraftServer.getServer();
-            for (Object candidate : server.getConfigurationManager().playerEntityList) {
-                if (candidate instanceof EntityPlayerMP) sync((EntityPlayerMP) candidate);
-            }
+        if (!Config.saveDeviceTeleportCost(value)) {
+            SENT.remove(player.getUniqueID());
+            sync(player);
+            return false;
+        }
+        MinecraftServer server = MinecraftServer.getServer();
+        for (Object candidate : server.getConfigurationManager().playerEntityList) {
+            if (candidate instanceof EntityPlayerMP) sync((EntityPlayerMP) candidate);
         }
         return true;
     }
@@ -64,11 +65,11 @@ public final class DeviceTerminalSettings extends WorldSavedData {
     public void sync(EntityPlayerMP player) {
         boolean editable = canEdit(player);
         int seconds = Math.max(1, Config.deviceSampleIntervalSeconds);
-        String signature = teleportCost + ":" + editable + ":" + seconds + ":" + player.dimension;
+        int cost = teleportCost();
+        String signature = cost + ":" + editable + ":" + seconds + ":" + player.dimension;
         if (signature.equals(SENT.get(player.getUniqueID()))) return;
         SENT.put(player.getUniqueID(), signature);
-        GTSWNPacketHandler.NETWORK
-            .sendTo(new PacketSyncDeviceTerminalSettings(teleportCost, editable, seconds), player);
+        GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncDeviceTerminalSettings(cost, editable, seconds), player);
     }
 
     public static void onLogout(UUID player) {
@@ -81,13 +82,11 @@ public final class DeviceTerminalSettings extends WorldSavedData {
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
-        if (tag.hasKey("teleportCost")) {
-            teleportCost = Math.max(0, Math.min(MAX_TELEPORT_COST, tag.getInteger("teleportCost")));
-        }
+        // Legacy per-world costs must not override the host's current configuration.
     }
 
     @Override
     public void writeToNBT(NBTTagCompound tag) {
-        tag.setInteger("teleportCost", teleportCost);
+        // Kept for saved-data compatibility; the cost is persisted only in gtswn.cfg.
     }
 }

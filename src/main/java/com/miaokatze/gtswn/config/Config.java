@@ -173,6 +173,7 @@ public class Config {
 
     /** gtswn_network.cfg 的启动时路径，供客户端命令运行时写回使用。 */
     private static File networkConfigFile;
+    private static File mainConfigFile;
 
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
@@ -357,6 +358,7 @@ public class Config {
      * @param configFile 配置文件对象 (config/gtswn/gtswn.cfg)
      */
     public static void synchronizeConfiguration(File configFile) {
+        mainConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
 
         metaIdOffset = configuration.getInt(
@@ -401,9 +403,9 @@ public class Config {
             Configuration.CATEGORY_GENERAL,
             deviceTeleportXPCost,
             0,
-            1000,
+            1000000,
             "设备信息终端传送经验等级消耗 / Device info terminal teleport XP level cost\n"
-                + "默认 3，范围 0~1000；0 = 传送免费且 GUI 按钮只显示图标 / Default 3, range 0-1000; "
+                + "默认 1，范围 0~1000000；0 = 传送免费且 GUI 按钮只显示图标 / Default 1, range 0-1000000; "
                 + "0 = free, icon-only button");
 
         // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
@@ -419,6 +421,25 @@ public class Config {
 
         if (configuration.hasChanged()) {
             configuration.save();
+        }
+    }
+
+    /** Saves the authoritative cost to this process's gtswn.cfg, preserving unrelated settings. */
+    public static boolean saveDeviceTeleportCost(int value) {
+        if (mainConfigFile == null || value < 0 || value > 1000000) return false;
+        try {
+            Configuration configuration = new Configuration(mainConfigFile);
+            configuration.get(Configuration.CATEGORY_GENERAL, "deviceTeleportXPCost", 1)
+                .set(value);
+            configuration.save();
+            Configuration persisted = new Configuration(mainConfigFile);
+            if (persisted.get(Configuration.CATEGORY_GENERAL, "deviceTeleportXPCost", -1)
+                .getInt() != value) return false;
+            deviceTeleportXPCost = value;
+            return true;
+        } catch (RuntimeException e) {
+            GTSimpleWirelessNetwork.LOG.error("Could not save device terminal teleport cost", e);
+            return false;
         }
     }
 

@@ -143,10 +143,24 @@ public class WirelessMonitorHUD extends Gui {
             if (pin.graph) PortableMonitorCharts.drawCompact(pin, hudX, rowY, rowWidth, rowHeight, mc.fontRenderer);
             else {
                 int column = PortableHudLayout.iconColumn(pin, Config.hudRenderMode);
-                if (column > 0 && rowWidth >= column) PortableMonitorIcons.draw(pin.icon, hudX, rowY, rowHeight);
+                String prefix = pin.group == PortableHudLayout.Group.AE_STOCK
+                    ? "\u00a73[" + StatCollector.translateToLocal(pin.group.labelKey) + "] "
+                    : "";
+                String body = pin.text;
+                if (!prefix.isEmpty() && body.startsWith(prefix)) body = body.substring(prefix.length());
+                else prefix = "";
+                int prefixWidth = Math.min(rowWidth, mc.fontRenderer.getStringWidth(prefix));
                 mc.fontRenderer.drawStringWithShadow(
-                    mc.fontRenderer.trimStringToWidth(pin.text, Math.max(0, rowWidth - column)),
-                    hudX + column,
+                    mc.fontRenderer.trimStringToWidth(prefix, rowWidth),
+                    hudX,
+                    rowY + (rowHeight - 8) / 2,
+                    0xffffff);
+                if (column > 0 && rowWidth - prefixWidth >= column)
+                    PortableMonitorIcons.draw(pin.icon, hudX + prefixWidth, rowY, rowHeight);
+                else column = 0;
+                mc.fontRenderer.drawStringWithShadow(
+                    mc.fontRenderer.trimStringToWidth(body, Math.max(0, rowWidth - prefixWidth - column)),
+                    hudX + prefixWidth + column,
                     rowY + (rowHeight - 8) / 2,
                     0xffffff);
             }

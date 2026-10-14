@@ -34,7 +34,7 @@ public final class DeviceTerminalClientCache {
     /** 终端实例 UUID → 缓存条目（仅客户端主线程访问：写入经 func_152344_a 调度，读取在 GUI 线程=主线程） */
     private static final Map<UUID, Cached> CACHE = new HashMap<>();
 
-    private static int teleportCost = 3;
+    private static int teleportCost = 1;
     private static boolean canConfigure;
     private static long freshMillis = 40000L;
 
@@ -56,7 +56,7 @@ public final class DeviceTerminalClientCache {
 
     public static void clear() {
         CACHE.clear();
-        teleportCost = 3;
+        teleportCost = 1;
         canConfigure = false;
         freshMillis = 40000L;
     }
