@@ -26,6 +26,8 @@ import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.client.render.RenderNetworkQuantumNode;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.command.CommandGTSWNClient;
+import com.miaokatze.gtswn.common.gui.ContainerTerminal;
+import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.hud.HudController;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
@@ -448,6 +450,8 @@ public class ClientProxy extends CommonProxy {
 
     @Override
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
-        return null;
+        if (id != GTSWNGuiHandler.QUANTUM_TERMINAL && id != GTSWNGuiHandler.LINK_TERMINAL) return null;
+        ContainerTerminal container = new ContainerTerminal(player, id == GTSWNGuiHandler.QUANTUM_TERMINAL);
+        return container.canInteractWith(player) ? new GuiQuantumTerminal(container) : null;
     }
 }

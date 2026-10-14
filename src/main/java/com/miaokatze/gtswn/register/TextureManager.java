@@ -1,10 +1,12 @@
 package com.miaokatze.gtswn.register;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import net.minecraft.util.ResourceLocation;
 
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
 import gregtech.api.enums.Textures;
 import gregtech.api.interfaces.IIconContainer;
 import gregtech.api.interfaces.ITexture;
@@ -32,11 +34,29 @@ public class TextureManager {
     /** 无线能量输出覆盖板材质 */
     public static final IIconContainer TEX_WIRELESS_CONNECTOR_OUTPUT = Textures.BlockIcons
         .custom("gtswn:covers/wireless_connector_output");
+    public static final IIconContainer TEX_WIRELESS_CONNECTOR_INPUT_OLDPLUS = Textures.BlockIcons
+        .custom("gtswn:covers/wireless_connector_input_oldplus");
+    public static final IIconContainer TEX_WIRELESS_CONNECTOR_OUTPUT_OLDPLUS = Textures.BlockIcons
+        .custom("gtswn:covers/wireless_connector_output_oldplus");
 
     // 材质缓存表，用于存储已创建的 ITexture 实例以提高性能
     public static final IIconContainer TEX_LINK_NODE_CLEAR = Textures.BlockIcons.custom("gtswn:covers/link_node_clear");
 
-    private static final Map<String, ITexture> textureCache = new HashMap<>();
+    private static final Map<String, ITexture> textureCache = new ConcurrentHashMap<>();
+
+    /** Legacy materials use GT's normal cover face and the animated block atlas. */
+    @SideOnly(Side.CLIENT)
+    public static ITexture getLinkNodeCoverTexture(String material, boolean energy) {
+        IIconContainer icon;
+        if ("old".equals(material)) {
+            icon = energy ? TEX_WIRELESS_CONNECTOR_INPUT : TEX_WIRELESS_CONNECTOR_OUTPUT;
+        } else if ("oldplus".equals(material)) {
+            icon = energy ? TEX_WIRELESS_CONNECTOR_INPUT_OLDPLUS : TEX_WIRELESS_CONNECTOR_OUTPUT_OLDPLUS;
+        } else {
+            return null; // Enhanced materials retain the registered transparent face.
+        }
+        return getOrCreateTexture("link_node_" + material + (energy ? "_input" : "_output"), icon);
+    }
 
     /**
      * 获取或创建材质

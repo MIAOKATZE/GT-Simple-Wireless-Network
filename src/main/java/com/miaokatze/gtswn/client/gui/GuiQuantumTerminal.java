@@ -381,10 +381,10 @@ public class GuiQuantumTerminal extends GuiContainer {
                     : nextSize(Config.quantumParticleSizePercent));
                 break;
             case 113:
-                if (tap) Config.tapRenderDistance = (decreaseSetting ? Math.max(1, Config.tapRenderDistance - 16)
-                    : nextDistance(Config.tapRenderDistance));
-                else Config.quantumRenderDistance = (decreaseSetting ? Math.max(1, Config.quantumRenderDistance - 16)
-                    : nextDistance(Config.quantumRenderDistance));
+                if (tap)
+                    Config.tapRenderDistance = Config.adjustRenderDistance(Config.tapRenderDistance, decreaseSetting);
+                else Config.quantumRenderDistance = Config
+                    .adjustRenderDistance(Config.quantumRenderDistance, decreaseSetting);
                 break;
             case 114:
                 String[] materials = { "old", "oldplus", "low", "medium", "high" };
@@ -414,10 +414,6 @@ public class GuiQuantumTerminal extends GuiContainer {
 
     private static int nextSize(int value) {
         return value >= 400 ? 10 : Math.min(400, value + 10);
-    }
-
-    private static int nextDistance(int value) {
-        return value >= 256 ? 1 : Math.min(256, value + 16);
     }
 
     private static String tr(String key) {

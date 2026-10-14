@@ -37,6 +37,17 @@ public class GtswnMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (mixinClassName.startsWith("com.miaokatze.gtswn.mixins.mm.")) {
+            // This runs before FML's mod list is ready. Probe class bytes without loading MM types.
+            boolean present = getClass().getClassLoader()
+                .getResource(targetClassName.replace('.', '/') + ".class") != null;
+            LOG.info(
+                "[GTSWN] MatterManipulator target {} {}; mixin {}",
+                targetClassName,
+                present ? "present" : "absent",
+                present ? "applied" : "skipped");
+            return present;
+        }
         if (PATHING_MIXIN_CLASS.equals(mixinClassName)) {
             boolean apply = Ae2PathingCompat.hasControllerFaceModel();
             // 可 grep 的应用/跳过证据（1050 真机负向验证也依赖此行）
