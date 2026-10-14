@@ -237,12 +237,24 @@ public final class GuiPortableMonitor extends GuiScreen {
         for (int i = page * visibleRows; i < Math.min(rows.size(), (page + 1) * visibleRows); i++) {
             PacketSyncPortableMonitor.Row row = rows.get(i);
             shownRows.add(row);
+            int index = shownRows.size() - 1;
+            if (row.kind == 1 || row.kind == 2) {
+                int fieldWidth = (panelWidth - 28) / 2;
+                for (int field = 0; field < 2; field++) add(
+                    100 + index * 2 + field,
+                    12 + field * (fieldWidth + 4),
+                    137 + index * 20,
+                    fieldWidth,
+                    (PortableMonitorClientCache.stockPinned(snapshot.terminalId, panel, row, field == 1) ? "\u2611 "
+                        : "\u2610 ") + tr("pin.stock." + (field == 0 ? "instant" : "average")) + " | " + row.name);
+                continue;
+            }
             String label = (PortableMonitorClientCache.pinned(snapshot.terminalId, panel, row) ? "\u2611 " : "\u2610 ")
                 + (row.kind == 3 ? row.name : PortableMonitorClientCache.viewerRowText(row, panel.displayMode));
             add(
-                100 + shownRows.size() - 1,
+                100 + index * 2,
                 12,
-                137 + (shownRows.size() - 1) * 20,
+                137 + index * 20,
                 panelWidth - 24,
                 fontRendererObj.trimStringToWidth(label, panelWidth - 34));
         }
@@ -339,10 +351,12 @@ public final class GuiPortableMonitor extends GuiScreen {
                 manualTab = false;
             }
             page = 0;
-        } else if (button.id >= 100 && button.id < 100 + shownRows.size() && panel != null && snapshot != null) {
-            notice = PortableMonitorClientCache.togglePin(snapshot.terminalId, panel, shownRows.get(button.id - 100))
-                ? ""
-                : tr("save.failed");
+        } else if (button.id >= 100 && button.id < 100 + shownRows.size() * 2 && panel != null && snapshot != null) {
+            PacketSyncPortableMonitor.Row row = shownRows.get((button.id - 100) / 2);
+            boolean saved = row.kind == 1 || row.kind == 2
+                ? PortableMonitorClientCache.toggleStockPin(snapshot.terminalId, panel, row, (button.id - 100) % 2 == 1)
+                : PortableMonitorClientCache.togglePin(snapshot.terminalId, panel, row);
+            notice = saved ? "" : tr("save.failed");
             enablePinnedHud();
         }
         rebuild();
@@ -634,8 +648,8 @@ public final class GuiPortableMonitor extends GuiScreen {
                         fontRendererObj);
                     break;
                 }
-                int index = button.id - 100;
-                if (index < 0 || index >= shownRows.size()
+                int index = (button.id - 100) / 2;
+                if (button.id < 100 || index >= shownRows.size()
                     || mouseX < button.xPosition
                     || mouseX >= button.xPosition + button.width
                     || mouseY < button.yPosition
@@ -653,10 +667,12 @@ public final class GuiPortableMonitor extends GuiScreen {
                 List<String> tooltip = new ArrayList<>();
                 tooltip.add(row.name + ": " + row.amount + (row.kind == 2 ? " mB" : row.kind == 0 ? " EU" : ""));
                 tooltip.add(tr("field.instant") + ": " + PortableMonitorClientCache.rate(row.rate, unit));
-                tooltip.add(tr("field.average") + ": " + PortableMonitorClientCache.rate(row.average, unit));
+                tooltip.add(
+                    tr(row.kind == 0 ? "field.average" : "pin.stock.average") + ": "
+                        + PortableMonitorClientCache.rate(row.average, unit));
                 if (row.kind == 0 && panel() != null)
                     tooltip.add(tr("grid.status") + ": " + PortableMonitorClientCache.gridStatus(panel(), row));
-                tooltip.add(tr("pin.hint"));
+                tooltip.add(tr(row.kind == 0 ? "pin.hint" : "pin.stock.hint"));
                 drawHoveringText(tooltip, mouseX, mouseY, fontRendererObj);
                 break;
             }

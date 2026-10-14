@@ -652,7 +652,7 @@ gtswn.monitor.field.average=平均变化率
 gtswn.monitor.field.compact=电网简化标签
 gtswn.monitor.field.tier=电压等级
 gtswn.monitor.field.amount=AE 数量
-gtswn.monitor.field.rate=AE 变化率
+gtswn.monitor.field.rate=AE 即时/平均变化率
 
 gtswn.monitor.pin.short=常驻 HUD
 gtswn.monitor.grid.status=电网状态
@@ -757,3 +757,8 @@ gtswn.hud.group.ae_trend=AE走势
 gtswn.hud.group.ae_stock=AE库存
 gtswn.monitor.remove.current=仅解除当前信息屏绑定
 gtswn.monitor.remove.done=已解绑 %s；剩余 %s 块信息屏
+
+# AE inventory instant and five-minute average subscriptions
+gtswn.monitor.pin.stock.instant=即时
+gtswn.monitor.pin.stock.average=平均（5分）
+gtswn.monitor.pin.stock.hint=即时与5分钟平均可独立勾选，双选时同一HUD行显示；AE即时/平均变化率开关控制是否显示。

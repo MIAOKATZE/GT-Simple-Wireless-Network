@@ -652,7 +652,7 @@ gtswn.monitor.field.average=Average Rate
 gtswn.monitor.field.compact=Compact Labels
 gtswn.monitor.field.tier=Voltage Tier
 gtswn.monitor.field.amount=AE Amount
-gtswn.monitor.field.rate=AE Change Rates
+gtswn.monitor.field.rate=AE Rates (Instant / Average)
 
 gtswn.monitor.pin.short=Pin HUD
 gtswn.monitor.grid.status=Grid State
@@ -757,3 +757,8 @@ gtswn.hud.group.ae_trend=AE Trend
 gtswn.hud.group.ae_stock=AE Stock
 gtswn.monitor.remove.current=Unbind this information screen
 gtswn.monitor.remove.done=Unbound %s; %s information screens remain
+
+# AE inventory instant and five-minute average subscriptions
+gtswn.monitor.pin.stock.instant=Instant
+gtswn.monitor.pin.stock.average=Average (5m)
+gtswn.monitor.pin.stock.hint=Select instant and 5-minute average independently; both appear on the same HUD row. AE Rates (Instant / Average) controls visibility.

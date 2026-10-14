@@ -154,4 +154,60 @@ public class PortableMonitorSubscriptionsTest {
         assertEquals(128, result.length);
         assertTrue(new HashSet<>(Arrays.asList(result)).contains("terminal/panel/" + PortableMonitorPins.AE_PLOT));
     }
+
+    @Test
+    public void legacyStockMigratesOnlyTouchedTargetAndFieldsToggleIndependently() {
+        String prefix = UUID.randomUUID() + "/" + UUID.randomUUID() + "/";
+        String key = "fluid:water";
+        String other = UUID.randomUUID() + "/" + UUID.randomUUID() + "/" + key;
+        String instant = PortableMonitorPins.stock(key, false), average = PortableMonitorPins.stock(key, true);
+        String[] legacy = { prefix + key, other };
+        assertTrue(PortableMonitorPins.selected(legacy, prefix, instant));
+        assertFalse(PortableMonitorPins.selected(legacy, prefix, average));
+        String[] both = PortableMonitorPins.toggle(legacy, prefix, average, 128);
+        assertFalse(
+            Arrays.asList(both)
+                .contains(prefix + key));
+        assertTrue(
+            Arrays.asList(both)
+                .contains(other));
+        assertTrue(PortableMonitorPins.selected(both, prefix, instant));
+        assertTrue(PortableMonitorPins.selected(both, prefix, average));
+        String[] averageOnly = PortableMonitorPins.toggle(both, prefix, instant, 128);
+        assertFalse(PortableMonitorPins.selected(averageOnly, prefix, instant));
+        assertTrue(PortableMonitorPins.selected(averageOnly, prefix, average));
+        assertTrue(PortableMonitorPins.selected(averageOnly, prefix, key));
+        assertArrayEquals(new String[] { other }, PortableMonitorPins.toggle(averageOnly, prefix, average, 128));
+        assertArrayEquals(new String[] { other }, PortableMonitorPins.toggle(legacy, prefix, instant, 128));
+    }
+
+    @Test
+    public void stockMigrationAtCapacityFailsAtomicallyButAllowsRemoval() {
+        String prefix = "terminal/panel/", key = "item:minecraft:iron_ingot:0";
+        String[] pins = new String[128];
+        for (int i = 0; i < pins.length; i++) pins[i] = "other/" + i;
+        pins[12] = prefix + key;
+        String[] unchanged = pins.clone();
+        assertNull(PortableMonitorPins.toggle(pins, prefix, PortableMonitorPins.stock(key, true), 128));
+        assertArrayEquals(unchanged, pins);
+        String[] removed = PortableMonitorPins.toggle(pins, prefix, PortableMonitorPins.stock(key, false), 128);
+        assertEquals(127, removed.length);
+        assertFalse(PortableMonitorPins.selected(removed, prefix, key));
+    }
+
+    @Test
+    public void bothStockFieldsSendOneNativeTargetAndNoHistorySubscription() {
+        UUID terminal = UUID.randomUUID(), panel = UUID.randomUUID();
+        String prefix = terminal + "/" + panel + "/", key = "fluid:water";
+        PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(terminal, 1, 0, 0);
+        PortableMonitorClientCache.subscribeRequest(
+            request,
+            new String[] { prefix + PortableMonitorPins.stock(key, false),
+                prefix + PortableMonitorPins.stock(key, true), prefix + key,
+                UUID.randomUUID() + "/" + panel + "/fluid:lava" });
+        assertEquals(1, request.pins.size());
+        assertEquals(Collections.singleton(key), request.pins.get(panel));
+        assertFalse(PortableMonitorRequestQueue.needsAEChart(false, request.pins.get(panel)));
+        assertFalse(PortableMonitorRequestQueue.needsEUChart(false, request.pins.get(panel), true));
+    }
 }
