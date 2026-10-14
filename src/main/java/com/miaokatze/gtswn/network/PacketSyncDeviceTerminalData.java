@@ -5,8 +5,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
+import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
 import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -40,9 +41,9 @@ public class PacketSyncDeviceTerminalData implements IMessage {
 
     /** 条目总数硬上限（与 Config.deviceTerminalMaxMachines 默认一致，防异常包体内存暴涨） */
     public static final int MAX_ENTRIES = 1024;
-    /** v1.8.58 adds independent idle power roles; reject older layouts before reading their entries. */
+    /** v1.8.60 carries electric data only; reject older layouts before reading their entries. */
     private static final int WIRE_MAGIC = 0x47545358;
-    private static final int WIRE_SCHEMA = 1;
+    private static final int WIRE_SCHEMA = 2;
 
     /** name 字段长度上限（字符） */
     public static final int MAX_NAME_LEN = 64;
@@ -110,15 +111,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             ByteBufUtils.writeUTF8String(buf, entry.recipeIn);
             ByteBufUtils.writeUTF8String(buf, entry.recipeOut);
             buf.writeInt(entry.metaTileId);
-            buf.writeByte(entry.energyKind);
             buf.writeByte(entry.capabilityMask);
             buf.writeByte(entry.recognitionMode);
             buf.writeByte(entry.evidenceKind);
             buf.writeByte(entry.linkNodeType);
-            buf.writeLong(entry.steamInstIn);
-            buf.writeLong(entry.steamInstOut);
-            buf.writeDouble(entry.steamAvgIn);
-            buf.writeDouble(entry.steamAvgOut);
             ByteBufUtils.writeUTF8String(buf, entry.displayName);
             buf.writeByte(entry.nameColor);
             buf.writeBoolean(entry.nameBold);
@@ -158,15 +154,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     String recipeIn = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
                     String recipeOut = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
                     int metaTileId = buf.readInt();
-                    byte energyKind = buf.readByte();
                     byte capabilityMask = buf.readByte();
                     byte recognitionMode = buf.readByte();
                     byte evidenceKind = buf.readByte();
                     byte linkNodeType = buf.readByte();
-                    long steamInstIn = buf.readLong();
-                    long steamInstOut = buf.readLong();
-                    double steamAvgIn = buf.readDouble();
-                    double steamAvgOut = buf.readDouble();
                     String displayName = ByteBufUtils.readUTF8String(buf);
                     byte nameColor = buf.readByte();
                     boolean nameBold = buf.readBoolean();
@@ -192,13 +183,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                             recipeIn,
                             recipeOut,
                             metaTileId,
-                            energyKind,
                             evidenceKind,
                             linkNodeType,
-                            steamInstIn,
-                            steamInstOut,
-                            steamAvgIn,
-                            steamAvgOut,
                             displayName,
                             nameColor,
                             nameBold,
@@ -313,23 +299,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         public final byte nameColor;
         public final boolean nameBold;
         public final int metaTileId;
-        public final byte energyKind;
         public final byte capabilityMask;
         public final byte recognitionMode;
         public final byte evidenceKind;
         public final byte linkNodeType;
-        public final long steamInstIn;
-        public final long steamInstOut;
-        public final double steamAvgIn;
-        public final double steamAvgOut;
-
-        public long steamInstNet() {
-            return steamInstOut - steamInstIn;
-        }
-
-        public double steamAvgNet() {
-            return steamAvgOut - steamAvgIn;
-        }
 
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut) {
@@ -349,19 +322,13 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                 recipeIn,
                 recipeOut,
                 -1,
-                (byte) 0,
                 (byte) 2,
-                (byte) 0,
-                0L,
-                0L,
-                0.0,
-                0.0);
+                (byte) 0);
         }
 
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
-            byte energyKind, byte evidenceKind, byte linkNodeType, long steamInstIn, long steamInstOut,
-            double steamAvgIn, double steamAvgOut) {
+            byte evidenceKind, byte linkNodeType) {
             this(
                 key,
                 name,
@@ -378,13 +345,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                 recipeIn,
                 recipeOut,
                 metaTileId,
-                energyKind,
                 evidenceKind,
                 linkNodeType,
-                steamInstIn,
-                steamInstOut,
-                steamAvgIn,
-                steamAvgOut,
                 "",
                 (byte) 15,
                 false);
@@ -392,8 +354,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
 
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
-            byte energyKind, byte evidenceKind, byte linkNodeType, long steamInstIn, long steamInstOut,
-            double steamAvgIn, double steamAvgOut, String displayName, byte nameColor, boolean nameBold) {
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold) {
             this(
                 key,
                 name,
@@ -410,23 +371,17 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                 recipeIn,
                 recipeOut,
                 metaTileId,
-                energyKind,
                 evidenceKind,
                 linkNodeType,
-                steamInstIn,
-                steamInstOut,
-                steamAvgIn,
-                steamAvgOut,
                 displayName,
                 nameColor,
                 nameBold,
-                DeviceSteamAdapter.legacyCapabilityMask(energyKind, powerType));
+                DevicePowerCapabilities.defaultMask(powerType));
         }
 
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
-            byte energyKind, byte evidenceKind, byte linkNodeType, long steamInstIn, long steamInstOut,
-            double steamAvgIn, double steamAvgOut, String displayName, byte nameColor, boolean nameBold,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
             byte capabilityMask) {
             this(
                 key,
@@ -444,13 +399,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                 recipeIn,
                 recipeOut,
                 metaTileId,
-                energyKind,
                 evidenceKind,
                 linkNodeType,
-                steamInstIn,
-                steamInstOut,
-                steamAvgIn,
-                steamAvgOut,
                 displayName,
                 nameColor,
                 nameBold,
@@ -460,12 +410,11 @@ public class PacketSyncDeviceTerminalData implements IMessage {
 
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
-            byte energyKind, byte evidenceKind, byte linkNodeType, long steamInstIn, long steamInstOut,
-            double steamAvgIn, double steamAvgOut, String displayName, byte nameColor, boolean nameBold,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
             byte capabilityMask, byte recognitionMode) {
-            this.recognitionMode = recognitionMode >= 0 && recognitionMode <= 2 ? recognitionMode : (byte) 0;
+            this.recognitionMode = DeviceTerminalRecognitionMode.migrate(recognitionMode);
             boolean ignored = this.recognitionMode == 2 || state == 3;
-            this.capabilityMask = ignored ? 0 : (byte) (capabilityMask & 15);
+            this.capabilityMask = ignored ? 0 : (byte) (capabilityMask & 3);
             String normalized = DeviceTerminalNameRules.normalize(displayName);
             this.displayName = normalized == null ? "" : normalized;
             this.nameColor = (byte) (!this.displayName.isEmpty() && DeviceTerminalNameRules.validColor(nameColor)
@@ -473,13 +422,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                 : DeviceTerminalNameRules.DEFAULT_COLOR);
             this.nameBold = !this.displayName.isEmpty() && nameBold;
             this.metaTileId = metaTileId;
-            this.energyKind = energyKind >= 0 && energyKind <= 2 ? energyKind : (byte) 0;
             this.evidenceKind = ignored ? 0 : evidenceKind >= 0 && evidenceKind <= 3 ? evidenceKind : (byte) 3;
             this.linkNodeType = (byte) (linkNodeType & 3);
-            this.steamInstIn = ignored ? 0 : Math.max(0, steamInstIn);
-            this.steamInstOut = ignored ? 0 : Math.max(0, steamInstOut);
-            this.steamAvgIn = !ignored && Double.isFinite(steamAvgIn) ? Math.max(0, steamAvgIn) : 0;
-            this.steamAvgOut = !ignored && Double.isFinite(steamAvgOut) ? Math.max(0, steamAvgOut) : 0;
             this.key = key == null ? "" : key;
             this.name = truncate(name, MAX_NAME_LEN);
             this.state = ignored ? (byte) 3 : state;

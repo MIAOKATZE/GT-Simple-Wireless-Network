@@ -438,8 +438,7 @@ public final class DeviceScanManager {
                     byte powerType = candidate.generator ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
                         : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
                     int metaTileId = candidate.metaTileId;
-                    byte capabilities = DeviceSteamAdapter.legacyCapabilityMask((byte) 0, powerType);
-                    byte energyKind = DeviceSteamAdapter.EU;
+                    byte capabilities = DevicePowerCapabilities.defaultMask(powerType);
                     byte linkNodes = 0;
                     World world = net.minecraftforge.common.DimensionManager.getWorld(candidate.dim);
                     boolean loaded = world != null && world.getChunkProvider() != null
@@ -451,14 +450,11 @@ public final class DeviceScanManager {
                         IMetaTileEntity mte = gtTE == null ? null : gtTE.getMetaTileEntity();
                         if (!DeviceMachineTypes.isWorkingMachine(mte)) continue;
                         metaTileId = gtTE.getMetaTileID();
-                        capabilities = DeviceSteamAdapter.capabilityMask(mte);
-                        energyKind = DeviceSteamAdapter.energyKind(capabilities);
+                        capabilities = DevicePowerCapabilities.capabilityMask(mte);
                         linkNodes = DeviceMachineIdentity.linkNodeType(mte);
                         powerType = DeviceMachineTypes.isGeneratorMachine(mte)
-                            || (energyKind == DeviceSteamAdapter.STEAM
-                                && (capabilities & DeviceSteamAdapter.STEAM_OUT) != 0)
-                                    ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                                    : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
+                            ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                            : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
                         localName = mte.getLocalName();
                         DeviceEntry known = registry.getEntry(candidate.key);
                         registry.register(
@@ -474,13 +470,10 @@ public final class DeviceScanManager {
                         if (metaTileId >= 0 && metaTileId < gregtech.api.GregTechAPI.METATILEENTITIES.length) {
                             IMetaTileEntity prototype = gregtech.api.GregTechAPI.METATILEENTITIES[metaTileId];
                             if (DeviceMachineTypes.isWorkingMachine(prototype)) {
-                                capabilities = DeviceSteamAdapter.capabilityMask(prototype);
-                                energyKind = DeviceSteamAdapter.energyKind(capabilities);
+                                capabilities = DevicePowerCapabilities.capabilityMask(prototype);
                                 powerType = DeviceMachineTypes.isGeneratorMachine(prototype)
-                                    || (energyKind == DeviceSteamAdapter.STEAM
-                                        && (capabilities & DeviceSteamAdapter.STEAM_OUT) != 0)
-                                            ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                                            : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
+                                    ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                                    : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
                             }
                         }
                     }
@@ -496,7 +489,6 @@ public final class DeviceScanManager {
                         candidate.z,
                         powerType,
                         metaTileId,
-                        energyKind,
                         linkNodes,
                         capabilities) == DeviceTerminalDataStore.AddResult.SUCCESS) {
                         added++;

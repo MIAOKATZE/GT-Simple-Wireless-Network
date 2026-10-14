@@ -37,7 +37,7 @@ public final class DeviceMachineIdentity {
                     methods.add(type.getMethod(name));
                 } catch (NoSuchMethodException ignored) {}
             }
-            for (String name : new String[] { "mTecTechDynamoHatches", "mTecTechEnergyHatches", "mSteamInputFluids" }) {
+            for (String name : new String[] { "mTecTechDynamoHatches", "mTecTechEnergyHatches" }) {
                 try {
                     fields.add(type.getField(name));
                 } catch (NoSuchFieldException ignored) {}

@@ -7,28 +7,7 @@ import org.junit.Test;
 public class DeviceTerminalWireSampleTest {
 
     private boolean sample(DeviceTerminalDataStore.MachineRecord r, String name, double average) {
-        return r.applySample(
-            1,
-            (byte) 0,
-            123,
-            (byte) 0,
-            (byte) 0,
-            (byte) 1,
-            10,
-            0,
-            0,
-            0,
-            average,
-            0,
-            0,
-            0,
-            0,
-            1,
-            64,
-            2,
-            name,
-            "",
-            "recipe");
+        return r.applySample(1, (byte) 0, 123, (byte) 0, (byte) 1, 10, 0, average, 0, 0, 1, 64, 2, name, "", "recipe");
     }
 
     @Test

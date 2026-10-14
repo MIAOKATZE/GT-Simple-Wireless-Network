@@ -132,11 +132,11 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      */
     public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
         byte powerType) {
-        return addBinding(terminalId, key, localName, dim, x, y, z, powerType, -1, (byte) 0, (byte) 0);
+        return addBinding(terminalId, key, localName, dim, x, y, z, powerType, -1, (byte) 0);
     }
 
     public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
-        byte powerType, int metaTileId, byte energyKind, byte linkNodeType) {
+        byte powerType, int metaTileId, byte linkNodeType) {
         return addBinding(
             terminalId,
             key,
@@ -147,13 +147,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             z,
             powerType,
             metaTileId,
-            energyKind,
             linkNodeType,
-            DeviceSteamAdapter.legacyCapabilityMask(energyKind, powerType));
+            DevicePowerCapabilities.defaultMask(powerType));
     }
 
     public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
-        byte powerType, int metaTileId, byte energyKind, byte linkNodeType, byte capabilityMask) {
+        byte powerType, int metaTileId, byte linkNodeType, byte capabilityMask) {
         TerminalData data = getOrCreateTerminal(terminalId);
         if (data.boundKeys.contains(key)) {
             return AddResult.ALREADY_BOUND;
@@ -165,8 +164,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         MachineRecord record = new MachineRecord();
         record.name = localName;
         record.metaTileId = metaTileId;
-        record.energyKind = energyKind;
-        record.capabilityMask = (byte) (capabilityMask & 15);
+        record.capabilityMask = (byte) (capabilityMask & 3);
         record.linkNodeType = linkNodeType;
         record.powerType = powerType == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
         record.dim = dim;
@@ -201,12 +199,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         }
         byte mode = override != null ? override.mode
             : machine != null ? DeviceDefaultRecognitionPolicy.defaultMode(machine)
-                : !changedIdentity && record != null ? record.recognitionMode : DeviceTerminalRecognitionMode.AUTO;
+                : !changedIdentity && record != null ? record.recognitionMode : DeviceTerminalRecognitionMode.TRACK;
         boolean changedRecordIdentity = record != null && metaTileId >= 0 && record.metaTileId != metaTileId;
         if (record != null && (record.recognitionMode != mode || changedIdentity
             || changedRecordIdentity
             || (mode == DeviceTerminalRecognitionMode.IGNORE && record.hasIgnoredResidual()))) {
-            byte originalCapabilities = machine != null ? DeviceSteamAdapter.capabilityMask(machine)
+            byte originalCapabilities = machine != null ? DevicePowerCapabilities.capabilityMask(machine)
                 : record.capabilityMask;
             record.resetRecognition(mode, originalCapabilities);
             if (metaTileId >= 0) record.metaTileId = metaTileId;
@@ -219,10 +217,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                     DeviceRegistryData.DeviceEntry known = registry.getEntry(key);
                     if (known != null) registry.register(key, known.owner, record.name, metaTileId);
                 }
-                record.powerType = DeviceMachineTypes.isGeneratorMachine(machine)
-                    || (DeviceSteamAdapter.energyKind(originalCapabilities) == DeviceSteamAdapter.STEAM
-                        && (originalCapabilities & DeviceSteamAdapter.STEAM_OUT) != 0) ? POWER_TYPE_GENERATE
-                            : POWER_TYPE_CONSUME;
+                record.powerType = DeviceMachineTypes.isGeneratorMachine(machine) ? POWER_TYPE_GENERATE
+                    : POWER_TYPE_CONSUME;
             }
             data.version++;
             markDirty();
@@ -447,9 +443,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             for (int i = 0; i < Math.min(overrides.tagCount(), DeviceTerminalRecognitionMode.MAX_OVERRIDES); i++) {
                 NBTTagCompound entry = overrides.getCompoundTagAt(i);
                 String key = entry.getString("key");
-                byte mode = entry.getByte("mode");
-                if (KeyFormat.parse(key) != null && mode >= DeviceTerminalRecognitionMode.AUTO
-                    && mode <= DeviceTerminalRecognitionMode.IGNORE)
+                byte mode = DeviceTerminalRecognitionMode.migrate(entry.getByte("mode"));
+                if (KeyFormat.parse(key) != null)
                     recognitionOverrides.put(key, new RecognitionOverride(entry.getInteger("metaTileId"), mode));
             }
             version = tag.getLong("version");
@@ -503,24 +498,15 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         /** 流出方向 EU/t 环形缓冲；旧档缺键时保持全 0。 */
         public final double[] fifoOut = new double[FIFO_SIZE];
-        public final double[] fifoSteamIn = new double[FIFO_SIZE];
-        public final double[] fifoSteamOut = new double[FIFO_SIZE];
         public int metaTileId = -1;
-        public byte energyKind;
         public byte capabilityMask;
         public byte recognitionMode;
-        /** Actual directions learned for a manual channel, independent of its initial idle fallback. */
-        public byte observedOverrideDirections;
         public boolean recognitionWarmup;
         /** 0 observed, 1 provider model, 2 warming up, 3 unavailable. */
         public byte evidenceKind = 2;
         public byte linkNodeType;
         public long instIn;
         public long instOut;
-        public long steamInstIn;
-        public long steamInstOut;
-        public double steamAvgIn;
-        public double steamAvgOut;
 
         /** 环形写指针（下一个写入位，输入/输出双通道共用） */
         public int idx;
@@ -569,74 +555,40 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 || count != 0
                 || instIn != 0
                 || instOut != 0
-                || steamInstIn != 0
-                || steamInstOut != 0
                 || inAvg != 0
                 || outAvg != 0
-                || steamAvgIn != 0
-                || steamAvgOut != 0
                 || !recipeIn.isEmpty()
                 || !recipeOut.isEmpty();
         }
 
         public void resetRecognition(byte mode, byte originalCapabilities) {
             recognitionMode = mode;
-            observedOverrideDirections = 0;
             java.util.Arrays.fill(fifoIn, 0);
             java.util.Arrays.fill(fifoOut, 0);
-            java.util.Arrays.fill(fifoSteamIn, 0);
-            java.util.Arrays.fill(fifoSteamOut, 0);
             idx = count = 0;
-            instIn = instOut = steamInstIn = steamInstOut = 0;
-            inAvg = outAvg = steamAvgIn = steamAvgOut = 0;
+            instIn = instOut = 0;
+            inAvg = outAvg = 0;
             recipeIn = recipeOut = "";
             capabilityMask = DeviceTerminalRecognitionMode.effectiveCapabilities(mode, originalCapabilities, powerType);
-            energyKind = mode == DeviceTerminalRecognitionMode.IGNORE
-                ? DeviceSteamAdapter.energyKind(originalCapabilities)
-                : DeviceSteamAdapter.energyKind(capabilityMask);
             state = mode == DeviceTerminalRecognitionMode.IGNORE ? STATE_IGNORED : STATE_IDLE;
             evidenceKind = mode == DeviceTerminalRecognitionMode.IGNORE ? (byte) 0 : (byte) 2;
             recognitionWarmup = mode != DeviceTerminalRecognitionMode.IGNORE;
         }
 
-        public byte learnOverrideDirections(byte originalCapabilities, byte fallbackCapabilities, long electricIn,
-            long electricOut, long steamIn, long steamOut, double[] interval) {
-            int channel = DeviceSteamAdapter.energyKind(fallbackCapabilities) == DeviceSteamAdapter.STEAM ? 12 : 3;
-            int actual = 0;
-            if ((channel & DeviceSteamAdapter.EU_IN) != 0 && (electricIn > 0 || interval[0] > 0))
-                actual |= DeviceSteamAdapter.EU_IN;
-            if ((channel & DeviceSteamAdapter.EU_OUT) != 0 && (electricOut > 0 || interval[1] > 0))
-                actual |= DeviceSteamAdapter.EU_OUT;
-            if ((channel & DeviceSteamAdapter.STEAM_IN) != 0 && (steamIn > 0 || interval[2] > 0))
-                actual |= DeviceSteamAdapter.STEAM_IN;
-            if ((channel & DeviceSteamAdapter.STEAM_OUT) != 0 && (steamOut > 0 || interval[3] > 0))
-                actual |= DeviceSteamAdapter.STEAM_OUT;
-            observedOverrideDirections = (byte) ((observedOverrideDirections | actual) & channel);
-            int nativeRoles = originalCapabilities & channel;
-            if (nativeRoles != 0) return (byte) (nativeRoles | observedOverrideDirections);
-            return observedOverrideDirections != 0 ? observedOverrideDirections : fallbackCapabilities;
-        }
-
         /** Exact comparison of serialized fields; rolling FIFO bookkeeping alone does not invalidate network pages. */
-        public boolean applySample(int nextState, byte nextPower, int meta, byte energy, byte evidence, byte nodes,
-            long electricIn, long electricOut, long steamIn, long steamOut, double avgElectricIn, double avgElectricOut,
-            double avgSteamIn, double avgSteamOut, int dimension, int px, int py, int pz, String localName,
-            String inputRecipe, String outputRecipe) {
+        public boolean applySample(int nextState, byte nextPower, int meta, byte evidence, byte nodes, long electricIn,
+            long electricOut, double avgElectricIn, double avgElectricOut, int dimension, int px, int py, int pz,
+            String localName, String inputRecipe, String outputRecipe) {
             return applySample(
                 nextState,
                 nextPower,
                 meta,
-                energy,
                 evidence,
                 nodes,
                 electricIn,
                 electricOut,
-                steamIn,
-                steamOut,
                 avgElectricIn,
                 avgElectricOut,
-                avgSteamIn,
-                avgSteamOut,
                 dimension,
                 px,
                 py,
@@ -644,28 +596,22 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 localName,
                 inputRecipe,
                 outputRecipe,
-                DeviceSteamAdapter.legacyCapabilityMask(energy, nextPower));
+                DevicePowerCapabilities.defaultMask(nextPower));
         }
 
-        public boolean applySample(int nextState, byte nextPower, int meta, byte energy, byte evidence, byte nodes,
-            long electricIn, long electricOut, long steamIn, long steamOut, double avgElectricIn, double avgElectricOut,
-            double avgSteamIn, double avgSteamOut, int dimension, int px, int py, int pz, String localName,
-            String inputRecipe, String outputRecipe, byte capabilities) {
-            capabilities = (byte) (capabilities & 15);
+        public boolean applySample(int nextState, byte nextPower, int meta, byte evidence, byte nodes, long electricIn,
+            long electricOut, double avgElectricIn, double avgElectricOut, int dimension, int px, int py, int pz,
+            String localName, String inputRecipe, String outputRecipe, byte capabilities) {
+            capabilities = (byte) (capabilities & 3);
             boolean changed = capabilityMask != capabilities || state != nextState
                 || powerType != nextPower
                 || metaTileId != meta
-                || energyKind != energy
                 || evidenceKind != evidence
                 || linkNodeType != nodes
                 || instIn != electricIn
                 || instOut != electricOut
-                || steamInstIn != steamIn
-                || steamInstOut != steamOut
                 || Double.compare(inAvg, avgElectricIn) != 0
                 || Double.compare(outAvg, avgElectricOut) != 0
-                || Double.compare(steamAvgIn, avgSteamIn) != 0
-                || Double.compare(steamAvgOut, avgSteamOut) != 0
                 || dim != dimension
                 || x != px
                 || y != py
@@ -677,17 +623,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             state = nextState;
             powerType = nextPower;
             metaTileId = meta;
-            energyKind = energy;
             evidenceKind = evidence;
             linkNodeType = nodes;
             instIn = electricIn;
             instOut = electricOut;
-            steamInstIn = steamIn;
-            steamInstOut = steamOut;
             inAvg = avgElectricIn;
             outAvg = avgElectricOut;
-            steamAvgIn = avgSteamIn;
-            steamAvgOut = avgSteamOut;
             dim = dimension;
             x = px;
             y = py;
@@ -702,24 +643,13 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // 迁移语义：旧存储型净通道 fifo/avg 及其 NBT 键故意忽略；缺双通道键按 0，窗口自然回填。
             readFifo(tag, "fifoIn", fifoIn);
             readFifo(tag, "fifoOut", fifoOut);
-            readFifo(tag, "fifoSteamIn", fifoSteamIn);
-            readFifo(tag, "fifoSteamOut", fifoSteamOut);
             metaTileId = tag.hasKey("metaTileId") ? tag.getInteger("metaTileId") : -1;
-            energyKind = tag.getByte("energyKind");
-            recognitionMode = tag.getByte("recognitionMode");
-            if (recognitionMode < 0 || recognitionMode > 2) recognitionMode = 0;
+            recognitionMode = DeviceTerminalRecognitionMode.migrate(tag.getByte("recognitionMode"));
             recognitionWarmup = recognitionMode != DeviceTerminalRecognitionMode.IGNORE;
-            observedOverrideDirections = recognitionMode == DeviceTerminalRecognitionMode.OTHER
-                ? (byte) (tag.getByte("observedOverrideDirections") & 15)
-                : 0;
             evidenceKind = 2;
             linkNodeType = tag.getByte("linkNodeType");
             instIn = tag.getLong("instIn");
             instOut = tag.getLong("instOut");
-            steamInstIn = tag.getLong("steamInstIn");
-            steamInstOut = tag.getLong("steamInstOut");
-            steamAvgIn = tag.getDouble("steamAvgIn");
-            steamAvgOut = tag.getDouble("steamAvgOut");
             // 坏存档防御：idx 落到 [0, FIFO_SIZE)，count 落到 [0, FIFO_SIZE]，防采样越界 / 均值分母异常
             idx = ((tag.getInteger("idx") % FIFO_SIZE) + FIFO_SIZE) % FIFO_SIZE;
             count = Math.min(Math.max(tag.getInteger("count"), 0), FIFO_SIZE);
@@ -729,10 +659,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             state = tag.getInteger("state");
             // v1.8.0 旧档兼容：缺 powerType 键时 getByte 返回 0（=耗电），非 1 值一律钳回耗电
             powerType = tag.getByte("powerType") == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
-            if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE)
-                resetRecognition(recognitionMode, DeviceSteamAdapter.legacyCapabilityMask(energyKind, powerType));
-            capabilityMask = tag.hasKey("capabilityMask") ? (byte) (tag.getByte("capabilityMask") & 15)
-                : DeviceSteamAdapter.legacyCapabilityMask(energyKind, powerType);
+            capabilityMask = tag.hasKey("capabilityMask") ? (byte) (tag.getByte("capabilityMask") & 3)
+                : DevicePowerCapabilities.defaultMask(powerType);
             name = tag.getString("name");
             String alias = DeviceTerminalNameRules.normalize(tag.getString("displayName"));
             displayName = alias == null ? "" : alias;
@@ -748,6 +676,10 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // getString 返回空串（不迁移旧值，下一采样周期由调度器刷新为双侧新值）
             recipeIn = tag.getString("recipeIn");
             recipeOut = tag.getString("recipeOut");
+            // Clear ignored numeric/recipe/FIFO residue after all persisted fields have loaded.
+            if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE)
+                resetRecognition(recognitionMode, capabilityMask);
+            else if (tag.getByte("recognitionMode") == 1) resetRecognition(recognitionMode, capabilityMask);
         }
 
         NBTTagCompound toNBT() {
@@ -755,20 +687,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // 不再写入存储型净通道 fifo/avg；净值由双通道派生。
             writeFifo(tag, "fifoIn", fifoIn);
             writeFifo(tag, "fifoOut", fifoOut);
-            writeFifo(tag, "fifoSteamIn", fifoSteamIn);
-            writeFifo(tag, "fifoSteamOut", fifoSteamOut);
             tag.setInteger("metaTileId", metaTileId);
-            tag.setByte("energyKind", energyKind);
             tag.setByte("capabilityMask", capabilityMask);
             tag.setByte("recognitionMode", recognitionMode);
-            tag.setByte("observedOverrideDirections", observedOverrideDirections);
             tag.setByte("linkNodeType", linkNodeType);
             tag.setLong("instIn", instIn);
             tag.setLong("instOut", instOut);
-            tag.setLong("steamInstIn", steamInstIn);
-            tag.setLong("steamInstOut", steamInstOut);
-            tag.setDouble("steamAvgIn", steamAvgIn);
-            tag.setDouble("steamAvgOut", steamAvgOut);
             tag.setInteger("idx", idx);
             tag.setInteger("count", count);
             tag.setDouble("inAvg", inAvg);

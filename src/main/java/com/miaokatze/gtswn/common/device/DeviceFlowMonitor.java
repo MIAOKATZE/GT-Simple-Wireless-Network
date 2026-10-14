@@ -23,15 +23,14 @@ public final class DeviceFlowMonitor {
 
     public static final class Reading {
 
-        private final long[][] values = new long[4][WINDOW];
+        private final long[][] values = new long[2][WINDOW];
         /** Allocated only for transactions larger than the ordinary long bucket range. */
         private double[][] oversizedValues;
         private final long[] ticks = new long[WINDOW];
         private long expires;
-        private final double[] totals = new double[4];
+        private final double[] totals = new double[2];
         private Object owner;
         private boolean fusionInternalBuffer;
-        private boolean sawSteam;
         private double selfIn, selfOut, externalIn, externalOut;
         private long observedAt;
 
@@ -47,7 +46,6 @@ public final class DeviceFlowMonitor {
 
         private void add(int channel, double amount, boolean oversized) {
             if (amount <= 0) return;
-            if (channel >= 2) sawSteam = true;
             int slot = (int) Math.floorMod(now, (long) WINDOW);
             if (ticks[slot] != now) {
                 ticks[slot] = now;
@@ -58,7 +56,7 @@ public final class DeviceFlowMonitor {
             if (oversizedValues != null && oversizedValues[channel][slot] > 0)
                 oversizedValues[channel][slot] = finiteAdd(oversizedValues[channel][slot], amount);
             else if (oversized || amount > (double) Long.MAX_VALUE) {
-                if (oversizedValues == null) oversizedValues = new double[4][WINDOW];
+                if (oversizedValues == null) oversizedValues = new double[2][WINDOW];
                 oversizedValues[channel][slot] = finiteAdd(values[channel][slot], amount);
             } else {
                 long bucketAmount = amount >= Long.MAX_VALUE ? Long.MAX_VALUE : (long) amount;
@@ -70,17 +68,13 @@ public final class DeviceFlowMonitor {
         /** Since-last-sample volume divided by elapsed ticks, retaining periodic bursts in long-term averages. */
         public double[] consumeInterval() {
             long elapsed = now - observedAt;
-            double[] rates = new double[4];
+            double[] rates = new double[2];
             if (elapsed > 0) {
                 for (int i = 0; i < rates.length; i++) rates[i] = totals[i] / elapsed;
                 java.util.Arrays.fill(totals, 0);
                 observedAt = now;
             }
             return rates;
-        }
-
-        public boolean hasSteamActivity() {
-            return sawSteam;
         }
 
         public boolean warmedUp() {
@@ -196,10 +190,6 @@ public final class DeviceFlowMonitor {
         return reading != null && reading.expires >= now;
     }
 
-    public static void steamCurrent(long amount, boolean output) {
-        if (active()) current.add(output ? 3 : 2, amount);
-    }
-
     /** Canonical committed transaction only: negative = actual controller withdrawal, positive = deposit. */
     public static void wirelessTransaction(BigInteger signedAmount, boolean committed) {
         if (!committed || !active() || signedAmount == null || signedAmount.signum() == 0) return;
@@ -211,32 +201,24 @@ public final class DeviceFlowMonitor {
     }
 
     /** EU buffer mutations during a monitored controller call: decrease = consumption, increase = production. */
-    public static void energyChange(long before, long after, boolean steamStorage) {
-        energyChange(null, before, after, steamStorage);
+    public static void energyChange(long before, long after) {
+        energyChange(null, before, after);
     }
 
-    public static void energyChange(Object storage, long before, long after, boolean steamStorage) {
+    public static void energyChange(Object storage, long before, long after) {
         if (!active()) return;
         before = Math.max(0, before);
         after = Math.max(0, after);
         if (before == after) return;
         long amount = after > before ? after - before : before - after;
         if (amount < 0) amount = Long.MAX_VALUE;
-        if (steamStorage) amount = amount > Long.MAX_VALUE / 2 ? Long.MAX_VALUE : amount * 2;
-        if (steamStorage) current.add(after > before ? 3 : 2, amount);
-        else if (storage == current.owner) {
+        if (storage == current.owner) {
             if (after > before) current.selfOut = current.selfOut + amount;
             else current.selfIn = current.selfIn + amount;
         } else {
             if (after > before) current.externalOut = current.externalOut + amount;
             else current.externalIn = current.externalIn + amount;
         }
-    }
-
-    public static void steam(Object controller, long amount, boolean output) {
-        if (Thread.currentThread() != serverThread) return;
-        Reading reading = TRACKED.get(controller);
-        if (reading != null && reading.expires >= now) reading.add(output ? 3 : 2, amount);
     }
 
     static long saturatingAdd(long a, long b) {

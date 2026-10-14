@@ -13,27 +13,26 @@ import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
-/** Terminal-local classification overrides never change machine behavior or convert liters to electricity. */
+/** Terminal-local tracking switches never change machine behavior. */
 public final class DeviceTerminalRecognitionMode {
 
-    public static final byte AUTO = 0;
-    public static final byte OTHER = 1;
+    public static final byte TRACK = 0;
     public static final byte IGNORE = 2;
     public static final int MAX_OVERRIDES = 1024;
 
     private DeviceTerminalRecognitionMode() {}
 
     public static byte next(byte mode) {
-        return mode == AUTO ? OTHER : mode == OTHER ? IGNORE : AUTO;
+        return mode == IGNORE ? TRACK : IGNORE;
     }
 
     public static byte effectiveCapabilities(byte mode, byte original, byte powerType) {
-        if (mode == IGNORE) return 0;
-        if (mode != OTHER) return original;
-        if (DeviceSteamAdapter.energyKind(original) == DeviceSteamAdapter.STEAM)
-            return powerType == 1 ? DeviceSteamAdapter.EU_OUT : DeviceSteamAdapter.EU_IN;
-        int steam = original & (DeviceSteamAdapter.STEAM_IN | DeviceSteamAdapter.STEAM_OUT);
-        return steam != 0 ? (byte) steam : powerType == 1 ? DeviceSteamAdapter.STEAM_OUT : DeviceSteamAdapter.STEAM_IN;
+        return mode == IGNORE ? 0 : (byte) (original & 3);
+    }
+
+    /** v1.8.59 stored AUTO=0, OTHER=1, IGNORE=2; legacy manual choices now track electricity. */
+    public static byte migrate(byte mode) {
+        return mode == IGNORE ? IGNORE : TRACK;
     }
 
     /** Validates a loaded working machine. Unbound world targets must be within reach of this player. */
@@ -69,7 +68,7 @@ public final class DeviceTerminalRecognitionMode {
         if (!DeviceMachineTypes.isWorkingMachine(machine)) return -1;
         UUID terminalId = ItemDeviceInfoTerminal.ensureTerminalIdSynced(player, terminal);
         byte result = store
-            .cycleRecognition(terminalId, key, metaTileId, DeviceSteamAdapter.capabilityMask(machine), machine);
+            .cycleRecognition(terminalId, key, metaTileId, DevicePowerCapabilities.capabilityMask(machine), machine);
         if (result >= 0) {
             DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
             boolean watchedElsewhere = false;
@@ -80,10 +79,7 @@ public final class DeviceTerminalRecognitionMode {
             }
             if (!watchedElsewhere) DeviceFlowMonitor.forget(machine);
             DeviceTerminalRequestQueue.invalidate(player);
-            String modeKey = result == AUTO ? "auto"
-                : result == IGNORE ? "ignored"
-                    : DeviceSteamAdapter.energyKind(DeviceSteamAdapter.capabilityMask(machine))
-                        == DeviceSteamAdapter.STEAM ? "eu" : "steam";
+            String modeKey = result == IGNORE ? "ignored" : "track";
             player.addChatMessage(
                 new net.minecraft.util.ChatComponentTranslation(
                     "gtswn.device.chat.recognition_mode",

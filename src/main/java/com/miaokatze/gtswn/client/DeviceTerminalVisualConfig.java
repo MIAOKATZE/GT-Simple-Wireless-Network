@@ -13,8 +13,6 @@ public final class DeviceTerminalVisualConfig {
     private static boolean explicitHeatChoice;
     public static boolean showConsumers = true;
     public static boolean showGenerators = true;
-    public static boolean showSteamConsumers = true;
-    public static boolean showSteamProducers = true;
     public static boolean depthTest = true;
     public static boolean showLabels = true;
     public static boolean showLabelName = true;
@@ -68,8 +66,10 @@ public final class DeviceTerminalVisualConfig {
         }
         showConsumers = configuration.getBoolean("showConsumers", category, true, "Electric consumers.");
         showGenerators = configuration.getBoolean("showGenerators", category, true, "Electric generators.");
-        showSteamConsumers = configuration.getBoolean("showSteamConsumers", category, true, "Steam consumers.");
-        showSteamProducers = configuration.getBoolean("showSteamProducers", category, true, "Steam producers.");
+        configuration.getCategory(category)
+            .remove("showSteamConsumers");
+        configuration.getCategory(category)
+            .remove("showSteamProducers");
         depthTest = configuration.getBoolean("depthTest", category, true, "Respect world depth occlusion.");
         showLabels = configuration.getBoolean("showLabels", category, true, "Show travel-anchor label panels.");
         showLabelName = configuration.getBoolean("showLabelName", category, true, "Machine names on anchors.");
@@ -116,10 +116,6 @@ public final class DeviceTerminalVisualConfig {
             .set(showConsumers);
         configuration.get(category, "showGenerators", true)
             .set(showGenerators);
-        configuration.get(category, "showSteamConsumers", true)
-            .set(showSteamConsumers);
-        configuration.get(category, "showSteamProducers", true)
-            .set(showSteamProducers);
         configuration.get(category, "depthTest", true)
             .set(depthTest);
         configuration.get(category, "showLabels", true)
@@ -175,8 +171,6 @@ public final class DeviceTerminalVisualConfig {
 
     public static long appearanceKey() {
         int bits = (showConsumers ? 1 : 0) | (showGenerators ? 2 : 0)
-            | (showSteamConsumers ? 4 : 0)
-            | (showSteamProducers ? 8 : 0)
             | (showLabels ? 16 : 0)
             | (showLabelName ? 32 : 0)
             | (showLabelPower ? 64 : 0)
@@ -188,7 +182,7 @@ public final class DeviceTerminalVisualConfig {
         return bits | average << 9 | (long) DeviceEnergyVisualMath.validHeatSize(heatSize) << 16 | (long) labels << 26;
     }
 
-    public static boolean visible(boolean steam, boolean producer) {
-        return steam ? producer ? showSteamProducers : showSteamConsumers : producer ? showGenerators : showConsumers;
+    public static boolean visible(boolean producer) {
+        return producer ? showGenerators : showConsumers;
     }
 }

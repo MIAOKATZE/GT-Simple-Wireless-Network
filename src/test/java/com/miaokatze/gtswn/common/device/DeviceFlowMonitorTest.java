@@ -22,10 +22,10 @@ public class DeviceFlowMonitorTest {
         DeviceFlowMonitor.Reading first = DeviceFlowMonitor.watch(a, 100);
         DeviceFlowMonitor.Reading second = DeviceFlowMonitor.watch(b, 100);
         DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(a);
-        DeviceFlowMonitor.energyChange(hatch, 1000, 800, false);
+        DeviceFlowMonitor.energyChange(hatch, 1000, 800);
         DeviceFlowMonitor.leave(previous);
         previous = DeviceFlowMonitor.enter(b);
-        DeviceFlowMonitor.energyChange(hatch, 800, 740, false);
+        DeviceFlowMonitor.energyChange(hatch, 800, 740);
         DeviceFlowMonitor.leave(previous);
         assertEquals(10, first.average(0));
         assertEquals(3, second.average(0));
@@ -37,8 +37,8 @@ public class DeviceFlowMonitorTest {
         Object machine = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
         DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
-        DeviceFlowMonitor.energyChange(new Object(), 1000, 800, false);
-        DeviceFlowMonitor.energyChange(new Object(), 0, 400, false);
+        DeviceFlowMonitor.energyChange(new Object(), 1000, 800);
+        DeviceFlowMonitor.energyChange(new Object(), 0, 400);
         DeviceFlowMonitor.leave(previous);
         assertEquals(10, reading.average(0));
         assertEquals(20, reading.average(1));
@@ -55,9 +55,9 @@ public class DeviceFlowMonitorTest {
         for (Object fusion : new Object[] { new MTEFusionComputer(), new MTELargeFusionComputer() }) {
             DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(fusion, 100);
             DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(fusion);
-            DeviceFlowMonitor.energyChange(new Object(), 10000, 9000, false);
-            DeviceFlowMonitor.energyChange(fusion, 2000, 3000, false);
-            DeviceFlowMonitor.energyChange(fusion, 3000, 2600, false);
+            DeviceFlowMonitor.energyChange(new Object(), 10000, 9000);
+            DeviceFlowMonitor.energyChange(fusion, 2000, 3000);
+            DeviceFlowMonitor.energyChange(fusion, 3000, 2600);
             DeviceFlowMonitor.leave(previous);
             assertEquals(20, reading.average(0));
             assertEquals(0, reading.average(1));
@@ -69,23 +69,27 @@ public class DeviceFlowMonitorTest {
         Object machine = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 1000);
         assertFalse(reading.warmedUp());
-        DeviceFlowMonitor.steam(machine, 2000, true);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        DeviceFlowMonitor.energyChange(0, 2000);
+        DeviceFlowMonitor.leave(previous);
         DeviceFlowMonitor.tick(server, 200);
-        assertEquals(0, reading.average(3));
+        assertEquals(0, reading.average(1));
         assertTrue(reading.warmedUp());
-        assertEquals(20.0, reading.consumeInterval()[3], 0.0);
+        assertEquals(20.0, reading.consumeInterval()[1], 0.0);
         assertFalse(reading.warmedUp());
         DeviceFlowMonitor.tick(server, 300);
-        assertEquals(0.0, reading.consumeInterval()[3], 0.0);
+        assertEquals(0.0, reading.consumeInterval()[1], 0.0);
     }
 
     @Test
     public void lowDutyCycleFractionalRatesRemainVisible() {
         Object machine = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 1000);
-        DeviceFlowMonitor.steam(machine, 16, false);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        DeviceFlowMonitor.energyChange(16, 0);
+        DeviceFlowMonitor.leave(previous);
         DeviceFlowMonitor.tick(server, 300);
-        assertEquals(0.08, reading.consumeInterval()[2], 0.000001);
+        assertEquals(0.08, reading.consumeInterval()[0], 0.000001);
     }
 
     @Test
@@ -96,7 +100,7 @@ public class DeviceFlowMonitorTest {
         for (int tick = 100; tick < 120; tick++) {
             DeviceFlowMonitor.tick(server, tick);
             DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
-            DeviceFlowMonitor.energyChange(amount, 0, false);
+            DeviceFlowMonitor.energyChange(amount, 0);
             DeviceFlowMonitor.leave(previous);
         }
         assertTrue(reading.average(0) >= amount - 1024);
@@ -105,34 +109,23 @@ public class DeviceFlowMonitorTest {
     }
 
     @Test
-    public void actualSteamStorageRatioDoesNotBecomeElectricity() {
-        Object machine = new Object();
-        DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
-        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
-        DeviceFlowMonitor.energyChange(machine, 1000, 800, true);
-        DeviceFlowMonitor.leave(previous);
-        assertEquals(20, reading.average(2));
-        assertEquals(0, reading.average(0));
-    }
-
-    @Test
     public void nestedUnknownCallsAndExceptionsRestoreAttribution() {
         Object a = new Object(), unknown = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(a, 100);
         DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(a);
         try {
-            DeviceFlowMonitor.energyChange(1000, 800, false);
+            DeviceFlowMonitor.energyChange(1000, 800);
             DeviceFlowMonitor.Reading nested = DeviceFlowMonitor.enter(unknown);
             try {
-                DeviceFlowMonitor.energyChange(1000, 0, false);
+                DeviceFlowMonitor.energyChange(1000, 0);
             } finally {
                 DeviceFlowMonitor.leave(nested);
             }
-            DeviceFlowMonitor.energyChange(800, 600, false);
+            DeviceFlowMonitor.energyChange(800, 600);
         } finally {
             DeviceFlowMonitor.leave(previous);
         }
-        DeviceFlowMonitor.energyChange(600, 0, false);
+        DeviceFlowMonitor.energyChange(600, 0);
         assertEquals(20, reading.average(0));
     }
 
@@ -144,14 +137,12 @@ public class DeviceFlowMonitorTest {
         Thread client = new Thread(() -> {
             assertFalse(DeviceFlowMonitor.active());
             assertFalse(DeviceFlowMonitor.isWatched(machine));
-            DeviceFlowMonitor.energyChange(1000, 0, false);
-            DeviceFlowMonitor.steam(machine, 1000, false);
+            DeviceFlowMonitor.energyChange(1000, 0);
         });
         client.start();
         client.join();
         DeviceFlowMonitor.leave(previous);
         assertEquals(0, reading.average(0));
-        assertEquals(0, reading.average(2));
     }
 
     @Test
@@ -186,9 +177,9 @@ public class DeviceFlowMonitorTest {
         Object machine = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
         DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(-1000), true);
-        DeviceFlowMonitor.energyChange(machine, 0, 1000, false);
+        DeviceFlowMonitor.energyChange(machine, 0, 1000);
         DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
-        DeviceFlowMonitor.energyChange(machine, 1000, 800, false);
+        DeviceFlowMonitor.energyChange(machine, 1000, 800);
         DeviceFlowMonitor.leave(previous);
         assertEquals(10, reading.average(0));
         assertEquals(0, reading.average(1));
@@ -199,7 +190,7 @@ public class DeviceFlowMonitorTest {
         Object machine = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
         DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
-        DeviceFlowMonitor.energyChange(machine, 1000, 800, false);
+        DeviceFlowMonitor.energyChange(machine, 1000, 800);
         DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.valueOf(200), true);
         DeviceFlowMonitor.leave(previous);
         assertEquals(10, reading.average(0));

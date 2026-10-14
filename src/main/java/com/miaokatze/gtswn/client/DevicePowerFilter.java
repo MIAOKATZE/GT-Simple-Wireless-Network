@@ -1,45 +1,25 @@
 package com.miaokatze.gtswn.client;
 
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
-/** Device list filters use independent channel capabilities, including idle devices. */
+/** Device list filters use observed electrical input and output, independent of net power. */
 public final class DevicePowerFilter {
 
     public static final int ALL = 0;
-    public static final int ELECTRIC = 1;
-    public static final int STEAM = 2;
-    public static final int GENERATE_EU = 3;
-    public static final int CONSUME_EU = 4;
-    public static final int GENERATE_STEAM = 5;
-    public static final int CONSUME_STEAM = 6;
-    public static final int MODE_COUNT = 7;
-
-    private static final int EU_IN = 1;
-    private static final int EU_OUT = 2;
-    private static final int STEAM_IN = 4;
-    private static final int STEAM_OUT = 8;
+    public static final int GENERATE_EU = 1;
+    public static final int CONSUME_EU = 2;
+    public static final int MODE_COUNT = 3;
 
     private DevicePowerFilter() {}
 
-    /** The server combines idle capabilities and supported observed flows; net power is not a category. */
     public static boolean matches(Entry entry, int mode) {
-        return matches(entry.state == 3 ? 0 : entry.capabilityMask, mode);
-    }
-
-    public static boolean matches(int capabilityMask, int mode) {
+        boolean ignored = entry.state == 3 || entry.recognitionMode == DeviceTerminalRecognitionMode.IGNORE;
         switch (mode) {
-            case ELECTRIC:
-                return (capabilityMask & (EU_IN | EU_OUT)) != 0;
-            case STEAM:
-                return (capabilityMask & (STEAM_IN | STEAM_OUT)) != 0;
             case GENERATE_EU:
-                return (capabilityMask & EU_OUT) != 0;
+                return !ignored && (entry.instOut > 0L || entry.avgOut > 0D);
             case CONSUME_EU:
-                return (capabilityMask & EU_IN) != 0;
-            case GENERATE_STEAM:
-                return (capabilityMask & STEAM_OUT) != 0;
-            case CONSUME_STEAM:
-                return (capabilityMask & STEAM_IN) != 0;
+                return !ignored && (entry.instIn > 0L || entry.avgIn > 0D);
             case ALL:
             default:
                 return true;

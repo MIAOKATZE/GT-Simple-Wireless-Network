@@ -19,7 +19,8 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
-import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
+import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
@@ -31,12 +32,11 @@ public final class DeviceEnergyWorldRenderer {
 
     private static final int WORK_PER_TICK = 32;
     private static final int OUTLINE_BUDGET = 64;
-    private static final int[] LEGEND_COLORS = { 0xFF6E36, 0x44EA77, 0xC2C2C2, 0x707070 };
+    private static final int[] LEGEND_COLORS = { 0xFF6E36, 0x44EA77 };
     private final List<Visual> visible = new ArrayList<>(1024);
     private final List<Visual> building = new ArrayList<>(1024);
     private final List<Visual> drawn = new ArrayList<>(1024);
     private final Map<String, Visual> electricPrevious = new HashMap<>();
-    private final Map<String, Visual> steamPrevious = new HashMap<>();
     private List<DeviceTerminalAnchorRenderer.Anchor> source;
     private UUID terminal;
     private long sourceGeneration = Long.MIN_VALUE;
@@ -47,9 +47,7 @@ public final class DeviceEnergyWorldRenderer {
     private long appearance;
     private long buildAppearance;
     private double maxElectric;
-    private double maxSteam;
     private double buildElectricMax;
-    private double buildSteamMax;
     private String[] legendLines = new String[0];
     private int legendWidth;
     private String legendLanguage;
@@ -97,7 +95,6 @@ public final class DeviceEnergyWorldRenderer {
             cursor = 0;
             building.clear();
             buildElectricMax = 0D;
-            buildSteamMax = 0D;
         }
         // A soft camera/order rebuild never pauses or restarts an already bounded thermal build.
         if (source != null) advance();
@@ -120,19 +117,16 @@ public final class DeviceEnergyWorldRenderer {
             Entry entry = device.entry;
             if (ignored(entry)) {
                 // Ignored machines stay locatable regardless of energy filters, with one small gray core.
-                building.add(new Visual(device, false, false, 0D, true));
+                building.add(new Visual(device, false, 0D, true));
                 continue;
             }
-            int channels = channels(entry, device.steamCapable);
-            if ((channels & (DeviceSteamAdapter.EU_IN | DeviceSteamAdapter.EU_OUT)) != 0) add(device, false);
-            if ((channels & (DeviceSteamAdapter.STEAM_IN | DeviceSteamAdapter.STEAM_OUT)) != 0) add(device, true);
+            if (channels(entry) != 0) add(device);
         }
         if (cursor < source.size()) return;
         maxElectric = buildElectricMax;
-        maxSteam = buildSteamMax;
         for (Visual visual : building) {
-            visual.target = DeviceEnergyVisualMath.intensity(visual.magnitude, visual.steam ? maxSteam : maxElectric);
-            Visual previous = (visual.steam ? steamPrevious : electricPrevious).get(visual.device.entry.key);
+            visual.target = DeviceEnergyVisualMath.intensity(visual.magnitude, maxElectric);
+            Visual previous = electricPrevious.get(visual.device.entry.key);
             visual.intensity = visual.ignored ? 0D : previous == null ? visual.target : previous.intensity;
             visual.updateAppearance();
             visual.previousRadius = visual.ignored ? 0D : previous == null ? visual.radius : previous.previousRadius;
@@ -141,9 +135,7 @@ public final class DeviceEnergyWorldRenderer {
         visible.clear();
         visible.addAll(building);
         electricPrevious.clear();
-        steamPrevious.clear();
-        for (Visual visual : visible)
-            (visual.steam ? steamPrevious : electricPrevious).put(visual.device.entry.key, visual);
+        for (Visual visual : visible) electricPrevious.put(visual.device.entry.key, visual);
         sourceGeneration = buildGeneration;
         appearance = buildAppearance;
         source = null;
@@ -151,41 +143,26 @@ public final class DeviceEnergyWorldRenderer {
     }
 
     static boolean ignored(Entry entry) {
-        return entry.state == 3 || entry.recognitionMode == 2;
+        return entry.state == 3 || entry.recognitionMode == DeviceTerminalRecognitionMode.IGNORE;
     }
 
-    static int channels(Entry entry, boolean observedSteam) {
-        if (ignored(entry)) return 0;
-        int capabilities = entry.capabilityMask;
-        // AUTO keeps the observed machine capability guard for old or stale MIXED snapshots.
-        // An explicit OTHER choice uses the server's effective channel even for an ordinary EU machine.
-        if (entry.recognitionMode == 0 && !observedSteam)
-            capabilities &= ~(DeviceSteamAdapter.STEAM_IN | DeviceSteamAdapter.STEAM_OUT);
-        return capabilities;
+    static int channels(Entry entry) {
+        return ignored(entry) ? 0
+            : entry.capabilityMask & (DevicePowerCapabilities.EU_IN | DevicePowerCapabilities.EU_OUT);
     }
 
-    private void add(DeviceTerminalAnchorRenderer.Anchor device, boolean steam) {
+    private void add(DeviceTerminalAnchorRenderer.Anchor device) {
         Entry entry = device.entry;
-        double input = DeviceEnergyVisualMath.weighted(
-            steam ? entry.steamInstIn : entry.instIn,
-            steam ? entry.steamAvgIn : entry.avgIn,
-            DeviceTerminalVisualConfig.averageWeight);
-        double output = DeviceEnergyVisualMath.weighted(
-            steam ? entry.steamInstOut : entry.instOut,
-            steam ? entry.steamAvgOut : entry.avgOut,
-            DeviceTerminalVisualConfig.averageWeight);
-        boolean producesAtRest = steam
-            ? (entry.capabilityMask & DeviceSteamAdapter.STEAM_OUT) != 0
-                && (entry.capabilityMask & DeviceSteamAdapter.STEAM_IN) == 0
-            : entry.powerType == 1;
-        boolean producer = output > input || output == input && producesAtRest;
-        if (!DeviceTerminalVisualConfig.visible(steam, producer)) return;
+        double input = DeviceEnergyVisualMath
+            .weighted(entry.instIn, entry.avgIn, DeviceTerminalVisualConfig.averageWeight);
+        double output = DeviceEnergyVisualMath
+            .weighted(entry.instOut, entry.avgOut, DeviceTerminalVisualConfig.averageWeight);
+        boolean producer = output > input || output == input && entry.powerType == 1;
+        if (!DeviceTerminalVisualConfig.visible(producer)) return;
         // Balanced input/output is still activity: net-zero must not hide a working device.
         double magnitude = Math.max(0D, Math.max(input, output));
-        Visual visual = new Visual(device, steam, producer, magnitude, entry.evidenceKind >= 2 || magnitude == 0D);
-        building.add(visual);
-        if (steam) buildSteamMax = Math.max(buildSteamMax, magnitude);
-        else buildElectricMax = Math.max(buildElectricMax, magnitude);
+        building.add(new Visual(device, producer, magnitude, entry.evidenceKind >= 2 || magnitude == 0D));
+        buildElectricMax = Math.max(buildElectricMax, magnitude);
     }
 
     @SubscribeEvent
@@ -232,13 +209,8 @@ public final class DeviceEnergyWorldRenderer {
             DeviceEnergyRenderState.start(tess, GL11.GL_QUADS);
             int batchVertices = 0;
             // Device groups are cached nearest-first; reverse groups for translucent far-to-near compositing.
-            // Within a mixed device, EU fills first and the distinct steam top slab fills last.
             for (int i = drawn.size() - 1; i >= 0; i--) {
                 Visual visual = drawn.get(i);
-                if (visual.steam && i > 0 && drawn.get(i - 1).device == visual.device) {
-                    Visual electric = drawn.get(--i);
-                    batchVertices = fillLayer(tess, electric, x, y, z, batchVertices);
-                }
                 batchVertices = fillLayer(tess, visual, x, y, z, batchVertices);
             }
             tess.draw();
@@ -353,16 +325,14 @@ public final class DeviceEnergyWorldRenderer {
 
     private void updateLegend(Minecraft mc) {
         legendLanguage = mc.gameSettings.language;
-        String[] keys = { "consumer", "generator", "steam.producer", "steam.consumer" };
-        legendLines = new String[6];
+        String[] keys = { "consumer", "generator" };
+        legendLines = new String[3];
         legendWidth = 0;
-        for (int i = 0; i < 4; i++) legendLines[i] = StatCollector.translateToLocal("gtswn.device.settings." + keys[i]);
-        legendLines[4] = StatCollector.translateToLocalFormatted(
+        for (int i = 0; i < keys.length; i++)
+            legendLines[i] = StatCollector.translateToLocal("gtswn.device.settings." + keys[i]);
+        legendLines[2] = StatCollector.translateToLocalFormatted(
             "gtswn.device.settings.maximum.eu",
             FormatUtil.formatMetricDouble(maxElectric, 1));
-        legendLines[5] = StatCollector.translateToLocalFormatted(
-            "gtswn.device.settings.maximum.steam",
-            FormatUtil.formatMetricDouble(maxSteam, 1));
         for (String line : legendLines) legendWidth = Math.max(legendWidth, mc.fontRenderer.getStringWidth(line));
     }
 
@@ -373,8 +343,11 @@ public final class DeviceEnergyWorldRenderer {
             || mc.gameSettings.hideGUI
             || visible.isEmpty()) return;
         int x = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaledWidth() - legendWidth - 8;
-        for (int i = 0; i < legendLines.length; i++)
-            mc.fontRenderer.drawStringWithShadow(legendLines[i], x, 70 + i * 11, i < 4 ? LEGEND_COLORS[i] : 0xDDDDDD);
+        for (int i = 0; i < legendLines.length; i++) mc.fontRenderer.drawStringWithShadow(
+            legendLines[i],
+            x,
+            70 + i * 11,
+            i < LEGEND_COLORS.length ? LEGEND_COLORS[i] : 0xDDDDDD);
     }
 
     @SubscribeEvent
@@ -390,7 +363,6 @@ public final class DeviceEnergyWorldRenderer {
         building.clear();
         drawn.clear();
         electricPrevious.clear();
-        steamPrevious.clear();
         source = null;
         terminal = null;
         sourceGeneration = Long.MIN_VALUE;
@@ -407,7 +379,6 @@ public final class DeviceEnergyWorldRenderer {
         final AxisAlignedBB coreBox;
         final AxisAlignedBB box;
         final double centerX, centerY, centerZ;
-        final boolean steam;
         final boolean producer;
         final boolean neutral;
         final boolean ignored;
@@ -420,15 +391,13 @@ public final class DeviceEnergyWorldRenderer {
         double extent;
         float red, green, blue, alpha;
 
-        Visual(DeviceTerminalAnchorRenderer.Anchor device, boolean steam, boolean producer, double magnitude,
-            boolean neutral) {
+        Visual(DeviceTerminalAnchorRenderer.Anchor device, boolean producer, double magnitude, boolean neutral) {
             this.device = device;
-            this.steam = steam;
             this.producer = producer;
             ignored = DeviceEnergyWorldRenderer.ignored(device.entry);
             this.magnitude = ignored ? 0D : magnitude;
             this.neutral = ignored || neutral;
-            coreBox = steam && device.entry.energyKind == 2 ? device.steamBounds : device.heatBounds;
+            coreBox = device.heatBounds;
             centerX = (coreBox.minX + coreBox.maxX) * .5D;
             centerY = (coreBox.minY + coreBox.maxY) * .5D;
             centerZ = (coreBox.minZ + coreBox.maxZ) * .5D;
@@ -446,12 +415,9 @@ public final class DeviceEnergyWorldRenderer {
                 alpha = (float) DeviceTerminalVisualConfig.opacity * .18F;
                 return;
             }
-            if (steam) red = green = blue = producer ? .38F + strength * .42F : .22F - strength * .20F;
-            else {
-                red = producer ? .06F : .55F + .45F * strength;
-                green = producer ? .4F + .6F * strength : .18F + .13F * strength;
-                blue = producer ? .13F + .13F * strength : .07F;
-            }
+            red = producer ? .06F : .55F + .45F * strength;
+            green = producer ? .4F + .6F * strength : .18F + .13F * strength;
+            blue = producer ? .13F + .13F * strength : .07F;
             alpha = (float) DeviceTerminalVisualConfig.opacity * (.25F + .75F * strength);
         }
 

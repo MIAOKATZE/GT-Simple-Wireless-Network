@@ -97,10 +97,10 @@ public class DeviceEnergyVisualMathTest {
     }
 
     @Test
-    public void independentChannelsAndAverageWeightPreserveRadiusOrdering() {
-        double electric = DeviceEnergyVisualMath.intensity(32D, 128D);
-        double steam = DeviceEnergyVisualMath.intensity(3200D, 12800D);
-        assertTrue(DeviceEnergyVisualMath.radius(steam) > DeviceEnergyVisualMath.radius(electric));
+    public void electricLoadAndAverageWeightPreserveRadiusOrdering() {
+        double low = DeviceEnergyVisualMath.intensity(32D, 32768D);
+        double high = DeviceEnergyVisualMath.intensity(3200D, 32768D);
+        assertTrue(DeviceEnergyVisualMath.radius(high) > DeviceEnergyVisualMath.radius(low));
         double briefSpike = DeviceEnergyVisualMath.weighted(32768D, 32D, .65D);
         double sustained = DeviceEnergyVisualMath.weighted(32768D, 32768D, .65D);
         double quiet = DeviceEnergyVisualMath.weighted(32D, 32D, .65D);
@@ -134,11 +134,11 @@ public class DeviceEnergyVisualMathTest {
     }
 
     @Test
-    public void maximumMixedSceneNeverGrowsTheDefaultTessellatorBuffer() {
+    public void maximumElectricSceneNeverGrowsTheDefaultTessellatorBuffer() {
         int vertices = 0;
         int batches = 1;
-        // 512 bounded devices, each with electric and steam channels; every channel is active.
-        for (int layer = 0; layer < 1024; layer++) {
+        // 512 bounded devices, each with one active electric channel.
+        for (int layer = 0; layer < 512; layer++) {
             int required = DeviceEnergyVisualMath.vertices(true);
             if (DeviceEnergyVisualMath.startsNewBatch(vertices, required)) {
                 assertTrue(vertices * 8 <= 61440);
@@ -149,7 +149,7 @@ public class DeviceEnergyVisualMathTest {
             assertTrue(vertices <= DeviceEnergyVisualMath.FILL_VERTEX_BUDGET);
         }
         assertTrue(vertices * 8 <= 61440);
-        assertTrue("Radial geometry remains a bounded set of shared batches", batches <= 12);
+        assertTrue("Radial geometry remains a bounded set of shared batches", batches <= 6);
         assertEquals(88, DeviceEnergyVisualMath.vertices(true));
         assertEquals(24, DeviceEnergyVisualMath.vertices(false));
         assertFalse(DeviceEnergyVisualMath.startsNewBatch(7656, 24));

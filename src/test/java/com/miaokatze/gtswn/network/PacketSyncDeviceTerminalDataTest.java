@@ -54,13 +54,8 @@ public class PacketSyncDeviceTerminalDataTest {
             "",
             "eu/t output",
             1234,
-            (byte) 2,
             (byte) 1,
             (byte) 3,
-            80L,
-            20L,
-            0.08,
-            0.02,
             "Generator alias",
             (byte) 12,
             true,
@@ -124,16 +119,9 @@ public class PacketSyncDeviceTerminalDataTest {
         assertEquals((byte) 12, second.nameColor);
         assertTrue(second.nameBold);
         assertEquals(1234, second.metaTileId);
-        assertEquals((byte) 2, second.energyKind);
-        assertEquals((byte) 14, second.capabilityMask);
+        assertEquals((byte) 2, second.capabilityMask);
         assertEquals((byte) 1, second.evidenceKind);
         assertEquals((byte) 3, second.linkNodeType);
-        assertEquals(80L, second.steamInstIn);
-        assertEquals(20L, second.steamInstOut);
-        assertEquals(-60L, second.steamInstNet());
-        assertEquals(0.08, second.steamAvgIn, 0.0);
-        assertEquals(0.02, second.steamAvgOut, 0.0);
-        assertEquals(-0.06, second.steamAvgNet(), 0.000001);
         assertTrue("字段序回归应保留两条目顺序", first.key.startsWith("-1:") && second.key.startsWith("0:"));
     }
 
@@ -155,7 +143,7 @@ public class PacketSyncDeviceTerminalDataTest {
         ByteBuf current = Unpooled.buffer();
         new PacketSyncDeviceTerminalData(UUID.randomUUID(), 1, 0, 1, 0, java.util.Collections.emptyList())
             .toBytes(current);
-        current.setByte(4, 2);
+        current.setByte(4, 1);
         decoded.fromBytes(current);
         org.junit.Assert.assertNull(decoded.getTerminalId());
         assertTrue(
@@ -181,13 +169,8 @@ public class PacketSyncDeviceTerminalDataTest {
             "recipe",
             "output",
             123,
-            (byte) 2,
             (byte) 1,
             (byte) 3,
-            60,
-            70,
-            80,
-            90,
             "Alias",
             (byte) 7,
             true,
@@ -209,8 +192,8 @@ public class PacketSyncDeviceTerminalDataTest {
             assertEquals(3, entry.state);
             assertEquals(2, entry.recognitionMode);
             assertEquals(0, entry.capabilityMask);
-            assertEquals(0, entry.instIn + entry.instOut + entry.steamInstIn + entry.steamInstOut);
-            assertEquals(0, entry.avgIn + entry.avgOut + entry.steamAvgIn + entry.steamAvgOut, 0);
+            assertEquals(0, entry.instIn + entry.instOut);
+            assertEquals(0, entry.avgIn + entry.avgOut, 0);
             assertEquals(0, entry.evidenceKind);
             assertEquals("", entry.recipeIn);
             assertEquals("", entry.recipeOut);

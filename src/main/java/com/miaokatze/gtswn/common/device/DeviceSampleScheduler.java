@@ -27,7 +27,7 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
 /**
  * Bounded server sampling of active terminal bindings. Actual energy is attributed to controller calls,
- * steam remains in liters, and registered model providers carry a distinct evidence flag.
+ * registered model providers carry a distinct evidence flag.
  * Instantaneous readings use a 20-tick window; the 60-point averages use all changes since each previous observation.
  */
 public class DeviceSampleScheduler {
@@ -64,15 +64,13 @@ public class DeviceSampleScheduler {
     /** runningSum 会话缓存条目：上次推进后的三通道 (sum, sumIn, sumOut) 与 (idx, count)，须与记录状态一致才可增量推进 */
     private static final class FifoState {
 
-        final int[] nonzero = new int[4];
+        final int[] nonzero = new int[2];
 
         /** 流入通道（fifoIn）有效样本之和 */
         double sumIn;
 
         /** 流出通道（fifoOut）有效样本之和 */
         double sumOut;
-        double sumSteamIn;
-        double sumSteamOut;
 
         /** 上次推进后的写指针 */
         int idx;
@@ -221,19 +219,12 @@ public class DeviceSampleScheduler {
             DeviceFlowMonitor.Reading observed = DeviceFlowMonitor
                 .watch(mte, Math.max(200L, (long) Config.deviceSampleIntervalSeconds * 60L));
             byte evidenceKind = observed == null ? (byte) 3 : observed.warmedUp() ? (byte) 0 : (byte) 2;
-            byte realEvidenceKind = evidenceKind;
-            double[] interval = observed == null ? new double[4] : observed.consumeInterval();
+            double[] interval = observed == null ? new double[2] : observed.consumeInterval();
             long euIn = observed == null ? 0L : observed.average(0);
             long euOut = observed == null ? 0L : observed.average(1);
-            long steamIn = observed == null ? 0L : observed.average(2);
-            long steamOut = observed == null ? 0L : observed.average(3);
-            byte originalCapabilities = DeviceSteamAdapter.capabilityMask(mte);
-            byte capabilities = DeviceSteamAdapter
-                .observedCapabilities(originalCapabilities, euIn, euOut, steamIn, steamOut, interval);
-            byte energyKind = DeviceSteamAdapter.energyKind(capabilities);
+            byte originalCapabilities = DevicePowerCapabilities.capabilityMask(mte);
             // Provider values are explicitly modeled; no recipe-demand or hatch-network fallback is used.
-            if (state == DeviceTerminalDataStore.STATE_RUNNING && energyKind != DeviceSteamAdapter.STEAM
-                && euIn == 0
+            if (state == DeviceTerminalDataStore.STATE_RUNNING && euIn == 0
                 && euOut == 0
                 && interval[0] == 0
                 && interval[1] == 0) {
@@ -249,10 +240,10 @@ public class DeviceSampleScheduler {
                     }
                 }
             }
-            byte powerType = isGenerator
-                || (energyKind == DeviceSteamAdapter.STEAM && DeviceSteamAdapter.isSteamProducer(mte))
-                    ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                    : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
+            byte capabilities = DevicePowerCapabilities
+                .observedCapabilities(originalCapabilities, euIn, euOut, interval);
+            byte powerType = isGenerator ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
             int metaTileId = gtTE.getMetaTileID();
             byte linkNodeType = DeviceMachineIdentity.linkNodeType(mte);
             String localName = mte.getLocalName();
@@ -275,45 +266,27 @@ public class DeviceSampleScheduler {
                 if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE) {
                     if (record.recognitionMode != recognitionMode
                         || record.state != DeviceTerminalDataStore.STATE_IGNORED) {
-                        record.resetRecognition(recognitionMode, DeviceSteamAdapter.capabilityMask(mte));
+                        record.resetRecognition(recognitionMode, DevicePowerCapabilities.capabilityMask(mte));
                         data.version++;
                     }
                     Map<UUID, FifoState> ignoredStates = this.fifoStates.get(key);
                     if (ignoredStates != null) ignoredStates.remove(entry.getKey());
                     continue;
                 }
-                byte effectiveCapabilities = DeviceTerminalRecognitionMode.effectiveCapabilities(
-                    recognitionMode,
-                    recognitionMode == DeviceTerminalRecognitionMode.OTHER ? originalCapabilities : capabilities,
-                    powerType);
-                boolean onlySteam = recognitionMode == DeviceTerminalRecognitionMode.OTHER
-                    && DeviceSteamAdapter.energyKind(effectiveCapabilities) == DeviceSteamAdapter.STEAM;
-                boolean onlyEu = recognitionMode == DeviceTerminalRecognitionMode.OTHER && !onlySteam;
-                long sampleEuIn = onlySteam ? 0 : euIn, sampleEuOut = onlySteam ? 0 : euOut;
-                long sampleSteamIn = onlyEu ? 0 : steamIn, sampleSteamOut = onlyEu ? 0 : steamOut;
-                double[] sampleInterval = { onlySteam ? 0 : interval[0], onlySteam ? 0 : interval[1],
-                    onlyEu ? 0 : interval[2], onlyEu ? 0 : interval[3] };
-                byte sampleEvidence = onlySteam ? realEvidenceKind : evidenceKind;
+                byte effectiveCapabilities = capabilities;
+                long sampleEuIn = euIn, sampleEuOut = euOut;
+                double[] sampleInterval = interval.clone();
+                byte sampleEvidence = evidenceKind;
                 if (record.recognitionWarmup) {
                     record.recognitionWarmup = false;
                     Map<UUID, FifoState> warmStates = this.fifoStates.get(key);
                     if (warmStates != null) warmStates.remove(entry.getKey());
-                    sampleEuIn = sampleEuOut = sampleSteamIn = sampleSteamOut = 0;
+                    sampleEuIn = sampleEuOut = 0;
                     java.util.Arrays.fill(sampleInterval, 0);
                     sampleEvidence = 2;
                 }
-                if (recognitionMode == DeviceTerminalRecognitionMode.OTHER)
-                    effectiveCapabilities = record.learnOverrideDirections(
-                        originalCapabilities,
-                        effectiveCapabilities,
-                        sampleEuIn,
-                        sampleEuOut,
-                        sampleSteamIn,
-                        sampleSteamOut,
-                        sampleInterval);
                 record.recognitionMode = recognitionMode;
                 double nextInAvg = record.inAvg, nextOutAvg = record.outAvg;
-                double nextSteamInAvg = record.steamAvgIn, nextSteamOutAvg = record.steamAvgOut;
                 if (sampleEvidence <= 1) {
                     FifoState window = fifoState(key, entry.getKey(), record);
                     double runningSumIn = FifoMath.pushScaled(
@@ -334,26 +307,6 @@ public class DeviceSampleScheduler {
                         1);
                     record.fifoIn[record.idx] = sampleInterval[0];
                     record.fifoOut[record.idx] = sampleInterval[1];
-                    double sumSteamIn = FifoMath.pushScaled(
-                        record.fifoSteamIn,
-                        record.idx,
-                        record.count,
-                        window.sumSteamIn,
-                        sampleInterval[2],
-                        window.nonzero,
-                        2);
-                    double sumSteamOut = FifoMath.pushScaled(
-                        record.fifoSteamOut,
-                        record.idx,
-                        record.count,
-                        window.sumSteamOut,
-                        sampleInterval[3],
-                        window.nonzero,
-                        3);
-                    record.fifoSteamIn[record.idx] = sampleInterval[2];
-                    record.fifoSteamOut[record.idx] = sampleInterval[3];
-                    window.sumSteamIn = sumSteamIn;
-                    window.sumSteamOut = sumSteamOut;
                     record.idx = (record.idx + 1) % DeviceTerminalDataStore.FIFO_SIZE;
                     if (record.count < DeviceTerminalDataStore.FIFO_SIZE) {
                         record.count++;
@@ -364,30 +317,20 @@ public class DeviceSampleScheduler {
                     window.count = record.count;
                     nextInAvg = FifoMath.scaledAvg(runningSumIn, record.count, DeviceTerminalDataStore.FIFO_SIZE);
                     nextOutAvg = FifoMath.scaledAvg(runningSumOut, record.count, DeviceTerminalDataStore.FIFO_SIZE);
-                    nextSteamInAvg = FifoMath.scaledAvg(sumSteamIn, record.count, DeviceTerminalDataStore.FIFO_SIZE);
-                    nextSteamOutAvg = FifoMath.scaledAvg(sumSteamOut, record.count, DeviceTerminalDataStore.FIFO_SIZE);
                 }
-                byte nextCapabilities = recognitionMode == DeviceTerminalRecognitionMode.AUTO
-                    && record.metaTileId == metaTileId
-                        ? (byte) (effectiveCapabilities
-                            | (record.capabilityMask & (DeviceSteamAdapter.supportsSteamChannel(mte) ? 15 : 3)))
-                        : effectiveCapabilities;
-                byte nextEnergyKind = DeviceSteamAdapter.energyKind(nextCapabilities);
+                byte nextCapabilities = record.metaTileId == metaTileId
+                    ? (byte) (effectiveCapabilities | (record.capabilityMask & 3))
+                    : effectiveCapabilities;
                 if (record.applySample(
                     state,
                     powerType,
                     metaTileId,
-                    nextEnergyKind,
                     sampleEvidence,
                     linkNodeType,
                     sampleEuIn,
                     sampleEuOut,
-                    sampleSteamIn,
-                    sampleSteamOut,
                     nextInAvg,
                     nextOutAvg,
-                    nextSteamInAvg,
-                    nextSteamOutAvg,
                     pos[0],
                     pos[1],
                     pos[2],
@@ -417,8 +360,6 @@ public class DeviceSampleScheduler {
             window = new FifoState();
             window.sumIn = FifoMath.rebuildScaledSum(record.fifoIn, record.count, window.nonzero, 0);
             window.sumOut = FifoMath.rebuildScaledSum(record.fifoOut, record.count, window.nonzero, 1);
-            window.sumSteamIn = FifoMath.rebuildScaledSum(record.fifoSteamIn, record.count, window.nonzero, 2);
-            window.sumSteamOut = FifoMath.rebuildScaledSum(record.fifoSteamOut, record.count, window.nonzero, 3);
             window.idx = record.idx;
             window.count = record.count;
             if (perKey == null) {

@@ -94,15 +94,15 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
             shownCost = DeviceTerminalClientCache.teleportCost();
             shownPermission = DeviceTerminalClientCache.canConfigure();
         }
-        heatSize = sizeField(heatSize, DeviceTerminalVisualConfig.heatSize);
-        labelSize = sizeField(labelSize, DeviceTerminalVisualConfig.labelSize);
+        heatSize = sizeField(heatSize, DeviceTerminalVisualConfig.heatSize, 5);
+        labelSize = sizeField(labelSize, DeviceTerminalVisualConfig.labelSize, 6);
         rebuild();
     }
 
-    private GuiTextField sizeField(GuiTextField previous, int configuredValue) {
+    private GuiTextField sizeField(GuiTextField previous, int configuredValue, int row) {
         String draft = previous == null ? Integer.toString(configuredValue) : previous.getText();
         boolean focused = previous != null && previous.isFocused();
-        GuiTextField field = new GuiTextField(fontRendererObj, left + rightColumn, top + 48 + rowGap * 6, 64, 18);
+        GuiTextField field = new GuiTextField(fontRendererObj, left + rightColumn, top + 48 + rowGap * row, 64, 18);
         field.setMaxStringLength(10);
         field.setText(draft);
         field.setFocused(focused);
@@ -136,49 +136,37 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                 columnWidth,
                 toggle("generator", DeviceTerminalVisualConfig.showGenerators));
             button(
-                13,
-                12,
-                48 + rowGap * 2,
-                columnWidth,
-                toggle("steam.consumer", DeviceTerminalVisualConfig.showSteamConsumers));
-            button(
-                14,
-                rightColumn,
-                48 + rowGap * 2,
-                columnWidth,
-                toggle("steam.producer", DeviceTerminalVisualConfig.showSteamProducers));
-            button(
                 15,
                 12,
-                48 + rowGap * 3,
+                48 + rowGap * 2,
                 columnWidth,
                 label("range", Integer.toString(DeviceTerminalVisualConfig.range)));
             button(
                 16,
                 rightColumn,
-                48 + rowGap * 3,
+                48 + rowGap * 2,
                 columnWidth,
                 label("opacity", percent(DeviceTerminalVisualConfig.opacity)));
             button(
                 17,
                 12,
-                48 + rowGap * 4,
+                48 + rowGap * 3,
                 columnWidth,
                 label("average", percent(DeviceTerminalVisualConfig.averageWeight)));
             button(
                 18,
                 rightColumn,
-                48 + rowGap * 4,
+                48 + rowGap * 3,
                 columnWidth,
                 label("smoothing", percent(DeviceTerminalVisualConfig.smoothing)));
-            button(19, 12, 48 + rowGap * 5, columnWidth, toggle("depth", DeviceTerminalVisualConfig.depthTest));
+            button(19, 12, 48 + rowGap * 4, columnWidth, toggle("depth", DeviceTerminalVisualConfig.depthTest));
             button(
                 20,
                 rightColumn,
-                48 + rowGap * 5,
+                48 + rowGap * 4,
                 columnWidth,
                 label("limit", Integer.toString(DeviceTerminalVisualConfig.maxDevices)));
-            button(21, rightColumn + 72, 48 + rowGap * 6, columnWidth - 72, tr("apply"));
+            button(21, rightColumn + 72, 48 + rowGap * 5, columnWidth - 72, tr("apply"));
         } else if (tab == 4) {
             button(40, 12, 48, panelWidth - 24, toggle("labels", DeviceTerminalVisualConfig.showLabels));
             button(41, 12, 48 + rowGap, columnWidth, toggle("labels.name", DeviceTerminalVisualConfig.showLabelName));
@@ -283,12 +271,6 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
                 break;
             case 12:
                 DeviceTerminalVisualConfig.showGenerators = !DeviceTerminalVisualConfig.showGenerators;
-                break;
-            case 13:
-                DeviceTerminalVisualConfig.showSteamConsumers = !DeviceTerminalVisualConfig.showSteamConsumers;
-                break;
-            case 14:
-                DeviceTerminalVisualConfig.showSteamProducers = !DeviceTerminalVisualConfig.showSteamProducers;
                 break;
             case 15:
                 DeviceTerminalVisualConfig.range = next(
@@ -489,18 +471,19 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
     }
 
     private void drawSize(boolean labels) {
+        int row = labels ? 6 : 5;
         GuiTextField field = labels ? labelSize : heatSize;
         drawString(
             fontRendererObj,
             fontRendererObj.trimStringToWidth(tr(labels ? "labels.size" : "heat.size"), columnWidth - 4),
             left + 12,
-            top + 53 + rowGap * 6,
+            top + 53 + rowGap * row,
             GtswnGuiPalette.TEXT_BODY);
         field.drawTextBox();
         fontRendererObj.drawSplitString(
             tr(labels ? "labels.size.hint" : "heat.size.hint"),
             left + 12,
-            top + 48 + rowGap * 6 + 22,
+            top + 48 + rowGap * row + 22,
             panelWidth - 24,
             GtswnGuiPalette.TEXT_MUTED);
         String notice = labels ? labelSizeNotice : heatSizeNotice;
@@ -509,7 +492,7 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
             fontRendererObj,
             notice,
             left + 12,
-            top + 48 + rowGap * 6 + 45,
+            top + 48 + rowGap * row + 45,
             invalid ? GtswnGuiPalette.STATE_OFFLINE : GtswnGuiPalette.STATE_ONLINE);
     }
 
@@ -520,9 +503,8 @@ public final class GuiDeviceTerminalSettings extends GuiScreen {
             drawSize(false);
             int legendY = top + 238;
             drawString(fontRendererObj, tr("legend.electric"), left + 12, legendY, 0xDF966A);
-            drawString(fontRendererObj, tr("legend.steam"), left + 12, legendY + 11, 0xAEB6BC);
             fontRendererObj
-                .drawSplitString(tr("hint"), left + 12, legendY + 25, panelWidth - 24, GtswnGuiPalette.TEXT_MUTED);
+                .drawSplitString(tr("hint"), left + 12, legendY + 14, panelWidth - 24, GtswnGuiPalette.TEXT_MUTED);
         } else if (tab == 4) {
             drawSize(true);
             fontRendererObj

@@ -18,9 +18,9 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.device.DeviceMachineIdentity;
 import com.miaokatze.gtswn.common.device.DeviceMachineTypes;
+import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
 import com.miaokatze.gtswn.common.device.DeviceRegistryData;
 import com.miaokatze.gtswn.common.device.DeviceScanManager;
-import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore.AddResult;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
@@ -219,14 +219,11 @@ public class ItemDeviceInfoTerminal extends Item {
             x,
             y,
             z,
-            (DeviceMachineTypes.isGeneratorMachine(mte)
-                || (DeviceSteamAdapter.energyKind(mte) == DeviceSteamAdapter.STEAM
-                    && DeviceSteamAdapter.isSteamProducer(mte))) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                        : DeviceTerminalDataStore.POWER_TYPE_CONSUME,
+            DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                : DeviceTerminalDataStore.POWER_TYPE_CONSUME,
             ((IGregTechTileEntity) te).getMetaTileID(),
-            DeviceSteamAdapter.energyKind(mte),
             DeviceMachineIdentity.linkNodeType(mte),
-            DeviceSteamAdapter.capabilityMask(mte));
+            DevicePowerCapabilities.capabilityMask(mte));
         switch (result) {
             case SUCCESS:
                 sendMessage(player, "gtswn.device.chat.bound", localName);

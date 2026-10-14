@@ -271,7 +271,6 @@ class GuiDeviceEntryList {
 
     private static int amountColor(Entry entry, double value) {
         if (entry.state == 3) return GtswnGuiPalette.TEXT_MUTED;
-        if (entry.energyKind == 1 && value != 0D) return value > 0D ? 0xFFBFC5CA : 0xFF858B90;
         return eutColor(value);
     }
 

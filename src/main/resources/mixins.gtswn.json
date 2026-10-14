@@ -13,12 +13,6 @@
     "minecraft.QuantumIncorporationIdentityMixin",
     "gregtech.DeviceControllerTickMixin",
     "gregtech.DeviceEnergyMutationMixin",
-    "gregtech.DeviceSteamInputMixin",
-    "gregtech.DeviceSteamMachineMixin",
-    "gregtech.DeviceSteamOutputMixin",
-    "gregtech.DeviceSteamGeneratorMixin",
-    "gregtech.DeviceSteamBoilerMixin",
-    "gregtech.DeviceSteamRecipeMixin",
     "gregtech.DeviceWirelessTransactionMixin"
   ],
   "client": [

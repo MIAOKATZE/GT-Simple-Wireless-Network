@@ -194,8 +194,7 @@ public final class DeviceMachineTypes {
             || mte instanceof MTEBasicGenerator
             || mte instanceof MTESolarGenerator
             || mte instanceof MTELightningRod
-            || DeviceDefaultRecognitionPolicy.isPassiveFacility(mte)
-            || DeviceSteamAdapter.supportsSteamChannel(mte);
+            || DeviceDefaultRecognitionPolicy.isPassiveFacility(mte);
     }
 
     /**

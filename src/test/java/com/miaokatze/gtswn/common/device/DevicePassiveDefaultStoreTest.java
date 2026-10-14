@@ -35,7 +35,7 @@ public class DevicePassiveDefaultStoreTest {
     }
 
     @Test
-    public void defaultIgnoreDoesNotConsumeCapacityAndExplicitAutoSurvivesReload() throws Exception {
+    public void defaultIgnoreDoesNotConsumeCapacityAndExplicitTrackSurvivesReload() throws Exception {
         int meta = GregTechAPI.METATILEENTITIES.length - 1;
         IMetaTileEntity original = GregTechAPI.METATILEENTITIES[meta];
         IMetaTileEntity machine = transformer();
@@ -45,8 +45,8 @@ public class DevicePassiveDefaultStoreTest {
             UUID a = UUID.randomUUID(), b = UUID.randomUUID();
             String key = "0:1:64:2";
             assertTrue(DeviceMachineTypes.isWorkingMachine(machine));
-            store.addBinding(a, key, "Transfer", 0, 1, 64, 2, (byte) 0, meta, (byte) 0, (byte) 0, (byte) 3);
-            store.addBinding(b, key, "Transfer", 0, 1, 64, 2, (byte) 0, meta, (byte) 0, (byte) 0, (byte) 3);
+            store.addBinding(a, key, "Transfer", 0, 1, 64, 2, (byte) 0, meta, (byte) 0, (byte) 3);
+            store.addBinding(b, key, "Transfer", 0, 1, 64, 2, (byte) 0, meta, (byte) 0, (byte) 3);
             assertEquals(2, store.recognitionMode(a, key, meta));
             assertEquals(3, store.getTerminal(a).records.get(key).state);
             assertTrue(store.getTerminal(a).recognitionOverrides.isEmpty());
@@ -59,7 +59,6 @@ public class DevicePassiveDefaultStoreTest {
             loaded.readFromNBT(saved);
             assertEquals(0, loaded.recognitionMode(a, key, meta));
             assertEquals(2, loaded.recognitionMode(b, key, meta));
-            assertEquals(1, loaded.cycleRecognition(a, key, meta, (byte) 3, machine));
             assertEquals(2, loaded.cycleRecognition(a, key, meta, (byte) 3, machine));
             assertTrue(loaded.getTerminal(a).recognitionOverrides.isEmpty());
         } finally {

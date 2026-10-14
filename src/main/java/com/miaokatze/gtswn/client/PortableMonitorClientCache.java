@@ -236,6 +236,7 @@ public final class PortableMonitorClientCache {
         }
         if (cache.request.action != 0) {
             cache.result = response.result;
+            cache.mutationResponse = response;
             if (cache.stack != null && cache.stack.stackTagCompound != null)
                 cache.stack.stackTagCompound.setInteger(PortableWirelessNetworkMonitor.NBT_HUD_MODE, response.hudMode);
             if (cache.request.action == 1 && (response.result == 1 || response.result == 3)) {
@@ -346,6 +347,13 @@ public final class PortableMonitorClientCache {
             || cache.snapshot.bindingRevision < MonitorBindings.revision(stack) ? null : cache.snapshot;
     }
 
+    /** The actual mutation ACK, including its binding count even if a newer S2F already arrived. */
+    public static PacketSyncPortableMonitor mutationResponse(ItemStack stack) {
+        stack = currentStack(stack);
+        Cached cache = CACHE.get(MonitorBindings.id(stack));
+        return cache == null ? null : cache.mutationResponse;
+    }
+
     public static boolean stale(ItemStack stack) {
         stack = currentStack(stack);
         Cached cache = CACHE.get(MonitorBindings.id(stack));
@@ -449,24 +457,30 @@ public final class PortableMonitorClientCache {
         List<PinnedLine> lines = new ArrayList<>();
         for (PacketSyncPortableMonitor.Panel panel : snapshot.panels) {
             String prefix = snapshot.terminalId + "/" + panel.binding.panelId + "/";
+            String source = panel.binding.panelId.toString();
+            String sourceLabel = "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] ";
+            String stockLabel = "\u00a73[" + StatCollector.translateToLocal(PortableHudLayout.Group.AE_STOCK.labelKey)
+                + "] ";
             boolean unavailable = panel.state != 0 || stale(stack);
             String status = "\u00a77" + panel.binding.label()
                 + " \u00a76"
                 + stateText(panel.state == 0 ? 4 : panel.state);
             for (PacketSyncPortableMonitor.Row row : panel.rows) {
-                if (!pinned(snapshot.terminalId, panel, row)) continue;
+                if (row.kind == 0 || !pinned(snapshot.terminalId, panel, row)) continue;
                 String text = unavailable ? status : pinnedRowText(row, panel.displayMode);
                 if (text != null) lines.add(
-                    new PinnedLine(
-                        row.kind == 0 ? "\u00a73[" + (snapshot.panels.indexOf(panel) + 1) + "] " + text : text,
-                        unavailable ? null : row.icon));
+                    new PinnedLine(stockLabel + text, unavailable ? null : row.icon)
+                        .grouped(PortableHudLayout.Group.AE_STOCK, source));
             }
             for (String pin : Config.hudPinnedEntries) {
                 if (!pin.startsWith(prefix) || PortableMonitorPins.component(pin.substring(prefix.length()))) continue;
                 String key = pin.substring(prefix.length());
                 boolean present = false;
                 for (PacketSyncPortableMonitor.Row row : panel.rows) if (row.key.equals(key)) present = true;
-                if (!present) lines.add(new PinnedLine(status, new double[0]));
+                if (!present) lines.add(
+                    new PinnedLine((key.equals("eu") ? sourceLabel : stockLabel) + status, new double[0]).grouped(
+                        key.equals("eu") ? PortableHudLayout.Group.EU_TREND : PortableHudLayout.Group.AE_STOCK,
+                        source));
             }
             for (int graph = 0; graph < 2; graph++) {
                 PacketSyncPortableMonitor.Row value = null;
@@ -477,17 +491,14 @@ public final class PortableMonitorClientCache {
                     }
                 String name = graph == 0 ? "EU / EU/t"
                     : value == null ? "AE" : value.name + " / " + (value.kind == 2 ? "mB/min" : "/min");
+                PortableHudLayout.Group group = graph == 0 ? PortableHudLayout.Group.EU_TREND
+                    : PortableHudLayout.Group.AE_TREND;
                 if (PortableMonitorPins.selected(Config.hudPinnedEntries, prefix, PortableMonitorPins.title(graph)))
                     lines.add(
                         new PinnedLine(
                             unavailable ? status
-                                : "\u00a73[" + (snapshot.panels.indexOf(panel) + 1)
-                                    + "] "
-                                    + name
-                                    + " ["
-                                    + (graph == 0 ? panel.window : panel.aeWindow)
-                                    + "]",
-                            new double[0]));
+                                : sourceLabel + name + " [" + (graph == 0 ? panel.window : panel.aeWindow) + "]",
+                            new double[0]).grouped(group, source));
                 if (graphPinned(snapshot.terminalId, panel, graph)) lines.add(
                     new PinnedLine(
                         unavailable ? status : "",
@@ -496,7 +507,22 @@ public final class PortableMonitorClientCache {
                         value == null ? 0 : value.rate,
                         "",
                         panel.palette,
-                        graph == 0));
+                        graph == 0).grouped(group, source));
+                if (graph == 0 && value != null && pinned(snapshot.terminalId, panel, value)) {
+                    if (unavailable)
+                        lines.add(new PinnedLine(sourceLabel + status, new double[0]).grouped(group, source));
+                    else for (String text : pinnedEUValueLines(
+                        value,
+                        panel.displayMode,
+                        Config.hudEUEnabled,
+                        Config.hudInstantEnabled,
+                        Config.hudAverageEnabled,
+                        Config.hudTierEnabled,
+                        sourceLabel,
+                        StatCollector.translateToLocal("gtswn.monitor.field.instant"),
+                        StatCollector.translateToLocal("gtswn.monitor.field.average")))
+                        lines.add(new PinnedLine(text, new double[0]).grouped(group, source));
+                }
             }
         }
         cache.renderSnapshot = snapshot;
@@ -546,6 +572,25 @@ public final class PortableMonitorClientCache {
         } catch (NumberFormatException ignored) {
             return amount;
         }
+    }
+
+    /** Three physical EU value rows share one source; only the first selected row carries its screen number. */
+    public static List<String> pinnedEUValueLines(PacketSyncPortableMonitor.Row row, int displayMode, boolean energy,
+        boolean instant, boolean average, boolean tier, String sourceLabel, String instantLabel, String averageLabel) {
+        List<String> values = new ArrayList<>();
+        if (instant) values.add(
+            "\u00a7b" + instantLabel
+                + ": "
+                + rate(row.rate, "EU/t", displayMode)
+                + (tier ? " " + GTTierUtil.formatGTPower(row.rate) : ""));
+        if (average) values.add(
+            "\u00a7b" + averageLabel
+                + ": "
+                + rate(row.average, "EU/t", displayMode)
+                + (tier && !instant ? " " + GTTierUtil.formatGTPower(row.average) : ""));
+        if (energy) values.add("\u00a7bEU: \u00a7f" + amount(row.amount, displayMode));
+        if (!values.isEmpty()) values.set(0, sourceLabel + values.get(0));
+        return values;
     }
 
     private static String pinnedRowText(PacketSyncPortableMonitor.Row row, int displayMode) {
@@ -619,6 +664,27 @@ public final class PortableMonitorClientCache {
         public final TrendLinePalette palette;
         public final boolean euGraph;
         public final PortableMonitorIcon icon;
+        public final PortableHudLayout.Group group;
+        public final String source;
+
+        /** Keep rendering data unchanged while attaching the subscription's source identity. */
+        public PinnedLine grouped(PortableHudLayout.Group group, String source) {
+            return new PinnedLine(this, group, source);
+        }
+
+        private PinnedLine(PinnedLine line, PortableHudLayout.Group group, String source) {
+            this.text = line.text;
+            this.chart = line.chart;
+            this.rateChart = line.rateChart;
+            this.graph = line.graph;
+            this.change = line.change;
+            this.currentText = line.currentText;
+            this.palette = line.palette;
+            this.euGraph = line.euGraph;
+            this.icon = line.icon;
+            this.group = group;
+            this.source = source;
+        }
 
         PinnedLine(String text, double[] chart) {
             this.text = text;
@@ -630,6 +696,8 @@ public final class PortableMonitorClientCache {
             this.palette = TrendLinePalette.DEFAULT;
             this.euGraph = true;
             this.icon = null;
+            this.group = PortableHudLayout.Group.NONE;
+            this.source = "";
         }
 
         public PinnedLine(String text, PortableMonitorIcon icon) {
@@ -642,6 +710,8 @@ public final class PortableMonitorClientCache {
             this.palette = TrendLinePalette.DEFAULT;
             this.euGraph = true;
             this.icon = icon;
+            this.group = PortableHudLayout.Group.NONE;
+            this.source = "";
         }
 
         public PinnedLine(String text, double[] chart, double[] rates, double change) {
@@ -663,12 +733,15 @@ public final class PortableMonitorClientCache {
             this.palette = palette;
             this.euGraph = euGraph;
             this.icon = null;
+            this.group = PortableHudLayout.Group.NONE;
+            this.source = "";
         }
     }
 
     private static final class Cached {
 
         PacketSyncPortableMonitor snapshot;
+        PacketSyncPortableMonitor mutationResponse;
         int sequence, action, value, result;
         UUID targetPanel = new UUID(0, 0);
         long sentAt, receivedAt;

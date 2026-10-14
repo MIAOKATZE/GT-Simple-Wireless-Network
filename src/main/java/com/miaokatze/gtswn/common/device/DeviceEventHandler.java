@@ -97,10 +97,8 @@ public class DeviceEventHandler {
             .register(key, event.player.getUniqueID(), localName, ((IGregTechTileEntity) te).getMetaTileID());
         // 放置者背包内的终端逐台自动绑定 + 轻提示（同时补登记活跃索引，覆盖会话内新获得终端）
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(event.world);
-        byte powerType = DeviceMachineTypes.isGeneratorMachine(mte)
-            || (DeviceSteamAdapter.energyKind(mte) == DeviceSteamAdapter.STEAM
-                && DeviceSteamAdapter.isSteamProducer(mte)) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                    : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
+        byte powerType = DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+            : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
         for (UUID terminalId : collectTerminalIds(event.player)) {
             DeviceTerminalDataStore.ensureActiveTerminal(event.player.getUniqueID(), terminalId);
             DeviceTerminalDataStore.AddResult result = store.addBinding(
@@ -113,9 +111,8 @@ public class DeviceEventHandler {
                 event.z,
                 powerType,
                 ((IGregTechTileEntity) te).getMetaTileID(),
-                DeviceSteamAdapter.energyKind(mte),
                 DeviceMachineIdentity.linkNodeType(mte),
-                DeviceSteamAdapter.capabilityMask(mte));
+                DevicePowerCapabilities.capabilityMask(mte));
             switch (result) {
                 case SUCCESS:
                     sendMessage(event.player, "gtswn.device.chat.auto_bound", localName);

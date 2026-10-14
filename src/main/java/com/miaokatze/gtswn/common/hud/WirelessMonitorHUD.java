@@ -7,6 +7,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
 import org.lwjgl.opengl.GL11;
@@ -71,12 +72,7 @@ public class WirelessMonitorHUD extends Gui {
         int screenHeight = resolution.getScaledHeight();
         List<PortableMonitorClientCache.PinnedLine> all = PortableMonitorClientCache
             .pinnedLines(this.controller.monitorStack());
-        boolean graph = false;
-        for (PortableMonitorClientCache.PinnedLine line : all) if (line.graph) {
-            graph = true;
-            break;
-        }
-        int largestRow = graph ? 48 : Config.hudRenderMode == 1 ? 16 : 12;
+        int largestUnit = PortableHudLayout.requiredHeight(all, Config.hudRenderMode);
 
         // 饱食度图标位置：x = screenWidth / 2 + 91, y = screenHeight - 39
         // HUD 显示在饱食度上方 15 像素处
@@ -88,8 +84,7 @@ public class WirelessMonitorHUD extends Gui {
             + (Config.hudInstantEnabled ? 1 : 0)
             + (Config.hudAverageEnabled ? 1 : 0)
             + (Config.hudEUEnabled ? 1 : 0);
-        scale = Math
-            .min(scale, (screenHeight - 8f) / Math.max(12, basicRows * 12 + (all.isEmpty() ? 0 : largestRow) + 4));
+        scale = Math.min(scale, (screenHeight - 8f) / Math.max(12, basicRows * 12 + largestUnit + 4));
         int maxWidth = Math.min(Config.hudPanelWidth, Math.max(1, (int) ((screenWidth - 8) / scale) - 4));
         int hudX = Math.max(
             (int) Math.ceil(4 + 2 * scale),
@@ -124,7 +119,9 @@ public class WirelessMonitorHUD extends Gui {
             all,
             Config.hudPinnedRows,
             Math.max(0, (int) ((screenHeight - 8) / scale) - lines.size() * 12 - 4),
-            Config.hudRenderMode);
+            Config.hudRenderMode,
+            "\u00a73[" + StatCollector.translateToLocal(PortableHudLayout.Group.EU_TREND.labelKey) + "]",
+            "\u00a73[" + StatCollector.translateToLocal(PortableHudLayout.Group.AE_TREND.labelKey) + "]");
         int page = (int) ((System.currentTimeMillis() / (Config.hudRotationSeconds * 1000L)) % pages.size());
         List<PortableMonitorClientCache.PinnedLine> pinned = pages.get(page);
         int totalHeight = lines.size() * 12;

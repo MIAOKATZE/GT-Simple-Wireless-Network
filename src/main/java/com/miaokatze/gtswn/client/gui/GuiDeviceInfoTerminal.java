@@ -98,9 +98,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     private static final int POWER_MENU_WIDTH = 136;
     private static final int POWER_MENU_ROW_HEIGHT = 18;
     private static final String[] POWER_FILTER_KEYS = { "gtswn.device.gui.filter.power.all",
-        "gtswn.device.gui.filter.power.electric", "gtswn.device.gui.filter.power.steam",
-        "gtswn.device.gui.filter.power.generate_eu", "gtswn.device.gui.filter.power.consume_eu",
-        "gtswn.device.gui.filter.power.generate_steam", "gtswn.device.gui.filter.power.consume_steam" };
+        "gtswn.device.gui.filter.power.generate_eu", "gtswn.device.gui.filter.power.consume_eu" };
 
     /** 顶行按钮：状态筛选五态轮换（纯 GUI 会话态，不发包不持久化） */
     private static final int BTN_STATE_FILTER = 3;
@@ -389,23 +387,21 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     static long instantValue(Entry entry) {
         if (entry.state == 3) return 0L;
-        return entry.energyKind == 1 ? entry.steamInstNet() : entry.instNet();
+        return entry.instNet();
     }
 
     static double averageValue(Entry entry) {
         if (entry.state == 3) return 0D;
-        return entry.energyKind == 1 ? entry.steamAvgNet() : entry.avgNet();
+        return entry.avgNet();
     }
 
     String formatInstant(Entry entry) {
-        if (entry.state == 3) return entry.energyKind == 1 ? "0 L/t" : formatEUt(0);
-        if (entry.energyKind == 1) return FormatUtil.formatMetric(BigInteger.valueOf(entry.steamInstNet()), 1) + " L/t";
+        if (entry.state == 3) return formatEUt(0);
         return formatEUt(entry.instNet());
     }
 
     String formatAverage(Entry entry) {
-        if (entry.state == 3) return entry.energyKind == 1 ? "0 L/t" : formatAvg(0);
-        if (entry.energyKind == 1) return FormatUtil.formatMetricDouble(entry.steamAvgNet(), 1) + " L/t";
+        if (entry.state == 3) return formatAvg(0);
         return formatAvg(entry.avgNet());
     }
 
@@ -763,17 +759,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         lines.add(DeviceTerminalNames.localName(hovered));
         lines.add(tr("gtswn.device.rename.hover"));
         lines.add(tr("gtswn.device.gui.tooltip.recognition.cycle"));
-        lines
-            .add(
-                StatCollector
-                    .translateToLocalFormatted(
-                        "gtswn.device.gui.tooltip.recognition.mode",
-                        tr(
-                            hovered.recognitionMode == 2 ? "gtswn.device.gui.recognition.ignored"
-                                : hovered.recognitionMode == 1
-                                    ? hovered.energyKind == 1 ? "gtswn.device.gui.recognition.steam"
-                                        : "gtswn.device.gui.recognition.electric"
-                                    : "gtswn.device.gui.recognition.auto")));
+        lines.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.tooltip.recognition.mode",
+                tr(
+                    hovered.recognitionMode == 2 ? "gtswn.device.gui.recognition.ignored"
+                        : "gtswn.device.gui.recognition.track")));
         if (hovered.linkNodeType != 0) {
             lines.add(
                 tr(
@@ -784,38 +775,17 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             tr(
                 "gtswn.device.gui.tooltip.evidence." + (hovered.evidenceKind == 1 ? "model"
                     : hovered.evidenceKind == 2 ? "warming" : hovered.evidenceKind == 3 ? "unavailable" : "measured")));
-        if (hovered.energyKind != 1) {
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.device.gui.tooltip.input",
-                    hovered.state == 3 ? 0L : hovered.instIn));
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.device.gui.tooltip.output",
-                    hovered.state == 3 ? 0L : hovered.instOut));
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.device.gui.tooltip.net",
-                    hovered.state == 3 ? 0L : hovered.instNet()));
-        }
-        if (hovered.energyKind != 0) {
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.device.gui.tooltip.steam.input",
-                    hovered.state == 3 ? 0L : hovered.steamInstIn));
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.device.gui.tooltip.steam.output",
-                    hovered.state == 3 ? 0L : hovered.steamInstOut));
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.device.gui.tooltip.steam.net",
-                    hovered.state == 3 ? 0L : hovered.steamInstNet()));
-            lines.add(
-                StatCollector.translateToLocalFormatted(
-                    "gtswn.device.gui.tooltip.steam.average",
-                    hovered.state == 3 ? 0D : hovered.steamAvgNet()));
-        }
+        lines.add(
+            StatCollector
+                .translateToLocalFormatted("gtswn.device.gui.tooltip.input", hovered.state == 3 ? 0L : hovered.instIn));
+        lines.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.tooltip.output",
+                hovered.state == 3 ? 0L : hovered.instOut));
+        lines.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.tooltip.net",
+                hovered.state == 3 ? 0L : hovered.instNet()));
         lines.add(tr("gtswn.device.gui.tooltip.recipe_title"));
         if (recipeIn.isEmpty() && recipeOut.isEmpty()) {
             lines.add(tr("gtswn.device.gui.tooltip.recipe_none"));

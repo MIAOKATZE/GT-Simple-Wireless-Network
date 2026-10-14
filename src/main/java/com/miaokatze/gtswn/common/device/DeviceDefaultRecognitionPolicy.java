@@ -47,7 +47,7 @@ public final class DeviceDefaultRecognitionPolicy {
     }
 
     public static byte defaultMode(IMetaTileEntity machine) {
-        return isPassiveFacility(machine) ? DeviceTerminalRecognitionMode.IGNORE : DeviceTerminalRecognitionMode.AUTO;
+        return isPassiveFacility(machine) ? DeviceTerminalRecognitionMode.IGNORE : DeviceTerminalRecognitionMode.TRACK;
     }
 
     public static IMetaTileEntity prototype(int metaTileId) {

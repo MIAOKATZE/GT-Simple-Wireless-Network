@@ -9,91 +9,65 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 public class DevicePowerFilterTest {
 
     @Test
-    public void idleElectricConsumerAndGeneratorKeepTheirCategories() {
-        assertModes(1, true, true, false, false, true, false, false);
-        assertModes(2, true, true, false, true, false, false, false);
+    public void actualElectricDirectionOverridesMachineCategory() {
+        assertModes(entry(0L, 64L, 0D, 32D, (byte) 0, (byte) 0), true, true, false);
+        assertModes(entry(64L, 0L, 32D, 0D, (byte) 1, (byte) 0), true, false, true);
     }
 
     @Test
-    public void steamMachineAndBoilerKeepSteamCategoriesAtZeroFlow() {
-        assertModes(4, true, false, true, false, false, false, true);
-        assertModes(8, true, false, true, false, false, true, false);
+    public void balancedInputOutputRemainsInBothDirectionalFilters() {
+        assertModes(entry(64L, 64L, 32D, 32D, (byte) 0, (byte) 0), true, true, true);
     }
 
     @Test
-    public void ordinaryTurbineProducesElectricityAndConsumesSteam() {
-        assertModes(2 | 4, true, true, true, true, false, false, true);
+    public void recentAverageActivityRetainsItsElectricalDirection() {
+        assertModes(entry(0L, 0L, 32D, 0D, (byte) 1, (byte) 0), true, false, true);
+        assertModes(entry(0L, 0L, 0D, 32D, (byte) 0, (byte) 0), true, true, false);
     }
 
     @Test
-    public void highPressureAndSupercriticalTurbinesRetainBothSteamDirections() {
-        assertModes(2 | 4 | 8, true, true, true, true, false, true, true);
+    public void zeroReadingsBelongOnlyToAllEvenWithStaleCapabilities() {
+        Entry idle = entry(0L, 0L, 0D, 0D, (byte) 1, (byte) 0);
+        assertModes(idle, true, false, false);
+        assertEquals(true, DevicePowerFilter.matches(idle, -1));
+        assertEquals(true, DevicePowerFilter.matches(idle, DevicePowerFilter.MODE_COUNT));
     }
 
     @Test
-    public void balancedBidirectionalChannelsRemainInBothDirectionalFilters() {
-        assertModes(1 | 2 | 4 | 8, true, true, true, true, true, true, true);
+    public void ignoredEntryIsExcludedFromDirectionsDespiteStaleReadings() {
+        assertModes(entry(64L, 64L, 32D, 32D, (byte) 1, (byte) 2), true, false, false);
     }
 
-    @Test
-    public void electricRecipeSteamTransactionDoesNotCreateSteamCapability() {
-        // The server admits steam bits only for supported steam equipment.
-        assertModes(1, true, true, false, false, true, false, false);
-    }
-
-    @Test
-    public void allIncludesUnclassifiedEntriesAndUnknownModeFallsBackToAll() {
-        assertModes(0, true, false, false, false, false, false, false);
-        assertEquals(true, DevicePowerFilter.matches(0, -1));
-        assertEquals(true, DevicePowerFilter.matches(0, DevicePowerFilter.MODE_COUNT));
-    }
-
-    @Test
-    public void ignoredEntryIsExcludedFromEveryChannelFilter() {
-        Entry ignored = new Entry(
+    private static Entry entry(long in, long out, double averageIn, double averageOut, byte powerType, byte mode) {
+        return new Entry(
             "0:1:2:3",
-            "Ignored turbine",
-            (byte) 3,
+            "Machine",
             (byte) 1,
-            64L,
-            64L,
-            32D,
-            32D,
+            powerType,
+            in,
+            out,
+            averageIn,
+            averageOut,
             0,
             1,
             2,
             3,
-            "recipe input",
-            "recipe output",
-            0,
-            (byte) 2,
+            "",
+            "",
+            -1,
             (byte) 0,
-            (byte) 3,
-            16L,
-            16L,
-            8D,
-            8D,
+            (byte) 0,
             "Name",
             (byte) 15,
-            true,
-            (byte) 15);
-        assertEquals(true, DevicePowerFilter.matches(ignored, DevicePowerFilter.ALL));
-        for (int mode = 1; mode < DevicePowerFilter.MODE_COUNT; mode++) {
-            assertEquals("ignored mode=" + mode, false, DevicePowerFilter.matches(ignored, mode));
-        }
-        assertEquals("Name", ignored.displayName);
-        assertEquals(1, ignored.x);
-        assertEquals(2, ignored.y);
-        assertEquals(3, ignored.z);
+            false,
+            (byte) 3,
+            mode);
     }
 
-    private static void assertModes(int capabilities, boolean... expected) {
+    private static void assertModes(Entry entry, boolean... expected) {
         assertEquals(DevicePowerFilter.MODE_COUNT, expected.length);
         for (int mode = 0; mode < expected.length; mode++) {
-            assertEquals(
-                "capabilities=" + capabilities + ", mode=" + mode,
-                expected[mode],
-                DevicePowerFilter.matches(capabilities, mode));
+            assertEquals("mode=" + mode, expected[mode], DevicePowerFilter.matches(entry, mode));
         }
     }
 }

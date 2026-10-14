@@ -31,16 +31,12 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
-import com.miaokatze.gtswn.common.device.DeviceSteamAdapter;
-import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
-import gregtech.api.GregTechAPI;
-import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
 /** Bound-machine travel markers. All snapshot work is sliced on client ticks; render reads cached text only. */
@@ -188,7 +184,6 @@ public final class DeviceTerminalAnchorRenderer {
                 Entry previous = boundIdentity.get(entry.key);
                 buildingIdentity.put(entry.key, entry);
                 if (previous == null || previous.metaTileId != entry.metaTileId
-                    || previous.energyKind != entry.energyKind
                     || previous.capabilityMask != entry.capabilityMask
                     || previous.recognitionMode != entry.recognitionMode) buildStructureChanged = true;
             }
@@ -242,18 +237,13 @@ public final class DeviceTerminalAnchorRenderer {
     }
 
     private static boolean equivalent(Entry a, Entry b) {
-        return a.state == b.state && a.energyKind == b.energyKind
-            && a.capabilityMask == b.capabilityMask
+        return a.state == b.state && a.capabilityMask == b.capabilityMask
             && a.recognitionMode == b.recognitionMode
             && a.evidenceKind == b.evidenceKind
             && a.instIn == b.instIn
             && a.instOut == b.instOut
             && a.avgIn == b.avgIn
             && a.avgOut == b.avgOut
-            && a.steamInstIn == b.steamInstIn
-            && a.steamInstOut == b.steamInstOut
-            && a.steamAvgIn == b.steamAvgIn
-            && a.steamAvgOut == b.steamAvgOut
             && a.nameColor == b.nameColor
             && a.nameBold == b.nameBold
             && a.metaTileId == b.metaTileId
@@ -273,21 +263,7 @@ public final class DeviceTerminalAnchorRenderer {
             && (entry.metaTileId < 0 || ((IGregTechTileEntity) tile).getMetaTileID() == entry.metaTileId);
         anchor.available = fresh && matchingMachine;
         anchor.loaded = matchingMachine;
-        IMetaTileEntity machine = matchingMachine ? ((IGregTechTileEntity) tile).getMetaTileEntity()
-            : entry.metaTileId >= 0 && entry.metaTileId < GregTechAPI.METATILEENTITIES.length
-                ? GregTechAPI.METATILEENTITIES[entry.metaTileId]
-                : null;
-        if (machine != anchor.capabilityMachine) {
-            anchor.actualSteamCapable = DeviceSteamAdapter.supportsSteamChannel(machine);
-            anchor.capabilityMachine = machine;
-        }
-        // AUTO rejects recipe-only steam; OTHER uses the server's terminal-local channel without that live gate.
         boolean ignored = ignored(entry);
-        boolean steamCapable = !ignored
-            && (entry.capabilityMask & (DeviceSteamAdapter.STEAM_IN | DeviceSteamAdapter.STEAM_OUT)) != 0
-            && (entry.recognitionMode != DeviceTerminalRecognitionMode.AUTO || anchor.actualSteamCapable);
-        if (steamCapable != anchor.steamCapable) anchor.textDirty = true;
-        anchor.steamCapable = steamCapable;
         String status = !fresh ? "stale" : !loaded ? "unloaded" : !anchor.available ? "missing" : "";
         long appearance = DeviceTerminalVisualConfig.appearanceKey();
         String language = mc.gameSettings.language;
@@ -315,20 +291,13 @@ public final class DeviceTerminalAnchorRenderer {
             if (DeviceTerminalVisualConfig.showLabelPower) {
                 if (!ignored && entry.evidenceKind >= 2) addLine(anchor, mc, tr("power.unknown"));
                 else {
-                    if (entry.energyKind != 1) addLine(
+                    addLine(
                         anchor,
                         mc,
                         StatCollector.translateToLocalFormatted(
                             "gtswn.device.visual.power.eu",
                             metric(ignored ? 0 : entry.instIn),
                             metric(ignored ? 0 : entry.instOut)));
-                    if (anchor.steamCapable || (ignored && entry.energyKind == DeviceSteamAdapter.STEAM)) addLine(
-                        anchor,
-                        mc,
-                        StatCollector.translateToLocalFormatted(
-                            "gtswn.device.visual.power.steam",
-                            metric(ignored ? 0 : entry.steamInstIn),
-                            metric(ignored ? 0 : entry.steamInstOut)));
                 }
             }
             if (!ignored && DeviceTerminalVisualConfig.showLabelRecipe) {
@@ -789,16 +758,12 @@ public final class DeviceTerminalAnchorRenderer {
         final List<String> lines = new ArrayList<>();
         boolean available;
         boolean loaded;
-        boolean steamCapable;
-        boolean actualSteamCapable;
-        IMetaTileEntity capabilityMachine;
         boolean textDirty = true;
         String status;
         String language;
         long appearance;
         final List<Integer> lineWidths = new ArrayList<>();
         final AxisAlignedBB heatBounds;
-        final AxisAlignedBB steamBounds;
         String name;
         int width;
 
@@ -812,13 +777,6 @@ public final class DeviceTerminalAnchorRenderer {
                 entry.x + 1.012D,
                 entry.y + 1.012D,
                 entry.z + 1.012D);
-            steamBounds = AxisAlignedBB.getBoundingBox(
-                entry.x - 0.035D,
-                entry.y + 0.72D,
-                entry.z - 0.035D,
-                entry.x + 1.035D,
-                entry.y + 1.04D,
-                entry.z + 1.035D);
             this.bounds = AxisAlignedBB
                 .getBoundingBox(entry.x - 1D, entry.y, entry.z - 1D, entry.x + 2D, entry.y + 3D, entry.z + 2D);
             labelBounds = AxisAlignedBB
