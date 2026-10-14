@@ -754,7 +754,7 @@ gtswn.device.gui.recognition.track=Tracking
 gtswn.device.recognition.track=Tracking
 gtswn.hud.group.eu_trend=EU Trend
 gtswn.hud.group.ae_trend=AE Trend
-gtswn.hud.group.ae_stock=AE Stock
+gtswn.hud.group.ae_stock=Stock
 gtswn.monitor.remove.current=Unbind this information screen
 gtswn.monitor.remove.done=Unbound %s; %s information screens remain
 
