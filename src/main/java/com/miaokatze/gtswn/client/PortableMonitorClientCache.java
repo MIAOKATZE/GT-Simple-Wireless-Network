@@ -495,9 +495,7 @@ public final class PortableMonitorClientCache {
                         panel.displayMode,
                         Config.hudAEAmountEnabled,
                         Config.hudAERateEnabled && stockPinned(snapshot.terminalId, panel, row, false),
-                        Config.hudAERateEnabled && stockPinned(snapshot.terminalId, panel, row, true),
-                        StatCollector.translateToLocal("gtswn.monitor.pin.stock.instant"),
-                        StatCollector.translateToLocal("gtswn.monitor.pin.stock.average"));
+                        Config.hudAERateEnabled && stockPinned(snapshot.terminalId, panel, row, true));
                 if (text != null) lines.add(
                     new PinnedLine(stockLabel + text, unavailable ? null : row.icon)
                         .grouped(PortableHudLayout.Group.AE_STOCK, source));
@@ -619,12 +617,12 @@ public final class PortableMonitorClientCache {
 
     /** Each AE target keeps one physical inventory row, with instant preceding the five-minute average. */
     public static String pinnedStockText(PacketSyncPortableMonitor.Row row, int displayMode, boolean showAmount,
-        boolean instant, boolean average, String instantLabel, String averageLabel) {
+        boolean instant, boolean average) {
         String unit = row.kind == 2 ? "mB/min" : "/min";
         return "\u00a7b" + row.name
             + (showAmount ? ": \u00a7f" + amount(row.amount, displayMode) + (row.kind == 2 ? " mB" : "") : "")
-            + (instant ? " | \u00a7b" + instantLabel + ": " + rate(row.rate, unit, displayMode) : "")
-            + (average ? " | \u00a7b" + averageLabel + ": " + rate(row.average, unit, displayMode) : "");
+            + (instant ? " | " + rate(row.rate, unit, displayMode) : "")
+            + (average ? (instant ? "\u00a77 - " : " | ") + rate(row.average, unit, displayMode) : "");
     }
 
     public static String amount(String value, int displayMode) {

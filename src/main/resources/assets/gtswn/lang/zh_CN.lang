@@ -754,7 +754,7 @@ gtswn.device.gui.recognition.track=跟踪
 gtswn.device.recognition.track=跟踪
 gtswn.hud.group.eu_trend=EU走势
 gtswn.hud.group.ae_trend=AE走势
-gtswn.hud.group.ae_stock=AE库存
+gtswn.hud.group.ae_stock=库存
 gtswn.monitor.remove.current=仅解除当前信息屏绑定
 gtswn.monitor.remove.done=已解绑 %s；剩余 %s 块信息屏
 

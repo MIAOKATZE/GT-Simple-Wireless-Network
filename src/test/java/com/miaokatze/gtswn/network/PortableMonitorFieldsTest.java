@@ -58,17 +58,17 @@ public class PortableMonitorFieldsTest {
         PacketSyncPortableMonitor.Row row = eu();
         row.kind = 1;
         row.name = "Iron";
-        String both = PortableMonitorClientCache.pinnedStockText(row, 0, true, true, true, "Instant", "Average (5m)");
+        String both = PortableMonitorClientCache.pinnedStockText(row, 0, true, true, true);
         assertTrue(both.startsWith("\u00a7bIron: \u00a7f"));
-        assertTrue(both.contains("Instant: \u00a7a+42.50 /min"));
-        assertTrue(both.contains("Average (5m): \u00a7c-8.25 /min"));
-        assertTrue(both.indexOf("Instant") < both.indexOf("Average"));
+        assertTrue(both.contains("\u00a7a+42.50 /min\u00a77 - \u00a7c-8.25 /min"));
+        assertFalse(both.contains("Instant"));
+        assertFalse(both.contains("Average"));
         assertFalse(both.contains("\n"));
-        String average = PortableMonitorClientCache
-            .pinnedStockText(row, 0, false, false, true, "Instant", "Average (5m)");
+        String average = PortableMonitorClientCache.pinnedStockText(row, 0, false, false, true);
         assertFalse(average.contains("Instant"));
         assertFalse(average.contains(row.amount));
-        assertTrue(average.contains("Average (5m): \u00a7c-8.25 /min"));
+        assertTrue(average.endsWith(" | \u00a7c-8.25 /min"));
+        assertFalse(average.contains("Average"));
     }
 
     @Test
@@ -76,12 +76,12 @@ public class PortableMonitorFieldsTest {
         PacketSyncPortableMonitor.Row row = eu();
         row.kind = 2;
         row.name = "Water";
-        String both = PortableMonitorClientCache.pinnedStockText(row, 0, true, true, true, "Instant", "Average (5m)");
+        String both = PortableMonitorClientCache.pinnedStockText(row, 0, true, true, true);
         assertTrue(both.contains(" mB | "));
-        assertTrue(both.contains("Instant: \u00a7a+42.50 mB/min"));
-        assertTrue(both.contains("Average (5m): \u00a7c-8.25 mB/min"));
-        String amountOnly = PortableMonitorClientCache
-            .pinnedStockText(row, 0, true, false, false, "Instant", "Average (5m)");
+        assertTrue(both.contains("\u00a7a+42.50 mB/min\u00a77 - \u00a7c-8.25 mB/min"));
+        assertFalse(both.contains("Instant"));
+        assertFalse(both.contains("Average"));
+        String amountOnly = PortableMonitorClientCache.pinnedStockText(row, 0, true, false, false);
         assertTrue(amountOnly.endsWith(" mB"));
         assertFalse(amountOnly.contains("Instant"));
         assertFalse(amountOnly.contains("Average"));
