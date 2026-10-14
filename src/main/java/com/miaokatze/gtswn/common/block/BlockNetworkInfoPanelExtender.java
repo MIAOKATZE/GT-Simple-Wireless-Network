@@ -15,6 +15,9 @@ import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
 import com.miaokatze.gtswn.common.tile.screen.ScreenStructureUtil;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
+
 public class BlockNetworkInfoPanelExtender extends BlockContainer {
 
     private IIcon screenIcon;
@@ -37,6 +40,7 @@ public class BlockNetworkInfoPanelExtender extends BlockContainer {
     }
 
     @Override
+    @SideOnly(Side.CLIENT)
     public void registerBlockIcons(IIconRegister register) {
         screenIcon = register.registerIcon("gtswn:network_info_panel/extenderScreen");
         for (int i = 0; i < connectedScreenIcons.length; i++) {

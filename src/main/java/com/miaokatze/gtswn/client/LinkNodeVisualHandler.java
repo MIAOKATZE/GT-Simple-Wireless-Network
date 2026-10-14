@@ -1,8 +1,5 @@
 package com.miaokatze.gtswn.client;
 
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -10,8 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import javax.imageio.ImageIO;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.OpenGlHelper;
@@ -35,14 +30,13 @@ import com.miaokatze.gtswn.client.render.LinkNodeVisuals.Cell;
 import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.PacketLinkNodeInstalled;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.interfaces.tileentity.ICoverable;
 
-/** Bounded client-only decorative mesh. It never changes cover bounds or collision. */
+/** Enhanced material mesh and particles; legacy faces are rendered natively by GT. */
 public final class LinkNodeVisualHandler {
 
     public static final LinkNodeVisualHandler INSTANCE = new LinkNodeVisualHandler();
@@ -54,6 +48,7 @@ public final class LinkNodeVisualHandler {
     private final Map<String, PacketLinkNodeInstalled> installationTargets = new LinkedHashMap<>();
     private World world;
     private int discoveryCursor;
+    private String observedMaterial;
 
     private LinkNodeVisualHandler() {}
 
@@ -64,6 +59,13 @@ public final class LinkNodeVisualHandler {
         if (world != mc.theWorld) {
             clear();
             world = mc.theWorld;
+        }
+        if (world != null) {
+            if (observedMaterial != null && !observedMaterial.equals(Config.tapMaterial)) {
+                // Native cover textures are baked into chunk geometry. All setting entry points converge here.
+                mc.renderGlobal.loadRenderers();
+            }
+            observedMaterial = Config.tapMaterial;
         }
         if (world == null || mc.renderViewEntity == null || mc.isGamePaused()) return;
         updateInstallations();
@@ -185,6 +187,7 @@ public final class LinkNodeVisualHandler {
         installations.clear();
         installationTargets.clear();
         discoveryCursor = 0;
+        observedMaterial = null;
         world = null;
     }
 
@@ -229,14 +232,14 @@ public final class LinkNodeVisualHandler {
             GL11.glDepthMask(false);
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240, 240);
             for (int type = 0; type < 2; type++) {
-                if (!activeTypes[type]) continue;
+                if (legacy || !activeTypes[type]) continue;
                 TextureSet texture = textures[textureIndex][type];
                 if (texture == null) textures[textureIndex][type] = texture = new TextureSet(material, type == 0);
                 texture.update(seconds);
             }
-            // Keep back-to-front order across both materials. Adjacent matching materials share a batch.
-            for (int pass = 0; pass < 2; pass++) {
-                if (legacy && pass == 1) continue;
+            // Legacy faces belong solely to GT's block renderer; only enhanced materials draw these passes.
+            // Keep back-to-front order across both types. Adjacent matching types share a batch.
+            for (int pass = 0; !legacy && pass < 2; pass++) {
                 GL11.glEnable(GL11.GL_TEXTURE_2D);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, pass == 0 ? GL11.GL_ONE_MINUS_SRC_ALPHA : GL11.GL_ONE);
                 Tessellator tess = Tessellator.instance;
@@ -249,21 +252,10 @@ public final class LinkNodeVisualHandler {
                         mc.getTextureManager()
                             .bindTexture(pass == 0 ? texture.baseLocation : texture.glowLocation);
                         tess.startDrawingQuads();
-                        tess.setColorRGBA_F(1, 1, 1, pass == 0 && !legacy ? Config.linkNodeOpacity : 1);
+                        tess.setColorRGBA_F(1, 1, 1, pass == 0 ? Config.linkNodeOpacity : 1);
                         previousType = type;
                     }
-                    if (legacy) {
-                        tess.setColorRGBA_F(
-                            1,
-                            1,
-                            1,
-                            (float) Math.min(
-                                1,
-                                source.installElapsed(event.partialTicks) / LinkNodeInstallAnimation.DURATION_TICKS));
-                        quad(source, .001, -.5, -.5, .5, .5);
-                    } else {
-                        surface(source, high, pass == 0 ? Config.linkNodeOpacity : 1, event.partialTicks);
-                    }
+                    surface(source, high, pass == 0 ? Config.linkNodeOpacity : 1, event.partialTicks);
                 }
                 if (previousType >= 0) tess.draw();
             }
@@ -482,18 +474,14 @@ public final class LinkNodeVisualHandler {
 
         private final int size;
         private final boolean energy;
-        private final String material;
-        private final int[] legacyFrames;
         private final DynamicTexture base, glow;
         private final ResourceLocation baseLocation, glowLocation;
         private long frame = Long.MIN_VALUE;
 
         private TextureSet(String material, boolean energy) {
-            this.material = material;
             this.size = LinkNodeVisuals.resolution(material);
             this.energy = energy;
             int size = this.size;
-            legacyFrames = "old".equals(material) || "oldplus".equals(material) ? loadLegacy(material, energy) : null;
             base = new DynamicTexture(size, size);
             glow = new DynamicTexture(size, size);
             baseLocation = Minecraft.getMinecraft()
@@ -505,21 +493,9 @@ public final class LinkNodeVisualHandler {
         }
 
         private void update(double seconds) {
-            long next = (long) Math.floor(seconds * (legacyFrames != null ? 2 : size == 32 ? 3 : 10));
+            long next = (long) Math.floor(seconds * (size == 32 ? 3 : 10));
             if (next == frame) return;
             frame = next;
-            if (LinkNodeVisuals.legacyMaterial(material)) {
-                int animationFrame = (int) Math.floorMod(next, 4);
-                int[] pixels = legacyFrames == null ? new int[size * size] : legacyFrames;
-                System.arraycopy(
-                    pixels,
-                    legacyFrames == null ? 0 : animationFrame * size * size,
-                    base.getTextureData(),
-                    0,
-                    size * size);
-                base.updateDynamicTexture();
-                return;
-            }
             System.arraycopy(
                 LinkNodeVisuals.pixels(size, seconds, energy, false),
                 0,
@@ -534,26 +510,6 @@ public final class LinkNodeVisualHandler {
                 size * size);
             base.updateDynamicTexture();
             glow.updateDynamicTexture();
-        }
-
-        private static int[] loadLegacy(String material, boolean energy) {
-            String path = ("old".equals(material) ? "textures/blocks/covers/" : "textures/covers/")
-                + "wireless_connector_"
-                + (energy ? "input" : "output")
-                + ".png";
-            try (InputStream stream = Minecraft.getMinecraft()
-                .getResourceManager()
-                .getResource(new ResourceLocation("gtswn", path))
-                .getInputStream()) {
-                BufferedImage image = ImageIO.read(stream);
-                if (image == null || image.getWidth() != 16 || image.getHeight() != 64) {
-                    throw new IOException("Expected 16x64 legacy link texture: " + path);
-                }
-                return image.getRGB(0, 0, 16, 64, null, 0, 16);
-            } catch (IOException e) {
-                GTSimpleWirelessNetwork.LOG.error("Could not load legacy link node texture " + path, e);
-                return null;
-            }
         }
     }
 }

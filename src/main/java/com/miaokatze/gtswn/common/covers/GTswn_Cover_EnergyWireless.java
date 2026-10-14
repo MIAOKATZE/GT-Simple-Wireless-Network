@@ -46,6 +46,16 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
         super(context);
     }
 
+    /** New copies start empty; updating settings preserves the destination's own energy. */
+    public void fundCopiedBuffer(EntityPlayer placer) {
+        if (!configured || placer == null) return;
+        storedEU = WirelessCoverCopy.refillBuffer(
+            storedEU,
+            capacity,
+            Config.downlinkLossEU,
+            amount -> addEUToGlobalEnergyMap(placer.getUniqueID(), amount.negate()));
+    }
+
     /** 能源无线节点：显形协议 type = {@link WirelessNodeRegistry#TYPE_ENERGY}（0） */
     @Override
     public byte nodeTypeId() {

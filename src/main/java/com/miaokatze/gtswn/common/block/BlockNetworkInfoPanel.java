@@ -23,6 +23,9 @@ import com.miaokatze.gtswn.common.tile.screen.ScreenStructureUtil;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
+
 public class BlockNetworkInfoPanel extends BlockContainer {
 
     private IIcon screenIcon;
@@ -45,6 +48,7 @@ public class BlockNetworkInfoPanel extends BlockContainer {
     }
 
     @Override
+    @SideOnly(Side.CLIENT)
     public void registerBlockIcons(IIconRegister register) {
         screenIcon = register.registerIcon("gtswn:network_info_panel/screen");
         for (int i = 0; i < connectedScreenIcons.length; i++) {

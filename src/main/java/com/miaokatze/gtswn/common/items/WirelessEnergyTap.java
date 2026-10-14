@@ -26,6 +26,8 @@ import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
 import gregtech.api.covers.CoverPlacer;
 import gregtech.api.covers.CoverRegistry;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
@@ -570,6 +572,7 @@ public class WirelessEnergyTap extends Item {
      * 注册图标
      */
     @Override
+    @SideOnly(Side.CLIENT)
     public void registerIcons(net.minecraft.client.renderer.texture.IIconRegister register) {
         // 注册输入模式图标
         icons[0] = register.registerIcon("gtswn:wireless_energy_tap_input");

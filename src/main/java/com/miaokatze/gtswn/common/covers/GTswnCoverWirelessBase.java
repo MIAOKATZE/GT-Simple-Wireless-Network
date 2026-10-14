@@ -19,10 +19,13 @@ import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
 import com.miaokatze.gtswn.network.PacketLinkNodeInstalled;
+import com.miaokatze.gtswn.register.TextureManager;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
 import gregtech.api.covers.CoverContext;
+import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.modularui2.CoverGuiData;
@@ -35,8 +38,7 @@ import gregtech.common.gui.modularui.cover.base.CoverBaseGui;
  * 提取 {@link GTswn_Cover_DynamoWireless} 与 {@link GTswn_Cover_EnergyWireless} 的公共逻辑：
  * <ul>
  * <li>公共字段：{@link #storedEU}（缓冲池 EU）、{@link #configured}（是否已配置）</li>
- * <li>公共行为：禁止红石敏感 / tick rate 调整；复制粘贴工具默认禁止（{@link Config#allowCopyPasteTool}
- * 可开启，供 GT5U 覆盖板工具 / 物质操纵者等复制配置）；alwaysLookConnected；每 tick 执行；有 GUI</li>
+ * <li>公共行为：禁止红石敏感 / tick rate 调整；允许复制配置；alwaysLookConnected；每 tick 执行；有 GUI</li>
  * <li>{@link #getOwner(ICoverable)}：从机器获取拥有者 UUID（v1.2.1 修正参数类型从 Object 到 ICoverable）</li>
  * <li>{@link #onCoverRemoval()}：将缓冲池剩余 EU 发回无线电网（计算上行损耗）</li>
  * </ul>
@@ -125,17 +127,11 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     }
 
     /**
-     * 是否允许复制粘贴工具复制本覆盖板配置（GT5U {@code Cover.allowsCopyPasteTool} 开关）。
-     * <p>
-     * GT5U 覆盖板复制工具与物质操纵者（MatterManipulator）等外部复制工具在回填覆盖板配置前
-     * 都会检查此开关：返回 false 时覆盖板会被装上并正常入册，但配置 NBT 不回填（表现为
-     * 「复制了机器但链路节点没配置」）；返回 true 时走 {@code updateAttachedCover} →
-     * {@code readFromNbt} 完整恢复配置。由 {@link Config#allowCopyPasteTool} 控制，默认 false
-     * （与 GT5U 原版无线覆盖板一致）。
+     * Configuration copying is always enabled. Tool integration guards the separate stored-energy boundary.
      */
     @Override
     public boolean allowsCopyPasteTool() {
-        return Config.allowCopyPasteTool;
+        return true;
     }
 
     @Override
@@ -156,6 +152,18 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     @Override
     public boolean hasCoverGUI() {
         return true;
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public ITexture getOverlayTexture() {
+        return TextureManager.getLinkNodeCoverTexture(Config.tapMaterial, nodeTypeId() == 0);
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public ITexture getSpecialFaceTexture() {
+        return getOverlayTexture();
     }
 
     public abstract double getAmperage();

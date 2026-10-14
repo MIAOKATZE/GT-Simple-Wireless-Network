@@ -166,6 +166,31 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         return true;
     }
 
+    /** Blueprint snapshot is bounded to one live registration and excludes identity/owner/runtime edges. */
+    public NBTTagCompound copyBinding(World world, int x, int y, int z) {
+        if (!isIncorporated(world, x, y, z)) return null;
+        Entry entry = entries.get(QuantumControllerRegistry.pack(x, y, z));
+        NBTTagCompound binding = new NBTTagCompound();
+        binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM, entry.dim);
+        binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X, entry.ax);
+        binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, entry.ay);
+        binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, entry.az);
+        return binding;
+    }
+
+    /** Copying onto an existing incorporation is idempotent and never takes over its owner. */
+    public boolean restoreCopiedBinding(World world, int x, int y, int z, NBTTagCompound binding, EntityPlayer placer) {
+        if (world == null || world.isRemote || placer == null || !isEligible(world, x, y, z)) return false;
+        if (isIncorporated(world, x, y, z)) return true;
+        Entry stale = entries.get(QuantumControllerRegistry.pack(x, y, z));
+        if (stale != null) forget(world, stale, false);
+        if (!binding.hasKey(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM, 3)
+            || !binding.hasKey(ItemNetworkQuantumTerminal.NBT_ANCHOR_X, 3)
+            || !binding.hasKey(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, 3)
+            || !binding.hasKey(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, 3)) return false;
+        return add(world, x, y, z, binding, placer);
+    }
+
     public boolean remove(World world, int x, int y, int z, EntityPlayer player) {
         Entry entry = entries.get(QuantumControllerRegistry.pack(x, y, z));
         if (entry == null || (!player.capabilities.isCreativeMode && !entry.owner.equals(

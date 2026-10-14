@@ -293,4 +293,18 @@ public class QuantumParticleQualityConfigTest {
         assertEquals(2, QuantumVoxelParticleHandler.emissionCount(1.5D, .25D));
         assertEquals(1, QuantumVoxelParticleHandler.emissionCount(1.5D, .75D));
     }
+
+    @Test
+    public void guiDistanceReturnsFromMinimumToSixteenWithoutDrifting() {
+        int reduced = Config.adjustRenderDistance(16, true);
+        assertEquals(1, reduced);
+        assertEquals(16, Config.adjustRenderDistance(reduced, false));
+        for (int distance = 32; distance <= 256; distance += 16) {
+            assertEquals(distance, Config.adjustRenderDistance(Config.adjustRenderDistance(distance, true), false));
+        }
+        assertEquals(1, Config.adjustRenderDistance(256, false));
+        assertEquals(1, Config.adjustRenderDistance(1, true));
+        assertEquals(16, Config.adjustRenderDistance(17, true));
+        assertEquals(32, Config.adjustRenderDistance(17, false));
+    }
 }

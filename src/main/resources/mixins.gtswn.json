@@ -13,7 +13,10 @@
     "minecraft.QuantumIncorporationIdentityMixin",
     "gregtech.DeviceControllerTickMixin",
     "gregtech.DeviceEnergyMutationMixin",
-    "gregtech.DeviceWirelessTransactionMixin"
+    "gregtech.DeviceWirelessTransactionMixin",
+    "gregtech.CoverToolCopyMixin",
+    "mm.GTAnalysisResultMixin",
+    "mm.PendingBlockMixin"
   ],
   "client": [
     "minecraft.HeldChargeSyncMixin"

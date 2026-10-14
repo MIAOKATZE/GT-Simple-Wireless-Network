@@ -60,6 +60,13 @@ public class Config {
         return quantumParticlesEnabled ? quantumParticleDensityPercent / 100D : 0D;
     }
 
+    /** GUI distance stops are 1, 16, 32, ... 256; manual values join the nearest next stop. */
+    public static int adjustRenderDistance(int value, boolean decrease) {
+        int current = Math.max(1, Math.min(256, value));
+        if (decrease) return current <= 16 ? 1 : (current - 1) / 16 * 16;
+        return current >= 256 ? 1 : (current / 16 + 1) * 16;
+    }
+
     public static boolean validTapMaterial(String material) {
         return Arrays.asList("old", "oldplus", "low", "medium", "high")
             .contains(material);
@@ -219,21 +226,10 @@ public class Config {
     // 默认 200 / Default 200
     public static int bufferRedundancyTicks = 200;
 
-    // 链路节点是否允许配置复制粘贴工具 / Whether link nodes allow copy-paste config tools
-    // GT5U 的 Cover.allowsCopyPasteTool 开关：GT5U 覆盖板复制工具、物质操纵者（MatterManipulator）
-    // 等外部复制工具在回填覆盖板配置前都会检查此开关。
-    // false（默认）：工具拒绝复制本覆盖板配置（与 GT5U 原版无线覆盖板一致）；复制带链路节点的机器时，
-    // 节点覆盖板会装上并入册，但 V/A 等配置不回填，需手动重配。
-    // true：允许复制与回填配置；复制出的节点携带源节点的 V/A 等配置及缓冲池剩余电量。
-    // GT5U's Cover.allowsCopyPasteTool switch: the GT5U cover tool and external copy tools such as
-    // MatterManipulator check this before restoring cover config onto the pasted cover.
-    // false (default): tools refuse to copy this cover's config (same as GT5U's own wireless covers);
-    // copying a machine with a link node installs the cover and registers the node, but leaves it
-    // unconfigured (no V/A) for manual setup.
-    // true: config is copied and restored; the copied node carries the source node's V/A config
-    // and remaining buffer EU.
-    // 需重启生效 / Requires restart
-    public static boolean allowCopyPasteTool = false;
+    // Retained for source compatibility. Copying is always enabled since v1.8.63.
+    // Legacy AllowCopyPasteTool values are ignored; tools guard stored EU separately.
+    @Deprecated
+    public static boolean allowCopyPasteTool = true;
 
     // 便携无线网络监测终端 HUD 检测间隔（tick）/ Portable wireless network monitor HUD detection interval (ticks)
     // 数值越小检测与发包越频繁 / Smaller value = more frequent detection and packet sending
@@ -538,19 +534,14 @@ public class Config {
                 + "Warning: too small a value leaves insufficient buffer between interactions; machines may lose power.\n"
                 + "默认 200 / Default 200, range 0-60000");
 
-        // 链路节点是否允许配置复制粘贴工具 / Whether link nodes allow copy-paste config tools
-        allowCopyPasteTool = configuration.getBoolean(
+        // Retire the old key explicitly, including existing false values.
+        configuration.getBoolean(
             "AllowCopyPasteTool",
             Configuration.CATEGORY_GENERAL,
-            allowCopyPasteTool,
-            "链路节点是否允许配置复制粘贴工具 / Whether link nodes allow copy-paste config tools\n"
-                + "GT5U 覆盖板复制工具、物质操纵者等外部复制工具回填覆盖板配置前检查此开关。\n"
-                + "false（默认）：拒绝复制本覆盖板配置（与 GT5U 原版无线覆盖板一致），复制出的链路节点需手动重配。\n"
-                + "true：复制并回填 V/A 等配置与缓冲池剩余电量。\n"
-                + "External copy tools (GT5U cover tool, MatterManipulator, ...) check this before restoring cover config.\n"
-                + "false (default): refuse to copy this cover's config (same as GT5U's own wireless covers); copied nodes stay unconfigured.\n"
-                + "true: copy and restore V/A config and remaining buffer EU.\n"
-                + "需重启生效 / Requires restart");
+            true,
+            "Deprecated and ignored since v1.8.63: link-node configuration copying is always enabled.\n"
+                + "Copied stored EU is guarded separately by tool integration.");
+        allowCopyPasteTool = true;
 
         // 便携无线网络监测终端 HUD 检测间隔（tick）/ Portable wireless network monitor HUD detection interval (ticks)
         hudUpdateInterval = configuration.getInt(
