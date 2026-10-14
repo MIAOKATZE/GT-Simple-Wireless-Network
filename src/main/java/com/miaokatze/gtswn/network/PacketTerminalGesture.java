@@ -85,9 +85,12 @@ public final class PacketTerminalGesture implements IMessage {
             CHARGES.remove(player.getUniqueID());
             return;
         }
-        if (player.isDead || player.playerNetServerHandler == null || !TerminalAirInteraction.isAir(player)) return;
+        if (player.isDead || player.playerNetServerHandler == null) return;
         ItemStack held = player.getHeldItem();
         if (held == null) return;
+        boolean device = held.getItem() instanceof ItemDeviceInfoTerminal;
+        // Device scans may begin and remain charged while looking at blocks. Other reveal gestures stay air-only.
+        if (device ? player.isSneaking() : !TerminalAirInteraction.isAir(player)) return;
         if (request.action == SCAN_DEVICES) {
             if (held.getItem() instanceof ItemDeviceInfoTerminal && consumeReveal(player)) {
                 ItemDeviceInfoTerminal.startChargedScan(player, held);
@@ -100,11 +103,10 @@ public final class PacketTerminalGesture implements IMessage {
                 player
                     .openGui(GTSimpleWirelessNetwork.instance, GTSWNGuiHandler.LINK_TERMINAL, player.worldObj, 0, 0, 0);
             }
-        } else if (player.isSneaking()
-            && (held.getItem() instanceof WirelessEnergyTap || held.getItem() instanceof ItemNetworkQuantumTerminal
-                || held.getItem() instanceof ItemDeviceInfoTerminal)) {
-                    CHARGES.putIfAbsent(player.getUniqueID(), new Charge(player, held));
-                }
+        } else if (held.getItem() instanceof ItemDeviceInfoTerminal || (player.isSneaking()
+            && (held.getItem() instanceof WirelessEnergyTap || held.getItem() instanceof ItemNetworkQuantumTerminal))) {
+                CHARGES.putIfAbsent(player.getUniqueID(), new Charge(player, held));
+            }
     }
 
     /** 一次性消费蓄力凭据；旧显形包本身不再足以触发显形。 */
@@ -148,11 +150,11 @@ public final class PacketTerminalGesture implements IMessage {
 
         private boolean valid() {
             return !player.isDead && player.playerNetServerHandler != null
-                && player.isSneaking()
+                && (stack.getItem() instanceof ItemDeviceInfoTerminal ? !player.isSneaking() : player.isSneaking())
                 && player.dimension == dimension
                 && player.inventory.currentItem == slot
                 && player.getHeldItem() == stack
-                && TerminalAirInteraction.isAir(player);
+                && (stack.getItem() instanceof ItemDeviceInfoTerminal || TerminalAirInteraction.isAir(player));
         }
     }
 }

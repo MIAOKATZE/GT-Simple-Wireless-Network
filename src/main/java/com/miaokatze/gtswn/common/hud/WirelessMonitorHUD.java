@@ -1,15 +1,23 @@
 package com.miaokatze.gtswn.common.hud;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.client.PortableHudLayout;
+import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.gui.GtswnGuiDrawing;
 import com.miaokatze.gtswn.client.gui.GtswnGuiTextures;
+import com.miaokatze.gtswn.client.gui.PortableMonitorCharts;
+import com.miaokatze.gtswn.client.gui.PortableMonitorIcons;
 import com.miaokatze.gtswn.config.Config;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -62,14 +70,26 @@ public class WirelessMonitorHUD extends Gui {
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
         int screenWidth = resolution.getScaledWidth();
         int screenHeight = resolution.getScaledHeight();
+        List<PortableMonitorClientCache.PinnedLine> all = PortableMonitorClientCache
+            .pinnedLines(this.controller.monitorStack());
+        int largestUnit = PortableHudLayout.requiredHeight(all, Config.hudRenderMode);
 
         // 饱食度图标位置：x = screenWidth / 2 + 91, y = screenHeight - 39
         // HUD 显示在饱食度上方 15 像素处
         // 应用配置的偏移：X 正=右（直接加），Y 正=上（减去偏移以反转屏幕坐标——屏幕 Y 向下为正）
         // Apply configured offsets: X positive = right (add directly);
         // Y positive = up (subtract to invert screen coords — screen Y points downward)
-        int hudX = screenWidth / 2 + 91 + Config.hudXOffset;
-        int hudY = screenHeight - 54 - Config.hudYOffset;
+        float scale = Config.hudScale;
+        int basicRows = (Config.hudChargeEnabled && this.controller.hasBattery() ? 1 : 0)
+            + (Config.hudInstantEnabled ? 1 : 0)
+            + (Config.hudAverageEnabled ? 1 : 0)
+            + (Config.hudEUEnabled ? 1 : 0);
+        scale = Math.min(scale, (screenHeight - 8f) / Math.max(12, basicRows * 12 + largestUnit + 4));
+        int maxWidth = Math.min(Config.hudPanelWidth, Math.max(1, (int) ((screenWidth - 8) / scale) - 4));
+        int hudX = Math.max(
+            (int) Math.ceil(4 + 2 * scale),
+            Math.min((int) (screenWidth - (maxWidth + 2) * scale - 4), screenWidth / 2 + 91 + Config.hudXOffset));
+        int hudY = Math.max(4, Math.min(screenHeight - 4, screenHeight - 54 - Config.hudYOffset));
 
         // 保存 OpenGL 状态
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
@@ -79,7 +99,6 @@ public class WirelessMonitorHUD extends Gui {
         // Apply scale transform: use (hudX, hudY) as scale origin to prevent HUD drift after scaling.
         // 流程：先平移到原点 → 缩放 → 平移回原位置，使 HUD 基准点保持不变。
         // Pipeline: translate to origin → scale → translate back, keeping HUD base point fixed.
-        float scale = Config.hudScale;
         if (scale != 1.0f) {
             GL11.glTranslatef(hudX, hudY, 0);
             GL11.glScalef(scale, scale, 1.0f);
@@ -91,22 +110,70 @@ public class WirelessMonitorHUD extends Gui {
         GL11.glDisable(GL11.GL_LIGHTING);
 
         // 自下向上紧凑排列；充电行位于原有三行上方。
-        String[] lines = { Config.hudEUEnabled ? this.controller.euText() : null,
-            Config.hudAverageEnabled ? this.controller.eutText() : null,
-            Config.hudInstantEnabled ? this.controller.realtimeEutText() : null,
-            Config.hudChargeEnabled && this.controller.hasBattery() ? this.controller.chargeText() : null };
-        int rowY = hudY;
-        int textWidth = 0;
-        for (String line : lines) {
-            if (line == null) {
-                continue;
-            }
-            textWidth = Math.max(textWidth, mc.fontRenderer.getStringWidth(line));
+        List<String> lines = new ArrayList<>();
+        if (Config.hudChargeEnabled && this.controller.hasBattery()) lines.add(this.controller.chargeText());
+        if (Config.hudInstantEnabled) lines.add(this.controller.realtimeEutText());
+        if (Config.hudAverageEnabled) lines.add(this.controller.eutText());
+        if (Config.hudEUEnabled) lines.add(this.controller.euText());
+        List<List<PortableMonitorClientCache.PinnedLine>> pages = PortableHudLayout.pages(
+            all,
+            Config.hudPinnedRows,
+            Math.max(0, (int) ((screenHeight - 8) / scale) - lines.size() * 12 - 4),
+            Config.hudRenderMode,
+            "\u00a73[" + StatCollector.translateToLocal(PortableHudLayout.Group.EU_TREND.labelKey) + "]",
+            "\u00a73[" + StatCollector.translateToLocal(PortableHudLayout.Group.AE_TREND.labelKey) + "]");
+        int page = (int) ((System.currentTimeMillis() / (Config.hudRotationSeconds * 1000L)) % pages.size());
+        List<PortableMonitorClientCache.PinnedLine> pinned = pages.get(page);
+        int totalHeight = lines.size() * 12;
+        for (PortableMonitorClientCache.PinnedLine pin : pinned)
+            totalHeight += PortableHudLayout.height(pin, Config.hudRenderMode);
+        float margin = 4 + 2 * scale;
+        float physicalTop = Math
+            .max(margin, Math.min(screenHeight - totalHeight * scale - margin, hudY - totalHeight * scale));
+        float localTop = hudY + (physicalTop - hudY) / scale;
+        int rowY = (int) localTop;
+        GL11.glTranslatef(0, localTop - rowY, 0);
+        for (PortableMonitorClientCache.PinnedLine pin : pinned) {
+            int rowHeight = PortableHudLayout.height(pin, Config.hudRenderMode);
+            int rowWidth = PortableHudLayout
+                .width(pin, mc.fontRenderer.getStringWidth(pin.text), maxWidth, Config.hudRenderMode);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            GtswnGuiDrawing.drawStretch(GtswnGuiTextures.HUD_BASE, hudX - 2, rowY - 2, textWidth + 4, 12, 0);
-            mc.fontRenderer.drawStringWithShadow(line, hudX, rowY, 0xFFFFFF);
-            rowY -= 12;
+            GtswnGuiDrawing.drawStretch(GtswnGuiTextures.HUD_BASE, hudX - 2, rowY - 2, rowWidth + 4, rowHeight, 0);
+            if (pin.graph) PortableMonitorCharts.drawCompact(pin, hudX, rowY, rowWidth, rowHeight, mc.fontRenderer);
+            else {
+                int column = PortableHudLayout.iconColumn(pin, Config.hudRenderMode);
+                String prefix = pin.group == PortableHudLayout.Group.AE_STOCK
+                    ? "\u00a73[" + StatCollector.translateToLocal(pin.group.labelKey) + "] "
+                    : "";
+                String body = pin.text;
+                if (!prefix.isEmpty() && body.startsWith(prefix)) body = body.substring(prefix.length());
+                else prefix = "";
+                int prefixWidth = Math.min(rowWidth, mc.fontRenderer.getStringWidth(prefix));
+                mc.fontRenderer.drawStringWithShadow(
+                    mc.fontRenderer.trimStringToWidth(prefix, rowWidth),
+                    hudX,
+                    rowY + (rowHeight - 8) / 2,
+                    0xffffff);
+                if (column > 0 && rowWidth - prefixWidth >= column)
+                    PortableMonitorIcons.draw(pin.icon, hudX + prefixWidth, rowY, rowHeight);
+                else column = 0;
+                mc.fontRenderer.drawStringWithShadow(
+                    mc.fontRenderer.trimStringToWidth(body, Math.max(0, rowWidth - prefixWidth - column)),
+                    hudX + prefixWidth + column,
+                    rowY + (rowHeight - 8) / 2,
+                    0xffffff);
+            }
+            rowY += rowHeight;
+        }
+        for (String line : lines) {
+            int rowWidth = Math.min(maxWidth, Math.max(1, mc.fontRenderer.getStringWidth(line)));
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            GtswnGuiDrawing.drawStretch(GtswnGuiTextures.HUD_BASE, hudX - 2, rowY - 2, rowWidth + 4, 12, 0);
+            mc.fontRenderer
+                .drawStringWithShadow(mc.fontRenderer.trimStringToWidth(line, maxWidth), hudX, rowY, 0xffffff);
+            rowY += 12;
         }
 
         GL11.glDisable(GL11.GL_BLEND);

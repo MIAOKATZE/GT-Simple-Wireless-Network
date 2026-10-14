@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
@@ -23,6 +24,63 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * 不得重开只含本页的不完整 pending 批次（否则 hasMorePending 恒真触发无效追加轮询）。
  */
 public class DeviceTerminalClientCacheTest {
+
+    @Test
+    public void keepaliveCannotCreateOrEraseSnapshotAndMissingCacheRequestsFullData() {
+        UUID id = UUID.randomUUID();
+        DeviceTerminalClientCache.receivePage(id, 4L, -1, 1, Collections.emptyList());
+        assertNull(DeviceTerminalClientCache.getSnapshot(id));
+        assertEquals(
+            -1L,
+            DeviceTerminalClientCache.requestMetadata(id)
+                .getKnownVersion());
+        assertFalse(
+            DeviceTerminalClientCache.requestMetadata(id)
+                .isComplete());
+        DeviceTerminalClientCache.receivePage(id, 4L, 0, 1, Collections.singletonList(entry("bound")));
+        Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(id);
+        DeviceTerminalClientCache.receivePage(id, 4L, -1, 1, Collections.emptyList());
+        assertSame(snapshot, DeviceTerminalClientCache.getSnapshot(id));
+        assertEquals(1, snapshot.entries.size());
+        assertTrue(
+            DeviceTerminalClientCache.requestMetadata(id)
+                .isComplete());
+    }
+
+    @Test
+    public void requestCarriesInFlightVersionWhenOldLongSnapshotRemainsDisplayed() {
+        UUID id = UUID.randomUUID();
+        DeviceTerminalClientCache.receivePage(id, 1L, 0, 1, Arrays.asList(entry("a"), entry("b"), entry("c")));
+        DeviceTerminalClientCache.receivePage(id, 2L, 0, 2, Collections.singletonList(entry("new-a")));
+        assertEquals(1L, DeviceTerminalClientCache.getSnapshot(id).version);
+        assertEquals(
+            2L,
+            DeviceTerminalClientCache.requestMetadata(id)
+                .getKnownVersion());
+        assertFalse(
+            DeviceTerminalClientCache.requestMetadata(id)
+                .isComplete());
+        DeviceTerminalClientCache.receivePage(id, 2L, -1, 2, Collections.emptyList());
+        assertTrue(DeviceTerminalClientCache.hasMorePending(id));
+        DeviceTerminalClientCache.receivePage(id, 2L, 1, 2, Collections.singletonList(entry("new-b")));
+        assertEquals(2L, DeviceTerminalClientCache.getSnapshot(id).version);
+        assertTrue(
+            DeviceTerminalClientCache.requestMetadata(id)
+                .isComplete());
+    }
+
+    @Test
+    public void freshnessTracksServerSamplingWindowAndRejectsExpiredCache() {
+        UUID id = UUID.randomUUID();
+        DeviceTerminalClientCache.handleSettings(0, true, 60);
+        DeviceTerminalClientCache.receivePage(id, 1L, 0, 1, Collections.singletonList(entry("fresh")));
+        long now = System.currentTimeMillis();
+        assertTrue(DeviceTerminalClientCache.isFresh(id, now + 180000L));
+        assertFalse(DeviceTerminalClientCache.isFresh(id, now + 200000L));
+        assertEquals(0, DeviceTerminalClientCache.teleportCost());
+        assertTrue(DeviceTerminalClientCache.canConfigure());
+        DeviceTerminalClientCache.handleSettings(3, false, 10);
+    }
 
     /** 构造最小 Entry（仅 key 参与断言，其余字段取代表性常量） */
     private static Entry entry(String key) {

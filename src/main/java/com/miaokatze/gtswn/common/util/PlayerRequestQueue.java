@@ -58,4 +58,14 @@ public abstract class PlayerRequestQueue<P> {
             process(payload);
         }
     }
+
+    /** Stops after a fixed number of requests even if Netty keeps replenishing the queue. */
+    protected void drainAtMost(int budget) {
+        for (int i = 0; i < budget; i++) {
+            P payload = pending.poll();
+            if (payload == null) return;
+            pendingPlayers.remove(playerOf(payload));
+            process(payload);
+        }
+    }
 }

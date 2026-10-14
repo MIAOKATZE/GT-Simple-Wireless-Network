@@ -147,6 +147,28 @@ public class GTSWNPacketHandler {
             Side.SERVER);
         NETWORK.registerMessage(PacketLinkNodeInstalled.Handler.class, PacketLinkNodeInstalled.class, 19, Side.CLIENT);
         NETWORK.registerMessage(PacketTerminalGesture.Handler.class, PacketTerminalGesture.class, 20, Side.SERVER);
+        NETWORK.registerMessage(
+            PacketRequestPortableMonitor.Handler.class,
+            PacketRequestPortableMonitor.class,
+            21,
+            Side.SERVER);
+        NETWORK
+            .registerMessage(PacketSyncPortableMonitor.Handler.class, PacketSyncPortableMonitor.class, 22, Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketSyncDeviceTerminalSettings.Handler.class,
+            PacketSyncDeviceTerminalSettings.class,
+            23,
+            Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketDeviceTerminalVisualAction.Handler.class,
+            PacketDeviceTerminalVisualAction.class,
+            24,
+            Side.SERVER);
+        NETWORK.registerMessage(
+            PacketSyncDeviceTerminalVisualState.Handler.class,
+            PacketSyncDeviceTerminalVisualState.class,
+            25,
+            Side.CLIENT);
         cpw.mods.fml.common.FMLCommonHandler.instance()
             .bus()
             .register(new PacketTerminalGesture.Drain());

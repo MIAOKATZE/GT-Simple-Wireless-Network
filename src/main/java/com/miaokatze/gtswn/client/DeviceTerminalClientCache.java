@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
@@ -33,12 +34,58 @@ public final class DeviceTerminalClientCache {
     /** 终端实例 UUID → 缓存条目（仅客户端主线程访问：写入经 func_152344_a 调度，读取在 GUI 线程=主线程） */
     private static final Map<UUID, Cached> CACHE = new HashMap<>();
 
+    private static int teleportCost = 1;
+    private static boolean canConfigure;
+    private static long freshMillis = 40000L;
+
     private DeviceTerminalClientCache() {}
+
+    public static void handleSettings(int cost, boolean allowed, int samplingSeconds) {
+        freshMillis = Math.max(30000L, (Math.max(1, Math.min(3600, samplingSeconds)) * 3L + 10L) * 1000L);
+        teleportCost = Math.max(0, Math.min(1000000, cost));
+        canConfigure = allowed;
+    }
+
+    public static int teleportCost() {
+        return teleportCost;
+    }
+
+    public static boolean canConfigure() {
+        return canConfigure;
+    }
+
+    public static void clear() {
+        CACHE.clear();
+        teleportCost = 1;
+        canConfigure = false;
+        freshMillis = 40000L;
+    }
+
+    public static boolean isFresh(UUID terminalId, long now) {
+        Cached cached = CACHE.get(terminalId);
+        return cached != null && cached.snapshot != null && now - cached.receivedAt < freshMillis;
+    }
+
+    public static PacketRequestDeviceTerminalData requestMetadata(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        long version = cached == null ? -1L
+            : cached.pendingPages == null ? cached.version : Math.max(cached.version, cached.pendingVersion);
+        boolean complete = cached != null && cached.snapshot != null && cached.pendingPages == null;
+        return new PacketRequestDeviceTerminalData(terminalId, version, complete);
+    }
 
     /**
      * 接收单页（主线程）：同 version 分页累积，整批到齐整体替换 / 未到齐提交连续前缀。
      */
     public static void receivePage(UUID terminalId, long version, int pageIndex, int pageTotal, List<Entry> page) {
+        if (terminalId != null && pageIndex == -1) {
+            Cached cached = CACHE.get(terminalId);
+            if (cached != null && cached.snapshot != null
+                && cached.pendingPages == null
+                && version == cached.version
+                && pageTotal == cached.pageTotal) cached.receivedAt = System.currentTimeMillis();
+            return;
+        }
         if (terminalId == null || pageTotal <= 0 || pageIndex < 0 || pageIndex >= pageTotal) {
             return;
         }
@@ -51,6 +98,7 @@ public final class DeviceTerminalClientCache {
             // 旧版本页迟达（服务端已重发更高版本）：丢弃防回退
             return;
         }
+        cached.receivedAt = System.currentTimeMillis();
         // 同版本迟到重复页（整批已提交、pending 已清、分页布局一致）：直接丢弃，不重开批次——
         // 重开会产生只含本页的不完整 pending 批次，令 hasMorePending 恒真并触发无效追加轮询
         // （v1.7.15 修复）。安全性依据服务端不变式「数据变更必然 version++」：同 version 的
@@ -144,6 +192,7 @@ public final class DeviceTerminalClientCache {
 
         /** 已提交快照的最新版本（前缀或整批，取较新提交者） */
         long version = -1L;
+        long receivedAt;
 
         /** 已提交快照（null=尚未有任何完整批次；部分前缀一旦提交即非 null） */
         Snapshot snapshot;

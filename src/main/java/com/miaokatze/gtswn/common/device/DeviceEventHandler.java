@@ -9,13 +9,17 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
+import net.minecraftforge.event.world.ChunkEvent;
 
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.config.Config;
 
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
+import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
@@ -32,6 +36,41 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * 挂载 MTE，事件内可直接判别；旁路放置的漏登由终端右击绑定补登兜底。
  */
 public class DeviceEventHandler {
+
+    /** Fixed 36-slot reconciliation once per second; no world or historical-terminal scan. */
+    @SubscribeEvent
+    public void onHeldTerminalInventoryTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || event.player.worldObj.isRemote
+            || event.player.worldObj.getTotalWorldTime() % 20 != 0
+            || !(event.player instanceof net.minecraft.entity.player.EntityPlayerMP)) return;
+        net.minecraft.server.MinecraftServer server = net.minecraft.server.MinecraftServer.getServer();
+        if (server == null || server.getConfigurationManager()
+            .func_152612_a(event.player.getCommandSenderName()) != event.player) return;
+        Set<UUID> ids = new java.util.HashSet<>();
+        for (ItemStack stack : event.player.inventory.mainInventory) {
+            if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal) {
+                UUID id = ItemDeviceInfoTerminal.readTerminalId(stack);
+                if (id != null) ids.add(id);
+            }
+        }
+        DeviceTerminalDataStore.synchronizeHeldTerminals(event.player.getUniqueID(), ids);
+    }
+
+    /** Guard server vanilla interaction before block activation; custom travel remains packet24-only. */
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void onVisualVanillaInteraction(PlayerInteractEvent event) {
+        if (event.world.isRemote || !(event.entityPlayer instanceof net.minecraft.entity.player.EntityPlayerMP)
+            || (event.action != PlayerInteractEvent.Action.RIGHT_CLICK_AIR
+                && event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK))
+            return;
+        net.minecraft.entity.player.EntityPlayerMP player = (net.minecraft.entity.player.EntityPlayerMP) event.entityPlayer;
+        if (com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue
+            .shouldConsumeVanillaUse(player, player.getHeldItem())) {
+            event.useBlock = cpw.mods.fml.common.eventhandler.Event.Result.DENY;
+            event.useItem = cpw.mods.fml.common.eventhandler.Event.Result.DENY;
+            event.setCanceled(true);
+        }
+    }
 
     // ==================== 放置：登记 + 自动绑定 ====================
 
@@ -55,15 +94,25 @@ public class DeviceEventHandler {
         String localName = mte.getLocalName();
         // 登记 / 覆盖（重放同位机器刷新 owner 与显示名，幂等）
         DeviceRegistryData.get(event.world)
-            .register(key, event.player.getUniqueID(), localName);
+            .register(key, event.player.getUniqueID(), localName, ((IGregTechTileEntity) te).getMetaTileID());
         // 放置者背包内的终端逐台自动绑定 + 轻提示（同时补登记活跃索引，覆盖会话内新获得终端）
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(event.world);
         byte powerType = DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
             : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
         for (UUID terminalId : collectTerminalIds(event.player)) {
             DeviceTerminalDataStore.ensureActiveTerminal(event.player.getUniqueID(), terminalId);
-            DeviceTerminalDataStore.AddResult result = store
-                .addBinding(terminalId, key, localName, dim, event.x, event.y, event.z, powerType);
+            DeviceTerminalDataStore.AddResult result = store.addBinding(
+                terminalId,
+                key,
+                localName,
+                dim,
+                event.x,
+                event.y,
+                event.z,
+                powerType,
+                ((IGregTechTileEntity) te).getMetaTileID(),
+                DeviceMachineIdentity.linkNodeType(mte),
+                DevicePowerCapabilities.capabilityMask(mte));
             switch (result) {
                 case SUCCESS:
                     sendMessage(event.player, "gtswn.device.chat.auto_bound", localName);
@@ -90,6 +139,10 @@ public class DeviceEventHandler {
         if (event.world.isRemote) {
             return;
         }
+        TileEntity removedTile = event.world.getTileEntity(event.x, event.y, event.z);
+        if (removedTile instanceof IGregTechTileEntity) {
+            DeviceFlowMonitor.forget(((IGregTechTileEntity) removedTile).getMetaTileEntity());
+        }
         String key = DeviceRegistryData.makeKey(event.world.provider.dimensionId, event.x, event.y, event.z);
         DeviceRegistryData registry = DeviceRegistryData.get(event.world);
         if (registry.unregister(key)) {
@@ -99,6 +152,16 @@ public class DeviceEventHandler {
     }
 
     // ==================== 登录 / 登出：活跃终端索引 ====================
+
+    /** Loaded chunk lifecycle releases watched machine references immediately. No other chunks are queried. */
+    @SubscribeEvent
+    public void onChunkUnload(ChunkEvent.Unload event) {
+        if (event.world.isRemote) return;
+        for (Object tile : event.getChunk().chunkTileEntityMap.values()) {
+            if (tile instanceof IGregTechTileEntity)
+                DeviceFlowMonitor.forget(((IGregTechTileEntity) tile).getMetaTileEntity());
+        }
+    }
 
     /**
      * 玩家登录：扫描背包（含热栏）收集终端 UUID，登记活跃索引（阶段 C 采样调度只采活跃终端）。

@@ -15,15 +15,19 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
+import org.lwjgl.input.Keyboard;
+import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.GL11;
+
+import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
+import com.miaokatze.gtswn.client.DeviceTerminalNames;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
-import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
-import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
@@ -45,11 +49,11 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * </ol>
  * <p>
  * 布局（自上而下）：标题 / 顶行四按钮（计数模式四态轮换 + 显示配方纯本地开关 +
- * 功率筛选三态轮换 + 状态筛选四态轮换，后三者为纯 GUI 会话态）/ 列头行
+ * 功率筛选七项下拉 + 状态筛选五态轮换，后三者为纯 GUI 会话态）/ 列头行
  * （点击排序，▲▼ 高亮当前列，平均列默认降序、其余默认升序）/ 滚动列表
  * （{@link GuiDeviceEntryList}，行高 20）/ 底行操作提示。
  * <p>
- * 筛选（v1.8.0）：功率（全部→耗电→发电）与状态（全部→待机→运行→停机）两组可叠加
+ * 筛选：功率按电力/蒸汽通道及各自生产/消耗能力筛选，与状态（全部→待机→运行→停机→忽略）两组可叠加
  * （AND），插在条目副本生成后、排序前；会话态实例字段仿显示配方——不发包不持久化，
  * 重开 GUI 复位为全部/全部。
  * <p>
@@ -88,10 +92,15 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 顶行按钮：显示配方开关（纯 GUI 实例字段，不发包不持久化） */
     private static final int BTN_SHOW_RECIPE = 1;
 
-    /** 顶行按钮：功率筛选三态轮换（纯 GUI 会话态，不发包不持久化；v1.8.0） */
+    /** 顶行按钮：功率筛选七项下拉（纯 GUI 会话态，不发包不持久化） */
     private static final int BTN_POWER_FILTER = 2;
 
-    /** 顶行按钮：状态筛选四态轮换（纯 GUI 会话态，不发包不持久化；v1.8.0） */
+    private static final int POWER_MENU_WIDTH = 136;
+    private static final int POWER_MENU_ROW_HEIGHT = 18;
+    private static final String[] POWER_FILTER_KEYS = { "gtswn.device.gui.filter.power.all",
+        "gtswn.device.gui.filter.power.generate_eu", "gtswn.device.gui.filter.power.consume_eu" };
+
+    /** 顶行按钮：状态筛选五态轮换（纯 GUI 会话态，不发包不持久化） */
     private static final int BTN_STATE_FILTER = 3;
 
     /** 列头行文本 Y 偏移（按钮行下方） */
@@ -104,9 +113,9 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     private static final String[] COLUMN_KEYS = { "gtswn.device.gui.col.name", "gtswn.device.gui.col.state",
         "gtswn.device.gui.col.instant", "gtswn.device.gui.col.average", "gtswn.device.gui.col.pos" };
 
-    /** 状态三态 lang 键（0 待机 / 1 运行 / 2 停机，值自带 § 颜色码） */
+    /** 状态 lang 键（0 待机 / 1 运行 / 2 停机 / 3 忽略，值自带 § 颜色码） */
     private static final String[] STATE_KEYS = { "gtswn.device.gui.state.idle", "gtswn.device.gui.state.running",
-        "gtswn.device.gui.state.stopped" };
+        "gtswn.device.gui.state.stopped", "gtswn.device.gui.state.ignored" };
 
     // ==================== 状态 ====================
 
@@ -153,10 +162,15 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 显示配方开关（纯 GUI 实例字段：开启时瞬时/平均两列区临时替换为单条配方行） */
     private boolean showRecipe = false;
 
-    /** 功率筛选会话态：0 全部 / 1 耗电 / 2 发电（重开 GUI 复位为全部） */
+    /** 功率筛选会话态：全部、电力、蒸汽、产能、耗电、产汽、耗气（重开 GUI 复位为全部） */
     private int powerFilter = 0;
+    private boolean powerFilterOpen;
+    private int powerFilterCursor;
 
-    /** 状态筛选会话态：0 全部 / 1 待机 / 2 运行 / 3 停机（重开 GUI 复位为全部） */
+    /** 下拉选项独立绘制，不加入原版会在 action 回调期间遍历的 buttonList。 */
+    private final List<GtswnGuiButton> powerFilterOptions = new ArrayList<>();
+
+    /** 状态筛选会话态：0 全部 / 1 待机 / 2 运行 / 3 停机 / 4 忽略（重开 GUI 复位为全部） */
     private int stateFilter = 0;
 
     /** 排序偏好被点击后置位，强制下次 refreshEntries 重排（同版本快照也重排） */
@@ -164,6 +178,8 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 滚动列表控件（initGui 创建） */
     private GuiDeviceEntryList entryList;
+    private GuiDeviceNameEditor nameEditor;
+    private float uiScale = 1.0F;
 
     /**
      * 构造：锚点 UUID + 初始 UI 偏好来源 stack（排序列/方向/计数法，只读）。
@@ -194,6 +210,11 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     @Override
     @SuppressWarnings("unchecked")
     public void initGui() {
+        // GuiScreen's native mouse handling uses width/height, so it shares this logical canvas.
+        uiScale = Math.min(1.0F, Math.min((width - 12.0F) / xSize, (height - 12.0F) / ySize));
+        uiScale = Math.max(0.1F, uiScale);
+        width = Math.round(width / uiScale);
+        height = Math.round(height / uiScale);
         this.guiLeft = (this.width - this.xSize) / 2;
         this.guiTop = (this.height - this.ySize) / 2;
         buttonList.clear();
@@ -208,7 +229,20 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             .add(new GtswnGuiButton(BTN_POWER_FILTER, this.guiLeft + 264, this.guiTop + 16, 94, 16, powerFilterText()));
         buttonList
             .add(new GtswnGuiButton(BTN_STATE_FILTER, this.guiLeft + 362, this.guiTop + 16, 80, 16, stateFilterText()));
+        powerFilterOpen = false;
+        powerFilterOptions.clear();
+        for (int mode = 0; mode < POWER_FILTER_KEYS.length; mode++) {
+            powerFilterOptions.add(
+                new GtswnGuiButton(
+                    mode,
+                    powerMenuLeft() + 3,
+                    powerMenuTop() + 3 + mode * POWER_MENU_ROW_HEIGHT,
+                    POWER_MENU_WIDTH - 6,
+                    POWER_MENU_ROW_HEIGHT - 2,
+                    tr(POWER_FILTER_KEYS[mode])));
+        }
         this.entryList = new GuiDeviceEntryList(this, this.guiLeft, this.guiTop);
+        if (nameEditor != null) nameEditor.relayout();
         refreshAnchor();
         refreshEntries();
     }
@@ -220,13 +254,14 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      */
     @Override
     public void updateScreen() {
+        if (nameEditor != null) nameEditor.update();
         refreshAnchor();
         refreshEntries();
         if (this.extraPollCooldown > 0) {
             this.extraPollCooldown--;
         }
         if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0) {
-            GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
+            GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
         }
     }
 
@@ -256,6 +291,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         this.anchorHeldSlot = player.inventory.currentItem;
         UUID resolved = resolveTerminalId();
         if (resolved != null && !resolved.equals(this.anchor)) {
+            closeNameEditor();
             this.anchor = resolved;
             this.displayedVersion = Long.MIN_VALUE;
             this.displayedEntryCount = -1;
@@ -334,7 +370,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             List<Entry> copy = new ArrayList<>(snapshot.entries);
             // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
             if (this.powerFilter != 0) {
-                copy.removeIf(entry -> !matchesPowerFilter(entry, this.powerFilter));
+                copy.removeIf(entry -> !DevicePowerFilter.matches(entry, this.powerFilter));
             }
             if (this.stateFilter != 0) {
                 copy.removeIf(entry -> !matchesStateFilter(entry, this.stateFilter));
@@ -349,27 +385,43 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         }
     }
 
-    /** 功率筛选判定：1=仅耗电（powerType 0）/ 2=仅发电（powerType 1）；其余模式不筛。 */
-    private static boolean matchesPowerFilter(Entry entry, int mode) {
-        return mode == 1 ? entry.powerType == 0 : entry.powerType == 1;
+    static long instantValue(Entry entry) {
+        if (entry.state == 3) return 0L;
+        return entry.instNet();
     }
 
-    /** 状态筛选判定：1=仅待机 / 2=仅运行 / 3=仅停机（复用三态 0/1/2）；其余模式不筛。 */
+    static double averageValue(Entry entry) {
+        if (entry.state == 3) return 0D;
+        return entry.avgNet();
+    }
+
+    String formatInstant(Entry entry) {
+        if (entry.state == 3) return formatEUt(0);
+        return formatEUt(entry.instNet());
+    }
+
+    String formatAverage(Entry entry) {
+        if (entry.state == 3) return formatAvg(0);
+        return formatAvg(entry.avgNet());
+    }
+
+    /** 状态筛选判定：1 待机 / 2 运行 / 3 停机 / 4 忽略；0 不筛。 */
     private static boolean matchesStateFilter(Entry entry, int mode) {
-        return mode == 1 ? entry.state == 0 : mode == 2 ? entry.state == 1 : entry.state == 2;
+        return mode == 0 || entry.state == mode - 1;
     }
 
     /** 排序比较器：NAME 字符串 / STATE int / INST long / AVG double / POS dim,x,y,z 字典序。 */
     private static int compareEntries(Entry a, Entry b, int column) {
         switch (column) {
             case PacketDeviceTerminalAction.COLUMN_NAME:
-                return a.name.compareToIgnoreCase(b.name);
+                return DeviceTerminalNames.plainName(a)
+                    .compareToIgnoreCase(DeviceTerminalNames.plainName(b));
             case PacketDeviceTerminalAction.COLUMN_STATE:
                 return Integer.compare(a.state, b.state);
             case PacketDeviceTerminalAction.COLUMN_INST:
-                return Long.compare(a.instNet(), b.instNet());
+                return Long.compare(instantValue(a), instantValue(b));
             case PacketDeviceTerminalAction.COLUMN_AVG:
-                return Double.compare(a.avgNet(), b.avgNet());
+                return Double.compare(averageValue(a), averageValue(b));
             case PacketDeviceTerminalAction.COLUMN_POS:
                 int c = Integer.compare(a.dim, b.dim);
                 if (c != 0) return c;
@@ -403,14 +455,11 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             this.showRecipe = !this.showRecipe;
             button.displayString = showRecipeText();
         } else if (button.id == BTN_POWER_FILTER) {
-            // 功率筛选三态轮换：全部→耗电→发电→全部（纯会话态，不发包不持久化）
-            this.powerFilter = (this.powerFilter + 1) % 3;
-            button.displayString = powerFilterText();
-            this.sortDirty = true;
-            refreshEntries();
+            this.powerFilterOpen = !this.powerFilterOpen;
+            this.powerFilterCursor = this.powerFilter;
         } else if (button.id == BTN_STATE_FILTER) {
-            // 状态筛选四态轮换：全部→待机→运行→停机→全部（纯会话态，不发包不持久化）
-            this.stateFilter = (this.stateFilter + 1) % 4;
+            // 状态筛选五态轮换：全部→待机→运行→停机→忽略→全部。
+            this.stateFilter = (this.stateFilter + 1) % 5;
             button.displayString = stateFilterText();
             this.sortDirty = true;
             refreshEntries();
@@ -436,21 +485,57 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             tr(this.showRecipe ? "gtswn.device.gui.on" : "gtswn.device.gui.off"));
     }
 
-    /** 功率筛选按钮文案（功率筛选: 全部/耗电/发电） */
+    /** 功率筛选按钮文案；完整选项在下拉中显示，按钮末尾留出箭头。 */
     private String powerFilterText() {
-        String value = tr(
-            this.powerFilter == 1 ? "gtswn.device.gui.filter.power.consume"
-                : this.powerFilter == 2 ? "gtswn.device.gui.filter.power.generate"
-                    : "gtswn.device.gui.filter.power.all");
-        return StatCollector.translateToLocalFormatted("gtswn.device.gui.filter.power", value);
+        String text = StatCollector
+            .translateToLocalFormatted("gtswn.device.gui.filter.power", tr(POWER_FILTER_KEYS[this.powerFilter]));
+        if (fontRendererObj.getStringWidth(text) > 76) text = fontRendererObj.trimStringToWidth(text, 70) + "...";
+        return text + " \u25BC";
     }
 
-    /** 状态筛选按钮文案（状态筛选: 全部/待机/运行/停机；三态名复用 gtswn.device.gui.state.*） */
+    private int powerMenuLeft() {
+        return guiLeft + 264;
+    }
+
+    private int powerMenuTop() {
+        return guiTop + 33;
+    }
+
+    private void selectPowerFilter(int mode) {
+        powerFilterOpen = false;
+        powerFilter = mode;
+        for (Object value : buttonList) {
+            GuiButton button = (GuiButton) value;
+            if (button.id == BTN_POWER_FILTER) button.displayString = powerFilterText();
+        }
+        sortDirty = true;
+        refreshEntries();
+    }
+
+    private void drawPowerFilter(int mouseX, int mouseY) {
+        int left = powerMenuLeft();
+        int top = powerMenuTop();
+        int bottom = top + POWER_MENU_ROW_HEIGHT * POWER_FILTER_KEYS.length + 6;
+        drawRect(left - 1, top - 1, left + POWER_MENU_WIDTH + 1, bottom + 1, GtswnGuiPalette.DIVIDER);
+        GtswnGuiDrawing
+            .drawNineSlice(GtswnGuiTextures.LIST_PANEL, 4, left, top, POWER_MENU_WIDTH, bottom - top, zLevel);
+        for (GtswnGuiButton option : powerFilterOptions) {
+            option.drawButton(mc, mouseX, mouseY);
+            if (option.id == powerFilter || option.id == powerFilterCursor) {
+                int color = option.id == powerFilter ? GtswnGuiPalette.TEXT_ACCENT : GtswnGuiPalette.TEXT_MUTED;
+                drawRect(left + 1, option.yPosition + 2, left + 3, option.yPosition + option.height - 2, color);
+            }
+        }
+    }
+
+    /** 状态筛选按钮文案：全部/待机/运行/停机/忽略。 */
     private String stateFilterText() {
         String value = tr(
             this.stateFilter == 1 ? "gtswn.device.gui.state.idle"
                 : this.stateFilter == 2 ? "gtswn.device.gui.state.running"
-                    : this.stateFilter == 3 ? "gtswn.device.gui.state.stopped" : "gtswn.device.gui.filter.state.all");
+                    : this.stateFilter == 3 ? "gtswn.device.gui.state.stopped"
+                        : this.stateFilter == 4 ? "gtswn.device.gui.state.ignored"
+                            : "gtswn.device.gui.filter.state.all");
         return StatCollector.translateToLocalFormatted("gtswn.device.gui.filter.state", value);
     }
 
@@ -515,17 +600,41 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
                 key));
     }
 
+    /** Recognition preference belongs to the opened terminal; the next server snapshot updates the row. */
+    void cycleRecognition(String key) {
+        if (anchor == null) return;
+        GTSWNPacketHandler.NETWORK.sendToServer(PacketDeviceTerminalAction.cycleRecognition(anchor, key));
+    }
+
     // ==================== 绘制 ====================
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        drawPanelBackground();
-        drawTitle();
-        drawColumnHeaders();
-        super.drawScreen(mouseX, mouseY, partialTicks);
-        drawBody(mouseX, mouseY);
-        drawFooter();
-        drawHoverTooltip(mouseX, mouseY);
+        mouseX = (int) (mouseX / uiScale);
+        mouseY = (int) (mouseY / uiScale);
+        GL11.glPushAttrib(GL11.GL_TRANSFORM_BIT);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glPushMatrix();
+        try {
+            GL11.glScalef(uiScale, uiScale, 1.0F);
+            drawPanelBackground();
+            drawTitle();
+            drawColumnHeaders();
+            super.drawScreen(mouseX, mouseY, partialTicks);
+            drawBody(mouseX, mouseY);
+            drawFooter();
+            if (powerFilterOpen) drawPowerFilter(mouseX, mouseY);
+            else if (nameEditor == null) drawHoverTooltip(mouseX, mouseY);
+            else nameEditor.draw(mouseX, mouseY);
+        } finally {
+            GL11.glMatrixMode(GL11.GL_MODELVIEW);
+            GL11.glPopMatrix();
+            GL11.glPopAttrib();
+        }
+    }
+
+    float renderScale() {
+        return uiScale;
     }
 
     /**
@@ -631,16 +740,52 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      * 替代旧 48 字符硬切）。
      */
     private void drawHoverTooltip(int mouseX, int mouseY) {
+        if (this.entryList != null && this.entryList.hoveredTeleport()) {
+            drawHoveringText(
+                Collections.singletonList(
+                    StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.teleport_cost", teleportCost())),
+                mouseX,
+                mouseY,
+                this.fontRendererObj);
+            return;
+        }
         Entry hovered = this.entryList == null ? null : this.entryList.hoveredEntry();
         if (hovered == null) {
             return;
         }
-        String recipeIn = hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
-        String recipeOut = hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
+        String recipeIn = hovered.state == 3 || hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
+        String recipeOut = hovered.state == 3 || hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();
-        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.input", hovered.instIn));
-        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.output", hovered.instOut));
-        lines.add(StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.net", hovered.instNet()));
+        lines.add(DeviceTerminalNames.localName(hovered));
+        lines.add(tr("gtswn.device.rename.hover"));
+        lines.add(tr("gtswn.device.gui.tooltip.recognition.cycle"));
+        lines.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.tooltip.recognition.mode",
+                tr(
+                    hovered.recognitionMode == 2 ? "gtswn.device.gui.recognition.ignored"
+                        : "gtswn.device.gui.recognition.track")));
+        if (hovered.linkNodeType != 0) {
+            lines.add(
+                tr(
+                    "gtswn.device.gui.tooltip.link."
+                        + (hovered.linkNodeType == 3 ? "both" : hovered.linkNodeType == 1 ? "input" : "output")));
+        }
+        lines.add(
+            tr(
+                "gtswn.device.gui.tooltip.evidence." + (hovered.evidenceKind == 1 ? "model"
+                    : hovered.evidenceKind == 2 ? "warming" : hovered.evidenceKind == 3 ? "unavailable" : "measured")));
+        lines.add(
+            StatCollector
+                .translateToLocalFormatted("gtswn.device.gui.tooltip.input", hovered.state == 3 ? 0L : hovered.instIn));
+        lines.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.tooltip.output",
+                hovered.state == 3 ? 0L : hovered.instOut));
+        lines.add(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.tooltip.net",
+                hovered.state == 3 ? 0L : hovered.instNet()));
         lines.add(tr("gtswn.device.gui.tooltip.recipe_title"));
         if (recipeIn.isEmpty() && recipeOut.isEmpty()) {
             lines.add(tr("gtswn.device.gui.tooltip.recipe_none"));
@@ -670,6 +815,24 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int button) {
+        if (nameEditor != null) {
+            nameEditor.mouseClicked(mouseX, mouseY, button);
+            return;
+        }
+        if (powerFilterOpen) {
+            if (button == 0) {
+                for (GtswnGuiButton option : powerFilterOptions) {
+                    if (option.mousePressed(mc, mouseX, mouseY)) {
+                        option.func_146113_a(mc.getSoundHandler());
+                        selectPowerFilter(option.id);
+                        return;
+                    }
+                }
+            }
+            // 外部点击只关闭菜单，不能穿透触发下方排序、重命名或传送。
+            powerFilterOpen = false;
+            return;
+        }
         super.mouseClicked(mouseX, mouseY, button);
         int column = headerColumnAt(mouseX, mouseY);
         if (column >= 0) {
@@ -683,6 +846,20 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     public void handleMouseInput() {
+        if (powerFilterOpen) {
+            int wheel = Mouse.getEventDWheel();
+            if (wheel != 0) {
+                powerFilterCursor = Math
+                    .floorMod(powerFilterCursor - Integer.signum(wheel), DevicePowerFilter.MODE_COUNT);
+                return;
+            }
+            super.handleMouseInput();
+            return;
+        }
+        if (nameEditor != null) {
+            super.handleMouseInput();
+            return;
+        }
         if (this.entryList != null && this.entryList.handleMouseInput()) {
             // G5-3 翻页按需：滚轮在列表区滚动且服务端增量批次未到齐 → 限频追加请求接力续页
             requestPendingPages();
@@ -704,11 +881,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             return;
         }
         this.extraPollCooldown = EXTRA_POLL_INTERVAL_TICKS;
-        GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestDeviceTerminalData());
+        GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
     }
 
     @Override
     protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
+        if (nameEditor != null || powerFilterOpen) return;
         super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
         if (this.entryList != null) {
             this.entryList.mouseClickMove(mouseX, mouseY, clickedMouseButton);
@@ -717,7 +895,9 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     @Override
     protected void mouseMovedOrUp(int mouseX, int mouseY, int which) {
+        if (nameEditor != null) return;
         super.mouseMovedOrUp(mouseX, mouseY, which);
+        if (powerFilterOpen) return;
         if (this.entryList != null) {
             this.entryList.mouseReleased(mouseX, mouseY, which);
         }
@@ -735,7 +915,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         return this.showRecipe;
     }
 
-    /** @param state 三态 0/1/2（越界回退待机文案；lang 值自带 § 颜色码） */
+    /** @param state 状态 0/1/2/3（越界回退待机文案；lang 值自带 § 颜色码） */
     String stateText(byte state) {
         int idx = state >= 0 && state < STATE_KEYS.length ? state : 0;
         return tr(STATE_KEYS[idx]);
@@ -776,7 +956,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** @return 传送按钮经验消耗（Config.deviceTeleportXPCost，0=免费且按钮只显示图标；服务端动作队列仍权威复查） */
     int teleportCost() {
-        return Config.deviceTeleportXPCost;
+        return DeviceTerminalClientCache.teleportCost();
     }
 
     /** @return 客户端玩家当前经验等级（传送按钮红/绿显示用） */
@@ -834,5 +1014,49 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 本地化工具（{@link GuiDeviceEntryList} 同包静态共用） */
     static String trStatic(String key) {
         return StatCollector.translateToLocal(key);
+    }
+
+    void openNameEditor(Entry entry, int mouseX, int mouseY) {
+        if (anchor == null) return;
+        powerFilterOpen = false;
+        closeNameEditor();
+        nameEditor = new GuiDeviceNameEditor(this, anchor, entry, mouseX, mouseY);
+    }
+
+    void closeNameEditor() {
+        if (nameEditor != null) {
+            nameEditor.close();
+            nameEditor = null;
+        }
+    }
+
+    void editorTooltip(List<String> lines, int mouseX, int mouseY) {
+        drawHoveringText(lines, mouseX, mouseY, fontRendererObj);
+    }
+
+    @Override
+    protected void keyTyped(char character, int keyCode) {
+        if (nameEditor != null) {
+            nameEditor.keyTyped(character, keyCode);
+            return;
+        }
+        if (powerFilterOpen) {
+            if (keyCode == Keyboard.KEY_ESCAPE) powerFilterOpen = false;
+            else if (keyCode == Keyboard.KEY_UP || keyCode == Keyboard.KEY_DOWN) {
+                powerFilterCursor = Math
+                    .floorMod(powerFilterCursor + (keyCode == Keyboard.KEY_UP ? -1 : 1), DevicePowerFilter.MODE_COUNT);
+            } else if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
+                selectPowerFilter(powerFilterCursor);
+            }
+            return;
+        }
+        super.keyTyped(character, keyCode);
+    }
+
+    @Override
+    public void onGuiClosed() {
+        powerFilterOpen = false;
+        closeNameEditor();
+        super.onGuiClosed();
     }
 }

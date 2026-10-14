@@ -63,4 +63,89 @@ public final class FifoMath {
     public static double avg(long runningSum, int count) {
         return count > 0 ? (double) runningSum / count : 0D;
     }
+
+    /** Fractional interval rates must survive persistence and the rolling average. */
+    public static double rebuildSum(double[] fifo, int count) {
+        int n = Math.min(Math.max(count, 0), fifo.length);
+        double sum = 0;
+        for (int i = 0; i < n; i++) sum += fifo[i];
+        return sum;
+    }
+
+    public static double push(double[] fifo, int idx, int count, double sum, double value) {
+        if (idx < 0 || idx >= fifo.length) return sum;
+        int n = Math.min(Math.max(count, 0), fifo.length);
+        boolean covered = idx < n;
+        boolean entering = !covered && idx == count && count < fifo.length;
+        return sum - (covered ? fifo[idx] : 0.0) + (covered || entering ? value : 0.0);
+    }
+
+    public static double avg(double sum, int count) {
+        return count > 0 ? sum / count : 0.0;
+    }
+
+    /** Sum scaled by window capacity: sixty finite large samples cannot overflow their rolling mean. */
+    public static double rebuildScaledSum(double[] fifo, int count) {
+        return rebuildScaledSum(fifo, count, null, 0);
+    }
+
+    public static double rebuildScaledSum(double[] fifo, int count, int[] nonzero, int channel) {
+        if (fifo.length == 0) return 0;
+        int n = Math.min(Math.max(count, 0), fifo.length);
+        double sum = 0;
+        int nonzeroCount = 0;
+        for (int i = 0; i < n; i++) {
+            double value = finiteAmount(fifo[i]);
+            if (value > 0) nonzeroCount++;
+            sum = finiteAdd(sum, value / fifo.length);
+        }
+        if (nonzero != null) nonzero[channel] = nonzeroCount;
+        return sum;
+    }
+
+    public static double pushScaled(double[] fifo, int idx, int count, double sum, double value) {
+        if (idx < 0 || idx >= fifo.length) return sum;
+        int n = Math.min(Math.max(count, 0), fifo.length);
+        boolean covered = idx < n;
+        boolean entering = !covered && idx == count && count < fifo.length;
+        double next = Math.max(0, sum - (covered ? finiteAmount(fifo[idx]) / fifo.length : 0));
+        return finiteAdd(next, covered || entering ? finiteAmount(value) / fifo.length : 0);
+    }
+
+    /** The cached nonzero count removes floating residuals exactly when the last real sample leaves the window. */
+    public static double pushScaled(double[] fifo, int idx, int count, double sum, double value, int[] nonzero,
+        int channel) {
+        if (idx < 0 || idx >= fifo.length) return sum;
+        int n = Math.min(Math.max(count, 0), fifo.length);
+        boolean covered = idx < n;
+        boolean entering = !covered && idx == count && count < fifo.length;
+        if (covered && finiteAmount(fifo[idx]) > 0) nonzero[channel]--;
+        if ((covered || entering) && finiteAmount(value) > 0) nonzero[channel]++;
+        if (nonzero[channel] == 0) return 0;
+        double next = pushScaled(fifo, idx, count, sum, value);
+        double evicted = covered ? finiteAmount(fifo[idx]) / fifo.length : 0;
+        if (evicted > 0 && next <= 4 * Math.ulp(evicted)) {
+            // Removing a dominant sample can expose smaller values previously lost to rounding.
+            // The caller has not written fifo[idx] yet, so rebuild its post-write state explicitly.
+            next = 0;
+            int nextCount = n + (entering ? 1 : 0);
+            for (int i = 0; i < nextCount; i++) {
+                double sample = i == idx ? value : fifo[i];
+                next = finiteAdd(next, finiteAmount(sample) / fifo.length);
+            }
+        }
+        return next;
+    }
+
+    public static double scaledAvg(double scaledSum, int count, int capacity) {
+        return count > 0 && capacity > 0 ? finiteAmount((scaledSum / count) * capacity) : 0;
+    }
+
+    private static double finiteAmount(double amount) {
+        return Double.isNaN(amount) || amount <= 0 ? 0 : Math.min(amount, Double.MAX_VALUE);
+    }
+
+    private static double finiteAdd(double a, double b) {
+        return a >= Double.MAX_VALUE - b ? Double.MAX_VALUE : a + b;
+    }
 }

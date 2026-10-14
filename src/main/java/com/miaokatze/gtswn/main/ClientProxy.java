@@ -97,6 +97,10 @@ public class ClientProxy extends CommonProxy {
         // 【v1.8.18】preInit 已完成配置加载，此时构造才能让 HUD 数据集容量读到
         // 用户配置的检测间隔（字段初始化器会先于 preInit 执行，只能拿到编译期默认值）
         this.hudController = new HudController();
+        com.miaokatze.gtswn.client.PortableMonitorClientCache.registerKey();
+        FMLCommonHandler.instance()
+            .bus()
+            .register(new com.miaokatze.gtswn.client.PortableMonitorClientCache.TickListener());
 
         ClientCommandHandler.instance.registerCommand(new CommandGTSWNClient());
 
@@ -111,6 +115,15 @@ public class ClientProxy extends CommonProxy {
         // 节点显形渲染器（RenderWorldLastEvent 穿墙线框 + WorldEvent.Unload 清缓存）：
         // 包 12 显形回包经 handleSyncNodeReveal 切主线程写缓存后由此绘制
         MinecraftForge.EVENT_BUS.register(new WirelessNodeRevealRenderer());
+        com.miaokatze.gtswn.client.DeviceEnergyWorldRenderer deviceHeatmap = new com.miaokatze.gtswn.client.DeviceEnergyWorldRenderer();
+        MinecraftForge.EVENT_BUS.register(deviceHeatmap);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(deviceHeatmap);
+        MinecraftForge.EVENT_BUS.register(com.miaokatze.gtswn.client.DeviceTerminalAnchorRenderer.INSTANCE);
+        FMLCommonHandler.instance()
+            .bus()
+            .register(com.miaokatze.gtswn.client.DeviceTerminalAnchorRenderer.INSTANCE);
         // 两个终端共享 Alt+右击空气蓄力，由既有量子手势处理器的 FML Tick 推进。
         MinecraftForge.EVENT_BUS.register(new RevealTriggerHandler());
         QuantumIncorporationClientHandler incorporation = new QuantumIncorporationClientHandler();
@@ -261,9 +274,13 @@ public class ClientProxy extends CommonProxy {
         final java.util.List<com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry> page = new java.util.ArrayList<>(
             msg.getEntries());
         // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
-        Minecraft.getMinecraft()
-            .func_152344_a(
-                () -> DeviceTerminalClientCache.receivePage(terminalId, version, pageIndex, pageTotal, page));
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World receivedWorld = minecraft.theWorld;
+        minecraft.func_152344_a(() -> {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld) {
+                DeviceTerminalClientCache.receivePage(terminalId, version, pageIndex, pageTotal, page);
+            }
+        });
     }
 
     /**
@@ -342,6 +359,34 @@ public class ClientProxy extends CommonProxy {
         mc.displayGuiScreen(new GuiDeviceInfoTerminal(ItemDeviceInfoTerminal.readTerminalId(stack), stack));
     }
 
+    @Override
+    public void openDeviceInfoTerminalSettingsGui() {
+        Minecraft.getMinecraft()
+            .displayGuiScreen(new com.miaokatze.gtswn.client.gui.GuiDeviceTerminalSettings());
+    }
+
+    @Override
+    public boolean isDeviceTerminalVisualizationActive() {
+        return com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.isActiveHeld();
+    }
+
+    @Override
+    public boolean handleDeviceVisualizationRightClick() {
+        return com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.handleRightClick();
+    }
+
+    @Override
+    public void handleSyncDeviceTerminalSettings(com.miaokatze.gtswn.network.PacketSyncDeviceTerminalSettings message) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World receivedWorld = minecraft.theWorld;
+        minecraft.func_152344_a(() -> {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld) {
+                DeviceTerminalClientCache
+                    .handleSettings(message.teleportCost, message.canEdit, message.samplingSeconds);
+            }
+        });
+    }
+
     /**
      * HUD 模式切换意图的客户端落地（O2-B10：物品侧经 @SidedProxy 发意图，本方法转
      * {@link HudController#applyHudToggle}；同 tick 执行，与原静态 setter 直调语义一致）。
@@ -352,9 +397,50 @@ public class ClientProxy extends CommonProxy {
     }
 
     @Override
+    public void handleSyncDeviceTerminalVisualState(
+        com.miaokatze.gtswn.network.PacketSyncDeviceTerminalVisualState message) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World receivedWorld = minecraft.theWorld;
+        minecraft.func_152344_a(() -> {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld) {
+                if (message.hasResult) {
+                    com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.handleResult(
+                        message.terminalId,
+                        message.result,
+                        message.targetKey,
+                        message.cooldownTicks,
+                        message.x,
+                        message.y,
+                        message.z);
+                } else {
+                    com.miaokatze.gtswn.client.DeviceTerminalVisualizationState
+                        .apply(message.terminalId, message.enabled);
+                }
+            }
+        });
+    }
+
+    @Override
     public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {
         Minecraft.getMinecraft()
             .displayGuiScreen(new GuiNetworkInfoPanel(panel));
+    }
+
+    @Override
+    public void openPortableMonitorGui(ItemStack stack) {
+        Minecraft.getMinecraft()
+            .displayGuiScreen(new com.miaokatze.gtswn.client.gui.GuiPortableMonitor(stack));
+    }
+
+    @Override
+    public void handleSyncPortableMonitor(com.miaokatze.gtswn.network.PacketSyncPortableMonitor message) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        EntityPlayer receivedPlayer = minecraft.thePlayer;
+        minecraft.func_152344_a(() -> {
+            if (receivedPlayer != null && receivedPlayer == minecraft.thePlayer) {
+                com.miaokatze.gtswn.client.PortableMonitorClientCache.receive(message);
+            }
+        });
     }
 
     @Override

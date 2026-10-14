@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
+import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -38,6 +41,9 @@ public class PacketSyncDeviceTerminalData implements IMessage {
 
     /** 条目总数硬上限（与 Config.deviceTerminalMaxMachines 默认一致，防异常包体内存暴涨） */
     public static final int MAX_ENTRIES = 1024;
+    /** v1.8.60 carries electric data only; reject older layouts before reading their entries. */
+    private static final int WIRE_MAGIC = 0x47545358;
+    private static final int WIRE_SCHEMA = 2;
 
     /** name 字段长度上限（字符） */
     public static final int MAX_NAME_LEN = 64;
@@ -81,6 +87,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
 
     @Override
     public void toBytes(ByteBuf buf) {
+        buf.writeInt(WIRE_MAGIC);
+        buf.writeByte(WIRE_SCHEMA);
         ByteBufUtils.writeUTF8String(buf, terminalId.toString());
         buf.writeLong(version);
         buf.writeInt(pageIndex);
@@ -102,12 +110,23 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             buf.writeInt(entry.z);
             ByteBufUtils.writeUTF8String(buf, entry.recipeIn);
             ByteBufUtils.writeUTF8String(buf, entry.recipeOut);
+            buf.writeInt(entry.metaTileId);
+            buf.writeByte(entry.capabilityMask);
+            buf.writeByte(entry.recognitionMode);
+            buf.writeByte(entry.evidenceKind);
+            buf.writeByte(entry.linkNodeType);
+            ByteBufUtils.writeUTF8String(buf, entry.displayName);
+            buf.writeByte(entry.nameColor);
+            buf.writeBoolean(entry.nameBold);
         }
     }
 
     @Override
     public void fromBytes(ByteBuf buf) {
+        terminalId = null;
+        entries.clear();
         try {
+            if (buf.readableBytes() < 5 || buf.readInt() != WIRE_MAGIC || buf.readUnsignedByte() != WIRE_SCHEMA) return;
             terminalId = UUID.fromString(ByteBufUtils.readUTF8String(buf));
             version = buf.readLong();
             pageIndex = buf.readInt();
@@ -134,6 +153,14 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     int z = buf.readInt();
                     String recipeIn = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
                     String recipeOut = truncate(ByteBufUtils.readUTF8String(buf), MAX_RECIPE_LEN);
+                    int metaTileId = buf.readInt();
+                    byte capabilityMask = buf.readByte();
+                    byte recognitionMode = buf.readByte();
+                    byte evidenceKind = buf.readByte();
+                    byte linkNodeType = buf.readByte();
+                    String displayName = ByteBufUtils.readUTF8String(buf);
+                    byte nameColor = buf.readByte();
+                    boolean nameBold = buf.readBoolean();
                     // key 正则校验：非法键跳过该条（不阻断后续条目）
                     if (key == null || !KEY_PATTERN.matcher(key)
                         .matches()) {
@@ -154,7 +181,15 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                             y,
                             z,
                             recipeIn,
-                            recipeOut));
+                            recipeOut,
+                            metaTileId,
+                            evidenceKind,
+                            linkNodeType,
+                            displayName,
+                            nameColor,
+                            nameBold,
+                            capabilityMask,
+                            recognitionMode));
                 } catch (Exception e) {
                     // 单条损坏（字符串长度越界等）：截断解析，保留已解析前缀
                     break;
@@ -260,22 +295,149 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         /** 当前执行配方输出侧描述（输出快照，近似，≤{@value #MAX_RECIPE_LEN} 字符） */
         public final String recipeOut;
 
+        public final String displayName;
+        public final byte nameColor;
+        public final boolean nameBold;
+        public final int metaTileId;
+        public final byte capabilityMask;
+        public final byte recognitionMode;
+        public final byte evidenceKind;
+        public final byte linkNodeType;
+
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                -1,
+                (byte) 2,
+                (byte) 0);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte evidenceKind, byte linkNodeType) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                metaTileId,
+                evidenceKind,
+                linkNodeType,
+                "",
+                (byte) 15,
+                false);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                metaTileId,
+                evidenceKind,
+                linkNodeType,
+                displayName,
+                nameColor,
+                nameBold,
+                DevicePowerCapabilities.defaultMask(powerType));
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
+            byte capabilityMask) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                metaTileId,
+                evidenceKind,
+                linkNodeType,
+                displayName,
+                nameColor,
+                nameBold,
+                capabilityMask,
+                (byte) 0);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
+            byte capabilityMask, byte recognitionMode) {
+            this.recognitionMode = DeviceTerminalRecognitionMode.migrate(recognitionMode);
+            boolean ignored = this.recognitionMode == 2 || state == 3;
+            this.capabilityMask = ignored ? 0 : (byte) (capabilityMask & 3);
+            String normalized = DeviceTerminalNameRules.normalize(displayName);
+            this.displayName = normalized == null ? "" : normalized;
+            this.nameColor = (byte) (!this.displayName.isEmpty() && DeviceTerminalNameRules.validColor(nameColor)
+                ? nameColor
+                : DeviceTerminalNameRules.DEFAULT_COLOR);
+            this.nameBold = !this.displayName.isEmpty() && nameBold;
+            this.metaTileId = metaTileId;
+            this.evidenceKind = ignored ? 0 : evidenceKind >= 0 && evidenceKind <= 3 ? evidenceKind : (byte) 3;
+            this.linkNodeType = (byte) (linkNodeType & 3);
             this.key = key == null ? "" : key;
             this.name = truncate(name, MAX_NAME_LEN);
-            this.state = state;
+            this.state = ignored ? (byte) 3 : state;
             this.powerType = powerType == 1 ? (byte) 1 : (byte) 0;
-            this.instIn = instIn;
-            this.instOut = instOut;
-            this.avgIn = avgIn;
-            this.avgOut = avgOut;
+            this.instIn = ignored ? 0 : instIn;
+            this.instOut = ignored ? 0 : instOut;
+            this.avgIn = ignored ? 0 : avgIn;
+            this.avgOut = ignored ? 0 : avgOut;
             this.dim = dim;
             this.x = x;
             this.y = y;
             this.z = z;
-            this.recipeIn = truncate(recipeIn, MAX_RECIPE_LEN);
-            this.recipeOut = truncate(recipeOut, MAX_RECIPE_LEN);
+            this.recipeIn = ignored ? "" : truncate(recipeIn, MAX_RECIPE_LEN);
+            this.recipeOut = ignored ? "" : truncate(recipeOut, MAX_RECIPE_LEN);
         }
     }
 

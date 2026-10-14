@@ -37,6 +37,8 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private int top;
     private final int xSize = 430;
     private final int ySize = 285;
+    private GuiCanvas canvas;
+    private int screenWidth, screenHeight;
     // AE 标签页按钮 ID 常量
     private static final int TAB_EU = 100;
     private static final int TAB_AE_CHART = 101;
@@ -51,6 +53,15 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private GuiTextField lineField;
     private GuiTextField smoothingField;
     private GuiTextField screenColorField;
+    private static final int PALETTE_PAGE = 90;
+    private static final int PALETTE_TOGGLE = 91;
+    private static final String[] PALETTE_KEYS = { "energyFlatColor", "energyUpColor", "energyDownColor",
+        "rateFlatColor", "rateUpColor", "rateDownColor" };
+    private final GuiTextField[] paletteFields = new GuiTextField[6];
+    private boolean palettePage, paletteEnabled;
+    private boolean dispatchingMouse, deferredGuiRefresh;
+    private String chartDraft = "";
+    private String paletteDraft = "";
 
     // AE 图表配置文本框（tab=1）
     private GuiTextField aeAxisMinField;
@@ -106,8 +117,22 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     }
 
     @Override
+    public void setWorldAndResolution(net.minecraft.client.Minecraft client, int width, int height) {
+        screenWidth = width;
+        screenHeight = height;
+        super.setWorldAndResolution(client, width, height);
+    }
+
+    @Override
     @SuppressWarnings("unchecked")
     public void initGui() {
+        if (dispatchingMouse) {
+            deferredGuiRefresh = true;
+            return;
+        }
+        canvas = new GuiCanvas(screenWidth, screenHeight, xSize, ySize);
+        width = canvas.width;
+        height = canvas.height;
         buttonList.clear();
         textFields.clear();
         left = (width - xSize) / 2;
@@ -153,6 +178,18 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
     /** 初始化 EU 标签页原有按钮 0-8 与 textFields（从原 initGui 抽取） */
     private void initEUTabControls() {
+        buttonList.add(
+            new GtswnGuiButton(
+                PALETTE_PAGE,
+                left + 320,
+                top + 253,
+                98,
+                16,
+                tr(palettePage ? "gtswn.network_info.gui.chart_settings" : "gtswn.network_info.gui.trend_colors")));
+        if (palettePage) {
+            initPaletteControls();
+            return;
+        }
         int y1 = top + 52;
         int y2 = top + 72;
         buttonList.add(
@@ -216,6 +253,71 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fieldY += 22;
         chartBgField = addField(left + 104, fieldY, 66, panel.getChartBackgroundColorText());
         screenColorField = addField(left + 250, fieldY, 66, panel.getScreenBackgroundColorText());
+        String[] keys = { "energyMin", "energyMax", "eutMin", "eutMax", "border", "chartBg", "line", "smoothing",
+            "screenColor" };
+        GuiTextField[] fields = { energyMinField, energyMaxField, eutMinField, eutMaxField, borderField, chartBgField,
+            lineField, smoothingField, screenColorField };
+        for (String entry : chartDraft.split("\n")) {
+            int split = entry.indexOf('=');
+            if (split < 0) continue;
+            for (int i = 0; i < keys.length; i++)
+                if (keys[i].equals(entry.substring(0, split))) fields[i].setText(entry.substring(split + 1));
+        }
+
+    }
+
+    /** EU direction colours use their own page so all six native fields fit the existing canvas. */
+    private void initPaletteControls() {
+        com.miaokatze.gtswn.common.panel.TrendLinePalette palette = panel.getTrendLinePalette();
+        paletteEnabled = palette.enabled;
+        String[] values = { com.miaokatze.gtswn.common.panel.PanelConfigStore.colorText(palette.energyFlat),
+            com.miaokatze.gtswn.common.panel.PanelConfigStore.colorText(palette.energyUp),
+            com.miaokatze.gtswn.common.panel.PanelConfigStore.colorText(palette.energyDown),
+            com.miaokatze.gtswn.common.panel.PanelConfigStore.colorText(palette.rateFlat),
+            com.miaokatze.gtswn.common.panel.PanelConfigStore.colorText(palette.rateUp),
+            com.miaokatze.gtswn.common.panel.PanelConfigStore.colorText(palette.rateDown) };
+        for (String line : paletteDraft.split("\n")) {
+            int split = line.indexOf('=');
+            if (split < 0) continue;
+            String key = line.substring(0, split), value = line.substring(split + 1);
+            if ("trendDirectionColors".equals(key)) paletteEnabled = Boolean.parseBoolean(value);
+            for (int i = 0; i < PALETTE_KEYS.length; i++) {
+                if (PALETTE_KEYS[i].equals(key)) values[i] = value;
+            }
+        }
+        buttonList.add(
+            new GtswnGuiButton(
+                PALETTE_TOGGLE,
+                left + 12,
+                top + 52,
+                230,
+                16,
+                bool(tr("gtswn.network_info.gui.trend_regions"), paletteEnabled)));
+        buttonList.add(new GtswnGuiButton(8, left + 344, top + 52, 74, 16, tr("gtswn.network_info.gui.apply")));
+        for (int i = 0; i < paletteFields.length; i++) {
+            paletteFields[i] = addField(left + 130 + i % 3 * 94, top + 120 + i / 3 * 48, 70, values[i]);
+            paletteFields[i].setMaxStringLength(7);
+        }
+    }
+
+    private String buildPaletteConfig() {
+        StringBuilder payload = new StringBuilder("trendDirectionColors=" + paletteEnabled);
+        for (int i = 0; i < PALETTE_KEYS.length; i++) {
+            payload.append('\n')
+                .append(PALETTE_KEYS[i])
+                .append('=')
+                .append(paletteFields[i].getText());
+        }
+        return payload.toString();
+    }
+
+    private void drawPaletteSettings() {
+        drawFieldLabel(tr("gtswn.network_info.gui.trend_flat"), left + 130, top + 106);
+        drawFieldLabel(tr("gtswn.network_info.gui.trend_up"), left + 224, top + 106);
+        drawFieldLabel(tr("gtswn.network_info.gui.trend_down"), left + 318, top + 106);
+        drawFieldLabel(tr("gtswn.network_info.gui.chart.eu"), left + 12, top + 124);
+        drawFieldLabel(tr("gtswn.network_info.gui.chart.eut"), left + 12, top + 172);
+        drawFieldLabel(tr("gtswn.network_info.gui.trend_color_hint"), left + 12, top + 210);
     }
 
     /** 初始化 AE 走势图配置标签页控件（tab=1），布局与 EU 标签页对称 */
@@ -387,6 +489,19 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == PALETTE_PAGE) {
+            if (palettePage) paletteDraft = buildPaletteConfig();
+            else chartDraft = buildChartConfig();
+            palettePage = !palettePage;
+            initGui();
+            return;
+        }
+        if (button.id == PALETTE_TOGGLE) {
+            paletteEnabled = !paletteEnabled;
+            button.displayString = bool(tr("gtswn.network_info.gui.trend_regions"), paletteEnabled);
+            return;
+        }
+
         if (button.id == TAB_EU || button.id == TAB_AE_CHART || button.id == TAB_AE_MONITOR) {
             int newTab = (button.id == TAB_EU) ? 0 : (button.id == TAB_AE_CHART ? 1 : 2);
             // 本地立即重建，服务端 setCurrentTab 后通过 getDescriptionPacket 回写，updateScreen 会再次比对确保一致
@@ -400,7 +515,12 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         if (button.id == 8) {
             // EU 图表配置应用
             GTSWNPacketHandler.NETWORK.sendToServer(
-                new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, buildChartConfig()));
+                new PacketUpdateNetworkInfoPanelConfig(
+                    panel.xCoord,
+                    panel.yCoord,
+                    panel.zCoord,
+                    (palettePage ? chartDraft + "\n" + buildPaletteConfig()
+                        : buildChartConfig() + "\n" + paletteDraft)));
         } else if (button.id == AE_APPLY_BUTTON) {
             // AE 图表配置应用
             GTSWNPacketHandler.NETWORK.sendToServer(
@@ -580,6 +700,16 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        org.lwjgl.opengl.GL11.glPushMatrix();
+        try {
+            org.lwjgl.opengl.GL11.glScalef(canvas.scale, canvas.scale, 1);
+            drawCanvas(canvas.mouse(mouseX), canvas.mouse(mouseY), partialTicks);
+        } finally {
+            org.lwjgl.opengl.GL11.glPopMatrix();
+        }
+    }
+
+    private void drawCanvas(int mouseX, int mouseY, float partialTicks) {
         // 移除 drawDefaultBackground()，避免 AE 实时监控等标签页出现巨大 dirt 背景；
         // 面板背景由 drawPanelBackground() 统一绘制。
         drawPanelBackground();
@@ -606,6 +736,11 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
     /** 绘制 EU 标签页（原 drawScreen 主体内容，去掉 super.drawScreen 与 textField 绘制） */
     private void drawEUTab() {
+        if (palettePage) {
+            drawPaletteSettings();
+            return;
+        }
+
         fontRendererObj.drawString(
             StatCollector.translateToLocalFormatted("gtswn.network_info.owner", safe(panel.getOwnerName())),
             left + 12,
@@ -782,7 +917,16 @@ public class GuiNetworkInfoPanel extends GuiScreen {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
-        super.mouseClicked(mouseX, mouseY, mouseButton);
+        dispatchingMouse = true;
+        try {
+            super.mouseClicked(mouseX, mouseY, mouseButton);
+        } finally {
+            dispatchingMouse = false;
+            if (deferredGuiRefresh) {
+                deferredGuiRefresh = false;
+                initGui();
+            }
+        }
         if (lastKnownTab == 2 && aeMonitorList != null) {
             aeMonitorList.mouseClicked(mouseX, mouseY, mouseButton);
         }
@@ -818,16 +962,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
      * 色值琥珀化（GtswnGuiPalette.DIVIDER，契约 §5）。继续不调用 drawDefaultBackground。
      */
     private void drawPanelBackground() {
-        GtswnGuiDrawing.bind(GtswnGuiTextures.PANEL_NETWORK_INFO);
-        GtswnGuiDrawing.drawRegion(
-            GtswnGuiTextures.PANEL_NETWORK_INFO,
-            left,
-            top,
-            0,
-            0,
-            GtswnGuiTextures.PANEL_NETWORK_INFO_W,
-            GtswnGuiTextures.PANEL_NETWORK_INFO_H,
-            this.zLevel);
+        GtswnGuiDrawing.drawNetworkPanel(left, top, xSize, ySize, this.zLevel);
         // 3 条区域分隔线（y+48/96/144，仍代码绘制）
         drawRect(left + 8, top + 48, left + xSize - 8, top + 49, GtswnGuiPalette.DIVIDER);
         drawRect(left + 8, top + 96, left + xSize - 8, top + 97, GtswnGuiPalette.DIVIDER);
@@ -840,6 +975,14 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         field.setText(value == null ? "" : value);
         textFields.add(field);
         return field;
+    }
+
+    int[] framebufferClip(int x, int y, int w, int h) {
+        net.minecraft.client.gui.ScaledResolution resolution = new net.minecraft.client.gui.ScaledResolution(
+            mc,
+            mc.displayWidth,
+            mc.displayHeight);
+        return canvas.scissor(x, y, w, h, resolution.getScaleFactor(), mc.displayWidth, mc.displayHeight);
     }
 
     private void drawChartSettings() {

@@ -52,7 +52,14 @@ public class PacketSyncDeviceTerminalDataTest {
             64,
             20,
             "",
-            "eu/t output");
+            "eu/t output",
+            1234,
+            (byte) 1,
+            (byte) 3,
+            "Generator alias",
+            (byte) 12,
+            true,
+            (byte) 14);
         List<Entry> entries = Arrays.asList(consume, generate);
         PacketSyncDeviceTerminalData original = new PacketSyncDeviceTerminalData(terminalId, 42L, 1, 3, 2, entries);
 
@@ -108,6 +115,92 @@ public class PacketSyncDeviceTerminalDataTest {
         assertEquals("eu/t output", second.recipeOut);
         assertEquals(900L, second.instNet());
         assertEquals(750.5D, second.avgNet(), 0D);
+        assertEquals("Generator alias", second.displayName);
+        assertEquals((byte) 12, second.nameColor);
+        assertTrue(second.nameBold);
+        assertEquals(1234, second.metaTileId);
+        assertEquals((byte) 2, second.capabilityMask);
+        assertEquals((byte) 1, second.evidenceKind);
+        assertEquals((byte) 3, second.linkNodeType);
         assertTrue("字段序回归应保留两条目顺序", first.key.startsWith("-1:") && second.key.startsWith("0:"));
+    }
+
+    @Test
+    public void schemaMismatchAndOldUnmarkedPacketsCannotBecomeValidEntries() {
+        ByteBuf old = Unpooled.buffer();
+        cpw.mods.fml.common.network.ByteBufUtils.writeUTF8String(
+            old,
+            UUID.randomUUID()
+                .toString());
+        old.writeLong(99);
+        PacketSyncDeviceTerminalData decoded = new PacketSyncDeviceTerminalData();
+        decoded.fromBytes(old);
+        org.junit.Assert.assertNull(decoded.getTerminalId());
+        assertTrue(
+            decoded.getEntries()
+                .isEmpty());
+
+        ByteBuf current = Unpooled.buffer();
+        new PacketSyncDeviceTerminalData(UUID.randomUUID(), 1, 0, 1, 0, java.util.Collections.emptyList())
+            .toBytes(current);
+        current.setByte(4, 1);
+        decoded.fromBytes(current);
+        org.junit.Assert.assertNull(decoded.getTerminalId());
+        assertTrue(
+            decoded.getEntries()
+                .isEmpty());
+    }
+
+    @Test
+    public void ignoredWireEntryCannotLeakAnyPowerOrRecipeValues() {
+        Entry ignored = new Entry(
+            "0:1:64:2",
+            "Native",
+            (byte) 1,
+            (byte) 0,
+            20,
+            30,
+            40,
+            50,
+            0,
+            1,
+            64,
+            2,
+            "recipe",
+            "output",
+            123,
+            (byte) 1,
+            (byte) 3,
+            "Alias",
+            (byte) 7,
+            true,
+            (byte) 15,
+            (byte) 2);
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            new PacketSyncDeviceTerminalData(
+                UUID.randomUUID(),
+                1,
+                0,
+                1,
+                1,
+                java.util.Collections.singletonList(ignored)).toBytes(bytes);
+            PacketSyncDeviceTerminalData decoded = new PacketSyncDeviceTerminalData();
+            decoded.fromBytes(bytes);
+            Entry entry = decoded.getEntries()
+                .get(0);
+            assertEquals(3, entry.state);
+            assertEquals(2, entry.recognitionMode);
+            assertEquals(0, entry.capabilityMask);
+            assertEquals(0, entry.instIn + entry.instOut);
+            assertEquals(0, entry.avgIn + entry.avgOut, 0);
+            assertEquals(0, entry.evidenceKind);
+            assertEquals("", entry.recipeIn);
+            assertEquals("", entry.recipeOut);
+            assertEquals("Alias", entry.displayName);
+            assertEquals(123, entry.metaTileId);
+        } finally {
+            bytes.release();
+        }
     }
 }

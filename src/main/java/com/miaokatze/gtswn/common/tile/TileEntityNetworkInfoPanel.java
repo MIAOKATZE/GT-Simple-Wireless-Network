@@ -60,6 +60,32 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     private UUID ownerUUID;
+    private UUID portableMonitorId;
+
+    /** Persistent block identity, intentionally omitted from item placement data. */
+    public UUID getPortableMonitorId() {
+        if (portableMonitorId == null && worldObj != null && !worldObj.isRemote) {
+            portableMonitorId = UUID.randomUUID();
+            markDirty();
+        }
+        return portableMonitorId;
+    }
+
+    /** Only the scalar display configuration; remote views never serialize proxy or inventory NBT. */
+    public NBTTagCompound getPortableRenderConfig() {
+        NBTTagCompound tag = new NBTTagCompound();
+        store.writeSync(tag);
+        int status = bridge.getPortableStatusBits();
+        tag.setBoolean("portableCold", (status & 1) != 0);
+        tag.setBoolean("portableLongSilent", (status & 2) != 0);
+        return tag;
+    }
+
+    /** Detached client preview only. No world binding, sampling or shared panel mutation. */
+    public void readPortableRenderConfig(NBTTagCompound tag) {
+        store.readSync(tag);
+    }
+
     private String ownerName = "";
 
     /**
@@ -554,6 +580,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return bridge.getCachedEu();
     }
 
+    public double getCachedEut() {
+        return bridge.getCachedEut();
+    }
+
     public String getCachedStatus() {
         return bridge.getCachedStatus();
     }
@@ -620,6 +650,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
     public String getChartBackgroundColorText() {
         return store.getChartBackgroundColorText();
+    }
+
+    public com.miaokatze.gtswn.common.panel.TrendLinePalette getTrendLinePalette() {
+        return store.getTrendLinePalette();
     }
 
     public int getTrendLineThickness() {
@@ -881,6 +915,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
+        try {
+            portableMonitorId = UUID.fromString(tag.getString("PortableMonitorPanelId"));
+        } catch (IllegalArgumentException ignored) {
+            portableMonitorId = null;
+        }
         readPlacementData(tag);
         store.readFromNBT(tag);
         if (tag.hasKey("screen")) {
@@ -901,6 +940,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
+        if (portableMonitorId != null) tag.setString("PortableMonitorPanelId", portableMonitorId.toString());
         writePlacementData(tag);
         store.writeToNBT(tag);
         if (structure.getScreen() != null) {

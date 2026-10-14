@@ -47,6 +47,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
     /** 机器状态：停机（!isAllowedToWork） */
     public static final int STATE_STOPPED = 2;
+    public static final int STATE_IGNORED = 3;
 
     /** 功率分类：耗电（旧档缺省值） */
     public static final byte POWER_TYPE_CONSUME = 0;
@@ -112,6 +113,16 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         return new ArrayList<>(terminals.entrySet());
     }
 
+    /** O(actual held terminals), independent of historical save size. */
+    public List<Map.Entry<UUID, TerminalData>> getActiveTerminals() {
+        List<Map.Entry<UUID, TerminalData>> active = new ArrayList<>();
+        for (UUID id : ACTIVE_TERMINALS) {
+            TerminalData data = terminals.get(id);
+            if (data != null) active.add(new java.util.AbstractMap.SimpleImmutableEntry<>(id, data));
+        }
+        return active;
+    }
+
     /**
      * 加绑定（右击机器 / 放置自动绑定 / 扫描录入统一入口）。
      * <p>
@@ -121,6 +132,27 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      */
     public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
         byte powerType) {
+        return addBinding(terminalId, key, localName, dim, x, y, z, powerType, -1, (byte) 0);
+    }
+
+    public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
+        byte powerType, int metaTileId, byte linkNodeType) {
+        return addBinding(
+            terminalId,
+            key,
+            localName,
+            dim,
+            x,
+            y,
+            z,
+            powerType,
+            metaTileId,
+            linkNodeType,
+            DevicePowerCapabilities.defaultMask(powerType));
+    }
+
+    public AddResult addBinding(UUID terminalId, String key, String localName, int dim, int x, int y, int z,
+        byte powerType, int metaTileId, byte linkNodeType, byte capabilityMask) {
         TerminalData data = getOrCreateTerminal(terminalId);
         if (data.boundKeys.contains(key)) {
             return AddResult.ALREADY_BOUND;
@@ -131,11 +163,15 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         data.boundKeys.add(key);
         MachineRecord record = new MachineRecord();
         record.name = localName;
+        record.metaTileId = metaTileId;
+        record.capabilityMask = (byte) (capabilityMask & 3);
+        record.linkNodeType = linkNodeType;
         record.powerType = powerType == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
         record.dim = dim;
         record.x = x;
         record.y = y;
         record.z = z;
+        record.resetRecognition(recognitionMode(terminalId, key, metaTileId), capabilityMask);
         data.records.put(key, record);
         data.version++;
         markDirty();
@@ -147,6 +183,100 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      *
      * @return true=已解除（version++ + markDirty）；false=绑定不存在（不 dirty）
      */
+    public byte recognitionMode(UUID terminalId, String key, int metaTileId) {
+        return recognitionMode(terminalId, key, metaTileId, DeviceDefaultRecognitionPolicy.prototype(metaTileId));
+    }
+
+    public byte recognitionMode(UUID terminalId, String key, int metaTileId,
+        gregtech.api.interfaces.metatileentity.IMetaTileEntity machine) {
+        TerminalData data = getOrCreateTerminal(terminalId);
+        MachineRecord record = data.records.get(key);
+        RecognitionOverride override = data.recognitionOverrides.get(key);
+        boolean changedIdentity = override != null && metaTileId >= 0 && override.metaTileId != metaTileId;
+        if (changedIdentity) {
+            data.recognitionOverrides.remove(key);
+            override = null;
+        }
+        byte mode = override != null ? override.mode
+            : machine != null ? DeviceDefaultRecognitionPolicy.defaultMode(machine)
+                : !changedIdentity && record != null ? record.recognitionMode : DeviceTerminalRecognitionMode.TRACK;
+        boolean changedRecordIdentity = record != null && metaTileId >= 0 && record.metaTileId != metaTileId;
+        if (record != null && (record.recognitionMode != mode || changedIdentity
+            || changedRecordIdentity
+            || (mode == DeviceTerminalRecognitionMode.IGNORE && record.hasIgnoredResidual()))) {
+            byte originalCapabilities = machine != null ? DevicePowerCapabilities.capabilityMask(machine)
+                : record.capabilityMask;
+            record.resetRecognition(mode, originalCapabilities);
+            if (metaTileId >= 0) record.metaTileId = metaTileId;
+            if (machine != null && changedRecordIdentity) {
+                record.name = machine.getLocalName();
+                record.linkNodeType = DeviceMachineIdentity.linkNodeType(machine);
+                gregtech.api.interfaces.tileentity.IGregTechTileEntity liveTile = machine.getBaseMetaTileEntity();
+                if (liveTile != null && liveTile.getWorld() != null) {
+                    DeviceRegistryData registry = DeviceRegistryData.get(liveTile.getWorld());
+                    DeviceRegistryData.DeviceEntry known = registry.getEntry(key);
+                    if (known != null) registry.register(key, known.owner, record.name, metaTileId);
+                }
+                record.powerType = DeviceMachineTypes.isGeneratorMachine(machine) ? POWER_TYPE_GENERATE
+                    : POWER_TYPE_CONSUME;
+            }
+            data.version++;
+            markDirty();
+        } else if (changedIdentity) {
+            data.version++;
+            markDirty();
+        }
+        return mode;
+    }
+
+    /** Used before snapshots and after NBT loading; prototypes not yet registered are deferred. */
+    public void refreshRecognitionDefaults(UUID terminalId) {
+        TerminalData data = getTerminal(terminalId);
+        if (data == null) return;
+        for (Map.Entry<String, MachineRecord> entry : data.records.entrySet()) {
+            gregtech.api.interfaces.metatileentity.IMetaTileEntity machine = DeviceDefaultRecognitionPolicy
+                .prototype(entry.getValue().metaTileId);
+            if (machine != null) recognitionMode(terminalId, entry.getKey(), entry.getValue().metaTileId, machine);
+        }
+    }
+
+    public byte cycleRecognition(UUID terminalId, String key, int metaTileId, byte originalCapabilities) {
+        return cycleRecognition(
+            terminalId,
+            key,
+            metaTileId,
+            originalCapabilities,
+            DeviceDefaultRecognitionPolicy.prototype(metaTileId));
+    }
+
+    public byte cycleRecognition(UUID terminalId, String key, int metaTileId, byte originalCapabilities,
+        gregtech.api.interfaces.metatileentity.IMetaTileEntity machine) {
+        if (KeyFormat.parse(key) == null || metaTileId < 0) return -1;
+        TerminalData data = getOrCreateTerminal(terminalId);
+        byte baseMode = DeviceDefaultRecognitionPolicy.defaultMode(machine);
+        byte mode = DeviceTerminalRecognitionMode.next(recognitionMode(terminalId, key, metaTileId, machine));
+        if (mode != baseMode && !data.recognitionOverrides.containsKey(key)
+            && data.recognitionOverrides.size() >= DeviceTerminalRecognitionMode.MAX_OVERRIDES) return -1;
+        if (mode == baseMode) data.recognitionOverrides.remove(key);
+        else data.recognitionOverrides.put(key, new RecognitionOverride(metaTileId, mode));
+        MachineRecord record = data.records.get(key);
+        if (record != null) record.resetRecognition(mode, originalCapabilities);
+        data.version++;
+        markDirty();
+        return mode;
+    }
+
+    public static final class RecognitionOverride {
+
+        public final int metaTileId;
+        public final byte mode;
+
+        public RecognitionOverride(int metaTileId, byte mode) {
+            this.metaTileId = metaTileId;
+            this.mode = mode;
+        }
+    }
+
     public boolean removeBinding(UUID terminalId, String key) {
         TerminalData data = terminals.get(terminalId);
         if (data == null) {
@@ -159,6 +289,26 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             markDirty();
         }
         return removed;
+    }
+
+    /** Alias belongs to this terminal binding; the original machine name continues to be sampled independently. */
+    public boolean renameBinding(UUID terminalId, String key, String name, int color, boolean bold) {
+        String normalized = DeviceTerminalNameRules.normalize(name);
+        if (normalized == null || !DeviceTerminalNameRules.validColor(color)) return false;
+        TerminalData data = terminals.get(terminalId);
+        if (data == null || !data.boundKeys.contains(key)) return false;
+        MachineRecord record = data.records.get(key);
+        if (record == null) return false;
+        byte chosenColor = (byte) (normalized.isEmpty() ? DeviceTerminalNameRules.DEFAULT_COLOR : color);
+        boolean chosenBold = !normalized.isEmpty() && bold;
+        if (normalized.equals(record.displayName) && record.nameColor == chosenColor && record.nameBold == chosenBold)
+            return true;
+        record.displayName = normalized;
+        record.nameColor = chosenColor;
+        record.nameBold = chosenBold;
+        data.version++;
+        markDirty();
+        return true;
     }
 
     /**
@@ -191,58 +341,60 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
     /** 在线玩家持有的终端 UUID 并集（阶段 C 采样调度判定用） */
     private static final Set<UUID> ACTIVE_TERMINALS = new HashSet<>();
+    private static final Map<UUID, Integer> HOLDER_COUNTS = new HashMap<>();
 
     /**
      * 玩家登录：登记其背包内全部终端 UUID（重复登录先清旧映射）。
      */
     public static void onPlayerLoggedIn(UUID playerId, Set<UUID> terminalIds) {
-        PLAYER_TERMINALS.put(playerId, new HashSet<>(terminalIds));
-        ACTIVE_TERMINALS.addAll(terminalIds);
+        synchronizeHeldTerminals(playerId, terminalIds);
     }
 
-    /**
-     * 玩家登出：移除其终端映射；无人再持有的终端退出活跃集（克隆物品可能多人共享同 UUID）。
-     */
     public static void onPlayerLoggedOut(UUID playerId) {
         Set<UUID> removed = PLAYER_TERMINALS.remove(playerId);
-        if (removed == null) {
-            return;
-        }
-        for (UUID terminalId : removed) {
-            if (!isHeldByOthers(terminalId)) {
-                ACTIVE_TERMINALS.remove(terminalId);
-            }
-        }
+        if (removed != null) for (UUID id : removed) removeHolder(id);
     }
 
-    /** 终端是否仍被某个在线玩家持有 */
-    private static boolean isHeldByOthers(UUID terminalId) {
-        for (Set<UUID> held : PLAYER_TERMINALS.values()) {
-            if (held.contains(terminalId)) {
-                return true;
+    /** Inventory reconciliation drops terminals put in chests or on the ground, rather than sampling until logout. */
+    public static void synchronizeHeldTerminals(UUID playerId, Set<UUID> actual) {
+        Set<UUID> held = PLAYER_TERMINALS.computeIfAbsent(playerId, ignored -> new HashSet<>());
+        java.util.Iterator<UUID> iterator = held.iterator();
+        while (iterator.hasNext()) {
+            UUID id = iterator.next();
+            if (!actual.contains(id)) {
+                iterator.remove();
+                removeHolder(id);
             }
         }
-        return false;
+        for (UUID id : actual) if (held.add(id)) addHolder(id);
+        if (held.isEmpty()) PLAYER_TERMINALS.remove(playerId);
     }
 
-    /**
-     * 主线程观测补登记：请求 / 动作排水发现玩家持有某终端时调用。
-     * <p>
-     * 会话内新获得的终端（创造拿取 / 合成 / PlaceEvent 新建 UUID）未走登录扫描，
-     * 若不补入活跃索引，采样调度会一直跳过它直到重登。
-     */
+    private static void addHolder(UUID id) {
+        HOLDER_COUNTS.put(id, HOLDER_COUNTS.getOrDefault(id, 0) + 1);
+        ACTIVE_TERMINALS.add(id);
+    }
+
+    private static void removeHolder(UUID id) {
+        int count = HOLDER_COUNTS.getOrDefault(id, 1) - 1;
+        if (count <= 0) {
+            HOLDER_COUNTS.remove(id);
+            ACTIVE_TERMINALS.remove(id);
+        } else HOLDER_COUNTS.put(id, count);
+    }
+
     public static void ensureActiveTerminal(UUID playerId, UUID terminalId) {
-        Set<UUID> held = PLAYER_TERMINALS.get(playerId);
-        if (held == null) {
-            held = new HashSet<>();
-            PLAYER_TERMINALS.put(playerId, held);
-        }
-        if (held.add(terminalId)) {
-            ACTIVE_TERMINALS.add(terminalId);
-        }
+        Set<UUID> held = PLAYER_TERMINALS.computeIfAbsent(playerId, ignored -> new HashSet<>());
+        if (held.add(terminalId)) addHolder(terminalId);
     }
 
     /** 终端是否活跃（在线玩家持有；阶段 C 采样调度入口判定） */
+    public static void clearActiveTerminals() {
+        PLAYER_TERMINALS.clear();
+        ACTIVE_TERMINALS.clear();
+        HOLDER_COUNTS.clear();
+    }
+
     public static boolean isTerminalActive(UUID terminalId) {
         return ACTIVE_TERMINALS.contains(terminalId);
     }
@@ -259,6 +411,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         /** 机器键 → 采样记录 */
         public final Map<String, MachineRecord> records = new HashMap<>();
+        public final Map<String, RecognitionOverride> recognitionOverrides = new java.util.LinkedHashMap<>();
 
         /** 数据版本号（任一变更 +1，阶段 D5 请求排水防重发） */
         public long version;
@@ -285,6 +438,15 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 record.readFromNBT(entry.getCompoundTag("data"));
                 records.put(key, record);
             }
+            recognitionOverrides.clear();
+            NBTTagList overrides = tag.getTagList("recognitionOverrides", Constants.NBT.TAG_COMPOUND);
+            for (int i = 0; i < Math.min(overrides.tagCount(), DeviceTerminalRecognitionMode.MAX_OVERRIDES); i++) {
+                NBTTagCompound entry = overrides.getCompoundTagAt(i);
+                String key = entry.getString("key");
+                byte mode = DeviceTerminalRecognitionMode.migrate(entry.getByte("mode"));
+                if (KeyFormat.parse(key) != null)
+                    recognitionOverrides.put(key, new RecognitionOverride(entry.getInteger("metaTileId"), mode));
+            }
             version = tag.getLong("version");
         }
 
@@ -307,6 +469,15 @@ public class DeviceTerminalDataStore extends WorldSavedData {
                 recs.appendTag(entryTag);
             }
             tag.setTag("records", recs);
+            NBTTagList overrides = new NBTTagList();
+            for (Map.Entry<String, RecognitionOverride> entry : recognitionOverrides.entrySet()) {
+                NBTTagCompound item = new NBTTagCompound();
+                item.setString("key", entry.getKey());
+                item.setInteger("metaTileId", entry.getValue().metaTileId);
+                item.setByte("mode", entry.getValue().mode);
+                overrides.appendTag(item);
+            }
+            tag.setTag("recognitionOverrides", overrides);
             tag.setLong("version", version);
         }
     }
@@ -323,10 +494,19 @@ public class DeviceTerminalDataStore extends WorldSavedData {
     public static final class MachineRecord {
 
         /** 流入方向 EU/t 环形缓冲；旧档缺键时保持全 0。 */
-        public final long[] fifoIn = new long[FIFO_SIZE];
+        public final double[] fifoIn = new double[FIFO_SIZE];
 
         /** 流出方向 EU/t 环形缓冲；旧档缺键时保持全 0。 */
-        public final long[] fifoOut = new long[FIFO_SIZE];
+        public final double[] fifoOut = new double[FIFO_SIZE];
+        public int metaTileId = -1;
+        public byte capabilityMask;
+        public byte recognitionMode;
+        public boolean recognitionWarmup;
+        /** 0 observed, 1 provider model, 2 warming up, 3 unavailable. */
+        public byte evidenceKind = 2;
+        public byte linkNodeType;
+        public long instIn;
+        public long instOut;
 
         /** 环形写指针（下一个写入位，输入/输出双通道共用） */
         public int idx;
@@ -348,6 +528,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
         /** 机器本地显示名（绑定 / 采样时刷新） */
         public String name = "";
+        public String displayName = "";
+        public byte nameColor = DeviceTerminalNameRules.DEFAULT_COLOR;
+        public boolean nameBold;
 
         /** 机器维度 */
         public int dim;
@@ -365,10 +548,108 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         /** 当前执行配方输出侧描述（输出快照，近似；阶段 C 采样填充） */
         public String recipeOut = "";
 
+        boolean hasIgnoredResidual() {
+            return state != STATE_IGNORED || capabilityMask != 0
+                || evidenceKind != 0
+                || idx != 0
+                || count != 0
+                || instIn != 0
+                || instOut != 0
+                || inAvg != 0
+                || outAvg != 0
+                || !recipeIn.isEmpty()
+                || !recipeOut.isEmpty();
+        }
+
+        public void resetRecognition(byte mode, byte originalCapabilities) {
+            recognitionMode = mode;
+            java.util.Arrays.fill(fifoIn, 0);
+            java.util.Arrays.fill(fifoOut, 0);
+            idx = count = 0;
+            instIn = instOut = 0;
+            inAvg = outAvg = 0;
+            recipeIn = recipeOut = "";
+            capabilityMask = DeviceTerminalRecognitionMode.effectiveCapabilities(mode, originalCapabilities, powerType);
+            state = mode == DeviceTerminalRecognitionMode.IGNORE ? STATE_IGNORED : STATE_IDLE;
+            evidenceKind = mode == DeviceTerminalRecognitionMode.IGNORE ? (byte) 0 : (byte) 2;
+            recognitionWarmup = mode != DeviceTerminalRecognitionMode.IGNORE;
+        }
+
+        /** Exact comparison of serialized fields; rolling FIFO bookkeeping alone does not invalidate network pages. */
+        public boolean applySample(int nextState, byte nextPower, int meta, byte evidence, byte nodes, long electricIn,
+            long electricOut, double avgElectricIn, double avgElectricOut, int dimension, int px, int py, int pz,
+            String localName, String inputRecipe, String outputRecipe) {
+            return applySample(
+                nextState,
+                nextPower,
+                meta,
+                evidence,
+                nodes,
+                electricIn,
+                electricOut,
+                avgElectricIn,
+                avgElectricOut,
+                dimension,
+                px,
+                py,
+                pz,
+                localName,
+                inputRecipe,
+                outputRecipe,
+                DevicePowerCapabilities.defaultMask(nextPower));
+        }
+
+        public boolean applySample(int nextState, byte nextPower, int meta, byte evidence, byte nodes, long electricIn,
+            long electricOut, double avgElectricIn, double avgElectricOut, int dimension, int px, int py, int pz,
+            String localName, String inputRecipe, String outputRecipe, byte capabilities) {
+            capabilities = (byte) (capabilities & 3);
+            boolean changed = capabilityMask != capabilities || state != nextState
+                || powerType != nextPower
+                || metaTileId != meta
+                || evidenceKind != evidence
+                || linkNodeType != nodes
+                || instIn != electricIn
+                || instOut != electricOut
+                || Double.compare(inAvg, avgElectricIn) != 0
+                || Double.compare(outAvg, avgElectricOut) != 0
+                || dim != dimension
+                || x != px
+                || y != py
+                || z != pz
+                || !java.util.Objects.equals(name, localName)
+                || !java.util.Objects.equals(recipeIn, inputRecipe)
+                || !java.util.Objects.equals(recipeOut, outputRecipe);
+            capabilityMask = capabilities;
+            state = nextState;
+            powerType = nextPower;
+            metaTileId = meta;
+            evidenceKind = evidence;
+            linkNodeType = nodes;
+            instIn = electricIn;
+            instOut = electricOut;
+            inAvg = avgElectricIn;
+            outAvg = avgElectricOut;
+            dim = dimension;
+            x = px;
+            y = py;
+            z = pz;
+            name = localName;
+            recipeIn = inputRecipe;
+            recipeOut = outputRecipe;
+            return changed;
+        }
+
         void readFromNBT(NBTTagCompound tag) {
             // 迁移语义：旧存储型净通道 fifo/avg 及其 NBT 键故意忽略；缺双通道键按 0，窗口自然回填。
             readFifo(tag, "fifoIn", fifoIn);
             readFifo(tag, "fifoOut", fifoOut);
+            metaTileId = tag.hasKey("metaTileId") ? tag.getInteger("metaTileId") : -1;
+            recognitionMode = DeviceTerminalRecognitionMode.migrate(tag.getByte("recognitionMode"));
+            recognitionWarmup = recognitionMode != DeviceTerminalRecognitionMode.IGNORE;
+            evidenceKind = 2;
+            linkNodeType = tag.getByte("linkNodeType");
+            instIn = tag.getLong("instIn");
+            instOut = tag.getLong("instOut");
             // 坏存档防御：idx 落到 [0, FIFO_SIZE)，count 落到 [0, FIFO_SIZE]，防采样越界 / 均值分母异常
             idx = ((tag.getInteger("idx") % FIFO_SIZE) + FIFO_SIZE) % FIFO_SIZE;
             count = Math.min(Math.max(tag.getInteger("count"), 0), FIFO_SIZE);
@@ -378,7 +659,15 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             state = tag.getInteger("state");
             // v1.8.0 旧档兼容：缺 powerType 键时 getByte 返回 0（=耗电），非 1 值一律钳回耗电
             powerType = tag.getByte("powerType") == POWER_TYPE_GENERATE ? POWER_TYPE_GENERATE : POWER_TYPE_CONSUME;
+            capabilityMask = tag.hasKey("capabilityMask") ? (byte) (tag.getByte("capabilityMask") & 3)
+                : DevicePowerCapabilities.defaultMask(powerType);
             name = tag.getString("name");
+            String alias = DeviceTerminalNameRules.normalize(tag.getString("displayName"));
+            displayName = alias == null ? "" : alias;
+            int color = tag.hasKey("nameColor") ? tag.getByte("nameColor") : DeviceTerminalNameRules.DEFAULT_COLOR;
+            nameColor = (byte) (!displayName.isEmpty() && DeviceTerminalNameRules.validColor(color) ? color
+                : DeviceTerminalNameRules.DEFAULT_COLOR);
+            nameBold = !displayName.isEmpty() && tag.getBoolean("nameBold");
             dim = tag.getInteger("dim");
             x = tag.getInteger("x");
             y = tag.getInteger("y");
@@ -387,6 +676,10 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // getString 返回空串（不迁移旧值，下一采样周期由调度器刷新为双侧新值）
             recipeIn = tag.getString("recipeIn");
             recipeOut = tag.getString("recipeOut");
+            // Clear ignored numeric/recipe/FIFO residue after all persisted fields have loaded.
+            if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE)
+                resetRecognition(recognitionMode, capabilityMask);
+            else if (tag.getByte("recognitionMode") == 1) resetRecognition(recognitionMode, capabilityMask);
         }
 
         NBTTagCompound toNBT() {
@@ -394,6 +687,12 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             // 不再写入存储型净通道 fifo/avg；净值由双通道派生。
             writeFifo(tag, "fifoIn", fifoIn);
             writeFifo(tag, "fifoOut", fifoOut);
+            tag.setInteger("metaTileId", metaTileId);
+            tag.setByte("capabilityMask", capabilityMask);
+            tag.setByte("recognitionMode", recognitionMode);
+            tag.setByte("linkNodeType", linkNodeType);
+            tag.setLong("instIn", instIn);
+            tag.setLong("instOut", instOut);
             tag.setInteger("idx", idx);
             tag.setInteger("count", count);
             tag.setDouble("inAvg", inAvg);
@@ -401,6 +700,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             tag.setInteger("state", state);
             tag.setByte("powerType", powerType);
             tag.setString("name", name == null ? "" : name);
+            tag.setString("displayName", displayName);
+            tag.setByte("nameColor", nameColor);
+            tag.setBoolean("nameBold", nameBold);
             tag.setInteger("dim", dim);
             tag.setInteger("x", x);
             tag.setInteger("y", y);
@@ -411,21 +713,21 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         }
 
         /** 读一条环形缓冲（键缺 / 旧档缺新键时 getTagList 返回空表 → 目标数组保持全 0；条目子键 "v"，三通道同构） */
-        private static void readFifo(NBTTagCompound tag, String key, long[] target) {
+        private static void readFifo(NBTTagCompound tag, String key, double[] target) {
             NBTTagList list = tag.getTagList(key, Constants.NBT.TAG_COMPOUND);
             int n = Math.min(list.tagCount(), target.length);
             for (int i = 0; i < n; i++) {
                 target[i] = list.getCompoundTagAt(i)
-                    .getLong("v");
+                    .getDouble("v");
             }
         }
 
         /** 写一条环形缓冲（条目子键 "v"，三通道同构） */
-        private static void writeFifo(NBTTagCompound tag, String key, long[] source) {
+        private static void writeFifo(NBTTagCompound tag, String key, double[] source) {
             NBTTagList list = new NBTTagList();
-            for (long value : source) {
+            for (double value : source) {
                 NBTTagCompound entry = new NBTTagCompound();
-                entry.setLong("v", value);
+                entry.setDouble("v", value);
                 list.appendTag(entry);
             }
             tag.setTag(key, list);
@@ -447,7 +749,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             try {
                 TerminalData data = new TerminalData();
                 data.readFromNBT(entry.getCompoundTag("data"));
-                terminals.put(UUID.fromString(id), data);
+                UUID terminalId = UUID.fromString(id);
+                terminals.put(terminalId, data);
+                refreshRecognitionDefaults(terminalId);
             } catch (IllegalArgumentException e) {
                 // 坏 UUID 数据跳过（不阻断其余终端加载）
             }

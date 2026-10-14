@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.config;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 
 import net.minecraftforge.common.config.ConfigCategory;
@@ -172,6 +173,7 @@ public class Config {
 
     /** gtswn_network.cfg 的启动时路径，供客户端命令运行时写回使用。 */
     private static File networkConfigFile;
+    private static File mainConfigFile;
 
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
@@ -270,6 +272,15 @@ public class Config {
     public static boolean hudEUEnabled = true;
     public static boolean hudInstantEnabled = true;
     public static boolean hudAverageEnabled = true;
+    public static int hudPanelWidth = 220;
+    public static int hudPinnedRows = 4;
+    public static int hudRotationSeconds = 5;
+    public static int hudRenderMode = 0;
+    public static boolean hudCompact = false;
+    public static boolean hudTierEnabled = true;
+    public static boolean hudAEAmountEnabled = true;
+    public static boolean hudAERateEnabled = true;
+    public static String[] hudPinnedEntries = new String[0];
 
     // AE2 监控采样间隔（tick）/ AE2 monitor sample interval (ticks)
     // 数值越小采样越频繁，但会增加服务器负担 / Smaller value = more frequent sampling, higher server load
@@ -331,7 +342,7 @@ public class Config {
     // XP levels deducted when teleporting to a machine from the terminal list. 0 = free,
     // the GUI teleport button then shows the icon only, without the number.
     // 默认 3，范围 0~1000 / Default 3, range 0-1000
-    public static int deviceTeleportXPCost = 3;
+    public static int deviceTeleportXPCost = 1;
 
     // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
     // 右击绑定 / 放置自动绑定 / 扫描录入共用此上限，超限拒绝并聊天提示。
@@ -347,6 +358,7 @@ public class Config {
      * @param configFile 配置文件对象 (config/gtswn/gtswn.cfg)
      */
     public static void synchronizeConfiguration(File configFile) {
+        mainConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
 
         metaIdOffset = configuration.getInt(
@@ -391,9 +403,9 @@ public class Config {
             Configuration.CATEGORY_GENERAL,
             deviceTeleportXPCost,
             0,
-            1000,
+            1000000,
             "设备信息终端传送经验等级消耗 / Device info terminal teleport XP level cost\n"
-                + "默认 3，范围 0~1000；0 = 传送免费且 GUI 按钮只显示图标 / Default 3, range 0-1000; "
+                + "默认 1，范围 0~1000000；0 = 传送免费且 GUI 按钮只显示图标 / Default 1, range 0-1000000; "
                 + "0 = free, icon-only button");
 
         // 单台设备信息终端最大绑定机器数 / Max bound machines per device info terminal
@@ -409,6 +421,25 @@ public class Config {
 
         if (configuration.hasChanged()) {
             configuration.save();
+        }
+    }
+
+    /** Saves the authoritative cost to this process's gtswn.cfg, preserving unrelated settings. */
+    public static boolean saveDeviceTeleportCost(int value) {
+        if (mainConfigFile == null || value < 0 || value > 1000000) return false;
+        try {
+            Configuration configuration = new Configuration(mainConfigFile);
+            configuration.get(Configuration.CATEGORY_GENERAL, "deviceTeleportXPCost", 1)
+                .set(value);
+            configuration.save();
+            Configuration persisted = new Configuration(mainConfigFile);
+            if (persisted.get(Configuration.CATEGORY_GENERAL, "deviceTeleportXPCost", -1)
+                .getInt() != value) return false;
+            deviceTeleportXPCost = value;
+            return true;
+        } catch (RuntimeException e) {
+            GTSimpleWirelessNetwork.LOG.error("Could not save device terminal teleport cost", e);
+            return false;
         }
     }
 
@@ -591,16 +622,29 @@ public class Config {
             .getBoolean("HudInstantEnabled", CATEGORY_HUD, hudInstantEnabled, "显示瞬时功率 / Show instantaneous power");
         hudAverageEnabled = configuration
             .getBoolean("HudAverageEnabled", CATEGORY_HUD, hudAverageEnabled, "显示平均功率 / Show average power");
+        hudPanelWidth = configuration.getInt("HudPanelWidth", CATEGORY_HUD, 220, 100, 600, "HUD width");
+        hudPinnedRows = configuration.getInt("HudPinnedRows", CATEGORY_HUD, 4, 1, 16, "Pinned row count");
+        hudRotationSeconds = configuration
+            .getInt("HudRotationSeconds", CATEGORY_HUD, 5, 1, 120, "Pinned page rotation seconds");
+        hudRenderMode = configuration.getInt("HudRenderMode", CATEGORY_HUD, 0, 0, 2, "0=text, 1=cards, 2=charts");
+        hudCompact = configuration.getBoolean("HudCompact", CATEGORY_HUD, false, "Compact network labels");
+        hudTierEnabled = configuration.getBoolean("HudTierEnabled", CATEGORY_HUD, true, "Show voltage tier");
+        hudAEAmountEnabled = configuration.getBoolean("HudAEAmountEnabled", CATEGORY_HUD, true, "Show AE amounts");
+        hudAERateEnabled = configuration.getBoolean("HudAERateEnabled", CATEGORY_HUD, true, "Show AE rates");
+        hudPinnedEntries = configuration.get(CATEGORY_HUD, "HudPinnedEntries", new String[0])
+            .getStringList();
+        if (hudPinnedEntries.length > 128) hudPinnedEntries = Arrays.copyOf(hudPinnedEntries, 128);
         configuration.setCategoryPropertyOrder(
             CATEGORY_HUD,
-            Arrays.asList(
-                "HudXOffset",
-                "HudYOffset",
-                "HudScale",
-                "HudChargeEnabled",
-                "HudEUEnabled",
-                "HudInstantEnabled",
-                "HudAverageEnabled"));
+            new ArrayList<>(
+                Arrays.asList(
+                    "HudXOffset",
+                    "HudYOffset",
+                    "HudScale",
+                    "HudChargeEnabled",
+                    "HudEUEnabled",
+                    "HudInstantEnabled",
+                    "HudAverageEnabled")));
 
         // v1.8.15 及更早版本 saveHudConfiguration 的 get 参数序 bug 会把 HUD 值写进垃圾类目，
         // 此处加载时一次性迁移回 [hud] 并清理垃圾类目（详见 migrateLegacyHudCategories）。
@@ -640,6 +684,26 @@ public class Config {
         }
         try {
             Configuration configuration = new Configuration(networkConfigFile);
+            configuration.get("general", "HudUpdateInterval", hudUpdateInterval)
+                .set(hudUpdateInterval);
+            configuration.get(CATEGORY_HUD, "HudPanelWidth", hudPanelWidth)
+                .set(hudPanelWidth);
+            configuration.get(CATEGORY_HUD, "HudPinnedRows", hudPinnedRows)
+                .set(hudPinnedRows);
+            configuration.get(CATEGORY_HUD, "HudRotationSeconds", hudRotationSeconds)
+                .set(hudRotationSeconds);
+            configuration.get(CATEGORY_HUD, "HudRenderMode", hudRenderMode)
+                .set(hudRenderMode);
+            configuration.get(CATEGORY_HUD, "HudCompact", hudCompact)
+                .set(hudCompact);
+            configuration.get(CATEGORY_HUD, "HudTierEnabled", hudTierEnabled)
+                .set(hudTierEnabled);
+            configuration.get(CATEGORY_HUD, "HudAEAmountEnabled", hudAEAmountEnabled)
+                .set(hudAEAmountEnabled);
+            configuration.get(CATEGORY_HUD, "HudAERateEnabled", hudAERateEnabled)
+                .set(hudAERateEnabled);
+            configuration.get(CATEGORY_HUD, "HudPinnedEntries", hudPinnedEntries)
+                .set(hudPinnedEntries);
             configuration.setCategoryComment(CATEGORY_HUD, "HUD 显示参数（偏移与缩放）\nHUD display parameters (offset & scale)");
             // 注意：Configuration.get 的参数序是 (category, key, ...)，与 getInt(name, category, ...) 相反；
             // v1.8.15 及更早版本此处两个参数颠倒，值被写进垃圾类目而非 [hud]（迁移清理见 migrateLegacyHudCategories）。

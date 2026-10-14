@@ -144,9 +144,11 @@ public class CommonProxy {
         // B07（O2-B07，吸收 B2-01）：面板操作队列自宿主 tick 监听注册——包 2/3 世界态修改
         // 由 ServerTickEvent(END) 主线程排空（与通道注册同址，队列即 network→tile 唯一受控调用点）
         PanelActionQueue.register();
+        com.miaokatze.gtswn.network.PortableMonitorRequestQueue.register();
         // 阶段 D3：设备信息终端动作队列自宿主 tick 监听注册——包 10 动作（排序/计数法/解绑/传送）
         // 由 ServerTickEvent(END) 主线程排空（照 PanelActionQueue 同址注册模式）
         DeviceTerminalActionQueue.register();
+        com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.register();
         // 节点显形请求队列自宿主 tick 监听注册——包 11 显形请求（手持/冷却/注册表查询/模式过滤）
         // 由 ServerTickEvent(END) 主线程排空（照 DeviceTerminalActionQueue 同址注册模式）
         NodeRevealRequestQueue.register();
@@ -468,7 +470,27 @@ public class CommonProxy {
      */
     public void openDeviceInfoTerminalGui() {}
 
+    public void openDeviceInfoTerminalSettingsGui() {}
+
+    public boolean isDeviceTerminalVisualizationActive() {
+        return false;
+    }
+
+    public boolean handleDeviceVisualizationRightClick() {
+        return false;
+    }
+
+    public void handleSyncDeviceTerminalVisualState(
+        com.miaokatze.gtswn.network.PacketSyncDeviceTerminalVisualState message) {}
+
+    public void handleSyncDeviceTerminalSettings(
+        com.miaokatze.gtswn.network.PacketSyncDeviceTerminalSettings message) {}
+
     public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {}
+
+    public void openPortableMonitorGui(net.minecraft.item.ItemStack stack) {}
+
+    public void handleSyncPortableMonitor(com.miaokatze.gtswn.network.PacketSyncPortableMonitor message) {}
 
     /**
      * HUD 模式切换意图（O2-B10：items→hud 拆环，物品类不再字节码引用客户端类

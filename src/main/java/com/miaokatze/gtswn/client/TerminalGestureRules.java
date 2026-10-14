@@ -5,6 +5,19 @@ public final class TerminalGestureRules {
 
     private TerminalGestureRules() {}
 
+    public static boolean canCharge(boolean deviceTerminal, boolean alt, boolean shift, boolean air) {
+        return alt && (deviceTerminal ? !shift : shift && air);
+    }
+
+    public static boolean canToggleVisualization(boolean deviceTerminal, boolean alt, boolean shift) {
+        return deviceTerminal && alt && shift;
+    }
+
+    public static boolean canTravelToMarker(boolean deviceTerminal, boolean active, boolean alt, boolean shift,
+        boolean targeted) {
+        return deviceTerminal && active && !alt && !shift && targeted;
+    }
+
     public static boolean canIncorporate(boolean alt, boolean shift, boolean block) {
         return alt && !shift && block;
     }

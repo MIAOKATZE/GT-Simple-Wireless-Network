@@ -12,15 +12,18 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
 import net.minecraft.tileentity.TileEntity;
-import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.device.DeviceMachineIdentity;
 import com.miaokatze.gtswn.common.device.DeviceMachineTypes;
+import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
 import com.miaokatze.gtswn.common.device.DeviceRegistryData;
 import com.miaokatze.gtswn.common.device.DeviceScanManager;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore.AddResult;
+import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -32,13 +35,14 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * <p>
  * 手势表：
  * <ul>
- * <li>右击<b>加工 GT 机器</b> = 绑定到本终端：onItemUseFirst 服务端权威
+ * <li>可视化关闭时右击<b>加工 GT 机器</b> = 绑定到本终端：onItemUseFirst 服务端权威
  * （客户端返回 false 放行让 C08 包发出、服务端返回 true 拦截，仿
  * {@link ItemNetworkQuantumTerminal#onItemUseFirst} 先例；登记表无则补登 owner=点击者）</li>
  * <li>右击<b>GT 非加工机器</b> = not_machine 提示并拦截（不开其 GUI）；右击<b>非 GT 方块</b>
  * = 放行（等效空手交互）</li>
- * <li>右击空气 = 打开终端 GUI（阶段 E 客户端本地打开，本阶段服务端无操作）</li>
- * <li>Alt+Shift+右击空气长按一秒 = 启动扫描；重复完成手势不会取消进行中的扫描</li>
+ * <li>可视化开启时普通右击瞄准绑定机器或标记 = 传送；没有目标 = 打开终端列表</li>
+ * <li>右击空气 = 打开终端 GUI；Shift+右击机器循环当前终端识别方式，Shift+右击空地打开设置</li>
+ * <li>Alt+右击长按一秒 = 扫描（允许瞄准方块）；Shift+Alt+右击切换可视化</li>
  * </ul>
  * <p>
  * 判别式（统一口径 D1，{@link DeviceMachineTypes#isWorkingMachine}）：
@@ -54,6 +58,9 @@ public class ItemDeviceInfoTerminal extends Item {
 
     /** 终端实例 UUID（string，首用生成后常驻） */
     public static final String NBT_UUID = "DIT_UUID";
+
+    /** Persistent visual preference; only the server's toggle action writes this value. */
+    public static final String NBT_VISUAL_ENABLED = "DIT_VisualEnabled";
 
     /** GUI 排序列偏好（string：NAME / STATE / INST / AVG / POS，默认 AVG） */
     public static final String NBT_SORT_COLUMN = "DIT_SortCol";
@@ -113,13 +120,44 @@ public class ItemDeviceInfoTerminal extends Item {
         setMaxStackSize(1);
     }
 
+    public static boolean isVisualizationEnabled(ItemStack stack) {
+        return stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal
+            && stack.stackTagCompound != null
+            && stack.stackTagCompound.getBoolean(NBT_VISUAL_ENABLED);
+    }
+
+    public static void setVisualizationEnabled(ItemStack stack, boolean enabled) {
+        ensureNBT(stack).setBoolean(NBT_VISUAL_ENABLED, enabled);
+    }
+
+    /** Held enabled terminal wins, then the current enabled UUID, then a stable inventory-slot fallback. */
+    public static int findEnabledTerminalSlot(ItemStack[] inventory, int heldSlot, UUID preferred) {
+        if (heldSlot >= 0 && heldSlot < inventory.length
+            && isVisualizationEnabled(inventory[heldSlot])
+            && readTerminalId(inventory[heldSlot]) != null) return heldSlot;
+        String token = preferred == null ? null : preferred.toString();
+        int fallback = -1;
+        for (int i = 0; i < inventory.length; i++) {
+            ItemStack stack = inventory[i];
+            if (!isVisualizationEnabled(stack) || readTerminalId(stack) == null) continue;
+            if (token != null && token.equals(stack.stackTagCompound.getString(NBT_UUID))) return i;
+            if (fallback < 0) fallback = i;
+        }
+        return fallback;
+    }
+
+    @Override
+    public boolean hasEffect(ItemStack stack, int pass) {
+        return isVisualizationEnabled(stack) || super.hasEffect(stack, pass);
+    }
+
     // ==================== 手势 1：右击机器 = 绑定（onItemUseFirst，服务端权威） ====================
 
     /**
      * 右击加工 GT 机器 = 绑定到本终端（onItemUseFirst 服务端权威处理并拦截，客户端放行）。
      * <p>
      * 客户端返回 false 让 C08 包发出（仿 {@link ItemNetworkQuantumTerminal} 先例）；
-     * Shift 一律放行（return false，终端等效空手），扫描由独立蓄力意图启动；
+     * Shift 机器识别意图与设置由客户端分流并拦截机器交互，扫描由独立蓄力意图启动；
      * 非 Shift 才走绑定流程：非 GT 方块放行（不提示不拦截）；GT 非加工机器 → 聊天原因
      * 并拦截（不开其 GUI）；成功路径：登记表无该机器则补登（owner=点击者）→ 数据仓加绑定
      * （尊重 {@link Config#deviceTerminalMaxMachines} 上限，超限聊天拒绝）。
@@ -127,13 +165,24 @@ public class ItemDeviceInfoTerminal extends Item {
     @Override
     public boolean onItemUseFirst(ItemStack stack, EntityPlayer player, World world, int x, int y, int z, int side,
         float hitX, float hitY, float hitZ) {
-        // ① 客户端：返回 false 让 C08 包发出，全部逻辑交给服务端权威执行
+        // Client visual/modifier intents consume use before native block activation/C08; ordinary binding sends C08.
         if (world.isRemote) {
+            if (GTSimpleWirelessNetwork.proxy.handleDeviceVisualizationRightClick()) return true;
+            if (player.isSneaking()) GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
             return false;
         }
-        // ② Shift+右击机器一律放行；扫描只由已完成的空气蓄力手势触发。
+        if (player instanceof EntityPlayerMP visualPlayer
+            && com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.shouldConsumeVanillaUse(visualPlayer, stack))
+            return true;
+        // Native/server callers retain the same mode action; the normal client sends an explicit action before C08.
         if (player.isSneaking()) {
-            return false;
+            ensureTerminalIdSynced(player, stack);
+            TileEntity clicked = world.getTileEntity(x, y, z);
+            if (player instanceof EntityPlayerMP modePlayer && clicked instanceof IGregTechTileEntity
+                && DeviceMachineTypes.isWorkingMachine(((IGregTechTileEntity) clicked).getMetaTileEntity()))
+                DeviceTerminalRecognitionMode
+                    .cycle(modePlayer, stack, DeviceRegistryData.makeKey(world.provider.dimensionId, x, y, z));
+            return true;
         }
         // ③ 非 GT 方块：放行（等效空手交互，不提示不拦截）
         TileEntity te = world.getTileEntity(x, y, z);
@@ -151,15 +200,16 @@ public class ItemDeviceInfoTerminal extends Item {
         String key = DeviceRegistryData.makeKey(dim, x, y, z);
         String localName = mte.getLocalName();
         DeviceRegistryData registry = DeviceRegistryData.get(world);
-        if (registry.getEntry(key) == null) {
-            registry.register(key, player.getUniqueID(), localName);
-        }
-        UUID terminalId = getOrCreateTerminalId(stack);
+        DeviceRegistryData.DeviceEntry known = registry.getEntry(key);
+        if (known == null) {
+            registry.register(key, player.getUniqueID(), localName, ((IGregTechTileEntity) te).getMetaTileID());
+        } else if (known.metaTileId != ((IGregTechTileEntity) te).getMetaTileID()
+            || !java.util.Objects.equals(known.localName, localName)) {
+                registry.register(key, known.owner, localName, ((IGregTechTileEntity) te).getMetaTileID());
+            }
+        UUID terminalId = ensureTerminalIdSynced(player, stack);
         // 首用生成 UUID 后立即同步手持槽：GUI 锚点/客户端缓存键依赖客户端 NBT 的 UUID，
         // 1.7.10 原地 NBT 变更不自动推送（否则新终端扫描绑定后 GUI 因客户端 UUID 缺失永远空列表）
-        if (player instanceof EntityPlayerMP playerMP) {
-            syncHeldSlot(playerMP, stack);
-        }
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(world);
         AddResult result = store.addBinding(
             terminalId,
@@ -170,7 +220,10 @@ public class ItemDeviceInfoTerminal extends Item {
             y,
             z,
             DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                : DeviceTerminalDataStore.POWER_TYPE_CONSUME);
+                : DeviceTerminalDataStore.POWER_TYPE_CONSUME,
+            ((IGregTechTileEntity) te).getMetaTileID(),
+            DeviceMachineIdentity.linkNodeType(mte),
+            DevicePowerCapabilities.capabilityMask(mte));
         switch (result) {
             case SUCCESS:
                 sendMessage(player, "gtswn.device.chat.bound", localName);
@@ -189,21 +242,23 @@ public class ItemDeviceInfoTerminal extends Item {
 
     // ==================== 手势 2/3：右击空气（onItemRightClick） ====================
 
-    /** 普通空气右击打开原本地界面；扫描改由Alt+Shift蓄力完成后启动。 */
+    /** Plain visual clicks travel when aimed or open the list; Shift opens settings; Alt charges a scan. */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         if (world.isRemote) {
+            if (GTSimpleWirelessNetwork.proxy.handleDeviceVisualizationRightClick()) return stack;
             // 原纯GuiScreen保持本地打开，不污染背包容器windowId。
-            if (!player.isSneaking()) {
+            if (player.isSneaking()) {
+                GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalSettingsGui();
+            } else {
                 GTSimpleWirelessNetwork.proxy.openDeviceInfoTerminalGui();
             }
             return stack;
         }
-        if (player.isSneaking()) return stack;
-        getOrCreateTerminalId(stack);
-        if (player instanceof EntityPlayerMP playerMP) {
-            syncHeldSlot(playerMP, stack);
-        }
+        if (player instanceof EntityPlayerMP visualPlayer
+            && com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.shouldConsumeVanillaUse(visualPlayer, stack))
+            return stack;
+        ensureTerminalIdSynced(player, stack);
         return stack;
     }
 
@@ -218,8 +273,7 @@ public class ItemDeviceInfoTerminal extends Item {
     }
 
     public static void startChargedScan(EntityPlayerMP player, ItemStack stack) {
-        DeviceScanManager.startScan(player, getOrCreateTerminalId(stack));
-        syncHeldSlot(player, stack);
+        DeviceScanManager.startScan(player, ensureTerminalIdSynced(player, stack));
     }
 
     @Override
@@ -227,6 +281,7 @@ public class ItemDeviceInfoTerminal extends Item {
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l1"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l2"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l3"));
+        list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.visual"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.details"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.scan.repeat"));
         list.add(StatCollector.translateToLocal("item.gtswn.deviceInfoTerminal.tooltip.l4"));
@@ -347,8 +402,18 @@ public class ItemDeviceInfoTerminal extends Item {
         player.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, stack));
     }
 
+    /** Reusing unchanged NBT must not replace the client's held stack/re-equip the terminal on each right-click. */
+    public static UUID ensureTerminalIdSynced(EntityPlayer player, ItemStack stack) {
+        UUID before = readTerminalId(stack);
+        if (before != null) return before;
+        if (stack.stackTagCompound != null) stack.stackTagCompound.removeTag(NBT_UUID);
+        UUID created = getOrCreateTerminalId(stack);
+        if (player instanceof EntityPlayerMP playerMP) syncHeldSlot(playerMP, stack);
+        return created;
+    }
+
     /** 服务端向玩家发送本地化聊天提示（仅服务端调用） */
     private static void sendMessage(EntityPlayer player, String key, Object... args) {
-        player.addChatMessage(new ChatComponentText(StatCollector.translateToLocalFormatted(key, args)));
+        player.addChatMessage(new ChatComponentTranslation(key, args));
     }
 }

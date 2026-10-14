@@ -46,6 +46,13 @@ public final class HudController {
      */
     public boolean updateForFrame(EntityPlayer player) {
         Minecraft mc = Minecraft.getMinecraft();
+        if (state.samplingInterval != Config.hudUpdateInterval) {
+            state.samplingInterval = Config.hudUpdateInterval;
+            state.dataSet = new com.miaokatze.gtswn.common.util.EUDataSet(
+                com.miaokatze.gtswn.common.util.EUDataSet.hudCapacityFor(Config.hudUpdateInterval));
+            state.syncedEuStr = null;
+            state.lastUpdateTick = 0;
+        }
 
         // ① 检测世界切换：用户确认世界切换时保留数据集（维持 EU/t 连续性）
         // 仅重置 UI 状态（syncedEuStr、cachedEUText、cachedEUTText、lastUpdateTick），不清空 dataSet
@@ -113,6 +120,7 @@ public final class HudController {
         if (!state.hudEnabled) {
             return false;
         }
+        com.miaokatze.gtswn.client.PortableMonitorClientCache.poll(state.monitorStack);
 
         // 如果找不到监测终端，不显示 HUD
         if (state.cachedOwnerUUID == null || state.cachedOwnerUUID.isEmpty()) {
@@ -161,17 +169,39 @@ public final class HudController {
 
     /** 渲染只读：EU 总量文本（原 cachedEUText 静态字段读点收口为门面） */
     public String euText() {
-        return state.cachedEUText;
+        return Config.hudCompact ? compact(state.cachedEUText) : state.cachedEUText;
     }
 
     /** 渲染只读：EU/t 状态文本 */
     public String eutText() {
-        return state.cachedEUTText;
+        return displayPower(state.cachedEUTText);
     }
 
     /** 渲染只读：实时 EU/t 状态文本 */
     public String realtimeEutText() {
-        return state.cachedRealtimeEUTText;
+        return displayPower(state.cachedRealtimeEUTText);
+    }
+
+    private static String compact(String value) {
+        return value.replace(StatCollector.translateToLocal("gtswn.hud.wireless.network"), "EU")
+            .replace(StatCollector.translateToLocal("gtswn.hud.network.status"), "\u0394")
+            .replace(StatCollector.translateToLocal("gtswn.hud.network.realtime_status"), "\u0394t");
+    }
+
+    private static String displayPower(String value) {
+        if (!Config.hudTierEnabled) {
+            int bracket = value.lastIndexOf('(');
+            if (bracket >= 0 && !value.contains(StatCollector.translateToLocal("gtswn.hud.network.status.silent"))
+                && !value.contains(StatCollector.translateToLocal("gtswn.hud.network.status.long_silent"))
+                && !value.contains(StatCollector.translateToLocal("gtswn.hud.network.status.lt1"))) {
+                value = value.substring(0, bracket);
+            }
+        }
+        return Config.hudCompact ? compact(value) : value;
+    }
+
+    public ItemStack monitorStack() {
+        return state.monitorStack;
     }
 
     public boolean hasBattery() {

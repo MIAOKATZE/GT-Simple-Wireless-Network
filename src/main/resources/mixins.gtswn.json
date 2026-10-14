@@ -10,7 +10,10 @@
     "ae2.PathingCalculationMixin",
     "ae2.QuantumIncorporationGridNodeMixin",
     "ae2.TileCableBusAccessor",
-    "minecraft.QuantumIncorporationIdentityMixin"
+    "minecraft.QuantumIncorporationIdentityMixin",
+    "gregtech.DeviceControllerTickMixin",
+    "gregtech.DeviceEnergyMutationMixin",
+    "gregtech.DeviceWirelessTransactionMixin"
   ],
   "client": [
     "minecraft.HeldChargeSyncMixin"

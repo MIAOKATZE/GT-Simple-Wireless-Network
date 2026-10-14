@@ -47,7 +47,8 @@ final class HudState {
      * 内部使用 BigDecimal 精确计算 EU/t 斜率。原 static 单例 → HudState 实例单例：HUD 全局唯一。
      * </p>
      */
-    final EUDataSet dataSet = new EUDataSet(EUDataSet.hudCapacityFor(Config.hudUpdateInterval));
+    EUDataSet dataSet = new EUDataSet(EUDataSet.hudCapacityFor(Config.hudUpdateInterval));
+    int samplingInterval = Config.hudUpdateInterval;
 
     /** 缓存的 EU/t 文本 */
     String cachedEUTText = "";

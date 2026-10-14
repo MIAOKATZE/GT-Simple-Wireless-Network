@@ -7,31 +7,10 @@ import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.common.tileentities.machines.multi.MTELargeNaquadahReactor;
 
 /**
- * 特殊机器权威功率 provider（预选词条/数值链版）：对「实时输出不在标准流量词条」的机器，按
- * <b>预选字段数值链</b>读取权威实时功率，读到非零即停。EU 方向统一采集优先序 =
- * 基座/controller getter → hatch 聚合 → 真双零门内数值链（发电词条幅值 → 长功率符号权威层 →
- * 本 provider 符号值 → 耗电词条幅值，见 {@link DeviceSampleScheduler#collectEuFlow}）。
- * <p>
- * 【GT5U 5.09.54.133 已核实事实（beta-3 复核）】
- * <ul>
- * <li>大型硅岩反应堆 {@code MTELargeNaquadahReactor}：{@code protected long trueOutput} 仍为
- * 权威输出（:70 声明、:241 计算、:253 getInfoData |trueOutput| 展示）；beta-2→beta-3 该类逻辑
- * 零改动（仅结构字符串格式化与 NEI 维度），{@code addAutoEnergy} 仍直写 Dynamo hatch
- * {@code setEUVar} 绕过网络记账（:304-320）。v1.8.1/v1.8.2 终端读不到 LNR 的真因是采样层
- * 词条命中不再咨询 provider，而其白名单幅值 {@code |mEUt|} 恒 0，非 GT5U 改动</li>
- * <li>戴森云控制器 {@code TileEntityDysonSwarm}（gtnhintergalactic 独立 mod jar，无编译依赖，
- * GT5U monolith 内源码 :195）：{@code private long euPerTick} 为权威实时输出 →
- * {@link Class#forName} 软检测，缺类/缺字段静默禁用该 entry</li>
- * </ul>
- * <p>
- * <b>预选词条/数值链语义</b>：每个注册类带有序候选字段名链（如 LNR 未来若再改字段，只需在链上
- * 追加新名即可同时兼容新旧版本）；类加载时对链做<b>一次性巡检</b>，解析存在的字段按原序缓存；
- * 运行期读取按链遍历，<b>读到非零即停</b>——字段缺失/改名/反射异常/权威值为 0 均视为该词条
- * 缺失，继续下一候选，全链缺失归 0（不编造数值、严禁抛出中断采样循环）。
- * <p>
- * 方向语义由调用方解释：provider 返回<b>带符号</b> EU/t（正值=发电→out 通道、负值=消耗→in 通道）。
- * Legacy 涡轮等未验证家族不接入；如需扩展须先按 GT5U 权威源码核实字段并补注册分支
- * （注释级扩展点）。
+ * Explicit per-machine power models for output paths outside generic storage observations.
+ * GT205 MTELargeNaquadahReactor.trueOutput and Intergalactic DysonSwarm.euPerTick are known native model fields.
+ * The sampler labels these values as models and only uses them when no directly observed energy is available.
+ * Field lookup is performed once; missing optional machines or renamed fields yield zero.
  */
 public final class DeviceSpecialPowerProvider {
 
