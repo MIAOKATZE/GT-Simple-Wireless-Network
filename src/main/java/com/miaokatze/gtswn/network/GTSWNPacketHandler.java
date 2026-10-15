@@ -172,6 +172,11 @@ public class GTSWNPacketHandler {
             PacketQuantumMigrationResult.class,
             27,
             Side.CLIENT);
+        NETWORK
+            .registerMessage(PacketRequestQuantumInfo.Handler.class, PacketRequestQuantumInfo.class, 28, Side.SERVER);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new PacketRequestQuantumInfo.Drain());
         cpw.mods.fml.common.FMLCommonHandler.instance()
             .bus()
             .register(new PacketQuantumMigration.Drain());

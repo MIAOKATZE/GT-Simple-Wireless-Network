@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.client;
 
+import com.miaokatze.gtswn.network.PacketQuantumMigration;
+
 /** Client input lifecycle, independent of server authorization and elapsed server time. */
 final class QuantumMigrationGesture {
 
@@ -27,7 +29,7 @@ final class QuantumMigrationGesture {
     Step tick() {
         if (!active) return Step.IDLE;
         if (ticks++ == 0) return Step.BEGIN;
-        return ticks == 101 ? Step.COMPLETE : Step.HOLD;
+        return ticks == PacketQuantumMigration.REQUIRED_TICKS + 1 ? Step.COMPLETE : Step.HOLD;
     }
 
     boolean acknowledge(long id) {

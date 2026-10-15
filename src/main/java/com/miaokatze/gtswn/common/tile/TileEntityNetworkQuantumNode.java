@@ -160,6 +160,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private int anchorY;
     private int anchorZ;
 
+    // Informational placement identity; AE proxy playerID remains the security authority.
+    private String placerUUID = "";
+    private String placerName = "";
+
     // ==================== AE2 网络代理（仿 TileEntityNetworkInfoPanel 生命周期） ====================
 
     /** AE2 网络代理，懒加载，首次调用 getProxy() 时初始化 */
@@ -333,7 +337,32 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return;
         }
         getProxy().setOwner(player);
+        placerUUID = player.getUniqueID()
+            .toString();
+        placerName = player.getCommandSenderName();
         markDirty();
+    }
+
+    public String getPlacerUUID() {
+        return placerUUID;
+    }
+
+    public String getPlacerName() {
+        return placerName;
+    }
+
+    /** Native AE ID is retained for old saves whose placement metadata is absent. */
+    public int getNativeOwnerID() {
+        if (pendingProxyNBT != null) {
+            NBTTagCompound proxy = pendingProxyNBT.getCompoundTag("proxy");
+            return proxy.hasKey("p") ? proxy.getInteger("p") : -1;
+        }
+        IGridNode node = gridProxy == null ? null : gridProxy.getNode();
+        return node == null ? -1 : node.getPlayerID();
+    }
+
+    public int getBridgeUsedChannels() {
+        return isLinked() ? connection.getUsedChannels() : 0;
     }
 
     /** 是否已设置锚点（放置时未写入锚点的节点视为无锚，桥接保持离线） */
@@ -1436,6 +1465,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
         lastAppliedMigration = tag.getLong("lastAppliedMigration");
+        placerUUID = tag.getString("placerUUID");
+        placerName = tag.getString("placerName");
         partMigrationPending = true;
         recoveredPartDrops.clear();
         NBTTagList recovered = tag.getTagList(NBT_RECOVERED_PART_DROPS, 10);
@@ -1480,6 +1511,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
         tag.setLong("lastAppliedMigration", lastAppliedMigration);
+        tag.setString("placerUUID", placerUUID);
+        tag.setString("placerName", placerName);
         if (!recoveredPartDrops.isEmpty()) {
             NBTTagList recovered = new NBTTagList();
             for (ItemStack stack : recoveredPartDrops) {
@@ -1496,7 +1529,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // v1.6.13 任务1：持久化同步在线状态，用于区块加载/磁盘读取后恢复 clientLinked
         tag.setBoolean(NBT_SYNC_LINKED, isLinked());
-        if (gridProxy != null) {
+        if (pendingProxyNBT != null && pendingProxyNBT.hasKey("proxy", 10)) {
+            // A save can precede the first loaded tick. Preserve the deferred native owner,
+            // security key and grid-storage identity rather than writing an uninitialized proxy.
+            tag.setTag(
+                "proxy",
+                pendingProxyNBT.getCompoundTag("proxy")
+                    .copy());
+        } else if (gridProxy != null) {
             gridProxy.writeToNBT(tag);
         }
         // v1.8.5：部件容器持久化——子标签隔离；空容器不写任何键

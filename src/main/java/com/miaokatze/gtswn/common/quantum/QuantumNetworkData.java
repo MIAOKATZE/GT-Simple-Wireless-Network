@@ -162,6 +162,7 @@ public class QuantumNetworkData {
      * @return 装配完成的快照；手持不是已绑定量子终端时返回 null（调用方静默丢弃请求）
      */
     public static QuantumNetworkData assemble(EntityPlayer player, ItemStack held) {
+        if (!QuantumTerminalAccess.validate(player, held)) return null;
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) {
             return null;
         }

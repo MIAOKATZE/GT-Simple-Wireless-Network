@@ -18,6 +18,7 @@ import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 
@@ -102,6 +103,10 @@ public class PacketQuantumIncorporation implements IMessage {
         World world = player.worldObj;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
+        if (!QuantumTerminalAccess.validate(player, held)) {
+            tell(player, "gtswn.chat.quantum.no_permission");
+            return;
+        }
         if (!world.blockExists(message.x, message.y, message.z)
             || player.getDistanceSq(message.x + 0.5, message.y + 0.5, message.z + 0.5) > 64) return;
         // Platform.getEyeOffset uses the client's eye-position convention; MP posY is feet.
@@ -116,6 +121,13 @@ public class PacketQuantumIncorporation implements IMessage {
         QuantumIncorporationRegistry registry = QuantumIncorporationRegistry.get(world);
         // Alt is a toggle. The authoritative registry decides even if the client cache is stale.
         if (QuantumIncorporationRegistry.isIncorporated(world, message.x, message.y, message.z)) {
+            QuantumIncorporationRegistry.Entry entry = registry.find(world, message.x, message.y, message.z);
+            World anchorWorld = entry == null ? null : DimensionManager.getWorld(entry.dim);
+            if (entry == null
+                || !QuantumTerminalAccess.canAccessAnchor(player, held, anchorWorld, entry.ax, entry.ay, entry.az)) {
+                tell(player, "gtswn.chat.quantum.no_permission");
+                return;
+            }
             if (registry.remove(world, message.x, message.y, message.z, player))
                 tell(player, "gtswn.chat.quantum.incorporation_removed");
             else tell(player, "gtswn.chat.quantum.no_permission");
@@ -144,8 +156,8 @@ public class PacketQuantumIncorporation implements IMessage {
         TileEntity controller = anchor.getTileEntity(ax, ay, az);
         TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
         if (!(controller instanceof TileController) || !anchor.canMineBlock(player, ax, ay, az)
-            || !canBuild((IGridHost) controller, player)
-            || !canBuild((IGridHost) tile, player)) {
+            || (QuantumTerminalAccess.isSecurityRequired(anchor, ax, ay, az)
+                && (!canBuild((IGridHost) controller, player) || !canBuild((IGridHost) tile, player)))) {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }

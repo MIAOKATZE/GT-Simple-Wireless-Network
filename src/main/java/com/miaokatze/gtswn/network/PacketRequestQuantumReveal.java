@@ -23,6 +23,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
 import appeng.tile.networking.TileController;
@@ -75,6 +76,7 @@ public class PacketRequestQuantumReveal implements IMessage {
         if (player.isDead || player.playerNetServerHandler == null) return;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
+        if (!QuantumTerminalAccess.validate(player, held)) return;
         if (!PacketTerminalGesture.consumeReveal(player)) return;
         World world = player.worldObj;
         long now = world.getTotalWorldTime();

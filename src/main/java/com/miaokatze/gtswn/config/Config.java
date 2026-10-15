@@ -303,6 +303,10 @@ public class Config {
     // 默认 50；重启应用 / Default 50; restart required
     public static double quantumIncorporationIdlePowerUsage = 50.0D;
 
+    /** Server-wide charge and completion messages can be configured independently. */
+    public static boolean quantumMigrationStartAnnouncement = true;
+    public static boolean quantumMigrationSuccessAnnouncement = true;
+
     // 量子终端装配端是否枚举全量字段（O2-18）
     // GUI（v1.6.9 紧凑化 + O2-17 短回包）只消费 9 个字段；能量四项/存储字节/设备列表枚举
     // 为死负载，每 100t 每锚点执行一次。默认 false 跳过（代码保留不删，审计模式仍可开启）。
@@ -859,6 +863,17 @@ public class Config {
             "每个有效量子并入方块额外实际扣能（AE/t）/ Actual additional stored AE consumed per connected incorporated block per tick\n"
                 + "仅附加费用不受 AE 倍率影响；原设备与频道仍按 AE 原生规则计费 / Only this surcharge ignores AE's multiplier; device and channel draw follow native AE rules\n"
                 + "不额外占用频道；默认 50；重启应用 / No extra channels; default 50; restart required");
+
+        quantumMigrationStartAnnouncement = configuration.getBoolean(
+            "quantumMigrationStartAnnouncement",
+            CATEGORY_AE2,
+            true,
+            "广播量子网络迁移蓄力开始（每玩家每三分钟最多一次）/ Broadcast quantum migration charge starts (once per player per three minutes)");
+        quantumMigrationSuccessAnnouncement = configuration.getBoolean(
+            "quantumMigrationSuccessAnnouncement",
+            CATEGORY_AE2,
+            true,
+            "广播量子网络迁移成功 / Broadcast completed quantum network migrations");
 
         // 量子终端装配端是否枚举全量字段 / Assemble full quantum terminal data (O2-18)
         quantumTerminalAssembleFullData = configuration.getBoolean(

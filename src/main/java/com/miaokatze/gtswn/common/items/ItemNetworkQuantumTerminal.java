@@ -24,7 +24,9 @@ import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
@@ -34,6 +36,7 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.PacketQuantumTerminalSwapBus;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
+import appeng.api.features.INetworkEncodable;
 import appeng.api.networking.pathing.ControllerState;
 import appeng.api.util.DimensionalCoord;
 import appeng.me.GridAccessException;
@@ -68,7 +71,20 @@ import cpw.mods.fml.relauncher.SideOnly;
  * <p>
  * NBT 结构（§5.1）：QT_Bound(byte) / QT_AnchorDim / QT_AnchorX/Y/Z(int) / QT_BoundName(string)。
  */
-public class ItemNetworkQuantumTerminal extends Item {
+public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodable {
+
+    @Override
+    public String getEncryptionKey(ItemStack stack) {
+        return stack.getTagCompound() == null ? ""
+            : stack.getTagCompound()
+                .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY);
+    }
+
+    @Override
+    public void setEncryptionKey(ItemStack stack, String key, String name) {
+        ensureNBT(stack).setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, key == null ? "" : key);
+        QuantumTerminalAccess.onEncoded(key);
+    }
 
     @SideOnly(Side.CLIENT)
     private IIcon incorporationIcon;
@@ -196,13 +212,32 @@ public class ItemNetworkQuantumTerminal extends Item {
             }
             return false;
         }
+        QuantumTerminalAccess.synchronize(player, stack);
         if (QuantumIncorporationRegistry.isIncorporated(world, x, y, z)) {
+            if (!QuantumTerminalAccess.validate(player, stack)) return true;
+            QuantumIncorporationRegistry.Entry entry = QuantumIncorporationRegistry.get(world)
+                .find(world, x, y, z);
+            if (entry == null || !QuantumTerminalAccess.canAccessAnchor(
+                player,
+                stack,
+                net.minecraftforge.common.DimensionManager.getWorld(entry.dim),
+                entry.ax,
+                entry.ay,
+                entry.az)) return true;
             return false;
         }
         TileEntity te = world.getTileEntity(x, y, z);
         if (te instanceof TileController) {
+            if (!QuantumTerminalAccess.canAccessAnchor(player, stack, world, x, y, z)) {
+                sendMessage(player, "gtswn.chat.quantum.no_permission");
+                return true;
+            }
             boolean result = handleControllerClick(stack, player, world, (TileController) te, x, y, z);
             return result;
+        }
+        if (!QuantumTerminalAccess.validate(player, stack)) {
+            sendMessage(player, "gtswn.chat.quantum.no_permission");
+            return true;
         }
         if (PacketQuantumTerminalSwapBus.handleInteraction(player, x, y, z, side)) {
             return true;
@@ -224,6 +259,10 @@ public class ItemNetworkQuantumTerminal extends Item {
             if (!quantized) {
                 // 未量子化时 Shift 无取消语义：放行（等效空手点击，可正常打开控制器）
                 return false;
+            }
+            if (!QuantumTerminalAccess.canManageAnchor(player, stack, world, x, y, z)) {
+                sendMessage(player, "gtswn.chat.quantum.no_permission");
+                return true;
             }
             if (!Platform.hasPermissions(new DimensionalCoord(world, x, y, z), player)) {
                 sendMessage(player, "gtswn.chat.quantum.no_permission");
@@ -291,7 +330,9 @@ public class ItemNetworkQuantumTerminal extends Item {
     /** Shift+右击空气由服务端打开容器；Alt组合由专用客户端手势处理器截获。 */
     @Override
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
-        if (!world.isRemote && player.isSneaking() && TerminalAirInteraction.isAir(player)) {
+        if (!world.isRemote && player.isSneaking()
+            && TerminalAirInteraction.isAir(player)
+            && QuantumTerminalAccess.validate(player, stack)) {
             player.openGui(GTSimpleWirelessNetwork.instance, GTSWNGuiHandler.QUANTUM_TERMINAL, world, 0, 0, 0);
         }
         return stack;
@@ -347,6 +388,8 @@ public class ItemNetworkQuantumTerminal extends Item {
      * 离线（D7）。本方法不做锚点有效性预校验。
      */
     private void placeQuantumNode(ItemStack stack, EntityPlayer player, World world, int x, int y, int z) {
+        if (!QuantumTerminalAccess.validate(player, stack) || !world.canMineBlock(player, x, y, z)
+            || !player.canPlayerEdit(x, y, z, 1, stack)) return;
         Block nodeBlock = BlockRegistrar.networkQuantumNode;
         // flag 3 = 通知客户端 + 触发邻接更新（邻接更新驱动连接过滤重算）
         if (!world.setBlock(x, y, z, nodeBlock, 0, 3)) return;
@@ -381,6 +424,7 @@ public class ItemNetworkQuantumTerminal extends Item {
      * 连网络主人自己的网络也桥接不上。
      */
     public static void applyAnchorToNode(ItemStack stack, TileEntityNetworkQuantumNode node, EntityPlayer player) {
+        if (!QuantumTerminalAccess.validate(player, stack)) return;
         NBTTagCompound tag = stack.stackTagCompound;
         node.setAnchor(
             tag.getInteger(NBT_ANCHOR_DIM),
@@ -427,6 +471,10 @@ public class ItemNetworkQuantumTerminal extends Item {
         tag.setInteger(NBT_ANCHOR_Y, y);
         tag.setInteger(NBT_ANCHOR_Z, z);
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
+        tag.setLong(
+            QuantumTerminalAccess.NBT_MIGRATION_CURSOR,
+            QuantumMigrationJournal.get(world)
+                .currentSequence());
         QuantumNetworkColor.bind(stack, world, x, y, z);
     }
 
@@ -445,11 +493,12 @@ public class ItemNetworkQuantumTerminal extends Item {
         tag.removeTag(NBT_ANCHOR_Y);
         tag.removeTag(NBT_ANCHOR_Z);
         tag.removeTag(NBT_BOUND_NAME);
+        tag.removeTag(QuantumTerminalAccess.NBT_MIGRATION_CURSOR);
     }
 
     /** 终端是否已绑定（public：v1.6.1 起供客户端放置预览渲染器等外部调用） */
     public static boolean isBound(ItemStack stack) {
-        return stack.stackTagCompound != null && stack.stackTagCompound.getByte(NBT_BOUND) == 1;
+        return stack != null && stack.stackTagCompound != null && stack.stackTagCompound.getByte(NBT_BOUND) == 1;
     }
 
     /**
@@ -503,6 +552,18 @@ public class ItemNetworkQuantumTerminal extends Item {
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean advanced) {
         DeviceTooltip.state(list);
+        if (stack.getTagCompound() != null && stack.getTagCompound()
+            .hasKey(QuantumTerminalAccess.NBT_OWNER_NAME)) {
+            list.add(
+                StatCollector.translateToLocalFormatted(
+                    "gtswn.tooltip.quantum_terminal.owner",
+                    stack.getTagCompound()
+                        .getString(QuantumTerminalAccess.NBT_OWNER_NAME)));
+        }
+        list.add(
+            StatCollector.translateToLocal(
+                getEncryptionKey(stack).isEmpty() ? "gtswn.tooltip.quantum_terminal.security_unbound"
+                    : "gtswn.tooltip.quantum_terminal.security_bound"));
         if (isBound(stack)) {
             NBTTagCompound tag = stack.stackTagCompound;
             list.add(
@@ -524,7 +585,8 @@ public class ItemNetworkQuantumTerminal extends Item {
             list,
             "gtswn.tooltip.quantum_terminal.description",
             "gtswn.tooltip.quantum_terminal.power_requirement",
-            "gtswn.tooltip.quantum_terminal.usage.anchor");
+            "gtswn.tooltip.quantum_terminal.usage.anchor",
+            "gtswn.tooltip.quantum_terminal.security_usage");
         list.add(
             StatCollector.translateToLocalFormatted(
                 "gtswn.tooltip.quantum_incorporation.power",

@@ -14,6 +14,7 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumBusReplacement;
 import com.miaokatze.gtswn.common.quantum.QuantumBusTarget;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
@@ -194,10 +195,23 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) {
             return false;
         }
+        if (!QuantumTerminalAccess.validate(player, held)) return true;
         if (QuantumIncorporationRegistry.isIncorporated(world, x, y, z)) return false;
         TileEntity clickedTile = world.getTileEntity(x, y, z);
         if (removeCore) {
             if (clickedTile instanceof TileEntityNetworkQuantumNode) {
+                TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) clickedTile;
+                node.applyPendingMigrations(com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal.get(world));
+                if (node.hasAnchor() && !QuantumTerminalAccess.canAccessAnchor(
+                    player,
+                    held,
+                    net.minecraftforge.common.DimensionManager.getWorld(node.getAnchorDim()),
+                    node.getAnchorX(),
+                    node.getAnchorY(),
+                    node.getAnchorZ())) {
+                    ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.no_permission");
+                    return true;
+                }
                 removeCore(player, (TileEntityNetworkQuantumNode) clickedTile);
                 return true;
             }

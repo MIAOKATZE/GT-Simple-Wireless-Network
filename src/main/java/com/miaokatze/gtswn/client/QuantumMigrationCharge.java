@@ -115,15 +115,17 @@ final class QuantumMigrationCharge {
         if (step == QuantumMigrationGesture.Step.BEGIN) send(PacketQuantumMigration.BEGIN);
         send(PacketQuantumMigration.HOLD);
         if (step == QuantumMigrationGesture.Step.COMPLETE) send(PacketQuantumMigration.COMPLETE);
-        // Keep using and sending heartbeats after COMPLETE: a slow server still needs 100 real ticks.
+        // Keep using and sending heartbeats after COMPLETE: a slow server still needs 600 real ticks.
     }
 
     static void draw(RenderGameOverlayEvent.Post event) {
         if (stack == null || event.type != RenderGameOverlayEvent.ElementType.TEXT) return;
         Minecraft mc = Minecraft.getMinecraft();
-        String text = GESTURE.ticks() <= 100
-            ? StatCollector
-                .translateToLocalFormatted("gtswn.hud.quantum.migration_charge", Math.min(GESTURE.ticks(), 100))
+        String text = GESTURE.ticks() <= PacketQuantumMigration.REQUIRED_TICKS
+            ? StatCollector.translateToLocalFormatted(
+                "gtswn.hud.quantum.migration_charge",
+                Math.min(GESTURE.ticks(), PacketQuantumMigration.REQUIRED_TICKS) * 100
+                    / PacketQuantumMigration.REQUIRED_TICKS)
             : StatCollector.translateToLocal("gtswn.hud.quantum.migration_wait");
         mc.fontRenderer.drawStringWithShadow(
             text,

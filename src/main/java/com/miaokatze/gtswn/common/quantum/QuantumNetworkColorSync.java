@@ -82,11 +82,7 @@ public final class QuantumNetworkColorSync {
         boolean changed = false;
         for (ItemStack stack : event.player.inventory.mainInventory) {
             if (stack == null || !(stack.getItem() instanceof ItemNetworkQuantumTerminal)) continue;
-            int color = QuantumNetworkColor.resolve(stack);
-            if (QuantumNetworkColor.get(stack) != color) {
-                QuantumNetworkColor.set(stack, color);
-                changed = true;
-            }
+            changed |= QuantumTerminalAccess.synchronize(event.player, stack);
         }
         if (changed) event.player.inventory.markDirty();
     }

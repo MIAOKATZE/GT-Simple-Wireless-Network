@@ -138,6 +138,8 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 出册打包坐标（供 tick 巡检遍历打包值时直接使用） */
     public void dequantize(long packed) {
         if (this.controllers.remove(packed)) {
+            if (world != null && !world.isRemote) QuantumNetworkSecurityRegistry.get(world)
+                .remove(Collections.singleton(packed));
             identities.remove(packed);
             loadedTiles.remove(packed);
             this.revision++;

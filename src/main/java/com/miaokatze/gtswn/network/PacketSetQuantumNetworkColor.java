@@ -12,17 +12,13 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
-import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorSync;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 
-import appeng.api.config.SecurityPermissions;
-import appeng.api.networking.IGridHost;
-import appeng.api.networking.IGridNode;
-import appeng.api.networking.security.ISecurityGrid;
 import appeng.tile.networking.TileController;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -107,6 +103,10 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
         if (player.isDead || player.playerNetServerHandler == null || player.inventory.currentItem != job.slot) return;
         ItemStack stack = player.getHeldItem();
         if (stack == null || !(stack.getItem() instanceof ItemNetworkQuantumTerminal)) return;
+        if (!QuantumTerminalAccess.canManage(player, stack)) {
+            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.no_permission");
+            return;
+        }
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) {
             QuantumNetworkColor.set(stack, job.color);
@@ -118,14 +118,6 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
         if (world == null || !world.blockExists(anchor[1], anchor[2], anchor[3])) return;
         TileEntity tile = world.getTileEntity(anchor[1], anchor[2], anchor[3]);
         if (!(tile instanceof TileController) || !world.canMineBlock(player, anchor[1], anchor[2], anchor[3])) return;
-        IGridNode node = ((IGridHost) tile).getGridNode(ForgeDirection.UNKNOWN);
-        if (node == null || node.getGrid() == null) return;
-        ISecurityGrid security = node.getGrid()
-            .getCache(ISecurityGrid.class);
-        if (security != null && !security.hasPermission(player, SecurityPermissions.BUILD)) {
-            ItemNetworkQuantumTerminal.sendMessage(player, "gtswn.chat.quantum.no_permission");
-            return;
-        }
         QuantumNetworkColorRegistry registry = QuantumNetworkColorRegistry.get(world);
         Set<Long> members = registry.structure(world, anchor[1], anchor[2], anchor[3]);
         if (members.isEmpty()) return;

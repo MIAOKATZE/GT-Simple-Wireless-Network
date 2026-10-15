@@ -3,7 +3,7 @@ package com.miaokatze.gtswn.network;
 /** Server-clock credential. Client completion is only intent, never elapsed time. */
 final class QuantumMigrationSession {
 
-    static final int REQUIRED_TICKS = 100;
+    static final int REQUIRED_TICKS = PacketQuantumMigration.REQUIRED_TICKS;
     static final int HEARTBEAT_TIMEOUT = 10;
     private final long started;
     private long lastValidated;

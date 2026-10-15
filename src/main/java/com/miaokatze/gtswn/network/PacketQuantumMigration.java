@@ -10,7 +10,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
@@ -19,6 +21,8 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerIdentity;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkMigration;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.tile.networking.TileController;
@@ -35,6 +39,7 @@ import io.netty.buffer.ByteBuf;
 /** All state and world access stay on the server END tick, including cancellation. */
 public final class PacketQuantumMigration implements IMessage {
 
+    public static final int REQUIRED_TICKS = 600;
     public static final int BEGIN = 0;
     public static final int HOLD = 1;
     public static final int CANCEL = 2;
@@ -42,6 +47,7 @@ public final class PacketQuantumMigration implements IMessage {
     private static final Map<UUID, Inbox> PENDING = new ConcurrentHashMap<>();
     private static final Map<UUID, Charge> CHARGES = new HashMap<>();
     private static final Map<UUID, Long> LAST_SESSION = new HashMap<>();
+    private static final QuantumMigrationAnnouncements ANNOUNCEMENTS = new QuantumMigrationAnnouncements();
     private static long serverTick;
     int action = -1;
     long session;
@@ -55,6 +61,15 @@ public final class PacketQuantumMigration implements IMessage {
         this.x = x;
         this.y = y;
         this.z = z;
+    }
+
+    /** Server stop also runs for integrated worlds, whose static fields otherwise outlive the save. */
+    public static void clearServerState() {
+        PENDING.clear();
+        CHARGES.clear();
+        LAST_SESSION.clear();
+        ANNOUNCEMENTS.clear();
+        serverTick = 0;
     }
 
     @Override
@@ -97,6 +112,7 @@ public final class PacketQuantumMigration implements IMessage {
         public void tick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
             serverTick++;
+            if (serverTick % 20 == 0) ANNOUNCEMENTS.expire(System.nanoTime());
             // Drain intents before validating/committing, so a same-tick CANCEL always wins.
             for (Inbox inbox : PENDING.values()) {
                 Request cancellation = inbox.pollCancellation();
@@ -176,9 +192,11 @@ public final class PacketQuantumMigration implements IMessage {
                 result(player, message.session, PacketQuantumMigrationResult.REJECTED);
                 return;
             }
+            // canStart synchronizes terminal migrations; snapshot the resulting anchor, never the stale packet state.
             charge = new Charge(player, stack, message);
             player.setItemInUse(stack, stack.getMaxItemUseDuration());
             CHARGES.put(id, charge);
+            announceStart(charge);
             return;
         }
         if (charge == null || charge.player != player || charge.session != message.session) return;
@@ -197,6 +215,27 @@ public final class PacketQuantumMigration implements IMessage {
             charge.clearUse();
             result(charge.player, charge.session, PacketQuantumMigrationResult.CANCELLED);
         }
+    }
+
+    private static void announceStart(Charge charge) {
+        if (!Config.quantumMigrationStartAnnouncement
+            || !ANNOUNCEMENTS.reserve(charge.player.getUniqueID(), System.nanoTime())) return;
+        MinecraftServer.getServer()
+            .getConfigurationManager()
+            .sendChatMsg(
+                new ChatComponentTranslation(
+                    "gtswn.chat.quantum.migration_started",
+                    charge.player.getCommandSenderName(),
+                    charge.sourceWorld.provider.getDimensionName(),
+                    charge.source[0],
+                    charge.source[1],
+                    charge.source[2],
+                    charge.source[3],
+                    charge.world.provider.getDimensionName(),
+                    charge.dimension,
+                    charge.x,
+                    charge.y,
+                    charge.z));
     }
 
     private static void result(EntityPlayerMP player, long session, int result) {
@@ -270,6 +309,8 @@ public final class PacketQuantumMigration implements IMessage {
                 && target instanceof TileController
                 && pointing(player, x, y, z)
                 && world.getTileEntity(x, y, z) == target
+                // Permission loss ends this credential immediately. Synchronization can also change its anchor.
+                && QuantumTerminalAccess.canManage(player, stack)
                 && Arrays.equals(source, ItemNetworkQuantumTerminal.getAnchor(stack))
                 && sourceCurrent();
         }

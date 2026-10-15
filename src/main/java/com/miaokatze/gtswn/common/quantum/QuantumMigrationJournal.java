@@ -15,7 +15,7 @@ import net.minecraftforge.common.DimensionManager;
 
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
-/** Durable ordered binding changes. Terminals deliberately never consult this journal. */
+/** Durable ordered binding changes, replayed lazily by terminals, nodes and incorporation entries. */
 public final class QuantumMigrationJournal extends WorldSavedData {
 
     private static final String NAME = "gtswn_quantum_migrations";
