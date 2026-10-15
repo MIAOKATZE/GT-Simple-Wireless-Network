@@ -8,19 +8,24 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.GuiButton;
+import net.minecraft.client.gui.GuiScreen;
+import net.minecraft.client.gui.GuiTextField;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+import org.lwjgl.input.Keyboard;
 
 import com.miaokatze.gtswn.common.gui.ContainerTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
@@ -30,6 +35,29 @@ import cpw.mods.fml.relauncher.FMLInjectionData;
 
 /** Exercises the actual GUI button list and callbacks without constructing a Minecraft client or GL context. */
 public class QuantumTerminalEffectsGuiTest {
+
+    private static class TestFont extends FontRenderer {
+
+        private TestFont() {
+            super(null, null, null, false);
+        }
+
+        @Override
+        public int getStringWidth(String text) {
+            return text.length() * 6;
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int width) {
+            return trimStringToWidth(text, width, false);
+        }
+
+        @Override
+        public String trimStringToWidth(String text, int width, boolean reverse) {
+            int count = Math.min(text.length(), Math.max(0, width / 6));
+            return reverse ? text.substring(text.length() - count) : text.substring(0, count);
+        }
+    }
 
     @Rule
     public TemporaryFolder temporaryFolder = new TemporaryFolder();
@@ -127,6 +155,37 @@ public class QuantumTerminalEffectsGuiTest {
                 .set(null, entry.getValue());
         }
         minecraftHome.set(null, originalHome);
+    }
+
+    @Test
+    public void quantumOnlyRenameButtonFitsAndInlineEditorKeepsETextSnapshotAndPageUntilEscape() throws Exception {
+        ActualGui gui = actualGui(true);
+        GuiButton rename = gui.find(103);
+        assertNotNull(rename);
+        assertEquals(5, rename.yPosition);
+        assertTrue(rename.xPosition >= 110);
+        assertTrue(rename.xPosition + rename.width <= gui.find(100).xPosition);
+        assertNull(actualGui(false).find(103));
+        Field font = GuiScreen.class.getDeclaredField("fontRendererObj");
+        font.setAccessible(true);
+        font.set(gui, allocate(TestFont.class));
+        Method layout = GuiQuantumTerminal.class.getDeclaredMethod("layoutRenameEditor", String.class);
+        layout.setAccessible(true);
+        layout.invoke(gui, "量子");
+        Field editor = GuiQuantumTerminal.class.getDeclaredField("renameField");
+        editor.setAccessible(true);
+        GuiTextField text = (GuiTextField) editor.get(gui);
+        gui.keyTyped('e', Keyboard.KEY_E);
+        gui.keyTyped('中', 0);
+        assertEquals("量子e中", text.getText());
+        GuiQuantumTerminal.receiveData(new QuantumNetworkData());
+        assertEquals("量子e中", text.getText());
+        gui.keyTyped((char) 0, Keyboard.KEY_ESCAPE);
+        assertNull(editor.get(gui));
+        Field page = GuiQuantumTerminal.class.getDeclaredField("effectsPage");
+        page.setAccessible(true);
+        assertTrue(page.getBoolean(gui));
+        assertNotNull(gui.find(103));
     }
 
     @Test

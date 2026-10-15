@@ -101,6 +101,10 @@ Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emi
 
 The Quantum Terminal GUI keeps its 16-color palette and node, incorporation and channel details on the Details page; its Effects page reads and writes the same client settings used by `/gtswn quantum`. The Link Terminal uses the same two-page UI: Details shows the player, dimension, level, team lead and grid EU, while Effects uses the settings shared with `/gtswn tap`; left-click numeric controls to increase and right-click to decrease, within the same ranges as the commands. Both terminals share a player-persistent supply store. The Laser Vacuum Pipe and Quantum Incorporation Anchor labels share a row with their item slots; text below says supplies can be preloaded, up to 640 of each, within the 300×240 interface. Each real inventory slot withdraws at most one stack (64); the item badge shows the player's total, and a ghost icon appears only while the slot is empty. Quick transfers are supported, and right-click withdraws one item. When an operation starts with preloaded stock, its success chat message reports the remaining amount, including 0 after consuming the last item. Failures, removals, and operations that start without preloaded stock do not add that notice.
 
+量子终端顶部的「命名」按钮位于「详情」「特效」左侧，可在当前界面输入最多 40 个字符的物品名称，支持中文；留空恢复默认名称。效果与铁砧的物品自定义名称一致，无额外经验或耗材成本。Enter 确认、Esc 取消，供给槽和当前页面保留。
+
+The Quantum Terminal's Rename button sits to the left of Details and Effects. Enter an item name of up to 40 characters, including Chinese, or leave it blank to restore the default name. This uses the same custom item name as an anvil, with no extra experience or material cost. Enter confirms and Esc cancels while retaining the supply slots and current page.
+
 量子终端的 16 色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
 
 The terminal's 16-color selection synchronizes across its quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close the interface.
@@ -120,6 +124,7 @@ Administrators can temporarily recover access to all quantum networks with `/gts
 - **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认实际扣除 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default actual draw: 10.0 AE/t).
 - **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
 - **拆除 / Dismantling**: 普通机器硬度，支持挖掘及 AE、GT 扳手 Shift+右击，也支持 IC2 扳手原生拆卸。节点核心不掉落，部件与库存正常回收。/ Normal machine hardness; supports mining, AE/GT wrench sneak-right-click, and native IC2 wrench removal. The core never drops; parts and inventories are recovered.
+- **扳手选框 / Wrench Highlight**: 量子节点不显示 GT 机器的扳手九宫格方向提示，保留核心和侧部件的正常选框及扳手拆除行为。/ Quantum Nodes hide GT's wrench rotation grid while retaining normal core and side-part outlines and wrench removal.
 
 ### 量子并入与锚点 / Quantum Incorporation & Anchor
 

@@ -865,3 +865,6 @@ gtswn.gui.quantum.safety_permission=需要拥有者或“安全”权限
 gtswn.gui.quantum.safety_waiting=等待服务端安全状态
 gtswn.gui.quantum.safety_authorized=拥有者或“安全”权限可切换
 gtswn.gui.quantum.safety_management_only=配对后查看网络详情
+gtswn.gui.quantum.rename=命名
+gtswn.gui.quantum.rename_title=命名量子终端
+gtswn.gui.quantum.rename_hint=最多40个字符；留空恢复原名。

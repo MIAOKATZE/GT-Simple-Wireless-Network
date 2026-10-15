@@ -2,19 +2,23 @@ package com.miaokatze.gtswn.client.gui;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiButton;
+import net.minecraft.client.gui.GuiTextField;
 import net.minecraft.client.gui.inventory.GuiContainer;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
+import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.gui.ContainerTerminal;
+import com.miaokatze.gtswn.common.gui.TerminalNameRules;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketRenameQuantumTerminal;
 import com.miaokatze.gtswn.network.PacketRequestQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSetQuantumNetworkColor;
 import com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety;
@@ -33,6 +37,12 @@ public class GuiQuantumTerminal extends GuiContainer {
     private boolean effectsPage;
     private int pollTimer;
     private boolean decreaseSetting;
+    private GuiTextField renameField;
+    private GuiButton renameConfirm;
+    private GuiButton renameCancel;
+    private String renameExpectedName;
+    private boolean previousRepeatEvents;
+    private boolean renameRepeatEnabled;
 
     public GuiQuantumTerminal() {
         this(new ContainerTerminal(Minecraft.getMinecraft().thePlayer, true));
@@ -77,11 +87,13 @@ public class GuiQuantumTerminal extends GuiContainer {
         guiLeft = (width - WIDTH) / 2;
         guiTop = (height - HEIGHT) / 2;
         rebuildButtons();
+        if (renameField != null) layoutRenameEditor(renameField.getText());
     }
 
     @Override
     public void updateScreen() {
         super.updateScreen();
+        if (renameField != null) renameField.updateCursorCounter();
         ItemStack held = heldTerminal();
         if (held == null) {
             mc.thePlayer.closeScreen();
@@ -121,7 +133,7 @@ public class GuiQuantumTerminal extends GuiContainer {
             guiLeft + COLOR_LEFT - 4,
             guiTop + 132,
             GtswnGuiPalette.DIVIDER);
-        drawLine(tr("gtswn.gui.quantum.network_details"), 8, GtswnGuiPalette.TEXT_TITLE);
+        drawHeader(tr("gtswn.gui.quantum.network_details"));
         drawDetails();
         fontRendererObj
             .drawString(tr("gtswn.gui.quantum.color"), guiLeft + COLOR_LEFT, guiTop + 22, GtswnGuiPalette.TEXT_TITLE);
@@ -147,6 +159,10 @@ public class GuiQuantumTerminal extends GuiContainer {
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
         refreshSafetyButton();
         super.drawScreen(mouseX, mouseY, partialTicks);
+        if (renameField != null) {
+            drawRenameEditor(mouseX, mouseY);
+            return;
+        }
         if (effectsPage) {
             for (Object entry : buttonList) {
                 GuiButton setting = (GuiButton) entry;
@@ -244,6 +260,12 @@ public class GuiQuantumTerminal extends GuiContainer {
 
     @Override
     protected void mouseClicked(int mouseX, int mouseY, int button) {
+        if (renameField != null) {
+            renameField.mouseClicked(mouseX, mouseY, button);
+            if (button == 0 && renameConfirm.mousePressed(mc, mouseX, mouseY)) submitRename();
+            else if (button == 0 && renameCancel.mousePressed(mc, mouseX, mouseY)) closeRenameEditor();
+            return;
+        }
         if (effectsPage && button == 1) {
             for (Object entry : buttonList) {
                 GuiButton setting = (GuiButton) entry;
@@ -335,6 +357,8 @@ public class GuiQuantumTerminal extends GuiContainer {
 
     private void rebuildButtons() {
         buttonList.clear();
+        if (terminalContainer.quantum)
+            buttonList.add(new GtswnGuiButton(103, guiLeft + 114, guiTop + 5, 58, 16, tr("gtswn.gui.quantum.rename")));
         buttonList.add(new GtswnGuiButton(100, guiLeft + 174, guiTop + 5, 58, 16, tr("gtswn.gui.terminal.details")));
         buttonList.add(new GtswnGuiButton(101, guiLeft + 234, guiTop + 5, 58, 16, tr("gtswn.gui.terminal.effects")));
         if (!effectsPage) {
@@ -402,11 +426,121 @@ public class GuiQuantumTerminal extends GuiContainer {
     }
 
     private void drawEffects() {
-        drawLine(tr("gtswn.gui.terminal.effects"), 8, GtswnGuiPalette.TEXT_TITLE);
+        drawHeader(tr("gtswn.gui.terminal.effects"));
+    }
+
+    private void drawHeader(String text) {
+        int available = terminalContainer.quantum ? 100 : COLOR_LEFT - 19;
+        fontRendererObj.drawString(
+            fontRendererObj.trimStringToWidth(text, available),
+            guiLeft + 10,
+            guiTop + 8,
+            GtswnGuiPalette.TEXT_TITLE);
+    }
+
+    private void openRenameEditor() {
+        ItemStack held = heldTerminal();
+        if (!terminalContainer.quantum || held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal))
+            return;
+        renameExpectedName = ContainerTerminal.customName(held);
+        previousRepeatEvents = Keyboard.areRepeatEventsEnabled();
+        Keyboard.enableRepeatEvents(true);
+        renameRepeatEnabled = true;
+        layoutRenameEditor(held.getDisplayName());
+        renameField.setSelectionPos(0);
+    }
+
+    private void layoutRenameEditor(String text) {
+        int left = guiLeft + 10, top = guiTop + 56;
+        renameField = new GuiTextField(fontRendererObj, left + 12, top + 29, 256, 18);
+        renameField.setMaxStringLength(TerminalNameRules.MAX_LENGTH);
+        renameField.setText(text);
+        renameField.setFocused(true);
+        renameField.setCanLoseFocus(false);
+        renameConfirm = new GtswnGuiButton(104, left + 12, top + 80, 122, 20, tr("gui.done"));
+        renameCancel = new GtswnGuiButton(105, left + 146, top + 80, 122, 20, tr("gui.cancel"));
+    }
+
+    private void drawRenameEditor(int mouseX, int mouseY) {
+        int left = guiLeft + 10, top = guiTop + 56;
+        GL11.glPushMatrix();
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT);
+        GL11.glTranslatef(0, 0, 400);
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glDisable(GL11.GL_DEPTH_TEST);
+        try {
+            drawRect(0, 0, width, height, 0xB0000000);
+            GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.PANEL_QUANTUM, 4, left, top, 280, 112, zLevel);
+            fontRendererObj
+                .drawString(tr("gtswn.gui.quantum.rename_title"), left + 12, top + 10, GtswnGuiPalette.TEXT_TITLE);
+            renameField.drawTextBox();
+            fontRendererObj
+                .drawString(tr("gtswn.gui.quantum.rename_hint"), left + 12, top + 57, GtswnGuiPalette.TEXT_BODY);
+            renameConfirm.enabled = terminalContainer.renameToken() != 0;
+            renameConfirm.drawButton(mc, mouseX, mouseY);
+            renameCancel.drawButton(mc, mouseX, mouseY);
+        } finally {
+            GL11.glPopAttrib();
+            GL11.glPopMatrix();
+        }
+    }
+
+    private void submitRename() {
+        long token = terminalContainer.renameToken();
+        if (token == 0) return;
+        GTSWNPacketHandler.NETWORK.sendToServer(
+            new PacketRenameQuantumTerminal(
+                terminalContainer.windowId,
+                terminalContainer.heldIndex(),
+                token,
+                renameExpectedName,
+                renameField.getText()));
+        closeRenameEditor();
+    }
+
+    private void closeRenameEditor() {
+        if (renameField == null) return;
+        renameField = null;
+        renameExpectedName = null;
+        if (renameRepeatEnabled) {
+            Keyboard.enableRepeatEvents(previousRepeatEvents);
+            renameRepeatEnabled = false;
+        }
+    }
+
+    @Override
+    protected void keyTyped(char character, int keyCode) {
+        if (renameField != null) {
+            if (keyCode == Keyboard.KEY_ESCAPE) closeRenameEditor();
+            else if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) submitRename();
+            else renameField.textboxKeyTyped(character, keyCode);
+            return;
+        }
+        super.keyTyped(character, keyCode);
+    }
+
+    @Override
+    protected void mouseMovedOrUp(int mouseX, int mouseY, int button) {
+        if (renameField == null) super.mouseMovedOrUp(mouseX, mouseY, button);
+    }
+
+    @Override
+    protected void mouseClickMove(int mouseX, int mouseY, int button, long elapsed) {
+        if (renameField == null) super.mouseClickMove(mouseX, mouseY, button, elapsed);
+    }
+
+    @Override
+    public void onGuiClosed() {
+        closeRenameEditor();
+        super.onGuiClosed();
     }
 
     @Override
     protected void actionPerformed(GuiButton button) {
+        if (button.id == 103) {
+            openRenameEditor();
+            return;
+        }
         if (button.id == 100 || button.id == 101) {
             effectsPage = button.id == 101;
             rebuildButtons();

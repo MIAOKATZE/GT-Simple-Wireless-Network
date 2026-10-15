@@ -89,6 +89,7 @@ public class GTSimpleWirelessNetwork {
         AnimationQualityHints.clear();
         com.miaokatze.gtswn.network.PacketQuantumMigration.clearServerState();
         com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety.clearContexts();
+        com.miaokatze.gtswn.network.PacketRenameQuantumTerminal.clearPending();
         com.miaokatze.gtswn.common.quantum.QuantumConnectionSecurity.clearConnections();
         com.miaokatze.gtswn.common.device.DeviceFlowMonitor.clear();
         com.miaokatze.gtswn.common.device.DeviceTerminalSettings.clear();
