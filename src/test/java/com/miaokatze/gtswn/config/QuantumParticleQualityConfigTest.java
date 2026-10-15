@@ -83,6 +83,7 @@ public class QuantumParticleQualityConfigTest {
         command.processCommand(sender, new String[] { "tap", "size", "250" });
         command.processCommand(sender, new String[] { "tap", "distance", "128" });
         command.processCommand(sender, new String[] { "tap", "material", "OLDPLUS" });
+        command.processCommand(sender, new String[] { "TaP", "VoLtAgE", "OFF" });
         command.processCommand(sender, new String[] { "QUANTUM", "density", "200" });
         command.processCommand(sender, new String[] { "quantum", "size", "40" });
         command.processCommand(sender, new String[] { "quantum", "distance", "7" });
@@ -96,6 +97,7 @@ public class QuantumParticleQualityConfigTest {
         assertEquals(128, Config.tapRenderDistance);
         assertEquals(7, Config.quantumRenderDistance);
         assertEquals("oldplus", Config.tapMaterial);
+        assertFalse(Config.tapVoltageColorsEnabled);
         assertEquals(0D, Config.tapParticleDensity(), 0D);
         assertEquals(2D, Config.quantumParticleDensity(), 0D);
         assertEquals(123, Config.hudXOffset);
@@ -104,6 +106,34 @@ public class QuantumParticleQualityConfigTest {
             "keep-me",
             new Configuration(file).get("custom", "PreservedSetting", "missing")
                 .getString());
+    }
+
+    @Test
+    public void voltageColorsDefaultOnAndResetOnlyWithTap() throws Exception {
+        File file = temporaryFolder.newFile("voltage.cfg");
+        Config.tapVoltageColorsEnabled = false;
+        Config.synchronizeNetworkConfiguration(file);
+        assertTrue(Config.tapVoltageColorsEnabled);
+        command.processCommand(sender, new String[] { "tap", "voltage", "off" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertFalse(Config.tapVoltageColorsEnabled);
+        assertFalse(
+            new Configuration(file).get("client", "TapVoltageColorsEnabled", true)
+                .getBoolean());
+        command.processCommand(sender, new String[] { "quantum", "reset" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertFalse(Config.tapVoltageColorsEnabled);
+        command.processCommand(sender, new String[] { "tap", "reset" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertTrue(Config.tapVoltageColorsEnabled);
+        command.processCommand(sender, new String[] { "tap", "voltage", "off" });
+        command.processCommand(sender, new String[] { "tap", "voltage", "ON" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertTrue(Config.tapVoltageColorsEnabled);
+        command.processCommand(sender, new String[] { "tap", "voltage", "off" });
+        command.processCommand(sender, new String[] { "reset" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertTrue(Config.tapVoltageColorsEnabled);
     }
 
     @Test
@@ -204,7 +234,8 @@ public class QuantumParticleQualityConfigTest {
             { "tap", "density", "NaN" }, { "tap", "size", "100.0" }, { "tap", "on", "extra" },
             { "tap", "reset", "extra" }, { "quantum", "material", "high" }, { "tap", "material", "unknown" },
             { "tap", "material", "oldultra" }, { "tap", "density", "50", "extra" }, { "tap", "status", "extra" },
-            { "quality", "low" }, { "particle", "off" }, { "reset", "extra" } };
+            { "tap", "voltage" }, { "tap", "voltage", "true" }, { "tap", "voltage", "off", "extra" },
+            { "quantum", "voltage", "off" }, { "quality", "low" }, { "particle", "off" }, { "reset", "extra" } };
         for (String[] args : invalid) {
             try {
                 command.processCommand(sender, args);
@@ -217,6 +248,7 @@ public class QuantumParticleQualityConfigTest {
                 assertEquals(100, Config.tapParticleSizePercent);
                 assertEquals(64, Config.quantumRenderDistance);
                 assertEquals("high", Config.tapMaterial);
+                assertTrue(Config.tapVoltageColorsEnabled);
             }
         }
         command.processCommand(sender, new String[] {});
@@ -254,6 +286,21 @@ public class QuantumParticleQualityConfigTest {
         assertFalse(
             command.addTabCompletionOptions(sender, new String[] { "quantum", "" })
                 .contains("material"));
+        assertTrue(
+            command.addTabCompletionOptions(sender, new String[] { "TAP", "" })
+                .contains("voltage"));
+        assertFalse(
+            command.addTabCompletionOptions(sender, new String[] { "quantum", "" })
+                .contains("voltage"));
+        assertEquals(
+            java.util.Arrays.asList("on", "off"),
+            command.addTabCompletionOptions(sender, new String[] { "tap", "VOLTAGE", "" }));
+        assertTrue(
+            command.addTabCompletionOptions(sender, new String[] { "quantum", "voltage", "" })
+                .isEmpty());
+        assertTrue(
+            command.addTabCompletionOptions(sender, new String[] { "tap", "voltage", "on", "" })
+                .isEmpty());
         assertTrue(
             command.addTabCompletionOptions(sender, new String[] { "tap", "MATERIAL", "" })
                 .contains("oldplus"));

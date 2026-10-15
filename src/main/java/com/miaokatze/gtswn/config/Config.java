@@ -48,6 +48,8 @@ public class Config {
     public static int tapRenderDistance = 64;
     public static int quantumRenderDistance = 64;
     public static String tapMaterial = "high";
+    /** high/medium 内三圈及粒子使用机器 GT 电压等级色；关闭恢复能源/动力色。 */
+    public static boolean tapVoltageColorsEnabled = true;
     public static float linkNodeOpacity = .48F;
     public static double linkNodeDepth = 1 / 8D;
     public static double linkNodeRelief = .65D;
@@ -105,6 +107,8 @@ public class Config {
             .set(quantumRenderDistance);
         configuration.get(CATEGORY_CLIENT, "TapMaterial", "high")
             .set(tapMaterial);
+        configuration.get(CATEGORY_CLIENT, "TapVoltageColorsEnabled", true)
+            .set(tapVoltageColorsEnabled);
     }
 
     public static boolean resetParticleConfiguration(boolean tap) {
@@ -114,6 +118,7 @@ public class Config {
             tapParticleSizePercent = 100;
             tapRenderDistance = 64;
             tapMaterial = "high";
+            tapVoltageColorsEnabled = true;
         } else {
             quantumParticlesEnabled = true;
             quantumParticleDensityPercent = 100;
@@ -169,6 +174,12 @@ public class Config {
             .getString()
             .toLowerCase(java.util.Locale.ROOT);
         if (!validTapMaterial(tapMaterial)) tapMaterial = "high";
+        tapVoltageColorsEnabled = configuration.getBoolean(
+            "TapVoltageColorsEnabled",
+            CATEGORY_CLIENT,
+            true,
+            "high/medium 材质的内三圈及粒子按识别机器的 GT 电压等级着色；关闭恢复能源/动力色。\n"
+                + "Color the inner three rings and particles of high/medium materials by the recognized machine's GT voltage tier; disable to restore energy/dynamo colors.");
         writeParticleConfiguration(configuration);
     }
 

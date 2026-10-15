@@ -10,7 +10,8 @@ import gregtech.api.enums.GTValues;
  * <p>
  * 电压数值单源引用 GT5U {@link GTValues#V}（SWN-OPT-04：本地硬拷贝已实际漂移——
  * MAX 档差 7、缺 error tier 第 15 档；GT5U 为必选依赖，直接改引消除静默漂移）。
- * 名称/颜色表仍为本 mod 展示层定义，档位上限 14=MAX 与两表长度对齐（15 档），
+ * 名称表保留本 mod 的 MAX 展示名称；颜色直接引用 GT5U 标准，包含高等级的格式修饰。
+ * 档位上限 14=MAX 与两表长度对齐（15 档），
  * 不进入 GT5U 的 index 15 error tier（8589934592，防数组越界的哨兵档，非真实等级）。
  * <p>
  * 来源：合并自 {@code MTEWirelessEnergyMonitor} 与 {@code WirelessMonitorHUD} 的重复实现。
@@ -24,24 +25,27 @@ public class GTTierUtil {
         "UIV", "UMV", "UXV", "MAX" };
 
     /**
-     * GT 电压等级颜色代码（使用 Minecraft 原生 16 色）
+     * GT5U 电压等级格式色，保留原生下划线、粗体等高等级修饰。
      */
-    public static final String[] TIER_COLORS = { "§7", // ULV - 灰色
-        "§7", // LV - 灰色
-        "§b", // MV - 亮蓝色
-        "§9", // HV - 蓝色
-        "§3", // EV - 青色
-        "§3", // IV - 青色
-        "§a", // LuV - 绿色
-        "§e", // ZPM - 黄色
-        "§e", // UV - 黄色
-        "§6", // UHV - 金色
-        "§6", // UEV - 金色
-        "§c", // UIV - 红色
-        "§c", // UMV - 红色
-        "§4", // UXV - 深红色
-        "§4" // MAX - 深红色
-    };
+    public static final String[] TIER_COLORS = java.util.Arrays.copyOf(GTValues.TIER_COLORS, TIER_NAMES.length);
+
+    /** Standard Minecraft text RGB for a GT tier; unknown tiers have no voltage tint. */
+    public static int tierRgb(int tier) {
+        if (tier < 0 || tier >= TIER_COLORS.length) return -1;
+        String formatting = TIER_COLORS[tier];
+        for (int i = 0; i + 1 < formatting.length(); i++) {
+            if (formatting.charAt(i) != '§') continue;
+            int code = Character.digit(formatting.charAt(++i), 16);
+            if (code < 0) continue;
+            int bright = (code >> 3 & 1) * 85;
+            int red = (code >> 2 & 1) * 170 + bright;
+            int green = (code >> 1 & 1) * 170 + bright;
+            int blue = (code & 1) * 170 + bright;
+            if (code == 6) red += 85;
+            return red << 16 | green << 8 | blue;
+        }
+        return -1;
+    }
 
     /**
      * 获取 EU/t 对应的 GT 电压等级索引
@@ -92,10 +96,10 @@ public class GTTierUtil {
      * 本方法取绝对值委托 {@link #formatGTPowerDecimal}，括号内保持无符号——
      * 统计/HUD/MTE 调用方的方向语义由 ↑↓/正负文案承担。
      * <p>
-     * 输出示例：{@code §92.0A HV}（蓝色 2.0A HV）、{@code §410.0A MAX}（深红 10.0A MAX）。
+     * 输出示例：{@code §e2.0A HV}（黄色 2.0A HV），MAX 使用白色粗体下划线。
      *
      * @param euPerTick 每秒能量变化率
-     * @return 格式化后的字符串（带 § 颜色代码），例如 {@code §92.0A HV}
+     * @return 格式化后的字符串（带 § 颜色代码），例如 {@code §e2.0A HV}
      */
     public static String formatGTPower(double euPerTick) {
         return formatGTPowerDecimal(Math.abs(euPerTick));
@@ -104,17 +108,17 @@ public class GTTierUtil {
     /**
      * 将 EU/t 转换为 GT 的电流+电压等级格式（「电流*电压」统一格式化方法）。
      * <p>
-     * 电流按 {@code absEU / V[tier]} 真实值四舍五入保留 1 位小数（例 2048EU/t HV →
-     * {@code §92.0A HV}）；档位与进位逻辑复用 {@link #getGTTier}（&gt;4A 自动升档）。
+     * 电流按 {@code absEU / V[tier]} 真实值四舍五入保留 1 位小数（例 1024EU/t HV →
+     * {@code §e2.0A HV}）；档位与进位逻辑复用 {@link #getGTTier}（&gt;4A 自动升档）。
      * MAX 档已是最高档、无更高级可升：超过 4A 后电流值按真实比值继续增大、不封顶
-     * （例 10737418200EU/t → {@code §410.0A MAX}）；负值（发电）加 {@code "-"} 前缀
-     * （例 -1024EU/t → {@code §9-2.0A HV}）；档位颜色与整数版一致。
+     * （例 10737418200EU/t → 白色粗体下划线的 {@code 10.0A MAX}）；负值（发电）加 {@code "-"} 前缀
+     * （例 -1024EU/t → {@code §e-2.0A HV}）；档位颜色与整数版一致。
      * <p>
      * v1.7.4：整数变体 {@link #formatGTPower} 改为本方法的绝对值薄委托，两处表现
      * （无线电网统计括号后缀、设备信息终端「电压等级」计数模式）共用同一实现。
      *
      * @param euPerTick 每秒能量变化率（正=耗电 / 负=发电）
-     * @return 格式化后的字符串（带 § 颜色代码），例如 {@code §92.0A HV}
+     * @return 格式化后的字符串（带 § 颜色代码），例如 {@code §e2.0A HV}
      */
     public static String formatGTPowerDecimal(double euPerTick) {
         int tier = getGTTier(euPerTick);

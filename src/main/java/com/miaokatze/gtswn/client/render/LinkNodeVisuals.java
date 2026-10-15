@@ -23,6 +23,15 @@ public final class LinkNodeVisuals {
         return "old".equals(material) || "oldplus".equals(material);
     }
 
+    public static int voltageRgb(String material, boolean enabled, int rgb) {
+        return enabled && ("high".equals(material) || "medium".equals(material)) ? rgb : -1;
+    }
+
+    /** Only the inner three rings display machine voltage; the outer ring identifies the node type. */
+    public static int cellRgb(int ring, boolean energy, int voltageRgb) {
+        return ring < 3 && voltageRgb >= 0 ? voltageRgb : energy ? 0xFFB523 : 0xDE4AFF;
+    }
+
     /** High and Medium share the same textures, with High adding geometry. */
     public static int textureIndex(String material) {
         return "old".equals(material) ? 2 : "oldplus".equals(material) ? 3 : "low".equals(material) ? 0 : 1;
@@ -139,6 +148,10 @@ public final class LinkNodeVisuals {
     }
 
     public static int[] pixels(int size, double seconds, boolean energy, boolean emissive) {
+        return pixels(size, seconds, energy, emissive, -1);
+    }
+
+    public static int[] pixels(int size, double seconds, boolean energy, boolean emissive, int voltageRgb) {
         int[] pixels = new int[size * size];
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
@@ -150,7 +163,8 @@ public final class LinkNodeVisuals {
                     boolean edge = distance > CELL_RADIUS * .866 - 1.1 / size;
                     double light = brightness(cell, seconds, size == 32, energy);
                     int alpha = emissive ? (int) (light * (edge ? 245 : 160)) : edge ? 125 : 38;
-                    int red = energy ? 255 : 222, green = energy ? 181 : 74, blue = energy ? 35 : 255;
+                    int rgb = cellRgb(cell.ring, energy, size == 64 ? voltageRgb : -1);
+                    int red = rgb >> 16 & 255, green = rgb >> 8 & 255, blue = rgb & 255;
                     if (emissive) {
                         red += (int) ((255 - red) * light * .65);
                         green += (int) ((255 - green) * light * .65);

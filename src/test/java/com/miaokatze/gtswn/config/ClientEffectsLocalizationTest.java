@@ -51,6 +51,20 @@ public class ClientEffectsLocalizationTest {
             String current = String
                 .format(Locale.ROOT, messages.getProperty("gtswn.command.effects.current"), "tap", "on", 100, 100, 64);
             assertTrue(current.contains("100%"));
+            String voltage = String.format(Locale.ROOT, messages.getProperty("gtswn.command.effects.voltage"), "off");
+            assertTrue(voltage.contains("off"));
+            assertTrue(voltage.contains("high/medium"));
+            String tapUsage = messages.getProperty("gtswn.command.effects.tap_usage");
+            assertTrue(tapUsage.contains("voltage <on|off>"));
+            if ("zh_CN".equals(language)) {
+                assertTrue(voltage.contains("内三圈及粒子"));
+                assertTrue(voltage.contains("关闭恢复能源/动力色"));
+                assertTrue(tapUsage.contains("识别机器的 GT 电压等级"));
+            } else {
+                assertTrue(voltage.contains("inner three rings and particles"));
+                assertTrue(voltage.contains("off restores energy/dynamo colors"));
+                assertTrue(tapUsage.contains("recognized machine's GT voltage tier"));
+            }
             for (String group : new String[] { "tap", "quantum" }) {
                 String usage = String
                     .format(Locale.ROOT, messages.getProperty("gtswn.command.effects." + group + "_usage"));

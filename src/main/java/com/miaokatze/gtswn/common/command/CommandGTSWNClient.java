@@ -26,6 +26,7 @@ public class CommandGTSWNClient extends CommandBase {
     public String getCommandUsage(ICommandSender sender) {
         return "/gtswn <tap|quantum> [on|off|density <0..200>|size <10..400>|distance <1..256>|help|status|reset]"
             + " | /gtswn tap material <old|oldplus|low|medium|high>"
+            + " | /gtswn tap voltage <on|off>"
             + " | /gtswn <HudXOffset|HudYOffset|HudScale> [value]"
             + " | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn <help|status|reset>";
     }
@@ -60,6 +61,7 @@ public class CommandGTSWNClient extends CommandBase {
                     "size",
                     "distance",
                     "material",
+                    "voltage",
                     "help",
                     "status",
                     "reset")
@@ -77,6 +79,9 @@ public class CommandGTSWNClient extends CommandBase {
         if (args.length == 3 && isGroup(args[0])) {
             if ("material".equalsIgnoreCase(args[1]) && "tap".equalsIgnoreCase(args[0])) {
                 return getListOfStringsMatchingLastWord(args, "old", "oldplus", "low", "medium", "high");
+            }
+            if ("voltage".equalsIgnoreCase(args[1]) && "tap".equalsIgnoreCase(args[0])) {
+                return getListOfStringsMatchingLastWord(args, "on", "off");
             }
             if ("density".equalsIgnoreCase(args[1]))
                 return getListOfStringsMatchingLastWord(args, "0", "50", "100", "200");
@@ -207,7 +212,10 @@ public class CommandGTSWNClient extends CommandBase {
             tap ? Config.tapParticleDensityPercent : Config.quantumParticleDensityPercent,
             tap ? Config.tapParticleSizePercent : Config.quantumParticleSizePercent,
             tap ? Config.tapRenderDistance : Config.quantumRenderDistance);
-        if (tap) message(sender, "gtswn.command.effects.material", Config.tapMaterial);
+        if (tap) {
+            message(sender, "gtswn.command.effects.material", Config.tapMaterial);
+            message(sender, "gtswn.command.effects.voltage", Config.tapVoltageColorsEnabled ? "on" : "off");
+        }
     }
 
     private void processEffects(ICommandSender sender, String[] args) {
@@ -234,6 +242,11 @@ public class CommandGTSWNClient extends CommandBase {
             String material = args[2].toLowerCase(java.util.Locale.ROOT);
             if (!Config.validTapMaterial(material)) throw new WrongUsageException(usage);
             Config.tapMaterial = material;
+        } else if ("voltage".equals(operation) && tap) {
+            if (args.length != 3 || !("on".equalsIgnoreCase(args[2]) || "off".equalsIgnoreCase(args[2]))) {
+                throw new WrongUsageException(usage);
+            }
+            Config.tapVoltageColorsEnabled = "on".equalsIgnoreCase(args[2]);
         } else if ("density".equals(operation) || "size".equals(operation) || "distance".equals(operation)) {
             if (args.length != 3) throw new WrongUsageException(usage);
             int minimum = "density".equals(operation) ? 0 : "size".equals(operation) ? 10 : 1;
