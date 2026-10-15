@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.MathContext;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicLong;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -23,14 +24,19 @@ import gregtech.common.misc.spaceprojects.SpaceProjectManager;
 /** A bounded real item slot, with matching client prediction and integer persistent reserves. */
 public class ContainerTerminal extends Container {
 
+    private static final AtomicLong NEXT_RENAME_TOKEN = new AtomicLong(System.nanoTime());
+    private static final long RENAME_TTL_NANOS = 60_000_000_000L;
     public final boolean quantum;
     public final TerminalSupplyStore.Kind kind;
     private final EntityPlayer owner;
     private final ItemStack terminal;
     private final ItemStack supplyReference;
     private final int heldIndex;
-    private final int[] values = new int[80];
-    private final int[] sent = new int[80];
+    private final int[] values = new int[84];
+    private final int[] sent = new int[84];
+    private long renameToken;
+    private long renameIssuedNanos;
+    private boolean closed;
     private long snapshotTick = Long.MIN_VALUE;
     public int supplyCount;
 
@@ -45,6 +51,7 @@ public class ContainerTerminal extends Container {
         supplyReference = reference == null ? null : reference.copy();
         terminal = player.getHeldItem();
         heldIndex = player.inventory.currentItem;
+        if (quantum && !player.worldObj.isRemote) renewRenameToken();
         Arrays.fill(sent, -1);
         addSlotToContainer(new Slot(new InventoryBasic("supply", false, 1), 0, 279, 161) {
 
@@ -89,11 +96,72 @@ public class ContainerTerminal extends Container {
             && held != null
             && player.inventory.currentItem == heldIndex
             && (player.worldObj.isRemote || held == terminal)
-            && (!quantum || player.worldObj.isRemote
-                || QuantumTerminalAccess.validate(player, held)
-                || QuantumTerminalAccess.canManage(player, held))
+            && (!quantum || player.worldObj.isRemote || QuantumTerminalAccess.canOpenTerminal(player, held))
             && (quantum ? held.getItem() instanceof ItemNetworkQuantumTerminal
                 : held.getItem() instanceof WirelessEnergyTap);
+    }
+
+    public int heldIndex() {
+        return heldIndex;
+    }
+
+    /** Native progress updates carry four unsigned 16-bit parts, including on vanilla's signed-short wire. */
+    public long renameToken() {
+        long token = 0;
+        for (int i = 0; i < 4; i++) token |= (long) (values[80 + i] & 0xFFFF) << (16 * i);
+        return token;
+    }
+
+    private void renewRenameToken() {
+        renameToken = NEXT_RENAME_TOKEN.incrementAndGet();
+        if (renameToken == 0) renameToken = NEXT_RENAME_TOKEN.incrementAndGet();
+        renameIssuedNanos = System.nanoTime();
+        for (int i = 0; i < 4; i++) values[80 + i] = (int) (renameToken >>> (16 * i)) & 0xFFFF;
+    }
+
+    /** The name belongs to the held item, so this intentionally does not require network SECURITY access. */
+    private boolean checkRenameContext(EntityPlayer player, int window, int slot, long token, String expectedName) {
+        return quantum && !closed
+            && !owner.worldObj.isRemote
+            && player == owner
+            && player.isEntityAlive()
+            && player.openContainer == this
+            && windowId == window
+            && heldIndex == slot
+            && player.inventory.currentItem == heldIndex
+            && terminal != null
+            && terminal.getItem() instanceof ItemNetworkQuantumTerminal
+            && player.getHeldItem() == terminal
+            && token != 0
+            && token == renameToken
+            && System.nanoTime() - renameIssuedNanos <= RENAME_TTL_NANOS
+            && customName(terminal).equals(expectedName);
+    }
+
+    public static String customName(ItemStack stack) {
+        return stack != null && stack.hasDisplayName() ? stack.getDisplayName() : "";
+    }
+
+    /** Server-thread-only mutation, followed by vanilla slot synchronization. */
+    public boolean renameTerminal(EntityPlayer player, int window, int slot, long token, String expectedName,
+        String name) {
+        if (!checkRenameContext(player, window, slot, token, expectedName)) return false;
+        String normalized = TerminalNameRules.normalize(name);
+        if (normalized == null || !checkRenameContext(player, window, slot, token, expectedName)) return false;
+        if (normalized.isEmpty()) terminal.func_135074_t();
+        else terminal.setStackDisplayName(normalized);
+        owner.inventory.markDirty();
+        // Consume this intent so a delayed/replayed request cannot overwrite a subsequent edit.
+        renewRenameToken();
+        detectAndSendChanges();
+        return true;
+    }
+
+    @Override
+    public void onContainerClosed(EntityPlayer player) {
+        closed = true;
+        renameToken = 0;
+        super.onContainerClosed(player);
     }
 
     @Override
@@ -210,6 +278,7 @@ public class ContainerTerminal extends Container {
     @Override
     public void detectAndSendChanges() {
         if (!owner.worldObj.isRemote) {
+            if (quantum && !closed && System.nanoTime() - renameIssuedNanos > RENAME_TTL_NANOS / 2) renewRenameToken();
             supplyCount = TerminalSupplyStore.count(owner, kind);
             refreshSupplySlot();
         }

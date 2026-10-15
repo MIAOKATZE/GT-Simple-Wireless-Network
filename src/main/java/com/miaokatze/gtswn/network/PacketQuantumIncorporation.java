@@ -16,6 +16,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.quantum.QuantumConnectionSecurity;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
@@ -159,9 +160,9 @@ public class PacketQuantumIncorporation implements IMessage {
         TileEntity controller = anchor.getTileEntity(ax, ay, az);
         TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
         if (!(controller instanceof TileController) || !anchor.canMineBlock(player, ax, ay, az)
-            || !canBuild((IGridHost) tile, player)
+            || !canBuild((IGridHost) tile, player, held)
             || (QuantumTerminalAccess.isSecurityRequired(anchor, ax, ay, az)
-                && !canBuild((IGridHost) controller, player))) {
+                && !canBuild((IGridHost) controller, player, held))) {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }
@@ -186,7 +187,7 @@ public class PacketQuantumIncorporation implements IMessage {
         }
     }
 
-    private static boolean canBuild(IGridHost host, EntityPlayerMP player) {
+    private static boolean canBuild(IGridHost host, EntityPlayerMP player, ItemStack terminal) {
         boolean found = false;
         for (ForgeDirection direction : ForgeDirection.values()) {
             IGridNode node = host.getGridNode(direction);
@@ -195,7 +196,8 @@ public class PacketQuantumIncorporation implements IMessage {
             found = true;
             ISecurityGrid security = node.getGrid()
                 .getCache(ISecurityGrid.class);
-            if (security != null && !security.hasPermission(player, SecurityPermissions.BUILD)) return false;
+            if (!QuantumConnectionSecurity.bypassesNetworkSafety(terminal, node) && security != null
+                && !security.hasPermission(player, SecurityPermissions.BUILD)) return false;
         }
         return found;
     }

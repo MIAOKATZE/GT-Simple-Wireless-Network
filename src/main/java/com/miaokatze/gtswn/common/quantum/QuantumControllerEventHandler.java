@@ -37,11 +37,13 @@ import appeng.block.networking.BlockEnergyCell;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.parts.networking.PartQuartzFiber;
+import appeng.tile.misc.TileSecurity;
 import appeng.tile.networking.TileCableBus;
 import appeng.tile.networking.TileController;
 import appeng.tile.networking.TileCreativeEnergyCell;
 import appeng.tile.networking.TileEnergyAcceptor;
 import appeng.tile.networking.TileEnergyCell;
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -108,6 +110,13 @@ public class QuantumControllerEventHandler {
     private static long lastLoggedNanos = 0L;
 
     // ==================== 1. 右键交互全量拦截（D2-A） ====================
+
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public void onNodeWrenchInteract(PlayerInteractEvent event) {
+        if (event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK) return;
+        Block block = event.world.getBlock(event.x, event.y, event.z);
+        if (block instanceof BlockNetworkQuantumNode) ((BlockNetworkQuantumNode) block).handleWrenchInteract(event);
+    }
 
     /**
      * 拦截对已量子化 ME 控制器的右键交互。
@@ -205,7 +214,7 @@ public class QuantumControllerEventHandler {
      * 使挖掘耗时等效于硬度 1000（黑曜石 50 的 20 倍）。
      * <p>
      * 机制：挖掘耗时 ∝ blockHardness / newSpeed，故 newSpeed ×= (hardness/1000) 后等效硬度即 1000。
-     * 量子节点方块的硬度已直接设为 1000，不再由本事件修正。本事件双侧触发，此处只读查询无副作用，
+     * 量子节点保留普通机器硬度，不由本事件修正。本事件双侧触发，此处只读查询无副作用，
      * 客户端查不到量子化状态（WorldSavedData 不同步）时不减速——由服务端权威纠正（挖掘回弹），可接受。
      */
     @SubscribeEvent
@@ -356,6 +365,7 @@ public class QuantumControllerEventHandler {
         if (server == null) {
             return;
         }
+        QuantumConnectionSecurity.restoreNativeChecks();
         if (this.lastCacheServer != server) {
             this.lastCacheServer = server;
             this.lastSweepTick = -1L;
@@ -503,6 +513,8 @@ public class QuantumControllerEventHandler {
      * <li>{@link TileEnergyCell} / {@link TileCreativeEnergyCell}：能源元件（v1.6.1 问题 4a，
      * 量子化控制器需保持与能源元件连接，否则网络断电停机；致密能源元件
      * TileDenseEnergyCell 继承 TileEnergyCell，一并覆盖）</li>
+     * <li>{@link TileSecurity}：原生安全终端必须保留同网与频道，否则配对后的安全 latch
+     * 会在量子化或重载过滤时将整个网络锁死</li>
      * <li>{@link TileCableBus} 且其<b>朝向本控制器那一面</b>的 Part 是 {@link PartQuartzFiber}
      * （石英纤维通过 outerProxy 按面暴露纯能量节点）</li>
      * </ul>
@@ -532,6 +544,10 @@ public class QuantumControllerEventHandler {
             } else if (neighbor instanceof TileEnergyCell || neighbor instanceof TileCreativeEnergyCell) {
                 // v1.6.1 问题 4a：量子化控制器需保持与能源元件连接，否则网络断电停机
                 // （TileDenseEnergyCell 致密能源元件继承 TileEnergyCell，此处一并放行）
+                allowed.add(d);
+            } else if (neighbor instanceof TileSecurity) {
+                // Keep the native authorization provider connected across quantization and reload.
+                // Ordinary machines and cable buses still follow the existing isolation rules below.
                 allowed.add(d);
             } else if (neighbor instanceof TileCableBus) {
                 // 石英纤维判定：站在控制器视角邻居在方向 d，从 cable bus 视角控制器在 d 的反方向，

@@ -6,4 +6,8 @@ public interface QuantumControllerIdentity {
     String gtswn$getControllerIdentity();
 
     void gtswn$setControllerIdentity(String identity);
+
+    boolean gtswn$isNetworkSafetyEnabled();
+
+    void gtswn$setNetworkSafetyEnabled(boolean enabled);
 }

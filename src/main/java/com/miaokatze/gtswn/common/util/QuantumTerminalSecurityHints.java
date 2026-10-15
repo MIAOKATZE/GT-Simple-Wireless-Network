@@ -9,6 +9,7 @@ import net.minecraftforge.common.DimensionManager;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.config.Config;
 
 /** Success-only guidance about the affected network, independent of the terminal's encoded key. */
 public final class QuantumTerminalSecurityHints {
@@ -17,7 +18,9 @@ public final class QuantumTerminalSecurityHints {
 
     /** Snapshot after authorization and before mutations can remove or transfer the network's security latch. */
     public static boolean isOpen(World world, int x, int y, int z) {
-        return world != null && !world.isRemote && !QuantumTerminalAccess.isSecurityRequired(world, x, y, z);
+        return world != null && !world.isRemote
+            && world.blockExists(x, y, z)
+            && !QuantumTerminalAccess.isNetworkSafetyEnabled(world, x, y, z);
     }
 
     public static boolean isOpen(ItemStack terminal) {
@@ -27,7 +30,7 @@ public final class QuantumTerminalSecurityHints {
 
     /** Call exactly once after a successful terminal action, using its pre-mutation snapshot. */
     public static void show(EntityPlayer player, boolean wasOpen) {
-        if (!wasOpen || player.worldObj.isRemote) return;
+        if (!Config.quantumSafetyEnabled || !wasOpen || player.worldObj.isRemote) return;
         NBTTagCompound data = player.getEntityData();
         NBTTagCompound persisted = data.getCompoundTag(EntityPlayer.PERSISTED_NBT_TAG);
         int remaining = QualityHintCounter.consume(persisted, QualityHintCounter.Kind.OPEN_NETWORK);

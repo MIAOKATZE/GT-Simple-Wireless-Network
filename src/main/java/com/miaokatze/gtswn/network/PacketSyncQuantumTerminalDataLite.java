@@ -3,44 +3,41 @@ package com.miaokatze.gtswn.network;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
+import cpw.mods.fml.common.network.ByteBufUtils;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
 import cpw.mods.fml.common.network.simpleimpl.MessageContext;
 import io.netty.buffer.ByteBuf;
 
 /**
- * 服务端→客户端 短回包：量子终端轮询专用的 11 字段轻量同步（discriminator = 7，O2-17）。
- * <p>
- * 【为什么需要】v1.6.9 GUI 紧凑化后，{@link com.miaokatze.gtswn.client.gui.GuiQuantumTerminal}
- * 实际只消费 11 个字段（online / anchorDim+xyz / usedChannels / totalChannels /
- * quantumNodeCount / channelsInfinite / incorporationCount / incorporationChannels）。
- * 短包固定 38B，省去能量、存储以及设备条目列表。
- * <p>
- * 【协议约定】与包 6 同 jar 双端发布，无版本偏斜窗口；包 6 类保留作协议回退位与
- * 未来 GUI 回扩位（GUI 打开首包回全量、后续短包的回扩设计），本包不再被包 5 请求
- * 路径之外的场景使用。序列化顺序：
- * online(1B) + anchorDim/X/Y/Z(4×4B) + usedChannels(4B) + totalChannels(4B)
- * + quantumNodeCount(4B) + channelsInfinite(1B) + incorporationCount/channels(2×4B) = 38B。
- * <p>
- * 【客户端重建】fromBytes 构造 {@link QuantumNetworkData} 仅填 11 字段，其余字段保持
- * 类默认值（0 / false / 空 entries）——GUI 零改动，未消费字段读到默认值与全量包
- * 中真实值的表现一致（GUI 不读它们）。
- * <p>
- * 【hotfix v1.5.14 类加载安全模式】Handler 方法体只引用 CommonProxy（双端类型），
- * 不引用任何 @SideOnly(Side.CLIENT) 客户端类，也不加 @SideOnly 注解——
- * 与 {@link PacketSyncQuantumTerminalData.Handler} 同模式，实际客户端逻辑在
- * ClientProxy 中实现（func_152344_a 切主线程写 GUI 缓存）。
+ * S2C terminal polling response (discriminator 7). The base network metrics occupy 38 bytes;
+ * safety appends global/local/capability booleans, a UTF-8 controller identity, and a response token.
+ * Old payloads retain local safety off and capability off. Actor capabilities and tokens are held
+ * by the response, never written into the shared anchor snapshot. Client handling delegates through
+ * the sided proxy, keeping dedicated-server class loading independent of client classes.
  */
 public class PacketSyncQuantumTerminalDataLite implements IMessage {
 
-    /** 网络快照数据（fromBytes 重建仅 11 字段；客户端经 getter 读取） */
+    /** 网络快照数据（fromBytes 重建仅 16 字段；客户端经 getter 读取） */
     private QuantumNetworkData data;
+    private boolean globalSafetyEnabled;
+    private boolean canChangeNetworkSafety;
+    private long networkSafetyRequestToken;
 
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketSyncQuantumTerminalDataLite() {}
 
     public PacketSyncQuantumTerminalDataLite(QuantumNetworkData data) {
+        this(data, data.globalSafetyEnabled, data.canChangeNetworkSafety, data.networkSafetyRequestToken);
+    }
+
+    /** Player capabilities belong to this response, never to the shared anchor cache. */
+    public PacketSyncQuantumTerminalDataLite(QuantumNetworkData data, boolean globalSafetyEnabled,
+        boolean canChangeNetworkSafety, long networkSafetyRequestToken) {
         this.data = data;
+        this.globalSafetyEnabled = globalSafetyEnabled;
+        this.canChangeNetworkSafety = canChangeNetworkSafety;
+        this.networkSafetyRequestToken = networkSafetyRequestToken;
     }
 
     @Override
@@ -56,6 +53,12 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
         buf.writeBoolean(data.channelsInfinite);
         buf.writeInt(data.incorporationCount);
         buf.writeInt(data.incorporationChannels);
+        buf.writeBoolean(globalSafetyEnabled);
+        buf.writeBoolean(data.networkSafetyEnabled);
+        buf.writeBoolean(canChangeNetworkSafety);
+        ByteBufUtils.writeUTF8String(buf, data.networkSafetyIdentity);
+        buf.writeLong(networkSafetyRequestToken);
+        buf.writeBoolean(data.managementOnly);
     }
 
     @Override
@@ -74,10 +77,19 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
             d.incorporationCount = buf.readInt();
             d.incorporationChannels = buf.readInt();
         }
+        // Old payloads retain local safety=false and capability=false.
+        if (buf.readableBytes() >= 3) {
+            d.globalSafetyEnabled = buf.readBoolean();
+            d.networkSafetyEnabled = buf.readBoolean();
+            d.canChangeNetworkSafety = buf.readBoolean();
+            if (buf.isReadable()) d.networkSafetyIdentity = ByteBufUtils.readUTF8String(buf);
+            if (buf.readableBytes() >= 8) d.networkSafetyRequestToken = buf.readLong();
+            if (buf.isReadable()) d.managementOnly = buf.readBoolean();
+        }
         this.data = d;
     }
 
-    /** @return 网络快照数据（仅 11 字段有效，其余为类默认值） */
+    /** @return 网络快照数据（仅 16 字段有效，其余为类默认值） */
     public QuantumNetworkData getData() {
         return data;
     }

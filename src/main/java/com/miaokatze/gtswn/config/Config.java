@@ -206,6 +206,7 @@ public class Config {
     /** gtswn_network.cfg 的启动时路径，供客户端命令运行时写回使用。 */
     private static File networkConfigFile;
     private static File mainConfigFile;
+    private static File aeConfigFile;
 
     // GregTech 元机器实体 (MTE) ID 分配的偏移量。
     // 注意：基准值 (BASE) 已在 MetaTileEntityID.java 中硬编码为 14600，以便按类型分段管理 ID。
@@ -322,6 +323,9 @@ public class Config {
     // Actual stored AE consumed per bridged quantum node per tick, independent of AE's power multiplier.
     // 默认 10；重启应用 / Default 10; restart required
     public static double quantumNodeIdlePowerUsage = 10.0D;
+
+    /** Server authority; false temporarily bypasses quantum security without deleting pairing metadata. */
+    public static boolean quantumSafetyEnabled = true;
 
     // 每个有效量子并入方块额外实际扣能（AE/t），不受 AE 倍率影响，与原设备原生功耗独立叠加。
     // Actual additional stored AE consumed per incorporated block per tick, independent of AE's multiplier.
@@ -831,6 +835,7 @@ public class Config {
      * @param configuration 已打开的 AE2 配置 {@link Configuration} 对象
      */
     public static void synchronizeAEConfiguration(Configuration configuration) {
+        aeConfigFile = configuration.getConfigFile();
         // 设置 [ae2] 类目注释 / Set [ae2] category comment
         configuration.setCategoryComment(
             CATEGORY_AE2,
@@ -900,6 +905,14 @@ public class Config {
             true,
             "广播量子网络迁移成功 / Broadcast completed quantum network migrations");
 
+        quantumSafetyEnabled = configuration.getBoolean(
+            "quantumSafetyEnabled",
+            CATEGORY_AE2,
+            true,
+            "量子网络安全总开关；控制器网络默认 OFF，由终端界面显式开启 / Master quantum security switch; each controller network defaults OFF and is enabled explicitly in its terminal UI\n"
+                + "false = 临时恢复访问，不删除网络、配对或安全锁定记录 / false = recovery access without deleting networks, pairings or security latches\n"
+                + "默认 true；管理员可用 /gtswn safety on|off 实时修改并保存 / Default true; OP command /gtswn safety on|off applies and saves immediately");
+
         // 量子终端装配端是否枚举全量字段 / Assemble full quantum terminal data (O2-18)
         quantumTerminalAssembleFullData = configuration.getBoolean(
             "quantumTerminalAssembleFullData",
@@ -912,6 +925,28 @@ public class Config {
 
         if (configuration.hasChanged()) {
             configuration.save();
+        }
+    }
+
+    /** Persist first and verify: Forge Configuration.save() logs and swallows IO failures. */
+    public static boolean saveQuantumSafetyEnabled(boolean enabled) {
+        if (aeConfigFile == null) return false;
+        try {
+            Configuration configuration = new Configuration(aeConfigFile);
+            configuration.get(CATEGORY_AE2, "quantumSafetyEnabled", true)
+                .set(enabled);
+            configuration.save();
+            if (!aeConfigFile.isFile()) return false;
+            Configuration persisted = new Configuration(aeConfigFile);
+            if (!persisted.hasKey(CATEGORY_AE2, "quantumSafetyEnabled")
+                || persisted.get(CATEGORY_AE2, "quantumSafetyEnabled", !enabled)
+                    .getBoolean() != enabled)
+                return false;
+            quantumSafetyEnabled = enabled;
+            return true;
+        } catch (RuntimeException e) {
+            GTSimpleWirelessNetwork.LOG.error("Could not save quantum safety setting", e);
+            return false;
         }
     }
 }

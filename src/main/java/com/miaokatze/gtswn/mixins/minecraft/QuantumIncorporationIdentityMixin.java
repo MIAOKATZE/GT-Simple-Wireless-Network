@@ -23,6 +23,19 @@ public abstract class QuantumIncorporationIdentityMixin
     @Unique
     private String gtswn$controllerIdentity = "";
 
+    @Unique
+    private boolean gtswn$networkSafetyEnabled;
+
+    @Override
+    public boolean gtswn$isNetworkSafetyEnabled() {
+        return gtswn$networkSafetyEnabled;
+    }
+
+    @Override
+    public void gtswn$setNetworkSafetyEnabled(boolean enabled) {
+        gtswn$networkSafetyEnabled = enabled;
+    }
+
     @Override
     public String gtswn$getControllerIdentity() {
         return gtswn$controllerIdentity;
@@ -50,12 +63,14 @@ public abstract class QuantumIncorporationIdentityMixin
         else tag.removeTag("GTSWN_IncorporationIdentity");
         if (!gtswn$controllerIdentity.isEmpty()) tag.setString("GTSWN_ControllerIdentity", gtswn$controllerIdentity);
         else tag.removeTag("GTSWN_ControllerIdentity");
+        tag.setBoolean("GTSWN_NetworkSafetyEnabled", gtswn$networkSafetyEnabled);
     }
 
     @Inject(method = "readFromNBT", at = @At("RETURN"))
     private void gtswn$readIdentity(NBTTagCompound tag, CallbackInfo callback) {
         gtswn$incorporationIdentity = tag.getString("GTSWN_IncorporationIdentity");
         gtswn$controllerIdentity = tag.getString("GTSWN_ControllerIdentity");
+        gtswn$networkSafetyEnabled = tag.getBoolean("GTSWN_NetworkSafetyEnabled");
     }
 
     @Inject(method = "invalidate", at = @At("HEAD"))

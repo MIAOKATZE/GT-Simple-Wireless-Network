@@ -36,6 +36,7 @@ public class CommandGTSWN extends CommandBase {
     private static final String SUBCMD_TRANSFER = "global_energy_trans";
     private static final String SUBCMD_JOIN = "global_energy_join";
     private static final String SUBCMD_CLEANUP_INFO = "cleanup_info_data";
+    private static final String SUBCMD_SAFETY = "safety";
 
     @Override
     public String getCommandName() {
@@ -51,7 +52,7 @@ public class CommandGTSWN extends CommandBase {
             + " <memberUUID> <leaderUUID>"
             + " | /gtswn "
             + SUBCMD_CLEANUP_INFO
-            + " <all|player>";
+            + " <all|player> | /gtswn safety <on|off>";
     }
 
     @Override
@@ -62,7 +63,15 @@ public class CommandGTSWN extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
-            return getListOfStringsMatchingLastWord(args, SUBCMD_TRANSFER, SUBCMD_JOIN, SUBCMD_CLEANUP_INFO);
+            return getListOfStringsMatchingLastWord(
+                args,
+                SUBCMD_TRANSFER,
+                SUBCMD_JOIN,
+                SUBCMD_CLEANUP_INFO,
+                SUBCMD_SAFETY);
+        }
+        if (args.length == 2 && SUBCMD_SAFETY.equals(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "on", "off");
         }
         // cleanup_info_data 子命令补全：all + 在线玩家名
         if (args.length == 2 && SUBCMD_CLEANUP_INFO.equals(args[0])) {
@@ -87,9 +96,36 @@ public class CommandGTSWN extends CommandBase {
             processJoin(sender, args);
         } else if (SUBCMD_CLEANUP_INFO.equals(args[0])) {
             processCleanupInfoData(sender, args);
+        } else if (SUBCMD_SAFETY.equals(args[0])) {
+            processSafety(sender, args);
         } else {
             throw new WrongUsageException(getCommandUsage(sender));
         }
+    }
+
+    private void processSafety(ICommandSender sender, String[] args) {
+        if (args.length != 2 || !("on".equals(args[1]) || "off".equals(args[1]))) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    StatCollector.translateToLocalFormatted(
+                        "gtswn.command.safety.current",
+                        Config.quantumSafetyEnabled ? "on" : "off")));
+            throw new WrongUsageException("gtswn.command.safety.usage");
+        }
+        if (!Config.saveQuantumSafetyEnabled("on".equals(args[1]))) {
+            sender.addChatMessage(
+                new ChatComponentText(
+                    StatCollector.translateToLocalFormatted(
+                        "gtswn.command.safety.save_failed",
+                        Config.quantumSafetyEnabled ? "on" : "off")));
+            return;
+        }
+        sender.addChatMessage(
+            new ChatComponentText(StatCollector.translateToLocalFormatted("gtswn.command.safety.saved", args[1])));
+        sender.addChatMessage(
+            new ChatComponentText(
+                StatCollector.translateToLocal(
+                    Config.quantumSafetyEnabled ? "gtswn.command.safety.enabled" : "gtswn.command.safety.disabled")));
     }
 
     private void processTransfer(ICommandSender sender, String[] args) {

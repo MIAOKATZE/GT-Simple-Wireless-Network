@@ -16,13 +16,17 @@ import net.minecraftforge.common.DimensionManager;
 
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
-/** A security enrollment survives removing the security station and unloading its network. */
+import appeng.tile.networking.TileController;
+
+/** Controller-owned safety policy; saved coordinates only mirror the corresponding tile generation. */
 public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
 
     private static final String NAME = "gtswn_quantum_security";
     private final Set<Long> enrolled = new HashSet<>();
     private final Map<Long, String> identities = new HashMap<>();
     private final Set<Long> providerKeys = new HashSet<>();
+    private final Set<Long> safetyEnabled = new HashSet<>();
+    private final Map<Long, Boolean> pendingSafety = new HashMap<>();
 
     public QuantumNetworkSecurityRegistry(String name) {
         super(name);
@@ -68,6 +72,8 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
                 || !saved.equals(((QuantumControllerIdentity) tile).gtswn$getControllerIdentity()))) {
                 enrolled.remove(member);
                 identities.remove(member);
+                safetyEnabled.remove(member);
+                pendingSafety.remove(member);
                 markDirty();
             }
         }
@@ -85,7 +91,7 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
                 z = QuantumControllerRegistry.unpackZ(member);
             if (!world.blockExists(x, y, z)) continue;
             TileEntity tile = world.getTileEntity(x, y, z);
-            if (!(tile instanceof QuantumControllerIdentity)) continue;
+            if (!(tile instanceof TileController) || !(tile instanceof QuantumControllerIdentity)) continue;
             QuantumControllerIdentity identity = (QuantumControllerIdentity) tile;
             if (identity.gtswn$getControllerIdentity()
                 .isEmpty()) {
@@ -100,21 +106,101 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
     }
 
     public void remove(Set<Long> members) {
-        if (enrolled.removeAll(members)) {
-            for (long member : members) identities.remove(member);
-            markDirty();
+        boolean changed = enrolled.removeAll(members) | safetyEnabled.removeAll(members);
+        for (long member : members) {
+            changed |= identities.remove(member) != null;
+            changed |= pendingSafety.remove(member) != null;
+        }
+        if (changed) markDirty();
+    }
+
+    /** Loaded tile NBT is authoritative. Missing legacy fields are OFF, regardless of enrollment history. */
+    public boolean isSafetyEnabled(World world, Set<Long> members) {
+        boolean enabled = false;
+        for (long member : members) {
+            int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
+                z = QuantumControllerRegistry.unpackZ(member);
+            if (!world.blockExists(x, y, z)) {
+                enabled |= safetyEnabled.contains(member) && identities.containsKey(member);
+                continue;
+            }
+            TileEntity tile = world.getTileEntity(x, y, z);
+            if (!(tile instanceof TileController) || !(tile instanceof QuantumControllerIdentity)) {
+                remove(java.util.Collections.singleton(member));
+                continue;
+            }
+            QuantumControllerIdentity identity = (QuantumControllerIdentity) tile;
+            String saved = identities.getOrDefault(member, "");
+            if (!saved.isEmpty() && !saved.equals(identity.gtswn$getControllerIdentity())) {
+                safetyEnabled.remove(member);
+                identities.remove(member);
+                enrolled.remove(member);
+                markDirty();
+            }
+            Boolean pending = pendingSafety.remove(member);
+            if (pending != null && !saved.isEmpty() && saved.equals(identity.gtswn$getControllerIdentity())) {
+                identity.gtswn$setNetworkSafetyEnabled(pending);
+                tile.markDirty();
+                markDirty();
+            }
+            enabled |= identity.gtswn$isNetworkSafetyEnabled();
+        }
+        // Newly added structure members inherit the whole structure policy, never an old coordinate's policy.
+        synchronizeSafety(world, members, enabled);
+        return enabled;
+    }
+
+    public void setSafety(World world, Set<Long> members, boolean enabled) {
+        synchronizeSafety(world, members, enabled);
+        for (long member : members) {
+            if (!world.blockExists(
+                QuantumControllerRegistry.unpackX(member),
+                QuantumControllerRegistry.unpackY(member),
+                QuantumControllerRegistry.unpackZ(member)) && identities.containsKey(member)) {
+                if (!Boolean.valueOf(enabled)
+                    .equals(pendingSafety.put(member, enabled))) markDirty();
+            } else if (pendingSafety.remove(member) != null) markDirty();
         }
     }
 
-    /** Move the latch, never weaken an already enrolled destination. No security station means locked offline. */
+    private void synchronizeSafety(World world, Set<Long> members, boolean enabled) {
+        for (long member : members) {
+            int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
+                z = QuantumControllerRegistry.unpackZ(member);
+            if (world.blockExists(x, y, z)) {
+                TileEntity tile = world.getTileEntity(x, y, z);
+                if (!(tile instanceof TileController) || !(tile instanceof QuantumControllerIdentity)) continue;
+                QuantumControllerIdentity identity = (QuantumControllerIdentity) tile;
+                if (identity.gtswn$getControllerIdentity()
+                    .isEmpty()) {
+                    identity.gtswn$setControllerIdentity(
+                        UUID.randomUUID()
+                            .toString());
+                    tile.markDirty();
+                }
+                if (!identity.gtswn$getControllerIdentity()
+                    .equals(identities.put(member, identity.gtswn$getControllerIdentity()))) markDirty();
+                if (identity.gtswn$isNetworkSafetyEnabled() != enabled) {
+                    identity.gtswn$setNetworkSafetyEnabled(enabled);
+                    tile.markDirty();
+                }
+            }
+            if (enabled ? safetyEnabled.add(member) : safetyEnabled.remove(member)) markDirty();
+        }
+    }
+
+    /** Preserve either protected network when moving, without allowing an OFF source to unlock an ON target. */
     public static void transfer(World sourceWorld, Set<Long> sourceMembers, World targetWorld,
         Set<Long> targetMembers) {
         QuantumNetworkSecurityRegistry source = get(sourceWorld);
         QuantumNetworkSecurityRegistry target = get(targetWorld);
-        boolean required = source.isEnrolled(sourceWorld, sourceMembers)
+        boolean enrolled = source.isEnrolled(sourceWorld, sourceMembers)
             || target.isEnrolled(targetWorld, targetMembers);
+        boolean enabled = source.isSafetyEnabled(sourceWorld, sourceMembers)
+            | target.isSafetyEnabled(targetWorld, targetMembers);
         source.remove(sourceMembers);
-        if (required) target.enroll(targetWorld, targetMembers);
+        if (enrolled) target.enroll(targetWorld, targetMembers);
+        target.setSafety(targetWorld, targetMembers, enabled);
     }
 
     @Override
@@ -122,6 +208,19 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
         enrolled.clear();
         identities.clear();
         providerKeys.clear();
+        safetyEnabled.clear();
+        pendingSafety.clear();
+        NBTTagList policies = tag.getTagList("localSafetyEnabled", 10);
+        for (int i = 0; i < policies.tagCount(); i++) {
+            NBTTagCompound policy = policies.getCompoundTagAt(i);
+            long position = policy.getLong("position");
+            safetyEnabled.add(position);
+        }
+        NBTTagList pending = tag.getTagList("pendingSafety", 10);
+        for (int i = 0; i < pending.tagCount(); i++) {
+            NBTTagCompound entry = pending.getCompoundTagAt(i);
+            pendingSafety.put(entry.getLong("position"), entry.getBoolean("enabled"));
+        }
         NBTTagList providers = tag.getTagList("providers", 10);
         for (int i = 0; i < providers.tagCount(); i++) providerKeys.add(
             providers.getCompoundTagAt(i)
@@ -138,6 +237,21 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
 
     @Override
     public void writeToNBT(NBTTagCompound tag) {
+        NBTTagList policies = new NBTTagList();
+        for (long position : safetyEnabled) {
+            NBTTagCompound policy = new NBTTagCompound();
+            policy.setLong("position", position);
+            policies.appendTag(policy);
+        }
+        tag.setTag("localSafetyEnabled", policies);
+        NBTTagList pending = new NBTTagList();
+        for (Map.Entry<Long, Boolean> entry : pendingSafety.entrySet()) {
+            NBTTagCompound policy = new NBTTagCompound();
+            policy.setLong("position", entry.getKey());
+            policy.setBoolean("enabled", entry.getValue());
+            pending.appendTag(policy);
+        }
+        tag.setTag("pendingSafety", pending);
         NBTTagList providers = new NBTTagList();
         for (long nativeKey : providerKeys) {
             NBTTagCompound entry = new NBTTagCompound();

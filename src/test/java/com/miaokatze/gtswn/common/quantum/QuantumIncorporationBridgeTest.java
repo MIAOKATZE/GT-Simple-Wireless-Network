@@ -10,10 +10,17 @@ import java.util.EnumSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 
 import org.junit.Test;
 
+import com.mojang.authlib.GameProfile;
+
+import appeng.api.features.IPlayerRegistry;
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridBlock;
@@ -22,6 +29,54 @@ import appeng.api.networking.IGridNode;
 import appeng.util.ReadOnlyCollection;
 
 public class QuantumIncorporationBridgeTest {
+
+    @Test
+    public void legacyIncorporationResolvesItsOwnUuidAndPersistsNativeActorWithoutInventingIdentity() throws Exception {
+        String uuid = UUID.randomUUID()
+            .toString();
+        NBTTagCompound legacy = new NBTTagCompound();
+        legacy.setString("identity", "saved-generation");
+        legacy.setString("owner", uuid);
+        NBTTagList entries = new NBTTagList();
+        entries.appendTag(legacy);
+        NBTTagCompound saved = new NBTTagCompound();
+        saved.setTag("entries", entries);
+        QuantumIncorporationRegistry registry = new QuantumIncorporationRegistry("legacy");
+        registry.readFromNBT(saved);
+        NBTTagCompound roundTrip = new NBTTagCompound();
+        registry.writeToNBT(roundTrip);
+        assertFalse(
+            roundTrip.getTagList("entries", 10)
+                .getCompoundTagAt(0)
+                .hasKey("nativeOwnerID"));
+        Field registered = QuantumIncorporationRegistry.class.getDeclaredField("entries");
+        registered.setAccessible(true);
+        QuantumIncorporationRegistry.Entry entry = ((Map<Long, QuantumIncorporationRegistry.Entry>) registered
+            .get(registry)).values()
+                .iterator()
+                .next();
+        IPlayerRegistry players = (IPlayerRegistry) Proxy.newProxyInstance(
+            IPlayerRegistry.class.getClassLoader(),
+            new Class<?>[] { IPlayerRegistry.class },
+            (proxy, method, args) -> {
+                assertEquals(UUID.fromString(uuid), ((GameProfile) args[0]).getId());
+                return 37;
+            });
+        assertEquals(37, entry.resolveNativeActor(players));
+        registry.writeToNBT(roundTrip);
+        NBTTagCompound current = roundTrip.getTagList("entries", 10)
+            .getCompoundTagAt(0);
+        assertEquals(uuid, current.getString("owner"));
+        assertEquals(37, current.getInteger("nativeOwnerID"));
+        registry.readFromNBT(roundTrip);
+        entry = ((Map<Long, QuantumIncorporationRegistry.Entry>) registered.get(registry)).values()
+            .iterator()
+            .next();
+        assertEquals(37, entry.resolveNativeActor(null));
+        set(entry, "nativeOwnerID", -1);
+        set(entry, "owner", "invalid-or-missing-legacy-uuid");
+        assertEquals(-1, entry.resolveNativeActor(players));
+    }
 
     @Test
     public void relayIsOneNativeDenseNodeWithoutConsumingAChannel() throws Exception {

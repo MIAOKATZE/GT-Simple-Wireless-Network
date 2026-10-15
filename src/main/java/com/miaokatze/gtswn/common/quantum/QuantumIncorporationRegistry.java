@@ -24,9 +24,11 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 import com.miaokatze.gtswn.config.Config;
+import com.mojang.authlib.GameProfile;
 
 import appeng.api.AEApi;
 import appeng.api.config.PowerMultiplier;
+import appeng.api.features.IPlayerRegistry;
 import appeng.api.implementations.parts.IPartCable;
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.GridNotification;
@@ -60,6 +62,31 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     private static int connectionsThisTick;
     /** Only live bridges, indexed across dimensions by their controller anchor. */
     private static final Map<AnchorKey, Set<Entry>> ACTIVE = new HashMap<>();
+
+    static boolean isBillingHost(IGridHost host) {
+        return host instanceof BillingLeaf;
+    }
+
+    static boolean isBillingClass(Class<? extends IGridHost> type) {
+        return type == BillingLeaf.class;
+    }
+
+    static AnchorKey billingAnchor(IGridHost host) {
+        return host instanceof BillingLeaf ? ((BillingLeaf) host).entry.anchorKey() : null;
+    }
+
+    static boolean permitsBillingConnection(IGridHost host, IGridNode first, IGridNode second) {
+        if (!(host instanceof BillingLeaf)) return true;
+        Entry entry = ((BillingLeaf) host).entry;
+        return QuantumConnectionSecurity.mayBridge(
+            DimensionManager.getWorld(entry.dim),
+            entry.ax,
+            entry.ay,
+            entry.az,
+            entry.local == null ? first : entry.local,
+            entry.target == null ? second : entry.target,
+            entry::nativeActorID);
+    }
 
     private static void invalidateStats() {
         QuantumNetworkStatsCache.clear();
@@ -400,6 +427,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             return;
         }
         IGridNode node = local.get(0);
+        if (!QuantumConnectionSecurity
+            .mayBridge(anchor, entry.ax, entry.ay, entry.az, node, target, entry::nativeActorID)) {
+            entry.disconnect();
+            return;
+        }
         if (entry.local == node && entry.target == target && entry.hasLiveConnections()) {
             return;
         }
@@ -423,7 +455,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.billingNode = AEApi.instance()
                 .createGridNode(billing);
             billing.node = entry.billingNode;
-            entry.billingNode.setPlayerID(target.getPlayerID());
+            int actor = entry.nativeActorID();
+            // Legacy OPEN registrations with no provable actor keep their prior native endpoint behavior.
+            entry.billingNode.setPlayerID(actor >= 0 ? actor : target.getPlayerID());
             entry.billingNode.updateState();
             // A single DENSE_CAPACITY node caps the complete quantum route at 32 channels,
             // shared by every downstream side/device. Original native flags and owner are untouched.
@@ -592,6 +626,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             e.identity = n.getString("identity");
             e.owner = n.getString("owner");
             e.ownerName = n.getString("ownerName");
+            e.nativeOwnerID = n.hasKey("nativeOwnerID", 3) ? n.getInteger("nativeOwnerID") : -1;
             e.dim = n.getInteger("dim");
             e.ax = n.getInteger("x");
             e.ay = n.getInteger("y");
@@ -616,6 +651,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             n.setString("identity", e.identity);
             n.setString("owner", e.owner);
             n.setString("ownerName", e.ownerName);
+            if (e.nativeOwnerID >= 0) n.setInteger("nativeOwnerID", e.nativeOwnerID);
             n.setInteger("dim", e.dim);
             n.setInteger("x", e.ax);
             n.setInteger("y", e.ay);
@@ -642,6 +678,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         private String block, tileClass, identity, owner;
         private String ownerName = "";
+        private int nativeOwnerID = -1;
         private TileEntity loadedTile;
         private IGridConnection connection;
         private IGridConnection billingConnection;
@@ -665,6 +702,27 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         public String ownerName() {
             return ownerName;
+        }
+
+        private int nativeActorID() {
+            if (nativeOwnerID >= 0) return nativeOwnerID;
+            return resolveNativeActor(
+                AEApi.instance()
+                    .registries()
+                    .players());
+        }
+
+        int resolveNativeActor(IPlayerRegistry players) {
+            if (nativeOwnerID >= 0) return nativeOwnerID;
+            try {
+                UUID uuid = UUID.fromString(owner);
+                nativeOwnerID = players.getID(new GameProfile(uuid, ownerName.isEmpty() ? owner : ownerName));
+                if (nativeOwnerID >= 0 && loadedTile != null && loadedTile.getWorldObj() != null)
+                    get(loadedTile.getWorldObj()).markDirty();
+                return nativeOwnerID;
+            } catch (IllegalArgumentException invalidIdentity) {
+                return -1;
+            }
         }
 
         public boolean isConnected() {
