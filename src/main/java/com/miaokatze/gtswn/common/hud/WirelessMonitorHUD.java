@@ -55,6 +55,10 @@ public class WirelessMonitorHUD extends Gui {
 
         // 确保游戏正常运行且有玩家
         if (mc.theWorld == null || mc.thePlayer == null) {
+            Object connection = mc.getNetHandler() == null ? null
+                : mc.getNetHandler()
+                    .getNetworkManager();
+            this.controller.synchronizeSession(mc.theWorld, mc.thePlayer, connection);
             return;
         }
 

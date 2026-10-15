@@ -166,6 +166,15 @@ public class GTSWNPacketHandler {
             PacketSyncDeviceTerminalVisualState.class,
             25,
             Side.CLIENT);
+        NETWORK.registerMessage(PacketQuantumMigration.Handler.class, PacketQuantumMigration.class, 26, Side.SERVER);
+        NETWORK.registerMessage(
+            PacketQuantumMigrationResult.Handler.class,
+            PacketQuantumMigrationResult.class,
+            27,
+            Side.CLIENT);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new PacketQuantumMigration.Drain());
         cpw.mods.fml.common.FMLCommonHandler.instance()
             .bus()
             .register(new PacketTerminalGesture.Drain());

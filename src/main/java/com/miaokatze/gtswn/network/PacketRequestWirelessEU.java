@@ -24,6 +24,7 @@ public class PacketRequestWirelessEU implements IMessage {
 
     /** 拥有者 UUID 字符串（来自便携监测终端 NBT 的 OwnerUUID 字段） */
     private String ownerUUID;
+    long requestToken;
 
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketRequestWirelessEU() {}
@@ -32,15 +33,33 @@ public class PacketRequestWirelessEU implements IMessage {
         this.ownerUUID = ownerUUID;
     }
 
+    public PacketRequestWirelessEU(String ownerUUID, long requestToken) {
+        this.ownerUUID = ownerUUID;
+        this.requestToken = requestToken;
+    }
+
     @Override
     public void fromBytes(ByteBuf buf) {
         // 1.7.10 用 ByteBufUtils.readUTF8String 读写字符串
-        ownerUUID = ByteBufUtils.readUTF8String(buf);
+        ownerUUID = null;
+        requestToken = 0;
+        try {
+            String owner = ByteBufUtils.readUTF8String(buf);
+            if (buf.readableBytes() != 0 && buf.readableBytes() != 8) return;
+            if (buf.isReadable()) {
+                requestToken = buf.readLong();
+                if (requestToken <= 0) return;
+            }
+            ownerUUID = owner;
+        } catch (RuntimeException invalid) {
+            ownerUUID = null;
+        }
     }
 
     @Override
     public void toBytes(ByteBuf buf) {
         ByteBufUtils.writeUTF8String(buf, ownerUUID);
+        if (requestToken != 0) buf.writeLong(requestToken);
     }
 
     /**
@@ -71,7 +90,8 @@ public class PacketRequestWirelessEU implements IMessage {
             }
 
             // 查询移交主线程：仅入队，由 ServerTickEvent 在主线程 drain 查询并回包
-            WirelessEURequestQueue.enqueue((EntityPlayerMP) ctx.getServerHandler().playerEntity, uuid.toString());
+            WirelessEURequestQueue
+                .enqueue((EntityPlayerMP) ctx.getServerHandler().playerEntity, uuid.toString(), message.requestToken);
             return null;
         }
     }

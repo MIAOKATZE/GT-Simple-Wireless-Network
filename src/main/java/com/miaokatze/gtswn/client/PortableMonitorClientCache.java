@@ -43,6 +43,7 @@ public final class PortableMonitorClientCache {
 
     private static final Map<UUID, Cached> CACHE = new HashMap<>();
     private static EntityPlayer sessionPlayer;
+    private static Object sessionWorld, sessionConnection;
     private static int nextSequence;
     private static long nextGlobalRequest;
     private static KeyBinding monitorKey;
@@ -59,12 +60,26 @@ public final class PortableMonitorClientCache {
     private PortableMonitorClientCache() {}
 
     private static void session() {
-        EntityPlayer player = Minecraft.getMinecraft().thePlayer;
-        if (player != sessionPlayer) {
-            CACHE.clear();
-            nextGlobalRequest = 0;
+        Minecraft mc = Minecraft.getMinecraft();
+        EntityPlayer player = mc.thePlayer;
+        Object connection = mc.getNetHandler() == null ? null
+            : mc.getNetHandler()
+                .getNetworkManager();
+        if (player != sessionPlayer || mc.theWorld != sessionWorld || connection != sessionConnection) {
+            resetForHudSession();
             sessionPlayer = player;
+            sessionWorld = mc.theWorld;
+            sessionConnection = connection;
         }
+    }
+
+    /** Only transient HUD/UI snapshots; configured pins and terminal NBT remain untouched. */
+    public static void resetForHudSession() {
+        CACHE.clear();
+        nextGlobalRequest = 0;
+        sessionPlayer = null;
+        sessionWorld = null;
+        sessionConnection = null;
     }
 
     public static void poll(ItemStack stack) {

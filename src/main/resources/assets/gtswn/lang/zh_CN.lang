@@ -493,6 +493,12 @@ gtswn.nei.monitor_battery.return=旧电池返回背包，满则掉落
 gtswn.nei.monitor_battery.tool=撬棍按原生规则消耗耐久或电量
 
 gtswn.tooltip.quantum_terminal.usage.incorporate=§dAlt+右击兼容完整 AE 方块或 GT ME 仓室：量子并入（排除线缆部件，需建造权限）§r
+gtswn.tooltip.quantum_terminal.usage.migrate=§d对未量子化 ME 控制器持续按住 Alt+右键 5 秒：迁移所绑定的整个网络；其他终端需手动重新绑定§r
+gtswn.hud.quantum.migration_charge=网络迁移蓄力：%s%%（持续按住 Alt+右键 5 秒）
+gtswn.hud.quantum.migration_wait=网络迁移：等待服务端确认（请保持按住）
+gtswn.chat.quantum.migration_source_invalid=§c[量子终端] 原控制器未加载、已被替换或已取消量子化，迁移已取消。
+gtswn.chat.quantum.migration_target_invalid=§c[量子终端] 目标必须是完整、活跃且所有成员均未量子化的 ME 控制器结构。
+gtswn.chat.quantum.migrated=§d[量子网络] 已从 %s（ID %s）%s, %s, %s 迁移至 %s（ID %s）%s, %s, %s。仅发起迁移的终端已改绑，其他终端需手动重新绑定。
 gtswn.tooltip.quantum_terminal.usage.release=§dAlt+右击自己已并入的方块：解除量子并入（创造模式不限拥有者）§r
 
 gtswn.gui.quantum.color=网络颜色

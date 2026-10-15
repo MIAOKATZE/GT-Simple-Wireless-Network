@@ -26,6 +26,7 @@ import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.AnchorKey;
 import com.miaokatze.gtswn.common.quantum.AnchorReachability;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorSync;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
@@ -260,6 +261,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      */
     private int colorIndex;
     private boolean colorTracked;
+    private long lastAppliedMigration;
 
     public int getColorIndex() {
         return colorIndex;
@@ -274,6 +276,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     }
 
     public void setAnchor(int dim, int x, int y, int z) {
+        // Explicit bindings start after historical migrations of reused controller coordinates.
+        lastAppliedMigration = worldObj != null && !worldObj.isRemote ? QuantumMigrationJournal.get(worldObj)
+            .currentSequence() : 0L;
+        replaceAnchor(dim, x, y, z);
+    }
+
+    private void replaceAnchor(int dim, int x, int y, int z) {
+        destroyBridgeConnection();
         QuantumNetworkColorSync.untrack(this);
         colorTracked = false;
         this.anchorDim = dim;
@@ -283,6 +293,26 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         QuantumNetworkColorSync.track(this);
         colorTracked = worldObj != null && !worldObj.isRemote;
         // 标记 TE 数据已修改，确保锚点写入随区块保存落盘
+        markDirty();
+    }
+
+    /** Apply lazy changes before AE readiness without replacing ownership or the part container. */
+    public void applyPendingMigrations(QuantumMigrationJournal journal) {
+        if (!hasAnchor() || lastAppliedMigration >= journal.currentSequence()) return;
+        QuantumMigrationJournal.Resolution result = journal
+            .resolve(new AnchorKey(anchorDim, anchorX, anchorY, anchorZ), lastAppliedMigration);
+        if (result.anchor.getDimension() != anchorDim || result.anchor.getX() != anchorX
+            || result.anchor.getY() != anchorY
+            || result.anchor.getZ() != anchorZ) {
+            replaceAnchor(
+                result.anchor.getDimension(),
+                result.anchor.getX(),
+                result.anchor.getY(),
+                result.anchor.getZ());
+            lastMaintenanceTick = -1L;
+            reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
+        }
+        lastAppliedMigration = result.sequence;
         markDirty();
     }
 
@@ -864,6 +894,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (worldObj == null || worldObj.isRemote) {
             return;
         }
+        applyPendingMigrations(QuantumMigrationJournal.get(worldObj));
         migrateLivePartConflicts();
         flushRecoveredPartDrops();
         // v1.6.2 修复：无锚点节点（未经量子终端放置，如创造模式直接放置的空白节点）无效——
@@ -1404,6 +1435,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
+        lastAppliedMigration = tag.getLong("lastAppliedMigration");
         partMigrationPending = true;
         recoveredPartDrops.clear();
         NBTTagList recovered = tag.getTagList(NBT_RECOVERED_PART_DROPS, 10);
@@ -1447,6 +1479,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     @Override
     public void writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
+        tag.setLong("lastAppliedMigration", lastAppliedMigration);
         if (!recoveredPartDrops.isEmpty()) {
             NBTTagList recovered = new NBTTagList();
             for (ItemStack stack : recoveredPartDrops) {

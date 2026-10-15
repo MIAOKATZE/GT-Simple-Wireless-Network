@@ -493,6 +493,12 @@ gtswn.nei.monitor_battery.return=Old battery returns to inventory, or drops if f
 gtswn.nei.monitor_battery.tool=Crowbar uses its native durability or energy cost
 
 gtswn.tooltip.quantum_terminal.usage.incorporate=§dAlt+right-click a compatible full AE block or GT ME hatch: Incorporate (no cable parts; build permission required)§r
+gtswn.tooltip.quantum_terminal.usage.migrate=§dHold Alt+right-click on an unquantized ME Controller for 5 seconds to migrate the entire bound network; other terminals must be rebound manually§r
+gtswn.hud.quantum.migration_charge=Network migration: %s%% (hold Alt + right-click; 5 seconds)
+gtswn.hud.quantum.migration_wait=Network migration: waiting for server confirmation (keep holding)
+gtswn.chat.quantum.migration_source_invalid=§c[Quantum Terminal] The source controller is unloaded, replaced, or no longer quantized. Migration cancelled.
+gtswn.chat.quantum.migration_target_invalid=§c[Quantum Terminal] The target must be a complete, active ME Controller structure with no quantized controllers.
+gtswn.chat.quantum.migrated=§d[Quantum Network] Migrated from %s (ID %s), %s, %s, %s to %s (ID %s), %s, %s, %s. Only the initiating terminal was rebound; all other terminals must be rebound manually.
 gtswn.tooltip.quantum_terminal.usage.release=§dAlt+right-click a block you incorporated: Release it (creative bypasses ownership)§r
 
 gtswn.gui.quantum.color=Network color
