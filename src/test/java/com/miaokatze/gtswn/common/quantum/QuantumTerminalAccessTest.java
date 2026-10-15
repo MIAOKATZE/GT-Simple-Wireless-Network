@@ -54,17 +54,19 @@ import appeng.api.networking.security.ISecurityGrid;
 import appeng.api.networking.security.ISecurityProvider;
 import appeng.api.util.AECableType;
 import appeng.api.util.IReadOnlyCollection;
+import appeng.tile.networking.TileController;
 
 public class QuantumTerminalAccessTest {
 
     @Test
-    public void liveBridgeAclKeepsLegacyOpenNetworksOpenAndFailsClosedWithoutTheEnrolledProvider() throws Exception {
+    public void liveBridgeAclDefaultsOffAndExplicitOnFailsClosedWithoutAProvider() throws Exception {
         boolean enabled = Config.quantumSafetyEnabled;
         try {
             Config.quantumSafetyEnabled = true;
             FixtureWorld world = world();
             GridFixture grid = new GridFixture();
-            world.tile = new IdentityTile(grid.node);
+            world.tile = identityTile(grid.node);
+            grid.hasProvider = false;
             assertTrue(
                 QuantumConnectionSecurity.mayBridge(
                     world,
@@ -73,9 +75,10 @@ public class QuantumTerminalAccessTest {
                     2,
                     grid.node,
                     grid.node,
-                    () -> { throw new AssertionError("OPEN networks must not require or invent an actor ID"); }));
+                    () -> { throw new AssertionError("OFF without providers must not invent an actor ID"); }));
+            grid.hasProvider = true;
             QuantumNetworkSecurityRegistry.get(world)
-                .enroll(world, members(1, 64, 2));
+                .setSafety(world, members(1, 64, 2), true);
             assertFalse(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
             grid.grants.put(43, EnumSet.of(SecurityPermissions.BUILD));
             grid.booting = true;
@@ -122,13 +125,14 @@ public class QuantumTerminalAccessTest {
         try {
             Config.quantumSafetyEnabled = true;
             FixtureWorld world = world();
-            world.tile = new IdentityTile();
+            world.tile = identityTile(null);
             FixturePlayer actor = player(world, "actor");
             ItemStack terminal = terminal(0, 1, 64, 2);
             terminal.getTagCompound()
                 .setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, "unresolvable-old-key");
             QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
             policy.enroll(world, members(1, 64, 2));
+            policy.setSafety(world, members(1, 64, 2), true);
             policy.enrollProvider(Long.MIN_VALUE);
             NBTTagCompound saved = new NBTTagCompound();
             policy.writeToNBT(saved);
@@ -190,65 +194,37 @@ public class QuantumTerminalAccessTest {
     }
 
     @Test
-    public void onlyActualOpenNetworksQualifyAndFalseSnapshotsNeverConsumeHints() throws Exception {
+    public void onlySafetyOffNetworksQualifyRegardlessOfPairingHistoryOrBooting() throws Exception {
         FixtureWorld world = world();
         GridFixture grid = new GridFixture();
-        world.tile = new IdentityTile(grid.node);
+        world.tile = identityTile(grid.node);
         FixturePlayer player = player(world, "actor");
-        ItemStack encodedForAnotherNetwork = terminal(0, 1, 64, 2);
-        encodedForAnotherNetwork.getTagCompound()
-            .setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, "456");
-        assertTrue(QuantumTerminalAccess.canAccessAnchor(player, encodedForAnotherNetwork, world, 1, 64, 2));
         assertTrue(QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
         grid.booting = true;
+        QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
+        policy.enroll(world, members(1, 64, 2));
+        assertTrue(QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
+        policy.setSafety(world, members(1, 64, 2), true);
         assertFalse(QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        QuantumTerminalSecurityHints.show(player, QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        world.tile = new IdentityTile();
-        assertFalse(QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        QuantumTerminalSecurityHints.show(player, QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        assertFalse(QuantumTerminalSecurityHints.isOpen((World) null, 1, 64, 2));
-        assertFalse(QuantumTerminalSecurityHints.isOpen(new ItemStack(new ItemNetworkQuantumTerminal())));
+        QuantumTerminalSecurityHints.show(player, false);
         assertTrue(player.data.hasNoTags());
         assertTrue(player.messages.isEmpty());
-        grid.booting = false;
-        world.tile = new IdentityTile(grid.node);
-        QuantumNetworkSecurityRegistry.get(world)
-            .enroll(world, members(1, 64, 2));
-        assertFalse(QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        QuantumTerminalSecurityHints.show(player, QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        assertTrue(player.data.hasNoTags());
-        QuantumTerminalSecurityHints.show(player, true);
-        assertEquals(1, player.messages.size());
-        assertEquals(
-            1,
-            player.data.getCompoundTag(EntityPlayer.PERSISTED_NBT_TAG)
-                .getCompoundTag("gtswn")
-                .getCompoundTag("qualityHints")
-                .getInteger("openNetwork"));
+        assertFalse(QuantumTerminalSecurityHints.isOpen((World) null, 1, 64, 2));
+        assertFalse(QuantumTerminalSecurityHints.isOpen(new ItemStack(new ItemNetworkQuantumTerminal())));
     }
 
     @Test
-    public void securitySnapshotSurvivesControllerDequantizationWithoutFalseOpenHint() throws Exception {
+    public void controllerSafetySurvivesDequantizationAndRequantization() throws Exception {
         FixtureWorld world = world();
-        GridFixture grid = new GridFixture();
-        world.tile = new IdentityTile(grid.node);
-        FixturePlayer player = player(world, "actor");
+        world.tile = identityTile(new GridFixture().node);
         QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
         controllers.quantizeAll(members(1, 64, 2));
-        QuantumNetworkSecurityRegistry.get(world)
-            .enroll(world, members(1, 64, 2));
-        boolean wasOpen = QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2);
-        assertFalse(wasOpen);
+        QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
+        policy.setSafety(world, members(1, 64, 2), true);
         controllers.dequantize(1, 64, 2);
-        assertTrue(QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        QuantumTerminalSecurityHints.show(player, wasOpen);
-        assertTrue(player.messages.isEmpty());
-        assertTrue(player.data.hasNoTags());
-        wasOpen = QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2);
-        world.tile = null;
-        assertFalse(QuantumTerminalSecurityHints.isOpen(world, 1, 64, 2));
-        QuantumTerminalSecurityHints.show(player, wasOpen);
-        assertEquals(1, player.messages.size());
+        assertTrue(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
+        controllers.quantizeAll(members(1, 64, 2));
+        assertTrue(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
     }
 
     @Test
@@ -402,7 +378,7 @@ public class QuantumTerminalAccessTest {
     @Test
     public void replacingControllerEnrolledBeforeQuantizationCannotInheritSavedSecurity() throws Exception {
         FixtureWorld world = world();
-        world.tile = new IdentityTile();
+        world.tile = identityTile(null);
         QuantumNetworkSecurityRegistry registry = QuantumNetworkSecurityRegistry.get(world);
         Set<Long> members = members(1, 64, 2);
         registry.enroll(world, members);
@@ -410,7 +386,7 @@ public class QuantumTerminalAccessTest {
         NBTTagCompound saved = new NBTTagCompound();
         registry.writeToNBT(saved);
         registry.readFromNBT(saved);
-        world.tile = new IdentityTile();
+        world.tile = identityTile(null);
         assertFalse(registry.isEnrolled(world, members));
     }
 
@@ -434,48 +410,62 @@ public class QuantumTerminalAccessTest {
     }
 
     @Test
-    public void pairedProviderPromotesNewControllerGenerationAndRemovalKeepsItLocked() throws Exception {
+    public void pairingHistoryNeverEnablesSafetyAndExplicitOnNeedsNoPriorEnrollment() throws Exception {
         FixtureWorld world = world();
         GridFixture grid = new GridFixture();
-        world.tile = new IdentityTile(grid.node);
-        QuantumNetworkSecurityRegistry.providerRegistry(world)
-            .enrollProvider(123L);
+        world.tile = identityTile(grid.node);
+        QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
+        policy.enrollProvider(123L);
+        policy.enroll(world, members(1, 64, 2));
+        FixturePlayer guest = player(world, "guest");
+        ItemStack terminal = terminal(0, 1, 64, 2);
+        assertFalse(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
+        assertTrue(QuantumTerminalAccess.canAccessAnchor(guest, terminal, world, 1, 64, 2));
+        policy.remove(members(1, 64, 2));
+        policy.setSafety(world, members(1, 64, 2), true);
         assertTrue(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
-        assertTrue(
-            QuantumNetworkSecurityRegistry.get(world)
-                .isEnrolled(members(1, 64, 2)));
-        assertFalse(
-            QuantumTerminalAccess.canAccessAnchor(player(world, "guest"), terminal(0, 1, 64, 2), world, 1, 64, 2));
+        assertFalse(QuantumTerminalAccess.canAccessAnchor(guest, terminal, world, 1, 64, 2));
         grid.hasProvider = false;
         assertTrue(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
-        world.tile = new IdentityTile(grid.node);
+        world.tile = identityTile(grid.node);
         assertFalse(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
-        grid.hasProvider = true;
-        assertTrue(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
     }
 
     @Test
-    public void stableUnpairedProviderStaysOpenButUnknownOrBootingGridDoesNotBecomePermanentlyLocked()
-        throws Exception {
+    public void defaultOffStaysOpenWithBootingOrUnknownGrid() throws Exception {
         FixtureWorld world = world();
         GridFixture grid = new GridFixture();
-        world.tile = new IdentityTile(grid.node);
+        world.tile = identityTile(grid.node);
         FixturePlayer guest = player(world, "guest");
         ItemStack terminal = terminal(0, 1, 64, 2);
         assertTrue(QuantumTerminalAccess.canAccessAnchor(guest, terminal, world, 1, 64, 2));
         grid.booting = true;
-        assertFalse(QuantumTerminalAccess.canAccessAnchor(guest, terminal, world, 1, 64, 2));
-        assertFalse(
-            QuantumNetworkSecurityRegistry.get(world)
-                .isEnrolled(members(1, 64, 2)));
-        world.tile = new IdentityTile();
-        assertFalse(QuantumTerminalAccess.canAccessAnchor(guest, terminal, world, 1, 64, 2));
-        assertFalse(
-            QuantumNetworkSecurityRegistry.get(world)
-                .isEnrolled(members(1, 64, 2)));
-        grid.booting = false;
-        world.tile = new IdentityTile(grid.node);
         assertTrue(QuantumTerminalAccess.canAccessAnchor(guest, terminal, world, 1, 64, 2));
+        world.tile = identityTile(null);
+        assertTrue(QuantumTerminalAccess.canAccessAnchor(guest, terminal, world, 1, 64, 2));
+    }
+
+    @Test
+    public void safetyManagementUsesRealProviderOwnerOrSecurityWithoutPairingOrBuild() {
+        HashMap<Integer, EnumSet<SecurityPermissions>> grants = new HashMap<>();
+        ISecurityProvider provider = (ISecurityProvider) Proxy.newProxyInstance(
+            ISecurityProvider.class.getClassLoader(),
+            new Class<?>[] { ISecurityProvider.class },
+            (proxy, method, args) -> {
+                if (method.getName()
+                    .equals("getOwner")) return 42;
+                if (method.getName()
+                    .equals("readPermissions"))
+                    ((HashMap<Integer, EnumSet<SecurityPermissions>>) args[0]).putAll(grants);
+                return null;
+            });
+        assertTrue(QuantumTerminalAccess.permitsSafetyProvider(provider, 42));
+        assertFalse(QuantumTerminalAccess.permitsSafetyProvider(provider, 43));
+        grants.put(43, EnumSet.of(SecurityPermissions.BUILD));
+        assertFalse(QuantumTerminalAccess.permitsSafetyProvider(provider, 43));
+        grants.put(43, EnumSet.of(SecurityPermissions.SECURITY));
+        assertTrue(QuantumTerminalAccess.permitsSafetyProvider(provider, 43));
+        assertFalse(QuantumTerminalAccess.permitsSafetyProvider(provider, -1));
     }
 
     private static ISecurityGrid security(boolean available, EntityPlayer allowedActor, int owner) {
@@ -613,16 +603,17 @@ public class QuantumTerminalAccessTest {
         }
     }
 
-    private static class IdentityTile extends TileEntity implements QuantumControllerIdentity, IGridHost {
+    private static IdentityTile identityTile(IGridNode node) throws Exception {
+        IdentityTile tile = (IdentityTile) allocate(IdentityTile.class);
+        tile.identity = "";
+        tile.node = node;
+        return tile;
+    }
+
+    private static class IdentityTile extends TileController implements QuantumControllerIdentity {
 
         private String identity = "";
         private IGridNode node;
-
-        private IdentityTile() {}
-
-        private IdentityTile(IGridNode node) {
-            this.node = node;
-        }
 
         @Override
         public IGridNode getGridNode(ForgeDirection direction) {
@@ -636,6 +627,18 @@ public class QuantumTerminalAccessTest {
 
         @Override
         public void securityBreak() {}
+
+        private boolean networkSafetyEnabled;
+
+        @Override
+        public boolean gtswn$isNetworkSafetyEnabled() {
+            return networkSafetyEnabled;
+        }
+
+        @Override
+        public void gtswn$setNetworkSafetyEnabled(boolean enabled) {
+            networkSafetyEnabled = enabled;
+        }
 
         @Override
         public String gtswn$getControllerIdentity() {

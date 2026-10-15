@@ -136,6 +136,7 @@ public class QuantumTerminalEffectsGuiTest {
         data.canChangeNetworkSafety = true;
         data.networkSafetyIdentity = "generation-A";
         data.networkSafetyRequestToken = 45L;
+        data.managementOnly = true;
         GuiQuantumTerminal.receiveData(data);
         ActualGui gui = actualGui(true);
         assertNull(gui.find(102));
@@ -143,15 +144,15 @@ public class QuantumTerminalEffectsGuiTest {
         GuiButton safety = gui.find(102);
         assertNotNull(safety);
         assertTrue(safety.enabled);
-        assertTrue(safety.displayString.endsWith(": ON"));
+        assertTrue(safety.displayString.endsWith(": OFF"));
         assertEquals(178, safety.xPosition);
         assertEquals(128, safety.yPosition);
         assertTrue(safety.xPosition + safety.width <= 292);
         assertTrue(safety.yPosition + safety.height <= 146);
-        data.networkSafetyEnabled = false;
+        data.networkSafetyEnabled = true;
         gui.actionPerformed(new GuiButton(100, 0, 0, ""));
         assertTrue(gui.find(102).enabled);
-        assertTrue(gui.find(102).displayString.endsWith(": OFF"));
+        assertTrue(gui.find(102).displayString.endsWith(": ON"));
         data.canChangeNetworkSafety = false;
         gui.actionPerformed(new GuiButton(100, 0, 0, ""));
         assertFalse(gui.find(102).enabled);

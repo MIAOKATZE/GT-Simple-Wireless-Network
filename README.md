@@ -105,13 +105,13 @@ The Quantum Terminal GUI keeps its 16-color palette and node, incorporation and 
 
 The terminal's 16-color selection synchronizes across its quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close the interface.
 
-量子网络默认开启安全校验，仅曾通过 AE 安全终端配对的网络需要校验；未配对网络仍可直接使用。将量子终端放入原生 AE 安全终端完成配对后，访问沿用 AE 权限。终端详情页可单独关闭或开启当前网络的安全模式，两个方向都要求网络拥有者或 AE「安全（SECURITY）」权限；仅有「建造（BUILD）」权限不能切换。单网设置随存档保存，旧存档默认开启。
+量子网络的安全模式默认 OFF，由控制器保存并向同一网络的终端同步；旧存档没有该属性时也默认 OFF。安全终端配对不会自动开启安全，OFF 时配对不会限制量子访问。网络拥有者或持 AE「安全（SECURITY）」权限的人可在终端详情页显式开启或关闭；仅有「建造（BUILD）」权限不能切换。开启后立即要求安全配对与 AE 权限，不再取决于网络是否曾配对。管理者修改开关不要求手中终端已配对，未配对时界面只提供安全开关，配对后才能查看受保护的网络详情。
 
-Quantum security is enabled by default and applies to networks previously paired through an AE Security Terminal; unpaired networks remain open. Encode the Quantum Terminal in the native AE Security Terminal to use AE permissions. The Details page can disable or enable security for the current network. Both directions require the network owner or AE SECURITY permission; BUILD alone cannot change the setting. Per-network settings persist with the world and default to enabled for older saves.
+Quantum security defaults to OFF. The controller saves the setting and synchronizes it to terminals on the same network; older saves without the property also default to OFF. Encoding a terminal does not enable security or restrict quantum access while OFF. The network owner or a player with AE SECURITY permission can explicitly enable or disable it on the Details page; BUILD alone is insufficient. Enabling immediately requires security pairing and AE permissions, regardless of pairing history. Managers can change the switch without an encoded terminal; an unpaired manager sees only the safety control until pairing grants access to protected network details.
 
-管理员可用 `/gtswn safety off` 临时恢复全部量子网络的访问，再用 `/gtswn safety on` 恢复安全校验。指令需要 OP 4 或服务器控制台，实时生效并保存至 `config/gtswn/gtswn_ae.cfg` 的 `ae2.quantumSafetyEnabled`（默认 `true`）；关闭不会删除原配对或单网设置。全局关闭时，终端详情页不能修改单网安全模式。
+管理员可用 `/gtswn safety off` 临时恢复全部量子网络的访问，再用 `/gtswn safety on` 恢复各网络已设置的安全模式。指令需要 OP 4 或服务器控制台，实时生效并保存至 `config/gtswn/gtswn_ae.cfg` 的 `ae2.quantumSafetyEnabled`（默认 `true`）；关闭不会删除原配对或单网设置，重新开启也不会把原本 OFF 的网络改成 ON。全局关闭时，终端详情页不能修改单网安全模式。
 
-Administrators can temporarily recover access to all quantum networks with `/gtswn safety off`, then restore security with `/gtswn safety on`. These commands require OP level 4 or the server console, apply immediately, and save `ae2.quantumSafetyEnabled` in `config/gtswn/gtswn_ae.cfg` (default `true`). Disabling global security preserves existing pairings and per-network settings. The per-network control is unavailable while global security is disabled.
+Administrators can temporarily recover access to all quantum networks with `/gtswn safety off`, then restore each network's saved policy with `/gtswn safety on`. These commands require OP level 4 or the server console, apply immediately, and save `ae2.quantumSafetyEnabled` in `config/gtswn/gtswn_ae.cfg` (default `true`). The global override preserves pairings and per-network settings; re-enabling it leaves OFF networks OFF. The per-network control is unavailable while global security is disabled.
 
 ### 量子节点 / Quantum Node
 

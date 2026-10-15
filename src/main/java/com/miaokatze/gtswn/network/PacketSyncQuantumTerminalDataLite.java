@@ -12,7 +12,7 @@ import io.netty.buffer.ByteBuf;
 /**
  * S2C terminal polling response (discriminator 7). The base network metrics occupy 38 bytes;
  * safety appends global/local/capability booleans, a UTF-8 controller identity, and a response token.
- * Old payloads retain local safety on and capability off. Actor capabilities and tokens are held
+ * Old payloads retain local safety off and capability off. Actor capabilities and tokens are held
  * by the response, never written into the shared anchor snapshot. Client handling delegates through
  * the sided proxy, keeping dedicated-server class loading independent of client classes.
  */
@@ -58,6 +58,7 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
         buf.writeBoolean(canChangeNetworkSafety);
         ByteBufUtils.writeUTF8String(buf, data.networkSafetyIdentity);
         buf.writeLong(networkSafetyRequestToken);
+        buf.writeBoolean(data.managementOnly);
     }
 
     @Override
@@ -76,13 +77,14 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
             d.incorporationCount = buf.readInt();
             d.incorporationChannels = buf.readInt();
         }
-        // Old payloads retain safety=true and capability=false.
+        // Old payloads retain local safety=false and capability=false.
         if (buf.readableBytes() >= 3) {
             d.globalSafetyEnabled = buf.readBoolean();
             d.networkSafetyEnabled = buf.readBoolean();
             d.canChangeNetworkSafety = buf.readBoolean();
             if (buf.isReadable()) d.networkSafetyIdentity = ByteBufUtils.readUTF8String(buf);
             if (buf.readableBytes() >= 8) d.networkSafetyRequestToken = buf.readLong();
+            if (buf.isReadable()) d.managementOnly = buf.readBoolean();
         }
         this.data = d;
     }

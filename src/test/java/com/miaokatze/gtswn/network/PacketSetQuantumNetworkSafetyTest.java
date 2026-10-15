@@ -94,6 +94,31 @@ public class PacketSetQuantumNetworkSafetyTest {
     }
 
     @Test
+    public void authorizedUnpairedManagerReceivesTokenThatRotatesWhenKeyChanges() throws Exception {
+        PacketSetQuantumNetworkSafety.clearContexts();
+        try {
+            EntityPlayerMP actor = player();
+            ItemStack held = terminal();
+            held.getTagCompound()
+                .removeTag(QuantumTerminalAccess.NBT_ENCRYPTION_KEY);
+            QuantumNetworkData management = new QuantumNetworkData();
+            management.online = true;
+            management.managementOnly = true;
+            management.networkSafetyIdentity = "controller-A";
+            long unpairedToken = PacketSetQuantumNetworkSafety.issueToken(actor, held, management, true);
+            assertTrue(unpairedToken != 0L);
+            assertEquals(unpairedToken, PacketSetQuantumNetworkSafety.issueToken(actor, held, management, true));
+            held.getTagCompound()
+                .setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, "real-native-key");
+            long pairedToken = PacketSetQuantumNetworkSafety.issueToken(actor, held, management, true);
+            assertTrue(pairedToken != unpairedToken);
+            assertEquals(0L, PacketSetQuantumNetworkSafety.issueToken(actor, held, management, false));
+        } finally {
+            PacketSetQuantumNetworkSafety.clearContexts();
+        }
+    }
+
+    @Test
     public void intentRoundTripsBothModesAndRejectsMalformedSlotAndMode() throws Exception {
         Field valid = PacketSetQuantumNetworkSafety.class.getDeclaredField("valid");
         valid.setAccessible(true);

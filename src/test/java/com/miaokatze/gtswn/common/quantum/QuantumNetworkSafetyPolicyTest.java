@@ -13,7 +13,6 @@ import java.util.Set;
 
 import net.minecraft.entity.Entity;
 import net.minecraft.nbt.NBTTagCompound;
-import net.minecraft.nbt.NBTTagList;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
@@ -41,76 +40,84 @@ import appeng.util.ReadOnlyCollection;
 public class QuantumNetworkSafetyPolicyTest {
 
     @Test
-    public void policyDefaultsOnAndRoundTripsItsGenerationAndExactTrustedKeys() throws Exception {
+    public void policyDefaultsOffAndControllerPropertySurvivesRegistryReloadAndDequantization() throws Exception {
         FixtureWorld world = world(0);
-        controller(world, 0);
+        Controller tile = controller(world, 0);
         QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
-        assertTrue(policy.isSafetyEnabled(world, members(0)));
-        Set<Long> trusted = new java.util.HashSet<>();
-        trusted.add(Long.MIN_VALUE);
-        trusted.add(Long.MAX_VALUE);
-        policy.setSafety(world, members(0), false, trusted);
+        assertFalse(policy.isSafetyEnabled(world, members(0)));
+        policy.setSafety(world, members(0), true);
+        assertTrue(tile.gtswn$isNetworkSafetyEnabled());
         NBTTagCompound saved = new NBTTagCompound();
         policy.writeToNBT(saved);
         policy.readFromNBT(saved);
-        assertFalse(policy.isSafetyEnabled(world, members(0)));
-        assertEquals(trusted, policy.trustedProviderKeys(world, members(0)));
+        assertTrue(policy.isSafetyEnabled(world, members(0)));
         QuantumControllerRegistry.get(world)
             .dequantize(0, 64, 0);
+        QuantumControllerRegistry.get(world)
+            .quantize(0, 64, 0);
         assertTrue(policy.isSafetyEnabled(world, members(0)));
-        assertTrue(
-            policy.trustedProviderKeys(world, members(0))
-                .isEmpty());
     }
 
     @Test
-    public void orphanOrMissingGenerationCannotDisableAnOldOrReplacementController() throws Exception {
+    public void oldEnrollmentAndCoordinateRecordsCannotEnableAReplacementController() throws Exception {
         FixtureWorld world = world(0);
         controller(world, 0);
         QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
-        NBTTagCompound partial = new NBTTagCompound();
-        NBTTagCompound off = new NBTTagCompound();
-        off.setLong("position", QuantumControllerRegistry.pack(0, 64, 0));
-        NBTTagList list = new NBTTagList();
-        list.appendTag(off);
-        partial.setTag("localSafetyDisabled", list);
-        policy.readFromNBT(partial);
-        assertTrue(policy.isSafetyEnabled(world, members(0)));
-        partial.setIntArray("enrolled", new int[] { 0, 64, 0 });
-        policy.readFromNBT(partial);
-        assertTrue(policy.isSafetyEnabled(world, members(0)));
-        policy.setSafety(world, members(0), false, Collections.singleton(123L));
+        NBTTagCompound legacy = new NBTTagCompound();
+        legacy.setIntArray("enrolled", new int[] { 0, 64, 0 });
+        policy.readFromNBT(legacy);
         assertFalse(policy.isSafetyEnabled(world, members(0)));
-        controller(world, 0);
+        policy.setSafety(world, members(0), true);
         assertTrue(policy.isSafetyEnabled(world, members(0)));
-        assertTrue(
-            policy.trustedProviderKeys(world, members(0))
-                .isEmpty());
+        controller(world, 0);
+        assertFalse(policy.isSafetyEnabled(world, members(0)));
     }
 
     @Test
-    public void migrationCarriesOffToANewTargetButNeverWeakensAnEnrolledOnTarget() throws Exception {
+    public void migrationCarriesExplicitPolicyAndNeverWeakensAnOnTarget() throws Exception {
         FixtureWorld source = world(0), target = world(-1);
         controller(source, 0);
         controller(target, 32);
         QuantumNetworkSecurityRegistry from = QuantumNetworkSecurityRegistry.get(source);
         QuantumNetworkSecurityRegistry to = QuantumNetworkSecurityRegistry.get(target);
-        from.setSafety(source, members(0), false, Collections.singleton(123L));
         QuantumNetworkSecurityRegistry.transfer(source, members(0), target, members(32));
-        assertTrue(from.isSafetyEnabled(source, members(0)));
         assertFalse(to.isSafetyEnabled(target, members(32)));
-        assertEquals(Collections.singleton(123L), to.trustedProviderKeys(target, members(32)));
-        from.setSafety(source, members(0), false, Collections.singleton(456L));
-        to.setSafety(target, members(32), true, Collections.emptySet());
+        from.setSafety(source, members(0), true);
         QuantumNetworkSecurityRegistry.transfer(source, members(0), target, members(32));
         assertTrue(to.isSafetyEnabled(target, members(32)));
-        assertTrue(
-            to.trustedProviderKeys(target, members(32))
-                .isEmpty());
+        from.setSafety(source, members(0), false);
+        QuantumNetworkSecurityRegistry.transfer(source, members(0), target, members(32));
+        assertTrue(to.isSafetyEnabled(target, members(32)));
     }
 
     @Test
-    public void localOverrideCannotCrossAForeignProviderOrAnEnrolledNetworkWithItsProviderUnloaded() throws Exception {
+    public void explicitOffSurvivesUnloadedMemberReloadAndDoesNotTransferToReplacement() throws Exception {
+        FixtureWorld world = world(0);
+        Controller first = controller(world, 0), second = controller(world, 1);
+        Set<Long> structure = new java.util.HashSet<>(members(0));
+        structure.addAll(members(1));
+        QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
+        policy.setSafety(world, structure, true);
+        world.tiles.remove(QuantumControllerRegistry.pack(1, 64, 0));
+        policy.setSafety(world, structure, false);
+        assertFalse(first.gtswn$isNetworkSafetyEnabled());
+        assertTrue(second.gtswn$isNetworkSafetyEnabled());
+        NBTTagCompound saved = new NBTTagCompound();
+        policy.writeToNBT(saved);
+        policy.readFromNBT(saved);
+        world.tiles.put(QuantumControllerRegistry.pack(1, 64, 0), second);
+        assertFalse(policy.isSafetyEnabled(world, structure));
+        assertFalse(second.gtswn$isNetworkSafetyEnabled());
+        world.tiles.remove(QuantumControllerRegistry.pack(1, 64, 0));
+        policy.setSafety(world, structure, true);
+        first.gtswn$setNetworkSafetyEnabled(false);
+        Controller replacement = controller(world, 1);
+        assertFalse(policy.isSafetyEnabled(world, structure));
+        assertFalse(replacement.gtswn$isNetworkSafetyEnabled());
+    }
+
+    @Test
+    public void offWithoutHistoricalTrustedKeysBypassesOwnProvidersButNeverForeignProtectedDomains() throws Exception {
         boolean enabled = Config.quantumSafetyEnabled;
         try {
             Config.quantumSafetyEnabled = true;
@@ -119,18 +126,17 @@ public class QuantumNetworkSafetyPolicyTest {
             Grid ownGrid = new Grid(), foreignGrid = new Grid();
             own.node = ownGrid.add(own);
             other.node = foreignGrid.add(other);
-            ownGrid.add(provider(123L));
-            IGridNode foreignProvider = foreignGrid.add(provider(456L));
             QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
-            policy.setSafety(world, members(0), false, Collections.singleton(123L));
-            policy.enroll(world, members(32));
             assertTrue(QuantumConnectionSecurity.bypassesNetworkSafety(world, 0, 64, 0, own.node, own.node));
+            ownGrid.add(provider(123L));
+            assertTrue(QuantumConnectionSecurity.bypassesNetworkSafety(world, 0, 64, 0, own.node, own.node));
+            IGridNode foreignProvider = foreignGrid.add(provider(456L));
             assertFalse(QuantumConnectionSecurity.bypassesNetworkSafety(world, 0, 64, 0, own.node, other.node));
             foreignGrid.remove(foreignProvider);
+            assertTrue(QuantumConnectionSecurity.bypassesNetworkSafety(world, 0, 64, 0, own.node, other.node));
+            policy.setSafety(world, members(32), true);
             assertFalse(QuantumConnectionSecurity.bypassesNetworkSafety(world, 0, 64, 0, own.node, other.node));
-            assertTrue(policy.isSafetyEnabled(world, members(32)));
-            assertTrue(policy.isEnrolled(world, members(32)));
-            policy.setSafety(world, members(0), true, Collections.emptySet());
+            policy.setSafety(world, members(0), true);
             assertFalse(QuantumConnectionSecurity.bypassesNetworkSafety(world, 0, 64, 0, own.node, own.node));
         } finally {
             Config.quantumSafetyEnabled = enabled;
@@ -192,6 +198,18 @@ public class QuantumNetworkSafetyPolicyTest {
 
         String identity;
         IGridNode node;
+
+        private boolean networkSafetyEnabled;
+
+        @Override
+        public boolean gtswn$isNetworkSafetyEnabled() {
+            return networkSafetyEnabled;
+        }
+
+        @Override
+        public void gtswn$setNetworkSafetyEnabled(boolean enabled) {
+            networkSafetyEnabled = enabled;
+        }
 
         @Override
         public String gtswn$getControllerIdentity() {

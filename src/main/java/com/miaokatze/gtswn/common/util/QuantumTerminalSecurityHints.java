@@ -19,8 +19,8 @@ public final class QuantumTerminalSecurityHints {
     /** Snapshot after authorization and before mutations can remove or transfer the network's security latch. */
     public static boolean isOpen(World world, int x, int y, int z) {
         return world != null && !world.isRemote
-            && QuantumTerminalAccess.isNetworkSafetyEnabled(world, x, y, z)
-            && !QuantumTerminalAccess.isSecurityRequired(world, x, y, z);
+            && world.blockExists(x, y, z)
+            && !QuantumTerminalAccess.isNetworkSafetyEnabled(world, x, y, z);
     }
 
     public static boolean isOpen(ItemStack terminal) {

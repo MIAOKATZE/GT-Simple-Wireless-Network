@@ -15,7 +15,7 @@ import org.junit.Test;
 public class ClientEffectsLocalizationTest {
 
     @Test
-    public void bilingualQuantumSecurityGuidanceIncludesExactRequestedChinese() throws Exception {
+    public void bilingualQuantumSecurityGuidanceRequiresExplicitEnablement() throws Exception {
         for (String language : new String[] { "zh_CN", "en_US" }) {
             Properties messages = new Properties();
             try (InputStreamReader reader = new InputStreamReader(
@@ -28,11 +28,15 @@ public class ClientEffectsLocalizationTest {
             assertNotNull(warning);
             assertNotNull(management);
             if ("zh_CN".equals(language)) {
-                assertEquals("目前量子化AE网络没有安全策略，任何人都可以进行网络调色、网络迁移、量子化取消。绑定一次任意量子终端启用安全策略。", warning);
+                assertTrue(warning.contains("安全为OFF"));
+                assertTrue(warning.contains("终端界面开启"));
+                assertTrue(warning.contains("不会自动开启"));
                 assertEquals("必须是网络拥有者或者持有‘安全’权限", management);
             } else {
                 assertTrue(warning.contains("Anyone can recolor or migrate"));
-                assertTrue(warning.contains("ME Security Terminal"));
+                assertTrue(warning.contains("safety OFF"));
+                assertTrue(warning.contains("quantum terminal UI"));
+                assertTrue(warning.contains("Pairing alone does not enable it"));
                 assertTrue(management.contains("network owner or"));
                 assertTrue(management.contains("'Security' permission"));
             }

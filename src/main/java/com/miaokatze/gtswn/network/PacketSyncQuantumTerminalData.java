@@ -87,6 +87,7 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         buf.writeBoolean(canChangeNetworkSafety);
         ByteBufUtils.writeUTF8String(buf, data.networkSafetyIdentity);
         buf.writeLong(networkSafetyRequestToken);
+        buf.writeBoolean(data.managementOnly);
     }
 
     @Override
@@ -133,13 +134,14 @@ public class PacketSyncQuantumTerminalData implements IMessage {
             d.incorporationCount = buf.readInt();
             d.incorporationChannels = buf.readInt();
         }
-        // Old payloads retain safety=true and capability=false.
+        // Old payloads retain local safety=false and capability=false.
         if (buf.readableBytes() >= 3) {
             d.globalSafetyEnabled = buf.readBoolean();
             d.networkSafetyEnabled = buf.readBoolean();
             d.canChangeNetworkSafety = buf.readBoolean();
             if (buf.isReadable()) d.networkSafetyIdentity = ByteBufUtils.readUTF8String(buf);
             if (buf.readableBytes() >= 8) d.networkSafetyRequestToken = buf.readLong();
+            if (buf.isReadable()) d.managementOnly = buf.readBoolean();
         }
         this.data = d;
     }

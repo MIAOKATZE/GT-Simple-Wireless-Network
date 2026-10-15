@@ -87,13 +87,8 @@ public final class QuantumConnectionSecurity {
             if (anchor instanceof IGridHost)
                 collectProviders(((IGridHost) anchor).getGridNode(ForgeDirection.UNKNOWN), grids, providers);
         }
-        boolean required = anchorWorld == null || !QuantumTerminalAccess.isNetworkSafetyEnabled(anchorWorld, x, y, z)
-            || QuantumTerminalAccess.isSecurityRequired(anchorWorld, x, y, z);
-        if (!required && anchorWorld != null) {
-            QuantumNetworkSecurityRegistry history = QuantumNetworkSecurityRegistry.providerRegistry(anchorWorld);
-            for (ISecurityProvider provider : providers)
-                if (history.isProviderEnrolled(provider.getSecurityKey())) required = true;
-        }
+        boolean required = anchorWorld == null || QuantumTerminalAccess.isSecurityRequired(anchorWorld, x, y, z)
+            || !providers.isEmpty();
         if (!required) return true;
         for (Scope scope : scopes(grids)) {
             if (scope.world == null) return false;
@@ -210,20 +205,19 @@ public final class QuantumConnectionSecurity {
     private static boolean allowsLocalScope(Scope own, IGridNode first, IGridNode second) {
         if (own.world == null || QuantumTerminalAccess.networkSafetyIdentity(own.world, own.x, own.y, own.z)
             .isEmpty() || QuantumTerminalAccess.isNetworkSafetyEnabled(own.world, own.x, own.y, own.z)) return false;
-        Set<Long> trusted = QuantumNetworkSecurityRegistry.get(own.world)
-            .trustedProviderKeys(own.world, own.members);
-        if (trusted.isEmpty()) return false;
         Set<IGrid> grids = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ISecurityProvider> providers = Collections.newSetFromMap(new IdentityHashMap<>());
         collectProviders(first, grids, providers);
         collectProviders(second, grids, providers);
         collectAnchorProviders(own, grids, providers);
-        if (providers.size() > 1) return false;
-        for (ISecurityProvider provider : providers) if (!trusted.contains(provider.getSecurityKey())) return false;
+        Set<ISecurityProvider> ownProviders = Collections.newSetFromMap(new IdentityHashMap<>());
+        collectAnchorProviders(own, Collections.newSetFromMap(new IdentityHashMap<>()), ownProviders);
+        // OFF exempts this anchor's providers; it cannot grant entry into a separate protected AE grid.
+        if (!ownProviders.containsAll(providers)) return false;
         for (Scope other : scopes(grids)) {
             if (own.sameNetwork(other)) continue;
-            if (other.world == null || QuantumTerminalAccess.isSecurityRequired(other.world, other.x, other.y, other.z))
-                return false;
+            if (other.world == null
+                || QuantumTerminalAccess.isNetworkSafetyEnabled(other.world, other.x, other.y, other.z)) return false;
         }
         return true;
     }

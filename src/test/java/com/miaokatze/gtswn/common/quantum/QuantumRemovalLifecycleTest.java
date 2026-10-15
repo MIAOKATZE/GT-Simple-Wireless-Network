@@ -321,6 +321,18 @@ public class QuantumRemovalLifecycleTest {
 
         String identity;
 
+        private boolean networkSafetyEnabled;
+
+        @Override
+        public boolean gtswn$isNetworkSafetyEnabled() {
+            return networkSafetyEnabled;
+        }
+
+        @Override
+        public void gtswn$setNetworkSafetyEnabled(boolean enabled) {
+            networkSafetyEnabled = enabled;
+        }
+
         @Override
         public String gtswn$getControllerIdentity() {
             return identity;

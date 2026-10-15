@@ -13,6 +13,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
+import net.minecraftforge.common.DimensionManager;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
@@ -80,12 +81,14 @@ public class QuantumNetworkData {
     /** 锚点解析成功且网格可用 */
     public boolean online;
 
-    /** Missing/old/offline snapshots are conservative: safety on, no management capability. */
+    /** Networks default to local OFF. Missing/old snapshots never grant management capability. */
     public boolean globalSafetyEnabled = true;
-    public boolean networkSafetyEnabled = true;
+    public boolean networkSafetyEnabled;
     public boolean canChangeNetworkSafety;
     public String networkSafetyIdentity = "";
     public long networkSafetyRequestToken;
+    /** A native manager may recover the safety switch without gaining access to network metrics. */
+    public boolean managementOnly;
 
     /** 锚点控制器维度与坐标 */
     public int anchorDim;
@@ -164,19 +167,31 @@ public class QuantumNetworkData {
     /**
      * 从玩家手持的已绑定量子终端装配（包 5 Handler 入口）。
      *
-     * @param player 请求方玩家（当前未使用，保留以便未来做权限校验）
+     * @param player 请求方玩家（普通数据权限与安全开关管理权限分开校验）
      * @param held   玩家手持物品
      * @return 装配完成的快照；手持不是已绑定量子终端时返回 null（调用方静默丢弃请求）
      */
     public static QuantumNetworkData assemble(EntityPlayer player, ItemStack held) {
-        if (!QuantumTerminalAccess.validate(player, held) && !QuantumTerminalAccess.canManage(player, held))
-            return null;
+        boolean canRead = QuantumTerminalAccess.validate(player, held) || QuantumTerminalAccess.canManage(player, held);
+        if (!canRead && !QuantumTerminalAccess.canChangeNetworkSafety(player, held)) return null;
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) {
             return null;
         }
         NBTTagCompound tag = held.stackTagCompound;
         if (tag == null || tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) != 1) {
             return null;
+        }
+        if (!canRead) {
+            // Deliberately bypass FULL_CACHE: this response contains no network metrics or actor-shared capability.
+            QuantumNetworkData data = offlineFromStack(held);
+            World world = DimensionManager.getWorld(data.anchorDim);
+            data.networkSafetyIdentity = QuantumTerminalAccess
+                .networkSafetyIdentity(world, data.anchorX, data.anchorY, data.anchorZ);
+            data.online = !data.networkSafetyIdentity.isEmpty();
+            data.networkSafetyEnabled = QuantumTerminalAccess
+                .isNetworkSafetyEnabled(world, data.anchorX, data.anchorY, data.anchorZ);
+            data.managementOnly = true;
+            return data;
         }
         return assemble(
             tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM),

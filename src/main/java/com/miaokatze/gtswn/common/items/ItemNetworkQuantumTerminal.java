@@ -345,7 +345,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
     public ItemStack onItemRightClick(ItemStack stack, World world, EntityPlayer player) {
         if (!world.isRemote && player.isSneaking()
             && TerminalAirInteraction.isAir(player)
-            && (QuantumTerminalAccess.validate(player, stack) || QuantumTerminalAccess.canManage(player, stack))) {
+            && QuantumTerminalAccess.canOpenTerminal(player, stack)) {
             player.openGui(GTSimpleWirelessNetwork.instance, GTSWNGuiHandler.QUANTUM_TERMINAL, world, 0, 0, 0);
         }
         return stack;

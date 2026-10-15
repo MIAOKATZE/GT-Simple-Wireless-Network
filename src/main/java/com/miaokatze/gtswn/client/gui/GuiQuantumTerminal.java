@@ -198,6 +198,10 @@ public class GuiQuantumTerminal extends GuiContainer {
                 data.anchorX + ", " + data.anchorY + ", " + data.anchorZ + " @ " + data.anchorDim,
                 30,
                 GtswnGuiPalette.TEXT_BODY);
+            if (data.managementOnly) {
+                drawLine(tr("gtswn.gui.quantum.safety_management_only"), 56, GtswnGuiPalette.STATE_OVERLOAD);
+                return;
+            }
             drawLine(
                 tr("gtswn.gui.quantum.node_count") + ": " + (data.online ? data.quantumNodeCount : 0),
                 43,
@@ -257,6 +261,7 @@ public class GuiQuantumTerminal extends GuiContainer {
         super.mouseClicked(mouseX, mouseY, button);
         if (effectsPage || !terminalContainer.quantum
             || button != 0
+            || latestData != null && latestData.managementOnly
             || heldTerminal() == null
             || mouseX < guiLeft + COLOR_LEFT
             || mouseX >= guiLeft + WIDTH - 8) {
@@ -373,7 +378,7 @@ public class GuiQuantumTerminal extends GuiContainer {
             GuiButton button = (GuiButton) entry;
             if (button.id != 102) continue;
             button.displayString = tr("gtswn.gui.quantum.safety") + ": "
-                + (latestData == null || latestData.networkSafetyEnabled ? "ON" : "OFF");
+                + (latestData == null ? "..." : latestData.networkSafetyEnabled ? "ON" : "OFF");
             button.enabled = canToggleSafety(latestData);
         }
     }

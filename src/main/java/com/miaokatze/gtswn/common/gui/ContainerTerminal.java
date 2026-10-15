@@ -89,9 +89,7 @@ public class ContainerTerminal extends Container {
             && held != null
             && player.inventory.currentItem == heldIndex
             && (player.worldObj.isRemote || held == terminal)
-            && (!quantum || player.worldObj.isRemote
-                || QuantumTerminalAccess.validate(player, held)
-                || QuantumTerminalAccess.canManage(player, held))
+            && (!quantum || player.worldObj.isRemote || QuantumTerminalAccess.canOpenTerminal(player, held))
             && (quantum ? held.getItem() instanceof ItemNetworkQuantumTerminal
                 : held.getItem() instanceof WirelessEnergyTap);
     }

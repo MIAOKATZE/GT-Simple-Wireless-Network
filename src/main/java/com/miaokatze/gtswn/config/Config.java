@@ -909,7 +909,7 @@ public class Config {
             "quantumSafetyEnabled",
             CATEGORY_AE2,
             true,
-            "量子网络安全策略开关；仅曾安全配对的网络应用安全策略 / Enable quantum security for networks with an existing security pairing\n"
+            "量子网络安全总开关；控制器网络默认 OFF，由终端界面显式开启 / Master quantum security switch; each controller network defaults OFF and is enabled explicitly in its terminal UI\n"
                 + "false = 临时恢复访问，不删除网络、配对或安全锁定记录 / false = recovery access without deleting networks, pairings or security latches\n"
                 + "默认 true；管理员可用 /gtswn safety on|off 实时修改并保存 / Default true; OP command /gtswn safety on|off applies and saves immediately");
 
