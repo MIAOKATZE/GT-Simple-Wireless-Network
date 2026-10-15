@@ -14,6 +14,7 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketQuantumIncorporation;
+import com.miaokatze.gtswn.network.PacketRequestQuantumInfo;
 
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -52,6 +53,15 @@ public final class QuantumIncorporationClientHandler {
         }
     }
 
+    private static boolean requestEmptyHandInfo(Minecraft mc, int x, int y, int z) {
+        if (mc.thePlayer == null || mc.currentScreen != null
+            || mc.thePlayer.getHeldItem() != null
+            || !isAltDown()
+            || !QuantumIncorporationClientState.registered(mc.theWorld, x, y, z)) return false;
+        GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestQuantumInfo(x, y, z));
+        return true;
+    }
+
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onMouse(MouseEvent event) {
         if (event.button != 1) return;
@@ -61,6 +71,12 @@ public final class QuantumIncorporationClientHandler {
             return;
         }
         Minecraft mc = Minecraft.getMinecraft();
+        MovingObjectPosition pointed = mc.objectMouseOver;
+        if (pointed != null && pointed.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+            && requestEmptyHandInfo(mc, pointed.blockX, pointed.blockY, pointed.blockZ)) {
+            event.setCanceled(true);
+            return;
+        }
         if (!isAltDown() || !isHoldingTerminal(mc)) return;
         event.setCanceled(true);
         MovingObjectPosition hit = mc.objectMouseOver;
@@ -76,9 +92,12 @@ public final class QuantumIncorporationClientHandler {
 
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void onInteract(PlayerInteractEvent event) {
-        if (!event.world.isRemote || event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK
-            || !isAltDown()
-            || !isHoldingTerminal(Minecraft.getMinecraft())) return;
+        if (!event.world.isRemote || event.action != PlayerInteractEvent.Action.RIGHT_CLICK_BLOCK) return;
+        if (requestEmptyHandInfo(Minecraft.getMinecraft(), event.x, event.y, event.z)) {
+            event.setCanceled(true);
+            return;
+        }
+        if (!isAltDown() || !isHoldingTerminal(Minecraft.getMinecraft())) return;
         event.setCanceled(true);
         if (!TerminalGestureRules.canIncorporate(isAltDown(), isShiftDown(), true)) {
             TerminalRevealCharge.cancel();

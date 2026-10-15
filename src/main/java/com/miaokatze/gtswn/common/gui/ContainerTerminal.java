@@ -15,6 +15,7 @@ import net.minecraft.item.ItemStack;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 
 import gregtech.common.misc.WirelessNetworkManager;
 import gregtech.common.misc.spaceprojects.SpaceProjectManager;
@@ -88,6 +89,9 @@ public class ContainerTerminal extends Container {
             && held != null
             && player.inventory.currentItem == heldIndex
             && (player.worldObj.isRemote || held == terminal)
+            && (!quantum || player.worldObj.isRemote
+                || QuantumTerminalAccess.validate(player, held)
+                || QuantumTerminalAccess.canManage(player, held))
             && (quantum ? held.getItem() instanceof ItemNetworkQuantumTerminal
                 : held.getItem() instanceof WirelessEnergyTap);
     }

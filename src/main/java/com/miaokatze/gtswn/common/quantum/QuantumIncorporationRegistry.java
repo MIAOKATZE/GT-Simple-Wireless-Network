@@ -43,8 +43,10 @@ import appeng.tile.networking.TileController;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
-/** Original devices remain intact; a direct bridge and a separate idle-power leaf are added. */
+/** Original devices remain intact; a single dense bridge also accounts for their idle surcharge. */
 public class QuantumIncorporationRegistry extends WorldSavedData {
+
+    public static final int MAX_CHANNELS = 32;
 
     private static final String DATA_NAME = "gtswn_quantum_incorporation";
 
@@ -171,6 +173,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             .toString();
         entry.owner = owner.getUniqueID()
             .toString();
+        entry.ownerName = owner.getCommandSenderName();
         entry.dim = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM);
         entry.ax = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X);
         entry.ay = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y);
@@ -186,6 +189,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         disconnectExternal(tile, null);
         maintain(world, entry);
         return true;
+    }
+
+    /** Read one live registration without scanning chunks or changing its binding. */
+    public Entry find(World world, int x, int y, int z) {
+        return isIncorporated(world, x, y, z) ? entries.get(QuantumControllerRegistry.pack(x, y, z)) : null;
     }
 
     /** Blueprint snapshot is bounded to one live registration and excludes identity/owner/runtime edges. */
@@ -417,11 +425,14 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             billing.node = entry.billingNode;
             entry.billingNode.setPlayerID(target.getPlayerID());
             entry.billingNode.updateState();
-            // Connecting to the controller keeps isolation of the original machine unchanged.
+            // A single DENSE_CAPACITY node caps the complete quantum route at 32 channels,
+            // shared by every downstream side/device. Original native flags and owner are untouched.
+            // Attach the bridge to the secured controller first: the second native connection still
+            // checks the original device's own player ID against that network's security grid.
             entry.billingConnection = AEApi.instance()
                 .createGridConnection(entry.billingNode, target);
             entry.connection = AEApi.instance()
-                .createGridConnection(node, target);
+                .createGridConnection(node, entry.billingNode);
             entry.backoff = 20;
             ACTIVE.computeIfAbsent(entry.anchorKey(), ignored -> Collections.newSetFromMap(new IdentityHashMap<>()))
                 .add(entry);
@@ -580,6 +591,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             e.tileClass = n.getString("tile");
             e.identity = n.getString("identity");
             e.owner = n.getString("owner");
+            e.ownerName = n.getString("ownerName");
             e.dim = n.getInteger("dim");
             e.ax = n.getInteger("x");
             e.ay = n.getInteger("y");
@@ -603,6 +615,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             n.setString("tile", e.tileClass);
             n.setString("identity", e.identity);
             n.setString("owner", e.owner);
+            n.setString("ownerName", e.ownerName);
             n.setInteger("dim", e.dim);
             n.setInteger("x", e.ax);
             n.setInteger("y", e.ay);
@@ -628,6 +641,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
 
         private String block, tileClass, identity, owner;
+        private String ownerName = "";
         private TileEntity loadedTile;
         private IGridConnection connection;
         private IGridConnection billingConnection;
@@ -645,6 +659,22 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             return identity;
         }
 
+        public String owner() {
+            return owner;
+        }
+
+        public String ownerName() {
+            return ownerName;
+        }
+
+        public boolean isConnected() {
+            return hasLiveConnections();
+        }
+
+        public int usedChannels() {
+            return hasLiveConnections() ? connection.getUsedChannels() : 0;
+        }
+
         private boolean owns(TileEntity tile) {
             return loadedTile != null ? loadedTile == tile
                 : tile instanceof QuantumIncorporationIdentity
@@ -658,7 +688,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                 && billingNode != null
                 && local.getConnections()
                     .contains(connection)
-                && target.getConnections()
+                && billingNode.getConnections()
                     .contains(connection)
                 && billingNode.getConnections()
                     .contains(billingConnection)
@@ -674,7 +704,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             boolean changed = active != null && active.remove(this);
             if (active != null && active.isEmpty()) ACTIVE.remove(anchorKey());
             // An overridden tile invalidate may have destroyed its AE node before reaching our base hook.
-            if (connection != null && (containsConnection(local, connection) || containsConnection(target, connection)))
+            if (connection != null
+                && (containsConnection(local, connection) || containsConnection(billingNode, connection)))
                 connection.destroy();
             if (billingConnection != null && (containsConnection(billingNode, billingConnection)
                 || containsConnection(target, billingConnection))) billingConnection.destroy();
@@ -693,7 +724,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
     }
 
-    /** Runtime-only, channel-free surcharge; AE's energy cache owns all accounting. */
+    /** Runtime-only shared 32-channel bottleneck and idle surcharge; AE owns pathing and accounting. */
     private static final class BillingLeaf implements IGridBlock, IGridHost {
 
         private final DimensionalCoord location;
@@ -714,7 +745,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         @Override
         public EnumSet<GridFlags> getFlags() {
-            return EnumSet.noneOf(GridFlags.class);
+            return EnumSet.of(GridFlags.DENSE_CAPACITY);
         }
 
         @Override

@@ -18,8 +18,10 @@ import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
+import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 
 import appeng.api.config.SecurityPermissions;
 import appeng.api.networking.IGridHost;
@@ -102,6 +104,10 @@ public class PacketQuantumIncorporation implements IMessage {
         World world = player.worldObj;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
+        if (!QuantumTerminalAccess.validate(player, held)) {
+            tell(player, "gtswn.chat.quantum.no_permission");
+            return;
+        }
         if (!world.blockExists(message.x, message.y, message.z)
             || player.getDistanceSq(message.x + 0.5, message.y + 0.5, message.z + 0.5) > 64) return;
         // Platform.getEyeOffset uses the client's eye-position convention; MP posY is feet.
@@ -116,9 +122,18 @@ public class PacketQuantumIncorporation implements IMessage {
         QuantumIncorporationRegistry registry = QuantumIncorporationRegistry.get(world);
         // Alt is a toggle. The authoritative registry decides even if the client cache is stale.
         if (QuantumIncorporationRegistry.isIncorporated(world, message.x, message.y, message.z)) {
-            if (registry.remove(world, message.x, message.y, message.z, player))
+            QuantumIncorporationRegistry.Entry entry = registry.find(world, message.x, message.y, message.z);
+            World anchorWorld = entry == null ? null : DimensionManager.getWorld(entry.dim);
+            if (entry == null
+                || !QuantumTerminalAccess.canAccessAnchor(player, held, anchorWorld, entry.ax, entry.ay, entry.az)) {
+                tell(player, "gtswn.chat.quantum.no_permission");
+                return;
+            }
+            boolean wasOpen = QuantumTerminalSecurityHints.isOpen(anchorWorld, entry.ax, entry.ay, entry.az);
+            if (registry.remove(world, message.x, message.y, message.z, player)) {
                 tell(player, "gtswn.chat.quantum.incorporation_removed");
-            else tell(player, "gtswn.chat.quantum.no_permission");
+                QuantumTerminalSecurityHints.show(player, wasOpen);
+            } else tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }
         if (!ItemNetworkQuantumTerminal.isBound(held)) {
@@ -144,8 +159,9 @@ public class PacketQuantumIncorporation implements IMessage {
         TileEntity controller = anchor.getTileEntity(ax, ay, az);
         TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
         if (!(controller instanceof TileController) || !anchor.canMineBlock(player, ax, ay, az)
-            || !canBuild((IGridHost) controller, player)
-            || !canBuild((IGridHost) tile, player)) {
+            || !canBuild((IGridHost) tile, player)
+            || (QuantumTerminalAccess.isSecurityRequired(anchor, ax, ay, az)
+                && !canBuild((IGridHost) controller, player))) {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }
@@ -155,6 +171,7 @@ public class PacketQuantumIncorporation implements IMessage {
             tell(player, "gtswn.chat.quantum.incorporation_need_anchor");
             return;
         }
+        boolean wasOpen = QuantumTerminalSecurityHints.isOpen(anchor, ax, ay, az);
         if (registry.add(world, message.x, message.y, message.z, held.getTagCompound(), player)) {
             if (!player.capabilities.isCreativeMode)
                 TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.ANCHOR);
@@ -165,6 +182,7 @@ public class PacketQuantumIncorporation implements IMessage {
                     TerminalSupplyStore.Kind.ANCHOR,
                     suppliesBefore));
             AnimationQualityHints.show(player, QualityHintCounter.Kind.INCORPORATION);
+            QuantumTerminalSecurityHints.show(player, wasOpen);
         }
     }
 

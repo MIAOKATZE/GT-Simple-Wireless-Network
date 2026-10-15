@@ -24,6 +24,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.client.render.QuantumTintedTextures;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.quantum.QuantumConnectionInfo;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.network.PacketQuantumTerminalSwapBus;
 import com.miaokatze.gtswn.register.CreativeTabManager;
@@ -292,6 +293,7 @@ public class BlockNetworkQuantumNode extends BlockContainer {
             key = node.getOfflineReasonKey();
         }
         player.addChatComponentMessage(new ChatComponentTranslation(key));
+        QuantumConnectionInfo.node(player, node);
         return true;
     }
 

@@ -15,6 +15,7 @@ import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.TerminalAirInteraction;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
@@ -88,6 +89,8 @@ public final class PacketTerminalGesture implements IMessage {
         if (player.isDead || player.playerNetServerHandler == null) return;
         ItemStack held = player.getHeldItem();
         if (held == null) return;
+        if (held.getItem() instanceof ItemNetworkQuantumTerminal && !QuantumTerminalAccess.validate(player, held))
+            return;
         boolean device = held.getItem() instanceof ItemDeviceInfoTerminal;
         // Device scans may begin and remain charged while looking at blocks. Other reveal gestures stay air-only.
         if (device ? player.isSneaking() : !TerminalAirInteraction.isAir(player)) return;

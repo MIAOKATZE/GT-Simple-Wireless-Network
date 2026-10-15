@@ -9,7 +9,8 @@ public final class QualityHintCounter {
 
         NODE("node"),
         INCORPORATION("incorporation"),
-        LINK("link");
+        LINK("link"),
+        OPEN_NETWORK("openNetwork");
 
         final String key;
 

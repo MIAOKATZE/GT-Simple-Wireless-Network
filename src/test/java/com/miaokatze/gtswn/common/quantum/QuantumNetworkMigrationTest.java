@@ -176,7 +176,7 @@ public class QuantumNetworkMigrationTest {
     }
 
     @Test
-    public void terminalsArePlainCoordinatesAndOnlyExplicitStackIsRebound() throws Exception {
+    public void terminalsWaitForValidationBeforeApplyingCommittedMoves() throws Exception {
         FixtureWorld world = world();
         QuantumControllerRegistry.get(world)
             .quantize(B.getX(), B.getY(), B.getZ());
