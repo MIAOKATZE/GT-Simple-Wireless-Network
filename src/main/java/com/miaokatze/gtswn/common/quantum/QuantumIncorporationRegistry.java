@@ -27,6 +27,7 @@ import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.AEApi;
 import appeng.api.config.PowerMultiplier;
+import appeng.api.implementations.parts.IPartCable;
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.GridNotification;
 import appeng.api.networking.IGrid;
@@ -128,7 +129,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             && entry.identity.equals(((QuantumIncorporationIdentity) tile).gtswn$getIncorporationIdentity());
     }
 
-    /** Called by the AE directional gate; UNKNOWN internal and quantum edges stay untouched. */
+    /** Whether this node belongs to a currently registered incorporated tile. */
     public static boolean blocksPhysicalConnection(IGridNode node) {
         TileEntity tile = nodeTile(node);
         if (tile == null) return false;
@@ -138,6 +139,19 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         return entry != null && !tile.isInvalid()
             && (entry.loadedTile == null || entry.loadedTile == tile)
             && entry.identity.equals(((QuantumIncorporationIdentity) tile).gtswn$getIncorporationIdentity());
+    }
+
+    /** Additional directional restriction only; native direction, color, capacity and security checks still run. */
+    public static boolean blocksCableConnection(IGridNode first, IGridNode second) {
+        return (isCableNode(first) && blocksPhysicalConnection(second))
+            || (isCableNode(second) && blocksPhysicalConnection(first));
+    }
+
+    private static boolean isCableNode(IGridNode node) {
+        if (node == null) return false;
+        Object machine = node.getMachine();
+        // The quantum block's virtual cable shares its TE-owned proxy and is not an ordinary ME cable.
+        return machine instanceof IPartCable && !(machine instanceof QuantumNodeCablePart);
     }
 
     public boolean add(World world, int x, int y, int z, NBTTagCompound terminal, EntityPlayer owner) {
@@ -474,10 +488,12 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             ArrayList<IGridConnection> connections = new ArrayList<>();
             for (IGridConnection connection : node.getConnections()) connections.add(connection);
             for (IGridConnection connection : connections) {
-                if (connection != preserve
-                    && (connection.getDirection(node) != ForgeDirection.UNKNOWN || connection.getOtherSide(node) == null
-                        || nodeTile(connection.getOtherSide(node)) != tile))
-                    connection.destroy();
+                if (connection == preserve) continue;
+                IGridNode peer = connection.getOtherSide(node);
+                boolean forbidden = connection.getDirection(node) == ForgeDirection.UNKNOWN
+                    ? peer == null || nodeTile(peer) != tile
+                    : blocksCableConnection(node, peer);
+                if (forbidden) connection.destroy();
             }
         }
     }
