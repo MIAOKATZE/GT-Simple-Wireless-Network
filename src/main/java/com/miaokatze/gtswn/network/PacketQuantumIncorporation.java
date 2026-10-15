@@ -156,8 +156,9 @@ public class PacketQuantumIncorporation implements IMessage {
         TileEntity controller = anchor.getTileEntity(ax, ay, az);
         TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
         if (!(controller instanceof TileController) || !anchor.canMineBlock(player, ax, ay, az)
+            || !canBuild((IGridHost) tile, player)
             || (QuantumTerminalAccess.isSecurityRequired(anchor, ax, ay, az)
-                && (!canBuild((IGridHost) controller, player) || !canBuild((IGridHost) tile, player)))) {
+                && !canBuild((IGridHost) controller, player))) {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }
