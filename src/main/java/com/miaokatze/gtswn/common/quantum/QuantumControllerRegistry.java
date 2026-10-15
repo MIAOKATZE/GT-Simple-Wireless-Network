@@ -16,6 +16,8 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 import appeng.core.AEConfig;
@@ -118,15 +120,23 @@ public class QuantumControllerRegistry extends WorldSavedData {
             rememberIdentity(pack(x, y, z));
             this.revision++;
             markDirty();
+            TestWorldProbes.at(world, x, y, z, Type.QUANTUM_CONTROLLER_ADD, "");
         }
     }
 
     /** 批量入册（打包坐标集，通常为 floodControllers 的洪泛结果） */
     public void quantizeAll(Set<Long> packedCoords) {
+        Set<Long> added = null;
+        if (TestWorldProbes.enabled()) {
+            added = new HashSet<>(packedCoords);
+            added.removeAll(this.controllers);
+        }
         if (this.controllers.addAll(packedCoords)) {
             for (long packed : packedCoords) rememberIdentity(packed);
             this.revision++;
             markDirty();
+            if (added != null) for (long packed : added) TestWorldProbes
+                .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_ADD, "");
         }
     }
 
@@ -144,6 +154,8 @@ public class QuantumControllerRegistry extends WorldSavedData {
             loadedTiles.remove(packed);
             this.revision++;
             markDirty();
+            if (TestWorldProbes.enabled()) TestWorldProbes
+                .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_REMOVE, "");
         }
     }
 

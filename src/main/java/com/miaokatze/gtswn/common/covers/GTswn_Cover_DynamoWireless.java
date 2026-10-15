@@ -12,6 +12,8 @@ import net.minecraft.util.ChatComponentText;
 
 import com.google.common.io.ByteArrayDataInput;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 import com.miaokatze.gtswn.config.Config;
@@ -157,9 +159,18 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
                 if (owner != null) {
                     long actualAdded = CoverMaths.afterUplinkLoss(this.storedEU, Config.uplinkLossEU);
                     if (actualAdded > 0 && addEUToGlobalEnergyMap(owner, actualAdded)) {
+                        if (TestWorldProbes.enabled()) TestWorldProbes.at(
+                            bmte,
+                            Type.EU_UPLINK,
+                            "bufferEU=" + storedEU + ";networkEU=" + actualAdded + ";committed=true");
                         this.storedEU = 0;
                         // v1.6.19：性能审计——上行上传成功计数
                         PerformanceAudit.recordWirelessUpload();
+                    } else {
+                        if (TestWorldProbes.enabled()) TestWorldProbes.at(
+                            bmte,
+                            Type.EU_UPLINK,
+                            "bufferEU=" + storedEU + ";networkEU=" + actualAdded + ";committed=false");
                     }
                 }
             }

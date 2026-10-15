@@ -5,6 +5,8 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+
 /**
  * Server-thread-only observation of actual controller energy interactions.
  * The twenty-tick window contains changes made while the controller executes, not hatch network traffic.
@@ -63,6 +65,7 @@ public final class DeviceFlowMonitor {
                 values[channel][slot] = saturatingAdd(values[channel][slot], bucketAmount);
             }
             totals[channel] = finiteAdd(totals[channel], amount);
+            TestWorldProbes.flow(owner, channel, amount);
         }
 
         /** Since-last-sample volume divided by elapsed ticks, retaining periodic bursts in long-term averages. */

@@ -106,6 +106,41 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         return terminals.get(terminalId);
     }
 
+    /** Bounded debug scope: exports exactly one synthetic terminal, never the whole shared store. */
+    public NBTTagCompound snapshotTestTerminal(World testWorld, UUID terminalId) {
+        requireRunningTestWorld(testWorld);
+        TerminalData data = terminals.get(terminalId);
+        if (data == null) return null;
+        NBTTagCompound snapshot = new NBTTagCompound();
+        data.writeToNBT(snapshot);
+        return snapshot;
+    }
+
+    /** Restores or removes that exact test key after a scenario, including failure/timeout cleanup. */
+    public void restoreTestTerminal(World testWorld, UUID terminalId, NBTTagCompound snapshot) {
+        requireRunningTestWorld(testWorld);
+        if (snapshot == null) terminals.remove(terminalId);
+        else {
+            TerminalData data = new TerminalData();
+            data.readFromNBT(snapshot);
+            terminals.put(terminalId, data);
+        }
+        markDirty();
+    }
+
+    /** Removes only the new UUID explicitly recorded in this operator's durable UI kit backup. */
+    public void removeUiKitTerminal(net.minecraft.entity.player.EntityPlayer player, World origin, UUID terminalId) {
+        if (!com.miaokatze.gtswn.common.testworld.TestUiKit.ownsTerminal(player, origin, terminalId))
+            throw new IllegalStateException("UI terminal cleanup requires its exact persistent kit scope");
+        if (terminals.remove(terminalId) != null) markDirty();
+    }
+
+    private static void requireRunningTestWorld(World testWorld) {
+        if (testWorld == null || !(testWorld.provider instanceof com.miaokatze.gtswn.common.testworld.WorldProviderTest)
+            || !com.miaokatze.gtswn.common.testworld.TestWorldManager.isRunning(testWorld))
+            throw new IllegalStateException("Terminal scope access requires a running isolated test scenario");
+    }
+
     /**
      * 全部终端数据快照（阶段 C 采样 / 自愈遍历用，修改不影响内部映射）。
      */

@@ -15,6 +15,7 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
+import com.miaokatze.gtswn.common.testworld.TestWorldCommand;
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.common.misc.WirelessNetworkManager;
@@ -52,7 +53,7 @@ public class CommandGTSWN extends CommandBase {
             + " <memberUUID> <leaderUUID>"
             + " | /gtswn "
             + SUBCMD_CLEANUP_INFO
-            + " <all|player> | /gtswn safety <on|off>";
+            + " <all|player> | /gtswn safety <on|off> | /gtswn test help";
     }
 
     @Override
@@ -68,8 +69,10 @@ public class CommandGTSWN extends CommandBase {
                 SUBCMD_TRANSFER,
                 SUBCMD_JOIN,
                 SUBCMD_CLEANUP_INFO,
-                SUBCMD_SAFETY);
+                SUBCMD_SAFETY,
+                "test");
         }
+        if (args.length >= 2 && "test".equals(args[0])) return TestWorldCommand.complete(args);
         if (args.length == 2 && SUBCMD_SAFETY.equals(args[0])) {
             return getListOfStringsMatchingLastWord(args, "on", "off");
         }
@@ -90,7 +93,9 @@ public class CommandGTSWN extends CommandBase {
         if (args.length < 1) {
             throw new WrongUsageException(getCommandUsage(sender));
         }
-        if (SUBCMD_TRANSFER.equals(args[0])) {
+        if ("test".equals(args[0])) {
+            TestWorldCommand.execute(sender, args);
+        } else if (SUBCMD_TRANSFER.equals(args[0])) {
             processTransfer(sender, args);
         } else if (SUBCMD_JOIN.equals(args[0])) {
             processJoin(sender, args);

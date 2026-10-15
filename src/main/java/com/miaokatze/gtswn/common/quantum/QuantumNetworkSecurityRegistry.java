@@ -14,6 +14,8 @@ import net.minecraft.world.WorldSavedData;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
+import com.miaokatze.gtswn.common.testworld.TestDimension;
+import com.miaokatze.gtswn.common.testworld.TestWorldManager;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 import appeng.tile.networking.TileController;
@@ -49,6 +51,14 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
 
     public void enrollProvider(long nativeKey) {
         if (providerKeys.add(nativeKey)) markDirty();
+    }
+
+    /** Test runner cleanup: remove only a key its synthetic station introduced, never other saved security state. */
+    public void forgetTestProvider(World testWorld, long nativeKey) {
+        if (!TestDimension.isTest(testWorld) || !TestWorldManager.isRunning(testWorld)
+            || this != providerRegistry(testWorld))
+            throw new IllegalStateException("Provider cleanup requires an active isolated test scenario");
+        if (providerKeys.remove(nativeKey)) markDirty();
     }
 
     public boolean isEnrolled(Set<Long> members) {

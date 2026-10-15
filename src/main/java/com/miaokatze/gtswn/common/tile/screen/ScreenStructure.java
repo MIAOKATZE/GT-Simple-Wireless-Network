@@ -10,6 +10,8 @@ import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
 
@@ -141,6 +143,20 @@ public final class ScreenStructure {
         core.markDirty();
         core.getWorldObj()
             .markBlockForUpdate(core.xCoord, core.yCoord, core.zCoord);
+        if (TestWorldProbes.enabled()) TestWorldProbes.at(
+            core,
+            Type.PANEL_REBUILD,
+            "min=" + next.minX
+                + ":"
+                + next.minY
+                + ":"
+                + next.minZ
+                + ";max="
+                + next.maxX
+                + ":"
+                + next.maxY
+                + ":"
+                + next.maxZ);
     }
 
     /**

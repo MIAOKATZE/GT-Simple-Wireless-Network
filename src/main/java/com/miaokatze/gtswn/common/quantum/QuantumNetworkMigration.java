@@ -13,6 +13,8 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -41,7 +43,10 @@ public final class QuantumNetworkMigration {
 
     public static boolean migrate(EntityPlayerMP player, ItemStack terminal, World targetWorld, int x, int y, int z) {
         Plan plan = validate(player, terminal, targetWorld, x, y, z);
-        if (plan == null) return false;
+        if (plan == null) {
+            TestWorldProbes.at(targetWorld, x, y, z, Type.QUANTUM_MIGRATE_REJECT, "");
+            return false;
+        }
         boolean wasOpen = QuantumTerminalSecurityHints
             .isOpen(plan.sourceWorld, plan.source[1], plan.source[2], plan.source[3]);
         QuantumMigrationJournal journal = QuantumMigrationJournal.get(targetWorld);
@@ -116,6 +121,7 @@ public final class QuantumNetworkMigration {
                     y,
                     z));
         QuantumTerminalSecurityHints.show(player, wasOpen);
+        TestWorldProbes.at(targetWorld, x, y, z, Type.QUANTUM_MIGRATE, "");
         return true;
     }
 

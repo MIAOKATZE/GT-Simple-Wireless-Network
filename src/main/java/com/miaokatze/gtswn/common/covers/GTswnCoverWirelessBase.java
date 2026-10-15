@@ -7,6 +7,7 @@ import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
 import com.cleanroommc.modularui.api.drawable.IKey;
@@ -15,6 +16,8 @@ import com.cleanroommc.modularui.value.sync.LongSyncValue;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
@@ -332,7 +335,15 @@ public abstract class GTswnCoverWirelessBase extends Cover {
             if (owner != null) {
                 long actualAdded = CoverMaths.afterUplinkLoss(this.storedEU, Config.uplinkLossEU);
                 if (actualAdded > 0) {
-                    addEUToGlobalEnergyMap(owner, actualAdded);
+                    boolean committed = addEUToGlobalEnergyMap(owner, actualAdded);
+                    if (TestWorldProbes.enabled() && tileEntity instanceof TileEntity) TestWorldProbes.at(
+                        (TileEntity) tileEntity,
+                        Type.EU_UPLINK,
+                        "source=removal;bufferEU=" + storedEU
+                            + ";networkEU="
+                            + actualAdded
+                            + ";committed="
+                            + committed);
                 }
             }
             this.storedEU = 0;
@@ -361,6 +372,8 @@ public abstract class GTswnCoverWirelessBase extends Cover {
      * Single idempotent registration entry shared by the attach path and the
      * deferred NBT-restore path; all guards live here. Returns {@code false} only
      * for the retryable "world not bound yet" case.
+     * Queued construction may outlive its attachment or host. Stale requests are discarded without
+     * loading chunks, so deferred registration cannot undo removal.
      */
     public boolean registerIntoNodeIndex() {
         ICoverable tileEntity = coveredTile.get();
@@ -374,8 +387,15 @@ public abstract class GTswnCoverWirelessBase extends Cover {
         if (world.isRemote) {
             return true;
         }
+        if (tileEntity.getCoverAtSide(getSide()) != this) {
+            return true;
+        }
+        int x = tileEntity.getXCoord(), y = tileEntity.getYCoord(), z = tileEntity.getZCoord();
+        if (!world.blockExists(x, y, z) || world.getTileEntity(x, y, z) != tileEntity) {
+            return true;
+        }
         WirelessNodeRegistry.get(world)
-            .register(world, tileEntity.getXCoord(), tileEntity.getYCoord(), tileEntity.getZCoord(), nodeTypeId());
+            .register(world, x, y, z, nodeTypeId());
         return true;
     }
 

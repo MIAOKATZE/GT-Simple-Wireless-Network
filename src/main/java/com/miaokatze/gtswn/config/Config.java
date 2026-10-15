@@ -213,6 +213,10 @@ public class Config {
     // 此配置仅用于在基准值基础上进行微调。
     public static int metaIdOffset = 0;
 
+    /** Explicit administrator-only laboratory; its ID must remain stable for existing saves. */
+    public static boolean testDimensionEnabled = true;
+    public static int testDimensionId = 19871;
+
     // 下行损耗系数 / Downlink loss ratio
     // 能源覆盖板从无线网络取电时，机器收到的 EU 不变，电网按 (1 + 此值) 倍率扣除。
     // When energy cover draws EU from wireless network, machine receives full amount;
@@ -389,6 +393,19 @@ public class Config {
     public static void synchronizeConfiguration(File configFile) {
         mainConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
+
+        testDimensionEnabled = configuration.getBoolean(
+            "enabled",
+            "testworld",
+            true,
+            "Register the administrator-only GTSWN debug dimension (requires restart).");
+        testDimensionId = configuration.getInt(
+            "dimensionId",
+            "testworld",
+            19871,
+            1024,
+            Integer.MAX_VALUE,
+            "Stable debug dimension ID. Conflicts disable the laboratory; no automatic remapping (requires restart).");
 
         metaIdOffset = configuration.getInt(
             "metaIdOffset",

@@ -11,6 +11,8 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.Constants;
 
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
@@ -184,6 +186,8 @@ public final class EUCacheBridge {
                     core.markDirty();
                     core.getWorldObj()
                         .markBlockForUpdate(core.xCoord, core.yCoord, core.zCoord);
+                    if (TestWorldProbes.enabled())
+                        TestWorldProbes.at(core, Type.PANEL_EU_SAMPLE, "source=global_sample_poll;tick=" + newest.tick);
                 }
             }
         }
