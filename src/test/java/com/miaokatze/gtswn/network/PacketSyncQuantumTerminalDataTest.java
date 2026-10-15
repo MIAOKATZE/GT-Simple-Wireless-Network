@@ -1,6 +1,8 @@
 package com.miaokatze.gtswn.network;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -10,6 +12,27 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
 public class PacketSyncQuantumTerminalDataTest {
+
+    @Test
+    public void responseCapabilitiesDoNotMutateSharedAnchorSnapshot() {
+        QuantumNetworkData shared = new QuantumNetworkData();
+        shared.online = true;
+        for (boolean allowed : new boolean[] { true, false }) {
+            ByteBuf buffer = Unpooled.buffer();
+            try {
+                new PacketSyncQuantumTerminalDataLite(shared, false, allowed, allowed ? 14L : 0L).toBytes(buffer);
+                PacketSyncQuantumTerminalDataLite decoded = new PacketSyncQuantumTerminalDataLite();
+                decoded.fromBytes(buffer);
+                assertEquals(allowed, decoded.getData().canChangeNetworkSafety);
+                assertFalse(decoded.getData().globalSafetyEnabled);
+                assertFalse(shared.canChangeNetworkSafety);
+                assertTrue(shared.globalSafetyEnabled);
+                assertEquals(0L, shared.networkSafetyRequestToken);
+            } finally {
+                buffer.release();
+            }
+        }
+    }
 
     private static QuantumNetworkData sample() {
         QuantumNetworkData data = new QuantumNetworkData();
@@ -23,6 +46,11 @@ public class PacketSyncQuantumTerminalDataTest {
         data.quantumNodeCount = 4;
         data.incorporationCount = 3;
         data.incorporationChannels = 2;
+        data.globalSafetyEnabled = false;
+        data.networkSafetyEnabled = false;
+        data.canChangeNetworkSafety = true;
+        data.networkSafetyIdentity = "controller-generation";
+        data.networkSafetyRequestToken = 572L;
         return data;
     }
 
@@ -46,27 +74,52 @@ public class PacketSyncQuantumTerminalDataTest {
             decoded.fromBytes(buffer);
             assertSnapshot(decoded.getData(), 3, 2);
             assertEquals(0, buffer.readableBytes());
-            buffer.setIndex(0, bytes - 8);
+            assertFalse(decoded.getData().globalSafetyEnabled);
+            assertFalse(decoded.getData().networkSafetyEnabled);
+            assertTrue(decoded.getData().canChangeNetworkSafety);
+            assertEquals("controller-generation", decoded.getData().networkSafetyIdentity);
+            assertEquals(572L, decoded.getData().networkSafetyRequestToken);
+            buffer.setIndex(0, bytes - 3 - 1 - "controller-generation".length() - 8 - 8);
             decoded.fromBytes(buffer);
             assertSnapshot(decoded.getData(), 0, 0);
+            assertTrue(decoded.getData().globalSafetyEnabled);
+            assertTrue(decoded.getData().networkSafetyEnabled);
+            assertFalse(decoded.getData().canChangeNetworkSafety);
+            assertEquals("", decoded.getData().networkSafetyIdentity);
+            assertEquals(0L, decoded.getData().networkSafetyRequestToken);
         } finally {
             buffer.release();
         }
     }
 
     @Test
-    public void litePacketIs38BytesAndReadsOld30BytePayload() {
+    public void litePacketCarriesSafetyAndReadsOld30BytePayload() {
         ByteBuf buffer = Unpooled.buffer();
         try {
             new PacketSyncQuantumTerminalDataLite(sample()).toBytes(buffer);
-            assertEquals(38, buffer.readableBytes());
+            assertEquals(50 + "controller-generation".length(), buffer.readableBytes());
             PacketSyncQuantumTerminalDataLite decoded = new PacketSyncQuantumTerminalDataLite();
             decoded.fromBytes(buffer);
             assertSnapshot(decoded.getData(), 3, 2);
             assertEquals(0, buffer.readableBytes());
+            assertFalse(decoded.getData().globalSafetyEnabled);
+            assertFalse(decoded.getData().networkSafetyEnabled);
+            assertTrue(decoded.getData().canChangeNetworkSafety);
+            assertEquals("controller-generation", decoded.getData().networkSafetyIdentity);
+            assertEquals(572L, decoded.getData().networkSafetyRequestToken);
+            buffer.setIndex(0, 38);
+            decoded.fromBytes(buffer);
+            assertSnapshot(decoded.getData(), 3, 2);
+            assertTrue(decoded.getData().networkSafetyEnabled);
+            assertFalse(decoded.getData().canChangeNetworkSafety);
             buffer.setIndex(0, 30);
             decoded.fromBytes(buffer);
             assertSnapshot(decoded.getData(), 0, 0);
+            assertTrue(decoded.getData().globalSafetyEnabled);
+            assertTrue(decoded.getData().networkSafetyEnabled);
+            assertFalse(decoded.getData().canChangeNetworkSafety);
+            assertEquals("", decoded.getData().networkSafetyIdentity);
+            assertEquals(0L, decoded.getData().networkSafetyRequestToken);
         } finally {
             buffer.release();
         }

@@ -9,6 +9,7 @@
   "mixins": [
     "ae2.PathingCalculationMixin",
     "ae2.QuantumIncorporationGridNodeMixin",
+    "ae2.QuantumConnectionSecurityMixin",
     "ae2.TileCableBusAccessor",
     "ae2.CableBusStorageMixin",
     "ae2.QuantumCableBusContainerMixin",

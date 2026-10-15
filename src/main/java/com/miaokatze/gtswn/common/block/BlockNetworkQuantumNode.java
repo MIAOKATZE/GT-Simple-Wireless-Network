@@ -12,6 +12,7 @@ import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.ChatComponentTranslation;
@@ -20,7 +21,10 @@ import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Vec3;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.ForgeDirection;
+import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.world.BlockEvent;
 
 import com.miaokatze.gtswn.client.render.QuantumTintedTextures;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
@@ -98,8 +102,9 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         setBlockName("NetworkQuantumNode_GTswn");
         // 设置材质路径，指向 assets/gtswn/textures/blocks/ME_Network_Quantum_Node.png
         setBlockTextureName("gtswn:ME_Network_Quantum_Node");
-        // 硬度 = 黑曜石 × 20 = 1000，与量子化控制器等效硬度一致
-        setHardness(1000.0F);
+        // Match ordinary AE machines; GT/AE wrenches use the native harvest-tool contract.
+        setHardness(2.2F);
+        setHarvestLevel("wrench", 0);
         // 爆炸抗性 = 黑曜石 × 200 = 400000
         setResistance(400000.0F);
         // 脚步/破坏音效：金属（Material.iron 对应音色）
@@ -228,10 +233,7 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     }
 
     /**
-     * v1.6.2：挖掘不掉落。
-     * <p>
-     * 节点只能经「Shift+右击」由量子终端销毁（见 onBlockActivated 潜行分支），挖掘直接销毁不掉落，
-     * 防止玩家用镐子批量采掘绕过锚点语义（掉落物重新放置即丢失锚点，成为无效空白节点）。
+     * Removing a node never returns its core. Attached parts and inventories are recovered by breakBlock.
      */
     @Override
     public ArrayList<ItemStack> getDrops(World world, int x, int y, int z, int metadata, int fortune) {
@@ -259,6 +261,7 @@ public class BlockNetworkQuantumNode extends BlockContainer {
     @Override
     public boolean onBlockActivated(World world, int x, int y, int z, EntityPlayer player, int side, float hitX,
         float hitY, float hitZ) {
+        if (tryWrenchDismantle(world, x, y, z, player, side)) return true;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile instanceof TileEntityNetworkQuantumNode) {
             TileEntityNetworkQuantumNode node = (TileEntityNetworkQuantumNode) tile;
@@ -295,6 +298,52 @@ public class BlockNetworkQuantumNode extends BlockContainer {
         player.addChatComponentMessage(new ChatComponentTranslation(key));
         QuantumConnectionInfo.node(player, node);
         return true;
+    }
+
+    /** Consume the gesture before AE2's part-host handler can dismantle only a side part. */
+    public boolean tryWrenchDismantle(World world, int x, int y, int z, EntityPlayer player, int side) {
+        if (player == null || !player.isSneaking() || !isUsableWrench(player, x, y, z)) return false;
+        if (world.isRemote) return true;
+        TileEntityNetworkQuantumNode node = getNodeTE(world, x, y, z);
+        if (node == null || !node.wrenchCanRemove(player) || !player.canPlayerEdit(x, y, z, side, player.getHeldItem()))
+            return true;
+        if (isWrenchBreakAllowed(world, x, y, z, player)) {
+            // The one removal path recovers the side parts and their inventories, then invalidates every grid edge.
+            removedByPlayer(world, player, x, y, z, false);
+        }
+        return true;
+    }
+
+    protected boolean isWrenchBreakAllowed(World world, int x, int y, int z, EntityPlayer player) {
+        BlockEvent.BreakEvent event = new BlockEvent.BreakEvent(
+            x,
+            y,
+            z,
+            world,
+            this,
+            world.getBlockMetadata(x, y, z),
+            player);
+        return !MinecraftForge.EVENT_BUS.post(event);
+    }
+
+    protected boolean isUsableWrench(EntityPlayer player, int x, int y, int z) {
+        return Platform.isWrench(player, player.getHeldItem(), x, y, z);
+    }
+
+    public void handleWrenchInteract(PlayerInteractEvent event) {
+        if (event.isCanceled()
+            || !tryWrenchDismantle(event.world, event.x, event.y, event.z, event.entityPlayer, event.face)) return;
+        // Forge cancels Minecraft's right click before PlayerControllerMP sends C08.
+        // Forward only this canceled input event; ordinary block activation never sends an extra request.
+        if (event.world.isRemote) requestWrenchDismantle(event.entityPlayer, event.x, event.y, event.z, event.face);
+        event.setCanceled(true);
+    }
+
+    @SideOnly(Side.CLIENT)
+    protected void requestWrenchDismantle(EntityPlayer player, int x, int y, int z, int side) {
+        Minecraft.getMinecraft()
+            .getNetHandler()
+            .addToSendQueue(new C08PacketPlayerBlockPlacement(x, y, z, side, player.getHeldItem(), .5F, .5F, .5F));
     }
 
     // ==================== v1.8.5：AE2 部件方块面（碰撞/选框/射线/掉落/红石/邻居） ====================

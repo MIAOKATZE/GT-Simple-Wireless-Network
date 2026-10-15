@@ -25,11 +25,13 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.AnchorKey;
 import com.miaokatze.gtswn.common.quantum.AnchorReachability;
+import com.miaokatze.gtswn.common.quantum.QuantumConnectionSecurity;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorSync;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
+import com.miaokatze.gtswn.common.quantum.QuantumNodeBridgeRelay;
 import com.miaokatze.gtswn.common.quantum.QuantumNodeCablePart;
 import com.miaokatze.gtswn.common.quantum.QuantumNodePartMigration;
 import com.miaokatze.gtswn.common.quantum.QuantumNodePartRules;
@@ -48,6 +50,7 @@ import appeng.api.implementations.parts.IPartCable;
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridConnection;
+import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.events.MENetworkBootingStatusChange;
 import appeng.api.networking.events.MENetworkCellArrayUpdate;
@@ -78,6 +81,7 @@ import appeng.parts.CableBusContainer;
 import appeng.parts.networking.PartQuartzFiber;
 import appeng.tile.networking.TileController;
 import appeng.util.Platform;
+import ic2.api.tile.IWrenchable;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 
@@ -102,7 +106,7 @@ import io.netty.buffer.Unpooled;
  * {@link CableBusContainer}（仿 TileCableBus）。量子节点自身占据中心线缆位，支持普通线缆
  * 的侧部件；中心虚拟部件复用宿主 proxy，容器与六面真实部件保持原生生命周期。
  */
-public class TileEntityNetworkQuantumNode extends TileEntity implements IGridProxyable, IPartHost {
+public class TileEntityNetworkQuantumNode extends TileEntity implements IGridProxyable, IPartHost, IWrenchable {
 
     static {
         // O2-B08：向 quantum 侧注册节点类——grid.getMachines 需具体 Class（无法纯接口化），
@@ -199,6 +203,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     /** 当前桥接连接（运行时缓存；AE2 的连接本就是运行时对象，重启后靠维护循环重建） */
     private IGridConnection connection = null;
+    private IGridConnection anchorConnection;
+    private IGridNode bridgeRelayNode;
+    private IGridNode bridgeTargetNode;
 
     /** 建连成功时的锚点快照：锚点被改指（setAnchor 再次调用）后旧连接不再有效，需销毁重建 */
     private int connectedAnchorDim = Integer.MIN_VALUE;
@@ -361,6 +368,29 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         return node == null ? -1 : node.getPlayerID();
     }
 
+    /** Recheck the durable native node actor, never the current terminal holder's descriptive owner. */
+    public boolean isNativeConnectionAuthorized(IGridNode first, IGridNode second) {
+        if (!hasAnchor()) return false;
+        return QuantumConnectionSecurity.mayBridge(
+            DimensionManager.getWorld(anchorDim),
+            anchorX,
+            anchorY,
+            anchorZ,
+            first,
+            second,
+            this::getNativeOwnerID);
+    }
+
+    public boolean ownsBridgeRelay(IGridNode candidate) {
+        return candidate != null && bridgeRelayNode == candidate;
+    }
+
+    public void bridgeSecurityBreak(IGridNode relay) {
+        if (!ownsBridgeRelay(relay)) return;
+        destroyBridgeConnection();
+        offlineReason = OfflineReason.NO_PERMISSION;
+    }
+
     public int getBridgeUsedChannels() {
         return isLinked() ? connection.getUsedChannels() : 0;
     }
@@ -405,8 +435,19 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return false;
         }
         IGridNode node = this.gridProxy.getNode();
-        return node != null && node.getConnections()
-            .contains(this.connection);
+        if (node == null || !node.getConnections()
+            .contains(this.connection)) return false;
+        // A pre-existing direct native edge may be adopted without allocating a relay.
+        if (bridgeRelayNode == null) return true;
+        return anchorConnection != null && bridgeTargetNode != null
+            && bridgeRelayNode.getConnections()
+                .contains(connection)
+            && bridgeRelayNode.getConnections()
+                .contains(anchorConnection)
+            && bridgeTargetNode.getConnections()
+                .contains(anchorConnection)
+            && node.getGrid() == bridgeRelayNode.getGrid()
+            && node.getGrid() == bridgeTargetNode.getGrid();
     }
 
     /** 当前离线原因（在线时为 {@link OfflineReason#NONE}），供 T5 统计使用 */
@@ -558,6 +599,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (worldObj == null || worldObj.isRemote) {
             return null;
         }
+        IGridNode exposed = this.partContainer.getGridNode(dir == null ? ForgeDirection.UNKNOWN : dir);
         // v1.6.19：量子节点之间互不连接——相邻为量子节点时该方向不暴露节点，
         // AE2 FindConnections 在两侧都会跳过该方向的建连尝试
         if (dir != null && dir != ForgeDirection.UNKNOWN
@@ -567,8 +609,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             if (neighbor instanceof TileEntityNetworkQuantumNode) {
                 return null;
             }
+            if (Config.quantumSafetyEnabled && exposed != null && neighbor instanceof IGridHost) {
+                IGridNode other = ((IGridHost) neighbor).getGridNode(dir.getOpposite());
+                // Do not offer an unauthorized host to a native neighbor's discovery pass:
+                // AE2 otherwise schedules securityBreak on that innocent discovering machine.
+                if (other != null && !isNativeConnectionAuthorized(exposed, other)) return null;
+            }
         }
-        return this.partContainer.getGridNode(dir == null ? ForgeDirection.UNKNOWN : dir);
+        return exposed;
     }
 
     /** The virtual cable shares the one proxy already owned by this block. */
@@ -624,6 +672,36 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     @Override
     public void securityBreak() {
         // AE2 安全系统回调，不做破坏
+    }
+
+    @Override
+    public boolean wrenchCanSetFacing(EntityPlayer player, int side) {
+        return false;
+    }
+
+    @Override
+    public short getFacing() {
+        return (short) ForgeDirection.UNKNOWN.ordinal();
+    }
+
+    @Override
+    public void setFacing(short side) {}
+
+    @Override
+    public boolean wrenchCanRemove(EntityPlayer player) {
+        return player != null && worldObj != null
+            && worldObj.canMineBlock(player, xCoord, yCoord, zCoord)
+            && player.canPlayerEdit(xCoord, yCoord, zCoord, -1, player.getHeldItem());
+    }
+
+    @Override
+    public float getWrenchDropRate() {
+        return 1.0F;
+    }
+
+    @Override
+    public ItemStack getWrenchDrop(EntityPlayer player) {
+        return null;
     }
 
     // ==================== IPartHost 实现（v1.8.5，宿主面自实现 + 其余委托容器） ====================
@@ -724,7 +802,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void cleanup() {
         // 关键防护：必须保持 no-op。AE2 wrenchLogic 拆掉最后一个部件时会调 host.cleanup()
         // （PartPlacement.java:165-167），TileCableBus 原版实现是 setBlock(AIR)——那会连量子节点
-        // 本体一起删掉。本节点的删除只能走「潜行+量子终端」受控路径，部件拆光后节点必须原样保留。
+        // 本体一起删掉。拆部件不等于拆核心；普通挖掘/扳手拆核心由方块移除路径负责。
     }
 
     @Override
@@ -998,6 +1076,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // v1.6.24：每次维护窗口（20t，≤1s）重算并同步连接方向掩码（在过载检查/桥接分支之前执行，
         // 不受下方 bridge 早退分支影响；空白节点不执行维护，客户端掩码默认 0 不画臂）
         syncSidesIfChanged(computeConnectedSidesMask());
+        if (connection != null && isLinked()
+            && !isNativeConnectionAuthorized(getCoreGridNode(), connection.getOtherSide(getCoreGridNode()))) {
+            destroyBridgeConnection();
+            failReconnect(OfflineReason.NO_PERMISSION);
+            return;
+        }
         // v1.6.8：网络过载检查（仅桥接存活时执行，避免离线节点重复触发）
         if (this.connection != null && isLinked()) {
             checkNetworkOverload();
@@ -1008,7 +1092,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // ===== 原有逻辑保持不变 =====
         if (this.connection != null) {
-            if (isLinked() && isAnchorSnapshotMatched() && isAnchorStillQuantized()) {
+            if (isLinked() && isAnchorSnapshotMatched()
+                && isAnchorStillQuantized()
+                && isNativeConnectionAuthorized(getCoreGridNode(), connection.getOtherSide(getCoreGridNode()))) {
                 return;
             }
             // 连接已死（对端销毁/本节点重建）或锚点改指或锚点已取消量子化：清理后走重建
@@ -1271,6 +1357,11 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
         }
+        if (!isNativeConnectionAuthorized(myNode, anchorNode)) {
+            failReconnect(OfflineReason.NO_PERMISSION);
+            return;
+        }
+        boolean connected = false;
         try {
             // 已核实：createGridConnection 不校验方向位/邻接，仅查自重/安全/重复
             // （appeng/core/Api.java:109 → GridConnection.java:204-246）
@@ -1290,8 +1381,24 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             // v1.6.23：性能审计——AE2 建连切片计时（AE2 全网重路由成本归入 ae2.connect）
             long aeT0 = PerformanceAudit.startSlice();
             try {
-                this.connection = AEApi.instance()
-                    .createGridConnection(myNode, anchorNode);
+                this.connection = findDirectConnection(myNode, anchorNode);
+                if (this.connection == null) {
+                    QuantumNodeBridgeRelay relay = new QuantumNodeBridgeRelay(
+                        this,
+                        new DimensionalCoord(reach.anchorTE));
+                    bridgeRelayNode = AEApi.instance()
+                        .createGridNode(relay);
+                    relay.attach(bridgeRelayNode);
+                    bridgeRelayNode.setPlayerID(myNode.getPlayerID());
+                    bridgeRelayNode.updateState();
+                    bridgeTargetNode = anchorNode;
+                    // Joining the controller first ensures the native security check uses the
+                    // node's actor on either side of a reloaded security-provider network.
+                    anchorConnection = AEApi.instance()
+                        .createGridConnection(bridgeRelayNode, anchorNode);
+                    this.connection = AEApi.instance()
+                        .createGridConnection(myNode, bridgeRelayNode);
+                }
             } finally {
                 PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_CONNECT, aeT0);
             }
@@ -1300,9 +1407,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             this.reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
             // v1.6.19：性能审计——建连成功计数
             PerformanceAudit.recordQuantumBridgeSuccess();
+            connected = true;
         } catch (SecurityConnectionException e) {
             // §9 风险行：网络有安全终端且放置者无权限（放置者 ≠ 网络 owner）
-            this.connection = null;
             failReconnect(OfflineReason.NO_PERMISSION);
         } catch (ExistingConnectionException e) {
             // 两节点间已存在直连（如玩家另拉了线缆/石英纤维以外的部件直接贴上）：
@@ -1319,13 +1426,15 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 this.reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
                 // v1.6.19：性能审计——收养既有直连成功计数
                 PerformanceAudit.recordQuantumBridgeSuccess();
+                connected = true;
             } else {
                 failReconnect(OfflineReason.NETWORK_NOT_READY);
             }
         } catch (FailedConnection e) {
             // 其余建连失败（FailedConnection 剩余子类如 NullNodeConnectionException）：瞬时处理，下轮重试
-            this.connection = null;
             failReconnect(OfflineReason.NETWORK_NOT_READY);
+        } finally {
+            if (!connected) destroyBridgeConnection();
         }
     }
 
@@ -1352,6 +1461,21 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             }
             this.connection = null;
         }
+        if (anchorConnection != null) {
+            if (anchorConnection.a()
+                .getConnections()
+                .contains(anchorConnection)
+                || anchorConnection.b()
+                    .getConnections()
+                    .contains(anchorConnection))
+                anchorConnection.destroy();
+            anchorConnection = null;
+        }
+        if (bridgeRelayNode != null) {
+            bridgeRelayNode.destroy();
+            bridgeRelayNode = null;
+        }
+        bridgeTargetNode = null;
         clearAnchorSnapshot();
     }
 

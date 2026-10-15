@@ -2,9 +2,11 @@ package com.miaokatze.gtswn.common.command;
 
 import java.util.List;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.command.WrongUsageException;
+import net.minecraft.network.play.client.C01PacketChatMessage;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 
@@ -29,7 +31,8 @@ public class CommandGTSWNClient extends CommandBase {
             + " | /gtswn tap voltage <on|off>"
             + " | /gtswn tap ratio <25|50|75|100>"
             + " | /gtswn <HudXOffset|HudYOffset|HudScale> [value]"
-            + " | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn <help|status|reset>";
+            + " | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn <help|status|reset>"
+            + " | /gtswn safety <on|off> (server OP)";
     }
 
     @Override
@@ -47,10 +50,14 @@ public class CommandGTSWNClient extends CommandBase {
                 "help",
                 "status",
                 "reset",
+                "safety",
                 SUBCMD_X,
                 SUBCMD_Y,
                 SUBCMD_SCALE,
                 "hud");
+        }
+        if (args.length == 2 && "safety".equals(args[0])) {
+            return getListOfStringsMatchingLastWord(args, "on", "off");
         }
         if (args.length == 2 && isGroup(args[0])) {
             return "tap".equalsIgnoreCase(args[0])
@@ -108,6 +115,10 @@ public class CommandGTSWNClient extends CommandBase {
 
     @Override
     public void processCommand(ICommandSender sender, String[] args) {
+        if (args.length > 0 && "safety".equals(args[0])) {
+            forwardServerCommand(sender, args);
+            return;
+        }
         if (args.length == 0) {
             message(sender, "gtswn.command.effects.guide");
             return;
@@ -188,6 +199,13 @@ public class CommandGTSWNClient extends CommandBase {
             return;
         }
         sender.addChatMessage(new ChatComponentText(subcommand + " = " + getValue(subcommand)));
+    }
+
+    /** Forge's client command handler consumes matching names, including unknown subcommands. */
+    protected void forwardServerCommand(ICommandSender sender, String[] args) {
+        Minecraft.getMinecraft()
+            .getNetHandler()
+            .addToSendQueue(new C01PacketChatMessage("/gtswn " + String.join(" ", args)));
     }
 
     private static String getValue(String subcommand) {

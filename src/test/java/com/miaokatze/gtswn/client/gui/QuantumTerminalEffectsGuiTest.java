@@ -23,6 +23,7 @@ import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
 
 import com.miaokatze.gtswn.common.gui.ContainerTerminal;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.config.Config;
 
 import cpw.mods.fml.relauncher.FMLInjectionData;
@@ -120,11 +121,59 @@ public class QuantumTerminalEffectsGuiTest {
 
     @After
     public void restoreConfiguration() throws Exception {
+        GuiQuantumTerminal.receiveData(null);
         for (Map.Entry<Field, Object> entry : originalConfig.entrySet()) {
             entry.getKey()
                 .set(null, entry.getValue());
         }
         minecraftHome.set(null, originalHome);
+    }
+
+    @Test
+    public void quantumSafetyControlUsesServerAuthorityInBothModesAndFitsBelowPalette() throws Exception {
+        QuantumNetworkData data = new QuantumNetworkData();
+        data.online = true;
+        data.canChangeNetworkSafety = true;
+        data.networkSafetyIdentity = "generation-A";
+        data.networkSafetyRequestToken = 45L;
+        GuiQuantumTerminal.receiveData(data);
+        ActualGui gui = actualGui(true);
+        assertNull(gui.find(102));
+        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
+        GuiButton safety = gui.find(102);
+        assertNotNull(safety);
+        assertTrue(safety.enabled);
+        assertTrue(safety.displayString.endsWith(": ON"));
+        assertEquals(178, safety.xPosition);
+        assertEquals(128, safety.yPosition);
+        assertTrue(safety.xPosition + safety.width <= 292);
+        assertTrue(safety.yPosition + safety.height <= 146);
+        data.networkSafetyEnabled = false;
+        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
+        assertTrue(gui.find(102).enabled);
+        assertTrue(gui.find(102).displayString.endsWith(": OFF"));
+        data.canChangeNetworkSafety = false;
+        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
+        assertFalse(gui.find(102).enabled);
+        assertEquals("gtswn.gui.quantum.safety_permission", GuiQuantumTerminal.safetyReason(data));
+        data.canChangeNetworkSafety = true;
+        data.globalSafetyEnabled = false;
+        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
+        assertFalse(gui.find(102).enabled);
+        assertEquals("gtswn.gui.quantum.safety_global_off", GuiQuantumTerminal.safetyReason(data));
+        data.globalSafetyEnabled = true;
+        data.online = false;
+        assertFalse(GuiQuantumTerminal.canToggleSafety(data));
+        assertEquals("gtswn.gui.quantum.safety_offline", GuiQuantumTerminal.safetyReason(data));
+        assertFalse(GuiQuantumTerminal.canToggleSafety(new QuantumNetworkData()));
+        assertFalse(GuiQuantumTerminal.canToggleSafety(null));
+        data.online = true;
+        data.networkSafetyRequestToken = 0;
+        assertFalse(GuiQuantumTerminal.canToggleSafety(data));
+        assertEquals("gtswn.gui.quantum.safety_waiting", GuiQuantumTerminal.safetyReason(data));
+        ActualGui tap = actualGui(false);
+        tap.actionPerformed(new GuiButton(100, 0, 0, ""));
+        assertNull(tap.find(102));
     }
 
     @Test

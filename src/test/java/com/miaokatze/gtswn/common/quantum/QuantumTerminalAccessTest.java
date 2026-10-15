@@ -8,8 +8,11 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -38,6 +41,7 @@ import org.junit.Test;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
+import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.config.SecurityPermissions;
 import appeng.api.features.INetworkEncodable;
@@ -52,6 +56,111 @@ import appeng.api.util.AECableType;
 import appeng.api.util.IReadOnlyCollection;
 
 public class QuantumTerminalAccessTest {
+
+    @Test
+    public void liveBridgeAclKeepsLegacyOpenNetworksOpenAndFailsClosedWithoutTheEnrolledProvider() throws Exception {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            Config.quantumSafetyEnabled = true;
+            FixtureWorld world = world();
+            GridFixture grid = new GridFixture();
+            world.tile = new IdentityTile(grid.node);
+            assertTrue(
+                QuantumConnectionSecurity.mayBridge(
+                    world,
+                    1,
+                    64,
+                    2,
+                    grid.node,
+                    grid.node,
+                    () -> { throw new AssertionError("OPEN networks must not require or invent an actor ID"); }));
+            QuantumNetworkSecurityRegistry.get(world)
+                .enroll(world, members(1, 64, 2));
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
+            grid.grants.put(43, EnumSet.of(SecurityPermissions.BUILD));
+            grid.booting = true;
+            assertTrue(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> -1));
+            grid.hasProvider = false;
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
+            Config.quantumSafetyEnabled = false;
+            assertTrue(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> -1));
+            Config.quantumSafetyEnabled = true;
+            grid.hasProvider = true;
+            grid.grants.clear();
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
+        } finally {
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
+
+    @Test
+    public void safetyOffDoesNotSpendOpenReminderQuotaAndOnResumesAtTheSameCount() throws Exception {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            FixturePlayer actor = player(world(), "actor");
+            Config.quantumSafetyEnabled = true;
+            QuantumTerminalSecurityHints.show(actor, true);
+            NBTTagCompound before = (NBTTagCompound) actor.data.copy();
+            Config.quantumSafetyEnabled = false;
+            for (int i = 0; i < 12; i++) QuantumTerminalSecurityHints.show(actor, true);
+            assertEquals(1, actor.messages.size());
+            assertEquals(before, actor.data);
+            Config.quantumSafetyEnabled = true;
+            for (int i = 1; i < 10; i++) QuantumTerminalSecurityHints.show(actor, true);
+            assertEquals(10, actor.messages.size());
+            QuantumTerminalSecurityHints.show(actor, true);
+            assertEquals(10, actor.messages.size());
+        } finally {
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
+
+    @Test
+    public void safetySwitchImmediatelyBypassesOldEnrollmentAndUnknownGridWithoutErasingPolicy() throws Exception {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            Config.quantumSafetyEnabled = true;
+            FixtureWorld world = world();
+            world.tile = new IdentityTile();
+            FixturePlayer actor = player(world, "actor");
+            ItemStack terminal = terminal(0, 1, 64, 2);
+            terminal.getTagCompound()
+                .setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, "unresolvable-old-key");
+            QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
+            policy.enroll(world, members(1, 64, 2));
+            policy.enrollProvider(Long.MIN_VALUE);
+            NBTTagCompound saved = new NBTTagCompound();
+            policy.writeToNBT(saved);
+            policy.readFromNBT(saved);
+            assertFalse(QuantumTerminalAccess.canAccessAnchor(actor, terminal, world, 1, 64, 2));
+            assertFalse(QuantumTerminalAccess.canManageAnchor(actor, terminal, world, 1, 64, 2));
+            Config.quantumSafetyEnabled = false;
+            assertTrue(QuantumTerminalAccess.canAccessAnchor(actor, terminal, world, 1, 64, 2));
+            assertTrue(QuantumTerminalAccess.canManageAnchor(actor, terminal, world, 1, 64, 2));
+            assertFalse(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
+            NBTTagCompound after = new NBTTagCompound();
+            policy.writeToNBT(after);
+            assertEquals(saved, after);
+            assertEquals(
+                "unresolvable-old-key",
+                terminal.getTagCompound()
+                    .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY));
+            // Terminal actor metadata cannot grant access when enforcement is restored.
+            Config.quantumSafetyEnabled = true;
+            assertTrue(QuantumTerminalAccess.isSecurityRequired(world, 1, 64, 2));
+            assertFalse(QuantumTerminalAccess.canAccessAnchor(actor, terminal, world, 1, 64, 2));
+            assertFalse(QuantumTerminalAccess.canManageAnchor(actor, terminal, world, 1, 64, 2));
+            policy.remove(members(1, 64, 2));
+            Config.quantumSafetyEnabled = false;
+            assertTrue(QuantumTerminalAccess.canAccessAnchor(actor, terminal, world, 1, 64, 2));
+            Config.quantumSafetyEnabled = true;
+            assertFalse(QuantumTerminalAccess.canAccessAnchor(actor, terminal, world, 1, 64, 2));
+            assertFalse(policy.isEnrolled(members(1, 64, 2)));
+        } finally {
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
 
     @Test
     public void openNetworkHintsArePerPlayerAndSurviveCompressedPersistentDataReload() throws Exception {
@@ -228,6 +337,13 @@ public class QuantumTerminalAccessTest {
         assertFalse(QuantumTerminalAccess.permitsEnrolled(security(false, borrower, 42), true, borrower, false, 43));
         assertFalse(QuantumTerminalAccess.permitsEnrolled(null, true, borrower, false, 43));
         ISecurityGrid securityOnly = security(true, borrower, 42, SecurityPermissions.SECURITY);
+        assertFalse(
+            QuantumTerminalAccess.permitsEnrolled(
+                security(true, borrower, -1, SecurityPermissions.SECURITY, SecurityPermissions.BUILD),
+                true,
+                borrower,
+                true,
+                43));
         assertTrue(QuantumTerminalAccess.permitsEnrolled(securityOnly, true, borrower, true, 43));
         assertFalse(QuantumTerminalAccess.permitsEnrolled(securityOnly, true, borrower, false, 43));
         assertFalse(QuantumTerminalAccess.permitsEnrolled(securityOnly, true, owner, true, 43));
@@ -539,6 +655,7 @@ public class QuantumTerminalAccessTest {
 
         private boolean booting;
         private boolean hasProvider = true;
+        private final Map<Integer, EnumSet<SecurityPermissions>> grants = new HashMap<>();
         private final IGrid grid;
         private final IGridNode node;
         private final IGridNode providerNode;
@@ -550,6 +667,11 @@ public class QuantumTerminalAccessTest {
                 (proxy, method, args) -> {
                     if (method.getName()
                         .equals("getSecurityKey")) return 123L;
+                    if (method.getName()
+                        .equals("getOwner")) return 42;
+                    if (method.getName()
+                        .equals("readPermissions"))
+                        ((HashMap<Integer, EnumSet<SecurityPermissions>>) args[0]).putAll(grants);
                     return null;
                 });
             providerNode = (IGridNode) Proxy.newProxyInstance(

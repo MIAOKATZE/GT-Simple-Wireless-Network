@@ -5,8 +5,10 @@ import net.minecraft.item.ItemStack;
 
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
+import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
 /**
@@ -83,7 +85,12 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
                 PerformanceAudit.recordTerminalAssembled();
             }
             // O2-17：轮询回包改用 disc 7 短包（仅 GUI 消费的 9 字段，30B；全量包 6 保留作回退位）
-            GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalDataLite(data), player);
+            boolean canChange = data.online && !data.networkSafetyIdentity.isEmpty()
+                && QuantumTerminalAccess.canChangeNetworkSafety(player, held);
+            long safetyToken = PacketSetQuantumNetworkSafety.issueToken(player, held, data, canChange);
+            GTSWNPacketHandler.NETWORK.sendTo(
+                new PacketSyncQuantumTerminalDataLite(data, Config.quantumSafetyEnabled, canChange, safetyToken),
+                player);
             // v1.6.19：性能审计——正常回包计数
             PerformanceAudit.recordTerminalReply();
         } catch (Throwable t) {
@@ -98,7 +105,9 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
                 if (fallback == null) {
                     fallback = new QuantumNetworkData();
                 }
-                GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncQuantumTerminalDataLite(fallback), player);
+                GTSWNPacketHandler.NETWORK.sendTo(
+                    new PacketSyncQuantumTerminalDataLite(fallback, Config.quantumSafetyEnabled, false, 0L),
+                    player);
                 // v1.6.19：性能审计——兜底回包计数
                 PerformanceAudit.recordTerminalReply();
             } catch (Throwable ignored) {

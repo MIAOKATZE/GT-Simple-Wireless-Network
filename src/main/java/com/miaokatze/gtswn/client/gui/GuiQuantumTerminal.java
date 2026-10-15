@@ -17,6 +17,7 @@ import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketRequestQuantumTerminalData;
 import com.miaokatze.gtswn.network.PacketSetQuantumNetworkColor;
+import com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety;
 
 /** Quantum network details and network color selection. Server snapshots remain authoritative. */
 public class GuiQuantumTerminal extends GuiContainer {
@@ -42,10 +43,8 @@ public class GuiQuantumTerminal extends GuiContainer {
         terminalContainer = container;
         xSize = WIDTH;
         ySize = HEIGHT;
-        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(heldTerminal());
-        if (!matchesCachedAnchor(anchor)) {
-            latestData = null;
-        }
+        // Capabilities and response tokens belong to the current server session and held stack.
+        latestData = null;
     }
 
     private static ItemStack heldTerminal() {
@@ -146,6 +145,7 @@ public class GuiQuantumTerminal extends GuiContainer {
 
     @Override
     public void drawScreen(int mouseX, int mouseY, float partialTicks) {
+        refreshSafetyButton();
         super.drawScreen(mouseX, mouseY, partialTicks);
         if (effectsPage) {
             for (Object entry : buttonList) {
@@ -162,6 +162,14 @@ public class GuiQuantumTerminal extends GuiContainer {
             return;
         }
         if (!terminalContainer.quantum) return;
+        if (mouseX >= guiLeft + 178 && mouseX < guiLeft + 292 && mouseY >= guiTop + 128 && mouseY < guiTop + 156) {
+            drawHoveringText(
+                java.util.Arrays.asList(tr("gtswn.gui.quantum.safety_scope"), tr(safetyReason(latestData))),
+                mouseX,
+                mouseY,
+                fontRendererObj);
+            return;
+        }
         int column = (mouseX - guiLeft - COLOR_LEFT) / 57;
         int relativeY = mouseY - guiTop - COLOR_TOP;
         if (mouseX >= guiLeft + COLOR_LEFT && mouseX < guiLeft + WIDTH - 8
@@ -265,6 +273,9 @@ public class GuiQuantumTerminal extends GuiContainer {
     @Override
     protected void drawGuiContainerForegroundLayer(int mouseX, int mouseY) {
         fontRendererObj.drawString(tr("container.inventory"), 10, 138, GtswnGuiPalette.TEXT_BODY);
+        if (terminalContainer.quantum && !effectsPage) {
+            drawSupplyText(tr(safetyReason(latestData)), 178, 147, 114);
+        }
         String label = tr(terminalContainer.quantum ? "gtswn.gui.terminal.anchor" : "gtswn.gui.terminal.tube");
         drawSupplyText(label, 178, 165, 97);
         drawSupplyText(tr("gtswn.gui.terminal.preload"), 184, 188, 108);
@@ -321,7 +332,13 @@ public class GuiQuantumTerminal extends GuiContainer {
         buttonList.clear();
         buttonList.add(new GtswnGuiButton(100, guiLeft + 174, guiTop + 5, 58, 16, tr("gtswn.gui.terminal.details")));
         buttonList.add(new GtswnGuiButton(101, guiLeft + 234, guiTop + 5, 58, 16, tr("gtswn.gui.terminal.effects")));
-        if (!effectsPage) return;
+        if (!effectsPage) {
+            if (terminalContainer.quantum) {
+                buttonList.add(new GtswnGuiButton(102, guiLeft + 178, guiTop + 128, 114, 16, ""));
+                refreshSafetyButton();
+            }
+            return;
+        }
         boolean tap = !terminalContainer.quantum;
         String[] labels = {
             tr("gtswn.gui.terminal.enabled") + ": "
@@ -351,6 +368,34 @@ public class GuiQuantumTerminal extends GuiContainer {
         }
     }
 
+    private void refreshSafetyButton() {
+        for (Object entry : buttonList) {
+            GuiButton button = (GuiButton) entry;
+            if (button.id != 102) continue;
+            button.displayString = tr("gtswn.gui.quantum.safety") + ": "
+                + (latestData == null || latestData.networkSafetyEnabled ? "ON" : "OFF");
+            button.enabled = canToggleSafety(latestData);
+        }
+    }
+
+    static boolean canToggleSafety(QuantumNetworkData data) {
+        return data != null && data.online
+            && data.globalSafetyEnabled
+            && data.canChangeNetworkSafety
+            && !data.networkSafetyIdentity.isEmpty()
+            && data.networkSafetyRequestToken != 0;
+    }
+
+    static String safetyReason(QuantumNetworkData data) {
+        if (data == null) return "gtswn.gui.quantum.safety_waiting";
+        if (!data.globalSafetyEnabled) return "gtswn.gui.quantum.safety_global_off";
+        if (!data.online) return "gtswn.gui.quantum.safety_offline";
+        if (!data.canChangeNetworkSafety) return "gtswn.gui.quantum.safety_permission";
+        if (data.networkSafetyIdentity.isEmpty() || data.networkSafetyRequestToken == 0)
+            return "gtswn.gui.quantum.safety_waiting";
+        return "gtswn.gui.quantum.safety_authorized";
+    }
+
     private void drawEffects() {
         drawLine(tr("gtswn.gui.terminal.effects"), 8, GtswnGuiPalette.TEXT_TITLE);
     }
@@ -360,6 +405,20 @@ public class GuiQuantumTerminal extends GuiContainer {
         if (button.id == 100 || button.id == 101) {
             effectsPage = button.id == 101;
             rebuildButtons();
+            return;
+        }
+        if (button.id == 102) {
+            if (terminalContainer.quantum && !effectsPage
+                && button.enabled
+                && canToggleSafety(latestData)
+                && matchesCachedAnchor(ItemNetworkQuantumTerminal.getAnchor(heldTerminal()))) {
+                GTSWNPacketHandler.NETWORK.sendToServer(
+                    new PacketSetQuantumNetworkSafety(
+                        mc.thePlayer.inventory.currentItem,
+                        latestData,
+                        !latestData.networkSafetyEnabled));
+                button.enabled = false;
+            }
             return;
         }
         boolean tap = !terminalContainer.quantum;

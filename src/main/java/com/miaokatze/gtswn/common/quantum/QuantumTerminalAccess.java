@@ -13,6 +13,7 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.AEApi;
 import appeng.api.config.SecurityPermissions;
@@ -68,7 +69,56 @@ public final class QuantumTerminalAccess {
     }
 
     public static boolean isSecurityRequired(World world, int x, int y, int z) {
+        if (!Config.quantumSafetyEnabled) return false;
+        if (!isNetworkSafetyEnabled(world, x, y, z)) return false;
         return requirement(world, members(world, x, y, z), gridAt(world, x, y, z)) != SecurityRequirement.OPEN;
+    }
+
+    public static boolean isNetworkSafetyEnabled(World world, int x, int y, int z) {
+        return world == null || QuantumNetworkSecurityRegistry.get(world)
+            .isSafetyEnabled(world, members(world, x, y, z));
+    }
+
+    public static String networkSafetyIdentity(World world, int x, int y, int z) {
+        if (world == null || world.isRemote || !world.blockExists(x, y, z)) return "";
+        QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
+        long position = QuantumControllerRegistry.pack(x, y, z);
+        if (!controllers.isQuantized(position) || !controllers.isCurrentController(world, position)) return "";
+        TileEntity tile = world.getTileEntity(x, y, z);
+        return tile instanceof QuantumControllerIdentity
+            ? ((QuantumControllerIdentity) tile).gtswn$getControllerIdentity()
+            : "";
+    }
+
+    /** Both directions of a local switch require the real native manager and paired key, even while disabled. */
+    public static boolean canChangeNetworkSafety(EntityPlayer player, ItemStack stack) {
+        if (!isTerminal(stack) || player == null || player.worldObj == null || player.worldObj.isRemote) return false;
+        synchronize(player, stack);
+        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
+        if (anchor == null) return false;
+        World world = DimensionManager.getWorld(anchor[0]);
+        if (networkSafetyIdentity(world, anchor[1], anchor[2], anchor[3]).isEmpty()) return false;
+        return permitsNative(player, stack, gridAt(world, anchor[1], anchor[2], anchor[3]), true);
+    }
+
+    public static boolean setNetworkSafety(EntityPlayer player, ItemStack stack, boolean enabled) {
+        if (!Config.quantumSafetyEnabled || !canChangeNetworkSafety(player, stack)) return false;
+        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
+        World world = DimensionManager.getWorld(anchor[0]);
+        Set<Long> trusted = Collections.singleton(
+            Long.parseLong(
+                stack.getTagCompound()
+                    .getString(NBT_ENCRYPTION_KEY)));
+        QuantumNetworkSecurityRegistry.get(world)
+            .setSafety(world, members(world, anchor[1], anchor[2], anchor[3]), enabled, trusted);
+        QuantumNetworkData.clearCache();
+        QuantumNetworkStatsCache.clear();
+        QuantumConnectionSecurity.restoreNativeChecks();
+        return true;
+    }
+
+    static Set<Long> networkMembers(World world, int x, int y, int z) {
+        return members(world, x, y, z);
     }
 
     private enum SecurityRequirement {
@@ -99,6 +149,10 @@ public final class QuantumTerminalAccess {
 
     private static boolean permits(EntityPlayer player, ItemStack stack, World world, int x, int y, int z,
         boolean management) {
+        // This switch only suppresses GTSWN's AE authorization. Callers retain world,
+        // anchor, structure, reach and edit checks, and enrollment data is left intact.
+        if (!Config.quantumSafetyEnabled) return true;
+        if (!isNetworkSafetyEnabled(world, x, y, z)) return true;
         Set<Long> members = members(world, x, y, z);
         IGrid grid = gridAt(world, x, y, z);
         SecurityRequirement required = requirement(world, members, grid);
@@ -106,10 +160,15 @@ public final class QuantumTerminalAccess {
         if (required == SecurityRequirement.OPEN) return true;
         QuantumNetworkSecurityRegistry.get(world)
             .enroll(world, members);
+        return permitsNative(player, stack, grid, management);
+    }
+
+    private static boolean permitsNative(EntityPlayer player, ItemStack stack, IGrid grid, boolean management) {
         IGrid encoded = encodedGrid(
             stack.getTagCompound()
                 .getString(NBT_ENCRYPTION_KEY));
         ISecurityGrid security = grid == null ? null : grid.getCache(ISecurityGrid.class);
+        if (security == null || encoded == null || encoded != grid) return false;
         return permitsEnrolled(
             security,
             encoded != null && encoded == grid,
@@ -124,6 +183,7 @@ public final class QuantumTerminalAccess {
     static boolean permitsEnrolled(ISecurityGrid security, boolean keyMatches, EntityPlayer player, boolean management,
         int playerId) {
         return security != null && keyMatches
+            && security.getOwner() >= 0
             && security.isAvailable()
             && (management
                 ? security.getOwner() == playerId || security.hasPermission(player, SecurityPermissions.SECURITY)

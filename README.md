@@ -78,9 +78,9 @@ Right-click a machine to install the appropriate cover; no separate recipe is ne
 
 The Quantum Terminal binds a formed ME controller structure. Quantum Nodes connect distant AE2 devices to that network, bypassing cable distance limits.
 
-量子终端可通过 LV 级工作台配方合成（福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1）；量子节点无独立配方——已绑定终端右击空地放置，Shift+右击销毁（无掉落）。
+量子终端可通过 LV 级工作台配方合成（福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1）；量子节点无独立配方——已绑定终端右击空地放置，可直接挖掘或用扳手拆除，节点本体无掉落，已安装部件及其库存正常回收。用终端 Shift+右击则仅移除核心，将侧部件保留在还原的线缆宿主上。
 
-Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emitter ×4 + ME Controller ×1); the Quantum Node has no recipe — place it with a bound terminal by right-clicking ground, and destroy it with shift+right-click (no drops).
+Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emitter ×4 + ME Controller ×1); the Quantum Node has no recipe — place it with a bound terminal by right-clicking ground. Mining or wrench removal recovers installed parts and their inventories without dropping the node core. Sneak-right-clicking with the terminal removes only the core and preserves side parts on a restored cable host.
 
 ### 量子终端 / Quantum Terminal
 
@@ -89,7 +89,7 @@ Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emi
 | 右击控制器 / Right-click controller | 量子化并绑定整结构（已量子化则改绑）/ Quantize & bind the entire structure (rebinds if already quantized) |
 | Shift+右击控制器 / Shift+right-click controller | 取消量子化并解绑 / Dequantize & unbind |
 | 右击空地（已绑定）/ Right-click ground (bound) | 放置量子节点 / Place a Quantum Node |
-| Shift+右击节点 / Shift+right-click node | 销毁节点（无掉落）/ Destroy the node (no drops) |
+| Shift+右击节点 / Shift+right-click node | 移除核心（不掉落，侧部件保留在线缆宿主上）/ Remove the core (no drop; side parts remain on a cable host) |
 | Shift+右击空气 / Shift+right-click air | 打开终端界面 / Open terminal GUI |
 | Alt+右击完整 AE 方块 / Alt+right-click a full AE block | 消耗一个量子并入锚点接入已绑定网络；再次操作解除并入 / Consume one Quantum Incorporation Anchor to join the bound network; repeat to remove incorporation |
 | Alt+Shift+右击方块 / Alt+Shift+right-click a block | 取消方块目标操作，不进行并入 / Cancels the block-targeted action; does not incorporate |
@@ -105,12 +105,21 @@ The Quantum Terminal GUI keeps its 16-color palette and node, incorporation and 
 
 The terminal's 16-color selection synchronizes across its quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close the interface.
 
+量子网络默认开启安全校验，仅曾通过 AE 安全终端配对的网络需要校验；未配对网络仍可直接使用。将量子终端放入原生 AE 安全终端完成配对后，访问沿用 AE 权限。终端详情页可单独关闭或开启当前网络的安全模式，两个方向都要求网络拥有者或 AE「安全（SECURITY）」权限；仅有「建造（BUILD）」权限不能切换。单网设置随存档保存，旧存档默认开启。
+
+Quantum security is enabled by default and applies to networks previously paired through an AE Security Terminal; unpaired networks remain open. Encode the Quantum Terminal in the native AE Security Terminal to use AE permissions. The Details page can disable or enable security for the current network. Both directions require the network owner or AE SECURITY permission; BUILD alone cannot change the setting. Per-network settings persist with the world and default to enabled for older saves.
+
+管理员可用 `/gtswn safety off` 临时恢复全部量子网络的访问，再用 `/gtswn safety on` 恢复安全校验。指令需要 OP 4 或服务器控制台，实时生效并保存至 `config/gtswn/gtswn_ae.cfg` 的 `ae2.quantumSafetyEnabled`（默认 `true`）；关闭不会删除原配对或单网设置。全局关闭时，终端详情页不能修改单网安全模式。
+
+Administrators can temporarily recover access to all quantum networks with `/gtswn safety off`, then restore security with `/gtswn safety on`. These commands require OP level 4 or the server console, apply immediately, and save `ae2.quantumSafetyEnabled` in `config/gtswn/gtswn_ae.cfg` (default `true`). Disabling global security preserves existing pairings and per-network settings. The per-network control is unavailable while global security is disabled.
+
 ### 量子节点 / Quantum Node
 
 - **远程桥接 / Remote Bridge**: 经虚拟桥接接入锚点控制器 ME 网络，相邻 AE2 设备直接入网。/ Bridges into the anchored controller's ME grid via a virtual connection; adjacent AE2 devices join the network directly.
 - **连接容量 / Connection Capacity**: 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。/ Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels.
 - **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认实际扣除 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default actual draw: 10.0 AE/t).
 - **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
+- **拆除 / Dismantling**: 普通机器硬度，支持挖掘及 AE、GT 扳手 Shift+右击，也支持 IC2 扳手原生拆卸。节点核心不掉落，部件与库存正常回收。/ Normal machine hardness; supports mining, AE/GT wrench sneak-right-click, and native IC2 wrench removal. The core never drops; parts and inventories are recovered.
 
 ### 量子并入与锚点 / Quantum Incorporation & Anchor
 
@@ -119,7 +128,7 @@ The terminal's 16-color selection synchronizes across its quantum network. Only 
 A bound Quantum Terminal can incorporate full AE blocks and ME-capable GT hatches directly into its network. Each successful incorporation consumes one **Quantum Incorporation Anchor**; Alt+right-click again to remove it. AE cable/bus parts and controllers are excluded. Devices keep their original block, functions and inventory.
 
 - **合成 / Crafting**：LV 组装机每批产出 16 个锚点：基础涂层电路板 ×1、LV 发射器 ×1、LV 传感器 ×1、钢板 ×2、末影珍珠 ×1、细铜线 ×4。/ An LV assembler produces 16 anchors per batch from Basic Coated Circuit Board ×1, LV Emitter ×1, LV Sensor ×1, Steel Plate ×2, Ender Pearl ×1 and Fine Copper Wire ×4.
-- **隔离与强化 / Isolation & Protection**：并入设备阻断物理 AE 连接，避免相邻网络串网，并获得挖掘与爆炸防护；先解除并入再拆除。/ Incorporated devices block physical AE connections to prevent adjacent networks from merging, and resist mining and explosions. Remove incorporation before dismantling.
+- **隔离与拆除 / Isolation & Dismantling**：并入设备阻断物理 AE 连接，避免相邻网络串网，并保留爆炸防护。挖掘硬度与扳手拆除沿用原设备，可直接拆除并正常掉落；移除后自动清理并入连接。/ Incorporated devices block physical AE connections to prevent adjacent networks from merging and retain explosion protection. Native mining hardness, wrench removal and device drops are preserved; dismantling automatically clears the incorporation connection.
 - **额外耗电 / Additional Power**：每个有效并入连接默认额外实际扣除 **50 AE/t**，由 `config/gtswn/gtswn_ae.cfg` 的 `quantumIncorporationIdlePowerUsage` 配置，重启应用。这 50 AE/t 不含设备原生功耗与频道耗电，两者仍由 AE 独立计算；解除并入、连接失效或区块卸载后释放附加功耗。缺电不会免除耗电需求。/ Each valid incorporation connection adds an actual **50 AE/t** by default, configured by `quantumIncorporationIdlePowerUsage` in `config/gtswn/gtswn_ae.cfg` and applied after restart. This excludes native device and channel power, which AE calculates independently. Removing incorporation, invalidating the connection or unloading the chunk releases the surcharge. An unpowered grid retains the demand.
 
 节点与并入附加费抵消 AE 配置的耗电倍率，实际分别扣除 10 和额外 50 AE/t；原设备及频道的原生倍率计费保持不变。/ The node draw and incorporation surcharge compensate for AE's configured power multiplier, drawing 10 and an additional 50 AE/t respectively. Native device and channel power still use AE's normal multiplier.

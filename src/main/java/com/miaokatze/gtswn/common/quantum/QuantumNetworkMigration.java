@@ -191,8 +191,9 @@ public final class QuantumNetworkMigration {
             if (node == null || node.getGrid() == null) return false;
             ISecurityGrid security = node.getGrid()
                 .getCache(ISecurityGrid.class);
-            if (enforceSecurity && security != null && !security.hasPermission(player, SecurityPermissions.BUILD))
-                return false;
+            if (enforceSecurity && !QuantumConnectionSecurity.bypassesNetworkSafety(terminal, node)
+                && security != null
+                && !security.hasPermission(player, SecurityPermissions.BUILD)) return false;
         }
         return true;
     }

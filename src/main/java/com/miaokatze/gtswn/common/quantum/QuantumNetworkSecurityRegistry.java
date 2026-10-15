@@ -16,6 +16,8 @@ import net.minecraftforge.common.DimensionManager;
 
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
+import appeng.tile.networking.TileController;
+
 /** A security enrollment survives removing the security station and unloading its network. */
 public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
 
@@ -23,6 +25,8 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
     private final Set<Long> enrolled = new HashSet<>();
     private final Map<Long, String> identities = new HashMap<>();
     private final Set<Long> providerKeys = new HashSet<>();
+    private final Set<Long> safetyDisabled = new HashSet<>();
+    private final Map<Long, Set<Long>> trustedProviders = new HashMap<>();
 
     public QuantumNetworkSecurityRegistry(String name) {
         super(name);
@@ -68,6 +72,8 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
                 || !saved.equals(((QuantumControllerIdentity) tile).gtswn$getControllerIdentity()))) {
                 enrolled.remove(member);
                 identities.remove(member);
+                safetyDisabled.remove(member);
+                trustedProviders.remove(member);
                 markDirty();
             }
         }
@@ -100,10 +106,59 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
     }
 
     public void remove(Set<Long> members) {
-        if (enrolled.removeAll(members)) {
-            for (long member : members) identities.remove(member);
+        boolean changed = enrolled.removeAll(members) | safetyDisabled.removeAll(members);
+        for (long member : members) {
+            changed |= identities.remove(member) != null;
+            changed |= trustedProviders.remove(member) != null;
+        }
+        if (changed) markDirty();
+    }
+
+    public boolean isSafetyEnabled(World world, Set<Long> members) {
+        isEnrolled(world, members);
+        for (long member : members) {
+            if (!safetyDisabled.contains(member)) continue;
+            if (hasSafetyIdentity(world, member)) return false;
+            safetyDisabled.remove(member);
+            trustedProviders.remove(member);
             markDirty();
         }
+        return true;
+    }
+
+    private boolean hasSafetyIdentity(World world, long member) {
+        String saved = identities.getOrDefault(member, "");
+        if (!enrolled.contains(member) || saved.isEmpty()) return false;
+        int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
+            z = QuantumControllerRegistry.unpackZ(member);
+        if (!world.blockExists(x, y, z)) return true;
+        TileEntity tile = world.getTileEntity(x, y, z);
+        return tile instanceof TileController && tile instanceof QuantumControllerIdentity
+            && saved.equals(((QuantumControllerIdentity) tile).gtswn$getControllerIdentity());
+    }
+
+    public Set<Long> trustedProviderKeys(World world, Set<Long> members) {
+        isEnrolled(world, members);
+        Set<Long> keys = new HashSet<>();
+        for (long member : members) {
+            if (safetyDisabled.contains(member) && hasSafetyIdentity(world, member)
+                && trustedProviders.containsKey(member)) keys.addAll(trustedProviders.get(member));
+        }
+        return keys;
+    }
+
+    public void setSafety(World world, Set<Long> members, boolean enabled, Set<Long> providerKeys) {
+        enroll(world, members);
+        for (long member : members) {
+            if (enabled) {
+                safetyDisabled.remove(member);
+                trustedProviders.remove(member);
+            } else {
+                safetyDisabled.add(member);
+                trustedProviders.put(member, new HashSet<>(providerKeys));
+            }
+        }
+        markDirty();
     }
 
     /** Move the latch, never weaken an already enrolled destination. No security station means locked offline. */
@@ -111,10 +166,15 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
         Set<Long> targetMembers) {
         QuantumNetworkSecurityRegistry source = get(sourceWorld);
         QuantumNetworkSecurityRegistry target = get(targetWorld);
-        boolean required = source.isEnrolled(sourceWorld, sourceMembers)
-            || target.isEnrolled(targetWorld, targetMembers);
+        boolean sourceRequired = source.isEnrolled(sourceWorld, sourceMembers);
+        boolean targetRequired = target.isEnrolled(targetWorld, targetMembers);
+        boolean enabled = source.isSafetyEnabled(sourceWorld, sourceMembers)
+            || targetRequired && target.isSafetyEnabled(targetWorld, targetMembers);
+        Set<Long> trusted = source.trustedProviderKeys(sourceWorld, sourceMembers);
+        trusted.addAll(target.trustedProviderKeys(targetWorld, targetMembers));
+        boolean required = sourceRequired || targetRequired;
         source.remove(sourceMembers);
-        if (required) target.enroll(targetWorld, targetMembers);
+        if (required) target.setSafety(targetWorld, targetMembers, enabled, trusted);
     }
 
     @Override
@@ -122,6 +182,20 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
         enrolled.clear();
         identities.clear();
         providerKeys.clear();
+        safetyDisabled.clear();
+        trustedProviders.clear();
+        NBTTagList policies = tag.getTagList("localSafetyDisabled", 10);
+        for (int i = 0; i < policies.tagCount(); i++) {
+            NBTTagCompound policy = policies.getCompoundTagAt(i);
+            long position = policy.getLong("position");
+            safetyDisabled.add(position);
+            Set<Long> keys = new HashSet<>();
+            NBTTagList trusted = policy.getTagList("providers", 10);
+            for (int j = 0; j < trusted.tagCount(); j++) keys.add(
+                trusted.getCompoundTagAt(j)
+                    .getLong("key"));
+            trustedProviders.put(position, keys);
+        }
         NBTTagList providers = tag.getTagList("providers", 10);
         for (int i = 0; i < providers.tagCount(); i++) providerKeys.add(
             providers.getCompoundTagAt(i)
@@ -138,6 +212,20 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
 
     @Override
     public void writeToNBT(NBTTagCompound tag) {
+        NBTTagList policies = new NBTTagList();
+        for (long position : safetyDisabled) {
+            NBTTagCompound policy = new NBTTagCompound();
+            policy.setLong("position", position);
+            NBTTagList trusted = new NBTTagList();
+            for (long key : trustedProviders.getOrDefault(position, java.util.Collections.emptySet())) {
+                NBTTagCompound entry = new NBTTagCompound();
+                entry.setLong("key", key);
+                trusted.appendTag(entry);
+            }
+            policy.setTag("providers", trusted);
+            policies.appendTag(policy);
+        }
+        tag.setTag("localSafetyDisabled", policies);
         NBTTagList providers = new NBTTagList();
         for (long nativeKey : providerKeys) {
             NBTTagCompound entry = new NBTTagCompound();

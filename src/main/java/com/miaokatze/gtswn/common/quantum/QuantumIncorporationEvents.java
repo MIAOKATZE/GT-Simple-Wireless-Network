@@ -5,7 +5,6 @@ import java.util.Iterator;
 import net.minecraft.world.ChunkPosition;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
-import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.world.ExplosionEvent;
 import net.minecraftforge.event.world.WorldEvent;
 
@@ -45,15 +44,6 @@ public class QuantumIncorporationEvents {
     @SubscribeEvent
     public void load(WorldEvent.Load event) {
         if (!event.world.isRemote) QuantumTileLifecycle.worldLoaded(event.world);
-    }
-
-    @SubscribeEvent
-    public void hardness(PlayerEvent.BreakSpeed event) {
-        if (event.y < 0
-            || !QuantumIncorporationRegistry.isIncorporated(event.entityPlayer.worldObj, event.x, event.y, event.z))
-            return;
-        float hardness = event.block.getBlockHardness(event.entityPlayer.worldObj, event.x, event.y, event.z);
-        if (hardness > 0) event.newSpeed = event.originalSpeed * hardness / 1000F;
     }
 
     @SubscribeEvent

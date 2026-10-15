@@ -29,12 +29,24 @@ public class PacketSyncQuantumTerminalData implements IMessage {
 
     /** 网络快照数据（fromBytes 重建；客户端经 getter 读取） */
     private QuantumNetworkData data;
+    private boolean globalSafetyEnabled;
+    private boolean canChangeNetworkSafety;
+    private long networkSafetyRequestToken;
 
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketSyncQuantumTerminalData() {}
 
     public PacketSyncQuantumTerminalData(QuantumNetworkData data) {
+        this(data, data.globalSafetyEnabled, data.canChangeNetworkSafety, data.networkSafetyRequestToken);
+    }
+
+    /** Player capabilities belong to this response, never to the shared anchor cache. */
+    public PacketSyncQuantumTerminalData(QuantumNetworkData data, boolean globalSafetyEnabled,
+        boolean canChangeNetworkSafety, long networkSafetyRequestToken) {
         this.data = data;
+        this.globalSafetyEnabled = globalSafetyEnabled;
+        this.canChangeNetworkSafety = canChangeNetworkSafety;
+        this.networkSafetyRequestToken = networkSafetyRequestToken;
     }
 
     @Override
@@ -70,6 +82,11 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         buf.writeBoolean(data.channelsInfinite);
         buf.writeInt(data.incorporationCount);
         buf.writeInt(data.incorporationChannels);
+        buf.writeBoolean(globalSafetyEnabled);
+        buf.writeBoolean(data.networkSafetyEnabled);
+        buf.writeBoolean(canChangeNetworkSafety);
+        ByteBufUtils.writeUTF8String(buf, data.networkSafetyIdentity);
+        buf.writeLong(networkSafetyRequestToken);
     }
 
     @Override
@@ -115,6 +132,14 @@ public class PacketSyncQuantumTerminalData implements IMessage {
         if (buf.readableBytes() >= 8) {
             d.incorporationCount = buf.readInt();
             d.incorporationChannels = buf.readInt();
+        }
+        // Old payloads retain safety=true and capability=false.
+        if (buf.readableBytes() >= 3) {
+            d.globalSafetyEnabled = buf.readBoolean();
+            d.networkSafetyEnabled = buf.readBoolean();
+            d.canChangeNetworkSafety = buf.readBoolean();
+            if (buf.isReadable()) d.networkSafetyIdentity = ByteBufUtils.readUTF8String(buf);
+            if (buf.readableBytes() >= 8) d.networkSafetyRequestToken = buf.readLong();
         }
         this.data = d;
     }

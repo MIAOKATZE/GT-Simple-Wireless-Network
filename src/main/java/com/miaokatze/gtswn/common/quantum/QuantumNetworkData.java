@@ -80,6 +80,13 @@ public class QuantumNetworkData {
     /** 锚点解析成功且网格可用 */
     public boolean online;
 
+    /** Missing/old/offline snapshots are conservative: safety on, no management capability. */
+    public boolean globalSafetyEnabled = true;
+    public boolean networkSafetyEnabled = true;
+    public boolean canChangeNetworkSafety;
+    public String networkSafetyIdentity = "";
+    public long networkSafetyRequestToken;
+
     /** 锚点控制器维度与坐标 */
     public int anchorDim;
     public int anchorX;
@@ -259,6 +266,8 @@ public class QuantumNetworkData {
             return cached.data;
         }
         data.online = true;
+        data.networkSafetyEnabled = QuantumTerminalAccess.isNetworkSafetyEnabled(world, anchorX, anchorY, anchorZ);
+        data.networkSafetyIdentity = QuantumTerminalAccess.networkSafetyIdentity(world, anchorX, anchorY, anchorZ);
 
         // 5-6. 总频道、已用频道和量子节点数共享同一份主线程统计快照。
         QuantumNetworkStatsCache.Snapshot stats = QuantumNetworkStatsCache.getOrCompute(cacheKey, world, grid);
@@ -314,6 +323,7 @@ public class QuantumNetworkData {
             int total = 0;
             List<DeviceEntry> aggregated = new ArrayList<>();
             for (Class<? extends IGridHost> machineClass : grid.getMachinesClasses()) {
+                if (machineClass == QuantumNodeBridgeRelay.class) continue;
                 IMachineSet machines = grid.getMachines(machineClass);
                 if (machines.isEmpty()) {
                     continue;
