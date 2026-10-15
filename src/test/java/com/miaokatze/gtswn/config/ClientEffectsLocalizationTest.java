@@ -51,17 +51,26 @@ public class ClientEffectsLocalizationTest {
             String current = String
                 .format(Locale.ROOT, messages.getProperty("gtswn.command.effects.current"), "tap", "on", 100, 100, 64);
             assertTrue(current.contains("100%"));
-            String voltage = String.format(Locale.ROOT, messages.getProperty("gtswn.command.effects.voltage"), "off");
+            String voltage = String
+                .format(Locale.ROOT, messages.getProperty("gtswn.command.effects.voltage"), "off", 75);
             assertTrue(voltage.contains("off"));
             assertTrue(voltage.contains("high/medium"));
             String tapUsage = messages.getProperty("gtswn.command.effects.tap_usage");
             assertTrue(tapUsage.contains("voltage <on|off>"));
+            assertTrue(tapUsage.contains("ratio <25|50|75|100>"));
+            assertNotNull(messages.getProperty("gtswn.gui.terminal.voltage_colors"));
+            assertNotNull(messages.getProperty("gtswn.gui.terminal.voltage_ratio"));
+            for (int percent : new int[] { 25, 50, 75, 100 }) {
+                String status = String
+                    .format(Locale.ROOT, messages.getProperty("gtswn.command.effects.voltage"), "on", percent);
+                assertTrue(status.contains(percent + "%"));
+            }
             if ("zh_CN".equals(language)) {
-                assertTrue(voltage.contains("内三圈及粒子"));
+                assertTrue(voltage.contains("配色比例 75%"));
                 assertTrue(voltage.contains("关闭恢复能源/动力色"));
                 assertTrue(tapUsage.contains("识别机器的 GT 电压等级"));
             } else {
-                assertTrue(voltage.contains("inner three rings and particles"));
+                assertTrue(voltage.contains("color ratio 75%"));
                 assertTrue(voltage.contains("off restores energy/dynamo colors"));
                 assertTrue(tapUsage.contains("recognized machine's GT voltage tier"));
             }

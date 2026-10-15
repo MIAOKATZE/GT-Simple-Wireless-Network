@@ -8,6 +8,7 @@ import java.util.Random;
 public final class LinkNodeVisuals {
 
     public static final double CELL_RADIUS = .078;
+    public static final double COLUMN_RADIUS = .36;
     public static final List<Cell> CELLS = cells();
     private static final int[][] NORMALS = { { 0, -1, 0 }, { 0, 1, 0 }, { 0, 0, -1 }, { 0, 0, 1 }, { -1, 0, 0 },
         { 1, 0, 0 } };
@@ -27,9 +28,39 @@ public final class LinkNodeVisuals {
         return enabled && ("high".equals(material) || "medium".equals(material)) ? rgb : -1;
     }
 
-    /** Only the inner three rings display machine voltage; the outer ring identifies the node type. */
+    public static boolean voltageCell(int ring, int voltageRgb) {
+        return voltageCell(ring, voltageRgb, 75);
+    }
+
+    public static int voltageRings(int percent) {
+        return (Math.max(25, Math.min(100, percent)) + 24) / 25;
+    }
+
+    public static boolean voltageCell(int ring, int voltageRgb, int percent) {
+        return ring < voltageRings(percent) && voltageRgb >= 0;
+    }
+
+    /** The default 75% colors the inner three rings; configurable proportions follow the same radial bands. */
     public static int cellRgb(int ring, boolean energy, int voltageRgb) {
-        return ring < 3 && voltageRgb >= 0 ? voltageRgb : energy ? 0xFFB523 : 0xDE4AFF;
+        return cellRgb(ring, energy, voltageRgb, 75);
+    }
+
+    public static int cellRgb(int ring, boolean energy, int voltageRgb, int percent) {
+        return voltageCell(ring, voltageRgb, percent) ? voltageRgb : energy ? 0xFFB523 : 0xDE4AFF;
+    }
+
+    public static double particleVoltageRadius(int percent) {
+        return COLUMN_RADIUS * voltageRings(percent) / 4D;
+    }
+
+    /** Particle centers follow the selected voltage-color proportion; the surrounding column keeps its type color. */
+    public static int particleVoltageRgb(double u, double v, int voltageRgb) {
+        return particleVoltageRgb(u, v, voltageRgb, 75);
+    }
+
+    public static int particleVoltageRgb(double u, double v, int voltageRgb, int percent) {
+        double radius = particleVoltageRadius(percent);
+        return u * u + v * v <= radius * radius ? voltageRgb : -1;
     }
 
     /** High and Medium share the same textures, with High adding geometry. */
@@ -122,7 +153,7 @@ public final class LinkNodeVisuals {
 
     public static double[] sampleColumn(Random random) {
         double angle = random.nextDouble() * Math.PI * 2;
-        double radius = Math.sqrt(random.nextDouble()) * .36;
+        double radius = Math.sqrt(random.nextDouble()) * COLUMN_RADIUS;
         return new double[] { Math.cos(angle) * radius, Math.sin(angle) * radius };
     }
 
@@ -152,6 +183,11 @@ public final class LinkNodeVisuals {
     }
 
     public static int[] pixels(int size, double seconds, boolean energy, boolean emissive, int voltageRgb) {
+        return pixels(size, seconds, energy, emissive, voltageRgb, 75);
+    }
+
+    public static int[] pixels(int size, double seconds, boolean energy, boolean emissive, int voltageRgb,
+        int percent) {
         int[] pixels = new int[size * size];
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
@@ -163,7 +199,7 @@ public final class LinkNodeVisuals {
                     boolean edge = distance > CELL_RADIUS * .866 - 1.1 / size;
                     double light = brightness(cell, seconds, size == 32, energy);
                     int alpha = emissive ? (int) (light * (edge ? 245 : 160)) : edge ? 125 : 38;
-                    int rgb = cellRgb(cell.ring, energy, size == 64 ? voltageRgb : -1);
+                    int rgb = cellRgb(cell.ring, energy, size == 64 ? voltageRgb : -1, percent);
                     int red = rgb >> 16 & 255, green = rgb >> 8 & 255, blue = rgb & 255;
                     if (emissive) {
                         red += (int) ((255 - red) * light * .65);

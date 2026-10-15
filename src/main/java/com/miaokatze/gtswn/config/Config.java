@@ -48,8 +48,10 @@ public class Config {
     public static int tapRenderDistance = 64;
     public static int quantumRenderDistance = 64;
     public static String tapMaterial = "high";
-    /** high/medium 内三圈及粒子使用机器 GT 电压等级色；关闭恢复能源/动力色。 */
+    /** high/medium 可调内圈及联动粒子半径使用机器 GT 电压等级色；关闭恢复能源/动力色。 */
     public static boolean tapVoltageColorsEnabled = true;
+    /** 配色比例为 25/50/75/100%；25% 对应一层，默认 75% 对应三层；粒子半径按同一比例联动。 */
+    public static int tapVoltageColorPercent = 75;
     public static float linkNodeOpacity = .48F;
     public static double linkNodeDepth = 1 / 8D;
     public static double linkNodeRelief = .65D;
@@ -109,6 +111,8 @@ public class Config {
             .set(tapMaterial);
         configuration.get(CATEGORY_CLIENT, "TapVoltageColorsEnabled", true)
             .set(tapVoltageColorsEnabled);
+        configuration.get(CATEGORY_CLIENT, "TapVoltageColorPercent", 75)
+            .set(tapVoltageColorPercent);
     }
 
     public static boolean resetParticleConfiguration(boolean tap) {
@@ -119,6 +123,7 @@ public class Config {
             tapRenderDistance = 64;
             tapMaterial = "high";
             tapVoltageColorsEnabled = true;
+            tapVoltageColorPercent = 75;
         } else {
             quantumParticlesEnabled = true;
             quantumParticleDensityPercent = 100;
@@ -178,8 +183,17 @@ public class Config {
             "TapVoltageColorsEnabled",
             CATEGORY_CLIENT,
             true,
-            "high/medium 材质的内三圈及粒子按识别机器的 GT 电压等级着色；关闭恢复能源/动力色。\n"
-                + "Color the inner three rings and particles of high/medium materials by the recognized machine's GT voltage tier; disable to restore energy/dynamo colors.");
+            "high/medium 材质及中心粒子按识别机器的 GT 电压等级着色；配色比例可选 25/50/75/100%，粒子半径按同一比例联动；关闭恢复能源/动力色。\n"
+                + "Color high/medium materials and central particles by the recognized machine's GT voltage tier; choose 25/50/75/100% coverage with the same particle radius ratio; disable to restore energy/dynamo colors.");
+        tapVoltageColorPercent = configuration.getInt(
+            "TapVoltageColorPercent",
+            CATEGORY_CLIENT,
+            75,
+            25,
+            100,
+            "电压配色比例 25/50/75/100%，25% 对应一层，默认 75% 对应三层；粒子半径按同一比例联动。先限幅再向上取 25% 档。\n"
+                + "Voltage color coverage 25/50/75/100%; 25% is one layer, default 75% is three layers; particle radius follows the same ratio. Clamp, then round up to a 25% step.");
+        tapVoltageColorPercent = (tapVoltageColorPercent + 24) / 25 * 25;
         writeParticleConfiguration(configuration);
     }
 

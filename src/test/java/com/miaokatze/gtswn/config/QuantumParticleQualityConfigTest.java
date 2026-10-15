@@ -272,6 +272,24 @@ public class QuantumParticleQualityConfigTest {
     @Test
     public void completionIncludesOnlyValidNextArguments() {
         assertTrue(
+            command.getCommandUsage(sender)
+                .contains("ratio <25|50|75|100>"));
+        assertTrue(
+            command.addTabCompletionOptions(sender, new String[] { "TaP", "" })
+                .contains("ratio"));
+        assertFalse(
+            command.addTabCompletionOptions(sender, new String[] { "quantum", "" })
+                .contains("ratio"));
+        assertEquals(
+            java.util.Arrays.asList("25", "50", "75", "100"),
+            command.addTabCompletionOptions(sender, new String[] { "tap", "RATIO", "" }));
+        assertTrue(
+            command.addTabCompletionOptions(sender, new String[] { "quantum", "ratio", "" })
+                .isEmpty());
+        assertTrue(
+            command.addTabCompletionOptions(sender, new String[] { "tap", "ratio", "25", "" })
+                .isEmpty());
+        assertTrue(
             command.addTabCompletionOptions(sender, new String[] { "" })
                 .contains("tap"));
         assertFalse(
@@ -353,5 +371,72 @@ public class QuantumParticleQualityConfigTest {
         assertEquals(1, Config.adjustRenderDistance(1, true));
         assertEquals(16, Config.adjustRenderDistance(17, true));
         assertEquals(32, Config.adjustRenderDistance(17, false));
+    }
+
+    @Test
+    public void voltageRatioPersistsAtBothBoundsAndResetOnlyWithTap() throws Exception {
+        File file = temporaryFolder.newFile("ratio.cfg");
+        Config.tapVoltageColorPercent = 25;
+        Config.synchronizeNetworkConfiguration(file);
+        assertEquals(75, Config.tapVoltageColorPercent);
+        command.processCommand(sender, new String[] { "TaP", "RaTiO", "25" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertEquals(25, Config.tapVoltageColorPercent);
+        command.processCommand(sender, new String[] { "quantum", "reset" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertEquals(25, Config.tapVoltageColorPercent);
+        for (int percent : new int[] { 25, 50, 75, 100 }) {
+            command.processCommand(sender, new String[] { "tap", "ratio", Integer.toString(percent) });
+            Config.synchronizeNetworkConfiguration(file);
+            assertEquals(percent, Config.tapVoltageColorPercent);
+        }
+        command.processCommand(sender, new String[] { "tap", "ratio", "100" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertEquals(100, Config.tapVoltageColorPercent);
+        assertEquals(
+            100,
+            new Configuration(file).get("client", "TapVoltageColorPercent", 75)
+                .getInt());
+        command.processCommand(sender, new String[] { "tap", "reset" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertEquals(75, Config.tapVoltageColorPercent);
+        command.processCommand(sender, new String[] { "tap", "ratio", "25" });
+        command.processCommand(sender, new String[] { "reset" });
+        Config.synchronizeNetworkConfiguration(file);
+        assertEquals(75, Config.tapVoltageColorPercent);
+    }
+
+    @Test
+    public void invalidRatioCommandsNeverMutateAndFileValuesNormalize() throws Exception {
+        File file = temporaryFolder.newFile("invalid-ratio.cfg");
+        Config.synchronizeNetworkConfiguration(file);
+        String[][] invalid = { { "tap", "ratio" }, { "tap", "ratio", "0" }, { "tap", "ratio", "101" },
+            { "tap", "ratio", "1" }, { "tap", "ratio", "24" }, { "tap", "ratio", "26" }, { "tap", "ratio", "74" },
+            { "tap", "ratio", "76" }, { "tap", "ratio", "-1" }, { "tap", "ratio", "25.0" }, { "tap", "ratio", "NaN" },
+            { "tap", "ratio", "2147483648" }, { "tap", "ratio", "25", "extra" }, { "quantum", "ratio", "25" },
+            { "tap", "rings", "3" } };
+        for (String[] args : invalid) {
+            try {
+                command.processCommand(sender, args);
+                fail("Invalid ratio command accepted");
+            } catch (WrongUsageException expected) {
+                assertEquals(75, Config.tapVoltageColorPercent);
+            }
+        }
+        int[] values = { Integer.MIN_VALUE, 0, 25, 26, 50, 51, 75, 76, 100, 101, Integer.MAX_VALUE };
+        int[] normalized = { 25, 25, 25, 50, 50, 75, 75, 100, 100, 100, 100 };
+        for (int i = 0; i < values.length; i++) {
+            Configuration configuration = new Configuration(file);
+            configuration.get("client", "TapVoltageColorPercent", 75)
+                .set(values[i]);
+            configuration.save();
+            Config.synchronizeNetworkConfiguration(file);
+            int expected = normalized[i];
+            assertEquals(expected, Config.tapVoltageColorPercent);
+            assertEquals(
+                expected,
+                new Configuration(file).get("client", "TapVoltageColorPercent", 75)
+                    .getInt());
+        }
     }
 }

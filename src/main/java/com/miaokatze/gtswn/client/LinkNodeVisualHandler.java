@@ -282,12 +282,14 @@ public final class LinkNodeVisualHandler {
         int type = source.energy ? 0 : 1;
         if (rgb >= 0) {
             // RGB comes solely from the finite GT tier palette. Never allocate textures per host or face.
-            int key = rgb << 1 | type;
-            return voltageTextures.computeIfAbsent(key, ignored -> new TextureSet(material, source.energy, rgb));
+            int rings = LinkNodeVisuals.voltageRings(Config.tapVoltageColorPercent);
+            int key = rgb << 3 | (rings - 1) << 1 | type;
+            return voltageTextures
+                .computeIfAbsent(key, ignored -> new TextureSet(material, source.energy, rgb, rings * 25));
         }
         int materialIndex = LinkNodeVisuals.textureIndex(material);
         TextureSet texture = textures[materialIndex][type];
-        if (texture == null) textures[materialIndex][type] = texture = new TextureSet(material, source.energy, -1);
+        if (texture == null) textures[materialIndex][type] = texture = new TextureSet(material, source.energy, -1, 75);
         return texture;
     }
 
@@ -351,8 +353,8 @@ public final class LinkNodeVisualHandler {
                 double depth = Math
                     .max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief));
                 double light = LinkNodeVisuals.brightness(cell, seconds, false, source.energy);
-                int rgb = LinkNodeVisuals.cellRgb(cell.ring, source.energy, voltageRgb);
-                boolean tinted = voltageRgb >= 0 && cell.ring < 3;
+                int rgb = LinkNodeVisuals.cellRgb(cell.ring, source.energy, voltageRgb, Config.tapVoltageColorPercent);
+                boolean tinted = LinkNodeVisuals.voltageCell(cell.ring, voltageRgb, Config.tapVoltageColorPercent);
                 tess.setColorRGBA_F(
                     tinted ? (rgb >> 16 & 255) / 255F : source.energy ? 1 : .87F,
                     tinted ? (rgb >> 8 & 255) / 255F : source.energy ? .7F : .3F,
@@ -418,7 +420,11 @@ public final class LinkNodeVisualHandler {
             if (dx * dx + dy * dy + dz * dz > (double) Config.tapRenderDistance * Config.tapRenderDistance) continue;
             double age = particle.age + partial;
             boolean energy = particle.source.energy;
-            int rgb = particle.source.voltageRgb();
+            int rgb = LinkNodeVisuals.particleVoltageRgb(
+                particle.u,
+                particle.v,
+                particle.source.voltageRgb(),
+                Config.tapVoltageColorPercent);
             float alpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, glow);
             tess.setColorRGBA_F(
                 rgb >= 0 ? (rgb >> 16 & 255) / 255F : energy ? 1 : .95F,
@@ -506,14 +512,16 @@ public final class LinkNodeVisualHandler {
         private final int size;
         private final boolean energy;
         private final int voltageRgb;
+        private final int voltagePercent;
         private final DynamicTexture base, glow;
         private final ResourceLocation baseLocation, glowLocation;
         private long frame = Long.MIN_VALUE;
 
-        private TextureSet(String material, boolean energy, int voltageRgb) {
+        private TextureSet(String material, boolean energy, int voltageRgb, int voltagePercent) {
             this.size = LinkNodeVisuals.resolution(material);
             this.energy = energy;
             this.voltageRgb = voltageRgb;
+            this.voltagePercent = voltagePercent;
             int size = this.size;
             base = new DynamicTexture(size, size);
             glow = new DynamicTexture(size, size);
@@ -530,13 +538,13 @@ public final class LinkNodeVisualHandler {
             if (next == frame) return;
             frame = next;
             System.arraycopy(
-                LinkNodeVisuals.pixels(size, seconds, energy, false, voltageRgb),
+                LinkNodeVisuals.pixels(size, seconds, energy, false, voltageRgb, voltagePercent),
                 0,
                 base.getTextureData(),
                 0,
                 size * size);
             System.arraycopy(
-                LinkNodeVisuals.pixels(size, seconds, energy, true, voltageRgb),
+                LinkNodeVisuals.pixels(size, seconds, energy, true, voltageRgb, voltagePercent),
                 0,
                 glow.getTextureData(),
                 0,

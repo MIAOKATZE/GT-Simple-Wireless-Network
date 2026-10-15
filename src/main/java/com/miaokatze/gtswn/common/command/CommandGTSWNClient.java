@@ -27,6 +27,7 @@ public class CommandGTSWNClient extends CommandBase {
         return "/gtswn <tap|quantum> [on|off|density <0..200>|size <10..400>|distance <1..256>|help|status|reset]"
             + " | /gtswn tap material <old|oldplus|low|medium|high>"
             + " | /gtswn tap voltage <on|off>"
+            + " | /gtswn tap ratio <25|50|75|100>"
             + " | /gtswn <HudXOffset|HudYOffset|HudScale> [value]"
             + " | /gtswn hud <charge|eu|instant|average> <on|off> | /gtswn <help|status|reset>";
     }
@@ -62,6 +63,7 @@ public class CommandGTSWNClient extends CommandBase {
                     "distance",
                     "material",
                     "voltage",
+                    "ratio",
                     "help",
                     "status",
                     "reset")
@@ -82,6 +84,9 @@ public class CommandGTSWNClient extends CommandBase {
             }
             if ("voltage".equalsIgnoreCase(args[1]) && "tap".equalsIgnoreCase(args[0])) {
                 return getListOfStringsMatchingLastWord(args, "on", "off");
+            }
+            if ("ratio".equalsIgnoreCase(args[1]) && "tap".equalsIgnoreCase(args[0])) {
+                return getListOfStringsMatchingLastWord(args, "25", "50", "75", "100");
             }
             if ("density".equalsIgnoreCase(args[1]))
                 return getListOfStringsMatchingLastWord(args, "0", "50", "100", "200");
@@ -214,7 +219,11 @@ public class CommandGTSWNClient extends CommandBase {
             tap ? Config.tapRenderDistance : Config.quantumRenderDistance);
         if (tap) {
             message(sender, "gtswn.command.effects.material", Config.tapMaterial);
-            message(sender, "gtswn.command.effects.voltage", Config.tapVoltageColorsEnabled ? "on" : "off");
+            message(
+                sender,
+                "gtswn.command.effects.voltage",
+                Config.tapVoltageColorsEnabled ? "on" : "off",
+                Config.tapVoltageColorPercent);
         }
     }
 
@@ -247,6 +256,15 @@ public class CommandGTSWNClient extends CommandBase {
                 throw new WrongUsageException(usage);
             }
             Config.tapVoltageColorsEnabled = "on".equalsIgnoreCase(args[2]);
+        } else if ("ratio".equals(operation) && tap) {
+            if (args.length != 3) throw new WrongUsageException(usage);
+            try {
+                int ratio = Integer.parseInt(args[2]);
+                if (ratio != 25 && ratio != 50 && ratio != 75 && ratio != 100) throw new IllegalArgumentException();
+                Config.tapVoltageColorPercent = ratio;
+            } catch (IllegalArgumentException exception) {
+                throw new WrongUsageException(usage);
+            }
         } else if ("density".equals(operation) || "size".equals(operation) || "distance".equals(operation)) {
             if (args.length != 3) throw new WrongUsageException(usage);
             int minimum = "density".equals(operation) ? 0 : "size".equals(operation) ? 10 : 1;
