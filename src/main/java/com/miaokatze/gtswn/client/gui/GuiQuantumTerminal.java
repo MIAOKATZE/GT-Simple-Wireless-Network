@@ -150,7 +150,7 @@ public class GuiQuantumTerminal extends GuiContainer {
         if (effectsPage) {
             for (Object entry : buttonList) {
                 GuiButton setting = (GuiButton) entry;
-                if (setting.id >= 111 && setting.id <= 113 && setting.mousePressed(mc, mouseX, mouseY)) {
+                if (isNumericSetting(setting.id) && setting.mousePressed(mc, mouseX, mouseY)) {
                     drawHoveringText(
                         java.util.Collections.singletonList(tr("gtswn.gui.terminal.numeric_hint")),
                         mouseX,
@@ -235,7 +235,7 @@ public class GuiQuantumTerminal extends GuiContainer {
         if (effectsPage && button == 1) {
             for (Object entry : buttonList) {
                 GuiButton setting = (GuiButton) entry;
-                if (setting.id >= 111 && setting.id <= 113 && setting.mousePressed(mc, mouseX, mouseY)) {
+                if (isNumericSetting(setting.id) && setting.mousePressed(mc, mouseX, mouseY)) {
                     decreaseSetting = true;
                     try {
                         actionPerformed(setting);
@@ -333,16 +333,20 @@ public class GuiQuantumTerminal extends GuiContainer {
                 + (tap ? Config.tapParticleSizePercent : Config.quantumParticleSizePercent)
                 + "%",
             tr("gtswn.gui.terminal.distance") + ": " + (tap ? Config.tapRenderDistance : Config.quantumRenderDistance),
-            tr("gtswn.gui.terminal.material") + ": " + Config.tapMaterial, tr("gtswn.gui.terminal.reset") };
+            tr("gtswn.gui.terminal.material") + ": " + Config.tapMaterial, tr("gtswn.gui.terminal.reset"),
+            tr("gtswn.gui.terminal.voltage_colors") + ": " + (Config.tapVoltageColorsEnabled ? "ON" : "OFF"),
+            tr("gtswn.gui.terminal.voltage_ratio") + ": " + Config.tapVoltageColorPercent + "%" };
         for (int i = 0; i < labels.length; i++) {
-            if (i == 4 && !tap) continue;
+            if (!tap && (i == 4 || i >= 6)) continue;
+            int position = tap && i >= 5 ? (i == 5 ? 7 : i - 1) : i;
+            int rows = tap ? 4 : 3;
             buttonList.add(
                 new GtswnGuiButton(
                     110 + i,
-                    guiLeft + 10 + (i / 3) * 144,
-                    guiTop + 26 + (i % 3) * 34,
+                    guiLeft + 10 + (position / rows) * 144,
+                    guiTop + 26 + (position % rows) * (tap ? 26 : 34),
                     134,
-                    28,
+                    tap ? 22 : 28,
                     labels[i]));
         }
     }
@@ -387,6 +391,7 @@ public class GuiQuantumTerminal extends GuiContainer {
                     .adjustRenderDistance(Config.quantumRenderDistance, decreaseSetting);
                 break;
             case 114:
+                if (!tap) return;
                 String[] materials = { "old", "oldplus", "low", "medium", "high" };
                 int index = java.util.Arrays.asList(materials)
                     .indexOf(Config.tapMaterial);
@@ -396,6 +401,16 @@ public class GuiQuantumTerminal extends GuiContainer {
                 showSaveResult(Config.resetParticleConfiguration(tap));
                 rebuildButtons();
                 return;
+            case 116:
+                if (!tap) return;
+                Config.tapVoltageColorsEnabled = !Config.tapVoltageColorsEnabled;
+                break;
+            case 117:
+                if (!tap) return;
+                Config.tapVoltageColorPercent = decreaseSetting
+                    ? (Config.tapVoltageColorPercent <= 25 ? 100 : Config.tapVoltageColorPercent - 25)
+                    : (Config.tapVoltageColorPercent >= 100 ? 25 : Config.tapVoltageColorPercent + 25);
+                break;
             default:
                 return;
         }
@@ -410,6 +425,10 @@ public class GuiQuantumTerminal extends GuiContainer {
 
     private static int nextDensity(int value) {
         return value >= 200 ? 0 : Math.min(200, value + 25);
+    }
+
+    private boolean isNumericSetting(int id) {
+        return id >= 111 && id <= 113 || id == 117 && !terminalContainer.quantum;
     }
 
     private static int nextSize(int value) {

@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.client;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,6 +45,7 @@ public final class LinkNodeVisualHandler {
     private final List<Source> visible = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
     private final TextureSet[][] textures = new TextureSet[4][2];
+    private final Map<Integer, TextureSet> voltageTextures = new HashMap<>();
     private final LinkNodeInstallAnimation installations = new LinkNodeInstallAnimation();
     private final Map<String, PacketLinkNodeInstalled> installationTargets = new LinkedHashMap<>();
     private World world;
@@ -189,6 +191,14 @@ public final class LinkNodeVisualHandler {
         discoveryCursor = 0;
         observedMaterial = null;
         world = null;
+        for (TextureSet[] material : textures) {
+            for (int type = 0; type < material.length; type++) {
+                if (material[type] != null) material[type].delete();
+                material[type] = null;
+            }
+        }
+        for (TextureSet texture : voltageTextures.values()) texture.delete();
+        voltageTextures.clear();
     }
 
     @SubscribeEvent
@@ -202,18 +212,15 @@ public final class LinkNodeVisualHandler {
         String material = Config.tapMaterial;
         boolean high = "high".equals(material);
         boolean legacy = LinkNodeVisuals.legacyMaterial(material);
-        int textureIndex = LinkNodeVisuals.textureIndex(material);
         double seconds = (world.getTotalWorldTime() + event.partialTicks) / 20D;
         Frustrum frustum = new Frustrum();
         frustum.setPosition(x, y, z);
         List<Source> eligible = new ArrayList<>();
-        boolean[] activeTypes = new boolean[2];
         for (Source source : visible) {
             if (!source.valid() || !withinDistance(source.host, x, y, z)
                 || !front(source, camera)
                 || !inView(source, frustum)) continue;
             eligible.add(source);
-            activeTypes[source.energy ? 0 : 1] = true;
         }
         if (eligible.isEmpty()) return;
         eligible.sort(
@@ -231,33 +238,29 @@ public final class LinkNodeVisualHandler {
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glDepthMask(false);
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240, 240);
-            for (int type = 0; type < 2; type++) {
-                if (legacy || !activeTypes[type]) continue;
-                TextureSet texture = textures[textureIndex][type];
-                if (texture == null) textures[textureIndex][type] = texture = new TextureSet(material, type == 0);
-                texture.update(seconds);
+            if (!legacy) {
+                for (Source source : eligible) texture(source, material).update(seconds);
             }
             // Legacy faces belong solely to GT's block renderer; only enhanced materials draw these passes.
-            // Keep back-to-front order across both types. Adjacent matching types share a batch.
+            // Keep back-to-front order across all types and tiers. Adjacent matching textures share a batch.
             for (int pass = 0; !legacy && pass < 2; pass++) {
                 GL11.glEnable(GL11.GL_TEXTURE_2D);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, pass == 0 ? GL11.GL_ONE_MINUS_SRC_ALPHA : GL11.GL_ONE);
                 Tessellator tess = Tessellator.instance;
-                int previousType = -1;
+                TextureSet previousTexture = null;
                 for (Source source : eligible) {
-                    int type = source.energy ? 0 : 1;
-                    if (type != previousType) {
-                        if (previousType >= 0) tess.draw();
-                        TextureSet texture = textures[textureIndex][type];
+                    TextureSet texture = texture(source, material);
+                    if (texture != previousTexture) {
+                        if (previousTexture != null) tess.draw();
                         mc.getTextureManager()
                             .bindTexture(pass == 0 ? texture.baseLocation : texture.glowLocation);
                         tess.startDrawingQuads();
                         tess.setColorRGBA_F(1, 1, 1, pass == 0 ? Config.linkNodeOpacity : 1);
-                        previousType = type;
+                        previousTexture = texture;
                     }
                     surface(source, high, pass == 0 ? Config.linkNodeOpacity : 1, event.partialTicks);
                 }
-                if (previousType >= 0) tess.draw();
+                if (previousTexture != null) tess.draw();
             }
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -272,6 +275,22 @@ public final class LinkNodeVisualHandler {
             GL11.glPopMatrix();
             GL11.glPopAttrib();
         }
+    }
+
+    private TextureSet texture(Source source, String material) {
+        int rgb = source.voltageRgb();
+        int type = source.energy ? 0 : 1;
+        if (rgb >= 0) {
+            // RGB comes solely from the finite GT tier palette. Never allocate textures per host or face.
+            int rings = LinkNodeVisuals.voltageRings(Config.tapVoltageColorPercent);
+            int key = rgb << 3 | (rings - 1) << 1 | type;
+            return voltageTextures
+                .computeIfAbsent(key, ignored -> new TextureSet(material, source.energy, rgb, rings * 25));
+        }
+        int materialIndex = LinkNodeVisuals.textureIndex(material);
+        TextureSet texture = textures[materialIndex][type];
+        if (texture == null) textures[materialIndex][type] = texture = new TextureSet(material, source.energy, -1, 75);
+        return texture;
     }
 
     private static void surface(Source source, boolean high, float opacity, float partial) {
@@ -329,14 +348,17 @@ public final class LinkNodeVisualHandler {
         tess.startDrawingQuads();
         for (Source source : eligible) {
             double elapsed = source.installElapsed(partial);
+            int voltageRgb = source.voltageRgb();
             for (Cell cell : LinkNodeVisuals.CELLS) {
                 double depth = Math
                     .max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief));
                 double light = LinkNodeVisuals.brightness(cell, seconds, false, source.energy);
+                int rgb = LinkNodeVisuals.cellRgb(cell.ring, source.energy, voltageRgb, Config.tapVoltageColorPercent);
+                boolean tinted = LinkNodeVisuals.voltageCell(cell.ring, voltageRgb, Config.tapVoltageColorPercent);
                 tess.setColorRGBA_F(
-                    source.energy ? 1 : .87F,
-                    source.energy ? .7F : .3F,
-                    source.energy ? .14F : 1,
+                    tinted ? (rgb >> 16 & 255) / 255F : source.energy ? 1 : .87F,
+                    tinted ? (rgb >> 8 & 255) / 255F : source.energy ? .7F : .3F,
+                    tinted ? (rgb & 255) / 255F : source.energy ? .14F : 1,
                     (float) (Config.linkNodeOpacity * (.25 + light * .6)
                         * LinkNodeInstallAnimation.alpha(cell.ring, elapsed)));
                 for (int edge = 0; edge < 6; edge++) {
@@ -398,8 +420,17 @@ public final class LinkNodeVisualHandler {
             if (dx * dx + dy * dy + dz * dz > (double) Config.tapRenderDistance * Config.tapRenderDistance) continue;
             double age = particle.age + partial;
             boolean energy = particle.source.energy;
+            int rgb = LinkNodeVisuals.particleVoltageRgb(
+                particle.u,
+                particle.v,
+                particle.source.voltageRgb(),
+                Config.tapVoltageColorPercent);
             float alpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, glow);
-            tess.setColorRGBA_F(energy ? 1 : .95F, energy ? .78F : .35F, energy ? .25F : 1, alpha);
+            tess.setColorRGBA_F(
+                rgb >= 0 ? (rgb >> 16 & 255) / 255F : energy ? 1 : .95F,
+                rgb >= 0 ? (rgb >> 8 & 255) / 255F : energy ? .78F : .35F,
+                rgb >= 0 ? (rgb & 255) / 255F : energy ? .25F : 1,
+                alpha);
             cube(
                 particle.source.host.xCoord + point[0],
                 particle.source.host.yCoord + point[1],
@@ -425,6 +456,7 @@ public final class LinkNodeVisualHandler {
         private final TileEntity host;
         private final int side;
         private final boolean energy;
+        private final int machineRgb;
         private final Object installedCover;
         private final String installationKey;
 
@@ -432,8 +464,13 @@ public final class LinkNodeVisualHandler {
             this.host = host;
             this.side = side;
             this.energy = energy;
+            machineRgb = LinkNodeVoltageTier.rgb(host);
             installationKey = LinkNodeInstallAnimation.key(host.xCoord, host.yCoord, host.zCoord, side);
             installedCover = ((ICoverable) host).getCoverAtSide(ForgeDirection.getOrientation(side));
+        }
+
+        private int voltageRgb() {
+            return LinkNodeVisuals.voltageRgb(Config.tapMaterial, Config.tapVoltageColorsEnabled, machineRgb);
         }
 
         private double installElapsed(float partial) {
@@ -474,13 +511,17 @@ public final class LinkNodeVisualHandler {
 
         private final int size;
         private final boolean energy;
+        private final int voltageRgb;
+        private final int voltagePercent;
         private final DynamicTexture base, glow;
         private final ResourceLocation baseLocation, glowLocation;
         private long frame = Long.MIN_VALUE;
 
-        private TextureSet(String material, boolean energy) {
+        private TextureSet(String material, boolean energy, int voltageRgb, int voltagePercent) {
             this.size = LinkNodeVisuals.resolution(material);
             this.energy = energy;
+            this.voltageRgb = voltageRgb;
+            this.voltagePercent = voltagePercent;
             int size = this.size;
             base = new DynamicTexture(size, size);
             glow = new DynamicTexture(size, size);
@@ -497,19 +538,28 @@ public final class LinkNodeVisualHandler {
             if (next == frame) return;
             frame = next;
             System.arraycopy(
-                LinkNodeVisuals.pixels(size, seconds, energy, false),
+                LinkNodeVisuals.pixels(size, seconds, energy, false, voltageRgb, voltagePercent),
                 0,
                 base.getTextureData(),
                 0,
                 size * size);
             System.arraycopy(
-                LinkNodeVisuals.pixels(size, seconds, energy, true),
+                LinkNodeVisuals.pixels(size, seconds, energy, true, voltageRgb, voltagePercent),
                 0,
                 glow.getTextureData(),
                 0,
                 size * size);
             base.updateDynamicTexture();
             glow.updateDynamicTexture();
+        }
+
+        private void delete() {
+            Minecraft.getMinecraft()
+                .getTextureManager()
+                .deleteTexture(baseLocation);
+            Minecraft.getMinecraft()
+                .getTextureManager()
+                .deleteTexture(glowLocation);
         }
     }
 }
