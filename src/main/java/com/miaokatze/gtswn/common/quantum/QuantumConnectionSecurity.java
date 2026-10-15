@@ -89,14 +89,15 @@ public final class QuantumConnectionSecurity {
         }
         boolean required = anchorWorld == null || QuantumTerminalAccess.isSecurityRequired(anchorWorld, x, y, z)
             || !providers.isEmpty();
-        if (!required) return true;
         for (Scope scope : scopes(grids)) {
             if (scope.world == null) return false;
             if (!QuantumTerminalAccess.isSecurityRequired(scope.world, scope.x, scope.y, scope.z)) continue;
+            required = true;
             Set<ISecurityProvider> known = Collections.newSetFromMap(new IdentityHashMap<>());
             collectAnchorProviders(scope, Collections.newSetFromMap(new IdentityHashMap<>()), known);
             if (known.isEmpty() && !sameAnchor(scope, anchorWorld, x, y, z)) return false;
         }
+        if (!required) return true;
         if (providers.size() != 1) return false;
         return permitsProvider(
             providers.iterator()

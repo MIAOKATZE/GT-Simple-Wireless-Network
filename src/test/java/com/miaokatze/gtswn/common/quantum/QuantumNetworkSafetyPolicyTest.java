@@ -143,6 +143,31 @@ public class QuantumNetworkSafetyPolicyTest {
         }
     }
 
+    @Test
+    public void bridgeCannotEnterForeignOnNetworkWhenBothGridsHaveNoSecurityProvider() throws Exception {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            Config.quantumSafetyEnabled = true;
+            FixtureWorld world = world(0);
+            Controller own = controller(world, 0), other = controller(world, 32);
+            Grid ownGrid = new Grid(), foreignGrid = new Grid();
+            own.node = ownGrid.add(own);
+            other.node = foreignGrid.add(other);
+            java.util.function.IntSupplier actor = () -> {
+                throw new AssertionError("Providerless policy decisions must not need an actor ID");
+            };
+            assertTrue(QuantumConnectionSecurity.mayBridge(world, 0, 64, 0, own.node, own.node, actor));
+            assertTrue(QuantumConnectionSecurity.mayBridge(world, 0, 64, 0, own.node, other.node, actor));
+            QuantumNetworkSecurityRegistry.get(world)
+                .setSafety(world, members(32), true);
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 0, 64, 0, own.node, other.node, actor));
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 0, 64, 0, other.node, own.node, actor));
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 32, 64, 0, own.node, other.node, actor));
+        } finally {
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
+
     private static Set<Long> members(int x) {
         return Collections.singleton(QuantumControllerRegistry.pack(x, 64, 0));
     }
