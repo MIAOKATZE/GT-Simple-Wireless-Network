@@ -13,7 +13,7 @@ public class QuantumMigrationGestureTest {
         QuantumMigrationGesture gesture = new QuantumMigrationGesture();
         assertTrue(gesture.press(1));
         assertEquals(QuantumMigrationGesture.Step.BEGIN, gesture.tick());
-        for (int tick = 1; tick < 600; tick++) {
+        for (int tick = 1; tick < 300; tick++) {
             assertFalse(gesture.press(2));
             assertEquals(QuantumMigrationGesture.Step.HOLD, gesture.tick());
         }

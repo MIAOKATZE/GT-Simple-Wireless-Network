@@ -8,40 +8,40 @@ import org.junit.Test;
 public class QuantumMigrationSessionTest {
 
     @Test
-    public void earlyCompleteWaitsForExactlySixHundredServerTicksAndConsumesOnce() {
+    public void earlyCompleteWaitsForExactlyThreeHundredServerTicksAndConsumesOnce() {
         QuantumMigrationSession session = new QuantumMigrationSession(500);
         session.complete();
-        for (int tick = 500; tick < 1100; tick++) {
+        for (int tick = 500; tick < 800; tick++) {
             session.heartbeat(tick);
             assertTrue(session.validate(tick, true));
             assertFalse("tick " + tick, session.consume(tick));
         }
-        session.heartbeat(1100);
-        assertTrue(session.validate(1100, true));
-        assertTrue(session.consume(1100));
+        session.heartbeat(800);
+        assertTrue(session.validate(800, true));
+        assertTrue(session.consume(800));
         session.complete();
-        session.heartbeat(1100);
-        assertFalse(session.consume(1100));
+        session.heartbeat(800);
+        assertFalse(session.consume(800));
     }
 
     @Test
     public void cancellationOnCompletionTickWinsAndCannotBeResumed() {
-        QuantumMigrationSession session = readyAtFiveHundredNinetyNine();
+        QuantumMigrationSession session = readyAtTwoHundredNinetyNine();
         session.cancel();
         session.complete();
-        session.heartbeat(600);
-        assertFalse(session.validate(600, true));
-        assertFalse(session.consume(600));
+        session.heartbeat(300);
+        assertFalse(session.validate(300, true));
+        assertFalse(session.consume(300));
     }
 
     @Test
     public void oneInvalidRayStackSourceSlotDimensionOrUseTickPermanentlyInvalidatesCredential() {
-        QuantumMigrationSession session = readyAtFiveHundredNinetyNine();
-        assertFalse(session.validate(600, false));
+        QuantumMigrationSession session = readyAtTwoHundredNinetyNine();
+        assertFalse(session.validate(300, false));
         session.complete();
-        session.heartbeat(601);
-        assertFalse(session.validate(601, true));
-        assertFalse(session.consume(601));
+        session.heartbeat(301);
+        assertFalse(session.validate(301, true));
+        assertFalse(session.consume(301));
     }
 
     @Test
@@ -50,48 +50,48 @@ public class QuantumMigrationSessionTest {
         session.complete();
         for (int tick = 1; tick <= 10; tick++) assertTrue(session.validate(tick, true));
         assertFalse(session.validate(11, true));
-        session.heartbeat(600);
-        assertFalse(session.validate(600, true));
-        assertFalse(session.consume(600));
+        session.heartbeat(300);
+        assertFalse(session.validate(300, true));
+        assertFalse(session.consume(300));
     }
 
     @Test
     public void heartbeatAndClientCompletionCannotReplaceMissingServerValidation() {
         QuantumMigrationSession session = new QuantumMigrationSession(0);
-        session.heartbeat(600);
+        session.heartbeat(300);
         session.complete();
-        assertFalse(session.consume(600));
-        assertFalse(session.validate(600, true));
-        assertFalse(session.consume(600));
+        assertFalse(session.consume(300));
+        assertFalse(session.validate(300, true));
+        assertFalse(session.consume(300));
     }
 
     @Test
-    public void sixHundredValidTicksStillRequireExplicitCompletionIntent() {
+    public void threeHundredValidTicksStillRequireExplicitCompletionIntent() {
         QuantumMigrationSession session = new QuantumMigrationSession(0);
-        for (int tick = 1; tick <= 600; tick++) {
+        for (int tick = 1; tick <= 300; tick++) {
             session.heartbeat(tick);
             assertTrue(session.validate(tick, true));
         }
-        assertFalse(session.consume(600));
+        assertFalse(session.consume(300));
         session.complete();
-        assertTrue(session.consume(600));
+        assertTrue(session.consume(300));
     }
 
     @Test
     public void skippedValidationAtEndCannotBeReplacedByHeartbeatOrExtraElapsedTime() {
-        QuantumMigrationSession session = readyAtFiveHundredNinetyNine();
+        QuantumMigrationSession session = readyAtTwoHundredNinetyNine();
         session.complete();
-        session.heartbeat(601);
-        assertFalse(session.validate(601, true));
-        assertFalse(session.consume(601));
-        session.heartbeat(602);
-        assertFalse(session.validate(602, true));
-        assertFalse(session.consume(602));
+        session.heartbeat(301);
+        assertFalse(session.validate(301, true));
+        assertFalse(session.consume(301));
+        session.heartbeat(302);
+        assertFalse(session.validate(302, true));
+        assertFalse(session.consume(302));
     }
 
-    private static QuantumMigrationSession readyAtFiveHundredNinetyNine() {
+    private static QuantumMigrationSession readyAtTwoHundredNinetyNine() {
         QuantumMigrationSession session = new QuantumMigrationSession(0);
-        for (int tick = 1; tick <= 599; tick++) {
+        for (int tick = 1; tick <= 299; tick++) {
             session.heartbeat(tick);
             assertTrue(session.validate(tick, true));
         }

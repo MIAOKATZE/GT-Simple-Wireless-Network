@@ -39,7 +39,7 @@ import io.netty.buffer.ByteBuf;
 /** All state and world access stay on the server END tick, including cancellation. */
 public final class PacketQuantumMigration implements IMessage {
 
-    public static final int REQUIRED_TICKS = 600;
+    public static final int REQUIRED_TICKS = 300;
     public static final int BEGIN = 0;
     public static final int HOLD = 1;
     public static final int CANCEL = 2;
