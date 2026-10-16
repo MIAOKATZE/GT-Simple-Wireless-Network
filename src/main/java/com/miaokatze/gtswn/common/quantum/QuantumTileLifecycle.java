@@ -29,6 +29,7 @@ public final class QuantumTileLifecycle {
 
     public static void worldLoaded(World world) {
         UNLOADING.remove(world);
+        QuantumTerminalSyncEpoch.changed();
     }
 
     public static void removed(TileEntity tile) {

@@ -16,8 +16,12 @@ public class QuantumCanonicalAnchorTest {
     public void firstClickSurvivesExpansionUnloadAndSaveReload() {
         QuantumControllerRegistry registry = registry();
         assertTrue(registry.quantizeAll(members(0, 1), pos(1)));
-        String generation = registry.canonicalAnchor(pos(0)).generation;
+        QuantumControllerRegistry.CanonicalAnchor first = registry.canonicalAnchor(pos(0));
+        String generation = first.generation;
+        assertSame(first, registry.canonicalAnchor(pos(1)));
+        assertSame(first, registry.resolveAnchor(pos(0), generation));
         assertTrue(registry.quantizeAll(members(0, 1, 2, 3), pos(3)));
+        assertSame(first, registry.canonicalAnchor(pos(3)));
         registry.unload();
         QuantumControllerRegistry restored = reload(registry);
         for (long member : members(0, 1, 2, 3)) {

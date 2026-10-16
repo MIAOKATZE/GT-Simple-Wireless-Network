@@ -61,6 +61,7 @@ public final class QuantumMigrationJournal extends WorldSavedData {
         Event event = new Event(++sequence, dimension, positions, target, sourceGeneration, targetGeneration, eligible);
         index(event);
         markDirty();
+        QuantumTerminalSyncEpoch.changed();
         return sequence;
     }
 
@@ -104,6 +105,7 @@ public final class QuantumMigrationJournal extends WorldSavedData {
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
+        QuantumTerminalSyncEpoch.changed();
         events.clear();
         sources.clear();
         sequence = Math.max(0L, tag.getLong("sequence"));

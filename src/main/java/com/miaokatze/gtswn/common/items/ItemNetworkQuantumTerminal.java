@@ -6,6 +6,7 @@ import java.util.Set;
 import net.minecraft.block.Block;
 import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.creativetab.CreativeTabs;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.EnumAction;
 import net.minecraft.item.Item;
@@ -28,6 +29,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalSyncEpoch;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
@@ -160,6 +162,9 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
     public static final String NBT_ANCHOR_Y = "QT_AnchorY";
     public static final String NBT_ANCHOR_Z = "QT_AnchorZ";
     public static final String NBT_ANCHOR_GENERATION = "QT_AnchorGeneration";
+    public static final String NBT_ANCHOR_SCHEMA = "QT_AnchorSchema";
+    public static final byte ANCHOR_SCHEMA = 1;
+    public static final String NBT_SYNC_EPOCH = "QT_SyncEpoch";
 
     /** 绑定时维度显示名（tooltip 用） */
     private static final String NBT_BOUND_NAME = "QT_BoundName";
@@ -353,6 +358,17 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         return stack;
     }
 
+    /** Local format/source-event pull; matching format+epoch does no lookup and chests are never scanned. */
+    @Override
+    public void onUpdate(ItemStack stack, World world, Entity entity, int slot, boolean held) {
+        if (world.isRemote || !(entity instanceof EntityPlayer)) return;
+        NBTTagCompound tag = stack.getTagCompound();
+        if (tag == null || tag.getByte(NBT_BOUND) != 1) return;
+        if (tag.getByte(NBT_ANCHOR_SCHEMA) == ANCHOR_SCHEMA
+            && tag.getLong(NBT_SYNC_EPOCH) == QuantumTerminalSyncEpoch.current()) return;
+        QuantumTerminalAccess.upgradeLoadedItem((EntityPlayer) entity, stack);
+    }
+
     // ==================== 手势实现：量子化 / 取消量子化 / 放置节点 ====================
 
     /**
@@ -488,6 +504,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
             .canonicalAnchor(QuantumControllerRegistry.pack(x, y, z));
         if (anchor == null) throw new IllegalArgumentException("Controller has no live canonical quantum anchor");
+        QuantumTerminalAccess.clearPendingUpgrade(stack);
         x = QuantumControllerRegistry.unpackX(anchor.position);
         y = QuantumControllerRegistry.unpackY(anchor.position);
         z = QuantumControllerRegistry.unpackZ(anchor.position);
@@ -498,12 +515,14 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         tag.setInteger(NBT_ANCHOR_Y, y);
         tag.setInteger(NBT_ANCHOR_Z, z);
         tag.setString(NBT_ANCHOR_GENERATION, anchor.generation);
+        tag.setByte(NBT_ANCHOR_SCHEMA, ANCHOR_SCHEMA);
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
         tag.setLong(
             QuantumTerminalAccess.NBT_MIGRATION_CURSOR,
             QuantumMigrationJournal.get(world)
                 .currentSequence());
         QuantumNetworkColor.bind(stack, world, x, y, z);
+        tag.setLong(NBT_SYNC_EPOCH, QuantumTerminalSyncEpoch.current());
     }
 
     /**
@@ -511,6 +530,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
      * 仅移除本模组写入的 6 个键，不整段置空以兼容改名/附魔等外部 NBT。
      */
     private static void clearAnchor(ItemStack stack) {
+        QuantumTerminalAccess.clearPendingUpgrade(stack);
         NBTTagCompound tag = stack.stackTagCompound;
         if (tag == null) {
             return;
@@ -521,6 +541,8 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         tag.removeTag(NBT_ANCHOR_Y);
         tag.removeTag(NBT_ANCHOR_Z);
         tag.removeTag(NBT_ANCHOR_GENERATION);
+        tag.removeTag(NBT_ANCHOR_SCHEMA);
+        tag.removeTag(NBT_SYNC_EPOCH);
         tag.removeTag(NBT_BOUND_NAME);
         tag.removeTag(QuantumTerminalAccess.NBT_MIGRATION_CURSOR);
     }

@@ -304,6 +304,7 @@ public class CommonProxy {
      */
     @SuppressWarnings({ "unused" })
     public void serverStarting(FMLServerStartingEvent event) {
+        com.miaokatze.gtswn.common.quantum.QuantumTerminalSyncEpoch.beginSession();
         if (DebugTestGate.isEnabled()) TestWorldManager.serverStarting();
         event.registerServerCommand(new CommandGTSWN());
     }

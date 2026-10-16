@@ -167,6 +167,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private int anchorY;
     private int anchorZ;
     private String anchorGeneration = "";
+    private QuantumControllerRegistry normalizedAnchorRegistry;
+    private long normalizedAnchorRevision = Long.MIN_VALUE;
 
     // Informational placement identity; AE proxy playerID remains the security authority.
     private String placerUUID = "";
@@ -311,6 +313,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     }
 
     private void replaceAnchor(int dim, int x, int y, int z, String generation) {
+        normalizedAnchorRegistry = null;
         destroyBridgeConnection();
         QuantumNetworkColorSync.untrack(this);
         colorTracked = false;
@@ -327,7 +330,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         markDirty();
     }
 
-    /** Apply lazy changes before AE readiness without replacing ownership or the part container. */
+    /** Apply explicit moves without replacing ownership or the part container. */
     public void applyPendingMigrations(QuantumMigrationJournal journal) {
         if (!hasAnchor() || lastAppliedMigration >= journal.currentSequence()) return;
         QuantumMigrationJournal.Resolution result = journal
@@ -351,8 +354,14 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     private boolean normalizeCanonicalAnchor() {
         WorldServer world = DimensionManager.getWorld(anchorDim);
-        if (world == null) return true; // Existing unreachable-dimension handling remains authoritative.
-        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+        if (world == null) {
+            normalizedAnchorRegistry = null;
+            return true; // Existing unreachable-dimension handling remains authoritative.
+        }
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        long revision = registry.getRevision();
+        if (normalizedAnchorRegistry == registry && normalizedAnchorRevision == revision) return true;
+        QuantumControllerRegistry.CanonicalAnchor anchor = registry
             .resolveAnchor(QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ), anchorGeneration);
         if (anchor == null) return false;
         if (anchor.position != QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ)
@@ -364,6 +373,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 QuantumControllerRegistry.unpackZ(anchor.position),
                 anchor.generation);
         }
+        normalizedAnchorRegistry = registry;
+        normalizedAnchorRevision = revision;
         return true;
     }
 
@@ -1041,7 +1052,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (worldObj == null || worldObj.isRemote) {
             return;
         }
-        applyPendingMigrations(QuantumMigrationJournal.get(worldObj));
         migrateLivePartConflicts();
         flushRecoveredPartDrops();
         // v1.6.2 修复：无锚点节点（未经量子终端放置，如创造模式直接放置的空白节点）无效——
@@ -1095,6 +1105,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return;
         }
         this.lastMaintenanceTick = tick;
+        // Explicit migrations push loaded nodes immediately; unloaded nodes replay on their ordinary maintenance.
+        applyPendingMigrations(QuantumMigrationJournal.get(worldObj));
         if (!normalizeCanonicalAnchor()) {
             destroyBridgeConnection();
             failReconnect(OfflineReason.ANCHOR_NOT_QUANTIZED);
@@ -1670,6 +1682,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
+        normalizedAnchorRegistry = null;
         super.readFromNBT(tag);
         lastAppliedMigration = tag.getLong("lastAppliedMigration");
         anchorGeneration = tag.getString("anchorGeneration");

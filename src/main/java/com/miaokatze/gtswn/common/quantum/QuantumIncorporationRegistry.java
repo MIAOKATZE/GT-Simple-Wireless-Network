@@ -315,13 +315,14 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private void index(Entry entry) {
-        sources.computeIfAbsent(new AnchorKey(entry.dim, entry.ax, entry.ay, entry.az), ignored -> new HashMap<>())
+        sources.computeIfAbsent(entry.anchorKey(), ignored -> new HashMap<>())
             .put(entry.position, entry);
         chunks.computeIfAbsent(entryChunk(entry), ignored -> new HashMap<>())
             .put(entry.position, entry);
     }
 
     public void sweep(World world) {
+        applyPendingMigrations(world, QuantumMigrationJournal.get(world));
         for (Entry entry : snapshot()) {
             inspect(world, entry);
         }
@@ -330,6 +331,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     /** Bounded round-robin inspection; sharing a two-bridge-per-tick budget across every dimension. */
     public void tick(World world) {
         if (entries.isEmpty()) return;
+        applyPendingMigrations(world, QuantumMigrationJournal.get(world));
         if (maintenanceOrder == null) maintenanceOrder = new ArrayList<>(entries.values());
         ArrayList<Entry> order = maintenanceOrder;
         for (int i = 0, limit = Math.min(16, order.size()); i < limit; i++) {
@@ -340,7 +342,6 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private void inspect(World world, Entry entry) {
-        applyPendingMigrations(world, QuantumMigrationJournal.get(world));
         int x = QuantumControllerRegistry.unpackX(entry.position),
             y = QuantumControllerRegistry.unpackY(entry.position),
             z = QuantumControllerRegistry.unpackZ(entry.position);
@@ -600,13 +601,19 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     /** Includes registrations whose local chunks are unloaded; identity and owner never change. */
     public void applyPendingMigrations(World world, QuantumMigrationJournal journal) {
         if (migrationRevision == journal.currentSequence()) return;
+        if (journal.currentSequence() == 0) {
+            migrationRevision = 0;
+            return; // Old aliases upgrade only when their own device is normally maintained, never by a load-time scan.
+        }
         Set<Long> changedChunks = new java.util.HashSet<>();
+        boolean dirty = false;
         for (Entry entry : entries.values()) {
+            if (entry.lastAppliedMigration >= journal.currentSequence()) continue;
             AnchorKey previous = entry.anchorKey();
             String previousGeneration = entry.anchorGeneration;
             QuantumMigrationJournal.Resolution result = journal
-                .resolve(entry.anchorKey(), entry.lastAppliedMigration, entry.anchorGeneration);
-            if (!result.anchor.equals(entry.anchorKey()) || !result.generation.equals(entry.anchorGeneration)) {
+                .resolve(previous, entry.lastAppliedMigration, entry.anchorGeneration);
+            if (!result.anchor.equals(previous) || !result.generation.equals(entry.anchorGeneration)) {
                 entry.disconnect();
                 entry.dim = result.anchor.getDimension();
                 entry.ax = result.anchor.getX();
@@ -622,8 +629,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             if (!previous.equals(entry.anchorKey()) || !previousGeneration.equals(entry.anchorGeneration))
                 changedChunks.add(entryChunk(entry));
             entry.lastAppliedMigration = result.sequence;
-            markDirty();
+            dirty = true;
         }
+        if (dirty) markDirty();
         if (!changedChunks.isEmpty()) {
             sources.clear();
             for (Entry entry : entries.values()) index(entry);
@@ -634,7 +642,12 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private boolean normalizeAnchor(Entry entry, WorldServer anchorWorld) {
-        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(anchorWorld)
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(anchorWorld);
+        long revision = registry.getRevision();
+        if (entry.normalizedRegistry == registry && entry.normalizedRevision == revision
+            && entry.normalizedKey == entry.anchorKey()
+            && entry.anchorGeneration.equals(entry.normalizedGeneration)) return true;
+        QuantumControllerRegistry.CanonicalAnchor anchor = registry
             .resolveAnchor(QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az), entry.anchorGeneration);
         if (anchor == null) return false;
         if (anchor.position != QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az)
@@ -647,6 +660,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.nextAttempt = 0L;
             entry.backoff = 20;
         }
+        entry.normalizedRegistry = registry;
+        entry.normalizedRevision = revision;
+        entry.normalizedKey = entry.anchorKey();
+        entry.normalizedGeneration = entry.anchorGeneration;
         return true;
     }
 
@@ -660,6 +677,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         for (Entry entry : snapshot()) {
             entry.disconnect();
             entry.loadedTile = null;
+            entry.normalizedRegistry = null;
         }
     }
 
@@ -746,9 +764,17 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private long nextAttempt;
         private long lastIsolation = Long.MIN_VALUE;
         private int backoff = 20;
+        private AnchorKey cachedAnchorKey, normalizedKey;
+        private QuantumControllerRegistry normalizedRegistry;
+        private long normalizedRevision;
+        private String normalizedGeneration;
 
         private AnchorKey anchorKey() {
-            return new AnchorKey(dim, ax, ay, az);
+            if (cachedAnchorKey == null || cachedAnchorKey.getDimension() != dim
+                || cachedAnchorKey.getX() != ax
+                || cachedAnchorKey.getY() != ay
+                || cachedAnchorKey.getZ() != az) cachedAnchorKey = new AnchorKey(dim, ax, ay, az);
+            return cachedAnchorKey;
         }
 
         public String identity() {

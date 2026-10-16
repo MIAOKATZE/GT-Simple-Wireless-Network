@@ -57,7 +57,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
     private final Map<Long, TileEntity> loadedTiles = new HashMap<>();
     private static final int ANCHOR_SCHEMA = 1;
     private final Map<Long, String> memberGenerations = new HashMap<>();
-    private final Map<String, Long> canonicalAnchors = new HashMap<>();
+    private final Map<String, CanonicalAnchor> canonicalAnchors = new HashMap<>();
     private final Map<String, Integer> generationCounts = new HashMap<>();
     private final Map<Long, String> legacyAnchorAliases = new HashMap<>();
     private World world;
@@ -196,7 +196,8 @@ public class QuantumControllerRegistry extends WorldSavedData {
         Set<Long> added = new HashSet<>(packedCoords);
         added.removeAll(this.controllers);
         if (this.controllers.addAll(packedCoords)) {
-            if (move || !canonicalAnchors.containsKey(generation)) canonicalAnchors.put(generation, firstClick);
+            if (move || !canonicalAnchors.containsKey(generation))
+                canonicalAnchors.put(generation, new CanonicalAnchor(firstClick, generation));
             for (long packed : packedCoords) {
                 if (!memberGenerations.containsKey(packed)) {
                     memberGenerations.put(packed, generation);
@@ -261,10 +262,9 @@ public class QuantumControllerRegistry extends WorldSavedData {
     }
 
     private CanonicalAnchor canonicalGeneration(String generation) {
-        Long position = canonicalAnchors.get(generation);
-        return position != null && controllers.contains(position) && generation.equals(memberGenerations.get(position))
-            ? new CanonicalAnchor(position, generation)
-            : null;
+        CanonicalAnchor anchor = canonicalAnchors.get(generation);
+        return anchor != null && controllers.contains(anchor.position)
+            && generation.equals(memberGenerations.get(anchor.position)) ? anchor : null;
     }
 
     /** 出册单个坐标；不存在则无效果 */
@@ -451,7 +451,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             pending.removeAll(members);
             String generation = UUID.randomUUID()
                 .toString();
-            canonicalAnchors.put(generation, first);
+            canonicalAnchors.put(generation, new CanonicalAnchor(first, generation));
             generationCounts.put(generation, members.size());
             for (long member : members) {
                 memberGenerations.put(member, generation);
@@ -592,7 +592,8 @@ public class QuantumControllerRegistry extends WorldSavedData {
                 NBTTagCompound entry = anchors.getCompoundTagAt(i);
                 String generation = entry.getString("generation");
                 long position = entry.getLong("pos");
-                if (generation.equals(memberGenerations.get(position))) canonicalAnchors.put(generation, position);
+                if (generation.equals(memberGenerations.get(position)))
+                    canonicalAnchors.put(generation, new CanonicalAnchor(position, generation));
             }
             NBTTagList aliases = tag.getTagList("legacyAnchorAliases", 10);
             for (int i = 0; i < aliases.tagCount(); i++) {
@@ -627,10 +628,10 @@ public class QuantumControllerRegistry extends WorldSavedData {
         tag.setTag("memberGenerations", generationTags(memberGenerations));
         tag.setTag("legacyAnchorAliases", generationTags(legacyAnchorAliases));
         NBTTagList anchors = new NBTTagList();
-        for (Map.Entry<String, Long> entry : canonicalAnchors.entrySet()) {
+        for (Map.Entry<String, CanonicalAnchor> entry : canonicalAnchors.entrySet()) {
             NBTTagCompound value = new NBTTagCompound();
             value.setString("generation", entry.getKey());
-            value.setLong("pos", entry.getValue());
+            value.setLong("pos", entry.getValue().position);
             anchors.appendTag(value);
         }
         tag.setTag("canonicalAnchors", anchors);

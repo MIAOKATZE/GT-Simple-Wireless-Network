@@ -60,25 +60,45 @@ public final class QuantumNetworkColorRegistry extends WorldSavedData {
         Long chosen = null;
         for (long key : members) if (colors.containsKey(key) && (chosen == null || key < chosen)) chosen = key;
         if (chosen != null) index = colors.get(chosen);
-        boolean changed = false;
-        for (long key : members) if (!Integer.valueOf(index)
-            .equals(colors.put(key, index))) changed = true;
+        boolean changed = false, visibleChanged = false;
+        for (long key : members) {
+            int previous = colors.getOrDefault(key, QuantumNetworkColor.DEFAULT);
+            if (!Integer.valueOf(index)
+                .equals(colors.put(key, index))) changed = true;
+            visibleChanged |= previous != index;
+        }
         if (changed) markDirty();
+        if (visibleChanged) QuantumTerminalSyncEpoch.changed();
     }
 
     public void recolor(Set<Long> members, int index) {
-        for (long key : members) colors.put(key, QuantumNetworkColor.normalize(index));
-        markDirty();
+        index = QuantumNetworkColor.normalize(index);
+        boolean changed = false, visibleChanged = false;
+        for (long key : members) {
+            int previous = colors.getOrDefault(key, QuantumNetworkColor.DEFAULT);
+            if (!Integer.valueOf(index)
+                .equals(colors.put(key, index))) changed = true;
+            visibleChanged |= previous != index;
+        }
+        if (changed) markDirty();
+        if (visibleChanged) QuantumTerminalSyncEpoch.changed();
     }
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
+        Map<Long, Integer> previous = new HashMap<>(colors);
         colors.clear();
         NBTTagList list = tag.getTagList("colors", 10);
         for (int i = 0; i < list.tagCount(); i++) {
             NBTTagCompound entry = list.getCompoundTagAt(i);
             colors.put(entry.getLong("pos"), QuantumNetworkColor.normalize(entry.getInteger("color")));
         }
+        boolean visibleChanged = false;
+        for (Map.Entry<Long, Integer> entry : previous.entrySet()) visibleChanged |= entry.getValue()
+            .intValue() != colors.getOrDefault(entry.getKey(), QuantumNetworkColor.DEFAULT);
+        for (Map.Entry<Long, Integer> entry : colors.entrySet()) visibleChanged |= entry.getValue()
+            .intValue() != previous.getOrDefault(entry.getKey(), QuantumNetworkColor.DEFAULT);
+        if (visibleChanged) QuantumTerminalSyncEpoch.changed();
     }
 
     @Override
