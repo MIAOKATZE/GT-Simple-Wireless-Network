@@ -11,11 +11,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerIdentity;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationIdentity;
+import com.miaokatze.gtswn.common.quantum.QuantumPolicyEpoch;
 import com.miaokatze.gtswn.common.quantum.QuantumTileLifecycle;
 
 @Mixin(TileEntity.class)
 public abstract class QuantumIncorporationIdentityMixin
-    implements QuantumIncorporationIdentity, QuantumControllerIdentity {
+    implements QuantumIncorporationIdentity, QuantumControllerIdentity, QuantumPolicyEpoch.TrackedController {
 
     @Unique
     private String gtswn$incorporationIdentity = "";
@@ -33,7 +34,9 @@ public abstract class QuantumIncorporationIdentityMixin
 
     @Override
     public void gtswn$setNetworkSafetyEnabled(boolean enabled) {
+        if (gtswn$networkSafetyEnabled == enabled) return;
         gtswn$networkSafetyEnabled = enabled;
+        QuantumPolicyEpoch.controllerChanged((TileEntity) (Object) this);
     }
 
     @Override
@@ -43,7 +46,9 @@ public abstract class QuantumIncorporationIdentityMixin
 
     @Override
     public void gtswn$setControllerIdentity(String identity) {
+        if (gtswn$controllerIdentity.equals(identity)) return;
         gtswn$controllerIdentity = identity;
+        QuantumPolicyEpoch.controllerChanged((TileEntity) (Object) this);
     }
 
     @Override
@@ -71,6 +76,7 @@ public abstract class QuantumIncorporationIdentityMixin
         gtswn$incorporationIdentity = tag.getString("GTSWN_IncorporationIdentity");
         gtswn$controllerIdentity = tag.getString("GTSWN_ControllerIdentity");
         gtswn$networkSafetyEnabled = tag.getBoolean("GTSWN_NetworkSafetyEnabled");
+        QuantumPolicyEpoch.controllerChanged((TileEntity) (Object) this);
     }
 
     @Inject(method = "invalidate", at = @At("HEAD"))

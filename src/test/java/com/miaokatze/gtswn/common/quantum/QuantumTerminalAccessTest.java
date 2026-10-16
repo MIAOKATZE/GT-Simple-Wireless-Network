@@ -269,6 +269,8 @@ public class QuantumTerminalAccessTest {
         QuantumMigrationJournal journal = QuantumMigrationJournal.get(world);
         journal.append(0, members(1, 64, 2), new AnchorKey(8, 3, 70, 4));
         ItemStack terminal = new ItemStack(new ItemNetworkQuantumTerminal());
+        QuantumControllerRegistry.get(world)
+            .quantize(1, 64, 2);
         ItemNetworkQuantumTerminal.writeAnchor(terminal, world, 1, 64, 2);
         QuantumTerminalAccess.applyPendingMigrations(terminal, journal);
         assertArrayEquals(new int[] { 0, 1, 64, 2 }, ItemNetworkQuantumTerminal.getAnchor(terminal));

@@ -6,6 +6,7 @@ import java.util.Set;
 import net.minecraft.block.Block;
 import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.creativetab.CreativeTabs;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.EnumAction;
 import net.minecraft.item.Item;
@@ -28,6 +29,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.common.quantum.QuantumTerminalSyncEpoch;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
@@ -159,6 +161,10 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
     public static final String NBT_ANCHOR_X = "QT_AnchorX";
     public static final String NBT_ANCHOR_Y = "QT_AnchorY";
     public static final String NBT_ANCHOR_Z = "QT_AnchorZ";
+    public static final String NBT_ANCHOR_GENERATION = "QT_AnchorGeneration";
+    public static final String NBT_ANCHOR_SCHEMA = "QT_AnchorSchema";
+    public static final byte ANCHOR_SCHEMA = 2;
+    public static final String NBT_SYNC_EPOCH = "QT_SyncEpoch";
 
     /** 绑定时维度显示名（tooltip 用） */
     private static final String NBT_BOUND_NAME = "QT_BoundName";
@@ -276,9 +282,10 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
                 return true;
             }
             boolean wasOpen = QuantumTerminalSecurityHints.isOpen(world, x, y, z);
-            dequantizeStructure(player, world, registry, x, y, z);
-            clearAnchor(stack);
-            QuantumTerminalSecurityHints.show(player, wasOpen);
+            if (dequantizeStructure(player, world, registry, x, y, z)) {
+                clearAnchor(stack);
+                QuantumTerminalSecurityHints.show(player, wasOpen);
+            }
             return true;
         }
         if (quantized) {
@@ -289,7 +296,8 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
             }
             boolean wasOpen = QuantumTerminalSecurityHints.isOpen(world, x, y, z);
             writeAnchor(stack, world, x, y, z);
-            sendBindingMessage(player, "gtswn.chat.quantum.bound", x, y, z);
+            int[] bound = getAnchor(stack);
+            sendBindingMessage(player, "gtswn.chat.quantum.bound", bound[1], bound[2], bound[3]);
             QuantumTerminalSecurityHints.show(player, wasOpen);
             return true;
         }
@@ -351,6 +359,17 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         return stack;
     }
 
+    /** Local format/source-event pull; matching format+epoch does no lookup and chests are never scanned. */
+    @Override
+    public void onUpdate(ItemStack stack, World world, Entity entity, int slot, boolean held) {
+        if (world.isRemote || !(entity instanceof EntityPlayer)) return;
+        NBTTagCompound tag = stack.getTagCompound();
+        if (tag == null || tag.getByte(NBT_BOUND) != 1) return;
+        if (tag.getByte(NBT_ANCHOR_SCHEMA) == ANCHOR_SCHEMA
+            && tag.getLong(NBT_SYNC_EPOCH) == QuantumTerminalSyncEpoch.current()) return;
+        QuantumTerminalAccess.upgradeLoadedItem((EntityPlayer) entity, stack);
+    }
+
     // ==================== 手势实现：量子化 / 取消量子化 / 放置节点 ====================
 
     /**
@@ -361,7 +380,12 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         QuantumControllerRegistry registry, int x, int y, int z) {
         // D10：洪泛 6 邻接全部相连控制器（整结构语义）
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, x, y, z);
-        registry.quantizeAll(structure);
+        if (!registry.quantizeAll(structure, QuantumControllerRegistry.pack(x, y, z))) {
+            boolean suspended = false;
+            for (long member : structure) suspended |= registry.isSuspendedController(member);
+            sendMessage(player, suspended ? "gtswn.chat.quantum.resume_pending" : "gtswn.chat.quantum.no_permission");
+            return;
+        }
         // 逐块应用连接过滤（仅放行同伴控制器/能量接收器/石英纤维朝向面）
         for (long packed : structure) {
             QuantumControllerEventHandler.applyConnectionFilter(
@@ -386,10 +410,14 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
      * {@code restoreAllSides} 共用同一路径；结构本身不合法时 TileController.onNeighborChange
      * 后续会自行修正 validSides，无需额外处理。
      */
-    private void dequantizeStructure(EntityPlayer player, World world, QuantumControllerRegistry registry, int x, int y,
-        int z) {
-        QuantumControllerEventHandler.cancelStructure(world, QuantumControllerRegistry.pack(x, y, z));
+    private boolean dequantizeStructure(EntityPlayer player, World world, QuantumControllerRegistry registry, int x,
+        int y, int z) {
+        if (!QuantumControllerEventHandler.suspendStructure(world, QuantumControllerRegistry.pack(x, y, z))) {
+            sendMessage(player, "gtswn.chat.quantum.pause_failed");
+            return false;
+        }
         sendMessage(player, "gtswn.chat.quantum.dequantized");
+        return true;
     }
 
     /**
@@ -445,7 +473,8 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
             tag.getInteger(NBT_ANCHOR_DIM),
             tag.getInteger(NBT_ANCHOR_X),
             tag.getInteger(NBT_ANCHOR_Y),
-            tag.getInteger(NBT_ANCHOR_Z));
+            tag.getInteger(NBT_ANCHOR_Z),
+            tag.getString(NBT_ANCHOR_GENERATION));
         node.setColorIndex(QuantumNetworkColor.resolve(stack));
         node.setPlacer(player);
     }
@@ -479,18 +508,28 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
 
     /** 写入终端绑定锚点（含维度显示名），QT_Bound 置 1 */
     public static void writeAnchor(ItemStack stack, World world, int x, int y, int z) {
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+            .canonicalAnchor(QuantumControllerRegistry.pack(x, y, z));
+        if (anchor == null) throw new IllegalArgumentException("Controller has no live canonical quantum anchor");
+        QuantumTerminalAccess.clearPendingUpgrade(stack);
+        x = QuantumControllerRegistry.unpackX(anchor.position);
+        y = QuantumControllerRegistry.unpackY(anchor.position);
+        z = QuantumControllerRegistry.unpackZ(anchor.position);
         NBTTagCompound tag = ensureNBT(stack);
         tag.setByte(NBT_BOUND, (byte) 1);
         tag.setInteger(NBT_ANCHOR_DIM, world.provider.dimensionId);
         tag.setInteger(NBT_ANCHOR_X, x);
         tag.setInteger(NBT_ANCHOR_Y, y);
         tag.setInteger(NBT_ANCHOR_Z, z);
+        tag.setString(NBT_ANCHOR_GENERATION, anchor.generation);
+        tag.setByte(NBT_ANCHOR_SCHEMA, ANCHOR_SCHEMA);
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
         tag.setLong(
             QuantumTerminalAccess.NBT_MIGRATION_CURSOR,
             QuantumMigrationJournal.get(world)
                 .currentSequence());
         QuantumNetworkColor.bind(stack, world, x, y, z);
+        tag.setLong(NBT_SYNC_EPOCH, QuantumTerminalSyncEpoch.current());
     }
 
     /**
@@ -498,6 +537,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
      * 仅移除本模组写入的 6 个键，不整段置空以兼容改名/附魔等外部 NBT。
      */
     private static void clearAnchor(ItemStack stack) {
+        QuantumTerminalAccess.clearPendingUpgrade(stack);
         NBTTagCompound tag = stack.stackTagCompound;
         if (tag == null) {
             return;
@@ -507,6 +547,9 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         tag.removeTag(NBT_ANCHOR_X);
         tag.removeTag(NBT_ANCHOR_Y);
         tag.removeTag(NBT_ANCHOR_Z);
+        tag.removeTag(NBT_ANCHOR_GENERATION);
+        tag.removeTag(NBT_ANCHOR_SCHEMA);
+        tag.removeTag(NBT_SYNC_EPOCH);
         tag.removeTag(NBT_BOUND_NAME);
         tag.removeTag(QuantumTerminalAccess.NBT_MIGRATION_CURSOR);
     }

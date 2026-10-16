@@ -8,6 +8,8 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.miaokatze.gtswn.common.quantum.QuantumConnectionSecurity;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 
 import appeng.api.networking.IGridConnection;
 import appeng.me.GridConnection;
@@ -28,6 +30,7 @@ public abstract class QuantumConnectionSecurityMixin {
             target = "Lappeng/util/Platform;securityCheck(Lappeng/me/GridNode;Lappeng/me/GridNode;)Z"),
         require = 1)
     private boolean gtswn$checkQuantumConnection(GridNode first, GridNode second) {
+        if (DebugTestGate.probesActive()) TestWorldProbes.aeConnectionAttempt(first, second);
         // Native true means rejection. No keys, cache entries, player IDs or providers are rewritten.
         if (QuantumConnectionSecurity.bypassesNativeCheck(first, second)) {
             gtswn$overrodeSafety = true;

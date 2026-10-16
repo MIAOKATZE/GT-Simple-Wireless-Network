@@ -6,17 +6,12 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-import net.minecraft.item.ItemStack;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
-import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
-import cpw.mods.fml.common.eventhandler.SubscribeEvent;
-import cpw.mods.fml.common.gameevent.TickEvent;
-
-/** Event-driven source updates; inventory synchronization checks only each player's slots once per second. */
+/** Event-driven source updates; carried terminals pull only after their source epoch changes. */
 public final class QuantumNetworkColorSync {
 
     private static final Map<AnchorKey, Set<TileEntityNetworkQuantumNode>> NODES = new HashMap<>();
@@ -75,15 +70,4 @@ public final class QuantumNetworkColorSync {
             .recolor(world, dimension, members, index);
     }
 
-    @SubscribeEvent
-    public void playerTick(TickEvent.PlayerTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || event.player.worldObj.isRemote || event.player.ticksExisted % 20 != 0)
-            return;
-        boolean changed = false;
-        for (ItemStack stack : event.player.inventory.mainInventory) {
-            if (stack == null || !(stack.getItem() instanceof ItemNetworkQuantumTerminal)) continue;
-            changed |= QuantumTerminalAccess.synchronize(event.player, stack);
-        }
-        if (changed) event.player.inventory.markDirty();
-    }
 }

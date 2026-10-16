@@ -58,9 +58,6 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
         FMLCommonHandler.instance()
             .bus()
             .register(new Drain());
-        FMLCommonHandler.instance()
-            .bus()
-            .register(new QuantumNetworkColorSync());
     }
 
     public static final class Handler implements IMessageHandler<PacketSetQuantumNetworkColor, IMessage> {

@@ -1,7 +1,10 @@
 package com.miaokatze.gtswn.common.quantum;
 
+import java.lang.ref.WeakReference;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
+import java.util.WeakHashMap;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
@@ -32,8 +35,111 @@ public final class QuantumTerminalAccess {
     public static final String NBT_OWNER_UUID = "QT_OwnerUUID";
     public static final String NBT_OWNER_NAME = "QT_OwnerName";
     public static final String NBT_ENCRYPTION_KEY = "QT_EncryptionKey";
+    /** Main-thread, pending items only. Values never retain item stacks, players or worlds. */
+    private static Map<ItemStack, PendingUpgrade> pendingUpgrades;
 
     private QuantumTerminalAccess() {}
+
+    public static void clearPendingUpgrade(ItemStack stack) {
+        if (pendingUpgrades != null) pendingUpgrades.remove(stack);
+    }
+
+    public static void upgradeLoadedItem(EntityPlayer player, ItemStack stack) {
+        if (!isTerminal(stack) || player == null || player.worldObj == null || player.worldObj.isRemote) return;
+        NBTTagCompound tag = stack.getTagCompound();
+        if (tag == null || tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) != 1) return;
+        if (tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA) == ItemNetworkQuantumTerminal.ANCHOR_SCHEMA
+            && tag.getLong(ItemNetworkQuantumTerminal.NBT_SYNC_EPOCH) == QuantumTerminalSyncEpoch.current()) return;
+        QuantumMigrationJournal journal = QuantumMigrationJournal.get(player.worldObj);
+        PendingUpgrade pending = pendingUpgrades == null ? null : pendingUpgrades.get(stack);
+        if (pending != null) {
+            WorldServer previousWorld = DimensionManager
+                .getWorld(tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM));
+            QuantumControllerRegistry previous = previousWorld == null ? null
+                : QuantumControllerRegistry.get(previousWorld);
+            if (pending.matches(tag, previous, journal)) return;
+        }
+        int replay = replayPendingMigrations(stack, journal);
+        boolean changed = (replay & 1) != 0;
+        boolean canonicalRequired = tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA)
+            != ItemNetworkQuantumTerminal.ANCHOR_SCHEMA || (replay & 2) != 0
+            || (pending != null && pending.canonicalRequired);
+        if (!canonicalRequired) {
+            // A color/session notice does not repeat an already completed format/alias conversion.
+            WorldServer world = DimensionManager.getWorld(tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM));
+            if (world == null) deferUpgrade(stack, tag, null, journal, false);
+            else {
+                changed |= updateColor(stack, world);
+                changed |= recordSyncEpoch(tag, journal);
+                clearPendingUpgrade(stack);
+            }
+        } else {
+            WorldServer world = DimensionManager.getWorld(tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM));
+            QuantumControllerRegistry registry = world == null ? null : QuantumControllerRegistry.get(world);
+            QuantumControllerRegistry.CanonicalAnchor anchor = registry == null ? null
+                : registry.resolveAnchor(
+                    bindingPosition(tag),
+                    tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+            if (anchor != null) {
+                changed |= applyCanonicalAnchor(tag, world, anchor);
+                changed |= updateColor(stack, world);
+                changed |= recordSyncEpoch(tag, journal);
+                clearPendingUpgrade(stack);
+            } else {
+                deferUpgrade(stack, tag, registry, journal, true);
+            }
+        }
+        if (changed) player.inventory.markDirty();
+    }
+
+    private static void deferUpgrade(ItemStack stack, NBTTagCompound tag, QuantumControllerRegistry registry,
+        QuantumMigrationJournal journal, boolean canonicalRequired) {
+        if (pendingUpgrades == null) pendingUpgrades = new WeakHashMap<>();
+        pendingUpgrades.put(stack, new PendingUpgrade(tag, registry, journal, canonicalRequired));
+    }
+
+    private static long bindingPosition(NBTTagCompound tag) {
+        return QuantumControllerRegistry.pack(
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z));
+    }
+
+    private static final class PendingUpgrade {
+
+        private final WeakReference<QuantumControllerRegistry> registry;
+        private final WeakReference<QuantumMigrationJournal> journal;
+        private final long revision, sequence, position, cursor, epoch;
+        private final int dimension;
+        private final String generation;
+        private final boolean canonicalRequired;
+
+        PendingUpgrade(NBTTagCompound tag, QuantumControllerRegistry registry, QuantumMigrationJournal journal,
+            boolean canonicalRequired) {
+            this.registry = new WeakReference<>(registry);
+            this.journal = new WeakReference<>(journal);
+            revision = registry == null ? -1 : registry.getRevision();
+            sequence = journal.currentSequence();
+            position = bindingPosition(tag);
+            cursor = tag.getLong(NBT_MIGRATION_CURSOR);
+            dimension = tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM);
+            generation = tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION);
+            epoch = QuantumTerminalSyncEpoch.current();
+            this.canonicalRequired = canonicalRequired;
+        }
+
+        boolean matches(NBTTagCompound tag, QuantumControllerRegistry current, QuantumMigrationJournal currentJournal) {
+            return epoch == QuantumTerminalSyncEpoch.current() && registry.get() == current
+                && (current == null || revision == current.getRevision())
+                && journal.get() == currentJournal
+                && sequence == currentJournal.currentSequence()
+                && cursor >= currentJournal.currentSequence()
+                && cursor == tag.getLong(NBT_MIGRATION_CURSOR)
+                && position == bindingPosition(tag)
+                && dimension == tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM)
+                && generation.equals(tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+        }
+    }
 
     /** Silent by design: polling and inventory refreshes must not produce chat spam. */
     public static boolean validate(EntityPlayer player, ItemStack stack) {
@@ -42,7 +148,8 @@ public final class QuantumTerminalAccess {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return true;
         World world = DimensionManager.getWorld(anchor[0]);
-        return world != null && permits(player, stack, world, anchor[1], anchor[2], anchor[3], false);
+        return world != null && currentBinding(stack, world, anchor)
+            && permits(player, stack, world, anchor[1], anchor[2], anchor[3], false);
     }
 
     public static boolean canManage(EntityPlayer player, ItemStack stack) {
@@ -51,7 +158,8 @@ public final class QuantumTerminalAccess {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return true;
         World world = DimensionManager.getWorld(anchor[0]);
-        return world != null && permits(player, stack, world, anchor[1], anchor[2], anchor[3], true);
+        return world != null && currentBinding(stack, world, anchor)
+            && permits(player, stack, world, anchor[1], anchor[2], anchor[3], true);
     }
 
     /** Binding and controller interactions must check the clicked network, including unbound terminals. */
@@ -94,6 +202,7 @@ public final class QuantumTerminalAccess {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return false;
         World world = DimensionManager.getWorld(anchor[0]);
+        if (world == null || !currentBinding(stack, world, anchor)) return false;
         if (networkSafetyIdentity(world, anchor[1], anchor[2], anchor[3]).isEmpty()) return false;
         return permitsSafetyManagement(player, world, anchor[1], anchor[2], anchor[3]);
     }
@@ -203,36 +312,152 @@ public final class QuantumTerminalAccess {
     /** Migration is resolved before color or permissions, even when the old coordinate has been rebuilt. */
     public static boolean synchronize(EntityPlayer player, ItemStack stack) {
         if (!isTerminal(stack) || player == null || player.worldObj == null || player.worldObj.isRemote) return false;
-        NBTTagCompound before = stack.getTagCompound() == null ? null
-            : (NBTTagCompound) stack.getTagCompound()
-                .copy();
-        if (stack.getTagCompound() == null) stack.setTagCompound(new NBTTagCompound());
+        boolean changed = stack.getTagCompound() == null;
+        if (changed) stack.setTagCompound(new NBTTagCompound());
         NBTTagCompound tag = stack.getTagCompound();
-        tag.setString(
+        changed |= setString(
+            tag,
             NBT_OWNER_UUID,
             player.getUniqueID()
                 .toString());
-        tag.setString(NBT_OWNER_NAME, player.getCommandSenderName());
-        applyPendingMigrations(stack, QuantumMigrationJournal.get(player.worldObj));
-        QuantumNetworkColor.set(stack, QuantumNetworkColor.resolve(stack));
-        boolean changed = !tag.equals(before);
+        changed |= setString(tag, NBT_OWNER_NAME, player.getCommandSenderName());
+        QuantumMigrationJournal journal = QuantumMigrationJournal.get(player.worldObj);
+        int replay = replayPendingMigrations(stack, journal);
+        changed |= (replay & 1) != 0;
+        // This is format state only. validate/canManage still call currentBinding and native permissions below.
+        boolean formatted = tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) == 1
+            && tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA) == ItemNetworkQuantumTerminal.ANCHOR_SCHEMA
+            && (replay & 2) == 0;
+        if (!formatted) {
+            int normalized = normalizeAnchor(stack);
+            changed |= (normalized & 1) != 0;
+            formatted = (normalized & 2) != 0;
+        }
+        World colorWorld = tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) == 1
+            ? DimensionManager.getWorld(tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM))
+            : null;
+        changed |= updateColor(stack, colorWorld);
+        PendingUpgrade pending = pendingUpgrades == null ? null : pendingUpgrades.get(stack);
+        if (formatted && colorWorld != null && (pending == null || !pending.canonicalRequired)) {
+            changed |= recordSyncEpoch(tag, journal);
+            clearPendingUpgrade(stack);
+        }
         if (changed) player.inventory.markDirty();
         return changed;
     }
 
-    static void applyPendingMigrations(ItemStack stack, QuantumMigrationJournal journal) {
-        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
-        if (anchor == null) return;
+    static boolean applyPendingMigrations(ItemStack stack, QuantumMigrationJournal journal) {
+        return (replayPendingMigrations(stack, journal) & 1) != 0;
+    }
+
+    /** Bit 0: cursor/NBT changed; bit 1: an actual binding changed, requiring canonical validation. */
+    private static int replayPendingMigrations(ItemStack stack, QuantumMigrationJournal journal) {
         NBTTagCompound tag = stack.getTagCompound();
+        if (tag == null || tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) != 1
+            || tag.getLong(NBT_MIGRATION_CURSOR) >= journal.currentSequence()) return 0;
+        AnchorKey original = new AnchorKey(
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y),
+            tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z));
+        String generation = tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION);
         QuantumMigrationJournal.Resolution resolved = journal
-            .resolve(new AnchorKey(anchor[0], anchor[1], anchor[2], anchor[3]), tag.getLong(NBT_MIGRATION_CURSOR));
-        tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM, resolved.anchor.getDimension());
-        tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X, resolved.anchor.getX());
-        tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, resolved.anchor.getY());
-        tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, resolved.anchor.getZ());
+            .resolve(original, tag.getLong(NBT_MIGRATION_CURSOR), generation);
+        boolean bindingChanged = !original.equals(resolved.anchor) || !generation.equals(resolved.generation);
+        setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM, resolved.anchor.getDimension());
+        setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_X, resolved.anchor.getX());
+        setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, resolved.anchor.getY());
+        setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, resolved.anchor.getZ());
         tag.setLong(NBT_MIGRATION_CURSOR, resolved.sequence);
+        setString(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, resolved.generation);
         WorldServer world = DimensionManager.getWorld(resolved.anchor.getDimension());
-        if (world != null) tag.setString("QT_BoundName", world.provider.getDimensionName());
+        if (world != null) setString(tag, "QT_BoundName", world.provider.getDimensionName());
+        return 1 | (bindingChanged ? 2 : 0);
+    }
+
+    private static boolean currentBinding(ItemStack stack, World world, int[] coordinates) {
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+            .resolveAnchor(
+                QuantumControllerRegistry.pack(coordinates[1], coordinates[2], coordinates[3]),
+                stack.getTagCompound()
+                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+        return anchor != null
+            && anchor.position == QuantumControllerRegistry.pack(coordinates[1], coordinates[2], coordinates[3]);
+    }
+
+    /** Bit 0: changed; bit 1: a valid canonical binding was established. */
+    private static int normalizeAnchor(ItemStack stack) {
+        int[] coordinates = ItemNetworkQuantumTerminal.getAnchor(stack);
+        if (coordinates == null) return 0;
+        World world = DimensionManager.getWorld(coordinates[0]);
+        if (world == null) return 0;
+        NBTTagCompound tag = stack.getTagCompound();
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+            .resolveAnchor(
+                QuantumControllerRegistry.pack(coordinates[1], coordinates[2], coordinates[3]),
+                tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+        if (anchor == null) return 0;
+        boolean changed = applyCanonicalAnchor(tag, world, anchor);
+        clearPendingUpgrade(stack);
+        return 2 | (changed ? 1 : 0);
+    }
+
+    private static boolean updateColor(ItemStack stack, World world) {
+        NBTTagCompound tag = stack.getTagCompound();
+        int color = world == null ? QuantumNetworkColor.get(stack)
+            : QuantumNetworkColorRegistry.get(world)
+                .color(
+                    tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X),
+                    tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y),
+                    tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z));
+        if (tag.hasKey(QuantumNetworkColor.NBT_COLOR) && tag.getInteger(QuantumNetworkColor.NBT_COLOR) == color)
+            return false;
+        QuantumNetworkColor.set(stack, color);
+        return true;
+    }
+
+    private static boolean recordSyncEpoch(NBTTagCompound tag, QuantumMigrationJournal journal) {
+        // A lazy source read may emit a color epoch. A newer journal entry still needs another item pull.
+        if (tag.getLong(NBT_MIGRATION_CURSOR) < journal.currentSequence()) return false;
+        long epoch = QuantumTerminalSyncEpoch.current();
+        if (tag.getLong(ItemNetworkQuantumTerminal.NBT_SYNC_EPOCH) == epoch) return false;
+        tag.setLong(ItemNetworkQuantumTerminal.NBT_SYNC_EPOCH, epoch);
+        return true;
+    }
+
+    private static boolean applyCanonicalAnchor(NBTTagCompound tag, World world,
+        QuantumControllerRegistry.CanonicalAnchor anchor) {
+        boolean changed = setInteger(
+            tag,
+            ItemNetworkQuantumTerminal.NBT_ANCHOR_X,
+            QuantumControllerRegistry.unpackX(anchor.position));
+        changed |= setInteger(
+            tag,
+            ItemNetworkQuantumTerminal.NBT_ANCHOR_Y,
+            QuantumControllerRegistry.unpackY(anchor.position));
+        changed |= setInteger(
+            tag,
+            ItemNetworkQuantumTerminal.NBT_ANCHOR_Z,
+            QuantumControllerRegistry.unpackZ(anchor.position));
+        changed |= setString(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, anchor.generation);
+        changed |= setString(tag, "QT_BoundName", world.provider.getDimensionName());
+        if (tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA) != ItemNetworkQuantumTerminal.ANCHOR_SCHEMA) {
+            tag.setByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA, ItemNetworkQuantumTerminal.ANCHOR_SCHEMA);
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean setString(NBTTagCompound tag, String key, String value) {
+        if (value.equals(tag.getString(key))) return false;
+        tag.setString(key, value);
+        return true;
+    }
+
+    private static boolean setInteger(NBTTagCompound tag, String key, int value) {
+        if (tag.getInteger(key) == value) return false;
+        tag.setInteger(key, value);
+        return true;
     }
 
     /** Called directly by AE2's native security input/output slots through INetworkEncodable. */

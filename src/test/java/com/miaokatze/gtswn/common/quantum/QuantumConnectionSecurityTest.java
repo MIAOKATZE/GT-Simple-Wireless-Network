@@ -107,6 +107,36 @@ public class QuantumConnectionSecurityTest {
         }
     }
 
+    @Test
+    public void destroyedTrackedEdgesAreForgottenBeforeQueryingTheirOldAnchor() {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            QuantumConnectionSecurity.clearConnections();
+            Config.quantumSafetyEnabled = true;
+            TileEntityNetworkQuantumNode stale = new TileEntityNetworkQuantumNode() {
+
+                @Override
+                public boolean hasAnchor() {
+                    throw new AssertionError("A destroyed edge must not query its anchor or policy");
+                }
+            };
+            IGridHost ordinary = (IGridHost) Proxy.newProxyInstance(
+                IGridHost.class.getClassLoader(),
+                new Class<?>[] { IGridHost.class },
+                (proxy, method, args) -> null);
+            AtomicInteger destroyed = new AtomicInteger();
+            IGridConnection edge = trackedEdge(stale, ordinary, destroyed);
+            QuantumConnectionSecurity.recordActual(edge, true);
+            edge.destroy();
+            QuantumConnectionSecurity.restoreNativeChecks();
+            QuantumConnectionSecurity.restoreNativeChecks();
+            assertEquals(1, destroyed.get());
+        } finally {
+            QuantumConnectionSecurity.clearConnections();
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
+
     private static IGridConnection trackedEdge(IGridHost first, IGridHost second, AtomicInteger destroyed) {
         List<IGridConnection> edges = new ArrayList<>();
         java.util.function.Function<IGridHost, IGridNode> endpoint = host -> (IGridNode) Proxy.newProxyInstance(

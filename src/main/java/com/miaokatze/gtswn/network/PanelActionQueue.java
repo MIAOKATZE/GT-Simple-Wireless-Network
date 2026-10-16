@@ -9,7 +9,9 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -57,13 +59,17 @@ public final class PanelActionQueue {
 
     /** Netty 线程入队：包 2 信息屏配置操作（EU/AE 图表配置行协议与 action 按钮） */
     public static void enqueueConfig(EntityPlayerMP player, int x, int y, int z, int action, String chartConfig) {
-        PENDING.add(new ConfigAction(player, x, y, z, action, chartConfig));
+        ConfigAction pending = new ConfigAction(player, x, y, z, action, chartConfig);
+        PENDING.add(pending);
+        pending.trace(false);
     }
 
     /** Netty 线程入队：包 3 AE 标签页切换与监视列表操作 */
     public static void enqueueAETab(EntityPlayerMP player, int x, int y, int z, byte actionType, int tabIndex,
         NBTTagCompound stackData) {
-        PENDING.add(new AETabAction(player, x, y, z, actionType, tabIndex, stackData));
+        AETabAction pending = new AETabAction(player, x, y, z, actionType, tabIndex, stackData);
+        PENDING.add(pending);
+        pending.trace(false);
     }
 
     /**
@@ -88,6 +94,7 @@ public final class PanelActionQueue {
             }
             try {
                 action.apply((TileEntityNetworkInfoPanel) tile);
+                action.trace(true);
             } catch (Throwable t) {
                 GTSimpleWirelessNetwork.LOG.error("[PanelActionQueue] 面板操作应用异常（丢弃该条，继续后续）", t);
             }
@@ -112,11 +119,22 @@ public final class PanelActionQueue {
         protected final int y;
         protected final int z;
 
+        /** Observation-only scenario provenance, captured on enqueue and never used for authorization. */
+        private final long probeToken;
+
         PanelAction(EntityPlayerMP player, int x, int y, int z) {
             this.player = player;
             this.x = x;
             this.y = y;
             this.z = z;
+            this.probeToken = DebugTestGate.probesActive()
+                ? TestWorldProbes.queueToken(player == null ? null : player.worldObj, x, y, z)
+                : 0L;
+        }
+
+        void trace(boolean executed) {
+            if (!DebugTestGate.probesActive()) return;
+            TestWorldProbes.queue(probeToken, player == null ? null : player.worldObj, x, y, z, executed);
         }
 
         /** 主线程复验通过后对目标信息屏应用操作（自包 2/3 Handler 逐字搬迁） */

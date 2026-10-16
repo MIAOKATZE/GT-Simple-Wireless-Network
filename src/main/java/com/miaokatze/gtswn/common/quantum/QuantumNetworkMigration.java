@@ -13,6 +13,9 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -41,7 +44,10 @@ public final class QuantumNetworkMigration {
 
     public static boolean migrate(EntityPlayerMP player, ItemStack terminal, World targetWorld, int x, int y, int z) {
         Plan plan = validate(player, terminal, targetWorld, x, y, z);
-        if (plan == null) return false;
+        if (plan == null) {
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(targetWorld, x, y, z, Type.QUANTUM_MIGRATE_REJECT, "");
+            return false;
+        }
         boolean wasOpen = QuantumTerminalSecurityHints
             .isOpen(plan.sourceWorld, plan.source[1], plan.source[2], plan.source[3]);
         QuantumMigrationJournal journal = QuantumMigrationJournal.get(targetWorld);
@@ -49,12 +55,23 @@ public final class QuantumNetworkMigration {
         QuantumControllerRegistry targetRegistry = QuantumControllerRegistry.get(targetWorld);
         int color = QuantumNetworkColorRegistry.get(plan.sourceWorld)
             .color(plan.source[1], plan.source[2], plan.source[3]);
+        QuantumControllerRegistry.CanonicalAnchor sourceAnchor = sourceRegistry
+            .canonicalAnchor(QuantumControllerRegistry.pack(plan.source[1], plan.source[2], plan.source[3]));
+        if (sourceAnchor == null) return false;
 
         // Commit durable binding intent before disconnecting bridges or updating terminal cursors.
-        targetRegistry.quantizeAll(plan.targetMembers);
+        if (!targetRegistry
+            .quantizeTransferred(plan.targetMembers, QuantumControllerRegistry.pack(x, y, z), sourceAnchor.generation))
+            return false;
         QuantumNetworkColorRegistry.get(targetWorld)
             .recolor(plan.targetMembers, color);
-        journal.append(plan.source[0], plan.sourceMembers, new AnchorKey(targetWorld.provider.dimensionId, x, y, z));
+        journal.append(
+            plan.source[0],
+            plan.sourceMembers,
+            new AnchorKey(targetWorld.provider.dimensionId, x, y, z),
+            sourceAnchor.generation,
+            sourceAnchor.generation,
+            sourceRegistry.legacyMembers(plan.sourceMembers, sourceAnchor.generation));
         QuantumNetworkSecurityRegistry.transfer(plan.sourceWorld, plan.sourceMembers, targetWorld, plan.targetMembers);
         ItemNetworkQuantumTerminal.writeAnchor(terminal, targetWorld, x, y, z);
         player.inventory.markDirty();
@@ -116,6 +133,7 @@ public final class QuantumNetworkMigration {
                     y,
                     z));
         QuantumTerminalSecurityHints.show(player, wasOpen);
+        if (DebugTestGate.probesActive()) TestWorldProbes.at(targetWorld, x, y, z, Type.QUANTUM_MIGRATE, "");
         return true;
     }
 

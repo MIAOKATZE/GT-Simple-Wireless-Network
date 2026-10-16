@@ -12,7 +12,10 @@ import net.minecraft.util.ChatComponentText;
 
 import com.google.common.io.ByteArrayDataInput;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.CoverMaths;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverContext;
@@ -177,6 +180,11 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
             this.storedEU = this.capacity;
             // v1.6.19：性能审计——下行补满成功计数
             PerformanceAudit.recordWirelessDraw();
+            if (DebugTestGate.probesActive()) TestWorldProbes
+                .at(bmte, Type.EU_DOWNLINK, "bufferEU=" + needed + ";networkEU=" + totalDeducted + ";committed=true");
+        } else {
+            if (DebugTestGate.probesActive()) TestWorldProbes
+                .at(bmte, Type.EU_DOWNLINK, "bufferEU=" + needed + ";networkEU=" + totalDeducted + ";committed=false");
         }
     }
 

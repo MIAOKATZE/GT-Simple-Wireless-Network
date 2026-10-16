@@ -11,6 +11,9 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
 import net.minecraftforge.common.util.Constants;
 
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 /**
@@ -91,6 +94,7 @@ public class DeviceRegistryData extends WorldSavedData {
             && existing.metaTileId == metaTileId) return false;
         devices.put(key, new DeviceEntry(owner, localName, metaTileId));
         markDirty();
+        if (DebugTestGate.probesActive()) TestWorldProbes.deviceKey(key, Type.DEVICE_REGISTER);
         return isNew;
     }
 
@@ -108,6 +112,7 @@ public class DeviceRegistryData extends WorldSavedData {
         boolean removed = devices.remove(key) != null;
         if (removed) {
             markDirty();
+            if (DebugTestGate.probesActive()) TestWorldProbes.deviceKey(key, Type.DEVICE_REMOVE);
         }
         return removed;
     }

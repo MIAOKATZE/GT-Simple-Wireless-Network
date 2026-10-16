@@ -65,15 +65,29 @@ public class QuantumNetworkMigrationTest {
     public void newBindingAtReusedControllerCoordinatesIgnoresHistoricalMoves() throws Exception {
         FixtureWorld world = world();
         QuantumMigrationJournal journal = QuantumMigrationJournal.get(world);
-        journal.append(7, members(A), B);
+        QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
+        NBTTagCompound legacy = new NBTTagCompound();
+        legacy.setIntArray("controllers", new int[] { 7, A.getX(), A.getY(), A.getZ() });
+        controllers.readFromNBT(legacy);
+        String previous = controllers
+            .canonicalAnchor(QuantumControllerRegistry.pack(A.getX(), A.getY(), A.getZ())).generation;
+        journal.append(7, members(A), B, previous, previous, members(A));
+        controllers.dequantize(A.getX(), A.getY(), A.getZ());
+        controllers.quantize(A.getX(), A.getY(), A.getZ());
+        String rebuilt = controllers
+            .canonicalAnchor(QuantumControllerRegistry.pack(A.getX(), A.getY(), A.getZ())).generation;
+        assertTrue(
+            controllers.legacyMembers(members(A), rebuilt)
+                .isEmpty());
         Node fresh = new Node();
         fresh.setWorldObj(world);
-        fresh.setAnchor(7, A.getX(), A.getY(), A.getZ());
+        fresh.setAnchor(7, A.getX(), A.getY(), A.getZ(), rebuilt);
         fresh.applyPendingMigrations(journal);
         assertEquals(A, anchor(fresh));
-        journal.append(7, members(A), C);
+        journal.append(7, members(A), C, rebuilt, rebuilt);
         fresh.applyPendingMigrations(journal);
         assertEquals(C, anchor(fresh));
+        assertEquals(rebuilt, fresh.getAnchorGeneration());
         QuantumNetworkColorSync.untrack(fresh);
     }
 
@@ -89,10 +103,11 @@ public class QuantumNetworkMigrationTest {
         node.restoreProxyAfterReplacement(security);
         Object parts = node.getPartContainer();
         QuantumMigrationJournal journal = journal();
-        journal.append(7, members(A), B);
-        journal.append(8, members(B), C);
+        journal.append(7, members(A), B, "generation", "generation", members(A));
+        journal.append(8, members(B), C, "generation", "generation");
         node.applyPendingMigrations(journal);
         assertEquals(C, anchor(node));
+        assertEquals("generation", node.getAnchorGeneration());
         assertSame(parts, node.getPartContainer());
         assertSame(security, node.snapshotProxyForReplacement());
         assertEquals(
@@ -108,8 +123,8 @@ public class QuantumNetworkMigrationTest {
         QuantumIncorporationRegistry registry = new QuantumIncorporationRegistry("fixture");
         registry.readFromNBT(incorporationSave(A, 0));
         QuantumMigrationJournal journal = journal();
-        journal.append(7, members(A), B);
-        journal.append(8, members(B), C);
+        journal.append(7, members(A), B, "generation", "generation", members(A));
+        journal.append(8, members(B), C, "generation", "generation");
         registry.applyPendingMigrations(world, journal);
         registry.controllerRemoved(world, 7, members(A));
         NBTTagCompound saved = new NBTTagCompound();
@@ -119,6 +134,7 @@ public class QuantumNetworkMigrationTest {
         NBTTagCompound entry = entries.getCompoundTagAt(0);
         assertEquals("original-owner", entry.getString("owner"));
         assertEquals("original-identity", entry.getString("identity"));
+        assertEquals("generation", entry.getString("anchorGeneration"));
         assertEquals(9, entry.getInteger("dim"));
         assertEquals(99, entry.getInteger("x"));
         assertEquals(2L, entry.getLong("lastAppliedMigration"));

@@ -17,7 +17,10 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -363,6 +366,7 @@ public final class AEMonitorController {
             // G4：数据集内容已变，推进本地 revision（装配缓存失效）
             dataSetRevision++;
             store.markDirty();
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(core, Type.PANEL_SAMPLE, "source=ae;tick=" + tick);
         }
 
         // 无论是否写入新采样，都推送一次最新数据给客户端，保证 GUI 状态及时

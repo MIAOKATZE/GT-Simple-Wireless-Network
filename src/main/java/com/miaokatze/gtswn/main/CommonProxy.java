@@ -28,8 +28,11 @@ import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.QuantumChunkLoaderCallback;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerEventHandler;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalColorHintHandler;
+import com.miaokatze.gtswn.common.testworld.TestDimension;
+import com.miaokatze.gtswn.common.testworld.TestWorldManager;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.crossmod.bq.BqCompat;
 import com.miaokatze.gtswn.crossmod.bq.BqQuestInjector;
@@ -103,6 +106,8 @@ public class CommonProxy {
         File networkConfigFile = new File(configDir, "gtswn_network.cfg");
         File aeConfigFile = new File(configDir, "gtswn_ae.cfg");
         Config.synchronizeConfiguration(mainConfigFile);
+        DebugTestGate.latchAtStartup(Config.testDimensionEnabled);
+        if (DebugTestGate.isEnabled()) TestDimension.init(configDir);
         Config.synchronizeNetworkConfiguration(networkConfigFile);
         Config.synchronizeAEConfiguration(new net.minecraftforge.common.config.Configuration(aeConfigFile));
         // v1.6.19：性能审计开关（preInit 配置读取后设置，重启生效；关闭时完全静默）
@@ -166,6 +171,7 @@ public class CommonProxy {
      */
     @SuppressWarnings({ "unused" })
     public void init(FMLInitializationEvent event) {
+        if (DebugTestGate.isEnabled()) TestWorldManager.init();
         // 1. 确保机器注册任务已执行（通过 GregTech 队列在 preInit 结束时触发）
         // 2. 初始化创造模式物品栏（此时 GTSWNItemList 应已被 set() 填充）
         GTSimpleWirelessNetwork.LOG.info("[2/3] 开始初始化创造模式物品栏...");
@@ -298,6 +304,8 @@ public class CommonProxy {
      */
     @SuppressWarnings({ "unused" })
     public void serverStarting(FMLServerStartingEvent event) {
+        com.miaokatze.gtswn.common.quantum.QuantumTerminalSyncEpoch.beginSession();
+        if (DebugTestGate.isEnabled()) TestWorldManager.serverStarting();
         event.registerServerCommand(new CommandGTSWN());
     }
 

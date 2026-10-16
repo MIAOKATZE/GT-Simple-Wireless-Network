@@ -22,6 +22,9 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 import com.miaokatze.gtswn.config.Config;
 import com.mojang.authlib.GameProfile;
@@ -205,6 +208,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         entry.ax = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X);
         entry.ay = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y);
         entry.az = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z);
+        entry.anchorGeneration = terminal.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION);
+        WorldServer anchorWorld = DimensionManager.getWorld(entry.dim);
+        if (anchorWorld != null && !normalizeAnchor(entry, anchorWorld)) return false;
         entry.color = QuantumNetworkColor.resolve(entry.dim, entry.ax, entry.ay, entry.az);
         ((QuantumIncorporationIdentity) tile).gtswn$setIncorporationIdentity(entry.identity);
         tile.markDirty();
@@ -215,6 +221,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         QuantumIncorporationVisualSync.changed(world, x, y, z);
         disconnectExternal(tile, null);
         maintain(world, entry);
+        if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_ADD, "");
         return true;
     }
 
@@ -232,6 +239,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X, entry.ax);
         binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, entry.ay);
         binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, entry.az);
+        binding.setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, entry.anchorGeneration);
         return binding;
     }
 
@@ -287,6 +295,19 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
     }
 
+    /** Indexed explicit disable: retain device identity, ownership and binding for later resumption. */
+    public void controllerSuspended(int dimension, Set<Long> members) {
+        for (long position : members) {
+            Map<Long, Entry> anchored = sources.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(position),
+                    QuantumControllerRegistry.unpackY(position),
+                    QuantumControllerRegistry.unpackZ(position)));
+            if (anchored != null) for (Entry entry : anchored.values()) entry.disconnect();
+        }
+    }
+
     public Iterable<Entry> snapshot() {
         return new ArrayList<>(entries.values());
     }
@@ -307,13 +328,14 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private void index(Entry entry) {
-        sources.computeIfAbsent(new AnchorKey(entry.dim, entry.ax, entry.ay, entry.az), ignored -> new HashMap<>())
+        sources.computeIfAbsent(entry.anchorKey(), ignored -> new HashMap<>())
             .put(entry.position, entry);
         chunks.computeIfAbsent(entryChunk(entry), ignored -> new HashMap<>())
             .put(entry.position, entry);
     }
 
     public void sweep(World world) {
+        applyPendingMigrations(world, QuantumMigrationJournal.get(world));
         for (Entry entry : snapshot()) {
             inspect(world, entry);
         }
@@ -322,6 +344,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     /** Bounded round-robin inspection; sharing a two-bridge-per-tick budget across every dimension. */
     public void tick(World world) {
         if (entries.isEmpty()) return;
+        applyPendingMigrations(world, QuantumMigrationJournal.get(world));
         if (maintenanceOrder == null) maintenanceOrder = new ArrayList<>(entries.values());
         ArrayList<Entry> order = maintenanceOrder;
         for (int i = 0, limit = Math.min(16, order.size()); i < limit; i++) {
@@ -332,7 +355,6 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private void inspect(World world, Entry entry) {
-        applyPendingMigrations(world, QuantumMigrationJournal.get(world));
         int x = QuantumControllerRegistry.unpackX(entry.position),
             y = QuantumControllerRegistry.unpackY(entry.position),
             z = QuantumControllerRegistry.unpackZ(entry.position);
@@ -383,6 +405,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             y = QuantumControllerRegistry.unpackY(entry.position),
             z = QuantumControllerRegistry.unpackZ(entry.position);
         QuantumIncorporationVisualSync.changed(world, x, y, z);
+        if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REMOVE, "");
         if (!world.blockExists(x, y, z)) return;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile != null
@@ -405,10 +428,30 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.lastIsolation = isolationTick;
         }
         WorldServer anchor = DimensionManager.getWorld(entry.dim);
-        if (anchor != null && !QuantumControllerRegistry.get(anchor)
-            .isQuantized(entry.ax, entry.ay, entry.az)) {
-            forget(world, entry, true);
-            return;
+        if (anchor != null) {
+            if (QuantumControllerRegistry.get(anchor)
+                .isSuspendedAnchor(
+                    QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az),
+                    entry.anchorGeneration)) {
+                entry.disconnect();
+                return;
+            }
+            AnchorKey previous = entry.anchorKey();
+            String previousGeneration = entry.anchorGeneration;
+            if (!normalizeAnchor(entry, anchor)) {
+                forget(world, entry, true);
+                return;
+            }
+            if (!previous.equals(entry.anchorKey()) || !previousGeneration.equals(entry.anchorGeneration)) {
+                Map<Long, Entry> indexed = sources.get(previous);
+                if (indexed != null) {
+                    indexed.remove(entry.position);
+                    if (indexed.isEmpty()) sources.remove(previous);
+                }
+                index(entry);
+                markDirty();
+                invalidateStats();
+            }
         }
         // Never load worlds or chunks just to keep an incorporated machine connected.
         if (anchor == null || !anchor.blockExists(entry.ax, entry.ay, entry.az)) {
@@ -430,6 +473,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         if (!QuantumConnectionSecurity
             .mayBridge(anchor, entry.ax, entry.ay, entry.az, node, target, entry::nativeActorID)) {
             entry.disconnect();
+            if (DebugTestGate.probesActive())
+                TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
             return;
         }
         if (entry.local == node && entry.target == target && entry.hasLiveConnections()) {
@@ -472,10 +517,19 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                 .add(entry);
             invalidateStats();
             connected = true;
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
         } catch (appeng.api.exceptions.FailedConnection failure) {
             // Security failures remain isolated and offline with bounded exponential retry.
             entry.nextAttempt = now + entry.backoff;
             entry.backoff = Math.min(200, entry.backoff * 2);
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(
+                world,
+                x,
+                y,
+                z,
+                Type.INCORPORATION_REJECT,
+                "reason=" + failure.getClass()
+                    .getSimpleName());
         } finally {
             if (!connected) entry.disconnect();
         }
@@ -567,24 +621,37 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     /** Includes registrations whose local chunks are unloaded; identity and owner never change. */
     public void applyPendingMigrations(World world, QuantumMigrationJournal journal) {
         if (migrationRevision == journal.currentSequence()) return;
+        if (journal.currentSequence() == 0) {
+            migrationRevision = 0;
+            return; // Old aliases upgrade only when their own device is normally maintained, never by a load-time scan.
+        }
         Set<Long> changedChunks = new java.util.HashSet<>();
+        boolean dirty = false;
         for (Entry entry : entries.values()) {
             if (entry.lastAppliedMigration >= journal.currentSequence()) continue;
-            QuantumMigrationJournal.Resolution result = journal.resolve(entry.anchorKey(), entry.lastAppliedMigration);
-            if (!result.anchor.equals(entry.anchorKey())) {
+            AnchorKey previous = entry.anchorKey();
+            String previousGeneration = entry.anchorGeneration;
+            QuantumMigrationJournal.Resolution result = journal
+                .resolve(previous, entry.lastAppliedMigration, entry.anchorGeneration);
+            if (!result.anchor.equals(previous) || !result.generation.equals(entry.anchorGeneration)) {
                 entry.disconnect();
                 entry.dim = result.anchor.getDimension();
                 entry.ax = result.anchor.getX();
                 entry.ay = result.anchor.getY();
                 entry.az = result.anchor.getZ();
+                entry.anchorGeneration = result.generation;
                 entry.nextAttempt = 0L;
                 entry.backoff = 20;
                 entry.color = entry.getColorIndex();
-                changedChunks.add(entryChunk(entry));
             }
+            WorldServer anchor = DimensionManager.getWorld(entry.dim);
+            if (anchor != null) normalizeAnchor(entry, anchor);
+            if (!previous.equals(entry.anchorKey()) || !previousGeneration.equals(entry.anchorGeneration))
+                changedChunks.add(entryChunk(entry));
             entry.lastAppliedMigration = result.sequence;
-            markDirty();
+            dirty = true;
         }
+        if (dirty) markDirty();
         if (!changedChunks.isEmpty()) {
             sources.clear();
             for (Entry entry : entries.values()) index(entry);
@@ -592,6 +659,32 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
         migrationRevision = journal.currentSequence();
         if (!changedChunks.isEmpty()) migrationVisualsChanged(world, changedChunks);
+    }
+
+    private boolean normalizeAnchor(Entry entry, WorldServer anchorWorld) {
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(anchorWorld);
+        long revision = registry.getRevision();
+        if (entry.normalizedRegistry == registry && entry.normalizedRevision == revision
+            && entry.normalizedKey == entry.anchorKey()
+            && entry.anchorGeneration.equals(entry.normalizedGeneration)) return true;
+        QuantumControllerRegistry.CanonicalAnchor anchor = registry
+            .resolveAnchor(QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az), entry.anchorGeneration);
+        if (anchor == null) return false;
+        if (anchor.position != QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az)
+            || !anchor.generation.equals(entry.anchorGeneration)) {
+            entry.disconnect();
+            entry.ax = QuantumControllerRegistry.unpackX(anchor.position);
+            entry.ay = QuantumControllerRegistry.unpackY(anchor.position);
+            entry.az = QuantumControllerRegistry.unpackZ(anchor.position);
+            entry.anchorGeneration = anchor.generation;
+            entry.nextAttempt = 0L;
+            entry.backoff = 20;
+        }
+        entry.normalizedRegistry = registry;
+        entry.normalizedRevision = revision;
+        entry.normalizedKey = entry.anchorKey();
+        entry.normalizedGeneration = entry.anchorGeneration;
+        return true;
     }
 
     /** Visual snapshots may reenter get(); every binding and index must already reflect the committed revision. */
@@ -604,6 +697,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         for (Entry entry : snapshot()) {
             entry.disconnect();
             entry.loadedTile = null;
+            entry.normalizedRegistry = null;
         }
     }
 
@@ -631,6 +725,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             e.ax = n.getInteger("x");
             e.ay = n.getInteger("y");
             e.az = n.getInteger("z");
+            e.anchorGeneration = n.getString("anchorGeneration");
             e.color = QuantumNetworkColor.normalize(n.getInteger("color"));
             if (!e.identity.isEmpty()) {
                 entries.put(e.position, e);
@@ -656,6 +751,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             n.setInteger("x", e.ax);
             n.setInteger("y", e.ay);
             n.setInteger("z", e.az);
+            n.setString("anchorGeneration", e.anchorGeneration);
             n.setInteger("color", e.color);
             list.appendTag(n);
         }
@@ -666,6 +762,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         public long position;
         public int dim, ax, ay, az;
+        public String anchorGeneration = "";
         private int color;
         private long lastAppliedMigration;
 
@@ -687,9 +784,17 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private long nextAttempt;
         private long lastIsolation = Long.MIN_VALUE;
         private int backoff = 20;
+        private AnchorKey cachedAnchorKey, normalizedKey;
+        private QuantumControllerRegistry normalizedRegistry;
+        private long normalizedRevision;
+        private String normalizedGeneration;
 
         private AnchorKey anchorKey() {
-            return new AnchorKey(dim, ax, ay, az);
+            if (cachedAnchorKey == null || cachedAnchorKey.getDimension() != dim
+                || cachedAnchorKey.getX() != ax
+                || cachedAnchorKey.getY() != ay
+                || cachedAnchorKey.getZ() != az) cachedAnchorKey = new AnchorKey(dim, ax, ay, az);
+            return cachedAnchorKey;
         }
 
         public String identity() {
@@ -768,6 +873,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             if (billingConnection != null && (containsConnection(billingNode, billingConnection)
                 || containsConnection(target, billingConnection))) billingConnection.destroy();
             if (billingNode != null) billingNode.destroy();
+            if (changed && DebugTestGate.probesActive())
+                TestWorldProbes.at(loadedTile, Type.INCORPORATION_DISCONNECT, "");
             connection = null;
             billingConnection = null;
             billingNode = null;

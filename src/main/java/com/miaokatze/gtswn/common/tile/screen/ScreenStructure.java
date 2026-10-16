@@ -10,8 +10,11 @@ import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 
 /**
  * 信息屏多方块结构域（O2-01b = E 线 E2，四域拆分第一步）：BFS 连通重建 + 最大填满子矩形
@@ -141,6 +144,20 @@ public final class ScreenStructure {
         core.markDirty();
         core.getWorldObj()
             .markBlockForUpdate(core.xCoord, core.yCoord, core.zCoord);
+        if (DebugTestGate.probesActive()) TestWorldProbes.at(
+            core,
+            Type.PANEL_REBUILD,
+            "min=" + next.minX
+                + ":"
+                + next.minY
+                + ":"
+                + next.minZ
+                + ";max="
+                + next.maxX
+                + ":"
+                + next.maxY
+                + ":"
+                + next.maxZ);
     }
 
     /**

@@ -120,6 +120,8 @@ public class ClientProxy extends CommonProxy {
             .register(new com.miaokatze.gtswn.client.PortableMonitorClientCache.TickListener());
 
         ClientCommandHandler.instance.registerCommand(new CommandGTSWNClient());
+        if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
+            com.miaokatze.gtswn.client.testworld.UiDebugSuite.register();
 
         // 注册 HUD 渲染器到 Forge 事件总线（仅在客户端）
         // 注意：RenderGameOverlayEvent 是 Forge 事件，必须注册到 MinecraftForge.EVENT_BUS

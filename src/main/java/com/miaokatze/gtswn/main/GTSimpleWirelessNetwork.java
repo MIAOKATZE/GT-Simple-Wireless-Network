@@ -15,6 +15,7 @@ import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.event.FMLServerStartedEvent;
 import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.event.FMLServerStoppedEvent;
+import cpw.mods.fml.common.event.FMLServerStoppingEvent;
 
 /**
  * 模组主类
@@ -85,7 +86,15 @@ public class GTSimpleWirelessNetwork {
     }
 
     @Mod.EventHandler
+    public void serverStopping(FMLServerStoppingEvent event) {
+        if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
+            com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
+    }
+
+    @Mod.EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
+        if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
+            com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
         AnimationQualityHints.clear();
         com.miaokatze.gtswn.network.PacketQuantumMigration.clearServerState();
         com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety.clearContexts();
