@@ -28,12 +28,12 @@ public class QuantumCanonicalAnchorTest {
             assertEquals(pos(1), restored.canonicalAnchor(member).position);
             assertEquals(generation, restored.canonicalAnchor(member).generation);
         }
-        assertNull("New structures never grant generation-less legacy adoption", restored.resolveAnchor(pos(0), ""));
+        assertEquals(generation, restored.resolveAnchor(pos(0), "").generation);
         assertEquals(new AnchorKey(7, 1, 64, 0), restored.canonicalKey(new AnchorKey(7, 3, 64, 0)));
     }
 
     @Test
-    public void legacyAliasesUpgradeOnceAndCannotInheritRebuiltCoordinates() {
+    public void legacyAliasesUpgradeOnceAndRebuiltCoordinatesRecoverCurrentGeneration() {
         NBTTagCompound old = new NBTTagCompound();
         old.setIntArray("controllers", new int[] { 7, 0, 64, 0, 7, 1, 64, 0, 7, 2, 64, 0 });
         QuantumControllerRegistry migrated = registry();
@@ -48,21 +48,116 @@ public class QuantumCanonicalAnchorTest {
         for (long member : members(0, 1, 2)) saved.dequantize(member);
         assertTrue(saved.quantizeAll(members(0, 1, 2), pos(2)));
         assertNotEquals(first.generation, saved.canonicalAnchor(pos(2)).generation);
-        assertNull(saved.resolveAnchor(pos(2), first.generation));
-        assertNull(reload(saved).resolveAnchor(pos(2), ""));
+        assertEquals(
+            saved.canonicalAnchor(pos(2)).generation,
+            saved.resolveAnchor(pos(2), first.generation).generation);
+        assertEquals(saved.canonicalAnchor(pos(2)).generation, reload(saved).resolveAnchor(pos(2), "").generation);
     }
 
     @Test
-    public void expansionCannotJoinTwoPreviouslyRegisteredGenerations() {
+    public void manyIndependentLegacyComponentsKeepTheirAliasesAndGenerationsAcrossSchemaTwoReloads() {
+        int componentCount = 2048;
+        Set<Long> coordinates = disconnectedMembers(componentCount);
+        int[] flat = new int[coordinates.size() * 4];
+        int index = 0;
+        for (long member : coordinates) {
+            flat[index++] = 7;
+            flat[index++] = QuantumControllerRegistry.unpackX(member);
+            flat[index++] = QuantumControllerRegistry.unpackY(member);
+            flat[index++] = QuantumControllerRegistry.unpackZ(member);
+        }
+        NBTTagCompound legacy = new NBTTagCompound();
+        legacy.setIntArray("controllers", flat);
+        QuantumControllerRegistry migrated = registry();
+        migrated.readFromNBT(legacy);
+
+        QuantumControllerRegistry.CanonicalAnchor[] anchors = new QuantumControllerRegistry.CanonicalAnchor[componentCount];
+        Set<String> generations = new HashSet<>();
+        for (int component = 0; component < componentCount; component++) {
+            int first = component * 8, size = 1 + component % 4;
+            QuantumControllerRegistry.CanonicalAnchor anchor = migrated.resolveAnchor(pos(first), "");
+            assertNotNull(anchor);
+            assertTrue(generations.add(anchor.generation));
+            assertTrue(anchor.position >= pos(first) && anchor.position <= pos(first + size - 1));
+            anchors[component] = anchor;
+            for (int offset = 0; offset < size; offset++) {
+                long member = pos(first + offset);
+                assertSame(anchor, migrated.resolveAnchor(member, ""));
+                assertSame(anchor, migrated.resolveAnchor(member, "stale-legacy-hint"));
+                assertEquals(
+                    size,
+                    migrated.registeredStructure(member)
+                        .size());
+            }
+        }
+
+        NBTTagCompound saved = new NBTTagCompound();
+        migrated.writeToNBT(saved);
+        assertEquals(3, saved.getInteger("anchorSchema"));
+        assertEquals(
+            componentCount,
+            saved.getTagList("canonicalAnchors", 10)
+                .tagCount());
+        assertEquals(
+            coordinates.size(),
+            saved.getTagList("legacyAnchorAliases", 10)
+                .tagCount());
+        QuantumControllerRegistry restored = registry();
+        restored.readFromNBT(saved);
+        restored = reload(restored);
+        assertEquals(coordinates, restored.getAll());
+        for (int component = 0; component < componentCount; component++) {
+            int first = component * 8, size = 1 + component % 4;
+            QuantumControllerRegistry.CanonicalAnchor expected = anchors[component];
+            AnchorKey canonical = new AnchorKey(7, QuantumControllerRegistry.unpackX(expected.position), 64, 0);
+            for (int offset = 0; offset < size; offset++) {
+                QuantumControllerRegistry.CanonicalAnchor actual = restored.resolveAnchor(pos(first + offset), "");
+                assertNotNull(actual);
+                assertEquals(expected.position, actual.position);
+                assertEquals(expected.generation, actual.generation);
+                assertEquals(canonical, restored.canonicalKey(new AnchorKey(7, first + offset, 64, 0)));
+            }
+        }
+    }
+
+    @Test
+    public void bulkQuantizationKeepsIndependentComponentsSeparateWithoutGrantingLegacyAliases() {
+        int componentCount = 257;
+        Set<Long> coordinates = disconnectedMembers(componentCount);
+        QuantumControllerRegistry registry = registry();
+        registry.quantizeAll(coordinates);
+        QuantumControllerRegistry restored = reload(registry);
+        assertEquals(coordinates, restored.getAll());
+        Set<String> generations = new HashSet<>();
+        for (int component = 0; component < componentCount; component++) {
+            int first = component * 8, size = 1 + component % 4;
+            QuantumControllerRegistry.CanonicalAnchor anchor = restored.canonicalAnchor(pos(first));
+            assertNotNull(anchor);
+            assertTrue(generations.add(anchor.generation));
+            assertEquals(registry.canonicalAnchor(pos(first)).position, anchor.position);
+            assertEquals(registry.canonicalAnchor(pos(first)).generation, anchor.generation);
+            for (int offset = 0; offset < size; offset++) {
+                assertSame(anchor, restored.canonicalAnchor(pos(first + offset)));
+                assertSame(anchor, restored.resolveAnchor(pos(first + offset), ""));
+                assertEquals(
+                    size,
+                    restored.registeredStructure(pos(first + offset))
+                        .size());
+            }
+        }
+    }
+
+    @Test
+    public void physicalExpansionCoalescesPreviouslyRegisteredGenerationsOnce() {
         QuantumControllerRegistry registry = registry();
         registry.quantize(0, 64, 0);
         registry.quantize(2, 64, 0);
         long revision = registry.getRevision();
-        assertFalse(registry.canExtendStructure(members(0, 1, 2)));
-        assertFalse(registry.quantizeAll(members(0, 1, 2), pos(1)));
-        assertFalse(registry.isQuantized(pos(1)));
-        assertEquals(revision, registry.getRevision());
-        assertNotEquals(registry.canonicalAnchor(pos(0)).generation, registry.canonicalAnchor(pos(2)).generation);
+        assertTrue(registry.canExtendStructure(members(0, 1, 2)));
+        assertTrue(registry.quantizeAll(members(0, 1, 2), pos(1)));
+        assertTrue(registry.isQuantized(pos(1)));
+        assertTrue(registry.getRevision() > revision);
+        assertSame(registry.canonicalAnchor(pos(0)), registry.canonicalAnchor(pos(2)));
     }
 
     @Test
@@ -103,9 +198,9 @@ public class QuantumCanonicalAnchorTest {
         current.quantizeAll(members(0, 1, 2), pos(2));
         assertNotEquals(generation, current.canonicalAnchor(pos(0)).generation);
         current = reload(current);
-        assertNull(current.resolveAnchor(pos(0), "erased-by-old-cancel"));
-        assertNull(current.resolveAnchor(pos(1), generation));
-        assertNull(current.resolveAnchor(pos(2), ""));
+        assertSame(current.canonicalAnchor(pos(0)), current.resolveAnchor(pos(0), "erased-by-old-cancel"));
+        assertSame(current.canonicalAnchor(pos(1)), current.resolveAnchor(pos(1), generation));
+        assertSame(current.canonicalAnchor(pos(2)), current.resolveAnchor(pos(2), ""));
         assertTrue(
             current.legacyMembers(members(0, 1, 2), current.canonicalAnchor(pos(0)).generation)
                 .isEmpty());
@@ -146,6 +241,14 @@ public class QuantumCanonicalAnchorTest {
 
     private static long pos(int x) {
         return QuantumControllerRegistry.pack(x, 64, 0);
+    }
+
+    private static Set<Long> disconnectedMembers(int componentCount) {
+        Set<Long> result = new HashSet<>();
+        for (int component = 0; component < componentCount; component++) {
+            for (int offset = 0; offset < 1 + component % 4; offset++) result.add(pos(component * 8 + offset));
+        }
+        return result;
     }
 
     private static Set<Long> members(int... xs) {

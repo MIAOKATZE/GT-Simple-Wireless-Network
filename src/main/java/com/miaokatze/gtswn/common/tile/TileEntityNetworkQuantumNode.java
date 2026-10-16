@@ -25,6 +25,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.AnchorKey;
 import com.miaokatze.gtswn.common.quantum.AnchorReachability;
+import com.miaokatze.gtswn.common.quantum.QuantumConnectionMembership;
 import com.miaokatze.gtswn.common.quantum.QuantumConnectionSecurity;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
@@ -169,6 +170,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private String anchorGeneration = "";
     private QuantumControllerRegistry normalizedAnchorRegistry;
     private long normalizedAnchorRevision = Long.MIN_VALUE;
+    private boolean normalizedAnchorValid;
 
     // Informational placement identity; AE proxy playerID remains the security authority.
     private String placerUUID = "";
@@ -202,6 +204,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private final List<ItemStack> recoveredPartDrops = new ArrayList<>();
 
     private boolean partMigrationPending = true;
+
+    /** Per-face repair schedules are runtime facts, never cached native authorization decisions. */
+    private final PartConnectionRetry[] partConnectionRetries = new PartConnectionRetry[6];
+    private int partConnectionCursor;
 
     private static final String NBT_RECOVERED_PART_DROPS = "recoveredPartDrops";
 
@@ -322,6 +328,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.anchorY = y;
         this.anchorZ = z;
         this.anchorGeneration = generation;
+        com.miaokatze.gtswn.common.quantum.QuantumSecurityScopeIndex.anchorChanged(this);
         if (DebugTestGate.probesActive())
             TestWorldProbes.at(this, Type.QUANTUM_NODE_ANCHOR, "anchor=" + dim + ":" + x + ":" + y + ":" + z);
         QuantumNetworkColorSync.track(this);
@@ -360,10 +367,15 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
         long revision = registry.getRevision();
-        if (normalizedAnchorRegistry == registry && normalizedAnchorRevision == revision) return true;
+        if (normalizedAnchorRegistry == registry && normalizedAnchorRevision == revision) return normalizedAnchorValid;
         QuantumControllerRegistry.CanonicalAnchor anchor = registry
             .resolveAnchor(QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ), anchorGeneration);
-        if (anchor == null) return false;
+        if (anchor == null) {
+            normalizedAnchorRegistry = registry;
+            normalizedAnchorRevision = revision;
+            normalizedAnchorValid = false;
+            return false;
+        }
         if (anchor.position != QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ)
             || !anchor.generation.equals(anchorGeneration)) {
             replaceAnchor(
@@ -374,7 +386,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 anchor.generation);
         }
         normalizedAnchorRegistry = registry;
-        normalizedAnchorRevision = revision;
+        normalizedAnchorRevision = registry.getRevision();
+        normalizedAnchorValid = true;
         return true;
     }
 
@@ -486,17 +499,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return false;
         }
         IGridNode node = this.gridProxy.getNode();
-        if (node == null || !node.getConnections()
-            .contains(this.connection)) return false;
+        if (node == null || !QuantumConnectionMembership.contains(node, this.connection)) return false;
         // A pre-existing direct native edge may be adopted without allocating a relay.
         if (bridgeRelayNode == null) return true;
         return anchorConnection != null && bridgeTargetNode != null
-            && bridgeRelayNode.getConnections()
-                .contains(connection)
-            && bridgeRelayNode.getConnections()
-                .contains(anchorConnection)
-            && bridgeTargetNode.getConnections()
-                .contains(anchorConnection)
+            && QuantumConnectionMembership.contains(bridgeRelayNode, connection)
+            && QuantumConnectionMembership.contains(bridgeRelayNode, anchorConnection)
+            && QuantumConnectionMembership.contains(bridgeTargetNode, anchorConnection)
             && node.getGrid() == bridgeRelayNode.getGrid()
             && node.getGrid() == bridgeTargetNode.getGrid();
     }
@@ -934,7 +943,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 IGridNode partNode = part.getGridNode();
                 if (proxyNode != null && partNode != null && findDirectConnection(proxyNode, partNode) == null) {
                     try {
-                        new GridConnection(proxyNode, partNode, ForgeDirection.UNKNOWN);
+                        connectPartNodes(proxyNode, partNode);
                     } catch (FailedConnection e) {
                         // 建连失败回滚（仿容器 :237-243）：拆掉装入的部件，防止其游离在宿主网络之外
                         this.partContainer.removePart(placed, false);
@@ -949,7 +958,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     /**
      * 补齐 proxy↔部件连接，包括原位接管已经在世界中的裸部件容器。
      * 原生中心在装入或重载时连线；这里对账未建立的连接：
-     * 未互连即建，FailedConnection 留待下一 tick 重试。空容器/客户端零开销早退。
+     * 已存在的边保持原生生命周期；缺边修复共享桥接预算，失败按面指数退避。
      */
     private void rewirePartConnections() {
         if (worldObj == null || worldObj.isRemote || !hasParts()) {
@@ -959,24 +968,94 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (proxyNode == null) {
             return;
         }
-        for (ForgeDirection side : ForgeDirection.values()) {
-            if (side == ForgeDirection.UNKNOWN) {
-                continue;
-            }
+        long now = worldObj.getTotalWorldTime();
+        int firstSide = partConnectionCursor;
+        partConnectionCursor = (partConnectionCursor + 1) % 6;
+        for (int offset = 0; offset < 6; offset++) {
+            ForgeDirection side = ForgeDirection.VALID_DIRECTIONS[(firstSide + offset) % 6];
+            int index = side.ordinal();
             IPart part = this.partContainer.getPart(side);
             if (part == null) {
+                partConnectionRetries[index] = null;
                 continue;
             }
+            PartConnectionRetry retry = partConnectionRetries[index];
+            if (retry == null || retry.part != part || retry.core != proxyNode) {
+                retry = new PartConnectionRetry(part, proxyNode);
+                partConnectionRetries[index] = retry;
+            }
+            if (now < retry.nextAttempt) continue;
+            if (retry.node != null && findDirectConnection(proxyNode, retry.node) != null) {
+                retry.connected(now);
+                continue;
+            }
+            if (!reserveConnectionAttempt()) continue;
             IGridNode partNode = part.getGridNode();
-            if (partNode == null || findDirectConnection(proxyNode, partNode) != null) {
+            retry.node = partNode;
+            if (partNode == null) {
+                retry.failed(now);
+                continue;
+            }
+            if (findDirectConnection(proxyNode, partNode) != null) {
+                retry.connected(now);
                 continue;
             }
             try {
-                new GridConnection(proxyNode, partNode, ForgeDirection.UNKNOWN);
+                connectPartNodes(proxyNode, partNode);
+                retry.connected(now);
             } catch (FailedConnection e) {
-                // 单一部件建连失败不阻断其余面（安全终端未授权等），下一 tick 重试
+                // A denied face must not repeatedly create/check native grids every tick.
+                retry.failed(now);
             }
         }
+    }
+
+    protected void connectPartNodes(IGridNode core, IGridNode part) throws FailedConnection {
+        new GridConnection(core, part, ForgeDirection.UNKNOWN);
+    }
+
+    private static final class PartConnectionRetry {
+
+        final IPart part;
+        final IGridNode core;
+        IGridNode node;
+        long nextAttempt;
+        int backoff = (int) MAINTENANCE_INTERVAL_TICKS;
+
+        PartConnectionRetry(IPart part, IGridNode core) {
+            this.part = part;
+            this.core = core;
+        }
+
+        void failed(long now) {
+            nextAttempt = now + backoff;
+            backoff = Math.min(MAX_RECONNECT_BACKOFF_TICKS, backoff * 2);
+        }
+
+        void connected(long now) {
+            nextAttempt = now + MAINTENANCE_INTERVAL_TICKS;
+            backoff = (int) MAINTENANCE_INTERVAL_TICKS;
+        }
+    }
+
+    private static boolean hasConnectionBudget() {
+        long serverTick = MinecraftServer.getServer()
+            .getTickCounter();
+        if (serverTick != connectBudgetTick) {
+            connectBudgetTick = serverTick;
+            connectsThisTick = 0;
+        }
+        if (connectsThisTick >= MAX_CONNECTS_PER_TICK) {
+            PerformanceAudit.recordConnectBudgetDeferred();
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean reserveConnectionAttempt() {
+        if (!hasConnectionBudget()) return false;
+        connectsThisTick++;
+        return true;
     }
 
     private void migrateLivePartConflicts() {
@@ -1141,7 +1220,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         int checkedDim = 0, checkedX = 0, checkedY = 0, checkedZ = 0;
         String checkedGeneration = "";
         WorldServer checkedAnchorWorld = null;
-        if (connection != null && isLinked()) {
+        if (connection != null && isLinked() && !hasUnchangedBridgeOverride()) {
             checkedDim = anchorDim;
             checkedX = anchorX;
             checkedY = anchorY;
@@ -1184,7 +1263,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 && checkedAnchorWorld == DimensionManager.getWorld(anchorDim);
             if (isLinked() && isAnchorSnapshotMatched()
                 && isAnchorStillQuantized()
-                && (unchangedAuthorization
+                && (hasUnchangedBridgeOverride() || unchangedAuthorization
                     || isNativeConnectionAuthorized(getCoreGridNode(), connection.getOtherSide(getCoreGridNode())))) {
                 return;
             }
@@ -1192,6 +1271,16 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             destroyBridgeConnection();
         }
         tryConnect();
+    }
+
+    private boolean hasUnchangedBridgeOverride() {
+        if (bridgeTargetNode == null || !isAnchorSnapshotMatched() || !isAnchorStillQuantized()) return false;
+        WorldServer anchorWorld = DimensionManager.getWorld(anchorDim);
+        if (anchorWorld == null || !anchorWorld.blockExists(anchorX, anchorY, anchorZ)) return false;
+        TileEntity controller = anchorWorld.getTileEntity(anchorX, anchorY, anchorZ);
+        return controller instanceof TileController && !controller.isInvalid()
+            && bridgeTargetNode.getMachine() == controller
+            && QuantumConnectionSecurity.hasUnchangedOverride(connection, anchorConnection);
     }
 
     // ==================== v1.6.8：网络过载爆炸 + 95% 预警 ====================
@@ -1449,27 +1538,23 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
         }
+        long nowTick = worldObj.getTotalWorldTime();
+        if (!hasConnectionBudget()) {
+            this.lastMaintenanceTick = nowTick - this.reconnectBackoff + 1;
+            return;
+        }
         if (!isNativeConnectionAuthorized(myNode, anchorNode)) {
             failReconnect(OfflineReason.NO_PERMISSION);
+            return;
+        }
+        if (!reserveConnectionAttempt()) {
+            this.lastMaintenanceTick = nowTick - this.reconnectBackoff + 1;
             return;
         }
         boolean connected = false;
         try {
             // 已核实：createGridConnection 不校验方向位/邻接，仅查自重/安全/重复
             // （appeng/core/Api.java:109 → GridConnection.java:204-246）
-            long nowTick = worldObj.getTotalWorldTime();
-            long serverTick = MinecraftServer.getServer()
-                .getTickCounter();
-            if (serverTick != connectBudgetTick) {
-                connectBudgetTick = serverTick;
-                connectsThisTick = 0;
-            }
-            if (connectsThisTick >= MAX_CONNECTS_PER_TICK) {
-                PerformanceAudit.recordConnectBudgetDeferred();
-                this.lastMaintenanceTick = nowTick - this.reconnectBackoff + 1;
-                return;
-            }
-            connectsThisTick++;
             // v1.6.23：性能审计——AE2 建连切片计时（AE2 全网重路由成本归入 ae2.connect）
             long aeT0 = PerformanceAudit.startSlice();
             try {
@@ -1540,10 +1625,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (this.connection != null) {
             IGridNode a = this.connection.a();
             IGridNode b = this.connection.b();
-            if ((a != null && a.getConnections()
-                .contains(this.connection)) || (b != null
-                    && b.getConnections()
-                        .contains(this.connection))) {
+            if ((a != null && QuantumConnectionMembership.contains(a, this.connection))
+                || (b != null && QuantumConnectionMembership.contains(b, this.connection))) {
                 PerformanceAudit.recordBridgeDestroyed();
                 long aeT0 = PerformanceAudit.startSlice();
                 try {
@@ -1557,12 +1640,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 TestWorldProbes.at(this, Type.QUANTUM_NODE_DISCONNECT, "connection=released");
         }
         if (anchorConnection != null) {
-            if (anchorConnection.a()
-                .getConnections()
-                .contains(anchorConnection)
-                || anchorConnection.b()
-                    .getConnections()
-                    .contains(anchorConnection))
+            if (QuantumConnectionMembership.contains(anchorConnection.a(), anchorConnection)
+                || QuantumConnectionMembership.contains(anchorConnection.b(), anchorConnection))
                 anchorConnection.destroy();
             anchorConnection = null;
         }
@@ -1702,6 +1781,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             this.anchorY = tag.getInteger(NBT_ANCHOR_Y);
             this.anchorZ = tag.getInteger(NBT_ANCHOR_Z);
         }
+        com.miaokatze.gtswn.common.quantum.QuantumSecurityScopeIndex.anchorChanged(this);
         // v1.6.13 任务1：防御性读取同步在线状态，防止区块加载/磁盘读取后 clientLinked 缺失
         if (tag.hasKey(NBT_SYNC_LINKED)) {
             this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);

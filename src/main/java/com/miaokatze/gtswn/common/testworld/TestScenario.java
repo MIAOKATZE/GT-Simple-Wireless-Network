@@ -13,6 +13,11 @@ public interface TestScenario {
         return 1200;
     }
 
+    /** Half-width of the authored x/z area; chunk-aligned, bounded to 32..80 blocks. */
+    default int footprintRadius() {
+        return 32;
+    }
+
     /** Heavy cases must opt out and can then run only by their explicit stable ID. */
     default boolean includeInAll() {
         return true;

@@ -27,6 +27,8 @@ import com.miaokatze.gtswn.common.quantum.QuantumNetworkSecurityRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkStatsCache;
 import com.miaokatze.gtswn.common.quantum.QuantumPolicyEpoch;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.register.BlockRegistrar;
 
 import appeng.api.AEApi;
 import appeng.api.config.Actionable;
@@ -52,6 +54,7 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
     private FakePlayer owner;
     private ItemStack terminal, previousTerminal;
     private TileEntity rejectedCandidate;
+    private TileEntityNetworkQuantumNode recoveryNode;
     private String generation;
     private int stage;
     private long stageTick, placementWorldTick;
@@ -65,7 +68,7 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
 
     @Override
     public String description() {
-        return "Native first-anchor/legacy alias, controller placement rollback, generation and policy-mixin lifecycle";
+        return "Native canonical/legacy alias, placement rollback, rebuilt terminal/node recovery and policy-mixin lifecycle";
     }
 
     @Override
@@ -84,6 +87,7 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
         terminal = null;
         previousTerminal = null;
         rejectedCandidate = null;
+        recoveryNode = null;
         generation = null;
         stage = 0;
         stageTick = ctx.tick();
@@ -120,8 +124,14 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
                     terminal.getTagCompound()
                         .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION)),
                 "New terminal carries generation");
+            TestWorldFixtures.place(ctx.world(), X + 5, Y, Z, BlockRegistrar.networkQuantumNode, 0);
+            recoveryNode = (TileEntityNetworkQuantumNode) ctx.world()
+                .getTileEntity(X + 5, Y, Z);
+            ItemNetworkQuantumTerminal.applyAnchorToNode(terminal, recoveryNode, owner);
             next(ctx, 1);
         } else if (stage == 1) {
+            if (!recoveryNode.isLinked()) return;
+            require(ctx, generation.equals(recoveryNode.getAnchorGeneration()), "Real node initially uses old binding");
             ordinaryCablePlacement(ctx);
             observer.expectedX = X + 2;
             observer.cancel = false;
@@ -194,30 +204,82 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
         } else if (stage == 5) {
             require(
                 ctx,
-                !registry.isQuantized(pos(0)) && !registry.isQuantized(pos(1)) && !registry.isQuantized(pos(2)),
-                "Actual controller removal retires whole old structure");
+                registry.isQuantized(pos(0)) && !registry.isQuantized(pos(1)) && registry.isQuantized(pos(2)),
+                "Ordinary removal keeps both surviving controller components quantum");
             require(
                 ctx,
-                !QuantumTerminalAccess.validate(owner, previousTerminal),
-                "Retired generation rejects old terminal");
-            clear(ctx);
-            placeInitial(ctx);
+                registry.canonicalAnchor(pos(0)).position == pos(0)
+                    && registry.canonicalAnchor(pos(2)).position == pos(2),
+                "Split native components each select their own surviving canonical controller");
+            require(
+                ctx,
+                QuantumTerminalAccess.validate(owner, previousTerminal) && previousTerminal.getTagCompound()
+                    .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X) == X,
+                "Old air-coordinate terminal lazily follows the surviving component through real validate");
+            if (!recoveryNode.isLinked()) return;
+            require(
+                ctx,
+                recoveryNode.getAnchorX() == X && recoveryNode.getAnchorY() == Y && recoveryNode.getAnchorZ() == Z,
+                "Existing real node naturally reconnects after ordinary canonical removal before any rebuild");
+            ItemStack restoredMiddle = controllerStack();
+            require(
+                ctx,
+                placeThroughManager(ctx, X, restoredMiddle),
+                "Real placement restores the removed middle controller between normalized components");
+            require(ctx, restoredMiddle.stackSize == 0, "Restoring the middle consumes one real controller");
             next(ctx, 6);
         } else if (stage == 6) {
+            if (!ready(ctx, 3)) return;
+            require(
+                ctx,
+                registry.isQuantized(pos(0)) && registry.isQuantized(pos(1))
+                    && registry.isQuantized(pos(2))
+                    && registry.canonicalAnchor(pos(0)) == registry.canonicalAnchor(pos(2)),
+                "Repaired physical component coalesces its defaults without retiring either endpoint");
+            IGridNode left = ((IGridHost) tile(ctx, 0)).getGridNode(ForgeDirection.UNKNOWN);
+            IGridNode right = ((IGridHost) tile(ctx, 2)).getGridNode(ForgeDirection.UNKNOWN);
+            require(
+                ctx,
+                left != null && right != null && left.getGrid() == right.getGrid() && recoveryNode.isLinked(),
+                "Repaired controllers share one real native grid and the existing node remains connected");
+            clear(ctx, true);
+            placeInitial(ctx);
+            next(ctx, 7);
+        } else if (stage == 7) {
             if (!ready(ctx, 2)) return;
             terminal = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
             clickTerminal(ctx);
             QuantumControllerRegistry.CanonicalAnchor rebuilt = registry.canonicalAnchor(pos(1));
             require(
                 ctx,
-                rebuilt != null && rebuilt.position == pos(1) && !generation.equals(rebuilt.generation),
-                "Rebuild at identical first point gets another generation");
+                rebuilt != null && rebuilt.position == pos(0) && !generation.equals(rebuilt.generation),
+                "Full fixture rebuild preserves its last established default with a new physical generation");
             require(
                 ctx,
-                !QuantumTerminalAccess.validate(owner, previousTerminal) && generation.equals(
-                    previousTerminal.getTagCompound()
-                        .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION)),
-                "Old terminal cannot adopt rebuilt generation during ordinary synchronization");
+                QuantumTerminalAccess.validate(owner, previousTerminal)
+                    && rebuilt.generation.equals(
+                        previousTerminal.getTagCompound()
+                            .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION))
+                    && previousTerminal.getTagCompound()
+                        .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X) == X
+                    && previousTerminal.getTagCompound()
+                        .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y) == Y
+                    && previousTerminal.getTagCompound()
+                        .getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z) == Z,
+                "Old terminal recovers rebuilt generation and canonical coordinate through real validate");
+            next(ctx, 8);
+        } else if (stage == 8) {
+            if (!recoveryNode.isLinked()) return;
+            QuantumControllerRegistry.CanonicalAnchor rebuilt = registry.canonicalAnchor(pos(1));
+            require(
+                ctx,
+                rebuilt.generation.equals(recoveryNode.getAnchorGeneration()) && recoveryNode.getAnchorX() == X
+                    && recoveryNode.getAnchorY() == Y
+                    && recoveryNode.getAnchorZ() == Z
+                    && owner.getUniqueID()
+                        .toString()
+                        .equals(recoveryNode.getPlacerUUID()),
+                "Existing real node reconnects and lazily calibrates without replacing its placer");
             TileEntity root = tile(ctx, 1);
             long epoch = QuantumPolicyEpoch.current();
             ((QuantumControllerIdentity) root).gtswn$setControllerIdentity(
@@ -235,22 +297,22 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
                 candidateStack.stackSize == 0 && rejectedCandidate instanceof TileController
                     && !rejectedCandidate.isInvalid(),
                 "Guard candidate consumed one controller and remains a real live tile");
-            next(ctx, 7);
-        } else if (stage == 7) {
+            next(ctx, 9);
+        } else if (stage == 9) {
             require(
                 ctx,
                 tile(ctx, 2) == rejectedCandidate && !rejectedCandidate.isInvalid(),
                 "Natural END retains the exact candidate tile; rejection is not deletion or replacement");
             require(
                 ctx,
-                !registry.isQuantized(pos(2)),
-                "Expansion rejects old-member identity mutation before adopting candidate");
+                !registry.isQuantized(pos(2)) || registry.isCurrentController(ctx.world(), pos(1)),
+                "Candidate adoption requires current physical evidence after the placement guard");
             require(
                 ctx,
-                !registry.isQuantized(pos(1)) || !registry.isCurrentController(ctx.world(), pos(1)),
-                "Expansion never overwrites original expected identity to adopt the mutated object");
+                registry.isQuantized(pos(0)) && registry.isQuantized(pos(1)),
+                "Physical identity changes never retire surviving quantum controllers or their cluster");
             ctx.pass(
-                "Native first point, legacy alias, natural END expansion/rollback, retirement/rebuild and tracked policy NBT passed");
+                "Native canonical/legacy alias, natural END expansion/rollback, rebuilt terminal/node recovery and tracked policy NBT passed");
         }
     }
 
@@ -386,7 +448,7 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
             reloaded.readFromNBT(saved);
             require(
                 ctx,
-                saved.getInteger("anchorSchema") == 2
+                saved.getInteger("anchorSchema") == 3
                     && reloaded.resolveAnchor(pos(0), "").position == selected.position
                     && reloaded.resolveAnchor(pos(0), "").generation.equals(selected.generation),
                 "Old registry migration fixes one persistent first point across NBT reload");
@@ -575,6 +637,10 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
     }
 
     private static void clear(TestContext ctx) {
+        clear(ctx, false);
+    }
+
+    private static void clear(TestContext ctx, boolean preserveRecoveryNode) {
         TestWorldFixtures.requireTestWorld(ctx.world());
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(ctx.world());
         for (int offset = 0; offset < 4; offset++) {
@@ -584,6 +650,14 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
             TestWorldProbes.addPosition(X + offset, Y, Z);
             ctx.world()
                 .setBlockToAir(X + offset, Y, Z);
+        }
+        if (!preserveRecoveryNode) {
+            TileEntity tile = ctx.world()
+                .getTileEntity(X + 5, Y, Z);
+            if (tile instanceof AEBaseTile) ((AEBaseTile) tile).disableDrops();
+            TestWorldProbes.addPosition(X + 5, Y, Z);
+            ctx.world()
+                .setBlockToAir(X + 5, Y, Z);
         }
         for (int offset = 6; offset <= 7; offset++) {
             TileEntity tile = tile(ctx, offset);
@@ -605,6 +679,7 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
             terminal = null;
             previousTerminal = null;
             rejectedCandidate = null;
+            recoveryNode = null;
             observer = null;
         }
     }

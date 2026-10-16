@@ -30,7 +30,7 @@ import gregtech.api.enums.ItemList;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.common.covers.Cover;
 
-/** Fixed, deliberately small fixtures. Every mutation is confined to the dedicated test dimension. */
+/** Bounded fixtures. Every mutation is confined to the dedicated test dimension. */
 public final class TestWorldFixtures {
 
     public static final int Y = 65;
@@ -142,8 +142,12 @@ public final class TestWorldFixtures {
     }
 
     public static BaseMetaTileEntity machine(WorldServer world, int x, int z, ItemStack stack, UUID owner) {
-        place(world, x, Y, z, GregTechAPI.sBlockMachines, 0);
-        BaseMetaTileEntity tile = (BaseMetaTileEntity) world.getTileEntity(x, Y, z);
+        return machine(world, x, Y, z, stack, owner);
+    }
+
+    public static BaseMetaTileEntity machine(WorldServer world, int x, int y, int z, ItemStack stack, UUID owner) {
+        place(world, x, y, z, GregTechAPI.sBlockMachines, 0);
+        BaseMetaTileEntity tile = (BaseMetaTileEntity) world.getTileEntity(x, y, z);
         tile.setInitialValuesAsNBT(null, (short) stack.getItemDamage());
         tile.setOwnerUuid(owner);
         tile.setOwnerName("GTSWN isolated test");
@@ -178,7 +182,7 @@ public final class TestWorldFixtures {
     public static TileEntity aeOwnedBlock(WorldServer world, int x, int y, int z, ItemStack stack,
         EntityPlayer player) {
         requireTestWorld(world);
-        if (x < -32 || x > 31 || z < -32 || z > 31 || y < 64 || y > 127)
+        if (!TestWorldFootprint.containsFixture(TestWorldManager.fixtureRadius(world), x, y, z))
             throw new IllegalArgumentException("AE fixture outside test platform");
         if (!(stack.getItem() instanceof ItemBlock))
             throw new IllegalArgumentException("AE fixture is not an item block");
@@ -193,7 +197,7 @@ public final class TestWorldFixtures {
 
     public static void place(WorldServer world, int x, int y, int z, Block block, int metadata) {
         requireTestWorld(world);
-        if (x < -32 || x > 31 || z < -32 || z > 31 || y < 64 || y > 127)
+        if (!TestWorldFootprint.containsFixture(TestWorldManager.fixtureRadius(world), x, y, z))
             throw new IllegalArgumentException("Fixture outside test platform");
         TestWorldProbes.addPosition(x, y, z);
         world.setBlockToAir(x, y, z);

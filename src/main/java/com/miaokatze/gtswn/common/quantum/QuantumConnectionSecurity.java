@@ -34,16 +34,47 @@ import appeng.tile.networking.TileController;
 public final class QuantumConnectionSecurity {
 
     private static final Set<IGridConnection> BYPASSED = Collections.newSetFromMap(new WeakHashMap<>());
+    private static long bypassRevision;
+    private static long restoredBypassRevision = -1L, restoredNativeRevision = -1L;
+    private static long restoredPolicyEpoch = -1L, restoredStructureEpoch = -1L;
+    private static boolean restoredTracked, restoredSafety;
 
     private QuantumConnectionSecurity() {}
 
     public static boolean bypassesNativeCheck(IGridNode first, IGridNode second) {
         if (!isQuantumHost(first) && !isQuantumHost(second)) return false;
-        return !Config.quantumSafetyEnabled || localOverride(first, second, new Context());
+        if (!Config.quantumSafetyEnabled) return true;
+        return bypassesNativeCheck(first, second, new Context());
+    }
+
+    private static boolean bypassesNativeCheck(IGridNode first, IGridNode second, Context context) {
+        if (!isQuantumHost(first) && !isQuantumHost(second)) return false;
+        return !Config.quantumSafetyEnabled || localOverride(first, second, context);
     }
 
     public static void clearConnections() {
         BYPASSED.clear();
+        bypassRevision++;
+        restoredTracked = false;
+    }
+
+    /**
+     * A live bridge may reuse the last complete OFF-exemption inspection while all observed facts
+     * are unchanged. ON/native ACL authorization is never retained by this shortcut.
+     */
+    public static boolean hasUnchangedOverride(IGridConnection first, IGridConnection second) {
+        if (!Config.quantumSafetyEnabled) return true;
+        return first != null && second != null
+            && restoredTracked
+            && restoredSafety
+            && restoredNativeRevision == QuantumSecurityTopology.current()
+            && restoredPolicyEpoch == QuantumPolicyEpoch.current()
+            && restoredStructureEpoch == QuantumTerminalSyncEpoch.current()
+            && restoredBypassRevision == bypassRevision
+            && BYPASSED.contains(first)
+            && BYPASSED.contains(second)
+            && isLive(first)
+            && isLive(second);
     }
 
     private static boolean isQuantumHost(IGridNode node) {
@@ -56,6 +87,11 @@ public final class QuantumConnectionSecurity {
 
     public static boolean permitsNativeConnection(IGridNode first, IGridNode second) {
         if (bypassesNativeCheck(first, second)) return true;
+        return permitsNativeConnectionAfterOverride(first, second);
+    }
+
+    /** The constructor has already evaluated the override; do not repeat that complete query. */
+    public static boolean permitsNativeConnectionAfterOverride(IGridNode first, IGridNode second) {
         for (IGridNode endpoint : new IGridNode[] { first, second }) {
             if (endpoint == null) continue;
             IGridHost host = endpoint.getMachine();
@@ -140,7 +176,7 @@ public final class QuantumConnectionSecurity {
             IGridHost host = endpoint.getMachine();
             if (host instanceof TileEntityNetworkQuantumNode || host instanceof QuantumNodeBridgeRelay
                 || QuantumIncorporationRegistry.isBillingHost(host)) {
-                BYPASSED.add(connection);
+                if (BYPASSED.add(connection)) bypassRevision++;
                 return;
             }
         }
@@ -148,7 +184,21 @@ public final class QuantumConnectionSecurity {
 
     /** Destroy every live edge admitted under the override before native authorization resumes. */
     public static void restoreNativeChecks() {
-        if (!Config.quantumSafetyEnabled || BYPASSED.isEmpty()) return;
+        if (!Config.quantumSafetyEnabled) {
+            restoredSafety = false;
+            return;
+        }
+        if (BYPASSED.isEmpty()) return;
+        long nativeRevision = QuantumSecurityTopology.current();
+        long policyEpoch = QuantumPolicyEpoch.current();
+        long structureEpoch = QuantumTerminalSyncEpoch.current();
+        long edgesRevision = bypassRevision;
+        if (restoredTracked && restoredSafety == Config.quantumSafetyEnabled
+            && restoredNativeRevision == nativeRevision
+            && restoredPolicyEpoch == policyEpoch
+            && restoredStructureEpoch == structureEpoch
+            && restoredBypassRevision == edgesRevision) return;
+        Context context = new Context();
         Set<TileEntityNetworkQuantumNode> refresh = Collections.newSetFromMap(new IdentityHashMap<>());
         ArrayList<IGridConnection> previous = new ArrayList<>();
         for (IGridConnection edge : new ArrayList<>(BYPASSED)) {
@@ -156,7 +206,8 @@ public final class QuantumConnectionSecurity {
                 BYPASSED.remove(edge);
                 continue;
             }
-            if (!bypassesNativeCheck(edge.a(), edge.b())) {
+            context.beginAuthorization();
+            if (!bypassesNativeCheck(edge.a(), edge.b(), context)) {
                 previous.add(edge);
                 BYPASSED.remove(edge);
             }
@@ -176,15 +227,19 @@ public final class QuantumConnectionSecurity {
             IGridNode core = node.getCoreGridNode();
             if (core != null) core.updateState();
         }
+        // Capture the versions from BEFORE the work. Getter/destroy callbacks and newly recorded
+        // edges may have emitted another change, which must remain pending for the next tick.
+        restoredNativeRevision = nativeRevision;
+        restoredPolicyEpoch = policyEpoch;
+        restoredStructureEpoch = structureEpoch;
+        restoredBypassRevision = edgesRevision;
+        restoredSafety = Config.quantumSafetyEnabled;
+        restoredTracked = context.allTracked;
     }
 
     private static boolean isLive(IGridConnection edge) {
-        return edge.a()
-            .getConnections()
-            .contains(edge)
-            || edge.b()
-                .getConnections()
-                .contains(edge);
+        return QuantumConnectionMembership.contains(edge.a(), edge)
+            || QuantumConnectionMembership.contains(edge.b(), edge);
     }
 
     public static boolean bypassesNetworkSafety(ItemStack terminal, IGridNode other) {
@@ -266,7 +321,7 @@ public final class QuantumConnectionSecurity {
             && scope.members.contains(QuantumControllerRegistry.pack(x, y, z));
     }
 
-    /** One synchronous authorization only. Never retain a policy, provider inventory or verdict across calls. */
+    /** One synchronous operation/batch only. No policy, inventory or verdict survives into another tick. */
     private static final class Context {
 
         private final Map<IGrid, Set<ISecurityProvider>> providersByGrid = new IdentityHashMap<>();
@@ -276,6 +331,36 @@ public final class QuantumConnectionSecurity {
         private final Map<Set<ISecurityProvider>, Inventory> inventories = new IdentityHashMap<>();
         private long policyEpoch = Long.MIN_VALUE;
         private long nativeRevision;
+        private long observedNativeRevision = QuantumSecurityTopology.current();
+        private long observedPolicyEpoch = QuantumPolicyEpoch.current();
+        private long observedStructureEpoch = QuantumTerminalSyncEpoch.current();
+        private boolean allTracked = true;
+
+        void beginAuthorization() {
+            inventories.clear();
+            if (!allTracked) {
+                anchors.clear();
+                discardSnapshots();
+            }
+            refreshSnapshots();
+        }
+
+        private void observe(IGrid grid) {
+            if (!(grid instanceof QuantumSecurityTopology.TrackedGrid)) allTracked = false;
+        }
+
+        private void refreshSnapshots() {
+            long nativeVersion = QuantumSecurityTopology.current();
+            long policyVersion = QuantumPolicyEpoch.current();
+            long structureVersion = QuantumTerminalSyncEpoch.current();
+            if (observedNativeRevision == nativeVersion && observedPolicyEpoch == policyVersion
+                && observedStructureEpoch == structureVersion) return;
+            observedNativeRevision = nativeVersion;
+            observedPolicyEpoch = policyVersion;
+            observedStructureEpoch = structureVersion;
+            anchors.clear();
+            clearSnapshots();
+        }
 
         void collect(IGridNode node, Set<IGrid> grids, Set<ISecurityProvider> providers) {
             Inventory inventory = inventories.computeIfAbsent(providers, ignored -> new Inventory(grids, providers));
@@ -308,10 +393,12 @@ public final class QuantumConnectionSecurity {
             if (node.getMachine() instanceof ISecurityProvider)
                 inventory.providers.add((ISecurityProvider) node.getMachine());
             IGrid grid = node.getGrid();
+            observe(grid);
             if (grid != null && inventory.grids.add(grid)) inventory.providers.addAll(providers(grid));
         }
 
         boolean safetyEnabled(Scope scope) {
+            refreshSnapshots();
             if (scope.world == null) return false;
             long currentEpoch = QuantumPolicyEpoch.current();
             if (policyEpoch != currentEpoch) {
@@ -338,6 +425,8 @@ public final class QuantumConnectionSecurity {
         }
 
         Set<ISecurityProvider> providers(IGrid grid) {
+            refreshSnapshots();
+            observe(grid);
             Set<ISecurityProvider> found = providersByGrid.get(grid);
             if (found != null) return found;
             found = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -353,26 +442,70 @@ public final class QuantumConnectionSecurity {
         }
 
         Iterable<Scope> scopes(Set<IGrid> grids) {
+            refreshSnapshots();
             Map<ScopeKey, Scope> found = new LinkedHashMap<>();
             for (IGrid grid : grids) {
+                observe(grid);
                 Map<ScopeKey, Scope> cached = scopesByGrid.get(grid);
                 if (cached == null) {
                     cached = new LinkedHashMap<>();
-                    for (Class<? extends IGridHost> type : grid.getMachinesClasses()) {
-                        if (!TileController.class.isAssignableFrom(type)
-                            && !TileEntityNetworkQuantumNode.class.isAssignableFrom(type)
-                            && !QuantumNodeBridgeRelay.class.isAssignableFrom(type)
-                            && !QuantumIncorporationRegistry.isBillingClass(type)) continue;
-                        for (IGridNode node : grid.getMachines(type)) {
+                    QuantumSecurityScopeIndex index = grid instanceof QuantumSecurityTopology.TrackedGrid
+                        ? ((QuantumSecurityTopology.TrackedGrid) grid).quantumSecurityScopes()
+                        : null;
+                    if (index != null) {
+                        // The native membership index groups source coordinates before resolving worlds/components.
+                        // Policy and component membership are deliberately resolved again for this authorization.
+                        for (AnchorKey anchor : index.anchors()) {
+                            Scope scope = new Scope(
+                                DimensionManager.getWorld(anchor.getDimension()),
+                                anchor.getDimension(),
+                                anchor.getX(),
+                                anchor.getY(),
+                                anchor.getZ());
+                            cached.putIfAbsent(new ScopeKey(scope, null), scope);
+                        }
+                        Map<World, Set<Long>> coveredControllers = new IdentityHashMap<>();
+                        for (IGridNode node : index.controllers()) {
                             IGridHost host = node.getMachine();
+                            Object machine = host;
+                            TileEntity tile = (TileEntity) machine;
+                            if (!(host instanceof QuantumPolicyEpoch.TrackedController)) allTracked = false;
+                            World world = tile.getWorldObj();
+                            if (world == null) continue;
+                            Set<Long> covered = coveredControllers.computeIfAbsent(world, ignored -> new HashSet<>());
+                            long position = QuantumControllerRegistry.pack(tile.xCoord, tile.yCoord, tile.zCoord);
+                            boolean loaded = world.blockExists(tile.xCoord, tile.yCoord, tile.zCoord)
+                                && world.getTileEntity(tile.xCoord, tile.yCoord, tile.zCoord) == tile;
+                            if (loaded && node.getGrid() == grid && covered.contains(position)) continue;
                             Scope scope = scope(host);
                             if (scope == null) continue;
-                            // The machine-set node already exists. Never resolve a remote anchor to build a key.
-                            Object machine = host;
-                            IGrid actual = machine instanceof TileController && scope.world != null
-                                && scope.world.blockExists(scope.x, scope.y, scope.z)
-                                && scope.world.getTileEntity(scope.x, scope.y, scope.z) == host ? node.getGrid() : null;
+                            IGrid actual = loaded ? node.getGrid() : null;
                             cached.putIfAbsent(new ScopeKey(scope, actual), scope);
+                            if (actual == grid) {
+                                // Every peer still checks its loaded identity/native membership before skipping.
+                                covered.addAll(scope.members);
+                            }
+                        }
+                    } else {
+                        for (Class<? extends IGridHost> type : grid.getMachinesClasses()) {
+                            if (!TileController.class.isAssignableFrom(type)
+                                && !TileEntityNetworkQuantumNode.class.isAssignableFrom(type)
+                                && !QuantumNodeBridgeRelay.class.isAssignableFrom(type)
+                                && !QuantumIncorporationRegistry.isBillingClass(type)) continue;
+                            for (IGridNode node : grid.getMachines(type)) {
+                                IGridHost host = node.getMachine();
+                                Object machine = host;
+                                if (machine instanceof TileController
+                                    && !(host instanceof QuantumPolicyEpoch.TrackedController)) allTracked = false;
+                                Scope scope = scope(host);
+                                if (scope == null) continue;
+                                // The machine-set node already exists. Never resolve a remote anchor to build a key.
+                                IGrid actual = machine instanceof TileController && scope.world != null
+                                    && scope.world.blockExists(scope.x, scope.y, scope.z)
+                                    && scope.world.getTileEntity(scope.x, scope.y, scope.z) == host ? node.getGrid()
+                                        : null;
+                                cached.putIfAbsent(new ScopeKey(scope, actual), scope);
+                            }
                         }
                     }
                     scopesByGrid.put(grid, cached);
@@ -384,6 +517,7 @@ public final class QuantumConnectionSecurity {
         }
 
         IGridNode anchorNode(Scope scope) {
+            refreshSnapshots();
             if (scope.world == null) return null;
             ScopeKey key = new ScopeKey(scope, null);
             if (!scope.world.blockExists(scope.x, scope.y, scope.z)) {
@@ -395,6 +529,8 @@ public final class QuantumConnectionSecurity {
                 if (anchors.remove(key) != null) clearSnapshots();
                 return null;
             }
+            if (tile instanceof TileController && !(tile instanceof QuantumPolicyEpoch.TrackedController))
+                allTracked = false;
             AnchorObservation known = anchors.get(key);
             IGrid currentGrid = known == null || known.node == null ? null : known.node.getGrid();
             if (known != null && known.tile == tile) {
@@ -404,12 +540,23 @@ public final class QuantumConnectionSecurity {
                 }
                 return known.node;
             }
-            // This normal lookup may lazily create a node and merge native grids. Do not reuse earlier inventories.
-            discardSnapshots();
+            // A hooked native grid proves whether this normal lookup actually changed membership.
+            // Unhooked grids retain the conservative invalidation used for arbitrary lazy getters.
+            long beforeNative = QuantumSecurityTopology.current();
+            long beforePolicy = QuantumPolicyEpoch.current();
             IGridNode node = ((IGridHost) tile).getGridNode(ForgeDirection.UNKNOWN);
+            IGrid grid = node == null ? null : node.getGrid();
+            observe(grid);
             // Booting null results are stable until a natural tick/readiness callback, not advanced by this query.
             anchors.put(key, new AnchorObservation(tile, node));
-            clearSnapshots();
+            if (!(grid instanceof QuantumSecurityTopology.TrackedGrid)
+                || beforeNative != QuantumSecurityTopology.current()
+                || beforePolicy != QuantumPolicyEpoch.current()) {
+                observedNativeRevision = QuantumSecurityTopology.current();
+                observedPolicyEpoch = QuantumPolicyEpoch.current();
+                observedStructureEpoch = QuantumTerminalSyncEpoch.current();
+                clearSnapshots();
+            }
             return anchorSource(key);
         }
 
@@ -511,7 +658,8 @@ public final class QuantumConnectionSecurity {
         }
 
         boolean sameNetwork(Scope other) {
-            return dimension == other.dimension && !Collections.disjoint(members, other.members);
+            return dimension == other.dimension
+                && (members == other.members || !Collections.disjoint(members, other.members));
         }
     }
 }

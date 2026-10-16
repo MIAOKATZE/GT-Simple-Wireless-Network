@@ -10,6 +10,7 @@
     "ae2.PathingCalculationMixin",
     "ae2.QuantumIncorporationGridNodeMixin",
     "ae2.QuantumConnectionSecurityMixin",
+    "ae2.QuantumSecurityGridMixin",
     "ae2.TileCableBusAccessor",
     "ae2.CableBusStorageMixin",
     "ae2.QuantumCableBusContainerMixin",
@@ -24,6 +25,7 @@
     "mm.PendingBlockMixin"
   ],
   "client": [
+    "minecraft.KeyBindingRegistryMixin",
     "minecraft.HeldChargeSyncMixin",
     "gregtech.QuantumNodeWrenchOverlayMixin"
   ]

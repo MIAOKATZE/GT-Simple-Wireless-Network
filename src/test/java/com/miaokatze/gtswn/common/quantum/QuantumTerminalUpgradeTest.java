@@ -79,8 +79,7 @@ public class QuantumTerminalUpgradeTest {
     }
 
     @Test
-    public void pendingUpgradeRetriesOnlyWhenWorldRegistryOrJournalChangesAndNeverAdoptsWrongGeneration()
-        throws Exception {
+    public void pendingUpgradeRetriesOnlyOnSourceEventsAndRecoversRetiredCoordinateHints() throws Exception {
         try (Fixture fixture = new Fixture(false)) {
             ItemStack stack = terminal();
             for (int i = 0; i < 10; i++) fixture.item.onUpdate(stack, fixture.world, fixture.actor, 0, true);
@@ -100,7 +99,7 @@ public class QuantumTerminalUpgradeTest {
                 ItemNetworkQuantumTerminal.ANCHOR_SCHEMA,
                 stack.getTagCompound()
                     .getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
-            // A later genuinely rebuilt structure has no upgrade-captured alias to adopt stale hints.
+            // A rebuilt, explicitly registered coordinate supersedes an obsolete saved generation hint.
             fixture.registry.dequantize(pos());
             fixture.registry.quantize(0, 64, 0);
             ItemStack stale = terminal();
@@ -116,13 +115,13 @@ public class QuantumTerminalUpgradeTest {
                 Collections.singleton(QuantumControllerRegistry.pack(99, 64, 0)),
                 new AnchorKey(DIM, 100, 64, 0));
             fixture.item.onUpdate(stale, fixture.world, fixture.actor, 0, true);
-            assertEquals(failed + 1, fixture.registry.resolutions);
+            assertEquals(failed, fixture.registry.resolutions);
             assertEquals(
-                0,
+                ItemNetworkQuantumTerminal.ANCHOR_SCHEMA,
                 stale.getTagCompound()
                     .getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
             assertEquals(
-                "retired-generation",
+                fixture.registry.canonicalAnchor(pos()).generation,
                 stale.getTagCompound()
                     .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
         }
@@ -191,11 +190,17 @@ public class QuantumTerminalUpgradeTest {
                 fixture.registry.dequantize(pos());
                 assertEquals(false, normalize.invoke(node));
                 assertEquals(false, incNormalize.invoke(incorporation, entry, fixture.world));
+                int failed = fixture.registry.resolutions;
+                for (int i = 0; i < 10_000; i++) {
+                    assertEquals(false, normalize.invoke(node));
+                    assertEquals(false, incNormalize.invoke(incorporation, entry, fixture.world));
+                }
+                assertEquals(failed, fixture.registry.resolutions);
                 CountingRegistry replacement = new CountingRegistry();
                 replacement.quantize(0, 64, 0);
                 fixture.world.perWorldStorage.setData(QuantumControllerRegistry.DATA_NAME, replacement);
-                assertEquals(false, normalize.invoke(node));
-                assertEquals(false, incNormalize.invoke(incorporation, entry, fixture.world));
+                assertEquals(true, normalize.invoke(node));
+                assertEquals(true, incNormalize.invoke(incorporation, entry, fixture.world));
                 assertEquals(2, replacement.resolutions);
             } finally {
                 QuantumNetworkColorSync.untrack(node);
@@ -268,7 +273,7 @@ public class QuantumTerminalUpgradeTest {
             assertNotEquals(persistedEpoch, QuantumTerminalSyncEpoch.current());
             fixture.item.onUpdate(stack, fixture.world, fixture.actor, 0, true);
             assertEquals(QuantumTerminalSyncEpoch.current(), tag.getLong(ItemNetworkQuantumTerminal.NBT_SYNC_EPOCH));
-            assertEquals(beforeColor, fixture.registry.resolutions);
+            assertEquals(beforeColor + 1, fixture.registry.resolutions);
             assertEquals("persisted-owner", tag.getString(QuantumTerminalAccess.NBT_OWNER_UUID));
         }
     }
@@ -453,7 +458,9 @@ public class QuantumTerminalUpgradeTest {
             tag.setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, "old-canceled-generation");
             tag.setString(QuantumTerminalAccess.NBT_OWNER_UUID, "unchanged-terminal-owner");
             fixture.item.onUpdate(terminal, fixture.world, fixture.actor, 0, false);
-            assertEquals(2, tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
+            assertEquals(
+                ItemNetworkQuantumTerminal.ANCHOR_SCHEMA,
+                tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
             assertEquals(1, tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X));
             assertEquals(currentGeneration, tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
             assertEquals("unchanged-terminal-owner", tag.getString(QuantumTerminalAccess.NBT_OWNER_UUID));
@@ -463,6 +470,47 @@ public class QuantumTerminalUpgradeTest {
                 fixture.item.onUpdate(terminal, fixture.world, fixture.actor, 0, false);
             assertEquals(0, ((CountingTag) tag).writes);
             assertEquals(reads, fixture.registry.resolutions);
+        }
+    }
+
+    @Test
+    public void retiredSaveUsesLoadedBindingMajorityOnceAndTerminalsAndNodesThenStayStable() throws Exception {
+        try (Fixture fixture = new Fixture(true)) {
+            Node[] nodes = { new Node(), new Node(), new Node(), new Node() };
+            Method normalize = TileEntityNetworkQuantumNode.class.getDeclaredMethod("normalizeCanonicalAnchor");
+            normalize.setAccessible(true);
+            try {
+                for (int i = 0; i < nodes.length; i++) {
+                    nodes[i].setWorldObj(fixture.world);
+                    nodes[i].setAnchor(DIM, i == 0 ? 0 : 1, 64, 0, "already-retired-generation");
+                    assertEquals(false, normalize.invoke(nodes[i]));
+                }
+                java.util.Set<Long> members = new java.util.HashSet<>();
+                members.add(pos());
+                members.add(QuantumControllerRegistry.pack(1, 64, 0));
+                assertTrue(fixture.registry.quantizeAll(members, pos()));
+                assertEquals(1, QuantumControllerRegistry.unpackX(fixture.registry.canonicalAnchor(pos()).position));
+                for (Node node : nodes) {
+                    assertEquals(true, normalize.invoke(node));
+                    assertEquals(1, node.getAnchorX());
+                }
+                ItemStack stack = terminal();
+                NBTTagCompound tag = stack.getTagCompound();
+                tag.setByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA, (byte) 2);
+                tag.setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, "already-retired-generation");
+                fixture.item.onUpdate(stack, fixture.world, fixture.actor, 0, false);
+                assertEquals(1, tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X));
+                int resolved = fixture.registry.resolutions;
+                ((CountingTag) tag).writes = 0;
+                for (int tick = 0; tick < 10_000; tick++) {
+                    fixture.item.onUpdate(stack, fixture.world, fixture.actor, 0, false);
+                    for (Node node : nodes) assertEquals(true, normalize.invoke(node));
+                }
+                assertEquals(resolved, fixture.registry.resolutions);
+                assertEquals(0, ((CountingTag) tag).writes);
+            } finally {
+                for (Node node : nodes) QuantumNetworkColorSync.untrack(node);
+            }
         }
     }
 

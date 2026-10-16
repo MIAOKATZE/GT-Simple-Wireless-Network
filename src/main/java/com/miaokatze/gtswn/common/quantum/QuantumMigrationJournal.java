@@ -45,6 +45,12 @@ public final class QuantumMigrationJournal extends WorldSavedData {
         return append(dimension, members, target, "", "");
     }
 
+    /** Current cluster moves apply to every pre-existing coordinate binding, regardless of obsolete hints. */
+    public long appendClusterMigration(int dimension, Set<Long> bindingCoordinates, AnchorKey target,
+        String targetGeneration) {
+        return append(dimension, bindingCoordinates, target, "", targetGeneration);
+    }
+
     public long append(int dimension, Set<Long> members, AnchorKey target, String sourceGeneration,
         String targetGeneration) {
         return append(dimension, members, target, sourceGeneration, targetGeneration, Collections.emptySet());

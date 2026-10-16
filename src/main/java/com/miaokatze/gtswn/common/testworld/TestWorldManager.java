@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.LongPredicate;
 
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
@@ -19,6 +20,8 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingSpawnEvent;
 import net.minecraftforge.event.world.WorldEvent;
 
+import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -36,7 +39,6 @@ public final class TestWorldManager {
     public static final int LAYOUT_SCHEMA = 1;
     public static final long RESET_SCAN_BUDGET_NANOS = 3_000_000L;
     public static final int RESET_SCAN_MAX_CHECKS = 65536;
-    private static final int RESET_BLOCKS = 64 * 64 * 256;
     private static final Map<String, TestScenario> SCENARIOS = new LinkedHashMap<>();
     private static final TestWorldManager EVENTS = new TestWorldManager();
     private static final List<ForgeChunkManager.Ticket> TICKETS = new ArrayList<>();
@@ -49,12 +51,16 @@ public final class TestWorldManager {
     private static int scenarioIndex;
     private static int loadIndex;
     private static int resetCursor;
+    private static TestWorldFootprint resetFootprint;
+    private static int requestedRadius = TestWorldFootprint.DEFAULT_RADIUS;
     private static long operationTicks;
     private static long tickStartNanos;
     private static long tickStartCpuNanos;
     private static TestWorldPerformance runPerformance;
     private static TestWorldPerformance phasePerformance;
     private static TestWorldPerformance tickPerformance;
+    private static TestContext tickWorkloadContext;
+    private static TestWorldReport.WorkloadPhase tickWorkloadPhase;
     private static TestWorldPerformance closedResetPerformance;
     private static TestContext closedPerformanceContext;
     private static boolean processingTick;
@@ -85,6 +91,7 @@ public final class TestWorldManager {
             .matches("[a-z0-9][a-z0-9_.-]{0,79}")) throw new IllegalArgumentException("Invalid test scenario ID");
         if (SCENARIOS.containsKey(scenario.id()))
             throw new IllegalArgumentException("Duplicate scenario " + scenario.id());
+        new TestWorldFootprint(scenario.footprintRadius());
         SCENARIOS.put(scenario.id(), scenario);
     }
 
@@ -280,6 +287,10 @@ public final class TestWorldManager {
     }
 
     private static void beginReset() {
+        requestedRadius = selection == null ? TestWorldFootprint.DEFAULT_RADIUS
+            : selection.get(scenarioIndex)
+                .footprintRadius();
+        resetFootprint = data.beginResetFootprint(requestedRadius);
         phasePerformance = new TestWorldPerformance();
         phase = "BUILDING";
         loadIndex = 0;
@@ -291,7 +302,7 @@ public final class TestWorldManager {
         if (report != null) {
             data.lastOutcome = phase;
             report.status = phase;
-            report.event(null, report.elapsedTicks, "reset", "bounded reset x/z=-32..31, y=0..255");
+            report.event(null, report.elapsedTicks, "reset", "bounded reset " + resetFootprint.describe());
             report.write(reportFile, false);
         }
     }
@@ -301,24 +312,53 @@ public final class TestWorldManager {
         for (ForgeChunkManager.Ticket acquired : TICKETS) if (acquired.getChunkList()
             .contains(chunk)) return;
         ForgeChunkManager.Ticket ticket = TICKETS.isEmpty() ? null : TICKETS.get(TICKETS.size() - 1);
-        if (ticket == null || ticket.getChunkList()
-            .size() >= ticket.getChunkListDepth()) {
+        if (ticket == null || !ticketHasRoom(
+            ticket.getChunkListDepth(),
+            ticket.getChunkList()
+                .size())) {
             ticket = ForgeChunkManager
                 .requestTicket(GTSimpleWirelessNetwork.instance, world, ForgeChunkManager.Type.NORMAL);
             if (ticket == null) throw new IllegalStateException("Forge chunk ticket refused; test stopped");
             TICKETS.add(ticket);
             ticket.getModData()
                 .setBoolean("GTSWNTestRun", true);
-            if (ticket.getChunkListDepth() <= 0) throw new IllegalStateException("Forge chunk ticket depth is zero");
         }
         ForgeChunkManager.forceChunk(ticket, chunk);
     }
 
+    /** Forge evicts only for a positive maxDepth; zero and negative native depths are unbounded. */
+    static boolean ticketHasRoom(int depth, int chunks) {
+        return depth <= 0 || chunks < depth;
+    }
+
+    /** Verify the actual active leases and loaded chunks, rather than the count of past load requests. */
+    static int verifiedForcedChunkCount(WorldServer expectedWorld, int radius) {
+        if (world != expectedWorld)
+            throw new IllegalStateException("Chunk lease verification requires the active test world");
+        TestWorldFootprint footprint = new TestWorldFootprint(radius);
+        int count = 0;
+        for (int i = 0; i < footprint.chunkCount(); i++) {
+            ChunkCoordIntPair chunk = new ChunkCoordIntPair(footprint.chunkX(i), footprint.chunkZ(i));
+            boolean leased = false;
+            for (ForgeChunkManager.Ticket ticket : TICKETS) {
+                if (ticket.getChunkList()
+                    .contains(chunk)
+                    && ForgeChunkManager.getPersistentChunksFor(world)
+                        .containsEntry(chunk, ticket)) {
+                    leased = true;
+                    break;
+                }
+            }
+            if (leased && world.theChunkProviderServer.chunkExists(chunk.chunkXPos, chunk.chunkZPos)) count++;
+        }
+        return count;
+    }
+
     private static void buildTick() {
         if (++operationTicks > 6000) throw new IllegalStateException("Build exceeded 6000 real server ticks");
-        if (loadIndex < 16) {
-            int cx = -2 + loadIndex / 4;
-            int cz = -2 + loadIndex % 4;
+        if (loadIndex < resetFootprint.chunkCount()) {
+            int cx = resetFootprint.chunkX(loadIndex);
+            int cz = resetFootprint.chunkZ(loadIndex);
             leaseChunk(cx, cz);
             world.theChunkProviderServer.loadChunk(cx, cz);
             loadIndex++;
@@ -326,11 +366,10 @@ public final class TestWorldManager {
         }
         long deadline = System.nanoTime() + RESET_SCAN_BUDGET_NANOS;
         int visited = 0;
-        while (resetCursor < RESET_BLOCKS && visited < RESET_SCAN_MAX_CHECKS) {
+        while (resetCursor < resetFootprint.blockCount() && visited < RESET_SCAN_MAX_CHECKS) {
             int y = resetCursor & 255;
-            int column = resetCursor >>> 8;
-            int x = MIN + column / 64;
-            int z = MIN + column % 64;
+            int x = resetFootprint.blockX(resetCursor);
+            int z = resetFootprint.blockZ(resetCursor);
             net.minecraft.block.Block target = y == 0 ? Blocks.bedrock : y <= 63 ? Blocks.stone : Blocks.air;
             if (world.getBlock(x, y, z) != target || world.getBlockMetadata(x, y, z) != 0)
                 world.setBlock(x, y, z, target, 0, 3);
@@ -338,16 +377,18 @@ public final class TestWorldManager {
             visited++;
             if ((visited & 63) == 0 && System.nanoTime() >= deadline) return;
         }
-        if (resetCursor < RESET_BLOCKS) return;
+        if (resetCursor < resetFootprint.blockCount()) return;
         // Only entities inside the authored reset volume belong to this operation. Players are preserved.
         for (Object object : new ArrayList<>(world.loadedEntityList)) {
             Entity entity = (Entity) object;
-            if (!(entity instanceof EntityPlayer) && entity.posX >= MIN
-                && entity.posX < MAX + 1
-                && entity.posZ >= MIN
-                && entity.posZ < MAX + 1) entity.setDead();
+            if (!(entity instanceof EntityPlayer) && entity.posX >= -resetFootprint.radius
+                && entity.posX < resetFootprint.radius
+                && entity.posZ >= -resetFootprint.radius
+                && entity.posZ < resetFootprint.radius) entity.setDead();
         }
+        forgetResetQuantumHistory();
         TestWorldFixtures.build(world);
+        data.completeResetFootprint(requestedRadius);
         data.layoutSchema = LAYOUT_SCHEMA;
         data.built = true;
         data.operation = "COMPLETE";
@@ -357,15 +398,40 @@ public final class TestWorldManager {
         if (selection == null) {
             TestWorldReport.Result result = report.results.get(0);
             result.status = "PASS";
-            result.detail = "Bounded reset completed and authored fixtures built";
+            result.detail = "Bounded reset completed " + resetFootprint.describe() + "; authored fixtures built";
             result.ticks = operationTicks;
             complete("PASS", null);
             GTSimpleWirelessNetwork.LOG.info("[GTSWN-TEST] BUILD DONE dimension={}", TestDimension.dimId());
         } else startScenario();
     }
 
+    /** Called only after the entire authored reset volume has been physically cleared. */
+    private static void forgetResetQuantumHistory() {
+        TestWorldFixtures.requireTestWorld(world);
+        int radius = resetFootprint.radius;
+        LongPredicate clearedVolume = position -> {
+            int x = QuantumControllerRegistry.unpackX(position);
+            int y = QuantumControllerRegistry.unpackY(position);
+            int z = QuantumControllerRegistry.unpackZ(position);
+            return x >= -radius && x < radius && z >= -radius && z < radius && y >= 0 && y <= 255;
+        };
+        QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
+        controllers.forgetRemovedControllerHistory(clearedVolume);
+        QuantumNetworkColorRegistry.get(world)
+            .forgetColors(
+                position -> clearedVolume.test(position) && !controllers.isQuantized(position)
+                    && !controllers.isSuspendedController(position));
+    }
+
     private static void startScenario() {
         TestScenario scenario = selection.get(scenarioIndex);
+        TestWorldFootprint footprint = new TestWorldFootprint(requestedRadius);
+        if (resetFootprint.radius != footprint.radius) {
+            releaseTickets();
+            // All target chunks were loaded incrementally during reset; forcing them does not load new chunks.
+            for (int index = 0; index < footprint.chunkCount(); index++)
+                leaseChunk(footprint.chunkX(index), footprint.chunkZ(index));
+        }
         TestWorldReport.Result result = report.results.get(scenarioIndex);
         result.status = "RUNNING";
         result.detail = "running";
@@ -381,7 +447,7 @@ public final class TestWorldManager {
             TestContext context = current;
             if (context != null) context.event(type, detail);
         }, TestDimension.dimId());
-        current.event("start", scenario.id());
+        current.event("start", scenario.id() + "; footprint " + footprint.describe());
         report.write(reportFile, false);
         long started = System.nanoTime();
         try {
@@ -566,6 +632,26 @@ public final class TestWorldManager {
         return journal().built;
     }
 
+    /** A fixture may expand only inside the area already journaled by the active operation. */
+    static int fixtureRadius(WorldServer candidate) {
+        return candidate == world && ("BUILDING".equals(phase) || "RUNNING".equals(phase)) ? requestedRadius
+            : TestWorldFootprint.DEFAULT_RADIUS;
+    }
+
+    private static String footprintStatus(TestWorldData state) {
+        TestWorldFootprint authored = new TestWorldFootprint(TestWorldFootprint.savedRadius(state.authoredRadius));
+        return " footprint=" + authored.describe()
+            + ("BUILDING".equals(phase) && resetFootprint != null ? " scan=" + resetFootprint.describe()
+                + " chunks="
+                + loadIndex
+                + "/"
+                + resetFootprint.chunkCount()
+                + " reset="
+                + resetCursor
+                + "/"
+                + resetFootprint.blockCount() : "");
+    }
+
     public static String status() {
         if (TestDimension.problem() != null) return "DISABLED: " + TestDimension.problem();
         TestWorldData state = journal();
@@ -577,7 +663,7 @@ public final class TestWorldManager {
             + state.operation
             + " tickets="
             + TICKETS.size()
-            + ("BUILDING".equals(phase) ? " chunks=" + loadIndex + "/16 reset=" + resetCursor + "/" + RESET_BLOCKS : "")
+            + footprintStatus(state)
             + (current == null ? "" : " scenario=" + current.result.id + " tick=" + current.tick())
             + " run="
             + state.lastRun
@@ -598,6 +684,7 @@ public final class TestWorldManager {
             + phase
             + " report="
             + reportPath
+            + footprintStatus(state)
             + writeStatus()
             + retry;
     }
@@ -670,6 +757,8 @@ public final class TestWorldManager {
         tickStartNanos = System.nanoTime();
         tickStartCpuNanos = runPerformance.cpuTime();
         tickPerformance = phasePerformance;
+        tickWorkloadContext = current;
+        tickWorkloadPhase = current == null ? null : current.workloadPhase();
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -683,6 +772,8 @@ public final class TestWorldManager {
         TestWorldReport measuredReport = report;
         TestWorldPerformance measuredRun = runPerformance;
         TestWorldPerformance measuredPhase = phasePerformance;
+        TestContext measuredContext = current;
+        TestWorldReport.WorkloadPhase measuredWorkloadPhase = current == null ? null : current.workloadPhase();
         long workStarted = System.nanoTime();
         long workCpuStarted = measuredRun == null ? -1 : measuredRun.cpuTime();
         if (measuredReport != null) measuredReport.elapsedTicks++;
@@ -709,6 +800,12 @@ public final class TestWorldManager {
                 measuredPhase == tickPerformance ? cpuWindow : -1,
                 work,
                 workCpu);
+            if (measuredContext != null) measuredContext.recordWorkloadFrame(
+                measuredWorkloadPhase,
+                measuredContext == tickWorkloadContext && measuredWorkloadPhase == tickWorkloadPhase ? window : -1,
+                measuredContext == tickWorkloadContext && measuredWorkloadPhase == tickWorkloadPhase ? cpuWindow : -1,
+                work,
+                workCpu);
             if (measuredReport != null) {
                 measuredReport.managerWorkNanos += work;
                 measuredReport.managerMaxWorkNanos = Math.max(measuredReport.managerMaxWorkNanos, work);
@@ -722,6 +819,8 @@ public final class TestWorldManager {
             }
             tickStartNanos = 0;
             tickPerformance = null;
+            tickWorkloadContext = null;
+            tickWorkloadPhase = null;
             processingTick = false;
             if (deferredFinalReport != null) {
                 finishPerformance(deferredFinalReport);
@@ -745,6 +844,7 @@ public final class TestWorldManager {
             TestContext context = closedPerformanceContext;
             if (context.performance() != null) context.result.performance = context.performance()
                 .finish();
+            context.finishWorkloadPerformance();
             closedPerformanceContext = null;
         }
     }
@@ -755,5 +855,7 @@ public final class TestWorldManager {
         runPerformance = null;
         phasePerformance = null;
         tickPerformance = null;
+        tickWorkloadContext = null;
+        tickWorkloadPhase = null;
     }
 }

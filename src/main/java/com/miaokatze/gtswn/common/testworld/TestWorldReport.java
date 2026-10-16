@@ -75,11 +75,149 @@ public final class TestWorldReport {
         public long maxCallbackNanos;
         public long droppedEvents;
         public TestWorldPerformance.Snapshot performance;
+        public Workload workload;
         public final Map<String, Long> observedBusinessEvents = new LinkedHashMap<>();
         public final List<Trace> events = new ArrayList<>();
 
         Result(String id) {
             this.id = id;
+        }
+    }
+
+    /** Structured native fixture facts survive the bounded event journal. No live world objects enter reports. */
+    public static final class Workload {
+
+        public String kind = "native-ae-storage";
+        public String phase = "not_started";
+        public String retention = "World blocks and bound terminal remain after completion or stop. The runner releases its chunk tickets; subsequent ticking needs a player or independent chunk loading. build/reset removes the fixture.";
+        public final Map<String, Long> expected = new LinkedHashMap<>();
+        public final Map<String, Long> observed = new LinkedHashMap<>();
+        public final List<String> itemTypes = new ArrayList<>();
+        public final List<Cell> cells = new ArrayList<>();
+        public final List<WorkloadPhase> phases = new ArrayList<>();
+        public final List<Machine> machines = new ArrayList<>();
+        public final List<TransferGroup> transferGroups = new ArrayList<>();
+        public final List<String> coverageLimitations = new ArrayList<>();
+
+        Workload copy() {
+            Workload target = new Workload();
+            target.kind = kind;
+            target.phase = phase;
+            target.retention = retention;
+            target.expected.putAll(expected);
+            target.observed.putAll(observed);
+            target.itemTypes.addAll(itemTypes);
+            for (Cell cell : cells) target.cells.add(new Cell(cell));
+            for (WorkloadPhase phase : phases) target.phases.add(new WorkloadPhase(phase));
+            for (Machine machine : machines) target.machines.add(new Machine(machine));
+            for (TransferGroup group : transferGroups) target.transferGroups.add(new TransferGroup(group));
+            target.coverageLimitations.addAll(coverageLimitations);
+            return target;
+        }
+    }
+
+    /** Native bus sources and physical ME chest insertion provide machine-specific material evidence. */
+    public static final class Machine {
+
+        public final int id, x, y, z, metaId;
+        public long exportedInput, importedOutput, progressSamples, activeSamples;
+        public long chestInsertedOutput, auditedInputItems, auditedOutputItems, maxObservedRawEU;
+        public boolean nativeDebugEnergyCover;
+        public final List<Long> windowExportedInput = new ArrayList<>();
+        public final List<Long> windowImportedOutput = new ArrayList<>();
+        public final List<Long> windowChestInsertedOutput = new ArrayList<>();
+
+        Machine(int id, int x, int y, int z, int metaId) {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.metaId = metaId;
+        }
+
+        private Machine(Machine source) {
+            this(source.id, source.x, source.y, source.z, source.metaId);
+            exportedInput = source.exportedInput;
+            importedOutput = source.importedOutput;
+            progressSamples = source.progressSamples;
+            activeSamples = source.activeSamples;
+            chestInsertedOutput = source.chestInsertedOutput;
+            auditedInputItems = source.auditedInputItems;
+            auditedOutputItems = source.auditedOutputItems;
+            maxObservedRawEU = source.maxObservedRawEU;
+            nativeDebugEnergyCover = source.nativeDebugEnergyCover;
+            windowExportedInput.addAll(source.windowExportedInput);
+            windowImportedOutput.addAll(source.windowImportedOutput);
+            windowChestInsertedOutput.addAll(source.windowChestInsertedOutput);
+        }
+    }
+
+    public static final class TransferGroup {
+
+        public final int firstNode, nodeCount;
+        public long nativeInserted, nativeExtracted, interfacesTransferred;
+
+        TransferGroup(int firstNode, int nodeCount) {
+            this.firstNode = firstNode;
+            this.nodeCount = nodeCount;
+        }
+
+        private TransferGroup(TransferGroup source) {
+            this(source.firstNode, source.nodeCount);
+            nativeInserted = source.nativeInserted;
+            nativeExtracted = source.nativeExtracted;
+            interfacesTransferred = source.interfacesTransferred;
+        }
+    }
+
+    public static final class Cell {
+
+        public final int x, y, z, slot, itemType;
+        public final long bytes, capacity;
+        public long initializedCount, steadyCount;
+        public long initializedTypes;
+        public boolean initiallyFull, rejectedExtra, steadyObserved;
+
+        Cell(int x, int y, int z, int slot, int itemType, long bytes, long capacity) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.slot = slot;
+            this.itemType = itemType;
+            this.bytes = bytes;
+            this.capacity = capacity;
+        }
+
+        private Cell(Cell source) {
+            this(source.x, source.y, source.z, source.slot, source.itemType, source.bytes, source.capacity);
+            initializedCount = source.initializedCount;
+            steadyCount = source.steadyCount;
+            steadyObserved = source.steadyObserved;
+            initializedTypes = source.initializedTypes;
+            initiallyFull = source.initiallyFull;
+            rejectedExtra = source.rejectedExtra;
+        }
+    }
+
+    public static final class WorkloadPhase {
+
+        public final String name;
+        public final long startedTick;
+        public long endedTick;
+        public TestWorldPerformance.Snapshot performance;
+        public final Map<String, Long> observed = new LinkedHashMap<>();
+        transient TestWorldPerformance sampler;
+
+        WorkloadPhase(String name, long startedTick) {
+            this.name = name;
+            this.startedTick = startedTick;
+        }
+
+        private WorkloadPhase(WorkloadPhase source) {
+            this(source.name, source.startedTick);
+            endedTick = source.endedTick;
+            performance = source.performance;
+            observed.putAll(source.observed);
         }
     }
 
@@ -142,6 +280,7 @@ public final class TestWorldReport {
             target.maxCallbackNanos = result.maxCallbackNanos;
             target.droppedEvents = result.droppedEvents;
             target.performance = result.performance;
+            target.workload = result.workload == null ? null : result.workload.copy();
             target.events.addAll(result.events);
             target.observedBusinessEvents.putAll(result.observedBusinessEvents);
             copy.results.add(target);

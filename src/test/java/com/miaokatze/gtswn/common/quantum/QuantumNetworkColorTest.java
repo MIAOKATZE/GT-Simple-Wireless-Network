@@ -47,6 +47,34 @@ public class QuantumNetworkColorTest {
     }
 
     @Test
+    public void explicitFixtureColorResetPreservesOutsideColorsAndOnlyChangesEpochWhenVisible() {
+        QuantumNetworkColorRegistry registry = new QuantumNetworkColorRegistry("test");
+        long inside = QuantumControllerRegistry.pack(1, 65, 0);
+        long outside = QuantumControllerRegistry.pack(80, 65, 0);
+        long defaultColor = QuantumControllerRegistry.pack(2, 65, 0);
+        registry.recolor(new HashSet<>(Arrays.asList(inside, outside)), 14);
+        registry.recolor(new HashSet<>(Arrays.asList(defaultColor)), QuantumNetworkColor.DEFAULT);
+        long epoch = QuantumTerminalSyncEpoch.current();
+        long bindingEpoch = QuantumTerminalSyncEpoch.bindingEpoch();
+        assertTrue(registry.forgetColors(position -> position == inside));
+        assertEquals(epoch + 1, QuantumTerminalSyncEpoch.current());
+        assertEquals(bindingEpoch, QuantumTerminalSyncEpoch.bindingEpoch());
+        assertFalse(registry.forgetColors(position -> position == inside));
+        assertTrue(registry.forgetColors(position -> position == defaultColor));
+        assertEquals(epoch + 1, QuantumTerminalSyncEpoch.current());
+        NBTTagCompound saved = new NBTTagCompound();
+        registry.writeToNBT(saved);
+        assertEquals(
+            1,
+            saved.getTagList("colors", 10)
+                .tagCount());
+        QuantumNetworkColorRegistry restored = new QuantumNetworkColorRegistry("test");
+        restored.readFromNBT(saved);
+        assertEquals(QuantumNetworkColor.DEFAULT, restored.color(1, 65, 0));
+        assertEquals(14, restored.color(80, 65, 0));
+    }
+
+    @Test
     public void sixteenPaletteEntriesAreDistinctAndValid() {
         HashSet<Integer> colors = new HashSet<>();
         for (int index = 0; index < 16; index++) {

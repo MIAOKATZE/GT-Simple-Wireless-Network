@@ -163,7 +163,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
     public static final String NBT_ANCHOR_Z = "QT_AnchorZ";
     public static final String NBT_ANCHOR_GENERATION = "QT_AnchorGeneration";
     public static final String NBT_ANCHOR_SCHEMA = "QT_AnchorSchema";
-    public static final byte ANCHOR_SCHEMA = 2;
+    public static final byte ANCHOR_SCHEMA = 3;
     public static final String NBT_SYNC_EPOCH = "QT_SyncEpoch";
 
     /** 绑定时维度显示名（tooltip 用） */
@@ -523,6 +523,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         tag.setInteger(NBT_ANCHOR_Z, z);
         tag.setString(NBT_ANCHOR_GENERATION, anchor.generation);
         tag.setByte(NBT_ANCHOR_SCHEMA, ANCHOR_SCHEMA);
+        tag.setLong(QuantumTerminalAccess.NBT_BINDING_EPOCH, QuantumTerminalSyncEpoch.bindingEpoch());
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
         tag.setLong(
             QuantumTerminalAccess.NBT_MIGRATION_CURSOR,
@@ -549,6 +550,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         tag.removeTag(NBT_ANCHOR_Z);
         tag.removeTag(NBT_ANCHOR_GENERATION);
         tag.removeTag(NBT_ANCHOR_SCHEMA);
+        tag.removeTag(QuantumTerminalAccess.NBT_BINDING_EPOCH);
         tag.removeTag(NBT_SYNC_EPOCH);
         tag.removeTag(NBT_BOUND_NAME);
         tag.removeTag(QuantumTerminalAccess.NBT_MIGRATION_CURSOR);

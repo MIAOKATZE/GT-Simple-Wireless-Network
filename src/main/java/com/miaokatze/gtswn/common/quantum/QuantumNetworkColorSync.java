@@ -16,6 +16,25 @@ public final class QuantumNetworkColorSync {
 
     private static final Map<AnchorKey, Set<TileEntityNetworkQuantumNode>> NODES = new HashMap<>();
 
+    /** Read the existing loaded-device index, never world tiles or offline chunk NBT. */
+    static Map<Long, Integer> bindingVotes(int dimension, Set<Long> members) {
+        Map<Long, Integer> votes = new HashMap<>();
+        for (long position : members) {
+            Set<TileEntityNetworkQuantumNode> nodes = NODES.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(position),
+                    QuantumControllerRegistry.unpackY(position),
+                    QuantumControllerRegistry.unpackZ(position)));
+            if (nodes != null) {
+                int count = 0;
+                for (TileEntityNetworkQuantumNode node : nodes) if (!node.isInvalid()) count++;
+                if (count > 0) votes.put(position, count);
+            }
+        }
+        return votes;
+    }
+
     public static void track(TileEntityNetworkQuantumNode node) {
         if (node.getWorldObj() == null || node.getWorldObj().isRemote || !node.hasAnchor()) return;
         untrack(node);

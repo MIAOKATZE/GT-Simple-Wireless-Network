@@ -281,18 +281,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         entry.loadedTile = null;
     }
 
-    /** Remove bindings in every loaded world even when their local machine chunk is unloaded. */
+    /** Controller loss disconnects devices; their own identity/owner/binding survives for coordinate recovery. */
     public void controllerRemoved(World world, int dimension, Set<Long> members) {
-        for (long position : members) {
-            Map<Long, Entry> anchored = sources.get(
-                new AnchorKey(
-                    dimension,
-                    QuantumControllerRegistry.unpackX(position),
-                    QuantumControllerRegistry.unpackY(position),
-                    QuantumControllerRegistry.unpackZ(position)));
-            if (anchored == null) continue;
-            for (Entry entry : new ArrayList<>(anchored.values())) forget(world, entry, true);
-        }
+        controllerSuspended(dimension, members);
     }
 
     /** Indexed explicit disable: retain device identity, ownership and binding for later resumption. */
@@ -427,6 +418,13 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             disconnectExternal(tile, entry.connection);
             entry.lastIsolation = isolationTick;
         }
+        // A disconnected device cannot lose further bridge permissions. Wait before asking native
+        // hosts for nodes (which may create/merge grids), rather than only gating the constructors.
+        boolean attemptReserved = false;
+        if (!entry.hasLiveConnections()) {
+            entry.disconnect();
+            if (isolationTick < entry.nextAttempt) return;
+        }
         WorldServer anchor = DimensionManager.getWorld(entry.dim);
         if (anchor != null) {
             if (QuantumControllerRegistry.get(anchor)
@@ -434,12 +432,14 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                     QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az),
                     entry.anchorGeneration)) {
                 entry.disconnect();
+                entry.deferReconnect(isolationTick);
                 return;
             }
             AnchorKey previous = entry.anchorKey();
             String previousGeneration = entry.anchorGeneration;
             if (!normalizeAnchor(entry, anchor)) {
-                forget(world, entry, true);
+                entry.disconnect();
+                entry.deferReconnect(isolationTick);
                 return;
             }
             if (!previous.equals(entry.anchorKey()) || !previousGeneration.equals(entry.anchorGeneration)) {
@@ -456,23 +456,36 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         // Never load worlds or chunks just to keep an incorporated machine connected.
         if (anchor == null || !anchor.blockExists(entry.ax, entry.ay, entry.az)) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             return;
         }
         TileEntity controller = anchor.getTileEntity(entry.ax, entry.ay, entry.az);
         if (!(controller instanceof TileController)) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             return;
+        }
+        // The audited OFF override belongs to these same live endpoints. Native/policy changes
+        // invalidate it synchronously; ON networks continue through fresh native authorization.
+        if (entry.hasLiveConnections() && entry.target.getMachine() == controller
+            && !controller.isInvalid()
+            && QuantumConnectionSecurity.hasUnchangedOverride(entry.connection, entry.billingConnection)) return;
+        if (!entry.hasLiveConnections()) {
+            if (!reserveConnectionAttempt()) return;
+            attemptReserved = true;
         }
         IGridNode target = ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN);
         ArrayList<IGridNode> local = nodes((IGridHost) tile);
         if (target == null || local.isEmpty()) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             return;
         }
         IGridNode node = local.get(0);
         if (!QuantumConnectionSecurity
             .mayBridge(anchor, entry.ax, entry.ay, entry.az, node, target, entry::nativeActorID)) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             if (DebugTestGate.probesActive())
                 TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
             return;
@@ -482,15 +495,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
         // An incomplete bridge must never stay online while waiting for a billed retry.
         entry.disconnect();
-        long now = net.minecraft.server.MinecraftServer.getServer()
-            .getTickCounter();
-        if (now < entry.nextAttempt) return;
-        if (budgetTick != now) {
-            budgetTick = now;
-            connectionsThisTick = 0;
-        }
-        if (connectionsThisTick >= 2) return;
-        connectionsThisTick++;
+        if (!attemptReserved && !reserveConnectionAttempt()) return;
         disconnectExternal(tile, null);
         boolean connected = false;
         try {
@@ -513,6 +518,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.connection = AEApi.instance()
                 .createGridConnection(node, entry.billingNode);
             entry.backoff = 20;
+            entry.nextAttempt = 0L;
             ACTIVE.computeIfAbsent(entry.anchorKey(), ignored -> Collections.newSetFromMap(new IdentityHashMap<>()))
                 .add(entry);
             invalidateStats();
@@ -520,8 +526,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
         } catch (appeng.api.exceptions.FailedConnection failure) {
             // Security failures remain isolated and offline with bounded exponential retry.
-            entry.nextAttempt = now + entry.backoff;
-            entry.backoff = Math.min(200, entry.backoff * 2);
+            entry.deferReconnect(isolationTick);
             if (DebugTestGate.probesActive()) TestWorldProbes.at(
                 world,
                 x,
@@ -533,6 +538,18 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         } finally {
             if (!connected) entry.disconnect();
         }
+    }
+
+    private static boolean reserveConnectionAttempt() {
+        long now = net.minecraft.server.MinecraftServer.getServer()
+            .getTickCounter();
+        if (budgetTick != now) {
+            budgetTick = now;
+            connectionsThisTick = 0;
+        }
+        if (connectionsThisTick >= 2) return false;
+        connectionsThisTick++;
+        return true;
     }
 
     private static ArrayList<IGridNode> nodes(IGridHost host) {
@@ -666,10 +683,17 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         long revision = registry.getRevision();
         if (entry.normalizedRegistry == registry && entry.normalizedRevision == revision
             && entry.normalizedKey == entry.anchorKey()
-            && entry.anchorGeneration.equals(entry.normalizedGeneration)) return true;
+            && entry.anchorGeneration.equals(entry.normalizedGeneration)) return entry.normalizedValid;
         QuantumControllerRegistry.CanonicalAnchor anchor = registry
             .resolveAnchor(QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az), entry.anchorGeneration);
-        if (anchor == null) return false;
+        if (anchor == null) {
+            entry.normalizedRegistry = registry;
+            entry.normalizedRevision = registry.getRevision();
+            entry.normalizedKey = entry.anchorKey();
+            entry.normalizedGeneration = entry.anchorGeneration;
+            entry.normalizedValid = false;
+            return false;
+        }
         if (anchor.position != QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az)
             || !anchor.generation.equals(entry.anchorGeneration)) {
             entry.disconnect();
@@ -681,9 +705,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.backoff = 20;
         }
         entry.normalizedRegistry = registry;
-        entry.normalizedRevision = revision;
+        entry.normalizedRevision = registry.getRevision();
         entry.normalizedKey = entry.anchorKey();
         entry.normalizedGeneration = entry.anchorGeneration;
+        entry.normalizedValid = true;
         return true;
     }
 
@@ -787,7 +812,13 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private AnchorKey cachedAnchorKey, normalizedKey;
         private QuantumControllerRegistry normalizedRegistry;
         private long normalizedRevision;
+        private boolean normalizedValid;
         private String normalizedGeneration;
+
+        private void deferReconnect(long now) {
+            nextAttempt = now + backoff;
+            backoff = Math.min(200, backoff * 2);
+        }
 
         private AnchorKey anchorKey() {
             if (cachedAnchorKey == null || cachedAnchorKey.getDimension() != dim
@@ -849,14 +880,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                 && local != null
                 && target != null
                 && billingNode != null
-                && local.getConnections()
-                    .contains(connection)
-                && billingNode.getConnections()
-                    .contains(connection)
-                && billingNode.getConnections()
-                    .contains(billingConnection)
-                && target.getConnections()
-                    .contains(billingConnection)
+                && QuantumConnectionMembership.contains(local, connection)
+                && QuantumConnectionMembership.contains(billingNode, connection)
+                && QuantumConnectionMembership.contains(billingNode, billingConnection)
+                && QuantumConnectionMembership.contains(target, billingConnection)
                 && target.getGrid() != null
                 && local.getGrid() == target.getGrid()
                 && billingNode.getGrid() == target.getGrid();
@@ -884,8 +911,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
 
         private static boolean containsConnection(IGridNode node, IGridConnection connection) {
-            return node != null && node.getConnections()
-                .contains(connection);
+            return node != null && QuantumConnectionMembership.contains(node, connection);
         }
     }
 
