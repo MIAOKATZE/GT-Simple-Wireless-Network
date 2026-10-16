@@ -16,6 +16,8 @@ import net.minecraft.world.Teleporter;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
+import com.miaokatze.gtswn.common.util.DebugTestGate;
+
 /** Delegated from the existing OP4 /gtswn command. Console operations never need a player. */
 public final class TestWorldCommand {
 
@@ -26,6 +28,7 @@ public final class TestWorldCommand {
     private TestWorldCommand() {}
 
     public static List<String> complete(String[] args) {
+        if (!DebugTestGate.isEnabled()) return null;
         if (args.length == 2) return CommandBase.getListOfStringsMatchingLastWord(args, ACTIONS);
         if (args.length == 3 && "run".equals(args[1])) {
             List<String> ids = new ArrayList<>(TestWorldManager.ids());
@@ -38,6 +41,7 @@ public final class TestWorldCommand {
     }
 
     public static void execute(ICommandSender sender, String[] args) {
+        if (!DebugTestGate.isEnabled()) throw new CommandException(DebugTestGate.DISABLED_MESSAGE);
         String action = args.length < 2 ? "help" : args[1];
         if (args.length > ("run".equals(action) || "kit".equals(action) ? 3 : 2))
             throw new CommandException("/gtswn test help");

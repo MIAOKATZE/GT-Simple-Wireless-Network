@@ -16,6 +16,7 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.testworld.TestWorldCommand;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.common.misc.WirelessNetworkManager;
@@ -64,6 +65,12 @@ public class CommandGTSWN extends CommandBase {
     @Override
     public List<String> addTabCompletionOptions(ICommandSender sender, String[] args) {
         if (args.length == 1) {
+            if (!DebugTestGate.isEnabled()) return getListOfStringsMatchingLastWord(
+                args,
+                SUBCMD_TRANSFER,
+                SUBCMD_JOIN,
+                SUBCMD_CLEANUP_INFO,
+                SUBCMD_SAFETY);
             return getListOfStringsMatchingLastWord(
                 args,
                 SUBCMD_TRANSFER,
@@ -72,7 +79,8 @@ public class CommandGTSWN extends CommandBase {
                 SUBCMD_SAFETY,
                 "test");
         }
-        if (args.length >= 2 && "test".equals(args[0])) return TestWorldCommand.complete(args);
+        if (args.length >= 2 && "test".equals(args[0]))
+            return DebugTestGate.isEnabled() ? TestWorldCommand.complete(args) : null;
         if (args.length == 2 && SUBCMD_SAFETY.equals(args[0])) {
             return getListOfStringsMatchingLastWord(args, "on", "off");
         }
@@ -94,6 +102,10 @@ public class CommandGTSWN extends CommandBase {
             throw new WrongUsageException(getCommandUsage(sender));
         }
         if ("test".equals(args[0])) {
+            if (!DebugTestGate.isEnabled()) {
+                sender.addChatMessage(new ChatComponentText(DebugTestGate.DISABLED_MESSAGE));
+                return;
+            }
             TestWorldCommand.execute(sender, args);
         } else if (SUBCMD_TRANSFER.equals(args[0])) {
             processTransfer(sender, args);

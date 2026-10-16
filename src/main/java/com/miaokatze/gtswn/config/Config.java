@@ -214,7 +214,7 @@ public class Config {
     public static int metaIdOffset = 0;
 
     /** Explicit administrator-only laboratory; its ID must remain stable for existing saves. */
-    public static boolean testDimensionEnabled = true;
+    public static boolean testDimensionEnabled = false;
     public static int testDimensionId = 19871;
 
     // 下行损耗系数 / Downlink loss ratio
@@ -394,11 +394,17 @@ public class Config {
         mainConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
 
-        testDimensionEnabled = configuration.getBoolean(
-            "enabled",
+        Property testHarnessOptIn = configuration.get(
             "testworld",
-            true,
-            "Register the administrator-only GTSWN debug dimension (requires restart).");
+            "enableAgentTestHarness",
+            false,
+            "Explicitly opt in to the agent-only test harness. Default false: no test dimension, listeners, probes or report worker. Edit this key manually and restart Minecraft/server. Legacy testworld.enabled is ignored.");
+        testHarnessOptIn.setRequiresMcRestart(true);
+        testDimensionEnabled = testHarnessOptIn.getBoolean(false);
+        if (configuration.hasKey("testworld", "enabled")) configuration.get(
+            "testworld",
+            "enabled",
+            false).comment = "Deprecated and ignored. Only enableAgentTestHarness grants explicit opt-in after restart.";
         testDimensionId = configuration.getInt(
             "dimensionId",
             "testworld",

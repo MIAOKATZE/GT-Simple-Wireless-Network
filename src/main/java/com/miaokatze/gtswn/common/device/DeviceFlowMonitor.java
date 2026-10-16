@@ -6,6 +6,7 @@ import java.util.Iterator;
 import java.util.Map;
 
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 
 /**
  * Server-thread-only observation of actual controller energy interactions.
@@ -65,7 +66,7 @@ public final class DeviceFlowMonitor {
                 values[channel][slot] = saturatingAdd(values[channel][slot], bucketAmount);
             }
             totals[channel] = finiteAdd(totals[channel], amount);
-            TestWorldProbes.flow(owner, channel, amount);
+            if (DebugTestGate.probesActive()) TestWorldProbes.flow(owner, channel, amount);
         }
 
         /** Since-last-sample volume divided by elapsed ticks, retaining periodic bursts in long-term averages. */

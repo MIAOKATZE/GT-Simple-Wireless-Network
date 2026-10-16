@@ -24,6 +24,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 import com.miaokatze.gtswn.config.Config;
 import com.mojang.authlib.GameProfile;
@@ -217,7 +218,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         QuantumIncorporationVisualSync.changed(world, x, y, z);
         disconnectExternal(tile, null);
         maintain(world, entry);
-        TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_ADD, "");
+        if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_ADD, "");
         return true;
     }
 
@@ -386,7 +387,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             y = QuantumControllerRegistry.unpackY(entry.position),
             z = QuantumControllerRegistry.unpackZ(entry.position);
         QuantumIncorporationVisualSync.changed(world, x, y, z);
-        TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REMOVE, "");
+        if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REMOVE, "");
         if (!world.blockExists(x, y, z)) return;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile != null
@@ -434,7 +435,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         if (!QuantumConnectionSecurity
             .mayBridge(anchor, entry.ax, entry.ay, entry.az, node, target, entry::nativeActorID)) {
             entry.disconnect();
-            TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
+            if (DebugTestGate.probesActive())
+                TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
             return;
         }
         if (entry.local == node && entry.target == target && entry.hasLiveConnections()) {
@@ -477,12 +479,12 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                 .add(entry);
             invalidateStats();
             connected = true;
-            TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
         } catch (appeng.api.exceptions.FailedConnection failure) {
             // Security failures remain isolated and offline with bounded exponential retry.
             entry.nextAttempt = now + entry.backoff;
             entry.backoff = Math.min(200, entry.backoff * 2);
-            if (TestWorldProbes.enabled()) TestWorldProbes.at(
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(
                 world,
                 x,
                 y,
@@ -782,7 +784,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             if (billingConnection != null && (containsConnection(billingNode, billingConnection)
                 || containsConnection(target, billingConnection))) billingConnection.destroy();
             if (billingNode != null) billingNode.destroy();
-            if (changed) TestWorldProbes.at(loadedTile, Type.INCORPORATION_DISCONNECT, "");
+            if (changed && DebugTestGate.probesActive())
+                TestWorldProbes.at(loadedTile, Type.INCORPORATION_DISCONNECT, "");
             connection = null;
             billingConnection = null;
             billingNode = null;

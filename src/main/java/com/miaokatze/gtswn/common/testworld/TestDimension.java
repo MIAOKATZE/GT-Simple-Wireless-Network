@@ -6,6 +6,7 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -18,8 +19,8 @@ public final class TestDimension {
     private TestDimension() {}
 
     public static void init(File directory) {
-        if (!Config.testDimensionEnabled) {
-            problem = "test dimension disabled in configuration";
+        if (!DebugTestGate.isEnabled()) {
+            problem = DebugTestGate.DISABLED_MESSAGE;
             return;
         }
         int requested = Config.testDimensionId;
@@ -48,6 +49,7 @@ public final class TestDimension {
     }
 
     public static WorldServer ensureWorld() {
+        DebugTestGate.requireEnabled();
         if (problem != null) throw new IllegalStateException(problem);
         if (DimensionManager.getWorld(id) == null) DimensionManager.initDimension(id);
         WorldServer world = DimensionManager.getWorld(id);

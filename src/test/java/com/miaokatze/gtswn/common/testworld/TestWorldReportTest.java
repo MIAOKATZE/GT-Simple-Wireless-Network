@@ -17,6 +17,9 @@ import com.google.gson.JsonParser;
 public class TestWorldReportTest {
 
     @Rule
+    public final TestHarnessOptInRule harness = new TestHarnessOptInRule(true);
+
+    @Rule
     public final TemporaryFolder directory = new TemporaryFolder();
 
     @Test

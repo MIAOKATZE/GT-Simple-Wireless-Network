@@ -11,6 +11,7 @@ import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -126,13 +127,13 @@ public final class PanelActionQueue {
             this.x = x;
             this.y = y;
             this.z = z;
-            this.probeToken = TestWorldProbes.enabled()
+            this.probeToken = DebugTestGate.probesActive()
                 ? TestWorldProbes.queueToken(player == null ? null : player.worldObj, x, y, z)
                 : 0L;
         }
 
         void trace(boolean executed) {
-            if (!TestWorldProbes.enabled()) return;
+            if (!DebugTestGate.probesActive()) return;
             TestWorldProbes.queue(probeToken, player == null ? null : player.worldObj, x, y, z, executed);
         }
 

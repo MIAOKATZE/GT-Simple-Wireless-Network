@@ -39,6 +39,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumNodeTypes;
 import com.miaokatze.gtswn.common.quantum.QuantumOverloadCountdown;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
@@ -303,7 +304,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.anchorX = x;
         this.anchorY = y;
         this.anchorZ = z;
-        if (TestWorldProbes.enabled())
+        if (DebugTestGate.probesActive())
             TestWorldProbes.at(this, Type.QUANTUM_NODE_ANCHOR, "anchor=" + dim + ":" + x + ":" + y + ":" + z);
         QuantumNetworkColorSync.track(this);
         colorTracked = worldObj != null && !worldObj.isRemote;
@@ -1306,7 +1307,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private void failReconnect(OfflineReason reason) {
         this.offlineReason = reason;
         this.reconnectBackoff = Math.min(this.reconnectBackoff * 2, MAX_RECONNECT_BACKOFF_TICKS);
-        if (TestWorldProbes.enabled()) TestWorldProbes.at(this, Type.QUANTUM_NODE_REJECT, "reason=" + reason.name());
+        if (DebugTestGate.probesActive()) TestWorldProbes.at(this, Type.QUANTUM_NODE_REJECT, "reason=" + reason.name());
     }
 
     /** 尝试向锚点控制器建立桥接连接，失败时记录离线原因 */
@@ -1440,7 +1441,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             failReconnect(OfflineReason.NETWORK_NOT_READY);
         } finally {
             if (!connected) destroyBridgeConnection();
-            else TestWorldProbes.at(this, Type.QUANTUM_NODE_CONNECT, "");
+            else if (DebugTestGate.probesActive()) TestWorldProbes.at(this, Type.QUANTUM_NODE_CONNECT, "");
         }
     }
 
@@ -1466,7 +1467,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 }
             }
             this.connection = null;
-            TestWorldProbes.at(this, Type.QUANTUM_NODE_DISCONNECT, "connection=released");
+            if (DebugTestGate.probesActive())
+                TestWorldProbes.at(this, Type.QUANTUM_NODE_DISCONNECT, "connection=released");
         }
         if (anchorConnection != null) {
             if (anchorConnection.a()

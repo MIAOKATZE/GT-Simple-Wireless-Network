@@ -13,6 +13,7 @@ import net.minecraft.world.WorldSavedData;
 
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 /**
@@ -83,7 +84,8 @@ public class WirelessNodeRegistry extends WorldSavedData {
         }
         this.nodes.put(packed, type);
         markDirty();
-        if (TestWorldProbes.enabled()) TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_ADD, "nodeType=" + type);
+        if (DebugTestGate.probesActive())
+            TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_ADD, "nodeType=" + type);
     }
 
     /**
@@ -92,7 +94,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
     public void unregister(World world, int x, int y, int z) {
         if (this.nodes.remove(Long.valueOf(WirelessNodeIndexCodec.pack(x, y, z))) != null) {
             markDirty();
-            TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_REMOVE, "");
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_REMOVE, "");
         }
     }
 
@@ -105,7 +107,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
             return;
         }
         Set<Long> removed = null;
-        if (TestWorldProbes.enabled()) {
+        if (DebugTestGate.probesActive()) {
             removed = new HashSet<>(packedPositions);
             removed.retainAll(this.nodes.keySet());
         }

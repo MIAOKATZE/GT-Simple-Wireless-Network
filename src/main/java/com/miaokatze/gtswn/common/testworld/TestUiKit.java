@@ -26,6 +26,7 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
@@ -59,6 +60,7 @@ public final class TestUiKit {
     private TestUiKit() {}
 
     public static void register() {
+        if (!DebugTestGate.isEnabled()) return;
         if (registered) return;
         registered = true;
         FMLCommonHandler.instance()
@@ -81,6 +83,7 @@ public final class TestUiKit {
 
     /** Explicit-command arbitration only; never scans players in the normal tick path. */
     public static boolean inUse() {
+        if (!DebugTestGate.isEnabled()) return false;
         net.minecraft.server.MinecraftServer server = net.minecraft.server.MinecraftServer.getServer();
         if (server == null) return false;
         for (Object entry : server.getConfigurationManager().playerEntityList) {
@@ -114,6 +117,7 @@ public final class TestUiKit {
     }
 
     public static void grant(EntityPlayerMP player) {
+        DebugTestGate.requireEnabled();
         if (!TestDimension.isTest(player.worldObj) || !player.canCommandSenderUseCommand(4, "gtswn"))
             throw new IllegalStateException("UI kit requires OP4 in the GTSWN test dimension");
         if (TestWorldManager.busy())
@@ -177,6 +181,7 @@ public final class TestUiKit {
     }
 
     public static void restore(EntityPlayerMP player) {
+        if (!DebugTestGate.isEnabled()) return;
         NBTTagCompound persistent = persistent(player);
         NBTTagList recovery = persistent.getTagList(OVERFLOW, 10);
         if (hasBackup(player)) {
@@ -429,6 +434,7 @@ public final class TestUiKit {
 
     @SubscribeEvent
     public void prepareQuantum(TickEvent.PlayerTickEvent event) {
+        if (!DebugTestGate.isEnabled()) return;
         if (event.phase != TickEvent.Phase.END || !(event.player instanceof EntityPlayerMP)) return;
         EntityPlayerMP player = (EntityPlayerMP) event.player;
         if (!TestDimension.isTest(player.worldObj) || !hasBackup(player)) return;
@@ -551,6 +557,7 @@ public final class TestUiKit {
     }
 
     private static void recover(EntityPlayer player) {
+        if (!DebugTestGate.isEnabled()) return;
         if (!(player instanceof EntityPlayerMP) || player.worldObj.isRemote) return;
         if (hasBackup(player) || persistent(player).hasKey(OVERFLOW, 9)) {
             GTSimpleWirelessNetwork.LOG.info("[GTSWN-UI] recovering persistent kit for {}", player.getUniqueID());

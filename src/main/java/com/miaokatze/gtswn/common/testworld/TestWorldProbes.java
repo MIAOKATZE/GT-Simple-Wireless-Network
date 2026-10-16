@@ -11,6 +11,8 @@ import java.util.UUID;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.util.DebugTestGate;
+
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 
 /**
@@ -81,15 +83,19 @@ public final class TestWorldProbes {
 
     /** Called by the server-side test runner only, once per scenario. */
     public static void start(Sink sink, int dimension) {
+        if (!DebugTestGate.isEnabled()) return;
         if (sink == null) throw new IllegalArgumentException("Missing test probe sink");
         synchronized (LOCK) {
             active = false;
+            DebugTestGate.setProbeSessionActive(false);
             session = new Session(sink, dimension, ++generation);
             active = true;
+            DebugTestGate.setProbeSessionActive(true);
         }
     }
 
     public static void stop() {
+        DebugTestGate.setProbeSessionActive(false);
         synchronized (LOCK) {
             active = false;
             session = null;
@@ -97,7 +103,7 @@ public final class TestWorldProbes {
     }
 
     public static boolean enabled() {
-        return active;
+        return DebugTestGate.probesActive();
     }
 
     public static void addPosition(int x, int y, int z) {

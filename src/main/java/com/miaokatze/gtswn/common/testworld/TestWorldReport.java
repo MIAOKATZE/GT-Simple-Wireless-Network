@@ -21,6 +21,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.miaokatze.gtswn.Tags;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 /** Bounded event journal and append-only run identities. The writer receives detached snapshots only. */
@@ -145,6 +146,7 @@ public final class TestWorldReport {
     }
 
     static synchronized void startWriter() {
+        if (!DebugTestGate.isEnabled()) return;
         // A timed-out shutdown may still be writing a checkpoint. Never create a competing writer.
         if (writer != null && !writer.isTerminated()) return;
         writer = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(16), task -> {
@@ -237,6 +239,11 @@ public final class TestWorldReport {
         }
 
         synchronized boolean retry() {
+            if (!DebugTestGate.isEnabled()) {
+                error = DebugTestGate.DISABLED_MESSAGE;
+                state = State.FAILED;
+                return false;
+            }
             if (abandoned || state != State.FAILED) return false;
             state = State.QUEUED;
             attempts++;
@@ -347,6 +354,7 @@ public final class TestWorldReport {
     }
 
     private static boolean enqueue(TestWorldReport copy, File target, boolean done, WriteReceipt receipt) {
+        if (!DebugTestGate.isEnabled()) return false;
         try {
             writer.execute(() -> {
                 if (receipt != null) receipt.state = WriteReceipt.State.WRITING;
@@ -383,6 +391,7 @@ public final class TestWorldReport {
     }
 
     static void markInterrupted(File target, String runId, int dimension) {
+        if (!DebugTestGate.isEnabled()) return;
         try {
             writer.execute(() -> {
                 try {

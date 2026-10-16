@@ -26,6 +26,9 @@ import org.junit.rules.TemporaryFolder;
 public class TestWorldReportingLifecycleTest {
 
     @Rule
+    public final TestHarnessOptInRule harness = new TestHarnessOptInRule(true);
+
+    @Rule
     public final TemporaryFolder directory = new TemporaryFolder();
     private final Map<Field, Object> original = new HashMap<>();
     private Map<String, TestScenario> originalScenarios;

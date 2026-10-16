@@ -19,6 +19,7 @@ import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.entity.living.LivingSpawnEvent;
 import net.minecraftforge.event.world.WorldEvent;
 
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -62,6 +63,7 @@ public final class TestWorldManager {
     private TestWorldManager() {}
 
     public static void init() {
+        if (!DebugTestGate.isEnabled()) return;
         if (registered) return;
         registered = true;
         TestUiKit.register();
@@ -89,6 +91,7 @@ public final class TestWorldManager {
     }
 
     public static void serverStarting() {
+        if (!DebugTestGate.isEnabled()) return;
         SCENARIOS.clear();
         ScenarioRegistry.register();
         TestWorldReport.startWriter();
@@ -106,6 +109,7 @@ public final class TestWorldManager {
     }
 
     private static TestWorldData journal() {
+        DebugTestGate.requireEnabled();
         if (TestDimension.problem() != null) throw new IllegalStateException(TestDimension.problem());
         if (data == null) {
             WorldServer overworld = MinecraftServer.getServer()
@@ -582,6 +586,7 @@ public final class TestWorldManager {
     }
 
     public static void shutdown() {
+        if (!DebugTestGate.isEnabled()) return;
         stop("server stopping", false);
         releaseTickets();
         TestWorldProbes.stop();

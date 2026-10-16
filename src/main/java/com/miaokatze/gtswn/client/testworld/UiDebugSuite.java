@@ -40,6 +40,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.miaokatze.gtswn.common.testworld.TestDimension;
 import com.miaokatze.gtswn.common.testworld.TestUiKit;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -80,6 +81,7 @@ public final class UiDebugSuite {
     private UiDebugSuite() {}
 
     public static void register() {
+        if (!DebugTestGate.isEnabled()) return;
         if (registered) return;
         registered = true;
         FMLCommonHandler.instance()
@@ -98,6 +100,7 @@ public final class UiDebugSuite {
     }
 
     void start(String selection, boolean useMatrix, boolean withScreenshots, String explicitAction, String value) {
+        DebugTestGate.requireEnabled();
         if (running()) throw new IllegalStateException("UI run already active; use /gtswnui stop");
         mc = Minecraft.getMinecraft();
         requireDimension();

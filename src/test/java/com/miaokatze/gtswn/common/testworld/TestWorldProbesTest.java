@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.junit.After;
+import org.junit.Rule;
 import org.junit.Test;
 
 import com.miaokatze.gtswn.common.device.DeviceRegistryData;
@@ -15,6 +16,9 @@ import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 
 /** Isolation contracts: these probes observe live business hooks but cannot leak between runs. */
 public class TestWorldProbesTest {
+
+    @Rule
+    public final TestHarnessOptInRule harness = new TestHarnessOptInRule(true);
 
     @After
     public void stop() {

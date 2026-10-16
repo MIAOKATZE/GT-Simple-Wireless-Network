@@ -18,6 +18,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 import appeng.core.AEConfig;
@@ -64,6 +65,11 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     /** 快照对应的 revision（-1 = 快照未构建/已失效）。 */
     private long snapshotRevision = -1L;
+
+    /** Each saved graph component shares one immutable membership snapshot until the revision changes. */
+    private final Map<Long, Set<Long>> structureByMember = new HashMap<>();
+
+    private long structureRevision = -1L;
 
     /**
      * 本世界维度 ID（运行时字段，不持久化到独立 tag）。
@@ -120,14 +126,14 @@ public class QuantumControllerRegistry extends WorldSavedData {
             rememberIdentity(pack(x, y, z));
             this.revision++;
             markDirty();
-            TestWorldProbes.at(world, x, y, z, Type.QUANTUM_CONTROLLER_ADD, "");
+            if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.QUANTUM_CONTROLLER_ADD, "");
         }
     }
 
     /** 批量入册（打包坐标集，通常为 floodControllers 的洪泛结果） */
     public void quantizeAll(Set<Long> packedCoords) {
         Set<Long> added = null;
-        if (TestWorldProbes.enabled()) {
+        if (DebugTestGate.probesActive()) {
             added = new HashSet<>(packedCoords);
             added.removeAll(this.controllers);
         }
@@ -154,7 +160,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             loadedTiles.remove(packed);
             this.revision++;
             markDirty();
-            if (TestWorldProbes.enabled()) TestWorldProbes
+            if (DebugTestGate.probesActive()) TestWorldProbes
                 .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_REMOVE, "");
         }
     }
@@ -194,10 +200,19 @@ public class QuantumControllerRegistry extends WorldSavedData {
         return this.snapshot;
     }
 
-    /** Use the saved coordinate graph, including the missing member and unloaded chunks. */
+    /**
+     * Use the saved coordinate graph, including the missing member and unloaded chunks.
+     * All members share an immutable snapshot until the registry's structural revision changes.
+     */
     public Set<Long> registeredStructure(long start) {
+        if (structureRevision != revision) {
+            structureByMember.clear();
+            structureRevision = revision;
+        }
+        Set<Long> cached = structureByMember.get(start);
+        if (cached != null) return cached;
+        if (!controllers.contains(start)) return Collections.emptySet();
         Set<Long> result = new HashSet<>();
-        if (!controllers.contains(start)) return result;
         Queue<Long> queue = new ArrayDeque<>();
         result.add(start);
         queue.add(start);
@@ -211,7 +226,10 @@ public class QuantumControllerRegistry extends WorldSavedData {
                 if (controllers.contains(next) && result.add(next)) queue.add(next);
             }
         }
-        return result;
+        // Never mutate a published component: removal and migration retain the old snapshot.
+        Set<Long> component = Collections.unmodifiableSet(result);
+        for (long member : result) structureByMember.put(member, component);
+        return component;
     }
 
     private void rememberIdentity(long position) {

@@ -87,12 +87,14 @@ public class GTSimpleWirelessNetwork {
 
     @Mod.EventHandler
     public void serverStopping(FMLServerStoppingEvent event) {
-        com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
+        if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
+            com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
     }
 
     @Mod.EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
-        com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
+        if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
+            com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
         AnimationQualityHints.clear();
         com.miaokatze.gtswn.network.PacketQuantumMigration.clearServerState();
         com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety.clearContexts();
