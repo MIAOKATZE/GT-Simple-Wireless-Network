@@ -386,7 +386,7 @@ final class QuantumAnchorLifecycleScenario implements TestScenario {
             reloaded.readFromNBT(saved);
             require(
                 ctx,
-                saved.getInteger("anchorSchema") == 1
+                saved.getInteger("anchorSchema") == 2
                     && reloaded.resolveAnchor(pos(0), "").position == selected.position
                     && reloaded.resolveAnchor(pos(0), "").generation.equals(selected.generation),
                 "Old registry migration fixes one persistent first point across NBT reload");

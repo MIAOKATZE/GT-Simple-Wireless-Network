@@ -13,6 +13,7 @@ import java.util.Map;
 
 import net.minecraft.block.Block;
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
 import net.minecraft.profiler.Profiler;
@@ -253,7 +254,7 @@ public class QuantumControllerPlacementTest {
         }
     }
 
-    private static Controller controller(FixtureWorld world, int x) throws Exception {
+    static Controller controller(FixtureWorld world, int x) throws Exception {
         Controller controller = (Controller) allocate(Controller.class);
         TileEntity tile = controller;
         tile.xCoord = x;
@@ -265,7 +266,7 @@ public class QuantumControllerPlacementTest {
         return controller;
     }
 
-    private static long pos(int x) {
+    static long pos(int x) {
         return QuantumControllerRegistry.pack(x, 64, 0);
     }
 
@@ -277,7 +278,7 @@ public class QuantumControllerPlacementTest {
             .invoke(singleton.get(null), type);
     }
 
-    private static FixtureWorld world() throws Exception {
+    static FixtureWorld world() throws Exception {
         FixtureWorld world = (FixtureWorld) allocate(FixtureWorld.class);
         world.tiles = new HashMap<>();
         Field provider = World.class.getDeclaredField("provider");
@@ -290,11 +291,17 @@ public class QuantumControllerPlacementTest {
         return world;
     }
 
-    private static class Controller extends TileController implements QuantumControllerIdentity {
+    static class Controller extends TileController implements QuantumControllerIdentity {
 
         AENetworkProxy proxy;
         String identity;
         boolean safety;
+        appeng.api.networking.IGridNode nativeNode;
+
+        @Override
+        public appeng.api.networking.IGridNode getGridNode(ForgeDirection direction) {
+            return nativeNode;
+        }
 
         @Override
         public AENetworkProxy getProxy() {
@@ -325,9 +332,11 @@ public class QuantumControllerPlacementTest {
         }
     }
 
-    private static class FixtureWorld extends World {
+    static class FixtureWorld extends World {
 
         Map<Long, TileEntity> tiles;
+        java.util.Set<Long> unloaded = new HashSet<>();
+        java.util.Set<Long> loadedAir = new HashSet<>();
 
         private FixtureWorld() {
             super((ISaveHandler) null, "fixture", (WorldProvider) null, (WorldSettings) null, (Profiler) null);
@@ -350,7 +359,9 @@ public class QuantumControllerPlacementTest {
 
         @Override
         public boolean blockExists(int x, int y, int z) {
-            return tiles.containsKey(QuantumControllerRegistry.pack(x, y, z));
+            long position = QuantumControllerRegistry.pack(x, y, z);
+            return (unloaded == null || !unloaded.contains(position))
+                && (tiles.containsKey(position) || loadedAir != null && loadedAir.contains(position));
         }
 
         @Override
@@ -361,6 +372,11 @@ public class QuantumControllerPlacementTest {
         @Override
         public Block getBlock(int x, int y, int z) {
             return null;
+        }
+
+        @Override
+        public boolean canMineBlock(EntityPlayer player, int x, int y, int z) {
+            return true;
         }
 
         @Override

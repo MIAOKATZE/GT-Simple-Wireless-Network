@@ -21,6 +21,8 @@ import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
+import appeng.api.networking.IGridHost;
+import appeng.api.networking.IGridNode;
 import appeng.core.AEConfig;
 import appeng.core.features.AEFeature;
 import appeng.tile.networking.TileController;
@@ -55,11 +57,14 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     private final Map<Long, String> identities = new HashMap<>();
     private final Map<Long, TileEntity> loadedTiles = new HashMap<>();
-    private static final int ANCHOR_SCHEMA = 1;
+    private static final int ANCHOR_SCHEMA = 2;
     private final Map<Long, String> memberGenerations = new HashMap<>();
     private final Map<String, CanonicalAnchor> canonicalAnchors = new HashMap<>();
     private final Map<String, Integer> generationCounts = new HashMap<>();
     private final Map<Long, String> legacyAnchorAliases = new HashMap<>();
+    /** Explicitly disabled structures retain physical continuity, but are never active anchors. */
+    private final Set<String> suspendedGenerations = new HashSet<>();
+    private final Map<Long, Integer> suspendedNativeOwners = new HashMap<>();
     private World world;
 
     /** 运行期结构 revision；不持久化，仅用于让统计缓存感知量子化结构变化。 */
@@ -173,9 +178,97 @@ public class QuantumControllerRegistry extends WorldSavedData {
         if (packedCoords.isEmpty() || !packedCoords.contains(firstClick)) return false;
         String generation = inheritedGeneration(packedCoords);
         if (generation == null) return false;
+        if (suspendedGenerations.contains(generation)) {
+            Set<Long> original = registeredStructure(firstSuspendedMember(packedCoords, generation));
+            // A partial loaded flood cannot prove that the rest of a disabled structure still exists.
+            if (world == null) return false;
+            for (long member : original)
+                if (!world.blockExists(unpackX(member), unpackY(member), unpackZ(member))) return false;
+            boolean continuous = packedCoords.containsAll(original);
+            for (long member : original) {
+                // Unlike legacy active adoption, disabled identity continuity must already be provable.
+                boolean current = identities.containsKey(member) && isCurrentController(world, member);
+                if (!current) continuous = false;
+            }
+            if (continuous) for (long member : original) {
+                Integer owner = suspendedNativeOwners.get(member);
+                if (owner != null) {
+                    Integer currentOwner = nativeOwner(member);
+                    if (currentOwner == null) return false; // The native proxy is not ready yet; retain the proof.
+                    if (!owner.equals(currentOwner)) {
+                        continuous = false;
+                        break;
+                    }
+                }
+            }
+            if (!continuous) {
+                // Replacement/identity/owner changes retire the old generation, never adopt its references.
+                for (long member : original) dequantize(member);
+                generation = inheritedGeneration(packedCoords);
+                if (generation == null) return false;
+            } else {
+                suspendedGenerations.remove(generation);
+                for (long member : original) suspendedNativeOwners.remove(member);
+                revision++;
+                markDirty();
+                QuantumTerminalSyncEpoch.changed();
+            }
+        }
         if (generation.isEmpty()) generation = UUID.randomUUID()
             .toString();
         return quantizeAs(packedCoords, firstClick, generation, false);
+    }
+
+    private long firstSuspendedMember(Set<Long> members, String generation) {
+        for (long member : members) {
+            if (generation.equals(memberGenerations.get(member))) return member;
+            for (ForgeDirection direction : ForgeDirection.VALID_DIRECTIONS) {
+                long adjacent = pack(
+                    unpackX(member) + direction.offsetX,
+                    unpackY(member) + direction.offsetY,
+                    unpackZ(member) + direction.offsetZ);
+                if (generation.equals(memberGenerations.get(adjacent))) return adjacent;
+            }
+        }
+        throw new IllegalStateException("Suspended generation has no candidate member");
+    }
+
+    private Integer nativeOwner(long position) {
+        if (world == null || !world.blockExists(unpackX(position), unpackY(position), unpackZ(position))) return null;
+        TileEntity tile = world.getTileEntity(unpackX(position), unpackY(position), unpackZ(position));
+        if (!(tile instanceof TileController)) return null;
+        IGridNode node = ((IGridHost) tile).getGridNode(ForgeDirection.UNKNOWN);
+        return node == null ? null : node.getPlayerID();
+    }
+
+    /** Disable without destroying the generation or its independently owned device references. */
+    public boolean suspendStructure(long member) {
+        Set<Long> members = registeredStructure(member);
+        String generation = memberGenerations.get(member);
+        if (members.isEmpty() || generation == null) return false;
+        if (suspendedGenerations.contains(generation)) return true;
+        for (long position : members) {
+            if (!generation.equals(memberGenerations.get(position))) return false;
+            if (world != null && !isCurrentController(world, position)) return false;
+        }
+        for (long position : members) {
+            Integer owner = nativeOwner(position);
+            if (owner != null) suspendedNativeOwners.put(position, owner);
+        }
+        suspendedGenerations.add(generation);
+        revision++;
+        markDirty();
+        QuantumTerminalSyncEpoch.changed();
+        return true;
+    }
+
+    public boolean isSuspendedAnchor(long member, String expectedGeneration) {
+        String generation = resolveBindingGeneration(member, expectedGeneration);
+        return generation != null && suspendedGenerations.contains(generation);
+    }
+
+    public boolean isSuspendedController(long member) {
+        return controllers.contains(member) && suspendedGenerations.contains(memberGenerations.get(member));
     }
 
     /** Explicit migration is the sole operation allowed to move a live generation's canonical position. */
@@ -207,6 +300,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             for (long packed : added) rememberIdentity(packed);
             this.revision++;
             markDirty();
+            QuantumTerminalSyncEpoch.changed();
             if (DebugTestGate.probesActive()) for (long packed : added) TestWorldProbes
                 .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_ADD, "");
         }
@@ -253,17 +347,21 @@ public class QuantumControllerRegistry extends WorldSavedData {
     }
 
     public CanonicalAnchor resolveAnchor(long member, String expectedGeneration) {
-        String generation = expectedGeneration == null || expectedGeneration.isEmpty() ? legacyAnchorAliases.get(member)
-            : expectedGeneration;
-        if (generation == null) return null;
-        if (expectedGeneration != null && !expectedGeneration.isEmpty()
-            && !generation.equals(memberGenerations.get(member))) return null;
-        return canonicalGeneration(generation);
+        return canonicalGeneration(resolveBindingGeneration(member, expectedGeneration));
+    }
+
+    private String resolveBindingGeneration(long member, String expectedGeneration) {
+        String generation = memberGenerations.get(member);
+        if (!controllers.contains(member) || generation == null) return null;
+        // An upgrade-captured coordinate alias is authoritative for historical bindings, including stale hints.
+        if (!generation.equals(expectedGeneration) && !generation.equals(legacyAnchorAliases.get(member))) return null;
+        return generation;
     }
 
     private CanonicalAnchor canonicalGeneration(String generation) {
         CanonicalAnchor anchor = canonicalAnchors.get(generation);
-        return anchor != null && controllers.contains(anchor.position)
+        return anchor != null && !suspendedGenerations.contains(generation)
+            && controllers.contains(anchor.position)
             && generation.equals(memberGenerations.get(anchor.position)) ? anchor : null;
     }
 
@@ -278,17 +376,21 @@ public class QuantumControllerRegistry extends WorldSavedData {
             if (world != null && !world.isRemote) QuantumNetworkSecurityRegistry.get(world)
                 .remove(Collections.singleton(packed));
             identities.remove(packed);
+            legacyAnchorAliases.remove(packed);
             loadedTiles.remove(packed);
+            suspendedNativeOwners.remove(packed);
             String generation = memberGenerations.remove(packed);
             if (generation != null) {
                 int remaining = generationCounts.getOrDefault(generation, 1) - 1;
                 if (remaining <= 0) {
                     generationCounts.remove(generation);
                     canonicalAnchors.remove(generation);
+                    suspendedGenerations.remove(generation);
                 } else generationCounts.put(generation, remaining);
             }
             this.revision++;
             markDirty();
+            QuantumTerminalSyncEpoch.changed();
             if (DebugTestGate.probesActive()) TestWorldProbes
                 .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_REMOVE, "");
         }
@@ -301,12 +403,12 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     /** 查询指定坐标是否已量子化 */
     public boolean isQuantized(int x, int y, int z) {
-        return this.controllers.contains(pack(x, y, z));
+        return isQuantized(pack(x, y, z));
     }
 
     /** 查询打包坐标是否已量子化 */
     public boolean isQuantized(long packed) {
-        return this.controllers.contains(packed);
+        return this.controllers.contains(packed) && !suspendedGenerations.contains(memberGenerations.get(packed));
     }
 
     /**
@@ -323,7 +425,9 @@ public class QuantumControllerRegistry extends WorldSavedData {
      */
     public Set<Long> getAll() {
         if (this.snapshot == null || this.snapshotRevision != this.revision) {
-            this.snapshot = Collections.unmodifiableSet(new HashSet<>(this.controllers));
+            Set<Long> active = new HashSet<>(controllers);
+            if (!suspendedGenerations.isEmpty()) active.removeIf(this::isSuspendedController);
+            this.snapshot = Collections.unmodifiableSet(active);
             this.snapshotRevision = this.revision;
         }
         return this.snapshot;
@@ -556,6 +660,8 @@ public class QuantumControllerRegistry extends WorldSavedData {
         canonicalAnchors.clear();
         generationCounts.clear();
         legacyAnchorAliases.clear();
+        suspendedGenerations.clear();
+        suspendedNativeOwners.clear();
         this.revision++;
         if (!tag.hasKey(NBT_CONTROLLERS)) {
             return;
@@ -574,7 +680,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             String identity = value.getString("identity");
             if (controllers.contains(position) && !identity.isEmpty()) identities.put(position, identity);
         }
-        if (tag.getInteger("anchorSchema") < ANCHOR_SCHEMA) {
+        if (tag.getInteger("anchorSchema") < 1) {
             adoptLegacyAnchors();
         } else {
             NBTTagList members = tag.getTagList("memberGenerations", 10);
@@ -601,6 +707,28 @@ public class QuantumControllerRegistry extends WorldSavedData {
                 if (!entry.getString("generation")
                     .isEmpty()) legacyAnchorAliases.put(entry.getLong("pos"), entry.getString("generation"));
             }
+            NBTTagList suspended = tag.getTagList("suspendedGenerations", 10);
+            for (int i = 0; i < suspended.tagCount(); i++) {
+                String generation = suspended.getCompoundTagAt(i)
+                    .getString("generation");
+                if (canonicalAnchors.containsKey(generation)) suspendedGenerations.add(generation);
+            }
+            NBTTagList owners = tag.getTagList("suspendedNativeOwners", 10);
+            for (int i = 0; i < owners.tagCount(); i++) {
+                NBTTagCompound entry = owners.getCompoundTagAt(i);
+                long position = entry.getLong("pos");
+                if (suspendedGenerations.contains(memberGenerations.get(position)))
+                    suspendedNativeOwners.put(position, entry.getInteger("owner"));
+            }
+        }
+        if (tag.getInteger("anchorSchema") < ANCHOR_SCHEMA) {
+            // One saved-coordinate migration only: keep existing components/first points, repair stale aliases.
+            legacyAnchorAliases.clear();
+            for (long member : controllers) {
+                String generation = memberGenerations.get(member);
+                if (generation != null) legacyAnchorAliases.put(member, generation);
+            }
+            markDirty();
         }
     }
 
@@ -635,6 +763,21 @@ public class QuantumControllerRegistry extends WorldSavedData {
             anchors.appendTag(value);
         }
         tag.setTag("canonicalAnchors", anchors);
+        NBTTagList suspended = new NBTTagList();
+        for (String generation : suspendedGenerations) {
+            NBTTagCompound entry = new NBTTagCompound();
+            entry.setString("generation", generation);
+            suspended.appendTag(entry);
+        }
+        tag.setTag("suspendedGenerations", suspended);
+        NBTTagList owners = new NBTTagList();
+        for (Map.Entry<Long, Integer> owner : suspendedNativeOwners.entrySet()) {
+            NBTTagCompound entry = new NBTTagCompound();
+            entry.setLong("pos", owner.getKey());
+            entry.setInteger("owner", owner.getValue());
+            owners.appendTag(entry);
+        }
+        tag.setTag("suspendedNativeOwners", owners);
     }
 
     private static NBTTagList generationTags(Map<Long, String> values) {

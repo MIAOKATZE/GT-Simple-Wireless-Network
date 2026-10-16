@@ -295,6 +295,19 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
     }
 
+    /** Indexed explicit disable: retain device identity, ownership and binding for later resumption. */
+    public void controllerSuspended(int dimension, Set<Long> members) {
+        for (long position : members) {
+            Map<Long, Entry> anchored = sources.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(position),
+                    QuantumControllerRegistry.unpackY(position),
+                    QuantumControllerRegistry.unpackZ(position)));
+            if (anchored != null) for (Entry entry : anchored.values()) entry.disconnect();
+        }
+    }
+
     public Iterable<Entry> snapshot() {
         return new ArrayList<>(entries.values());
     }
@@ -416,6 +429,13 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
         WorldServer anchor = DimensionManager.getWorld(entry.dim);
         if (anchor != null) {
+            if (QuantumControllerRegistry.get(anchor)
+                .isSuspendedAnchor(
+                    QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az),
+                    entry.anchorGeneration)) {
+                entry.disconnect();
+                return;
+            }
             AnchorKey previous = entry.anchorKey();
             String previousGeneration = entry.anchorGeneration;
             if (!normalizeAnchor(entry, anchor)) {

@@ -388,6 +388,26 @@ public class QuantumControllerEventHandler {
 
     // ==================== 4. 破坏出册清理 ====================
 
+    /** Explicit terminal disable is reversible only while the original physical controllers survive. */
+    public static boolean suspendStructure(World world, long position) {
+        if (world == null || world.isRemote) return false;
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        Set<Long> members = registry.registeredStructure(position);
+        if (!registry.suspendStructure(position)) return false;
+        for (WorldServer loaded : DimensionManager.getWorlds()) QuantumIncorporationRegistry.get(loaded)
+            .controllerSuspended(world.provider.dimensionId, members);
+        TileEntityNetworkQuantumNode.disconnectAnchoredNodes(world.provider.dimensionId, members);
+        for (long member : members) {
+            int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
+                z = QuantumControllerRegistry.unpackZ(member);
+            QuantumOverloadCountdown.check(new AnchorKey(world.provider.dimensionId, x, y, z), 0L, false);
+            if (world.blockExists(x, y, z)) restoreAllSides(world, x, y, z);
+        }
+        QuantumNetworkStatsCache.clear();
+        QuantumNetworkData.clearCache();
+        return true;
+    }
+
     /** A BreakEvent can still be canceled; commit removal only from the actual tile lifecycle. */
     public static void cancelStructure(World world, long brokenPosition) {
         if (world == null || world.isRemote) return;

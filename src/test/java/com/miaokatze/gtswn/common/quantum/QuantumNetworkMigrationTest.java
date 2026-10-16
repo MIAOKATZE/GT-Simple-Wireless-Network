@@ -65,15 +65,29 @@ public class QuantumNetworkMigrationTest {
     public void newBindingAtReusedControllerCoordinatesIgnoresHistoricalMoves() throws Exception {
         FixtureWorld world = world();
         QuantumMigrationJournal journal = QuantumMigrationJournal.get(world);
-        journal.append(7, members(A), B);
+        QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
+        NBTTagCompound legacy = new NBTTagCompound();
+        legacy.setIntArray("controllers", new int[] { 7, A.getX(), A.getY(), A.getZ() });
+        controllers.readFromNBT(legacy);
+        String previous = controllers
+            .canonicalAnchor(QuantumControllerRegistry.pack(A.getX(), A.getY(), A.getZ())).generation;
+        journal.append(7, members(A), B, previous, previous, members(A));
+        controllers.dequantize(A.getX(), A.getY(), A.getZ());
+        controllers.quantize(A.getX(), A.getY(), A.getZ());
+        String rebuilt = controllers
+            .canonicalAnchor(QuantumControllerRegistry.pack(A.getX(), A.getY(), A.getZ())).generation;
+        assertTrue(
+            controllers.legacyMembers(members(A), rebuilt)
+                .isEmpty());
         Node fresh = new Node();
         fresh.setWorldObj(world);
-        fresh.setAnchor(7, A.getX(), A.getY(), A.getZ());
+        fresh.setAnchor(7, A.getX(), A.getY(), A.getZ(), rebuilt);
         fresh.applyPendingMigrations(journal);
         assertEquals(A, anchor(fresh));
-        journal.append(7, members(A), C);
+        journal.append(7, members(A), C, rebuilt, rebuilt);
         fresh.applyPendingMigrations(journal);
         assertEquals(C, anchor(fresh));
+        assertEquals(rebuilt, fresh.getAnchorGeneration());
         QuantumNetworkColorSync.untrack(fresh);
     }
 

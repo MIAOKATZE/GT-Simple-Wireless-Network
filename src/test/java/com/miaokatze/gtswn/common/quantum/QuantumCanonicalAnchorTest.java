@@ -77,6 +77,41 @@ public class QuantumCanonicalAnchorTest {
     }
 
     @Test
+    public void savedSchemaOneCanceledHintsUseCurrentCoordinateAliasesOnceAndFutureRemovalInvalidatesThem() {
+        QuantumControllerRegistry current = registry();
+        current.quantizeAll(members(0, 1, 2), pos(1));
+        String generation = current.canonicalAnchor(pos(0)).generation;
+        NBTTagCompound old = new NBTTagCompound();
+        current.writeToNBT(old);
+        old.setInteger("anchorSchema", 1);
+        net.minecraft.nbt.NBTTagList aliases = new net.minecraft.nbt.NBTTagList();
+        for (long member : members(0, 1, 2)) {
+            NBTTagCompound alias = new NBTTagCompound();
+            alias.setLong("pos", member);
+            alias.setString("generation", "erased-by-old-cancel");
+            aliases.appendTag(alias);
+        }
+        old.setTag("legacyAnchorAliases", aliases);
+        current.readFromNBT(old);
+        assertEquals(generation, current.canonicalAnchor(pos(0)).generation);
+        for (long member : members(0, 1, 2)) {
+            assertEquals(pos(1), current.resolveAnchor(member, "erased-by-old-cancel").position);
+            assertEquals(generation, current.resolveAnchor(member, "").generation);
+        }
+        current = reload(current);
+        for (long member : members(0, 1, 2)) current.dequantize(member);
+        current.quantizeAll(members(0, 1, 2), pos(2));
+        assertNotEquals(generation, current.canonicalAnchor(pos(0)).generation);
+        current = reload(current);
+        assertNull(current.resolveAnchor(pos(0), "erased-by-old-cancel"));
+        assertNull(current.resolveAnchor(pos(1), generation));
+        assertNull(current.resolveAnchor(pos(2), ""));
+        assertTrue(
+            current.legacyMembers(members(0, 1, 2), current.canonicalAnchor(pos(0)).generation)
+                .isEmpty());
+    }
+
+    @Test
     public void typedJournalDoesNotRedirectARebuiltGenerationAndPreservesLegacyChains() {
         QuantumMigrationJournal journal = new QuantumMigrationJournal("test");
         AnchorKey a = new AnchorKey(7, 0, 64, 0), b = new AnchorKey(8, 10, 64, 0), c = new AnchorKey(9, 20, 64, 0);
@@ -90,9 +125,11 @@ public class QuantumCanonicalAnchorTest {
         assertEquals("old", restored.resolve(a, 0, "").generation);
         assertEquals(c, restored.resolve(a, 0, "").anchor);
         assertEquals(new AnchorKey(7, 1, 64, 0), restored.resolve(new AnchorKey(7, 1, 64, 0), 0, "").anchor);
-        assertEquals(a, restored.resolve(a, 0, "rebuilt").anchor);
-        assertEquals("rebuilt", restored.resolve(a, 0, "rebuilt").generation);
-        assertEquals(2L, restored.resolve(a, 0, "rebuilt").sequence);
+        assertEquals(c, restored.resolve(a, 0, "old-canceled-hint").anchor);
+        // New bindings carry the journal head cursor and cannot replay an earlier coordinate alias move.
+        assertEquals(a, restored.resolve(a, restored.currentSequence(), "rebuilt").anchor);
+        assertEquals("rebuilt", restored.resolve(a, restored.currentSequence(), "rebuilt").generation);
+        assertEquals(2L, restored.resolve(a, restored.currentSequence(), "rebuilt").sequence);
     }
 
     private static QuantumControllerRegistry registry() {

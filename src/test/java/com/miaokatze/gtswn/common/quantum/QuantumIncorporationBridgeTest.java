@@ -105,7 +105,22 @@ public class QuantumIncorporationBridgeTest {
             target = node(targetEdges, grid, new AtomicInteger());
         IGridConnection deviceEdge = edge(localEdges, relayEdges, localDestroyed),
             controllerEdge = edge(relayEdges, targetEdges, targetDestroyed);
-        QuantumIncorporationRegistry.Entry entry = new QuantumIncorporationRegistry.Entry();
+        QuantumIncorporationRegistry registry = new QuantumIncorporationRegistry("suspended");
+        NBTTagCompound saved = new NBTTagCompound(), binding = new NBTTagCompound();
+        binding.setLong("pos", QuantumControllerRegistry.pack(10, 64, 0));
+        binding.setString("identity", "unchanged-incarnation");
+        binding.setString("owner", "unchanged-owner");
+        binding.setString("anchorGeneration", "unchanged-generation");
+        binding.setInteger("nativeOwnerID", 37);
+        NBTTagList bindings = new NBTTagList();
+        bindings.appendTag(binding);
+        saved.setTag("entries", bindings);
+        registry.readFromNBT(saved);
+        QuantumIncorporationRegistry.Entry entry = registry.snapshot()
+            .iterator()
+            .next();
+        NBTTagCompound before = new NBTTagCompound();
+        registry.writeToNBT(before);
         set(entry, "local", local);
         set(entry, "billingNode", relay);
         set(entry, "target", target);
@@ -130,15 +145,20 @@ public class QuantumIncorporationBridgeTest {
                     Collections.singleton(QuantumControllerRegistry.pack(0, 0, 0)),
                     grid,
                     Collections.emptySet()));
-            java.lang.reflect.Method disconnect = entry.getClass()
-                .getDeclaredMethod("disconnect");
-            disconnect.setAccessible(true);
-            disconnect.invoke(entry);
-            disconnect.invoke(entry);
+            registry.controllerSuspended(0, Collections.singleton(QuantumControllerRegistry.pack(0, 0, 0)));
+            registry.controllerSuspended(0, Collections.singleton(QuantumControllerRegistry.pack(0, 0, 0)));
             assertFalse(entry.isConnected());
             assertEquals(1, localDestroyed.get());
             assertEquals(1, targetDestroyed.get());
             assertEquals(1, relayDestroyed.get());
+            NBTTagCompound after = new NBTTagCompound();
+            registry.writeToNBT(after);
+            assertEquals(before, after);
+            assertSame(
+                entry,
+                registry.snapshot()
+                    .iterator()
+                    .next());
         } finally {
             active.remove(anchor);
             if (previous != null) active.put(anchor, previous);

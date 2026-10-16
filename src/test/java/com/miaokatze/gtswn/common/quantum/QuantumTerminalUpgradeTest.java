@@ -19,6 +19,7 @@ import net.minecraft.nbt.NBTBase;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.profiler.Profiler;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProviderSurface;
 import net.minecraft.world.WorldSavedData;
@@ -46,7 +47,9 @@ public class QuantumTerminalUpgradeTest {
             CountingTag tag = (CountingTag) stack.getTagCompound();
             tag.setString(QuantumTerminalAccess.NBT_OWNER_UUID, "saved-owner");
             fixture.item.onUpdate(stack, fixture.world, fixture.actor, 4, false);
-            assertEquals(1, tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
+            assertEquals(
+                ItemNetworkQuantumTerminal.ANCHOR_SCHEMA,
+                tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
             assertEquals("saved-owner", tag.getString(QuantumTerminalAccess.NBT_OWNER_UUID));
             assertEquals(
                 fixture.registry.canonicalAnchor(pos()).generation,
@@ -69,7 +72,7 @@ public class QuantumTerminalUpgradeTest {
             fixture.item.onUpdate(stack, fixture.world, fixture.actor, 4, false);
             assertEquals(1, fixture.registry.resolutions);
             assertEquals(
-                1,
+                ItemNetworkQuantumTerminal.ANCHOR_SCHEMA,
                 stack.getTagCompound()
                     .getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
         }
@@ -94,9 +97,12 @@ public class QuantumTerminalUpgradeTest {
             fixture.item.onUpdate(stack, fixture.world, fixture.actor, 0, true);
             assertEquals(2, fixture.registry.resolutions);
             assertEquals(
-                1,
+                ItemNetworkQuantumTerminal.ANCHOR_SCHEMA,
                 stack.getTagCompound()
                     .getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
+            // A later genuinely rebuilt structure has no upgrade-captured alias to adopt stale hints.
+            fixture.registry.dequantize(pos());
+            fixture.registry.quantize(0, 64, 0);
             ItemStack stale = terminal();
             stale.getTagCompound()
                 .setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, "retired-generation");
@@ -186,7 +192,7 @@ public class QuantumTerminalUpgradeTest {
                 assertEquals(false, normalize.invoke(node));
                 assertEquals(false, incNormalize.invoke(incorporation, entry, fixture.world));
                 CountingRegistry replacement = new CountingRegistry();
-                replacement.readFromNBT(legacy());
+                replacement.quantize(0, 64, 0);
                 fixture.world.perWorldStorage.setData(QuantumControllerRegistry.DATA_NAME, replacement);
                 assertEquals(false, normalize.invoke(node));
                 assertEquals(false, incNormalize.invoke(incorporation, entry, fixture.world));
@@ -339,7 +345,7 @@ public class QuantumTerminalUpgradeTest {
             ItemStack stack = terminal();
             fixture.item.onUpdate(stack, fixture.world, fixture.actor, 0, false);
             assertEquals(
-                1,
+                ItemNetworkQuantumTerminal.ANCHOR_SCHEMA,
                 stack.getTagCompound()
                     .getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
             assertNotEquals(
@@ -386,6 +392,77 @@ public class QuantumTerminalUpgradeTest {
             assertEquals(6, QuantumNetworkColor.get(stack));
             assertEquals(QuantumTerminalSyncEpoch.current(), tag.getLong(ItemNetworkQuantumTerminal.NBT_SYNC_EPOCH));
             assertEquals(resolved, fixture.registry.resolutions);
+        }
+    }
+
+    @Test
+    public void savedCanceledGenerationNodesAndSchemaOneTerminalPersistOneCanonicalBindingWithoutChangingOwners()
+        throws Exception {
+        try (Fixture fixture = new Fixture(true); NodeMapping mapping = new NodeMapping()) {
+            QuantumControllerRegistry old = new QuantumControllerRegistry("old");
+            java.util.Set<Long> members = new java.util.HashSet<>();
+            for (int x = 0; x < 3; x++) members.add(QuantumControllerRegistry.pack(x, 64, 0));
+            old.quantizeAll(members, QuantumControllerRegistry.pack(1, 64, 0));
+            String currentGeneration = old.canonicalAnchor(pos()).generation;
+            NBTTagCompound saved = new NBTTagCompound();
+            old.writeToNBT(saved);
+            saved.setInteger("anchorSchema", 1);
+            NBTTagList staleAliases = new NBTTagList();
+            for (long member : members) {
+                NBTTagCompound alias = new NBTTagCompound();
+                alias.setLong("pos", member);
+                alias.setString("generation", "old-canceled-generation");
+                staleAliases.appendTag(alias);
+            }
+            saved.setTag("legacyAnchorAliases", staleAliases);
+            fixture.registry.readFromNBT(saved);
+            Method normalize = TileEntityNetworkQuantumNode.class.getDeclaredMethod("normalizeCanonicalAnchor");
+            normalize.setAccessible(true);
+            for (int oldX : new int[] { 0, 2 }) {
+                Node node = new Node();
+                try {
+                    NBTTagCompound nodeSave = new NBTTagCompound();
+                    nodeSave.setInteger("anchorDim", DIM);
+                    nodeSave.setInteger("anchorX", oldX);
+                    nodeSave.setInteger("anchorY", 64);
+                    nodeSave.setString("anchorGeneration", "old-canceled-generation");
+                    nodeSave.setString("placerUUID", "unchanged-node-owner");
+                    nodeSave.setString("placerName", "unchanged name");
+                    node.readFromNBT(nodeSave);
+                    node.setWorldObj(fixture.world);
+                    assertEquals(true, normalize.invoke(node));
+                    NBTTagCompound normalizedSave = new NBTTagCompound();
+                    node.writeToNBT(normalizedSave);
+                    assertEquals(1, normalizedSave.getInteger("anchorX"));
+                    assertEquals(currentGeneration, normalizedSave.getString("anchorGeneration"));
+                    assertEquals("unchanged-node-owner", normalizedSave.getString("placerUUID"));
+                    Node restored = new Node();
+                    restored.readFromNBT(normalizedSave);
+                    assertEquals(1, restored.getAnchorX());
+                    assertEquals(currentGeneration, restored.getAnchorGeneration());
+                    int reads = fixture.registry.resolutions;
+                    for (int tick = 0; tick < 20; tick++) assertEquals(true, normalize.invoke(node));
+                    assertEquals(reads, fixture.registry.resolutions);
+                } finally {
+                    QuantumNetworkColorSync.untrack(node);
+                }
+            }
+            ItemStack terminal = terminal();
+            NBTTagCompound tag = terminal.getTagCompound();
+            tag.setByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA, (byte) 1);
+            tag.setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, "old-canceled-generation");
+            tag.setString(QuantumTerminalAccess.NBT_OWNER_UUID, "unchanged-terminal-owner");
+            fixture.item.onUpdate(terminal, fixture.world, fixture.actor, 0, false);
+            assertEquals(2, tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA));
+            assertEquals(1, tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X));
+            assertEquals(currentGeneration, tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+            assertEquals("unchanged-terminal-owner", tag.getString(QuantumTerminalAccess.NBT_OWNER_UUID));
+            int reads = fixture.registry.resolutions;
+            ((CountingTag) tag).writes = 0;
+            for (int tick = 0; tick < 20; tick++)
+                fixture.item.onUpdate(terminal, fixture.world, fixture.actor, 0, false);
+            assertEquals(0, ((CountingTag) tag).writes);
+            assertEquals(reads, fixture.registry.resolutions);
         }
     }
 
@@ -495,6 +572,31 @@ public class QuantumTerminalUpgradeTest {
 
         @Override
         public void markDirty() {}
+    }
+
+    /** Exact native tile IDs are needed by writeToNBT; leave both vanilla maps as they were. */
+    private static final class NodeMapping implements AutoCloseable {
+
+        private static final String ID = "gtswn.test.saved_anchor_upgrade";
+        private final Map<String, Class<?>> names;
+        private final Map<Class<?>, String> classes;
+        private final String previous;
+
+        @SuppressWarnings("unchecked")
+        NodeMapping() throws Exception {
+            names = (Map<String, Class<?>>) field(TileEntity.class, "nameToClassMap").get(null);
+            classes = (Map<Class<?>, String>) field(TileEntity.class, "classToNameMap").get(null);
+            previous = classes.get(Node.class);
+            assertFalse(names.containsKey(ID));
+            TileEntity.addMapping(Node.class, ID);
+        }
+
+        @Override
+        public void close() {
+            names.remove(ID);
+            if (previous == null) classes.remove(Node.class);
+            else classes.put(Node.class, previous);
+        }
     }
 
     private static class Actor extends EntityPlayerMP {

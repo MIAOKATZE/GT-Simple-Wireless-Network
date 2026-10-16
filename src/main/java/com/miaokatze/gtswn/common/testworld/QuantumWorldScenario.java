@@ -46,6 +46,11 @@ final class QuantumWorldScenario implements TestScenario {
     private long incorporationRejectsBefore;
     private NBTTagCompound incorporationBindingBeforeReject, terminalBeforeReject;
     private boolean incorporationSafetyRaised;
+    private ItemStack terminalBeforePause;
+    private NBTTagCompound terminalBindingBeforePause, incorporationBindingBeforePause;
+    private long canonicalBeforePause;
+    private String generationBeforePause;
+    private int nodeOwnerBeforePause;
 
     QuantumWorldScenario(Mode mode) {
         this.mode = mode;
@@ -85,6 +90,9 @@ final class QuantumWorldScenario implements TestScenario {
         incorporationSafetyRaised = false;
         incorporationBindingBeforeReject = null;
         terminalBeforeReject = null;
+        terminalBeforePause = null;
+        terminalBindingBeforePause = null;
+        incorporationBindingBeforePause = null;
         if (mode == Mode.SAFETY && !Config.quantumSafetyEnabled) {
             ctx.skip("Optional quantum safety is disabled by current Config; test does not change global Config");
             return;
@@ -282,6 +290,7 @@ final class QuantumWorldScenario implements TestScenario {
             return;
         }
         if (stage == 2 && node.isLinked()) {
+            capturePause(ctx);
             clickController(ctx, true);
             TestWorldFixtures.require(
                 ctx,
@@ -294,10 +303,15 @@ final class QuantumWorldScenario implements TestScenario {
             TestWorldFixtures.require(
                 ctx,
                 TestWorldProbes.count(TestWorldProbes.Type.QUANTUM_NODE_DISCONNECT) > 0
-                    && TestWorldProbes.count(TestWorldProbes.Type.QUANTUM_CONTROLLER_REMOVE) > 0,
-                "Production hooks observed dequantization and actual bridge disconnection");
+                    && registry(ctx).isSuspendedAnchor(canonicalBeforePause, generationBeforePause),
+                "Production hooks observed actual bridge disconnection while the same generation is suspended");
+            requirePausedBinding(ctx);
+            clickController(ctx, false);
+            next(ctx, 10);
+        } else if (stage == 10 && node.isLinked()) {
+            requireResumedBinding(ctx);
             ctx.pass(
-                "Real terminal quantization, natural bridge, node NBT reconnect and dequantization disconnect passed");
+                "Real terminal quantization, node NBT reconnect, pause and same-generation natural bridge recovery passed");
         } else if (stage == 4 && entry(ctx) != null && entry(ctx).isConnected()) {
             TestWorldFixtures.require(
                 ctx,
@@ -327,6 +341,38 @@ final class QuantumWorldScenario implements TestScenario {
                 ctx,
                 incorporationIdentity.equals(entry(ctx).identity()),
                 "Tile NBT and natural incorporation lifecycle recover the same registration");
+            capturePause(ctx);
+            incorporationBindingBeforePause = incorporations(ctx)
+                .copyBinding(ctx.world(), incorporated.xCoord, incorporated.yCoord, incorporated.zCoord);
+            clickController(ctx, true);
+            next(ctx, 11);
+        } else if (stage == 11 && ctx.tick() - stageTick >= 50) {
+            requirePausedBinding(ctx);
+            TestWorldFixtures.require(
+                ctx,
+                !node.isLinked() && entry(ctx) != null
+                    && !entry(ctx).isConnected()
+                    && incorporationIdentity.equals(entry(ctx).identity())
+                    && player.getUniqueID()
+                        .toString()
+                        .equals(entry(ctx).owner())
+                    && incorporationBindingBeforePause.equals(
+                        incorporations(ctx)
+                            .copyBinding(ctx.world(), incorporated.xCoord, incorporated.yCoord, incorporated.zCoord)),
+                "Paused incorporation keeps identity, owner and exact binding while both natural bridges are offline");
+            clickController(ctx, false);
+            next(ctx, 12);
+        } else if (stage == 12 && node.isLinked() && entry(ctx) != null && entry(ctx).isConnected()) {
+            requireResumedBinding(ctx);
+            TestWorldFixtures.require(
+                ctx,
+                incorporationIdentity.equals(entry(ctx).identity()) && player.getUniqueID()
+                    .toString()
+                    .equals(entry(ctx).owner())
+                    && incorporationBindingBeforePause.equals(
+                        incorporations(ctx)
+                            .copyBinding(ctx.world(), incorporated.xCoord, incorporated.yCoord, incorporated.zCoord)),
+                "Same incorporation naturally reconnects after real terminal re-quantization without re-adding it");
             TestWorldFixtures.require(
                 ctx,
                 !incorporations(ctx)
@@ -349,7 +395,7 @@ final class QuantumWorldScenario implements TestScenario {
                     && TestWorldProbes.count(TestWorldProbes.Type.INCORPORATION_REMOVE) > 0,
                 "Production hooks observed actual incorporation add/connect/remove");
             ctx.pass(
-                "Actual incorporation bridged, recovered after tile NBT reload, enforced removal ownership and disconnected");
+                "Actual incorporation recovered after NBT reload and same-generation pause/resume, then enforced removal ownership");
         } else if (stage == 6 && node.getAnchorX() == TestWorldFixtures.TARGET_X && node.isLinked()) {
             node = (TileEntityNetworkQuantumNode) TestWorldFixtures.reload(ctx.world(), node);
             TestWorldFixtures
@@ -446,18 +492,71 @@ final class QuantumWorldScenario implements TestScenario {
 
     private void clickController(TestContext ctx, boolean sneak) {
         player.setSneaking(sneak);
-        ((ItemNetworkQuantumTerminal) terminal.getItem()).onItemUseFirst(
-            terminal,
-            player,
-            ctx.world(),
-            TestWorldFixtures.CONTROLLER_X,
-            TestWorldFixtures.Y,
-            TestWorldFixtures.CONTROLLER_Z,
-            1,
-            .5f,
-            .5f,
-            .5f);
-        player.setSneaking(false);
+        player.inventory.currentItem = 0;
+        player.inventory.setInventorySlotContents(0, terminal);
+        try {
+            TestWorldFixtures.require(
+                ctx,
+                player.theItemInWorldManager.activateBlockOrUseItem(
+                    player,
+                    ctx.world(),
+                    terminal,
+                    TestWorldFixtures.CONTROLLER_X,
+                    TestWorldFixtures.Y,
+                    TestWorldFixtures.CONTROLLER_Z,
+                    ForgeDirection.UP.ordinal(),
+                    .5f,
+                    .5f,
+                    .5f),
+                "Real ItemInWorldManager terminal controller gesture handled");
+        } finally {
+            player.setSneaking(false);
+        }
+    }
+
+    private void capturePause(TestContext ctx) {
+        terminalBeforePause = terminal.copy();
+        terminalBindingBeforePause = (NBTTagCompound) terminalBeforePause.getTagCompound()
+            .copy();
+        QuantumControllerRegistry.CanonicalAnchor anchor = registry(ctx)
+            .canonicalAnchor(QuantumControllerRegistry.pack(controller.xCoord, controller.yCoord, controller.zCoord));
+        TestWorldFixtures
+            .require(ctx, anchor != null, "Live fixture has an authoritative canonical anchor before pause");
+        canonicalBeforePause = anchor.position;
+        generationBeforePause = anchor.generation;
+        nodeOwnerBeforePause = node.getNativeOwnerID();
+    }
+
+    private void requirePausedBinding(TestContext ctx) {
+        TestWorldFixtures.require(
+            ctx,
+            !registry(ctx).isQuantized(controller.xCoord, controller.yCoord, controller.zCoord) && ctx.world()
+                .getTileEntity(controller.xCoord, controller.yCoord, controller.zCoord) == controller
+                && node.hasAnchor()
+                && generationBeforePause.equals(node.getAnchorGeneration())
+                && node.getNativeOwnerID() == nodeOwnerBeforePause
+                && terminalBindingBeforePause.equals(terminalBeforePause.getTagCompound()),
+            "Real pause retains controller object, old terminal binding and node generation/owner");
+    }
+
+    private void requireResumedBinding(TestContext ctx) {
+        QuantumControllerRegistry.CanonicalAnchor anchor = registry(ctx)
+            .canonicalAnchor(QuantumControllerRegistry.pack(controller.xCoord, controller.yCoord, controller.zCoord));
+        TestWorldFixtures.require(
+            ctx,
+            anchor != null && anchor.position == canonicalBeforePause
+                && generationBeforePause.equals(anchor.generation)
+                && ctx.world()
+                    .getTileEntity(controller.xCoord, controller.yCoord, controller.zCoord) == controller
+                && generationBeforePause.equals(node.getAnchorGeneration())
+                && node.getNativeOwnerID() == nodeOwnerBeforePause
+                && node.getCoreGridNode()
+                    .getGrid()
+                    == ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN)
+                        .getGrid()
+                && terminalBindingBeforePause.equals(terminalBeforePause.getTagCompound())
+                && QuantumTerminalAccess.validate(player, terminalBeforePause.copy()),
+            "Same controller naturally reconnects the original node and accepts untouched old terminal with same canonical/generation/owner");
     }
 
     private void next(TestContext ctx, int value) {

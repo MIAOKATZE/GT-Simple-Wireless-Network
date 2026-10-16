@@ -163,7 +163,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
     public static final String NBT_ANCHOR_Z = "QT_AnchorZ";
     public static final String NBT_ANCHOR_GENERATION = "QT_AnchorGeneration";
     public static final String NBT_ANCHOR_SCHEMA = "QT_AnchorSchema";
-    public static final byte ANCHOR_SCHEMA = 1;
+    public static final byte ANCHOR_SCHEMA = 2;
     public static final String NBT_SYNC_EPOCH = "QT_SyncEpoch";
 
     /** 绑定时维度显示名（tooltip 用） */
@@ -282,9 +282,10 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
                 return true;
             }
             boolean wasOpen = QuantumTerminalSecurityHints.isOpen(world, x, y, z);
-            dequantizeStructure(player, world, registry, x, y, z);
-            clearAnchor(stack);
-            QuantumTerminalSecurityHints.show(player, wasOpen);
+            if (dequantizeStructure(player, world, registry, x, y, z)) {
+                clearAnchor(stack);
+                QuantumTerminalSecurityHints.show(player, wasOpen);
+            }
             return true;
         }
         if (quantized) {
@@ -380,7 +381,9 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         // D10：洪泛 6 邻接全部相连控制器（整结构语义）
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, x, y, z);
         if (!registry.quantizeAll(structure, QuantumControllerRegistry.pack(x, y, z))) {
-            sendMessage(player, "gtswn.chat.quantum.no_permission");
+            boolean suspended = false;
+            for (long member : structure) suspended |= registry.isSuspendedController(member);
+            sendMessage(player, suspended ? "gtswn.chat.quantum.resume_pending" : "gtswn.chat.quantum.no_permission");
             return;
         }
         // 逐块应用连接过滤（仅放行同伴控制器/能量接收器/石英纤维朝向面）
@@ -407,10 +410,14 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
      * {@code restoreAllSides} 共用同一路径；结构本身不合法时 TileController.onNeighborChange
      * 后续会自行修正 validSides，无需额外处理。
      */
-    private void dequantizeStructure(EntityPlayer player, World world, QuantumControllerRegistry registry, int x, int y,
-        int z) {
-        QuantumControllerEventHandler.cancelStructure(world, QuantumControllerRegistry.pack(x, y, z));
+    private boolean dequantizeStructure(EntityPlayer player, World world, QuantumControllerRegistry registry, int x,
+        int y, int z) {
+        if (!QuantumControllerEventHandler.suspendStructure(world, QuantumControllerRegistry.pack(x, y, z))) {
+            sendMessage(player, "gtswn.chat.quantum.pause_failed");
+            return false;
+        }
         sendMessage(player, "gtswn.chat.quantum.dequantized");
+        return true;
     }
 
     /**

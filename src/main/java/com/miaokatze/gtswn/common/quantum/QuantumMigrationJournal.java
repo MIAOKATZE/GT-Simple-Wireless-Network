@@ -81,8 +81,8 @@ public final class QuantumMigrationJournal extends WorldSavedData {
             Event event = next.getValue();
             applied = event.sequence;
             if (event.sourceGeneration.isEmpty() || event.sourceGeneration.equals(generation)
-                || (generation.isEmpty() && event.legacyMembers
-                    .contains(QuantumControllerRegistry.pack(result.getX(), result.getY(), result.getZ())))) {
+                || event.legacyMembers
+                    .contains(QuantumControllerRegistry.pack(result.getX(), result.getY(), result.getZ()))) {
                 result = event.target;
                 if (!event.targetGeneration.isEmpty()) generation = event.targetGeneration;
             }
