@@ -95,6 +95,9 @@ public final class TestWorldReport {
         public final List<String> itemTypes = new ArrayList<>();
         public final List<Cell> cells = new ArrayList<>();
         public final List<WorkloadPhase> phases = new ArrayList<>();
+        public final List<Machine> machines = new ArrayList<>();
+        public final List<TransferGroup> transferGroups = new ArrayList<>();
+        public final List<String> coverageLimitations = new ArrayList<>();
 
         Workload copy() {
             Workload target = new Workload();
@@ -106,7 +109,64 @@ public final class TestWorldReport {
             target.itemTypes.addAll(itemTypes);
             for (Cell cell : cells) target.cells.add(new Cell(cell));
             for (WorkloadPhase phase : phases) target.phases.add(new WorkloadPhase(phase));
+            for (Machine machine : machines) target.machines.add(new Machine(machine));
+            for (TransferGroup group : transferGroups) target.transferGroups.add(new TransferGroup(group));
+            target.coverageLimitations.addAll(coverageLimitations);
             return target;
+        }
+    }
+
+    /** Native bus sources and physical ME chest insertion provide machine-specific material evidence. */
+    public static final class Machine {
+
+        public final int id, x, y, z, metaId;
+        public long exportedInput, importedOutput, progressSamples, activeSamples;
+        public long chestInsertedOutput, auditedInputItems, auditedOutputItems, maxObservedRawEU;
+        public boolean nativeDebugEnergyCover;
+        public final List<Long> windowExportedInput = new ArrayList<>();
+        public final List<Long> windowImportedOutput = new ArrayList<>();
+        public final List<Long> windowChestInsertedOutput = new ArrayList<>();
+
+        Machine(int id, int x, int y, int z, int metaId) {
+            this.id = id;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.metaId = metaId;
+        }
+
+        private Machine(Machine source) {
+            this(source.id, source.x, source.y, source.z, source.metaId);
+            exportedInput = source.exportedInput;
+            importedOutput = source.importedOutput;
+            progressSamples = source.progressSamples;
+            activeSamples = source.activeSamples;
+            chestInsertedOutput = source.chestInsertedOutput;
+            auditedInputItems = source.auditedInputItems;
+            auditedOutputItems = source.auditedOutputItems;
+            maxObservedRawEU = source.maxObservedRawEU;
+            nativeDebugEnergyCover = source.nativeDebugEnergyCover;
+            windowExportedInput.addAll(source.windowExportedInput);
+            windowImportedOutput.addAll(source.windowImportedOutput);
+            windowChestInsertedOutput.addAll(source.windowChestInsertedOutput);
+        }
+    }
+
+    public static final class TransferGroup {
+
+        public final int firstNode, nodeCount;
+        public long nativeInserted, nativeExtracted, interfacesTransferred;
+
+        TransferGroup(int firstNode, int nodeCount) {
+            this.firstNode = firstNode;
+            this.nodeCount = nodeCount;
+        }
+
+        private TransferGroup(TransferGroup source) {
+            this(source.firstNode, source.nodeCount);
+            nativeInserted = source.nativeInserted;
+            nativeExtracted = source.nativeExtracted;
+            interfacesTransferred = source.interfacesTransferred;
         }
     }
 
@@ -145,6 +205,7 @@ public final class TestWorldReport {
         public final long startedTick;
         public long endedTick;
         public TestWorldPerformance.Snapshot performance;
+        public final Map<String, Long> observed = new LinkedHashMap<>();
         transient TestWorldPerformance sampler;
 
         WorkloadPhase(String name, long startedTick) {
@@ -156,6 +217,7 @@ public final class TestWorldReport {
             this(source.name, source.startedTick);
             endedTick = source.endedTick;
             performance = source.performance;
+            observed.putAll(source.observed);
         }
     }
 

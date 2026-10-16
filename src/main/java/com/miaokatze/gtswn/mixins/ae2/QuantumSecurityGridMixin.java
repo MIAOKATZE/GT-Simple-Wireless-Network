@@ -1,11 +1,13 @@
 package com.miaokatze.gtswn.mixins.ae2;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import com.miaokatze.gtswn.common.quantum.QuantumSecurityScopeIndex;
 import com.miaokatze.gtswn.common.quantum.QuantumSecurityTopology;
 
 import appeng.api.networking.events.MENetworkEvent;
@@ -16,6 +18,26 @@ import appeng.me.GridNode;
 /** Observe the native membership boundary, including direct destruction and initial grid creation. */
 @Mixin(value = Grid.class, remap = false)
 public abstract class QuantumSecurityGridMixin implements QuantumSecurityTopology.TrackedGrid {
+
+    @Unique
+    private QuantumSecurityScopeIndex gtswn$scopeIndex;
+
+    @Override
+    public QuantumSecurityScopeIndex quantumSecurityScopes() {
+        if (gtswn$scopeIndex == null) gtswn$scopeIndex = new QuantumSecurityScopeIndex();
+        return gtswn$scopeIndex;
+    }
+
+    @Inject(method = "add", at = @At("HEAD"), remap = false, require = 1)
+    private void gtswn$scopeAdded(GridNode node, CallbackInfo callback) {
+        quantumSecurityScopes().add(node);
+    }
+
+    @Inject(method = "remove", at = @At("RETURN"), remap = false, require = 1)
+    private void gtswn$scopeRemoved(GridNode node, CallbackInfo callback) {
+        quantumSecurityScopes().remove(node);
+        QuantumSecurityTopology.membershipChanged(node);
+    }
 
     @Inject(method = { "add", "remove" }, at = @At("HEAD"), remap = false, require = 2)
     private void gtswn$membershipChanged(GridNode node, CallbackInfo callback) {

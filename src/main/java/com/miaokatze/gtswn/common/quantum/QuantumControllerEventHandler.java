@@ -60,7 +60,7 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * <li>{@link #onBreakSpeed}：量子化控制器与量子节点挖掘减速至等效硬度 1000（黑曜石×20）</li>
  * <li>{@link #onBlockPlace}：方块放置时即时重算邻接已量子化控制器的连接过滤
  * （1.7.10 无 NeighborNotifyEvent，以 PlaceEvent 覆盖主路径）</li>
- * <li>真实方块实体移除时取消原控制器整结构的量子化</li>
+ * <li>真实控制器移除只更新该成员；其余控制器及设备绑定保留，默认点按组件惰性校准</li>
  * <li>{@link #onServerTick}：每秒（20t）巡检——连接过滤兜底重算、失效坐标出册、
  * D8 新贴上控制器自动合并量子化</li>
  * </ul>
@@ -297,9 +297,8 @@ public class QuantumControllerEventHandler {
             boolean touchesRegistered = false;
             for (long member : candidates) if (registry.isQuantized(member)) touchesRegistered = true;
             if (touchesRegistered) {
-                if (!registry.canExtendStructure(candidates)) {
-                    event.setCanceled(true);
-                } else {
+                // A paused neighbor suppresses automatic enrollment, never ordinary physical placement.
+                if (registry.canExtendStructure(candidates)) {
                     PendingPlacement pending = new PendingPlacement(event, placed);
                     for (long member : candidates) {
                         if (registry.isQuantized(member)) continue;
@@ -388,7 +387,7 @@ public class QuantumControllerEventHandler {
 
     // ==================== 4. 破坏出册清理 ====================
 
-    /** Explicit terminal disable is reversible only while the original physical controllers survive. */
+    /** Only an explicit terminal gesture pauses the structure; ordinary edits never perform this operation. */
     public static boolean suspendStructure(World world, long position) {
         if (world == null || world.isRemote) return false;
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
@@ -408,39 +407,21 @@ public class QuantumControllerEventHandler {
         return true;
     }
 
-    /** A BreakEvent can still be canceled; commit removal only from the actual tile lifecycle. */
+    /** Actual removal edits one coordinate. Surviving controllers and every device binding remain registered. */
     public static void cancelStructure(World world, long brokenPosition) {
         if (world == null || world.isRemote) return;
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
-        Set<Long> members = registry.registeredStructure(brokenPosition);
-        if (members.isEmpty()) return;
-        for (long member : members) {
-            registry.dequantize(member);
-            QuantumOverloadCountdown.check(
-                new AnchorKey(
-                    world.provider.dimensionId,
-                    QuantumControllerRegistry.unpackX(member),
-                    QuantumControllerRegistry.unpackY(member),
-                    QuantumControllerRegistry.unpackZ(member)),
-                0L,
-                false);
-        }
-        for (WorldServer loaded : DimensionManager.getWorlds()) {
-            QuantumIncorporationRegistry.get(loaded)
-                .controllerRemoved(loaded, world.provider.dimensionId, members);
-        }
-        TileEntityNetworkQuantumNode.disconnectAnchoredNodes(world.provider.dimensionId, members);
-        for (long member : members) {
-            int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
-                z = QuantumControllerRegistry.unpackZ(member);
-            if (!world.blockExists(x, y, z)) continue;
-            TileEntity tile = world.getTileEntity(x, y, z);
-            if (tile instanceof QuantumControllerIdentity) {
-                ((QuantumControllerIdentity) tile).gtswn$setControllerIdentity("");
-                tile.markDirty();
-            }
-            if (tile != null && !tile.isInvalid()) restoreAllSides(world, x, y, z);
-        }
+        registry.dequantize(brokenPosition);
+        QuantumOverloadCountdown.check(
+            new AnchorKey(
+                world.provider.dimensionId,
+                QuantumControllerRegistry.unpackX(brokenPosition),
+                QuantumControllerRegistry.unpackY(brokenPosition),
+                QuantumControllerRegistry.unpackZ(brokenPosition)),
+            0L,
+            false);
+        // Native invalidation already destroys edges to the removed tile. Other bridges stay live;
+        // devices lazily recalibrate only when their ordinary maintenance observes the new revision.
         QuantumNetworkStatsCache.clear();
         QuantumNetworkData.clearCache();
     }
@@ -531,10 +512,10 @@ public class QuantumControllerEventHandler {
         PerformanceAudit.recordControllerSweep();
         // v1.6.20：允许面集合在循环外建一次复用，避免每控制器每次调用新建 EnumSet
         EnumSet<ForgeDirection> allowed = EnumSet.noneOf(ForgeDirection.class);
-        // Validate the entire old coordinate graph before any auto-merge can re-quantize a remnant.
+        // Reconcile only changed physical members, retaining every surviving quantum controller.
         for (long packed : all) {
             if (registry.isQuantized(packed) && !registry.isCurrentController(world, packed)) {
-                cancelStructure(world, packed);
+                if (!registry.refreshController(world, packed)) cancelStructure(world, packed);
             }
         }
         for (long packed : all) {
@@ -576,7 +557,7 @@ public class QuantumControllerEventHandler {
             } else touchesRegistered = true;
         }
         if (!touchesRegistered) return false;
-        if (!registry.quantizeAll(structure, QuantumControllerRegistry.pack(x, y, z))) return false;
+        if (!registry.quantizeAutomatically(structure, QuantumControllerRegistry.pack(x, y, z))) return false;
         for (long packed : structure) {
             applyConnectionFilter(
                 world,

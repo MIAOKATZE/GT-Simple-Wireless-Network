@@ -5,10 +5,12 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.LongPredicate;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -58,11 +60,18 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     private final Map<Long, String> identities = new HashMap<>();
     private final Map<Long, TileEntity> loadedTiles = new HashMap<>();
-    private static final int ANCHOR_SCHEMA = 2;
+    private static final int ANCHOR_SCHEMA = 3;
     private final Map<Long, String> memberGenerations = new HashMap<>();
     private final Map<String, CanonicalAnchor> canonicalAnchors = new HashMap<>();
     private final Map<String, Integer> generationCounts = new HashMap<>();
     private final Map<Long, String> legacyAnchorAliases = new HashMap<>();
+    /** Historical component evidence lets a removed default point find its surviving companions. */
+    private final Map<String, Set<Long>> recoveryGroups = new HashMap<>();
+    private final Map<String, Long> recoveryDefaults = new HashMap<>();
+    private final Map<Long, String> recoveryAliases = new HashMap<>();
+    private final Set<String> recoveryDirtyGenerations = new HashSet<>();
+    private final Map<String, CanonicalAnchor> recoveredAnchors = new HashMap<>();
+    private long recoveryRevision = -1L;
     /** Explicitly disabled structures retain physical continuity, but are never active anchors. */
     private final Set<String> suspendedGenerations = new HashSet<>();
     private final Map<Long, Integer> suspendedNativeOwners = new HashMap<>();
@@ -150,12 +159,13 @@ public class QuantumControllerRegistry extends WorldSavedData {
     }
 
     public boolean canExtendStructure(Set<Long> members) {
-        return inheritedGeneration(members) != null;
+        return inheritedGeneration(members, false) != null;
     }
 
-    /** Empty means a new structure; null means two existing generations would be joined. */
-    private String inheritedGeneration(Set<Long> members) {
-        String inherited = "";
+    /** Generations are historical hints. A physically joined component selects one current default once. */
+    private String inheritedGeneration(Set<Long> members, boolean explicitResume) {
+        Set<String> generations = new HashSet<>();
+        boolean paused = false;
         for (long member : members) {
             for (int side = -1; side < ForgeDirection.VALID_DIRECTIONS.length; side++) {
                 long position = member;
@@ -168,55 +178,112 @@ public class QuantumControllerRegistry extends WorldSavedData {
                 }
                 if (!controllers.contains(position)) continue;
                 String generation = memberGenerations.get(position);
-                if (generation == null || (!inherited.isEmpty() && !inherited.equals(generation))) return null;
+                if (generation == null) continue;
+                generations.add(generation);
+                if (suspendedGenerations.contains(generation)) paused = true;
+            }
+        }
+        if (!explicitResume && paused) return null;
+        Map<Long, Integer> votes = QuantumNetworkColorSync.bindingVotes(dimensionId, members);
+        String inherited = "";
+        int most = -1;
+        long selectedPosition = Long.MAX_VALUE;
+        for (String generation : generations) {
+            int count = 0;
+            long position = Long.MAX_VALUE;
+            for (long member : members) if (generation.equals(memberGenerations.get(member))) {
+                count += votes.getOrDefault(member, 0);
+                position = Math.min(position, member);
+            }
+            CanonicalAnchor canonical = canonicalAnchors.get(generation);
+            if (canonical != null && generation.equals(memberGenerations.get(canonical.position)))
+                position = canonical.position;
+            if (count > most || (count == most && (position < selectedPosition
+                || (position == selectedPosition && generation.compareTo(inherited) < 0)))) {
                 inherited = generation;
+                most = count;
+                selectedPosition = position;
             }
         }
         return inherited;
     }
 
     public boolean quantizeAll(Set<Long> packedCoords, long firstClick) {
-        if (packedCoords.isEmpty() || !packedCoords.contains(firstClick)) return false;
-        String generation = inheritedGeneration(packedCoords);
+        return quantizeAll(packedCoords, firstClick, true);
+    }
+
+    public boolean quantizeAutomatically(Set<Long> packedCoords, long firstClick) {
+        return quantizeAll(packedCoords, firstClick, false);
+    }
+
+    private boolean quantizeAll(Set<Long> packedCoords, long firstClick, boolean explicitResume) {
+        if (packedCoords.isEmpty() || !packedCoords.contains(firstClick)
+            || coordinateComponent(packedCoords, firstClick).size() != packedCoords.size()) return false;
+        String generation = inheritedGeneration(packedCoords, explicitResume);
         if (generation == null) return false;
         if (suspendedGenerations.contains(generation)) {
-            Set<Long> original = registeredStructure(firstSuspendedMember(packedCoords, generation));
-            // A partial loaded flood cannot prove that the rest of a disabled structure still exists.
-            if (world == null) return false;
-            for (long member : original)
-                if (!world.blockExists(unpackX(member), unpackY(member), unpackZ(member))) return false;
-            boolean continuous = packedCoords.containsAll(original);
-            for (long member : original) {
-                // Unlike legacy active adoption, disabled identity continuity must already be provable.
-                boolean current = identities.containsKey(member) && isCurrentController(world, member);
-                if (!current) continuous = false;
+            Set<Long> component = registeredStructure(firstSuspendedMember(packedCoords, generation));
+            Set<Long> original = new HashSet<>(component);
+            Set<Long> historical = recoveryGroups.get(generation);
+            if (historical != null) for (long position : historical)
+                if (generation.equals(memberGenerations.get(position))) original.add(position);
+            // Do not mistake an unloaded remainder for a deliberate structure edit.
+            for (long member : component) if (!packedCoords.contains(member)
+                && (world == null || !world.blockExists(unpackX(member), unpackY(member), unpackZ(member))))
+                return false;
+            // Resumption is an explicit registration of the current physical component. Its coordinates,
+            // not obsolete tile identities or native owners, define which saved bindings can recover.
+            // Remove only physically missing members. Other detached fragments retain their paused bindings.
+            boolean detached = original.size() > component.size();
+            for (long member : component) if (!packedCoords.contains(member)) {
+                TileEntity tile = world.getTileEntity(unpackX(member), unpackY(member), unpackZ(member));
+                if (!(tile instanceof TileController) || tile.isInvalid()) dequantize(member);
+                else detached = true;
             }
-            if (continuous) for (long member : original) {
-                Integer owner = suspendedNativeOwners.get(member);
-                if (owner != null) {
-                    Integer currentOwner = nativeOwner(member);
-                    if (currentOwner == null) return false; // The native proxy is not ready yet; retain the proof.
-                    if (!owner.equals(currentOwner)) {
-                        continuous = false;
-                        break;
-                    }
+            if (detached) {
+                String previous = generation;
+                generation = UUID.randomUUID()
+                    .toString();
+                int moved = 0;
+                for (long member : packedCoords) if (previous.equals(memberGenerations.get(member))) {
+                    memberGenerations.put(member, generation);
+                    if (previous.equals(legacyAnchorAliases.get(member))) legacyAnchorAliases.put(member, generation);
+                    moved++;
+                }
+                generationCounts.put(previous, generationCounts.get(previous) - moved);
+                generationCounts.put(generation, moved);
+                CanonicalAnchor previousAnchor = canonicalAnchors.get(previous);
+                canonicalAnchors.put(
+                    generation,
+                    new CanonicalAnchor(
+                        previousAnchor != null && packedCoords.contains(previousAnchor.position)
+                            ? previousAnchor.position
+                            : electAnchor(packedCoords),
+                        generation));
+                recoveryDirtyGenerations.add(generation);
+            }
+            for (long member : packedCoords) {
+                suspendedNativeOwners.remove(member);
+                if (controllers.contains(member)) {
+                    loadedTiles.remove(member);
+                    identities.remove(member);
+                    rememberIdentity(member);
                 }
             }
-            if (!continuous) {
-                // Replacement/identity/owner changes retire the old generation, never adopt its references.
-                for (long member : original) dequantize(member);
-                generation = inheritedGeneration(packedCoords);
-                if (generation == null) return false;
-            } else {
-                suspendedGenerations.remove(generation);
-                for (long member : original) suspendedNativeOwners.remove(member);
-                revision++;
-                markDirty();
-                QuantumTerminalSyncEpoch.changed();
-            }
+            suspendedGenerations.remove(generation);
+            CanonicalAnchor canonical = canonicalAnchors.get(generation);
+            if (canonical != null && !packedCoords.contains(canonical.position)) canonicalAnchors.remove(generation);
+            revision++;
+            markDirty();
+            QuantumTerminalSyncEpoch.bindingsChanged();
         }
         if (generation.isEmpty()) generation = UUID.randomUUID()
             .toString();
+        // Explicit registration applies to the physical component, including paused losing generations.
+        // Automatic placement still retains the original object/identity fence until the normal sweep.
+        if (explicitResume && world != null)
+            for (long member : packedCoords) if (controllers.contains(member) && !isCurrentController(world, member)
+                && !refreshController(world, member)) return false;
         return quantizeAs(packedCoords, firstClick, generation, false);
     }
 
@@ -259,7 +326,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
         suspendedGenerations.add(generation);
         revision++;
         markDirty();
-        QuantumTerminalSyncEpoch.changed();
+        QuantumTerminalSyncEpoch.bindingsChanged();
         return true;
     }
 
@@ -277,7 +344,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
         if (members.isEmpty() || !members.contains(firstClick) || generation == null || generation.isEmpty())
             return false;
         for (long member : members) if (controllers.contains(member)) return false;
-        String inherited = inheritedGeneration(members);
+        String inherited = inheritedGeneration(members, false);
         if (inherited == null || !inherited.isEmpty()) return false;
         return quantizeAs(members, firstClick, generation, true);
     }
@@ -287,11 +354,32 @@ public class QuantumControllerRegistry extends WorldSavedData {
         // Check the old evidence before mutating any membership and never refresh it while adding companions.
         for (long packed : packedCoords)
             if (controllers.contains(packed) && world != null && !isCurrentController(world, packed)) return false;
+        boolean coalesced = false;
+        for (long packed : packedCoords) {
+            String previous = memberGenerations.get(packed);
+            if (previous == null || previous.equals(generation)) continue;
+            memberGenerations.put(packed, generation);
+            suspendedNativeOwners.remove(packed);
+            if (previous.equals(legacyAnchorAliases.get(packed))) legacyAnchorAliases.put(packed, generation);
+            int remaining = generationCounts.getOrDefault(previous, 1) - 1;
+            if (remaining <= 0) {
+                generationCounts.remove(previous);
+                canonicalAnchors.remove(previous);
+                suspendedGenerations.remove(previous);
+            } else generationCounts.put(previous, remaining);
+            generationCounts.put(generation, generationCounts.getOrDefault(generation, 0) + 1);
+            coalesced = true;
+        }
         Set<Long> added = new HashSet<>(packedCoords);
         added.removeAll(this.controllers);
-        if (this.controllers.addAll(packedCoords)) {
-            if (move || !canonicalAnchors.containsKey(generation))
-                canonicalAnchors.put(generation, new CanonicalAnchor(firstClick, generation));
+        if (this.controllers.addAll(packedCoords) || coalesced) {
+            recoveryDirtyGenerations.add(generation);
+            if (move || !canonicalAnchors.containsKey(generation)) {
+                long selected = move ? firstClick
+                    : added.size() == packedCoords.size() ? initialAnchor(packedCoords, firstClick)
+                        : electAnchor(packedCoords);
+                canonicalAnchors.put(generation, new CanonicalAnchor(selected, generation));
+            }
             for (long packed : packedCoords) {
                 if (!memberGenerations.containsKey(packed)) {
                     memberGenerations.put(packed, generation);
@@ -301,9 +389,14 @@ public class QuantumControllerRegistry extends WorldSavedData {
             for (long packed : added) rememberIdentity(packed);
             this.revision++;
             markDirty();
-            QuantumTerminalSyncEpoch.changed();
+            QuantumTerminalSyncEpoch.bindingsChanged();
             if (DebugTestGate.probesActive()) for (long packed : added) TestWorldProbes
                 .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_ADD, "");
+        }
+        if (!canonicalAnchors.containsKey(generation)) {
+            canonicalAnchors.put(generation, new CanonicalAnchor(electAnchor(packedCoords), generation));
+            recoveryDirtyGenerations.add(generation);
+            anchorChanged();
         }
         return true;
     }
@@ -321,7 +414,34 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     public CanonicalAnchor canonicalAnchor(long member) {
         String generation = memberGenerations.get(member);
-        return controllers.contains(member) ? canonicalGeneration(generation) : null;
+        if (!controllers.contains(member) || suspendedGenerations.contains(generation)) return null;
+        CanonicalAnchor anchor = canonicalGeneration(generation);
+        if (anchor != null && !registeredStructure(member).contains(anchor.position)) {
+            // A removed middle member can split one saved generation into independent structures.
+            String previous = generation;
+            generation = UUID.randomUUID()
+                .toString();
+            int moved = 0;
+            for (long position : registeredStructure(member)) if (previous.equals(memberGenerations.get(position))) {
+                memberGenerations.put(position, generation);
+                if (previous.equals(legacyAnchorAliases.get(position))) legacyAnchorAliases.put(position, generation);
+                moved++;
+            }
+            generationCounts.put(previous, generationCounts.getOrDefault(previous, moved) - moved);
+            generationCounts.put(generation, moved);
+            recoveryDirtyGenerations.add(generation);
+            anchor = null;
+        }
+        if (anchor == null && generation != null) {
+            Set<Long> members = new HashSet<>();
+            for (long position : registeredStructure(member))
+                if (generation.equals(memberGenerations.get(position))) members.add(position);
+            anchor = new CanonicalAnchor(electAnchor(members), generation);
+            canonicalAnchors.put(generation, anchor);
+            recoveryDirtyGenerations.add(generation);
+            anchorChanged();
+        }
+        return anchor;
     }
 
     public boolean sameGeneration(long first, long second) {
@@ -333,6 +453,16 @@ public class QuantumControllerRegistry extends WorldSavedData {
     public Set<Long> legacyMembers(Set<Long> members, String generation) {
         Set<Long> result = new HashSet<>();
         for (long member : members) if (generation.equals(legacyAnchorAliases.get(member))) result.add(member);
+        return result;
+    }
+
+    /** Include historical air-coordinate aliases that currently resolve to this exact live component. */
+    public Set<Long> migrationBindingMembers(Set<Long> members) {
+        Set<Long> result = new HashSet<>(members);
+        for (long position : recoveryAliases.keySet()) {
+            CanonicalAnchor current = resolveAnchor(position, "");
+            if (current != null && members.contains(current.position)) result.add(position);
+        }
         return result;
     }
 
@@ -348,15 +478,112 @@ public class QuantumControllerRegistry extends WorldSavedData {
     }
 
     public CanonicalAnchor resolveAnchor(long member, String expectedGeneration) {
-        return canonicalGeneration(resolveBindingGeneration(member, expectedGeneration));
+        // A current coordinate always wins over historical component evidence.
+        if (controllers.contains(member)) return canonicalAnchor(member);
+        String group = recoveryAliases.get(member);
+        if (group == null) return null;
+        if (recoveryRevision != revision) {
+            recoveredAnchors.clear();
+            recoveryRevision = revision;
+        }
+        if (recoveredAnchors.containsKey(group)) return recoveredAnchors.get(group);
+        Map<String, Integer> votes = new HashMap<>();
+        Map<String, CanonicalAnchor> candidates = new HashMap<>();
+        Set<Long> evidence = new HashSet<>();
+        Set<String> visited = new HashSet<>();
+        Queue<String> pending = new ArrayDeque<>();
+        pending.add(group);
+        while (!pending.isEmpty()) {
+            String current = pending.remove();
+            if (!visited.add(current)) continue;
+            Set<Long> positions = recoveryGroups.get(current);
+            if (positions == null) continue;
+            for (long position : positions) if (evidence.add(position) && !controllers.contains(position)) {
+                String next = recoveryAliases.get(position);
+                if (next != null && !visited.contains(next)) pending.add(next);
+            }
+        }
+        for (long position : evidence) {
+            CanonicalAnchor anchor = canonicalAnchor(position);
+            if (anchor != null) {
+                candidates.put(anchor.generation, anchor);
+                votes.put(anchor.generation, votes.getOrDefault(anchor.generation, 0) + 1);
+            }
+        }
+        CanonicalAnchor selected = null;
+        int most = -1;
+        for (CanonicalAnchor anchor : candidates.values()) {
+            int count = votes.get(anchor.generation);
+            if (count > most || (count == most && (selected == null || anchor.position < selected.position))) {
+                selected = anchor;
+                most = count;
+            }
+        }
+        recoveredAnchors.put(group, selected);
+        recoveryRevision = revision;
+        return selected;
+    }
+
+    private void rememberRecoveryGroup(long member) {
+        String generation = memberGenerations.get(member);
+        if (generation == null) return;
+        Set<Long> previous = recoveryGroups.get(generation);
+        // Once captured, a removal batch reuses the component evidence rather than flooding per member.
+        if (previous != null && !recoveryDirtyGenerations.contains(generation)) return;
+        Set<Long> members = new HashSet<>(registeredStructure(member));
+        if (previous != null) members.addAll(previous);
+        recoveryGroups.put(generation, Collections.unmodifiableSet(members));
+        CanonicalAnchor canonical = canonicalAnchors.get(generation);
+        if (canonical != null && generation.equals(memberGenerations.get(canonical.position)))
+            recoveryDefaults.put(generation, canonical.position);
+        for (long position : members) recoveryAliases.put(position, generation);
+        recoveryDirtyGenerations.remove(generation);
     }
 
     private String resolveBindingGeneration(long member, String expectedGeneration) {
         String generation = memberGenerations.get(member);
         if (!controllers.contains(member) || generation == null) return null;
-        // An upgrade-captured coordinate alias is authoritative for historical bindings, including stale hints.
-        if (!generation.equals(expectedGeneration) && !generation.equals(legacyAnchorAliases.get(member))) return null;
+        // A binding is a coordinate pointer. Generation remains a typed migration hint, never a permanent
+        // veto after an explicitly re-quantized controller has appeared at that same coordinate.
         return generation;
+    }
+
+    private long electAnchor(Set<Long> members) {
+        return electAnchor(members, QuantumNetworkColorSync.bindingVotes(dimensionId, members));
+    }
+
+    private long initialAnchor(Set<Long> members, long firstClick) {
+        Map<Long, Integer> votes = QuantumNetworkColorSync.bindingVotes(dimensionId, members);
+        Long previousDefault = null;
+        for (long member : members) {
+            Long candidate = recoveryDefaults.get(recoveryAliases.get(member));
+            if (candidate != null && members.contains(candidate)
+                && (previousDefault == null || candidate < previousDefault)) previousDefault = candidate;
+        }
+        if (previousDefault != null) return previousDefault;
+        boolean historical = !votes.isEmpty();
+        for (long member : members) historical |= recoveryAliases.containsKey(member);
+        return historical ? electAnchor(members, votes) : firstClick;
+    }
+
+    private void anchorChanged() {
+        revision++;
+        markDirty();
+        QuantumTerminalSyncEpoch.bindingsChanged();
+    }
+
+    /** Elect once from indexed bindings; fixed coordinate ordering makes empty votes and ties stable. */
+    static long electAnchor(Set<Long> members, Map<Long, Integer> votes) {
+        long selected = 0L;
+        int most = -1;
+        for (long member : members) {
+            int count = votes.getOrDefault(member, 0);
+            if (count > most || (count == most && Long.compare(member, selected) < 0)) {
+                selected = member;
+                most = count;
+            }
+        }
+        return selected;
     }
 
     private CanonicalAnchor canonicalGeneration(String generation) {
@@ -373,6 +600,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     /** 出册打包坐标（供 tick 巡检遍历打包值时直接使用） */
     public void dequantize(long packed) {
+        if (controllers.contains(packed)) rememberRecoveryGroup(packed);
         if (this.controllers.remove(packed)) {
             if (world != null && !world.isRemote) QuantumNetworkSecurityRegistry.get(world)
                 .remove(Collections.singleton(packed));
@@ -391,7 +619,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             }
             this.revision++;
             markDirty();
-            QuantumTerminalSyncEpoch.changed();
+            QuantumTerminalSyncEpoch.bindingsChanged();
             if (DebugTestGate.probesActive()) TestWorldProbes
                 .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_REMOVE, "");
         }
@@ -482,6 +710,20 @@ public class QuantumControllerRegistry extends WorldSavedData {
         loadedTiles.put(position, tile);
     }
 
+    /** Refresh physical evidence without treating replacement/owner changes as logical network retirement. */
+    public boolean refreshController(World world, long position) {
+        if (!controllers.contains(position)
+            || !world.blockExists(unpackX(position), unpackY(position), unpackZ(position))) return false;
+        TileEntity tile = world.getTileEntity(unpackX(position), unpackY(position), unpackZ(position));
+        if (!(tile instanceof TileController) || tile.isInvalid()) return false;
+        this.world = world;
+        identities.remove(position);
+        loadedTiles.remove(position);
+        rememberIdentity(position);
+        anchorChanged();
+        return true;
+    }
+
     /** A missing identity in an old save is adopted once, without loading any chunks. */
     public boolean isCurrentController(World world, long position) {
         if (!controllers.contains(position)) return false;
@@ -556,7 +798,6 @@ public class QuantumControllerRegistry extends WorldSavedData {
             pending.removeAll(members);
             String generation = UUID.randomUUID()
                 .toString();
-            canonicalAnchors.put(generation, new CanonicalAnchor(first, generation));
             generationCounts.put(generation, members.size());
             for (long member : members) {
                 memberGenerations.put(member, generation);
@@ -654,6 +895,8 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
+        Map<String, Set<Long>> missingCanonicals = new HashMap<>();
+        Map<String, Long> missingDefaults = new HashMap<>();
         this.controllers.clear();
         this.identities.clear();
         this.loadedTiles.clear();
@@ -661,6 +904,11 @@ public class QuantumControllerRegistry extends WorldSavedData {
         canonicalAnchors.clear();
         generationCounts.clear();
         legacyAnchorAliases.clear();
+        recoveryGroups.clear();
+        recoveryDefaults.clear();
+        recoveryAliases.clear();
+        recoveryDirtyGenerations.clear();
+        recoveredAnchors.clear();
         suspendedGenerations.clear();
         suspendedNativeOwners.clear();
         this.revision++;
@@ -701,6 +949,11 @@ public class QuantumControllerRegistry extends WorldSavedData {
                 long position = entry.getLong("pos");
                 if (generation.equals(memberGenerations.get(position)))
                     canonicalAnchors.put(generation, new CanonicalAnchor(position, generation));
+                else if (generationCounts.containsKey(generation)) {
+                    missingCanonicals.computeIfAbsent(generation, ignored -> new HashSet<>())
+                        .add(position);
+                    missingDefaults.put(generation, position);
+                }
             }
             NBTTagList aliases = tag.getTagList("legacyAnchorAliases", 10);
             for (int i = 0; i < aliases.tagCount(); i++) {
@@ -712,7 +965,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             for (int i = 0; i < suspended.tagCount(); i++) {
                 String generation = suspended.getCompoundTagAt(i)
                     .getString("generation");
-                if (canonicalAnchors.containsKey(generation)) suspendedGenerations.add(generation);
+                if (generationCounts.containsKey(generation)) suspendedGenerations.add(generation);
             }
             NBTTagList owners = tag.getTagList("suspendedNativeOwners", 10);
             for (int i = 0; i < owners.tagCount(); i++) {
@@ -722,7 +975,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
                     suspendedNativeOwners.put(position, entry.getInteger("owner"));
             }
         }
-        if (tag.getInteger("anchorSchema") < ANCHOR_SCHEMA) {
+        if (tag.getInteger("anchorSchema") < 2) {
             // One saved-coordinate migration only: keep existing components/first points, repair stale aliases.
             legacyAnchorAliases.clear();
             for (long member : controllers) {
@@ -731,6 +984,108 @@ public class QuantumControllerRegistry extends WorldSavedData {
             }
             markDirty();
         }
+        NBTTagList recovery = tag.getTagList("bindingRecoveryGroups", 10);
+        for (int i = 0; i < recovery.tagCount(); i++) {
+            NBTTagCompound entry = recovery.getCompoundTagAt(i);
+            String generation = entry.getString("generation");
+            Set<Long> positions = new HashSet<>();
+            int[] coordinates = entry.getIntArray("members");
+            for (int j = 0; j + 2 < coordinates.length; j += 3)
+                positions.add(pack(coordinates[j], coordinates[j + 1], coordinates[j + 2]));
+            if (!generation.isEmpty() && !positions.isEmpty())
+                recoveryGroups.put(generation, Collections.unmodifiableSet(positions));
+            if (recoveryGroups.containsKey(generation) && entry.hasKey("default"))
+                recoveryDefaults.put(generation, entry.getLong("default"));
+        }
+        NBTTagList recoveryPointers = tag.getTagList("bindingRecoveryAliases", 10);
+        for (int i = 0; i < recoveryPointers.tagCount(); i++) {
+            NBTTagCompound entry = recoveryPointers.getCompoundTagAt(i);
+            if (recoveryGroups.containsKey(entry.getString("generation")))
+                recoveryAliases.put(entry.getLong("pos"), entry.getString("generation"));
+        }
+        // Old schema 2 could save a dead canonical while still retaining its companions. The saved
+        // coordinate is evidence, even though it is no longer a valid live canonical controller.
+        if (!missingCanonicals.isEmpty()) {
+            for (Map.Entry<Long, String> member : memberGenerations.entrySet()) {
+                Set<Long> positions = missingCanonicals.get(member.getValue());
+                if (positions != null) positions.add(member.getKey());
+            }
+            for (Map.Entry<String, Set<Long>> group : missingCanonicals.entrySet()) {
+                Set<Long> positions = new HashSet<>(group.getValue());
+                Set<Long> existing = recoveryGroups.get(group.getKey());
+                if (existing != null) positions.addAll(existing);
+                recoveryGroups.put(group.getKey(), Collections.unmodifiableSet(positions));
+                recoveryDefaults.put(group.getKey(), missingDefaults.get(group.getKey()));
+                for (long position : positions) recoveryAliases.put(position, group.getKey());
+            }
+            markDirty();
+        }
+        repairSavedMembership();
+        recoveryDirtyGenerations.addAll(generationCounts.keySet());
+    }
+
+    /** Repair malformed schema 1/2 records once using their saved coordinate graph, without world reads. */
+    private void repairSavedMembership() {
+        Set<Long> pending = new HashSet<>(controllers);
+        Set<String> assigned = new HashSet<>();
+        boolean changed = false;
+        for (long first : new ArrayList<>(pending)) {
+            if (!pending.contains(first)) continue;
+            Set<Long> members = coordinateComponent(controllers, first);
+            pending.removeAll(members);
+            Map<String, Integer> counts = new HashMap<>();
+            String established = null;
+            for (long position : members) {
+                String generation = memberGenerations.get(position);
+                if (generation == null) continue;
+                counts.put(generation, counts.getOrDefault(generation, 0) + 1);
+                CanonicalAnchor anchor = canonicalAnchors.get(generation);
+                if (anchor != null && members.contains(anchor.position)
+                    && (established == null || generation.compareTo(established) < 0)) established = generation;
+            }
+            String selected = established;
+            if (selected == null) {
+                int most = 0;
+                for (Map.Entry<String, Integer> candidate : counts.entrySet()) {
+                    if (candidate.getValue() > most
+                        || (candidate.getValue() == most && (selected == null || candidate.getKey()
+                            .compareTo(selected) < 0))) {
+                        selected = candidate.getKey();
+                        most = candidate.getValue();
+                    }
+                }
+            }
+            if (selected == null) {
+                selected = UUID.randomUUID()
+                    .toString();
+            }
+            Map<String, String> replacements = new HashMap<>();
+            for (String generation : counts.keySet()) {
+                CanonicalAnchor anchor = canonicalAnchors.get(generation);
+                if (assigned.contains(generation) || (anchor != null && !members.contains(anchor.position))) {
+                    String replacement = UUID.randomUUID()
+                        .toString();
+                    replacements.put(generation, replacement);
+                    if (suspendedGenerations.contains(generation)) suspendedGenerations.add(replacement);
+                } else assigned.add(generation);
+            }
+            selected = replacements.getOrDefault(selected, selected);
+            // Multiple valid generations can touch in old saves; loading must not authorize their merger.
+            for (long position : members) {
+                String previous = memberGenerations.get(position);
+                String replacement = previous == null ? selected : replacements.get(previous);
+                if (replacement != null) {
+                    memberGenerations.put(position, replacement);
+                    if (previous != null && previous.equals(legacyAnchorAliases.get(position)))
+                        legacyAnchorAliases.put(position, replacement);
+                    changed = true;
+                }
+            }
+        }
+        generationCounts.clear();
+        for (String generation : memberGenerations.values())
+            generationCounts.put(generation, generationCounts.getOrDefault(generation, 0) + 1);
+        if (changed) markDirty();
     }
 
     @Override
@@ -756,6 +1111,25 @@ public class QuantumControllerRegistry extends WorldSavedData {
         tag.setInteger("anchorSchema", ANCHOR_SCHEMA);
         tag.setTag("memberGenerations", generationTags(memberGenerations));
         tag.setTag("legacyAnchorAliases", generationTags(legacyAnchorAliases));
+        tag.setTag("bindingRecoveryAliases", generationTags(recoveryAliases));
+        NBTTagList recovery = new NBTTagList();
+        for (Map.Entry<String, Set<Long>> group : recoveryGroups.entrySet()) {
+            NBTTagCompound entry = new NBTTagCompound();
+            entry.setString("generation", group.getKey());
+            Long previousDefault = recoveryDefaults.get(group.getKey());
+            if (previousDefault != null) entry.setLong("default", previousDefault);
+            int[] coordinates = new int[group.getValue()
+                .size() * 3];
+            int index = 0;
+            for (long position : group.getValue()) {
+                coordinates[index++] = unpackX(position);
+                coordinates[index++] = unpackY(position);
+                coordinates[index++] = unpackZ(position);
+            }
+            entry.setIntArray("members", coordinates);
+            recovery.appendTag(entry);
+        }
+        tag.setTag("bindingRecoveryGroups", recovery);
         NBTTagList anchors = new NBTTagList();
         for (Map.Entry<String, CanonicalAnchor> entry : canonicalAnchors.entrySet()) {
             NBTTagCompound value = new NBTTagCompound();
@@ -790,5 +1164,60 @@ public class QuantumControllerRegistry extends WorldSavedData {
             result.appendTag(value);
         }
         return result;
+    }
+
+    /**
+     * Destructive fixture reset only: forget removed coordinates in the explicitly cleared volume.
+     * Ordinary controller removal must retain this history so unloaded bindings can recover.
+     * Registered members, including suspended members, are always preserved.
+     */
+    public boolean forgetRemovedControllerHistory(LongPredicate clearedVolume) {
+        LongPredicate removed = position -> clearedVolume.test(position) && !controllers.contains(position);
+        // Compress only the alias edges being deleted, before changing any original graph evidence.
+        // Outside bindings must retain their recovery routes even while the outside target is absent.
+        Map<String, Set<Long>> projectedGroups = new HashMap<>();
+        for (String source : recoveryGroups.keySet()) {
+            Set<Long> retained = new HashSet<>();
+            Set<String> visited = new HashSet<>();
+            Queue<String> pending = new ArrayDeque<>();
+            pending.add(source);
+            while (!pending.isEmpty()) {
+                String group = pending.remove();
+                if (!visited.add(group)) continue;
+                Set<Long> positions = recoveryGroups.get(group);
+                if (positions == null) continue;
+                for (long position : positions) {
+                    if (!removed.test(position)) retained.add(position);
+                    else {
+                        String next = recoveryAliases.get(position);
+                        if (next != null && !visited.contains(next)) pending.add(next);
+                    }
+                }
+            }
+            projectedGroups.put(source, retained);
+        }
+        boolean changed = recoveryAliases.keySet()
+            .removeIf(removed::test);
+        changed |= legacyAnchorAliases.keySet()
+            .removeIf(removed::test);
+        changed |= recoveryDefaults.values()
+            .removeIf(removed::test);
+        changed |= canonicalAnchors.values()
+            .removeIf(anchor -> removed.test(anchor.position));
+        Iterator<Map.Entry<String, Set<Long>>> groups = recoveryGroups.entrySet()
+            .iterator();
+        while (groups.hasNext()) {
+            Map.Entry<String, Set<Long>> group = groups.next();
+            Set<Long> retained = projectedGroups.get(group.getKey());
+            if (retained.equals(group.getValue())) continue;
+            changed = true;
+            if (retained.isEmpty()) {
+                groups.remove();
+                recoveryDefaults.remove(group.getKey());
+                recoveryDirtyGenerations.remove(group.getKey());
+            } else group.setValue(Collections.unmodifiableSet(retained));
+        }
+        if (changed) anchorChanged();
+        return changed;
     }
 }

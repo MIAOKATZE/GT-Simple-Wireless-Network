@@ -25,6 +25,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.AnchorKey;
 import com.miaokatze.gtswn.common.quantum.AnchorReachability;
+import com.miaokatze.gtswn.common.quantum.QuantumConnectionMembership;
 import com.miaokatze.gtswn.common.quantum.QuantumConnectionSecurity;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
@@ -169,6 +170,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private String anchorGeneration = "";
     private QuantumControllerRegistry normalizedAnchorRegistry;
     private long normalizedAnchorRevision = Long.MIN_VALUE;
+    private boolean normalizedAnchorValid;
 
     // Informational placement identity; AE proxy playerID remains the security authority.
     private String placerUUID = "";
@@ -326,6 +328,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.anchorY = y;
         this.anchorZ = z;
         this.anchorGeneration = generation;
+        com.miaokatze.gtswn.common.quantum.QuantumSecurityScopeIndex.anchorChanged(this);
         if (DebugTestGate.probesActive())
             TestWorldProbes.at(this, Type.QUANTUM_NODE_ANCHOR, "anchor=" + dim + ":" + x + ":" + y + ":" + z);
         QuantumNetworkColorSync.track(this);
@@ -364,10 +367,15 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
         long revision = registry.getRevision();
-        if (normalizedAnchorRegistry == registry && normalizedAnchorRevision == revision) return true;
+        if (normalizedAnchorRegistry == registry && normalizedAnchorRevision == revision) return normalizedAnchorValid;
         QuantumControllerRegistry.CanonicalAnchor anchor = registry
             .resolveAnchor(QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ), anchorGeneration);
-        if (anchor == null) return false;
+        if (anchor == null) {
+            normalizedAnchorRegistry = registry;
+            normalizedAnchorRevision = revision;
+            normalizedAnchorValid = false;
+            return false;
+        }
         if (anchor.position != QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ)
             || !anchor.generation.equals(anchorGeneration)) {
             replaceAnchor(
@@ -378,7 +386,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 anchor.generation);
         }
         normalizedAnchorRegistry = registry;
-        normalizedAnchorRevision = revision;
+        normalizedAnchorRevision = registry.getRevision();
+        normalizedAnchorValid = true;
         return true;
     }
 
@@ -490,17 +499,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return false;
         }
         IGridNode node = this.gridProxy.getNode();
-        if (node == null || !node.getConnections()
-            .contains(this.connection)) return false;
+        if (node == null || !QuantumConnectionMembership.contains(node, this.connection)) return false;
         // A pre-existing direct native edge may be adopted without allocating a relay.
         if (bridgeRelayNode == null) return true;
         return anchorConnection != null && bridgeTargetNode != null
-            && bridgeRelayNode.getConnections()
-                .contains(connection)
-            && bridgeRelayNode.getConnections()
-                .contains(anchorConnection)
-            && bridgeTargetNode.getConnections()
-                .contains(anchorConnection)
+            && QuantumConnectionMembership.contains(bridgeRelayNode, connection)
+            && QuantumConnectionMembership.contains(bridgeRelayNode, anchorConnection)
+            && QuantumConnectionMembership.contains(bridgeTargetNode, anchorConnection)
             && node.getGrid() == bridgeRelayNode.getGrid()
             && node.getGrid() == bridgeTargetNode.getGrid();
     }
@@ -1033,7 +1038,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
     }
 
-    private static boolean reserveConnectionAttempt() {
+    private static boolean hasConnectionBudget() {
         long serverTick = MinecraftServer.getServer()
             .getTickCounter();
         if (serverTick != connectBudgetTick) {
@@ -1044,6 +1049,11 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             PerformanceAudit.recordConnectBudgetDeferred();
             return false;
         }
+        return true;
+    }
+
+    private static boolean reserveConnectionAttempt() {
+        if (!hasConnectionBudget()) return false;
         connectsThisTick++;
         return true;
     }
@@ -1528,19 +1538,23 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
         }
+        long nowTick = worldObj.getTotalWorldTime();
+        if (!hasConnectionBudget()) {
+            this.lastMaintenanceTick = nowTick - this.reconnectBackoff + 1;
+            return;
+        }
         if (!isNativeConnectionAuthorized(myNode, anchorNode)) {
             failReconnect(OfflineReason.NO_PERMISSION);
+            return;
+        }
+        if (!reserveConnectionAttempt()) {
+            this.lastMaintenanceTick = nowTick - this.reconnectBackoff + 1;
             return;
         }
         boolean connected = false;
         try {
             // 已核实：createGridConnection 不校验方向位/邻接，仅查自重/安全/重复
             // （appeng/core/Api.java:109 → GridConnection.java:204-246）
-            long nowTick = worldObj.getTotalWorldTime();
-            if (!reserveConnectionAttempt()) {
-                this.lastMaintenanceTick = nowTick - this.reconnectBackoff + 1;
-                return;
-            }
             // v1.6.23：性能审计——AE2 建连切片计时（AE2 全网重路由成本归入 ae2.connect）
             long aeT0 = PerformanceAudit.startSlice();
             try {
@@ -1611,10 +1625,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (this.connection != null) {
             IGridNode a = this.connection.a();
             IGridNode b = this.connection.b();
-            if ((a != null && a.getConnections()
-                .contains(this.connection)) || (b != null
-                    && b.getConnections()
-                        .contains(this.connection))) {
+            if ((a != null && QuantumConnectionMembership.contains(a, this.connection))
+                || (b != null && QuantumConnectionMembership.contains(b, this.connection))) {
                 PerformanceAudit.recordBridgeDestroyed();
                 long aeT0 = PerformanceAudit.startSlice();
                 try {
@@ -1628,12 +1640,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 TestWorldProbes.at(this, Type.QUANTUM_NODE_DISCONNECT, "connection=released");
         }
         if (anchorConnection != null) {
-            if (anchorConnection.a()
-                .getConnections()
-                .contains(anchorConnection)
-                || anchorConnection.b()
-                    .getConnections()
-                    .contains(anchorConnection))
+            if (QuantumConnectionMembership.contains(anchorConnection.a(), anchorConnection)
+                || QuantumConnectionMembership.contains(anchorConnection.b(), anchorConnection))
                 anchorConnection.destroy();
             anchorConnection = null;
         }
@@ -1773,6 +1781,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             this.anchorY = tag.getInteger(NBT_ANCHOR_Y);
             this.anchorZ = tag.getInteger(NBT_ANCHOR_Z);
         }
+        com.miaokatze.gtswn.common.quantum.QuantumSecurityScopeIndex.anchorChanged(this);
         // v1.6.13 任务1：防御性读取同步在线状态，防止区块加载/磁盘读取后 clientLinked 缺失
         if (tag.hasKey(NBT_SYNC_LINKED)) {
             this.clientLinked = tag.getBoolean(NBT_SYNC_LINKED);

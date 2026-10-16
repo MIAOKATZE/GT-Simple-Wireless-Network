@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 import net.minecraft.entity.Entity;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
@@ -542,6 +543,186 @@ public class QuantumConnectionSecurityContextTest {
         }
     }
 
+    @Test
+    public void indexedTenThousandNodeAndRelaySourcesDoConstantWorkPerAdmission() throws Exception {
+        try (MaintenanceFixture fixture = new MaintenanceFixture(true, 1, 0, true)) {
+            long visits = 0, reads = 0;
+            for (int i = 0; i < 5000; i++) {
+                MaintenanceNode quantum = quantum(fixture, 0);
+                fixture.grid.add(new QuantumNodeBridgeRelay(quantum, null));
+                fixture.grid.hostReads = 0;
+                fixture.resetCounts();
+                assertTrue(
+                    QuantumConnectionSecurity.mayBridge(
+                        fixture.world,
+                        0,
+                        64,
+                        0,
+                        quantum.nativeNode,
+                        fixture.own.node,
+                        () -> { throw new AssertionError("OFF must not resolve the actor"); }));
+                visits += fixture.grid.hostReads;
+                reads += fixture.world.tileReads;
+            }
+            assertTrue("Admission must not revisit the growing 10k source inventory: " + visits, visits < 5000 * 24);
+            assertTrue(
+                "World resolution must depend on distinct anchors, not source count: " + reads,
+                reads < 5000 * 24);
+            assertEquals(1, size(fixture.grid.index.anchors()));
+        }
+    }
+
+    @Test
+    public void indexedSourcesObservePolicyAclAndProviderChangesImmediately() throws Exception {
+        try (MaintenanceFixture fixture = new MaintenanceFixture(true, 1, 0, true)) {
+            Grid foreignGrid = new Grid(true, true);
+            Controller foreign = controller(fixture.world, 32, foreignGrid);
+            MaintenanceNode node = quantum(fixture, 32);
+            assertTrue(QuantumConnectionSecurity.bypassesNativeCheck(node.nativeNode, fixture.own.node));
+            QuantumNetworkSecurityRegistry registry = QuantumNetworkSecurityRegistry.get(fixture.world);
+            registry.setSafety(fixture.world, component(fixture.world, 32), true);
+            assertFalse(
+                "An ON foreign scope must revoke the OFF exemption immediately",
+                QuantumConnectionSecurity.bypassesNativeCheck(node.nativeNode, fixture.own.node));
+            assertFalse(
+                QuantumConnectionSecurity
+                    .mayBridge(fixture.world, 0, 64, 0, node.nativeNode, fixture.own.node, () -> 7));
+            Provider provider = new Provider();
+            IGridNode station = foreignGrid.add(provider.host);
+            assertTrue(
+                QuantumConnectionSecurity
+                    .mayBridge(fixture.world, 0, 64, 0, node.nativeNode, fixture.own.node, () -> 7));
+            provider.granted = false;
+            assertFalse(
+                "ON authorization must read the current ACL on every call",
+                QuantumConnectionSecurity
+                    .mayBridge(fixture.world, 0, 64, 0, node.nativeNode, fixture.own.node, () -> 7));
+            provider.granted = true;
+            foreignGrid.remove(station);
+            assertFalse(
+                "Removed providers must not remain in an indexed scope",
+                QuantumConnectionSecurity
+                    .mayBridge(fixture.world, 0, 64, 0, node.nativeNode, fixture.own.node, () -> 7));
+            registry.setSafety(fixture.world, component(fixture.world, 32), false);
+            assertTrue(QuantumConnectionSecurity.bypassesNativeCheck(node.nativeNode, fixture.own.node));
+            Grid external = new Grid(true, true);
+            station = external.add(provider.host);
+            assertFalse(
+                "OFF cannot exempt a separate protected native grid",
+                QuantumConnectionSecurity.bypassesNativeCheck(node.nativeNode, station));
+            external.remove(station);
+        }
+    }
+
+    @Test
+    public void indexedBindingEditUpdatesOwnerAndRelayAcrossGridsWithoutReenumeration() throws Exception {
+        try (MaintenanceFixture fixture = new MaintenanceFixture(true, 1, 0, true)) {
+            Grid relayGrid = new Grid(true, true);
+            Grid foreignGrid = new Grid(true, true);
+            controller(fixture.world, 32, foreignGrid);
+            MaintenanceNode node = quantum(fixture, 0);
+            IGridNode relay = relayGrid.add(new QuantumNodeBridgeRelay(node, null));
+            QuantumNetworkSecurityRegistry.get(fixture.world)
+                .setSafety(fixture.world, component(fixture.world, 32), true);
+            // Exercise the production setter, including canonical normalization and generation replacement.
+            node.setAnchor(37175, 32, 64, 0, "old-generation-is-not-an-authorization-cache-key");
+            try {
+                assertEquals(
+                    new AnchorKey(37175, 32, 64, 0),
+                    fixture.grid.index.anchors()
+                        .iterator()
+                        .next());
+                assertEquals(
+                    new AnchorKey(37175, 32, 64, 0),
+                    relayGrid.index.anchors()
+                        .iterator()
+                        .next());
+                assertFalse(
+                    QuantumConnectionSecurity.bypassesNetworkSafety(fixture.world, 0, 64, 0, fixture.own.node, relay));
+                node.setAnchor(37175, 0, 64, 0);
+                assertTrue(
+                    QuantumConnectionSecurity.bypassesNetworkSafety(fixture.world, 0, 64, 0, fixture.own.node, relay));
+                QuantumNetworkColorSync.untrack(node);
+                NBTTagCompound replacement = new NBTTagCompound();
+                replacement.setInteger("anchorDim", 37175);
+                replacement.setInteger("anchorX", 32);
+                replacement.setInteger("anchorY", 64);
+                replacement.setInteger("anchorZ", 0);
+                node.readFromNBT(replacement);
+                assertEquals(
+                    "Live NBT reload must update the core index",
+                    new AnchorKey(37175, 32, 64, 0),
+                    fixture.grid.index.anchors()
+                        .iterator()
+                        .next());
+                assertEquals(
+                    "Live NBT reload must update the remote relay index",
+                    new AnchorKey(37175, 32, 64, 0),
+                    relayGrid.index.anchors()
+                        .iterator()
+                        .next());
+                assertFalse(
+                    "Reloading an ON anchor must revoke the old OFF exemption immediately",
+                    QuantumConnectionSecurity.bypassesNetworkSafety(fixture.world, 0, 64, 0, fixture.own.node, relay));
+                relayGrid.remove(relay);
+                assertEquals(
+                    "A split/removal must remove the old grid's only raw scope",
+                    0,
+                    size(relayGrid.index.anchors()));
+                IGridNode merged = fixture.grid.add(new QuantumNodeBridgeRelay(node, null));
+                fixture.grid.remove(node.nativeNode);
+                assertEquals(
+                    "The surviving relay keeps the shared anchor reference alive",
+                    1,
+                    size(fixture.grid.index.anchors()));
+                fixture.grid.remove(merged);
+                assertEquals("The final unload releases the raw anchor", 0, size(fixture.grid.index.anchors()));
+            } finally {
+                QuantumNetworkColorSync.untrack(node);
+            }
+        }
+    }
+
+    @Test
+    public void indexedControllerDedupPreservesSplitAndUnloadedRepresentatives() throws Exception {
+        FixtureWorld world = world();
+        Controller own = controller(world, 0, new Grid(true, true));
+        Grid firstGrid = new Grid(true, true), secondGrid = new Grid(true, true);
+        Controller first = controller(world, 32, firstGrid);
+        Controller missing = controller(world, 33, firstGrid);
+        Controller second = controller(world, 34, secondGrid);
+        firstGrid.add(new Provider().host);
+        QuantumNetworkSecurityRegistry.get(world)
+            .setSafety(world, component(world, 32), true);
+        world.tiles.remove(QuantumControllerRegistry.pack(33, 64, 0));
+        assertFalse(
+            "An unloaded middle controller cannot disappear behind its loaded peer",
+            QuantumConnectionSecurity.mayBridge(world, 0, 64, 0, first.node, own.node, () -> 7));
+        assertEquals(0, missing.nodeLookups);
+        firstGrid.remove(missing.node);
+        assertFalse(
+            "A providerless split grid must not inherit its component peer's provider",
+            QuantumConnectionSecurity.mayBridge(world, 0, 64, 0, first.node, second.node, () -> 7));
+    }
+
+    private static int size(Iterable<?> values) {
+        int count = 0;
+        for (Object ignored : values) count++;
+        return count;
+    }
+
+    private static MaintenanceNode quantum(MaintenanceFixture fixture, int x) throws Exception {
+        MaintenanceNode node = (MaintenanceNode) allocate(MaintenanceNode.class);
+        node.setWorldObj(fixture.world);
+        field(TileEntityNetworkQuantumNode.class, "recoveredPartDrops").set(node, new ArrayList<>());
+        field(TileEntityNetworkQuantumNode.class, "anchorDim").setInt(node, 37175);
+        field(TileEntityNetworkQuantumNode.class, "anchorX").setInt(node, x);
+        field(TileEntityNetworkQuantumNode.class, "anchorY").setInt(node, 64);
+        field(TileEntityNetworkQuantumNode.class, "anchorGeneration").set(node, "legacy");
+        node.nativeNode = fixture.grid.add(node);
+        return node;
+    }
+
     /** Production entry point fixture: no modeled maintenance loop, TTL or precomputed verdict. */
     static final class MaintenanceFixture implements AutoCloseable {
 
@@ -555,11 +736,15 @@ public class QuantumConnectionSecurityContextTest {
         int destroyed;
 
         MaintenanceFixture(boolean tracked, int controllerCount, int edgeCount) throws Exception {
+            this(tracked, controllerCount, edgeCount, false);
+        }
+
+        MaintenanceFixture(boolean tracked, int controllerCount, int edgeCount, boolean indexed) throws Exception {
             QuantumConnectionSecurity.clearConnections();
             world.provider.dimensionId = 37175;
             worlds = (Map<Integer, WorldServer>) field(DimensionManager.class, "worlds").get(null);
             previous = worlds.put(37175, world);
-            grid = new Grid(tracked);
+            grid = new Grid(tracked, indexed);
             for (int i = 0; i < controllerCount; i++) controllers.add(controller(world, i, grid));
             own = controllers.get(0);
             QuantumNetworkSecurityRegistry.get(world)
@@ -629,6 +814,12 @@ public class QuantumConnectionSecurityContextTest {
     private static final class MaintenanceNode extends TileEntityNetworkQuantumNode {
 
         IGridNode nativeNode;
+
+        @Override
+        public void markDirty() {}
+
+        @Override
+        public void setColorIndex(int index) {}
 
         @Override
         public int getNativeOwnerID() {
@@ -762,19 +953,27 @@ public class QuantumConnectionSecurityContextTest {
         final Map<IGridNode, List<IGridConnection>> connections = new IdentityHashMap<>();
         final IGrid grid;
         final boolean tracked;
-        int machineReads;
+        int machineReads, hostReads;
+        final QuantumSecurityScopeIndex index;
 
         Grid() {
             this(false);
         }
 
         Grid(boolean tracked) {
+            this(tracked, false);
+        }
+
+        Grid(boolean tracked, boolean indexed) {
             this.tracked = tracked;
+            index = indexed ? new QuantumSecurityScopeIndex() : null;
             grid = (IGrid) Proxy.newProxyInstance(
                 IGrid.class.getClassLoader(),
                 tracked ? new Class<?>[] { IGrid.class, QuantumSecurityTopology.TrackedGrid.class }
                     : new Class<?>[] { IGrid.class },
                 (proxy, method, args) -> {
+                    if (method.getName()
+                        .equals("quantumSecurityScopes")) return index;
                     if (method.getName()
                         .equals("getMachinesClasses")) {
                         machineReads++;
@@ -801,7 +1000,10 @@ public class QuantumConnectionSecurityContextTest {
                     if (method.getName()
                         .equals("getGrid")) return grid;
                     if (method.getName()
-                        .equals("getMachine")) return host;
+                        .equals("getMachine")) {
+                        hostReads++;
+                        return host;
+                    }
                     if (method.getName()
                         .equals("getConnections")) return new ReadOnlyCollection<>(edges);
                     if (method.getName()
@@ -812,6 +1014,7 @@ public class QuantumConnectionSecurityContextTest {
                         .equals("hashCode")) return System.identityHashCode(proxy);
                     return null;
                 });
+            if (index != null) index.add(node);
             if (tracked) QuantumSecurityTopology.membershipChanged(node);
             connections.put(node, edges);
             machines.computeIfAbsent(host.getClass(), ignored -> new ArrayList<>())
@@ -828,6 +1031,8 @@ public class QuantumConnectionSecurityContextTest {
             if (entries.isEmpty()) machines.remove(
                 node.getMachine()
                     .getClass());
+            if (index != null) index.remove(node);
+            if (tracked) QuantumSecurityTopology.membershipChanged(node);
         }
     }
 

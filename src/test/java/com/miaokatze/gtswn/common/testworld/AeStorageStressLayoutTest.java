@@ -27,7 +27,7 @@ public class AeStorageStressLayoutTest {
             assertFalse(occupied.contains(key(TestWorldFixtures.PANEL_X, 65, TestWorldFixtures.PANEL_Z)));
             assertFalse("Default player entrance must stay empty", occupied.contains(key(0, 65, 0)));
             assertFalse(occupied.contains(key(TestWorldFixtures.CONTROLLER_X, 65, TestWorldFixtures.CONTROLLER_Z)));
-            assertEquals(26 + layout.modules * 5 + layout.cpus * 9, occupied.size());
+            assertEquals(198 + layout.modules * 5 + layout.cpus * 9, occupied.size());
         }
     }
 
@@ -90,7 +90,7 @@ public class AeStorageStressLayoutTest {
                     assertTrue(x >= 0 && x < 2 && y >= 0 && y < 2 && z >= 0 && z < 2);
                 }
             }
-            assertEquals(24, controllers);
+            assertEquals(196, controllers);
             assertEquals(layout.cpus, cpuStorage);
             assertEquals(layout.cpus, accelerators);
             assertEquals(layout.cpus, monitors);
@@ -102,7 +102,7 @@ public class AeStorageStressLayoutTest {
                 for (int[] d : directions)
                     if (!controllerPositions.contains(key(p.x + d[0], p.y + d[1], p.z + d[2]))) exposedFaces++;
             }
-            assertEquals(3072, exposedFaces * 32);
+            assertEquals(24704, exposedFaces * 32);
             assertTrue(layout.modules * 4 + layout.cpus < exposedFaces * 32);
             assertEquals(large ? 576 : 288, layout.nodes);
             assertEquals(large ? 5632 : 2816, layout.cells);

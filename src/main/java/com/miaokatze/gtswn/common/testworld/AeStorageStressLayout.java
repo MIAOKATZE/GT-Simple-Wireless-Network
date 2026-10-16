@@ -46,9 +46,8 @@ final class AeStorageStressLayout {
         nodes = modules + cpus;
         cells = modules * 11;
         itemTypes = large ? 256 : 128;
-        for (int x = -3; x <= 3; x++)
-            for (int z = -3; z <= 3; z++) if (Math.abs(x) == 3 || Math.abs(z) == 3) add(Kind.CONTROLLER, x, 65, z, -1);
-        add(Kind.POWER, -3, 66, -3, -1);
+        for (int[] p : AeStressControllerLayout.coordinates()) add(Kind.CONTROLLER, p[0], p[1], p[2], -1);
+        add(Kind.POWER, AeStressControllerLayout.X - 1, AeStressControllerLayout.Y, AeStressControllerLayout.Z, -1);
         add(Kind.ENTRY_CHEST, ENTRY_X, ENTRY_Y, ENTRY_Z, -1);
         for (int module = 0; module < modules; module++) {
             int x = x(module), y = y(module), z = z(module);

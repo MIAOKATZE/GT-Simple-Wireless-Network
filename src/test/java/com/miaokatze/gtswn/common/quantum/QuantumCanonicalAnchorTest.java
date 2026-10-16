@@ -28,12 +28,12 @@ public class QuantumCanonicalAnchorTest {
             assertEquals(pos(1), restored.canonicalAnchor(member).position);
             assertEquals(generation, restored.canonicalAnchor(member).generation);
         }
-        assertNull("New structures never grant generation-less legacy adoption", restored.resolveAnchor(pos(0), ""));
+        assertEquals(generation, restored.resolveAnchor(pos(0), "").generation);
         assertEquals(new AnchorKey(7, 1, 64, 0), restored.canonicalKey(new AnchorKey(7, 3, 64, 0)));
     }
 
     @Test
-    public void legacyAliasesUpgradeOnceAndCannotInheritRebuiltCoordinates() {
+    public void legacyAliasesUpgradeOnceAndRebuiltCoordinatesRecoverCurrentGeneration() {
         NBTTagCompound old = new NBTTagCompound();
         old.setIntArray("controllers", new int[] { 7, 0, 64, 0, 7, 1, 64, 0, 7, 2, 64, 0 });
         QuantumControllerRegistry migrated = registry();
@@ -48,8 +48,10 @@ public class QuantumCanonicalAnchorTest {
         for (long member : members(0, 1, 2)) saved.dequantize(member);
         assertTrue(saved.quantizeAll(members(0, 1, 2), pos(2)));
         assertNotEquals(first.generation, saved.canonicalAnchor(pos(2)).generation);
-        assertNull(saved.resolveAnchor(pos(2), first.generation));
-        assertNull(reload(saved).resolveAnchor(pos(2), ""));
+        assertEquals(
+            saved.canonicalAnchor(pos(2)).generation,
+            saved.resolveAnchor(pos(2), first.generation).generation);
+        assertEquals(saved.canonicalAnchor(pos(2)).generation, reload(saved).resolveAnchor(pos(2), "").generation);
     }
 
     @Test
@@ -91,7 +93,7 @@ public class QuantumCanonicalAnchorTest {
 
         NBTTagCompound saved = new NBTTagCompound();
         migrated.writeToNBT(saved);
-        assertEquals(2, saved.getInteger("anchorSchema"));
+        assertEquals(3, saved.getInteger("anchorSchema"));
         assertEquals(
             componentCount,
             saved.getTagList("canonicalAnchors", 10)
@@ -136,7 +138,7 @@ public class QuantumCanonicalAnchorTest {
             assertEquals(registry.canonicalAnchor(pos(first)).generation, anchor.generation);
             for (int offset = 0; offset < size; offset++) {
                 assertSame(anchor, restored.canonicalAnchor(pos(first + offset)));
-                assertNull(restored.resolveAnchor(pos(first + offset), ""));
+                assertSame(anchor, restored.resolveAnchor(pos(first + offset), ""));
                 assertEquals(
                     size,
                     restored.registeredStructure(pos(first + offset))
@@ -146,16 +148,16 @@ public class QuantumCanonicalAnchorTest {
     }
 
     @Test
-    public void expansionCannotJoinTwoPreviouslyRegisteredGenerations() {
+    public void physicalExpansionCoalescesPreviouslyRegisteredGenerationsOnce() {
         QuantumControllerRegistry registry = registry();
         registry.quantize(0, 64, 0);
         registry.quantize(2, 64, 0);
         long revision = registry.getRevision();
-        assertFalse(registry.canExtendStructure(members(0, 1, 2)));
-        assertFalse(registry.quantizeAll(members(0, 1, 2), pos(1)));
-        assertFalse(registry.isQuantized(pos(1)));
-        assertEquals(revision, registry.getRevision());
-        assertNotEquals(registry.canonicalAnchor(pos(0)).generation, registry.canonicalAnchor(pos(2)).generation);
+        assertTrue(registry.canExtendStructure(members(0, 1, 2)));
+        assertTrue(registry.quantizeAll(members(0, 1, 2), pos(1)));
+        assertTrue(registry.isQuantized(pos(1)));
+        assertTrue(registry.getRevision() > revision);
+        assertSame(registry.canonicalAnchor(pos(0)), registry.canonicalAnchor(pos(2)));
     }
 
     @Test
@@ -196,9 +198,9 @@ public class QuantumCanonicalAnchorTest {
         current.quantizeAll(members(0, 1, 2), pos(2));
         assertNotEquals(generation, current.canonicalAnchor(pos(0)).generation);
         current = reload(current);
-        assertNull(current.resolveAnchor(pos(0), "erased-by-old-cancel"));
-        assertNull(current.resolveAnchor(pos(1), generation));
-        assertNull(current.resolveAnchor(pos(2), ""));
+        assertSame(current.canonicalAnchor(pos(0)), current.resolveAnchor(pos(0), "erased-by-old-cancel"));
+        assertSame(current.canonicalAnchor(pos(1)), current.resolveAnchor(pos(1), generation));
+        assertSame(current.canonicalAnchor(pos(2)), current.resolveAnchor(pos(2), ""));
         assertTrue(
             current.legacyMembers(members(0, 1, 2), current.canonicalAnchor(pos(0)).generation)
                 .isEmpty());

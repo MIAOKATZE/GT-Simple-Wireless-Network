@@ -119,7 +119,7 @@ public class QuantumControllerPlacementTest {
     }
 
     @Test
-    public void bridgingIndependentGenerationsCancelsPlacementWithoutChangingEitherRoot() throws Exception {
+    public void realPlacementCoalescesPhysicallyJoinedGenerationsAndControllerFaces() throws Exception {
         FixtureWorld world = world();
         controller(world, 0);
         controller(world, 2);
@@ -130,11 +130,66 @@ public class QuantumControllerPlacementTest {
         BlockEvent.PlaceEvent event = event(world, 1);
         QuantumControllerEventHandler handler = new QuantumControllerEventHandler();
         handler.onBlockPlace(event);
-        assertTrue(event.isCanceled());
+        assertFalse(event.isCanceled());
         handler.commitPendingPlacements();
-        assertFalse(registry.isQuantized(pos(1)));
+        assertTrue(registry.isQuantized(pos(1)));
+        assertEquals(pos(0), registry.canonicalAnchor(pos(0)).position);
+        assertSame(registry.canonicalAnchor(pos(0)), registry.canonicalAnchor(pos(2)));
+        assertTrue(
+            ((Controller) world.tiles.get(pos(1))).proxy.getConnectableSides()
+                .contains(ForgeDirection.EAST));
+        assertTrue(
+            ((Controller) world.tiles.get(pos(1))).proxy.getConnectableSides()
+                .contains(ForgeDirection.WEST));
+    }
+
+    @Test
+    public void replacingRemovedMiddleRejoinsAlreadyNormalizedComponentsThroughTheRealPlacementHandler()
+        throws Exception {
+        FixtureWorld world = world();
+        controller(world, 0);
+        Controller middle = controller(world, 1);
+        controller(world, 2);
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        registry.quantizeAll(new HashSet<>(Arrays.asList(pos(0), pos(1), pos(2))), pos(1));
+        world.tiles.remove(pos(1));
+        world.loadedAir = new HashSet<>(Collections.singleton(pos(1)));
+        QuantumTileLifecycle.removed(middle);
         assertEquals(pos(0), registry.canonicalAnchor(pos(0)).position);
         assertEquals(pos(2), registry.canonicalAnchor(pos(2)).position);
+        assertNotEquals(registry.canonicalAnchor(pos(0)).generation, registry.canonicalAnchor(pos(2)).generation);
+        Controller replacement = controller(world, 1);
+        QuantumControllerEventHandler handler = new QuantumControllerEventHandler();
+        BlockEvent.PlaceEvent placement = event(world, 1);
+        handler.onBlockPlace(placement);
+        assertFalse(placement.isCanceled());
+        handler.commitPendingPlacements();
+        assertTrue(registry.isQuantized(pos(0)) && registry.isQuantized(pos(1)) && registry.isQuantized(pos(2)));
+        assertSame(registry.canonicalAnchor(pos(0)), registry.canonicalAnchor(pos(2)));
+        assertEquals(EnumSet.of(ForgeDirection.WEST, ForgeDirection.EAST), replacement.proxy.getConnectableSides());
+    }
+
+    @Test
+    public void activeAndPausedNeighborsAllowPhysicalPlacementWithoutAutomaticResumption() throws Exception {
+        FixtureWorld world = world();
+        controller(world, 0);
+        controller(world, 2);
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        registry.quantize(0, 64, 0);
+        registry.quantize(2, 64, 0);
+        String paused = registry.canonicalAnchor(pos(2)).generation;
+        assertTrue(registry.suspendStructure(pos(2)));
+        Controller placed = controller(world, 1);
+        QuantumControllerEventHandler handler = new QuantumControllerEventHandler();
+        BlockEvent.PlaceEvent placement = event(world, 1);
+        handler.onBlockPlace(placement);
+        assertFalse(placement.isCanceled());
+        handler.commitPendingPlacements();
+        assertSame(placed, world.tiles.get(pos(1)));
+        assertFalse(placed.isInvalid());
+        assertTrue(registry.isQuantized(pos(0)));
+        assertFalse(registry.isQuantized(pos(1)));
+        assertTrue(registry.isSuspendedAnchor(pos(2), paused));
     }
 
     @Test

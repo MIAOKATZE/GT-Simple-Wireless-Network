@@ -129,6 +129,7 @@ public class QuantumMaintenanceRetryTest {
             field(entry.getClass(), "normalizedRevision").setLong(entry, controllers.getRevision());
             field(entry.getClass(), "normalizedKey").set(entry, method(entry.getClass(), "anchorKey").invoke(entry));
             field(entry.getClass(), "normalizedGeneration").set(entry, entry.anchorGeneration);
+            field(entry.getClass(), "normalizedValid").setBoolean(entry, true);
             NBTTagCompound before = new NBTTagCompound();
             registry.writeToNBT(before);
             registry.controllerSuspended(dimension, Collections.singleton(0L));

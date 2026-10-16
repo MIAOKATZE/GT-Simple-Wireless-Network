@@ -51,7 +51,20 @@ public class TestWorldReportTest {
         result.workload.cells.add(cell);
         TestWorldReport.WorkloadPhase phase = new TestWorldReport.WorkloadPhase("fill_cells", 200);
         phase.endedTick = 201;
+        phase.observed.put("nativeOutputImports", 12L);
         result.workload.phases.add(phase);
+        TestWorldReport.Machine machine = new TestWorldReport.Machine(0, -74, 80, -75, 261);
+        machine.importedOutput = 12;
+        machine.chestInsertedOutput = 4;
+        machine.nativeDebugEnergyCover = true;
+        machine.windowImportedOutput.add(12L);
+        machine.windowExportedInput.add(16L);
+        machine.windowChestInsertedOutput.add(4L);
+        result.workload.machines.add(machine);
+        TestWorldReport.TransferGroup group = new TestWorldReport.TransferGroup(0, 250);
+        group.nativeExtracted = 8000;
+        result.workload.transferGroups.add(group);
+        result.workload.coverageLimitations.add("Server only");
         Method snapshot = TestWorldReport.class.getDeclaredMethod("snapshot");
         snapshot.setAccessible(true);
         TestWorldReport copy = (TestWorldReport) snapshot.invoke(report);
@@ -62,6 +75,17 @@ public class TestWorldReportTest {
         cell.initiallyFull = false;
         cell.steadyObserved = false;
         phase.endedTick = 999;
+        phase.observed.clear();
+        machine.importedOutput = 999;
+        machine.chestInsertedOutput = 999;
+        machine.nativeDebugEnergyCover = false;
+        machine.windowImportedOutput.clear();
+        machine.windowExportedInput.clear();
+        machine.windowChestInsertedOutput.clear();
+        group.nativeExtracted = 999;
+        result.workload.machines.clear();
+        result.workload.transferGroups.clear();
+        result.workload.coverageLimitations.clear();
         result.workload.cells.clear();
         result.workload.phases.clear();
         TestWorldReport.Workload frozen = copy.results.get(0).workload;
@@ -72,6 +96,15 @@ public class TestWorldReportTest {
         assertTrue(frozen.cells.get(0).initiallyFull);
         assertTrue(frozen.cells.get(0).steadyObserved);
         assertEquals(201L, frozen.phases.get(0).endedTick);
+        assertEquals(Long.valueOf(12), frozen.phases.get(0).observed.get("nativeOutputImports"));
+        assertEquals(12, frozen.machines.get(0).importedOutput);
+        assertEquals(4, frozen.machines.get(0).chestInsertedOutput);
+        assertTrue(frozen.machines.get(0).nativeDebugEnergyCover);
+        assertEquals(Long.valueOf(12), frozen.machines.get(0).windowImportedOutput.get(0));
+        assertEquals(Long.valueOf(16), frozen.machines.get(0).windowExportedInput.get(0));
+        assertEquals(Long.valueOf(4), frozen.machines.get(0).windowChestInsertedOutput.get(0));
+        assertEquals(8000, frozen.transferGroups.get(0).nativeExtracted);
+        assertEquals("Server only", frozen.coverageLimitations.get(0));
     }
 
     @Test

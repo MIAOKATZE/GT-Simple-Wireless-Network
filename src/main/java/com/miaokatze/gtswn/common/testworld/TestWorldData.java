@@ -12,6 +12,8 @@ public final class TestWorldData extends WorldSavedData {
     public int dimension;
     public int layoutSchema;
     public boolean built;
+    /** Retained independently of operation/report state until a complete reset removes old fixtures. */
+    public int authoredRadius = TestWorldFootprint.DEFAULT_RADIUS;
     public String operation = "IDLE";
     public String lastRun = "";
     public String activeRun = "";
@@ -31,6 +33,7 @@ public final class TestWorldData extends WorldSavedData {
         dimension = nbt.getInteger("dimension");
         layoutSchema = nbt.getInteger("layoutSchema");
         built = nbt.getBoolean("built");
+        authoredRadius = TestWorldFootprint.savedRadius(nbt.getInteger("authoredRadius"));
         operation = nbt.getString("operation");
         lastRun = nbt.getString("lastRun");
         activeRun = nbt.getString("activeRun");
@@ -43,10 +46,23 @@ public final class TestWorldData extends WorldSavedData {
         nbt.setInteger("dimension", dimension);
         nbt.setInteger("layoutSchema", layoutSchema);
         nbt.setBoolean("built", built);
+        nbt.setInteger("authoredRadius", TestWorldFootprint.savedRadius(authoredRadius));
         nbt.setString("operation", operation);
         nbt.setString("lastRun", lastRun);
         nbt.setString("activeRun", activeRun);
         nbt.setString("lastOutcome", lastOutcome);
         nbt.setString("lastReport", lastReport);
+    }
+
+    TestWorldFootprint beginResetFootprint(int requestedRadius) {
+        TestWorldFootprint requested = new TestWorldFootprint(requestedRadius);
+        authoredRadius = Math.max(TestWorldFootprint.savedRadius(authoredRadius), requested.radius);
+        markDirty(); // Record the expanded recovery boundary before loading or modifying any new chunk.
+        return new TestWorldFootprint(authoredRadius);
+    }
+
+    void completeResetFootprint(int requestedRadius) {
+        authoredRadius = new TestWorldFootprint(requestedRadius).radius;
+        markDirty();
     }
 }

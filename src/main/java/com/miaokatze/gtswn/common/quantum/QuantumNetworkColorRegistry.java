@@ -3,8 +3,10 @@ package com.miaokatze.gtswn.common.quantum;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.LongPredicate;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -111,5 +113,23 @@ public final class QuantumNetworkColorRegistry extends WorldSavedData {
             list.appendTag(value);
         }
         tag.setTag("colors", list);
+    }
+
+    /** Explicit fixture reset only; the caller restricts this to removed authored coordinates. */
+    public boolean forgetColors(LongPredicate removedVolume) {
+        boolean visibleChanged = false;
+        boolean changed = false;
+        Iterator<Map.Entry<Long, Integer>> entries = colors.entrySet()
+            .iterator();
+        while (entries.hasNext()) {
+            Map.Entry<Long, Integer> entry = entries.next();
+            if (!removedVolume.test(entry.getKey())) continue;
+            visibleChanged |= entry.getValue() != QuantumNetworkColor.DEFAULT;
+            entries.remove();
+            changed = true;
+        }
+        if (changed) markDirty();
+        if (visibleChanged) QuantumTerminalSyncEpoch.changed();
+        return changed;
     }
 }

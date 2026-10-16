@@ -14,6 +14,10 @@ public final class QuantumSecurityTopology {
 
     /** Implemented only by grids whose add/remove and security events emit this revision. */
     public interface TrackedGrid {
+
+        default QuantumSecurityScopeIndex quantumSecurityScopes() {
+            return null;
+        }
     }
 
     private static final AtomicLong REVISION = new AtomicLong();

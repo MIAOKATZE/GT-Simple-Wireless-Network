@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +24,7 @@ import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
@@ -57,6 +59,113 @@ import appeng.api.util.IReadOnlyCollection;
 import appeng.tile.networking.TileController;
 
 public class QuantumTerminalAccessTest {
+
+    @Test
+    public void sourceMigrationChecksEveryNativeGridOnButKeepsGlobalAndLocalOffShortCircuits() throws Exception {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            Config.quantumSafetyEnabled = true;
+            FixtureWorld world = world();
+            GridFixture active = new GridFixture(), paused = new GridFixture();
+            IdentityTile left = identityTile(active.node), right = identityTile(paused.node);
+            long a = QuantumControllerRegistry.pack(0, 64, 0), b = QuantumControllerRegistry.pack(1, 64, 0);
+            world.tiles = new HashMap<>();
+            world.tiles.put(a, left);
+            world.tiles.put(b, right);
+            NBTTagCompound saved = new NBTTagCompound();
+            saved.setInteger("anchorSchema", 3);
+            saved.setIntArray("controllers", new int[] { 0, 0, 64, 0, 0, 1, 64, 0 });
+            NBTTagList generations = new NBTTagList(), anchors = new NBTTagList(), suspended = new NBTTagList();
+            for (long position : new long[] { a, b }) {
+                NBTTagCompound member = new NBTTagCompound(), anchor = new NBTTagCompound();
+                String generation = position == a ? "active" : "paused";
+                member.setLong("pos", position);
+                member.setString("generation", generation);
+                generations.appendTag(member);
+                anchor.setLong("pos", position);
+                anchor.setString("generation", generation);
+                anchors.appendTag(anchor);
+                if (position == b) {
+                    NBTTagCompound pause = new NBTTagCompound();
+                    pause.setString("generation", generation);
+                    suspended.appendTag(pause);
+                }
+            }
+            saved.setTag("memberGenerations", generations);
+            saved.setTag("canonicalAnchors", anchors);
+            saved.setTag("suspendedGenerations", suspended);
+            QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
+            controllers.readFromNBT(saved);
+            Set<Long> source = new LinkedHashSet<>();
+            source.add(a);
+            source.add(b);
+            QuantumNetworkSecurityRegistry policy = QuantumNetworkSecurityRegistry.get(world);
+            policy.setSafety(world, source, true);
+            int[] checks = { 0 };
+            assertFalse(QuantumNetworkMigration.canManageSourceComponents(world, source, position -> {
+                checks[0]++;
+                return position == a;
+            }));
+            assertEquals(2, checks[0]);
+            assertTrue(controllers.isQuantized(a));
+            assertTrue(controllers.isSuspendedController(b));
+            right.node = active.node;
+            checks[0] = 0;
+            assertTrue(QuantumNetworkMigration.canManageSourceComponents(world, source, position -> {
+                checks[0]++;
+                return true;
+            }));
+            assertEquals(1, checks[0]);
+            Config.quantumSafetyEnabled = false;
+            assertTrue(
+                QuantumNetworkMigration.canManageSourceComponents(
+                    world,
+                    source,
+                    position -> { throw new AssertionError("Global OFF must not ask for source permissions"); }));
+            Config.quantumSafetyEnabled = true;
+            policy.setSafety(world, source, false);
+            left.node = null;
+            right.node = null;
+            assertTrue(
+                QuantumNetworkMigration.canManageSourceComponents(
+                    world,
+                    source,
+                    position -> {
+                        throw new AssertionError("Local OFF must not inspect source native grids or permissions");
+                    }));
+        } finally {
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
+
+    @Test
+    public void coordinateRecoveryKeepsTheOriginalActorAndStillRejectsRevokedNativePermission() throws Exception {
+        boolean enabled = Config.quantumSafetyEnabled;
+        try {
+            Config.quantumSafetyEnabled = true;
+            FixtureWorld world = world();
+            GridFixture grid = new GridFixture();
+            world.tile = identityTile(grid.node);
+            QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+            long coordinate = QuantumControllerRegistry.pack(1, 64, 2);
+            registry.quantize(1, 64, 2);
+            String retired = registry.canonicalAnchor(coordinate).generation;
+            registry.dequantize(coordinate);
+            registry.quantize(1, 64, 2);
+            assertNotEquals(retired, registry.resolveAnchor(coordinate, retired).generation);
+            QuantumNetworkSecurityRegistry.get(world)
+                .setSafety(world, members(1, 64, 2), true);
+            grid.hasProvider = true;
+            grid.grants.put(43, EnumSet.of(SecurityPermissions.BUILD));
+            assertTrue(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
+            grid.grants.clear();
+            assertFalse(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
+            Config.quantumSafetyEnabled = false;
+            assertTrue(QuantumConnectionSecurity.mayBridge(world, 1, 64, 2, grid.node, grid.node, () -> 43));
+        } finally {
+            Config.quantumSafetyEnabled = enabled;
+        }
+    }
 
     @Test
     public void liveBridgeAclDefaultsOffAndExplicitOnFailsClosedWithoutAProvider() throws Exception {
@@ -573,6 +682,7 @@ public class QuantumTerminalAccessTest {
     private static class FixtureWorld extends World {
 
         private TileEntity tile;
+        private Map<Long, TileEntity> tiles;
 
         private FixtureWorld() {
             super((ISaveHandler) null, "fixture", (WorldProvider) null, (WorldSettings) null, (Profiler) null);
@@ -595,11 +705,13 @@ public class QuantumTerminalAccessTest {
 
         @Override
         public boolean blockExists(int x, int y, int z) {
+            if (tiles != null) return tiles.containsKey(QuantumControllerRegistry.pack(x, y, z));
             return tile != null;
         }
 
         @Override
         public TileEntity getTileEntity(int x, int y, int z) {
+            if (tiles != null) return tiles.get(QuantumControllerRegistry.pack(x, y, z));
             if (tile != null) return tile;
             throw new AssertionError("Terminal synchronization must never load a chunk");
         }

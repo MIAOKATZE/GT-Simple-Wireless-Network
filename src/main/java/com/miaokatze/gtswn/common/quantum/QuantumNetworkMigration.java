@@ -1,6 +1,9 @@
 package com.miaokatze.gtswn.common.quantum;
 
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.function.LongPredicate;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
@@ -21,6 +24,7 @@ import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.api.config.SecurityPermissions;
+import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.security.ISecurityGrid;
@@ -58,6 +62,7 @@ public final class QuantumNetworkMigration {
         QuantumControllerRegistry.CanonicalAnchor sourceAnchor = sourceRegistry
             .canonicalAnchor(QuantumControllerRegistry.pack(plan.source[1], plan.source[2], plan.source[3]));
         if (sourceAnchor == null) return false;
+        Set<Long> bindingMembers = sourceRegistry.migrationBindingMembers(plan.sourceMembers);
 
         // Commit durable binding intent before disconnecting bridges or updating terminal cursors.
         if (!targetRegistry
@@ -65,13 +70,11 @@ public final class QuantumNetworkMigration {
             return false;
         QuantumNetworkColorRegistry.get(targetWorld)
             .recolor(plan.targetMembers, color);
-        journal.append(
+        journal.appendClusterMigration(
             plan.source[0],
-            plan.sourceMembers,
+            bindingMembers,
             new AnchorKey(targetWorld.provider.dimensionId, x, y, z),
-            sourceAnchor.generation,
-            sourceAnchor.generation,
-            sourceRegistry.legacyMembers(plan.sourceMembers, sourceAnchor.generation));
+            sourceAnchor.generation);
         QuantumNetworkSecurityRegistry.transfer(plan.sourceWorld, plan.sourceMembers, targetWorld, plan.targetMembers);
         ItemNetworkQuantumTerminal.writeAnchor(terminal, targetWorld, x, y, z);
         player.inventory.markDirty();
@@ -94,7 +97,7 @@ public final class QuantumNetworkMigration {
                 () -> QuantumIncorporationRegistry.get(world)
                     .applyPendingMigrations(world, journal));
         }
-        QuantumNetworkColorSync.migrateNodes(journal, plan.source[0], plan.sourceMembers);
+        QuantumNetworkColorSync.migrateNodes(journal, plan.source[0], bindingMembers);
         for (long member : plan.sourceMembers) {
             int sx = QuantumControllerRegistry.unpackX(member), sy = QuantumControllerRegistry.unpackY(member),
                 sz = QuantumControllerRegistry.unpackZ(member);
@@ -186,12 +189,47 @@ public final class QuantumNetworkMigration {
             if (!sourceRegistry.isCurrentController(sourceWorld, member))
                 return fail(player, "gtswn.chat.quantum.migration_source_invalid");
         }
-        // Source management was authorized above; SECURITY grants do not also require BUILD.
+        if (!canManageSourceComponents(
+            sourceWorld,
+            sourceMembers,
+            member -> QuantumTerminalAccess.canManageAnchor(
+                player,
+                terminal,
+                sourceWorld,
+                QuantumControllerRegistry.unpackX(member),
+                QuantumControllerRegistry.unpackY(member),
+                QuantumControllerRegistry.unpackZ(member))))
+            return fail(player, "gtswn.chat.quantum.manage_permission_required");
+        // Every actual source grid is authorized above; SECURITY grants do not also require BUILD.
         // The separate physical destination still requires its native BUILD permission.
         if (!mayEdit(player, terminal, sourceWorld, sourceMembers, false)
             || !mayEdit(player, terminal, targetWorld, targetMembers, true))
             return fail(player, "gtswn.chat.quantum.no_permission");
         return new Plan(sourceWorld, source, sourceMembers, targetMembers);
+    }
+
+    /** OFF retains the existing short circuit; ON authorizes each actual source grid once before mutation. */
+    static boolean canManageSourceComponents(World world, Set<Long> members, LongPredicate authority) {
+        if (!Config.quantumSafetyEnabled || members.isEmpty()) return true;
+        long first = members.iterator()
+            .next();
+        if (!QuantumTerminalAccess.isSecurityRequired(
+            world,
+            QuantumControllerRegistry.unpackX(first),
+            QuantumControllerRegistry.unpackY(first),
+            QuantumControllerRegistry.unpackZ(first))) return true;
+        Set<IGrid> checked = Collections.newSetFromMap(new IdentityHashMap<>());
+        for (long member : members) {
+            int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
+                z = QuantumControllerRegistry.unpackZ(member);
+            if (!world.blockExists(x, y, z)) return false;
+            TileEntity tile = world.getTileEntity(x, y, z);
+            if (!(tile instanceof TileController)) return false;
+            IGridNode node = ((IGridHost) tile).getGridNode(ForgeDirection.UNKNOWN);
+            IGrid grid = node == null ? null : node.getGrid();
+            if (grid == null || (checked.add(grid) && !authority.test(member))) return false;
+        }
+        return true;
     }
 
     private static boolean mayEdit(EntityPlayerMP player, ItemStack terminal, World world, Set<Long> members,

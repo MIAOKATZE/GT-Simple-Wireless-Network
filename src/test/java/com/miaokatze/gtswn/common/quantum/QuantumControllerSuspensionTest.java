@@ -41,7 +41,7 @@ import com.miaokatze.gtswn.config.Config;
 
 import appeng.api.networking.IGridNode;
 
-/** Explicit disable preserves proven physical continuity; replacement and real removal never do. */
+/** Coordinate recovery is separate from the native authorization applied when devices reconnect. */
 public class QuantumControllerSuspensionTest {
 
     @Test
@@ -146,7 +146,7 @@ public class QuantumControllerSuspensionTest {
     }
 
     @Test
-    public void realRemovalWhileDisabledRetiresWholeGenerationBeforeSamePositionRebuild() throws Exception {
+    public void realRemovalWhileDisabledPreservesSurvivorsAndTheirBindings() throws Exception {
         QuantumControllerPlacementTest.FixtureWorld world = world();
         controller(world, 0);
         QuantumControllerPlacementTest.Controller removed = controller(world, 1);
@@ -157,18 +157,18 @@ public class QuantumControllerSuspensionTest {
         assertTrue(registry.ownsController(removed));
         world.tiles.remove(pos(1));
         QuantumTileLifecycle.removed(removed);
-        assertTrue(
-            registry.registeredStructure(pos(0))
-                .isEmpty());
-        assertFalse(registry.isSuspendedAnchor(pos(0), generation));
+        assertEquals(members(0), registry.registeredStructure(pos(0)));
+        assertTrue(registry.isSuspendedAnchor(pos(0), generation));
         controller(world, 1);
         registry.quantizeAll(members(0, 1), pos(1));
-        assertNotEquals(generation, registry.canonicalAnchor(pos(0)).generation);
-        assertNull(registry.resolveAnchor(pos(0), generation));
+        assertEquals(generation, registry.canonicalAnchor(pos(0)).generation);
+        assertEquals(
+            registry.canonicalAnchor(pos(0)).generation,
+            registry.resolveAnchor(pos(0), generation).generation);
     }
 
     @Test
-    public void copiedIdentityReplacementBeforeResumeCannotAdoptOldGenerationOrLateInvalidation() throws Exception {
+    public void replacementBeforeResumeRecoversCoordinatesAndRejectsLateInvalidation() throws Exception {
         QuantumControllerPlacementTest.FixtureWorld world = world();
         QuantumControllerPlacementTest.Controller original = controller(world, 0);
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
@@ -178,15 +178,15 @@ public class QuantumControllerSuspensionTest {
         QuantumControllerPlacementTest.Controller replacement = controller(world, 0);
         replacement.identity = original.identity;
         assertTrue(registry.quantizeAll(members(0), pos(0)));
-        assertNotEquals(generation, registry.canonicalAnchor(pos(0)).generation);
-        assertNull(registry.resolveAnchor(pos(0), generation));
+        assertEquals(generation, registry.canonicalAnchor(pos(0)).generation);
+        assertEquals(generation, registry.resolveAnchor(pos(0), generation).generation);
         QuantumTileLifecycle.removed(original);
         assertTrue(registry.isQuantized(pos(0)));
         assertTrue(registry.ownsController(replacement));
     }
 
     @Test
-    public void inPlaceIdentityMutationAfterDisabledRestartDoesNotAdoptOldGeneration() throws Exception {
+    public void inPlaceIdentityMutationAfterDisabledRestartRetainsCoordinateBindings() throws Exception {
         QuantumControllerPlacementTest.FixtureWorld world = world();
         QuantumControllerPlacementTest.Controller original = controller(world, 0);
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
@@ -196,12 +196,12 @@ public class QuantumControllerSuspensionTest {
         registry.readFromNBT(save(registry));
         original.identity = "different-physical-controller";
         assertTrue(registry.quantizeAll(members(0), pos(0)));
-        assertNotEquals(generation, registry.canonicalAnchor(pos(0)).generation);
-        assertNull(registry.resolveAnchor(pos(0), generation));
+        assertEquals(generation, registry.canonicalAnchor(pos(0)).generation);
+        assertEquals(generation, registry.resolveAnchor(pos(0), generation).generation);
     }
 
     @Test
-    public void persistedNativeOwnerChangeDoesNotAdoptDisabledGeneration() throws Exception {
+    public void persistedNativeOwnerChangeRetainsCoordinateHintWithoutChangingTheNewOwner() throws Exception {
         QuantumControllerPlacementTest.FixtureWorld world = world();
         QuantumControllerPlacementTest.Controller original = controller(world, 0);
         original.nativeNode = ownerNode(3);
@@ -212,13 +212,13 @@ public class QuantumControllerSuspensionTest {
         registry.readFromNBT(save(registry));
         original.nativeNode = ownerNode(9);
         assertTrue(registry.quantizeAll(members(0), pos(0)));
-        assertNotEquals(generation, registry.canonicalAnchor(pos(0)).generation);
+        assertEquals(generation, registry.canonicalAnchor(pos(0)).generation);
         assertEquals(9, original.nativeNode.getPlayerID());
-        assertNull(registry.resolveAnchor(pos(0), generation));
+        assertEquals(generation, registry.resolveAnchor(pos(0), generation).generation);
     }
 
     @Test
-    public void temporarilyUnavailableNativeProxyDefersResumeWithoutDiscardingRecordedOwner() throws Exception {
+    public void temporarilyUnavailableNativeProxyDoesNotVetoExplicitCoordinateRegistration() throws Exception {
         QuantumControllerPlacementTest.FixtureWorld world = world();
         QuantumControllerPlacementTest.Controller original = controller(world, 0);
         original.nativeNode = ownerNode(3);
@@ -227,15 +227,15 @@ public class QuantumControllerSuspensionTest {
         String generation = registry.canonicalAnchor(pos(0)).generation;
         registry.suspendStructure(pos(0));
         original.nativeNode = null;
-        assertFalse(registry.quantizeAll(members(0), pos(0)));
-        assertTrue(registry.isSuspendedAnchor(pos(0), generation));
+        assertTrue(registry.quantizeAll(members(0), pos(0)));
+        assertFalse(registry.isSuspendedAnchor(pos(0), generation));
         original.nativeNode = ownerNode(3);
         assertTrue(registry.quantizeAll(members(0), pos(0)));
         assertEquals(generation, registry.canonicalAnchor(pos(0)).generation);
     }
 
     @Test
-    public void twoDisabledGenerationsCannotMergeAndTheirSuspensionIsPreserved() throws Exception {
+    public void explicitQuantizationResumesAndCoalescesBothPausedComponents() throws Exception {
         QuantumControllerPlacementTest.FixtureWorld world = world();
         controller(world, 0);
         controller(world, 2);
@@ -247,12 +247,11 @@ public class QuantumControllerSuspensionTest {
         registry.suspendStructure(pos(0));
         registry.suspendStructure(pos(2));
         controller(world, 1);
-        assertFalse(registry.quantizeAll(members(0, 1, 2), pos(1)));
-        assertTrue(registry.isSuspendedAnchor(pos(0), first));
-        assertTrue(registry.isSuspendedAnchor(pos(2), second));
-        assertTrue(
-            registry.getAll()
-                .isEmpty());
+        assertTrue(registry.quantizeAll(members(0, 1, 2), pos(1)));
+        assertFalse(registry.isSuspendedAnchor(pos(0), first));
+        assertFalse(registry.isSuspendedAnchor(pos(2), second));
+        assertEquals(members(0, 1, 2), registry.getAll());
+        assertSame(registry.canonicalAnchor(pos(0)), registry.canonicalAnchor(pos(2)));
     }
 
     @Test
@@ -266,13 +265,33 @@ public class QuantumControllerSuspensionTest {
         String generation = registry.canonicalAnchor(pos(0)).generation;
         registry.suspendStructure(pos(0));
         controller(world, 1);
-        assertFalse(registry.quantizeAll(members(0, 1, 2), pos(1)));
+        assertFalse(registry.quantizeAutomatically(members(0, 1, 2), pos(1)));
         assertTrue(registry.isSuspendedAnchor(pos(0), generation));
         assertEquals(Collections.singleton(pos(2)), registry.getAll());
     }
 
     @Test
-    public void missingLoadedMiddleMemberRetiresDisabledFragmentsRatherThanResumingPartialStructure() throws Exception {
+    public void explicitQuantizationRefreshesAReplacedPausedMemberEvenWhenTheActiveDefaultWins() throws Exception {
+        QuantumControllerPlacementTest.FixtureWorld world = world();
+        controller(world, 0);
+        controller(world, 2);
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        registry.quantize(0, 64, 0);
+        registry.quantize(2, 64, 0);
+        QuantumControllerRegistry.CanonicalAnchor active = registry.canonicalAnchor(pos(0));
+        assertTrue(registry.suspendStructure(pos(2)));
+        QuantumControllerPlacementTest.Controller replacement = controller(world, 2);
+        controller(world, 1);
+        assertFalse(registry.quantizeAutomatically(members(0, 1, 2), pos(1)));
+        assertTrue(registry.quantizeAll(members(0, 1, 2), pos(1)));
+        assertSame(active, registry.canonicalAnchor(pos(2)));
+        assertTrue(registry.isCurrentController(world, pos(2)));
+        assertTrue(registry.ownsController(replacement));
+        assertEquals(members(0, 1, 2), registry.getAll());
+    }
+
+    @Test
+    public void resumingOneSplitFragmentKeepsTheOtherFragmentSuspendedAndBound() throws Exception {
         QuantumControllerPlacementTest.FixtureWorld world = world();
         controller(world, 0);
         controller(world, 1);
@@ -286,7 +305,7 @@ public class QuantumControllerSuspensionTest {
         assertTrue(registry.quantizeAll(members(0), pos(0)));
         assertNotEquals(generation, registry.canonicalAnchor(pos(0)).generation);
         assertFalse(registry.isQuantized(pos(2)));
-        assertFalse(registry.isSuspendedAnchor(pos(2), generation));
+        assertTrue(registry.isSuspendedAnchor(pos(2), generation));
         assertNull(registry.resolveAnchor(pos(2), generation));
     }
 

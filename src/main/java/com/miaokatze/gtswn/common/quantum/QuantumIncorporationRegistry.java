@@ -281,18 +281,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         entry.loadedTile = null;
     }
 
-    /** Remove bindings in every loaded world even when their local machine chunk is unloaded. */
+    /** Controller loss disconnects devices; their own identity/owner/binding survives for coordinate recovery. */
     public void controllerRemoved(World world, int dimension, Set<Long> members) {
-        for (long position : members) {
-            Map<Long, Entry> anchored = sources.get(
-                new AnchorKey(
-                    dimension,
-                    QuantumControllerRegistry.unpackX(position),
-                    QuantumControllerRegistry.unpackY(position),
-                    QuantumControllerRegistry.unpackZ(position)));
-            if (anchored == null) continue;
-            for (Entry entry : new ArrayList<>(anchored.values())) forget(world, entry, true);
-        }
+        controllerSuspended(dimension, members);
     }
 
     /** Indexed explicit disable: retain device identity, ownership and binding for later resumption. */
@@ -447,7 +438,8 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             AnchorKey previous = entry.anchorKey();
             String previousGeneration = entry.anchorGeneration;
             if (!normalizeAnchor(entry, anchor)) {
-                forget(world, entry, true);
+                entry.disconnect();
+                entry.deferReconnect(isolationTick);
                 return;
             }
             if (!previous.equals(entry.anchorKey()) || !previousGeneration.equals(entry.anchorGeneration)) {
@@ -691,10 +683,17 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         long revision = registry.getRevision();
         if (entry.normalizedRegistry == registry && entry.normalizedRevision == revision
             && entry.normalizedKey == entry.anchorKey()
-            && entry.anchorGeneration.equals(entry.normalizedGeneration)) return true;
+            && entry.anchorGeneration.equals(entry.normalizedGeneration)) return entry.normalizedValid;
         QuantumControllerRegistry.CanonicalAnchor anchor = registry
             .resolveAnchor(QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az), entry.anchorGeneration);
-        if (anchor == null) return false;
+        if (anchor == null) {
+            entry.normalizedRegistry = registry;
+            entry.normalizedRevision = registry.getRevision();
+            entry.normalizedKey = entry.anchorKey();
+            entry.normalizedGeneration = entry.anchorGeneration;
+            entry.normalizedValid = false;
+            return false;
+        }
         if (anchor.position != QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az)
             || !anchor.generation.equals(entry.anchorGeneration)) {
             entry.disconnect();
@@ -706,9 +705,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.backoff = 20;
         }
         entry.normalizedRegistry = registry;
-        entry.normalizedRevision = revision;
+        entry.normalizedRevision = registry.getRevision();
         entry.normalizedKey = entry.anchorKey();
         entry.normalizedGeneration = entry.anchorGeneration;
+        entry.normalizedValid = true;
         return true;
     }
 
@@ -812,6 +812,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private AnchorKey cachedAnchorKey, normalizedKey;
         private QuantumControllerRegistry normalizedRegistry;
         private long normalizedRevision;
+        private boolean normalizedValid;
         private String normalizedGeneration;
 
         private void deferReconnect(long now) {
@@ -879,14 +880,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                 && local != null
                 && target != null
                 && billingNode != null
-                && local.getConnections()
-                    .contains(connection)
-                && billingNode.getConnections()
-                    .contains(connection)
-                && billingNode.getConnections()
-                    .contains(billingConnection)
-                && target.getConnections()
-                    .contains(billingConnection)
+                && QuantumConnectionMembership.contains(local, connection)
+                && QuantumConnectionMembership.contains(billingNode, connection)
+                && QuantumConnectionMembership.contains(billingNode, billingConnection)
+                && QuantumConnectionMembership.contains(target, billingConnection)
                 && target.getGrid() != null
                 && local.getGrid() == target.getGrid()
                 && billingNode.getGrid() == target.getGrid();
@@ -914,8 +911,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
 
         private static boolean containsConnection(IGridNode node, IGridConnection connection) {
-            return node != null && node.getConnections()
-                .contains(connection);
+            return node != null && QuantumConnectionMembership.contains(node, connection);
         }
     }
 

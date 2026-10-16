@@ -25,6 +25,7 @@
     "mm.PendingBlockMixin"
   ],
   "client": [
+    "minecraft.KeyBindingRegistryMixin",
     "minecraft.HeldChargeSyncMixin",
     "gregtech.QuantumNodeWrenchOverlayMixin"
   ]

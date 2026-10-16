@@ -110,7 +110,7 @@ final class AeStorageStressScenario implements TestScenario {
         workload = new TestWorldReport.Workload();
         ctx.result.workload = workload;
         workload.expected.put("quantumNodes", (long) layout.nodes);
-        workload.expected.put("controllers", 24L);
+        workload.expected.put("controllers", (long) AeStressControllerLayout.CONTROLLERS);
         workload.expected.put("creativeEnergyCells", 1L);
         workload.expected.put("drives", (long) layout.modules);
         workload.expected.put("configuredInterfaces", (long) layout.modules * 2);
@@ -278,7 +278,10 @@ final class AeStorageStressScenario implements TestScenario {
 
     private void activateController(TestContext ctx) {
         if (ctx.tick() - stageTick > 600) {
-            require(ctx, false, "Native 7x7 controller ring becomes online using its creative energy cell");
+            require(
+                ctx,
+                false,
+                "Native 196-block 7-cube controller structure becomes online using its creative energy cell");
         }
         if (!ItemNetworkQuantumTerminal.isControllerActive((TileController) controller)) return;
         ((ItemNetworkQuantumTerminal) terminal.getItem()).onItemUseFirst(
@@ -306,7 +309,11 @@ final class AeStorageStressScenario implements TestScenario {
         for (; cursor < limit; cursor++) {
             // Alternate genuine members; production resolves both to the first-click canonical identity.
             nodes.get(cursor)
-                .setAnchor(ctx.world().provider.dimensionId, -3, 65, cursor % 2 == 0 ? -3 : -2);
+                .setAnchor(
+                    ctx.world().provider.dimensionId,
+                    AeStressControllerLayout.X,
+                    AeStressControllerLayout.Y,
+                    AeStressControllerLayout.Z + cursor % 2);
         }
         if (cursor == nodes.size()) next(ctx, 3, "configure_interfaces");
     }

@@ -181,13 +181,18 @@ public class QuantumRemovalLifecycleTest {
     }
 
     @Test
-    public void controllerCancellationForgetsBindingEvenWhenLocalChunkIsUnloaded() throws Exception {
+    public void controllerCancellationRetainsBindingEvenWhenLocalChunkIsUnloaded() throws Exception {
         FixtureWorld world = world();
         QuantumIncorporationRegistry registry = QuantumIncorporationRegistry.get(world);
         registry.readFromNBT(incorporationSave("saved", 0));
         world.loaded.clear();
+        NBTTagCompound before = new NBTTagCompound();
+        registry.writeToNBT(before);
         registry.controllerRemoved(world, 7, java.util.Collections.singleton(pos(0)));
-        assertEquals(0, count(registry.snapshot()));
+        assertEquals(1, count(registry.snapshot()));
+        NBTTagCompound after = new NBTTagCompound();
+        registry.writeToNBT(after);
+        assertEquals(before, after);
     }
 
     @Test

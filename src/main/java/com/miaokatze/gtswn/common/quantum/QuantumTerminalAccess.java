@@ -35,6 +35,7 @@ public final class QuantumTerminalAccess {
     public static final String NBT_OWNER_UUID = "QT_OwnerUUID";
     public static final String NBT_OWNER_NAME = "QT_OwnerName";
     public static final String NBT_ENCRYPTION_KEY = "QT_EncryptionKey";
+    public static final String NBT_BINDING_EPOCH = "QT_BindingEpoch";
     /** Main-thread, pending items only. Values never retain item stacks, players or worlds. */
     private static Map<ItemStack, PendingUpgrade> pendingUpgrades;
 
@@ -63,6 +64,7 @@ public final class QuantumTerminalAccess {
         boolean changed = (replay & 1) != 0;
         boolean canonicalRequired = tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA)
             != ItemNetworkQuantumTerminal.ANCHOR_SCHEMA || (replay & 2) != 0
+            || tag.getLong(NBT_BINDING_EPOCH) != QuantumTerminalSyncEpoch.bindingEpoch()
             || (pending != null && pending.canonicalRequired);
         if (!canonicalRequired) {
             // A color/session notice does not repeat an already completed format/alias conversion.
@@ -327,6 +329,7 @@ public final class QuantumTerminalAccess {
         // This is format state only. validate/canManage still call currentBinding and native permissions below.
         boolean formatted = tag.getByte(ItemNetworkQuantumTerminal.NBT_BOUND) == 1
             && tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA) == ItemNetworkQuantumTerminal.ANCHOR_SCHEMA
+            && tag.getLong(NBT_BINDING_EPOCH) == QuantumTerminalSyncEpoch.bindingEpoch()
             && (replay & 2) == 0;
         if (!formatted) {
             int normalized = normalizeAnchor(stack);
@@ -440,6 +443,10 @@ public final class QuantumTerminalAccess {
             ItemNetworkQuantumTerminal.NBT_ANCHOR_Z,
             QuantumControllerRegistry.unpackZ(anchor.position));
         changed |= setString(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, anchor.generation);
+        if (tag.getLong(NBT_BINDING_EPOCH) != QuantumTerminalSyncEpoch.bindingEpoch()) {
+            tag.setLong(NBT_BINDING_EPOCH, QuantumTerminalSyncEpoch.bindingEpoch());
+            changed = true;
+        }
         changed |= setString(tag, "QT_BoundName", world.provider.getDimensionName());
         if (tag.getByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA) != ItemNetworkQuantumTerminal.ANCHOR_SCHEMA) {
             tag.setByte(ItemNetworkQuantumTerminal.NBT_ANCHOR_SCHEMA, ItemNetworkQuantumTerminal.ANCHOR_SCHEMA);
