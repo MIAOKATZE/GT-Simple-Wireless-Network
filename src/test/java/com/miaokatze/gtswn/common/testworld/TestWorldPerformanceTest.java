@@ -78,6 +78,74 @@ public class TestWorldPerformanceTest {
     }
 
     @Test
+    public void workloadTransitionFrameClosesOldPhaseAfterRecordingItAndLeavesNewPhaseUnmeasured() {
+        Clock clock = new Clock();
+        TestWorldReport report = new TestWorldReport("phase-transition", 19871, "native");
+        TestWorldReport.Result result = new TestWorldReport.Result("native");
+        result.workload = new TestWorldReport.Workload();
+        TestContext context = new TestContext(null, report.runId, report, result);
+        TestWorldReport.WorkloadPhase fill = new TestWorldReport.WorkloadPhase("fill", 0);
+        TestWorldReport.WorkloadPhase idle = new TestWorldReport.WorkloadPhase("idle", 1);
+        result.workload.phases.add(fill);
+        result.workload.phases.add(idle);
+        context.beginWorkloadPhase(fill, new TestWorldPerformance(clock));
+        TestWorldReport.WorkloadPhase entered = context.workloadPhase();
+        clock.nanos = 100;
+        clock.nativeAttempts = 3;
+        context.beginWorkloadPhase(idle, new TestWorldPerformance(clock));
+        assertNull(fill.performance);
+        context.recordWorkloadFrame(entered, 100, 80, 30, 20);
+        assertEquals(1, fill.performance.naturalServerWindowWallNanos.sampleCount);
+        assertEquals(100, fill.performance.naturalServerWindowWallNanos.totalNanos);
+        assertEquals(80, fill.performance.naturalServerThreadCpuNanos.totalNanos);
+        assertEquals(30, fill.performance.managerHandlerWallNanos.totalNanos);
+        assertEquals(20, fill.performance.managerHandlerCpuNanos.totalNanos);
+        assertEquals(Long.valueOf(3), fill.performance.nativeAeConnectionAttempts);
+        assertNull(fill.sampler);
+        assertNull(idle.performance);
+        context.recordWorkloadFrame(idle, 200, 160, 40, 25);
+        context.finishWorkloadPerformance();
+        assertEquals(1, idle.performance.naturalServerWindowWallNanos.sampleCount);
+        assertEquals(200, idle.performance.naturalServerWindowWallNanos.totalNanos);
+        assertEquals(1, fill.performance.naturalServerWindowWallNanos.sampleCount);
+    }
+
+    @Test
+    public void workloadFinalFramePrecedesFrozenReportAndRuntimeSamplerNeverSerializes() throws Exception {
+        TestWorldReport report = new TestWorldReport("phase-final", 19871, "native");
+        TestWorldReport.Result result = new TestWorldReport.Result("native");
+        report.results.add(result);
+        result.workload = new TestWorldReport.Workload();
+        TestWorldReport.WorkloadPhase phase = new TestWorldReport.WorkloadPhase("final", 0);
+        result.workload.phases.add(phase);
+        TestContext context = new TestContext(null, report.runId, report, result);
+        context.beginWorkloadPhase(phase, new TestWorldPerformance(new Clock()));
+        String running = new GsonBuilder().serializeNulls()
+            .create()
+            .toJson(phase);
+        assertFalse(running.contains("sampler"));
+        context.pass("last callback completes before END accounting");
+        context.recordWorkloadFrame(phase, 500, 400, 50, 40);
+        context.finishWorkloadPerformance();
+        Method snapshot = TestWorldReport.class.getDeclaredMethod("snapshot");
+        snapshot.setAccessible(true);
+        TestWorldReport detached = (TestWorldReport) snapshot.invoke(report);
+        TestWorldPerformance.Snapshot frozen = detached.results.get(0).workload.phases.get(0).performance;
+        assertSame(phase.performance, frozen);
+        assertEquals(1, frozen.naturalServerWindowWallNanos.sampleCount);
+        assertEquals(500, frozen.naturalServerWindowWallNanos.totalNanos);
+        assertEquals(400, frozen.naturalServerThreadCpuNanos.totalNanos);
+        assertEquals(50, frozen.managerHandlerWallNanos.totalNanos);
+        assertEquals(40, frozen.managerHandlerCpuNanos.totalNanos);
+        assertNull(phase.sampler);
+        assertNull(context.workloadPhase());
+        assertFalse(
+            new GsonBuilder().create()
+                .toJson(detached)
+                .contains("sampler"));
+    }
+
+    @Test
     public void nativeGateAttemptDeltaIsIndependentOfScenarioSessionCountsAndFreezesAtFinish() {
         Clock clock = new Clock();
         clock.nativeAttempts = 30;

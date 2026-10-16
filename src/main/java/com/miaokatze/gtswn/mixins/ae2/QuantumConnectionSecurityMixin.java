@@ -36,7 +36,7 @@ public abstract class QuantumConnectionSecurityMixin {
             gtswn$overrodeSafety = true;
             return false;
         }
-        return !QuantumConnectionSecurity.permitsNativeConnection(first, second)
+        return !QuantumConnectionSecurity.permitsNativeConnectionAfterOverride(first, second)
             || Platform.securityCheck(first, second);
     }
 

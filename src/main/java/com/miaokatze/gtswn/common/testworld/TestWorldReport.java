@@ -75,11 +75,87 @@ public final class TestWorldReport {
         public long maxCallbackNanos;
         public long droppedEvents;
         public TestWorldPerformance.Snapshot performance;
+        public Workload workload;
         public final Map<String, Long> observedBusinessEvents = new LinkedHashMap<>();
         public final List<Trace> events = new ArrayList<>();
 
         Result(String id) {
             this.id = id;
+        }
+    }
+
+    /** Structured native fixture facts survive the bounded event journal. No live world objects enter reports. */
+    public static final class Workload {
+
+        public String kind = "native-ae-storage";
+        public String phase = "not_started";
+        public String retention = "World blocks and bound terminal remain after completion or stop. The runner releases its chunk tickets; subsequent ticking needs a player or independent chunk loading. build/reset removes the fixture.";
+        public final Map<String, Long> expected = new LinkedHashMap<>();
+        public final Map<String, Long> observed = new LinkedHashMap<>();
+        public final List<String> itemTypes = new ArrayList<>();
+        public final List<Cell> cells = new ArrayList<>();
+        public final List<WorkloadPhase> phases = new ArrayList<>();
+
+        Workload copy() {
+            Workload target = new Workload();
+            target.kind = kind;
+            target.phase = phase;
+            target.retention = retention;
+            target.expected.putAll(expected);
+            target.observed.putAll(observed);
+            target.itemTypes.addAll(itemTypes);
+            for (Cell cell : cells) target.cells.add(new Cell(cell));
+            for (WorkloadPhase phase : phases) target.phases.add(new WorkloadPhase(phase));
+            return target;
+        }
+    }
+
+    public static final class Cell {
+
+        public final int x, y, z, slot, itemType;
+        public final long bytes, capacity;
+        public long initializedCount, steadyCount;
+        public long initializedTypes;
+        public boolean initiallyFull, rejectedExtra, steadyObserved;
+
+        Cell(int x, int y, int z, int slot, int itemType, long bytes, long capacity) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.slot = slot;
+            this.itemType = itemType;
+            this.bytes = bytes;
+            this.capacity = capacity;
+        }
+
+        private Cell(Cell source) {
+            this(source.x, source.y, source.z, source.slot, source.itemType, source.bytes, source.capacity);
+            initializedCount = source.initializedCount;
+            steadyCount = source.steadyCount;
+            steadyObserved = source.steadyObserved;
+            initializedTypes = source.initializedTypes;
+            initiallyFull = source.initiallyFull;
+            rejectedExtra = source.rejectedExtra;
+        }
+    }
+
+    public static final class WorkloadPhase {
+
+        public final String name;
+        public final long startedTick;
+        public long endedTick;
+        public TestWorldPerformance.Snapshot performance;
+        transient TestWorldPerformance sampler;
+
+        WorkloadPhase(String name, long startedTick) {
+            this.name = name;
+            this.startedTick = startedTick;
+        }
+
+        private WorkloadPhase(WorkloadPhase source) {
+            this(source.name, source.startedTick);
+            endedTick = source.endedTick;
+            performance = source.performance;
         }
     }
 
@@ -142,6 +218,7 @@ public final class TestWorldReport {
             target.maxCallbackNanos = result.maxCallbackNanos;
             target.droppedEvents = result.droppedEvents;
             target.performance = result.performance;
+            target.workload = result.workload == null ? null : result.workload.copy();
             target.events.addAll(result.events);
             target.observedBusinessEvents.putAll(result.observedBusinessEvents);
             copy.results.add(target);

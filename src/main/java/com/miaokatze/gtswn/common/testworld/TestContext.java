@@ -13,6 +13,7 @@ public final class TestContext {
     private final TestWorldReport report;
     final TestWorldReport.Result result;
     private TestWorldPerformance performance;
+    private TestWorldReport.WorkloadPhase workloadPhase;
     long elapsed;
     String outcome;
     String detail;
@@ -42,6 +43,40 @@ public final class TestContext {
 
     TestWorldPerformance performance() {
         return performance;
+    }
+
+    /** Switching identity does not close the old window: its final server frame still belongs to it. */
+    void beginWorkloadPhase(TestWorldReport.WorkloadPhase phase) {
+        beginWorkloadPhase(phase, new TestWorldPerformance());
+    }
+
+    void beginWorkloadPhase(TestWorldReport.WorkloadPhase phase, TestWorldPerformance sampler) {
+        workloadPhase = phase;
+        phase.sampler = sampler;
+    }
+
+    TestWorldReport.WorkloadPhase workloadPhase() {
+        return workloadPhase;
+    }
+
+    /** Called after END work, with the identity captured at handler entry, before any final report snapshot. */
+    void recordWorkloadFrame(TestWorldReport.WorkloadPhase entered, long wall, long cpu, long work, long workCpu) {
+        if (entered == null || entered.sampler == null) return;
+        entered.sampler.tick(wall, cpu, work, workCpu);
+        if (entered != workloadPhase) closeWorkloadPhase(entered);
+    }
+
+    void finishWorkloadPerformance() {
+        if (result.workload != null)
+            for (TestWorldReport.WorkloadPhase phase : result.workload.phases) closeWorkloadPhase(phase);
+        workloadPhase = null;
+    }
+
+    private static void closeWorkloadPhase(TestWorldReport.WorkloadPhase phase) {
+        if (phase.sampler != null) {
+            phase.performance = phase.sampler.finish();
+            phase.sampler = null;
+        }
     }
 
     /** Optional named wall timing; bounded and collected only while this scenario is active. */

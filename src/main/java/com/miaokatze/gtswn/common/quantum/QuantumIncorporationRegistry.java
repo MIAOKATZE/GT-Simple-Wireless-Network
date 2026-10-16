@@ -427,6 +427,13 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             disconnectExternal(tile, entry.connection);
             entry.lastIsolation = isolationTick;
         }
+        // A disconnected device cannot lose further bridge permissions. Wait before asking native
+        // hosts for nodes (which may create/merge grids), rather than only gating the constructors.
+        boolean attemptReserved = false;
+        if (!entry.hasLiveConnections()) {
+            entry.disconnect();
+            if (isolationTick < entry.nextAttempt) return;
+        }
         WorldServer anchor = DimensionManager.getWorld(entry.dim);
         if (anchor != null) {
             if (QuantumControllerRegistry.get(anchor)
@@ -434,6 +441,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                     QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az),
                     entry.anchorGeneration)) {
                 entry.disconnect();
+                entry.deferReconnect(isolationTick);
                 return;
             }
             AnchorKey previous = entry.anchorKey();
@@ -456,23 +464,36 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         // Never load worlds or chunks just to keep an incorporated machine connected.
         if (anchor == null || !anchor.blockExists(entry.ax, entry.ay, entry.az)) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             return;
         }
         TileEntity controller = anchor.getTileEntity(entry.ax, entry.ay, entry.az);
         if (!(controller instanceof TileController)) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             return;
+        }
+        // The audited OFF override belongs to these same live endpoints. Native/policy changes
+        // invalidate it synchronously; ON networks continue through fresh native authorization.
+        if (entry.hasLiveConnections() && entry.target.getMachine() == controller
+            && !controller.isInvalid()
+            && QuantumConnectionSecurity.hasUnchangedOverride(entry.connection, entry.billingConnection)) return;
+        if (!entry.hasLiveConnections()) {
+            if (!reserveConnectionAttempt()) return;
+            attemptReserved = true;
         }
         IGridNode target = ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN);
         ArrayList<IGridNode> local = nodes((IGridHost) tile);
         if (target == null || local.isEmpty()) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             return;
         }
         IGridNode node = local.get(0);
         if (!QuantumConnectionSecurity
             .mayBridge(anchor, entry.ax, entry.ay, entry.az, node, target, entry::nativeActorID)) {
             entry.disconnect();
+            entry.deferReconnect(isolationTick);
             if (DebugTestGate.probesActive())
                 TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
             return;
@@ -482,15 +503,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
         // An incomplete bridge must never stay online while waiting for a billed retry.
         entry.disconnect();
-        long now = net.minecraft.server.MinecraftServer.getServer()
-            .getTickCounter();
-        if (now < entry.nextAttempt) return;
-        if (budgetTick != now) {
-            budgetTick = now;
-            connectionsThisTick = 0;
-        }
-        if (connectionsThisTick >= 2) return;
-        connectionsThisTick++;
+        if (!attemptReserved && !reserveConnectionAttempt()) return;
         disconnectExternal(tile, null);
         boolean connected = false;
         try {
@@ -513,6 +526,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.connection = AEApi.instance()
                 .createGridConnection(node, entry.billingNode);
             entry.backoff = 20;
+            entry.nextAttempt = 0L;
             ACTIVE.computeIfAbsent(entry.anchorKey(), ignored -> Collections.newSetFromMap(new IdentityHashMap<>()))
                 .add(entry);
             invalidateStats();
@@ -520,8 +534,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
         } catch (appeng.api.exceptions.FailedConnection failure) {
             // Security failures remain isolated and offline with bounded exponential retry.
-            entry.nextAttempt = now + entry.backoff;
-            entry.backoff = Math.min(200, entry.backoff * 2);
+            entry.deferReconnect(isolationTick);
             if (DebugTestGate.probesActive()) TestWorldProbes.at(
                 world,
                 x,
@@ -533,6 +546,18 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         } finally {
             if (!connected) entry.disconnect();
         }
+    }
+
+    private static boolean reserveConnectionAttempt() {
+        long now = net.minecraft.server.MinecraftServer.getServer()
+            .getTickCounter();
+        if (budgetTick != now) {
+            budgetTick = now;
+            connectionsThisTick = 0;
+        }
+        if (connectionsThisTick >= 2) return false;
+        connectionsThisTick++;
+        return true;
     }
 
     private static ArrayList<IGridNode> nodes(IGridHost host) {
@@ -788,6 +813,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         private QuantumControllerRegistry normalizedRegistry;
         private long normalizedRevision;
         private String normalizedGeneration;
+
+        private void deferReconnect(long now) {
+            nextAttempt = now + backoff;
+            backoff = Math.min(200, backoff * 2);
+        }
 
         private AnchorKey anchorKey() {
             if (cachedAnchorKey == null || cachedAnchorKey.getDimension() != dim

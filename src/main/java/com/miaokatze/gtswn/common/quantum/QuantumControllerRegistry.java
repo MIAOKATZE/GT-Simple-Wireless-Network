@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.quantum;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -139,9 +140,9 @@ public class QuantumControllerRegistry extends WorldSavedData {
     /** 批量入册（打包坐标集，通常为 floodControllers 的洪泛结果） */
     public void quantizeAll(Set<Long> packedCoords) {
         Set<Long> pending = new HashSet<>(packedCoords);
-        while (!pending.isEmpty()) {
-            long first = pending.iterator()
-                .next();
+        // Keep the original seed order without restarting a hash-table scan for every component.
+        for (long first : new ArrayList<>(pending)) {
+            if (!pending.contains(first)) continue;
             Set<Long> component = coordinateComponent(packedCoords, first);
             pending.removeAll(component);
             quantizeAll(component, first);
@@ -548,9 +549,9 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     private void adoptLegacyAnchors() {
         Set<Long> pending = new HashSet<>(controllers);
-        while (!pending.isEmpty()) {
-            long first = pending.iterator()
-                .next();
+        // Retain the initial legacy seed order while scanning the hash table only once for component seeds.
+        for (long first : new ArrayList<>(pending)) {
+            if (!pending.contains(first)) continue;
             Set<Long> members = coordinateComponent(controllers, first);
             pending.removeAll(members);
             String generation = UUID.randomUUID()

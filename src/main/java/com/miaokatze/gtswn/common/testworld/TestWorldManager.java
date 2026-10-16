@@ -55,6 +55,8 @@ public final class TestWorldManager {
     private static TestWorldPerformance runPerformance;
     private static TestWorldPerformance phasePerformance;
     private static TestWorldPerformance tickPerformance;
+    private static TestContext tickWorkloadContext;
+    private static TestWorldReport.WorkloadPhase tickWorkloadPhase;
     private static TestWorldPerformance closedResetPerformance;
     private static TestContext closedPerformanceContext;
     private static boolean processingTick;
@@ -670,6 +672,8 @@ public final class TestWorldManager {
         tickStartNanos = System.nanoTime();
         tickStartCpuNanos = runPerformance.cpuTime();
         tickPerformance = phasePerformance;
+        tickWorkloadContext = current;
+        tickWorkloadPhase = current == null ? null : current.workloadPhase();
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
@@ -683,6 +687,8 @@ public final class TestWorldManager {
         TestWorldReport measuredReport = report;
         TestWorldPerformance measuredRun = runPerformance;
         TestWorldPerformance measuredPhase = phasePerformance;
+        TestContext measuredContext = current;
+        TestWorldReport.WorkloadPhase measuredWorkloadPhase = current == null ? null : current.workloadPhase();
         long workStarted = System.nanoTime();
         long workCpuStarted = measuredRun == null ? -1 : measuredRun.cpuTime();
         if (measuredReport != null) measuredReport.elapsedTicks++;
@@ -709,6 +715,12 @@ public final class TestWorldManager {
                 measuredPhase == tickPerformance ? cpuWindow : -1,
                 work,
                 workCpu);
+            if (measuredContext != null) measuredContext.recordWorkloadFrame(
+                measuredWorkloadPhase,
+                measuredContext == tickWorkloadContext && measuredWorkloadPhase == tickWorkloadPhase ? window : -1,
+                measuredContext == tickWorkloadContext && measuredWorkloadPhase == tickWorkloadPhase ? cpuWindow : -1,
+                work,
+                workCpu);
             if (measuredReport != null) {
                 measuredReport.managerWorkNanos += work;
                 measuredReport.managerMaxWorkNanos = Math.max(measuredReport.managerMaxWorkNanos, work);
@@ -722,6 +734,8 @@ public final class TestWorldManager {
             }
             tickStartNanos = 0;
             tickPerformance = null;
+            tickWorkloadContext = null;
+            tickWorkloadPhase = null;
             processingTick = false;
             if (deferredFinalReport != null) {
                 finishPerformance(deferredFinalReport);
@@ -745,6 +759,7 @@ public final class TestWorldManager {
             TestContext context = closedPerformanceContext;
             if (context.performance() != null) context.result.performance = context.performance()
                 .finish();
+            context.finishWorkloadPerformance();
             closedPerformanceContext = null;
         }
     }
@@ -755,5 +770,7 @@ public final class TestWorldManager {
         runPerformance = null;
         phasePerformance = null;
         tickPerformance = null;
+        tickWorkloadContext = null;
+        tickWorkloadPhase = null;
     }
 }
