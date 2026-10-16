@@ -45,7 +45,7 @@ public final class TestWorldReport {
     public long droppedEvents;
     public long callbackNanos;
     public long maxCallbackNanos;
-    public final String timingScope = "Observed tick window: this listener START to this listener END completion; excludes later END listeners and is not full server MSPT. Manager work: this END handler, including reset, scenario, cleanup and ticket release.";
+    public final String timingScope = "Observed tick window: HIGHEST START to LOWEST END handler work completion; excludes listeners outside those boundaries and sampling/finalization overhead, and is not complete server MSPT. Manager work: this END handler work including reset, scenario, cleanup and ticket release; neither is mod-exclusive cost.";
     public final long resetScanBudgetNanos = TestWorldManager.RESET_SCAN_BUDGET_NANOS;
     public final int resetScanMaxChecksPerTick = TestWorldManager.RESET_SCAN_MAX_CHECKS;
     public long maxObservedTickWindowNanos;
@@ -53,6 +53,8 @@ public final class TestWorldReport {
     public long observedTickWindows;
     public long managerWorkNanos;
     public long managerMaxWorkNanos;
+    public TestWorldPerformance.Snapshot performance;
+    public final List<TestWorldPerformance.Snapshot> resetPerformance = new ArrayList<>();
     public final List<Result> results = new ArrayList<>();
     public final List<String> actors = new ArrayList<>();
     public final Deque<Trace> events = new ArrayDeque<>();
@@ -72,6 +74,7 @@ public final class TestWorldReport {
         public long callbackNanos;
         public long maxCallbackNanos;
         public long droppedEvents;
+        public TestWorldPerformance.Snapshot performance;
         public final Map<String, Long> observedBusinessEvents = new LinkedHashMap<>();
         public final List<Trace> events = new ArrayList<>();
 
@@ -128,6 +131,8 @@ public final class TestWorldReport {
         copy.observedTickWindows = observedTickWindows;
         copy.managerWorkNanos = managerWorkNanos;
         copy.managerMaxWorkNanos = managerMaxWorkNanos;
+        copy.performance = performance;
+        copy.resetPerformance.addAll(resetPerformance);
         for (Result result : results) {
             Result target = new Result(result.id);
             target.status = result.status;
@@ -136,6 +141,7 @@ public final class TestWorldReport {
             target.callbackNanos = result.callbackNanos;
             target.maxCallbackNanos = result.maxCallbackNanos;
             target.droppedEvents = result.droppedEvents;
+            target.performance = result.performance;
             target.events.addAll(result.events);
             target.observedBusinessEvents.putAll(result.observedBusinessEvents);
             copy.results.add(target);
@@ -365,7 +371,8 @@ public final class TestWorldReport {
                     File temp = new File(target.getParentFile(), target.getName() + ".tmp");
                     Files.write(
                         temp.toPath(),
-                        new GsonBuilder().setPrettyPrinting()
+                        new GsonBuilder().serializeNulls()
+                            .setPrettyPrinting()
                             .create()
                             .toJson(copy)
                             .getBytes(StandardCharsets.UTF_8));

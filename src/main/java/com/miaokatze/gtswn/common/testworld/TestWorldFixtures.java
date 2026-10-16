@@ -19,6 +19,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.quantum.QuantumTileLifecycle;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 import com.mojang.authlib.GameProfile;
 
@@ -118,10 +119,20 @@ public final class TestWorldFixtures {
     public static FakePlayer player(WorldServer world, UUID uuid) {
         requireTestWorld(world);
         FakePlayer player = FakePlayerFactory.get(world, new GameProfile(uuid, actorName(uuid)));
+        ensureActorConnection(player);
         player.setPosition(0.5, Y, 0.5);
         player.inventory.clearInventory(null, -1);
         player.inventory.currentItem = 0;
         return player;
+    }
+
+    /** Test-only transport sink; preserves existing actor handlers, UUIDs, profiles and all gameplay callbacks. */
+    public static void ensureActorConnection(FakePlayer player) {
+        DebugTestGate.requireEnabled();
+        if (player == null || !(player.worldObj instanceof WorldServer))
+            throw new IllegalArgumentException("Synthetic test actor requires a server world");
+        requireTestWorld((WorldServer) player.worldObj);
+        if (player.playerNetServerHandler == null) new SilentActorConnection(player);
     }
 
     public static String actorName(UUID uuid) {

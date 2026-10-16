@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.quantum;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -30,8 +31,33 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
     private final Set<Long> safetyEnabled = new HashSet<>();
     private final Map<Long, Boolean> pendingSafety = new HashMap<>();
 
+    // Keys are the registry's shared immutable component snapshots, never caller-owned mutable sets.
+    private final Map<Set<Long>, Boolean> safetyByComponent = new IdentityHashMap<>();
+    private long cachedPolicyEpoch = -1L;
+    private long cachedStructureRevision = -1L;
+
     public QuantumNetworkSecurityRegistry(String name) {
         super(name);
+    }
+
+    @Override
+    public void markDirty() {
+        QuantumPolicyEpoch.changed();
+        clearPolicyCache();
+        super.markDirty();
+    }
+
+    public void clearPolicyCache() {
+        safetyByComponent.clear();
+        cachedPolicyEpoch = -1L;
+        cachedStructureRevision = -1L;
+    }
+
+    private void preparePolicyCache(long revision, long epoch) {
+        if (cachedStructureRevision == revision && cachedPolicyEpoch == epoch) return;
+        safetyByComponent.clear();
+        cachedStructureRevision = revision;
+        cachedPolicyEpoch = epoch;
     }
 
     public static QuantumNetworkSecurityRegistry get(World world) {
@@ -126,20 +152,36 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
 
     /** Loaded tile NBT is authoritative. Missing legacy fields are OFF, regardless of enrollment history. */
     public boolean isSafetyEnabled(World world, Set<Long> members) {
+        QuantumControllerRegistry controllers = QuantumControllerRegistry.get(world);
+        long revision = controllers.getRevision();
+        preparePolicyCache(revision, QuantumPolicyEpoch.current());
+        boolean cacheable = !members.isEmpty() && controllers.registeredStructure(
+            members.iterator()
+                .next())
+            == members;
+        if (cacheable) {
+            Boolean cached = safetyByComponent.get(members);
+            if (cached != null) return cached;
+        }
         boolean enabled = false;
         for (long member : members) {
             int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
                 z = QuantumControllerRegistry.unpackZ(member);
             if (!world.blockExists(x, y, z)) {
+                // A missing member may load later. Keep the original scan until its real lifecycle is observed.
+                cacheable = false;
                 enabled |= safetyEnabled.contains(member) && identities.containsKey(member);
                 continue;
             }
             TileEntity tile = world.getTileEntity(x, y, z);
             if (!(tile instanceof TileController) || !(tile instanceof QuantumControllerIdentity)) {
+                cacheable = false;
                 remove(java.util.Collections.singleton(member));
                 continue;
             }
             QuantumControllerIdentity identity = (QuantumControllerIdentity) tile;
+            // Unit stubs and installations without the invalidation mixin retain the uncached semantics.
+            cacheable &= tile instanceof QuantumPolicyEpoch.TrackedController;
             String saved = identities.getOrDefault(member, "");
             if (!saved.isEmpty() && !saved.equals(identity.gtswn$getControllerIdentity())) {
                 safetyEnabled.remove(member);
@@ -148,15 +190,19 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
                 markDirty();
             }
             Boolean pending = pendingSafety.remove(member);
+            if (pending != null) markDirty();
             if (pending != null && !saved.isEmpty() && saved.equals(identity.gtswn$getControllerIdentity())) {
                 identity.gtswn$setNetworkSafetyEnabled(pending);
                 tile.markDirty();
-                markDirty();
             }
             enabled |= identity.gtswn$isNetworkSafetyEnabled();
         }
         // Newly added structure members inherit the whole structure policy, never an old coordinate's policy.
         synchronizeSafety(world, members, enabled);
+        // Synchronization can assign identities, apply pending policy and emit more epoch changes itself.
+        // Capture the final version so a newly populated entry is useful on the very next call.
+        preparePolicyCache(controllers.getRevision(), QuantumPolicyEpoch.current());
+        if (cacheable && controllers.getRevision() == revision) safetyByComponent.put(members, enabled);
         return enabled;
     }
 
@@ -215,6 +261,8 @@ public final class QuantumNetworkSecurityRegistry extends WorldSavedData {
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
+        QuantumPolicyEpoch.changed();
+        clearPolicyCache();
         enrolled.clear();
         identities.clear();
         providerKeys.clear();

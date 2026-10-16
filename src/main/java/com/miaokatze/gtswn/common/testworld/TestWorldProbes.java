@@ -11,8 +11,11 @@ import java.util.UUID;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.quantum.QuantumNodeBridgeRelay;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 
+import appeng.api.networking.IGridHost;
+import appeng.api.networking.IGridNode;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 
 /**
@@ -49,6 +52,7 @@ public final class TestWorldProbes {
         INCORPORATION_CONNECT,
         INCORPORATION_DISCONNECT,
         INCORPORATION_REJECT,
+        AE_CONNECTION_ATTEMPT,
         QUEUE_ENQUEUE,
         QUEUE_EXECUTE
     }
@@ -61,6 +65,8 @@ public final class TestWorldProbes {
     private static final Object LOCK = new Object();
     private static volatile boolean active;
     private static long generation;
+    /** Process-lifetime accepted native gate observations; deliberately survives start/stop/reset. */
+    private static long nativeAeConnectionAttempts;
     private static Session session;
 
     private static final class Session {
@@ -137,6 +143,46 @@ public final class TestWorldProbes {
                 result.put(type, session == null ? 0L : session.counts.getOrDefault(type, 0L));
             return Collections.unmodifiableMap(result);
         }
+    }
+
+    /** Only accepted, enrolled fixture endpoints contribute; session transitions never reset this counter. */
+    public static long nativeAeConnectionAttempts() {
+        synchronized (LOCK) {
+            return nativeAeConnectionAttempts;
+        }
+    }
+
+    /**
+     * One GridConnection construction reaching its native security gate, before its verdict is known.
+     * Constructors failing validation before that gate are not observed. Either endpoint may establish
+     * fixture provenance; both enrolled endpoints still count once. No world/chunk/grid lookup occurs.
+     */
+    public static void aeConnectionAttempt(IGridNode first, IGridNode second) {
+        if (!active) return;
+        synchronized (LOCK) {
+            Session scope = session;
+            TileEntity tile = acceptedEndpoint(scope, first);
+            if (tile == null) tile = acceptedEndpoint(scope, second);
+            if (tile == null) return;
+            publish(
+                scope,
+                Type.AE_CONNECTION_ATTEMPT,
+                "dim=" + tile.getWorldObj().provider.dimensionId
+                    + ";pos="
+                    + position(tile.xCoord, tile.yCoord, tile.zCoord)
+                    + ";stage=native_security_gate");
+        }
+    }
+
+    private static TileEntity acceptedEndpoint(Session scope, IGridNode node) {
+        if (scope == null || node == null) return null;
+        IGridHost host = node.getMachine();
+        TileEntity tile = host instanceof QuantumNodeBridgeRelay ? ((QuantumNodeBridgeRelay) host).owner()
+            : host instanceof TileEntity ? (TileEntity) host : null;
+        World world = tile == null ? null : tile.getWorldObj();
+        return world != null && !world.isRemote
+            && TestDimension.isTest(world)
+            && accepts(scope, world.provider.dimensionId, tile.xCoord, tile.yCoord, tile.zCoord) ? tile : null;
     }
 
     public static void at(TileEntity tile, Type type, String detail) {
@@ -240,6 +286,7 @@ public final class TestWorldProbes {
 
     private static void publish(Session scope, Type type, String detail) {
         scope.counts.put(type, scope.counts.getOrDefault(type, 0L) + 1L);
+        if (type == Type.AE_CONNECTION_ATTEMPT) nativeAeConnectionAttempts++;
         try {
             scope.sink.record(type.name(), detail);
         } catch (RuntimeException ignored) {

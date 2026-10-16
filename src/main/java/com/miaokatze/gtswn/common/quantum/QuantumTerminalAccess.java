@@ -42,7 +42,8 @@ public final class QuantumTerminalAccess {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return true;
         World world = DimensionManager.getWorld(anchor[0]);
-        return world != null && permits(player, stack, world, anchor[1], anchor[2], anchor[3], false);
+        return world != null && currentBinding(stack, world, anchor)
+            && permits(player, stack, world, anchor[1], anchor[2], anchor[3], false);
     }
 
     public static boolean canManage(EntityPlayer player, ItemStack stack) {
@@ -51,7 +52,8 @@ public final class QuantumTerminalAccess {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return true;
         World world = DimensionManager.getWorld(anchor[0]);
-        return world != null && permits(player, stack, world, anchor[1], anchor[2], anchor[3], true);
+        return world != null && currentBinding(stack, world, anchor)
+            && permits(player, stack, world, anchor[1], anchor[2], anchor[3], true);
     }
 
     /** Binding and controller interactions must check the clicked network, including unbound terminals. */
@@ -94,6 +96,7 @@ public final class QuantumTerminalAccess {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return false;
         World world = DimensionManager.getWorld(anchor[0]);
+        if (world == null || !currentBinding(stack, world, anchor)) return false;
         if (networkSafetyIdentity(world, anchor[1], anchor[2], anchor[3]).isEmpty()) return false;
         return permitsSafetyManagement(player, world, anchor[1], anchor[2], anchor[3]);
     }
@@ -214,6 +217,7 @@ public final class QuantumTerminalAccess {
                 .toString());
         tag.setString(NBT_OWNER_NAME, player.getCommandSenderName());
         applyPendingMigrations(stack, QuantumMigrationJournal.get(player.worldObj));
+        normalizeAnchor(stack);
         QuantumNetworkColor.set(stack, QuantumNetworkColor.resolve(stack));
         boolean changed = !tag.equals(before);
         if (changed) player.inventory.markDirty();
@@ -224,15 +228,45 @@ public final class QuantumTerminalAccess {
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return;
         NBTTagCompound tag = stack.getTagCompound();
-        QuantumMigrationJournal.Resolution resolved = journal
-            .resolve(new AnchorKey(anchor[0], anchor[1], anchor[2], anchor[3]), tag.getLong(NBT_MIGRATION_CURSOR));
+        QuantumMigrationJournal.Resolution resolved = journal.resolve(
+            new AnchorKey(anchor[0], anchor[1], anchor[2], anchor[3]),
+            tag.getLong(NBT_MIGRATION_CURSOR),
+            tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
         tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM, resolved.anchor.getDimension());
         tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X, resolved.anchor.getX());
         tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, resolved.anchor.getY());
         tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, resolved.anchor.getZ());
         tag.setLong(NBT_MIGRATION_CURSOR, resolved.sequence);
+        tag.setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, resolved.generation);
         WorldServer world = DimensionManager.getWorld(resolved.anchor.getDimension());
         if (world != null) tag.setString("QT_BoundName", world.provider.getDimensionName());
+    }
+
+    private static boolean currentBinding(ItemStack stack, World world, int[] coordinates) {
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+            .resolveAnchor(
+                QuantumControllerRegistry.pack(coordinates[1], coordinates[2], coordinates[3]),
+                stack.getTagCompound()
+                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+        return anchor != null
+            && anchor.position == QuantumControllerRegistry.pack(coordinates[1], coordinates[2], coordinates[3]);
+    }
+
+    private static void normalizeAnchor(ItemStack stack) {
+        int[] coordinates = ItemNetworkQuantumTerminal.getAnchor(stack);
+        if (coordinates == null) return;
+        World world = DimensionManager.getWorld(coordinates[0]);
+        if (world == null) return;
+        NBTTagCompound tag = stack.getTagCompound();
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+            .resolveAnchor(
+                QuantumControllerRegistry.pack(coordinates[1], coordinates[2], coordinates[3]),
+                tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+        if (anchor == null) return;
+        tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X, QuantumControllerRegistry.unpackX(anchor.position));
+        tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, QuantumControllerRegistry.unpackY(anchor.position));
+        tag.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, QuantumControllerRegistry.unpackZ(anchor.position));
+        tag.setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, anchor.generation);
     }
 
     /** Called directly by AE2's native security input/output slots through INetworkEncodable. */

@@ -55,12 +55,23 @@ public final class QuantumNetworkMigration {
         QuantumControllerRegistry targetRegistry = QuantumControllerRegistry.get(targetWorld);
         int color = QuantumNetworkColorRegistry.get(plan.sourceWorld)
             .color(plan.source[1], plan.source[2], plan.source[3]);
+        QuantumControllerRegistry.CanonicalAnchor sourceAnchor = sourceRegistry
+            .canonicalAnchor(QuantumControllerRegistry.pack(plan.source[1], plan.source[2], plan.source[3]));
+        if (sourceAnchor == null) return false;
 
         // Commit durable binding intent before disconnecting bridges or updating terminal cursors.
-        targetRegistry.quantizeAll(plan.targetMembers);
+        if (!targetRegistry
+            .quantizeTransferred(plan.targetMembers, QuantumControllerRegistry.pack(x, y, z), sourceAnchor.generation))
+            return false;
         QuantumNetworkColorRegistry.get(targetWorld)
             .recolor(plan.targetMembers, color);
-        journal.append(plan.source[0], plan.sourceMembers, new AnchorKey(targetWorld.provider.dimensionId, x, y, z));
+        journal.append(
+            plan.source[0],
+            plan.sourceMembers,
+            new AnchorKey(targetWorld.provider.dimensionId, x, y, z),
+            sourceAnchor.generation,
+            sourceAnchor.generation,
+            sourceRegistry.legacyMembers(plan.sourceMembers, sourceAnchor.generation));
         QuantumNetworkSecurityRegistry.transfer(plan.sourceWorld, plan.sourceMembers, targetWorld, plan.targetMembers);
         ItemNetworkQuantumTerminal.writeAnchor(terminal, targetWorld, x, y, z);
         player.inventory.markDirty();

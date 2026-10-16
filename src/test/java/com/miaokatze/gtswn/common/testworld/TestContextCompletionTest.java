@@ -67,4 +67,38 @@ public class TestContextCompletionTest {
         assertEquals("FAIL", context.outcome);
         assertEquals("assertion after success failed", context.detail);
     }
+
+    @Test
+    public void wrappedNativeCauseAndBoundedFramesReachTheReportWithoutReplacingFirstFailure() {
+        TestContext context = context();
+        context.fail("first failure");
+        IllegalArgumentException nativeFailure = new IllegalArgumentException("exact native rejection");
+        StackTraceElement[] frames = new StackTraceElement[20];
+        for (int i = 0; i < frames.length; i++)
+            frames[i] = new StackTraceElement("NativeHandler", "step" + i, "NativeHandler.java", i + 1);
+        nativeFailure.setStackTrace(frames);
+        context.callbackFailure(
+            "tick",
+            new IllegalStateException(
+                "handler wrapper",
+                new java.lang.reflect.InvocationTargetException(nativeFailure)));
+        assertEquals("FAIL", context.outcome);
+        assertEquals("first failure", context.detail);
+        assertTrue(
+            context.result.events.stream()
+                .anyMatch(
+                    event -> event.type.equals("callback_cause")
+                        && event.detail.equals("cause[2]=java.lang.IllegalArgumentException: exact native rejection")));
+        assertEquals(
+            12L,
+            context.result.events.stream()
+                .filter(event -> event.type.equals("callback_stack") && event.detail.startsWith("cause[2] "))
+                .count());
+        assertTrue(
+            context.result.events.stream()
+                .anyMatch(event -> event.detail.contains("NativeHandler.step11")));
+        assertTrue(
+            context.result.events.stream()
+                .noneMatch(event -> event.detail.contains("NativeHandler.step12")));
+    }
 }

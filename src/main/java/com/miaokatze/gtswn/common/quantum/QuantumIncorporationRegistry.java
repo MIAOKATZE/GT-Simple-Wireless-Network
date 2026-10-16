@@ -208,6 +208,9 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         entry.ax = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X);
         entry.ay = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y);
         entry.az = terminal.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z);
+        entry.anchorGeneration = terminal.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION);
+        WorldServer anchorWorld = DimensionManager.getWorld(entry.dim);
+        if (anchorWorld != null && !normalizeAnchor(entry, anchorWorld)) return false;
         entry.color = QuantumNetworkColor.resolve(entry.dim, entry.ax, entry.ay, entry.az);
         ((QuantumIncorporationIdentity) tile).gtswn$setIncorporationIdentity(entry.identity);
         tile.markDirty();
@@ -236,6 +239,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_X, entry.ax);
         binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, entry.ay);
         binding.setInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, entry.az);
+        binding.setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, entry.anchorGeneration);
         return binding;
     }
 
@@ -410,10 +414,23 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.lastIsolation = isolationTick;
         }
         WorldServer anchor = DimensionManager.getWorld(entry.dim);
-        if (anchor != null && !QuantumControllerRegistry.get(anchor)
-            .isQuantized(entry.ax, entry.ay, entry.az)) {
-            forget(world, entry, true);
-            return;
+        if (anchor != null) {
+            AnchorKey previous = entry.anchorKey();
+            String previousGeneration = entry.anchorGeneration;
+            if (!normalizeAnchor(entry, anchor)) {
+                forget(world, entry, true);
+                return;
+            }
+            if (!previous.equals(entry.anchorKey()) || !previousGeneration.equals(entry.anchorGeneration)) {
+                Map<Long, Entry> indexed = sources.get(previous);
+                if (indexed != null) {
+                    indexed.remove(entry.position);
+                    if (indexed.isEmpty()) sources.remove(previous);
+                }
+                index(entry);
+                markDirty();
+                invalidateStats();
+            }
         }
         // Never load worlds or chunks just to keep an incorporated machine connected.
         if (anchor == null || !anchor.blockExists(entry.ax, entry.ay, entry.az)) {
@@ -585,19 +602,25 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         if (migrationRevision == journal.currentSequence()) return;
         Set<Long> changedChunks = new java.util.HashSet<>();
         for (Entry entry : entries.values()) {
-            if (entry.lastAppliedMigration >= journal.currentSequence()) continue;
-            QuantumMigrationJournal.Resolution result = journal.resolve(entry.anchorKey(), entry.lastAppliedMigration);
-            if (!result.anchor.equals(entry.anchorKey())) {
+            AnchorKey previous = entry.anchorKey();
+            String previousGeneration = entry.anchorGeneration;
+            QuantumMigrationJournal.Resolution result = journal
+                .resolve(entry.anchorKey(), entry.lastAppliedMigration, entry.anchorGeneration);
+            if (!result.anchor.equals(entry.anchorKey()) || !result.generation.equals(entry.anchorGeneration)) {
                 entry.disconnect();
                 entry.dim = result.anchor.getDimension();
                 entry.ax = result.anchor.getX();
                 entry.ay = result.anchor.getY();
                 entry.az = result.anchor.getZ();
+                entry.anchorGeneration = result.generation;
                 entry.nextAttempt = 0L;
                 entry.backoff = 20;
                 entry.color = entry.getColorIndex();
-                changedChunks.add(entryChunk(entry));
             }
+            WorldServer anchor = DimensionManager.getWorld(entry.dim);
+            if (anchor != null) normalizeAnchor(entry, anchor);
+            if (!previous.equals(entry.anchorKey()) || !previousGeneration.equals(entry.anchorGeneration))
+                changedChunks.add(entryChunk(entry));
             entry.lastAppliedMigration = result.sequence;
             markDirty();
         }
@@ -608,6 +631,23 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         }
         migrationRevision = journal.currentSequence();
         if (!changedChunks.isEmpty()) migrationVisualsChanged(world, changedChunks);
+    }
+
+    private boolean normalizeAnchor(Entry entry, WorldServer anchorWorld) {
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(anchorWorld)
+            .resolveAnchor(QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az), entry.anchorGeneration);
+        if (anchor == null) return false;
+        if (anchor.position != QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az)
+            || !anchor.generation.equals(entry.anchorGeneration)) {
+            entry.disconnect();
+            entry.ax = QuantumControllerRegistry.unpackX(anchor.position);
+            entry.ay = QuantumControllerRegistry.unpackY(anchor.position);
+            entry.az = QuantumControllerRegistry.unpackZ(anchor.position);
+            entry.anchorGeneration = anchor.generation;
+            entry.nextAttempt = 0L;
+            entry.backoff = 20;
+        }
+        return true;
     }
 
     /** Visual snapshots may reenter get(); every binding and index must already reflect the committed revision. */
@@ -647,6 +687,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             e.ax = n.getInteger("x");
             e.ay = n.getInteger("y");
             e.az = n.getInteger("z");
+            e.anchorGeneration = n.getString("anchorGeneration");
             e.color = QuantumNetworkColor.normalize(n.getInteger("color"));
             if (!e.identity.isEmpty()) {
                 entries.put(e.position, e);
@@ -672,6 +713,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             n.setInteger("x", e.ax);
             n.setInteger("y", e.ay);
             n.setInteger("z", e.az);
+            n.setString("anchorGeneration", e.anchorGeneration);
             n.setInteger("color", e.color);
             list.appendTag(n);
         }
@@ -682,6 +724,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         public long position;
         public int dim, ax, ay, az;
+        public String anchorGeneration = "";
         private int color;
         private long lastAppliedMigration;
 

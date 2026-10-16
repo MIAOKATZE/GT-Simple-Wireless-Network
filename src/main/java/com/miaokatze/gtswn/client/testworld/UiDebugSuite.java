@@ -51,7 +51,8 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 public final class UiDebugSuite {
 
     public static final UiDebugSuite INSTANCE = new UiDebugSuite();
-    private static final Gson JSON = new GsonBuilder().setPrettyPrinting()
+    private static final Gson JSON = new GsonBuilder().serializeNulls()
+        .setPrettyPrinting()
         .disableHtmlEscaping()
         .create();
     private static final int TIMEOUT = 400;
@@ -74,6 +75,7 @@ public final class UiDebugSuite {
     private boolean waitForData;
     private boolean metricsTouched, navigationTouched;
     private long started;
+    private long renderStartedNanos, dataWaitStartedNanos, presetDataWaitNanos;
     private Case current;
     private Map<String, Object> explicitInput;
     private ItemStack[] originalTools;
@@ -141,6 +143,9 @@ public final class UiDebugSuite {
         preset = null;
         dataStatus = null;
         dataReason = null;
+        renderStartedNanos = 0;
+        dataWaitStartedNanos = 0;
+        presetDataWaitNanos = 0;
         ticks = 0;
         started = System.currentTimeMillis();
         directory = new File(
@@ -188,6 +193,8 @@ public final class UiDebugSuite {
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !running()) return;
+        UiPerformance measured = current == null ? null : current.performance;
+        long handlerStarted = measured == null ? 0 : System.nanoTime();
         ticks++;
         try {
             if (stopping && !phase.equals("WAIT_RESTORE")) {
@@ -236,6 +243,7 @@ public final class UiDebugSuite {
                     }
                     dataReason = UiDebugSnapshot.pendingDataReason(mc, target, preset);
                     if (dataReason == null || ticks >= deadline) {
+                        finishDataWait();
                         dataStatus = dataReason == null ? "SERVER_RESPONSE_READY" : "DATA_TIMEOUT";
                         if (dataReason != null) record(
                             "DATA_TIMEOUT",
@@ -309,12 +317,23 @@ public final class UiDebugSuite {
                 complete();
             } else if (target != null) phase = "NEXT_CASE";
             else finish("RUN_ERROR");
+        } finally {
+            if (measured != null) measured.add("clientTickHandlerWallNanos", System.nanoTime() - handlerStarted);
         }
     }
 
     @SubscribeEvent
     public void render(TickEvent.RenderTickEvent event) {
-        if (event.phase != TickEvent.Phase.END || !phase.equals("WAIT_RENDER") || ticks < captureAt) return;
+        if (!running() || current == null || current.performance == null || mc.currentScreen != target) return;
+        if (event.phase == TickEvent.Phase.START) {
+            renderStartedNanos = System.nanoTime();
+            return;
+        }
+        long handlerStarted = System.nanoTime();
+        if (renderStartedNanos != 0)
+            current.performance.add("naturalRenderWindowWallNanos", handlerStarted - renderStartedNanos);
+        renderStartedNanos = 0;
+        if (!phase.equals("WAIT_RENDER") || ticks < captureAt) return;
         if (mc.currentScreen != target) return;
         try {
             Map<String, Object> snapshot = snapshot();
@@ -338,12 +357,24 @@ public final class UiDebugSuite {
             }
             String file = String.format("%03d-%s", results.size(), current.key.replaceAll("[^a-zA-Z0-9_.-]", "_"));
             if (screenshots) {
-                ScreenShotHelper
-                    .saveScreenshot(directory, file + ".png", mc.displayWidth, mc.displayHeight, mc.getFramebuffer());
+                long pngStarted = System.nanoTime();
+                try {
+                    ScreenShotHelper.saveScreenshot(
+                        directory,
+                        file + ".png",
+                        mc.displayWidth,
+                        mc.displayHeight,
+                        mc.getFramebuffer());
+                } finally {
+                    current.performance.add("pngCaptureWallNanos", System.nanoTime() - pngStarted);
+                }
                 File png = new File(directory, "screenshots/" + file + ".png");
                 snapshot.put("png", png.exists() ? "screenshots/" + png.getName() : "NOT_WRITTEN");
                 if (!png.exists()) throw new IOException("Framebuffer screenshot was not written");
             } else snapshot.put("png", "NOT_REQUESTED");
+            current.performance.add("captureHandlerBeforeJsonWriteWallNanos", System.nanoTime() - handlerStarted);
+            Map<String, Object> performance = current.performance.finish();
+            snapshot.put("performance", performance);
             write(new File(directory, file + ".json"), snapshot);
             List<?> findings = (List<?>) snapshot.get("findings");
             long failures = findings.stream()
@@ -368,7 +399,9 @@ public final class UiDebugSuite {
                     "functionalStatus",
                     "MANUAL_SERVER_ASSERTION",
                     "dataStatus",
-                    dataStatus));
+                    dataStatus,
+                    "performance",
+                    performance));
             writeIndex(false, null);
             phase = "NEXT_CASE";
         } catch (Exception failure) {
@@ -388,11 +421,21 @@ public final class UiDebugSuite {
     }
 
     private void beginDataWait(String resume) {
+        dataWaitStartedNanos = System.nanoTime();
         dataResumePhase = resume;
         dataStatus = "WAITING_FOR_SERVER_RESPONSE";
         dataReason = null;
         phase = "WAIT_DATA";
         deadline = ticks + TIMEOUT;
+    }
+
+    private void finishDataWait() {
+        if (dataWaitStartedNanos == 0) return;
+        long elapsed = System.nanoTime() - dataWaitStartedNanos;
+        if (current != null && current.performance != null && !"NEXT_CASE".equals(dataResumePhase))
+            current.performance.dataWait(elapsed);
+        else presetDataWaitNanos = elapsed;
+        dataWaitStartedNanos = 0;
     }
 
     private boolean inventoryRestored() {
@@ -403,20 +446,26 @@ public final class UiDebugSuite {
     }
 
     private Map<String, Object> snapshot() {
-        Map<String, Object> snapshot = UiModularSnapshot.supports(target) ? UiModularSnapshot.capture(mc, target)
-            : UiDebugSnapshot.capture(mc, target);
+        long inspectStarted = System.nanoTime();
         try {
-            byte[] bytes = MessageDigest.getInstance("SHA-256")
-                .digest(
-                    JSON.toJson(snapshot)
-                        .getBytes(StandardCharsets.UTF_8));
-            StringBuilder fingerprint = new StringBuilder();
-            for (byte value : bytes) fingerprint.append(String.format("%02x", value & 255));
-            snapshot.put("fingerprintSha256", fingerprint.toString());
-        } catch (java.security.NoSuchAlgorithmException impossible) {
-            throw new IllegalStateException(impossible);
+            Map<String, Object> snapshot = UiModularSnapshot.supports(target) ? UiModularSnapshot.capture(mc, target)
+                : UiDebugSnapshot.capture(mc, target);
+            try {
+                byte[] bytes = MessageDigest.getInstance("SHA-256")
+                    .digest(
+                        JSON.toJson(snapshot)
+                            .getBytes(StandardCharsets.UTF_8));
+                StringBuilder fingerprint = new StringBuilder();
+                for (byte value : bytes) fingerprint.append(String.format("%02x", value & 255));
+                snapshot.put("fingerprintSha256", fingerprint.toString());
+            } catch (java.security.NoSuchAlgorithmException impossible) {
+                throw new IllegalStateException(impossible);
+            }
+            return snapshot;
+        } finally {
+            if (current != null && current.performance != null)
+                current.performance.add("layoutInspectWallNanos", System.nanoTime() - inspectStarted);
         }
-        return snapshot;
     }
 
     private boolean clickTarget(String path) throws Exception {
@@ -451,6 +500,8 @@ public final class UiDebugSuite {
         restoreState();
         target = null;
         current = null;
+        dataWaitStartedNanos = 0;
+        presetDataWaitNanos = 0;
         preset = presets.removeFirst();
         phase = "WAIT_SCREEN";
         deadline = ticks + TIMEOUT;
@@ -603,6 +654,8 @@ public final class UiDebugSuite {
             return;
         }
         current = cases.removeFirst();
+        current.performance = new UiPerformance(presetDataWaitNanos);
+        renderStartedNanos = 0;
         if (mc.currentScreen != target) {
             record("NOT_RUN", "Original production screen no longer active");
             return;
@@ -812,6 +865,7 @@ public final class UiDebugSuite {
     }
 
     private void finish(String reason) {
+        finishDataWait();
         if (phase.equals("WAIT_RESTORE") && (mc.thePlayer == null || mc.theWorld != world))
             restorationStatus = "SERVER_LIFECYCLE_RECOVERY_REQUIRED";
         if (terminalReason == null) {
@@ -863,8 +917,8 @@ public final class UiDebugSuite {
     }
 
     private void recordUnexecuted(String reason) {
-        if (current != null && !caseRecorded(preset, current.key)) results.add(
-            UiDebugSnapshot.map(
+        if (current != null && !caseRecorded(preset, current.key)) {
+            Map<String, Object> unexecuted = UiDebugSnapshot.map(
                 "preset",
                 preset,
                 "case",
@@ -874,7 +928,10 @@ public final class UiDebugSuite {
                 "reason",
                 reason,
                 "functionalStatus",
-                "NOT_VERIFIED"));
+                "NOT_VERIFIED");
+            if (current.performance != null) unexecuted.put("performance", current.performance.finish());
+            results.add(unexecuted);
+        }
         if (current == null && preset != null
             && (phase.equals("WAIT_SCREEN") || phase.equals("WAIT_DATA") && "NEXT_CASE".equals(dataResumePhase)))
             results.add(
@@ -929,18 +986,20 @@ public final class UiDebugSuite {
     }
 
     private void record(String status, String reason) {
-        results.add(
-            UiDebugSnapshot.map(
-                "preset",
-                preset,
-                "case",
-                current == null ? null : current.key,
-                "status",
-                status,
-                "reason",
-                reason,
-                "functionalStatus",
-                "NOT_VERIFIED"));
+        Map<String, Object> result = UiDebugSnapshot.map(
+            "preset",
+            preset,
+            "case",
+            current == null ? null : current.key,
+            "status",
+            status,
+            "reason",
+            reason,
+            "functionalStatus",
+            "NOT_VERIFIED");
+        if (current != null && current.performance != null && ("FAIL".equals(status) || "NOT_RUN".equals(status)))
+            result.put("performance", current.performance.finish());
+        results.add(result);
         writeIndex(false, null);
     }
 
@@ -1018,6 +1077,7 @@ public final class UiDebugSuite {
         final int scale;
         final int[] clicks;
         Map<String, Object> before;
+        UiPerformance performance;
 
         Case(String key, String language, int scale, int[] clicks) {
             this.key = key;

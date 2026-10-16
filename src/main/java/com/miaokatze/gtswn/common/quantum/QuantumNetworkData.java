@@ -249,6 +249,14 @@ public class QuantumNetworkData {
         if (world == null) {
             return data;
         }
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        AnchorKey canonical = registry.canonicalKey(new AnchorKey(anchorDim, anchorX, anchorY, anchorZ));
+        anchorX = canonical.getX();
+        anchorY = canonical.getY();
+        anchorZ = canonical.getZ();
+        data.anchorX = anchorX;
+        data.anchorY = anchorY;
+        data.anchorZ = anchorZ;
         // 2-3. 锚点可达性判定（区块已加载 + 位置是 ME 控制器，O2-B08 抽至 AnchorReachability
         // 与节点建连同源单源；requireQuantized=false——装配原实现不查量子化状态，口径保持）
         AnchorReachability.Result reach = AnchorReachability.resolve(world, anchorX, anchorY, anchorZ, false, false);
@@ -267,7 +275,6 @@ public class QuantumNetworkData {
             return data;
         }
 
-        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
         long bucket = world.getTotalWorldTime() / FULL_CACHE_INTERVAL_TICKS;
         pruneFullCache(bucket);
         AnchorKey cacheKey = new AnchorKey(anchorDim, anchorX, anchorY, anchorZ);

@@ -89,10 +89,11 @@ public class QuantumNetworkMigrationTest {
         node.restoreProxyAfterReplacement(security);
         Object parts = node.getPartContainer();
         QuantumMigrationJournal journal = journal();
-        journal.append(7, members(A), B);
-        journal.append(8, members(B), C);
+        journal.append(7, members(A), B, "generation", "generation", members(A));
+        journal.append(8, members(B), C, "generation", "generation");
         node.applyPendingMigrations(journal);
         assertEquals(C, anchor(node));
+        assertEquals("generation", node.getAnchorGeneration());
         assertSame(parts, node.getPartContainer());
         assertSame(security, node.snapshotProxyForReplacement());
         assertEquals(
@@ -108,8 +109,8 @@ public class QuantumNetworkMigrationTest {
         QuantumIncorporationRegistry registry = new QuantumIncorporationRegistry("fixture");
         registry.readFromNBT(incorporationSave(A, 0));
         QuantumMigrationJournal journal = journal();
-        journal.append(7, members(A), B);
-        journal.append(8, members(B), C);
+        journal.append(7, members(A), B, "generation", "generation", members(A));
+        journal.append(8, members(B), C, "generation", "generation");
         registry.applyPendingMigrations(world, journal);
         registry.controllerRemoved(world, 7, members(A));
         NBTTagCompound saved = new NBTTagCompound();
@@ -119,6 +120,7 @@ public class QuantumNetworkMigrationTest {
         NBTTagCompound entry = entries.getCompoundTagAt(0);
         assertEquals("original-owner", entry.getString("owner"));
         assertEquals("original-identity", entry.getString("identity"));
+        assertEquals("generation", entry.getString("anchorGeneration"));
         assertEquals(9, entry.getInteger("dim"));
         assertEquals(99, entry.getInteger("x"));
         assertEquals(2L, entry.getLong("lastAppliedMigration"));

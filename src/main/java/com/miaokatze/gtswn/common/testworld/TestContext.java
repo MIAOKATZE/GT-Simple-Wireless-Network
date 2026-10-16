@@ -12,6 +12,7 @@ public final class TestContext {
     private final String runId;
     private final TestWorldReport report;
     final TestWorldReport.Result result;
+    private TestWorldPerformance performance;
     long elapsed;
     String outcome;
     String detail;
@@ -33,6 +34,23 @@ public final class TestContext {
 
     public String runId() {
         return runId;
+    }
+
+    void beginPerformance() {
+        performance = new TestWorldPerformance();
+    }
+
+    TestWorldPerformance performance() {
+        return performance;
+    }
+
+    /** Optional named wall timing; bounded and collected only while this scenario is active. */
+    public long operationStart() {
+        return performance == null ? 0 : System.nanoTime();
+    }
+
+    public void operationEnd(String name, long startedNanos) {
+        if (performance != null && startedNanos != 0) performance.operation(name, System.nanoTime() - startedNanos);
     }
 
     public void event(String type, String message) {
@@ -64,6 +82,20 @@ public final class TestContext {
             + ": "
             + failure.getMessage();
         event("callback_failure", message);
+        Throwable cause = failure;
+        for (int depth = 0; cause != null && depth < 8; depth++, cause = cause.getCause()) {
+            event(
+                "callback_cause",
+                "cause[" + depth
+                    + "]="
+                    + cause.getClass()
+                        .getName()
+                    + ": "
+                    + cause.getMessage());
+            StackTraceElement[] frames = cause.getStackTrace();
+            for (int frame = 0; frame < Math.min(12, frames.length); frame++)
+                event("callback_stack", "cause[" + depth + "] " + frames[frame]);
+        }
         fail(message);
     }
 

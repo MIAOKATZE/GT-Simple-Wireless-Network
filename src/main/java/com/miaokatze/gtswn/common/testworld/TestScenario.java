@@ -13,6 +13,11 @@ public interface TestScenario {
         return 1200;
     }
 
+    /** Heavy cases must opt out and can then run only by their explicit stable ID. */
+    default boolean includeInAll() {
+        return true;
+    }
+
     void start(TestContext context) throws Exception;
 
     void tick(TestContext context) throws Exception;

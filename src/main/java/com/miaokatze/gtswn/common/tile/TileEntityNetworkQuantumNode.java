@@ -166,6 +166,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private int anchorX;
     private int anchorY;
     private int anchorZ;
+    private String anchorGeneration = "";
 
     // Informational placement identity; AE proxy playerID remains the security authority.
     private String placerUUID = "";
@@ -290,13 +291,26 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     }
 
     public void setAnchor(int dim, int x, int y, int z) {
+        WorldServer world = DimensionManager.getWorld(dim);
+        QuantumControllerRegistry.CanonicalAnchor anchor = world == null ? null
+            : QuantumControllerRegistry.get(world)
+                .canonicalAnchor(QuantumControllerRegistry.pack(x, y, z));
+        setAnchor(dim, x, y, z, anchor == null ? "" : anchor.generation);
+    }
+
+    public String getAnchorGeneration() {
+        return anchorGeneration;
+    }
+
+    public void setAnchor(int dim, int x, int y, int z, String generation) {
         // Explicit bindings start after historical migrations of reused controller coordinates.
         lastAppliedMigration = worldObj != null && !worldObj.isRemote ? QuantumMigrationJournal.get(worldObj)
             .currentSequence() : 0L;
-        replaceAnchor(dim, x, y, z);
+        replaceAnchor(dim, x, y, z, generation == null ? "" : generation);
+        normalizeCanonicalAnchor();
     }
 
-    private void replaceAnchor(int dim, int x, int y, int z) {
+    private void replaceAnchor(int dim, int x, int y, int z, String generation) {
         destroyBridgeConnection();
         QuantumNetworkColorSync.untrack(this);
         colorTracked = false;
@@ -304,6 +318,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.anchorX = x;
         this.anchorY = y;
         this.anchorZ = z;
+        this.anchorGeneration = generation;
         if (DebugTestGate.probesActive())
             TestWorldProbes.at(this, Type.QUANTUM_NODE_ANCHOR, "anchor=" + dim + ":" + x + ":" + y + ":" + z);
         QuantumNetworkColorSync.track(this);
@@ -316,20 +331,40 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void applyPendingMigrations(QuantumMigrationJournal journal) {
         if (!hasAnchor() || lastAppliedMigration >= journal.currentSequence()) return;
         QuantumMigrationJournal.Resolution result = journal
-            .resolve(new AnchorKey(anchorDim, anchorX, anchorY, anchorZ), lastAppliedMigration);
+            .resolve(new AnchorKey(anchorDim, anchorX, anchorY, anchorZ), lastAppliedMigration, anchorGeneration);
         if (result.anchor.getDimension() != anchorDim || result.anchor.getX() != anchorX
             || result.anchor.getY() != anchorY
-            || result.anchor.getZ() != anchorZ) {
+            || result.anchor.getZ() != anchorZ
+            || !result.generation.equals(anchorGeneration)) {
             replaceAnchor(
                 result.anchor.getDimension(),
                 result.anchor.getX(),
                 result.anchor.getY(),
-                result.anchor.getZ());
+                result.anchor.getZ(),
+                result.generation);
             lastMaintenanceTick = -1L;
             reconnectBackoff = (int) MAINTENANCE_INTERVAL_TICKS;
         }
         lastAppliedMigration = result.sequence;
         markDirty();
+    }
+
+    private boolean normalizeCanonicalAnchor() {
+        WorldServer world = DimensionManager.getWorld(anchorDim);
+        if (world == null) return true; // Existing unreachable-dimension handling remains authoritative.
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+            .resolveAnchor(QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ), anchorGeneration);
+        if (anchor == null) return false;
+        if (anchor.position != QuantumControllerRegistry.pack(anchorX, anchorY, anchorZ)
+            || !anchor.generation.equals(anchorGeneration)) {
+            replaceAnchor(
+                anchorDim,
+                QuantumControllerRegistry.unpackX(anchor.position),
+                QuantumControllerRegistry.unpackY(anchor.position),
+                QuantumControllerRegistry.unpackZ(anchor.position),
+                anchor.generation);
+        }
+        return true;
     }
 
     /**
@@ -1060,6 +1095,13 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             return;
         }
         this.lastMaintenanceTick = tick;
+        if (!normalizeCanonicalAnchor()) {
+            destroyBridgeConnection();
+            failReconnect(OfflineReason.ANCHOR_NOT_QUANTIZED);
+            syncLinkedStateIfChanged(false);
+            PerformanceAudit.record(auditT0);
+            return;
+        }
         maintainConnection();
         PerformanceAudit.record(auditT0);
     }
@@ -1081,11 +1123,29 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // v1.6.24：每次维护窗口（20t，≤1s）重算并同步连接方向掩码（在过载检查/桥接分支之前执行，
         // 不受下方 bridge 早退分支影响；空白节点不执行维护，客户端掩码默认 0 不画臂）
         syncSidesIfChanged(computeConnectedSidesMask());
-        if (connection != null && isLinked()
-            && !isNativeConnectionAuthorized(getCoreGridNode(), connection.getOtherSide(getCoreGridNode()))) {
-            destroyBridgeConnection();
-            failReconnect(OfflineReason.NO_PERMISSION);
-            return;
+        IGridConnection checkedConnection = null;
+        IGridNode checkedCore = null, checkedPeer = null;
+        IGrid checkedCoreGrid = null, checkedPeerGrid = null;
+        int checkedDim = 0, checkedX = 0, checkedY = 0, checkedZ = 0;
+        String checkedGeneration = "";
+        WorldServer checkedAnchorWorld = null;
+        if (connection != null && isLinked()) {
+            checkedDim = anchorDim;
+            checkedX = anchorX;
+            checkedY = anchorY;
+            checkedZ = anchorZ;
+            checkedGeneration = getAnchorGeneration();
+            checkedAnchorWorld = DimensionManager.getWorld(checkedDim);
+            checkedConnection = connection;
+            checkedCore = getCoreGridNode();
+            checkedPeer = checkedConnection.getOtherSide(checkedCore);
+            checkedCoreGrid = checkedCore == null ? null : checkedCore.getGrid();
+            checkedPeerGrid = checkedPeer == null ? null : checkedPeer.getGrid();
+            if (!isNativeConnectionAuthorized(checkedCore, checkedPeer)) {
+                destroyBridgeConnection();
+                failReconnect(OfflineReason.NO_PERMISSION);
+                return;
+            }
         }
         // v1.6.8：网络过载检查（仅桥接存活时执行，避免离线节点重复触发）
         if (this.connection != null && isLinked()) {
@@ -1097,9 +1157,23 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         }
         // ===== 原有逻辑保持不变 =====
         if (this.connection != null) {
+            // Reuse only this callback's earlier check, after ruling out overload/lifecycle/retarget changes.
+            boolean unchangedAuthorization = checkedConnection == connection && checkedCore != null
+                && checkedPeer != null
+                && checkedCore == getCoreGridNode()
+                && checkedPeer == connection.getOtherSide(checkedCore)
+                && checkedCoreGrid == checkedCore.getGrid()
+                && checkedPeerGrid == checkedPeer.getGrid()
+                && checkedDim == anchorDim
+                && checkedX == anchorX
+                && checkedY == anchorY
+                && checkedZ == anchorZ
+                && checkedGeneration.equals(getAnchorGeneration())
+                && checkedAnchorWorld == DimensionManager.getWorld(anchorDim);
             if (isLinked() && isAnchorSnapshotMatched()
                 && isAnchorStillQuantized()
-                && isNativeConnectionAuthorized(getCoreGridNode(), connection.getOtherSide(getCoreGridNode()))) {
+                && (unchangedAuthorization
+                    || isNativeConnectionAuthorized(getCoreGridNode(), connection.getOtherSide(getCoreGridNode())))) {
                 return;
             }
             // 连接已死（对端销毁/本节点重建）或锚点改指或锚点已取消量子化：清理后走重建
@@ -1598,6 +1672,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void readFromNBT(NBTTagCompound tag) {
         super.readFromNBT(tag);
         lastAppliedMigration = tag.getLong("lastAppliedMigration");
+        anchorGeneration = tag.getString("anchorGeneration");
         placerUUID = tag.getString("placerUUID");
         placerName = tag.getString("placerName");
         partMigrationPending = true;
@@ -1644,6 +1719,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void writeToNBT(NBTTagCompound tag) {
         super.writeToNBT(tag);
         tag.setLong("lastAppliedMigration", lastAppliedMigration);
+        tag.setString("anchorGeneration", anchorGeneration);
         tag.setString("placerUUID", placerUUID);
         tag.setString("placerName", placerName);
         if (!recoveredPartDrops.isEmpty()) {

@@ -82,7 +82,7 @@ public final class TestWorldCommand {
                     break;
                 case "build":
                 case "reset":
-                    TestWorldManager.build();
+                    TestWorldManager.build(args[1]);
                     say(sender, "BUILDING; use /gtswn test status to observe completion.");
                     break;
                 case "run":

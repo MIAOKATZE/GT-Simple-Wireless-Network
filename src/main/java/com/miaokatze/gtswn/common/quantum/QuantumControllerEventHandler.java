@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.quantum;
 
+import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -23,6 +24,7 @@ import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.event.world.ExplosionEvent;
+import net.minecraftforge.event.world.WorldEvent;
 
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
@@ -31,6 +33,7 @@ import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.network.WirelessEURequestQueue;
 
 import appeng.api.implementations.items.INetworkToolItem;
+import appeng.block.networking.BlockController;
 import appeng.block.networking.BlockCreativeEnergyCell;
 import appeng.block.networking.BlockEnergyAcceptor;
 import appeng.block.networking.BlockEnergyCell;
@@ -92,6 +95,9 @@ public class QuantumControllerEventHandler {
 
     /** 右键拦截提示冷却表：玩家 UUID → 上次提示的世界 tick */
     private final Map<UUID, Long> lastBlockedMsgTick = new HashMap<>();
+
+    /** Only allocated while a controller placement awaits Forge's final cancellation decision. */
+    private ArrayList<PendingPlacement> pendingPlacements;
 
     /** 上次巡检的世界 tick（-1 = 未巡检过） */
     private long lastSweepTick = -1L;
@@ -155,6 +161,7 @@ public class QuantumControllerEventHandler {
         if (isEnergyRelatedItem(held)) {
             return;
         }
+        if (held != null && Block.getBlockFromItem(held.getItem()) instanceof BlockController) return;
         // 非能源相关物品/空手 → 全量拦截
         event.setCanceled(true);
         // 冷却防刷屏：同一玩家 2 秒内仅提示一次
@@ -284,6 +291,30 @@ public class QuantumControllerEventHandler {
             return;
         }
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(event.world);
+        TileEntity placed = event.world.getTileEntity(event.x, event.y, event.z);
+        if (placed instanceof TileController && !registry.isQuantized(event.x, event.y, event.z)) {
+            Set<Long> candidates = QuantumControllerRegistry.floodControllers(event.world, event.x, event.y, event.z);
+            boolean touchesRegistered = false;
+            for (long member : candidates) if (registry.isQuantized(member)) touchesRegistered = true;
+            if (touchesRegistered) {
+                if (!registry.canExtendStructure(candidates)) {
+                    event.setCanceled(true);
+                } else {
+                    PendingPlacement pending = new PendingPlacement(event, placed);
+                    for (long member : candidates) {
+                        if (registry.isQuantized(member)) continue;
+                        TileEntity candidate = event.world.getTileEntity(
+                            QuantumControllerRegistry.unpackX(member),
+                            QuantumControllerRegistry.unpackY(member),
+                            QuantumControllerRegistry.unpackZ(member));
+                        pending.isolated.put(member, candidate);
+                        setValidSidesIfChanged(candidate, EnumSet.noneOf(ForgeDirection.class));
+                    }
+                    if (pendingPlacements == null) pendingPlacements = new ArrayList<>();
+                    pendingPlacements.add(pending);
+                }
+            }
+        }
         applyFilterIfQuantized(registry, event.world, event.x, event.y, event.z);
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
             applyFilterIfQuantized(
@@ -292,6 +323,56 @@ public class QuantumControllerEventHandler {
                 event.x + d.offsetX,
                 event.y + d.offsetY,
                 event.z + d.offsetZ);
+        }
+    }
+
+    /** Commit after every PlaceEvent listener and vanilla rollback have completed, within this natural tick. */
+    void commitPendingPlacements() {
+        if (pendingPlacements == null) return;
+        ArrayList<PendingPlacement> pending = pendingPlacements;
+        pendingPlacements = null;
+        for (PendingPlacement placement : pending) {
+            BlockEvent.PlaceEvent event = placement.event;
+            TileEntity current = event.world.getTileEntity(event.x, event.y, event.z);
+            boolean committed = !event.isCanceled() && current == placement.placed
+                && !current.isInvalid()
+                && mergeNewStructure(
+                    QuantumControllerRegistry.get(event.world),
+                    event.world,
+                    event.x,
+                    event.y,
+                    event.z);
+            if (!committed) {
+                QuantumControllerRegistry registry = QuantumControllerRegistry.get(event.world);
+                for (Map.Entry<Long, TileEntity> isolated : placement.isolated.entrySet()) {
+                    long position = isolated.getKey();
+                    int x = QuantumControllerRegistry.unpackX(position),
+                        y = QuantumControllerRegistry.unpackY(position),
+                        z = QuantumControllerRegistry.unpackZ(position);
+                    if (!registry.isQuantized(position) && event.world.blockExists(x, y, z)
+                        && event.world.getTileEntity(x, y, z) == isolated.getValue())
+                        restoreAllSides(event.world, x, y, z);
+                }
+            }
+        }
+    }
+
+    @SubscribeEvent
+    public void onWorldUnload(WorldEvent.Unload event) {
+        if (pendingPlacements == null) return;
+        pendingPlacements.removeIf(pending -> pending.event.world == event.world);
+        if (pendingPlacements.isEmpty()) pendingPlacements = null;
+    }
+
+    private static final class PendingPlacement {
+
+        final BlockEvent.PlaceEvent event;
+        final TileEntity placed;
+        final Map<Long, TileEntity> isolated = new HashMap<>();
+
+        PendingPlacement(BlockEvent.PlaceEvent event, TileEntity placed) {
+            this.event = event;
+            this.placed = placed;
         }
     }
 
@@ -367,12 +448,14 @@ public class QuantumControllerEventHandler {
         }
         QuantumConnectionSecurity.restoreNativeChecks();
         if (this.lastCacheServer != server) {
+            if (this.lastCacheServer != null) this.pendingPlacements = null;
             this.lastCacheServer = server;
             this.lastSweepTick = -1L;
             QuantumNetworkStatsCache.clear();
             QuantumNetworkData.clearCache();
             QuantumOverloadCountdown.clear();
         }
+        commitPendingPlacements();
         // v1.6.1 问题 4b：每 tick 在主线程排空量子终端数据请求队列（独立于下方每秒巡检节奏）
         QuantumTerminalRequestQueue.drain();
         // v1.6.19：每 tick 在主线程排空无线 EU 查询请求队列（WirelessNetworkManager 主线程安全）
@@ -460,18 +543,20 @@ public class QuantumControllerEventHandler {
     }
 
     /** D8 合并：洪泛新结构入册 + 逐块应用过滤 + 向附近玩家提示 */
-    private static void mergeNewStructure(QuantumControllerRegistry registry, World world, int x, int y, int z) {
+    private static boolean mergeNewStructure(QuantumControllerRegistry registry, World world, int x, int y, int z) {
         // v1.6.19：性能审计——D8 合并计数
         PerformanceAudit.recordControllerMerge();
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, x, y, z);
         // 统计真正新增的块数（洪泛可能覆盖已入册的旧结构块）
         int added = 0;
+        boolean touchesRegistered = false;
         for (long packed : structure) {
             if (!registry.isQuantized(packed)) {
                 added++;
-            }
+            } else touchesRegistered = true;
         }
-        registry.quantizeAll(structure);
+        if (!touchesRegistered) return false;
+        if (!registry.quantizeAll(structure, QuantumControllerRegistry.pack(x, y, z))) return false;
         for (long packed : structure) {
             applyConnectionFilter(
                 world,
@@ -479,7 +564,8 @@ public class QuantumControllerEventHandler {
                 QuantumControllerRegistry.unpackY(packed),
                 QuantumControllerRegistry.unpackZ(packed));
         }
-        notifyMerged(world, x, y, z, added);
+        if (added > 0) notifyMerged(world, x, y, z, added);
+        return true;
     }
 
     /** 向合并点附近 48 格内的玩家发送合并提示 */
@@ -534,11 +620,15 @@ public class QuantumControllerEventHandler {
             return;
         }
         allowed.clear();
+        QuantumControllerRegistry registry = null;
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
             if (!world.blockExists(x + d.offsetX, y + d.offsetY, z + d.offsetZ)) continue;
             TileEntity neighbor = world.getTileEntity(x + d.offsetX, y + d.offsetY, z + d.offsetZ);
             if (neighbor instanceof TileController) {
-                allowed.add(d);
+                if (registry == null) registry = QuantumControllerRegistry.get(world);
+                if (registry.sameGeneration(
+                    QuantumControllerRegistry.pack(x, y, z),
+                    QuantumControllerRegistry.pack(x + d.offsetX, y + d.offsetY, z + d.offsetZ))) allowed.add(d);
             } else if (neighbor instanceof TileEnergyAcceptor) {
                 allowed.add(d);
             } else if (neighbor instanceof TileEnergyCell || neighbor instanceof TileCreativeEnergyCell) {

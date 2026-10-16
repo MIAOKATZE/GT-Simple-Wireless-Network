@@ -24,6 +24,7 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.Event;
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
@@ -50,6 +51,12 @@ public final class TestWorldManager {
     private static int resetCursor;
     private static long operationTicks;
     private static long tickStartNanos;
+    private static long tickStartCpuNanos;
+    private static TestWorldPerformance runPerformance;
+    private static TestWorldPerformance phasePerformance;
+    private static TestWorldPerformance tickPerformance;
+    private static TestWorldPerformance closedResetPerformance;
+    private static TestContext closedPerformanceContext;
     private static boolean processingTick;
     private static TestWorldReport deferredFinalReport;
     private static File deferredFinalFile;
@@ -188,35 +195,64 @@ public final class TestWorldManager {
     }
 
     public static void build() {
+        build("build");
+    }
+
+    public static void build(String operation) {
+        if (!"build".equals(operation) && !"reset".equals(operation))
+            throw new IllegalArgumentException("Unknown reset operation: " + operation);
         requireIdle();
         journal();
         world = TestDimension.ensureWorld();
         selection = null;
-        data.activeRun = "";
-        tickStartNanos = 0;
+        createReport(operation);
+        report.results.add(new TestWorldReport.Result("harness.reset"));
         beginReset();
     }
 
     public static String run(String requested) {
         requireIdle();
-        List<TestScenario> chosen = new ArrayList<>();
-        if ("all".equals(requested)) chosen.addAll(SCENARIOS.values());
-        else if (SCENARIOS.containsKey(requested)) chosen.add(SCENARIOS.get(requested));
-        else throw new IllegalArgumentException("Unknown scenario: " + requested);
+        List<TestScenario> chosen = selectScenarios(requested, SCENARIOS.values());
         if (chosen.isEmpty()) throw new IllegalStateException("No test scenarios registered");
         journal();
         world = TestDimension.ensureWorld();
         selection = chosen;
         finalWrite = null;
         scenarioIndex = 0;
+        createReport(requested);
+        report.actors.addAll(TestActors.describe());
+        for (TestScenario scenario : chosen) report.results.add(new TestWorldReport.Result(scenario.id()));
+        report.event(null, 0, "run", "selection=" + requested + "; scenarios=" + chosen.size());
+        beginReset();
+        return report.runId;
+    }
+
+    static List<TestScenario> selectScenarios(String requested, Iterable<TestScenario> available) {
+        List<TestScenario> chosen = new ArrayList<>();
+        for (TestScenario scenario : available) {
+            if ("all".equals(requested) ? scenario.includeInAll()
+                : scenario.id()
+                    .equals(requested))
+                chosen.add(scenario);
+        }
+        if (chosen.isEmpty() && !"all".equals(requested))
+            throw new IllegalArgumentException("Unknown scenario: " + requested);
+        return chosen;
+    }
+
+    private static void createReport(String requested) {
+        finalWrite = null;
         tickStartNanos = 0;
+        tickStartCpuNanos = -1;
+        tickPerformance = null;
+        closedResetPerformance = null;
+        closedPerformanceContext = null;
+        runPerformance = new TestWorldPerformance();
         report = new TestWorldReport(
             UUID.randomUUID()
                 .toString(),
             TestDimension.dimId(),
             requested);
-        report.actors.addAll(TestActors.describe());
-        for (TestScenario scenario : chosen) report.results.add(new TestWorldReport.Result(scenario.id()));
         File save = MinecraftServer.getServer()
             .worldServerForDimension(0)
             .getSaveHandler()
@@ -228,9 +264,6 @@ public final class TestWorldManager {
         data.activeRun = report.runId;
         data.lastOutcome = "BUILDING";
         data.lastReport = reportPath;
-        report.event(null, 0, "run", "selection=" + requested + "; scenarios=" + chosen.size());
-        beginReset();
-        return report.runId;
     }
 
     public static boolean busy() {
@@ -247,6 +280,7 @@ public final class TestWorldManager {
     }
 
     private static void beginReset() {
+        phasePerformance = new TestWorldPerformance();
         phase = "BUILDING";
         loadIndex = 0;
         resetCursor = 0;
@@ -318,10 +352,14 @@ public final class TestWorldManager {
         data.built = true;
         data.operation = "COMPLETE";
         data.markDirty();
+        closedResetPerformance = phasePerformance;
+        phasePerformance = null;
         if (selection == null) {
-            releaseTickets();
-            phase = "IDLE";
-            world = null;
+            TestWorldReport.Result result = report.results.get(0);
+            result.status = "PASS";
+            result.detail = "Bounded reset completed and authored fixtures built";
+            result.ticks = operationTicks;
+            complete("PASS", null);
             GTSimpleWirelessNetwork.LOG.info("[GTSWN-TEST] BUILD DONE dimension={}", TestDimension.dimId());
         } else startScenario();
     }
@@ -332,6 +370,8 @@ public final class TestWorldManager {
         result.status = "RUNNING";
         result.detail = "running";
         current = new TestContext(world, report.runId, report, result);
+        current.beginPerformance();
+        phasePerformance = current.performance();
         phase = "RUNNING";
         report.status = phase;
         data.operation = phase;
@@ -350,6 +390,7 @@ public final class TestWorldManager {
             current.callbackFailure("start", ex);
         }
         recordCallback(System.nanoTime() - started);
+        current.operationEnd("scenario.start", started);
         if (current.outcome != null) finishScenario();
     }
 
@@ -381,12 +422,14 @@ public final class TestWorldManager {
                 current.callbackFailure("tick", ex);
             }
             recordCallback(System.nanoTime() - started);
+            current.operationEnd("scenario.tick", started);
         }
         if (current.outcome != null) finishScenario();
     }
 
     private static void finishScenario() {
         TestContext context = current;
+        long cleanupStarted = System.nanoTime();
         try {
             selection.get(scenarioIndex)
                 .cleanup(context);
@@ -394,12 +437,15 @@ public final class TestWorldManager {
             context.callbackFailure("cleanup", ex);
             context.event("cleanup_failure", exception(ex));
         } finally {
+            context.operationEnd("scenario.cleanup", cleanupStarted);
             captureCounts(context);
             TestWorldProbes.stop();
         }
         context.result.status = context.outcome;
         context.result.detail = context.detail;
         context.result.ticks = context.elapsed;
+        closedPerformanceContext = context;
+        phasePerformance = null;
         current = null;
         scenarioIndex++;
         if (scenarioIndex < selection.size()) beginReset();
@@ -421,6 +467,10 @@ public final class TestWorldManager {
     private static void complete(String status, String failure) {
         TestWorldProbes.stop();
         releaseTickets();
+        if ("BUILDING".equals(phase) && phasePerformance != null) {
+            closedResetPerformance = phasePerformance;
+            phasePerformance = null;
+        }
         if (report != null) {
             report.status = status;
             report.failure = failure;
@@ -430,6 +480,7 @@ public final class TestWorldManager {
                 deferredFinalReport = report;
                 deferredFinalFile = reportFile;
             } else {
+                finishPerformance(report);
                 finalWrite = report.writeFinal(reportFile);
                 rememberFinalWrite();
             }
@@ -485,17 +536,22 @@ public final class TestWorldManager {
         if (current != null) {
             current.fail(reason);
             TestContext context = current;
+            long cleanupStarted = System.nanoTime();
             try {
                 selection.get(scenarioIndex)
                     .cleanup(context);
             } catch (Exception | LinkageError ex) {
                 context.callbackFailure("cleanup", ex);
                 context.event("cleanup_failure", exception(ex));
+            } finally {
+                context.operationEnd("scenario.cleanup", cleanupStarted);
             }
             captureCounts(context);
             context.result.status = "FAIL";
             context.result.detail = context.detail;
             context.result.ticks = context.elapsed;
+            closedPerformanceContext = context;
+            phasePerformance = null;
         }
         if (data != null && "BUILDING".equals(phase)) data.built = false;
         complete("STOPPED", reason);
@@ -606,19 +662,29 @@ public final class TestWorldManager {
         if (!event.world.isRemote && event.world == world) stop("test world unloaded", false);
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST)
+    public void tickStart(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.START || runPerformance == null
+            || "IDLE".equals(phase)
+            || "REPORTING".equals(phase)) return;
+        tickStartNanos = System.nanoTime();
+        tickStartCpuNanos = runPerformance.cpuTime();
+        tickPerformance = phasePerformance;
+    }
+
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public void tick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
         if ("REPORTING".equals(phase)) {
-            if (event.phase == TickEvent.Phase.END) acknowledgeFinalWrite();
+            acknowledgeFinalWrite();
             return;
         }
         if ("IDLE".equals(phase)) return;
-        if (event.phase == TickEvent.Phase.START) {
-            tickStartNanos = System.nanoTime();
-            return;
-        }
         TestWorldReport measuredReport = report;
+        TestWorldPerformance measuredRun = runPerformance;
+        TestWorldPerformance measuredPhase = phasePerformance;
         long workStarted = System.nanoTime();
+        long workCpuStarted = measuredRun == null ? -1 : measuredRun.cpuTime();
         if (measuredReport != null) measuredReport.elapsedTicks++;
         processingTick = true;
         try {
@@ -632,25 +698,62 @@ public final class TestWorldManager {
             } else complete("FAIL", exception(ex));
         } finally {
             long finished = System.nanoTime();
+            long cpuFinished = measuredRun == null ? -1 : measuredRun.cpuTime();
+            long work = finished - workStarted;
+            long window = tickStartNanos == 0 ? -1 : finished - tickStartNanos;
+            long cpuWindow = tickStartNanos == 0 ? -1 : TestWorldPerformance.delta(tickStartCpuNanos, cpuFinished);
+            long workCpu = TestWorldPerformance.delta(workCpuStarted, cpuFinished);
+            if (measuredRun != null) measuredRun.tick(window, cpuWindow, work, workCpu);
+            if (measuredPhase != null) measuredPhase.tick(
+                measuredPhase == tickPerformance ? window : -1,
+                measuredPhase == tickPerformance ? cpuWindow : -1,
+                work,
+                workCpu);
             if (measuredReport != null) {
-                long work = finished - workStarted;
                 measuredReport.managerWorkNanos += work;
                 measuredReport.managerMaxWorkNanos = Math.max(measuredReport.managerMaxWorkNanos, work);
                 if (tickStartNanos != 0) {
-                    long window = finished - tickStartNanos;
                     measuredReport.observedTickWindows++;
                     measuredReport.totalObservedTickWindowNanos += window;
                     measuredReport.maxObservedTickWindowNanos = Math
                         .max(measuredReport.maxObservedTickWindowNanos, window);
                 }
+                finishClosedPerformance(measuredReport);
             }
+            tickStartNanos = 0;
+            tickPerformance = null;
             processingTick = false;
             if (deferredFinalReport != null) {
+                finishPerformance(deferredFinalReport);
                 finalWrite = deferredFinalReport.writeFinal(deferredFinalFile);
                 rememberFinalWrite();
                 deferredFinalReport = null;
                 deferredFinalFile = null;
             }
         }
+    }
+
+    private static void finishClosedPerformance(TestWorldReport target) {
+        if (closedResetPerformance != null) {
+            TestWorldPerformance.Snapshot reset = closedResetPerformance.finish();
+            target.resetPerformance.add(reset);
+            if (("build".equals(target.selection) || "reset".equals(target.selection)) && !target.results.isEmpty())
+                target.results.get(0).performance = reset;
+            closedResetPerformance = null;
+        }
+        if (closedPerformanceContext != null) {
+            TestContext context = closedPerformanceContext;
+            if (context.performance() != null) context.result.performance = context.performance()
+                .finish();
+            closedPerformanceContext = null;
+        }
+    }
+
+    private static void finishPerformance(TestWorldReport target) {
+        finishClosedPerformance(target);
+        if (runPerformance != null) target.performance = runPerformance.finish();
+        runPerformance = null;
+        phasePerformance = null;
+        tickPerformance = null;
     }
 }

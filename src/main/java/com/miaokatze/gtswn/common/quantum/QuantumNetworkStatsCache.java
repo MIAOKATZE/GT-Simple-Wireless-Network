@@ -56,6 +56,7 @@ public final class QuantumNetworkStatsCache {
         long bucket = anchorWorld.getTotalWorldTime() / CACHE_INTERVAL_TICKS;
         prune(bucket);
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(anchorWorld);
+        key = registry.canonicalKey(key);
         long revision = registry.getRevision();
         CacheEntry cached = CACHE.get(key);
         if (cached != null && cached.bucket == bucket && cached.revision == revision && cached.grid == grid) {

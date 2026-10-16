@@ -43,7 +43,9 @@ public class QuantumControllerComponentCacheTest {
     public void bridgeAdditionAndRemovalInvalidateAllMembersWithoutMutatingPublishedSnapshots() {
         QuantumControllerRegistry registry = new QuantumControllerRegistry("test");
         registry.quantize(0, 64, 0);
+        registry.quantize(1, 64, 0);
         registry.quantize(2, 64, 0);
+        registry.dequantize(pos(1));
         Set<Long> first = registry.registeredStructure(pos(0));
         Set<Long> second = registry.registeredStructure(pos(2));
         registry.quantizeAll(Collections.singleton(pos(1)));

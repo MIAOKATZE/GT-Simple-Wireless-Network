@@ -20,6 +20,9 @@ public final class QuantumTileLifecycle {
 
     public static void worldUnloading(World world) {
         UNLOADING.add(world);
+        QuantumPolicyEpoch.changed();
+        QuantumNetworkSecurityRegistry.get(world)
+            .clearPolicyCache();
         QuantumControllerRegistry.get(world)
             .unload();
     }
@@ -29,6 +32,7 @@ public final class QuantumTileLifecycle {
     }
 
     public static void removed(TileEntity tile) {
+        QuantumPolicyEpoch.controllerChanged(tile);
         World world = tile.getWorldObj();
         if (world == null || world.isRemote
             || UNLOADING.contains(world)
@@ -48,6 +52,7 @@ public final class QuantumTileLifecycle {
     }
 
     public static void unloaded(TileEntity tile) {
+        QuantumPolicyEpoch.controllerChanged(tile);
         World world = tile.getWorldObj();
         if (world == null || world.isRemote) return;
         if (!(tile instanceof TileController) && (!(tile instanceof QuantumIncorporationIdentity)
@@ -66,6 +71,7 @@ public final class QuantumTileLifecycle {
     }
 
     public static void validated(TileEntity tile) {
+        QuantumPolicyEpoch.controllerChanged(tile);
         UNLOADED_TILES.remove(tile);
         REINSERTED_TILES.remove(tile);
     }

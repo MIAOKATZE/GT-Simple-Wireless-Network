@@ -121,6 +121,9 @@ public class TestHarnessDisabledLifecycleTest {
         assertFalse(field(UiDebugSuite.class, "registered").getBoolean(null));
         assertSame(retained, field(TestWorldManager.class, "data").get(null));
         assertSame(writer, field(TestWorldReport.class, "writer").get(null));
+        assertNull(field(TestWorldManager.class, "runPerformance").get(null));
+        assertNull(field(TestWorldManager.class, "phasePerformance").get(null));
+        assertNull(field(TestWorldManager.class, "tickPerformance").get(null));
         assertEquals("REPORTING", retained.operation);
         assertFalse(unavailableReport.exists());
         TestUiKit.restore(null); // Disabled restoration must not inspect a player or inventory.
@@ -163,6 +166,8 @@ public class TestHarnessDisabledLifecycleTest {
             TestWorldManager.ids()
                 .isEmpty());
         assertNotNull(field(TestWorldReport.class, "writer").get(null));
+        assertNull(field(TestWorldManager.class, "runPerformance").get(null));
+        assertNull(field(TestWorldManager.class, "phasePerformance").get(null));
         TestWorldManager.shutdown();
     }
 }

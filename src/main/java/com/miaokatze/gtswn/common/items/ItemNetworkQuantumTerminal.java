@@ -159,6 +159,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
     public static final String NBT_ANCHOR_X = "QT_AnchorX";
     public static final String NBT_ANCHOR_Y = "QT_AnchorY";
     public static final String NBT_ANCHOR_Z = "QT_AnchorZ";
+    public static final String NBT_ANCHOR_GENERATION = "QT_AnchorGeneration";
 
     /** 绑定时维度显示名（tooltip 用） */
     private static final String NBT_BOUND_NAME = "QT_BoundName";
@@ -289,7 +290,8 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
             }
             boolean wasOpen = QuantumTerminalSecurityHints.isOpen(world, x, y, z);
             writeAnchor(stack, world, x, y, z);
-            sendBindingMessage(player, "gtswn.chat.quantum.bound", x, y, z);
+            int[] bound = getAnchor(stack);
+            sendBindingMessage(player, "gtswn.chat.quantum.bound", bound[1], bound[2], bound[3]);
             QuantumTerminalSecurityHints.show(player, wasOpen);
             return true;
         }
@@ -361,7 +363,10 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         QuantumControllerRegistry registry, int x, int y, int z) {
         // D10：洪泛 6 邻接全部相连控制器（整结构语义）
         Set<Long> structure = QuantumControllerRegistry.floodControllers(world, x, y, z);
-        registry.quantizeAll(structure);
+        if (!registry.quantizeAll(structure, QuantumControllerRegistry.pack(x, y, z))) {
+            sendMessage(player, "gtswn.chat.quantum.no_permission");
+            return;
+        }
         // 逐块应用连接过滤（仅放行同伴控制器/能量接收器/石英纤维朝向面）
         for (long packed : structure) {
             QuantumControllerEventHandler.applyConnectionFilter(
@@ -445,7 +450,8 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
             tag.getInteger(NBT_ANCHOR_DIM),
             tag.getInteger(NBT_ANCHOR_X),
             tag.getInteger(NBT_ANCHOR_Y),
-            tag.getInteger(NBT_ANCHOR_Z));
+            tag.getInteger(NBT_ANCHOR_Z),
+            tag.getString(NBT_ANCHOR_GENERATION));
         node.setColorIndex(QuantumNetworkColor.resolve(stack));
         node.setPlacer(player);
     }
@@ -479,12 +485,19 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
 
     /** 写入终端绑定锚点（含维度显示名），QT_Bound 置 1 */
     public static void writeAnchor(ItemStack stack, World world, int x, int y, int z) {
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(world)
+            .canonicalAnchor(QuantumControllerRegistry.pack(x, y, z));
+        if (anchor == null) throw new IllegalArgumentException("Controller has no live canonical quantum anchor");
+        x = QuantumControllerRegistry.unpackX(anchor.position);
+        y = QuantumControllerRegistry.unpackY(anchor.position);
+        z = QuantumControllerRegistry.unpackZ(anchor.position);
         NBTTagCompound tag = ensureNBT(stack);
         tag.setByte(NBT_BOUND, (byte) 1);
         tag.setInteger(NBT_ANCHOR_DIM, world.provider.dimensionId);
         tag.setInteger(NBT_ANCHOR_X, x);
         tag.setInteger(NBT_ANCHOR_Y, y);
         tag.setInteger(NBT_ANCHOR_Z, z);
+        tag.setString(NBT_ANCHOR_GENERATION, anchor.generation);
         tag.setString(NBT_BOUND_NAME, world.provider.getDimensionName());
         tag.setLong(
             QuantumTerminalAccess.NBT_MIGRATION_CURSOR,
@@ -507,6 +520,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         tag.removeTag(NBT_ANCHOR_X);
         tag.removeTag(NBT_ANCHOR_Y);
         tag.removeTag(NBT_ANCHOR_Z);
+        tag.removeTag(NBT_ANCHOR_GENERATION);
         tag.removeTag(NBT_BOUND_NAME);
         tag.removeTag(QuantumTerminalAccess.NBT_MIGRATION_CURSOR);
     }
