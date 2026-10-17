@@ -117,6 +117,20 @@ final class UiModularSnapshot {
         return null;
     }
 
+    static String namedPath(Minecraft mc, GuiScreen screen, String name) {
+        Object rows = capture(mc, screen).get("widgets");
+        String path = null;
+        if (rows instanceof List<?>) for (Object row : (List<?>) rows) {
+            if (!(row instanceof Map<?, ?>)) continue;
+            Map<?, ?> widget = (Map<?, ?>) row;
+            if (!name.equals(widget.get("name")) || !Boolean.TRUE.equals(widget.get("enabled"))
+                || !Boolean.TRUE.equals(widget.get("visible"))) continue;
+            if (path != null) throw new IllegalStateException("Ambiguous visible MUI2 control name: " + name);
+            path = (String) widget.get("path");
+        }
+        return path;
+    }
+
     private static final class Probe {
 
         private final Minecraft mc;
@@ -135,9 +149,9 @@ final class UiModularSnapshot {
 
         private Map<String, Object> capture() {
             Map<String, Object> state = new LinkedHashMap<>();
-            state.put("explicitClick", "GUARDED_STANDARD_BUTTON_LEFT_ONLY");
+            state.put("explicitClick", "GUARDED_NATIVE_BUTTON_AND_TEXTFIELD");
             limitations.add(
-                "Explicit clicks support only guarded standard ButtonWidget left clicks through production screen press/release; synthetic framework dispatch and server effects remain NOT_VERIFIED. Text, wheel, drag and overlays are unsupported.");
+                "Native ButtonWidget/TextFieldWidget clicks use guarded production screen press/release and real hit testing. Text uses native focus/key/text-event routes. Server effects, wheel, drag and overlays require separate assertions.");
             limitations.add(
                 "Custom draw/foreground/tooltip pixels and custom stencil shapes are UNKNOWN; no draw callbacks are invoked.");
             limitations.add(
@@ -154,9 +168,41 @@ final class UiModularSnapshot {
                     screenArea = new Area(screen.getScreenArea());
                     state.put("muiOwner", screen.getOwner());
                     state.put("muiName", screen.getName());
+                    state.put("serverData", UiDebugSnapshot.dataObservation(mc, wrapper));
                     state.put("active", screen.isActive());
                     state.put("overlay", screen.isOverlay());
                     state.put("screenArea", rect(screenArea));
+                    net.minecraft.inventory.Container container = mc.thePlayer == null ? null
+                        : mc.thePlayer.openContainer;
+                    if (container != null) {
+                        state.put(
+                            "containerClass",
+                            container.getClass()
+                                .getName());
+                        state.put("containerWindowId", container.windowId);
+                        state.put("containerSlotCount", container.inventorySlots.size());
+                        if (container instanceof com.miaokatze.gtswn.common.gui.ContainerTerminal) {
+                            boolean count = container.inventorySlots.size() == 37;
+                            int heldSlot = 28 + mc.thePlayer.inventory.currentItem;
+                            boolean locked = count && !container.getSlot(heldSlot)
+                                .canTakeStack(mc.thePlayer)
+                                && !container.getSlot(heldSlot)
+                                    .isItemValid(mc.thePlayer.getHeldItem());
+                            state.put("terminalHeldSlotLocked", locked);
+                            if (!count) finding(
+                                "FAIL",
+                                "TERMINAL_SLOT_COUNT",
+                                "screen",
+                                null,
+                                "The native terminal must expose exactly 37 slots");
+                            if (!locked) finding(
+                                "FAIL",
+                                "TERMINAL_HELD_SLOT_UNLOCKED",
+                                "screen",
+                                null,
+                                "The held terminal player slot must reject insertion and extraction");
+                        }
+                    }
                     widgets.add(
                         map(
                             "path",
@@ -304,6 +350,7 @@ final class UiModularSnapshot {
                 item.put("enabled", enabled);
                 item.put("valid", widget.isValid());
                 item.put("name", widget.getName());
+
                 IWidget actualParent = widget.getParent();
                 item.put(
                     "parentClass",

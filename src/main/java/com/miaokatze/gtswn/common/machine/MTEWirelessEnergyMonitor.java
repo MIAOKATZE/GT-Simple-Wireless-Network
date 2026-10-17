@@ -23,6 +23,7 @@ import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 import com.cleanroommc.modularui.value.sync.StringSyncValue;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.layout.Flow;
+import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 import com.miaokatze.gtswn.common.machine.widgets.ScientificTextFieldWidget;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
@@ -565,10 +566,10 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     /**
      * 构建 ModularUI 2 主面板
      * <p>
-     * 布局结构（346×165，禁用物品栏，禁用 GT Logo，保留 cover tabs）：
+     * 布局结构（414×214，禁用物品栏与框外标题，保留 GT cover tabs）：
      *
      * <pre>
-     * ┌──────── GT 默认背景（无 Logo） ────────┐
+     * ┌──────── 深色工业终端背景 ─────────────┐
      * │ [切换模式按钮]   标题文本              │
      * │ 模式: 常规计数                        │
      * │ 无线电网能量: 1,234 EU                │
@@ -652,26 +653,22 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             this::setCachedModeDescText);
         syncManager.syncValue("cachedModeDescText", modeDescTextSync);
 
-        // === 构建主面板 ===
-        // 使用 GT 模板构建器：禁用物品栏、禁用 GT Logo、保留 cover tabs
-        // v1.1.12 调整：宽度 236→336（+100），高度 150→155（+5，全给下padding）
-        // v1.1.13 调整：宽度 336→346（+10 延伸左边缘），高度 155→165（+10 延伸下边缘）
+        // Preserve GT cover tabs while placing the title inside the terminal frame.
         ModularPanel panel = GTGuis.mteTemplatePanelBuilder(this, guiData, syncManager, uiSettings)
-            .setWidth(346)
-            .setHeight(181)
+            .setWidth(414)
+            .setHeight(214)
             .doesBindPlayerInventory(false)
             .doesAddGregTechLogo(false)
-            .build();
+            .doesAddTitle(false)
+            .build()
+            .background(GtswnMuiTheme.PANEL)
+            .themeOverride(GtswnMuiTheme.THEME_ID);
+        GtswnMuiTheme.fit(panel, 24, 0);
 
-        // === 主内容列布局（padding: 上6 右4 下13 左24） ===
-        // v1.1.10 修复：childPadding 从 2 改为 0，消除行间额外间距（行高已由各 row 的 height() 显式控制）
-        // v1.1.11 修复：padding 上下从 4 改为 2，配合 9 行统一行高(7*16+2*17=146) 让总高 146+4=150 严丝合缝
-        // v1.1.12 调整：下padding 从 2 改为 7（+5），配合 panel 高度 155，内容区 146+9=155 严丝合缝
-        // v1.1.13 调整：下padding 7→17（+10 延伸下边缘），左padding 14→24（+10 延伸左边缘），内容区右边界不变
-        // v1.1.14 调整：padding 改为 (6,4,13,24)，使上下边距更均衡；所有文本/行添加居中对齐
+        // Explicit bounds keep the content clear of the frame and bottom warning stripe.
         Flow column = Flow.column()
-            .full()
-            .padding(6, 4, 13, 24)
+            .pos(16, 14)
+            .size(382, 180)
             .childPadding(0)
             .crossAxisAlignment(Alignment.CrossAxis.START);
 
@@ -681,26 +678,30 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         column.child(
             Flow.row()
                 .widthRel(1f)
-                .height(16)
+                .height(20)
                 .mainAxisAlignment(Alignment.MainAxis.SPACE_BETWEEN)
                 .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .childPadding(4)
                 .child(
                     IKey.lang("gtswn.ui.title")
+                        .color(GtswnMuiTheme.TEXT_TITLE)
                         .asWidget()
                         .alignment(Alignment.CenterLeft))
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    // 切换显示模式：0->1->2->0（常规/科学/千位）
-                    // 关键：通过 IntSyncValue.setValue 触发 C2S 同步，让服务端也更新
-                    // 直接调用 setDisplayMode 只会改客户端副本，服务端不会收到
-                    displayModeSync.setValue((displayModeSync.getIntValue() + 1) % 3);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    // 添加循环切换图标（最接近"模式切换"语义）
-                    .overlay(GTGuiTextures.OVERLAY_BUTTON_CYCLIC)
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.mode")))));
+                .child(
+                    new ButtonWidget<>().name("wireless_monitor.control.1")
+                        .onMousePressed(mouseButton -> {
+                            // 切换显示模式：0->1->2->0（常规/科学/千位）
+                            // 关键：通过 IntSyncValue.setValue 触发 C2S 同步，让服务端也更新
+                            // 直接调用 setDisplayMode 只会改客户端副本，服务端不会收到
+                            displayModeSync.setValue((displayModeSync.getIntValue() + 1) % 3);
+                            return true;
+                        })
+                        .background(GtswnMuiTheme.BUTTON)
+                        .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                        // 添加循环切换图标（最接近"模式切换"语义）
+                        .overlay(GTGuiTextures.OVERLAY_BUTTON_CYCLIC)
+                        .size(16, 16)
+                        .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.mode")))));
 
         // 第 2-7 行：6 个动态文本（模式/能量/状态/红石模式/红石输出/模式说明）
         // v1.1.11 修复：无按钮行也显式 height(16)，与有按钮行高一致，行间距均匀
@@ -724,15 +725,18 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     IKey.dynamic(() -> cachedEUText)
                         .asWidget()
                         .alignment(Alignment.CenterLeft))
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    // 切换锚定参数为电网电量模式
-                    anchorModeSync.setValue(0);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 0 ? "=" : "<"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
+                .child(
+                    new ButtonWidget<>().name("wireless_monitor.control.2")
+                        .onMousePressed(mouseButton -> {
+                            // 切换锚定参数为电网电量模式
+                            anchorModeSync.setValue(0);
+                            return true;
+                        })
+                        .background(GtswnMuiTheme.BUTTON)
+                        .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                        .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 0 ? "=" : "<"))
+                        .size(16, 16)
+                        .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
 
         // 电网状态行 + 锚定按钮2（点击设置 anchorMode=1：电网状态 EU/t）
         // 选中时显示"="（当前锚定），未选中显示"<"（可切换）
@@ -746,18 +750,23 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                 .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                 .childPadding(4)
                 .child(
-                    IKey.dynamic(() -> cachedStatusText)
+                    IKey.dynamic(
+                        () -> cachedStatusText
+                            .replace(EnumChatFormatting.DARK_GRAY.toString(), EnumChatFormatting.GRAY.toString()))
                         .asWidget()
                         .alignment(Alignment.CenterLeft))
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    // 切换锚定参数为电网状态模式
-                    anchorModeSync.setValue(1);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 1 ? "=" : "<"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
+                .child(
+                    new ButtonWidget<>().name("wireless_monitor.control.3")
+                        .onMousePressed(mouseButton -> {
+                            // 切换锚定参数为电网状态模式
+                            anchorModeSync.setValue(1);
+                            return true;
+                        })
+                        .background(GtswnMuiTheme.BUTTON)
+                        .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                        .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 1 ? "=" : "<"))
+                        .size(16, 16)
+                        .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
 
         column.child(
             Flow.row()
@@ -770,14 +779,17 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     IKey.dynamic(() -> cachedRealtimeStatusText)
                         .asWidget()
                         .alignment(Alignment.CenterLeft))
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    anchorModeSync.setValue(2);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 2 ? "=" : "<"))
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
+                .child(
+                    new ButtonWidget<>().name("wireless_monitor.control.4")
+                        .onMousePressed(mouseButton -> {
+                            anchorModeSync.setValue(2);
+                            return true;
+                        })
+                        .background(GtswnMuiTheme.BUTTON)
+                        .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                        .overlay(IKey.dynamic(() -> anchorModeSync.getIntValue() == 2 ? "=" : "<"))
+                        .size(16, 16)
+                        .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.anchor")))));
 
         // 红石模式行：文本 + 切换红石按钮
         // v1.1.10 修复：显式 height(16) 紧贴按钮高度
@@ -793,17 +805,20 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                     IKey.dynamic(() -> cachedRedstoneModeText)
                         .asWidget()
                         .alignment(Alignment.CenterLeft))
-                .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                    // 循环切换红石模式 0->1->2->3->4->0
-                    // 关键：通过 IntSyncValue.setValue 触发 C2S 同步，让服务端也更新
-                    redstoneModeSync.setValue((redstoneModeSync.getIntValue() + 1) % 5);
-                    return true;
-                })
-                    .background(GTGuiTextures.BUTTON_STANDARD)
-                    // 添加模拟信号图标（最接近"红石比较器"语义）
-                    .overlay(GTGuiTextures.OVERLAY_BUTTON_ANALOG)
-                    .size(16, 16)
-                    .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.redstone")))));
+                .child(
+                    new ButtonWidget<>().name("wireless_monitor.control.5")
+                        .onMousePressed(mouseButton -> {
+                            // 循环切换红石模式 0->1->2->3->4->0
+                            // 关键：通过 IntSyncValue.setValue 触发 C2S 同步，让服务端也更新
+                            redstoneModeSync.setValue((redstoneModeSync.getIntValue() + 1) % 5);
+                            return true;
+                        })
+                        .background(GtswnMuiTheme.BUTTON)
+                        .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                        // 添加模拟信号图标（最接近"红石比较器"语义）
+                        .overlay(GTGuiTextures.OVERLAY_BUTTON_ANALOG)
+                        .size(16, 16)
+                        .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.toggle.redstone")))));
 
         // v1.1.11 修复：无按钮行也显式 height(16)
         column.child(
@@ -842,6 +857,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .child(
                             // 科学计数法输入框：displayMode==1 时失焦后格式化为 1.5E6 形式
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
+                                .name("wireless_monitor.param1")
                                 .formatAsInteger(true)
                                 .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
                                 .size(200, 17)
@@ -853,57 +869,69 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .childPadding(2)
                         .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                         // - 按钮（减少最高位）
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            long currentValue = param1Sync.getLongValue();
-                            long absValue = Math.abs(currentValue);
-                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                            // 退位处理：100 -> 90, 1000 -> 900
-                            long newValue;
-                            if (currentValue == step) {
-                                long nextStep = step / 10;
-                                if (nextStep < 1) nextStep = 1;
-                                newValue = currentValue - nextStep;
-                            } else {
-                                newValue = safeAddStep(currentValue, -step);
-                            }
-                            // 支持负数：不再截断为 0
-                            param1Sync.setValue(newValue);
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("-"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.minus"))))
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.6")
+                                .onMousePressed(mouseButton -> {
+                                    long currentValue = param1Sync.getLongValue();
+                                    long absValue = Math.abs(currentValue);
+                                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                                    // 退位处理：100 -> 90, 1000 -> 900
+                                    long newValue;
+                                    if (currentValue == step) {
+                                        long nextStep = step / 10;
+                                        if (nextStep < 1) nextStep = 1;
+                                        newValue = currentValue - nextStep;
+                                    } else {
+                                        newValue = safeAddStep(currentValue, -step);
+                                    }
+                                    // 支持负数：不再截断为 0
+                                    param1Sync.setValue(newValue);
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("-"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.minus"))))
                         // + 按钮（增加最高位）
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            long currentValue = param1Sync.getLongValue();
-                            long absValue = Math.abs(currentValue);
-                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                            param1Sync.setValue(safeAddStep(currentValue, step));
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("+"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.plus"))))
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.7")
+                                .onMousePressed(mouseButton -> {
+                                    long currentValue = param1Sync.getLongValue();
+                                    long absValue = Math.abs(currentValue);
+                                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                                    param1Sync.setValue(safeAddStep(currentValue, step));
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("+"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.plus"))))
                         // ×10 按钮
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            param1Sync.setValue(safeMul10(param1Sync.getLongValue()));
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("\u00D7"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.mul10"))))
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.8")
+                                .onMousePressed(mouseButton -> {
+                                    param1Sync.setValue(safeMul10(param1Sync.getLongValue()));
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("\u00D7"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.mul10"))))
                         // ÷10 按钮
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            param1Sync.setValue(param1Sync.getLongValue() / 10);
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("\u00F7"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.div10"))))));
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.9")
+                                .onMousePressed(mouseButton -> {
+                                    param1Sync.setValue(param1Sync.getLongValue() / 10);
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("\u00F7"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param1.div10"))))));
 
         // 参数2行：[左组：标签+输入框] [右组：4个位数调整按钮]（SPACE_BETWEEN 让按钮组右对齐到 UI 边框）
         // v1.1.10 修复：显式 height(17) 对齐输入框高度
@@ -930,6 +958,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .child(
                             // 科学计数法输入框：displayMode==1 时失焦后格式化为 1.5E6 形式
                             new ScientificTextFieldWidget().displayMode(() -> displayMode)
+                                .name("wireless_monitor.param2")
                                 .formatAsInteger(true)
                                 .numbersLong(() -> Long.MIN_VALUE, () -> Long.MAX_VALUE)
                                 .size(200, 17)
@@ -941,56 +970,68 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .childPadding(2)
                         .crossAxisAlignment(Alignment.CrossAxis.CENTER)
                         // - 按钮（减少最高位）
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            long currentValue = param2Sync.getLongValue();
-                            long absValue = Math.abs(currentValue);
-                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                            long newValue;
-                            if (currentValue == step) {
-                                long nextStep = step / 10;
-                                if (nextStep < 1) nextStep = 1;
-                                newValue = currentValue - nextStep;
-                            } else {
-                                newValue = safeAddStep(currentValue, -step);
-                            }
-                            // 支持负数：不再截断为 0
-                            param2Sync.setValue(newValue);
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("-"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.minus"))))
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.10")
+                                .onMousePressed(mouseButton -> {
+                                    long currentValue = param2Sync.getLongValue();
+                                    long absValue = Math.abs(currentValue);
+                                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                                    long newValue;
+                                    if (currentValue == step) {
+                                        long nextStep = step / 10;
+                                        if (nextStep < 1) nextStep = 1;
+                                        newValue = currentValue - nextStep;
+                                    } else {
+                                        newValue = safeAddStep(currentValue, -step);
+                                    }
+                                    // 支持负数：不再截断为 0
+                                    param2Sync.setValue(newValue);
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("-"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.minus"))))
                         // + 按钮（增加最高位）
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            long currentValue = param2Sync.getLongValue();
-                            long absValue = Math.abs(currentValue);
-                            long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
-                            param2Sync.setValue(safeAddStep(currentValue, step));
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("+"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.plus"))))
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.11")
+                                .onMousePressed(mouseButton -> {
+                                    long currentValue = param2Sync.getLongValue();
+                                    long absValue = Math.abs(currentValue);
+                                    long step = absValue > 0 ? (long) Math.pow(10, (int) Math.log10(absValue)) : 1;
+                                    param2Sync.setValue(safeAddStep(currentValue, step));
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("+"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.plus"))))
                         // ×10 按钮
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            param2Sync.setValue(safeMul10(param2Sync.getLongValue()));
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("\u00D7"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.mul10"))))
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.12")
+                                .onMousePressed(mouseButton -> {
+                                    param2Sync.setValue(safeMul10(param2Sync.getLongValue()));
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("\u00D7"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.mul10"))))
                         // ÷10 按钮
-                        .child(new ButtonWidget<>().onMousePressed(mouseButton -> {
-                            param2Sync.setValue(param2Sync.getLongValue() / 10);
-                            return true;
-                        })
-                            .background(GTGuiTextures.BUTTON_STANDARD)
-                            .overlay(IKey.str("\u00F7"))
-                            .size(16, 16)
-                            .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.div10"))))));
+                        .child(
+                            new ButtonWidget<>().name("wireless_monitor.control.13")
+                                .onMousePressed(mouseButton -> {
+                                    param2Sync.setValue(param2Sync.getLongValue() / 10);
+                                    return true;
+                                })
+                                .background(GtswnMuiTheme.BUTTON)
+                                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(IKey.str("\u00F7"))
+                                .size(16, 16)
+                                .tooltip(t -> t.addLine(translate("gtswn.ui.tooltip.param2.div10"))))));
 
         // 将列添加到面板
         panel.child(column);

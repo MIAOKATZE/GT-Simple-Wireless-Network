@@ -52,7 +52,10 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  * NBT 结构：DIT_UUID（终端实例 UUID，首用生成，绑定数据仓锚点）+
  * UI 偏好三键（排序列 / 排序方向 / 计数法，非法值读侧回退默认）。
  */
-public class ItemDeviceInfoTerminal extends Item {
+@cpw.mods.fml.common.Optional.InterfaceList({
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles"),
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.expanded.IBaubleExpanded", modid = "Baubles") })
+public class ItemDeviceInfoTerminal extends Item implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded {
 
     // ==================== NBT 键名 ====================
 
@@ -278,6 +281,7 @@ public class ItemDeviceInfoTerminal extends Item {
 
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean advanced) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.addSlotTooltip(list, 2);
         DeviceTooltip.state(list);
         DeviceTooltip.add(
             list,
@@ -429,5 +433,43 @@ public class ItemDeviceInfoTerminal extends Item {
     /** 服务端向玩家发送本地化聊天提示（仅服务端调用） */
     private static void sendMessage(EntityPlayer player, String key, Object... args) {
         player.addChatMessage(new ChatComponentTranslation(key, args));
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public baubles.api.BaubleType getBaubleType(ItemStack stack) {
+        return baubles.api.BaubleType.UNIVERSAL;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public String[] getBaubleTypes(ItemStack stack) {
+        return new String[] { com.miaokatze.gtswn.common.baubles.TerminalBaubles.TYPES[2] };
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onEquipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.onEquipped(stack, player);
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onUnequipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canEquip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return stack != null && stack.stackSize == 1;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canUnequip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return true;
     }
 }

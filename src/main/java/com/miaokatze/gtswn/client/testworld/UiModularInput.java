@@ -18,6 +18,9 @@ import com.cleanroommc.modularui.api.widget.Interactable;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.ModularScreen;
 import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
+import com.cleanroommc.modularui.widgets.ButtonWidget;
+import com.cleanroommc.modularui.widgets.PageButton;
+import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.ModContainer;
@@ -25,11 +28,13 @@ import cpw.mods.fml.common.ModContainer;
 /** Explicit, guarded screen-level dispatch. Does not synthesize LWJGL events or invoke widget callbacks. */
 final class UiModularInput {
 
-    private static final String BUTTON = "com.cleanroommc.modularui.widgets.ButtonWidget";
-
     private UiModularInput() {}
 
     static Map<String, Object> click(Minecraft mc, GuiScreen wrapper, String path) {
+        return click(mc, wrapper, path, 0);
+    }
+
+    static Map<String, Object> click(Minecraft mc, GuiScreen wrapper, String path, int mouseButton) {
         Map<String, Object> result = UiDebugSnapshot.map(
             "path",
             path,
@@ -53,6 +58,8 @@ final class UiModularInput {
         float oldPartial = 0;
         boolean moved = false, attempted = false;
         try {
+            require(mouseButton == 0 || mouseButton == 1, "Only left/right mouse buttons are supported");
+            result.put("mouseButton", mouseButton);
             require(
                 mc != null && mc.currentScreen == wrapper && UiModularSnapshot.supports(wrapper),
                 "Original MUI2 screen is not current");
@@ -82,8 +89,14 @@ final class UiModularInput {
                 "A keyboard modifier is held");
             List<ModularPanel> panels = screen.getPanelManager()
                 .getOpenPanels();
-            require(panels.size() == 1, "Only a single stable panel is supported");
-            panel = panels.get(0);
+            IWidget target = resolve(screen, path);
+            require(target != null, "No observed widget at the exact path");
+            panel = target.getPanel();
+            require(panel != null && panels.contains(panel), "Target panel is not open");
+            for (ModularPanel above : panels) {
+                if (above == panel) break;
+                require(!above.disablePanelsBelow(), "A modal panel blocks input to this lower panel");
+            }
             require(
                 panel.isValid() && panel.isEnabled()
                     && "OPEN".equals(String.valueOf(panel.getState()))
@@ -96,14 +109,11 @@ final class UiModularInput {
                 !api.held.getBoolean(api.mouse.get(panel)) && !api.held.getBoolean(api.keyboard.get(panel)),
                 "A panel input is held");
             context = screen.getContext();
-            require(!context.hasDraggable() && !context.isFocused(), "Dragging or a focused input is unsupported");
+            require(!context.hasDraggable(), "Dragging is unsupported");
             require(api.ghost.invoke(null, context) == null, "NEI ghost drag is active");
-            IWidget target = resolve(screen, path);
             require(
-                target != null && BUTTON.equals(
-                    target.getClass()
-                        .getName()),
-                "Only an exact standard ButtonWidget path is supported");
+                target instanceof ButtonWidget<?> || target instanceof PageButton || target instanceof TextFieldWidget,
+                "Only a native ButtonWidget or TextFieldWidget is supported");
             require(
                 target.isValid() && target.isEnabled() && target.getPanel() == panel && !target.requiresResize(),
                 "Target is invalid, disabled, or awaiting layout");
@@ -146,8 +156,7 @@ final class UiModularInput {
                 target.isEnabled() && !target.requiresResize()
                     && !panel.requiresResize()
                     && !panel.isOpening()
-                    && !panel.isClosing()
-                    && !context.isFocused(),
+                    && !panel.isClosing(),
                 "UI became unstable during hover refresh");
             for (int button = 0; button < Mouse.getButtonCount(); button++)
                 require(!Mouse.isButtonDown(button), "A physical mouse button became held");
@@ -166,7 +175,7 @@ final class UiModularInput {
             result.put("pressAttempted", true);
             result.put("status", "SENT");
             result.put("inputEvidence", "SYNTHETIC_FRAMEWORK_DISPATCH");
-            result.put("pressConsumed", api.press.invoke(screen, 0));
+            result.put("pressConsumed", api.press.invoke(screen, mouseButton));
             Object pressed = api.lastPressed.get(api.mouse.get(panel));
             result.put("targetObservedPressed", pressed != null && api.element.invoke(pressed) == target);
             result.put("reason", "Production MUI2 screen press dispatched once; server effects are NOT_VERIFIED");
@@ -185,7 +194,7 @@ final class UiModularInput {
                     // Never send release to a replacement screen or invoke a disposed original panel.
                     if (panel != null && panel.isValid() && screen.isActive()) {
                         result.put("releaseAttempted", true);
-                        result.put("releaseConsumed", api.release.invoke(screen, 0));
+                        result.put("releaseConsumed", api.release.invoke(screen, mouseButton));
                         result.put("releaseStatus", "SENT");
                     } else result.put("releaseStatus", "NOT_VERIFIED_ORIGINAL_SCREEN_DISPOSED");
                 } catch (Exception | LinkageError failure) {
@@ -215,7 +224,7 @@ final class UiModularInput {
         return result;
     }
 
-    private static IWidget resolve(ModularScreen screen, String path) {
+    static IWidget resolve(ModularScreen screen, String path) {
         if (path == null || path.length() > 1024) return null;
         String[] parts = path.split("/", -1);
         if (parts.length > 33 || !parts[0].matches("panel\\[[0-9]{1,3}\\]")) return null;
@@ -236,6 +245,51 @@ final class UiModularInput {
             widget = child;
         }
         return widget;
+    }
+
+    /** Uses the production focus, key and text-event routes; never mutates a value/handler directly. */
+    static Map<String, Object> type(Minecraft mc, GuiScreen wrapper, String path, String text) {
+        Map<String, Object> result = click(mc, wrapper, path);
+        result.put("operation", "type");
+        if (!"SENT".equals(result.get("status"))) return result;
+        try {
+            ModularScreen screen = UiModularSnapshot.wrappedScreen(wrapper);
+            IWidget widget = resolve(screen, path);
+            require(widget instanceof TextFieldWidget, "Target is not a native text field");
+            TextFieldWidget field = (TextFieldWidget) widget;
+            require(field.isFocused() && mc.currentScreen == wrapper, "Production click did not focus target");
+            require(text.length() <= 256, "Text is limited to 256 characters");
+            Class<?> event = Class.forName("me.eigenraven.lwjgl3ify.api.InputEvents$TextEvent");
+            Method textEvent = ModularScreen.class.getMethod("onTextEvent", event);
+            // Home then Delete uses normal key handlers, with no modifier injection or clipboard changes.
+            screen.onKeyPressed('\0', Keyboard.KEY_HOME);
+            screen.onKeyRelease('\0', Keyboard.KEY_HOME);
+            int count = field.getText()
+                .length();
+            for (int i = 0; i < count; i++) {
+                require(field.isFocused() && mc.currentScreen == wrapper, "Focus changed during deletion");
+                screen.onKeyPressed('\0', Keyboard.KEY_DELETE);
+                screen.onKeyRelease('\0', Keyboard.KEY_DELETE);
+            }
+            require(
+                field.getText()
+                    .isEmpty(),
+                "Normal delete route did not clear target");
+            textEvent.invoke(
+                screen,
+                event.getConstructor(String.class)
+                    .newInstance(text));
+            result.put("inputEvidence", "PRODUCTION_MUI2_FOCUS_KEY_AND_TEXT_EVENT");
+            result.put("observedTextMatchesRequest", text.equals(field.getText()));
+            result.put("observedText", field.getText());
+            result.put(
+                "reason",
+                "Native text event delivered to focused field; server effect requires independent data assertion");
+        } catch (Exception | LinkageError failure) {
+            result.put("reason", failure.toString());
+            result.put("textStatus", "NOT_VERIFIED");
+        }
+        return result;
     }
 
     private static void require(boolean condition, String reason) {

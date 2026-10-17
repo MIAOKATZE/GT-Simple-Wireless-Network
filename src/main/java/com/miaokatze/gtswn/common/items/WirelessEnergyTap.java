@@ -51,7 +51,10 @@ import gregtech.common.covers.Cover;
  * - Shift + 右键能量容器：切换输入/输出模式
  * - 自动读取目标能量容器的电压等级
  */
-public class WirelessEnergyTap extends Item {
+@cpw.mods.fml.common.Optional.InterfaceList({
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles"),
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.expanded.IBaubleExpanded", modid = "Baubles") })
+public class WirelessEnergyTap extends Item implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded {
 
     /** NBT 键名：存储当前输出模式(true=动力, false=能源) */
     private static final String NBT_OUTPUT_MODE = "OutputMode";
@@ -175,7 +178,7 @@ public class WirelessEnergyTap extends Item {
     /**
      * 检查指定的覆盖板是否是我们的GTswn覆盖板
      */
-    private boolean isOurGTswnCover(ItemStack coverStack) {
+    public static boolean isOurGTswnCover(ItemStack coverStack) {
         if (coverStack == null || coverStack.getItem() == null) {
             return false;
         }
@@ -609,6 +612,7 @@ public class WirelessEnergyTap extends Item {
      */
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean f3_h) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.addSlotTooltip(list, 1);
         DeviceTooltip.state(list);
         boolean outputMode = getOutputModeStatic(stack);
         String modeKey = outputMode ? "gtswn.tooltip.tap.mode.output" : "gtswn.tooltip.tap.mode.input";
@@ -626,5 +630,43 @@ public class WirelessEnergyTap extends Item {
             "gtswn.tooltip.tap.reveal",
             "gtswn.tooltip.tap.reveal.repeat");
         DeviceTooltip.finish(list);
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public baubles.api.BaubleType getBaubleType(ItemStack stack) {
+        return baubles.api.BaubleType.UNIVERSAL;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public String[] getBaubleTypes(ItemStack stack) {
+        return new String[] { com.miaokatze.gtswn.common.baubles.TerminalBaubles.TYPES[1] };
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onEquipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.onEquipped(stack, player);
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onUnequipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canEquip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return stack != null && stack.stackSize == 1;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canUnequip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return true;
     }
 }
