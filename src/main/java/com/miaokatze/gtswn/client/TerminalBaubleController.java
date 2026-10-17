@@ -7,11 +7,12 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
-import net.minecraft.client.settings.GameSettings;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
+import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.common.MinecraftForge;
@@ -27,17 +28,26 @@ import com.miaokatze.gtswn.client.gui.GuiTerminalWheel;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketTerminalBaubleAction;
 import com.miaokatze.gtswn.network.PacketTerminalBaubleState;
 
+import appeng.tile.networking.TileController;
 import cpw.mods.fml.client.registry.ClientRegistry;
 import cpw.mods.fml.common.FMLCommonHandler;
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.InputEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
 /** Client input and presentation only. Inventory transactions and borrowed-stack validation stay server-side. */
+@SideOnly(Side.CLIENT)
 public final class TerminalBaubleController {
 
     public static final TerminalBaubleController INSTANCE = new TerminalBaubleController();
@@ -65,12 +75,22 @@ public final class TerminalBaubleController {
     }
 
     public static String keyName() {
-        return GameSettings.getKeyDisplayString(keyCode());
+        return TerminalKeyNames.name(keyCode());
     }
 
     public static boolean bindingDown(int code) {
-        return code < 0 ? code + 100 >= 0 && Mouse.isButtonDown(code + 100)
-            : code > 0 && code < Keyboard.KEYBOARD_SIZE && Keyboard.isKeyDown(code);
+        return TerminalKeyNames.isDown(code);
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
+    public void guiKeyRelease(com.cleanroommc.modularui.api.event.KeyboardInputEvent.Pre event) {
+        if (!Keyboard.getEventKeyState()) TerminalWheelInput.released(Keyboard.getEventKey());
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
+    public void guiMouseRelease(com.cleanroommc.modularui.api.event.MouseInputEvent.Pre event) {
+        if (Mouse.getEventButton() >= 0 && !Mouse.getEventButtonState())
+            TerminalWheelInput.released(Mouse.getEventButton() - 100);
     }
 
     @SubscribeEvent
@@ -100,6 +120,7 @@ public final class TerminalBaubleController {
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
+        TerminalWheelInput.poll();
         Minecraft mc = Minecraft.getMinecraft();
         if (sessionPlayer != mc.thePlayer || sessionWorld != mc.theWorld) {
             sessionPlayer = mc.thePlayer;
@@ -138,6 +159,10 @@ public final class TerminalBaubleController {
         send(PacketTerminalBaubleAction.SELECT, selection);
     }
 
+    public static void take(int selection) {
+        send(PacketTerminalBaubleAction.TAKE, selection);
+    }
+
     private static void send(int action, int selection) {
         GTSWNPacketHandler.NETWORK.sendToServer(new PacketTerminalBaubleAction(action, selection));
     }
@@ -146,42 +171,101 @@ public final class TerminalBaubleController {
         return StatCollector.translateToLocalFormatted(key, args);
     }
 
+    public static String action(String key, String action) {
+        return "\u00a7e" + key + " \u00a7b" + text("gtswn.terminal_action." + action);
+    }
+
+    public static String row(String... actions) {
+        return String.join(" \u00a77\u00b7 ", actions);
+    }
+
     @SubscribeEvent
     public void hud(RenderGameOverlayEvent.Post event) {
         Minecraft mc = Minecraft.getMinecraft();
         if (event.type != RenderGameOverlayEvent.ElementType.TEXT || mc.currentScreen != null
             || mc.thePlayer == null
+            || mc.theWorld == null
             || mc.gameSettings.hideGUI) return;
         ItemStack held = mc.thePlayer.getHeldItem();
         int category = TerminalBaubles.category(held);
         if (category < 0) return;
         List<String> lines = new ArrayList<>();
-        lines.add(held.getDisplayName());
-        lines.add(
-            text(canReturn(mc.thePlayer) ? "gtswn.terminal_wheel.return" : "gtswn.terminal_wheel.equip", keyName()));
-        String use = GameSettings.getKeyDisplayString(mc.gameSettings.keyBindUseItem.getKeyCode());
-        String sneak = GameSettings.getKeyDisplayString(mc.gameSettings.keyBindSneak.getKeyCode());
+        String use = TerminalKeyNames.name(mc.gameSettings.keyBindUseItem.getKeyCode());
+        String sneak = TerminalKeyNames.name(mc.gameSettings.keyBindSneak.getKeyCode());
+        String shifted = sneak + "+" + use;
+        String altUse = "Alt+" + use;
+        String altShifted = "Alt+" + shifted;
+        boolean shift = bindingDown(mc.gameSettings.keyBindSneak.getKeyCode());
+        boolean alt = bindingDown(Keyboard.KEY_LMENU) || bindingDown(Keyboard.KEY_RMENU);
+        boolean block = mc.objectMouseOver != null
+            && mc.objectMouseOver.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK;
+        TileEntity target = block
+            ? mc.theWorld.getTileEntity(mc.objectMouseOver.blockX, mc.objectMouseOver.blockY, mc.objectMouseOver.blockZ)
+            : null;
         if (category == 0) {
-            lines.add(text("gtswn.terminal_controls.monitor.toggle", use));
-            lines.add(text("gtswn.terminal_controls.monitor.open", sneak, use));
-            lines.add(text("gtswn.terminal_controls.monitor.bind", use, use));
+            boolean bound = PortableWirelessNetworkMonitor.isMonitorBound(held);
+            boolean own = bound && mc.thePlayer.getUniqueID()
+                .toString()
+                .equals(PortableWirelessNetworkMonitor.getOwnerUUID(held));
+            String plainAction = target instanceof TileEntityNetworkInfoPanel ? "bind_screen"
+                : bound ? "toggle_hud" : "monitor_bind";
+            String shiftAction = own ? "monitor_open" : "monitor_rebind";
+            lines.add(
+                shift ? row(action(shifted, shiftAction), action(use, plainAction))
+                    : row(action(use, plainAction), action(shifted, shiftAction)));
         } else if (category == 1) {
-            lines.add(text("gtswn.terminal_controls.link.bind", use));
-            lines.add(text("gtswn.terminal_controls.link.mode", sneak, use));
-            lines.add(text("gtswn.terminal_controls.link.open", use));
-            lines.add(text("gtswn.terminal_controls.link.reveal", sneak, use));
+            if (alt) {
+                lines.add(
+                    shift ? row(action(altShifted, "reveal"), action(altUse, "link_open"))
+                        : row(action(altUse, "link_open"), action(altShifted, "reveal")));
+            } else {
+                String plain = action(block ? use : altUse, block ? "link_config" : "link_open");
+                lines.add(shift ? row(action(shifted, "link_mode"), plain) : row(plain, action(shifted, "link_mode")));
+                lines.add(
+                    block ? row(action(altUse, "link_open"), action(altShifted, "reveal"))
+                        : action(altShifted, "reveal"));
+            }
         } else if (category == 2) {
-            lines.add(text("gtswn.terminal_controls.device.open", use, sneak, use));
-            lines.add(text("gtswn.terminal_controls.device.bind", use, sneak, use));
-            lines.add(text("gtswn.terminal_controls.device.scan", use, sneak, use));
-            lines.add(text("gtswn.terminal_controls.device.travel", use));
+            boolean visual = DeviceTerminalVisualizationState.isActiveHeld();
+            boolean machine = target instanceof IGregTechTileEntity;
+            if (alt) {
+                lines.add(
+                    shift ? row(action(altShifted, "device_visual"), action(altUse, "device_scan"))
+                        : row(action(altUse, "device_scan"), action(altShifted, "device_visual")));
+            } else {
+                String plainAction = visual && DeviceTerminalAnchorRenderer.INSTANCE.hasCurrentTarget()
+                    ? "device_travel"
+                    : machine && !visual ? "device_bind" : "device_open";
+                String shiftAction = machine ? "device_track" : "device_settings";
+                lines.add(
+                    shift ? row(action(shifted, shiftAction), action(use, plainAction))
+                        : row(action(use, plainAction), action(shifted, shiftAction)));
+                lines.add(row(action(altUse, "device_scan"), action(altShifted, "device_visual")));
+            }
         } else {
-            lines.add(text("gtswn.terminal_controls.quantum.bind", use, sneak, use));
-            lines.add(text("gtswn.terminal_controls.quantum.node", use, sneak, use));
-            lines.add(text("gtswn.terminal_controls.quantum.open", sneak, use));
-            lines.add(text("gtswn.terminal_controls.quantum.incorporate", use, use));
-            lines.add(text("gtswn.terminal_controls.quantum.reveal", sneak, use));
+            if (alt) {
+                String altAction = target instanceof TileController ? "quantum_migrate" : "quantum_incorporate";
+                lines.add(
+                    shift || !block ? row(action(altShifted, "reveal"), action(shifted, "quantum_open"))
+                        : row(action(altUse, altAction), action(shifted, "quantum_open")));
+            } else if (!block) {
+                lines.add(row(action(shifted, "quantum_open"), action(altShifted, "reveal")));
+            } else {
+                String plainAction = target instanceof TileController ? "quantum_bind" : "quantum_node";
+                String shiftAction = target instanceof TileEntityNetworkQuantumNode ? "quantum_pickup"
+                    : target instanceof TileController ? "quantum_remove" : "quantum_open";
+                lines.add(
+                    shift ? row(action(shifted, shiftAction), action(use, plainAction))
+                        : row(action(use, plainAction), action(shifted, shiftAction)));
+                lines.add(row(action(altUse, "quantum_incorporate"), action(altShifted, "reveal")));
+            }
         }
+        lines.add(
+            text(
+                "gtswn.terminal_wheel.press",
+                "\u00a7e" + keyName(),
+                "\u00a7b"
+                    + text(canReturn(mc.thePlayer) ? "gtswn.terminal_action.return" : "gtswn.terminal_action.equip")));
         drawHud(mc, lines);
     }
 
@@ -195,21 +279,16 @@ public final class TerminalBaubleController {
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
         try {
-            GL11.glTranslatef(resolution.getScaledWidth() / 2f, 6, 0);
+            GL11.glTranslatef(resolution.getScaledWidth() / 2f, 8, 0);
             GL11.glScalef(scale, scale, 1);
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             int half = (widest + 16) / 2;
-            Gui.drawRect(-half, 0, half, lines.size() * 11 + 10, 0xB510171F);
-            Gui.drawRect(-half, 0, half, 1, GtswnMuiTheme.TEXT_ACCENT);
+            Gui.drawRect(-half, 0, half, lines.size() * 11 + 6, 0x90101010);
             for (int i = 0; i < lines.size(); i++) {
                 String line = lines.get(i);
-                font.drawStringWithShadow(
-                    line,
-                    -font.getStringWidth(line) / 2,
-                    6 + i * 11,
-                    i == 0 ? GtswnMuiTheme.TEXT_TITLE : i == 1 ? GtswnMuiTheme.TEXT_ACCENT : GtswnMuiTheme.TEXT_BODY);
+                font.drawStringWithShadow(line, -font.getStringWidth(line) / 2, 4 + i * 11, GtswnMuiTheme.TEXT_BODY);
             }
         } finally {
             GL11.glPopMatrix();

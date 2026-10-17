@@ -9,7 +9,7 @@ import io.netty.buffer.ByteBuf;
 
 public final class PacketTerminalBaubleAction implements IMessage {
 
-    public static final int EQUIP = 0, SELECT = 1, RETURN = 2;
+    public static final int EQUIP = 0, SELECT = 1, RETURN = 2, TAKE = 3;
     public int action = -1, selection = -1;
 
     public PacketTerminalBaubleAction() {}
@@ -29,12 +29,16 @@ public final class PacketTerminalBaubleAction implements IMessage {
         selection = -1;
         if (buffer.readableBytes() != 2) return;
         int candidate = buffer.readUnsignedByte(), selected = buffer.readByte();
-        if (candidate <= RETURN && selected >= -1
-            && selected < TerminalBaubles.SIZE
-            && (candidate != SELECT || selected >= 0)) {
+        if (isValid(candidate, selected)) {
             action = candidate;
             selection = selected;
         }
+    }
+
+    public static boolean isValid(int action, int selection) {
+        if (action < EQUIP || action > TAKE) return false;
+        if (action == SELECT || action == TAKE) return selection >= 0 && selection < TerminalBaubles.SIZE;
+        return selection >= -1 && selection < TerminalBaubles.SIZE;
     }
 
     public static final class Handler implements IMessageHandler<PacketTerminalBaubleAction, IMessage> {

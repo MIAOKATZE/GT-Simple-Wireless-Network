@@ -87,11 +87,7 @@ public final class TerminalBaubles {
     }
 
     public static void enqueue(EntityPlayerMP player, int action, int selection) {
-        if (player != null && action >= 0
-            && action <= 2
-            && selection >= -1
-            && selection < SIZE
-            && (action != PacketTerminalBaubleAction.SELECT || selection >= 0))
+        if (player != null && PacketTerminalBaubleAction.isValid(action, selection))
             PENDING.putIfAbsent(player.getUniqueID(), new Request(player, action, selection));
     }
 
@@ -120,10 +116,7 @@ public final class TerminalBaubles {
 
     /** Main server thread only; packet handlers must use enqueue instead. */
     public static void service(EntityPlayerMP player, int action, int selection) {
-        if (action >= 0 && action <= 2
-            && selection >= -1
-            && selection < SIZE
-            && (action != PacketTerminalBaubleAction.SELECT || selection >= 0))
+        if (player != null && PacketTerminalBaubleAction.isValid(action, selection))
             handle(new Request(player, action, selection));
     }
 
@@ -180,7 +173,7 @@ public final class TerminalBaubles {
         ItemStack stack = baubles.getStackInSlot(slot);
         int category = category(stack);
         initialize(stack, player);
-        if (category == 0 || category == 2) {
+        if (request.action == PacketTerminalBaubleAction.SELECT && (category == 0 || category == 2)) {
             sync(player, baubles);
             send(
                 player,
