@@ -146,6 +146,7 @@ public class CommonProxy {
 
         // 注册网络包通道（便携监测终端 EU 同步：修复客户端恒显示 0EU 的 Bug）
         GTSWNPacketHandler.register();
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.init();
         // B07（O2-B07，吸收 B2-01）：面板操作队列自宿主 tick 监听注册——包 2/3 世界态修改
         // 由 ServerTickEvent(END) 主线程排空（与通道注册同址，队列即 network→tile 唯一受控调用点）
         PanelActionQueue.register();
@@ -521,4 +522,7 @@ public class CommonProxy {
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
         return null;
     }
+
+    public void receiveTerminalBaubleState(int action, int selection, int heldSlot,
+        net.minecraft.item.ItemStack stack) {}
 }

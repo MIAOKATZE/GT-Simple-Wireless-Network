@@ -75,7 +75,11 @@ import cpw.mods.fml.relauncher.SideOnly;
  * <p>
  * NBT 结构（§5.1）：QT_Bound(byte) / QT_AnchorDim / QT_AnchorX/Y/Z(int) / QT_BoundName(string)。
  */
-public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodable {
+@cpw.mods.fml.common.Optional.InterfaceList({
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles"),
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.expanded.IBaubleExpanded", modid = "Baubles") })
+public class ItemNetworkQuantumTerminal extends Item
+    implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded, INetworkEncodable {
 
     @Override
     public String getEncryptionKey(ItemStack stack) {
@@ -354,7 +358,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
         if (!world.isRemote && player.isSneaking()
             && TerminalAirInteraction.isAir(player)
             && QuantumTerminalAccess.canOpenTerminal(player, stack)) {
-            player.openGui(GTSimpleWirelessNetwork.instance, GTSWNGuiHandler.QUANTUM_TERMINAL, world, 0, 0, 0);
+            GTSWNGuiHandler.openTerminal(player, true);
         }
         return stack;
     }
@@ -611,6 +615,7 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
      */
     @Override
     public void addInformation(ItemStack stack, EntityPlayer player, List<String> list, boolean advanced) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.addSlotTooltip(list, 3);
         DeviceTooltip.state(list);
         if (stack.getTagCompound() != null && stack.getTagCompound()
             .hasKey(QuantumTerminalAccess.NBT_OWNER_NAME)) {
@@ -665,5 +670,43 @@ public class ItemNetworkQuantumTerminal extends Item implements INetworkEncodabl
             "gtswn.tooltip.quantum_terminal.usage.reveal",
             "gtswn.tooltip.quantum_terminal.usage.reveal.repeat");
         DeviceTooltip.finish(list);
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public baubles.api.BaubleType getBaubleType(ItemStack stack) {
+        return baubles.api.BaubleType.UNIVERSAL;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public String[] getBaubleTypes(ItemStack stack) {
+        return new String[] { com.miaokatze.gtswn.common.baubles.TerminalBaubles.TYPES[3] };
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onEquipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.onEquipped(stack, player);
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onUnequipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canEquip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return stack != null && stack.stackSize == 1;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canUnequip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return true;
     }
 }

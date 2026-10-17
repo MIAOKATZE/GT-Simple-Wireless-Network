@@ -44,7 +44,7 @@ public class ContainerTerminalTest {
                 receiving.getSlot(i)
                     .putStack(stack == null ? null : stack.copy());
             }
-            EntityPlayer client = ((InventoryPlayer) receiving.getSlot(1).inventory).player;
+            EntityPlayer client = receiving.terminalOwner();
             ItemStack cursor = inventory.getItemStack();
             client.inventory.setItemStack(cursor == null ? null : cursor.copy());
         }
@@ -87,7 +87,7 @@ public class ContainerTerminalTest {
     }
 
     private EntityPlayer owner(ContainerTerminal container) {
-        return ((InventoryPlayer) container.getSlot(1).inventory).player;
+        return container.terminalOwner();
     }
 
     private void clickBoth(ContainerTerminal client, ContainerTerminal server, int slot, int button, int mode) {

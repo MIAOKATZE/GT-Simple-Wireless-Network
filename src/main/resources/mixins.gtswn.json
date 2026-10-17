@@ -7,6 +7,9 @@
   "target": "@env(DEFAULT)",
   "compatibilityLevel": "JAVA_8",
   "mixins": [
+    "baubles.BaublesConfigMixin",
+    "baubles.BaubleExpandedSlotsMixin",
+    "baubles.ContainerPlayerExpandedMixin",
     "ae2.PathingCalculationMixin",
     "ae2.QuantumIncorporationGridNodeMixin",
     "ae2.QuantumConnectionSecurityMixin",
@@ -27,6 +30,7 @@
     "mm.PendingBuildMixin"
   ],
   "client": [
+    "minecraft.TerminalWheelInputMixin",
     "minecraft.KeyBindingRegistryMixin",
     "minecraft.HeldChargeSyncMixin",
     "gregtech.QuantumNodeWrenchOverlayMixin"

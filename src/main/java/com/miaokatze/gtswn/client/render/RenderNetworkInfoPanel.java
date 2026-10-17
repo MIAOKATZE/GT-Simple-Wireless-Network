@@ -172,8 +172,15 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         FontRenderer font = Minecraft.getMinecraft().fontRenderer;
         int edge = Math.max(8, Math.min(16, Math.min(width, height) / 18));
         int safe = edge + 10;
+        int currentTab = panel.getCurrentTab();
         int briefHeight = Math.max(34, height * 15 / 100);
         briefHeight = Math.min(briefHeight, height - safe * 2 - 50);
+        if (activePortable != null && currentTab != 2) {
+            int briefLines = currentTab == 1 ? 4
+                : 1 + (panel.isShowBriefEnergy() ? 1 : 0) + (panel.isShowBriefStatus() ? 1 : 0);
+            int lineStep = Math.max(10, Math.round(10 * panel.getBriefFontScale()));
+            briefHeight = Math.max(briefHeight, briefLines * lineStep);
+        }
         boolean cullEnabled = GL11.glIsEnabled(GL11.GL_CULL_FACE);
         boolean depthEnabled = GL11.glIsEnabled(GL11.GL_DEPTH_TEST);
         boolean fogEnabled = GL11.glIsEnabled(GL11.GL_FOG);
@@ -193,7 +200,6 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         }
         // v1.4.5：移除额外外边框渲染，由方块本身承担边界
 
-        int currentTab = panel.getCurrentTab();
         if (currentTab == 0) {
             drawEUPanel(panel, font, safe, width, height, briefHeight);
         } else if (currentTab == 1) {

@@ -264,6 +264,11 @@ final class UiDebugSnapshot {
             return "GTSWN isolated UI display".equals(panel.getOwnerName()) && panel.getCurrentTab() == expected ? null
                 : "Waiting for real tile description sync (fixture owner display name and expected tab; name is not authorization); samples may legitimately be empty";
         }
+        if (preset.equals("monitor") || preset.startsWith("cover-") || preset.equals("link")) {
+            return screen instanceof GuiContainer && ((GuiContainer) screen).inventorySlots.windowId > 0
+                && mc.thePlayer.openContainer == ((GuiContainer) screen).inventorySlots ? null
+                    : "Waiting for authoritative native MUI2 container window";
+        }
         if (held == null) return "Expected held terminal is not synchronized";
         if (held.getItem() instanceof PortableWirelessNetworkMonitor) {
             PacketSyncPortableMonitor packet = PortableMonitorClientCache.snapshot(held);
@@ -283,9 +288,12 @@ final class UiDebugSnapshot {
                 && DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()) ? null
                     : "Waiting for actual device server version/received snapshot; zero entries is valid";
         }
-        if (held.getItem() instanceof ItemNetworkQuantumTerminal && screen instanceof GuiQuantumTerminal) {
-            if (!(screen instanceof GuiContainer) || ((GuiContainer) screen).inventorySlots.windowId <= 0
-                || mc.thePlayer.openContainer != ((GuiContainer) screen).inventorySlots)
+        if (held.getItem() instanceof ItemNetworkQuantumTerminal
+            && (UiModularSnapshot.supports(screen) || screen.getClass()
+                .getSimpleName()
+                .equals("GuiQuantumTerminal"))) {
+            if (screen instanceof GuiContainer && (((GuiContainer) screen).inventorySlots.windowId <= 0
+                || mc.thePlayer.openContainer != ((GuiContainer) screen).inventorySlots))
                 return "Waiting for server-authorized quantum container window context";
             QuantumNetworkData data = quantumData();
             int[] anchor = ItemNetworkQuantumTerminal.getAnchor(held);
@@ -310,7 +318,7 @@ final class UiDebugSnapshot {
         }
     }
 
-    private static Map<String, Object> dataObservation(Minecraft mc, GuiScreen screen) {
+    static Map<String, Object> dataObservation(Minecraft mc, GuiScreen screen) {
         Object tile = read(screen, "panel");
         if (tile instanceof TileEntityNetworkInfoPanel) {
             TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
@@ -366,7 +374,10 @@ final class UiDebugSnapshot {
                 "version",
                 snapshot == null ? null : snapshot.version);
         }
-        if (held.getItem() instanceof ItemNetworkQuantumTerminal && screen instanceof GuiQuantumTerminal) {
+        if (held.getItem() instanceof ItemNetworkQuantumTerminal
+            && (UiModularSnapshot.supports(screen) || screen.getClass()
+                .getSimpleName()
+                .equals("GuiQuantumTerminal"))) {
             QuantumNetworkData snapshot = quantumData();
             return map(
                 "status",
@@ -476,6 +487,9 @@ final class UiDebugSnapshot {
     }
 
     static Object read(Object owner, String... names) {
+        if (owner instanceof GuiScreen && UiModularSnapshot.supports((GuiScreen) owner))
+            owner = UiModularSnapshot.wrappedScreen((GuiScreen) owner);
+        if (owner == null) return null;
         for (String name : names) for (Field field : fields(owner.getClass())) if (field.getName()
             .equals(name)) return get(field, owner);
         return null;

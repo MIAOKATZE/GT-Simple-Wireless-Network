@@ -11,11 +11,17 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
 import com.cleanroommc.modularui.api.drawable.IKey;
+import com.cleanroommc.modularui.drawable.ItemDrawable;
+import com.cleanroommc.modularui.network.NetworkUtils;
+import com.cleanroommc.modularui.screen.ModularPanel;
+import com.cleanroommc.modularui.screen.UISettings;
+import com.cleanroommc.modularui.utils.Alignment;
 import com.cleanroommc.modularui.value.sync.DoubleSyncValue;
 import com.cleanroommc.modularui.value.sync.LongSyncValue;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
+import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.CoverMaths;
@@ -33,6 +39,7 @@ import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.modularui2.CoverGuiData;
+import gregtech.api.util.GTUtility;
 import gregtech.common.covers.Cover;
 import gregtech.common.gui.modularui.cover.base.CoverBaseGui;
 
@@ -181,64 +188,36 @@ public abstract class GTswnCoverWirelessBase extends Cover {
 
     protected abstract long getRemainingTicks();
 
+    /** MUI1 requires a non-null window while its tab protocol completes; editing lives in MUI2. */
     @Override
     protected com.gtnewhorizons.modularui.api.screen.ModularWindow createWindow(
         gregtech.api.gui.modularui.CoverUIBuildContext context) {
-        return new gregtech.common.gui.mui1.cover.CoverUIFactory<GTswnCoverWirelessBase>(context) {
+        return com.gtnewhorizons.modularui.api.screen.ModularWindow.builder(1, 1)
+            .build();
+    }
 
-            @Override
-            protected GTswnCoverWirelessBase adaptCover(Cover candidate) {
-                return candidate instanceof GTswnCoverWirelessBase wireless ? wireless : null;
-            }
+    @Override
+    public com.gtnewhorizons.modularui.common.internal.wrapper.ModularUIContainer createCoverContainer(
+        EntityPlayer player) {
+        com.gtnewhorizons.modularui.common.internal.wrapper.ModularUIContainer container = super.createCoverContainer(
+            player);
+        if (container != null) com.miaokatze.gtswn.common.gui.CoverUiRedirectQueue.enqueue(player, this, container);
+        return container;
+    }
 
-            @Override
-            protected int getGUIWidth() {
-                return 260;
-            }
+    @Override
+    public com.gtnewhorizons.modularui.api.screen.ModularWindow createCoverWindow(EntityPlayer player) {
+        com.gtnewhorizons.modularui.api.screen.ModularWindow window = super.createCoverWindow(player);
+        com.miaokatze.gtswn.common.gui.CoverUiRedirectQueue.enqueue(player, this, player.openContainer);
+        return window;
+    }
 
-            @Override
-            protected int getGUIHeight() {
-                return 145;
-            }
-
-            @Override
-            protected boolean doesBindPlayerInventory() {
-                return false;
-            }
-
-            @Override
-            protected void addUIWidgets(com.gtnewhorizons.modularui.api.screen.ModularWindow.Builder builder) {
-                builder.widget(
-                    new com.gtnewhorizons.modularui.common.widget.TextWidget(
-                        net.minecraft.util.StatCollector.translateToLocal("gtswn.gui.cover.current")).setPos(10, 28));
-                builder.widget(
-                    new com.gtnewhorizons.modularui.common.widget.textfield.NumericWidget()
-                        .setGetter(() -> getCover() == null ? 0.1 : getCover().getAmperage())
-                        .setSetter(value -> ifCoverValid(cover -> cover.setAmperage(value)))
-                        .setBounds(0.1, Double.MAX_VALUE)
-                        .setValidator(value -> CoverMaths.validAmperage(value) ? value : 0.1)
-                        .setScrollValues(0.1, 1, 10)
-                        .setFocusOnGuiOpen(true)
-                        .setPos(130, 25)
-                        .setSize(110, 14));
-                addReadOnly(builder, "gtswn.gui.cover.voltage", cover -> cover.getDisplayVoltage(), " EU/t", 48);
-                addReadOnly(builder, "gtswn.gui.cover.capacity", cover -> cover.getDisplayCapacity(), " EU", 66);
-                addReadOnly(builder, "gtswn.gui.cover.stored", cover -> cover.storedEU, " EU", 84);
-                addReadOnly(builder, "gtswn.gui.cover.next", cover -> cover.getRemainingTicks(), " ticks", 102);
-            }
-
-            private void addReadOnly(com.gtnewhorizons.modularui.api.screen.ModularWindow.Builder builder, String label,
-                java.util.function.ToLongFunction<GTswnCoverWirelessBase> getter, String unit, int y) {
-                builder.widget(
-                    com.gtnewhorizons.modularui.common.widget.TextWidget
-                        .dynamicString(
-                            getCoverString(
-                                cover -> net.minecraft.util.StatCollector.translateToLocal(label) + " "
-                                    + getter.applyAsLong(cover)
-                                    + unit))
-                        .setPos(10, y));
-            }
-        }.createWindow();
+    @Override
+    public boolean onCoverShiftRightClick(EntityPlayer player) {
+        ICoverable tile = getTile();
+        if (tile == null || !(player instanceof net.minecraft.entity.player.EntityPlayerMP serverPlayer)) return false;
+        gregtech.api.modularui2.CoverUIFactory.INSTANCE.open(serverPlayer, getCoverID(), tile, getSide());
+        return true;
     }
 
     @Override
@@ -251,23 +230,77 @@ public abstract class GTswnCoverWirelessBase extends Cover {
             }
 
             @Override
+            protected ModularPanel createBasePanel(PanelSyncManager syncManager, UISettings settings,
+                CoverGuiData data) {
+                syncManager.addCloseListener(
+                    player -> {
+                        if (!NetworkUtils.isClient(player)) cover.getTile()
+                            .markDirty();
+                    });
+                ModularPanel panel = new ModularPanel(getGuiId() + "." + data.getSide()).background(GtswnMuiTheme.PANEL)
+                    .themeOverride(GtswnMuiTheme.THEME_ID);
+                Flow content = Flow.column()
+                    .width(332)
+                    .coverChildrenHeight()
+                    .margin(14)
+                    .crossAxisAlignment(Alignment.CrossAxis.START)
+                    .childPadding(8);
+                Flow title = Flow.row()
+                    .width(332)
+                    .height(20)
+                    .childPadding(6)
+                    .crossAxisAlignment(Alignment.CrossAxis.CENTER);
+                ItemStack coverItem = GTUtility.intToStack(cover.getCoverID());
+                if (coverItem != null) {
+                    title.child(
+                        new ItemDrawable(coverItem).asWidget()
+                            .size(16));
+                    title.child(
+                        IKey.str(coverItem.getDisplayName())
+                            .color(GtswnMuiTheme.TEXT_TITLE)
+                            .asWidget()
+                            .size(data.isPopUp() ? 290 : 310, 20)
+                            .alignment(Alignment.CenterLeft));
+                }
+                Flow widgets = Flow.column()
+                    .width(332)
+                    .coverChildrenHeight()
+                    .childPadding(6)
+                    .crossAxisAlignment(Alignment.CrossAxis.START);
+                addUIWidgets(syncManager, widgets, data);
+                content.child(title)
+                    .child(widgets);
+                panel.child(content);
+                return GtswnMuiTheme.fit(panel);
+            }
+
+            @Override
             public void addUIWidgets(PanelSyncManager syncManager, Flow column, CoverGuiData data) {
                 column.child(
                     Flow.row()
-                        .coverChildren()
-                        .childPadding(4)
+                        .width(332)
+                        .height(20)
+                        .crossAxisAlignment(Alignment.CrossAxis.CENTER)
+                        .childPadding(8)
                         .child(
                             IKey.lang("gtswn.gui.cover.current")
+                                .color(GtswnMuiTheme.TEXT_LABEL)
                                 .asWidget())
                         .child(
-                            new TextFieldWidget().size(100, 16)
+                            new TextFieldWidget().size(120, 20)
+                                .name("wireless_cover.amperage")
+                                .background(GtswnMuiTheme.LIST_PANEL)
                                 .numbersDouble(
                                     value -> CoverMaths.validAmperage(value) ? value : CoverMaths.MIN_AMPERAGE)
                                 .value(new DoubleSyncValue(cover::getAmperage, cover::setAmperage).allowC2S())
                                 .setFocusOnGuiOpen(true)));
                 column.child(
                     IKey.lang("gtswn.gui.cover.current_hint")
-                        .asWidget());
+                        .color(GtswnMuiTheme.TEXT_MUTED)
+                        .asWidget()
+                        .width(332)
+                        .height(28)
+                        .maxWidth(332));
                 addReadOnly(
                     syncManager,
                     column,
@@ -295,7 +328,11 @@ public abstract class GTswnCoverWirelessBase extends Cover {
                         () -> net.minecraft.util.StatCollector.translateToLocal(label) + " "
                             + value.getLongValue()
                             + unit)
-                        .asWidget());
+                        .color(GtswnMuiTheme.TEXT_BODY)
+                        .asWidget()
+                        .width(332)
+                        .height(14)
+                        .alignment(Alignment.CenterLeft));
             }
         };
     }
