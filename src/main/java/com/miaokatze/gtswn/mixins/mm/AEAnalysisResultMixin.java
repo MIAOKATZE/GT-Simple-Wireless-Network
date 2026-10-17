@@ -7,7 +7,7 @@ import org.spongepowered.asm.mixin.Pseudo;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-import com.miaokatze.gtswn.common.quantum.QuantumNodeCablePart;
+import com.miaokatze.gtswn.crossmod.mm.AEPartCopy;
 
 import appeng.api.parts.IPart;
 import appeng.api.parts.IPartHost;
@@ -24,7 +24,6 @@ public abstract class AEAnalysisResultMixin {
             value = "INVOKE",
             target = "Lappeng/api/parts/IPartHost;getPart(Lnet/minecraftforge/common/util/ForgeDirection;)Lappeng/api/parts/IPart;"))
     private IPart gtswn$transferablePart(IPartHost host, ForgeDirection side) {
-        IPart part = host.getPart(side);
-        return side == ForgeDirection.UNKNOWN && part instanceof QuantumNodeCablePart ? null : part;
+        return AEPartCopy.transferablePart(host, side);
     }
 }

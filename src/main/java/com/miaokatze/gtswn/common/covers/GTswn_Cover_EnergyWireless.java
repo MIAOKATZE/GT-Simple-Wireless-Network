@@ -51,12 +51,18 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
 
     /** New copies start empty; updating settings preserves the destination's own energy. */
     public void fundCopiedBuffer(EntityPlayer placer) {
-        if (!configured || placer == null) return;
+        tryFundCopiedBuffer(placer);
+    }
+
+    /** Funding is optional: a declined debit keeps the installed configuration and its existing buffer. */
+    public boolean tryFundCopiedBuffer(EntityPlayer placer) {
+        if (!configured || placer == null) return false;
         storedEU = WirelessCoverCopy.refillBuffer(
             storedEU,
             capacity,
             Config.downlinkLossEU,
             amount -> addEUToGlobalEnergyMap(placer.getUniqueID(), amount.negate()));
+        return storedEU >= capacity;
     }
 
     /** 能源无线节点：显形协议 type = {@link WirelessNodeRegistry#TYPE_ENERGY}（0） */
