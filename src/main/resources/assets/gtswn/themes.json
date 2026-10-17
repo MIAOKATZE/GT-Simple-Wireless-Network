@@ -1,0 +1,4 @@
+{
+  "gtswn:terminal": "gtswn:terminal",
+  "screens": { "gtswn": "gtswn:terminal" }
+}

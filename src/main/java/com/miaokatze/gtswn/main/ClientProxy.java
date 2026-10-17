@@ -8,6 +8,7 @@ import net.minecraft.world.World;
 import net.minecraftforge.client.ClientCommandHandler;
 import net.minecraftforge.common.MinecraftForge;
 
+import com.cleanroommc.modularui.factory.ClientGUI;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTooltipHandler;
 import com.miaokatze.gtswn.client.LinkNodeDismantleTriggerHandler;
@@ -27,8 +28,6 @@ import com.miaokatze.gtswn.client.render.RenderNetworkInfoPanel;
 import com.miaokatze.gtswn.client.render.RenderNetworkQuantumNode;
 import com.miaokatze.gtswn.common.block.BlockNetworkQuantumNode;
 import com.miaokatze.gtswn.common.command.CommandGTSWNClient;
-import com.miaokatze.gtswn.common.gui.ContainerTerminal;
-import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.hud.HudController;
 import com.miaokatze.gtswn.common.hud.WirelessMonitorHUD;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
@@ -356,12 +355,6 @@ public class ClientProxy extends CommonProxy {
         });
     }
 
-    @Override
-    public void openQuantumTerminalGui() {
-        Minecraft.getMinecraft()
-            .displayGuiScreen(new GuiQuantumTerminal());
-    }
-
     /**
      * 客户端打开设备信息终端 GUI（阶段 E3：{@code ItemDeviceInfoTerminal.onItemRightClick}
      * 非 Shift 右击空气经 @SidedProxy 委托至此）。
@@ -392,13 +385,12 @@ public class ClientProxy extends CommonProxy {
         if (stack == null) {
             return;
         }
-        mc.displayGuiScreen(new GuiDeviceInfoTerminal(ItemDeviceInfoTerminal.readTerminalId(stack), stack));
+        ClientGUI.open(new GuiDeviceInfoTerminal(ItemDeviceInfoTerminal.readTerminalId(stack), stack));
     }
 
     @Override
     public void openDeviceInfoTerminalSettingsGui() {
-        Minecraft.getMinecraft()
-            .displayGuiScreen(new com.miaokatze.gtswn.client.gui.GuiDeviceTerminalSettings());
+        ClientGUI.open(new com.miaokatze.gtswn.client.gui.GuiDeviceTerminalSettings());
     }
 
     @Override
@@ -458,14 +450,12 @@ public class ClientProxy extends CommonProxy {
 
     @Override
     public void openNetworkInfoPanelGui(TileEntityNetworkInfoPanel panel) {
-        Minecraft.getMinecraft()
-            .displayGuiScreen(new GuiNetworkInfoPanel(panel));
+        ClientGUI.open(new GuiNetworkInfoPanel(panel));
     }
 
     @Override
     public void openPortableMonitorGui(ItemStack stack) {
-        Minecraft.getMinecraft()
-            .displayGuiScreen(new com.miaokatze.gtswn.client.gui.GuiPortableMonitor(stack));
+        ClientGUI.open(new com.miaokatze.gtswn.client.gui.GuiPortableMonitor(stack));
     }
 
     @Override
@@ -481,8 +471,7 @@ public class ClientProxy extends CommonProxy {
 
     @Override
     public Object getClientGuiElement(int id, EntityPlayer player, World world, int x, int y, int z) {
-        if (id != GTSWNGuiHandler.QUANTUM_TERMINAL && id != GTSWNGuiHandler.LINK_TERMINAL) return null;
-        ContainerTerminal container = new ContainerTerminal(player, id == GTSWNGuiHandler.QUANTUM_TERMINAL);
-        return container.canInteractWith(player) ? new GuiQuantumTerminal(container) : null;
+        // TerminalGuiFactory creates both sides and the synchronized MUI2 container.
+        return null;
     }
 }
