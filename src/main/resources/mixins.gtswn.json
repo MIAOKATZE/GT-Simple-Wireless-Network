@@ -22,6 +22,7 @@
     "gregtech.CoverToolCopyMixin",
     "mm.GTAnalysisResultMixin",
     "mm.AEAnalysisResultMixin",
+    "mm.MMUtilsMixin",
     "mm.PendingBlockMixin"
   ],
   "client": [
