@@ -22,7 +22,9 @@
     "gregtech.CoverToolCopyMixin",
     "mm.GTAnalysisResultMixin",
     "mm.AEAnalysisResultMixin",
-    "mm.PendingBlockMixin"
+    "mm.MMUtilsMixin",
+    "mm.PendingBlockMixin",
+    "mm.PendingBuildMixin"
   ],
   "client": [
     "minecraft.KeyBindingRegistryMixin",

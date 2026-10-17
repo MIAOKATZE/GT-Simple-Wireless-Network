@@ -36,6 +36,7 @@
 dependencies {
     // Optional MM integration; never bundled or required when running GTSWN.
     compileOnly("com.github.GTNewHorizons:MatterManipulator:0.1.59-GTNH:dev") { transitive = false }
+    testRuntimeOnly("com.github.GTNewHorizons:MatterManipulator:0.1.59-GTNH:dev") { transitive = false }
     // Minimal dependency set for current source usage.
     // Sources reference only GregTech API types (gregtech.api.*), so keep GT5-Unofficial.
     // User has an external hard backup of the original file, so this file is intentionally simplified.
