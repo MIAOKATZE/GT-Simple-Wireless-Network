@@ -10,6 +10,7 @@ import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
@@ -25,6 +26,7 @@ import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -62,9 +64,8 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * <p>
  * 锚点解析（G5-1 缓存）：GUI 持有打开时传入的终端 UUID；不再每 tick 全物品栏重扫——
  * 槽位指纹（主背包槽物品引用 + 手持槽下标）变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
- * 复核时才重解析手持优先终端（与服务端 {@code DeviceTerminalRequestQueue.findTerminalStack}
- * 同序；服务端右击空气时显式 S2FPacketSetSlot 同步 DIT_UUID 到客户端，槽位对象替换即被
- * 指纹检出，见 ItemDeviceInfoTerminal.onItemRightClick）；GUI 打开时强制一次全扫。
+ * 复核时才验证主背包与饰品栏中的指定 UUID；不切换到其他终端。初次 UUID 尚未同步时，
+ * 从手持或主背包解析一次并固定身份。GUI 打开时强制一次全扫。
  * <p>
  * 初始 UI 偏好（排序列/方向/计数法）从打开时物品 stack NBT 读；action 后以本地状态为准
  * （服务端 NBT 写回由动作队列权威执行，下轮打开校正）。
@@ -141,6 +142,10 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 上次锚点解析时的手持槽下标（切快捷栏不换槽内容但换手持，同样触发重扫） */
     private int anchorHeldSlot = -1;
 
+    /** A directly opened terminal keeps its identity even if another terminal is held. */
+    private UUID requestedTerminalId;
+    private ItemStack[] anchorBaubleRefs;
+
     /** 当前终端锚点 UUID（构造传入 + 指纹/复核触发重解析；null=客户端 NBT 尚未同步到 UUID） */
     private UUID anchor;
 
@@ -192,6 +197,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     public GuiDeviceInfoTerminal(UUID terminalId, ItemStack prefStack) {
         super("device_info_terminal", 450, 252);
         this.anchor = terminalId;
+        this.requestedTerminalId = terminalId;
         this.sortColumn = prefStack == null ? PacketDeviceTerminalAction.COLUMN_AVG
             : columnFromString(ItemDeviceInfoTerminal.getSortColumn(prefStack));
         this.sortDesc = prefStack == null
@@ -331,7 +337,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /**
      * 每 tick：锚点重解析（G5-1 缓存：槽位指纹变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
-     * 复核才全物品栏重扫，手持优先，与服务端队列解析同序）→ 版本/条目数变化或偏好变化时重排
+     * 复核才重扫主背包与饰品栏的指定 UUID）→ 版本/条目数变化或偏好变化时重排
      * （G5-2 入口短路）→ 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
      */
     @Override
@@ -342,7 +348,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         if (this.extraPollCooldown > 0) {
             this.extraPollCooldown--;
         }
-        if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0) {
+        if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0 && this.anchor != null) {
             GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
         }
     }
@@ -350,12 +356,12 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     // ==================== 锚点与数据刷新 ====================
 
     /**
-     * 只读重解析终端锚点 UUID（手持优先 → 主背包首台；与 DeviceTerminalRequestQueue 同序）。
+     * 只读验证指定终端 UUID，移走后清空显示与轮询，不跳到其他终端。
      * <p>
-     * G5-1 锚点缓存：不再每 tick 全物品栏重扫——槽位指纹（主背包槽物品引用 + 手持槽下标）
+     * G5-1 锚点缓存：不再每 tick 解析全部 NBT——槽位指纹（主背包 / 饰品槽物品引用 + 手持槽下标）
      * 变化才重扫，另每 {@value #ANCHOR_RECHECK_TICKS} tick 强制复核一次兜底（覆盖原地 NBT
      * 变异等不换对象引用的边角，锚点变化 ≤20t 内跟踪）；GUI 打开时（指纹未建 / 计时器归零）
-     * 自然强制一次全扫。槽位挪动 / 快捷栏切换同 tick 即检出，语义与每 tick 重扫一致。
+     * 自然强制一次全扫。槽位挪动 / 快捷栏切换同 tick 即检出。
      */
     private void refreshAnchor() {
         this.anchorTimer++;
@@ -371,8 +377,13 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         this.anchorSlotRefs = new ItemStack[inv.length];
         System.arraycopy(inv, 0, this.anchorSlotRefs, 0, inv.length);
         this.anchorHeldSlot = player.inventory.currentItem;
+        IInventory baubles = TerminalBaubles.inventory(player);
+        this.anchorBaubleRefs = baubles == null ? new ItemStack[0] : new ItemStack[baubles.getSizeInventory()];
+        if (baubles != null) for (int i = 0; i < anchorBaubleRefs.length; i++) {
+            anchorBaubleRefs[i] = baubles.getStackInSlot(i);
+        }
         UUID resolved = resolveTerminalId();
-        if (resolved != null && !resolved.equals(this.anchor)) {
+        if (!java.util.Objects.equals(resolved, this.anchor)) {
             closeNameEditor();
             this.anchor = resolved;
             this.displayedVersion = Long.MIN_VALUE;
@@ -399,14 +410,32 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 return true;
             }
         }
+        IInventory baubles = TerminalBaubles.inventory(player);
+        int baubleSize = baubles == null ? 0 : baubles.getSizeInventory();
+        if (anchorBaubleRefs == null || baubleSize != anchorBaubleRefs.length) return true;
+        for (int i = 0; i < baubleSize; i++) {
+            if (baubles.getStackInSlot(i) != anchorBaubleRefs[i]) return true;
+        }
         return false;
     }
 
-    /** 客户端只读解析（不生成不写 NBT）：手持优先 → 主背包首台终端的 DIT_UUID。 */
+    /** Resolve only the requested terminal; an opening with unsynced NBT locks onto its first resolved UUID. */
     private UUID resolveTerminalId() {
         EntityPlayer player = this.mc.thePlayer;
         if (player == null) {
             return this.anchor;
+        }
+        if (requestedTerminalId != null) {
+            for (ItemStack candidate : player.inventory.mainInventory) {
+                if (matchesRequestedTerminal(candidate)) return requestedTerminalId;
+            }
+            IInventory baubles = TerminalBaubles.inventory(player);
+            if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
+                if (matchesRequestedTerminal(baubles.getStackInSlot(i))) {
+                    return requestedTerminalId;
+                }
+            }
+            return null;
         }
         ItemStack stack = player.getHeldItem();
         if (!(stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal)) {
@@ -419,7 +448,14 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 }
             }
         }
-        return stack == null ? this.anchor : ItemDeviceInfoTerminal.readTerminalId(stack);
+        UUID resolved = stack == null ? null : ItemDeviceInfoTerminal.readTerminalId(stack);
+        if (resolved != null) requestedTerminalId = resolved;
+        return resolved;
+    }
+
+    private boolean matchesRequestedTerminal(ItemStack candidate) {
+        return candidate != null && candidate.getItem() instanceof ItemDeviceInfoTerminal
+            && requestedTerminalId.equals(ItemDeviceInfoTerminal.readTerminalId(candidate));
     }
 
     /**

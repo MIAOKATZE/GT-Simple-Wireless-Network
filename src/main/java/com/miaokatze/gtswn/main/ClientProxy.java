@@ -19,6 +19,7 @@ import com.miaokatze.gtswn.client.QuantumNodeHighlightRenderer;
 import com.miaokatze.gtswn.client.QuantumTerminalBusSwapHandler;
 import com.miaokatze.gtswn.client.QuantumVoxelParticleHandler;
 import com.miaokatze.gtswn.client.RevealTriggerHandler;
+import com.miaokatze.gtswn.client.TerminalBaubleController;
 import com.miaokatze.gtswn.client.WirelessNodeRevealRenderer;
 import com.miaokatze.gtswn.client.WirelessTapHighlightRenderer;
 import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
@@ -114,6 +115,7 @@ public class ClientProxy extends CommonProxy {
             .bus()
             .register(hudLifecycle);
         com.miaokatze.gtswn.client.PortableMonitorClientCache.registerKey();
+        TerminalBaubleController.register();
         FMLCommonHandler.instance()
             .bus()
             .register(new com.miaokatze.gtswn.client.PortableMonitorClientCache.TickListener());
@@ -386,6 +388,19 @@ public class ClientProxy extends CommonProxy {
             return;
         }
         ClientGUI.open(new GuiDeviceInfoTerminal(ItemDeviceInfoTerminal.readTerminalId(stack), stack));
+    }
+
+    @Override
+    public void receiveTerminalBaubleState(int action, int selection, int heldSlot, ItemStack stack) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World receivedWorld = minecraft.theWorld;
+        EntityPlayer receivedPlayer = minecraft.thePlayer;
+        ItemStack receivedStack = stack == null ? null : stack.copy();
+        minecraft.func_152344_a(() -> {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld && receivedPlayer == minecraft.thePlayer) {
+                TerminalBaubleController.INSTANCE.receive(action, selection, heldSlot, receivedStack);
+            }
+        });
     }
 
     @Override

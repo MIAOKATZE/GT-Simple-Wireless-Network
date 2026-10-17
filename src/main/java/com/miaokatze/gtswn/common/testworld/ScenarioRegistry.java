@@ -12,6 +12,7 @@ public final class ScenarioRegistry {
         TestWorldManager.register(new PanelStructureScenario());
         TestWorldManager.register(new PanelAeSamplingScenario());
         TestWorldManager.register(new TerminalRenameScenario());
+        TestWorldManager.register(new TerminalBaublesScenario());
         TestWorldManager.register(new DeviceWorldScenario());
         TestWorldManager.register(new PortableMonitorScenario());
         TestWorldManager.register(new WirelessTapScenario());
