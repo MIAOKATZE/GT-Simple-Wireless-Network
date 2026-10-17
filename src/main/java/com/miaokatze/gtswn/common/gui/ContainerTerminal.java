@@ -3,17 +3,23 @@ package com.miaokatze.gtswn.common.gui;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.MathContext;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
-import net.minecraft.inventory.Container;
 import net.minecraft.inventory.ICrafting;
 import net.minecraft.inventory.InventoryBasic;
 import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemStack;
 
+import com.cleanroommc.modularui.screen.ModularContainer;
+import com.cleanroommc.modularui.utils.item.InvWrapper;
+import com.cleanroommc.modularui.utils.item.PlayerInvWrapper;
+import com.cleanroommc.modularui.widgets.slot.ModularSlot;
+import com.cleanroommc.modularui.widgets.slot.PlayerSlotGroup;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
@@ -22,7 +28,7 @@ import gregtech.common.misc.WirelessNetworkManager;
 import gregtech.common.misc.spaceprojects.SpaceProjectManager;
 
 /** A bounded real item slot, with matching client prediction and integer persistent reserves. */
-public class ContainerTerminal extends Container {
+public class ContainerTerminal extends ModularContainer {
 
     private static final AtomicLong NEXT_RENAME_TOKEN = new AtomicLong(System.nanoTime());
     private static final long RENAME_TTL_NANOS = 60_000_000_000L;
@@ -32,6 +38,8 @@ public class ContainerTerminal extends Container {
     private final ItemStack terminal;
     private final ItemStack supplyReference;
     private final int heldIndex;
+    private final List<ModularSlot> terminalSlots = new ArrayList<>();
+    private final boolean deferSlotRegistration;
     private final int[] values = new int[84];
     private final int[] sent = new int[84];
     private long renameToken;
@@ -45,6 +53,19 @@ public class ContainerTerminal extends Container {
     }
 
     ContainerTerminal(EntityPlayer player, boolean quantum, ItemStack reference) {
+        this(player, quantum, reference, false);
+    }
+
+    static ContainerTerminal forUi(EntityPlayer player, boolean quantum) {
+        return new ContainerTerminal(
+            player,
+            quantum,
+            (quantum ? TerminalSupplyStore.Kind.ANCHOR : TerminalSupplyStore.Kind.TUBE).reference(),
+            true);
+    }
+
+    ContainerTerminal(EntityPlayer player, boolean quantum, ItemStack reference, boolean deferSlotRegistration) {
+        this.deferSlotRegistration = deferSlotRegistration;
         this.owner = player;
         this.quantum = quantum;
         kind = quantum ? TerminalSupplyStore.Kind.ANCHOR : TerminalSupplyStore.Kind.TUBE;
@@ -53,7 +74,7 @@ public class ContainerTerminal extends Container {
         heldIndex = player.inventory.currentItem;
         if (quantum && !player.worldObj.isRemote) renewRenameToken();
         Arrays.fill(sent, -1);
-        addSlotToContainer(new Slot(new InventoryBasic("supply", false, 1), 0, 279, 161) {
+        addTerminalSlot(new ModularSlot(new InvWrapper(new InventoryBasic("supply", false, 1)), 0) {
 
             @Override
             public boolean isItemValid(ItemStack stack) {
@@ -64,7 +85,7 @@ public class ContainerTerminal extends Container {
             public boolean canTakeStack(EntityPlayer player) {
                 return true;
             }
-        });
+        }, 279, 161);
         for (int row = 0; row < 3; row++) {
             for (int column = 0; column < 9; column++)
                 addPlayerSlot(column + row * 9 + 9, 10 + column * 18, 150 + row * 18);
@@ -75,7 +96,7 @@ public class ContainerTerminal extends Container {
     }
 
     private void addPlayerSlot(int index, int x, int y) {
-        addSlotToContainer(new Slot(owner.inventory, index, x, y) {
+        addTerminalSlot(new ModularSlot(new PlayerInvWrapper(owner.inventory), index) {
 
             @Override
             public boolean canTakeStack(EntityPlayer player) {
@@ -86,7 +107,18 @@ public class ContainerTerminal extends Container {
             public boolean isItemValid(ItemStack stack) {
                 return index != heldIndex;
             }
-        });
+        }.slotGroup(PlayerSlotGroup.NAME), x, y);
+    }
+
+    private void addTerminalSlot(ModularSlot slot, int x, int y) {
+        slot.xDisplayPosition = x;
+        slot.yDisplayPosition = y;
+        terminalSlots.add(slot);
+        if (!deferSlotRegistration) addSlotToContainer(slot);
+    }
+
+    ModularSlot terminalSlot(int index) {
+        return terminalSlots.get(index);
     }
 
     @Override
@@ -103,6 +135,10 @@ public class ContainerTerminal extends Container {
 
     public int heldIndex() {
         return heldIndex;
+    }
+
+    EntityPlayer terminalOwner() {
+        return owner;
     }
 
     /** Native progress updates carry four unsigned 16-bit parts, including on vanilla's signed-short wire. */
@@ -159,16 +195,30 @@ public class ContainerTerminal extends Container {
 
     @Override
     public void onContainerClosed(EntityPlayer player) {
+        // Vanilla also calls this when NEI temporarily takes over the screen.
+        if (!deferSlotRegistration) onModularContainerClosed();
+        super.onContainerClosed(player);
+    }
+
+    @Override
+    public void onModularContainerClosed() {
         closed = true;
         renameToken = 0;
-        super.onContainerClosed(player);
+        super.onModularContainerClosed();
+    }
+
+    @Override
+    public void onModularContainerOpened() {
+        closed = false;
+        if (quantum && !owner.worldObj.isRemote) renewRenameToken();
+        super.onModularContainerOpened();
     }
 
     @Override
     public ItemStack slotClick(int slot, int button, int mode, EntityPlayer player) {
         if (!canInteractWith(player) || (mode == 2 && button == heldIndex)) return null;
         if (slot > 0 && slot < inventorySlots.size() && getSlot(slot).getSlotIndex() == heldIndex) return null;
-        if (slot != 0) return super.slotClick(slot, button, mode, player);
+        if (slot != 0) return superSlotClick(slot, button, mode, player);
         if ((mode != 0 && mode != 1) || (button != 0 && button != 1)) return null;
         if (mode == 1) return transferStackInSlot(player, 0);
         supplyCount = currentSupplyCount();
@@ -258,7 +308,8 @@ public class ContainerTerminal extends Container {
     private void refreshSupplySlot() {
         ItemStack stack = supplyReference == null ? null : supplyReference.copy();
         if (stack != null) stack.stackSize = Math.min(supplyCount, Math.min(64, stack.getMaxStackSize()));
-        getSlot(0).putStack(stack == null || stack.stackSize == 0 ? null : stack);
+        terminalSlots.get(0)
+            .putStack(stack == null || stack.stackSize == 0 ? null : stack);
     }
 
     private boolean matchesSupply(ItemStack stack) {

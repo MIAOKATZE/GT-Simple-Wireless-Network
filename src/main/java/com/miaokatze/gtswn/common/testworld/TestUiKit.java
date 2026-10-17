@@ -16,8 +16,11 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
+import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
+import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
+import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.device.DeviceRegistryData;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
@@ -26,6 +29,7 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
+import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.register.BlockRegistrar;
@@ -39,6 +43,7 @@ import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
+import gregtech.api.enums.ItemList;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.common.misc.GlobalEnergyWorldSavedData;
 import gregtech.common.misc.GlobalVariableStorage;
@@ -138,7 +143,7 @@ public final class TestUiKit {
         NBTTagCompound backup = new NBTTagCompound();
         backup.setInteger("Selected", player.inventory.currentItem);
         NBTTagList originals = new NBTTagList();
-        for (int slot = 0; slot < 4; slot++) {
+        for (int slot = 0; slot < 5; slot++) {
             NBTTagCompound entry = new NBTTagCompound();
             entry.setInteger("Slot", slot);
             ItemStack stack = player.inventory.mainInventory[slot];
@@ -166,7 +171,11 @@ public final class TestUiKit {
         portable.stackTagCompound.setString("OwnerName", player.getCommandSenderName());
         MonitorBindings.ensureId(portable);
         for (int slot = 0; slot < kit.length; slot++) player.inventory.mainInventory[slot] = kit[slot];
-        player.inventory.mainInventory[3] = null;
+        ItemStack link = GTSWNItemList.Wireless_Energy_Tap.get(1);
+        if (!link.hasTagCompound()) link.setTagCompound(new NBTTagCompound());
+        link.stackTagCompound.setBoolean(MARKER, true);
+        player.inventory.mainInventory[3] = link;
+        player.inventory.mainInventory[4] = null;
         backup.setBoolean("Granted", true);
         device.setStackDisplayName("GTSWN UI Device 长名称 Layout 01234567890123456789");
         quantum.setStackDisplayName("GTSWN UI Quantum 长名称 Layout 01234567890123456789");
@@ -185,6 +194,7 @@ public final class TestUiKit {
         NBTTagCompound persistent = persistent(player);
         NBTTagList recovery = persistent.getTagList(OVERFLOW, 10);
         if (hasBackup(player)) {
+            player.closeScreen();
             // Scope metadata was saved before fixture/binding creation. Recover only these exact new keys.
             cleanupScope(player, persistent.getCompoundTag(BACKUP));
             ItemStack cursor = player.inventory.getItemStack();
@@ -203,7 +213,7 @@ public final class TestUiKit {
                 for (int index = 0; index < originals.tagCount(); index++) {
                     NBTTagCompound entry = originals.getCompoundTagAt(index);
                     int slot = entry.getInteger("Slot");
-                    if (slot < 0 || slot >= 4) throw new IllegalStateException("Invalid UI kit backup slot");
+                    if (slot < 0 || slot >= 5) throw new IllegalStateException("Invalid UI kit backup slot");
                     ItemStack displaced = player.inventory.mainInventory[slot];
                     if (displaced != null) recovery.appendTag(displaced.writeToNBT(new NBTTagCompound()));
                     player.inventory.mainInventory[slot] = entry.hasKey("Stack", 10)
@@ -306,6 +316,12 @@ public final class TestUiKit {
         if (monitor instanceof BaseMetaTileEntity && owner.equals(((BaseMetaTileEntity) monitor).getOwnerUuid()))
             if (!origin.setBlockToAir(2, 65, -1))
                 throw new IllegalStateException("Could not detach owned UI monitor; backup retained");
+        if (backup.getBoolean("UiCoverFixtures")) for (int x = 3; x <= 4; x++) {
+            TileEntity tile = origin.getTileEntity(x, 65, -1);
+            if (tile instanceof BaseMetaTileEntity && owner.equals(((BaseMetaTileEntity) tile).getOwnerUuid()))
+                if (!origin.setBlockToAir(x, 65, -1))
+                    throw new IllegalStateException("Could not detach owned UI cover fixture; backup retained");
+        }
         DeviceTerminalDataStore.get(origin)
             .removeUiKitTerminal(player, origin, terminal);
         String deviceKey = DeviceRegistryData
@@ -356,6 +372,11 @@ public final class TestUiKit {
 
     private static void prepareFixtures(EntityPlayerMP player, ItemStack portable, ItemStack device, UUID scopeOwner) {
         WorldServer world = (WorldServer) player.worldObj;
+        for (int x = 3; x <= 4; x++) if (!world.isAirBlock(x, 65, -1))
+            throw new IllegalStateException("UI cover fixture location is occupied; existing block preserved: " + x);
+        NBTTagCompound backup = persistent(player).getCompoundTag(BACKUP);
+        backup.setBoolean("UiCoverFixtures", true);
+        save(player);
         // Real AE placement establishes the operator's native grid ownership; no authorization is bypassed.
         TileEntity controller = TestWorldFixtures.aeOwnedBlock(
             world,
@@ -402,6 +423,55 @@ public final class TestUiKit {
         portable.stackTagCompound.setLong("MonitorRevision", 1);
         portable.stackTagCompound.setString("GTSWN_TestUiSource", "CURRENT_OPERATOR_READ_ONLY");
         TestWorldFixtures.machine(world, 2, -1, GTSWNItemList.Wireless_Energy_Monitor.get(1), scopeOwner);
+        for (int x = 3; x <= 4; x++) {
+            BaseMetaTileEntity tile = TestWorldFixtures.machine(
+                world,
+                x,
+                -1,
+                x == 3 ? ItemList.Hatch_Energy_LV.get(1) : ItemList.Hatch_Dynamo_LV.get(1),
+                scopeOwner);
+            ItemStack cover = (x == 3 ? GTSWNItemList.GTswn_Cover_Energy_Wireless
+                : GTSWNItemList.GTswn_Cover_Dynamo_Wireless).get(1);
+            int selected = player.inventory.currentItem;
+            boolean wasSneaking = player.isSneaking();
+            try {
+                player.inventory.currentItem = 4;
+                player.inventory.mainInventory[4] = cover;
+                player.setSneaking(true);
+                // Invoke the native GT placement route, including placeability and machine-side checks.
+                tile.onRightclick(player, ForgeDirection.UP, .5f, 1f, .5f);
+                if (!tile.hasCoverAtSide(ForgeDirection.UP))
+                    throw new IllegalStateException("Native GT refused isolated wireless cover placement");
+                // Arrangement uses the same public configuration API as WirelessEnergyTap. Actual GUI edits
+                // are tested separately; never report the initialized fixture value as an input result.
+                if (tile.getEUCapacity() <= 0)
+                    throw new IllegalStateException("Isolated cover host has no real energy capacity");
+                if (x == 3) {
+                    if (!(tile.getCoverAtSide(ForgeDirection.UP) instanceof GTswn_Cover_EnergyWireless energy))
+                        throw new IllegalStateException("Native GT installed an unexpected input cover");
+                    long voltage = tile.getInputVoltage();
+                    if (voltage <= 0) voltage = tile.getOutputVoltage();
+                    long amperage = tile.getInputAmperage();
+                    // These fixtures are ordinary LV hatches, without the tap's laser/battery-buffer branches.
+                    if (amperage <= 1) amperage = 3;
+                    if (voltage <= 0 || !CoverMaths.validAmperage(amperage))
+                        throw new IllegalStateException("Isolated energy hatch has invalid tap configuration");
+                    energy.configure(Math.toIntExact(voltage), Math.toIntExact(amperage));
+                } else {
+                    if (!(tile.getCoverAtSide(ForgeDirection.UP) instanceof GTswn_Cover_DynamoWireless dynamo))
+                        throw new IllegalStateException("Native GT installed an unexpected output cover");
+                    if (tile.getOutputVoltage() <= 0 || tile.getOutputAmperage() <= 0)
+                        throw new IllegalStateException("Isolated dynamo hatch has invalid tap configuration");
+                    dynamo.configure();
+                }
+                tile.markDirty();
+                world.markBlockForUpdate(x, 65, -1);
+            } finally {
+                player.inventory.mainInventory[4] = null;
+                player.inventory.currentItem = selected;
+                player.setSneaking(wasSneaking);
+            }
+        }
         boolean sneaking = player.isSneaking();
         player.setSneaking(false);
         try {
