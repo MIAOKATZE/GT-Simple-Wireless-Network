@@ -106,7 +106,19 @@ public final class UiDebugSuite {
         if (running()) throw new IllegalStateException("UI run already active; use /gtswnui stop");
         mc = Minecraft.getMinecraft();
         requireDimension();
-        if (!Arrays.asList("all", "current", "portable", "device", "settings", "quantum", "panel", "monitor")
+        if (!Arrays
+            .asList(
+                "all",
+                "current",
+                "portable",
+                "device",
+                "settings",
+                "quantum",
+                "link",
+                "panel",
+                "monitor",
+                "cover-input",
+                "cover-output")
             .contains(selection)) throw new IllegalArgumentException("Unknown preset " + selection);
         if (!selection.equals("current") && (kitPresent() || TestUiKit.hasBackup(mc.thePlayer)))
             throw new IllegalStateException(
@@ -116,7 +128,7 @@ public final class UiDebugSuite {
         originalSlot = mc.thePlayer.inventory.currentItem;
         originalYaw = mc.thePlayer.rotationYaw;
         originalPitch = mc.thePlayer.rotationPitch;
-        originalTools = new ItemStack[4];
+        originalTools = new ItemStack[5];
         for (int slot = 0; slot < originalTools.length; slot++)
             originalTools[slot] = ItemStack.copyItemStack(mc.thePlayer.inventory.mainInventory[slot]);
         world = mc.theWorld;
@@ -162,10 +174,13 @@ public final class UiDebugSuite {
                 "device",
                 "settings",
                 "quantum",
+                "link",
                 "panel",
                 "panel-ae-chart",
                 "panel-ae-list",
-                "monitor"));
+                "monitor",
+                "cover-input",
+                "cover-output"));
         else presets.add(selection);
         phase = kitRequested ? "WAIT_KIT" : "NEXT_PRESET";
         deadline = TIMEOUT;
@@ -223,16 +238,27 @@ public final class UiDebugSuite {
                     if (matches(mc.currentScreen, preset)) {
                         target = mc.currentScreen;
                         rememberState();
-                        if (waitForData && !UiModularSnapshot.supports(target)) beginDataWait("NEXT_CASE");
+                        if (waitForData) beginDataWait("NEXT_CASE");
                         else {
-                            dataStatus = waitForData ? "MUI2_SERVER_SYNC_NOT_VERIFIED" : "NOT_REQUESTED_CURRENT_GUI";
-                            dataReason = "Current/loading GUI capture is allowed; native MUI2 sync requires independent verification";
+                            dataStatus = "NOT_REQUESTED_CURRENT_GUI";
+                            dataReason = "Current GUI capture does not assert server effects";
                             planCases();
                             phase = "NEXT_CASE";
                         }
                     } else if (ticks >= deadline) {
                         record("NOT_RUN", "Production GUI did not open before timeout; no GUI was synthesized");
                         phase = "NEXT_PRESET";
+                    }
+                    break;
+                case "WAIT_CASE_SCREEN":
+                    if (matches(mc.currentScreen, preset)) {
+                        target = mc.currentScreen;
+                        captureAt = ticks + 8;
+                        actionIndex = 0;
+                        phase = "ACTIONS";
+                    } else if (ticks >= deadline) {
+                        record("NOT_RUN", "Production GUI did not reopen for isolated case");
+                        phase = "NEXT_CASE";
                     }
                     break;
                 case "WAIT_DATA":
@@ -265,10 +291,37 @@ public final class UiDebugSuite {
                     }
                     if (ticks < captureAt) break;
                     if (actionIndex < current.clicks.length) {
-                        int id = current.clicks[actionIndex++];
-                        if (!click(id)) {
-                            record("NOT_RUN", "Whitelisted navigation control " + id + " unavailable or disabled");
-                            phase = "NEXT_CASE";
+                        String id = current.clicks[actionIndex++];
+                        if (id.startsWith("assert:")) {
+                            if (!assertObserved(id.substring(7))) {
+                                if (ticks >= deadline) {
+                                    record("FAIL", "Server-synchronized assertion timed out: " + id);
+                                    phase = "NEXT_CASE";
+                                } else {
+                                    actionIndex--;
+                                    captureAt = ticks + 2;
+                                }
+                            } else captureAt = ticks + 2;
+                            break;
+                        }
+                        if (!navigate(id)) {
+                            boolean undispatched = explicitInput != null
+                                && Boolean.FALSE.equals(explicitInput.get("pressAttempted"))
+                                && Boolean.FALSE.equals(explicitInput.get("releaseAttempted"));
+                            if (undispatched && ticks < deadline) {
+                                explicitInput.put("retryBeforeDispatch", true);
+                                explicitInput.put("guardObservedAtTick", ticks);
+                                explicitInput.put("deadlineTick", deadline);
+                                actionIndex--;
+                                captureAt = ticks + 2;
+                            } else {
+                                record(
+                                    "NOT_RUN",
+                                    "Whitelisted navigation control " + id
+                                        + " unavailable or disabled: "
+                                        + (explicitInput == null ? "no input evidence" : explicitInput.get("reason")));
+                                phase = "NEXT_CASE";
+                            }
                         } else {
                             navigationTouched = true;
                             captureAt = ticks + 3;
@@ -350,6 +403,7 @@ public final class UiDebugSuite {
                 "source",
                 "CURRENT_OPERATOR_READ_ONLY: portable EU access uses the operator's normal owner credentials; fixture panels use isolated test owners");
             snapshot.put("before", current.before);
+            snapshot.put("inputDispatches", current.inputs);
             if (action != null && current.key.equals("action-after")) snapshot.put("explicitAction", action);
             if (explicitInput != null && current.key.equals("action-after")) {
                 snapshot.put("explicitInput", explicitInput);
@@ -450,6 +504,26 @@ public final class UiDebugSuite {
         try {
             Map<String, Object> snapshot = UiModularSnapshot.supports(target) ? UiModularSnapshot.capture(mc, target)
                 : UiDebugSnapshot.capture(mc, target);
+            snapshot.put("expectedFramework", "MODULAR_UI_2");
+            snapshot.put("requestedGuiScale", mc.gameSettings.guiScale);
+            snapshot
+                .put("effectiveGuiScale", new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaleFactor());
+            snapshot
+                .put("observedFramework", UiModularSnapshot.supports(target) ? "MODULAR_UI_2" : "VANILLA_OR_LEGACY");
+            if (!"current".equals(preset) && !UiModularSnapshot.supports(target)) {
+                Object value = snapshot.get("findings");
+                List<Object> findings = new ArrayList<>();
+                if (value instanceof List<?>) findings.addAll((List<?>) value);
+                findings.add(
+                    UiDebugSnapshot.map(
+                        "severity",
+                        "FAIL",
+                        "code",
+                        "LEGACY_GUI_ACTIVE",
+                        "message",
+                        "All production presets must use ModularUI 2"));
+                snapshot.put("findings", findings);
+            }
             try {
                 byte[] bytes = MessageDigest.getInstance("SHA-256")
                     .digest(
@@ -470,6 +544,7 @@ public final class UiDebugSuite {
 
     private boolean clickTarget(String path) throws Exception {
         if (UiModularSnapshot.supports(target)) {
+            if (path.startsWith("name:")) path = UiModularSnapshot.namedPath(mc, target, path.substring(5));
             explicitInput = UiModularInput.click(mc, target, path);
             record((String) explicitInput.get("status"), String.valueOf(explicitInput.get("reason")));
             // NOT_RUN is captured as such; any attempted press is SENT even when a callback throws.
@@ -505,10 +580,15 @@ public final class UiDebugSuite {
         preset = presets.removeFirst();
         phase = "WAIT_SCREEN";
         deadline = ticks + TIMEOUT;
+        openPreset();
+    }
+
+    private void openPreset() throws Exception {
         if (preset.equals("current")) return;
         if (mc.currentScreen != null) mc.thePlayer.closeScreen();
-        if (preset.startsWith("panel") || preset.equals("monitor")) {
-            int x = preset.equals("panel-ae-chart") ? 3 : preset.equals("panel-ae-list") ? 4 : 2;
+        if (preset.startsWith("panel") || preset.equals("monitor") || preset.startsWith("cover-")) {
+            int x = preset.equals("panel-ae-chart") || preset.equals("cover-input") ? 3
+                : preset.equals("panel-ae-list") || preset.equals("cover-output") ? 4 : 2;
             int z = preset.startsWith("panel") ? 1 : -1;
             if (mc.thePlayer.getDistanceSq(x + .5, 65.5, z + .5)
                 > Math.pow(mc.playerController.getBlockReachDistance(), 2)) {
@@ -516,20 +596,29 @@ public final class UiDebugSuite {
                 phase = "NEXT_PRESET";
                 return;
             }
-            mc.thePlayer.inventory.currentItem = 3;
-            mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(3));
-            mc.playerController.onPlayerRightClick(
-                mc.thePlayer,
-                mc.theWorld,
-                mc.thePlayer.getHeldItem(),
-                x,
-                65,
-                z,
-                1,
-                Vec3.createVectorHelper(x + .5, 66, z + .5));
+            mc.thePlayer.inventory.currentItem = 4;
+            mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(4));
+            boolean oldSneak = mc.thePlayer.isSneaking();
+            boolean fixtureSneak = preset.startsWith("cover-");
+            mc.thePlayer.setSneaking(fixtureSneak);
+            mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, fixtureSneak ? 1 : 2));
+            try {
+                mc.playerController.onPlayerRightClick(
+                    mc.thePlayer,
+                    mc.theWorld,
+                    mc.thePlayer.getHeldItem(),
+                    x,
+                    65,
+                    z,
+                    1,
+                    Vec3.createVectorHelper(x + .5, 66, z + .5));
+            } finally {
+                mc.thePlayer.setSneaking(oldSneak);
+                mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, oldSneak ? 1 : 2));
+            }
             return;
         }
-        int slot = preset.equals("portable") ? 0 : preset.equals("quantum") ? 2 : 1;
+        int slot = preset.equals("portable") ? 0 : preset.equals("quantum") ? 2 : preset.equals("link") ? 3 : 1;
         if (!TestUiKit.isKit(mc.thePlayer.inventory.mainInventory[slot])) {
             record("NOT_RUN", "Expected server kit stack missing from slot " + slot);
             phase = "NEXT_PRESET";
@@ -537,7 +626,7 @@ public final class UiDebugSuite {
         }
         mc.thePlayer.inventory.currentItem = slot;
         mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(slot));
-        boolean sneak = !preset.equals("device");
+        boolean sneak = !preset.equals("device") && !preset.equals("link");
         boolean oldSneak = mc.thePlayer.movementInput.sneak;
         mc.thePlayer.rotationPitch = -90;
         mc.thePlayer.sendQueue.addToSendQueue(
@@ -546,7 +635,12 @@ public final class UiDebugSuite {
         mc.thePlayer.setSneaking(sneak);
         mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, sneak ? 1 : 2));
         try {
-            mc.playerController.sendUseItem(mc.thePlayer, mc.theWorld, mc.thePlayer.getHeldItem());
+            if (preset.equals("link")) {
+                // The inspected Alt-air production gesture sends this exact validated C2S intent.
+                com.miaokatze.gtswn.network.GTSWNPacketHandler.NETWORK.sendToServer(
+                    new com.miaokatze.gtswn.network.PacketTerminalGesture(
+                        com.miaokatze.gtswn.network.PacketTerminalGesture.OPEN_LINK));
+            } else mc.playerController.sendUseItem(mc.thePlayer, mc.theWorld, mc.thePlayer.getHeldItem());
         } finally {
             mc.thePlayer.movementInput.sneak = oldSneak;
             mc.thePlayer.setSneaking(oldSneak);
@@ -556,7 +650,28 @@ public final class UiDebugSuite {
 
     private static boolean matches(GuiScreen screen, String preset) {
         if (screen == null) return false;
-        if (UiModularSnapshot.supports(screen)) return preset.equals("current") || preset.equals("monitor");
+        if (preset.equals("current")) return true;
+        if (UiModularSnapshot.supports(screen)) {
+            com.cleanroommc.modularui.screen.ModularScreen actual = UiModularSnapshot.wrappedScreen(screen);
+            String name = actual.getName();
+            if (preset.equals("monitor")) return "gregtech".equals(actual.getOwner()) && actual.getMainPanel()
+                .getName()
+                .toLowerCase()
+                .contains("monitor");
+            if (preset.startsWith("cover-")) return "gregtech".equals(actual.getOwner()) && actual.getMainPanel()
+                .getName()
+                .startsWith("cover.gtswn_wireless");
+            if (!"gtswn".equals(actual.getOwner())) return preset.equals("current");
+            if (preset.equals("current")) return true;
+            if (preset.startsWith("panel")) return "network_info_panel".equals(name);
+            if (preset.equals("portable")) return "portable_monitor".equals(name);
+            if (preset.equals("device")) return "device_info_terminal".equals(name);
+            if (preset.equals("settings")) return "device_terminal_settings".equals(name);
+            if (preset.equals("quantum")) return "quantum_terminal".equals(name);
+            if (preset.equals("link")) return "link_terminal".equals(name);
+            if (preset.startsWith("cover-")) return name.startsWith("cover.gtswn_wireless.");
+            return preset.equals("monitor") && name.contains("monitor");
+        }
         if (!screen.getClass()
             .getName()
             .startsWith(PREFIX)) return false;
@@ -599,6 +714,59 @@ public final class UiDebugSuite {
         if (matrix) for (String language : Arrays.asList("en_US", "zh_CN"))
             if (!languages.contains(language)) languages.add(language);
         int[] scales = matrix ? new int[] { 1, 2, 3 } : new int[] { originalScale };
+        if (UiModularSnapshot.supports(target)) {
+            List<String[]> paths = new ArrayList<>();
+            paths.add(new String[0]);
+            if (preset.equals("settings")) {
+                paths.add(new String[] { "name:device.settings.0" });
+                paths.add(new String[] { "name:device.settings.4" });
+                paths.add(new String[] { "name:device.settings.1" });
+            } else if (preset.equals("portable")) {
+                paths.add(new String[] { "name:portable.tab.eu" });
+                paths.add(new String[] { "name:portable.tab.ae" });
+                paths.add(new String[] { "name:portable.tab.list" });
+                paths.add(new String[] { "name:portable.pins" });
+                paths.add(new String[] { "name:portable.settings" });
+                paths.add(new String[] { "name:portable.settings", "name:portable.settings.effects" });
+            } else if (preset.startsWith("panel")) {
+                paths.add(new String[] { "name:panel.tab.eu" });
+                paths.add(new String[] { "name:panel.tab.ae" });
+                paths.add(new String[] { "name:panel.tab.monitor" });
+                paths.add(new String[] { "name:panel.tab.eu", "name:panel.palette" });
+                paths.add(new String[] { "name:panel.tab.ae", "name:panel.action.12" });
+                paths.add(new String[] { "name:panel.tab.monitor", "name:panel.action.33" });
+            } else if (preset.equals("quantum")) {
+                paths.add(new String[] { "name:quantum.tab.details" });
+                paths.add(new String[] { "name:quantum.tab.effects" });
+                paths.add(new String[] { "name:quantum.rename" });
+                paths.add(
+                    new String[] { "name:quantum.rename", "type:quantum.rename.field=GTSWN_UI_Probe",
+                        "name:quantum.rename.confirm", "assert:held-name=GTSWN_UI_Probe" });
+            } else if (preset.equals("link")) {
+                paths.add(new String[] { "name:link.tab.details" });
+                paths.add(new String[] { "name:link.tab.effects" });
+            } else if (preset.equals("monitor")) {
+                paths.add(new String[] { "name:wireless_monitor.control.1" });
+                paths.add(new String[] { "name:wireless_monitor.control.1", "name:wireless_monitor.control.1" });
+                paths.add(new String[] { "name:wireless_monitor.control.5" });
+                paths.add(new String[] { "type:wireless_monitor.param1=12345", "key:enter" });
+            } else if (preset.startsWith("cover-")) {
+                paths.add(new String[] { "type:wireless_cover.amperage=2.5", "key:enter" });
+            } else if (preset.equals("device")) {
+                paths.add(new String[] { "name:device.count" });
+                paths.add(new String[] { "name:device.recipe" });
+                paths.add(new String[] { "name:device.power" });
+                paths.add(new String[] { "name:device.power", "name:device.power.option.0" });
+                paths.add(new String[] { "name:device.row.0.name@right" });
+                paths.add(
+                    new String[] { "name:device.row.0.name@right", "type:device.rename.name=GTSWN_UI_Device",
+                        "name:device.rename.save", "assert:device-name=GTSWN_UI_Device" });
+                for (int i = 0; i < 5; i++) paths.add(new String[] { "name:device.sort." + i });
+            }
+            for (String language : languages) for (int scale : scales) for (int i = 0; i < paths.size(); i++) cases.add(
+                new Case(preset + "-" + language + "-scale" + scale + "-state" + i, language, scale, paths.get(i)));
+            return;
+        }
         String name = target.getClass()
             .getSimpleName();
         List<int[]> paths = new ArrayList<>();
@@ -660,6 +828,18 @@ public final class UiDebugSuite {
             record("NOT_RUN", "Original production screen no longer active");
             return;
         }
+        if (action == null && UiModularSnapshot.supports(target) && !preset.equals("current")) {
+            if (!current.language.equals(mc.gameSettings.language) || current.scale != mc.gameSettings.guiScale) {
+                metricsTouched = true;
+                applyLanguage(current.language);
+                mc.gameSettings.guiScale = current.scale;
+            }
+            current.before = snapshot();
+            openPreset();
+            phase = "WAIT_CASE_SCREEN";
+            deadline = ticks + TIMEOUT;
+            return;
+        }
         if (action == null) {
             boolean navigationRestored = restoreState();
             boolean metricsChanged = !current.language.equals(mc.gameSettings.language)
@@ -681,16 +861,13 @@ public final class UiDebugSuite {
                     throw new IllegalStateException("Button unavailable/disabled: " + actionValue);
             } else if (action.equals("type")) {
                 if (UiModularSnapshot.supports(target)) {
-                    explicitInput = UiDebugSnapshot.map(
-                        "status",
-                        "NOT_RUN",
-                        "inputEvidence",
-                        "NONE",
-                        "functionalStatus",
-                        "NOT_VERIFIED",
-                        "reason",
-                        "MUI2 text input is unsupported");
-                    record("NOT_RUN", "MUI2 text input is unsupported");
+                    int split = actionValue.indexOf(' ');
+                    if (split < 0) throw new IllegalArgumentException("type requires field-path and text");
+                    String path = actionValue.substring(0, split);
+                    if (path.startsWith("name:")) path = UiModularSnapshot.namedPath(mc, target, path.substring(5));
+                    explicitInput = UiModularInput.type(mc, target, path, actionValue.substring(split + 1));
+                    if (!"SENT".equals(explicitInput.get("status")))
+                        record("NOT_RUN", String.valueOf(explicitInput.get("reason")));
                 } else type(actionValue);
             }
             // Explicit actions may open a child screen; observe the actual resulting screen.
@@ -703,6 +880,7 @@ public final class UiDebugSuite {
 
     private void rememberState() throws IllegalAccessException {
         baseline.clear();
+        if (UiModularSnapshot.supports(target)) return;
         for (Field field : UiDebugSnapshot.fields(target.getClass())) {
             if (field.getName()
                 .matches(
@@ -730,6 +908,67 @@ public final class UiDebugSuite {
             }
         navigationTouched = false;
         return changed;
+    }
+
+    private boolean navigate(String control) throws Exception {
+        if (!UiModularSnapshot.supports(target)) return click(Integer.parseInt(control));
+        if (control.startsWith("type:")) {
+            int split = control.indexOf('=');
+            String name = control.substring(5, split);
+            String path = UiModularSnapshot.namedPath(mc, target, name);
+            explicitInput = UiModularInput.type(mc, target, path, control.substring(split + 1));
+            current.inputs.add(explicitInput);
+            return "SENT".equals(explicitInput.get("status"))
+                && Boolean.TRUE.equals(explicitInput.get("observedTextMatchesRequest"));
+        }
+        if (control.startsWith("key:")) {
+            com.cleanroommc.modularui.screen.ModularScreen screen = UiModularSnapshot.wrappedScreen(target);
+            int key = control.equals("key:enter") ? Keyboard.KEY_RETURN : Keyboard.KEY_ESCAPE;
+            screen.onKeyPressed('\0', key);
+            screen.onKeyRelease('\0', key);
+            current.inputs
+                .add(UiDebugSnapshot.map("status", "SENT", "inputEvidence", "PRODUCTION_MUI2_KEY_EVENT", "key", key));
+            return true;
+        }
+        int mouseButton = control.endsWith("@right") ? 1 : 0;
+        if (mouseButton == 1) control = control.substring(0, control.length() - 6);
+        String path = control.startsWith("name:") ? UiModularSnapshot.namedPath(mc, target, control.substring(5))
+            : control;
+        Map<String, Object> input = UiModularInput.click(mc, target, path, mouseButton);
+        current.inputs.add(input);
+        if (!"SENT".equals(input.get("status"))) {
+            explicitInput = input;
+            return false;
+        }
+        explicitInput = input;
+        return true;
+    }
+
+    private boolean assertObserved(String assertion) {
+        String observed = null;
+        int split = assertion.indexOf('=');
+        String kind = assertion.substring(0, split), expected = assertion.substring(split + 1);
+        ItemStack held = mc.thePlayer.getHeldItem();
+        if (kind.equals("held-name")) observed = held == null ? null : held.getDisplayName();
+        if (kind.equals("device-name") && held != null) {
+            com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot state = com.miaokatze.gtswn.client.DeviceTerminalClientCache
+                .getSnapshot(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(held));
+            if (state != null && !state.entries.isEmpty()) observed = state.entries.get(0).displayName;
+        }
+        if (!expected.equals(observed)) return false;
+        explicitInput = UiDebugSnapshot.map(
+            "status",
+            "OBSERVED",
+            "inputEvidence",
+            "SERVER_SYNCHRONIZED_RESPONSE",
+            "assertion",
+            kind,
+            "expected",
+            expected,
+            "observed",
+            observed);
+        current.inputs.add(explicitInput);
+        return true;
     }
 
     private boolean click(int id) throws Exception {
@@ -999,6 +1238,7 @@ public final class UiDebugSuite {
             "NOT_VERIFIED");
         if (current != null && current.performance != null && ("FAIL".equals(status) || "NOT_RUN".equals(status)))
             result.put("performance", current.performance.finish());
+        if (current != null) result.put("inputDispatches", new ArrayList<>(current.inputs));
         results.add(result);
         writeIndex(false, null);
     }
@@ -1075,11 +1315,20 @@ public final class UiDebugSuite {
 
         final String key, language;
         final int scale;
-        final int[] clicks;
+        final String[] clicks;
         Map<String, Object> before;
+        final List<Map<String, Object>> inputs = new ArrayList<>();
         UiPerformance performance;
 
         Case(String key, String language, int scale, int[] clicks) {
+            this.key = key;
+            this.language = language;
+            this.scale = scale;
+            this.clicks = new String[clicks.length];
+            for (int i = 0; i < clicks.length; i++) this.clicks[i] = Integer.toString(clicks[i]);
+        }
+
+        Case(String key, String language, int scale, String[] clicks) {
             this.key = key;
             this.language = language;
             this.scale = scale;

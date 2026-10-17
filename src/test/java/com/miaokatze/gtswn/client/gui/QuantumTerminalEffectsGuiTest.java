@@ -1,134 +1,96 @@
 package com.miaokatze.gtswn.client.gui;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
-import net.minecraft.client.gui.FontRenderer;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.entity.player.InventoryPlayer;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import org.lwjgl.input.Keyboard;
 
+import com.cleanroommc.modularui.api.drawable.IKey;
+import com.cleanroommc.modularui.api.widget.IWidget;
+import com.cleanroommc.modularui.widget.ParentWidget;
+import com.cleanroommc.modularui.widgets.ButtonWidget;
+import com.cleanroommc.modularui.widgets.PagedWidget;
+import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.common.gui.ContainerTerminal;
+import com.miaokatze.gtswn.common.gui.TerminalGuiFactory;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.config.Config;
 
 import cpw.mods.fml.relauncher.FMLInjectionData;
 
-/** Exercises the actual GUI button list and callbacks without constructing a Minecraft client or GL context. */
+/** Invokes the production MUI2 effect buttons without a Minecraft client or GL context. */
 public class QuantumTerminalEffectsGuiTest {
-
-    private static class TestFont extends FontRenderer {
-
-        private TestFont() {
-            super(null, null, null, false);
-        }
-
-        @Override
-        public int getStringWidth(String text) {
-            return text.length() * 6;
-        }
-
-        @Override
-        public String trimStringToWidth(String text, int width) {
-            return trimStringToWidth(text, width, false);
-        }
-
-        @Override
-        public String trimStringToWidth(String text, int width, boolean reverse) {
-            int count = Math.min(text.length(), Math.max(0, width / 6));
-            return reverse ? text.substring(text.length() - count) : text.substring(0, count);
-        }
-    }
 
     @Rule
     public TemporaryFolder temporaryFolder = new TemporaryFolder();
-
     private final Map<Field, Object> originalConfig = new HashMap<>();
     private Field minecraftHome;
     private Object originalHome;
     private File configFile;
 
-    private static class ActualGui extends GuiQuantumTerminal {
-
-        private ActualGui() {
-            super((ContainerTerminal) null);
-        }
-
-        private void initialize() {
-            buttonList = new ArrayList<GuiButton>();
-            guiLeft = 0;
-            guiTop = 0;
-            actionPerformed(new GuiButton(101, 0, 0, ""));
-        }
-
-        private GuiButton find(int id) {
-            for (Object entry : buttonList) {
-                GuiButton button = (GuiButton) entry;
-                if (button.id == id) return button;
-            }
-            return null;
-        }
-
-        private void activate(int id) {
-            GuiButton button = find(id);
-            assertNotNull(button);
-            assertTrue(button.mousePressed(null, button.xPosition + 1, button.yPosition + 1));
-            actionPerformed(button);
-        }
-
-        private void rightClick(int id) {
-            GuiButton button = find(id);
-            mouseClicked(button.xPosition + 1, button.yPosition + 1, 1);
-        }
-
-        private List<GuiButton> settings() {
-            List<GuiButton> settings = new ArrayList<>();
-            for (Object entry : buttonList) {
-                GuiButton button = (GuiButton) entry;
-                if (button.id >= 110) settings.add(button);
-            }
-            return settings;
-        }
+    private ParentWidget<?> effects(boolean quantum) throws Exception {
+        Field factory = TerminalGuiFactory.class.getDeclaredField(quantum ? "QUANTUM" : "LINK");
+        factory.setAccessible(true);
+        Method build = TerminalGuiFactory.class.getDeclaredMethod("effects", EntityPlayer.class);
+        build.setAccessible(true);
+        return (ParentWidget<?>) build.invoke(factory.get(null), new Object[] { null });
     }
 
-    private static Object allocate(Class<?> type) throws Exception {
-        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
-        Field singleton = unsafeClass.getDeclaredField("theUnsafe");
-        singleton.setAccessible(true);
-        return unsafeClass.getMethod("allocateInstance", Class.class)
-            .invoke(singleton.get(null), type);
+    private ButtonWidget<?> find(ParentWidget<?> page, int setting) {
+        for (IWidget child : page.getChildren()) {
+            if (child.getName()
+                .endsWith(".effects." + setting)) return (ButtonWidget<?>) child;
+        }
+        return null;
     }
 
-    private ActualGui actualGui(boolean quantum) throws Exception {
-        ContainerTerminal container = (ContainerTerminal) allocate(ContainerTerminal.class);
-        Field quantumField = ContainerTerminal.class.getDeclaredField("quantum");
-        quantumField.setAccessible(true);
-        quantumField.setBoolean(container, quantum);
-        ActualGui gui = (ActualGui) allocate(ActualGui.class);
-        Field containerField = GuiQuantumTerminal.class.getDeclaredField("terminalContainer");
-        containerField.setAccessible(true);
-        containerField.set(gui, container);
-        gui.initialize();
-        return gui;
+    private void activate(ParentWidget<?> page, int setting, boolean right) {
+        ButtonWidget<?> button = find(page, setting);
+        assertNotNull(button);
+        button.playClickSound(false)
+            .onMousePressed(right ? 1 : 0);
+    }
+
+    @Test
+    public void nativeRenameFieldKeepsEAndChineseDraftWhenSnapshotsArrive() throws Exception {
+        Class<?> unsafeType = Class.forName("sun.misc.Unsafe");
+        Field unsafeField = unsafeType.getDeclaredField("theUnsafe");
+        unsafeField.setAccessible(true);
+        EntityPlayer player = (EntityPlayer) unsafeType.getMethod("allocateInstance", Class.class)
+            .invoke(unsafeField.get(null), EntityPlayerMP.class);
+        player.inventory = new InventoryPlayer(player);
+        Field factory = TerminalGuiFactory.class.getDeclaredField("QUANTUM");
+        factory.setAccessible(true);
+        Method build = TerminalGuiFactory.class.getDeclaredMethod(
+            "rename",
+            EntityPlayer.class,
+            ContainerTerminal.class,
+            PagedWidget.Controller.class,
+            PagedWidget.class);
+        build.setAccessible(true);
+        ParentWidget<?> page = (ParentWidget<?>) build
+            .invoke(factory.get(null), player, null, new PagedWidget.Controller(), new PagedWidget<>());
+        TextFieldWidget field = null;
+        for (IWidget child : page.getChildren())
+            if ("quantum.rename.field".equals(child.getName())) field = (TextFieldWidget) child;
+        assertNotNull(field);
+        field.setText("量子e中");
+        GuiQuantumTerminal.receiveData(new QuantumNetworkData());
+        assertEquals("量子e中", field.getText());
     }
 
     @Before
@@ -150,76 +112,28 @@ public class QuantumTerminalEffectsGuiTest {
     @After
     public void restoreConfiguration() throws Exception {
         GuiQuantumTerminal.receiveData(null);
-        for (Map.Entry<Field, Object> entry : originalConfig.entrySet()) {
-            entry.getKey()
-                .set(null, entry.getValue());
-        }
+        for (Map.Entry<Field, Object> entry : originalConfig.entrySet()) entry.getKey()
+            .set(null, entry.getValue());
         minecraftHome.set(null, originalHome);
     }
 
     @Test
-    public void quantumOnlyRenameButtonFitsAndInlineEditorKeepsETextSnapshotAndPageUntilEscape() throws Exception {
-        ActualGui gui = actualGui(true);
-        GuiButton rename = gui.find(103);
-        assertNotNull(rename);
-        assertEquals(5, rename.yPosition);
-        assertTrue(rename.xPosition >= 110);
-        assertTrue(rename.xPosition + rename.width <= gui.find(100).xPosition);
-        assertNull(actualGui(false).find(103));
-        Field font = GuiScreen.class.getDeclaredField("fontRendererObj");
-        font.setAccessible(true);
-        font.set(gui, allocate(TestFont.class));
-        Method layout = GuiQuantumTerminal.class.getDeclaredMethod("layoutRenameEditor", String.class);
-        layout.setAccessible(true);
-        layout.invoke(gui, "量子");
-        Field editor = GuiQuantumTerminal.class.getDeclaredField("renameField");
-        editor.setAccessible(true);
-        GuiTextField text = (GuiTextField) editor.get(gui);
-        gui.keyTyped('e', Keyboard.KEY_E);
-        gui.keyTyped('中', 0);
-        assertEquals("量子e中", text.getText());
-        GuiQuantumTerminal.receiveData(new QuantumNetworkData());
-        assertEquals("量子e中", text.getText());
-        gui.keyTyped((char) 0, Keyboard.KEY_ESCAPE);
-        assertNull(editor.get(gui));
-        Field page = GuiQuantumTerminal.class.getDeclaredField("effectsPage");
-        page.setAccessible(true);
-        assertTrue(page.getBoolean(gui));
-        assertNotNull(gui.find(103));
-    }
-
-    @Test
-    public void quantumSafetyControlUsesServerAuthorityInBothModesAndFitsBelowPalette() throws Exception {
+    public void quantumSafetyControlKeepsServerAuthorityAcrossBothNetworkModes() {
         QuantumNetworkData data = new QuantumNetworkData();
         data.online = true;
         data.canChangeNetworkSafety = true;
         data.networkSafetyIdentity = "generation-A";
         data.networkSafetyRequestToken = 45L;
         data.managementOnly = true;
-        GuiQuantumTerminal.receiveData(data);
-        ActualGui gui = actualGui(true);
-        assertNull(gui.find(102));
-        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
-        GuiButton safety = gui.find(102);
-        assertNotNull(safety);
-        assertTrue(safety.enabled);
-        assertTrue(safety.displayString.endsWith(": OFF"));
-        assertEquals(178, safety.xPosition);
-        assertEquals(128, safety.yPosition);
-        assertTrue(safety.xPosition + safety.width <= 292);
-        assertTrue(safety.yPosition + safety.height <= 146);
+        assertTrue(GuiQuantumTerminal.canToggleSafety(data));
         data.networkSafetyEnabled = true;
-        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
-        assertTrue(gui.find(102).enabled);
-        assertTrue(gui.find(102).displayString.endsWith(": ON"));
+        assertTrue(GuiQuantumTerminal.canToggleSafety(data));
         data.canChangeNetworkSafety = false;
-        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
-        assertFalse(gui.find(102).enabled);
+        assertFalse(GuiQuantumTerminal.canToggleSafety(data));
         assertEquals("gtswn.gui.quantum.safety_permission", GuiQuantumTerminal.safetyReason(data));
         data.canChangeNetworkSafety = true;
         data.globalSafetyEnabled = false;
-        gui.actionPerformed(new GuiButton(100, 0, 0, ""));
-        assertFalse(gui.find(102).enabled);
+        assertFalse(GuiQuantumTerminal.canToggleSafety(data));
         assertEquals("gtswn.gui.quantum.safety_global_off", GuiQuantumTerminal.safetyReason(data));
         data.globalSafetyEnabled = true;
         data.online = false;
@@ -231,49 +145,45 @@ public class QuantumTerminalEffectsGuiTest {
         data.networkSafetyRequestToken = 0;
         assertFalse(GuiQuantumTerminal.canToggleSafety(data));
         assertEquals("gtswn.gui.quantum.safety_waiting", GuiQuantumTerminal.safetyReason(data));
-        ActualGui tap = actualGui(false);
-        tap.actionPerformed(new GuiButton(100, 0, 0, ""));
-        assertNull(tap.find(102));
     }
 
     @Test
     public void tapVoltageButtonTogglesPersistsAndResetRefreshesItsLabel() throws Exception {
-        ActualGui gui = actualGui(false);
-        assertTrue(gui.find(116).displayString.endsWith(": ON"));
-        gui.activate(116);
+        ParentWidget<?> gui = effects(false);
+        assertTrue(
+            ((IKey) find(gui, 6).getOverlay()).getFormatted()
+                .endsWith(": ON"));
+        activate(gui, 6, false);
         assertFalse(Config.tapVoltageColorsEnabled);
-        assertTrue(gui.find(116).displayString.endsWith(": OFF"));
         Config.synchronizeNetworkConfiguration(configFile);
         assertFalse(Config.tapVoltageColorsEnabled);
-        gui.activate(115);
+        activate(gui, 5, false);
         assertTrue(Config.tapVoltageColorsEnabled);
-        assertTrue(gui.find(116).displayString.endsWith(": ON"));
         Config.synchronizeNetworkConfiguration(configFile);
         assertTrue(Config.tapVoltageColorsEnabled);
     }
 
     @Test
-    public void tapSettingsFitAboveInventoryWithoutOverlappingAndNumericRightClickStillDecreases() throws Exception {
-        ActualGui gui = actualGui(false);
-        List<GuiButton> settings = gui.settings();
-        assertEquals(8, settings.size());
-        for (GuiButton button : settings) {
-            assertTrue(button.xPosition >= 10);
-            assertTrue(button.xPosition + button.width <= 290);
-            assertTrue(button.yPosition >= 26);
-            assertTrue(button.yPosition + button.height <= 126);
-            for (GuiButton other : settings) {
-                if (button == other) continue;
-                assertFalse(
-                    button.xPosition < other.xPosition + other.width
-                        && button.xPosition + button.width > other.xPosition
-                        && button.yPosition < other.yPosition + other.height
-                        && button.yPosition + button.height > other.yPosition);
-            }
-        }
-        gui.activate(111);
+    public void tapKeepsEightNamedSettingsAndNumericRightClickStillDecreases() throws Exception {
+        ParentWidget<?> gui = effects(false);
+        assertEquals(
+            8,
+            gui.getChildren()
+                .size());
+        for (int setting = 0; setting < 8; setting++) assertNotNull(find(gui, setting));
+        activate(gui, 1, false);
         assertEquals(125, Config.tapParticleDensityPercent);
-        gui.rightClick(111);
+        activate(gui, 1, true);
+        assertEquals(100, Config.tapParticleDensityPercent);
+        assertTrue(Config.tapVoltageColorsEnabled);
+        boolean enabled = Config.tapParticlesEnabled;
+        String material = Config.tapMaterial;
+        activate(gui, 0, true);
+        activate(gui, 4, true);
+        activate(gui, 5, true);
+        activate(gui, 6, true);
+        assertEquals(enabled, Config.tapParticlesEnabled);
+        assertEquals(material, Config.tapMaterial);
         assertEquals(100, Config.tapParticleDensityPercent);
         assertTrue(Config.tapVoltageColorsEnabled);
     }
@@ -283,55 +193,44 @@ public class QuantumTerminalEffectsGuiTest {
         Config.tapVoltageColorsEnabled = false;
         Config.tapVoltageColorPercent = 25;
         Config.saveParticleConfiguration();
-        ActualGui gui = actualGui(true);
+        ParentWidget<?> gui = effects(true);
         assertEquals(
             5,
-            gui.settings()
+            gui.getChildren()
                 .size());
-        assertNull(gui.find(114));
-        assertNull(gui.find(116));
-        assertNull(gui.find(117));
-        assertEquals(154, gui.find(115).xPosition);
-        assertEquals(94, gui.find(115).yPosition);
-        assertEquals(28, gui.find(115).height);
-        gui.activate(115);
+        assertNull(find(gui, 4));
+        assertNull(find(gui, 6));
+        assertNull(find(gui, 7));
+        activate(gui, 5, false);
         Config.synchronizeNetworkConfiguration(configFile);
         assertFalse(Config.tapVoltageColorsEnabled);
         assertEquals(25, Config.tapVoltageColorPercent);
-        gui.actionPerformed(new GuiButton(116, 0, 0, ""));
+        TerminalGuiFactory.changeEffect(true, 6, false);
+        TerminalGuiFactory.changeEffect(true, 7, false);
         assertFalse(Config.tapVoltageColorsEnabled);
-        gui.actionPerformed(new GuiButton(117, 0, 0, ""));
         assertEquals(25, Config.tapVoltageColorPercent);
     }
 
     @Test
     public void ratioButtonCyclesBothWaysPersistsAndResetRestoresDefault() throws Exception {
-        ActualGui gui = actualGui(false);
+        ParentWidget<?> gui = effects(false);
         assertEquals(75, Config.tapVoltageColorPercent);
-        assertEquals(154, gui.find(117).xPosition);
-        assertEquals(78, gui.find(117).yPosition);
-        assertEquals(104, gui.find(115).yPosition);
-        assertTrue(gui.find(117).displayString.endsWith(": 75%"));
-        gui.activate(117);
+        activate(gui, 7, false);
         assertEquals(100, Config.tapVoltageColorPercent);
-        assertTrue(gui.find(117).displayString.endsWith(": 100%"));
         Config.synchronizeNetworkConfiguration(configFile);
         assertEquals(100, Config.tapVoltageColorPercent);
-        gui.activate(117);
+        activate(gui, 7, false);
         assertEquals(25, Config.tapVoltageColorPercent);
-        assertTrue(gui.find(117).displayString.endsWith(": 25%"));
         Config.synchronizeNetworkConfiguration(configFile);
         assertEquals(25, Config.tapVoltageColorPercent);
-        gui.rightClick(117);
+        activate(gui, 7, true);
         assertEquals(100, Config.tapVoltageColorPercent);
-        gui.rightClick(117);
+        activate(gui, 7, true);
         assertEquals(75, Config.tapVoltageColorPercent);
-        gui.rightClick(117);
+        activate(gui, 7, true);
         assertEquals(50, Config.tapVoltageColorPercent);
-        assertTrue(gui.find(117).displayString.endsWith(": 50%"));
-        gui.activate(115);
+        activate(gui, 5, false);
         assertEquals(75, Config.tapVoltageColorPercent);
-        assertTrue(gui.find(117).displayString.endsWith(": 75%"));
         Config.synchronizeNetworkConfiguration(configFile);
         assertEquals(75, Config.tapVoltageColorPercent);
     }

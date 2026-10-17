@@ -18,6 +18,12 @@ import net.minecraft.world.storage.WorldInfo;
 
 import org.junit.Test;
 
+import com.cleanroommc.modularui.factory.GuiData;
+import com.cleanroommc.modularui.screen.UISettings;
+import com.cleanroommc.modularui.value.sync.ItemSlotSH;
+import com.cleanroommc.modularui.value.sync.ModularSyncManager;
+import com.cleanroommc.modularui.value.sync.PanelSyncManager;
+import com.cleanroommc.modularui.widgets.slot.PlayerSlotGroup;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 
 /** Real container/name/NBT paths; no running client, network, AE grid or native window. */
@@ -86,6 +92,64 @@ public class QuantumTerminalRenameTest {
             container.renameToken(),
             ContainerTerminal.customName(player.getHeldItem()),
             name);
+    }
+
+    @Test
+    public void muiSlotsRegisterOnceAndRenameSurvivesTemporaryScreensButNotClosedSessions() throws Exception {
+        Player player = player();
+        ContainerTerminal container = new ContainerTerminal(player, true, new ItemStack(new Item()), true);
+        container.windowId = 19;
+        player.openContainer = container;
+        assertEquals(0, container.inventorySlots.size());
+        ModularSyncManager session = new ModularSyncManager(false) {
+
+            @Override
+            public void detectAndSendChanges(boolean init) {
+                // Exercise real registration/lifecycle without a running FML network channel.
+            }
+        };
+        PanelSyncManager sync = new PanelSyncManager(session, true);
+        sync.registerSlotGroup(new PlayerSlotGroup(PlayerSlotGroup.NAME));
+        for (int i = 0; i < 37; i++) sync.syncValue("terminal_slot", i, new ItemSlotSH(container.terminalSlot(i)));
+        container.construct(player, session, new UISettings(), "quantum_terminal", new GuiData(player));
+        assertEquals(37, container.inventorySlots.size());
+        assertEquals(
+            36,
+            sync.getSlotGroup(PlayerSlotGroup.NAME)
+                .getSlots()
+                .size());
+        for (int i = 0; i < 37; i++) {
+            assertSame(container.terminalSlot(i), container.getSlot(i));
+            assertTrue(
+                container.terminalSlot(i)
+                    .isInitialized());
+        }
+        assertEquals(
+            0,
+            container.getSlot(0)
+                .getSlotIndex());
+        assertEquals(
+            9,
+            container.getSlot(1)
+                .getSlotIndex());
+        assertEquals(
+            0,
+            container.getSlot(28)
+                .getSlotIndex());
+        session.onOpen();
+        assertTrue(rename(container, player, "MUI2 session"));
+        container.onContainerClosed(player);
+        assertTrue(rename(container, player, "Returned from NEI"));
+        session.onClose();
+        assertFalse(rename(container, player, "closed request"));
+        session.onOpen();
+        assertTrue(rename(container, player, "Reopened"));
+        assertEquals(37, container.inventorySlots.size());
+        session.onClose();
+        session.dispose();
+        for (int i = 0; i < 37; i++) assertFalse(
+            container.terminalSlot(i)
+                .isInitialized());
     }
 
     @Test

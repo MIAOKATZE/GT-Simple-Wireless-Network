@@ -9,20 +9,25 @@ import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
 import org.lwjgl.input.Keyboard;
-import org.lwjgl.input.Mouse;
-import org.lwjgl.opengl.GL11;
 
+import com.cleanroommc.modularui.api.IPanelHandler;
+import com.cleanroommc.modularui.api.UpOrDown;
+import com.cleanroommc.modularui.api.drawable.IDrawable;
+import com.cleanroommc.modularui.screen.ModularPanel;
+import com.cleanroommc.modularui.widgets.ButtonWidget;
+import com.cleanroommc.modularui.widgets.Dialog;
 import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
+import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
@@ -31,13 +36,13 @@ import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
- * 设备信息终端客户端 GUI（实施计划 E1/E3/E4：vanilla {@link GuiScreen} 自绘，450×252 六列布局，
+ * 设备信息终端客户端 GUI（ModularUI 2 原生控件与状态绘制，450×252 六列布局，
  * v1.7.2 面板加宽 +20px）。
  * <p>
  * 数据流（UI 只发 action，不直改服务端权威数据）：
  * <ol>
- * <li>{@link #updateScreen()} 每 {@value #POLL_INTERVAL_TICKS} tick 经包 8 向服务端轮询
- * （pollTimer=0 首帧即发）；{@link #doesGuiPauseGame()} 返回 false 防单人暂停导致轮询僵死；
+ * <li>{@link #onUpdate()} 每 {@value #POLL_INTERVAL_TICKS} tick 经包 8 向服务端轮询
+ * （pollTimer=0 首帧即发）；MUI2 非暂停画面 防单人暂停导致轮询僵死；
  * 列表区滚轮翻页且增量批次未到齐时经 {@link #requestPendingPages()} 限频追加请求（G5-3）；</li>
  * <li>服务端包 9 <b>增量分页</b>回发（每次排水最多 2 页：当前页 + 预取，v1.7.14 G5；不再
  * 版本一变即 8 页全量连发）→ ClientProxy 切主线程 → {@link DeviceTerminalClientCache}
@@ -59,14 +64,13 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
  * <p>
  * 锚点解析（G5-1 缓存）：GUI 持有打开时传入的终端 UUID；不再每 tick 全物品栏重扫——
  * 槽位指纹（主背包槽物品引用 + 手持槽下标）变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
- * 复核时才重解析手持优先终端（与服务端 {@code DeviceTerminalRequestQueue.findTerminalStack}
- * 同序；服务端右击空气时显式 S2FPacketSetSlot 同步 DIT_UUID 到客户端，槽位对象替换即被
- * 指纹检出，见 ItemDeviceInfoTerminal.onItemRightClick）；GUI 打开时强制一次全扫。
+ * 复核时才验证主背包与饰品栏中的指定 UUID；不切换到其他终端。初次 UUID 尚未同步时，
+ * 从手持或主背包解析一次并固定身份。GUI 打开时强制一次全扫。
  * <p>
  * 初始 UI 偏好（排序列/方向/计数法）从打开时物品 stack NBT 读；action 后以本地状态为准
  * （服务端 NBT 写回由动作队列权威执行，下轮打开校正）。
  */
-public class GuiDeviceInfoTerminal extends GuiScreen {
+public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 轮询间隔（tick）：每 20 tick（1 秒）发一次请求包 8 */
     private static final int POLL_INTERVAL_TICKS = 20;
@@ -120,8 +124,8 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     // ==================== 状态 ====================
 
     /** GUI 左上角屏幕坐标（initGui 计算） */
-    private int guiLeft;
-    private int guiTop;
+    private final int guiLeft = 0;
+    private final int guiTop = 0;
 
     /** 轮询计时器（初值 0 → 打开后首个 updateScreen 立即发首包） */
     private int pollTimer = 0;
@@ -137,6 +141,10 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 上次锚点解析时的手持槽下标（切快捷栏不换槽内容但换手持，同样触发重扫） */
     private int anchorHeldSlot = -1;
+
+    /** A directly opened terminal keeps its identity even if another terminal is held. */
+    private UUID requestedTerminalId;
+    private ItemStack[] anchorBaubleRefs;
 
     /** 当前终端锚点 UUID（构造传入 + 指纹/复核触发重解析；null=客户端 NBT 尚未同步到 UUID） */
     private UUID anchor;
@@ -164,11 +172,10 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 功率筛选会话态：全部、电力、蒸汽、产能、耗电、产汽、耗气（重开 GUI 复位为全部） */
     private int powerFilter = 0;
-    private boolean powerFilterOpen;
-    private int powerFilterCursor;
 
-    /** 下拉选项独立绘制，不加入原版会在 action 回调期间遍历的 buttonList。 */
-    private final List<GtswnGuiButton> powerFilterOptions = new ArrayList<>();
+    /** Native secondary panel controls the filter menu lifecycle. */
+    private IPanelHandler powerMenu;
+    private int powerFilterCursor;
 
     /** 状态筛选会话态：0 全部 / 1 待机 / 2 运行 / 3 停机 / 4 忽略（重开 GUI 复位为全部） */
     private int stateFilter = 0;
@@ -179,7 +186,6 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     /** 滚动列表控件（initGui 创建） */
     private GuiDeviceEntryList entryList;
     private GuiDeviceNameEditor nameEditor;
-    private float uiScale = 1.0F;
 
     /**
      * 构造：锚点 UUID + 初始 UI 偏好来源 stack（排序列/方向/计数法，只读）。
@@ -189,78 +195,160 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      * @param prefStack  偏好来源物品（可为 null，取默认值 AVG/DESC/NORMAL）
      */
     public GuiDeviceInfoTerminal(UUID terminalId, ItemStack prefStack) {
+        super("device_info_terminal", 450, 252);
         this.anchor = terminalId;
+        this.requestedTerminalId = terminalId;
         this.sortColumn = prefStack == null ? PacketDeviceTerminalAction.COLUMN_AVG
             : columnFromString(ItemDeviceInfoTerminal.getSortColumn(prefStack));
         this.sortDesc = prefStack == null
             || ItemDeviceInfoTerminal.DIR_DESC.equals(ItemDeviceInfoTerminal.getSortDirection(prefStack));
         this.countMode = prefStack == null ? PacketDeviceTerminalAction.MODE_NORMAL
             : modeFromString(ItemDeviceInfoTerminal.getCountMode(prefStack));
+        buildPanel();
     }
 
-    /**
-     * 覆写默认行为，打开 GUI 时不暂停游戏 tick（同 GuiQuantumTerminal v1.6.7）：
-     * 单人模式下暂停会导致服务端不 tick、包 8 请求永远得不到回包，GUI 卡在「...」。
-     */
-    @Override
-    public boolean doesGuiPauseGame() {
-        return false;
+    private void buildPanel() {
+        getMainPanel().background(IDrawable.EMPTY);
+        getMainPanel().child(
+            GtswnMuiWidgets.canvas("device.chrome", 0, 0, xSize, ySize, (context, mouseX, mouseY, partialTicks) -> {
+                drawPanelBackground();
+                drawTitle();
+                drawColumnHeaders();
+                drawBody(mouseX, mouseY);
+                drawFooter();
+            }));
+        getMainPanel().child(
+            GtswnMuiWidgets
+                .button("device.count", this::countModeText, 8, 16, 130, 16, () -> actionPerformed(BTN_COUNT_MODE)));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.recipe",
+                this::showRecipeText,
+                146,
+                16,
+                110,
+                16,
+                () -> actionPerformed(BTN_SHOW_RECIPE)));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.power",
+                this::powerFilterText,
+                264,
+                16,
+                94,
+                16,
+                () -> actionPerformed(BTN_POWER_FILTER)));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.state",
+                this::stateFilterText,
+                362,
+                16,
+                80,
+                16,
+                () -> actionPerformed(BTN_STATE_FILTER)));
+        int[] columns = { 4, 112, 162, 228, 304, 400 };
+        for (int i = 0; i < 5; i++) {
+            final int column = i;
+            getMainPanel().child(
+                new ButtonWidget<>().name("device.sort." + i)
+                    .pos(8 + columns[i], 38)
+                    .size(columns[i + 1] - columns[i], 14)
+                    .background(IDrawable.EMPTY)
+                    .hoverBackground(IDrawable.EMPTY)
+                    .onMousePressed(button -> {
+                        if (button != 0) return false;
+                        onColumnHeaderClicked(column);
+                        return true;
+                    }));
+        }
+        entryList = new GuiDeviceEntryList(this);
+        getMainPanel().child(entryList);
+        nameEditor = new GuiDeviceNameEditor(this);
+        powerMenu = IPanelHandler.simple(getMainPanel(), (parent, player) -> buildPowerMenu(), true);
     }
 
-    @Override
-    @SuppressWarnings("unchecked")
-    public void initGui() {
-        // GuiScreen's native mouse handling uses width/height, so it shares this logical canvas.
-        uiScale = Math.min(1.0F, Math.min((width - 12.0F) / xSize, (height - 12.0F) / ySize));
-        uiScale = Math.max(0.1F, uiScale);
-        width = Math.round(width / uiScale);
-        height = Math.round(height / uiScale);
-        this.guiLeft = (this.width - this.xSize) / 2;
-        this.guiTop = (this.height - this.ySize) / 2;
-        buttonList.clear();
-        // 顶行四按钮（列头行上方）：计数模式 / 显示配方 / 功率筛选 / 状态筛选
-        // （显示配方右缘 +256；功率筛选 +264 宽 94；状态筛选 +362 宽 80，右缘 +442 = xSize-8，
-        // 均不越界面右缘、不与相邻按钮/列头重叠）
-        buttonList
-            .add(new GtswnGuiButton(BTN_COUNT_MODE, this.guiLeft + 8, this.guiTop + 16, 130, 16, countModeText()));
-        buttonList
-            .add(new GtswnGuiButton(BTN_SHOW_RECIPE, this.guiLeft + 146, this.guiTop + 16, 110, 16, showRecipeText()));
-        buttonList
-            .add(new GtswnGuiButton(BTN_POWER_FILTER, this.guiLeft + 264, this.guiTop + 16, 94, 16, powerFilterText()));
-        buttonList
-            .add(new GtswnGuiButton(BTN_STATE_FILTER, this.guiLeft + 362, this.guiTop + 16, 80, 16, stateFilterText()));
-        powerFilterOpen = false;
-        powerFilterOptions.clear();
+    private ModularPanel buildPowerMenu() {
+        ModularPanel panel = new Dialog<Void>("device.power.menu") {
+
+            @Override
+            public void beforeResize(boolean onOpen) {
+                int screenWidth = getParentArea().w();
+                int screenHeight = getParentArea().h();
+                int menuHeight = POWER_MENU_ROW_HEIGHT * POWER_FILTER_KEYS.length + 6;
+                float mainScale = GtswnMuiTheme.fitScale(screenWidth, screenHeight, xSize, ySize);
+                float menuScale = GtswnMuiTheme.fitScale(screenWidth, screenHeight, POWER_MENU_WIDTH, menuHeight);
+                float visibleWidth = POWER_MENU_WIDTH * menuScale;
+                float visibleHeight = menuHeight * menuScale;
+                float anchorX = (screenWidth - xSize * mainScale) / 2f + 264 * mainScale;
+                float anchorY = (screenHeight - ySize * mainScale) / 2f + 33 * mainScale;
+                float visibleX = Math.max(4, Math.min(screenWidth - visibleWidth - 4, anchorX));
+                float visibleY = Math.max(4, Math.min(screenHeight - visibleHeight - 4, anchorY));
+                pos(
+                    Math.round(visibleX - (POWER_MENU_WIDTH - visibleWidth) / 2f),
+                    Math.round(visibleY - (menuHeight - visibleHeight) / 2f));
+                super.beforeResize(onOpen);
+            }
+
+            @Override
+            public boolean onKeyPressed(char character, int keyCode) {
+                if (keyCode == Keyboard.KEY_UP || keyCode == Keyboard.KEY_DOWN) {
+                    powerFilterCursor = Math
+                        .floorMod(powerFilterCursor + (keyCode == Keyboard.KEY_UP ? -1 : 1), POWER_FILTER_KEYS.length);
+                    return true;
+                }
+                if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
+                    selectPowerFilter(powerFilterCursor);
+                    return true;
+                }
+                return super.onKeyPressed(character, keyCode);
+            }
+
+            @Override
+            public boolean onMouseScroll(UpOrDown direction, int amount) {
+                powerFilterCursor = Math.floorMod(powerFilterCursor - direction.modifier, POWER_FILTER_KEYS.length);
+                return true;
+            }
+        }.setCloseOnOutOfBoundsClick(true)
+            .size(POWER_MENU_WIDTH, POWER_MENU_ROW_HEIGHT * POWER_FILTER_KEYS.length + 6)
+            .background(GtswnMuiTheme.LIST_PANEL);
+        GtswnMuiTheme.fit(panel);
         for (int mode = 0; mode < POWER_FILTER_KEYS.length; mode++) {
-            powerFilterOptions.add(
-                new GtswnGuiButton(
-                    mode,
-                    powerMenuLeft() + 3,
-                    powerMenuTop() + 3 + mode * POWER_MENU_ROW_HEIGHT,
+            final int selected = mode;
+            panel.child(
+                GtswnMuiWidgets.button(
+                    "device.power.option." + mode,
+                    () -> (powerFilterCursor == selected ? "\u25B6 " : "") + tr(POWER_FILTER_KEYS[selected]),
+                    3,
+                    3 + mode * POWER_MENU_ROW_HEIGHT,
                     POWER_MENU_WIDTH - 6,
                     POWER_MENU_ROW_HEIGHT - 2,
-                    tr(POWER_FILTER_KEYS[mode])));
+                    () -> selectPowerFilter(selected)));
         }
-        this.entryList = new GuiDeviceEntryList(this, this.guiLeft, this.guiTop);
-        if (nameEditor != null) nameEditor.relayout();
+        return panel;
+    }
+
+    @Override
+    public void onOpen() {
+        super.onOpen();
         refreshAnchor();
         refreshEntries();
     }
 
     /**
      * 每 tick：锚点重解析（G5-1 缓存：槽位指纹变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
-     * 复核才全物品栏重扫，手持优先，与服务端队列解析同序）→ 版本/条目数变化或偏好变化时重排
+     * 复核才重扫主背包与饰品栏的指定 UUID）→ 版本/条目数变化或偏好变化时重排
      * （G5-2 入口短路）→ 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
      */
     @Override
-    public void updateScreen() {
-        if (nameEditor != null) nameEditor.update();
+    public void onUpdate() {
+        super.onUpdate();
         refreshAnchor();
         refreshEntries();
         if (this.extraPollCooldown > 0) {
             this.extraPollCooldown--;
         }
-        if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0) {
+        if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0 && this.anchor != null) {
             GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
         }
     }
@@ -268,12 +356,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     // ==================== 锚点与数据刷新 ====================
 
     /**
-     * 只读重解析终端锚点 UUID（手持优先 → 主背包首台；与 DeviceTerminalRequestQueue 同序）。
+     * 只读验证指定终端 UUID，移走后清空显示与轮询，不跳到其他终端。
      * <p>
-     * G5-1 锚点缓存：不再每 tick 全物品栏重扫——槽位指纹（主背包槽物品引用 + 手持槽下标）
+     * G5-1 锚点缓存：不再每 tick 解析全部 NBT——槽位指纹（主背包 / 饰品槽物品引用 + 手持槽下标）
      * 变化才重扫，另每 {@value #ANCHOR_RECHECK_TICKS} tick 强制复核一次兜底（覆盖原地 NBT
      * 变异等不换对象引用的边角，锚点变化 ≤20t 内跟踪）；GUI 打开时（指纹未建 / 计时器归零）
-     * 自然强制一次全扫。槽位挪动 / 快捷栏切换同 tick 即检出，语义与每 tick 重扫一致。
+     * 自然强制一次全扫。槽位挪动 / 快捷栏切换同 tick 即检出。
      */
     private void refreshAnchor() {
         this.anchorTimer++;
@@ -289,8 +377,13 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         this.anchorSlotRefs = new ItemStack[inv.length];
         System.arraycopy(inv, 0, this.anchorSlotRefs, 0, inv.length);
         this.anchorHeldSlot = player.inventory.currentItem;
+        IInventory baubles = TerminalBaubles.inventory(player);
+        this.anchorBaubleRefs = baubles == null ? new ItemStack[0] : new ItemStack[baubles.getSizeInventory()];
+        if (baubles != null) for (int i = 0; i < anchorBaubleRefs.length; i++) {
+            anchorBaubleRefs[i] = baubles.getStackInSlot(i);
+        }
         UUID resolved = resolveTerminalId();
-        if (resolved != null && !resolved.equals(this.anchor)) {
+        if (!java.util.Objects.equals(resolved, this.anchor)) {
             closeNameEditor();
             this.anchor = resolved;
             this.displayedVersion = Long.MIN_VALUE;
@@ -317,14 +410,32 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
                 return true;
             }
         }
+        IInventory baubles = TerminalBaubles.inventory(player);
+        int baubleSize = baubles == null ? 0 : baubles.getSizeInventory();
+        if (anchorBaubleRefs == null || baubleSize != anchorBaubleRefs.length) return true;
+        for (int i = 0; i < baubleSize; i++) {
+            if (baubles.getStackInSlot(i) != anchorBaubleRefs[i]) return true;
+        }
         return false;
     }
 
-    /** 客户端只读解析（不生成不写 NBT）：手持优先 → 主背包首台终端的 DIT_UUID。 */
+    /** Resolve only the requested terminal; an opening with unsynced NBT locks onto its first resolved UUID. */
     private UUID resolveTerminalId() {
         EntityPlayer player = this.mc.thePlayer;
         if (player == null) {
             return this.anchor;
+        }
+        if (requestedTerminalId != null) {
+            for (ItemStack candidate : player.inventory.mainInventory) {
+                if (matchesRequestedTerminal(candidate)) return requestedTerminalId;
+            }
+            IInventory baubles = TerminalBaubles.inventory(player);
+            if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
+                if (matchesRequestedTerminal(baubles.getStackInSlot(i))) {
+                    return requestedTerminalId;
+                }
+            }
+            return null;
         }
         ItemStack stack = player.getHeldItem();
         if (!(stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal)) {
@@ -337,7 +448,14 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
                 }
             }
         }
-        return stack == null ? this.anchor : ItemDeviceInfoTerminal.readTerminalId(stack);
+        UUID resolved = stack == null ? null : ItemDeviceInfoTerminal.readTerminalId(stack);
+        if (resolved != null) requestedTerminalId = resolved;
+        return resolved;
+    }
+
+    private boolean matchesRequestedTerminal(ItemStack candidate) {
+        return candidate != null && candidate.getItem() instanceof ItemDeviceInfoTerminal
+            && requestedTerminalId.equals(ItemDeviceInfoTerminal.readTerminalId(candidate));
     }
 
     /**
@@ -348,13 +466,14 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      */
     private void refreshEntries() {
         Snapshot snapshot = this.anchor == null ? null : DeviceTerminalClientCache.getSnapshot(this.anchor);
+        if (entryList != null) entryList.setEnabled(snapshot != null && !snapshot.entries.isEmpty());
         if (!this.sortDirty && snapshot != null
             && snapshot.version == this.displayedVersion
             && snapshot.entries.size() == this.displayedEntryCount) {
             return;
         }
         if (snapshot == null) {
-            if (this.displayedVersion != Long.MIN_VALUE) {
+            if (this.displayedVersion != Long.MIN_VALUE || !this.sortedEntries.isEmpty()) {
                 this.displayedVersion = Long.MIN_VALUE;
                 this.displayedEntryCount = -1;
                 this.sortedEntries = Collections.emptyList();
@@ -437,12 +556,10 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     // ==================== 顶行按钮 ====================
 
-    @Override
-    protected void actionPerformed(GuiButton button) {
-        if (button.id == BTN_COUNT_MODE) {
+    private void actionPerformed(int id) {
+        if (id == BTN_COUNT_MODE) {
             // 本地立即轮换显示（下轮打开由服务端 NBT 校正）+ 发包 action 1 持久化（四态轮换）
             this.countMode = (this.countMode + 1) % 4;
-            button.displayString = countModeText();
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketDeviceTerminalAction(
                     PacketDeviceTerminalAction.ACTION_COUNT_MODE,
@@ -450,17 +567,15 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
                     (byte) 0,
                     (byte) this.countMode,
                     ""));
-        } else if (button.id == BTN_SHOW_RECIPE) {
+        } else if (id == BTN_SHOW_RECIPE) {
             // 纯 GUI 实例字段：不发包不持久化
             this.showRecipe = !this.showRecipe;
-            button.displayString = showRecipeText();
-        } else if (button.id == BTN_POWER_FILTER) {
-            this.powerFilterOpen = !this.powerFilterOpen;
-            this.powerFilterCursor = this.powerFilter;
-        } else if (button.id == BTN_STATE_FILTER) {
+        } else if (id == BTN_POWER_FILTER) {
+            powerFilterCursor = powerFilter;
+            powerMenu.togglePanel();
+        } else if (id == BTN_STATE_FILTER) {
             // 状态筛选五态轮换：全部→待机→运行→停机→忽略→全部。
             this.stateFilter = (this.stateFilter + 1) % 5;
-            button.displayString = stateFilterText();
             this.sortDirty = true;
             refreshEntries();
         }
@@ -493,39 +608,11 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         return text + " \u25BC";
     }
 
-    private int powerMenuLeft() {
-        return guiLeft + 264;
-    }
-
-    private int powerMenuTop() {
-        return guiTop + 33;
-    }
-
     private void selectPowerFilter(int mode) {
-        powerFilterOpen = false;
+        powerMenu.closePanel();
         powerFilter = mode;
-        for (Object value : buttonList) {
-            GuiButton button = (GuiButton) value;
-            if (button.id == BTN_POWER_FILTER) button.displayString = powerFilterText();
-        }
         sortDirty = true;
         refreshEntries();
-    }
-
-    private void drawPowerFilter(int mouseX, int mouseY) {
-        int left = powerMenuLeft();
-        int top = powerMenuTop();
-        int bottom = top + POWER_MENU_ROW_HEIGHT * POWER_FILTER_KEYS.length + 6;
-        drawRect(left - 1, top - 1, left + POWER_MENU_WIDTH + 1, bottom + 1, GtswnGuiPalette.DIVIDER);
-        GtswnGuiDrawing
-            .drawNineSlice(GtswnGuiTextures.LIST_PANEL, 4, left, top, POWER_MENU_WIDTH, bottom - top, zLevel);
-        for (GtswnGuiButton option : powerFilterOptions) {
-            option.drawButton(mc, mouseX, mouseY);
-            if (option.id == powerFilter || option.id == powerFilterCursor) {
-                int color = option.id == powerFilter ? GtswnGuiPalette.TEXT_ACCENT : GtswnGuiPalette.TEXT_MUTED;
-                drawRect(left + 1, option.yPosition + 2, left + 3, option.yPosition + option.height - 2, color);
-            }
-        }
     }
 
     /** 状态筛选按钮文案：全部/待机/运行/停机/忽略。 */
@@ -540,22 +627,6 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     }
 
     // ==================== 列头排序 ====================
-
-    /** 列头命中：返回排序列 0-4（-1=未命中；传送列头不可排序）。 */
-    private int headerColumnAt(int mouseX, int mouseY) {
-        if (mouseY < this.guiTop + HEADER_Y - 2 || mouseY > this.guiTop + HEADER_Y + 12) {
-            return -1;
-        }
-        int rel = mouseX - (this.guiLeft + 8);
-        if (rel < GuiDeviceEntryList.COL_NAME_X || rel >= GuiDeviceEntryList.HEADER_MAX_X) {
-            return -1;
-        }
-        if (rel < GuiDeviceEntryList.COL_STATE_X) return PacketDeviceTerminalAction.COLUMN_NAME;
-        if (rel < GuiDeviceEntryList.COL_INST_X) return PacketDeviceTerminalAction.COLUMN_STATE;
-        if (rel < GuiDeviceEntryList.COL_AVG_X) return PacketDeviceTerminalAction.COLUMN_INST;
-        if (rel < GuiDeviceEntryList.COL_POS_X) return PacketDeviceTerminalAction.COLUMN_AVG;
-        return PacketDeviceTerminalAction.COLUMN_POS;
-    }
 
     /** 点击列头：同列再点反向；异列切默认方向（平均列降序、其余升序）→ 本地立即重排 + 发包 action 0。 */
     private void onColumnHeaderClicked(int column) {
@@ -608,35 +679,6 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     // ==================== 绘制 ====================
 
-    @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        mouseX = (int) (mouseX / uiScale);
-        mouseY = (int) (mouseY / uiScale);
-        GL11.glPushAttrib(GL11.GL_TRANSFORM_BIT);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glPushMatrix();
-        try {
-            GL11.glScalef(uiScale, uiScale, 1.0F);
-            drawPanelBackground();
-            drawTitle();
-            drawColumnHeaders();
-            super.drawScreen(mouseX, mouseY, partialTicks);
-            drawBody(mouseX, mouseY);
-            drawFooter();
-            if (powerFilterOpen) drawPowerFilter(mouseX, mouseY);
-            else if (nameEditor == null) drawHoverTooltip(mouseX, mouseY);
-            else nameEditor.draw(mouseX, mouseY);
-        } finally {
-            GL11.glMatrixMode(GL11.GL_MODELVIEW);
-            GL11.glPopMatrix();
-            GL11.glPopAttrib();
-        }
-    }
-
-    float renderScale() {
-        return uiScale;
-    }
-
     /**
      * 面板背景：消费 gtswn 整版贴图 panel_device_info（450×252，1:1 绘制，plan/ui/texture-list.md §2/§3 #1），
      * 几何与尺寸零变化；标题/列头两条分隔线仍代码绘制，色值琥珀化（GtswnGuiPalette.DIVIDER）。
@@ -651,16 +693,16 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             0,
             GtswnGuiTextures.PANEL_DEVICE_INFO_W,
             GtswnGuiTextures.PANEL_DEVICE_INFO_H,
-            this.zLevel);
+            0);
         // 标题分隔线
-        drawRect(
+        net.minecraft.client.gui.Gui.drawRect(
             this.guiLeft + 8,
             this.guiTop + 14,
             this.guiLeft + this.xSize - 8,
             this.guiTop + 15,
             GtswnGuiPalette.DIVIDER);
         // 列头分隔线
-        drawRect(
+        net.minecraft.client.gui.Gui.drawRect(
             this.guiLeft + 8,
             this.guiTop + 50,
             this.guiLeft + this.xSize - 8,
@@ -679,7 +721,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
     }
 
     /**
-     * 列头行：五列可排序标签 + 当前排序列 ▲/▼ 高亮（点击排序，见 headerColumnAt）+ 传送列标签（不可排序）。
+     * 列头行：五列可排序标签 + 当前排序列 ▲/▼ 高亮（点击排序，见 原生列头按钮）+ 传送列标签（不可排序）。
      * <p>
      * v1.7.2 列头全加粗 §l（与列表行加粗一致）。
      */
@@ -695,9 +737,10 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
                 i == this.sortColumn ? GtswnGuiPalette.TEXT_ACCENT : GtswnGuiPalette.TEXT_BODY);
         }
         // 第六列：传送列头（行内 ✦ 按钮列；不可排序，仅标签）
+        String teleport = "§l" + tr("gtswn.device.gui.teleport");
         this.fontRendererObj.drawString(
-            "§l" + tr("gtswn.device.gui.teleport"),
-            this.guiLeft + 8 + GuiDeviceEntryList.TP_BTN_X - 6,
+            teleport,
+            this.guiLeft + this.xSize - 8 - this.fontRendererObj.getStringWidth(teleport),
             this.guiTop + HEADER_Y,
             GtswnGuiPalette.TEXT_BODY);
     }
@@ -715,7 +758,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
             drawCenteredListText(tr("gtswn.device.gui.no_bindings"));
             return;
         }
-        this.entryList.draw(mouseX, mouseY, 0);
+
     }
 
     /** 列表区中央灰字提示（占位 / 无绑定共用）。 */
@@ -739,20 +782,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      * 单侧最多 4 项超限补「 等...」，{@code listFormattedStringToWidth} 按 ≈200px 像素分行，
      * 替代旧 48 字符硬切）。
      */
-    private void drawHoverTooltip(int mouseX, int mouseY) {
-        if (this.entryList != null && this.entryList.hoveredTeleport()) {
-            drawHoveringText(
-                Collections.singletonList(
-                    StatCollector.translateToLocalFormatted("gtswn.device.gui.tooltip.teleport_cost", teleportCost())),
-                mouseX,
-                mouseY,
-                this.fontRendererObj);
-            return;
-        }
-        Entry hovered = this.entryList == null ? null : this.entryList.hoveredEntry();
-        if (hovered == null) {
-            return;
-        }
+    List<String> entryTooltip(Entry hovered) {
         String recipeIn = hovered.state == 3 || hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
         String recipeOut = hovered.state == 3 || hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();
@@ -808,64 +838,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
                         TOOLTIP_WRAP_WIDTH));
             }
         }
-        drawHoveringText(lines, mouseX, mouseY, this.fontRendererObj);
-    }
-
-    // ==================== 鼠标事件（列头优先，列表次之） ====================
-
-    @Override
-    protected void mouseClicked(int mouseX, int mouseY, int button) {
-        if (nameEditor != null) {
-            nameEditor.mouseClicked(mouseX, mouseY, button);
-            return;
-        }
-        if (powerFilterOpen) {
-            if (button == 0) {
-                for (GtswnGuiButton option : powerFilterOptions) {
-                    if (option.mousePressed(mc, mouseX, mouseY)) {
-                        option.func_146113_a(mc.getSoundHandler());
-                        selectPowerFilter(option.id);
-                        return;
-                    }
-                }
-            }
-            // 外部点击只关闭菜单，不能穿透触发下方排序、重命名或传送。
-            powerFilterOpen = false;
-            return;
-        }
-        super.mouseClicked(mouseX, mouseY, button);
-        int column = headerColumnAt(mouseX, mouseY);
-        if (column >= 0) {
-            onColumnHeaderClicked(column);
-            return;
-        }
-        if (this.entryList != null) {
-            this.entryList.mouseClicked(mouseX, mouseY, button);
-        }
-    }
-
-    @Override
-    public void handleMouseInput() {
-        if (powerFilterOpen) {
-            int wheel = Mouse.getEventDWheel();
-            if (wheel != 0) {
-                powerFilterCursor = Math
-                    .floorMod(powerFilterCursor - Integer.signum(wheel), DevicePowerFilter.MODE_COUNT);
-                return;
-            }
-            super.handleMouseInput();
-            return;
-        }
-        if (nameEditor != null) {
-            super.handleMouseInput();
-            return;
-        }
-        if (this.entryList != null && this.entryList.handleMouseInput()) {
-            // G5-3 翻页按需：滚轮在列表区滚动且服务端增量批次未到齐 → 限频追加请求接力续页
-            requestPendingPages();
-            return;
-        }
-        super.handleMouseInput();
+        return lines;
     }
 
     /**
@@ -873,7 +846,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
      * 仍有未到齐页时发送包 8——服务端每次排水最多回 2 页（当前页 + 预取）自已发页接力，
      * 滚轮连击被限频；批次已到齐时客户端侧零发包（服务端版本跳过之外再省一道）。
      */
-    private void requestPendingPages() {
+    void requestPendingPages() {
         if (this.extraPollCooldown > 0 || this.anchor == null) {
             return;
         }
@@ -882,25 +855,6 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         }
         this.extraPollCooldown = EXTRA_POLL_INTERVAL_TICKS;
         GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
-    }
-
-    @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        if (nameEditor != null || powerFilterOpen) return;
-        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
-        if (this.entryList != null) {
-            this.entryList.mouseClickMove(mouseX, mouseY, clickedMouseButton);
-        }
-    }
-
-    @Override
-    protected void mouseMovedOrUp(int mouseX, int mouseY, int which) {
-        if (nameEditor != null) return;
-        super.mouseMovedOrUp(mouseX, mouseY, which);
-        if (powerFilterOpen) return;
-        if (this.entryList != null) {
-            this.entryList.mouseReleased(mouseX, mouseY, which);
-        }
     }
 
     // ==================== 列表注入（数据活取 / 格式化 / 状态文案） ====================
@@ -965,7 +919,7 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
         return player == null ? 0 : player.experienceLevel;
     }
 
-    // ==================== 宿主访问器（GuiScreen protected 字段跨包转发，仿 GuiNetworkInfoPanel） ====================
+    // ==================== 列表与命名子面板的宿主访问器 ====================
 
     /** 字体渲染器访问（列表绘制用） */
     FontRenderer font() {
@@ -979,12 +933,12 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     /** 矩形填充转发（列表背景/滚动条/按钮绘制用） */
     void fillRect(int x1, int y1, int x2, int y2, int color) {
-        drawRect(x1, y1, x2, y2, color);
+        net.minecraft.client.gui.Gui.drawRect(x1, y1, x2, y2, color);
     }
 
     /** 绘制层级转发（Gui.zLevel 为 protected 跨包不可直引，列表组件贴图绘制用） */
     float guiZLevel() {
-        return zLevel;
+        return 0;
     }
 
     // ==================== 偏好映射工具 ====================
@@ -1018,45 +972,17 @@ public class GuiDeviceInfoTerminal extends GuiScreen {
 
     void openNameEditor(Entry entry, int mouseX, int mouseY) {
         if (anchor == null) return;
-        powerFilterOpen = false;
-        closeNameEditor();
-        nameEditor = new GuiDeviceNameEditor(this, anchor, entry, mouseX, mouseY);
+        powerMenu.closePanel();
+        nameEditor.open(anchor, entry);
     }
 
     void closeNameEditor() {
-        if (nameEditor != null) {
-            nameEditor.close();
-            nameEditor = null;
-        }
-    }
-
-    void editorTooltip(List<String> lines, int mouseX, int mouseY) {
-        drawHoveringText(lines, mouseX, mouseY, fontRendererObj);
+        if (nameEditor != null) nameEditor.close();
     }
 
     @Override
-    protected void keyTyped(char character, int keyCode) {
-        if (nameEditor != null) {
-            nameEditor.keyTyped(character, keyCode);
-            return;
-        }
-        if (powerFilterOpen) {
-            if (keyCode == Keyboard.KEY_ESCAPE) powerFilterOpen = false;
-            else if (keyCode == Keyboard.KEY_UP || keyCode == Keyboard.KEY_DOWN) {
-                powerFilterCursor = Math
-                    .floorMod(powerFilterCursor + (keyCode == Keyboard.KEY_UP ? -1 : 1), DevicePowerFilter.MODE_COUNT);
-            } else if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
-                selectPowerFilter(powerFilterCursor);
-            }
-            return;
-        }
-        super.keyTyped(character, keyCode);
-    }
-
-    @Override
-    public void onGuiClosed() {
-        powerFilterOpen = false;
+    public void onClose() {
         closeNameEditor();
-        super.onGuiClosed();
+        super.onClose();
     }
 }

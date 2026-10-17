@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.creativetab.CreativeTabs;
-import net.minecraft.entity.EntityLivingBase;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
@@ -19,9 +18,6 @@ import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
-import baubles.api.BaubleType;
-import baubles.api.IBauble;
-import cpw.mods.fml.common.Optional;
 import gregtech.api.enums.GTValues;
 import ic2.api.item.IElectricItemManager;
 import ic2.api.item.ISpecialElectricItem;
@@ -36,8 +32,12 @@ import ic2.api.item.ISpecialElectricItem;
  * - Shift + 右击自己的终端打开远程查看与 HUD 设置；其他绑定覆盖为当前玩家
  * - 普通右击信息屏添加远程绑定（最多 16 个）
  */
-@Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles")
-public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISpecialElectricItem {
+
+@cpw.mods.fml.common.Optional.InterfaceList({
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles"),
+    @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.expanded.IBaubleExpanded", modid = "Baubles") })
+public class PortableWirelessNetworkMonitor extends Item
+    implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded, ISpecialElectricItem {
 
     @Override
     public boolean canProvideEnergy(ItemStack stack) {
@@ -261,6 +261,14 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
     /**
      * 更新物品的拥有者为当前玩家（覆盖绑定）
      */
+    public void ensureBaubleBinding(ItemStack stack, EntityPlayer player) {
+        if (!isMonitorBound(stack)) {
+            ensureNBT(stack);
+            bindOwner(stack, player);
+        }
+        MonitorBindings.ensureId(stack);
+    }
+
     private void updateOwner(ItemStack aStack, EntityPlayer aPlayer) {
         com.miaokatze.gtswn.common.hud.MonitorBindings.clear(aStack);
         // 设置新拥有者（覆盖旧数据）
@@ -324,46 +332,6 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
         }
     }
 
-    // ========== Baubles 饰品接口实现 ==========
-
-    /** 饰品槽位类型：UNIVERSAL（可放入任意饰品槽） */
-    @Override
-    @Optional.Method(modid = "Baubles")
-    public BaubleType getBaubleType(ItemStack itemstack) {
-        return BaubleType.UNIVERSAL;
-    }
-
-    /** 装备时每 tick 调用，HUD 由 C→S→C 包驱动故空实现 */
-    @Override
-    @Optional.Method(modid = "Baubles")
-    public void onWornTick(ItemStack itemstack, EntityLivingBase player) {
-        // 空实现：HUD 数据由客户端 PacketRequestWirelessEU 驱动
-    }
-
-    @Override
-    @Optional.Method(modid = "Baubles")
-    public void onEquipped(ItemStack itemstack, EntityLivingBase player) {
-        // 无需特殊处理
-    }
-
-    @Override
-    @Optional.Method(modid = "Baubles")
-    public void onUnequipped(ItemStack itemstack, EntityLivingBase player) {
-        // 无需特殊处理
-    }
-
-    @Override
-    @Optional.Method(modid = "Baubles")
-    public boolean canEquip(ItemStack itemstack, EntityLivingBase player) {
-        return true;
-    }
-
-    @Override
-    @Optional.Method(modid = "Baubles")
-    public boolean canUnequip(ItemStack itemstack, EntityLivingBase player) {
-        return true;
-    }
-
     // formatBigInteger 已迁移至 FormatUtil（T4 公共工具类提取）
 
     /**
@@ -372,6 +340,7 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
      */
     @Override
     public void addInformation(ItemStack aStack, EntityPlayer aPlayer, List<String> aList, boolean aF3_H) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.addSlotTooltip(aList, 0);
         DeviceTooltip.state(aList);
         if (!isMonitorBound(aStack)) {
             aList.add(StatCollector.translateToLocal("gtswn.tooltip.monitor.owner.unbound"));
@@ -408,5 +377,43 @@ public class PortableWirelessNetworkMonitor extends Item implements IBauble, ISp
             "gtswn.tooltip.monitor.usage.key");
         MonitorBattery.addControlsTooltip(aList);
         DeviceTooltip.finish(aList);
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public baubles.api.BaubleType getBaubleType(ItemStack stack) {
+        return baubles.api.BaubleType.UNIVERSAL;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public String[] getBaubleTypes(ItemStack stack) {
+        return new String[] { com.miaokatze.gtswn.common.baubles.TerminalBaubles.TYPES[0] };
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onEquipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        com.miaokatze.gtswn.common.baubles.TerminalBaubles.onEquipped(stack, player);
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public void onUnequipped(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canEquip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return stack != null && stack.stackSize == 1;
+    }
+
+    @Override
+    @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
+    public boolean canUnequip(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        return true;
     }
 }

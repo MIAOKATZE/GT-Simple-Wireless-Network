@@ -1,0 +1,124 @@
+{
+  "parent": "DEFAULT",
+  "color": "#FFFFFFFF",
+  "textColor": "#FFD8D4C8",
+  "textShadow": false,
+  "panel": {
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/panel_device_info.png",
+      "imageWidth": 450,
+      "imageHeight": 252,
+      "border": 8
+    }
+  },
+  "button": {
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/button_normal.png",
+      "imageWidth": 64,
+      "imageHeight": 20,
+      "border": 4
+    }
+  },
+  "button:hover": {
+    "textColor": "#FFF0A028",
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/button_hover.png",
+      "imageWidth": 64,
+      "imageHeight": 20,
+      "border": 4
+    }
+  },
+  "closeButton": {
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/button_normal.png",
+      "imageWidth": 64,
+      "imageHeight": 20,
+      "border": 4
+    }
+  },
+  "closeButton:hover": {
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/button_hover.png",
+      "imageWidth": 64,
+      "imageHeight": 20,
+      "border": 4
+    }
+  },
+  "toggleButton": {
+    "selectedTextColor": "#FFF0A028",
+    "selectedTextShadow": false,
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/tab_inactive.png",
+      "imageWidth": 64,
+      "imageHeight": 20,
+      "border": 4
+    },
+    "selectedBackground": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/tab_active.png",
+      "imageWidth": 64,
+      "imageHeight": 20,
+      "border": 4
+    }
+  },
+  "toggleButton:hover": {
+    "textColor": "#FFF0A028",
+    "selectedTextColor": "#FFF0A028",
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/button_hover.png",
+      "imageWidth": 64,
+      "imageHeight": 20,
+      "border": 4
+    }
+  },
+  "itemSlot": {
+    "slotHoverColor": "#60F0A028",
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/list_panel.png",
+      "imageWidth": 32,
+      "imageHeight": 32,
+      "border": 4
+    }
+  },
+  "fluidSlot": {
+    "slotHoverColor": "#60F0A028",
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/list_panel.png",
+      "imageWidth": 32,
+      "imageHeight": 32,
+      "border": 4
+    }
+  },
+  "textField": {
+    "textColor": "#FFD8D4C8",
+    "markedColor": "#FF7A5A1E",
+    "hintColor": "#FF9AA0A8",
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/list_panel.png",
+      "imageWidth": 32,
+      "imageHeight": 32,
+      "border": 4
+    }
+  },
+  "scrollbar": {
+    "width": 6,
+    "height": 6,
+    "background": {
+      "type": "texture",
+      "location": "gtswn:textures/gui/scrollbar_thumb.png",
+      "imageWidth": 6,
+      "imageHeight": 12,
+      "border": 2
+    }
+  }
+}
