@@ -1,9 +1,9 @@
 package com.miaokatze.gtswn.client;
 
-/** The opening press only opens; later press edges cycle. Either press can confirm once after twenty GUI ticks. */
+/** The opening press only opens; later press edges cycle. Either press confirms once after fifteen ticks (0.75s). */
 public final class TerminalWheelHold {
 
-    public static final int CONFIRM_TICKS = 20;
+    public static final int CONFIRM_TICKS = 15;
     public static final int IGNORED = 0, CYCLE = 1, TAKE = 2;
     private boolean opening = true;
     private boolean pressed = true;

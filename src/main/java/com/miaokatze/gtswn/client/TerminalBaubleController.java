@@ -16,6 +16,7 @@ import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.common.util.ForgeDirection;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
@@ -26,11 +27,17 @@ import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
 import com.miaokatze.gtswn.client.gui.GuiPortableMonitor;
 import com.miaokatze.gtswn.client.gui.GuiTerminalWheel;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
+import com.miaokatze.gtswn.common.device.DeviceMachineTypes;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.common.quantum.QuantumBusTarget;
+import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.common.util.LaserHatchUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketTerminalBaubleAction;
 import com.miaokatze.gtswn.network.PacketTerminalBaubleState;
@@ -44,7 +51,10 @@ import cpw.mods.fml.common.gameevent.InputEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
+import gregtech.api.interfaces.tileentity.IBasicEnergyContainer;
+import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
+import gregtech.api.util.GTUtility;
 
 /** Client input and presentation only. Inventory transactions and borrowed-stack validation stay server-side. */
 @SideOnly(Side.CLIENT)
@@ -189,76 +199,20 @@ public final class TerminalBaubleController {
         ItemStack held = mc.thePlayer.getHeldItem();
         int category = TerminalBaubles.category(held);
         if (category < 0) return;
-        List<String> lines = new ArrayList<>();
-        String use = TerminalKeyNames.name(mc.gameSettings.keyBindUseItem.getKeyCode());
-        String sneak = TerminalKeyNames.name(mc.gameSettings.keyBindSneak.getKeyCode());
-        String shifted = sneak + "+" + use;
-        String altUse = "Alt+" + use;
-        String altShifted = "Alt+" + shifted;
-        boolean shift = bindingDown(mc.gameSettings.keyBindSneak.getKeyCode());
-        boolean alt = bindingDown(Keyboard.KEY_LMENU) || bindingDown(Keyboard.KEY_RMENU);
-        boolean block = mc.objectMouseOver != null
-            && mc.objectMouseOver.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK;
-        TileEntity target = block
-            ? mc.theWorld.getTileEntity(mc.objectMouseOver.blockX, mc.objectMouseOver.blockY, mc.objectMouseOver.blockZ)
-            : null;
+        HudContext context = new HudContext(mc, held);
+        List<String> controls = new ArrayList<>();
         if (category == 0) {
-            boolean bound = PortableWirelessNetworkMonitor.isMonitorBound(held);
-            boolean own = bound && mc.thePlayer.getUniqueID()
-                .toString()
-                .equals(PortableWirelessNetworkMonitor.getOwnerUUID(held));
-            String plainAction = target instanceof TileEntityNetworkInfoPanel ? "bind_screen"
-                : bound ? "toggle_hud" : "monitor_bind";
-            String shiftAction = own ? "monitor_open" : "monitor_rebind";
-            lines.add(
-                shift ? row(action(shifted, shiftAction), action(use, plainAction))
-                    : row(action(use, plainAction), action(shifted, shiftAction)));
+            monitorHints(context, controls);
         } else if (category == 1) {
-            if (alt) {
-                lines.add(
-                    shift ? row(action(altShifted, "reveal"), action(altUse, "link_open"))
-                        : row(action(altUse, "link_open"), action(altShifted, "reveal")));
-            } else {
-                String plain = action(block ? use : altUse, block ? "link_config" : "link_open");
-                lines.add(shift ? row(action(shifted, "link_mode"), plain) : row(plain, action(shifted, "link_mode")));
-                lines.add(
-                    block ? row(action(altUse, "link_open"), action(altShifted, "reveal"))
-                        : action(altShifted, "reveal"));
-            }
+            linkHints(context, controls);
         } else if (category == 2) {
-            boolean visual = DeviceTerminalVisualizationState.isActiveHeld();
-            boolean machine = target instanceof IGregTechTileEntity;
-            if (alt) {
-                lines.add(
-                    shift ? row(action(altShifted, "device_visual"), action(altUse, "device_scan"))
-                        : row(action(altUse, "device_scan"), action(altShifted, "device_visual")));
-            } else {
-                String plainAction = visual && DeviceTerminalAnchorRenderer.INSTANCE.hasCurrentTarget()
-                    ? "device_travel"
-                    : machine && !visual ? "device_bind" : "device_open";
-                String shiftAction = machine ? "device_track" : "device_settings";
-                lines.add(
-                    shift ? row(action(shifted, shiftAction), action(use, plainAction))
-                        : row(action(use, plainAction), action(shifted, shiftAction)));
-                lines.add(row(action(altUse, "device_scan"), action(altShifted, "device_visual")));
-            }
+            deviceHints(context, controls);
         } else {
-            if (alt) {
-                String altAction = target instanceof TileController ? "quantum_migrate" : "quantum_incorporate";
-                lines.add(
-                    shift || !block ? row(action(altShifted, "reveal"), action(shifted, "quantum_open"))
-                        : row(action(altUse, altAction), action(shifted, "quantum_open")));
-            } else if (!block) {
-                lines.add(row(action(shifted, "quantum_open"), action(altShifted, "reveal")));
-            } else {
-                String plainAction = target instanceof TileController ? "quantum_bind" : "quantum_node";
-                String shiftAction = target instanceof TileEntityNetworkQuantumNode ? "quantum_pickup"
-                    : target instanceof TileController ? "quantum_remove" : "quantum_open";
-                lines.add(
-                    shift ? row(action(shifted, shiftAction), action(use, plainAction))
-                        : row(action(use, plainAction), action(shifted, shiftAction)));
-                lines.add(row(action(altUse, "quantum_incorporate"), action(altShifted, "reveal")));
-            }
+            quantumHints(context, controls);
+        }
+        List<String> lines = new ArrayList<>();
+        for (int i = 0; i < Math.min(4, controls.size()); i += 2) {
+            lines.add(i + 1 < controls.size() ? row(controls.get(i), controls.get(i + 1)) : controls.get(i));
         }
         lines.add(
             text(
@@ -267,6 +221,184 @@ public final class TerminalBaubleController {
                 "\u00a7b"
                     + text(canReturn(mc.thePlayer) ? "gtswn.terminal_action.return" : "gtswn.terminal_action.equip")));
         drawHud(mc, lines);
+    }
+
+    private static void hint(List<String> controls, boolean preferred, String key, String label) {
+        controls.add(preferred ? 0 : controls.size(), action(key, label));
+    }
+
+    private static void monitorHints(HudContext context, List<String> controls) {
+        if (!context.air && !context.block) return;
+        boolean bound = PortableWirelessNetworkMonitor.isMonitorBound(context.held);
+        boolean own = bound && context.mc.thePlayer.getUniqueID()
+            .toString()
+            .equals(PortableWirelessNetworkMonitor.getOwnerUUID(context.held));
+        // An arbitrary block can consume ordinary use. A monitor-owned panel has its own explicit binding path.
+        if (context.air) hint(controls, !context.sneaking, context.use, bound ? "toggle_hud" : "monitor_bind");
+        else if (context.target instanceof TileEntityNetworkInfoPanel && own)
+            hint(controls, !context.sneaking, context.use, "bind_screen");
+        hint(controls, context.sneaking, context.sneak + "+" + context.use, own ? "monitor_open" : "monitor_rebind");
+    }
+
+    private static void linkHints(HudContext context, List<String> controls) {
+        if (!context.air && !context.block) return;
+        boolean output = WirelessEnergyTap.getOutputModeStatic(context.held);
+        if (context.block) {
+            String linkAction = linkTargetAction(context, output);
+            if (linkAction != null) hint(controls, !context.sneaking, context.use, linkAction);
+        }
+        hint(
+            controls,
+            context.sneaking && (!context.alt || context.block),
+            context.sneak + "+" + context.use,
+            output ? "link_to_energy" : "link_to_dynamo");
+        if (context.air) {
+            hint(controls, context.alt && !context.shift, "Alt+" + context.right, "link_open");
+            hint(controls, context.alt && context.shift, context.revealKeys(), "reveal");
+        }
+    }
+
+    private static String linkTargetAction(HudContext context, boolean output) {
+        if (!(context.target instanceof IBasicEnergyContainer) || !(context.target instanceof ICoverable)) return null;
+        ICoverable coverable = (ICoverable) context.target;
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
+            if (WirelessEnergyTap.isOurGTswnCover(coverable.getCoverItemAtSide(side))) return "link_remove";
+        }
+        if (!context.validFace() || context.hit.hitVec == null) return null;
+        ForgeDirection side = GTUtility.determineWrenchingSide(
+            ForgeDirection.getOrientation(context.hit.sideHit),
+            (float) (context.hit.hitVec.xCoord - context.hit.blockX),
+            (float) (context.hit.hitVec.yCoord - context.hit.blockY),
+            (float) (context.hit.hitVec.zCoord - context.hit.blockZ));
+        IBasicEnergyContainer container = (IBasicEnergyContainer) context.target;
+        if (coverable.hasCoverAtSide(side) || container.getEUCapacity() <= 0) return null;
+        if (!output && container.getInputVoltage() <= 0
+            && container.getOutputVoltage() <= 0
+            && !LaserHatchUtil.isLaserHatch(context.target)) return null;
+        return output ? "link_dynamo" : "link_energy";
+    }
+
+    private static void deviceHints(HudContext context, List<String> controls) {
+        boolean machine = context.target instanceof IGregTechTileEntity
+            && DeviceMachineTypes.isWorkingMachine(((IGregTechTileEntity) context.target).getMetaTileEntity());
+        // The item NBT controls interception, while the ACK controls whether a teleport can actually be sent.
+        boolean visual = ItemDeviceInfoTerminal.isVisualizationEnabled(context.held);
+        String plain = null;
+        if (visual) plain = DeviceTerminalVisualizationState.isActiveHeld()
+            && DeviceTerminalAnchorRenderer.INSTANCE.hasCurrentTarget() ? "device_travel" : "device_open";
+        else if (machine) plain = "device_bind";
+        else if (context.air) plain = "device_open";
+        if (plain != null) hint(
+            controls,
+            !context.alt && !context.shift && !context.sneaking,
+            context.air || context.block ? context.use : context.right,
+            plain);
+        hint(
+            controls,
+            !context.alt && (context.shift || context.sneaking),
+            context.sneak + "+" + (context.air || context.block ? context.use : context.right),
+            machine ? "device_track" : "device_settings");
+        hint(controls, context.alt && !context.shift, "Alt+" + context.right, "device_scan");
+        hint(
+            controls,
+            context.alt && context.shift,
+            "Alt+Shift+" + (context.air || context.block ? context.use : context.right),
+            "device_visual");
+    }
+
+    private static void quantumHints(HudContext context, List<String> controls) {
+        boolean bound = ItemNetworkQuantumTerminal.isBound(context.held);
+        if (context.air) {
+            hint(controls, context.sneaking && !context.alt, context.sneak + "+" + context.use, "quantum_open");
+            if (bound) hint(controls, context.alt && context.shift, context.revealKeys(), "reveal");
+            return;
+        }
+        if (!context.block) return;
+        boolean incorporated = QuantumIncorporationClientState
+            .registered(context.mc.theWorld, context.hit.blockX, context.hit.blockY, context.hit.blockZ);
+        if (context.target instanceof TileController) {
+            hint(controls, !context.alt && !context.sneaking, context.use, "quantum_bind");
+            // Controller quantization is server-owned. The label states the condition instead of inventing client
+            // state.
+            hint(controls, !context.alt && context.sneaking, context.sneak + "+" + context.use, "quantum_remove");
+            int[] anchor = ItemNetworkQuantumTerminal.getAnchor(context.held);
+            boolean sameAnchor = anchor != null && anchor[0] == context.mc.theWorld.provider.dimensionId
+                && anchor[1] == context.hit.blockX
+                && anchor[2] == context.hit.blockY
+                && anchor[3] == context.hit.blockZ;
+            // AE2 syncs metadata 1 for powered, non-conflicting controllers. This is necessary, not a client grid
+            // query.
+            if (bound && !sameAnchor
+                && context.mc.theWorld.getBlockMetadata(context.hit.blockX, context.hit.blockY, context.hit.blockZ)
+                    == 1)
+                hint(controls, context.alt && !context.shift, "Alt+" + context.right, "quantum_migrate");
+            return;
+        }
+        if (!incorporated) {
+            if (context.target instanceof TileEntityNetworkQuantumNode)
+                hint(controls, !context.alt && context.sneaking, context.sneak + "+" + context.use, "quantum_pickup");
+            if (bound) {
+                String placement = quantumPlacementAction(context);
+                if (placement != null) hint(controls, !context.alt && !context.sneaking, context.use, placement);
+            }
+        }
+        if (incorporated) hint(controls, context.alt && !context.shift, "Alt+" + context.use, "quantum_release");
+        else if (bound && QuantumIncorporationRegistry
+            .isEligible(context.mc.theWorld, context.hit.blockX, context.hit.blockY, context.hit.blockZ))
+            hint(controls, context.alt && !context.shift, "Alt+" + context.use, "quantum_incorporate");
+    }
+
+    private static String quantumPlacementAction(HudContext context) {
+        if (!context.validFace()) return null;
+        QuantumBusTarget swap = QuantumBusTarget.resolve(
+            context.mc.theWorld,
+            context.hit.blockX,
+            context.hit.blockY,
+            context.hit.blockZ,
+            context.hit.sideHit);
+        if (swap != null)
+            return QuantumIncorporationClientState.registered(context.mc.theWorld, swap.x, swap.y, swap.z) ? null
+                : "quantum_replace";
+        ForgeDirection side = ForgeDirection.getOrientation(context.hit.sideHit);
+        int x = context.hit.blockX + side.offsetX, y = context.hit.blockY + side.offsetY,
+            z = context.hit.blockZ + side.offsetZ;
+        return context.mc.theWorld.blockExists(x, y, z) && context.mc.theWorld.getBlock(x, y, z)
+            .isReplaceable(context.mc.theWorld, x, y, z) ? "quantum_node" : null;
+    }
+
+    private static final class HudContext {
+
+        private final Minecraft mc;
+        private final ItemStack held;
+        private final MovingObjectPosition hit;
+        private final TileEntity target;
+        private final boolean air, block, alt, shift, sneaking;
+        private final String use, sneak, right;
+
+        private HudContext(Minecraft mc, ItemStack held) {
+            this.mc = mc;
+            this.held = held;
+            hit = mc.objectMouseOver;
+            air = TerminalRevealCharge.isPointingAtAir(mc);
+            block = hit != null && hit.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK
+                && mc.theWorld.blockExists(hit.blockX, hit.blockY, hit.blockZ);
+            target = block ? mc.theWorld.getTileEntity(hit.blockX, hit.blockY, hit.blockZ) : null;
+            alt = QuantumIncorporationClientHandler.isAltDown();
+            shift = QuantumIncorporationClientHandler.isShiftDown();
+            sneaking = mc.thePlayer.isSneaking();
+            use = TerminalKeyNames.name(mc.gameSettings.keyBindUseItem.getKeyCode());
+            sneak = TerminalKeyNames.name(mc.gameSettings.keyBindSneak.getKeyCode());
+            right = TerminalKeyNames.name(-99);
+        }
+
+        private boolean validFace() {
+            return block && hit.sideHit >= 0 && hit.sideHit < ForgeDirection.VALID_DIRECTIONS.length;
+        }
+
+        private String revealKeys() {
+            // Reveal starts on physical Shift+right mouse and the server also requires the actual sneak binding.
+            return "Alt+Shift+" + ("Shift".equals(sneak) || right.equals(sneak) ? "" : sneak + "+") + right;
+        }
     }
 
     private static void drawHud(Minecraft mc, List<String> lines) {

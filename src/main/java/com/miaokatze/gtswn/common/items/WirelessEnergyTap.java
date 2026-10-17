@@ -178,7 +178,7 @@ public class WirelessEnergyTap extends Item implements baubles.api.IBauble, baub
     /**
      * 检查指定的覆盖板是否是我们的GTswn覆盖板
      */
-    private boolean isOurGTswnCover(ItemStack coverStack) {
+    public static boolean isOurGTswnCover(ItemStack coverStack) {
         if (coverStack == null || coverStack.getItem() == null) {
             return false;
         }

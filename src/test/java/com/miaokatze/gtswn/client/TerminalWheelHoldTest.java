@@ -18,9 +18,9 @@ public class TerminalWheelHoldTest {
     }
 
     @Test
-    public void openingHoldConfirmsAtTwentyTicksWithoutACycle() {
+    public void openingHoldConfirmsAtFifteenTicksWithoutACycle() {
         TerminalWheelHold hold = new TerminalWheelHold();
-        for (int tick = 1; tick < 20; tick++) {
+        for (int tick = 1; tick < TerminalWheelHold.CONFIRM_TICKS; tick++) {
             assertFalse(hold.press());
             assertFalse(hold.tick(true));
         }
@@ -36,7 +36,7 @@ public class TerminalWheelHoldTest {
         TerminalWheelHold hold = new TerminalWheelHold();
         hold.release();
         assertTrue(hold.press());
-        for (int tick = 1; tick < 20; tick++) {
+        for (int tick = 1; tick < TerminalWheelHold.CONFIRM_TICKS; tick++) {
             assertFalse(hold.press());
             assertFalse(hold.tick(true));
         }
