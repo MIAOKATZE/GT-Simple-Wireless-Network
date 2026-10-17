@@ -2,14 +2,11 @@ package com.miaokatze.gtswn.client.gui;
 
 import java.math.BigInteger;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
-import net.minecraft.client.gui.GuiButton;
-import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.gui.GuiTextField;
-import net.minecraft.client.renderer.OpenGlHelper;
 import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.entity.RenderItem;
@@ -23,6 +20,12 @@ import net.minecraftforge.fluids.FluidStack;
 
 import org.lwjgl.opengl.GL11;
 
+import com.cleanroommc.modularui.api.drawable.IKey;
+import com.cleanroommc.modularui.value.StringValue;
+import com.cleanroommc.modularui.widget.ParentWidget;
+import com.cleanroommc.modularui.widgets.ButtonWidget;
+import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
+import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -30,47 +33,48 @@ import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketUpdateAETabState;
 import com.miaokatze.gtswn.network.PacketUpdateNetworkInfoPanelConfig;
 
-public class GuiNetworkInfoPanel extends GuiScreen {
+public class GuiNetworkInfoPanel extends GtswnMuiScreen {
 
     private final TileEntityNetworkInfoPanel panel;
     private int left;
     private int top;
     private final int xSize = 430;
     private final int ySize = 285;
-    private GuiCanvas canvas;
-    private int screenWidth, screenHeight;
+    private final ParentWidget<?> content = new ParentWidget<>().name("panel.body")
+        .size(430, 285);
+    private final Map<Integer, ButtonWidget<?>> buttons = new LinkedHashMap<>();
+    private boolean refreshPending;
     // AE 标签页按钮 ID 常量
     private static final int TAB_EU = 100;
     private static final int TAB_AE_CHART = 101;
     private static final int TAB_AE_MONITOR = 102;
-    private final List<GuiTextField> textFields = new ArrayList<>();
-    private GuiTextField energyMinField;
-    private GuiTextField energyMaxField;
-    private GuiTextField eutMinField;
-    private GuiTextField eutMaxField;
-    private GuiTextField borderField;
-    private GuiTextField chartBgField;
-    private GuiTextField lineField;
-    private GuiTextField smoothingField;
-    private GuiTextField screenColorField;
+    private final List<TextFieldWidget> textFields = new ArrayList<>();
+    private TextFieldWidget energyMinField;
+    private TextFieldWidget energyMaxField;
+    private TextFieldWidget eutMinField;
+    private TextFieldWidget eutMaxField;
+    private TextFieldWidget borderField;
+    private TextFieldWidget chartBgField;
+    private TextFieldWidget lineField;
+    private TextFieldWidget smoothingField;
+    private TextFieldWidget screenColorField;
     private static final int PALETTE_PAGE = 90;
     private static final int PALETTE_TOGGLE = 91;
     private static final String[] PALETTE_KEYS = { "energyFlatColor", "energyUpColor", "energyDownColor",
         "rateFlatColor", "rateUpColor", "rateDownColor" };
-    private final GuiTextField[] paletteFields = new GuiTextField[6];
+    private final TextFieldWidget[] paletteFields = new TextFieldWidget[6];
     private boolean palettePage, paletteEnabled;
-    private boolean dispatchingMouse, deferredGuiRefresh;
     private String chartDraft = "";
     private String paletteDraft = "";
 
     // AE 图表配置文本框（tab=1）
-    private GuiTextField aeAxisMinField;
-    private GuiTextField aeAxisMaxField;
-    private GuiTextField aeChartBorderField;
-    private GuiTextField aeTrendLineField;
-    private GuiTextField aeSmoothingField;
-    private GuiTextField aeBgField;
-    private GuiTextField aeLineColorField;
+    private TextFieldWidget aeAxisMinField;
+    private TextFieldWidget aeAxisMaxField;
+    private TextFieldWidget aeChartBorderField;
+    private TextFieldWidget aeTrendLineField;
+    private TextFieldWidget aeSmoothingField;
+    private TextFieldWidget aeBgField;
+    private TextFieldWidget aeLineColorField;
 
     /** 客户端上一次渲染时使用的标签页，用于检测服务端同步后重建控件 */
     private int lastKnownTab = -1;
@@ -113,54 +117,31 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private GuiAEMonitorList aeMonitorList;
 
     public GuiNetworkInfoPanel(TileEntityNetworkInfoPanel panel) {
+        super("network_info_panel", 430, 285);
         this.panel = panel;
+        getMainPanel().child(content);
+        buildPanel();
     }
 
-    @Override
-    public void setWorldAndResolution(net.minecraft.client.Minecraft client, int width, int height) {
-        screenWidth = width;
-        screenHeight = height;
-        super.setWorldAndResolution(client, width, height);
-    }
-
-    @Override
-    @SuppressWarnings("unchecked")
-    public void initGui() {
-        if (dispatchingMouse) {
-            deferredGuiRefresh = true;
-            return;
-        }
-        canvas = new GuiCanvas(screenWidth, screenHeight, xSize, ySize);
-        width = canvas.width;
-        height = canvas.height;
-        buttonList.clear();
+    private void buildPanel() {
+        content.removeAll();
+        buttons.clear();
         textFields.clear();
-        left = (width - xSize) / 2;
-        top = (height - ySize) / 2;
+        left = top = 0;
+        content.child(
+            GtswnMuiWidgets.canvas(
+                "panel.content",
+                0,
+                0,
+                xSize,
+                ySize,
+                (context, mouseX, mouseY, partialTicks) -> drawCanvas(mouseX, mouseY, partialTicks)));
 
-        // 标签页按钮（顶部，3 个均显示；选中态由 tab_active/tab_inactive 贴图表达，无 "[ x ]" 文本装饰）
         int tabY = top + 28;
         int initTab = lastKnownTab >= 0 ? lastKnownTab : panel.getCurrentTab();
-        buttonList
-            .add(new TabButton(TAB_EU, left + 12, tabY, 130, 16, tr("gtswn.network_info.gui.tab.eu"), initTab == 0));
-        buttonList.add(
-            new TabButton(
-                TAB_AE_CHART,
-                left + 150,
-                tabY,
-                130,
-                16,
-                tr("gtswn.network_info.gui.tab.ae_chart"),
-                initTab == 1));
-        buttonList.add(
-            new TabButton(
-                TAB_AE_MONITOR,
-                left + 288,
-                tabY,
-                130,
-                16,
-                tr("gtswn.network_info.gui.tab.ae_monitor"),
-                initTab == 2));
+        addButton(TAB_EU, left + 12, tabY, 130, 16, tr("gtswn.network_info.gui.tab.eu"));
+        addButton(TAB_AE_CHART, left + 150, tabY, 130, 16, tr("gtswn.network_info.gui.tab.ae_chart"));
+        addButton(TAB_AE_MONITOR, left + 288, tabY, 130, 16, tr("gtswn.network_info.gui.tab.ae_monitor"));
 
         int activeTab = lastKnownTab >= 0 ? lastKnownTab : panel.getCurrentTab();
         if (activeTab == 0) {
@@ -174,71 +155,41 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             initAEMonitorTabControls();
         }
         lastKnownTab = activeTab;
+        if (content.isValid()) content.scheduleResize();
     }
 
     /** 初始化 EU 标签页原有按钮 0-8 与 textFields（从原 initGui 抽取） */
     private void initEUTabControls() {
-        buttonList.add(
-            new GtswnGuiButton(
-                PALETTE_PAGE,
-                left + 320,
-                top + 253,
-                98,
-                16,
-                tr(palettePage ? "gtswn.network_info.gui.chart_settings" : "gtswn.network_info.gui.trend_colors")));
+        addButton(
+            PALETTE_PAGE,
+            left + 320,
+            top + 253,
+            98,
+            16,
+            tr(palettePage ? "gtswn.network_info.gui.chart_settings" : "gtswn.network_info.gui.trend_colors"));
         if (palettePage) {
             initPaletteControls();
             return;
         }
         int y1 = top + 52;
         int y2 = top + 72;
-        buttonList.add(
-            new GtswnGuiButton(
-                0,
-                left + 12,
-                y1,
-                94,
-                16,
-                bool(tr("gtswn.network_info.gui.brief.eu"), panel.isShowBriefEnergy())));
-        buttonList.add(
-            new GtswnGuiButton(
-                1,
-                left + 110,
-                y1,
-                94,
-                16,
-                bool(tr("gtswn.network_info.gui.brief.status"), panel.isShowBriefStatus())));
-        buttonList.add(
-            new GtswnGuiButton(
-                2,
-                left + 208,
-                y1,
-                94,
-                16,
-                bool(tr("gtswn.network_info.gui.chart.eu"), panel.isShowChartEnergy())));
-        buttonList.add(
-            new GtswnGuiButton(
-                3,
-                left + 306,
-                y1,
-                112,
-                16,
-                bool(tr("gtswn.network_info.gui.chart.eut"), panel.isShowChartStatus())));
-        buttonList.add(
-            new GtswnGuiButton(
-                4,
-                left + 12,
-                y2,
-                112,
-                16,
-                tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName()));
-        buttonList.add(new GtswnGuiButton(5, left + 130, y2, 24, 16, "-"));
-        buttonList.add(new GtswnGuiButton(6, left + 158, y2, 24, 16, "+"));
-        buttonList.add(new GtswnGuiButton(7, left + 188, y2, 74, 16, getDisplayModeButtonText(panel.getDisplayMode())));
-        buttonList.add(new GtswnGuiButton(8, left + 344, y2, 74, 16, tr("gtswn.network_info.gui.apply")));
+        addButton(0, left + 12, y1, 94, 16, bool(tr("gtswn.network_info.gui.brief.eu"), panel.isShowBriefEnergy()));
+        addButton(
+            1,
+            left + 110,
+            y1,
+            94,
+            16,
+            bool(tr("gtswn.network_info.gui.brief.status"), panel.isShowBriefStatus()));
+        addButton(2, left + 208, y1, 94, 16, bool(tr("gtswn.network_info.gui.chart.eu"), panel.isShowChartEnergy()));
+        addButton(3, left + 306, y1, 112, 16, bool(tr("gtswn.network_info.gui.chart.eut"), panel.isShowChartStatus()));
+        addButton(4, left + 12, y2, 112, 16, tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName());
+        addButton(5, left + 130, y2, 24, 16, "-");
+        addButton(6, left + 158, y2, 24, 16, "+");
+        addButton(7, left + 188, y2, 74, 16, getDisplayModeButtonText(panel.getDisplayMode()));
+        addButton(8, left + 344, y2, 74, 16, tr("gtswn.network_info.gui.apply"));
         // 样条类型按钮：位于平滑强度输入框正上方，点击轮换 0过点/1拟合/2折线/3数字
-        buttonList.add(
-            new GtswnGuiButton(9, left + 372, top + 187, 46, 16, getSplineTypeName(panel.getTrendLineSplineType())));
+        addButton(9, left + 372, top + 187, 46, 16, getSplineTypeName(panel.getTrendLineSplineType()));
 
         int fieldY = top + 165;
         energyMinField = addField(left + 104, fieldY, 66, panel.getEnergyAxisMinText());
@@ -249,19 +200,19 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fieldY += 22;
         borderField = addField(left + 104, fieldY, 46, String.valueOf(panel.getChartBorderThickness()));
         lineField = addField(left + 250, fieldY, 46, String.valueOf(panel.getTrendLineThickness()));
-        smoothingField = addField(left + 372, fieldY, 46, String.valueOf(panel.getTrendLineSmoothing()));
+        smoothingField = addField(left + 372, fieldY + 10, 46, String.valueOf(panel.getTrendLineSmoothing()));
         fieldY += 22;
         chartBgField = addField(left + 104, fieldY, 66, panel.getChartBackgroundColorText());
         screenColorField = addField(left + 250, fieldY, 66, panel.getScreenBackgroundColorText());
         String[] keys = { "energyMin", "energyMax", "eutMin", "eutMax", "border", "chartBg", "line", "smoothing",
             "screenColor" };
-        GuiTextField[] fields = { energyMinField, energyMaxField, eutMinField, eutMaxField, borderField, chartBgField,
-            lineField, smoothingField, screenColorField };
+        TextFieldWidget[] fields = { energyMinField, energyMaxField, eutMinField, eutMaxField, borderField,
+            chartBgField, lineField, smoothingField, screenColorField };
         for (String entry : chartDraft.split("\n")) {
             int split = entry.indexOf('=');
             if (split < 0) continue;
             for (int i = 0; i < keys.length; i++)
-                if (keys[i].equals(entry.substring(0, split))) fields[i].setText(entry.substring(split + 1));
+                if (keys[i].equals(entry.substring(0, split))) setFieldText(fields[i], entry.substring(split + 1));
         }
 
     }
@@ -285,18 +236,17 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 if (PALETTE_KEYS[i].equals(key)) values[i] = value;
             }
         }
-        buttonList.add(
-            new GtswnGuiButton(
-                PALETTE_TOGGLE,
-                left + 12,
-                top + 52,
-                230,
-                16,
-                bool(tr("gtswn.network_info.gui.trend_regions"), paletteEnabled)));
-        buttonList.add(new GtswnGuiButton(8, left + 344, top + 52, 74, 16, tr("gtswn.network_info.gui.apply")));
+        addButton(
+            PALETTE_TOGGLE,
+            left + 12,
+            top + 52,
+            230,
+            16,
+            bool(tr("gtswn.network_info.gui.trend_regions"), paletteEnabled));
+        addButton(8, left + 344, top + 52, 74, 16, tr("gtswn.network_info.gui.apply"));
         for (int i = 0; i < paletteFields.length; i++) {
             paletteFields[i] = addField(left + 130 + i % 3 * 94, top + 120 + i / 3 * 48, 70, values[i]);
-            paletteFields[i].setMaxStringLength(7);
+            paletteFields[i].setMaxLength(7);
         }
     }
 
@@ -326,55 +276,36 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         int row2Y = top + 74;
 
         // 第一行：简报 / 存量 / 变化率 / 显示模式
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_BRIEF_BUTTON,
-                left + 12,
-                row1Y,
-                94,
-                16,
-                bool(tr("gtswn.network_info.gui.ae.brief"), panel.isShowAEBrief())));
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_CHART_AMOUNT_BUTTON,
-                left + 110,
-                row1Y,
-                94,
-                16,
-                bool(tr("gtswn.network_info.gui.ae.chart.amount"), panel.isShowAEChartAmount())));
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_CHART_RATE_BUTTON,
-                left + 208,
-                row1Y,
-                94,
-                16,
-                bool(tr("gtswn.network_info.gui.ae.chart.rate"), panel.isShowAEChartRate())));
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_DISPLAY_MODE_BUTTON,
-                left + 306,
-                row1Y,
-                112,
-                16,
-                getDisplayModeButtonText(panel.getDisplayMode())));
+        addButton(
+            AE_BRIEF_BUTTON,
+            left + 12,
+            row1Y,
+            94,
+            16,
+            bool(tr("gtswn.network_info.gui.ae.brief"), panel.isShowAEBrief()));
+        addButton(
+            AE_CHART_AMOUNT_BUTTON,
+            left + 110,
+            row1Y,
+            94,
+            16,
+            bool(tr("gtswn.network_info.gui.ae.chart.amount"), panel.isShowAEChartAmount()));
+        addButton(
+            AE_CHART_RATE_BUTTON,
+            left + 208,
+            row1Y,
+            94,
+            16,
+            bool(tr("gtswn.network_info.gui.ae.chart.rate"), panel.isShowAEChartRate()));
+        addButton(AE_DISPLAY_MODE_BUTTON, left + 306, row1Y, 112, 16, getDisplayModeButtonText(panel.getDisplayMode()));
 
         // 第二行：AE 时长显示 / - / + / 应用
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_WINDOW_LABEL_BUTTON,
-                left + 12,
-                row2Y,
-                130,
-                16,
-                getAEWindowDisplay(panel.getAETrackingWindow())));
-        buttonList.add(new GtswnGuiButton(AE_WINDOW_PREV_BUTTON, left + 146, row2Y, 24, 16, "-"));
-        buttonList.add(new GtswnGuiButton(AE_WINDOW_NEXT_BUTTON, left + 174, row2Y, 24, 16, "+"));
-        buttonList
-            .add(new GtswnGuiButton(AE_APPLY_BUTTON, left + 344, row2Y, 74, 16, tr("gtswn.network_info.gui.apply")));
+        addButton(AE_WINDOW_LABEL_BUTTON, left + 12, row2Y, 130, 16, getAEWindowDisplay(panel.getAETrackingWindow()));
+        addButton(AE_WINDOW_PREV_BUTTON, left + 146, row2Y, 24, 16, "-");
+        addButton(AE_WINDOW_NEXT_BUTTON, left + 174, row2Y, 24, 16, "+");
+        addButton(AE_APPLY_BUTTON, left + 344, row2Y, 74, 16, tr("gtswn.network_info.gui.apply"));
         // AE 样条类型按钮：位于 aeSmoothingField 输入框正上方，点击轮换 0过点/1拟合/2折线/3数字
-        buttonList.add(
-            new GtswnGuiButton(27, left + 372, top + 165, 46, 16, getSplineTypeName(panel.getAETrendLineSplineType())));
+        addButton(27, left + 372, top + 165, 46, 16, getSplineTypeName(panel.getAETrendLineSplineType()));
 
         // 配置文本框整体下移，避免与按钮行重叠并和 EU 标签页对称
         int fieldY = top + 165;
@@ -383,7 +314,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fieldY += 22;
         aeChartBorderField = addField(left + 104, fieldY, 46, String.valueOf(panel.getAEChartBorderThickness()));
         aeTrendLineField = addField(left + 250, fieldY, 46, String.valueOf(panel.getAETrendLineThickness()));
-        aeSmoothingField = addField(left + 372, fieldY, 46, String.valueOf(panel.getAETrendLineSmoothing()));
+        aeSmoothingField = addField(left + 372, fieldY + 10, 46, String.valueOf(panel.getAETrendLineSmoothing()));
         fieldY += 22;
         aeBgField = addField(left + 104, fieldY, 66, panel.getAEChartBackgroundColorText());
         aeLineColorField = addField(left + 250, fieldY, 66, panel.getAELineColorText());
@@ -394,68 +325,50 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     private void initAEMonitorTabControls() {
         // 区域 2：第一排配置按钮（显示模式、字号、加粗、呈现方式）
         int row1Y = top + 52;
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_DISPLAY_MODE_BUTTON,
-                left + 12,
-                row1Y,
-                100,
-                16,
-                getDisplayModeButtonText(panel.getDisplayMode())));
+        addButton(AE_DISPLAY_MODE_BUTTON, left + 12, row1Y, 100, 16, getDisplayModeButtonText(panel.getDisplayMode()));
         // 字号标签与 -/+
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_MONITOR_FONT_SIZE_LABEL,
-                left + 116,
-                row1Y,
-                70,
-                16,
-                tr("gtswn.network_info.gui.ae.monitor.font_size") + ": " + panel.getAEMonitorFontSize()));
-        buttonList.add(new GtswnGuiButton(AE_MONITOR_FONT_SIZE_MINUS, left + 190, row1Y, 24, 16, "-"));
-        buttonList.add(new GtswnGuiButton(AE_MONITOR_FONT_SIZE_PLUS, left + 218, row1Y, 24, 16, "+"));
+        addButton(
+            AE_MONITOR_FONT_SIZE_LABEL,
+            left + 116,
+            row1Y,
+            70,
+            16,
+            tr("gtswn.network_info.gui.ae.monitor.font_size") + ": " + panel.getAEMonitorFontSize());
+        addButton(AE_MONITOR_FONT_SIZE_MINUS, left + 190, row1Y, 24, 16, "-");
+        addButton(AE_MONITOR_FONT_SIZE_PLUS, left + 218, row1Y, 24, 16, "+");
         // 加粗开关
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_MONITOR_BOLD_BUTTON,
-                left + 246,
-                row1Y,
-                70,
-                16,
-                tr("gtswn.network_info.gui.ae.monitor.bold") + " "
-                    + (panel.isAEMonitorBold() ? tr("gtswn.network_info.gui.on") : tr("gtswn.network_info.gui.off"))));
+        addButton(
+            AE_MONITOR_BOLD_BUTTON,
+            left + 246,
+            row1Y,
+            70,
+            16,
+            tr("gtswn.network_info.gui.ae.monitor.bold") + " "
+                + (panel.isAEMonitorBold() ? tr("gtswn.network_info.gui.on") : tr("gtswn.network_info.gui.off")));
         // 呈现方式切换
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_MONITOR_RENDER_MODE_BUTTON,
-                left + 320,
-                row1Y,
-                90,
-                16,
-                panel.getAEMonitorRenderMode() == 0 ? tr("gtswn.network_info.gui.ae.monitor.render_mode.list")
-                    : tr("gtswn.network_info.gui.ae.monitor.render_mode.grid")));
+        addButton(
+            AE_MONITOR_RENDER_MODE_BUTTON,
+            left + 320,
+            row1Y,
+            90,
+            16,
+            panel.getAEMonitorRenderMode() == 0 ? tr("gtswn.network_info.gui.ae.monitor.render_mode.list")
+                : tr("gtswn.network_info.gui.ae.monitor.render_mode.grid"));
 
         // 区域 2：第二排图标大小配置
         int row2Y = top + 74;
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_MONITOR_ICON_SIZE_LABEL,
-                left + 12,
-                row2Y,
-                80,
-                16,
-                tr("gtswn.network_info.gui.ae.monitor.icon_size") + ": " + panel.getAEMonitorIconSize()));
-        buttonList.add(new GtswnGuiButton(AE_MONITOR_ICON_SIZE_MINUS, left + 96, row2Y, 24, 16, "-"));
-        buttonList.add(new GtswnGuiButton(AE_MONITOR_ICON_SIZE_PLUS, left + 124, row2Y, 24, 16, "+"));
+        addButton(
+            AE_MONITOR_ICON_SIZE_LABEL,
+            left + 12,
+            row2Y,
+            80,
+            16,
+            tr("gtswn.network_info.gui.ae.monitor.icon_size") + ": " + panel.getAEMonitorIconSize());
+        addButton(AE_MONITOR_ICON_SIZE_MINUS, left + 96, row2Y, 24, 16, "-");
+        addButton(AE_MONITOR_ICON_SIZE_PLUS, left + 124, row2Y, 24, 16, "+");
 
         // 区域 3：全部清除按钮（向下移动 10px，避免与简报区 top+100 贴边）
-        buttonList.add(
-            new GtswnGuiButton(
-                AE_CLEAR_ALL_BUTTON,
-                left + 318,
-                top + 112,
-                100,
-                16,
-                tr("gtswn.network_info.gui.ae.clear_all")));
+        addButton(AE_CLEAR_ALL_BUTTON, left + 318, top + 112, 100, 16, tr("gtswn.network_info.gui.ae.clear_all"));
 
         // 构造当前监控条目数组，供滚动列表使用
         refreshMonitoredEntries();
@@ -470,49 +383,61 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             xSize,
             () -> monitoredEntries,
             this::sendMonitorToggle);
+        content.child(aeMonitorList);
     }
 
     /** 从 panel 刷新监控条目数组 */
-    private void refreshMonitoredEntries() {
+    private boolean refreshMonitoredEntries() {
         List<ItemStack> items = panel.getMonitoredItems();
         List<FluidStack> fluids = panel.getMonitoredFluids();
         int total = items.size() + fluids.size();
-        monitoredEntries = new Object[total];
+        Object[] next = new Object[total];
         int idx = 0;
         for (ItemStack stack : items) {
-            monitoredEntries[idx++] = stack;
+            next[idx++] = stack;
         }
         for (FluidStack fluid : fluids) {
-            monitoredEntries[idx++] = fluid;
+            next[idx++] = fluid;
         }
+        boolean changed = next.length != monitoredEntries.length;
+        for (int i = 0; !changed && i < next.length; i++) {
+            changed = !java.util.Objects.equals(entryKey(next[i]), entryKey(monitoredEntries[i]));
+        }
+        if (changed) monitoredEntries = next;
+        return changed;
     }
 
-    @Override
-    protected void actionPerformed(GuiButton button) {
-        if (button.id == PALETTE_PAGE) {
+    private static String entryKey(Object entry) {
+        return entry instanceof ItemStack ? TileEntityNetworkInfoPanel.getAEKey((ItemStack) entry)
+            : TileEntityNetworkInfoPanel.getAEKey((FluidStack) entry);
+    }
+
+    private void action(int id) {
+        if (id == PALETTE_PAGE) {
             if (palettePage) paletteDraft = buildPaletteConfig();
             else chartDraft = buildChartConfig();
             palettePage = !palettePage;
-            initGui();
+            refreshPending = true;
             return;
         }
-        if (button.id == PALETTE_TOGGLE) {
+        if (id == PALETTE_TOGGLE) {
             paletteEnabled = !paletteEnabled;
-            button.displayString = bool(tr("gtswn.network_info.gui.trend_regions"), paletteEnabled);
+            buttons.get(id)
+                .overlay(IKey.str(bool(tr("gtswn.network_info.gui.trend_regions"), paletteEnabled)));
             return;
         }
 
-        if (button.id == TAB_EU || button.id == TAB_AE_CHART || button.id == TAB_AE_MONITOR) {
-            int newTab = (button.id == TAB_EU) ? 0 : (button.id == TAB_AE_CHART ? 1 : 2);
+        if (id == TAB_EU || id == TAB_AE_CHART || id == TAB_AE_MONITOR) {
+            int newTab = (id == TAB_EU) ? 0 : (id == TAB_AE_CHART ? 1 : 2);
             // 本地立即重建，服务端 setCurrentTab 后通过 getDescriptionPacket 回写，updateScreen 会再次比对确保一致
             pendingTab = newTab;
             lastKnownTab = newTab;
-            initGui();
+            refreshPending = true;
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketUpdateAETabState(panel.xCoord, panel.yCoord, panel.zCoord, (byte) 0, newTab, null));
             return;
         }
-        if (button.id == 8) {
+        if (id == 8) {
             // EU 图表配置应用
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketUpdateNetworkInfoPanelConfig(
@@ -521,7 +446,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     panel.zCoord,
                     (palettePage ? chartDraft + "\n" + buildPaletteConfig()
                         : buildChartConfig() + "\n" + paletteDraft)));
-        } else if (button.id == AE_APPLY_BUTTON) {
+        } else if (id == AE_APPLY_BUTTON) {
             // AE 图表配置应用
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketUpdateNetworkInfoPanelConfig(
@@ -530,40 +455,37 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                     panel.zCoord,
                     buildAEChartConfig(),
                     true));
-        } else if (button.id == AE_DISPLAY_MODE_BUTTON) {
+        } else if (id == AE_DISPLAY_MODE_BUTTON) {
             // AE 标签页的显示模式切换复用 EU 的 action 7
             GTSWNPacketHandler.NETWORK
                 .sendToServer(new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, 7));
-        } else if (button.id == AE_CLEAR_ALL_BUTTON) {
+        } else if (id == AE_CLEAR_ALL_BUTTON) {
             // 一键清除全部物品+流体监控
             GTSWNPacketHandler.NETWORK
                 .sendToServer(new PacketUpdateAETabState(panel.xCoord, panel.yCoord, panel.zCoord, (byte) 6, 0, null));
-        } else if (button.id == AE_MONITOR_FONT_SIZE_LABEL || button.id == AE_MONITOR_ICON_SIZE_LABEL) {
+        } else if (id == AE_MONITOR_FONT_SIZE_LABEL || id == AE_MONITOR_ICON_SIZE_LABEL) {
             // 字号标签、图标大小标签仅作显示，无动作
             return;
-        } else if (button.id >= AE_MONITOR_FONT_SIZE_MINUS && button.id <= AE_MONITOR_ICON_SIZE_PLUS) {
+        } else if (id >= AE_MONITOR_FONT_SIZE_MINUS && id <= AE_MONITOR_ICON_SIZE_PLUS) {
             // AE 实时监控配置按钮（字号、加粗、呈现方式、图标大小）
-            GTSWNPacketHandler.NETWORK.sendToServer(
-                new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
-        } else if (button.id == 9 || button.id == 27) {
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, id));
+        } else if (id == 9 || id == 27) {
             // 样条类型轮换：action 号与按钮 id 一致（9=EU，27=AE），服务端 Store 内取模轮换；
             // 本地按下一状态即时刷新按钮文本，服务端回包后由 initGui 重建控件校正
-            GTSWNPacketHandler.NETWORK.sendToServer(
-                new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
-            int current = button.id == 9 ? panel.getTrendLineSplineType() : panel.getAETrendLineSplineType();
-            button.displayString = getSplineTypeName((current + 1) % 4);
-        } else if (button.id == 20 || button.id == 21
-            || button.id == 22
-            || button.id == 24
-            || button.id == 25
-            || button.id == 26) {
-                // AE 走势图开关、检测时长标签（切换窗口）与字号 +/- 直接走通用 action 包
-                GTSWNPacketHandler.NETWORK.sendToServer(
-                    new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
-            } else {
-                GTSWNPacketHandler.NETWORK.sendToServer(
-                    new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, button.id));
-            }
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, id));
+            int current = id == 9 ? panel.getTrendLineSplineType() : panel.getAETrendLineSplineType();
+            buttons.get(id)
+                .overlay(IKey.str(getSplineTypeName((current + 1) % 4)));
+        } else if (id == 20 || id == 21 || id == 22 || id == 24 || id == 25 || id == 26) {
+            // AE 走势图开关、检测时长标签（切换窗口）与字号 +/- 直接走通用 action 包
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, id));
+        } else {
+            GTSWNPacketHandler.NETWORK
+                .sendToServer(new PacketUpdateNetworkInfoPanelConfig(panel.xCoord, panel.yCoord, panel.zCoord, id));
+        }
     }
 
     /** 发送指定索引监控条目的移除包（action 3=物品，4=流体） */
@@ -588,131 +510,114 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     }
 
     @Override
-    public void updateScreen() {
+    public void onUpdate() {
+        super.onUpdate();
+        if (refreshPending) {
+            refreshPending = false;
+            buildPanel();
+        }
         int serverTab = panel.getCurrentTab();
         if (pendingTab == -1) {
             if (serverTab != lastKnownTab) {
                 lastKnownTab = serverTab;
-                initGui();
+                refreshPending = true;
                 return;
             }
         } else if (pendingTab == serverTab) {
             pendingTab = -1;
             if (serverTab != lastKnownTab) {
                 lastKnownTab = serverTab;
-                initGui();
+                refreshPending = true;
                 return;
             }
         }
-        // AE 监控标签页：监控列表长度变化时刷新滚动列表条目并校正滚动位置
-        if (lastKnownTab == 2 && aeMonitorList != null) {
-            int currentSize = panel.getMonitoredItems()
-                .size()
-                + panel.getMonitoredFluids()
-                    .size();
-            if (currentSize != monitoredEntries.length) {
-                refreshMonitoredEntries();
-                aeMonitorList.clampScroll();
+        // Reconcile identities too: replacing an entry need not change the list length.
+        if (lastKnownTab == 2 && aeMonitorList != null && refreshMonitoredEntries()) aeMonitorList.clampScroll();
+        for (Map.Entry<Integer, ButtonWidget<?>> entry : buttons.entrySet()) {
+            int id = entry.getKey();
+            ButtonWidget<?> button = entry.getValue();
+            if (id >= TAB_EU && id <= TAB_AE_MONITOR) {
+                button.background(id - TAB_EU == lastKnownTab ? GtswnMuiTheme.TAB_ACTIVE : GtswnMuiTheme.TAB_INACTIVE);
             }
-        }
-        for (Object object : buttonList) {
-            GuiButton button = (GuiButton) object;
-            switch (button.id) {
+            switch (id) {
                 case TAB_EU:
-                    button.displayString = tr("gtswn.network_info.gui.tab.eu");
-                    if (button instanceof TabButton) {
-                        ((TabButton) button).tabActive = lastKnownTab == 0;
-                    }
+                    button.overlay(IKey.str(tr("gtswn.network_info.gui.tab.eu")));
                     break;
                 case TAB_AE_CHART:
-                    button.displayString = tr("gtswn.network_info.gui.tab.ae_chart");
-                    if (button instanceof TabButton) {
-                        ((TabButton) button).tabActive = lastKnownTab == 1;
-                    }
+                    button.overlay(IKey.str(tr("gtswn.network_info.gui.tab.ae_chart")));
                     break;
                 case TAB_AE_MONITOR:
-                    button.displayString = tr("gtswn.network_info.gui.tab.ae_monitor");
-                    if (button instanceof TabButton) {
-                        ((TabButton) button).tabActive = lastKnownTab == 2;
-                    }
+                    button.overlay(IKey.str(tr("gtswn.network_info.gui.tab.ae_monitor")));
                     break;
                 case 0:
-                    button.displayString = bool(tr("gtswn.network_info.gui.brief.eu"), panel.isShowBriefEnergy());
+                    button.overlay(IKey.str(bool(tr("gtswn.network_info.gui.brief.eu"), panel.isShowBriefEnergy())));
                     break;
                 case 1:
-                    button.displayString = bool(tr("gtswn.network_info.gui.brief.status"), panel.isShowBriefStatus());
+                    button
+                        .overlay(IKey.str(bool(tr("gtswn.network_info.gui.brief.status"), panel.isShowBriefStatus())));
                     break;
                 case 2:
-                    button.displayString = bool(tr("gtswn.network_info.gui.chart.eu"), panel.isShowChartEnergy());
+                    button.overlay(IKey.str(bool(tr("gtswn.network_info.gui.chart.eu"), panel.isShowChartEnergy())));
                     break;
                 case 3:
-                    button.displayString = bool(tr("gtswn.network_info.gui.chart.eut"), panel.isShowChartStatus());
+                    button.overlay(IKey.str(bool(tr("gtswn.network_info.gui.chart.eut"), panel.isShowChartStatus())));
                     break;
                 case 4:
-                    button.displayString = tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName();
+                    button.overlay(IKey.str(tr("gtswn.network_info.gui.window") + ": " + panel.getWindowName()));
                     break;
                 case 7:
-                    button.displayString = getDisplayModeButtonText(panel.getDisplayMode());
+                    button.overlay(IKey.str(getDisplayModeButtonText(panel.getDisplayMode())));
                     break;
                 case AE_BRIEF_BUTTON:
-                    button.displayString = bool(tr("gtswn.network_info.gui.ae.brief"), panel.isShowAEBrief());
+                    button.overlay(IKey.str(bool(tr("gtswn.network_info.gui.ae.brief"), panel.isShowAEBrief())));
                     break;
                 case AE_CHART_AMOUNT_BUTTON:
-                    button.displayString = bool(
-                        tr("gtswn.network_info.gui.ae.chart.amount"),
-                        panel.isShowAEChartAmount());
+                    button.overlay(
+                        IKey.str(bool(tr("gtswn.network_info.gui.ae.chart.amount"), panel.isShowAEChartAmount())));
                     break;
                 case AE_CHART_RATE_BUTTON:
-                    button.displayString = bool(tr("gtswn.network_info.gui.ae.chart.rate"), panel.isShowAEChartRate());
+                    button
+                        .overlay(IKey.str(bool(tr("gtswn.network_info.gui.ae.chart.rate"), panel.isShowAEChartRate())));
                     break;
                 case AE_WINDOW_LABEL_BUTTON:
-                    button.displayString = getAEWindowDisplay(panel.getAETrackingWindow());
+                    button.overlay(IKey.str(getAEWindowDisplay(panel.getAETrackingWindow())));
                     break;
                 case AE_DISPLAY_MODE_BUTTON:
-                    button.displayString = getDisplayModeButtonText(panel.getDisplayMode());
+                    button.overlay(IKey.str(getDisplayModeButtonText(panel.getDisplayMode())));
                     break;
                 case AE_MONITOR_FONT_SIZE_LABEL:
-                    button.displayString = tr("gtswn.network_info.gui.ae.monitor.font_size") + ": "
-                        + panel.getAEMonitorFontSize();
+                    button.overlay(
+                        IKey.str(
+                            tr("gtswn.network_info.gui.ae.monitor.font_size") + ": " + panel.getAEMonitorFontSize()));
                     break;
                 case AE_MONITOR_BOLD_BUTTON:
-                    button.displayString = tr("gtswn.network_info.gui.ae.monitor.bold") + " "
-                        + (panel.isAEMonitorBold() ? tr("gtswn.network_info.gui.on")
-                            : tr("gtswn.network_info.gui.off"));
+                    button.overlay(
+                        IKey.str(
+                            tr("gtswn.network_info.gui.ae.monitor.bold") + " "
+                                + (panel.isAEMonitorBold() ? tr("gtswn.network_info.gui.on")
+                                    : tr("gtswn.network_info.gui.off"))));
                     break;
                 case AE_MONITOR_RENDER_MODE_BUTTON:
-                    button.displayString = panel.getAEMonitorRenderMode() == 0
-                        ? tr("gtswn.network_info.gui.ae.monitor.render_mode.list")
-                        : tr("gtswn.network_info.gui.ae.monitor.render_mode.grid");
+                    button.overlay(
+                        IKey.str(
+                            panel.getAEMonitorRenderMode() == 0
+                                ? tr("gtswn.network_info.gui.ae.monitor.render_mode.list")
+                                : tr("gtswn.network_info.gui.ae.monitor.render_mode.grid")));
                     break;
                 case AE_MONITOR_ICON_SIZE_LABEL:
-                    button.displayString = tr("gtswn.network_info.gui.ae.monitor.icon_size") + ": "
-                        + panel.getAEMonitorIconSize();
+                    button.overlay(
+                        IKey.str(
+                            tr("gtswn.network_info.gui.ae.monitor.icon_size") + ": " + panel.getAEMonitorIconSize()));
                     break;
                 default:
                     break;
             }
-        }
-        for (GuiTextField field : textFields) {
-            field.updateCursorCounter();
-        }
-    }
-
-    @Override
-    public void drawScreen(int mouseX, int mouseY, float partialTicks) {
-        org.lwjgl.opengl.GL11.glPushMatrix();
-        try {
-            org.lwjgl.opengl.GL11.glScalef(canvas.scale, canvas.scale, 1);
-            drawCanvas(canvas.mouse(mouseX), canvas.mouse(mouseY), partialTicks);
-        } finally {
-            org.lwjgl.opengl.GL11.glPopMatrix();
         }
     }
 
     private void drawCanvas(int mouseX, int mouseY, float partialTicks) {
         // 移除 drawDefaultBackground()，避免 AE 实时监控等标签页出现巨大 dirt 背景；
         // 面板背景由 drawPanelBackground() 统一绘制。
-        drawPanelBackground();
         drawTitleBar();
         // 标签页按钮始终绘制（已由 super.drawScreen 处理）
         int activeTab = lastKnownTab >= 0 ? lastKnownTab : panel.getCurrentTab();
@@ -722,15 +627,6 @@ public class GuiNetworkInfoPanel extends GuiScreen {
             drawAEChartTab();
         } else if (activeTab == 2) {
             drawAEMonitorTab();
-        }
-        super.drawScreen(mouseX, mouseY, partialTicks);
-        if (activeTab == 0 || activeTab == 1) {
-            for (GuiTextField field : textFields) {
-                field.drawTextBox();
-            }
-        }
-        if (activeTab == 2 && aeMonitorList != null) {
-            aeMonitorList.draw(mouseX, mouseY, partialTicks);
         }
     }
 
@@ -761,7 +657,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         fontRendererObj.drawString(
             StatCollector.translateToLocalFormatted("gtswn.network_info.gui.brief_ratio", panel.getBriefRatio()),
             left + 272,
-            top + 80,
+            top + 94,
             GtswnGuiPalette.TEXT_BODY);
         drawChartSettings();
     }
@@ -888,106 +784,51 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         int boxW = titleWidth + boxPadding * 2;
         int boxH = 14;
         // 标题栏 chip：9-slice 贴图（chip_active 32×16，切片 4px，boxH=14 纵向拉伸，契约 §3 #10）
-        GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.CHIP_ACTIVE, 4, boxX, boxY, boxW, boxH, this.zLevel);
+        GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.CHIP_ACTIVE, 4, boxX, boxY, boxW, boxH, 0);
         fontRendererObj.drawString(title, boxX + boxPadding, boxY + 3, 0xFFFFFF);
     }
 
-    @Override
-    protected void keyTyped(char typedChar, int keyCode) {
-        if (keyCode == 1) {
-            super.keyTyped(typedChar, keyCode);
-            return;
-        }
-        for (GuiTextField field : textFields) {
-            if (field.textboxKeyTyped(typedChar, keyCode)) {
-                return;
-            }
-        }
-        super.keyTyped(typedChar, keyCode);
-    }
-
-    @Override
-    public void handleMouseInput() {
-        // AE 监控标签页优先由自定义列表消费滚轮事件
-        if (lastKnownTab == 2 && aeMonitorList != null && aeMonitorList.handleMouseInput()) {
-            return;
-        }
-        super.handleMouseInput();
-    }
-
-    @Override
-    protected void mouseClicked(int mouseX, int mouseY, int mouseButton) {
-        dispatchingMouse = true;
-        try {
-            super.mouseClicked(mouseX, mouseY, mouseButton);
-        } finally {
-            dispatchingMouse = false;
-            if (deferredGuiRefresh) {
-                deferredGuiRefresh = false;
-                initGui();
-            }
-        }
-        if (lastKnownTab == 2 && aeMonitorList != null) {
-            aeMonitorList.mouseClicked(mouseX, mouseY, mouseButton);
-        }
-        for (GuiTextField field : textFields) {
-            field.mouseClicked(mouseX, mouseY, mouseButton);
-        }
-    }
-
-    @Override
-    protected void mouseClickMove(int mouseX, int mouseY, int clickedMouseButton, long timeSinceLastClick) {
-        super.mouseClickMove(mouseX, mouseY, clickedMouseButton, timeSinceLastClick);
-        if (lastKnownTab == 2 && aeMonitorList != null) {
-            aeMonitorList.mouseClickMove(mouseX, mouseY, clickedMouseButton);
-        }
-    }
-
-    @Override
-    protected void mouseMovedOrUp(int mouseX, int mouseY, int which) {
-        super.mouseMovedOrUp(mouseX, mouseY, which);
-        if (aeMonitorList != null) {
-            aeMonitorList.mouseReleased(mouseX, mouseY, which);
-        }
-    }
-
-    @Override
-    public boolean doesGuiPauseGame() {
-        return false;
-    }
-
-    /**
-     * 面板背景：消费 gtswn 整版贴图 panel_network_info（430×285，1:1 整绘，plan/ui/texture-list.md §2/§3 #3），
-     * 尺寸取 {@link GtswnGuiTextures} 常量，几何与行为零变化；3 条分隔线仍代码绘制，
-     * 色值琥珀化（GtswnGuiPalette.DIVIDER，契约 §5）。继续不调用 drawDefaultBackground。
-     */
-    private void drawPanelBackground() {
-        GtswnGuiDrawing.drawNetworkPanel(left, top, xSize, ySize, this.zLevel);
-        // 3 条区域分隔线（y+48/96/144，仍代码绘制）
-        drawRect(left + 8, top + 48, left + xSize - 8, top + 49, GtswnGuiPalette.DIVIDER);
-        drawRect(left + 8, top + 96, left + xSize - 8, top + 97, GtswnGuiPalette.DIVIDER);
-        drawRect(left + 8, top + 144, left + xSize - 8, top + 145, GtswnGuiPalette.DIVIDER);
-    }
-
-    private GuiTextField addField(int x, int y, int w, String value) {
-        GuiTextField field = new GuiTextField(fontRendererObj, x, y, w, 16);
-        field.setMaxStringLength(16);
-        field.setText(value == null ? "" : value);
+    private TextFieldWidget addField(int x, int y, int w, String value) {
+        TextFieldWidget field = GtswnMuiWidgets
+            .textField("panel.field." + textFields.size(), value == null ? "" : value, x, y, w, 16, 16);
         textFields.add(field);
+        content.child(field);
         return field;
     }
 
-    int[] framebufferClip(int x, int y, int w, int h) {
-        net.minecraft.client.gui.ScaledResolution resolution = new net.minecraft.client.gui.ScaledResolution(
-            mc,
-            mc.displayWidth,
-            mc.displayHeight);
-        return canvas.scissor(x, y, w, h, resolution.getScaleFactor(), mc.displayWidth, mc.displayHeight);
+    private void addButton(int id, int x, int y, int width, int height, String label) {
+        ButtonWidget<?> button = GtswnMuiWidgets.button(buttonName(id), label, x, y, width, height, () -> action(id));
+        if (id >= TAB_EU && id <= TAB_AE_MONITOR) {
+            int currentTab = lastKnownTab < 0 ? panel.getCurrentTab() : lastKnownTab;
+            button.background(id - TAB_EU == currentTab ? GtswnMuiTheme.TAB_ACTIVE : GtswnMuiTheme.TAB_INACTIVE);
+        }
+        buttons.put(id, button);
+        content.child(button);
+    }
+
+    private static String buttonName(int id) {
+        switch (id) {
+            case TAB_EU:
+                return "panel.tab.eu";
+            case TAB_AE_CHART:
+                return "panel.tab.ae";
+            case TAB_AE_MONITOR:
+                return "panel.tab.monitor";
+            case PALETTE_PAGE:
+                return "panel.palette";
+            default:
+                return "panel.action." + id;
+        }
+    }
+
+    private static void setFieldText(TextFieldWidget field, String text) {
+        field.value(new StringValue(text));
+        field.setText(text);
     }
 
     private void drawChartSettings() {
         int x = left + 12;
-        int y = top + 157;
+        int y = top + 149;
         fontRendererObj.drawString(
             EnumChatFormatting.BOLD + tr("gtswn.network_info.gui.chart_settings"),
             x,
@@ -1002,7 +843,7 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         y += 22;
         drawFieldLabel(tr("gtswn.network_info.gui.border_width"), left + 12, y + 4);
         drawFieldLabel(tr("gtswn.network_info.gui.line_width"), left + 180, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.smoothing"), left + 326, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.smoothing"), left + 326, y - 2);
         y += 22;
         drawFieldLabel(tr("gtswn.network_info.gui.chart_bg"), left + 12, y + 4);
         drawFieldLabel(tr("gtswn.network_info.gui.screen_bg"), left + 180, y + 4);
@@ -1013,20 +854,19 @@ public class GuiNetworkInfoPanel extends GuiScreen {
     /** 绘制 AE 走势图配置项标签（与 EU 的 drawChartSettings 布局对称，整体下移避免与按钮行重叠） */
     private void drawAEChartSettings() {
         int x = left + 12;
-        int y = top + 157;
+        int y = top + 149;
         fontRendererObj.drawString(
             EnumChatFormatting.BOLD + tr("gtswn.network_info.gui.ae.chart_settings"),
             x,
             y,
             GtswnGuiPalette.TEXT_BODY);
         y += 16;
-        // AE 走势图输入框标签复用 EU 标签，避免重复定义（按字段语义映射）
-        drawFieldLabel(tr("gtswn.network_info.gui.energy_y_min"), left + 12, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.energy_y_max"), left + 180, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.ae_y_min"), left + 12, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.ae_y_max"), left + 180, y + 4);
         y += 22;
         drawFieldLabel(tr("gtswn.network_info.gui.border_width"), left + 12, y + 4);
         drawFieldLabel(tr("gtswn.network_info.gui.line_width"), left + 180, y + 4);
-        drawFieldLabel(tr("gtswn.network_info.gui.smoothing"), left + 326, y + 4);
+        drawFieldLabel(tr("gtswn.network_info.gui.smoothing"), left + 326, y - 2);
         y += 22;
         drawFieldLabel(tr("gtswn.network_info.gui.chart_bg"), left + 12, y + 4);
         drawFieldLabel(tr("gtswn.network_info.gui.ae.line_color"), left + 180, y + 4);
@@ -1109,27 +949,9 @@ public class GuiNetworkInfoPanel extends GuiScreen {
         return StatCollector.translateToLocal(key);
     }
 
-    // ==================== GuiAEMonitorList 提级后的宿主访问器（O2-07） ====================
-    // GuiScreen 的 fontRendererObj / mc 为跨包 protected，GuiAEMonitorList 不能直引，经本包私有访问器活读。
-
-    /** 列表绘制用的字体渲染器（GuiScreen.fontRendererObj 转发） */
+    /** Shared font and icon drawing for native AE list rows. */
     FontRenderer font() {
         return fontRendererObj;
-    }
-
-    /** 列表滚轮/裁剪计算用的 Minecraft 实例（GuiScreen.mc 转发） */
-    Minecraft client() {
-        return mc;
-    }
-
-    /** 矩形填充转发 Gui.drawRect（protected 跨包不可直引，避免在列表类内复制 GL 代码） */
-    void fillRect(int x1, int y1, int x2, int y2, int color) {
-        drawRect(x1, y1, x2, y2, color);
-    }
-
-    /** 绘制层级转发（Gui.zLevel 为 protected 跨包不可直引，列表组件贴图绘制用） */
-    float guiZLevel() {
-        return zLevel;
     }
 
     /** 绘制 16x16 物品图标（启用标准 GUI 物品光照；列表行经包私有访问调用） */
@@ -1247,71 +1069,4 @@ public class GuiNetworkInfoPanel extends GuiScreen {
                 .isEmpty();
     }
 
-    /**
-     * 标签页按钮：选中态 tab_active / 未选中态 tab_inactive 9-slice 贴图（切片 4px，契约 §3 #7/#8），
-     * 标签为纯文本（"[ x ]" 装饰已去除，契约 §6 ③），选中状态由 {@link #tabActive} 驱动贴图。
-     * 几何与交互语义与 {@link GtswnGuiButton} 一致（id/x/y/w/h、hover 判定、mousePressed 不变），
-     * 标签三色复刻原版：hover 0xFFFFA0、normal 0xE0E0E0（均带阴影）、禁用 0xA0A0A0（无阴影）。
-     */
-    private static final class TabButton extends GtswnGuiButton {
-
-        /** tab 贴图 9-slice 角区边长（契约 §3：tab 切片 4px） */
-        private static final int SLICE = 4;
-
-        /** 是否选中态（initGui 构造时取初值，updateScreen 按 lastKnownTab 逐 tick 刷新） */
-        private boolean tabActive;
-
-        private TabButton(int id, int x, int y, int w, int h, String label, boolean tabActive) {
-            super(id, x, y, w, h, label);
-            this.tabActive = tabActive;
-        }
-
-        /** 贴图按 tabActive 二态选择（tab 无 hover 变体，契约 §3 #7/#8），标签三色与原版一致 */
-        @Override
-        public void drawButton(Minecraft mc, int mouseX, int mouseY) {
-            if (!this.visible) {
-                return;
-            }
-            // hover 判定复刻原版 GuiButton
-            boolean hovered = mouseX >= this.xPosition && mouseY >= this.yPosition
-                && mouseX < this.xPosition + this.width
-                && mouseY < this.yPosition + this.height;
-
-            GL11.glEnable(GL11.GL_BLEND);
-            OpenGlHelper.glBlendFunc(770, 771, 1, 0);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            if (this.tabActive) {
-                GtswnGuiDrawing.drawNineSlice(
-                    GtswnGuiTextures.TAB_ACTIVE,
-                    SLICE,
-                    this.xPosition,
-                    this.yPosition,
-                    this.width,
-                    this.height,
-                    this.zLevel);
-            } else {
-                GtswnGuiDrawing.drawNineSlice(
-                    GtswnGuiTextures.TAB_INACTIVE,
-                    SLICE,
-                    this.xPosition,
-                    this.yPosition,
-                    this.width,
-                    this.height,
-                    this.zLevel);
-            }
-            this.mouseDragged(mc, mouseX, mouseY);
-
-            // 标签：水平/垂直居中（y 取 (h-8)/2 与原版 drawCenteredString 落点一致），三色复刻原版
-            final FontRenderer fontrenderer = mc.fontRenderer;
-            final int tx = this.xPosition + this.width / 2 - fontrenderer.getStringWidth(this.displayString) / 2;
-            final int ty = this.yPosition + (this.height - 8) / 2;
-            if (!this.enabled) {
-                fontrenderer.drawString(this.displayString, tx, ty, 0xA0A0A0);
-            } else if (hovered) {
-                fontrenderer.drawStringWithShadow(this.displayString, tx, ty, 0xFFFFA0);
-            } else {
-                fontrenderer.drawStringWithShadow(this.displayString, tx, ty, 0xE0E0E0);
-            }
-        }
-    }
 }

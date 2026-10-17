@@ -341,6 +341,10 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                 return stack;
             }
         }
+        for (ItemStack stack : com.miaokatze.gtswn.common.baubles.TerminalBaubles.terminals(player)) {
+            if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal
+                && (requested == null || requested.equals(ItemDeviceInfoTerminal.readTerminalId(stack)))) return stack;
+        }
         return null;
     }
 }

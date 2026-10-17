@@ -16,7 +16,6 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.TerminalAirInteraction;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
-import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -103,8 +102,7 @@ public final class PacketTerminalGesture implements IMessage {
         if (request.action == OPEN_LINK) {
             if (held.getItem() instanceof WirelessEnergyTap && !player.isSneaking()) {
                 CHARGES.remove(player.getUniqueID());
-                player
-                    .openGui(GTSimpleWirelessNetwork.instance, GTSWNGuiHandler.LINK_TERMINAL, player.worldObj, 0, 0, 0);
+                GTSWNGuiHandler.openTerminal(player, false);
             }
         } else if (held.getItem() instanceof ItemDeviceInfoTerminal || (player.isSneaking()
             && (held.getItem() instanceof WirelessEnergyTap || held.getItem() instanceof ItemNetworkQuantumTerminal))) {

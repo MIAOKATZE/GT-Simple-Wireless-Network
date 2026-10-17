@@ -1,7 +1,7 @@
-<p align="center"><img src="images/GTSWN.png" alt="GTSWN" width="600"></p>
+<p align="center"><img src="images/GTSWN.png" alt="GTSWN" width="520"></p>
 
 <h1 align="center">GT-Simple-Wireless-Network</h1>
-<p align="center"><strong><em>GTNH 无线电网模组</em></strong><br><strong><em>GTNH Wireless Energy Network Mod</em></strong></p>
+<p align="center"><strong><em>GTNH 无线电网模组 / GTNH Wireless Energy Network Mod</em></strong></p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg"></a>
@@ -11,371 +11,285 @@
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
-一个 GregTech New Horizons 模组，为 GTNH 无线 EU 网络添加**无线能量监控、传输和红石控制**。提供便携式和方块式监视器、无线网络链路终端和链路终端覆盖板（能源/动力）——全部可在 LV 阶段合成——实现智能电网分析、红石逻辑输出和任意机器的无线能量传输。
+为 GTNH 提供 **无线 EU 监控、传输与红石控制**，包括便携/方块监视器、链路终端与覆盖板、信息屏、ME 量子接入和设备信息终端；均为 LV 阶段科技。
 
-A GregTech New Horizons mod that adds **wireless energy monitoring, transfer, and redstone control** to the GTNH wireless EU network. It provides portable and block-based monitors, wireless network link terminals, and link terminal covers (Energy/Power) — all craftable at LV tier — enabling intelligent grid analysis, redstone logic output, and seamless wireless energy transfer for any machine.
+**Wireless EU monitoring, transfer and redstone control** for GTNH: portable/block monitors, link terminals and covers, info panels, ME quantum access and device terminals, all available at LV tier.
 
-> \[!NOTE]
-> 这是一个非官方模组，讨论此模组时请注意场合。
-> This is an unofficial mod. Please avoid discussing this mod in official GTNH forums.
+> [!NOTE]
+> 非官方模组，讨论时请注意场合。/ Unofficial mod; please avoid discussing it in official GTNH forums.
+>
+> 📖 [完整文档 / Full Wiki](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/wiki)
 
-> 📖 **完整文档请查阅 [Wiki](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/wiki) / For full documentation, see the [Wiki](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/wiki)**
+## 下载与依赖 / Downloads & Requirements
 
-## 下载与版本需求 / Downloads & Requirements
+| GTNH | GTSWN | 维护 / Maintained |
+|---|---|:---:|
+| 2.9.0 beta1-3 & RC1-2 | **1.8.0+**（当前 / current）| ✔️ |
+| 2.9.0 beta-1&2 | 1.0.0–1.7.25 | ✔️ |
+| 2.8.4 | 0.2.0 | ❌ |
 
-| GTNH         | GTSWN  | 维护 / Maintenance |
-| ------------ | ------ | :--------------: |
-| 2.9.0 beta1-3 & RC1-2 | **1.8.0 +** （当前 / current） |        ✔️        |
-| 2.9.0 beta-1&2 | 1.0.0~1.7.25| ✔️ |
-| 2.8.4        | 0.2.0  |        ❌️        |
+[GitHub Releases 下载 / Download](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)：生产 jar 放入客户端和服务端 `mods/`，替换旧版且只留一个；勿安装 `-dev.jar` / `-sources.jar`。当前开发基线 **GTNH 2.9.0-RC-2**。
 
-下载最新版本 / Download the latest version：[GitHub Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)
+Install one release jar in both client and server `mods/`, replacing older versions; exclude `-dev.jar` / `-sources.jar`. Development baseline: **GTNH 2.9.0-RC-2**; compatibility above.
 
-将发布页的生产 jar 放入客户端与服务端的 `mods/`，替换旧版，保留一个 GTSWN jar；不要安装 `-dev.jar` 或 `-sources.jar`。当前开发基线为 GTNH **2.9.0-RC-2**，旧版本兼容范围见上表。依赖 GT5U、GTNHLib、StructureLib、ModularUI、ModularUI2、AE2；NEI、Baubles、WAILA、BetterQuesting 提供额外集成。
+- **依赖 / Required**：GT5U、GTNHLib、StructureLib、ModularUI、ModularUI2、AE2。
+- **额外集成 / Extra integrations**：NEI、Baubles、WAILA、BetterQuesting、MatterManipulator（MM）。
 
-Place the release jar in both client and server `mods/`, replacing the old version and keeping one GTSWN jar. Do not install `-dev.jar` or `-sources.jar`. The current development baseline is GTNH **2.9.0-RC-2**; see the table for older compatibility. Requires GT5U, GTNHLib, StructureLib, ModularUI, ModularUI2 and AE2; NEI, Baubles, WAILA and BetterQuesting provide extra integrations.
+## 饰品终端与轮盘 / Baubles Terminals & Wheel
 
-***
+<p align="center"><img src="images/Terminal_Baubles_Wheel_Showcase.png" alt="终端饰品栏与八格轮盘 / Terminal Baubles slots and eight-sector wheel" width="640"><br><em>实机图；当前长按确认 0.5 秒 / In-game screenshot; current hold-to-confirm time: 0.5s</em></p>
 
-## 无线网络链路终端与覆盖板 / Wireless Energy Tap & Covers
+四类专属 Baubles 槽共 **8 格：监测 1 + 链路 1 + 设备 1 + 量子 5**。轮盘按饰品库存顺序仅识别前 **1/1/1/5** 个对应终端，多余同类不参与选择。保留物品染色与自定义名称，便于区分多个量子网络。
 
-<p align="center"><img src="images/Wireless_Link_Nodes_Showcase.png" alt="无线网络链路终端与覆盖板 / Wireless Energy Tap and Covers" width="600"><br><em>链路终端与覆盖板 / Energy Tap and Covers</em></p>
+Four dedicated Baubles types provide **8 slots: 1 Monitor + 1 Link + 1 Device + 5 Quantum**. The wheel recognizes only the first **1/1/1/5** matching terminals in Baubles inventory order. Item colors and custom names help distinguish quantum networks.
 
-### 无线网络链路终端 / Wireless Energy Tap
+| 默认操作 / Default input | 行为 / Behavior |
+|---|---|
+| C（手持终端 / holding a terminal）| 有有效借出凭据则归还原饰品槽，否则装备到空的专属槽 / Return a valid borrowed terminal to its origin; otherwise equip into an empty dedicated slot |
+| C（其他情况 / otherwise）| 首次短按只打开八格轮盘 / First tap only opens the eight-sector wheel |
+| 后续短按 C 松手 / Subsequent tap and release C | 轮切；长按 **0.5 秒**确认（含首次）/ Cycle; hold **0.5s** to confirm, including the opening hold |
+| 左键、Enter 或 Space / Left-click, Enter or Space | 确认当前选择；监测/设备打开信息 UI，链路/量子取到手中 / Confirm: Monitor/Device opens its info UI; Link/Quantum moves to hand |
+| 轮盘 Shift+C / Shift+C in wheel | 强制取到手中，包括监测/设备终端 / Force selected terminal into hand, including Monitor/Device |
+| E（背包键）或 Esc / Inventory key or Esc | 关闭轮盘；轮盘期间屏蔽游戏操作，关闭后须松开按键再操作 / Close; gameplay input is blocked in the wheel and must be released before resuming |
 
-便携物品，将任意机器连接到跨维度共享的无线 EU 网络，链路节点支持跨维度供电与回传。Shift+右键切换能源模式（从电网获取，可配置损耗，默认15%）和动力模式（向电网输出，通过电容量缓冲池像虚拟导线般取电）。动态纹理反映当前模式。绑定激光源仓/靶仓时需消耗 1 根激光真空管。
+取手时原手持物品移到空背包格；无空位可安置时拒绝取出。借出凭据只认原热栏格中的同一物品，归还要求当前选中该格且原饰品槽为空，切走再切回仍可归还；移走、丢弃或替换后不能据此自动归还，每次仅保留一笔借出。
 
-A portable item that connects any machine to the wireless EU network shared across dimensions. Link nodes support cross-dimension energy delivery and return. Shift+right-click to switch between Energy mode (draw from network, configurable loss, default 15%) and Power mode (output to network, virtual-cable drain via capacity buffer). Dynamic texture reflects current mode. Binding a Laser Source/Target Hatch consumes 1 Laser Vacuum Pipe.
+Taking a terminal moves the held item to an empty inventory slot; it is refused if no space is available. One outstanding return record tracks the same item in its original hotbar slot. Return requires selecting that slot and an empty origin Baubles slot; switching away and back is allowed. Moving, dropping or replacing the item invalidates that return path.
 
-- **终端界面与显形 / Terminal UI & Reveal**：Alt+右击空气打开界面；Alt+Shift+右击空气蓄力约 1 秒，首次只显示当前能源/动力模式的节点；15 秒内再次扫描会同时显示能源与动力节点，显形持续 15 秒并在聊天框报告数量 / Alt+right-click in air opens the terminal UI. Hold Alt+Shift+right-click in air for about 1 second to reveal nodes in the current Energy/Power mode; scan again within 15 seconds to show both types together. Each reveal lasts 15 seconds and reports the count in chat.
-- **九宫格辅助线 / Grid Highlight**: 指向 GT 机器（ICoverable）时，绘制与 GT 扳手/覆盖板工具一致的九宫格辅助线——能源模式=黄色线，动力模式=紫色线。/ When pointing at a GT machine (ICoverable), draws a 3×3 grid highlight matching GT wrench/cover tool behavior — Energy mode = yellow lines, Power mode = purple lines.
+## 无线链路终端与覆盖板 / Wireless Energy Tap & Covers
 
-<p align="center"><img src="images/Wireless_Tap_Grid_Energy.png" alt="能源模式九宫格辅助线 / Grid highlight (Energy mode)" width="300"><img src="images/Wireless_Tap_Grid_Power.png" alt="动力模式九宫格辅助线 / Grid highlight (Power mode)" width="300"><br><em>九宫格辅助线 / Grid Highlight</em></p>
+<p align="center"><img src="images/Wireless_Link_Nodes_Showcase.png" alt="链路终端与覆盖板 / Energy Tap and Covers" width="600"></p>
 
-### 链路节点 / Link Nodes
+将机器接入跨维度共享的无线 EU 电网。Shift+右击切换**能源**（从电网取电）与**动力**（经容量缓冲池向电网回传，类似虚拟导线），动态纹理标识模式。绑定激光源仓/靶仓消耗 **1 根激光真空管**。
 
-右击机器自动安装对应覆盖板，无需单独合成。裸覆盖板没有配置不能工作；机器仍需保持区块加载。能源模式持续从缓存向机器供电，动力模式收集发电机输出并回传电网，覆盖板所在面不再向真实导线重复输出。
+Connect machines to the cross-dimensional wireless EU grid. Shift+right-click switches **Energy** (draw) / **Power** (return through a capacity buffer, like a virtual cable); textures show the mode. Binding a Laser Source/Target Hatch costs **1 Laser Vacuum Pipe**.
 
-Right-click a machine to install the appropriate cover; no separate recipe is needed. Bare covers without configuration do not work, and machine chunks must remain loaded. Energy mode powers the machine from its buffer; Power mode collects generator output and returns it to the grid, blocking duplicate cable output on the covered face.
+| 操作 / Control | 效果 / Effect |
+|---|---|
+| 右击机器 / Right-click machine | 自动安装对应节点覆盖板，无单独配方；裸覆盖板无配置不能工作 / Install configured node cover, no separate recipe; unconfigured covers do not work |
+| Alt+右击空气 / Alt+right-click air | 打开终端界面 / Open terminal UI |
+| Alt+Shift+对空气长按右键约 1 秒 / Hold Alt+Shift+right-click air ~1s | 当前模式节点显形 15 秒并报告数量；15 秒内再扫同时显示两类 / Reveal current mode for 15s and report count; rescan within 15s for both modes |
+| Shift+右击覆盖板 / Shift+right-click cover | 仅电流可编辑，最小 0.1 A，其余只读 / Edit amperage only, minimum 0.1 A; other values read-only |
+| 扳手左击 + Shift / Wrench-left-click + Shift | 拆除全部覆盖板 / Remove all covers |
+| 扳手左击 + Alt / Wrench-left-click + Alt | 静默清除链路节点，其他覆盖板沿用原行为 / Silently clear link nodes; other covers retain normal behavior |
 
-<p align="center"><img src="images/Wireless_Link_Nodes_Voltage_Colors.png" alt="不同机器电压等级下的能源与动力链路节点配色 / Energy and Power Link Node colors across machine voltage tiers" width="800"><br><em>链路节点电压变色实拍 / Link Node Voltage Tier Colors</em></p>
+机器区块须加载。能源模式从缓存供电；动力模式收集发电机输出，阻止覆盖面重复向真实导线供电。默认每 **600 tick / 30s** 与电网交互，损耗**下行 15%、上行 0%**，可在 `gtswn_network.cfg` 修改；拆除不掉落节点，剩余缓存按上行损耗退回电网。
 
-- **电压配色 / Voltage colors**：High/Medium 材质与中心粒子采用 GT 原生电压等级色，默认开启。终端特效页可设置配色比例 25%、50%、75%、100%，默认 75%（内三圈），粒子变色半径同比例联动；外围保留能源金黄或动力紫粉。支持 `/gtswn tap voltage on|off` 与 `/gtswn tap ratio <25|50|75|100>`，也可在 `gtswn_network.cfg` 调整 `TapVoltageColorsEnabled` / `TapVoltageColorPercent`。Low 与旧材质保留原色 / High/Medium materials and central particles use native GT voltage tier colors, enabled by default. Choose 25%, 50%, 75% or 100% coverage in the terminal's Effects page; the default 75% colors the inner three rings and the same proportion of the particle-column radius. The surrounding area retains Energy gold or Power purple. Use `/gtswn tap voltage on|off` and `/gtswn tap ratio <25|50|75|100>`, or configure `TapVoltageColorsEnabled` / `TapVoltageColorPercent` in `gtswn_network.cfg`. Low and legacy materials keep their original colors.
+Machine chunks must stay loaded. Energy powers from buffer; Power collects generator output and blocks duplicate cable output on that face. Default grid interval: **600 ticks / 30s**; losses: **15% down, 0% up**, configurable in `gtswn_network.cfg`. Removal drops no node and refunds the buffer with uplink loss.
 
-- **电流设置 / Current setting**：Shift+右击覆盖板打开界面，只允许编辑电流（A），最小为 0.1 A；其余参数只读 / Shift+right-click a cover to open its GUI. Only amperage (A) is editable, with a minimum of 0.1 A; all other settings are read-only.
-- **安装动画 / Installation animation**：新安装的覆盖板会由内向外逐渐显现蜂窝，动画结束后才开始显示粒子效果；Low、Medium、High 使用蜂窝显现，old 系列使用平面渐显；粒子设置独立于材质 / Low, Medium and High reveal the honeycomb; the old series fades in as a flat surface. Particles are configured independently of material.
-- **损耗与周期 / Loss and interval**：默认每 600 tick（30 秒）与电网交互，下行损耗 15%、上行 0%；可在 `gtswn_network.cfg` 配置。拆除覆盖板时剩余缓存按上行损耗返还 / Grid interaction defaults to every 600 ticks (30 seconds), with 15% downlink loss and 0% uplink loss. Configure these in `gtswn_network.cfg`; removing a cover returns its remaining buffer with uplink loss.
-- **拆机 / Dismantling**：扳手左键配合 Shift 拆除全部覆盖板；配合 Alt 静默清除链路节点，其他覆盖板保持原行为。链路节点不掉落物品，剩余电量回到电网 / Wrench-left-click with Shift removes all covers; with Alt silently clears link nodes while other covers retain their usual behavior. Link nodes leave no item drops and return their remaining energy to the grid.
-- **配置复制 / Copying settings**：`AllowCopyPasteTool` 默认关闭；开启后 GT 覆盖板工具、物质操纵者等可复制节点配置 / `AllowCopyPasteTool` is off by default; enable it to copy node settings with GT cover tools or MatterManipulator.
+<p align="center"><img src="images/Wireless_Tap_Grid_Energy.png" alt="能源模式辅助线 / Energy grid" width="290"> <img src="images/Wireless_Tap_Grid_Power.png" alt="动力模式辅助线 / Power grid" width="290"><br><em>GT 机器九宫格：能源黄、动力紫 / GT machine 3×3 grid: Energy yellow, Power purple</em></p>
 
-***
+- **材质与动画 / Materials & animation**：Low/Medium/High 蜂窝由内向外显现，old 系列平面渐显，结束后显示粒子；材质与粒子独立 / Low/Medium/High honeycomb reveals outward; old variants fade as flat surfaces. Particles begin afterward and are independent of material.
+- **电压配色 / Voltage colors**：High/Medium 与中心粒子默认用 GT 电压色，覆盖 **25/50/75/100%**，默认 **75%（内三圈）**，粒子半径同比例；外围保留能源金黄/动力紫粉，Low/旧材质不变。终端特效页或 `/gtswn tap voltage on|off`、`/gtswn tap ratio <25|50|75|100>` 调整；配置项 `TapVoltageColorsEnabled` / `TapVoltageColorPercent` / High/Medium and center particles use GT voltage colors by default, with the same radius ratio; outer areas retain Energy gold/Power purple. Low/legacy stay unchanged. Set via Effects, commands above or the named config keys.
 
-## ME 网络量子终端与节点 / ME Network Quantum Terminal & Node
+<p align="center"><img src="images/Wireless_Link_Nodes_Voltage_Colors.png" alt="链路节点电压等级配色实拍 / In-game Link Node voltage colors" width="640"></p>
 
-<p align="center"><img src="images/ME_Network_Quantum_Node.png" alt="不同颜色的量子网络、量子节点与设备并入场景 / Colored quantum networks, nodes and incorporated devices" width="600"><br><em>量子节点与量子并入：多网络调色展示 / Quantum Nodes and incorporation: multiple network colors</em></p>
+### 配置复制与 MM / Copying & MatterManipulator
 
-为 AE2 网络提供「量子化」远程接入机制。量子终端将成型的 ME 控制器整结构量子化并绑定其网络；量子节点作为远程接入点，经虚拟桥接接入锚点控制器网络——突破原版线缆距离限制，相邻 AE2 设备直接入网。
+`AllowCopyPasteTool` 默认关闭，开启后 GT 覆盖板工具、MM 等可复制节点配置。MM 复制保留绑定与设置，不克隆电量或库存；节点本体免单独材料，侧部件/升级照常计费。在激光仓新装/替换无线覆盖板每面消耗 **1 根激光真空管**，新建量子并入每台消耗 **1 个锚点**，已有有效并入不重复收费。可选无线 EU 补能失败不阻断复制，保留空池或目标原有缓存；批次消息汇总结果与耗材。
 
-The Quantum Terminal binds a formed ME controller structure. Quantum Nodes connect distant AE2 devices to that network, bypassing cable distance limits.
+`AllowCopyPasteTool` defaults off; enable it for GT cover tools/MM to copy node settings. MM copies bindings/settings, not stored energy or inventories. Node cores require no separate material; side parts/upgrades retain normal costs. A new/replacement wireless cover on a laser hatch costs **1 pipe per face**; new quantum incorporation costs **1 anchor per device**, with no repeat charge for an existing valid incorporation. Failed optional wireless EU refill does not stop copying; the target keeps an empty or existing buffer. Batch messages summarize results and materials.
 
-量子终端可通过 LV 级工作台配方合成（福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1）；量子节点无独立配方——已绑定终端右击空地放置，可直接挖掘或用扳手拆除，节点本体无掉落，已安装部件及其库存正常回收。用终端 Shift+右击则仅移除核心，将侧部件保留在还原的线缆宿主上。
+## ME 量子终端与节点 / ME Quantum Terminal & Node
 
-Quantum Terminal is craftable via an LV-tier crafting recipe (Fluix ×4 + LV Emitter ×4 + ME Controller ×1); the Quantum Node has no recipe — place it with a bound terminal by right-clicking ground. Mining or wrench removal recovers installed parts and their inventories without dropping the node core. Sneak-right-clicking with the terminal removes only the core and preserves side parts on a restored cable host.
+<p align="center"><img src="images/ME_Network_Quantum_Node.png" alt="量子节点、并入设备与网络颜色 / Quantum nodes, incorporated devices and network colors" width="600"></p>
 
-### 量子终端 / Quantum Terminal
+量子终端将成型 ME 控制器整结构量子化并绑定；量子节点经虚拟桥接远程接入，相邻 AE2 设备直接入网，突破线缆距离限制。**LV 工作台配方**：福鲁伊克斯方块 ×4 + LV 发射器 ×4 + ME 控制器 ×1。节点无配方，由绑定终端放置。
+
+Quantize and bind a formed ME controller structure; Quantum Nodes bridge distant adjacent AE2 devices into it beyond cable distance limits. **LV crafting recipe**: Fluix Block ×4 + LV Emitter ×4 + ME Controller ×1. Nodes have no recipe; place them with a bound terminal.
 
 | 手势 / Gesture | 行为 / Behavior |
 |---|---|
-| 右击控制器 / Right-click controller | 量子化并绑定整结构（已量子化则改绑）/ Quantize & bind the entire structure (rebinds if already quantized) |
-| Shift+右击控制器 / Shift+right-click controller | 取消量子化并解绑 / Dequantize & unbind |
-| 右击空地（已绑定）/ Right-click ground (bound) | 放置量子节点 / Place a Quantum Node |
-| Shift+右击节点 / Shift+right-click node | 移除核心（不掉落，侧部件保留在线缆宿主上）/ Remove the core (no drop; side parts remain on a cable host) |
-| Shift+右击空气 / Shift+right-click air | 打开终端界面 / Open terminal GUI |
-| Alt+右击完整 AE 方块 / Alt+right-click a full AE block | 消耗一个量子并入锚点接入已绑定网络；再次操作解除并入 / Consume one Quantum Incorporation Anchor to join the bound network; repeat to remove incorporation |
-| Alt+Shift+右击方块 / Alt+Shift+right-click a block | 取消方块目标操作，不进行并入 / Cancels the block-targeted action; does not incorporate |
-| Alt+Shift+对空气长按右键 1 秒 / Hold Alt+Shift+right-click air for 1 second | 显形附近已加载区块中的当前网络 15 秒；同一终端、维度与网络在显形期间再次操作可显形附近全部量子网络 / Reveal the current network in nearby loaded chunks for 15 seconds; repeat during the reveal with the same terminal, dimension and network to reveal all nearby quantum networks |
+| 右击控制器 / Right-click controller | 量子化并绑定整结构，已量子化则改绑 / Quantize & bind whole structure; rebind if already quantized |
+| Shift+右击控制器 / Shift+right-click controller | 取消量子化并解绑；控制器难挖且防爆，先解除再拆 / Dequantize & unbind; hardened controllers resist mining/explosions, so dequantize before removal |
+| 右击空地（已绑定）/ Right-click ground (bound) | 放置量子节点 / Place Quantum Node |
+| Shift+右击节点 / Shift+right-click node | 仅移除核心，不掉落；侧部件保留在还原的线缆宿主上 / Remove core without drop; side parts remain on restored cable host |
+| Shift+右击空气 / Shift+right-click air | 打开终端 UI / Open terminal UI |
+| Alt+右击完整 AE 方块或支持的 GT 仓室 / Alt+right-click full AE block or supported GT hatch | 消耗 1 个量子并入锚点接入绑定网络；再次操作解除 / Incorporate into bound network for 1 anchor; repeat to remove |
+| Alt+Shift+右击方块 / Alt+Shift+right-click block | 取消方块目标操作，不并入 / Cancel block-targeted action; no incorporation |
+| Alt+Shift+对空气长按右键 1 秒 / Hold Alt+Shift+right-click air 1s | 当前网络显形 15 秒；同终端/维度/网络在期间再用，显形附近全部量子网络，仅已加载区块 / Reveal current network for 15s; repeat with same terminal/dimension/network during reveal for all nearby networks, loaded chunks only |
 
-终端界面提供 16 色调色，颜色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
+### 终端界面与供给 / Terminal UI & Supplies
 
-量子终端 GUI 的详情页保留 16 色网络调色及节点、并入和频道信息，特效页直接读写 `/gtswn quantum` 使用的客户端设置。链路终端共用这套双页界面：详情页显示玩家、维度、等级、团队负责人和电网 EU，特效页读写 `/gtswn tap` 使用的同一组设置；数值项左键增加、右键减少，取值范围与命令相同。两个界面都显示同一玩家的个人供给库：激光真空管和量子并入锚点的名称分别与物品格同行，下方说明可预装耗材、每类最多 640 个，布局保持在 300×240 界面内。供给数量按玩家持久数据共享；真实库存槽每次最多取出一组（64 个），角标显示个人储存总数，槽位为空时才显示物品虚影，并支持快捷存取，右键可取出 1 个。操作前有预装库存时，成功操作的聊天消息会显示该类剩余预装数量，包括最后一枚被消耗后显示 0；失败、解除和操作前没有预装库存时不附加该提示。
+量子与链路终端共用「详情 / 特效」双页 UI，`E`（背包键）/`Esc` 关闭。量子详情含节点、并入、频道信息与 **16 色**网络调色；同网同步，终端仅中心粒子变色，节点/连接边缘/并入粒子/显形框随网变色。链路详情显示玩家、维度、等级、团队负责人、电网 EU。特效页与 `/gtswn quantum`、`/gtswn tap` 共用客户端设置；数值左增右减，范围同命令。
 
-The Quantum Terminal GUI keeps its 16-color palette and node, incorporation and channel details on the Details page; its Effects page reads and writes the same client settings used by `/gtswn quantum`. The Link Terminal uses the same two-page UI: Details shows the player, dimension, level, team lead and grid EU, while Effects uses the settings shared with `/gtswn tap`; left-click numeric controls to increase and right-click to decrease, within the same ranges as the commands. Both terminals share a player-persistent supply store. The Laser Vacuum Pipe and Quantum Incorporation Anchor labels share a row with their item slots; text below says supplies can be preloaded, up to 640 of each, within the 300×240 interface. Each real inventory slot withdraws at most one stack (64); the item badge shows the player's total, and a ghost icon appears only while the slot is empty. Quick transfers are supported, and right-click withdraws one item. When an operation starts with preloaded stock, its success chat message reports the remaining amount, including 0 after consuming the last item. Failures, removals, and operations that start without preloaded stock do not add that notice.
+Quantum/Link terminals share Details/Effects pages; close with inventory key/`Esc`. Quantum Details shows nodes, incorporation, channels and **16 network colors**, synchronized across the network: terminal center particles, node rims, incorporation particles and reveal outlines follow the color. Link Details shows player, dimension, level, team lead and grid EU. Effects shares client command settings; left/right-click increases/decreases values within command ranges.
 
-量子终端顶部的「命名」按钮位于「详情」「特效」左侧，可在当前界面输入最多 40 个字符的物品名称，支持中文；留空恢复默认名称。效果与铁砧的物品自定义名称一致，无额外经验或耗材成本。Enter 确认、Esc 取消，供给槽和当前页面保留。
+两终端共享按玩家持久保存的个人耗材库：激光真空管/量子并入锚点各最多 **640**，支持快捷存取，单次最多取 **64**、右键取 **1**；角标显示总数，空槽显示虚影。操作前有预装库存时，成功消息显示余量（含用尽后的 0）；失败、解除、无预装库存不提示余量。
 
-The Quantum Terminal's Rename button sits to the left of Details and Effects. Enter an item name of up to 40 characters, including Chinese, or leave it blank to restore the default name. This uses the same custom item name as an anvil, with no extra experience or material cost. Enter confirms and Esc cancels while retaining the supply slots and current page.
+Both terminals share player-persistent stores of up to **640 each** of Laser Vacuum Pipes/Quantum Incorporation Anchors. Quick transfer supported; withdraw at most **64**, or **1** with right-click. Badges show totals; empty slots show ghosts. Successful operations that started with preloaded stock report remaining stock, including 0; failures, removals and operations without preloaded stock omit it.
 
-量子终端的 16 色在同一量子网络内同步。终端物品仅中心粒子变色，节点、连接边缘、并入粒子与显形框随网络颜色变化；按 `E`（背包键）或 `Esc` 关闭界面。
+量子终端「命名」支持最多 **40 字符**（含中文），留空恢复默认，无经验/材料成本；Enter 确认、Esc 取消，保留页面与供给槽。
 
-The terminal's 16-color selection synchronizes across its quantum network. Only the terminal item's center particles change color; nodes, connection rims, incorporation particles and reveal outlines follow the network color. Press `E` (inventory key) or `Esc` to close the interface.
+Quantum Rename accepts **40 characters**, including Chinese; blank restores default, with no XP/material cost. Enter confirms, Esc cancels; current page and supply slots stay intact.
 
-量子网络的安全模式默认 OFF，由控制器保存并向同一网络的终端同步；旧存档没有该属性时也默认 OFF。安全终端配对不会自动开启安全，OFF 时配对不会限制量子访问。网络拥有者或持 AE「安全（SECURITY）」权限的人可在终端详情页显式开启或关闭；仅有「建造（BUILD）」权限不能切换。开启后立即要求安全配对与 AE 权限，不再取决于网络是否曾配对。管理者修改开关不要求手中终端已配对，未配对时界面只提供安全开关，配对后才能查看受保护的网络详情。
+### 量子网络安全 / Quantum Security
 
-Quantum security defaults to OFF. The controller saves the setting and synchronizes it to terminals on the same network; older saves without the property also default to OFF. Encoding a terminal does not enable security or restrict quantum access while OFF. The network owner or a player with AE SECURITY permission can explicitly enable or disable it on the Details page; BUILD alone is insufficient. Enabling immediately requires security pairing and AE permissions, regardless of pairing history. Managers can change the switch without an encoded terminal; an unpaired manager sees only the safety control until pairing grants access to protected network details.
+- **默认 OFF**，控制器保存并同网同步；旧存档无属性也 OFF。配对不自动开启，OFF 时不限制量子访问 / **OFF by default**, including old saves; saved by controller and synced. Pairing does not enable security or restrict access while OFF.
+- 网络拥有者或 AE **SECURITY** 权限者可在详情页开关；仅 BUILD 不够。开启后立即要求安全配对及 AE 权限，与历史配对无关。管理者未配对也能改开关，但配对前只能看安全开关，不能看受保护详情 / Owner or AE **SECURITY** permission required to toggle; BUILD is insufficient. Enabling immediately requires pairing and AE permissions, regardless of pairing history. Unpaired managers may toggle but cannot view protected details.
+- OP 4/控制台：`/gtswn safety off|on` 立即临时放开/恢复各网络策略，保存 `config/gtswn/gtswn_ae.cfg` → `ae2.quantumSafetyEnabled`（默认 true）。保留配对和单网设置，重开不把 OFF 网络变 ON；全局关闭时不可改单网开关 / OP 4/console: global override applies and saves immediately, preserving pairings and per-network policy. Re-enabling leaves OFF networks OFF; per-network toggles are unavailable during global bypass.
 
-管理员可用 `/gtswn safety off` 临时恢复全部量子网络的访问，再用 `/gtswn safety on` 恢复各网络已设置的安全模式。指令需要 OP 4 或服务器控制台，实时生效并保存至 `config/gtswn/gtswn_ae.cfg` 的 `ae2.quantumSafetyEnabled`（默认 `true`）；关闭不会删除原配对或单网设置，重新开启也不会把原本 OFF 的网络改成 ON。全局关闭时，终端详情页不能修改单网安全模式。
+### 节点、并入与负载 / Nodes, Incorporation & Load
 
-Administrators can temporarily recover access to all quantum networks with `/gtswn safety off`, then restore each network's saved policy with `/gtswn safety on`. These commands require OP level 4 or the server console, apply immediately, and save `ae2.quantumSafetyEnabled` in `config/gtswn/gtswn_ae.cfg` (default `true`). The global override preserves pairings and per-network settings; re-enabling it leaves OFF networks OFF. The per-network control is unavailable while global security is disabled.
+| 项目 / Feature | 行为与限制 / Behavior & Limits |
+|---|---|
+| 连接 / Connection | 致密容量 **32 频道/连接**，节点本身不占频道 / Dense capacity: **32 channels/connection**; node uses none |
+| 跨维度 / Cross-dimension | 支持；锚点维度和区块须已加载，节点不主动加载 / Supported; anchor dimension/chunk must already be loaded; no force-loading |
+| 节点拆除 / Node removal | 普通机器硬度；可挖掘、AE/GT 扳手 Shift+右击、IC2 原生扳手。核心不掉落，部件及库存回收；不显示 GT 九宫格，保留正常核心/侧部件选框 / Normal hardness; mine or use AE/GT sneak-wrench or native IC2 wrench. No core drop; parts/inventories recovered. Normal core/part outlines, no GT rotation grid |
+| 并入对象 / Incorporation targets | 完整 AE 方块、支持 ME 的 GT 仓室；排除线缆/总线等部件及控制器。保留原方块、功能、库存 / Full AE blocks and ME-capable GT hatches; excludes cable/bus parts and controllers. Original block/functions/inventory retained |
+| 并入隔离 / Isolation | 阻断物理 AE 连接防串网，保留防爆；原设备挖掘/扳手/掉落不变，拆除自动清理连接 / Blocks physical AE links to prevent merging; retains explosion protection. Native mining/wrench/drops preserved; removal clears connection |
+| 节点耗电 / Node power | 默认实际 **10 AE/t**，`quantumNodeIdlePowerUsage` 可配 / Default actual **10 AE/t**, configurable |
+| 并入附加费 / Incorporation surcharge | 每个有效连接额外实际 **50 AE/t**，不含设备/频道原生耗电；`gtswn_ae.cfg` 的 `quantumIncorporationIdlePowerUsage`，重启应用。解除/失效/区块卸载释放，缺电仍保留需求 / Extra actual **50 AE/t** per valid link, excluding native device/channel power; configure named key, restart to apply. Released on removal/invalidation/chunk unload; unpowered grids retain demand |
 
-### 量子节点 / Quantum Node
+节点与并入费抵消 AE 耗电倍率，实际分别为 10、额外 50 AE/t；设备与频道仍按 AE 原生倍率计费。
 
-- **远程桥接 / Remote Bridge**: 经虚拟桥接接入锚点控制器 ME 网络，相邻 AE2 设备直接入网。/ Bridges into the anchored controller's ME grid via a virtual connection; adjacent AE2 devices join the network directly.
-- **连接容量 / Connection Capacity**: 使用致密线缆容量（**32 频道/连接**），节点本身不消耗频道。/ Uses DENSE cable capacity (**32 channels/connection**); the node itself does not consume channels.
-- **待机功耗 / Idle Power**: 通过 `quantumNodeIdlePowerUsage` 配置（默认实际扣除 10.0 AE/t）。/ Configurable via `quantumNodeIdlePowerUsage` (default actual draw: 10.0 AE/t).
-- **跨维度 / Cross-Dimension**: 量子节点支持跨维度桥接；锚点维度与区块必须已加载，节点不会主动加载锚点。/ Quantum Nodes support cross-dimension bridging; the anchor dimension and chunk must already be loaded. Nodes do not load the anchor themselves.
-- **拆除 / Dismantling**: 普通机器硬度，支持挖掘及 AE、GT 扳手 Shift+右击，也支持 IC2 扳手原生拆卸。节点核心不掉落，部件与库存正常回收。/ Normal machine hardness; supports mining, AE/GT wrench sneak-right-click, and native IC2 wrench removal. The core never drops; parts and inventories are recovered.
-- **扳手选框 / Wrench Highlight**: 量子节点不显示 GT 机器的扳手九宫格方向提示，保留核心和侧部件的正常选框及扳手拆除行为。/ Quantum Nodes hide GT's wrench rotation grid while retaining normal core and side-part outlines and wrench removal.
+Node/incorporation charges compensate AE's power multiplier to draw 10/extra 50 AE/t; native device/channel power retains AE's multiplier.
 
-### 量子并入与锚点 / Quantum Incorporation & Anchor
+**锚点配方 / Anchor recipe**：LV 组装机每批 **16**：基础涂层电路板 ×1、LV 发射器 ×1、LV 传感器 ×1、钢板 ×2、末影珍珠 ×1、细铜线 ×4 / LV assembler → **16**: Basic Coated Circuit Board ×1, LV Emitter ×1, LV Sensor ×1, Steel Plate ×2, Ender Pearl ×1, Fine Copper Wire ×4.
 
-已绑定的量子终端可将完整 AE 方块和支持 ME 网络的 GT 仓室直接并入网络。每次成功并入消耗一个**量子并入锚点**，再次 Alt+右击解除并入；AE 线缆、总线等部件及控制器不适用。设备保留原方块、功能与库存。
-
-A bound Quantum Terminal can incorporate full AE blocks and ME-capable GT hatches directly into its network. Each successful incorporation consumes one **Quantum Incorporation Anchor**; Alt+right-click again to remove it. AE cable/bus parts and controllers are excluded. Devices keep their original block, functions and inventory.
-
-- **合成 / Crafting**：LV 组装机每批产出 16 个锚点：基础涂层电路板 ×1、LV 发射器 ×1、LV 传感器 ×1、钢板 ×2、末影珍珠 ×1、细铜线 ×4。/ An LV assembler produces 16 anchors per batch from Basic Coated Circuit Board ×1, LV Emitter ×1, LV Sensor ×1, Steel Plate ×2, Ender Pearl ×1 and Fine Copper Wire ×4.
-- **隔离与拆除 / Isolation & Dismantling**：并入设备阻断物理 AE 连接，避免相邻网络串网，并保留爆炸防护。挖掘硬度与扳手拆除沿用原设备，可直接拆除并正常掉落；移除后自动清理并入连接。/ Incorporated devices block physical AE connections to prevent adjacent networks from merging and retain explosion protection. Native mining hardness, wrench removal and device drops are preserved; dismantling automatically clears the incorporation connection.
-- **额外耗电 / Additional Power**：每个有效并入连接默认额外实际扣除 **50 AE/t**，由 `config/gtswn/gtswn_ae.cfg` 的 `quantumIncorporationIdlePowerUsage` 配置，重启应用。这 50 AE/t 不含设备原生功耗与频道耗电，两者仍由 AE 独立计算；解除并入、连接失效或区块卸载后释放附加功耗。缺电不会免除耗电需求。/ Each valid incorporation connection adds an actual **50 AE/t** by default, configured by `quantumIncorporationIdlePowerUsage` in `config/gtswn/gtswn_ae.cfg` and applied after restart. This excludes native device and channel power, which AE calculates independently. Removing incorporation, invalidating the connection or unloading the chunk releases the surcharge. An unpowered grid retains the demand.
-
-节点与并入附加费抵消 AE 配置的耗电倍率，实际分别扣除 10 和额外 50 AE/t；原设备及频道的原生倍率计费保持不变。/ The node draw and incorporation surcharge compensate for AE's configured power multiplier, drawing 10 and an additional 50 AE/t respectively. Native device and channel power still use AE's normal multiplier.
-
-### 过载保护 / Overload Protection
-
-量子节点带入的频道超过控制器容量时，启动 **3 分钟宽限倒计时**；期间频道恢复即取消，否则到期后控制器结构会 **爆炸**。达到 95% 容量时聊天警告。AE2 开启无限频道时无此限制。
-
-Exceeding controller channel capacity starts a **3-minute grace countdown**. Restoring capacity cancels it; otherwise the controller structure **explodes** at expiry. A chat warning appears at 95% capacity. This limit does not apply with AE2 infinite channels enabled.
-
-### 量子化控制器强化 / Hardened Controller
-
-量子化控制器难以挖掘且有防爆强化；用终端 Shift+右击取消量子化后再拆除。
-
-Quantized controllers resist mining and explosions. Sneak-right-click with the terminal to dequantize before dismantling.
-
-***
+**过载 / Overload**：95% 容量聊天警告；量子节点带入频道超控制器容量时倒计时 **3 分钟**，恢复即取消，否则控制器结构**爆炸**。AE2 无限频道不受此限 / Chat warns at 95% capacity. Excess node channels start a **3-minute** grace timer; restoring capacity cancels it, otherwise the controller structure **explodes**. Exempt with AE2 infinite channels.
 
 ## 便携无线监测终端 / Portable Wireless Network Monitor
 
-放在背包或任意 Baubles 饰品栏即可显示电网 HUD。首次右击绑定玩家，之后普通右击切换关闭/常规/科学计数；对自己的终端 Shift+右击，或按默认快捷键 **H**，打开远程查看与 HUD 设置。对信息屏普通右击可绑定多个物理屏幕，随身查看完整的原生屏幕内容。
+背包或 Baubles 中显示电网 HUD；普通右击空气首次绑定自己，之后循环关闭/常规/科学计数。Shift+右击自己的终端或默认 **H**（可改键）打开远程查看与设置；Shift+右击未绑定/他人终端改绑自己。普通右击信息屏可绑定最多 **16 块**，随身查看完整原生内容。
 
-Carry it in inventory or any Baubles slot for a wireless grid HUD. First right-click binds it to you; ordinary right-clicks then cycle Off/Normal/Scientific. Shift+right-click your own terminal, or press **H** by default, to open the remote viewer and HUD settings. Right-click physical info panels to bind multiple screens and view their complete native content on the go.
+Inventory/Baubles provides a grid HUD. Right-click air binds yourself first, then cycles Off/Normal/Scientific. Shift+right-click your own monitor or press default **H** (rebindable) for viewer/settings; Shift+right-click unbound/borrowed monitors rebinds ownership. Right-click info panels to bind up to **16** and view full native content remotely.
 
-| 手势 / Gesture | 行为 / Behavior |
+<p align="center"><img src="images/v1.8.62/portable-monitor-eu-chart.png" alt="随身 EU 走势 / Portable EU chart" width="310"> <img src="images/v1.8.62/portable-monitor-ae-inventory.png" alt="随身 AE 库存 / Portable AE inventory" width="310"><br><em>原生走势与库存随身查看 / Native charts and inventory on the go</em></p>
+
+- **真实来源 / Sources**：EU/AE 走势/AE 库存按钮选择对应模式的真实绑定屏，前后逐屏切换，解绑仅当前屏；保留原屏计数法、时间窗、走势色。查看/设置/挂载页缩小 15%，适配屏幕并保留边距，完整图表与分页列表可用 / Shortcuts select bound physical panels of the matching mode; browse individually and unbind only the current panel. Formats/windows/colors remain. Viewer/settings/pins are 15% smaller, fit the screen with margins, and retain full charts/pagination.
+- **常驻 / Pins**：标题、简图、数字独立勾选，与概览/充电状态共存；EU 电量/瞬时/平均分行，同屏走势只算一个轮换组，分组标题“EU走势 / AE走势” / Select titles, plots and values independently alongside overview/charging. EU/instant/average use separate lines, but one screen counts as one rotation group, headed EU Trend/AE Trend.
+- **AE 库存 / AE stock**：物品/流体独立勾选即时/平均，均选仍一行，即时在前、横杠分隔、无字段标签；平均 **5 分钟**。顺序为 `[库存] → 图标 → 名称、存量、变化率` / Separate Instant/Average selections per item/fluid; both share one row, instant first, dash-separated without field labels. Average: **5m**. Order: `[Stock] → icon → name, stock, rates`.
+- **布局 / Layout**：偏移、缩放、宽度、常驻组数、轮换时间、刷新间隔、文本/卡片/曲线可调；独立开关充电、电量、瞬时、平均、电压级、AE 数量/变化率；原 HUD 命令仍可用 / Adjust offsets, scale, width, pin count, rotation, refresh and Text/Card/Curve styles. Toggle charging, EU, instant, average, voltage tier, AE amount/rate; HUD commands remain available.
+
+<p align="center"><img src="images/v1.8.62/hud-visual-editor.png" alt="HUD 设置 / HUD editor" width="310"> <img src="images/v1.8.62/wireless-monitor-hud.png" alt="概览、走势与 AE 常驻 / Overview, trends and AE pins" width="310"><br><em>HUD 布局设置与实际显示 / HUD settings and display</em></p>
+
+### 电池与充电 / Battery & Charging
+
+- **安装/替换 / Install/replace**：终端 + 兼容 GT/IC2 电池无序合成，继承新电池电量，旧电池带终端余电返还，满包则掉落；无独立终端变种 / Shapeless terminal + compatible GT/IC2 battery retains new battery charge; old battery returns with remaining terminal energy, dropping if full. Same terminal, no variants.
+- **充电 / Charging**：背包/饰品栏中每 **10 秒**从绑定电网补缓存并计下行损耗，按电池电压级对背包/装备/饰品电力物品每目标 **1A** 充电；HUD 显示缺缓存/待机/充电/完成 / Refill from bound grid every **10s** with downlink loss; charge inventory/armor/accessories at battery-tier **1A per target**. HUD: empty/standby/charging/complete.
+- **工具箱 / Toolboxes**：带电池终端每 **20 tick** 轮转最多 **2 箱**，给支持的 GT 箱内电力工具充电；箱内电池槽沿用原路径。箱 UI 打开/破损动画/玩家挥动时跳过，不递归嵌套箱 / Battery-equipped monitor charges supported electric tools in up to **2 GT toolboxes per 20 ticks**, rotating. Battery slots retain original path. Skip open GUI/damage animation/player swinging; no nested traversal.
+- **拆卸/查看 / Remove/inspect**：带电池终端 + GT5U 撬棍无序合成取回带余电电池。NEI 有小型锂电池装/拆示例；GT/IC2 原生 Tooltip 和电量条显示缓存，充电更新不打断手持工具 / Shapeless battery-equipped terminal + GT5U crowbar returns charged battery. NEI shows small-lithium install/removal examples. Native energy tooltips/bars show buffer; updates preserve held-tool use.
+
+<p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" alt="科学计数充电 / Scientific, charging" width="310"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" alt="科学计数放电 / Scientific, discharging" width="310"><br><em>科学计数 HUD：充电 / 放电 / Scientific HUD: charging / discharging</em></p>
+
+## 无线能量监视器与红石 / Wireless Energy Monitor & Redstone
+
+单方块机器每 **5 秒**更新电网状态，可按储量或电网状态控制红石并动态切换状态贴图，支持工业信息屏。常规/科学计数（1,234,567 EU / 1.235×10^6 EU），变化率可用 GT 安培+电压级显示（如 2A HV）。
+
+Single-block monitor updates every **5s**, controls redstone by grid energy/status with dynamic state textures, and connects to Industrial Information Panels. Normal/scientific formats; GT-style amperage/voltage rates (e.g. 2A HV).
+
+<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" alt="监视器中文 / Monitor CN" width="310"> <img src="images/Wireless_Energy_Monitor_EN.png" alt="监视器英文 / Monitor EN" width="310"><br><img src="images/Wireless_Energy_Monitor_UI_CN.png" alt="监视器 UI 中文 / Monitor UI CN" width="250"> <img src="images/Wireless_Energy_Monitor_UI_EN.png" alt="监视器 UI 英文 / Monitor UI EN" width="250"><br><em>监视器与中英界面 / Monitor and bilingual UI</em></p>
+
+| 模式 / Mode | 红石输出 / Redstone output |
 |---|---|
-| 普通右击空气 / Right-click air | 首次绑定自己；已绑定时切换 HUD 模式 / Bind yourself on first use; then cycle HUD modes |
-| 普通右击信息屏 / Right-click an info panel | 绑定该物理屏幕，最多 16 块 / Bind that physical screen, up to 16 |
-| Shift+右击自己的终端 / Shift+right-click your own terminal | 打开查看与设置 / Open viewer and settings |
-| H（默认，可改键）/ H (default, rebindable) | 打开随身终端的查看与设置 / Open the carried terminal's viewer and settings |
-| Shift+右击未绑定或他人终端 / Shift+right-click an unbound or borrowed terminal | 将拥有者改绑为自己 / Bind ownership to yourself |
+| 关闭 / Off | 无 / None |
+| 高电平 / High | EU > 阈值 / threshold |
+| 低电平 / Low | EU < 阈值 / threshold |
+| 正向滞后 / High-Hysteresis | EU > 参数1时输出，EU < 参数2才取消 / On above param1; off only below param2 |
+| 反向滞后 / Low-Hysteresis | EU < 参数2时输出，EU > 参数1才取消 / On below param2; off only above param1 |
 
-- **真实屏幕来源 / Physical screen sources**：查看页的 EU、AE 走势、AE 库存按钮会选择已绑定且处于对应显示模式的真实信息屏；前后按钮逐屏切换，解绑只移除当前屏幕。原屏的计数法、时间窗口与走势颜色保留 / The EU, AE Chart and AE Inventory shortcuts select actual bound screens in the corresponding display mode. Previous/next browses screens; unbinding removes only the current screen. Native number formats, time windows and trend colors are retained.
-- **紧凑界面 / Compact viewer**：查看、设置与挂载管理页面统一缩小 15%，随屏幕比例适配并保留四周边距；完整图表与分页列表仍可使用 / The viewer, settings and pin manager are uniformly 15% smaller, scale to fit the screen and retain outer margins. Complete charts and paginated lists remain available.
-
-<p align="center"><img src="images/v1.8.62/portable-monitor-eu-chart.png" alt="便携终端远程查看 EU 走势 / Portable terminal viewing an EU chart" width="600"><br><em>随身查看原生 EU 走势 / Native EU chart on the go</em></p>
-
-- **独立常驻 / Independent HUD subscriptions**：管理常驻页面可分别勾选图表标题、走势图与数字，简图可与电网概览、充电状态同时显示。EU 电量、瞬时、平均三个数字各占一行，同一屏幕的走势内容作为一个轮换组，不按三行重复计数；分类标题使用“EU走势”“AE走势” / Manage HUD entries to select chart titles, plots and values independently. Mini charts coexist with grid overview and charging status. EU energy, instantaneous rate and average rate occupy separate lines; one screen's trend content counts as one rotation group. Group headings are EU Trend and AE Trend.
-- **AE 库存 / AE Inventory**：每个物品或流体分别提供“即时”“平均”两个勾选项；两项同时开启时仍在同一行，即时在前、平均在后，用横杠分隔，不显示即时/平均文字标签，平均窗口为 5 分钟。HUD 按“[库存] → 物品或流体图标 → 名称、存量与所选变化率”排列 / Each item or fluid has separate Instant and Average checkboxes. Selecting both keeps one row, with instant first and the five-minute average second, separated by a dash without field labels. HUD rows place [Stock], the item or fluid icon, then the name, stock and selected rates in order.
-
-<p align="center"><img src="images/v1.8.62/portable-monitor-ae-inventory.png" alt="便携终端查看 AE 库存 / Portable terminal viewing AE inventory" width="600"><br><em>AE 库存：图标、存量、即时与平均变化量 / AE inventory: icons, stock, instant and average changes</em></p>
-
-- **布局与显示 / Layout and display**：UI 可调整水平/垂直偏移、缩放、面板宽度、常驻组数、轮换秒数、刷新间隔与文本/卡片/曲线渲染，另可开关充电、电量、瞬时、平均、电压级及 AE 数量/变化率。原有 HUD 命令仍可用，见下方客户端命令 / The UI controls offsets, scale, panel width, pinned group count, rotation time, refresh interval and Text/Card/Curve rendering, plus charging, EU, instant, average, voltage tier and AE amount/rate switches. Existing HUD commands remain available below.
-
-<p align="center"><img src="images/v1.8.62/hud-visual-editor.png" alt="便携终端 HUD 布局与显示设置 / Portable HUD layout and display settings" width="600"><br><em>HUD 布局与显示设置 / HUD layout and display settings</em></p>
-
-<p align="center"><img src="images/v1.8.62/wireless-monitor-hud.png" alt="无线电网概览、走势图与 AE 库存共存的 HUD / HUD combining grid overview, trend charts and AE inventory" width="600"><br><em>电网概览、走势与 AE 库存常驻 / Grid overview, trends and pinned AE inventory</em></p>
-
-- **安装与换电池 / Install or replace**：终端 + 兼容 GT/IC2 电池无序合成，继承新电池电量；旧电池带着终端剩余电量返还，背包满则掉落。仍是同一个终端 / Shapeless-craft terminal + compatible GT/IC2 battery. The new battery retains its charge; the old one returns with the terminal’s remaining energy, dropping if inventory is full. No separate terminal variants.
-- **充电 / Charging**：在背包或饰品栏中，每 10 秒从已绑定的无线电网补满缓存并计算下行损耗，以电池电压级的每目标 1A 为背包、装备和饰品栏电力物品充电。HUD 显示缺少缓存/待机中/充电中/充电完毕 / In inventory or Baubles, refills from the bound grid every 10 seconds with downlink loss, and charges inventory, armor and accessory items at 1A per target for the battery tier. HUD states: buffer empty / standby / charging / complete.
-- **工具箱内充电 / Toolbox charging**：装有电池的监测终端可直接给 GT 工具箱中受支持的电力工具充电，每 20 tick 轮转处理最多 2 个工具箱；工具箱电池槽仍由原充电路径处理。工具箱界面打开、工具箱破损动画或玩家挥动时跳过该箱，不递归进入嵌套工具箱 / A monitor with an installed battery can directly charge supported electric tools inside GT toolboxes, rotating through at most two boxes every 20 ticks. The toolbox battery slot keeps its existing charging path. A box is skipped while its GUI is open, its damage animation is active, or the player is swinging; nested toolboxes are not traversed.
-- **拆卸与查看 / Remove and inspect**：带电池终端 + GT5U 撬棍无序合成，可取回保留余量的电池；NEI 提供小型锂电池安装与拆卸两条示例。电量使用 GT/IC2 原生 Tooltip 与电量条显示；充电更新避免打断手持工具操作 / Shapeless-craft a battery-equipped terminal + GT5U crowbar to recover the charged battery. NEI shows two small lithium battery examples: installation and removal. Native GT/IC2 energy tooltips and charge bars show the buffer; charge updates preserve held-tool use.
-
-<p align="center"><img src="images/README-Portable_Wireless_Network_Monitor-CN1.png" alt="便携监测终端 HUD：科学计数模式—充电状态 / Portable monitor HUD: scientific notation — charging" width="400"> <img src="images/README-Portable_Wireless_Network_Monitor-CN2.png" alt="便携监测终端 HUD：科学计数模式—放电状态 / Portable monitor HUD: scientific notation — discharging" width="400"><br><em>科学计数模式 — 充电状态 (left) & 放电状态 (right)</em></p>
-
-***
-
-## 无线能量监视器 / Wireless Energy Monitor
-
-<p align="center"><img src="images/Wireless_Energy_Monitor_CN.png" alt="无线能量监视器（中文界面） / Wireless Energy Monitor (CN interface)" width="600"><br><img src="images/Wireless_Energy_Monitor_EN.png" alt="无线能量监视器（英文界面） / Wireless Energy Monitor (EN interface)" width="600"><br><em>无线能量监视器 / Wireless Energy Monitor</em></p>
-
-**无线能量监视器 / Wireless Energy Monitor** — 单方块机器，实时显示无线电网能量状态（每五秒），具备高级红石控制（可以以电网容量或者电网状态为指标）。支持5种红石模式（关闭/高电平/低电平/正向滞后/反向滞后），参数化阈值设定，状态贴图动态切换。其还可以连接工业信息屏。
-
-A single-block machine that displays real-time (per 5 seconds) wireless network energy status with advanced redstone control (can be measured by the wireless capacity or the wireless status). Supports 5 redstone modes (Off/High/Low/High-Hysteresis/Low-Hysteresis) with parametric threshold settings. Dynamic texture switching reflects redstone output state. It can also be connected to the Industrial Information Panel.
-
-- **显示模式 / Display Modes**: 常规计数 / 科学计数（Normal counting (1,234,567 EU) / Scientific notation (1.235×10^6 EU)）
-- **智能 EU/t / Smart EU/t**: 实时变化率，GT 风格安培数 + 电压等级显示（如 "2A HV"）/ Real-time change rate with GT-style amperage + voltage tier display (e.g., "2A HV")
-
-<p align="center"><img src="images/Wireless_Energy_Monitor_UI_CN.png" alt="无线能量监视器界面（中文） / Wireless Energy Monitor UI (CN)" width="400"><br><img src="images/Wireless_Energy_Monitor_UI_EN.png" alt="无线能量监视器界面（英文） / Wireless Energy Monitor UI (EN)" width="400"><br><em>中文界面 (up) & English interface (down)</em></p>
-
-***
+**电网读数 / Grid readings**：监视器/便携终端显示储量、瞬时变化率、窗口平均（默认 **300 秒**）；近零为 `<1EU`、静默/长期静默，表示电网净变化而非单机功率 / Monitors show energy, instant rate and window average (**300s** default); near zero: `<1EU`, Silent/Long-Term Silent. These measure net grid change, not individual machine power.
 
 ## 网络信息屏与拓展屏 / Network Info Panel & Extender
 
-网络信息屏与拓展屏拼成连续矩形大屏，显示无线电网能量趋势。支持 5 分钟、1 小时、8 小时、24 小时、7 天、1 月、3 月、1 年八个时间窗口；同一玩家的多块 EU 信息屏共享历史数据。
+主屏+自动附着的拓展屏组成连续填充矩形，显示无线电网走势；同玩家 UUID 的 EU 屏共享历史。八个窗口 **5m / 1h / 8h / 24h / 7d / 1M / 3M / 1Y**。可调背景、线色/宽、平滑度、字号，支持常规/科学/公制计数（默认科学）。EU 储量/变化率可设平直/上升/下降分区色，并同步便携查看与 HUD 简图。
 
-**Network Info Panel** and extenders form a continuous rectangular screen showing wireless energy trends. Eight time windows cover 5m/1h/8h/24h/7d/1M/3M/1Y; EU panels belonging to the same player share history.
+Main panel + auto-attaching extenders form a filled rectangle. EU panels share history by player UUID, with eight windows: **5m / 1h / 8h / 24h / 7d / 1M / 3M / 1Y**. Configure background, lines, smoothing and text; Normal/Scientific/Metric formats (Scientific default). Flat/rising/falling EU energy/rate colors carry into portable views and HUD mini charts.
 
-<p align="center"><img src="images/Network Info Panel_CN.png" alt="网络信息屏（中文） / Network Info Panel (CN)" width="300"><img src="images/Network Info Panel_EN.png" alt="网络信息屏（英文） / Network Info Panel (EN)" width="300"><br><img src="images/Network Info Panel_L_CN.png" alt="大型网络信息屏（中文） / Large Network Info Panel (CN)" width="300"><img src="images/Network Info Panel_L_EN.png" alt="大型网络信息屏（英文） / Large Network Info Panel (EN)" width="300"><br><em>网络全天候检测示意图 / Network All-Weather Monitoring</em></p>
+<p align="center"><img src="images/Network Info Panel_CN.png" alt="信息屏中文 / Panel CN" width="300"> <img src="images/Network Info Panel_EN.png" alt="信息屏英文 / Panel EN" width="300"><br><img src="images/Network Info Panel_L_CN.png" alt="大屏中文 / Large panel CN" width="300"> <img src="images/Network Info Panel_L_EN.png" alt="大屏英文 / Large panel EN" width="300"><br><em>信息屏与矩形拓展 / Info panels and rectangular extension</em></p>
 
-- **多方块屏幕 / Multi-block Screen**: 主屏 + 拓展屏构成连续填充矩形；拓展屏自动附着到相邻主屏 / Main panel + extender panels form a contiguous filled rectangle; extender screens automatically attach to adjacent main screens
+| AE 模式 / AE mode | 内容与操作 / Content & Controls |
+|---|---|
+| 走势图 / Chart | 手持物品/流体右击绑定；蓝左轴存量、橙右轴变化率（同 EU/t 线色）；八时间窗、可缩放简报显示存量/实时/平均，`+/-` 调字号、时长按钮换窗口。可设 Y 轴界限、线宽/色/可见性、样条平滑、背景 / Right-click with item/fluid to bind. Blue left axis: stock; orange right: rate (EU/t line color). Eight windows; brief shows stock/instant/average, `+/-` resizes text, span button switches window. Configure axis limits, line width/color/visibility, smoothing/background |
+| 实时监测 / Realtime | 手持物品/流体右击添加多个监视项；图标、名、存量、实时与 **300s** 平均。滚轮/拖拽/滚动条，另有可调格大小的紧凑模式；字号/加粗/图标大小可配，深绿文字表示在线且被监视 / Add multiple items/fluids by right-click. Icon/name/stock/instant/**300s** average, wheel/drag/scrollbar; compact grid with configurable cells. Set font/bold/icon size; deep green means online and monitored |
 
-- **玩家共享 / Per-Player Sharing**: 数据集绑定玩家 UUID；多块屏幕显示同一数据 / Datasets bound to player UUID; multiple screens display the same data
-- **外观 / Appearance**：可配置背景、线色、线宽、曲线平滑度与字号 / Configure background, line colors, thickness, smoothing and text size.
-- **走势分区颜色 / Trend region colors**：EU 储量与变化率可按平直、上升、下降设置分区颜色，并同步到便携终端查看与 HUD 简图 / Configure flat, rising and falling colors for EU energy and rate curves; the portable viewer and HUD mini charts use the same palette.
-- **显示模式 / Display Modes**: 常规计数 (1,234,567) / 科学计数 (1.23E6) / 公制计数 (1.23K)，**默认科学计数** / Normal counting (1,234,567) / Scientific notation (1.23E6) / Metric notation (1.23K), **scientific by default**
-
-### AE 走势图 / AE Chart
-
-手持物品或流体右键信息屏，绑定 AE 网络中的存量与变化率。蓝色左轴显示存量，橙色右轴显示变化率；支持八个时间窗口和可缩放简报。
-
-**AE Chart** — Right-click the panel with an item or fluid to track its AE-network stock and rate. The blue left axis shows stock, orange right axis shows rate; eight time windows and a scalable brief are available.
-
-<p align="center"><img src="images/Network Info Panel_AE1.png" alt="AE 走势图 / AE Chart" width="450"><br><em>AE 走势图 / AE Chart</em></p>
-
-- **双 Y 轴 / Dual Y-Axis**: 左轴 = 存量（蓝），右轴 = 变化率（橙，与无线电网 EU/t 线颜色一致）/ Left axis = stock (blue), right axis = change rate (orange, consistent with wireless EU network EU/t line color)
-- **操作 / Controls**：`+/-` 调整简报字号，时长按钮切换时间窗口 / Use `+/-` to resize the brief and the time-span button to switch windows.
-- **简报 / Brief**：显示当前存量、实时变化率与平均变化率 / Shows stock, realtime rate and average rate.
-- **可配置 / Configurable**: Y 轴上下限、线宽、样条平滑度、背景色、线色、线条可见性开关 / Y-axis min/max, line thickness, spline smoothing, background color, line color, line visibility toggles
-
-### AE 实时监测 / AE Realtime Monitor
-
-AE 实时监测，同时监控多个 AE 物品/流体，可滚动列表显示。每行包含图标、名称、存量、实时变化率、300s 平均变化率。支持格子模式与可配置字号/加粗/图标大小。手持物品/流体右键信息屏即可添加监视项。
-
-**AE Realtime Monitor** — Monitor multiple AE items/fluids simultaneously in a scrollable list. Each row shows icon, name, stock, realtime change rate, and 300s average change rate. Supports grid mode and configurable font size/bold/icon size. Right-click the panel with an item/fluid in hand to add a monitored item.
-
-<p align="center"><img src="images/Network Info Panel_AE2.png" alt="AE 实时监测 / AE Realtime Monitor" width="450"><br><em>AE 实时监测 / AE Realtime Monitor</em></p>
-
-- **列表 / List**：支持滚轮、拖拽和滚动条 / Supports mouse wheel, dragging and scrollbar.
-
-- **格子模式 / Grid Mode**: 紧凑格子布局备选，单元格大小可配置 / Alternative compact grid layout with configurable cell size
-- **在线状态 / Online Status**: 深绿色文字表示该 AE 物品在线并被监视 / Deep green text indicates the AE item is online and being monitored
-
-***
-
-## 红石控制系统 / Redstone Control System
-
-无线能量监视器具备5模式红石控制系统：
-
-The Wireless Energy Monitor features a 5-mode redstone control system:
-
-| 模式   | 行为                 |
-| ---- | ------------------ |
-| 关闭   | 不输出红石信号            |
-| 高电平  | 电量 > 阈值时输出信号       |
-| 低电平  | 电量 < 阈值时输出信号       |
-| 正向滞后 | >参数1时输出，必须<参数2才能取消 |
-| 反向滞后 | <参数2时输出，必须>参数1才能取消 |
-
-| Mode            | Behavior                                              |
-| --------------- | ----------------------------------------------------- |
-| Off             | No redstone output                                    |
-| High            | Output signal when EU > threshold                     |
-| Low             | Output signal when EU < threshold                     |
-| High-Hysteresis | Output when EU > param1, cancel only when EU < param2 |
-| Low-Hysteresis  | Output when EU < param2, cancel only when EU > param1 |
-
-***
-
-## 电网读数 / Grid Readings
-
-监视器与便携终端显示电网储量、瞬时变化率和窗口平均变化率。默认平均窗口为 300 秒；接近零时显示 `<1EU`、静默或长期静默。它反映电网净变化，不代表单台机器的功率。
-
-Monitors and portable terminals show grid energy, instantaneous rate and window-average rate (300 seconds by default). Near-zero readings display `<1EU`, Silent or Long-Term Silent. These describe net grid change, rather than an individual machine’s power.
-
-***
+<p align="center"><img src="images/Network Info Panel_AE1.png" alt="AE 走势 / AE Chart" width="310"> <img src="images/Network Info Panel_AE2.png" alt="AE 实时监测 / AE Realtime Monitor" width="310"><br><em>AE 走势与实时库存 / AE trends and realtime stock</em></p>
 
 ## 设备信息终端 / Device Info Terminal
 
-<p align="center"><img src="images/Device_Info_Terminal.png" alt="设备信息终端物品 / Device Info Terminal item" width="180"><img src="images/Device_Info_Terminal_UI.png" alt="设备信息终端界面 / Device Info Terminal GUI" width="500"><br><em>设备信息终端物品（左）与界面（右） / Device Info Terminal item (left) & GUI (right)</em></p>
+绑定支持的 GT 工作机器，列表显示运行/待机/停机、实际 EU 输入/输出、瞬时/平均 EU/t、位置及配方；支持排序、四种计数法、跟踪/忽略、改名、热图与经验传送。
 
-绑定支持的 GT 工作机器，在列表中查看运行/待机/停机、实际 EU 输入/输出、瞬时与平均 EU/t、位置及配方预览。支持排序、四种计数法、跟踪/忽略切换、机器改名、可视化热图与消耗经验的传送。
+Bind supported GT working machines for status (Running/Idle/Stopped), actual EU in/out, instant/average EU/t, location and recipes; sorting, four number formats, tracking/ignored, names, heat view and XP travel.
 
-Bind supported GT working machines to view Running/Idle/Stopped status, actual EU input/output, instantaneous and average EU/t, location and recipe previews. Supports sorting, four number formats, tracking/ignored switches, custom names, heat visualization and XP-cost teleportation.
+<p align="center"><img src="images/Device_Info_Terminal.png" alt="设备终端 / Device terminal" width="140"> <img src="images/Device_Info_Terminal_UI.png" alt="设备列表 / Device list" width="460"></p>
 
 | 手势 / Gesture | 行为 / Behavior |
 |---|---|
-| 可视化关闭时右击可工作机器 / Right-click a working machine with visualization off | 绑定到本终端；携带终端放置支持的机器时自动绑定 / Bind to this terminal; supported machines placed while carrying a terminal bind automatically |
-| 普通右击空气，或在可视化模式下右击 / Right-click air, or right-click in visualization mode | 可视化开启且瞄准已绑定机器或标记时传送，否则打开列表 / With visualization enabled, teleport to an aimed bound machine or marker; otherwise open the list |
-| Shift+右击机器，或 Shift+点击列表设备 / Shift+right-click a machine, or Shift+click a list row | 在当前终端切换跟踪/忽略；未绑定机器只记录该开关 / Toggle tracking/ignored for this terminal; unbound machines only receive the preference |
-| Shift+右击空气或非机器 / Shift+right-click air or a non-machine | 打开设置 / Open settings |
-| Alt+长按右键约 1 秒（可瞄准方块）/ Hold Alt+right-click for about 1 second (blocks allowed) | 蓄力完成立即启动当前维度已加载区块中的本人及团队机器扫描；重复蓄力不取消扫描 / Start scanning your and your team's machines in loaded chunks of the current dimension immediately on charge completion; repeating does not cancel an active scan |
-| Shift+Alt+右击 / Shift+Alt+right-click | 开关并保存可视化状态 / Toggle and save visualization state |
-| Alt+左击列表机器名称 / Alt+left-click a machine name in the list | 编辑自定义名称、颜色与加粗 / Edit custom name, color and bold style |
-| Ctrl+点击条目 / Ctrl+click a row | 远程解绑（无确认）/ Remote unbind (no confirmation) |
-| 点击行内 ✦ 按钮 / Click the ✦ button on a row | 传送到机器，默认消耗 1 级经验，冷却 10 tick（0.5 秒）/ Teleport to the machine, default cost 1 XP level, 10-tick (0.5s) cooldown |
+| 可视化关闭时右击工作机器 / Right-click machine, visualization off | 绑定；携带终端放置支持机器时自动绑定 / Bind; supported machines placed while carrying terminal auto-bind |
+| 右击空气，或可视化开启时右击 / Right-click air, or with visualization on | 可视化瞄准已绑定机器/标记则传送，否则开列表 / Travel to aimed bound machine/marker in visualization; otherwise list |
+| Shift+右击机器 / Shift+right-click machine；Shift+点击行 / Shift+click row | 本终端切换跟踪/忽略；未绑定只记偏好 / Toggle tracking/ignored for this terminal; unbound only records preference |
+| Shift+右击空气/非机器 / Shift+right-click air/non-machine | 设置 / Settings |
+| Alt+长按右键约 1 秒（可瞄准方块）/ Hold Alt+right-click ~1s (blocks allowed) | 蓄满立即扫描当前维度已加载的本人/团队机器；重复蓄力不取消 / Scan own/team machines in current dimension's loaded chunks on charge completion; repeating does not cancel |
+| Shift+Alt+右击 / Shift+Alt+right-click | 切换并保存可视化 / Toggle/save visualization |
+| Alt+左击列表名称 / Alt+left-click list name | 改名、颜色、加粗，应用于世界标签 / Name/color/bold, also for world labels |
+| Ctrl+点击行 / Ctrl+click row | 远程解绑，无确认 / Remote unbind, no confirmation |
+| 行内 ✦ / Row ✦ | 传送；默认 **1 级经验**，冷却 **10 tick / 0.5s** / Travel; default **1 XP level**, **10-tick / 0.5s** cooldown |
 
-- **采样与均值 / Sampling & Averages**: 每 `deviceSampleIntervalSeconds`（默认 10 秒）采样一次；平均列为 60 点滚动均值，瞬时 EU/t 取最新采样点。/ Machines are sampled every `deviceSampleIntervalSeconds` (default 10s); the average column is a 60-point rolling mean, instant EU/t is the latest sample.
-- **配方与名称 / Recipe and names**：悬浮机器名称查看可读取的配方预览；“显示配方”开关可直接在列表展示。Alt+左击名称可改名、调色与加粗，并用于机器标签 / Hover a machine name for the available recipe preview; Show Recipe displays it in the list. Alt+left-click the name to rename it, choose its color and toggle bold, also used by world labels.
+- **采样/配方 / Sampling/recipes**：`deviceSampleIntervalSeconds` 默认 **10s**；平均为 **60 点**滚动值，瞬时取最新点。悬浮名称预览可读取配方，“显示配方”可放入列表 / Default **10s** sampling, **60-point** rolling average, latest sample for instant. Hover names for available recipe; Show Recipe puts it in list.
+- **能量口径 / Energy scope**：实际 EU 消耗/产出含直接无线交易；小图标标链路输入/输出/双向。耗电负数；聚变只计控制器自身消耗，等离子发电计下游 / Actual EU includes direct wireless transactions; icons mark link input/output/both. Consumption negative; fusion counts controller draw, plasma generation downstream.
+- **忽略 / Ignored**：仅影响本终端；储能/变压器默认忽略。普通扫描跳过；完成 **15 秒**内同终端再蓄力可纳入，仍忽略并灰色零值 / Per-terminal only; storage/transformers default ignored. Scans skip them; recharge same terminal within **15s** after completion to include them, retaining ignored/gray-zero state.
+- **常驻可视化 / Visualization**：开启有附魔光，背包中仍显示已绑定锚点；名称/状态/实时 EU/配方标签可单独开关，传送须手持对应终端 / Glint marks enabled state; bound anchors persist in inventory. Toggle name/status/live EU/recipe labels separately; hold matching terminal to travel.
+- **热图 / Heat view**：耗电暖红、发电绿，半径随瞬时/平均负载加权平滑变化；范围、不透明度、遮挡、设备/标签上限可配。热图倍率 **1–1000，默认10**（原半径上限 10 倍），标签 **1–100，默认10**（原大小 150%）/ Red consumption, green generation; smooth weighted instant/average radii. Configure range, opacity, occlusion, device/label limits. Heat multiplier **1–1000, default 10** (10× original radius limit); labels **1–100, default 10** (150% original).
+- **安全传送 / Safe travel**：机器前/上方选离玩家最近的安全落点，飞行可无地面；落点有效且传送成功才扣经验 / Nearest safe candidate in front/above machine; flying permits unsupported air. XP charged only on successful valid travel.
+- **配置 / Configuration**：默认最多 **1024** 绑定，已有配置保留；单人本地保存，多人 OP 在全服页保存服务端配置并同步在线玩家，费用可设 **0**。两端版本须一致 / Default **1024** bindings; existing config retained. Singleplayer saves locally; multiplayer OP Server-tab edits save server config/sync online players. Cost **0** allows free travel; match client/server versions.
 
-- **实际能量与链路 / Actual energy and links**：读数以实际 EU 消耗/产出为主，也覆盖机器直接与无线电网交易的路径；列表小图标标出链路节点输入、输出或双向。耗电读数带负号；聚变控制器按自身消耗计入耗电，等离子产物的发电由下游机器统计 / Readings prioritize actual EU consumed/produced, including machines that transact directly with the wireless grid. Small row icons identify link-node input, output or both. Consumption is negative. Fusion controllers count their own draw; plasma-product generation is measured downstream.
-- **跟踪与忽略 / Tracking and ignored**：开关仅影响当前终端的监测，储能设备与变压器默认忽略。普通扫描跳过忽略项；扫描完成后 15 秒内，对同一终端再次蓄力可强制纳入，仍保留忽略状态与灰色零值 / The switch affects this terminal's monitoring only. Energy storage and transformers default to ignored. Ordinary scans skip ignored machines; scan again with the same terminal within 15 seconds after completion to include them while keeping their ignored state and gray zero readings.
+<p align="center"><img src="images/v1.8.62/device-terminal-visualization.png" alt="设备标签与热图 / Device labels and heat" width="310"> <img src="images/v1.8.62/device-terminal-settings.png" alt="热图、标签与全服设置 / Heat, label and server settings" width="310"><br><em>设备可视化与设置 / Device visualization and settings</em></p>
 
-- **常驻可视化 / Persistent visualization**：开启后物品带附魔光效，放回背包仍显示本终端已绑定机器的锚点；标签可分别显示名称、状态、实时 EU 输入/输出与配方。传送需要手持对应终端 / Enabling visualization adds an item glint and keeps this terminal's bound-machine anchors visible while it remains in inventory. Labels independently show names, status, live EU input/output and recipes. Hold the corresponding terminal to teleport.
-- **能量热图 / Energy heat view**：耗电用暖红色、发电用绿色，热区半径随瞬时与平均负载加权、平滑变化；显示范围、不透明度、遮挡、设备/标签上限等均可调整。热图尺寸倍率 **1–1000，默认 10**（原尺寸上限的 10 倍），标签尺寸 **1–100，默认 10**（原标签的 150%）/ Consumption uses warm red and generation green. Heat radii vary smoothly with weighted instantaneous and average load. Range, opacity, occlusion and device/label limits are configurable. Heat size multiplier: **1–1000, default 10** (10× the original radius limit); label size: **1–100, default 10** (150% of the original).
+**LV 有序配方（v1.7.8 起）/ LV shaped recipe (since v1.7.8)**：LV 传感器 / Sensor ×2 + LV 发射器 / Emitter ×2 + 钢板 / Steel Plate ×3 + 电脑屏幕覆盖板 / Computer Screen Cover ×1 + 末影珍珠 / Ender Pearl ×1 → 设备信息终端 / Device Info Terminal ×1。
 
-<p align="center"><img src="images/v1.8.62/device-terminal-visualization.png" alt="设备终端已绑定机器标签与能量可视化 / Bound-machine labels and energy visualization" width="600"><br><em>已绑定设备的世界标签与可视化 / World labels and visualization for bound devices</em></p>
+## BQ 任务包 / BetterQuesting Quests
 
-- **安全传送 / Safe teleportation**：在机器前方与上方候选空地中选择离玩家最近的安全位置，飞行状态允许无地面支撑的空气落点；落点可用并传送成功后才扣经验 / Choose the nearest safe landing among candidates in front of and above the machine. Flying players may land in clear air without ground support. XP is charged only after a valid destination and successful teleport.
-- **配置与同步 / Configuration and sync**：默认每 10 秒采样、绑定上限 1024 台，传送消耗默认 1 级经验；已有配置保留。单人设置写入本地配置，多人由 OP 在全服页修改服务端配置并同步在线玩家，可设 0 免费。客户端与服务端使用相同版本 / Defaults: 10-second sampling, up to 1024 bindings and 1 XP level per teleport; existing configuration is retained. Singleplayer edits save locally; multiplayer OP edits on the Server tab save server configuration and sync online players. Set 0 for free travel. Use matching client and server versions.
+<p align="center"><img src="images/BetterQuest.png" alt="简易无线网络14任务 / GT Simple Wireless Network: 14 quests" width="560"></p>
 
-<p align="center"><img src="images/v1.8.62/device-terminal-settings.png" alt="设备终端热图、标签与全服设置 / Device terminal heat, label and server settings" width="600"><br><em>可视化、标签与传送设置 / Visualization, label and teleport settings</em></p>
+内置中英双语 **简易无线网络 / GT Simple Wireless Network** 任务线，**14 题、全 LV 科技**：监视器/HUD → 链路/覆盖板 → 信息屏 → ME 量子化/锚点/调色及设备终端。描述含屏幕绑定、完整随身查看、AE 即时/平均挂载、设备扫描/可视化、忽略和安全传送/经验设置。自动加载；换 jar 同步旧世界定义、保留进度，任务身份/条件/奖励/前置不变。
 
-- **合成 / Crafting**: LV 级有序配方（v1.7.8 起）：LV 传感器 ×2 + LV 发射器 ×2 + 钢板 ×3 + 电脑屏幕覆盖板 ×1 + 末影珍珠 ×1 → 设备信息终端 ×1。/ LV-tier shaped recipe (since v1.7.8): LV Sensor ×2 + LV Emitter ×2 + Steel Plate ×3 + Computer Screen Cover ×1 + Ender Pearl ×1 → Device Info Terminal ×1.
+Built-in bilingual **14-quest, all-LV** line covers monitors/HUD, links/covers, panels, ME quantization/anchors/colors and device terminals. Guidance includes panel binding, full portable views, AE instant/average pins, device scans/visualization, ignore and safe XP travel. Auto-loads; jar updates refresh existing-world definitions while preserving progress, quest identities/conditions/rewards/prerequisites.
 
-***
+## 命令 / Commands
 
-## BQ 任务包 / BetterQuesting Quest Pack
+### 管理员 / Admin
 
-<p align="center"><img src="images/BetterQuest.png" alt="「简易无线网络」任务线总览（14 题，红连线分支树）/ GT Simple Wireless Network quest line overview (14 quests)" width="600"><br><em>「简易无线网络」任务线总览（14 题，红连线分支树） / "GT Simple Wireless Network" quest line (14 quests)</em></p>
+**OP 4**（安全命令也支持控制台 / safety also accepts console）。
 
-随模组内置 **简易无线网络（GT Simple Wireless Network）** 任务线：14 个任务从无线能量监视器与掌上 HUD 讲起，经链路终端与无线覆盖板、墙面信息屏，一直到 ME 网络量子化、量子并入锚点与网络调色，以及设备信息终端——全部为 LV 时代科技。任务线与各任务的名称、描述均内置中英双语本地化。
-
-A BetterQuesting quest pack ships inside the mod: the **GT Simple Wireless Network (简易无线网络)** quest line of 14 quests — from the Wireless Energy Monitor and pocket HUD through the Link Terminal and its covers and wall-sized info panels, ending with ME network quantization, Quantum Incorporation Anchors and network colors, and the Device Info Terminal. Everything is LV-era tech. Quest line and per-quest names/descriptions are localized in both Chinese and English.
-
-- **更新 / Updates**：任务线自动装载；换新版 jar 后老世界同步任务定义并保留进度 / The quest line loads automatically; replacing the jar updates existing worlds’ definitions while keeping progress.
-- **操作说明 / Updated guidance**：中英双语描述涵盖信息屏绑定、完整随身查看、AE 即时/平均挂载、设备扫描与可视化、忽略开关、安全传送及经验配置；14 个任务的身份、条件、奖励与前置保持一致 / Bilingual descriptions cover screen binding, complete portable views, AE instant/average pins, device scans and visualization, ignore switches, safe travel and experience settings. The 14 quest identities, conditions, rewards and prerequisites remain unchanged.
-
-***
-
-## 管理员命令 / Admin Commands
-
-需要 OP 等级 4。/ OP level 4 required.
-
-- **`/gtswn global_energy_trans <fromUUID> <toUUID>`** — 一次性将 fromUUID 网络的所有 EU 迁移到 toUUID 网络。用于玩家换账户（正版转第三方等）导致 UUID 变化后迁移 EU。/ One-time transfer of all EU from one UUID's network to another. Use when a player's UUID changes (e.g., premium → third-party account).
-
-- **`/gtswn global_energy_join <memberUUID> <leaderUUID>`** — 将成员的无线 EU 网络永久并入队长网络 / Permanently join the member’s wireless EU network to the leader’s.
-
-- **`/gtswn cleanup_info_data <all|player>`** — 清理过期信息屏历史，或指定在线玩家的全部历史 / Clean expired panel history, or all history for a selected online player.
-
-***
-
-## 客户端命令 / Client Commands
-
-无需 OP 或作弊，仅作用于本地客户端，支持 Tab 补全。/ No OP or cheats required; client-side only, with Tab completion.
-
-- **`/gtswn HudXOffset [值]`** / **`/gtswn HudYOffset [值]`** — 调整便携监测终端 HUD 的水平/垂直偏移（整数，±500；Y 正值向上）。/ Adjust the portable monitor HUD horizontal/vertical offset (integer, ±500; positive Y is up).
-- **`/gtswn HudScale [值]`** — 调整便携监测终端 HUD 缩放（0.2–5.0）。/ Adjust the portable monitor HUD scale (0.2–5.0).
-- **`/gtswn hud <charge|eu|instant|average> <on|off>`** — 分别开关充电、电量、瞬时与平均功率行 / Toggle the charge, energy, instantaneous and average power rows.
-- **`/gtswn tap`** — 查看链路节点特效设置与用法；**`/gtswn quantum`** — 查看量子节点、量子并入特效设置与用法 / Show settings and usage for link nodes or quantum nodes and incorporation.
-- **`/gtswn <tap|quantum> <on|off>`** — 独立开关对应粒子，保留材质、安装动画和已设置的数值 / Toggle particles independently, retaining material, installation animation and numeric settings.
-- **`/gtswn <tap|quantum> density <0-200>`** — 粒子密度百分数，默认 100；0 关闭发射 / Particle density percentage, default 100; 0 stops emission.
-- **`/gtswn <tap|quantum> size <10-400>`** — 粒子大小百分数，默认 100，对应此前实际大小的 150% / Particle size percentage, default 100, equal to 150% of the previous physical size.
-- **`/gtswn <tap|quantum> distance <1-256>`** — 实际格数，默认 64；限制粒子发射与绘制，tap 同时限制材质绘制 / Distance in blocks, default 64; limits particle emission and drawing, and tap material drawing.
-- **`/gtswn tap material <old|oldplus|low|medium|high>`** — 仅链路节点支持，默认 high；材质不会改变粒子密度 / Link nodes only, default high; material does not change particle density.
-
-| 材质 / Material | 效果 / Appearance |
+| `/gtswn …` | 能力 / Capability |
 |---|---|
-| `old` | 16×16 四帧旧覆盖面 / Original 16×16 four-frame cover |
-| `oldplus` | 保留的复杂 16×16 四帧旧款 / Preserved detailed 16×16 four-frame legacy variant |
-| `low` | 32×32 平面蜂窝 / Flat 32×32 honeycomb |
-| `medium` | 64×64 平面蜂窝 / Flat 64×64 honeycomb |
-| `high` | 64×64 蜂窝与立体凹凸 / 64×64 honeycomb with surface relief |
+| `global_energy_trans <fromUUID> <toUUID>` | 一次迁移源网络全部 EU，用于换账号等 UUID 变化 / Transfer all EU once between UUID networks after account/UUID changes |
+| `global_energy_join <memberUUID> <leaderUUID>` | 成员无线 EU 网络永久并入队长 / Permanently join member wireless EU network to leader |
+| `cleanup_info_data <all\|player>` | 清过期信息屏历史，或指定在线玩家全部历史 / Clean expired panel history, or all history for selected online player |
+| `safety <off\|on>` | 全局临时放开/恢复量子安全，保留单网策略，详见上文 / Global quantum safety bypass/restore, preserving per-network policy; see above |
 
-- **`/gtswn <tap|quantum> <help|status|reset>`** — 用法、当前值或重置该组默认值；`/gtswn help`、`status`、`reset` 分别查看总帮助、两组状态、重置两组 / Usage, current values or reset that group; global help, status and reset cover both groups.
-- 首次升级自动将旧 `QuantumParticleQuality`、`ParticlesEnabled` 迁移为两组独立配置，保留旧开关与密度偏好；之后旧项不再覆盖新项。旧 `quality`、`particle` 指令已替换为以上分组指令 / The first upgrade migrates legacy quality and particle toggle preferences into independent group settings; legacy properties then stop overriding new ones. Group commands replace the former quality and particle commands.
-- 两组默认均开启，密度/大小为 100%，距离 64 格；密度受客户端粒子预算及原版粒子设置限制，不会强制加载区块 / Both groups default on with 100% density/size and 64-block distance. Density remains bounded by client particle budgets and vanilla particle settings; chunks are never force-loaded.
-- 带参数时立即生效并保存到 `config/gtswn/gtswn_network.cfg`；偏移/缩放命令无参数时显示当前值，四行开关也可在 `[hud]` 配置 / Values apply immediately and save to `config/gtswn/gtswn_network.cfg`. Offset/scale commands without values show current settings; row toggles are also configurable in `[hud]`.
+### 客户端 / Client
 
-***
+无需 OP/作弊，仅本地，支持 Tab 补全；带值立即生效并保存 `config/gtswn/gtswn_network.cfg`，偏移/缩放无值显示当前值，HUD 行也可在 `[hud]` 配置。
+
+No OP/cheats; local with Tab completion. Values apply/save immediately to `config/gtswn/gtswn_network.cfg`. Omit offset/scale value to inspect; HUD rows also configurable in `[hud]`.
+
+| `/gtswn …` | 功能、范围与默认 / Function, range & default |
+|---|---|
+| `HudXOffset [值/value]` / `HudYOffset [值/value]` | 水平/垂直偏移，整数 ±500，Y 正向上 / Horizontal/vertical, integer ±500, positive Y up |
+| `HudScale [值/value]` | HUD 缩放 / scale：0.2–5.0 |
+| `hud <charge\|eu\|instant\|average> <on\|off>` | 充电/电量/瞬时/平均行 / Charging/energy/instant/average rows |
+| `tap` / `quantum` | 链路 / 量子节点及并入特效用法与设置 / Link / quantum node and incorporation effects settings/usage |
+| `<tap\|quantum> <on\|off>` | 独立粒子开关，保留材质/动画/数值 / Independent particles; retain material/animation/values |
+| `<tap\|quantum> density <0-200>` | 密度 %，默认100；0 停发射 / Density %, default 100; 0 stops emission |
+| `<tap\|quantum> size <10-400>` | 大小 %，默认100（此前实际大小150%）/ Size %, default 100 (150% previous physical size) |
+| `<tap\|quantum> distance <1-256>` | 格数，默认64；限粒子发射/绘制，tap 也限材质 / Blocks, default 64; bounds emission/drawing, plus tap material |
+| `tap material <old\|oldplus\|low\|medium\|high>` | 链路材质，默认high，不改变粒子密度 / Link material, default high; no density change |
+| `tap voltage <on\|off>` | High/Medium 电压配色，默认开 / High/Medium voltage colors, default on |
+| `tap ratio <25\|50\|75\|100>` | 电压配色比例 %，默认75 / Voltage color coverage %, default 75 |
+| `<tap\|quantum> <help\|status\|reset>` | 该组用法/当前值/重置；总 `help/status/reset` 覆盖两组 / Group usage/status/reset; global forms cover both |
+
+| 材质 / Material | 外观 / Appearance |
+|---|---|
+| `old` / `oldplus` | 16×16 四帧旧覆盖面 / four-frame legacy；oldplus 更复杂 / more detailed |
+| `low` / `medium` | 32×32 / 64×64 平面蜂窝 / flat honeycomb |
+| `high` | 64×64 立体蜂窝 / honeycomb with surface relief |
+
+首次升级将 `QuantumParticleQuality` / `ParticlesEnabled` 迁移成两组独立配置，保留开关/密度偏好，之后旧项不覆盖新项；分组命令替代旧 `quality` / `particle`。两组默认开启、密度/大小 **100%**、距离 **64**；受客户端粒子预算和原版设置限制，不强制加载区块。
+
+First upgrade migrates legacy quality/toggle preferences into independent groups; old keys stop overriding them, and grouped commands replace `quality` / `particle`. Both default on, **100%** density/size, **64** blocks; client budgets and vanilla particle settings still apply, without force-loading chunks.
 
 ## 许可证 / License
 
-AGPL-3.0，详见 LICENSE 文件。
-AGPL-3.0 — see the LICENSE file.
+[AGPL-3.0](LICENSE)。

@@ -37,6 +37,17 @@ public class GtswnMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (mixinClassName.startsWith("com.miaokatze.gtswn.mixins.baubles.")) {
+            // Optional mod; test resource presence before FML's mod list becomes available.
+            boolean present = getClass().getClassLoader()
+                .getResource(targetClassName.replace('.', '/') + ".class") != null;
+            LOG.info(
+                "[GTSWN] Baubles terminal-slot target {} {}; mixin {}",
+                targetClassName,
+                present ? "present" : "absent",
+                present ? "applied" : "skipped");
+            return present;
+        }
         if (mixinClassName.startsWith("com.miaokatze.gtswn.mixins.mm.")) {
             // This runs before FML's mod list is ready. Probe class bytes without loading MM types.
             boolean present = getClass().getClassLoader()

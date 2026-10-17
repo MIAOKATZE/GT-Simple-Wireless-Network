@@ -23,7 +23,7 @@ public final class CommandUiDebug extends CommandBase {
 
     @Override
     public String getCommandUsage(ICommandSender sender) {
-        return "/gtswnui help|list|capture|inspect|batch [all|current|portable|device|settings|quantum|panel|monitor] [quick|matrix]|click <button-id-or-path>|type <field-path> <text>|stop";
+        return "/gtswnui help|list|capture|inspect|batch [all|current|portable|device|settings|quantum|link|panel|monitor|cover-input|cover-output] [quick|matrix]|click <button-id-or-path>|type <field-path> <text>|stop";
     }
 
     @Override
@@ -36,7 +36,7 @@ public final class CommandUiDebug extends CommandBase {
                 "quick: current language/scale + safe local tabs/pages. matrix: installed current/en_US/zh_CN languages x scales 1/2/3; resource/font reload cost is logged and settings restored.",
                 "Presets: portable=actual bound monitor, device=real terminal list, settings=real terminal settings, quantum=server-authorized ContainerTerminal. panel/monitor: native activation of dedicated kit fixtures near test spawn, within normal reach. current accepts an already open vanilla or MUI2 GUI.",
                 "click: actual mouse press/release at enabled visible button center. type: real field path (e.g. textFields[0]); inspected lwjgl3ify 3.0.37 uses synthetic TextEvent then production keyTyped, vanilla uses keyTyped. Unsupported versions or pending native text return NOT_RUN before editing. Server effects remain NOT_VERIFIED until independently checked.",
-                "MUI2 click: exact standard ButtonWidget paths from JSON (e.g. panel[0]/child[0]/child[1]), MUI2 2.3.92, one stable panel, no overlay/drag/held mouse/modifier/focused input. Synthetic production screen dispatch reports SENT/NOT_VERIFIED; failed guards are NOT_RUN. MUI2 text, wheel and drag remain unsupported.",
+                "MUI2 click: exact observed paths or name:<widget-name>, native ButtonWidget/PageButton/TextFieldWidget, version 2.3.92, stable target panel and real hit testing, no overlay/drag/held input. MUI2 type uses native focus, key deletion and TextEvent dispatch. SENT records dispatch; independent server data and visual review remain required. Wheel and drag are not automated.",
                 "Artifacts: <game>/gtswn-ui-debug/<run>/index.json, results.json, per-case JSON + screenshots/PNG. Stable field paths, IDs, actual font widths, widget classes/bounds, state, container window ID; no credentials/NBT dumped.",
                 "Presets wait up to 400 natural ticks for actual portable/device/quantum responses or panel owner+tab sync. Empty responses are valid. DATA_TIMEOUT still captures layout/PNG and remains NOT_VERIFIED. current/capture/inspect allow loading screens without waiting.",
                 "FAIL/NOT_RUN continues to next case; 400 tick case timeout; stop restores language/scale and requests kit restore. Real server effects/custom painted rows/pixel clipping/window resizing are MANUAL, never automatic PASS." })
@@ -82,6 +82,9 @@ public final class CommandUiDebug extends CommandBase {
             "device",
             "settings",
             "quantum",
+            "link",
+            "cover-input",
+            "cover-output",
             "panel",
             "monitor");
         if (args.length == 3 && args[0].equals("batch"))

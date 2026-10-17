@@ -20,6 +20,7 @@ import net.minecraft.util.StatCollector;
 
 import org.lwjgl.input.Keyboard;
 
+import com.cleanroommc.modularui.factory.ClientGUI;
 import com.miaokatze.gtswn.client.gui.GuiPortableMonitor;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.hud.PortableMonitorPins;
@@ -232,7 +233,7 @@ public final class PortableMonitorClientCache {
             Minecraft mc = Minecraft.getMinecraft();
             if (monitorKey != null && monitorKey.isPressed() && mc.currentScreen == null && mc.thePlayer != null) {
                 ItemStack terminal = findMonitor(mc.thePlayer);
-                if (terminal != null) mc.displayGuiScreen(new GuiPortableMonitor(terminal));
+                if (terminal != null) ClientGUI.open(new GuiPortableMonitor(terminal));
             }
             for (Cached cache : CACHE.values()) {
                 if (cache.action != 0 || cache.inFlight && cache.request.action != 0) poll(cache.stack);

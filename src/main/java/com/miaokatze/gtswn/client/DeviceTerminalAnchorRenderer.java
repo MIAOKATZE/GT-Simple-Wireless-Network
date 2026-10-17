@@ -403,6 +403,11 @@ public final class DeviceTerminalAnchorRenderer {
         return target == null ? null : target.entry.key;
     }
 
+    /** HUD hints consume the renderer's current selection without repeating the full target scan. */
+    public boolean hasCurrentTarget() {
+        return target != null;
+    }
+
     @SubscribeEvent
     public void render(RenderWorldLastEvent event) {
         lastRenderedMarkers = lastRenderedLabels = lastMarkerBatches = lastProjectedLabels = 0;
