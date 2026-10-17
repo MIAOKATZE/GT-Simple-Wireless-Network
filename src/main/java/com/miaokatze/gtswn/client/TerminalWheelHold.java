@@ -1,48 +1,43 @@
 package com.miaokatze.gtswn.client;
 
-/** The opening press only opens; later press edges cycle. Either press confirms once after fifteen ticks (0.75s). */
+/** The opening tap only opens; later taps cycle on release. A ten-tick hold (0.5s) confirms without cycling. */
 public final class TerminalWheelHold {
 
-    public static final int CONFIRM_TICKS = 15;
-    public static final int IGNORED = 0, CYCLE = 1, TAKE = 2;
+    public static final int CONFIRM_TICKS = 10;
+    public static final int IGNORED = 0, CYCLE = 1, TAKE = 2, CONFIRM = 3;
     private boolean opening = true;
     private boolean pressed = true;
-    private boolean confirmed;
+    private boolean consumed;
     private int ticks;
 
-    public boolean press() {
-        if (opening || pressed) return false;
+    public int press(boolean leftShift, boolean rightShift) {
+        if (pressed) return IGNORED;
         pressed = true;
         ticks = 0;
-        confirmed = false;
-        return true;
-    }
-
-    public int press(boolean leftShift, boolean rightShift) {
-        if (!press()) return IGNORED;
+        consumed = false;
         if (leftShift || rightShift) {
-            confirmed = true;
+            consumed = true;
             return TAKE;
         }
-        return CYCLE;
+        return IGNORED;
     }
 
-    public void release() {
+    public int release() {
+        if (!pressed) return IGNORED;
+        boolean cycle = !consumed && ticks < CONFIRM_TICKS && !opening;
         opening = false;
         pressed = false;
-        confirmed = false;
+        consumed = false;
         ticks = 0;
+        return cycle ? CYCLE : IGNORED;
     }
 
-    public boolean tick(boolean down) {
-        if (!down) {
-            release();
-            return false;
-        }
-        if (!pressed || confirmed) return false;
-        if (++ticks < CONFIRM_TICKS) return false;
-        confirmed = true;
-        return true;
+    public int tick(boolean down) {
+        if (!down) return release();
+        if (!pressed || consumed) return IGNORED;
+        if (++ticks < CONFIRM_TICKS) return IGNORED;
+        consumed = true;
+        return CONFIRM;
     }
 
     public boolean isOpening() {

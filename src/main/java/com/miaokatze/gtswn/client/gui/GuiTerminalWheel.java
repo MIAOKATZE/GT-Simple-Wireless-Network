@@ -41,6 +41,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     private final ItemStack[] terminals;
     private final ItemStack[] placeholders = new ItemStack[8];
     private int selected;
+    // The initial short C press opens the wheel; only later short releases cycle the selection.
     private final TerminalWheelHold hold = new TerminalWheelHold();
     private GuiScreen inputScreen;
 
@@ -88,8 +89,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     public void onUpdate() {
         super.onUpdate();
         if (inputScreen != null && mc.currentScreen == inputScreen) inputScreen.allowUserInput = false;
-        if (hold.tick(TerminalBaubleController.bindingDown(TerminalBaubleController.keyCode())))
-            confirm(selected, false);
+        applyHoldAction(hold.tick(TerminalBaubleController.bindingDown(TerminalBaubleController.keyCode())));
         ItemStack[] current = TerminalBaubles.terminals(mc.thePlayer);
         System.arraycopy(current, 0, terminals, 0, terminals.length);
     }
@@ -101,7 +101,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
             return true;
         }
         if (key == TerminalBaubleController.keyCode()) {
-            cycleOrTake();
+            beginWheelPress();
             return true;
         }
         if (key == Keyboard.KEY_RETURN || key == Keyboard.KEY_NUMPADENTER || key == Keyboard.KEY_SPACE) {
@@ -114,7 +114,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     @Override
     public boolean onKeyRelease(char character, int key) {
         TerminalWheelInput.released(key);
-        if (key == TerminalBaubleController.keyCode()) hold.release();
+        if (key == TerminalBaubleController.keyCode()) applyHoldAction(hold.release());
         return true;
     }
 
@@ -125,7 +125,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
             return true;
         }
         if (button - 100 == TerminalBaubleController.keyCode()) {
-            cycleOrTake();
+            beginWheelPress();
             return true;
         }
         return super.onMousePressed(button);
@@ -134,15 +134,19 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     @Override
     public boolean onMouseRelease(int button) {
         TerminalWheelInput.released(button - 100);
-        if (button - 100 == TerminalBaubleController.keyCode()) hold.release();
+        if (button - 100 == TerminalBaubleController.keyCode()) applyHoldAction(hold.release());
         return super.onMouseRelease(button);
     }
 
-    private void cycleOrTake() {
-        int action = hold
-            .press(TerminalKeyNames.isDown(Keyboard.KEY_LSHIFT), TerminalKeyNames.isDown(Keyboard.KEY_RSHIFT));
+    private void beginWheelPress() {
+        applyHoldAction(
+            hold.press(TerminalKeyNames.isDown(Keyboard.KEY_LSHIFT), TerminalKeyNames.isDown(Keyboard.KEY_RSHIFT)));
+    }
+
+    private void applyHoldAction(int action) {
         if (action == TerminalWheelHold.TAKE) confirm(selected, true);
         else if (action == TerminalWheelHold.CYCLE) selected = TerminalWheelGeometry.next(selected);
+        else if (action == TerminalWheelHold.CONFIRM) confirm(selected, false);
     }
 
     private void confirm(int index, boolean take) {

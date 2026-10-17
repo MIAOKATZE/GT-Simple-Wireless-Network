@@ -1,49 +1,54 @@
 package com.miaokatze.gtswn.client;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
 public class TerminalWheelHoldTest {
 
     @Test
-    public void openingTapDoesNotCycleOrConfirm() {
+    public void openingTapOnlyOpensWithoutCyclingOnPressOrRelease() {
         TerminalWheelHold hold = new TerminalWheelHold();
-        assertFalse(hold.press());
-        for (int tick = 0; tick < 10; tick++) assertFalse(hold.tick(true));
-        assertFalse(hold.tick(false));
+        assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+        for (int tick = 0; tick < 3; tick++) assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(false));
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
         assertEquals(0, hold.progress(), 0);
     }
 
     @Test
-    public void openingHoldConfirmsAtFifteenTicksWithoutACycle() {
+    public void openingHoldConfirmsAtTenTicksWithoutACycle() {
         TerminalWheelHold hold = new TerminalWheelHold();
         for (int tick = 1; tick < TerminalWheelHold.CONFIRM_TICKS; tick++) {
-            assertFalse(hold.press());
-            assertFalse(hold.tick(true));
+            assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+            assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
         }
-        assertTrue(hold.tick(true));
+        assertEquals(TerminalWheelHold.CONFIRM, hold.tick(true));
         for (int tick = 0; tick < 80; tick++) {
-            assertFalse(hold.press());
-            assertFalse(hold.tick(true));
+            assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+            assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
         }
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(false));
     }
 
     @Test
-    public void laterPressCyclesExactlyOnceAndHoldConfirmsExactlyOnce() {
+    public void laterTapCyclesOnReleaseAndHoldConfirmsTheUnchangedSelection() {
         TerminalWheelHold hold = new TerminalWheelHold();
         hold.release();
-        assertTrue(hold.press());
+        assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+        assertEquals(TerminalWheelHold.CYCLE, hold.release());
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(false));
+        assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
         for (int tick = 1; tick < TerminalWheelHold.CONFIRM_TICKS; tick++) {
-            assertFalse(hold.press());
-            assertFalse(hold.tick(true));
+            assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+            assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
         }
-        assertTrue(hold.tick(true));
-        assertFalse(hold.tick(true));
-        hold.release();
-        assertTrue(hold.press());
+        assertEquals(TerminalWheelHold.CONFIRM, hold.tick(true));
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
+        assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
     }
 
     @Test
@@ -51,8 +56,10 @@ public class TerminalWheelHoldTest {
         TerminalWheelHold hold = new TerminalWheelHold();
         for (int press = 0; press < 4; press++) {
             hold.release();
-            assertTrue(hold.press());
-            for (int tick = 0; tick < 12; tick++) assertFalse(hold.tick(true));
+            assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+            for (int tick = 0; tick < 5; tick++) assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
+            assertEquals(TerminalWheelHold.CYCLE, press % 2 == 0 ? hold.release() : hold.tick(false));
+            assertEquals(TerminalWheelHold.IGNORED, press % 2 == 0 ? hold.tick(false) : hold.release());
         }
     }
 
@@ -60,13 +67,14 @@ public class TerminalWheelHoldTest {
     public void eitherShiftTakesTheCurrentSelectionWithoutCyclingAndOpeningDoesNotTake() {
         TerminalWheelHold hold = new TerminalWheelHold();
         assertEquals(TerminalWheelHold.IGNORED, hold.press(true, true));
-        hold.release();
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
         assertEquals(TerminalWheelHold.TAKE, hold.press(true, false));
         assertEquals(TerminalWheelHold.IGNORED, hold.press(true, false));
-        hold.release();
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
         assertEquals(TerminalWheelHold.TAKE, hold.press(false, true));
-        for (int tick = 0; tick < 25; tick++) assertFalse(hold.tick(true));
-        hold.release();
-        assertEquals(TerminalWheelHold.CYCLE, hold.press(false, false));
+        for (int tick = 0; tick < 25; tick++) assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
+        assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+        assertEquals(TerminalWheelHold.CYCLE, hold.release());
     }
 }
