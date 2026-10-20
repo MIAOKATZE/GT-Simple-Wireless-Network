@@ -25,7 +25,7 @@ public abstract class BaubleExpandedSlotsMixin {
         String[] merged = DebugTestGate.isEnabled() ? SlotOverrideAudit.apply(assignments)
             : TerminalBaubleSlotPolicy.withRequiredSlots(assignments);
         LogManager.getLogger("GTSWN")
-            .info(
+            .debug(
                 "[GTSWN] Baubles INIT manual/slot override applied: retained {} existing slots; append count {} (terminal minimum 1/1/1/5)",
                 assignments.length,
                 merged.length - assignments.length);
