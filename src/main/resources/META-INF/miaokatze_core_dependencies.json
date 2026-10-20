@@ -1,0 +1,16 @@
+{
+  "identifier": "falsepatternlib_dependencies",
+  "repositories": [
+    "https://raw.githubusercontent.com/MIAOKATZE/MIAOKATZE-Core/maven/"
+  ],
+  "modDependencies": {
+    "obf": {
+      "common": [
+        {
+          "modid": "miaokatzecore",
+          "artifact": "com.miaokatze.miaokatzecore:miaokatzecore:0.1.7"
+        }
+      ]
+    }
+  }
+}

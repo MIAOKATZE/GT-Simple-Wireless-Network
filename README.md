@@ -7,9 +7,13 @@
   <a href="LICENSE"><img alt="License AGPL-3.0" src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg"></a>
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
-  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 beta1-3 & RC1-2" src="https://img.shields.io/badge/GTNH-2.9.0%20beta1--3%20%26%20RC1--2-orange.svg"></a>
+  <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 RC" src="https://img.shields.io/badge/GTNH-2.9.0%20RC-orange.svg"></a>
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
+
+此版本客户端与服务端均必须安装前置库 [MIAOKATZE Core 0.1.7](https://github.com/MIAOKATZE/MIAOKATZE-Core)（兼容区间：0.1.7 ≤ 版本 < 0.2.0）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
+
+仅支持 GTNH 2.9.0 RC 版本。自 v2.0.0 起，建议 GTIT、GTSWN、GTSR 三者一起更新。
 
 为 GTNH 提供 **无线 EU 监控、传输与红石控制**，包括便携/方块监视器、链路终端与覆盖板、信息屏、ME 量子接入和设备信息终端；均为 LV 阶段科技。
 
@@ -24,13 +28,11 @@
 
 | GTNH | GTSWN | 维护 / Maintained |
 |---|---|:---:|
-| 2.9.0 beta1-3 & RC1-2 | **1.8.0+**（当前 / current）| ✔️ |
-| 2.9.0 beta-1&2 | 1.0.0–1.7.25 | ✔️ |
-| 2.8.4 | 0.2.0 | ❌ |
+| 2.9.0 RC | **2.0.0+**（当前 / current） | ✔️ |
 
-[GitHub Releases 下载 / Download](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)：生产 jar 放入客户端和服务端 `mods/`，替换旧版且只留一个；勿安装 `-dev.jar` / `-sources.jar`。当前开发基线 **GTNH 2.9.0-RC-2**。
+[GitHub Releases 下载 / Download](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)：生产 jar 放入客户端和服务端 `mods/`，替换旧版且只留一个；勿安装 `-dev.jar` / `-sources.jar`。仅支持 GTNH 2.9.0 RC 版本。
 
-Install one release jar in both client and server `mods/`, replacing older versions; exclude `-dev.jar` / `-sources.jar`. Development baseline: **GTNH 2.9.0-RC-2**; compatibility above.
+Install one release jar in both client and server `mods/`, replacing older versions; exclude `-dev.jar` / `-sources.jar`. Only GTNH 2.9.0 RC versions are supported.
 
 - **依赖 / Required**：GT5U、GTNHLib、StructureLib、ModularUI、ModularUI2、AE2。
 - **额外集成 / Extra integrations**：NEI、Baubles、WAILA、BetterQuesting、MatterManipulator（MM）。

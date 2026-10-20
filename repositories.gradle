@@ -7,3 +7,16 @@ repositories {
 	mavenLocal()
 
 }
+
+// Route Core only through its immutable distribution, avoiding probes in unrelated Maven repositories.
+repositories {
+    exclusiveContent {
+        forRepository {
+            maven {
+                name = "miaokatzeCore"
+                url = uri(project.findProperty("miaokatzeCoreRepository") ?: "https://raw.githubusercontent.com/MIAOKATZE/MIAOKATZE-Core/maven/")
+            }
+        }
+        filter { includeGroup("com.miaokatze.miaokatzecore") }
+    }
+}

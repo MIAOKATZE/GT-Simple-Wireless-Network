@@ -39,8 +39,6 @@ public final class QuantumVoxelParticleHandler {
     private static final int EMISSION_BUDGET = 32;
     private static final int SOURCE_BUDGET = 128;
     private static final int DISCOVERY_BUDGET = 256;
-    private static final int[][] CUBE_FACES = { { 0, 1, 3, 2 }, { 4, 6, 7, 5 }, { 0, 4, 5, 1 }, { 2, 3, 7, 6 },
-        { 0, 2, 6, 4 }, { 1, 5, 7, 3 } };
     private static final float[] FACE_SHADE = { .65F, 1F, .8F, .8F, .7F, .7F };
 
     private final List<Particle> particles = new ArrayList<>();
@@ -270,16 +268,17 @@ public final class QuantumVoxelParticleHandler {
                     AxisAlignedBB
                         .getBoundingBox(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius)))
                 continue;
-            for (int side = 0; side < CUBE_FACES.length; side++) {
-                float shade = FACE_SHADE[side];
-                tessellator.setColorRGBA_F(red * shade, green * shade, blue * shade, alpha * (glow ? .14F : .65F));
-                for (int corner : CUBE_FACES[side]) {
-                    tessellator.addVertex(
-                        x + ((corner & 1) == 0 ? -radius : radius),
-                        y + ((corner & 4) == 0 ? -radius : radius),
-                        z + ((corner & 2) == 0 ? -radius : radius));
-                }
-            }
+            com.miaokatze.miaokatzecore.client.fx.VoxelGeometry.tessellatedCube(
+                tessellator,
+                x,
+                y,
+                z,
+                radius,
+                red,
+                green,
+                blue,
+                alpha * (glow ? .14F : .65F),
+                FACE_SHADE);
         }
         tessellator.draw();
     }

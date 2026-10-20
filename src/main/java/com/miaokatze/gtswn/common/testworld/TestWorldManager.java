@@ -24,6 +24,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+import com.miaokatze.miaokatzecore.testkit.Deadline;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.Event;
@@ -364,7 +365,7 @@ public final class TestWorldManager {
             loadIndex++;
             return; // At most one synchronous chunk load per server tick.
         }
-        long deadline = System.nanoTime() + RESET_SCAN_BUDGET_NANOS;
+        Deadline deadline = Deadline.afterNanos(RESET_SCAN_BUDGET_NANOS);
         int visited = 0;
         while (resetCursor < resetFootprint.blockCount() && visited < RESET_SCAN_MAX_CHECKS) {
             int y = resetCursor & 255;
@@ -375,7 +376,7 @@ public final class TestWorldManager {
                 world.setBlock(x, y, z, target, 0, 3);
             resetCursor++;
             visited++;
-            if ((visited & 63) == 0 && System.nanoTime() >= deadline) return;
+            if ((visited & 63) == 0 && deadline.isExpired()) return;
         }
         if (resetCursor < resetFootprint.blockCount()) return;
         // Only entities inside the authored reset volume belong to this operation. Players are preserved.

@@ -19,7 +19,6 @@ import gregtech.api.render.TextureFactory;
 public class TextureManager {
 
     // --- 无线能量监视器材质图标 ---
-    // [GT-compat] BlockIcons.custom(String) 在 beta-3 标记 @Deprecated 但未删除，此处保持单参形态以兼容 beta1/beta2/beta3 三版本编译
     /** 无线能量监视器正面材质（红石信号关闭） */
     public static final IIconContainer TEX_WIRELESS_MONITOR_OFF = Textures.BlockIcons
         .custom("gtswn:Wireless_Energy_Monitor_OFF");
@@ -40,7 +39,8 @@ public class TextureManager {
         .custom("gtswn:covers/wireless_connector_output_oldplus");
 
     // 材质缓存表，用于存储已创建的 ITexture 实例以提高性能
-    public static final IIconContainer TEX_LINK_NODE_CLEAR = Textures.BlockIcons.custom("gtswn:covers/link_node_clear");
+    public static final IIconContainer TEX_LINK_NODE_CLEAR = Textures.BlockIcons
+        .custom("gtswn", "covers/link_node_clear");
 
     private static final Map<String, ITexture> textureCache = new ConcurrentHashMap<>();
 

@@ -7,6 +7,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 import com.miaokatze.gtswn.common.baubles.TerminalBaubleSlotPolicy;
+import com.miaokatze.gtswn.common.testworld.SlotOverrideAudit;
+import com.miaokatze.gtswn.common.util.DebugTestGate;
 
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.LoaderState;
@@ -20,9 +22,10 @@ public abstract class BaubleExpandedSlotsMixin {
     private static String[] gtswn$preserveTerminalCapacity(String[] assignments) {
         if (Loader.instance()
             .getLoaderState() != LoaderState.INITIALIZATION) return assignments;
-        String[] merged = TerminalBaubleSlotPolicy.withRequiredSlots(assignments);
+        String[] merged = DebugTestGate.isEnabled() ? SlotOverrideAudit.apply(assignments)
+            : TerminalBaubleSlotPolicy.withRequiredSlots(assignments);
         LogManager.getLogger("GTSWN")
-            .info(
+            .debug(
                 "[GTSWN] Baubles INIT manual/slot override applied: retained {} existing slots; append count {} (terminal minimum 1/1/1/5)",
                 assignments.length,
                 merged.length - assignments.length);

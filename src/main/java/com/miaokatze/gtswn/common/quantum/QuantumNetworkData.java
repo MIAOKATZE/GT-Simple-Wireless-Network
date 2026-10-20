@@ -331,13 +331,8 @@ public class QuantumNetworkData {
                 data.itemBytesTotal = storage.getItemBytesTotal();
                 data.fluidBytesUsed = storage.getFluidBytesUsed();
                 data.fluidBytesTotal = storage.getFluidBytesTotal();
-                // 源质方法在部分 AE2 版本可能不存在：反射探测，失败则保持默认 0
-                try {
-                    data.essentiaBytesUsed = storage.getEssentiaBytesUsed();
-                    data.essentiaBytesTotal = storage.getEssentiaBytesTotal();
-                } catch (NoSuchMethodError ignored) {
-                    // 旧版 AE2 无源质存储：保持 0
-                }
+                data.essentiaBytesUsed = storage.getEssentiaBytesUsed();
+                data.essentiaBytesTotal = storage.getEssentiaBytesTotal();
             }
 
             // 9. 设备列表聚合：逐机器类统计数量，图标取该类第一个有效 machineRepresentation
