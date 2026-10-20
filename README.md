@@ -11,7 +11,7 @@
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
-此版本客户端与服务端均需 [MIAOKATZE Core 0.1.1](https://github.com/MIAOKATZE/MIAOKATZE-Core)（兼容区间：0.1.1 ≤ 版本 < 0.2.0）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
+此版本客户端与服务端均需 [MIAOKATZE Core 0.1.2](https://github.com/MIAOKATZE/MIAOKATZE-Core)（兼容区间：0.1.2 ≤ 版本 < 0.2.0）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
 
 为 GTNH 提供 **无线 EU 监控、传输与红石控制**，包括便携/方块监视器、链路终端与覆盖板、信息屏、ME 量子接入和设备信息终端；均为 LV 阶段科技。
 
@@ -295,3 +295,5 @@ First upgrade migrates legacy quality/toggle preferences into independent groups
 ## 许可证 / License
 
 [AGPL-3.0](LICENSE)。
+
+GTNH 2.9.0 RC2 is the only supported platform baseline. Older beta/RC1 packs are unsupported.

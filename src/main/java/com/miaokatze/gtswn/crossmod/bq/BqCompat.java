@@ -30,10 +30,10 @@ public final class BqCompat {
         try {
             Class.forName("betterquesting.api.questing.IQuest");
             bqLoaded = true;
-            GTSimpleWirelessNetwork.LOG.info("[BQ] 检测到 BetterQuesting，任务注入集成启用");
+            GTSimpleWirelessNetwork.LOG.debug("[BQ] 检测到 BetterQuesting，任务注入集成启用");
         } catch (ClassNotFoundException e) {
             bqLoaded = false;
-            GTSimpleWirelessNetwork.LOG.info("[BQ] 未检测到 BetterQuesting，任务注入集成静默停用");
+            GTSimpleWirelessNetwork.LOG.debug("[BQ] 未检测到 BetterQuesting，任务注入集成静默停用");
         }
     }
 
