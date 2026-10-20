@@ -55,14 +55,34 @@ final class TerminalBaublesScenario implements TestScenario {
                 + java.util.Arrays.toString(BaublesConfig.overrideSlotTypes)
                 + "; final slots="
                 + java.util.Arrays.toString(BaubleExpandedSlots.getCurrentSlotAssignments()));
-        if (BaublesConfig.manualSlotSelection) {
-            String[] configured = BaublesConfig.overrideSlotTypes;
-            String[] actual = BaubleExpandedSlots.getCurrentSlotAssignments();
-            require(ctx, actual.length >= configured.length, "Manual configuration retains all original slots");
-            for (int index = 0; index < configured.length; index++) {
-                String expected = BaubleExpandedSlots.isTypeRegistered(configured[index]) ? configured[index]
-                    : "unknown";
-                require(ctx, expected.equals(actual[index]), "Manual configuration preserves slot order at " + index);
+        java.util.List<SlotOverrideAudit.Observation> overrides = SlotOverrideAudit.snapshot();
+        require(ctx, SlotOverrideAudit.dropped() == 0, "All startup slot override observations retained");
+        if (BaublesConfig.manualSlotSelection)
+            require(ctx, !overrides.isEmpty(), "Actual manual startup override was observed");
+        for (int call = 0; call < overrides.size(); call++) {
+            SlotOverrideAudit.Observation observed = overrides.get(call);
+            ctx.event(
+                "baubles-override",
+                "call=" + call
+                    + "; input="
+                    + java.util.Arrays.toString(observed.before)
+                    + "; output="
+                    + java.util.Arrays.toString(observed.after));
+            require(
+                ctx,
+                observed.after.length >= observed.before.length,
+                "Override " + call + " retains every incoming slot");
+            for (int index = 0; index < observed.before.length; index++) {
+                require(
+                    ctx,
+                    java.util.Objects.equals(observed.before[index], observed.after[index]),
+                    "Override " + call
+                        + " preserves incoming slot "
+                        + index
+                        + ": "
+                        + observed.before[index]
+                        + " -> "
+                        + observed.after[index]);
             }
         }
         saved = new ItemStack[baubles.getSizeInventory()];
