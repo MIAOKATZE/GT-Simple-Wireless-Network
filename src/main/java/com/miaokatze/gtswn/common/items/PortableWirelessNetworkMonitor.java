@@ -18,6 +18,9 @@ import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
+import appeng.api.features.IWirelessTermHandler;
+import appeng.api.util.IConfigManager;
+import appeng.util.ConfigManager;
 import gregtech.api.enums.GTValues;
 import ic2.api.item.IElectricItemManager;
 import ic2.api.item.ISpecialElectricItem;
@@ -37,7 +40,41 @@ import ic2.api.item.ISpecialElectricItem;
     @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles"),
     @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.expanded.IBaubleExpanded", modid = "Baubles") })
 public class PortableWirelessNetworkMonitor extends Item
-    implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded, ISpecialElectricItem {
+    implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded, ISpecialElectricItem, IWirelessTermHandler {
+
+    /** 仅供社区按类型识别，不接管 AE 无线终端。 */
+    @Override
+    public boolean canHandle(ItemStack stack) {
+        return false;
+    }
+
+    /** 不提供 AE 能源判定。 */
+    @Override
+    public boolean hasPower(EntityPlayer player, double amount, ItemStack stack) {
+        return false;
+    }
+
+    /** 不消耗 AE 能源。 */
+    @Override
+    public boolean usePower(EntityPlayer player, double amount, ItemStack stack) {
+        return false;
+    }
+
+    /** 每次返回独立空配置，不关联终端 NBT。 */
+    @Override
+    public IConfigManager getConfigManager(ItemStack stack) {
+        return new ConfigManager((manager, settingName, newValue) -> {});
+    }
+
+    /** 此终端不保存 AE 配对密钥。 */
+    @Override
+    public String getEncryptionKey(ItemStack stack) {
+        return "";
+    }
+
+    /** 此终端忽略 AE 配对写入。 */
+    @Override
+    public void setEncryptionKey(ItemStack stack, String key, String name) {}
 
     @Override
     public boolean canProvideEnergy(ItemStack stack) {
