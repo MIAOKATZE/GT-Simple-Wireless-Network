@@ -11,7 +11,7 @@
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
-此版本客户端与服务端均必须安装前置库 [MIAOKATZE Core 0.1.7](https://github.com/MIAOKATZE/MIAOKATZE-Core)（兼容区间：0.1.7 ≤ 版本 < 0.2.0）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
+此版本客户端与服务端均必须安装前置库 [MIAOKATZE Core 0.1.8](https://github.com/MIAOKATZE/MIAOKATZE-Core)（最低版本：0.1.8）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
 
 仅支持 GTNH 2.9.0 RC 版本。自 v2.0.0 起，建议 GTIT、GTSWN、GTSR 三者一起更新。
 
@@ -28,7 +28,7 @@
 
 | GTNH | GTSWN | 维护 / Maintained |
 |---|---|:---:|
-| 2.9.0 RC | **2.0.0+**（当前 / current） | ✔️ |
+| 2.9.0 RC | **2.0.1+**（当前 / current） | ✔️ |
 
 [GitHub Releases 下载 / Download](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)：生产 jar 放入客户端和服务端 `mods/`，替换旧版且只留一个；勿安装 `-dev.jar` / `-sources.jar`。仅支持 GTNH 2.9.0 RC 版本。
 
