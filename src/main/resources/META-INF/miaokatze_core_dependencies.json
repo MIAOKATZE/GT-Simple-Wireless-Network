@@ -8,7 +8,7 @@
       "common": [
         {
           "modid": "miaokatzecore",
-          "artifact": "com.miaokatze.miaokatzecore:miaokatzecore:0.1.7"
+          "artifact": "com.miaokatze.miaokatzecore:miaokatzecore:0.1.8"
         }
       ]
     }
