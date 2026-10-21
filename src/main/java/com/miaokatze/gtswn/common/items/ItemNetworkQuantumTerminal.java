@@ -40,13 +40,15 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.PacketQuantumTerminalSwapBus;
 import com.miaokatze.gtswn.register.BlockRegistrar;
 
-import appeng.api.features.INetworkEncodable;
+import appeng.api.features.IWirelessTermHandler;
 import appeng.api.networking.pathing.ControllerState;
 import appeng.api.util.DimensionalCoord;
+import appeng.api.util.IConfigManager;
 import appeng.me.GridAccessException;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.networking.TileController;
+import appeng.util.ConfigManager;
 import appeng.util.Platform;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
@@ -79,7 +81,31 @@ import cpw.mods.fml.relauncher.SideOnly;
     @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.IBauble", modid = "Baubles"),
     @cpw.mods.fml.common.Optional.Interface(iface = "baubles.api.expanded.IBaubleExpanded", modid = "Baubles") })
 public class ItemNetworkQuantumTerminal extends Item
-    implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded, INetworkEncodable {
+    implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded, IWirelessTermHandler {
+
+    /** 仅供社区按类型识别，不接管 AE 无线终端。 */
+    @Override
+    public boolean canHandle(ItemStack stack) {
+        return false;
+    }
+
+    /** 不提供 AE 能源判定。 */
+    @Override
+    public boolean hasPower(EntityPlayer player, double amount, ItemStack stack) {
+        return false;
+    }
+
+    /** 不消耗 AE 能源。 */
+    @Override
+    public boolean usePower(EntityPlayer player, double amount, ItemStack stack) {
+        return false;
+    }
+
+    /** 每次返回独立空配置，不关联终端 NBT。 */
+    @Override
+    public IConfigManager getConfigManager(ItemStack stack) {
+        return new ConfigManager((manager, settingName, newValue) -> {});
+    }
 
     @Override
     public String getEncryptionKey(ItemStack stack) {
