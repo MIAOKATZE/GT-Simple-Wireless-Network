@@ -15,7 +15,10 @@ import net.minecraftforge.common.MinecraftForge;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
+import com.miaokatze.gtswn.client.TerminalBaubleController;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
+import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
+import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Node;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.miaokatzecore.api.camera.CameraIntersections;
 import com.miaokatze.miaokatzecore.api.camera.CameraPose;
@@ -189,6 +192,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (mc.currentScreen != null || mc.thePlayer == null) return;
         if (TOGGLE.isPressed()) toggle();
         if (!isActive() || !Keyboard.getEventKeyState() || Keyboard.isRepeatEvent()) return;
+        // The terminal binding owns its press even when the player has rebound it to another engineering shortcut.
+        if (Keyboard.getEventKey() == TerminalBaubleController.keyCode()) return;
         switch (Keyboard.getEventKey()) {
             case Keyboard.KEY_ESCAPE:
                 if (!EngineeringHud.escape()) close();
@@ -199,7 +204,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             case Keyboard.KEY_HOME:
                 returnToPlayer();
                 break;
-            case Keyboard.KEY_C:
+            case Keyboard.KEY_P:
                 togglePin();
                 break;
             case Keyboard.KEY_DELETE:
@@ -223,7 +228,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         lastX = x;
         lastY = y;
         lastZ = z;
-        if (mc.currentScreen != null || !mc.inGameHasFocus) return;
+        if (!EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)) return;
         if (pinned && selected != null) {
             x = selected.x + .5;
             y = selected.y + .5;
@@ -259,6 +264,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     private static int key(KeyBinding key) {
         int code = key.getKeyCode();
+        if (com.miaokatze.gtswn.client.TerminalWheelInput.suppresses(code)) return 0;
         return code > 0 && code < Keyboard.KEYBOARD_SIZE && Keyboard.isKeyDown(code) ? 1
             : code < 0 && code + 100 >= 0 && Mouse.isButtonDown(code + 100) ? 1 : 0;
     }
@@ -266,7 +272,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     @SubscribeEvent(priority = EventPriority.HIGHEST)
     public void mouse(MouseEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
-        if (!isActive() || mc.currentScreen != null || event.isCanceled()) return;
+        if (!EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
+            || event.isCanceled()) return;
         if (EngineeringHud.mouse(event)) {
             event.setCanceled(true);
             return;
@@ -319,6 +326,16 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
                     entry.y,
                     entry.z,
                     entry.displayName.isEmpty() ? entry.name : entry.displayName);
+            }
+        }
+        EngineeringSnapshot snapshot = EngineeringDashboardCache.snapshot();
+        if (snapshot != null) for (Node node : snapshot.nodes) {
+            if (node.dim != world.provider.dimensionId) continue;
+            double distance = CameraIntersections
+                .aabb(interval.ray(), node.x, node.y, node.z, node.x + 1, node.y + 1, node.z + 1, min, nearest);
+            if (Double.isFinite(distance)) {
+                nearest = distance;
+                result = new Target(node.x, node.y, node.z, node.name);
             }
         }
         return result;
@@ -392,20 +409,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
                     .panelPosition((int) (12 * scale), (int) (56 * scale))
                     .panelWidth(Math.max(1, (int) (192 * scale)))
                     .build())
-            .navigation(
-                CameraSettings.Navigation.builder()
-                    .pan(!following)
-                    .yaw(true)
-                    .pitch(true)
-                    .zoom(true)
-                    .reset(true)
-                    .rotateDrag(1, 0)
-                    .pitchRange(15, 85)
-                    .scaleRange(2, 128)
-                    .basePixelsPerWorldUnit(16)
-                    .sliceRange(0, 256)
-                    .build())
-            .guiPolicy(WorldCameras.GuiPolicy.SUSPEND)
+            .navigation(EngineeringInputPolicy.navigation(following))
+            .guiPolicy(WorldCameras.GuiPolicy.KEEP)
             .slice(slice)
             .build();
         return settings;
@@ -417,14 +422,26 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (following
             && (code == mc.gameSettings.keyBindJump.getKeyCode() || code == mc.gameSettings.keyBindSneak.getKeyCode()))
             return true;
-        return code == TOGGLE.getKeyCode() || code == Keyboard.KEY_ESCAPE
+        return code == TOGGLE.getKeyCode() || code == TerminalBaubleController.keyCode()
+            || code == Keyboard.KEY_ESCAPE
             || code == Keyboard.KEY_M
-            || code == Keyboard.KEY_C
+            || code == Keyboard.KEY_P
             || code == Keyboard.KEY_HOME
             || code == Keyboard.KEY_DELETE
             || code == Keyboard.KEY_F8
             || code == mc.gameSettings.keyBindScreenshot.getKeyCode()
             || code == mc.gameSettings.keyBindChat.getKeyCode();
+    }
+
+    @Override
+    public boolean allowRawKey(int code) {
+        // Vanilla opens the pause menu before FML KeyInputEvent. Handle world Esc at Core's earlier queue boundary.
+        // Core bypasses this callback while a real GUI is open, so that GUI retains its normal Esc behavior.
+        if (code == Keyboard.KEY_ESCAPE) {
+            if (Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent() && !EngineeringHud.escape()) close();
+            return false;
+        }
+        return allowKey(code);
     }
 
     @Override
@@ -434,12 +451,13 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean supports(CameraControl control) {
-        return isActive() && (control != CameraControl.PAN || !following)
-            && (WorldCameraHooks.pointerCaptured()
-                || !EngineeringHud.blocksNavigation(Mouse.getEventX(), Mouse.getEventY())
-                || control != CameraControl.PAN && control != CameraControl.YAW
-                    && control != CameraControl.PITCH
-                    && control != CameraControl.ZOOM);
+        Minecraft mc = Minecraft.getMinecraft();
+        return EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
+            && EngineeringInputPolicy.pointerControl(
+                control,
+                following,
+                WorldCameraHooks.pointerCaptured(),
+                EngineeringHud.blocksNavigation(Mouse.getEventX(), Mouse.getEventY()));
     }
 
     @Override

@@ -17,6 +17,7 @@ import org.lwjgl.opengl.GL11;
 import com.cleanroommc.modularui.api.drawable.IDrawable;
 import com.cleanroommc.modularui.api.layout.IViewportStack;
 import com.cleanroommc.modularui.api.widget.Interactable;
+import com.cleanroommc.modularui.factory.ClientGUI;
 import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
 import com.cleanroommc.modularui.theme.WidgetThemeEntry;
 import com.cleanroommc.modularui.widget.Widget;
@@ -25,9 +26,16 @@ import com.miaokatze.gtswn.client.TerminalKeyNames;
 import com.miaokatze.gtswn.client.TerminalWheelGeometry;
 import com.miaokatze.gtswn.client.TerminalWheelHold;
 import com.miaokatze.gtswn.client.TerminalWheelInput;
+import com.miaokatze.gtswn.client.engineering.EngineeringModeController;
+import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
+import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 
 /** Eight real annular hit regions, with the same framework transform for painting and input. */
 public final class GuiTerminalWheel extends GtswnMuiScreen {
@@ -44,6 +52,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     // The initial short C press opens the wheel; only later short releases cycle the selection.
     private final TerminalWheelHold hold = new TerminalWheelHold();
     private GuiScreen inputScreen;
+    private final boolean engineering = EngineeringModeController.isActive();
 
     public GuiTerminalWheel() {
         super("terminal_wheel", WIDTH, HEIGHT);
@@ -67,6 +76,37 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
                     .pos(0, 0)
                     .size(WIDTH, HEIGHT)
                     .background(IDrawable.EMPTY));
+        }
+        if (engineering) {
+            getMainPanel().child(
+                GtswnMuiWidgets.button(
+                    "engineering_follow",
+                    () -> GuiEngineeringTools.tr(EngineeringModeController.INSTANCE.following() ? "following" : "free"),
+                    16,
+                    56,
+                    84,
+                    20,
+                    () -> {
+                        closeWheel();
+                        EngineeringModeController.INSTANCE.toggleFollowing();
+                    }));
+            getMainPanel().child(
+                GtswnMuiWidgets.button("engineering_return", GuiEngineeringTools.tr("return"), 106, 56, 84, 20, () -> {
+                    closeWheel();
+                    EngineeringModeController.INSTANCE.returnToPlayer();
+                }));
+            getMainPanel().child(
+                GtswnMuiWidgets
+                    .button("engineering_camera", GuiEngineeringTools.tr("dash.camera"), 196, 56, 84, 20, () -> {
+                        closeWheel();
+                        EngineeringModeController.INSTANCE.toggleCameraPanel();
+                    }));
+            getMainPanel().child(
+                GtswnMuiWidgets
+                    .button("engineering_exit", GuiEngineeringTools.tr("tools.exit"), 286, 56, 82, 20, () -> {
+                        closeWheel();
+                        EngineeringModeController.close();
+                    }));
         }
     }
 
@@ -153,6 +193,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
         if (terminals[index] == null) return;
         closeWheel();
         if (take) TerminalBaubleController.take(index);
+        else if (engineering) ClientGUI.open(new GuiEngineeringTools(index));
         else TerminalBaubleController.select(index);
     }
 
@@ -188,6 +229,8 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
             CENTER_X,
             CENTER_Y + 11,
             GtswnMuiTheme.TEXT_MUTED);
+        if (engineering && terminals[selected] != null)
+            drawName(identity(terminals[selected], selected), CENTER_X, CENTER_Y + 24, 88, GtswnMuiTheme.TEXT_MUTED);
         if (terminals[selected] == null) center(
             TerminalBaubleController.text("gtswn.terminal_wheel.empty"),
             CENTER_X,
@@ -218,6 +261,35 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
         } finally {
             GL11.glPopMatrix();
         }
+    }
+
+    public static String identity(ItemStack stack, int slot) {
+        if (stack == null) return TerminalBaubleController.text("gtswn.terminal_wheel.empty");
+        if (slot >= 3) {
+            String color = TerminalBaubleController
+                .text("gtswn.color." + QuantumNetworkColor.name(QuantumNetworkColor.get(stack)));
+            int[] a = ItemNetworkQuantumTerminal.getAnchor(stack);
+            return color + " · "
+                + (a == null ? TerminalBaubleController.text("gtswn.tooltip.quantum_terminal.unbound")
+                    : "DIM " + a[0] + " · " + a[1] + "/" + a[2] + "/" + a[3]);
+        }
+        if (slot == 1) return GuiEngineeringTools
+            .tr(WirelessEnergyTap.getOutputModeStatic(stack) ? "tools.dynamo" : "tools.energy");
+        if (slot == 2) {
+            EngineeringTerminalHudSnapshot.Source source = EngineeringTerminalHudSnapshot
+                .capture(net.minecraft.client.Minecraft.getMinecraft().thePlayer).device;
+            return source.fresh
+                ? TerminalBaubleController.text("gtswn.engineering.tools.device_count", source.devices.size())
+                : GuiEngineeringTools.tr("devices") + " · " + GuiEngineeringTools.tr("waiting");
+        }
+        if (!PortableWirelessNetworkMonitor.isMonitorBound(stack)) return GuiEngineeringTools.tr("tools.unbound");
+        String owner = stack.stackTagCompound == null ? "" : stack.stackTagCompound.getString("OwnerName");
+        if (owner.isEmpty()) owner = GuiEngineeringTools.tr("dash.unknown");
+        return owner + " · "
+            + MonitorBindings.read(stack)
+                .size()
+            + " "
+            + GuiEngineeringTools.tr("tools.screens");
     }
 
     private ItemStack stack(int index) {
@@ -309,6 +381,8 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
                 tooltip.add(stack(index).getDisplayName())
                     .newLine();
                 tooltip.add(TerminalBaubleController.text("gtswn.terminal_wheel.slot", index + 1));
+                if (terminals[index] != null) tooltip.newLine()
+                    .add(identity(terminals[index], index));
                 if (terminals[index] == null) tooltip.newLine()
                     .add(TerminalBaubleController.text("gtswn.terminal_wheel.empty"));
             });
@@ -344,6 +418,12 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
                 int y = CENTER_Y + (int) Math.round(Math.sin(angle) * 99);
                 drawIcon(stack(index), x, y - 10, present);
                 drawName(stack(index).getDisplayName(), x, y + 7, 76, present ? GtswnMuiTheme.TEXT_BODY : 0xFF697580);
+                if (engineering && present && index >= 3) GuiTerminalWheel.this.center(
+                    TerminalBaubleController
+                        .text("gtswn.color." + QuantumNetworkColor.name(QuantumNetworkColor.get(terminals[index]))),
+                    x,
+                    y + 29,
+                    GtswnMuiTheme.TEXT_ACCENT);
             });
         }
     }

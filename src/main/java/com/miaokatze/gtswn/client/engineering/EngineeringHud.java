@@ -18,7 +18,6 @@ import net.minecraftforge.client.event.MouseEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 
-import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.TerminalBaubleController;
@@ -46,28 +45,27 @@ import com.miaokatze.miaokatzecore.client.render.GlScope;
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
-/** Nonmodal terminal dock. Core owns the camera; the server owns all network and review values. */
+/** Contextual world markers and selection. Terminal actions live in the existing wheel's native MUI screens. */
 public final class EngineeringHud extends Gui {
 
-    private static final int BACK = 0xEC141E27, HEADER = 0xF0263946, CARD = 0xE5263540;
+    private static final int BACK = 0xEC141E27, HEADER = 0xF0263946;
     private static final int ACCENT = 0xFF67D8CD, TEXT = 0xFFE2EEF4, MUTED = 0xFF92A7B4;
     private static final int LINK = 0xFFF1BD70, QUANTUM = 0xFF8EB2FF, INC = 0xFFDA97F1;
-    private static int menu = -1, activeSlot = -1, detailScroll;
+    private static int activeSlot = -1;
     private static boolean details = true, grid, gtGrid, selecting, dragging, boundOnly;
     private static int dragX, dragY, endX, endY, minCellX, minCellZ, maxCellX, maxCellZ;
     private static double dragWorldX, dragWorldZ, endWorldX, endWorldZ, planeY;
     private static String notice = "";
     private static Node selectedNode;
     private static final List<NodeHit> hits = new ArrayList<>();
-    private static boolean showNodes, nodeListExpanded = true;
+    private static boolean showNodes, nodeListExpanded;
     private static int nodeScroll;
     private static final List<NodeRow> nodeRows = new ArrayList<>();
     private static EngineeringSnapshot listSnapshot;
     private static boolean pendingGt;
 
     static void reset() {
-        menu = activeSlot = -1;
-        detailScroll = 0;
+        activeSlot = -1;
         details = true;
         grid = gtGrid = selecting = dragging = boundOnly = false;
         selectedNode = null;
@@ -76,7 +74,7 @@ public final class EngineeringHud extends Gui {
         nodeRows.clear();
         listSnapshot = null;
         showNodes = false;
-        nodeListExpanded = true;
+        nodeListExpanded = false;
         nodeScroll = 0;
         pendingGt = false;
         PortableSuperDashboard.close();
@@ -140,7 +138,7 @@ public final class EngineeringHud extends Gui {
             || mc.thePlayer == null) return;
         int w = width(mc), h = height(mc);
         EngineeringSnapshot ready = EngineeringDashboardCache.snapshot();
-        if (pendingGt && ready != null && ready.patternResolved) {
+        if (pendingGt && ready != null && ready.slot == 2 && ready.patternResolved) {
             pendingGt = false;
             gtGrid = true;
             defaultRegion();
@@ -154,82 +152,51 @@ public final class EngineeringHud extends Gui {
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             drawMap(mc.fontRenderer, w, h);
-            drawDock(mc, w);
-            if (PortableSuperDashboard.isOpen())
-                PortableSuperDashboard.render(w, h, localX(mc, Mouse.getX()), localY(mc, Mouse.getY()));
-            else {
-                drawDetails(mc.fontRenderer, h);
-                drawNodes(mc.fontRenderer, w, h);
-                rect(8, h - 27, w - 8, h - 8, BACK);
-                text(mc.fontRenderer, "L " + tr("dash.legend.link"), 16, h - 21, LINK, 102);
-                text(mc.fontRenderer, "Q " + tr("dash.legend.quantum"), 122, h - 21, QUANTUM, 102);
-                text(mc.fontRenderer, "+ " + tr("dash.legend.inc"), 230, h - 21, INC, 102);
-                text(
-                    mc.fontRenderer,
-                    tr(!notice.isEmpty() ? notice : selecting ? "dash.selection.hint" : "dash.navigation"),
-                    340,
-                    h - 21,
-                    MUTED,
-                    w - 358);
-                if (dragging) outline(
-                    Math.min(dragX, endX),
-                    Math.min(dragY, endY),
-                    Math.max(dragX, endX),
-                    Math.max(dragY, endY),
-                    ACCENT);
+            drawDetails(mc.fontRenderer, w, h);
+            drawNodes(mc.fontRenderer, w, h);
+            if (selecting || !notice.isEmpty()) {
+                String hint = tr(notice.isEmpty() ? "dash.selection.hint" : notice);
+                int hintWidth = Math.min(w - 32, mc.fontRenderer.getStringWidth(hint) + 16);
+                rect((w - hintWidth) / 2, h - 25, (w + hintWidth) / 2, h - 7, BACK);
+                text(mc.fontRenderer, hint, (w - hintWidth) / 2 + 8, h - 20, ACCENT, hintWidth - 16);
             }
-            if (menu >= 0) drawMenu(mc.fontRenderer, w);
+            if (dragging) outline(
+                Math.min(dragX, endX),
+                Math.min(dragY, endY),
+                Math.max(dragX, endX),
+                Math.max(dragY, endY),
+                ACCENT);
         }
     }
 
-    private static void drawDock(Minecraft mc, int w) {
-        FontRenderer f = mc.fontRenderer;
-        rect(8, 8, w - 8, 49, BACK);
-        rect(8, 8, w - 8, 10, ACCENT);
-        text(f, tr("title"), 16, 15, ACCENT, 210);
-        button(f, 16, 29, 64, tr(EngineeringModeController.INSTANCE.following() ? "following" : "free"));
-        button(f, 84, 29, 56, tr("return"));
-        button(f, 144, 29, 70, tr("dash.camera"));
-        ItemStack[] slots = TerminalBaubles.terminals(mc.thePlayer);
-        for (int i = 0; i < 8; i++) {
-            int x = w - 392 + i * 48;
-            boolean present = slots[i] != null;
-            rect(x + 2, 13, x + 46, 44, present ? (i == activeSlot ? 0xFF325C63 : HEADER) : 0xFF202B32);
-            text(
-                f,
-                tr(i == 0 ? "dash.portable" : i == 1 ? "dash.link" : i == 2 ? "devices" : "dash.quantum"),
-                x + 6,
-                17,
-                present ? TEXT : 0xFF52616A,
-                36);
-            text(
-                f,
-                present ? (i >= 3 ? "Q" + (i - 2) + " v" : "v") : tr("dash.empty"),
-                x + 6,
-                31,
-                present ? ACCENT : 0xFF52616A,
-                36);
-        }
-    }
-
-    private static int menuX(int w) {
-        return Math.max(8, Math.min(w - 226, w - 392 + menu * 48));
-    }
-
-    private static String[] menuLabels() {
-        if (menu == 0) return new String[] { tr("dash.board"), tr("dash.original") };
-        if (menu == 1) return new String[] { tr("dash.link.map"), tr("dash.original") };
-        if (menu == 2) return new String[] { tr("dash.device.map"), tr("dash.grid.mc"), tr("dash.grid.gt"),
+    /** Native MUI controls are the only terminal action entry; the world HUD stays contextual. */
+    public static String[] toolLabels(int slot) {
+        if (slot == 0) return new String[] { tr("dash.board"), tr("dash.original") };
+        if (slot == 1) return new String[] { tr("dash.link.map"), tr("dash.original"), tr("tools.stop") };
+        if (slot == 2) return new String[] { tr("dash.device.map"), tr("dash.grid.mc"), tr("dash.grid.gt"),
             tr(selecting ? "dash.select.off" : "dash.select.on"), tr(boundOnly ? "dash.scope.bound" : "dash.scope.all"),
             tr("dash.baseline"), tr("dash.stop"), tr("dash.original") };
-        return new String[] { tr("dash.quantum.map"), tr("dash.quantum.info"), tr("dash.original") };
+        return new String[] { tr("dash.quantum.map"), tr("dash.quantum.info"), tr("dash.original"), tr("tools.stop") };
     }
 
-    private static void drawMenu(FontRenderer f, int w) {
-        int x = menuX(w);
-        String[] labels = menuLabels();
-        rect(x, 52, x + 218, 58 + labels.length * 23, BACK);
-        for (int i = 0; i < labels.length; i++) button(f, x + 5, 56 + i * 23, 208, labels[i]);
+    public static void clearTarget() {
+        selectedNode = null;
+        EngineeringModeController.INSTANCE.clearSelection();
+    }
+
+    public static void inspect(int slot) {
+        if (slot > 0 && activeSlot != slot) {
+            PortableSuperDashboard.close();
+            defaultRegion();
+            subscribe(slot, false);
+        }
+        com.cleanroommc.modularui.factory.ClientGUI.open(new com.miaokatze.gtswn.client.gui.GuiEngineeringDetails());
+    }
+
+    public static List<String> inspectionLines() {
+        List<String> lines = selectedLines();
+        lines.addAll(detailLines());
+        return lines;
     }
 
     private static List<String> detailLines() {
@@ -307,53 +274,6 @@ public final class EngineeringHud extends Gui {
                     lines.add(tr("dash.inc.channels") + " " + q.incorporationChannels);
                 }
             } else lines.add(tr("dash.node.count") + " " + s.nodes.size());
-            Node n = currentNode(s);
-            if (n != null) {
-                lines.add("────────────────────────");
-                lines.add(n.name + " · " + tr(n.online ? "dash.online" : "dash.offline"));
-                lines.add("DIM " + n.dim + " · " + n.x + " / " + n.y + " / " + n.z);
-                if (n.dim != Minecraft.getMinecraft().theWorld.provider.dimensionId)
-                    lines.add(tr("dash.dimension.other"));
-                lines.add(tr("dash.owner") + " " + n.ownerName);
-                if (n.kind == 1) {
-                    lines.add(tr("dash.node.mode") + " " + n.mode + " · " + n.voltage + " V × " + n.amperage + " A");
-                    lines.add(tr("dash.stored") + " " + metric(n.stored) + "/" + metric(n.capacity) + " EU");
-                } else {
-                    lines.add(
-                        tr("dash.anchor") + " "
-                            + n.anchorDim
-                            + ": "
-                            + n.anchorX
-                            + " / "
-                            + n.anchorY
-                            + " / "
-                            + n.anchorZ);
-                    lines.add(tr("dash.channels") + " " + n.channels);
-                }
-            }
-        }
-        Target target = EngineeringModeController.INSTANCE.selected();
-        if (target != null) {
-            lines.add("────────────────────────");
-            lines.add(target.name + " · " + target.x + " / " + target.y + " / " + target.z);
-            boolean found = false;
-            for (Entry e : EngineeringTerminalHudSnapshot.capture(Minecraft.getMinecraft().thePlayer).device.devices) {
-                if (e.x != target.x || e.y != target.y
-                    || e.z != target.z
-                    || e.dim != Minecraft.getMinecraft().theWorld.provider.dimensionId) continue;
-                found = true;
-                lines.add(
-                    tr("state." + Math.max(0, Math.min(3, e.state))) + " · "
-                        + metric(e.instIn)
-                        + " → "
-                        + metric(e.instOut)
-                        + " EU/t");
-                lines.add(tr("dash.power.average") + " " + metric(e.avgIn) + " → " + metric(e.avgOut) + " EU/t");
-                if (!e.recipeIn.isEmpty()) lines.add(e.recipeIn);
-                if (!e.recipeOut.isEmpty()) lines.add(e.recipeOut);
-                break;
-            }
-            if (!found && selectedNode == null) lines.add(tr("dash.target.unknown"));
         }
         return lines;
     }
@@ -367,26 +287,86 @@ public final class EngineeringHud extends Gui {
     }
 
     private static Node currentNode(EngineeringSnapshot s) {
-        if (selectedNode != null) for (Node node : s.nodes) if (sameNode(node, selectedNode)) return node;
+        Target target = EngineeringModeController.INSTANCE.selected();
+        if (selectedNode != null && (target == null
+            || target.x == selectedNode.x && target.y == selectedNode.y && target.z == selectedNode.z))
+            for (Node node : s.nodes) if (sameNode(node, selectedNode)) return node;
+        if (target != null) for (Node node : s.nodes)
+            if (node.dim == Minecraft.getMinecraft().theWorld.provider.dimensionId && node.x == target.x
+                && node.y == target.y
+                && node.z == target.z) return node;
         return null;
     }
 
-    private static void drawDetails(FontRenderer f, int h) {
-        int top = h - (details ? 246 : 53);
-        rect(8, top, 298, h - 32, BACK);
-        rect(8, top, 298, top + 20, HEADER);
-        text(f, (details ? "− " : "+ ") + tr("dash.details"), 16, top + 6, ACCENT, 210);
-        if (!details) return;
-        List<String> lines = detailLines();
-        detailScroll = Math.max(0, Math.min(detailScroll, Math.max(0, lines.size() - 11)));
-        for (int i = 0; i < 11 && i + detailScroll < lines.size(); i++)
-            text(f, lines.get(i + detailScroll), 16, top + 27 + i * 15, TEXT, 274);
-        if (lines.size() > 11) text(f, "↕ " + (detailScroll + 1) + "/" + lines.size(), 238, top + 6, MUTED, 56);
-        if (EngineeringModeController.INSTANCE.selected() != null) {
-            button(f, 16, h - 56, 82, tr("focus"));
-            button(f, 102, h - 56, 82, tr(EngineeringModeController.INSTANCE.pinned() ? "unpin" : "pin"));
-            button(f, 188, h - 56, 100, tr("clear"));
+    private static List<String> selectedLines() {
+        List<String> lines = new ArrayList<>();
+        Target target = EngineeringModeController.INSTANCE.selected();
+        EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
+        Node n = s == null ? null : currentNode(s);
+        if (n != null) {
+            lines.add(
+                nodeRole(n) + " · "
+                    + tr(!EngineeringDashboardCache.fresh() ? "stale" : n.online ? "dash.online" : "dash.offline"));
+            lines.add(n.x + " / " + n.y + " / " + n.z + " · DIM " + n.dim);
+            lines.add(tr("dash.owner") + " " + (n.ownerName.isEmpty() ? tr("dash.unknown") : n.ownerName));
+            if (n.kind == 1) {
+                lines.add(
+                    tr("tools.face." + n.name.toLowerCase(java.util.Locale.ROOT)) + " · "
+                        + n.voltage
+                        + " V × "
+                        + metric(n.amperage)
+                        + " A");
+                lines.add(tr("dash.stored") + " " + metric(n.stored) + "/" + metric(n.capacity) + " EU");
+            } else lines.add(tr("dash.channels") + " " + n.channels);
+        } else if (target != null) {
+            lines.add(target.name);
+            lines.add(target.x + " / " + target.y + " / " + target.z);
+            boolean found = false;
+            EngineeringTerminalHudSnapshot.Source source = EngineeringTerminalHudSnapshot
+                .capture(Minecraft.getMinecraft().thePlayer).device;
+            for (Entry e : source.devices) {
+                if (e.dim != Minecraft.getMinecraft().theWorld.provider.dimensionId || e.x != target.x
+                    || e.y != target.y
+                    || e.z != target.z) continue;
+                found = true;
+                lines.add(
+                    tr("state." + Math.max(0, Math.min(3, e.state))) + " · "
+                        + tr(source.fresh ? "dash.server.live" : "stale"));
+                lines.add(metric(e.instIn) + " → " + metric(e.instOut) + " EU/t");
+                break;
+            }
+            if (!found) lines.add(tr("dash.target.unknown"));
         }
+        return lines;
+    }
+
+    private static String nodeRole(Node node) {
+        return tr(
+            node.kind == 1 ? node.mode == 0 ? "tools.energy" : "tools.dynamo"
+                : node.kind == 2 ? "dash.legend.quantum" : "dash.legend.inc");
+    }
+
+    private static boolean hasDetails() {
+        if (EngineeringModeController.INSTANCE.selected() == null && selectedNode != null
+            && selectedNode.dim == Minecraft.getMinecraft().theWorld.provider.dimensionId) selectedNode = null;
+        return EngineeringModeController.INSTANCE.selected() != null || selectedNode != null;
+    }
+
+    private static int detailTop(int h) {
+        return h - (details ? 112 : 24) - 8;
+    }
+
+    private static void drawDetails(FontRenderer f, int w, int h) {
+        if (!hasDetails()) return;
+        int x = w - 248, top = detailTop(h);
+        rect(x, top, w - 8, h - 8, BACK);
+        rect(x, top, w - 8, top + 20, HEADER);
+        text(f, (details ? "− " : "+ ") + tr("dash.details"), x + 8, top + 6, ACCENT, 180);
+        text(f, "×", w - 23, top + 6, MUTED, 10);
+        if (!details) return;
+        List<String> lines = selectedLines();
+        for (int i = 0; i < Math.min(5, lines.size()); i++) text(f, lines.get(i), x + 8, top + 27 + i * 14, TEXT, 224);
+        text(f, tr("tools.inspect.hint"), x + 8, h - 20, MUTED, 224);
     }
 
     private static String power(Power p, boolean average) {
@@ -416,27 +396,29 @@ public final class EngineeringHud extends Gui {
                     Node first = owner.get(0);
                     nodeRows.add(
                         new NodeRow(
-                            (first.ownerName.isEmpty() ? first.owner.isEmpty() ? tr("dash.unknown") : first.owner
-                                : first.ownerName) + " · DIM " + first.dim + " · " + owner.size(),
+                            (first.ownerName.isEmpty() ? tr("dash.unknown") : first.ownerName) + " · DIM "
+                                + first.dim
+                                + " · "
+                                + owner.size(),
                             null));
                     for (Node n : owner) nodeRows.add(new NodeRow(n.name + " · " + n.x + "/" + n.y + "/" + n.z, n));
                 }
             }
         }
-        int x = w - 228, bottom = nodeListExpanded ? nodeListBottom(h) : 82;
-        rect(x, 60, w - 8, bottom, BACK);
-        rect(x, 60, w - 8, 80, HEADER);
-        text(f, (nodeListExpanded ? "− " : "+ ") + tr("dash.nodes"), x + 8, 66, ACCENT, 204);
+        int x = 8, bottom = nodeListExpanded ? nodeListBottom(h) : 30;
+        rect(x, 8, x + 220, bottom, BACK);
+        rect(x, 8, x + 220, 28, HEADER);
+        text(f, (nodeListExpanded ? "− " : "+ ") + tr("dash.nodes"), x + 8, 14, ACCENT, 204);
         if (!nodeListExpanded) return;
-        int visible = Math.max(1, (bottom - 86) / 19);
+        int visible = Math.max(1, (bottom - 34) / 19);
         nodeScroll = Math.max(0, Math.min(nodeScroll, Math.max(0, nodeRows.size() - visible)));
-        if (nodeRows.isEmpty()) text(f, tr(s == null ? "waiting" : "dash.node.empty"), x + 8, 90, MUTED, 204);
+        if (nodeRows.isEmpty()) text(f, tr(s == null ? "waiting" : "dash.node.empty"), x + 8, 38, MUTED, 204);
         for (int i = 0; i < visible && i + nodeScroll < nodeRows.size(); i++) {
             NodeRow row = nodeRows.get(i + nodeScroll);
             if (row.node != null && selectedNode != null && sameNode(row.node, selectedNode))
-                rect(x + 3, 84 + i * 19, w - 11, 102 + i * 19, HEADER);
+                rect(x + 3, 32 + i * 19, x + 217, 50 + i * 19, HEADER);
             int color = row.node == null ? ACCENT : row.node.online && EngineeringDashboardCache.fresh() ? TEXT : MUTED;
-            text(f, row.label, x + (row.node == null ? 8 : 15), 89 + i * 19, color, row.node == null ? 204 : 197);
+            text(f, row.label, x + (row.node == null ? 8 : 15), 37 + i * 19, color, row.node == null ? 204 : 197);
         }
     }
 
@@ -447,7 +429,6 @@ public final class EngineeringHud extends Gui {
             controller.selectPosition(node.x, node.y, node.z, node.name);
         else controller.clearSelection();
         details = true;
-        detailScroll = Math.max(0, detailLines().size() - 11);
     }
 
     private static void drawMap(FontRenderer f, int w, int h) {
@@ -473,7 +454,7 @@ public final class EngineeringHud extends Gui {
                 h,
                 unknown ? 0x304B5F6B : net > 0 ? 0x3657C6A0 : net < 0 ? 0x365B9EDB : 0x304E7880);
             int[] p = project((x1 + x2) / 2.0, planeY, (z1 + z2) / 2.0, w, h);
-            if (p != null && p[0] > 10 && p[0] < w - 10 && p[1] > 58 && p[1] < h - 30) {
+            if (p != null && p[0] > 10 && p[0] < w - 10 && p[1] > 10 && p[1] < h - 10) {
                 text(f, c.x + "," + c.z, p[0] - 22, p[1] - 10, MUTED, 90);
                 text(f, unknown ? "?" : metric(net) + " EU/t", p[0] - 22, p[1] + 2, TEXT, 100);
             }
@@ -483,7 +464,7 @@ public final class EngineeringHud extends Gui {
         for (Node n : s.nodes) {
             if (n.dim != Minecraft.getMinecraft().theWorld.provider.dimensionId) continue;
             int[] p = project(n.x + .5, n.y + .5, n.z + .5, w, h);
-            if (p == null || p[0] < 10 || p[0] >= w - 10 || p[1] < 55 || p[1] > h - 30) continue;
+            if (p == null || p[0] < 10 || p[0] >= w - 10 || p[1] < 10 || p[1] > h - 10) continue;
             long key = ((long) (p[0] / 24) << 32) ^ (p[1] / 24 & 0xffffffffL);
             NodeHit hit = clusters.get(key);
             if (hit == null) {
@@ -498,13 +479,10 @@ public final class EngineeringHud extends Gui {
                 : n.kind == 1 ? LINK : n.kind == 2 ? QUANTUM : INC;
             rect(hit.x - 7, hit.y - 7, hit.x + 8, hit.y + 8, BACK);
             outline(hit.x - 7, hit.y - 7, hit.x + 8, hit.y + 8, color);
-            text(
-                f,
-                hit.nodes.size() > 1 ? String.valueOf(hit.nodes.size()) : n.kind == 3 ? "+" : n.kind == 1 ? "L" : "Q",
-                hit.x - 3,
-                hit.y - 3,
-                color,
-                20);
+            // Role comes from the server's node kind/mode, never an invented L/Q placeholder.
+            String label = nodeRole(n) + (hit.nodes.size() > 1 ? " ×" + hit.nodes.size() : "");
+            text(f, label, hit.x + 12, hit.y - 4, color, 112);
+            rect(hit.x - 3, hit.y - 3, hit.x + 4, hit.y + 4, color);
             hits.add(hit);
         }
     }
@@ -540,12 +518,8 @@ public final class EngineeringHud extends Gui {
     static boolean blocksNavigation(int displayX, int displayY) {
         Minecraft mc = Minecraft.getMinecraft();
         int x = localX(mc, displayX), y = localY(mc, displayY), w = width(mc), h = height(mc);
-        return y >= 8 && y < 49 && x >= 8 && x < w - 8
-            || menu >= 0 && x >= menuX(w) && x < menuX(w) + 218 && y >= 52 && y < 58 + menuLabels().length * 23
-            || PortableSuperDashboard.isOpen() && y >= 50
-            || showNodes && x >= w - 228 && x < w - 8 && y >= 60 && y < (nodeListExpanded ? nodeListBottom(h) : 82)
-            || x >= 8 && x < 298 && y >= h - (details ? 246 : 53) && y < h - 32
-            || y >= h - 27;
+        return showNodes && x >= 8 && x < 228 && y >= 8 && y < (nodeListExpanded ? nodeListBottom(h) : 30)
+            || hasDetails() && x >= w - 248 && x < w - 8 && y >= detailTop(h) && y < h - 8;
     }
 
     static boolean mouse(MouseEvent e) {
@@ -563,51 +537,24 @@ public final class EngineeringHud extends Gui {
             if (e.button == 0 && !e.buttonstate) finishSelection();
             return e.button != 1 && e.button != 2;
         }
-        if (menu >= 0 && x >= menuX(w) && x < menuX(w) + 218 && y >= 52 && y < 58 + menuLabels().length * 23) {
-            if (press) menuAction((y - 56) / 23);
-            return true;
-        }
-        if (x >= 8 && x < w - 8 && y >= 8 && y < 49) {
-            if (press) {
-                if (x >= w - 392) {
-                    int slot = Math.max(0, Math.min(7, (x - (w - 392)) / 48));
-                    if (TerminalBaubles.terminals(mc.thePlayer)[slot] != null) menu = menu == slot ? -1 : slot;
-                } else if (y >= 29 && x < 80) EngineeringModeController.INSTANCE.toggleFollowing();
-                else if (y >= 29 && x < 140) EngineeringModeController.INSTANCE.returnToPlayer();
-                else if (y >= 29 && x < 214) EngineeringModeController.INSTANCE.toggleCameraPanel();
-            }
-            return true;
-        }
-        if (PortableSuperDashboard.isOpen()) {
-            if (e.dwheel != 0) PortableSuperDashboard.wheel(x, y, e.dwheel);
-            if (e.button >= 0 && e.buttonstate) PortableSuperDashboard.click(x, y, e.button);
-            return y >= 50;
-        }
-        if (showNodes && x >= w - 228 && x < w - 8 && y >= 60 && y < (nodeListExpanded ? nodeListBottom(h) : 82)) {
+        if (showNodes && x >= 8 && x < 228 && y >= 8 && y < (nodeListExpanded ? nodeListBottom(h) : 30)) {
             if (e.dwheel != 0) nodeScroll += e.dwheel > 0 ? -2 : 2;
-            if (press && y < 80) nodeListExpanded = !nodeListExpanded;
-            else if (press && y >= 84 && nodeListExpanded) {
-                int index = nodeScroll + (y - 84) / 19;
+            if (press && y < 28) nodeListExpanded = !nodeListExpanded;
+            else if (press && y >= 32 && nodeListExpanded) {
+                int index = nodeScroll + (y - 32) / 19;
                 if (index >= 0 && index < nodeRows.size() && nodeRows.get(index).node != null)
                     selectNode(nodeRows.get(index).node);
             }
             return true;
         }
-        int top = h - (details ? 246 : 53);
-        if (x >= 8 && x < 298 && y >= top && y < h - 32) {
-            if (e.dwheel != 0) detailScroll += e.dwheel > 0 ? -2 : 2;
-            if (press && y < top + 20) details = !details;
-            else if (press && details && y >= h - 56 && EngineeringModeController.INSTANCE.selected() != null) {
-                Target target = EngineeringModeController.INSTANCE.selected();
-                if (x < 100) EngineeringModeController.focus(target.x, target.y, target.z);
-                else if (x < 186) EngineeringModeController.INSTANCE.togglePin();
-                else EngineeringModeController.INSTANCE.clearSelection();
-            }
-            return true;
-        }
-        if (y >= h - 27) return true;
-        if (press && menu >= 0) {
-            menu = -1;
+        int top = detailTop(h);
+        if (hasDetails() && x >= w - 248 && x < w - 8 && y >= top && y < h - 8) {
+            if (press && x >= w - 30 && y < top + 20) {
+                selectedNode = null;
+                EngineeringModeController.INSTANCE.clearSelection();
+            } else if (press && y < top + 20) details = !details;
+            else if (press) com.cleanroommc.modularui.factory.ClientGUI
+                .open(new com.miaokatze.gtswn.client.gui.GuiEngineeringDetails());
             return true;
         }
         if (selecting && e.button == 0) {
@@ -644,10 +591,6 @@ public final class EngineeringHud extends Gui {
             notice = "";
             return true;
         }
-        if (menu >= 0) {
-            menu = -1;
-            return true;
-        }
         if (PortableSuperDashboard.isOpen()) {
             PortableSuperDashboard.close();
             return true;
@@ -655,14 +598,19 @@ public final class EngineeringHud extends Gui {
         return false;
     }
 
-    private static void menuAction(int action) {
-        ItemStack stack = TerminalBaubles.terminals(Minecraft.getMinecraft().thePlayer)[menu];
-        if (stack == null || action < 0 || action >= menuLabels().length) {
-            menu = -1;
+    public static void toolAction(int slot, int action) {
+        if (slot < 0 || slot > 7) return;
+        ItemStack stack = TerminalBaubles.terminals(Minecraft.getMinecraft().thePlayer)[slot];
+        if (stack == null || action < 0 || action >= toolLabels(slot).length) return;
+        if (slot == 1 && action == 2 || slot >= 3 && action == 3) {
+            EngineeringDashboardCache.close();
+            activeSlot = -1;
+            grid = showNodes = false;
+            selectedNode = null;
+            pendingGt = dragging = selecting = false;
+            notice = "";
             return;
         }
-        int slot = menu;
-        menu = -1;
         boolean wasSelecting = selecting;
         pendingGt = false;
         dragging = selecting = false;
@@ -671,8 +619,11 @@ public final class EngineeringHud extends Gui {
             EngineeringDashboardCache.close();
             activeSlot = 0;
             grid = showNodes = false;
-            if (action == 0) PortableSuperDashboard.open(stack);
-            else TerminalBaubleController.select(slot);
+            if (action == 0) {
+                PortableSuperDashboard.open(stack);
+                if (PortableSuperDashboard.isOpen()) com.cleanroommc.modularui.factory.ClientGUI
+                    .open(new com.miaokatze.gtswn.client.gui.GuiEngineeringBoard());
+            } else TerminalBaubleController.select(slot);
             return;
         }
         PortableSuperDashboard.close();
@@ -685,11 +636,12 @@ public final class EngineeringHud extends Gui {
             if (action == 6) {
                 EngineeringDashboardCache.close();
                 activeSlot = -1;
-                grid = false;
+                grid = showNodes = false;
                 return;
             }
             if (action == 5) {
                 EngineeringDashboardCache.baseline();
+                inspect(slot);
                 return;
             }
             if (action == 4) {
@@ -708,7 +660,7 @@ public final class EngineeringHud extends Gui {
             }
             if (action == 1 || action == 2) {
                 EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
-                pendingGt = action == 2 && (s == null || !s.patternResolved);
+                pendingGt = action == 2 && (s == null || s.slot != 2 || !s.patternResolved);
                 gtGrid = action == 2 && !pendingGt;
                 if (pendingGt) notice = "dash.pattern.unknown";
                 defaultRegion();
@@ -727,6 +679,7 @@ public final class EngineeringHud extends Gui {
             defaultRegion();
             subscribe(slot, false);
             showNodes = slot == 1 || action == 0;
+            if (slot >= 3 && action == 1) inspect(slot);
         }
     }
 
@@ -734,7 +687,6 @@ public final class EngineeringHud extends Gui {
         activeSlot = slot;
         grid = showGrid;
         selectedNode = null;
-        detailScroll = 0;
         details = true;
         EngineeringModeController.INSTANCE.clearSelection();
         showNodes = slot == 1 || slot >= 3;
@@ -838,12 +790,6 @@ public final class EngineeringHud extends Gui {
 
     private static void text(FontRenderer f, String value, int x, int y, int color, int width) {
         f.drawString(f.trimStringToWidth(value == null ? "" : value, Math.max(0, width)), x, y, color);
-    }
-
-    private static void button(FontRenderer f, int x, int y, int width, String value) {
-        rect(x, y, x + width, y + 17, CARD);
-        rect(x, y + 16, x + width, y + 17, 0x805CA9AC);
-        text(f, value, x + 5, y + 5, TEXT, width - 10);
     }
 
     private static void outline(int x, int y, int right, int bottom, int color) {
