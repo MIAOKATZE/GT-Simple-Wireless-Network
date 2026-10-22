@@ -303,6 +303,26 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         return new ArrayList<>(entries.values());
     }
 
+    /** Bounded, source-indexed read for one authorized controller structure, without a world-wide copy. */
+    public java.util.List<Entry> snapshotSource(int dimension, Set<Long> members, int limit) {
+        java.util.List<Entry> result = new ArrayList<>();
+        if (members == null || limit <= 0) return result;
+        for (long member : members) {
+            Map<Long, Entry> indexed = sources.get(
+                new AnchorKey(
+                    dimension,
+                    QuantumControllerRegistry.unpackX(member),
+                    QuantumControllerRegistry.unpackY(member),
+                    QuantumControllerRegistry.unpackZ(member)));
+            if (indexed == null) continue;
+            for (Entry entry : indexed.values()) {
+                result.add(entry);
+                if (result.size() >= limit) return result;
+            }
+        }
+        return result;
+    }
+
     public Iterable<Entry> snapshotChunk(int chunkX, int chunkZ) {
         Map<Long, Entry> chunk = chunks.get(chunkKey(chunkX, chunkZ));
         return chunk == null ? Collections.emptyList() : new ArrayList<>(chunk.values());

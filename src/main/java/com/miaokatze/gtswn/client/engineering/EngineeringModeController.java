@@ -57,6 +57,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     private int settingsWidth, settingsHeight;
     private Target selected;
     private boolean pinned;
+    private boolean cameraPanel;
 
     private EngineeringModeController() {}
 
@@ -103,6 +104,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         world = null;
         selected = null;
         pinned = false;
+        cameraPanel = false;
         slice = HeightSlice.disabled();
         settings = null;
         EngineeringHud.reset();
@@ -138,6 +140,24 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         return following;
     }
 
+    public boolean cameraPanel() {
+        return cameraPanel;
+    }
+
+    public void toggleCameraPanel() {
+        cameraPanel = !cameraPanel;
+        settings = null;
+    }
+
+    public double mapPlaneY() {
+        return slice.enabled() && slice.hasUpper() ? slice.maximumY() - .01 : y;
+    }
+
+    public void selectPosition(int bx, int by, int bz, String name) {
+        selected = new Target(bx, by, bz, name);
+        pinned = false;
+    }
+
     public Target selected() {
         return selected;
     }
@@ -171,7 +191,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (!isActive() || !Keyboard.getEventKeyState() || Keyboard.isRepeatEvent()) return;
         switch (Keyboard.getEventKey()) {
             case Keyboard.KEY_ESCAPE:
-                close();
+                if (!EngineeringHud.escape()) close();
                 break;
             case Keyboard.KEY_M:
                 toggleFollowing();
@@ -193,6 +213,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) EngineeringDashboardCache.tick();
         if (event.phase != TickEvent.Phase.END || !isActive()) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld != world || mc.thePlayer == null || mc.thePlayer.isDead) {
@@ -367,8 +388,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             .hud(
                 CameraSettings.Hud.builder()
                     .crosshair(CameraSettings.Hud.Crosshair.HIDDEN)
-                    .panelVisible(true)
-                    .panelPosition((int) (12 * scale), (int) (88 * scale))
+                    .panelVisible(cameraPanel)
+                    .panelPosition((int) (12 * scale), (int) (56 * scale))
                     .panelWidth(Math.max(1, (int) (192 * scale)))
                     .build())
             .navigation(
@@ -413,13 +434,19 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean supports(CameraControl control) {
-        return isActive() && (control != CameraControl.PAN || !following);
+        return isActive() && (control != CameraControl.PAN || !following)
+            && (WorldCameraHooks.pointerCaptured()
+                || !EngineeringHud.blocksNavigation(Mouse.getEventX(), Mouse.getEventY())
+                || control != CameraControl.PAN && control != CameraControl.YAW
+                    && control != CameraControl.PITCH
+                    && control != CameraControl.ZOOM);
     }
 
     @Override
     public void panWorld(double dx, double dy, double dz) {
         if (!supports(CameraControl.PAN) || !Double.isFinite(dx) || !Double.isFinite(dy) || !Double.isFinite(dz))
             return;
+        if (dx != 0 || dy != 0 || dz != 0) EngineeringHud.cancelAreaDrag();
         pinned = false;
         x += dx;
         y += dy;
@@ -431,6 +458,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public void rotate(double dyaw, double dpitch) {
+        if (dyaw != 0 || dpitch != 0) EngineeringHud.cancelAreaDrag();
         if (Double.isFinite(dyaw)) yaw = (yaw + dyaw) % 360;
         if (Double.isFinite(dpitch)) pitch = Math.max(15, Math.min(85, pitch + dpitch));
     }

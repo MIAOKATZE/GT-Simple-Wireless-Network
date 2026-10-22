@@ -1,0 +1,570 @@
+package com.miaokatze.gtswn.client.engineering.board;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.ScaledResolution;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.StatCollector;
+
+import org.lwjgl.opengl.GL11;
+
+import com.miaokatze.gtswn.client.PortableMonitorClientCache;
+import com.miaokatze.gtswn.client.PortableMonitorClientCache.PinnedLine;
+import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
+import com.miaokatze.gtswn.client.gui.PortableMonitorCharts;
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
+import com.miaokatze.gtswn.common.hud.MonitorBindings;
+import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.network.PacketSyncPortableMonitor;
+import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Panel;
+import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Row;
+import com.miaokatze.miaokatzecore.client.render.GlScope;
+
+/** Read-only, foreground board of the original portable monitor's mounted information screens. */
+public final class PortableSuperDashboard extends Gui {
+
+    private static final int BACK = 0xF0151D25, CARD = 0xEB23323D, HEADER = 0xFF2D414D;
+    private static final int TEXT = 0xFFE5EEF3, MUTED = 0xFF94A8B5, ACCENT = 0xFF66D9D0, WARN = 0xFFE9B969;
+    private static final int TOP = 76;
+    private static final Map<String, Card> cards = new LinkedHashMap<>();
+    private static final Map<String, Integer> rowPages = new HashMap<>();
+    private static final List<Hit> hits = new ArrayList<>();
+    private static final List<String> visible = new ArrayList<>();
+    private static final List<MonitorBindings.Binding> bindings = new ArrayList<>();
+    private static ItemStack stack;
+    private static UUID terminal;
+    private static Object world, connection, player;
+    private static PacketSyncPortableMonitor lastSnapshot;
+    private static PortableBoardLayout layout;
+    private static PortableBoardStore store;
+    private static String identity, scope;
+    private static boolean open, settings, saveFailed;
+    private static int scroll, maxScroll, menuScroll, menuMax, width, height, lastTick;
+    private static int requestedIndex = -1;
+    private static String requestedId;
+    private static int optionsVersion;
+    private static long revision;
+    private static List<String> basic = new ArrayList<>();
+
+    private PortableSuperDashboard() {}
+
+    public static void open(ItemStack source) {
+        close();
+        Minecraft mc = Minecraft.getMinecraft();
+        UUID id = MonitorBindings.id(source);
+        // The board is the mounted portable entry, never a fallback to another inventory terminal.
+        if (id == null || mc.thePlayer == null || TerminalBaubles.terminals(mc.thePlayer)[0] != source) return;
+        stack = source;
+        terminal = id;
+        world = mc.theWorld;
+        player = mc.thePlayer;
+        connection = mc.getNetHandler();
+        scope = (mc.func_147104_D() != null ? "server:" + mc.func_147104_D().serverIP
+            : "local:" + (mc.getIntegratedServer() == null ? "unknown"
+                : mc.getIntegratedServer()
+                    .getFolderName()))
+            + "/"
+            + mc.thePlayer.getUniqueID();
+        store = new PortableBoardStore(
+            mc.mcDataDir.toPath()
+                .resolve("config/gtswn/engineering-board"));
+        lastTick = Integer.MIN_VALUE;
+        revision = Long.MIN_VALUE;
+        open = true;
+        saveFailed = false;
+        refreshBindings();
+    }
+
+    public static boolean isOpen() {
+        return open;
+    }
+
+    public static void close() {
+        if (stack != null) PortableMonitorClientCache.dashboardViewing(stack, -1);
+        open = settings = false;
+        stack = null;
+        terminal = null;
+        world = connection = player = null;
+        lastSnapshot = null;
+        identity = null;
+        cards.clear();
+        rowPages.clear();
+        bindings.clear();
+        hits.clear();
+        visible.clear();
+        basic = java.util.Collections.emptyList();
+        scroll = maxScroll = menuScroll = 0;
+        requestedIndex = -1;
+        requestedId = null;
+    }
+
+    private static void refreshBindings() {
+        long nextRevision = MonitorBindings.revision(stack);
+        if (revision == nextRevision) return;
+        revision = nextRevision;
+        bindings.clear();
+        bindings.addAll(MonitorBindings.read(stack));
+        List<String> ids = new ArrayList<>();
+        for (MonitorBindings.Binding binding : bindings) ids.add(binding.panelId.toString());
+        String nextIdentity = PortableBoardLayout.identity(scope, terminal.toString(), ids);
+        if (!nextIdentity.equals(identity)) {
+            identity = nextIdentity;
+            layout = store.load(identity, ids);
+            // A binding edit cannot leave previously authorized rows or graphs on screen.
+            cards.clear();
+            rowPages.clear();
+            lastSnapshot = null;
+            scroll = 0;
+            requestedIndex = -1;
+            requestedId = null;
+            PortableMonitorClientCache.dashboardViewing(stack, -1);
+            optionsVersion++;
+        }
+    }
+
+    private static boolean update() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (!open) return false;
+        if (mc.thePlayer != player || mc.theWorld != world || mc.getNetHandler() != connection) {
+            close();
+            return false;
+        }
+        if (lastTick == mc.thePlayer.ticksExisted) return true;
+        lastTick = mc.thePlayer.ticksExisted;
+        ItemStack current = TerminalBaubles.terminals(mc.thePlayer)[0];
+        if (!terminal.equals(MonitorBindings.id(current))) {
+            close();
+            return false;
+        }
+        stack = current;
+        refreshBindings();
+        EngineeringTerminalHudSnapshot.Source source = EngineeringTerminalHudSnapshot.capture(mc.thePlayer).portable;
+        basic = terminal.equals(source.terminalId) ? source.basicLines : java.util.Collections.emptyList();
+        PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.snapshot(stack);
+        if (snapshot != null && snapshot != lastSnapshot) {
+            lastSnapshot = snapshot;
+            long now = System.currentTimeMillis();
+            if (requestedId != null) cards.computeIfAbsent(requestedId, ignored -> new Card()).attempted = now;
+            for (Panel panel : snapshot.panels) {
+                String id = panel.binding.panelId.toString();
+                if (!layout.order.contains(id)) continue;
+                Card card = cards.computeIfAbsent(id, ignored -> new Card());
+                card.summary = panel;
+                if (panel.state != 0) {
+                    card.detail = null;
+                    card.received = 0;
+                } else if (panel.detail) {
+                    card.detail = panel;
+                    card.received = now;
+                    card.builtOptions = -1;
+                }
+            }
+            requestedIndex = -1;
+        }
+        // Hold one target until an ACK. Frontmost cards get a bounded age bonus, while every other
+        // visible-in-layout card eventually becomes older; unloaded screens cannot starve the rest.
+        if (requestedIndex < 0 || layout.hidden.contains(requestedId)) {
+            requestedIndex = nextSelection();
+            requestedId = requestedIndex < 0 ? null : bindings.get(requestedIndex).panelId.toString();
+        }
+        PortableMonitorClientCache.dashboardViewing(stack, requestedIndex);
+        if (requestedIndex >= 0) PortableMonitorClientCache.poll(stack);
+        return true;
+    }
+
+    private static int nextSelection() {
+        if (bindings.isEmpty()) return -1;
+        Map<String, Long> attempted = new HashMap<>();
+        for (Map.Entry<String, Card> entry : cards.entrySet())
+            attempted.put(entry.getKey(), entry.getValue().attempted);
+        String selected = layout.nextSource(layout.order, visible, attempted);
+        for (int i = 0; i < bindings.size(); i++) if (bindings.get(i).panelId.toString()
+            .equals(selected)) return i;
+        return -1;
+    }
+
+    public static void render(int screenWidth, int screenHeight, int mouseX, int mouseY) {
+        if (!update()) return;
+        width = screenWidth;
+        height = screenHeight;
+        FontRenderer font = Minecraft.getMinecraft().fontRenderer;
+        hits.clear();
+        visible.clear();
+        drawRect(10, 50, width - 10, height - 10, BACK);
+        drawRect(10, 50, width - 10, 73, HEADER);
+        text(font, tr("title"), 19, 58, ACCENT, width - 198);
+        button(font, width - 166, 53, 96, tr("settings"), () -> settings = !settings, false);
+        button(font, width - 65, 53, 47, tr("close"), PortableSuperDashboard::close, false);
+        int viewBottom = height - 26;
+        if (layout.overview) {
+            drawRect(18, TOP, width - 18, TOP + 78, CARD);
+            text(font, tr("overview"), 26, TOP + 6, ACCENT, width - 52);
+            int y = TOP + 21;
+            if (basic.isEmpty()) text(font, tr("overview.waiting"), 26, y, MUTED, width - 52);
+            else for (int i = 0; i < Math.min(4, basic.size()); i++) {
+                text(font, basic.get(i), 26, y + i * 12, TEXT, width - 52);
+            }
+        }
+        int start = TOP + (layout.overview ? 84 : 0);
+        Minecraft mc = Minecraft.getMinecraft();
+        int actualWidth = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaledWidth();
+        int columns = layout.effectiveColumns((int) ((width - 36) * actualWidth / (double) width)), gap = 8;
+        int cardWidth = (width - 36 - gap * (columns - 1)) / columns;
+        int[] columnY = new int[columns];
+        Arrays.fill(columnY, start);
+        int requiredBottom = start;
+        try (GlScope ignored = new GlScope()) {
+            scissor(16, start, width - 16, viewBottom);
+            for (String id : layout.order) {
+                if (layout.hidden.contains(id)) continue;
+                Card card = cards.computeIfAbsent(id, key -> new Card());
+                build(card);
+                int col = 0;
+                for (int i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
+                int cardHeight = cardHeight(card);
+                int x = 18 + col * (cardWidth + gap), y = columnY[col] - scroll;
+                columnY[col] += cardHeight + gap;
+                requiredBottom = Math.max(requiredBottom, columnY[col]);
+                if (y + cardHeight > start && y < viewBottom) {
+                    visible.add(id);
+                    drawCard(font, id, card, x, y, cardWidth, cardHeight);
+                }
+            }
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        }
+        maxScroll = Math.max(0, requiredBottom - viewBottom);
+        scroll = Math.max(0, Math.min(scroll, maxScroll));
+        if (layout.order.isEmpty()) text(font, tr("empty"), 26, start + 12, MUTED, width - 52);
+        else if (layout.hidden.size() == layout.order.size())
+            text(font, tr("hidden.all"), 26, start + 12, MUTED, width - 52);
+        if (maxScroll > 0) {
+            int track = Math.max(1, viewBottom - start), thumb = Math.max(14, track * track / (track + maxScroll));
+            int at = start + (track - thumb) * scroll / Math.max(1, maxScroll);
+            drawRect(width - 15, start, width - 12, viewBottom, HEADER);
+            drawRect(width - 15, at, width - 12, at + thumb, ACCENT);
+        }
+        text(font, saveFailed ? tr("save.failed") : tr("hint"), 20, height - 21, saveFailed ? WARN : MUTED, width - 40);
+        if (settings) drawSettings(font);
+    }
+
+    private static int cardHeight(Card card) {
+        int line = layout.size == 0 ? 12 : 14;
+        return 84 + card.lines.size() * line
+            + card.graphs.size() * (layout.size == 0 ? 60 : layout.size == 1 ? 86 : 116)
+            + (card.pages > 1 ? 22 : 0);
+    }
+
+    private static void build(Card card) {
+        if (card.builtOptions == optionsVersion) return;
+        card.builtOptions = optionsVersion;
+        card.lines.clear();
+        card.graphs.clear();
+        card.pages = 1;
+        Panel panel = card.detail;
+        if (panel == null) return;
+        if (layout.eu) for (Row row : panel.rows) if (row.kind == 0) {
+            card.lines.addAll(
+                PortableMonitorClientCache.pinnedEUValueLines(
+                    row,
+                    panel.displayMode,
+                    layout.amount,
+                    layout.instant,
+                    layout.average,
+                    false,
+                    tr("instant"),
+                    tr("average")));
+            break;
+        }
+        if (layout.eu && layout.trends) card.graphs.add(graph(panel, true));
+        if (layout.ae && layout.trends && !panel.chartKey.isEmpty()) card.graphs.add(graph(panel, false));
+        if (layout.stock) {
+            List<Row> stockRows = new ArrayList<>();
+            for (Row row : panel.rows) if (row.kind != 0) stockRows.add(row);
+            card.pages = Math.max(1, (stockRows.size() + 7) / 8);
+            int page = Math.min(rowPages.getOrDefault(panel.binding.panelId.toString(), 0), card.pages - 1);
+            card.page = page;
+            for (int i = page * 8; i < Math.min(stockRows.size(), (page + 1) * 8); i++) card.lines.add(
+                PortableMonitorClientCache.pinnedStockText(
+                    stockRows.get(i),
+                    panel.displayMode,
+                    layout.amount,
+                    layout.instant,
+                    layout.average));
+        }
+    }
+
+    private static PinnedLine graph(Panel panel, boolean eu) {
+        double[] values = eu ? panel.euChart : panel.aeChart, rates = eu ? panel.euRateChart : panel.aeRateChart;
+        int divisor = layout.window == 0 ? 1 : layout.window == 1 ? 2 : 4;
+        if (divisor > 1) {
+            values = Arrays
+                .copyOfRange(values, Math.max(0, values.length - Math.max(2, values.length / divisor)), values.length);
+            rates = Arrays
+                .copyOfRange(rates, Math.max(0, rates.length - Math.max(2, rates.length / divisor)), rates.length);
+        }
+        String label = eu ? "EU / EU/t" : "AE";
+        double change = 0;
+        for (Row row : panel.rows) if (eu ? row.kind == 0 : row.key.equals(panel.chartKey)) {
+            if (!eu) label = row.name + " / " + (row.kind == 2 ? "mB/min" : "/min");
+            change = row.rate;
+            break;
+        }
+        label += " [" + (eu ? panel.window : panel.aeWindow) + "]";
+        if (divisor > 1) label += " · " + tr("recent") + " 1/" + divisor;
+        return new PinnedLine(label, values, rates, change, "", panel.palette, eu);
+    }
+
+    private static void drawCard(FontRenderer font, String id, Card card, int x, int y, int w, int h) {
+        drawRect(x, y, x + w, y + h, CARD);
+        drawRect(x, y, x + w, y + 21, HEADER);
+        int index = layout.order.indexOf(id) + 1;
+        text(font, tr("screen") + " " + index, x + 8, y + 7, ACCENT, w - 82);
+        button(font, x + w - 69, y + 2, 20, "↑", () -> changeOrder(id, -1), true);
+        button(font, x + w - 47, y + 2, 20, "↓", () -> changeOrder(id, 1), true);
+        button(font, x + w - 25, y + 2, 20, "×", () -> {
+            layout.hidden.add(id);
+            changed();
+        }, true);
+        Panel summary = card.summary;
+        MonitorBindings.Binding binding = summary == null ? binding(id) : summary.binding;
+        text(font, binding == null ? tr("unknown") : binding.label(), x + 8, y + 27, MUTED, w - 16);
+        text(font, tr("window") + ": " + (summary == null ? "?" : summary.window), x + 8, y + 39, MUTED, w - 16);
+        text(
+            font,
+            tr("owner") + ": "
+                + (summary == null || summary.ownerName.isEmpty() ? tr("unknown") : summary.ownerName)
+                + " · AE "
+                + (summary == null ? "?" : summary.aeConnected ? tr("online") : tr("offline")),
+            x + 8,
+            y + 51,
+            MUTED,
+            w - 16);
+        long age = card.received == 0 ? -1 : Math.max(0, (System.currentTimeMillis() - card.received) / 1000);
+        boolean expired = age < 0 || System.currentTimeMillis() - card.received
+            > Math.max(10000L, Math.max(1, bindings.size()) * Math.max(1100L, Config.hudUpdateInterval * 50L) * 2);
+        String status = summary == null ? tr("waiting")
+            : summary.state != 0 ? PortableMonitorClientCache.stateText(summary.state)
+                : expired ? tr("stale") : tr("updated") + " " + age + "s";
+        text(font, status, x + 8, y + 65, expired || summary != null && summary.state != 0 ? WARN : ACCENT, w - 16);
+        if (expired || summary == null || summary.state != 0) return;
+        int at = y + 82;
+        for (String line : card.lines) {
+            text(font, line, x + 8, at, TEXT, w - 16);
+            at += layout.size == 0 ? 12 : 14;
+        }
+        int graphHeight = layout.size == 0 ? 60 : layout.size == 1 ? 86 : 116;
+        for (PinnedLine graph : card.graphs) {
+            drawRect(x + 7, at, x + w - 7, at + graphHeight - 4, 0x80202A32);
+            PortableMonitorCharts.drawCompact(graph, x + 9, at + 3, w - 18, graphHeight - 6, font);
+            if (graph.chart.length < 2 && graph.rateChart.length < 2)
+                text(font, tr("samples.waiting"), x + 13, at + 25, MUTED, w - 26);
+            at += graphHeight;
+        }
+        if (card.pages > 1) {
+            final int previous = Math.floorMod(card.page - 1, card.pages), next = (card.page + 1) % card.pages;
+            button(font, x + 8, at, 30, "<", () -> page(id, previous), true);
+            text(font, (card.page + 1) + " / " + card.pages, x + 46, at + 5, MUTED, w - 100);
+            button(font, x + w - 38, at, 30, ">", () -> page(id, next), true);
+        }
+    }
+
+    private static MonitorBindings.Binding binding(String id) {
+        for (MonitorBindings.Binding binding : bindings) if (binding.panelId.toString()
+            .equals(id)) return binding;
+        return null;
+    }
+
+    private static void page(String id, int page) {
+        rowPages.put(id, page);
+        optionsVersion++;
+    }
+
+    private static void changeOrder(String id, int delta) {
+        layout.move(id, delta);
+        changed();
+    }
+
+    private static void changed() {
+        optionsVersion++;
+        saveFailed = !store.save(identity, layout);
+    }
+
+    private static void drawSettings(FontRenderer font) {
+        int w = Math.min(280, width - 36), x = width - w - 18, top = 76, bottom = height - 27;
+        drawRect(x - 2, top - 2, x + w + 2, bottom + 2, ACCENT);
+        drawRect(x, top, x + w, bottom, BACK);
+        try (GlScope ignored = new GlScope()) {
+            scissor(x, top, x + w, bottom);
+            int y = top + 5 - menuScroll;
+            setting(
+                font,
+                x + 6,
+                y,
+                w - 12,
+                tr("columns") + ": " + (layout.columns == 0 ? tr("auto") : layout.columns),
+                () -> {
+                    layout.columns = (layout.columns + 1) % 5;
+                    changed();
+                });
+            y += 22;
+            setting(font, x + 6, y, w - 12, tr("size") + ": " + tr("size." + layout.size), () -> {
+                layout.size = (layout.size + 1) % 3;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, tr("window") + ": " + tr("window." + layout.window), () -> {
+                layout.window = (layout.window + 1) % 3;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("overview", layout.overview), () -> {
+                layout.overview = !layout.overview;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("eu", layout.eu), () -> {
+                layout.eu = !layout.eu;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("ae", layout.ae), () -> {
+                layout.ae = !layout.ae;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("stock", layout.stock), () -> {
+                layout.stock = !layout.stock;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("amount", layout.amount), () -> {
+                layout.amount = !layout.amount;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("instant", layout.instant), () -> {
+                layout.instant = !layout.instant;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("average", layout.average), () -> {
+                layout.average = !layout.average;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, toggleLabel("trends", layout.trends), () -> {
+                layout.trends = !layout.trends;
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, tr("show.all") + " (" + layout.hidden.size() + ")", () -> {
+                layout.hidden.clear();
+                changed();
+            });
+            y += 22;
+            setting(font, x + 6, y, w - 12, tr("reset"), () -> {
+                layout = new PortableBoardLayout();
+                List<String> ids = new ArrayList<>();
+                for (MonitorBindings.Binding binding : bindings) ids.add(binding.panelId.toString());
+                layout.reconcile(ids);
+                rowPages.clear();
+                scroll = 0;
+                changed();
+            });
+            y += 24;
+            menuMax = Math.max(0, y + menuScroll - bottom);
+            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+        }
+        menuScroll = Math.min(menuScroll, menuMax);
+    }
+
+    private static void setting(FontRenderer font, int x, int y, int w, String label, Runnable action) {
+        button(font, x, y, w, label, action, false);
+    }
+
+    private static String toggleLabel(String key, boolean value) {
+        return (value ? "[+] " : "[-] ") + tr(key);
+    }
+
+    private static void button(FontRenderer font, int x, int y, int w, String label, Runnable action, boolean card) {
+        drawRect(x, y, x + w, y + 18, 0xFF38515B);
+        text(font, label, x + 5, y + 5, TEXT, w - 10);
+        hits.add(new Hit(x, y, w, action, card, settings && !card && y >= 76));
+    }
+
+    public static boolean click(int mouseX, int mouseY, int button) {
+        if (!open || mouseY < 50) return false;
+        if (button == 0) for (int i = hits.size() - 1; i >= 0; i--) {
+            Hit hit = hits.get(i);
+            if (hit.card && (settings || mouseY < TOP + (layout.overview ? 84 : 0) || mouseY >= height - 26)) continue;
+            if (hit.menu && (mouseY < 76 || mouseY >= height - 27)) continue;
+            if (mouseX >= hit.x && mouseX < hit.x + hit.w && mouseY >= hit.y && mouseY < hit.y + 18) {
+                hit.action.run();
+                break;
+            }
+        }
+        return true;
+    }
+
+    public static boolean wheel(int mouseX, int mouseY, int delta) {
+        if (!open || mouseY < 50) return false;
+        int amount = delta > 0 ? -32 : delta < 0 ? 32 : 0;
+        int menuWidth = Math.min(280, width - 36);
+        if (settings && mouseX >= width - menuWidth - 20 && mouseY >= 76)
+            menuScroll = Math.max(0, Math.min(menuMax, menuScroll + amount));
+        else scroll = Math.max(0, Math.min(maxScroll, scroll + amount));
+        return true;
+    }
+
+    private static void text(FontRenderer font, String text, int x, int y, int color, int max) {
+        font.drawStringWithShadow(font.trimStringToWidth(text, Math.max(1, max)), x, y, color);
+    }
+
+    private static String tr(String key) {
+        return StatCollector.translateToLocal("gtswn.engineering.board." + key);
+    }
+
+    private static void scissor(int left, int top, int right, int bottom) {
+        Minecraft mc = Minecraft.getMinecraft();
+        int x = (int) Math.floor(left * mc.displayWidth / (double) width);
+        int y = (int) Math.floor((height - bottom) * mc.displayHeight / (double) height);
+        int endX = (int) Math.ceil(right * mc.displayWidth / (double) width);
+        int endY = (int) Math.ceil((height - top) * mc.displayHeight / (double) height);
+        GL11.glEnable(GL11.GL_SCISSOR_TEST);
+        GL11.glScissor(x, y, Math.max(0, endX - x), Math.max(0, endY - y));
+    }
+
+    private static final class Card {
+
+        Panel summary, detail;
+        long received, attempted;
+        int builtOptions = -1, pages = 1, page;
+        final List<String> lines = new ArrayList<>();
+        final List<PinnedLine> graphs = new ArrayList<>();
+    }
+
+    private static final class Hit {
+
+        final int x, y, w;
+        final Runnable action;
+        final boolean card, menu;
+
+        Hit(int x, int y, int w, Runnable action, boolean card, boolean menu) {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.action = action;
+            this.card = card;
+            this.menu = menu;
+        }
+    }
+}

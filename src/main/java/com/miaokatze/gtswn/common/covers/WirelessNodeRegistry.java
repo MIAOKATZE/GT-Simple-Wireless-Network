@@ -131,6 +131,11 @@ public class WirelessNodeRegistry extends WorldSavedData {
         return Collections.unmodifiableMap(new HashMap<>(this.nodes));
     }
 
+    /** Main-thread, short-lived read view for bounded dashboard queries; never retain across ticks. */
+    public Map<Long, Byte> readView() {
+        return Collections.unmodifiableMap(nodes);
+    }
+
     // ==================== NBT 持久化（int[2N] positions + byte[N] types，经 Codec 编解码） ====================
 
     @Override

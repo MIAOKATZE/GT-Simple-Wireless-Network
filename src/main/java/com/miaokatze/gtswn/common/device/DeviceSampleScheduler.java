@@ -286,6 +286,7 @@ public class DeviceSampleScheduler {
                     sampleEvidence = 2;
                 }
                 record.recognitionMode = recognitionMode;
+                record.recordSampleSource(te, world.getTotalWorldTime());
                 double nextInAvg = record.inAvg, nextOutAvg = record.outAvg;
                 if (sampleEvidence <= 1) {
                     FifoState window = fifoState(key, entry.getKey(), record);

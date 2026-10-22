@@ -33,6 +33,31 @@ public class DeviceFlowMonitorTest {
     }
 
     @Test
+    public void reopeningAnExpiredWatchBeforePeriodicPruneRequiresFreshWarmup() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading old = DeviceFlowMonitor.watch(machine, 21);
+        DeviceFlowMonitor.tick(server, 123);
+        DeviceFlowMonitor.Reading reopened = DeviceFlowMonitor.watch(machine, 200);
+        assertNotSame(old, reopened);
+        assertFalse(reopened.windowReady());
+        assertFalse(reopened.warmedUp());
+        DeviceFlowMonitor.tick(server, 143);
+        assertTrue(reopened.windowReady());
+    }
+
+    @Test
+    public void ordinaryTerminalRemovalDoesNotCancelAnActiveReadOnlyRegionLease() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading region = DeviceFlowMonitor.watchReadOnly(machine, 200);
+        assertSame(region, DeviceFlowMonitor.watch(machine, 1000));
+        DeviceFlowMonitor.forget(machine);
+        assertTrue(DeviceFlowMonitor.isWatched(machine));
+        DeviceFlowMonitor.tick(server, 301);
+        DeviceFlowMonitor.forget(machine);
+        assertFalse(DeviceFlowMonitor.isWatched(machine));
+    }
+
+    @Test
     public void bothActualDirectionsRemainAvailable() {
         Object machine = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);
@@ -90,6 +115,52 @@ public class DeviceFlowMonitorTest {
         DeviceFlowMonitor.leave(previous);
         DeviceFlowMonitor.tick(server, 300);
         assertEquals(0.08, reading.consumeInterval()[0], 0.000001);
+    }
+
+    @Test
+    public void dashboardWindowNeverConsumesOrResetsTheDitInterval() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 1000);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        DeviceFlowMonitor.energyChange(16, 0);
+        DeviceFlowMonitor.leave(previous);
+        assertFalse(reading.windowReady());
+        DeviceFlowMonitor.tick(server, 119);
+        assertEquals(0.8, reading.snapshotWindow()[0], 0.000001);
+        assertEquals(0.8, reading.snapshotWindow()[0], 0.000001);
+        assertEquals(16.0 / 19, reading.consumeInterval()[0], 0.000001);
+        assertFalse(reading.warmedUp());
+        DeviceFlowMonitor.tick(server, 120);
+        assertTrue(reading.windowReady());
+        assertEquals(0, reading.snapshotWindow()[0], 0);
+        reading.consumeInterval();
+        assertTrue(reading.windowReady());
+    }
+
+    @Test
+    public void shorterDashboardLeaseCannotShortenAnExistingDitWatch() {
+        Object machine = new Object();
+        DeviceFlowMonitor.watch(machine, 1000);
+        DeviceFlowMonitor.watch(machine, 200);
+        DeviceFlowMonitor.tick(server, 400);
+        assertTrue(DeviceFlowMonitor.isWatched(machine));
+        DeviceFlowMonitor.tick(server, 1120);
+        assertFalse(DeviceFlowMonitor.isWatched(machine));
+    }
+
+    @Test
+    public void readOnlyWindowPreservesOversizedValuesAndExpiresCleanly() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 1000);
+        DeviceFlowMonitor.Reading previous = DeviceFlowMonitor.enter(machine);
+        DeviceFlowMonitor.wirelessTransaction(java.math.BigInteger.TEN.pow(400), true);
+        DeviceFlowMonitor.leave(previous);
+        double rate = reading.snapshotWindow()[1];
+        assertTrue(Double.isFinite(rate));
+        assertTrue(rate > Long.MAX_VALUE);
+        DeviceFlowMonitor.tick(server, 120);
+        assertEquals(0, reading.snapshotWindow()[1], 0);
+        assertTrue(reading.consumeInterval()[1] > Long.MAX_VALUE);
     }
 
     @Test

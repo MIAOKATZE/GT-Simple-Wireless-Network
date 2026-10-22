@@ -206,6 +206,16 @@ public class GTSWNPacketHandler {
             Side.SERVER);
         NETWORK
             .registerMessage(PacketTerminalBaubleState.Handler.class, PacketTerminalBaubleState.class, 32, Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketEngineeringSubscribe.Handler.class,
+            PacketEngineeringSubscribe.class,
+            33,
+            Side.SERVER);
+        NETWORK
+            .registerMessage(PacketEngineeringSnapshot.Handler.class, PacketEngineeringSnapshot.class, 34, Side.CLIENT);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new com.miaokatze.gtswn.common.engineering.EngineeringDashboardSessions());
         PacketSetQuantumNetworkColor.register();
         com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync visualSync = new com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync();
         MinecraftForge.EVENT_BUS.register(visualSync);

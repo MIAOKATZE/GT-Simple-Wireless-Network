@@ -31,15 +31,19 @@ public final class DeviceFlowMonitor {
         private double[][] oversizedValues;
         private final long[] ticks = new long[WINDOW];
         private long expires;
+        private long readOnlyExpires = Long.MIN_VALUE;
         private final double[] totals = new double[2];
         private Object owner;
         private boolean fusionInternalBuffer;
         private double selfIn, selfOut, externalIn, externalOut;
         private long observedAt;
+        /** Independent of consumeInterval: read-only dashboard consumers never reset another sampler's clock. */
+        private final long watchingSince;
 
         private Reading(long expires) {
             this.expires = expires;
             observedAt = now;
+            watchingSince = now;
             java.util.Arrays.fill(ticks, Long.MIN_VALUE);
         }
 
@@ -83,6 +87,27 @@ public final class DeviceFlowMonitor {
 
         public boolean warmedUp() {
             return now > observedAt;
+        }
+
+        /** A full actual observation window is available, regardless of another consumer's interval resets. */
+        public boolean windowReady() {
+            return now - watchingSince >= WINDOW && expires >= now;
+        }
+
+        /** Non-consuming, fractional twenty-tick rates; preserves oversized wireless values above long range. */
+        public double[] snapshotWindow() {
+            double[] rates = new double[2];
+            for (int i = 0; i < WINDOW; i++) {
+                if (ticks[i] <= now && ticks[i] > now - WINDOW) {
+                    for (int channel = 0; channel < rates.length; channel++) {
+                        double amount = oversizedValues != null && oversizedValues[channel][i] > 0
+                            ? oversizedValues[channel][i]
+                            : values[channel][i];
+                        rates[channel] = finiteAdd(rates[channel], amount / WINDOW);
+                    }
+                }
+            }
+            return rates;
         }
 
         public long average(int channel) {
@@ -130,8 +155,8 @@ public final class DeviceFlowMonitor {
     public static Reading watch(Object controller, long ttlTicks) {
         if (Thread.currentThread() != serverThread) return null;
         Reading reading = TRACKED.get(controller);
-        if (reading == null) {
-            if (TRACKED.size() >= MAX_TRACKED) return null;
+        if (reading == null || reading.expires < now) {
+            if (reading == null && TRACKED.size() >= MAX_TRACKED) return null;
             reading = new Reading(now + ttlTicks);
             reading.owner = controller;
             for (Class<?> type = controller.getClass(); type != null; type = type.getSuperclass()) {
@@ -142,7 +167,14 @@ public final class DeviceFlowMonitor {
                 }
             }
             TRACKED.put(controller, reading);
-        } else reading.expires = now + ttlTicks;
+        } else reading.expires = Math.max(reading.expires, now + ttlTicks);
+        return reading;
+    }
+
+    /** A temporary dashboard observer survives an ordinary terminal removing its own observation. */
+    public static Reading watchReadOnly(Object controller, long ttlTicks) {
+        Reading reading = watch(controller, ttlTicks);
+        if (reading != null) reading.readOnlyExpires = Math.max(reading.readOnlyExpires, now + ttlTicks);
         return reading;
     }
 
@@ -157,7 +189,8 @@ public final class DeviceFlowMonitor {
     }
 
     public static void forget(Object controller) {
-        TRACKED.remove(controller);
+        Reading reading = TRACKED.get(controller);
+        if (reading == null || reading.readOnlyExpires < now) TRACKED.remove(controller);
     }
 
     public static Reading enter(Object controller) {
