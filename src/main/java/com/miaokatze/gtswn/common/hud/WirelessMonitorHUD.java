@@ -38,6 +38,7 @@ public class WirelessMonitorHUD extends Gui {
 
     public WirelessMonitorHUD(HudController controller) {
         this.controller = controller;
+        com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot.bind(controller);
     }
 
     /**

@@ -37,6 +37,7 @@ public final class HudController {
 
     private final HudState state = new HudState();
     private final HudSession session = new HudSession();
+    private boolean engineeringMode;
 
     public HudSession.Snapshot captureSession(Object world, Object player, Object connection) {
         return session.capture(world, player, connection);
@@ -82,11 +83,13 @@ public final class HudController {
 
         // 获取世界时间
         long currentTick = mc.theWorld.getTotalWorldTime();
+        boolean engineering = com.miaokatze.gtswn.client.engineering.EngineeringModeController.isActive();
 
         // ② 每 INVENTORY_CHECK_INTERVAL ticks 检查一次背包（在 hudEnabled 检查之前执行）
-        if (currentTick < state.lastInventoryCheckTick
+        if (engineering != engineeringMode || currentTick < state.lastInventoryCheckTick
             || currentTick - state.lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
-            // 单次背包扫描（主手 → Baubles → 主背包）：owner 与 HUD 模式同源返回，绑定口径一致
+            engineeringMode = engineering;
+            // 工程模式优先饰品，其次主背包槽序；常规模式保留手持优先。
             MonitorScanResult scan = scanMonitorInInventory(player);
             String newOwnerUUID = scan.ownerUUID;
             boolean selectionChanged = newOwnerUUID == null || !newOwnerUUID.equals(state.cachedOwnerUUID)
@@ -243,7 +246,7 @@ public final class HudController {
     }
 
     /**
-     * 单次遍历背包查找「已绑定」的便携监测终端（主手 → Baubles 饰品栏 → 主背包）。
+     * 单次遍历背包查找「已绑定」的便携监测终端（常规模式手持优先；工程模式饰品 → 主背包槽序）。
      * <p>
      * 合并原 findMonitorInInventory / findMonitorStackInInventory / getHUDModeFromInventory
      * 三重同构扫描（每 20t 最多三遍背包遍历 → 一次遍历返回复合结果，调用方各取所需）；
@@ -253,10 +256,10 @@ public final class HudController {
      * @return 第一个已绑定监测终端的复合结果；未找到返回 {@link MonitorScanResult#NONE}
      */
     private MonitorScanResult scanMonitorInInventory(EntityPlayer player) {
-        // 检查主手
-        MonitorScanResult result = inspectMonitorStack(player.getHeldItem());
-        if (result != null) {
-            return result;
+        MonitorScanResult result;
+        if (!engineeringMode) {
+            result = inspectMonitorStack(player.getHeldItem());
+            if (result != null) return result;
         }
 
         // --- 饰品栏扫描（Baubles 不存在时安全降级） ---

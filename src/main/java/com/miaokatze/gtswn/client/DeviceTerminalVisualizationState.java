@@ -5,11 +5,13 @@ import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.device.DeviceMachineTypes;
 import com.miaokatze.gtswn.common.device.DeviceRegistryData;
 import com.miaokatze.gtswn.common.device.DeviceTerminalTeleport;
@@ -78,7 +80,7 @@ public final class DeviceTerminalVisualizationState {
             && isActiveInventory();
     }
 
-    /** Rendering uses the ACK-selected terminal in the main inventory; travel still requires that terminal in hand. */
+    /** Rendering uses the ACK-selected carried terminal; travel still requires that terminal in hand. */
     public static UUID visualizationTerminalId() {
         Minecraft mc = Minecraft.getMinecraft();
         if (terminalId == null || mc.thePlayer == null
@@ -86,6 +88,11 @@ public final class DeviceTerminalVisualizationState {
             || mc.thePlayer.isDead
             || mc.thePlayer.getHealth() <= 0) return null;
         ItemStack[] inventory = mc.thePlayer.inventory.mainInventory;
+        IInventory baubles = TerminalBaubles.inventory(mc.thePlayer);
+        int baubleSlot = -inventorySlot - 2;
+        if (inventorySlot < -1 && baubles != null
+            && baubleSlot < baubles.getSizeInventory()
+            && matchesActive(baubles.getStackInSlot(baubleSlot))) return terminalId;
         if (inventorySlot >= 0 && inventorySlot < inventory.length && matchesActive(inventory[inventorySlot]))
             return terminalId;
         inventorySlot = -1;
@@ -93,6 +100,11 @@ public final class DeviceTerminalVisualizationState {
         if (lastInventoryScanTick != Integer.MIN_VALUE && now >= lastInventoryScanTick
             && now - lastInventoryScanTick < 20) return null;
         lastInventoryScanTick = now;
+        if (baubles != null)
+            for (int i = 0; i < baubles.getSizeInventory(); i++) if (matchesActive(baubles.getStackInSlot(i))) {
+                inventorySlot = -i - 2;
+                return terminalId;
+            }
         // Only a slot replacement/move performs this bounded scan; unchanged frames do one slot check.
         for (int i = 0; i < inventory.length; i++) if (matchesActive(inventory[i])) {
             inventorySlot = i;
