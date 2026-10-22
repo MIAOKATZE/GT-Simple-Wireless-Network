@@ -7,21 +7,23 @@ import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalVisualizationState;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
-import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
+import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.common.hud.HudController;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
-/** Read-only adapter: the existing HUD owns requests, subscriptions and session validation. */
+/** Read-only factory demand backed by the existing terminal queues and HUD cache owner. */
 public final class EngineeringTerminalHudSnapshot {
 
     private static HudController hud;
@@ -29,6 +31,11 @@ public final class EngineeringTerminalHudSnapshot {
     private static Object lastWorld, lastConnection;
     private static int lastTick = Integer.MIN_VALUE;
     private static EngineeringTerminalHudSnapshot cached;
+    private static boolean factoryReading, deviceReading;
+    private static EngineeringTerminalSources.Source deviceDemand = EngineeringTerminalSources.Source.EMPTY;
+    private static Object demandWorld, demandConnection;
+    private static EntityPlayer demandPlayer;
+    private static int lastDeviceRequest = Integer.MIN_VALUE;
 
     public final Source device;
     public final Source portable;
@@ -42,6 +49,68 @@ public final class EngineeringTerminalHudSnapshot {
     public static void bind(HudController controller) {
         hud = controller;
         cached = null;
+    }
+
+    /** Explicit lifecycle demand, never a side effect of capture/render and never a visualization toggle. */
+    public static void tick(boolean reading) {
+        Minecraft mc = Minecraft.getMinecraft();
+        reading &= mc.theWorld != null && mc.thePlayer != null && !mc.thePlayer.isDead;
+        boolean portableReading = (reading || PortableSuperDashboard.isOpen()) && mc.theWorld != null
+            && mc.thePlayer != null
+            && !mc.thePlayer.isDead;
+        if (!portableReading) {
+            close();
+            return;
+        }
+        if (!factoryReading || demandWorld != mc.theWorld
+            || demandConnection != mc.getNetHandler()
+            || demandPlayer != mc.thePlayer) {
+            close();
+            factoryReading = true;
+            demandWorld = mc.theWorld;
+            demandConnection = mc.getNetHandler();
+            demandPlayer = mc.thePlayer;
+        }
+        if (deviceReading != reading) cached = null;
+        deviceReading = reading;
+        if (hud != null) {
+            hud.setFactoryReading(true);
+            // This is the original HUD's sampler and token/session gate, shared with updateForFrame.
+            hud.updateForFrame(mc.thePlayer);
+        }
+        if (!deviceReading) {
+            deviceDemand = EngineeringTerminalSources.Source.EMPTY;
+            lastDeviceRequest = Integer.MIN_VALUE;
+            return;
+        }
+        EngineeringTerminalSources.Source current = EngineeringTerminalSources.resolve(mc.thePlayer, 2);
+        if (!deviceDemand.sameIdentity(current)) {
+            deviceDemand = current;
+            lastDeviceRequest = Integer.MIN_VALUE;
+            cached = null;
+        }
+        if (!current.present()) return;
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(current.stack);
+        // The existing visual HUD already polls this exact terminal; keep a single active polling owner.
+        if (ItemDeviceInfoTerminal.isVisualizationEnabled(current.stack) && DeviceTerminalVisualizationState.active(id)
+            && mc.currentScreen == null) return;
+        int now = mc.thePlayer.ticksExisted;
+        int interval = DeviceTerminalClientCache.hasMorePending(id) ? 5 : 20;
+        if (lastDeviceRequest == Integer.MIN_VALUE || now < lastDeviceRequest || now - lastDeviceRequest >= interval) {
+            GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(id));
+            lastDeviceRequest = now;
+        }
+    }
+
+    public static void close() {
+        factoryReading = false;
+        deviceReading = false;
+        deviceDemand = EngineeringTerminalSources.Source.EMPTY;
+        demandWorld = demandConnection = null;
+        demandPlayer = null;
+        lastDeviceRequest = Integer.MIN_VALUE;
+        cached = null;
+        if (hud != null) hud.setFactoryReading(false);
     }
 
     /** Client-main-thread capture; reuse a stable view throughout a rendered client tick. */
@@ -61,50 +130,38 @@ public final class EngineeringTerminalHudSnapshot {
         lastWorld = mc.theWorld;
         lastConnection = connection;
         lastTick = player.ticksExisted;
-        Selected device = select(player, false), portable = select(player, true);
+        EngineeringTerminalSources.Source device = EngineeringTerminalSources.resolve(player, 2);
+        EngineeringTerminalSources.Source portable = EngineeringTerminalSources.resolve(player, 0);
         cached = new EngineeringTerminalHudSnapshot(device(device), portable(portable));
         return cached;
     }
 
-    private static Selected select(EntityPlayer player, boolean portable) {
-        IInventory baubles = TerminalBaubles.inventory(player);
-        if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
-            ItemStack stack = baubles.getStackInSlot(i);
-            if (matches(stack, portable)) return new Selected(stack, true);
-        }
-        for (ItemStack stack : player.inventory.mainInventory)
-            if (matches(stack, portable)) return new Selected(stack, false);
-        return new Selected(null, false);
-    }
-
-    private static boolean matches(ItemStack stack, boolean portable) {
-        return portable ? PortableWirelessNetworkMonitor.isMonitorBound(stack)
-            : stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal;
-    }
-
-    private static Source device(Selected selected) {
+    private static Source device(EngineeringTerminalSources.Source selected) {
         UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
-        boolean enabled = ItemDeviceInfoTerminal.isVisualizationEnabled(selected.stack)
-            && DeviceTerminalVisualizationState.active(id);
+        boolean itemEnabled = ItemDeviceInfoTerminal.isVisualizationEnabled(selected.stack);
+        boolean enabled = deviceReading && selected.present()
+            || itemEnabled && DeviceTerminalVisualizationState.active(id);
         DeviceTerminalClientCache.Snapshot snapshot = enabled ? DeviceTerminalClientCache.getSnapshot(id) : null;
         return new Source(
             id,
-            selected.bauble,
+            selected.origin,
             enabled,
+            itemEnabled,
             snapshot != null && DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()),
             Collections.emptyList(),
             Collections.emptyList(),
             snapshot == null ? Collections.emptyList() : snapshot.entries);
     }
 
-    private static Source portable(Selected selected) {
+    private static Source portable(EngineeringTerminalSources.Source selected) {
         ItemStack stack = selected.stack;
         UUID id = MonitorBindings.id(stack);
-        boolean enabled = stack != null && PortableWirelessNetworkMonitor.getHudMode(stack) > 0;
+        boolean itemEnabled = stack != null && PortableWirelessNetworkMonitor.getHudMode(stack) > 0;
+        boolean enabled = selected.present() && (factoryReading || itemEnabled);
         List<String> basic = new ArrayList<>();
         // Old wireless-EU text belongs to the controller's selected owner, never to another terminal.
-        boolean selectedByHud = hud != null && (id == null ? stack != null && stack == hud.monitorStack()
-            : id.equals(MonitorBindings.id(hud.monitorStack())));
+        boolean selectedByHud = selected.present() && hud != null
+            && selected.binding.equals(EngineeringTerminalSources.binding(hud.monitorStack()));
         if (enabled && selectedByHud) {
             if (Config.hudChargeEnabled && hud.hasBattery()) basic.add(hud.chargeText());
             if (Config.hudInstantEnabled) basic.add(hud.realtimeEutText());
@@ -127,9 +184,10 @@ public final class EngineeringTerminalHudSnapshot {
         }
         return new Source(
             id,
-            selected.bauble,
+            selected.origin,
             enabled,
-            enabled && !PortableMonitorClientCache.stale(stack),
+            itemEnabled,
+            enabled && (selectedByHud && hud.fresh() || !PortableMonitorClientCache.stale(stack)),
             basic,
             lines,
             Collections.emptyList());
@@ -139,6 +197,7 @@ public final class EngineeringTerminalHudSnapshot {
 
         private static final Source EMPTY = new Source(
             null,
+            SourceOrigin.NONE,
             false,
             false,
             false,
@@ -147,15 +206,19 @@ public final class EngineeringTerminalHudSnapshot {
             Collections.emptyList());
         public final UUID terminalId;
         public final boolean bauble, enabled, fresh;
+        public final boolean itemDisplayEnabled;
+        public final SourceOrigin origin;
         public final List<String> basicLines;
         public final List<PortableMonitorClientCache.PinnedLine> pinnedLines;
         public final List<Entry> devices;
 
-        private Source(UUID terminalId, boolean bauble, boolean enabled, boolean fresh, List<String> basic,
-            List<PortableMonitorClientCache.PinnedLine> pinned, List<Entry> devices) {
+        private Source(UUID terminalId, SourceOrigin origin, boolean enabled, boolean itemDisplayEnabled, boolean fresh,
+            List<String> basic, List<PortableMonitorClientCache.PinnedLine> pinned, List<Entry> devices) {
             this.terminalId = terminalId;
-            this.bauble = bauble;
+            this.origin = origin;
+            this.bauble = origin == SourceOrigin.BAUBLE;
             this.enabled = enabled;
+            this.itemDisplayEnabled = itemDisplayEnabled;
             this.fresh = fresh;
             this.basicLines = Collections.unmodifiableList(new ArrayList<>(basic));
             this.pinnedLines = Collections.unmodifiableList(new ArrayList<>(pinned));
@@ -163,14 +226,4 @@ public final class EngineeringTerminalHudSnapshot {
         }
     }
 
-    private static final class Selected {
-
-        final ItemStack stack;
-        final boolean bauble;
-
-        Selected(ItemStack stack, boolean bauble) {
-            this.stack = stack;
-            this.bauble = bauble;
-        }
-    }
 }

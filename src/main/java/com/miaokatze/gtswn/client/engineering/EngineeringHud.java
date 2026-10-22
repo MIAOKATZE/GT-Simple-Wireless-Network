@@ -11,27 +11,25 @@ import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.RenderGlobal;
 import net.minecraft.entity.Entity;
-import net.minecraft.item.ItemStack;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.client.event.MouseEvent;
 import net.minecraftforge.client.event.RenderGameOverlayEvent;
 import net.minecraftforge.client.event.RenderWorldLastEvent;
 
+import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
-import com.miaokatze.gtswn.client.TerminalBaubleController;
 import com.miaokatze.gtswn.client.engineering.EngineeringModeController.Target;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
-import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
-import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.engineering.EngineeringGrid;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Cell;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Node;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Power;
-import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
@@ -45,37 +43,34 @@ import com.miaokatze.miaokatzecore.client.render.GlScope;
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
-/** Contextual world markers and selection. Terminal actions live in the existing wheel's native MUI screens. */
+/** Factory world markers and workbench. Terminal actions stay in the same non-modal world HUD. */
 public final class EngineeringHud extends Gui {
 
     private static final int BACK = 0xEC141E27, HEADER = 0xF0263946;
     private static final int ACCENT = 0xFF67D8CD, TEXT = 0xFFE2EEF4, MUTED = 0xFF92A7B4;
     private static final int LINK = 0xFFF1BD70, QUANTUM = 0xFF8EB2FF, INC = 0xFFDA97F1;
     private static int activeSlot = -1;
-    private static boolean details = true, grid, gtGrid, selecting, dragging, boundOnly;
+    private static boolean grid, gtGrid, selecting, dragging, boundOnly;
     private static int dragX, dragY, endX, endY, minCellX, minCellZ, maxCellX, maxCellZ;
     private static double dragWorldX, dragWorldZ, endWorldX, endWorldZ, planeY;
     private static String notice = "";
     private static Node selectedNode;
     private static final List<NodeHit> hits = new ArrayList<>();
-    private static boolean showNodes, nodeListExpanded;
-    private static int nodeScroll;
-    private static final List<NodeRow> nodeRows = new ArrayList<>();
-    private static EngineeringSnapshot listSnapshot;
+    private static boolean showNodes;
     private static boolean pendingGt;
+    private static boolean overview, suspended;
+    private static Source activeSource = Source.EMPTY;
 
     static void reset() {
         activeSlot = -1;
-        details = true;
+        overview = suspended = false;
+        activeSource = Source.EMPTY;
+        WorkbenchHud.reset();
         grid = gtGrid = selecting = dragging = boundOnly = false;
         selectedNode = null;
         notice = "";
         hits.clear();
-        nodeRows.clear();
-        listSnapshot = null;
         showNodes = false;
-        nodeListExpanded = false;
-        nodeScroll = 0;
         pendingGt = false;
         PortableSuperDashboard.close();
         EngineeringDashboardCache.close();
@@ -152,8 +147,7 @@ public final class EngineeringHud extends Gui {
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             drawMap(mc.fontRenderer, w, h);
-            drawDetails(mc.fontRenderer, w, h);
-            drawNodes(mc.fontRenderer, w, h);
+            WorkbenchHud.render(w, h, localX(mc, Mouse.getX()), localY(mc, Mouse.getY()));
             if (selecting || !notice.isEmpty()) {
                 String hint = tr(notice.isEmpty() ? "dash.selection.hint" : notice);
                 int hintWidth = Math.min(w - 32, mc.fontRenderer.getStringWidth(hint) + 16);
@@ -169,14 +163,136 @@ public final class EngineeringHud extends Gui {
         }
     }
 
-    /** Native MUI controls are the only terminal action entry; the world HUD stays contextual. */
+    /** Default factory overview reads existing data without changing a terminal's visualization setting. */
+    public static void activateOverview() {
+        overview = true;
+        suspended = false;
+        pendingGt = selecting = dragging = grid = gtGrid = boundOnly = false;
+        notice = "";
+        WorkbenchHud.reset();
+        activateOverviewSource();
+    }
+
+    private static void activateOverviewSource() {
+        Minecraft mc = Minecraft.getMinecraft();
+        int preferred = -1;
+        if (EngineeringTerminalSources.resolve(mc.thePlayer, 2)
+            .present()) preferred = 2;
+        else if (EngineeringTerminalSources.resolve(mc.thePlayer, 0)
+            .present()) preferred = 0;
+        else for (int i = 1; i < 8; i++) if (EngineeringTerminalSources.resolve(mc.thePlayer, i)
+            .present()) {
+                preferred = i;
+                break;
+            }
+        if (preferred < 0) {
+            EngineeringDashboardCache.close();
+            activeSlot = -1;
+            activeSource = Source.EMPTY;
+            grid = showNodes = false;
+            return;
+        }
+        activateData(preferred);
+    }
+
+    public static void activateTerminal(int slot) {
+        if (slot < 0 || slot > 7) return;
+        Source source = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
+        if (source.stack == null) return;
+        overview = false;
+        suspended = false;
+        WorkbenchHud.select(slot);
+        if (source.present()) activateData(slot);
+        else {
+            EngineeringDashboardCache.close();
+            activeSlot = slot;
+            activeSource = source;
+            grid = showNodes = false;
+        }
+    }
+
+    static void activateData(int slot) {
+        Source source = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
+        if (!source.present()) return;
+        suspended = false;
+        PortableSuperDashboard.close();
+        defaultRegion();
+        subscribe(slot, false);
+    }
+
+    /** Source replacement/removal invalidates the previous subscription before choosing a new overview source. */
+    public static void tickSources() {
+        if (suspended) return;
+        if (overview && activeSlot < 0) {
+            activateOverviewSource();
+            return;
+        }
+        if (overview && activeSlot != 2
+            && EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, 2)
+                .present()) {
+            activateOverviewSource();
+            return;
+        }
+        Source current = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, activeSlot);
+        if (activeSource.sameIdentity(current) || !activeSource.present() && !current.present()) return;
+        PortableSuperDashboard.close();
+        if (overview) activateOverviewSource();
+        else if (current.present()) {
+            defaultRegion();
+            subscribe(activeSlot, grid);
+        } else {
+            EngineeringDashboardCache.close();
+            activeSource = Source.EMPTY;
+            grid = showNodes = false;
+            selectedNode = null;
+        }
+    }
+
     public static String[] toolLabels(int slot) {
-        if (slot == 0) return new String[] { tr("dash.board"), tr("dash.original") };
-        if (slot == 1) return new String[] { tr("dash.link.map"), tr("dash.original"), tr("tools.stop") };
-        if (slot == 2) return new String[] { tr("dash.device.map"), tr("dash.grid.mc"), tr("dash.grid.gt"),
+        if (slot == 0) return new String[] { tr("dash.board"), tr("tools.inspect") };
+        if (slot == 1) return new String[] { tr("dash.link.map"), tr("tools.inspect"), tr("tools.stop") };
+        if (slot == 2) return new String[] { tr("tools.inspect"), tr("dash.grid.mc"), tr("dash.grid.gt"),
             tr(selecting ? "dash.select.off" : "dash.select.on"), tr(boundOnly ? "dash.scope.bound" : "dash.scope.all"),
-            tr("dash.baseline"), tr("dash.stop"), tr("dash.original") };
-        return new String[] { tr("dash.quantum.map"), tr("dash.quantum.info"), tr("dash.original"), tr("tools.stop") };
+            tr("dash.baseline"), tr("dash.stop") };
+        return new String[] { tr("dash.quantum.map"), tr("dash.quantum.info"), tr("tools.stop") };
+    }
+
+    static int activeSlot() {
+        return activeSlot;
+    }
+
+    static boolean mapVisible() {
+        return grid || showNodes;
+    }
+
+    static List<String> dataLines() {
+        return detailLines();
+    }
+
+    static List<String> targetLines() {
+        return selectedLines();
+    }
+
+    static void toggleMap() {
+        if (activeSlot < 0) return;
+        if (activeSlot == 2) {
+            grid = !grid;
+            if (grid) {
+                defaultRegion();
+                subscribe(2, true);
+            }
+        } else if (activeSlot > 0) showNodes = !showNodes;
+    }
+
+    static void stopData() {
+        suspended = true;
+        EngineeringDashboardCache.close();
+        activeSource = Source.EMPTY;
+        activeSlot = -1;
+        grid = showNodes = pendingGt = dragging = selecting = false;
+        selectedNode = null;
+        PortableSuperDashboard.close();
+        notice = "";
     }
 
     public static void clearTarget() {
@@ -185,12 +301,8 @@ public final class EngineeringHud extends Gui {
     }
 
     public static void inspect(int slot) {
-        if (slot > 0 && activeSlot != slot) {
-            PortableSuperDashboard.close();
-            defaultRegion();
-            subscribe(slot, false);
-        }
-        com.cleanroommc.modularui.factory.ClientGUI.open(new com.miaokatze.gtswn.client.gui.GuiEngineeringDetails());
+        if (slot >= 0 && activeSlot != slot) activateData(slot);
+        WorkbenchHud.inspect();
     }
 
     public static List<String> inspectionLines() {
@@ -333,6 +445,8 @@ public final class EngineeringHud extends Gui {
                     tr("state." + Math.max(0, Math.min(3, e.state))) + " · "
                         + tr(source.fresh ? "dash.server.live" : "stale"));
                 lines.add(metric(e.instIn) + " → " + metric(e.instOut) + " EU/t");
+                if (!e.recipeIn.isEmpty()) lines.add(e.recipeIn);
+                if (!e.recipeOut.isEmpty()) lines.add(e.recipeOut);
                 break;
             }
             if (!found) lines.add(tr("dash.target.unknown"));
@@ -340,33 +454,10 @@ public final class EngineeringHud extends Gui {
         return lines;
     }
 
-    private static String nodeRole(Node node) {
+    static String nodeRole(Node node) {
         return tr(
             node.kind == 1 ? node.mode == 0 ? "tools.energy" : "tools.dynamo"
                 : node.kind == 2 ? "dash.legend.quantum" : "dash.legend.inc");
-    }
-
-    private static boolean hasDetails() {
-        if (EngineeringModeController.INSTANCE.selected() == null && selectedNode != null
-            && selectedNode.dim == Minecraft.getMinecraft().theWorld.provider.dimensionId) selectedNode = null;
-        return EngineeringModeController.INSTANCE.selected() != null || selectedNode != null;
-    }
-
-    private static int detailTop(int h) {
-        return h - (details ? 112 : 24) - 8;
-    }
-
-    private static void drawDetails(FontRenderer f, int w, int h) {
-        if (!hasDetails()) return;
-        int x = w - 248, top = detailTop(h);
-        rect(x, top, w - 8, h - 8, BACK);
-        rect(x, top, w - 8, top + 20, HEADER);
-        text(f, (details ? "− " : "+ ") + tr("dash.details"), x + 8, top + 6, ACCENT, 180);
-        text(f, "×", w - 23, top + 6, MUTED, 10);
-        if (!details) return;
-        List<String> lines = selectedLines();
-        for (int i = 0; i < Math.min(5, lines.size()); i++) text(f, lines.get(i), x + 8, top + 27 + i * 14, TEXT, 224);
-        text(f, tr("tools.inspect.hint"), x + 8, h - 20, MUTED, 224);
     }
 
     private static String power(Power p, boolean average) {
@@ -378,57 +469,12 @@ public final class EngineeringHud extends Gui {
         return FormatUtil.formatMetricDouble(value);
     }
 
-    private static int nodeListBottom(int h) {
-        return Math.min(h - 40, 270);
-    }
-
-    private static void drawNodes(FontRenderer f, int w, int h) {
-        if (!showNodes) return;
-        EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
-        if (s != listSnapshot) {
-            nodeRows.clear();
-            listSnapshot = s;
-            if (s != null) {
-                Map<String, List<Node>> owners = new LinkedHashMap<>();
-                for (Node n : s.nodes) owners.computeIfAbsent(n.owner + "|" + n.dim, key -> new ArrayList<>())
-                    .add(n);
-                for (List<Node> owner : owners.values()) {
-                    Node first = owner.get(0);
-                    nodeRows.add(
-                        new NodeRow(
-                            (first.ownerName.isEmpty() ? tr("dash.unknown") : first.ownerName) + " · DIM "
-                                + first.dim
-                                + " · "
-                                + owner.size(),
-                            null));
-                    for (Node n : owner) nodeRows.add(new NodeRow(n.name + " · " + n.x + "/" + n.y + "/" + n.z, n));
-                }
-            }
-        }
-        int x = 8, bottom = nodeListExpanded ? nodeListBottom(h) : 30;
-        rect(x, 8, x + 220, bottom, BACK);
-        rect(x, 8, x + 220, 28, HEADER);
-        text(f, (nodeListExpanded ? "− " : "+ ") + tr("dash.nodes"), x + 8, 14, ACCENT, 204);
-        if (!nodeListExpanded) return;
-        int visible = Math.max(1, (bottom - 34) / 19);
-        nodeScroll = Math.max(0, Math.min(nodeScroll, Math.max(0, nodeRows.size() - visible)));
-        if (nodeRows.isEmpty()) text(f, tr(s == null ? "waiting" : "dash.node.empty"), x + 8, 38, MUTED, 204);
-        for (int i = 0; i < visible && i + nodeScroll < nodeRows.size(); i++) {
-            NodeRow row = nodeRows.get(i + nodeScroll);
-            if (row.node != null && selectedNode != null && sameNode(row.node, selectedNode))
-                rect(x + 3, 32 + i * 19, x + 217, 50 + i * 19, HEADER);
-            int color = row.node == null ? ACCENT : row.node.online && EngineeringDashboardCache.fresh() ? TEXT : MUTED;
-            text(f, row.label, x + (row.node == null ? 8 : 15), 37 + i * 19, color, row.node == null ? 204 : 197);
-        }
-    }
-
-    private static void selectNode(Node node) {
+    static void selectNode(Node node) {
         selectedNode = node;
         EngineeringModeController controller = EngineeringModeController.INSTANCE;
         if (node.dim == Minecraft.getMinecraft().theWorld.provider.dimensionId)
             controller.selectPosition(node.x, node.y, node.z, node.name);
         else controller.clearSelection();
-        details = true;
     }
 
     private static void drawMap(FontRenderer f, int w, int h) {
@@ -518,8 +564,8 @@ public final class EngineeringHud extends Gui {
     static boolean blocksNavigation(int displayX, int displayY) {
         Minecraft mc = Minecraft.getMinecraft();
         int x = localX(mc, displayX), y = localY(mc, displayY), w = width(mc), h = height(mc);
-        return showNodes && x >= 8 && x < 228 && y >= 8 && y < (nodeListExpanded ? nodeListBottom(h) : 30)
-            || hasDetails() && x >= w - 248 && x < w - 8 && y >= detailTop(h) && y < h - 8;
+        return WorkbenchHud.layout(w, h)
+            .contains(x, y);
     }
 
     static boolean mouse(MouseEvent e) {
@@ -537,26 +583,7 @@ public final class EngineeringHud extends Gui {
             if (e.button == 0 && !e.buttonstate) finishSelection();
             return e.button != 1 && e.button != 2;
         }
-        if (showNodes && x >= 8 && x < 228 && y >= 8 && y < (nodeListExpanded ? nodeListBottom(h) : 30)) {
-            if (e.dwheel != 0) nodeScroll += e.dwheel > 0 ? -2 : 2;
-            if (press && y < 28) nodeListExpanded = !nodeListExpanded;
-            else if (press && y >= 32 && nodeListExpanded) {
-                int index = nodeScroll + (y - 32) / 19;
-                if (index >= 0 && index < nodeRows.size() && nodeRows.get(index).node != null)
-                    selectNode(nodeRows.get(index).node);
-            }
-            return true;
-        }
-        int top = detailTop(h);
-        if (hasDetails() && x >= w - 248 && x < w - 8 && y >= top && y < h - 8) {
-            if (press && x >= w - 30 && y < top + 20) {
-                selectedNode = null;
-                EngineeringModeController.INSTANCE.clearSelection();
-            } else if (press && y < top + 20) details = !details;
-            else if (press) com.cleanroommc.modularui.factory.ClientGUI
-                .open(new com.miaokatze.gtswn.client.gui.GuiEngineeringDetails());
-            return true;
-        }
+        if (WorkbenchHud.mouse(x, y, w, h, e.button, e.buttonstate, e.dwheel)) return true;
         if (selecting && e.button == 0) {
             if (press) {
                 double[] p = planePoint(e.x, e.y);
@@ -591,106 +618,68 @@ public final class EngineeringHud extends Gui {
             notice = "";
             return true;
         }
-        if (PortableSuperDashboard.isOpen()) {
-            PortableSuperDashboard.close();
-            return true;
-        }
-        return false;
+        return WorkbenchHud.escape();
     }
 
     public static void toolAction(int slot, int action) {
-        if (slot < 0 || slot > 7) return;
-        ItemStack stack = TerminalBaubles.terminals(Minecraft.getMinecraft().thePlayer)[slot];
-        if (stack == null || action < 0 || action >= toolLabels(slot).length) return;
-        if (slot == 1 && action == 2 || slot >= 3 && action == 3) {
-            EngineeringDashboardCache.close();
-            activeSlot = -1;
-            grid = showNodes = false;
-            selectedNode = null;
-            pendingGt = dragging = selecting = false;
-            notice = "";
+        Source source = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
+        if (!source.present() || action < 0 || action >= toolLabels(slot).length) return;
+        if (slot == 1 && action == 2 || slot >= 3 && action == 2 || slot == 2 && action == 6) {
+            stopData();
             return;
         }
+        suspended = false;
+        overview = false;
         boolean wasSelecting = selecting;
-        pendingGt = false;
-        dragging = selecting = false;
+        pendingGt = dragging = selecting = false;
         notice = "";
         if (slot == 0) {
-            EngineeringDashboardCache.close();
-            activeSlot = 0;
-            grid = showNodes = false;
             if (action == 0) {
-                PortableSuperDashboard.open(stack);
-                if (PortableSuperDashboard.isOpen()) com.cleanroommc.modularui.factory.ClientGUI
-                    .open(new com.miaokatze.gtswn.client.gui.GuiEngineeringBoard());
-            } else TerminalBaubleController.select(slot);
-            return;
-        }
-        PortableSuperDashboard.close();
-        if (slot == 2) {
-            if (action == 7) {
-                EngineeringDashboardCache.close();
-                TerminalBaubleController.select(slot);
-                return;
-            }
-            if (action == 6) {
-                EngineeringDashboardCache.close();
-                activeSlot = -1;
-                grid = showNodes = false;
-                return;
-            }
+                activateTerminal(0);
+                WorkbenchHud.openDashboard();
+            } else activateData(0);
+        } else if (slot == 2) {
             if (action == 5) {
                 EngineeringDashboardCache.baseline();
-                inspect(slot);
-                return;
-            }
-            if (action == 4) {
+                WorkbenchHud.inspect();
+            } else if (action == 4) {
                 boundOnly = !boundOnly;
                 if (activeSlot != 2) defaultRegion();
-                subscribe(slot, true);
-                return;
-            }
-            if (action == 3) {
+                subscribe(2, true);
+            } else if (action == 3) {
                 if (activeSlot != 2) {
                     defaultRegion();
                     subscribe(2, true);
                 }
                 selecting = !wasSelecting;
-                return;
-            }
-            if (action == 1 || action == 2) {
+            } else if (action == 1 || action == 2) {
                 EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
                 pendingGt = action == 2 && (s == null || s.slot != 2 || !s.patternResolved);
                 gtGrid = action == 2 && !pendingGt;
                 if (pendingGt) notice = "dash.pattern.unknown";
                 defaultRegion();
-                subscribe(slot, true);
-            } else {
-                EngineeringTerminalActions.openGrid(ItemDeviceInfoTerminal.readTerminalId(stack));
+                subscribe(2, true);
+            } else activateData(2);
+        } else if (action == 0) {
+            if (activeSlot == slot) showNodes = !showNodes;
+            else {
                 defaultRegion();
                 subscribe(slot, false);
+                showNodes = true;
             }
         } else {
-            if (action == (slot == 1 ? 1 : 2)) {
-                EngineeringDashboardCache.close();
-                TerminalBaubleController.select(slot);
-                return;
-            }
-            defaultRegion();
-            subscribe(slot, false);
-            showNodes = slot == 1 || action == 0;
-            if (slot >= 3 && action == 1) inspect(slot);
+            activateData(slot);
+            WorkbenchHud.inspect();
         }
     }
 
     private static void subscribe(int slot, boolean showGrid) {
         activeSlot = slot;
+        activeSource = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
         grid = showGrid;
         selectedNode = null;
-        details = true;
         EngineeringModeController.INSTANCE.clearSelection();
-        showNodes = slot == 1 || slot >= 3;
-        nodeScroll = 0;
+        showNodes = false;
         EngineeringDashboardCache.subscribe(slot, gtGrid, minCellX, minCellZ, maxCellX, maxCellZ, boundOnly);
     }
 
@@ -814,14 +803,4 @@ public final class EngineeringHud extends Gui {
         }
     }
 
-    private static final class NodeRow {
-
-        final String label;
-        final Node node;
-
-        NodeRow(String label, Node node) {
-            this.label = label;
-            this.node = node;
-        }
-    }
 }

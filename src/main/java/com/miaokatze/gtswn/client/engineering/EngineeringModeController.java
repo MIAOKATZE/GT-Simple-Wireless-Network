@@ -92,7 +92,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         INSTANCE.lease = WorldCameras.tryActivate(OWNER, mc.theWorld, 20, INSTANCE, INSTANCE::revoked);
         if (!isActive()) {
             INSTANCE.world = null;
-            mc.thePlayer.addChatMessage(new ChatComponentText("世界相机正在由其他模块使用，工程视角未开启。"));
+            mc.thePlayer.addChatMessage(new ChatComponentText("世界相机正在由其他模块使用，工厂模式未开启。"));
+        } else {
+            EngineeringHud.activateOverview();
+            EngineeringTerminalHudSnapshot.tick(EngineeringDashboardCache.slot() >= 0);
         }
     }
 
@@ -111,6 +114,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         slice = HeightSlice.disabled();
         settings = null;
         EngineeringHud.reset();
+        EngineeringTerminalHudSnapshot.close();
     }
 
     public static void focus(int x, int y, int z) {
@@ -225,6 +229,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             close();
             return;
         }
+        EngineeringHud.tickSources();
+        EngineeringTerminalHudSnapshot.tick(EngineeringDashboardCache.slot() >= 0);
         lastX = x;
         lastY = y;
         lastZ = z;
@@ -406,7 +412,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
                 CameraSettings.Hud.builder()
                     .crosshair(CameraSettings.Hud.Crosshair.HIDDEN)
                     .panelVisible(cameraPanel)
-                    .panelPosition((int) (12 * scale), (int) (56 * scale))
+                    .panelPosition((int) (244 * scale), (int) (56 * scale))
                     .panelWidth(Math.max(1, (int) (192 * scale)))
                     .build())
             .navigation(EngineeringInputPolicy.navigation(following))

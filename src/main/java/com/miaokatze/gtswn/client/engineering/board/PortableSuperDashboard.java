@@ -11,6 +11,7 @@ import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
@@ -23,7 +24,7 @@ import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache.PinnedLine;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.client.gui.PortableMonitorCharts;
-import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor;
@@ -56,6 +57,8 @@ public final class PortableSuperDashboard extends Gui {
     private static int optionsVersion;
     private static long revision;
     private static List<String> basic = new ArrayList<>();
+    private static boolean embedded;
+    private static int embeddedX, embeddedY, virtualWidth, virtualHeight;
 
     private PortableSuperDashboard() {}
 
@@ -63,8 +66,9 @@ public final class PortableSuperDashboard extends Gui {
         close();
         Minecraft mc = Minecraft.getMinecraft();
         UUID id = MonitorBindings.id(source);
-        // The board is the mounted portable entry, never a fallback to another inventory terminal.
-        if (id == null || mc.thePlayer == null || TerminalBaubles.terminals(mc.thePlayer)[0] != source) return;
+        // Use the same explicitly identified provider as the factory overview.
+        if (id == null || mc.thePlayer == null || EngineeringTerminalSources.resolve(mc.thePlayer, 0).stack != source)
+            return;
         stack = source;
         terminal = id;
         world = mc.theWorld;
@@ -142,7 +146,7 @@ public final class PortableSuperDashboard extends Gui {
         }
         if (lastTick == mc.thePlayer.ticksExisted) return true;
         lastTick = mc.thePlayer.ticksExisted;
-        ItemStack current = TerminalBaubles.terminals(mc.thePlayer)[0];
+        ItemStack current = EngineeringTerminalSources.resolve(mc.thePlayer, 0).stack;
         if (!terminal.equals(MonitorBindings.id(current))) {
             close();
             return false;
@@ -194,6 +198,24 @@ public final class PortableSuperDashboard extends Gui {
         return -1;
     }
 
+    /** Same board, translated into the factory canvas; no GuiScreen or MUI overlay is opened. */
+    public static void renderEmbedded(int x, int y, int w, int h, int mouseX, int mouseY, int canvasWidth,
+        int canvasHeight) {
+        embedded = true;
+        embeddedX = x;
+        embeddedY = y - 50;
+        virtualWidth = canvasWidth;
+        virtualHeight = canvasHeight;
+        GL11.glPushMatrix();
+        try {
+            GL11.glTranslatef(x, y - 50, 0);
+            render(w, h + 50, mouseX - x, mouseY - y + 50);
+        } finally {
+            GL11.glPopMatrix();
+            embedded = false;
+        }
+    }
+
     public static void render(int screenWidth, int screenHeight, int mouseX, int mouseY) {
         if (!update()) return;
         width = screenWidth;
@@ -201,7 +223,10 @@ public final class PortableSuperDashboard extends Gui {
         FontRenderer font = Minecraft.getMinecraft().fontRenderer;
         hits.clear();
         visible.clear();
-        drawRect(10, 50, width - 10, height - 10, BACK);
+        int frameBottom = layout.order.isEmpty() && !settings
+            ? Math.min(height - 10, TOP + (layout.overview ? 84 : 0) + 40)
+            : height - 10;
+        drawRect(10, 50, width - 10, frameBottom, BACK);
         drawRect(10, 50, width - 10, 73, HEADER);
         text(font, tr("title"), 19, 58, ACCENT, width - 198);
         button(font, width - 166, 53, 96, tr("settings"), () -> settings = !settings, false);
@@ -218,7 +243,11 @@ public final class PortableSuperDashboard extends Gui {
         }
         int start = TOP + (layout.overview ? 84 : 0);
         GuiContext context = GuiContext.getDefault();
-        int actualWidth = Math.abs(context.transformX(width, 0) - context.transformX(0, 0));
+        Minecraft mc = Minecraft.getMinecraft();
+        int actualWidth = embedded
+            ? (int) (width * new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaledWidth()
+                / (double) virtualWidth)
+            : Math.abs(context.transformX(width, 0) - context.transformX(0, 0));
         int columns = layout.effectiveColumns((int) ((width - 36) * actualWidth / (double) width)), gap = 8;
         int cardWidth = (width - 36 - gap * (columns - 1)) / columns;
         int[] columnY = new int[columns];
@@ -244,7 +273,7 @@ public final class PortableSuperDashboard extends Gui {
                     }
                 }
             } finally {
-                Stencil.remove();
+                if (!embedded) Stencil.remove();
             }
         }
         maxScroll = Math.max(0, requiredBottom - viewBottom);
@@ -410,85 +439,88 @@ public final class PortableSuperDashboard extends Gui {
         drawRect(x, top, x + w, bottom, BACK);
         try (GlScope ignored = new GlScope()) {
             scissor(x, top, x + w, bottom);
-            int y = top + 5 - menuScroll;
-            setting(
-                font,
-                x + 6,
-                y,
-                w - 12,
-                tr("columns") + ": " + (layout.columns == 0 ? tr("auto") : layout.columns),
-                () -> {
-                    layout.columns = (layout.columns + 1) % 5;
+            try {
+                int y = top + 5 - menuScroll;
+                setting(
+                    font,
+                    x + 6,
+                    y,
+                    w - 12,
+                    tr("columns") + ": " + (layout.columns == 0 ? tr("auto") : layout.columns),
+                    () -> {
+                        layout.columns = (layout.columns + 1) % 5;
+                        changed();
+                    });
+                y += 22;
+                setting(font, x + 6, y, w - 12, tr("size") + ": " + tr("size." + layout.size), () -> {
+                    layout.size = (layout.size + 1) % 3;
                     changed();
                 });
-            y += 22;
-            setting(font, x + 6, y, w - 12, tr("size") + ": " + tr("size." + layout.size), () -> {
-                layout.size = (layout.size + 1) % 3;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, tr("window") + ": " + tr("window." + layout.window), () -> {
-                layout.window = (layout.window + 1) % 3;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("overview", layout.overview), () -> {
-                layout.overview = !layout.overview;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("eu", layout.eu), () -> {
-                layout.eu = !layout.eu;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("ae", layout.ae), () -> {
-                layout.ae = !layout.ae;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("stock", layout.stock), () -> {
-                layout.stock = !layout.stock;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("amount", layout.amount), () -> {
-                layout.amount = !layout.amount;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("instant", layout.instant), () -> {
-                layout.instant = !layout.instant;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("average", layout.average), () -> {
-                layout.average = !layout.average;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, toggleLabel("trends", layout.trends), () -> {
-                layout.trends = !layout.trends;
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, tr("show.all") + " (" + layout.hidden.size() + ")", () -> {
-                layout.hidden.clear();
-                changed();
-            });
-            y += 22;
-            setting(font, x + 6, y, w - 12, tr("reset"), () -> {
-                layout = new PortableBoardLayout();
-                List<String> ids = new ArrayList<>();
-                for (MonitorBindings.Binding binding : bindings) ids.add(binding.panelId.toString());
-                layout.reconcile(ids);
-                rowPages.clear();
-                scroll = 0;
-                changed();
-            });
-            y += 24;
-            menuMax = Math.max(0, y + menuScroll - bottom);
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
+                y += 22;
+                setting(font, x + 6, y, w - 12, tr("window") + ": " + tr("window." + layout.window), () -> {
+                    layout.window = (layout.window + 1) % 3;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("overview", layout.overview), () -> {
+                    layout.overview = !layout.overview;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("eu", layout.eu), () -> {
+                    layout.eu = !layout.eu;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("ae", layout.ae), () -> {
+                    layout.ae = !layout.ae;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("stock", layout.stock), () -> {
+                    layout.stock = !layout.stock;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("amount", layout.amount), () -> {
+                    layout.amount = !layout.amount;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("instant", layout.instant), () -> {
+                    layout.instant = !layout.instant;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("average", layout.average), () -> {
+                    layout.average = !layout.average;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, toggleLabel("trends", layout.trends), () -> {
+                    layout.trends = !layout.trends;
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, tr("show.all") + " (" + layout.hidden.size() + ")", () -> {
+                    layout.hidden.clear();
+                    changed();
+                });
+                y += 22;
+                setting(font, x + 6, y, w - 12, tr("reset"), () -> {
+                    layout = new PortableBoardLayout();
+                    List<String> ids = new ArrayList<>();
+                    for (MonitorBindings.Binding binding : bindings) ids.add(binding.panelId.toString());
+                    layout.reconcile(ids);
+                    rowPages.clear();
+                    scroll = 0;
+                    changed();
+                });
+                y += 24;
+                menuMax = Math.max(0, y + menuScroll - bottom);
+            } finally {
+                if (!embedded) Stencil.remove();
+            }
         }
         menuScroll = Math.min(menuScroll, menuMax);
     }
@@ -540,6 +572,16 @@ public final class PortableSuperDashboard extends Gui {
     }
 
     private static void scissor(int left, int top, int right, int bottom) {
+        if (embedded) {
+            Minecraft mc = Minecraft.getMinecraft();
+            double sx = mc.displayWidth / (double) virtualWidth, sy = mc.displayHeight / (double) virtualHeight;
+            int x = (int) Math.floor((embeddedX + left) * sx);
+            int y = (int) Math.floor(mc.displayHeight - (embeddedY + bottom) * sy);
+            int w = (int) Math.ceil((right - left) * sx), h = (int) Math.ceil((bottom - top) * sy);
+            GL11.glEnable(GL11.GL_SCISSOR_TEST);
+            GL11.glScissor(x, y, Math.max(0, w), Math.max(0, h));
+            return;
+        }
         // The MUI host scales and centres the board; use that same matrix for clipping.
         Stencil.apply(left, top, Math.max(0, right - left), Math.max(0, bottom - top), GuiContext.getDefault());
     }

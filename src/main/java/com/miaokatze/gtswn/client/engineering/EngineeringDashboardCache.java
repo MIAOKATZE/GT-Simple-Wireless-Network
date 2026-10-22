@@ -1,13 +1,12 @@
 package com.miaokatze.gtswn.client.engineering;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.item.ItemStack;
 
-import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.engineering.EngineeringGrid;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
-import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
-import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketEngineeringSubscribe;
 
@@ -16,8 +15,7 @@ public final class EngineeringDashboardCache {
 
     private static long serial = System.currentTimeMillis(), session;
     private static Object world, connection;
-    private static Object sourceItem;
-    private static String sourceBinding;
+    private static Source source = Source.EMPTY;
     private static int slot = -1, dim, minX, minZ, maxX, maxZ, lastTick;
     private static boolean gtGrid, boundOnly;
     private static EngineeringSnapshot snapshot;
@@ -33,13 +31,12 @@ public final class EngineeringDashboardCache {
         close();
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld == null || mc.thePlayer == null || selection < 0 || selection >= 8) return;
-        ItemStack actual = TerminalBaubles.terminals(mc.thePlayer)[selection];
-        if (actual == null) return;
+        Source actual = EngineeringTerminalSources.resolve(mc.thePlayer, selection);
+        if (!actual.present()) return;
         world = mc.theWorld;
         connection = mc.getNetHandler();
         slot = selection;
-        sourceItem = actual.getItem();
-        sourceBinding = binding(actual);
+        source = actual;
         dim = mc.theWorld.provider.dimensionId;
         gtGrid = gt;
         boundOnly = onlyBound;
@@ -93,8 +90,16 @@ public final class EngineeringDashboardCache {
         return slot;
     }
 
+    public static SourceOrigin sourceOrigin() {
+        return source.origin;
+    }
+
     public static void baseline() {
         if (session != 0) send(true, false);
+    }
+
+    public static void refresh() {
+        if (session != 0) send(false, false);
     }
 
     public static void close() {
@@ -104,23 +109,12 @@ public final class EngineeringDashboardCache {
         slot = -1;
         snapshot = null;
         world = connection = null;
-        sourceItem = sourceBinding = null;
+        source = Source.EMPTY;
     }
 
     private static boolean sameSource(Minecraft mc) {
         if (mc.thePlayer == null || slot < 0 || slot >= 8) return false;
-        ItemStack actual = TerminalBaubles.terminals(mc.thePlayer)[slot];
-        return actual != null && actual.getItem() == sourceItem && binding(actual).equals(sourceBinding);
-    }
-
-    private static String binding(ItemStack actual) {
-        if (actual.getItem() instanceof ItemDeviceInfoTerminal)
-            return String.valueOf(ItemDeviceInfoTerminal.readTerminalId(actual));
-        if (actual.getItem() instanceof ItemNetworkQuantumTerminal)
-            return java.util.Arrays.toString(ItemNetworkQuantumTerminal.getAnchor(actual)) + ":"
-                + (actual.hasTagCompound() ? actual.getTagCompound()
-                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION) : "");
-        return "";
+        return source.sameIdentity(EngineeringTerminalSources.resolve(mc.thePlayer, slot));
     }
 
     private static void send(boolean baseline, boolean close) {
@@ -136,7 +130,7 @@ public final class EngineeringDashboardCache {
                 gtGrid,
                 baseline,
                 close,
-                boundOnly));
+                boundOnly).source(source));
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer != null) lastTick = mc.thePlayer.ticksExisted;
     }
