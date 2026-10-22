@@ -26,6 +26,7 @@ import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
+import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
@@ -266,6 +267,20 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         getMainPanel().child(entryList);
         nameEditor = new GuiDeviceNameEditor(this);
         powerMenu = IPanelHandler.simple(getMainPanel(), (parent, player) -> buildPowerMenu(), true);
+        getMainPanel().child(
+            GtswnMuiWidgets
+                .button(
+                    "device.engineering",
+                    () -> tr("gtswn.device.gui.engineering"),
+                    344,
+                    235,
+                    98,
+                    14,
+                    () -> EngineeringTerminalActions.canOpen(anchor),
+                    () -> EngineeringTerminalActions.openGrid(anchor))
+                .tooltip(
+                    t -> t.addLine(
+                        com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.gui.engineering.hint"))));
     }
 
     private ModularPanel buildPowerMenu() {
@@ -771,7 +786,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 底行固定操作提示。 */
     private void drawFooter() {
         this.fontRendererObj.drawString(
-            tr("gtswn.device.gui.footer"),
+            this.fontRendererObj.trimStringToWidth(tr("gtswn.device.gui.footer"), 328),
             this.guiLeft + 8,
             this.guiTop + FOOTER_Y,
             GtswnGuiPalette.TEXT_MUTED);

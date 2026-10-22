@@ -196,6 +196,7 @@ public final class TerminalBaubleController {
             || mc.thePlayer == null
             || mc.theWorld == null
             || mc.gameSettings.hideGUI) return;
+        if (com.miaokatze.gtswn.client.engineering.EngineeringModeController.isActive()) return;
         ItemStack held = mc.thePlayer.getHeldItem();
         int category = TerminalBaubles.category(held);
         if (category < 0) return;

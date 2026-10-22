@@ -7,10 +7,12 @@ import java.util.Map;
 import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
 import net.minecraft.server.MinecraftServer;
 
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRequestQueue;
 import com.miaokatze.gtswn.common.device.DeviceTerminalTeleport;
@@ -179,6 +181,33 @@ public final class DeviceTerminalVisualActionQueue {
             return;
         }
         ItemStack held = player.getHeldItem();
+        // The device list can be opened directly from a carried slot. Only visualization toggles
+        // accept that carried identity; teleport/rename retain the existing held-terminal checks.
+        boolean accessory = false;
+        int targetSlot = player.inventory.currentItem;
+        if (message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE
+            && !PacketDeviceTerminalVisualAction.NEW_TERMINAL.equals(message.terminalId)
+            && !message.terminalId.equals(ItemDeviceInfoTerminal.readTerminalId(held))) {
+            IInventory baubles = TerminalBaubles.inventory(player);
+            if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
+                ItemStack candidate = baubles.getStackInSlot(i);
+                if (candidate != null && candidate.getItem() instanceof ItemDeviceInfoTerminal
+                    && message.terminalId.equals(ItemDeviceInfoTerminal.readTerminalId(candidate))) {
+                    held = candidate;
+                    accessory = true;
+                    break;
+                }
+            }
+            if (!accessory) for (int i = 0; i < player.inventory.mainInventory.length; i++) {
+                ItemStack candidate = player.inventory.mainInventory[i];
+                if (candidate != null && candidate.getItem() instanceof ItemDeviceInfoTerminal
+                    && message.terminalId.equals(ItemDeviceInfoTerminal.readTerminalId(candidate))) {
+                    held = candidate;
+                    targetSlot = i;
+                    break;
+                }
+            }
+        }
         if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)) {
             rejectTravel(player, message, DeviceTerminalTeleport.Status.INACTIVE);
             return;
@@ -210,14 +239,18 @@ public final class DeviceTerminalVisualActionQueue {
         if (message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE) {
             boolean enabled = !ItemDeviceInfoTerminal.isVisualizationEnabled(held);
             if (enabled && !SESSIONS.containsKey(player.getUniqueID()) && SESSIONS.size() >= MAX_SESSIONS) {
-                player.playerNetServerHandler
-                    .sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, held));
+                if (!accessory) player.playerNetServerHandler
+                    .sendPacket(new S2FPacketSetSlot(0, targetSlot < 9 ? 36 + targetSlot : targetSlot, held));
                 acknowledge(player, actual, false);
                 return;
             }
             ItemDeviceInfoTerminal.setVisualizationEnabled(held, enabled);
             player.inventory.markDirty();
-            player.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, held));
+            if (accessory) {
+                IInventory baubles = TerminalBaubles.inventory(player);
+                if (baubles != null) baubles.markDirty();
+            } else player.playerNetServerHandler
+                .sendPacket(new S2FPacketSetSlot(0, targetSlot < 9 ? 36 + targetSlot : targetSlot, held));
             if (!enabled) {
                 Session current = SESSIONS.get(player.getUniqueID());
                 if (current != null && current.terminalId.equals(actual)) {
@@ -287,9 +320,19 @@ public final class DeviceTerminalVisualActionQueue {
     private static boolean validInventory(EntityPlayerMP player, Session session) {
         if (player.isDead || player.getHealth() <= 0) return false;
         ItemStack[] inventory = player.inventory.mainInventory;
+        IInventory baubles = TerminalBaubles.inventory(player);
+        int baubleSlot = -session.slot - 2;
+        if (session.slot < -1 && baubles != null
+            && baubleSlot < baubles.getSizeInventory()
+            && matches(baubles.getStackInSlot(baubleSlot), session)) return true;
         if (session.slot >= 0 && session.slot < inventory.length && matches(inventory[session.slot], session))
             return true;
         // A moved stack is found once and cached; an actually missing stack removes the session immediately.
+        if (baubles != null)
+            for (int i = 0; i < baubles.getSizeInventory(); i++) if (matches(baubles.getStackInSlot(i), session)) {
+                session.slot = -i - 2;
+                return true;
+            }
         for (int i = 0; i < inventory.length; i++) if (matches(inventory[i], session)) {
             session.slot = i;
             return true;
@@ -299,16 +342,26 @@ public final class DeviceTerminalVisualActionQueue {
 
     private static void selectSession(EntityPlayerMP player, long now) {
         Session current = SESSIONS.get(player.getUniqueID());
-        ItemStack held = player.getHeldItem();
-        // A nonterminal hand keeps the current enabled terminal, rather than arbitrarily switching bindings.
-        if (!ItemDeviceInfoTerminal.isVisualizationEnabled(held) && current != null && validInventory(player, current))
-            return;
-        int selected = ItemDeviceInfoTerminal.findEnabledTerminalSlot(
-            player.inventory.mainInventory,
-            player.inventory.currentItem,
-            current == null ? null : current.terminalId);
-        if (selected < 0) return;
-        UUID id = ItemDeviceInfoTerminal.readTerminalId(player.inventory.mainInventory[selected]);
+        int selected = -1;
+        UUID id = null;
+        IInventory baubles = TerminalBaubles.inventory(player);
+        if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
+            ItemStack candidate = baubles.getStackInSlot(i);
+            if (ItemDeviceInfoTerminal.isVisualizationEnabled(candidate)
+                && (id = ItemDeviceInfoTerminal.readTerminalId(candidate)) != null) {
+                selected = -i - 2;
+                break;
+            }
+        }
+        if (id == null) for (int i = 0; i < player.inventory.mainInventory.length; i++) {
+            ItemStack candidate = player.inventory.mainInventory[i];
+            if (ItemDeviceInfoTerminal.isVisualizationEnabled(candidate)
+                && (id = ItemDeviceInfoTerminal.readTerminalId(candidate)) != null) {
+                selected = i;
+                break;
+            }
+        }
+        if (id == null) return;
         if (current != null && current.terminalId.equals(id)) return;
         if (current == null && SESSIONS.size() >= MAX_SESSIONS) return;
         if (current != null) acknowledge(player, current.terminalId, false);
