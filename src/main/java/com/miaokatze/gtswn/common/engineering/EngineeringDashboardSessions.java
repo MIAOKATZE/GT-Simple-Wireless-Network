@@ -13,6 +13,8 @@ import net.minecraft.item.ItemStack;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Power;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Review;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.common.engineering.power.EngineeringRegionPowerCollector;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
@@ -69,15 +71,14 @@ public final class EngineeringDashboardSessions {
             LAST_SENT.put(session.player.getUniqueID(), tick);
             updates++;
             try {
-                ItemStack[] terminals = TerminalBaubles.terminals(session.player);
-                ItemStack actual = terminals[session.view.slot];
-                if (actual == null || actual != session.terminal) {
-                    send(session.empty(actual == null ? "empty" : "expired"), session.player);
+                Source actual = EngineeringTerminalSources.resolve(session.player, session.view.slot);
+                if (actual.stack != session.terminal || !session.source.sameIdentity(actual)) {
+                    send(session.empty(actual.present() ? "expired" : "empty"), session.player);
                     session.close();
                     iterator.remove();
                     continue;
                 }
-                send(session.snapshot(terminals), session.player);
+                send(session.snapshot(TerminalBaubles.terminals(session.player)), session.player);
             } catch (RuntimeException failure) {
                 GTSimpleWirelessNetwork.LOG.error("[Engineering dashboard] Subscription failed", failure);
                 send(session.empty("error"), session.player);
@@ -99,19 +100,21 @@ public final class EngineeringDashboardSessions {
             return;
         }
         if (!connected(player)) return;
-        ItemStack[] terminals = TerminalBaubles.terminals(player);
-        ItemStack terminal = terminals[request.slot];
-        if (old != null && old.same(player, terminal, request)) {
+        Source source = EngineeringTerminalSources.resolve(player, request.slot);
+        ItemStack terminal = source.stack;
+        if (old != null && old.same(player, terminal, request)
+            && old.source.sameIdentity(source)
+            && request.matches(source)) {
             old.touched = tick;
             // Repeated keepalives cannot force an unbounded refresh. A new baseline resets only the comparison.
             if (request.baseline) old.review.reset();
             return;
         }
         if (old != null) old.close();
-        Session session = new Session(player, terminal, request);
-        if (terminal == null) {
+        Session session = new Session(player, source, request);
+        if (!request.matches(source)) {
             SESSIONS.remove(player.getUniqueID());
-            send(session.empty("empty"), player);
+            send(session.empty(source.present() ? "expired" : "empty"), player);
             return;
         }
         SESSIONS.put(player.getUniqueID(), session);
@@ -153,6 +156,7 @@ public final class EngineeringDashboardSessions {
 
         final EntityPlayerMP player;
         final ItemStack terminal;
+        final Source source;
         final PacketEngineeringSubscribe view;
         final int playerDimension;
         final boolean axis;
@@ -162,8 +166,13 @@ public final class EngineeringDashboardSessions {
         long touched = tick, sent = tick - UPDATE_TICKS;
 
         Session(EntityPlayerMP player, ItemStack terminal, PacketEngineeringSubscribe view) {
+            this(player, new Source(terminal, SourceOrigin.BAUBLE), view);
+        }
+
+        Session(EntityPlayerMP player, Source source, PacketEngineeringSubscribe view) {
             this.player = player;
-            this.terminal = terminal;
+            this.source = source;
+            this.terminal = source.stack;
             this.view = view;
             playerDimension = player.dimension;
             axis = axisPattern();
@@ -172,6 +181,7 @@ public final class EngineeringDashboardSessions {
 
         boolean same(EntityPlayerMP current, ItemStack stack, PacketEngineeringSubscribe request) {
             return current == player && terminal == stack
+                && source.binding.equals(EngineeringTerminalSources.binding(stack))
                 && current.dimension == playerDimension
                 && axis == axisPattern()
                 && view.sessionId == request.sessionId

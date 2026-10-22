@@ -4,12 +4,8 @@ import java.util.List;
 
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiScreen;
-import net.minecraft.client.renderer.RenderHelper;
 import net.minecraft.client.renderer.Tessellator;
-import net.minecraft.client.renderer.entity.RenderItem;
-import net.minecraft.client.renderer.texture.TextureMap;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.IIcon;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
@@ -17,7 +13,6 @@ import org.lwjgl.opengl.GL11;
 import com.cleanroommc.modularui.api.drawable.IDrawable;
 import com.cleanroommc.modularui.api.layout.IViewportStack;
 import com.cleanroommc.modularui.api.widget.Interactable;
-import com.cleanroommc.modularui.factory.ClientGUI;
 import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
 import com.cleanroommc.modularui.theme.WidgetThemeEntry;
 import com.cleanroommc.modularui.widget.Widget;
@@ -27,14 +22,8 @@ import com.miaokatze.gtswn.client.TerminalWheelGeometry;
 import com.miaokatze.gtswn.client.TerminalWheelHold;
 import com.miaokatze.gtswn.client.TerminalWheelInput;
 import com.miaokatze.gtswn.client.engineering.EngineeringModeController;
-import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
-import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
-import com.miaokatze.gtswn.common.hud.MonitorBindings;
-import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
-import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
-import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 
 /** Eight real annular hit regions, with the same framework transform for painting and input. */
@@ -57,10 +46,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     public GuiTerminalWheel() {
         super("terminal_wheel", WIDTH, HEIGHT);
         terminals = TerminalBaubles.terminals(mc.thePlayer);
-        placeholders[0] = GTSWNItemList.Portable_Wireless_Network_Monitor.get(1);
-        placeholders[1] = GTSWNItemList.Wireless_Energy_Tap.get(1);
-        placeholders[2] = GTSWNItemList.Device_Info_Terminal.get(1);
-        for (int i = 3; i < 8; i++) placeholders[i] = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
+        for (int i = 0; i < 8; i++) placeholders[i] = TerminalPresentation.placeholder(i);
         getMainPanel().background(IDrawable.EMPTY);
         getMainPanel().child(
             GtswnMuiWidgets.canvas(
@@ -193,7 +179,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
         if (terminals[index] == null) return;
         closeWheel();
         if (take) TerminalBaubleController.take(index);
-        else if (engineering) ClientGUI.open(new GuiEngineeringTools(index));
+        else if (engineering) com.miaokatze.gtswn.client.engineering.EngineeringHud.activateTerminal(index);
         else TerminalBaubleController.select(index);
     }
 
@@ -264,32 +250,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     }
 
     public static String identity(ItemStack stack, int slot) {
-        if (stack == null) return TerminalBaubleController.text("gtswn.terminal_wheel.empty");
-        if (slot >= 3) {
-            String color = TerminalBaubleController
-                .text("gtswn.color." + QuantumNetworkColor.name(QuantumNetworkColor.get(stack)));
-            int[] a = ItemNetworkQuantumTerminal.getAnchor(stack);
-            return color + " · "
-                + (a == null ? TerminalBaubleController.text("gtswn.tooltip.quantum_terminal.unbound")
-                    : "DIM " + a[0] + " · " + a[1] + "/" + a[2] + "/" + a[3]);
-        }
-        if (slot == 1) return GuiEngineeringTools
-            .tr(WirelessEnergyTap.getOutputModeStatic(stack) ? "tools.dynamo" : "tools.energy");
-        if (slot == 2) {
-            EngineeringTerminalHudSnapshot.Source source = EngineeringTerminalHudSnapshot
-                .capture(net.minecraft.client.Minecraft.getMinecraft().thePlayer).device;
-            return source.fresh
-                ? TerminalBaubleController.text("gtswn.engineering.tools.device_count", source.devices.size())
-                : GuiEngineeringTools.tr("devices") + " · " + GuiEngineeringTools.tr("waiting");
-        }
-        if (!PortableWirelessNetworkMonitor.isMonitorBound(stack)) return GuiEngineeringTools.tr("tools.unbound");
-        String owner = stack.stackTagCompound == null ? "" : stack.stackTagCompound.getString("OwnerName");
-        if (owner.isEmpty()) owner = GuiEngineeringTools.tr("dash.unknown");
-        return owner + " · "
-            + MonitorBindings.read(stack)
-                .size()
-            + " "
-            + GuiEngineeringTools.tr("tools.screens");
+        return TerminalPresentation.identity(stack, slot);
     }
 
     private ItemStack stack(int index) {
@@ -335,40 +296,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     }
 
     private void drawIcon(ItemStack stack, int x, int y, boolean present) {
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        GL11.glPushMatrix();
-        try {
-            GL11.glTranslatef(x - 12, y - 12, 0);
-            GL11.glScalef(1.5f, 1.5f, 1);
-            if (present) {
-                RenderHelper.enableGUIStandardItemLighting();
-                RenderItem.getInstance()
-                    .renderItemAndEffectIntoGUI(fontRendererObj, mc.getTextureManager(), stack, 0, 0);
-                RenderHelper.disableStandardItemLighting();
-            } else {
-                // RenderItem resets alpha internally. Empty previews use the item's actual icon with explicit alpha.
-                IIcon icon = stack.getItem()
-                    .getIcon(stack, 0);
-                if (icon == null) return;
-                mc.getTextureManager()
-                    .bindTexture(TextureMap.locationItemsTexture);
-                GL11.glDisable(GL11.GL_LIGHTING);
-                GL11.glDisable(GL11.GL_DEPTH_TEST);
-                GL11.glEnable(GL11.GL_BLEND);
-                GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-                GL11.glColor4f(0.7f, 0.75f, 0.8f, 0.24f);
-                Tessellator tess = Tessellator.instance;
-                tess.startDrawingQuads();
-                tess.addVertexWithUV(0, 16, 0, icon.getMinU(), icon.getMaxV());
-                tess.addVertexWithUV(16, 16, 0, icon.getMaxU(), icon.getMaxV());
-                tess.addVertexWithUV(16, 0, 0, icon.getMaxU(), icon.getMinV());
-                tess.addVertexWithUV(0, 0, 0, icon.getMinU(), icon.getMinV());
-                tess.draw();
-            }
-        } finally {
-            GL11.glPopMatrix();
-            GL11.glPopAttrib();
-        }
+        TerminalPresentation.drawIcon(mc, fontRendererObj, stack, x - 12, y - 12, present, 24);
     }
 
     private final class Sector extends Widget<Sector> implements Interactable {

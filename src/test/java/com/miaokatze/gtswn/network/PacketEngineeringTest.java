@@ -21,11 +21,11 @@ import io.netty.buffer.Unpooled;
 public class PacketEngineeringTest {
 
     @Test
-    public void fixedRequestCarriesOnlySlotRegionAndExplicitScope() {
+    public void requestCarriesBoundedViewAndProviderExpectation() {
         ByteBuf bytes = Unpooled.buffer();
         try {
             new PacketEngineeringSubscribe(17, 7, -1, -4, -4, 3, 3, true, true, false, true).toBytes(bytes);
-            assertEquals(30, bytes.readableBytes());
+            assertEquals(33, bytes.readableBytes());
             PacketEngineeringSubscribe decoded = new PacketEngineeringSubscribe();
             decoded.fromBytes(bytes);
             assertTrue(decoded.valid);
@@ -74,6 +74,50 @@ public class PacketEngineeringTest {
             decoded.fromBytes(bytes);
             assertFalse(decoded.valid);
             assertFalse(new PacketEngineeringSubscribe(1, 2, 0, 0, 0, 64, 0, false, false, false).valid);
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
+    public void providerIdentityRejectsTruncationUnknownOriginAndOversizedLength() {
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            PacketEngineeringSubscribe request = new PacketEngineeringSubscribe(
+                1,
+                2,
+                0,
+                0,
+                0,
+                0,
+                0,
+                false,
+                false,
+                false);
+            request.sourceBinding = "existing-server-id";
+            request.toBytes(bytes);
+            for (int length = 0; length < bytes.readableBytes(); length++) {
+                ByteBuf prefix = bytes.copy(0, length);
+                try {
+                    PacketEngineeringSubscribe decoded = new PacketEngineeringSubscribe();
+                    decoded.fromBytes(prefix);
+                    assertFalse("prefix=" + length, decoded.valid);
+                } finally {
+                    prefix.release();
+                }
+            }
+            for (int offset : new int[] { 30, 31 }) {
+                ByteBuf invalid = bytes.copy();
+                try {
+                    if (offset == 30) invalid.setByte(offset, 3);
+                    else invalid.setShort(offset, 513);
+                    PacketEngineeringSubscribe decoded = new PacketEngineeringSubscribe();
+                    decoded.fromBytes(invalid);
+                    assertFalse(decoded.valid);
+                } finally {
+                    invalid.release();
+                }
+            }
         } finally {
             bytes.release();
         }

@@ -30,6 +30,8 @@
     "mm.PendingBuildMixin"
   ],
   "client": [
+    "journeymap.FactoryMiniMapOverlayMixin",
+    "waila.FactoryTooltipOverlayMixin",
     "minecraft.TerminalWheelInputMixin",
     "minecraft.KeyBindingRegistryMixin",
     "minecraft.HeldChargeSyncMixin",

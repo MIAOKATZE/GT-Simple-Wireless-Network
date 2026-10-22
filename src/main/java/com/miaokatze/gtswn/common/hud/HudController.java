@@ -10,6 +10,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
 import com.miaokatze.gtswn.common.charging.MonitorBattery;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
@@ -38,6 +39,17 @@ public final class HudController {
     private final HudState state = new HudState();
     private final HudSession session = new HudSession();
     private boolean engineeringMode;
+    private boolean factoryReading;
+    private long lastResponseMillis;
+
+    /** A transient read demand on this sampler; never writes the monitor's HUD mode or owner. */
+    public void setFactoryReading(boolean reading) {
+        if (factoryReading == reading) return;
+        factoryReading = reading;
+        session.invalidateRequest();
+        state.lastInventoryCheckTick = Long.MIN_VALUE / 2;
+        state.lastUpdateTick = Long.MIN_VALUE / 2;
+    }
 
     public HudSession.Snapshot captureSession(Object world, Object player, Object connection) {
         return session.capture(world, player, connection);
@@ -48,6 +60,7 @@ public final class HudController {
         boolean preserveHistory = session.sameConnection(connection);
         if (!session.change(world, player, connection)) return false;
         state.resetForSession(preserveHistory);
+        lastResponseMillis = 0;
         return true;
     }
 
@@ -86,7 +99,8 @@ public final class HudController {
         boolean engineering = com.miaokatze.gtswn.client.engineering.EngineeringModeController.isActive();
 
         // ② 每 INVENTORY_CHECK_INTERVAL ticks 检查一次背包（在 hudEnabled 检查之前执行）
-        if (engineering != engineeringMode || currentTick < state.lastInventoryCheckTick
+        if (factoryReading && currentTick != state.lastInventoryCheckTick || engineering != engineeringMode
+            || currentTick < state.lastInventoryCheckTick
             || currentTick - state.lastInventoryCheckTick >= INVENTORY_CHECK_INTERVAL) {
             engineeringMode = engineering;
             // 工程模式优先饰品，其次主背包槽序；常规模式保留手持优先。
@@ -192,6 +206,11 @@ public final class HudController {
         return state.monitorStack;
     }
 
+    public boolean fresh() {
+        return state.syncedEuStr != null && lastResponseMillis > 0
+            && System.currentTimeMillis() - lastResponseMillis < Math.max(3500L, Config.hudUpdateInterval * 150L);
+    }
+
     public boolean hasBattery() {
         return state.monitorStack != null && MonitorBattery.hasBattery(state.monitorStack);
     }
@@ -257,6 +276,11 @@ public final class HudController {
      */
     private MonitorScanResult scanMonitorInInventory(EntityPlayer player) {
         MonitorScanResult result;
+        if (engineeringMode || factoryReading) {
+            EngineeringTerminalSources.Source source = EngineeringTerminalSources.resolve(player, 0);
+            if (!source.present()) return MonitorScanResult.NONE;
+            return inspectFactoryMonitor(source.stack);
+        }
         if (!engineeringMode) {
             result = inspectMonitorStack(player.getHeldItem());
             if (result != null) return result;
@@ -286,6 +310,13 @@ public final class HudController {
         }
 
         return MonitorScanResult.NONE;
+    }
+
+    private MonitorScanResult inspectFactoryMonitor(ItemStack stack) {
+        MonitorScanResult result = inspectMonitorStack(stack);
+        if (result == null) return MonitorScanResult.NONE;
+        return factoryReading && result.hudMode <= 0 ? new MonitorScanResult(result.ownerUUID, 1, result.stack)
+            : result;
     }
 
     /**
@@ -339,6 +370,7 @@ public final class HudController {
 
         // 更新同步缓存
         state.syncedEuStr = euStr;
+        lastResponseMillis = System.currentTimeMillis();
 
         // 获取当前世界 tick（receiveSyncedEU 无 currentTick 入参，自行从客户端世界读取）
         Minecraft mc = Minecraft.getMinecraft();
