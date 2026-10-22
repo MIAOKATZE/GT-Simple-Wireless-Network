@@ -11,12 +11,14 @@ import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
-import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
 import org.lwjgl.opengl.GL11;
 
+import com.cleanroommc.modularui.drawable.Stencil;
+import com.cleanroommc.modularui.screen.viewport.GuiContext;
+import com.cleanroommc.modularui.utils.Platform;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache.PinnedLine;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
@@ -215,8 +217,8 @@ public final class PortableSuperDashboard extends Gui {
             }
         }
         int start = TOP + (layout.overview ? 84 : 0);
-        Minecraft mc = Minecraft.getMinecraft();
-        int actualWidth = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaledWidth();
+        GuiContext context = GuiContext.getDefault();
+        int actualWidth = Math.abs(context.transformX(width, 0) - context.transformX(0, 0));
         int columns = layout.effectiveColumns((int) ((width - 36) * actualWidth / (double) width)), gap = 8;
         int cardWidth = (width - 36 - gap * (columns - 1)) / columns;
         int[] columnY = new int[columns];
@@ -224,22 +226,26 @@ public final class PortableSuperDashboard extends Gui {
         int requiredBottom = start;
         try (GlScope ignored = new GlScope()) {
             scissor(16, start, width - 16, viewBottom);
-            for (String id : layout.order) {
-                if (layout.hidden.contains(id)) continue;
-                Card card = cards.computeIfAbsent(id, key -> new Card());
-                build(card);
-                int col = 0;
-                for (int i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
-                int cardHeight = cardHeight(card);
-                int x = 18 + col * (cardWidth + gap), y = columnY[col] - scroll;
-                columnY[col] += cardHeight + gap;
-                requiredBottom = Math.max(requiredBottom, columnY[col]);
-                if (y + cardHeight > start && y < viewBottom) {
-                    visible.add(id);
-                    drawCard(font, id, card, x, y, cardWidth, cardHeight);
+            try {
+                Platform.setupDrawFont();
+                for (String id : layout.order) {
+                    if (layout.hidden.contains(id)) continue;
+                    Card card = cards.computeIfAbsent(id, key -> new Card());
+                    build(card);
+                    int col = 0;
+                    for (int i = 1; i < columns; i++) if (columnY[i] < columnY[col]) col = i;
+                    int cardHeight = cardHeight(card);
+                    int x = 18 + col * (cardWidth + gap), y = columnY[col] - scroll;
+                    columnY[col] += cardHeight + gap;
+                    requiredBottom = Math.max(requiredBottom, columnY[col]);
+                    if (y + cardHeight > start && y < viewBottom) {
+                        visible.add(id);
+                        drawCard(font, id, card, x, y, cardWidth, cardHeight);
+                    }
                 }
+            } finally {
+                Stencil.remove();
             }
-            GL11.glDisable(GL11.GL_SCISSOR_TEST);
         }
         maxScroll = Math.max(0, requiredBottom - viewBottom);
         scroll = Math.max(0, Math.min(scroll, maxScroll));
@@ -534,13 +540,8 @@ public final class PortableSuperDashboard extends Gui {
     }
 
     private static void scissor(int left, int top, int right, int bottom) {
-        Minecraft mc = Minecraft.getMinecraft();
-        int x = (int) Math.floor(left * mc.displayWidth / (double) width);
-        int y = (int) Math.floor((height - bottom) * mc.displayHeight / (double) height);
-        int endX = (int) Math.ceil(right * mc.displayWidth / (double) width);
-        int endY = (int) Math.ceil((height - top) * mc.displayHeight / (double) height);
-        GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        GL11.glScissor(x, y, Math.max(0, endX - x), Math.max(0, endY - y));
+        // The MUI host scales and centres the board; use that same matrix for clipping.
+        Stencil.apply(left, top, Math.max(0, right - left), Math.max(0, bottom - top), GuiContext.getDefault());
     }
 
     private static final class Card {
