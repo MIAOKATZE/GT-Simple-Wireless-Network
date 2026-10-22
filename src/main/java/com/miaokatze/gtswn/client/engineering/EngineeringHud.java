@@ -26,6 +26,7 @@ import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.miaokatzecore.client.render.GlScope;
 
+import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /** A nonmodal engineering workspace. Its data is a view of existing terminal HUD subscriptions. */
@@ -50,6 +51,28 @@ public final class EngineeringHud extends Gui {
 
     public static double scale(int width, int height) {
         return Math.min(1, Math.min((width - 16) / 480.0, (height - 12) / 340.0));
+    }
+
+    @SubscribeEvent(priority = EventPriority.HIGH)
+    public void hideVanillaHud(RenderGameOverlayEvent.Pre event) {
+        if (!EngineeringModeController.isActive() || Minecraft.getMinecraft().currentScreen != null) return;
+        switch (event.type) {
+            case HOTBAR:
+            case HEALTH:
+            case FOOD:
+            case ARMOR:
+            case AIR:
+            case EXPERIENCE:
+            case HEALTHMOUNT:
+            case JUMPBAR:
+            case BOSSHEALTH:
+            case HELMET:
+            case PORTAL:
+                event.setCanceled(true);
+                break;
+            default:
+                break;
+        }
     }
 
     @SubscribeEvent

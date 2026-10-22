@@ -70,6 +70,8 @@ public class WirelessMonitorHUD extends Gui {
         if (!this.controller.updateForFrame(player)) {
             return;
         }
+        // 工程侧栏复用上述控制器更新，只隐藏普通 HUD 的重复绘制。
+        if (com.miaokatze.gtswn.client.engineering.EngineeringModeController.isActive()) return;
 
         // 计算 HUD 位置（饱食度上方）
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
