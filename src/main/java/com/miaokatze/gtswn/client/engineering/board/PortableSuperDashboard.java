@@ -11,6 +11,7 @@ import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
@@ -100,7 +101,7 @@ public final class PortableSuperDashboard extends Gui {
         bindings.clear();
         hits.clear();
         visible.clear();
-        basic.clear();
+        basic = java.util.Collections.emptyList();
         scroll = maxScroll = menuScroll = 0;
         requestedIndex = -1;
         requestedId = null;
@@ -206,7 +207,7 @@ public final class PortableSuperDashboard extends Gui {
         int viewBottom = height - 26;
         if (layout.overview) {
             drawRect(18, TOP, width - 18, TOP + 78, CARD);
-            text(font, tr("overview") + "  ·  " + terminal, 26, TOP + 6, ACCENT, width - 52);
+            text(font, tr("overview"), 26, TOP + 6, ACCENT, width - 52);
             int y = TOP + 21;
             if (basic.isEmpty()) text(font, tr("overview.waiting"), 26, y, MUTED, width - 52);
             else for (int i = 0; i < Math.min(4, basic.size()); i++) {
@@ -214,7 +215,9 @@ public final class PortableSuperDashboard extends Gui {
             }
         }
         int start = TOP + (layout.overview ? 84 : 0);
-        int columns = layout.effectiveColumns(width - 36), gap = 8;
+        Minecraft mc = Minecraft.getMinecraft();
+        int actualWidth = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight).getScaledWidth();
+        int columns = layout.effectiveColumns((int) ((width - 36) * actualWidth / (double) width)), gap = 8;
         int cardWidth = (width - 36 - gap * (columns - 1)) / columns;
         int[] columnY = new int[columns];
         Arrays.fill(columnY, start);
@@ -333,8 +336,8 @@ public final class PortableSuperDashboard extends Gui {
         }, true);
         Panel summary = card.summary;
         MonitorBindings.Binding binding = summary == null ? binding(id) : summary.binding;
-        text(font, binding == null ? id : binding.label(), x + 8, y + 27, MUTED, w - 16);
-        text(font, "ID " + id, x + 8, y + 39, MUTED, w - 16);
+        text(font, binding == null ? tr("unknown") : binding.label(), x + 8, y + 27, MUTED, w - 16);
+        text(font, tr("window") + ": " + (summary == null ? "?" : summary.window), x + 8, y + 39, MUTED, w - 16);
         text(
             font,
             tr("owner") + ": "

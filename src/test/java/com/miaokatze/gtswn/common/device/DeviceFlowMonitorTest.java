@@ -46,6 +46,18 @@ public class DeviceFlowMonitorTest {
     }
 
     @Test
+    public void ordinaryTerminalRemovalDoesNotCancelAnActiveReadOnlyRegionLease() {
+        Object machine = new Object();
+        DeviceFlowMonitor.Reading region = DeviceFlowMonitor.watchReadOnly(machine, 200);
+        assertSame(region, DeviceFlowMonitor.watch(machine, 1000));
+        DeviceFlowMonitor.forget(machine);
+        assertTrue(DeviceFlowMonitor.isWatched(machine));
+        DeviceFlowMonitor.tick(server, 301);
+        DeviceFlowMonitor.forget(machine);
+        assertFalse(DeviceFlowMonitor.isWatched(machine));
+    }
+
+    @Test
     public void bothActualDirectionsRemainAvailable() {
         Object machine = new Object();
         DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 100);

@@ -116,7 +116,7 @@ public final class EngineeringRegionPowerCollector {
                 cellKey(
                     EngineeringGrid.cellOfBlock(machine.tile.xCoord, gtGrid, axis),
                     EngineeringGrid.cellOfBlock(machine.tile.zCoord, gtGrid, axis)));
-            DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine.controller, WATCH_TTL);
+            DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watchReadOnly(machine.controller, WATCH_TTL);
             if (reading == null || !reading.windowReady()) {
                 unknown++;
                 cell.unknown++;

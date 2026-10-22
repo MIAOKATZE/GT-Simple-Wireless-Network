@@ -31,6 +31,7 @@ public final class DeviceFlowMonitor {
         private double[][] oversizedValues;
         private final long[] ticks = new long[WINDOW];
         private long expires;
+        private long readOnlyExpires = Long.MIN_VALUE;
         private final double[] totals = new double[2];
         private Object owner;
         private boolean fusionInternalBuffer;
@@ -170,6 +171,13 @@ public final class DeviceFlowMonitor {
         return reading;
     }
 
+    /** A temporary dashboard observer survives an ordinary terminal removing its own observation. */
+    public static Reading watchReadOnly(Object controller, long ttlTicks) {
+        Reading reading = watch(controller, ttlTicks);
+        if (reading != null) reading.readOnlyExpires = Math.max(reading.readOnlyExpires, now + ttlTicks);
+        return reading;
+    }
+
     public static void clear() {
         TRACKED.clear();
         current = null;
@@ -181,7 +189,8 @@ public final class DeviceFlowMonitor {
     }
 
     public static void forget(Object controller) {
-        TRACKED.remove(controller);
+        Reading reading = TRACKED.get(controller);
+        if (reading == null || reading.readOnlyExpires < now) TRACKED.remove(controller);
     }
 
     public static Reading enter(Object controller) {
