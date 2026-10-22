@@ -91,6 +91,8 @@ public final class PortableMonitorClientCache {
         if (CACHE.size() >= 32 && !CACHE.containsKey(id)) CACHE.clear();
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
         cache.stack = stack;
+        boolean dashboard = Minecraft.getMinecraft().currentScreen == null && cache.dashboardSelected >= 0;
+        int selected = dashboard ? cache.dashboardSelected : cache.selected;
         long revision = MonitorBindings.revision(stack);
         if (revision != cache.bindingRevision) {
             cache.bindingRevision = revision;
@@ -105,7 +107,7 @@ public final class PortableMonitorClientCache {
                 break;
             }
         }
-        if (!cache.inFlight && cache.action == 0 && cache.selected < 0 && !cache.hasPins) return;
+        if (!cache.inFlight && cache.action == 0 && selected < 0 && !cache.hasPins) return;
         long now = System.currentTimeMillis();
         if (now < nextGlobalRequest || cache.inFlight && now - cache.sentAt < 5000
             || !cache.inFlight && cache.action == 0
@@ -119,13 +121,14 @@ public final class PortableMonitorClientCache {
                 cache.action,
                 cache.value);
             request.targetPanel = cache.targetPanel;
-            request.selected = cache.selected;
+            request.selected = selected;
             selectRequest(request, stack, cache.snapshot);
             request.charts = Config.hudRenderMode == 2;
             subscribeRequest(request, Config.hudPinnedEntries);
             if (request.selected < 0 && request.pins.isEmpty() && request.action == 0) return;
             cache.sequence = request.sequence;
             cache.request = request;
+            cache.dashboardRequest = dashboard;
             cache.inFlight = true;
             cache.dirty = false;
             cache.action = 0;
@@ -220,6 +223,20 @@ public final class PortableMonitorClientCache {
         if (cache.selected != index) {
             cache.selected = index;
             cache.dirty = true;
+        }
+    }
+
+    /** Independent foreground demand; closing the engineering board never changes the ordinary viewer's selection. */
+    public static void dashboardViewing(ItemStack stack, int index) {
+        session();
+        UUID id = MonitorBindings.id(currentStack(stack));
+        if (id == null) return;
+        Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
+        if (cache.dashboardSelected != index) {
+            cache.dashboardSelected = index;
+            cache.dirty = true;
+            if (index < 0 && cache.inFlight && cache.dashboardRequest && cache.request.action == 0)
+                cache.inFlight = false;
         }
     }
 
@@ -776,6 +793,8 @@ public final class PortableMonitorClientCache {
         boolean inFlight;
         boolean dirty;
         int selected = -1;
+        int dashboardSelected = -1;
+        boolean dashboardRequest;
         ItemStack stack;
         PacketRequestPortableMonitor request;
         PacketSyncPortableMonitor renderSnapshot;

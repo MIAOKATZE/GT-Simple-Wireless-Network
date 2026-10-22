@@ -186,6 +186,23 @@ public abstract class GTswnCoverWirelessBase extends Cover {
 
     protected abstract long getDisplayCapacity();
 
+    /** Read-only live dashboard values; no NBT serialization or cover mutation. */
+    public final long dashboardVoltage() {
+        return getDisplayVoltage();
+    }
+
+    public final long dashboardCapacity() {
+        return getDisplayCapacity();
+    }
+
+    public final long dashboardStored() {
+        return storedEU;
+    }
+
+    public final boolean dashboardConfigured() {
+        return configured;
+    }
+
     protected abstract long getRemainingTicks();
 
     /** MUI1 requires a non-null window while its tab protocol completes; editing lives in MUI2. */

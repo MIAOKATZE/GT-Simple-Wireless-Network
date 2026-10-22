@@ -543,6 +543,20 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         public long instIn;
         public long instOut;
 
+        /** Runtime freshness only: saved values are unknown to engineering review until sampled this session. */
+        public transient long lastSampleTick = -1;
+        private transient java.lang.ref.WeakReference<net.minecraft.tileentity.TileEntity> sampleSource;
+
+        public void recordSampleSource(net.minecraft.tileentity.TileEntity tile, long tick) {
+            if (sampleSource == null || sampleSource.get() != tile)
+                sampleSource = new java.lang.ref.WeakReference<>(tile);
+            lastSampleTick = tick;
+        }
+
+        public boolean sampledFrom(net.minecraft.tileentity.TileEntity tile) {
+            return tile != null && sampleSource != null && sampleSource.get() == tile;
+        }
+
         /** 环形写指针（下一个写入位，输入/输出双通道共用） */
         public int idx;
 

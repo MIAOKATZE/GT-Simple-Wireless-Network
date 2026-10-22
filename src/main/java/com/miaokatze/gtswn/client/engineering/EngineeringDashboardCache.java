@@ -1,0 +1,143 @@
+package com.miaokatze.gtswn.client.engineering;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.item.ItemStack;
+
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
+import com.miaokatze.gtswn.common.engineering.EngineeringGrid;
+import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
+import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketEngineeringSubscribe;
+
+/** Client intent and server snapshot have the same bounded, expiring session. */
+public final class EngineeringDashboardCache {
+
+    private static long serial = System.currentTimeMillis(), session;
+    private static Object world, connection;
+    private static Object sourceItem;
+    private static String sourceBinding;
+    private static int slot = -1, dim, minX, minZ, maxX, maxZ, lastTick;
+    private static boolean gtGrid, boundOnly;
+    private static EngineeringSnapshot snapshot;
+    private static long received;
+
+    private EngineeringDashboardCache() {}
+
+    public static void subscribe(int selection, boolean gt, int x1, int z1, int x2, int z2) {
+        subscribe(selection, gt, x1, z1, x2, z2, false);
+    }
+
+    public static void subscribe(int selection, boolean gt, int x1, int z1, int x2, int z2, boolean onlyBound) {
+        close();
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null || mc.thePlayer == null || selection < 0 || selection >= 8) return;
+        ItemStack actual = TerminalBaubles.terminals(mc.thePlayer)[selection];
+        if (actual == null) return;
+        world = mc.theWorld;
+        connection = mc.getNetHandler();
+        slot = selection;
+        sourceItem = actual.getItem();
+        sourceBinding = binding(actual);
+        dim = mc.theWorld.provider.dimensionId;
+        gtGrid = gt;
+        boundOnly = onlyBound;
+        minX = Math.min(x1, x2);
+        minZ = Math.min(z1, z2);
+        maxX = Math.max(x1, x2);
+        maxZ = Math.max(z1, z2);
+        session = ++serial;
+        send(true, false);
+    }
+
+    public static void tick() {
+        if (session == 0) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (!EngineeringModeController.isActive() || world != mc.theWorld
+            || connection != mc.getNetHandler()
+            || mc.thePlayer == null
+            || mc.thePlayer.isDead) {
+            close();
+            return;
+        }
+        if (!sameSource(mc)) {
+            close();
+            return;
+        }
+        if (mc.thePlayer.ticksExisted - lastTick >= 20) send(false, false);
+    }
+
+    public static void receive(EngineeringSnapshot value) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (value == null || session == 0
+            || value.sessionId != session
+            || value.slot != slot
+            || world != mc.theWorld
+            || connection != mc.getNetHandler()
+            || !sameSource(mc)) return;
+        snapshot = value;
+        EngineeringGrid.applyPattern(value.axisSymmetrical);
+        received = System.currentTimeMillis();
+    }
+
+    public static EngineeringSnapshot snapshot() {
+        return snapshot;
+    }
+
+    public static boolean fresh() {
+        return snapshot != null && System.currentTimeMillis() - received < 3500;
+    }
+
+    public static int slot() {
+        return slot;
+    }
+
+    public static void baseline() {
+        if (session != 0) send(true, false);
+    }
+
+    public static void close() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (session != 0 && world == mc.theWorld && connection == mc.getNetHandler()) send(false, true);
+        session = 0;
+        slot = -1;
+        snapshot = null;
+        world = connection = null;
+        sourceItem = sourceBinding = null;
+    }
+
+    private static boolean sameSource(Minecraft mc) {
+        if (mc.thePlayer == null || slot < 0 || slot >= 8) return false;
+        ItemStack actual = TerminalBaubles.terminals(mc.thePlayer)[slot];
+        return actual != null && actual.getItem() == sourceItem && binding(actual).equals(sourceBinding);
+    }
+
+    private static String binding(ItemStack actual) {
+        if (actual.getItem() instanceof ItemDeviceInfoTerminal)
+            return String.valueOf(ItemDeviceInfoTerminal.readTerminalId(actual));
+        if (actual.getItem() instanceof ItemNetworkQuantumTerminal)
+            return java.util.Arrays.toString(ItemNetworkQuantumTerminal.getAnchor(actual)) + ":"
+                + (actual.hasTagCompound() ? actual.getTagCompound()
+                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION) : "");
+        return "";
+    }
+
+    private static void send(boolean baseline, boolean close) {
+        GTSWNPacketHandler.NETWORK.sendToServer(
+            new PacketEngineeringSubscribe(
+                session,
+                slot,
+                dim,
+                minX,
+                minZ,
+                maxX,
+                maxZ,
+                gtGrid,
+                baseline,
+                close,
+                boundOnly));
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.thePlayer != null) lastTick = mc.thePlayer.ticksExisted;
+    }
+}

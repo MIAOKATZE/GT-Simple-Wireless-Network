@@ -19,6 +19,11 @@ public final class QuantumSecurityScopeIndex {
 
     private static final Map<TileEntityNetworkQuantumNode, Map<QuantumSecurityScopeIndex, Boolean>> OWNERS = new WeakHashMap<>();
 
+    /** Existing live membership index only. Server main-thread iteration must be bounded by its caller. */
+    public static Iterable<TileEntityNetworkQuantumNode> loadedOwners() {
+        return Collections.unmodifiableSet(OWNERS.keySet());
+    }
+
     private final Map<IGridNode, AnchorKey> nodes = new IdentityHashMap<>();
     private final Map<AnchorKey, Integer> anchors = new HashMap<>();
     private final Set<IGridNode> controllers = Collections.newSetFromMap(new IdentityHashMap<>());
