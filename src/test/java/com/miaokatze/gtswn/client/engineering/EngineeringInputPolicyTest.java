@@ -15,6 +15,7 @@ public class EngineeringInputPolicyTest {
     public void normalWheelUsesCoreDirectZoomAndExistingDragButtons() {
         CameraSettings.Navigation navigation = EngineeringInputPolicy.navigation(false);
         assertEquals(CameraSettings.Navigation.WheelZoom.DIRECT, navigation.wheelZoom());
+        assertEquals(CameraSettings.Navigation.WheelDeltaUnit.AUTO, navigation.wheelDeltaUnit());
         assertTrue(navigation.zoom());
         assertEquals(1, navigation.rotateButton());
         assertEquals(0, navigation.rotateKey());

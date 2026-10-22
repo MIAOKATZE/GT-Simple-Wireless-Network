@@ -30,6 +30,7 @@ final class EngineeringInputPolicy {
             .reset(true)
             .rotateDrag(1, 0)
             .wheelZoom(CameraSettings.Navigation.WheelZoom.DIRECT)
+            .wheelDeltaUnit(CameraSettings.Navigation.WheelDeltaUnit.AUTO)
             .pitchRange(15, 85)
             .scaleRange(2, 128)
             .basePixelsPerWorldUnit(16)
