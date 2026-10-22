@@ -71,6 +71,57 @@ public class QuantumNodeBridgeRelayTest {
         assertEquals(11, owner.getAnchorX());
     }
 
+    @Test
+    public void nativeRelayOwnsTheSplitBeforeEitherBridgeEdgeIsManuallyDestroyed() throws Exception {
+        TileEntityNetworkQuantumNode owner = new TileEntityNetworkQuantumNode();
+        List<IGridConnection> localEdges = new ArrayList<>(), relayEdges = new ArrayList<>(),
+            targetEdges = new ArrayList<>();
+        AtomicInteger localDestroyed = new AtomicInteger(), targetDestroyed = new AtomicInteger(),
+            relayDestroyed = new AtomicInteger();
+        IGridNode local = endpoint(localEdges, new AtomicInteger()),
+            target = endpoint(targetEdges, new AtomicInteger());
+        IGridNode relay = (IGridNode) Proxy.newProxyInstance(
+            IGridNode.class.getClassLoader(),
+            new Class<?>[] { IGridNode.class },
+            (proxy, method, args) -> {
+                if (method.getName()
+                    .equals("getConnections")) return new ReadOnlyCollection<>(relayEdges);
+                if (method.getName()
+                    .equals("destroy")) {
+                    relayDestroyed.incrementAndGet();
+                    assertEquals(
+                        "Native teardown must see both original edges before selecting retained pivots",
+                        2,
+                        relayEdges.size());
+                    // Match native connection insertion order: anchor first, local second.
+                    while (!relayEdges.isEmpty()) relayEdges.get(0)
+                        .destroy();
+                }
+                return null;
+            });
+        IGridConnection targetEdge = edge(relay, target, relayEdges, targetEdges, targetDestroyed),
+            localEdge = edge(local, relay, localEdges, relayEdges, localDestroyed);
+        field("connection").set(owner, localEdge);
+        field("anchorConnection").set(owner, targetEdge);
+        field("bridgeRelayNode").set(owner, relay);
+        field("bridgeTargetNode").set(owner, target);
+
+        owner.invalidate();
+        owner.onChunkUnload();
+        owner.disconnectFromDequantizedAnchor();
+
+        assertEquals(1, relayDestroyed.get());
+        assertEquals(1, targetDestroyed.get());
+        assertEquals(1, localDestroyed.get());
+        assertTrue(localEdges.isEmpty());
+        assertTrue(relayEdges.isEmpty());
+        assertTrue(targetEdges.isEmpty());
+        assertNull(field("connection").get(owner));
+        assertNull(field("anchorConnection").get(owner));
+        assertNull(field("bridgeRelayNode").get(owner));
+        assertNull(field("bridgeTargetNode").get(owner));
+    }
+
     private static Field field(String name) throws Exception {
         Field field = TileEntityNetworkQuantumNode.class.getDeclaredField(name);
         field.setAccessible(true);

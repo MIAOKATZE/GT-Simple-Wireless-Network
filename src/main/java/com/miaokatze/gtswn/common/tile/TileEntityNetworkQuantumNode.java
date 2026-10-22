@@ -1099,10 +1099,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void invalidate() {
         QuantumNetworkColorSync.untrack(this);
         colorTracked = false;
-        // v1.8.5：先拆部件（销毁部件 GridNode 及其全部连接），再断桥接连接，最后走 proxy 生命周期
-        this.partContainer.removeFromWorld();
-        // 断桥接连接必须先于 proxy 生命周期：显式 destroy 防止网格残留幽灵节点
+        // 先隔离远端网络，再销毁本地部件，避免部件拆除反复扰动远端网格。
         destroyBridgeConnection();
+        this.partContainer.removeFromWorld();
         super.invalidate();
         if (gridProxy != null) {
             gridProxy.invalidate();
@@ -1115,9 +1114,9 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     public void onChunkUnload() {
         QuantumNetworkColorSync.untrack(this);
         colorTracked = false;
-        // 同 invalidate：先拆部件，再断桥接连接，最后走 proxy 生命周期
-        this.partContainer.removeFromWorld();
+        // 同 invalidate：先隔离远端，再拆部件，最后走 proxy 生命周期。
         destroyBridgeConnection();
+        this.partContainer.removeFromWorld();
         super.onChunkUnload();
         if (gridProxy != null) {
             gridProxy.onChunkUnload();
@@ -1622,6 +1621,25 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * 活连接销毁异常保留引用并向上传递，避免把未拆完的连接误记为已移除。
      */
     private void destroyBridgeConnection() {
+        if (bridgeRelayNode != null) {
+            // Let native relay teardown choose retained-peer pivots before splitting the bridge.
+            // Manually destroying the local edge first can regrid the remote machines and rebuild
+            // their native caches when the old pivot is local.
+            boolean bridgeWasLive = connection != null
+                && (QuantumConnectionMembership.contains(connection.a(), connection)
+                    || QuantumConnectionMembership.contains(connection.b(), connection));
+            long aeT0 = PerformanceAudit.startSlice();
+            try {
+                bridgeRelayNode.destroy();
+            } finally {
+                PerformanceAudit.endSlice(PerformanceAudit.SLICE_AE2_CONNECT, aeT0);
+            }
+            bridgeRelayNode = null;
+            if (bridgeWasLive && !QuantumConnectionMembership.contains(connection.a(), connection)
+                && !QuantumConnectionMembership.contains(connection.b(), connection))
+                PerformanceAudit.recordBridgeDestroyed();
+        }
+        // Keep the guarded edge cleanup for legacy direct bridges and partially detached endpoints.
         if (this.connection != null) {
             IGridNode a = this.connection.a();
             IGridNode b = this.connection.b();
@@ -1644,10 +1662,6 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
                 || QuantumConnectionMembership.contains(anchorConnection.b(), anchorConnection))
                 anchorConnection.destroy();
             anchorConnection = null;
-        }
-        if (bridgeRelayNode != null) {
-            bridgeRelayNode.destroy();
-            bridgeRelayNode = null;
         }
         bridgeTargetNode = null;
         clearAnchorSnapshot();
