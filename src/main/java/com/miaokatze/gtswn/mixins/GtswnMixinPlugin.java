@@ -20,7 +20,9 @@ public class GtswnMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
-        if (mixinClassName.startsWith("com.miaokatze.gtswn.mixins.baubles.")) {
+        if (mixinClassName.startsWith("com.miaokatze.gtswn.mixins.baubles.")
+            || mixinClassName.startsWith("com.miaokatze.gtswn.mixins.journeymap.")
+            || mixinClassName.startsWith("com.miaokatze.gtswn.mixins.waila.")) {
             // Optional mod; test resource presence before FML's mod list becomes available.
             boolean present = getClass().getClassLoader()
                 .getResource(targetClassName.replace('.', '/') + ".class") != null;
