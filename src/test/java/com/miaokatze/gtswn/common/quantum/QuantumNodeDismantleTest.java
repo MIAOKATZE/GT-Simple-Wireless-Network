@@ -148,6 +148,10 @@ public class QuantumNodeDismantleTest {
 
                 @Override
                 public void removeFromWorld() {
+                    assertEquals(
+                        "Parts must be isolated from the remote bridge before their removal",
+                        1,
+                        bridgeCleanup.get());
                     partCleanup.incrementAndGet();
                 }
             });
