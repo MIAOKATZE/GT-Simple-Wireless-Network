@@ -48,6 +48,8 @@ final class WorkbenchHud extends Gui {
     private static final int[] MODE_ICONS = { 48, 0, 24, 12, 84 }, TOOL_ICONS = { 12, 36, 60, 24, 72 };
     private static boolean sidebarOpen, railOpen = true, powerOpen = true, dashboardMode, alertsOpen = true;
     private static int selectedSlot = -1, page, sidebarScroll, railScroll, detailScroll;
+    private static boolean settingsOpen;
+    private static int settingsPage, settingsScroll;
     private static final List<Row> rows = new ArrayList<>();
     private static final List<Hit> controls = new ArrayList<>();
     private static final Set<String> collapsedOwners = new HashSet<>();
@@ -63,18 +65,65 @@ final class WorkbenchHud extends Gui {
 
     static void reset() {
         sidebarOpen = dashboardMode = false;
+        settingsOpen = false;
         railOpen = powerOpen = alertsOpen = true;
         selectedSlot = -1;
         machineFilter = FactoryMachineFilter.ALL;
         powerFilter = DevicePowerFilter.ALL;
         page = sidebarScroll = railScroll = detailScroll = 0;
+        settingsPage = settingsScroll = 0;
         rows.clear();
         controls.clear();
         collapsedOwners.clear();
     }
 
+    static void rememberPreferences() {
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.SIDEBAR, sidebarOpen);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.RAIL, railOpen);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.POWER, powerOpen);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.DASHBOARD, dashboardMode);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.ALERTS, alertsOpen);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.SETTINGS, settingsOpen);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.SELECTED_SLOT, selectedSlot);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.PAGE, page);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.SIDEBAR_SCROLL, sidebarScroll);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.RAIL_SCROLL, railScroll);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.DETAIL_SCROLL, detailScroll);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.SETTINGS_PAGE, settingsPage);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.SETTINGS_SCROLL, settingsScroll);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.MACHINE_FILTER, machineFilter.ordinal());
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.POWER_FILTER, powerFilter);
+        String profile = EngineeringModeController.preferenceProfile();
+        if (!profile.isEmpty()) FactoryDisplayPreferences
+            .text("owners_" + profile, String.join(";", new java.util.TreeSet<>(collapsedOwners)));
+    }
+
+    static void restorePreferences() {
+        sidebarOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.SIDEBAR);
+        railOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.RAIL);
+        powerOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.POWER);
+        dashboardMode = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.DASHBOARD);
+        alertsOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.ALERTS);
+        settingsOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.SETTINGS);
+        selectedSlot = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.SELECTED_SLOT);
+        page = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.PAGE);
+        sidebarScroll = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.SIDEBAR_SCROLL);
+        railScroll = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.RAIL_SCROLL);
+        detailScroll = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.DETAIL_SCROLL);
+        settingsPage = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.SETTINGS_PAGE);
+        settingsScroll = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.SETTINGS_SCROLL);
+        machineFilter = FactoryMachineFilter.values()[FactoryDisplayPreferences
+            .integer(FactoryDisplayPreferences.Key.MACHINE_FILTER)];
+        powerFilter = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.POWER_FILTER);
+        collapsedOwners.clear();
+        String profile = EngineeringModeController.preferenceProfile();
+        if (!profile.isEmpty()) for (String owner : FactoryDisplayPreferences.text("owners_" + profile)
+            .split(";")) if (!owner.isEmpty() && collapsedOwners.size() < 1024) collapsedOwners.add(owner);
+    }
+
     static void select(int slot) {
         leaveCamera();
+        closeSettings();
         selectedSlot = slot;
         sidebarOpen = true;
         page = sidebarScroll = 0;
@@ -93,7 +142,7 @@ final class WorkbenchHud extends Gui {
         return new WorkbenchLayout(
             width,
             height,
-            sidebarOpen,
+            sidebarOpen || settingsOpen,
             railOpen && !camera,
             powerOpen && !camera,
             dashboardMode,
@@ -103,6 +152,10 @@ final class WorkbenchHud extends Gui {
     }
 
     static boolean escape() {
+        if (settingsOpen) {
+            closeSettings();
+            return true;
+        }
         if (dashboardMode) {
             dashboardMode = false;
             PortableSuperDashboard.close();
@@ -112,7 +165,30 @@ final class WorkbenchHud extends Gui {
             sidebarOpen = false;
             return true;
         }
+        if (EngineeringModeController.INSTANCE.cameraPanel()) {
+            EngineeringModeController.INSTANCE.toggleCameraPanel();
+            return true;
+        }
+        if (EngineeringModeController.INSTANCE.xrayEnabled()) {
+            EngineeringModeController.INSTANCE.toggleXray();
+            return true;
+        }
         return false;
+    }
+
+    private static void closeSettings() {
+        settingsOpen = false;
+        FactoryShortcuts.cancelBinding();
+        controls.clear();
+    }
+
+    private static void toggleSettings() {
+        if (settingsOpen) closeSettings();
+        else {
+            leaveCamera();
+            settingsOpen = true;
+        }
+        controls.clear();
     }
 
     static void inspect() {
@@ -134,15 +210,16 @@ final class WorkbenchHud extends Gui {
         for (int i = 0; i < 8; i++) {
             Rect r = l.terminals[i];
             boolean present = equipped[i] != null;
-            box(r, selectedSlot == i && sidebarOpen ? HEADER : BACK);
-            drawRect(r.x, r.y, r.x + 2, r.y + r.h, selectedSlot == i && sidebarOpen ? ACCENT : MUTED);
+            boolean active = selectedSlot == i && sidebarOpen && !settingsOpen;
+            box(r, active ? HEADER : BACK);
+            drawRect(r.x, r.y, r.x + 2, r.y + r.h, active ? ACCENT : MUTED);
             ItemStack stack = present ? equipped[i] : TerminalPresentation.placeholder(i);
             TerminalPresentation.drawIcon(mc, f, stack, r.x + 5, r.y + 5, present, 18);
             if (r.contains(mouseX, mouseY)) {
                 tooltip = new ArrayList<>();
                 tooltip.add(stack.getDisplayName());
                 tooltip.add(tr("slot") + " " + (i + 1));
-                tooltip.add(tr(selectedSlot == i && sidebarOpen ? "state.on" : "state.off"));
+                tooltip.add(tr(active ? "state.on" : "state.off"));
                 tooltip.add(TerminalPresentation.identity(equipped[i], i));
                 if (!present) tooltip.add(tr("empty.slot"));
                 bindingTooltip(tooltip, terminalAction(i));
@@ -158,18 +235,13 @@ final class WorkbenchHud extends Gui {
             mouseY,
             Boolean.TRUE.equals(actionState(MODES[i])));
         drawCameraHints(f, l.cameraHints);
-        box(l.shortcuts, sidebarOpen && page == 3 ? HEADER : BACK);
-        stateEdge(l.shortcuts, sidebarOpen && page == 3);
+        box(l.shortcuts, settingsOpen ? HEADER : BACK);
+        stateEdge(l.shortcuts, settingsOpen);
         control(
             l.shortcuts,
-            tr("shortcuts"),
-            tr("shortcuts.hint") + " - " + tr(sidebarOpen && page == 3 ? "state.on" : "state.off"),
-            () -> {
-                leaveCamera();
-                sidebarOpen = true;
-                page = 3;
-                sidebarScroll = 0;
-            });
+            tr("settings"),
+            tr("settings.hint") + " - " + tr(settingsOpen ? "state.on" : "state.off"),
+            WorkbenchHud::toggleSettings);
         String[] toolKeys = { "monitor", "power", "map", "refresh", "alerts" };
         for (int i = 0; i < l.tools.length; i++) icon(
             l.tools[i],
@@ -179,7 +251,10 @@ final class WorkbenchHud extends Gui {
             mouseX,
             mouseY,
             Boolean.TRUE.equals(actionState(TOOLS[i])));
-        if (l.sidebar != null) drawSidebar(f, l.sidebar, mouseX, mouseY);
+        if (l.sidebar != null) {
+            if (settingsOpen) drawSettings(f, l.sidebar);
+            else drawSidebar(f, l.sidebar, mouseX, mouseY);
+        }
         if (l.rail != null) drawRail(f, l.rail, mouseX, mouseY);
         if (l.power != null) drawPower(f, l.power);
         if (l.alerts != null) {
@@ -291,6 +366,8 @@ final class WorkbenchHud extends Gui {
                 return dashboardMode && !camera;
             case CAMERA:
                 return camera;
+            case XRAY:
+                return EngineeringModeController.INSTANCE.xrayEnabled();
             case FOLLOW:
                 return EngineeringModeController.INSTANCE.following();
             case PIN:
@@ -359,7 +436,7 @@ final class WorkbenchHud extends Gui {
         String name = source.stack != null ? source.stack.getDisplayName() : tr("source.none");
         text(f, name, r.x + 8, r.y + 7, ACCENT, r.w - 32);
         control(new Rect(r.x + r.w - 23, r.y + 2, 21, 19), "<", tr("collapse"), () -> sidebarOpen = false);
-        String[] tabs = { "functions", "data", "project", "shortcuts", "controls" };
+        String[] tabs = { "functions", "data", "project", "bindings" };
         int tabWidth = (r.w - 12) / tabs.length;
         for (int i = 0; i < tabs.length; i++) {
             final int tab = i;
@@ -373,12 +450,8 @@ final class WorkbenchHud extends Gui {
         }
         text(f, sourceLabel(source), r.x + 8, r.y + 53, source.present() ? MUTED : WARN, r.w - 16);
         int y = r.y + 69;
-        if (page == 4) {
-            drawControlSettings(f, r, y);
-            return;
-        }
         if (page == 3) {
-            drawShortcuts(f, r, y);
+            drawShortcuts(f, r, y, FactoryShortcutPages.bindings(selectedSlot), false);
             return;
         }
         if (!source.present()) {
@@ -394,28 +467,11 @@ final class WorkbenchHud extends Gui {
             return;
         }
         if (page == 0) {
-            List<Action> actions = new ArrayList<>();
-            if (selectedSlot == 0) {
-                java.util.Collections.addAll(actions, Action.DASHBOARD, Action.POWER, Action.MONITOR);
-            } else if (selectedSlot == 2) {
-                java.util.Collections.addAll(
-                    actions,
-                    Action.MONITOR,
-                    Action.FILTER,
-                    Action.SCAN,
-                    Action.VISUAL,
-                    Action.AUDIT,
-                    Action.GRID_MC,
-                    Action.GRID_GT,
-                    Action.SELECT_AREA,
-                    Action.SCOPE);
-            } else {
-                java.util.Collections.addAll(actions, Action.MAP, Action.MONITOR, Action.OVERVIEW);
-            }
+            Action[] actions = FactoryShortcutPages.functions(selectedSlot);
             int visible = Math.max(1, (r.h - 82) / 23);
-            sidebarScroll = Math.min(sidebarScroll, Math.max(0, actions.size() - visible));
-            for (int i = sidebarScroll; i < actions.size() && i < sidebarScroll + visible; i++) {
-                Action action = actions.get(i);
+            sidebarScroll = Math.min(sidebarScroll, Math.max(0, actions.length - visible));
+            for (int i = sidebarScroll; i < actions.length && i < sidebarScroll + visible; i++) {
+                Action action = actions[i];
                 String label = action == Action.MONITOR
                     ? tr(selectedSlot == 2 ? "machines" : selectedSlot == 0 ? "inspect" : "network.overview")
                     : action == Action.MAP ? tr("map.toggle") : actionLabel(action);
@@ -424,8 +480,7 @@ final class WorkbenchHud extends Gui {
             }
             if (y + 18 < r.y + r.h) text(f, tr("functions.hint"), r.x + 8, y + 5, MUTED, r.w - 16);
         } else if (page == 2) {
-            Action[] actions = { Action.REFRESH, Action.BASELINE, Action.PIN, Action.CLEAR, Action.STOP,
-                Action.OVERVIEW };
+            Action[] actions = FactoryShortcutPages.review(selectedSlot);
             for (Action action : actions) {
                 action(r, y, actionLabel(action), action);
                 y += 23;
@@ -439,11 +494,33 @@ final class WorkbenchHud extends Gui {
         }
     }
 
-    private static void drawShortcuts(FontRenderer f, Rect r, int y) {
-        Action[] actions = Action.values();
-        int visible = Math.max(1, (r.h - 82) / 22);
-        sidebarScroll = Math.min(sidebarScroll, Math.max(0, actions.length - visible));
-        for (int i = sidebarScroll; i < actions.length && i < sidebarScroll + visible; i++) {
+    private static void drawSettings(FontRenderer f, Rect r) {
+        box(r, BACK);
+        drawRect(r.x, r.y, r.x + r.w, r.y + 23, HEADER);
+        text(f, tr("settings"), r.x + 8, r.y + 7, ACCENT, r.w - 32);
+        control(new Rect(r.x + r.w - 23, r.y + 2, 21, 19), "<", tr("collapse"), WorkbenchHud::closeSettings);
+        String[] tabs = { "shortcuts", "controls" };
+        int tabWidth = (r.w - 12) / tabs.length;
+        for (int i = 0; i < tabs.length; i++) {
+            final int tab = i;
+            Rect tabRect = new Rect(r.x + 5 + i * tabWidth, r.y + 28, tabWidth - 2, 19);
+            box(tabRect, settingsPage == i ? HEADER : 0xFF22313C);
+            if (settingsPage == i) stateEdge(tabRect, true);
+            control(tabRect, tr(tabs[i]), tr(tabs[i]), () -> {
+                FactoryShortcuts.cancelBinding();
+                settingsPage = tab;
+            });
+        }
+        if (settingsPage == 0) drawShortcuts(f, r, r.y + 56, FactoryShortcutPages.global(), true);
+        else drawControlSettings(f, r, r.y + 56);
+    }
+
+    private static void drawShortcuts(FontRenderer f, Rect r, int y, Action[] actions, boolean global) {
+        int visible = Math.max(1, (r.y + r.h - 5 - y) / 22);
+        int scroll = Math.min(global ? settingsScroll : sidebarScroll, Math.max(0, actions.length - visible));
+        if (global) settingsScroll = scroll;
+        else sidebarScroll = scroll;
+        for (int i = scroll; i < actions.length && i < scroll + visible; i++) {
             Action action = actions[i];
             Rect row = new Rect(r.x + 5, y, r.w - 10, 20);
             box(row, HEADER);
@@ -554,7 +631,7 @@ final class WorkbenchHud extends Gui {
         int detailHeight = selected.isEmpty() ? 0 : Math.max(0, Math.min(112, Math.min(r.h / 2, r.y + r.h - top - 31)));
         int bottom = r.y + r.h - 8 - detailHeight;
         int count = Math.max(0, (bottom - top) / 23);
-        railScroll = Math.max(0, Math.min(railScroll, Math.max(0, rows.size() - count)));
+        if (!rows.isEmpty()) railScroll = Math.max(0, Math.min(railScroll, Math.max(0, rows.size() - count)));
         if (rows.isEmpty()) drawLines(
             f,
             java.util.Arrays.asList(
@@ -723,6 +800,13 @@ final class WorkbenchHud extends Gui {
                 : origin == SourceOrigin.INVENTORY ? "source.inventory" : "source.none");
     }
 
+    /** Restored dashboards reopen only against a currently available real terminal, outside rendering. */
+    static void tick() {
+        if (!dashboardMode || PortableSuperDashboard.isOpen()) return;
+        Source portable = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, 0);
+        if (portable.present()) PortableSuperDashboard.open(portable.stack);
+    }
+
     private static void toggleDashboard() {
         if (EngineeringModeController.INSTANCE.cameraPanel()) EngineeringModeController.INSTANCE.toggleCameraPanel();
         dashboardMode = !dashboardMode;
@@ -748,7 +832,8 @@ final class WorkbenchHud extends Gui {
         if (!mouseDispatch) clickSound();
         if (action.ordinal() >= Action.TERMINAL_0.ordinal() && action.ordinal() <= Action.TERMINAL_7.ordinal()) {
             int slot = action.ordinal() - Action.TERMINAL_0.ordinal();
-            if (selectedSlot == slot && sidebarOpen) sidebarOpen = false;
+            if (selectedSlot == slot && sidebarOpen && settingsOpen) closeSettings();
+            else if (selectedSlot == slot && sidebarOpen) sidebarOpen = false;
             else EngineeringHud.activateTerminal(slot);
             return;
         }
@@ -760,10 +845,14 @@ final class WorkbenchHud extends Gui {
                 toggleDashboard();
                 break;
             case CAMERA:
+                closeSettings();
                 sidebarOpen = false;
                 dashboardMode = false;
                 PortableSuperDashboard.close();
                 EngineeringModeController.INSTANCE.toggleCameraPanel();
+                break;
+            case XRAY:
+                EngineeringModeController.INSTANCE.toggleXray();
                 break;
             case RETURN:
                 EngineeringModeController.INSTANCE.returnToPlayer();
@@ -870,7 +959,7 @@ final class WorkbenchHud extends Gui {
     }
 
     private static Action terminalAction(int slot) {
-        return Action.values()[Action.TERMINAL_0.ordinal() + slot];
+        return FactoryShortcutPages.terminal(slot);
     }
 
     private static String actionLabel(Action action) {
@@ -895,8 +984,10 @@ final class WorkbenchHud extends Gui {
         if (!l.contains(x, y)) return false;
         if (wheel != 0) {
             int delta = wheel > 0 ? -2 : 2;
-            if (WorkbenchLayout.inside(l.sidebar, x, y)) sidebarScroll = Math.max(0, sidebarScroll + delta);
-            else if (WorkbenchLayout.inside(l.rail, x, y)) {
+            if (WorkbenchLayout.inside(l.sidebar, x, y)) {
+                if (settingsOpen) settingsScroll = Math.max(0, settingsScroll + delta);
+                else sidebarScroll = Math.max(0, sidebarScroll + delta);
+            } else if (WorkbenchLayout.inside(l.rail, x, y)) {
                 if (y >= l.rail.y + l.rail.h - 112 && !EngineeringHud.targetLines()
                     .isEmpty()) detailScroll = Math.max(0, detailScroll + delta);
                 else railScroll = Math.max(0, railScroll + delta);

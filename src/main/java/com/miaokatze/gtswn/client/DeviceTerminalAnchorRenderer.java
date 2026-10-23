@@ -109,8 +109,8 @@ public final class DeviceTerminalAnchorRenderer {
             DeviceTerminalVisualizationState.clear();
             return;
         }
-        UUID held = DeviceTerminalVisualizationState.visualizationTerminalId();
-        if (!DeviceTerminalVisualizationState.active(held)) {
+        UUID held = DeviceTerminalVisualizationState.presentationTerminalId();
+        if (!DeviceTerminalVisualizationState.presentationActive(held)) {
             reset();
             return;
         }
@@ -118,12 +118,15 @@ public final class DeviceTerminalAnchorRenderer {
         terminal = held;
         DeviceTerminalVisualConfig.load();
         // Screens poll their own terminal UUID; persistent inventory mode needs no GUI-time network lease.
-        if (mc.currentScreen == null
+        if (!DeviceTerminalVisualizationState.factoryPresentation() && mc.currentScreen == null
             && (ticks % 20 == 0 || DeviceTerminalClientCache.hasMorePending(terminal) && ticks % 5 == 0)) {
             GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(terminal));
         }
         ticks++;
-        DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(terminal);
+        DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalVisualizationState.factoryPresentation()
+            ? com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot
+                .visualizationSnapshot(terminal)
+            : DeviceTerminalClientCache.getSnapshot(terminal);
         if (snapshot != null && scanning == null && (snapshot != displayed || moved(mc))) begin(snapshot, mc);
         if (scanning != null) advance(mc);
         else if (!visible.isEmpty()) {
@@ -647,7 +650,10 @@ public final class DeviceTerminalAnchorRenderer {
                         : tr(DeviceTerminalVisualizationState.isActiveHeld() ? "teleport" : "hold_terminal")
                             + (DeviceTerminalVisualConfig.showLabelName ? " " + target.name : "");
         String hint = tr(DeviceTerminalVisualizationState.isActiveHeld() ? "hint" : "inventory_hint");
-        DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(terminal);
+        DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalVisualizationState.factoryPresentation()
+            ? com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot
+                .visualizationSnapshot(terminal)
+            : DeviceTerminalClientCache.getSnapshot(terminal);
         String count = StatCollector.translateToLocalFormatted(
             "gtswn.device.visual.count",
             visible.size(),
@@ -698,8 +704,8 @@ public final class DeviceTerminalAnchorRenderer {
             && !mc.gameSettings.hideGUI
             && mc.currentScreen == null
             && terminal != null
-            && DeviceTerminalVisualizationState.active(terminal)
-            && terminal.equals(DeviceTerminalVisualizationState.visualizationTerminalId());
+            && DeviceTerminalVisualizationState.presentationActive(terminal)
+            && terminal.equals(DeviceTerminalVisualizationState.presentationTerminalId());
     }
 
     private static double eyeY(Minecraft mc) {

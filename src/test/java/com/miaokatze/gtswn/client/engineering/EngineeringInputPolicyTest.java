@@ -27,6 +27,20 @@ public class EngineeringInputPolicyTest {
     }
 
     @Test
+    public void xrayBarRemainsAvailableWhenTheCombinedCameraPanelCloses() {
+        CameraSettings.Hud compact = EngineeringInputPolicy.hud(false, 1);
+        assertFalse(compact.panelVisible());
+        assertTrue(compact.sliceBarVisible());
+        CameraSettings.Hud combined = EngineeringInputPolicy.hud(true, 1);
+        assertTrue(combined.panelVisible());
+        assertTrue(combined.sliceBarVisible());
+        WorkbenchLayout layout = new WorkbenchLayout(640, 400, true, true, true, false);
+        assertTrue(compact.panelX() >= layout.sidebar.x + layout.sidebar.w);
+        assertTrue(compact.panelX() + 72 <= layout.rail.x);
+        assertTrue(compact.panelY() + 220 <= 400);
+    }
+
+    @Test
     public void sensitivityUsesCoreNavigationWithSafeFallbacks() {
         CameraSettings.Navigation navigation = EngineeringInputPolicy.navigation(false, 2, .5);
         assertEquals(.7, navigation.rotationDegreesPerPixel(), 1e-12);

@@ -1282,3 +1282,7 @@ gtswn.engineering.dash.selection.sampled=Existing samples
 gtswn.engineering.dash.selection.unsampled=Unsampled area is unknown
 gtswn.engineering.device.source_unavailable=Device terminal source is unbound or changed. Select it again.
 gtswn.engineering.device.unavailable=Device operation is unavailable. Try again shortly.
+gtswn.factory.bindings=Bindings
+gtswn.factory.settings=Settings & bindings
+key.gtswn.factory.xray=Toggle X-ray
+gtswn.factory.settings.hint=Global bindings and camera controls

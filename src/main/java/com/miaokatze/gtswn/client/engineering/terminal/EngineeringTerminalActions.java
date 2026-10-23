@@ -7,15 +7,15 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.ChatComponentTranslation;
 
-import com.miaokatze.gtswn.client.DeviceTerminalVisualizationState;
 import com.miaokatze.gtswn.client.engineering.EngineeringModeController;
+import com.miaokatze.gtswn.client.engineering.FactoryDisplayPreferences;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketEngineeringDeviceAction;
 
-/** Factory intent uses the resolved provider; visual state changes only after the normal server ACK. */
+/** Factory display is a client preference; scans retain the server-validated terminal source. */
 public final class EngineeringTerminalActions {
 
     private EngineeringTerminalActions() {}
@@ -27,7 +27,7 @@ public final class EngineeringTerminalActions {
     public static void openGrid(UUID terminalId) {
         ItemStack stack = find(terminalId);
         if (stack == null) return;
-        if (!ItemDeviceInfoTerminal.isVisualizationEnabled(stack)) toggleDeviceVisualization();
+        if (!FactoryDisplayPreferences.deviceVisualization()) toggleDeviceVisualization();
         EngineeringModeController.open();
     }
 
@@ -36,14 +36,19 @@ public final class EngineeringTerminalActions {
     }
 
     public static void toggleDeviceVisualization() {
-        send(PacketEngineeringDeviceAction.TOGGLE_VISUALIZATION);
+        FactoryDisplayPreferences.toggleDeviceVisualization();
     }
 
-    /** A saved item flag alone is not an acknowledged rendering session. */
+    /** This preference never grants a normal terminal ACK/session or visual teleport permission. */
     public static boolean deviceVisualizationEnabled() {
+        return FactoryDisplayPreferences.deviceVisualization();
+    }
+
+    public static UUID visualizationTerminalId() {
+        if (!EngineeringModeController.isActive() || !deviceVisualizationEnabled()) return null;
         Source source = deviceSource();
         UUID id = source.present() ? ItemDeviceInfoTerminal.readTerminalId(source.stack) : null;
-        return id != null && id.equals(DeviceTerminalVisualizationState.visualizationTerminalId());
+        return id != null && EngineeringTerminalHudSnapshot.visualizationSnapshot(id) != null ? id : null;
     }
 
     private static void send(byte action) {

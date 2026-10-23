@@ -1282,3 +1282,7 @@ gtswn.engineering.dash.selection.sampled=现有采样
 gtswn.engineering.dash.selection.unsampled=未采样范围数据未知
 gtswn.engineering.device.source_unavailable=设备终端来源未绑定或已变化，请重新选择。
 gtswn.engineering.device.unavailable=操作暂不可用，请稍后重试。
+gtswn.factory.bindings=绑定
+gtswn.factory.settings=设置与绑定
+key.gtswn.factory.xray=X 光开关
+gtswn.factory.settings.hint=全局绑定与相机操作设置

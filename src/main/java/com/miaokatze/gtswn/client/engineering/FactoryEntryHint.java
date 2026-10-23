@@ -33,7 +33,6 @@ public final class FactoryEntryHint {
     private static EntityPlayer player;
     private static Object world;
     private static FactoryEntryHintState state;
-    private static int warmup;
     private static int poll;
 
     private FactoryEntryHint() {}
@@ -43,15 +42,12 @@ public final class FactoryEntryHint {
             player = mc.thePlayer;
             world = mc.theWorld;
             state = player == null ? null : state(player.getUniqueID());
-            warmup = 40;
             poll = 0;
         }
         if (state == null || world == null) return;
-        boolean baseline = warmup > 0;
-        if (warmup > 0) warmup--;
         if (poll++ % 5 != 0) return;
         // Eight accessories, four times per second. Binding reads bounded scalar identity fields only.
-        state.observe(equipment(player), now(), baseline);
+        state.observe(equipment(player));
     }
 
     private static String equipment(EntityPlayer current) {
@@ -89,14 +85,14 @@ public final class FactoryEntryHint {
         preferences.load();
     }
 
-    /** Call after successful factory activation, never merely after pressing its binding. */
-    public static void opened() {
+    /** Call for an accepted factory toggle binding while its camera is active, before closing or after opening. */
+    public static void bindingUsed() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.thePlayer == null || !EngineeringModeController.isActive()) return;
         UUID id = mc.thePlayer.getUniqueID();
         FactoryEntryHintState current = state(id);
-        current.observe(equipment(mc.thePlayer), now(), true);
-        if (!current.opened(now())) return;
+        current.observe(equipment(mc.thePlayer));
+        if (!current.confirmBinding()) return;
         preferences.get("opened", id.toString(), false)
             .set(true);
         preferences.save();
@@ -105,7 +101,7 @@ public final class FactoryEntryHint {
     public static void draw(Minecraft mc, FactoryEntryHintLayout.Bounds terminal) {
         if (state == null || player != mc.thePlayer
             || world != mc.theWorld
-            || !state.visible(now())
+            || !state.visible()
             || mc.currentScreen != null
             || mc.gameSettings.hideGUI
             || EngineeringModeController.isActive()) return;
@@ -114,7 +110,7 @@ public final class FactoryEntryHint {
         int code = EngineeringModeController.TOGGLE.getKeyCode();
         String key = code == 0 ? text("unbound") : FactoryShortcuts.hint(FactoryShortcuts.Action.TOGGLE);
         String title = text("title", key);
-        String detail = text(state.firstPending() ? "first" : "reminder");
+        String detail = text("first");
         int desiredWidth = Math.min(208, Math.max(font.getStringWidth(title), font.getStringWidth(detail)) + 20);
         FactoryEntryHintLayout.Bounds box = FactoryEntryHintLayout
             .place(resolution.getScaledWidth(), resolution.getScaledHeight(), desiredWidth, terminal);

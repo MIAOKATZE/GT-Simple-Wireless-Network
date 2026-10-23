@@ -119,12 +119,41 @@ public final class DeviceTerminalVisualizationState {
             && terminalToken.equals(stack.stackTagCompound.getString(ItemDeviceInfoTerminal.NBT_UUID));
     }
 
+    /** Presentation ownership is separate from acknowledged travel ownership. */
+    public static UUID presentationTerminalId() {
+        boolean factory = com.miaokatze.gtswn.client.engineering.EngineeringModeController.isActive();
+        boolean enabled = com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions
+            .deviceVisualizationEnabled();
+        return presentationOwner(
+            factory,
+            enabled,
+            factory && enabled
+                ? com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions.visualizationTerminalId()
+                : null,
+            factory ? null : visualizationTerminalId());
+    }
+
+    static UUID presentationOwner(boolean factoryActive, boolean factoryEnabled, UUID factoryId, UUID ordinaryId) {
+        return factoryActive ? factoryEnabled ? factoryId : null : ordinaryId;
+    }
+
+    public static boolean presentationActive(UUID id) {
+        return id != null && id.equals(presentationTerminalId());
+    }
+
+    public static boolean factoryPresentation() {
+        return com.miaokatze.gtswn.client.engineering.EngineeringModeController.isActive()
+            && com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions.deviceVisualizationEnabled();
+    }
+
     public static boolean isActiveInventory() {
         return visualizationTerminalId() != null;
     }
 
     public static String currentTargetKey() {
-        return isActiveHeld() ? DeviceTerminalAnchorRenderer.INSTANCE.currentTargetKey() : null;
+        return isActiveHeld() && terminalId.equals(presentationTerminalId())
+            ? DeviceTerminalAnchorRenderer.INSTANCE.currentTargetKey()
+            : null;
     }
 
     /** Mouse, Forge block/air events and item callbacks share one intent for each native right-click tick. */

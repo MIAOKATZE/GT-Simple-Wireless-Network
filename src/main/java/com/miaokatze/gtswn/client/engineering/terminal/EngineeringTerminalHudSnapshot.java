@@ -36,6 +36,7 @@ public final class EngineeringTerminalHudSnapshot {
     private static Object demandWorld, demandConnection;
     private static EntityPlayer demandPlayer;
     private static int lastDeviceRequest = Integer.MIN_VALUE;
+    private static long initialDeviceReceipt;
 
     public final Source device;
     public final Source portable;
@@ -86,20 +87,49 @@ public final class EngineeringTerminalHudSnapshot {
         EngineeringTerminalSources.Source current = EngineeringTerminalSources.resolve(mc.thePlayer, 2);
         if (!deviceDemand.sameIdentity(current)) {
             deviceDemand = current;
+            initialDeviceReceipt = DeviceTerminalClientCache
+                .receiptRevision(ItemDeviceInfoTerminal.readTerminalId(current.stack));
             lastDeviceRequest = Integer.MIN_VALUE;
             cached = null;
         }
         if (!current.present()) return;
         UUID id = ItemDeviceInfoTerminal.readTerminalId(current.stack);
-        // The existing visual HUD already polls this exact terminal; keep a single active polling owner.
-        if (ItemDeviceInfoTerminal.isVisualizationEnabled(current.stack) && DeviceTerminalVisualizationState.active(id)
-            && mc.currentScreen == null) return;
+        // Factory owns this polling demand even when its labels are off; the ordinary renderer is paused here.
         int now = mc.thePlayer.ticksExisted;
         int interval = DeviceTerminalClientCache.hasMorePending(id) ? 5 : 20;
         if (lastDeviceRequest == Integer.MIN_VALUE || now < lastDeviceRequest || now - lastDeviceRequest >= interval) {
-            GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(id));
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                lastDeviceRequest == Integer.MIN_VALUE
+                    ? new com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData(id, -1, false)
+                    : DeviceTerminalClientCache.requestMetadata(id));
             lastDeviceRequest = now;
         }
+    }
+
+    /** Rendering cannot borrow a prior source/connection cache or a normal ACK for another UUID. */
+    public static DeviceTerminalClientCache.Snapshot visualizationSnapshot(UUID id) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (id == null || !deviceReading
+            || demandPlayer != mc.thePlayer
+            || demandWorld != mc.theWorld
+            || demandConnection != mc.getNetHandler()
+            || mc.thePlayer == null
+            || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0) return null;
+        EngineeringTerminalSources.Source current = EngineeringTerminalSources.resolve(mc.thePlayer, 2);
+        if (!acceptsVisualization(
+            id,
+            ItemDeviceInfoTerminal.readTerminalId(current.stack),
+            current.present() && deviceDemand.sameIdentity(current),
+            initialDeviceReceipt,
+            DeviceTerminalClientCache.receiptRevision(id),
+            DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()))) return null;
+        return DeviceTerminalClientCache.getSnapshot(id);
+    }
+
+    static boolean acceptsVisualization(UUID requested, UUID actual, boolean sameSource, long before, long receipt,
+        boolean fresh) {
+        return requested != null && requested.equals(actual) && sameSource && receipt > before && fresh;
     }
 
     public static void close() {

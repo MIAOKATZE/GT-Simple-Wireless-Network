@@ -77,6 +77,39 @@ public final class EngineeringHud extends Gui {
         EngineeringDashboardCache.close();
     }
 
+    static void rememberPreferences() {
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.OVERVIEW, overview);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.SUSPENDED, suspended);
+        if (!overview && activeSlot >= 0)
+            FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.ACTIVE_SLOT, activeSlot);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.BOUND_ONLY, boundOnly);
+    }
+
+    static void restorePreferences() {
+        reset();
+        boundOnly = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.BOUND_ONLY);
+        overview = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.OVERVIEW);
+        suspended = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.SUSPENDED);
+        if (suspended) return;
+        if (overview) activateOverviewSource();
+        else {
+            int slot = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.ACTIVE_SLOT);
+            if (slot < 0) return;
+            activeSlot = slot;
+            activateData(slot);
+        }
+    }
+
+    private static void restorePowerPreferences() {
+        powerSelection.reset();
+        int requested = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.GRID);
+        if (requested > 0)
+            powerSelection.grid(requested == 2 ? FactoryPowerSelection.Grid.GT : FactoryPowerSelection.Grid.MC);
+        if (FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.AUDIT)) powerSelection.toggleAudit();
+        pendingGt = powerSelection.gt() && !EngineeringDashboardCache.patternResolved();
+        syncPowerSelection();
+    }
+
     public static double scale(int width, int height) {
         return Math.max(.1, Math.min(1, Math.min((width - 16) / 640.0, (height - 12) / 400.0)));
     }
@@ -164,10 +197,9 @@ public final class EngineeringHud extends Gui {
         overview = true;
         suspended = false;
         activeSlot = -1;
-        pendingGt = selecting = dragging = grid = gtGrid = boundOnly = false;
+        pendingGt = selecting = dragging = grid = gtGrid = false;
         powerSelection.reset();
         notice = "";
-        WorkbenchHud.reset();
         activateOverviewSource();
     }
 
@@ -218,11 +250,14 @@ public final class EngineeringHud extends Gui {
         if (!suspended && activeSlot == slot && activeSource.sameIdentity(source)) return;
         suspended = false;
         PortableSuperDashboard.close();
-        powerSelection.reset();
-        pendingGt = false;
-        syncPowerSelection();
+        if (slot == 2) restorePowerPreferences();
+        else {
+            powerSelection.reset();
+            pendingGt = false;
+            syncPowerSelection();
+        }
         defaultRegion();
-        subscribe(slot, false);
+        subscribe(slot, slot == 2 && grid);
     }
 
     /** Source replacement/removal invalidates the previous subscription before choosing a new overview source. */
@@ -243,7 +278,8 @@ public final class EngineeringHud extends Gui {
         PortableSuperDashboard.close();
         if (overview) activateOverviewSource();
         else if (current.present()) {
-            powerSelection.clearCustom();
+            if (activeSlot == 2) restorePowerPreferences();
+            else powerSelection.clearCustom();
             syncPowerSelection();
             defaultRegion();
             subscribe(activeSlot, grid);
@@ -306,6 +342,7 @@ public final class EngineeringHud extends Gui {
         if (activeSlot != 2 || suspended) activateData(2);
         overview = false;
         boolean restore = powerSelection.toggleAudit();
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.AUDIT, powerSelection.audit());
         syncPowerSelection();
         notice = "";
         if (restore) restoreDefaultRegion();
@@ -336,7 +373,10 @@ public final class EngineeringHud extends Gui {
         if (activeSlot < 0) return;
         if (activeSlot == 2) {
             toolAction(2, gtGrid ? 2 : 1);
-        } else if (activeSlot > 0) showNodes = !showNodes;
+        } else if (activeSlot > 0) {
+            showNodes = !showNodes;
+            FactoryDisplayPreferences.put(FactoryDisplayPreferences.nodes(activeSlot), showNodes);
+        }
     }
 
     static void stopData() {
@@ -796,6 +836,9 @@ public final class EngineeringHud extends Gui {
             } else if (action == 1 || action == 2) {
                 FactoryPowerSelection.Change change = powerSelection
                     .grid(action == 2 ? FactoryPowerSelection.Grid.GT : FactoryPowerSelection.Grid.MC);
+                FactoryDisplayPreferences.put(
+                    FactoryDisplayPreferences.Key.GRID,
+                    powerSelection.visible() ? powerSelection.gt() ? 2 : 1 : 0);
                 pendingGt = powerSelection.gt() && !EngineeringDashboardCache.patternResolved();
                 syncPowerSelection();
                 if (pendingGt) notice = "dash.pattern.unknown";
@@ -808,6 +851,7 @@ public final class EngineeringHud extends Gui {
                 subscribe(slot, false);
                 showNodes = true;
             }
+            FactoryDisplayPreferences.put(FactoryDisplayPreferences.nodes(slot), showNodes);
         } else {
             activateData(slot);
             WorkbenchHud.inspect();
@@ -825,7 +869,8 @@ public final class EngineeringHud extends Gui {
         grid = showGrid;
         selectedNode = null;
         EngineeringModeController.INSTANCE.clearSelection();
-        showNodes = false;
+        FactoryDisplayPreferences.Key nodes = FactoryDisplayPreferences.nodes(slot);
+        showNodes = nodes != null && FactoryDisplayPreferences.flag(nodes);
         EngineeringDashboardCache
             .subscribe(slot, gtGrid && !pendingGt, minCellX, minCellZ, maxCellX, maxCellZ, boundOnly);
     }

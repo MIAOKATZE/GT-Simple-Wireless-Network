@@ -19,8 +19,21 @@ public class FactoryShortcutsTest {
         Map<Action, Integer> bindings = FactoryShortcuts.Policy.defaults();
         assertFalse(bindings.containsKey(Action.TOGGLE));
         assertEquals(Integer.valueOf(Keyboard.KEY_M), bindings.get(Action.FOLLOW));
+        assertEquals(Integer.valueOf(Keyboard.KEY_X), bindings.get(Action.XRAY));
         assertEquals(Integer.valueOf(Keyboard.KEY_NONE), bindings.get(Action.TERMINAL_0));
         assertEquals(Integer.valueOf(Keyboard.KEY_NONE), bindings.get(Action.CAMERA));
+    }
+
+    @Test
+    public void xrayUsesTheSameRebindingAndConflictPolicyAsOtherFactoryKeys() {
+        Map<Action, Integer> bindings = defaults();
+        assertEquals(Action.XRAY, resolve(Keyboard.KEY_X, Keyboard.KEY_C, bindings));
+        bindings.put(Action.XRAY, Keyboard.KEY_Z);
+        assertNull(resolve(Keyboard.KEY_X, Keyboard.KEY_C, bindings));
+        assertEquals(Action.XRAY, resolve(Keyboard.KEY_Z, Keyboard.KEY_C, bindings));
+        assertNull(resolve(Keyboard.KEY_Z, Keyboard.KEY_Z, bindings));
+        bindings.put(Action.MONITOR, Keyboard.KEY_Z);
+        assertEquals(Action.MONITOR, resolve(Keyboard.KEY_Z, Keyboard.KEY_C, bindings));
     }
 
     @Test
