@@ -48,7 +48,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     public static final KeyBinding TOGGLE = new KeyBinding(
         "key.gtswn.engineering",
         Keyboard.KEY_F12,
-        "key.categories.gtswn");
+        "key.categories.gtswn.factory");
     private final ZoomMotion zoom = new ZoomMotion(1, .125, 8);
     private WorldCameras.Lease lease;
     private World world;
@@ -66,6 +66,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     public static void register() {
         ClientRegistry.registerKeyBinding(TOGGLE);
+        FactoryShortcuts.register();
         FMLCommonHandler.instance()
             .bus()
             .register(INSTANCE);
@@ -94,6 +95,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             INSTANCE.world = null;
             mc.thePlayer.addChatMessage(new ChatComponentText("世界相机正在由其他模块使用，工厂模式未开启。"));
         } else {
+            FactoryEntryHint.opened();
             EngineeringHud.activateOverview();
             EngineeringTerminalHudSnapshot.tick(EngineeringDashboardCache.slot() >= 0);
         }
@@ -106,6 +108,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     }
 
     private void revoked() {
+        FactoryShortcuts.cancelBinding();
         lease = null;
         world = null;
         selected = null;
@@ -194,35 +197,19 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     public void keys(InputEvent.KeyInputEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.currentScreen != null || mc.thePlayer == null) return;
-        if (TOGGLE.isPressed()) toggle();
-        if (!isActive() || !Keyboard.getEventKeyState() || Keyboard.isRepeatEvent()) return;
-        // The terminal binding owns its press even when the player has rebound it to another engineering shortcut.
-        if (Keyboard.getEventKey() == TerminalBaubleController.keyCode()) return;
-        switch (Keyboard.getEventKey()) {
-            case Keyboard.KEY_ESCAPE:
-                if (!EngineeringHud.escape()) close();
-                break;
-            case Keyboard.KEY_M:
-                toggleFollowing();
-                break;
-            case Keyboard.KEY_HOME:
-                returnToPlayer();
-                break;
-            case Keyboard.KEY_P:
-                togglePin();
-                break;
-            case Keyboard.KEY_DELETE:
-                selected = null;
-                pinned = false;
-                break;
-            default:
-                break;
-        }
+        // Active input is handled at Core's raw queue boundary, so it cannot also fire here.
+        if (isActive() || !Keyboard.getEventKeyState() || Keyboard.isRepeatEvent()) return;
+        int code = Keyboard.getEventKey();
+        if (code != Keyboard.KEY_NONE && code == TOGGLE.getKeyCode() && code != TerminalBaubleController.keyCode())
+            toggle();
     }
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
-        if (event.phase == TickEvent.Phase.END) EngineeringDashboardCache.tick();
+        if (event.phase == TickEvent.Phase.END) {
+            FactoryShortcuts.poll();
+            EngineeringDashboardCache.tick();
+        }
         if (event.phase != TickEvent.Phase.END || !isActive()) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld != world || mc.thePlayer == null || mc.thePlayer.isDead) {
@@ -234,7 +221,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         lastX = x;
         lastY = y;
         lastZ = z;
-        if (!EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)) return;
+        if (!EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
+            || FactoryShortcuts.isBinding()) return;
         if (pinned && selected != null) {
             x = selected.x + .5;
             y = selected.y + .5;
@@ -270,7 +258,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     private static int key(KeyBinding key) {
         int code = key.getKeyCode();
-        if (com.miaokatze.gtswn.client.TerminalWheelInput.suppresses(code)) return 0;
+        if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null
+            || com.miaokatze.gtswn.client.TerminalWheelInput.suppresses(code)) return 0;
         return code > 0 && code < Keyboard.KEYBOARD_SIZE && Keyboard.isKeyDown(code) ? 1
             : code < 0 && code + 100 >= 0 && Mouse.isButtonDown(code + 100) ? 1 : 0;
     }
@@ -280,6 +269,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         Minecraft mc = Minecraft.getMinecraft();
         if (!EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
             || event.isCanceled()) return;
+        if (FactoryShortcuts.isBinding()) {
+            event.setCanceled(true);
+            return;
+        }
         if (EngineeringHud.mouse(event)) {
             event.setCanceled(true);
             return;
@@ -424,16 +417,12 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowKey(int code) {
+        if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null) return false;
         Minecraft mc = Minecraft.getMinecraft();
         if (following
             && (code == mc.gameSettings.keyBindJump.getKeyCode() || code == mc.gameSettings.keyBindSneak.getKeyCode()))
             return true;
-        return code == TOGGLE.getKeyCode() || code == TerminalBaubleController.keyCode()
-            || code == Keyboard.KEY_ESCAPE
-            || code == Keyboard.KEY_M
-            || code == Keyboard.KEY_P
-            || code == Keyboard.KEY_HOME
-            || code == Keyboard.KEY_DELETE
+        return code == TerminalBaubleController.keyCode() || code == Keyboard.KEY_ESCAPE
             || code == Keyboard.KEY_F8
             || code == mc.gameSettings.keyBindScreenshot.getKeyCode()
             || code == mc.gameSettings.keyBindChat.getKeyCode();
@@ -441,6 +430,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowRawKey(int code) {
+        if (FactoryShortcuts.consumeKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent())) return false;
         // Vanilla opens the pause menu before FML KeyInputEvent. Handle world Esc at Core's earlier queue boundary.
         // Core bypasses this callback while a real GUI is open, so that GUI retains its normal Esc behavior.
         if (code == Keyboard.KEY_ESCAPE) {
@@ -459,6 +449,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     public boolean supports(CameraControl control) {
         Minecraft mc = Minecraft.getMinecraft();
         return EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
+            && !FactoryShortcuts.isBinding()
             && EngineeringInputPolicy.pointerControl(
                 control,
                 following,

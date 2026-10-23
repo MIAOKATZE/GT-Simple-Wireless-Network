@@ -23,6 +23,8 @@ import org.lwjgl.input.Mouse;
 import org.lwjgl.opengl.GL11;
 
 import com.cleanroommc.modularui.factory.ClientGUI;
+import com.miaokatze.gtswn.client.engineering.FactoryEntryHint;
+import com.miaokatze.gtswn.client.engineering.FactoryEntryHintLayout;
 import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
 import com.miaokatze.gtswn.client.gui.GuiPortableMonitor;
 import com.miaokatze.gtswn.client.gui.GuiTerminalWheel;
@@ -132,6 +134,7 @@ public final class TerminalBaubleController {
         if (event.phase != TickEvent.Phase.END) return;
         TerminalWheelInput.poll();
         Minecraft mc = Minecraft.getMinecraft();
+        FactoryEntryHint.tick(mc);
         if (sessionPlayer != mc.thePlayer || sessionWorld != mc.theWorld) {
             sessionPlayer = mc.thePlayer;
             sessionWorld = mc.theWorld;
@@ -199,7 +202,10 @@ public final class TerminalBaubleController {
         if (com.miaokatze.gtswn.client.engineering.EngineeringModeController.isActive()) return;
         ItemStack held = mc.thePlayer.getHeldItem();
         int category = TerminalBaubles.category(held);
-        if (category < 0) return;
+        if (category < 0) {
+            FactoryEntryHint.draw(mc, null);
+            return;
+        }
         HudContext context = new HudContext(mc, held);
         List<String> controls = new ArrayList<>();
         if (category == 0) {
@@ -221,7 +227,7 @@ public final class TerminalBaubleController {
                 "\u00a7e" + keyName(),
                 "\u00a7b"
                     + text(canReturn(mc.thePlayer) ? "gtswn.terminal_action.return" : "gtswn.terminal_action.equip")));
-        drawHud(mc, lines);
+        FactoryEntryHint.draw(mc, drawHud(mc, lines));
     }
 
     private static void hint(List<String> controls, boolean preferred, String key, String label) {
@@ -402,7 +408,7 @@ public final class TerminalBaubleController {
         }
     }
 
-    private static void drawHud(Minecraft mc, List<String> lines) {
+    private static FactoryEntryHintLayout.Bounds drawHud(Minecraft mc, List<String> lines) {
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
         FontRenderer font = mc.fontRenderer;
         int widest = 0;
@@ -427,5 +433,11 @@ public final class TerminalBaubleController {
             GL11.glPopMatrix();
             GL11.glPopAttrib();
         }
+        int half = (widest + 16) / 2;
+        return new FactoryEntryHintLayout.Bounds(
+            (int) Math.floor(resolution.getScaledWidth() / 2f - half * scale),
+            8,
+            (int) Math.ceil(half * 2 * scale),
+            (int) Math.ceil((lines.size() * 11 + 6) * scale));
     }
 }

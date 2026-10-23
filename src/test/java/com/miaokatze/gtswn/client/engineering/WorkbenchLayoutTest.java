@@ -35,4 +35,16 @@ public class WorkbenchLayoutTest {
         assertEquals(null, expanded.rail);
         assertEquals(null, expanded.power);
     }
+
+    @Test
+    public void smallestFactoryCanvasFitsCommonActionsAndKeepsPanelsSeparate() {
+        WorkbenchLayout layout = new WorkbenchLayout(640, 400, true, true, true, false, 500, 108);
+        assertTrue(layout.sidebar.y + 69 + 7 * 23 <= layout.sidebar.y + layout.sidebar.h - 5);
+        assertTrue(layout.sidebar.x + layout.sidebar.w < layout.rail.x);
+        assertTrue(layout.rail.y + layout.rail.h < layout.power.y);
+        assertTrue(layout.power.y + layout.power.h <= 400);
+        assertTrue(layout.terminals[7].y + layout.terminals[7].h <= 400);
+        assertTrue(layout.contains(layout.shortcuts.x + 4, layout.shortcuts.y + 4));
+    }
+
 }
