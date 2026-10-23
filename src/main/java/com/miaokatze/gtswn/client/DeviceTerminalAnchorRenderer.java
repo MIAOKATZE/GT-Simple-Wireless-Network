@@ -31,9 +31,13 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.client.engineering.EngineeringModeController;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
+import com.miaokatze.miaokatzecore.api.camera.ProjectedPoint;
+import com.miaokatze.miaokatzecore.client.camera.WorldCameraHooks;
+import com.miaokatze.miaokatzecore.client.render.GlScope;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -277,6 +281,8 @@ public final class DeviceTerminalAnchorRenderer {
         anchor.status = status;
         anchor.appearance = appearance;
         anchor.language = language;
+        anchor.factoryPower = factoryPowerText(entry, anchor.available);
+        anchor.factoryPowerWidth = mc.fontRenderer.getStringWidth(anchor.factoryPower);
         anchor.lines.clear();
         anchor.lineWidths.clear();
         anchor.name = DeviceTerminalNames.localName(entry);
@@ -322,6 +328,14 @@ public final class DeviceTerminalAnchorRenderer {
 
     private static String metric(long value) {
         return FormatUtil.formatMetric(BigInteger.valueOf(value), 1);
+    }
+
+    /** Unavailable/unknown readings never turn into a measured zero; ignored devices remain neutral. */
+    static String factoryPowerText(Entry entry, boolean available) {
+        if (!available) return "\u00a77? EU/t";
+        if (DeviceEnergyWorldRenderer.ignored(entry)) return "\u00a78\u2014 EU/t";
+        if (entry.evidenceKind >= 2) return "\u00a77\u2193? \u2191? EU/t";
+        return "\u00a76\u2193" + metric(entry.instIn) + " \u00a7a\u2191" + metric(entry.instOut) + "\u00a77 EU/t";
     }
 
     private static boolean ignored(Entry entry) {
@@ -415,7 +429,7 @@ public final class DeviceTerminalAnchorRenderer {
     public void render(RenderWorldLastEvent event) {
         lastRenderedMarkers = lastRenderedLabels = lastMarkerBatches = lastProjectedLabels = 0;
         Minecraft mc = Minecraft.getMinecraft();
-        if (!canRender(mc) || visible.isEmpty()) return;
+        if (!canRender(mc) || visible.isEmpty() || DeviceTerminalVisualizationState.factoryPresentation()) return;
         Entity camera = mc.renderViewEntity == null ? mc.thePlayer : mc.renderViewEntity;
         double x = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * event.partialTicks;
         double y = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * event.partialTicks;
@@ -642,6 +656,10 @@ public final class DeviceTerminalAnchorRenderer {
         Minecraft mc = Minecraft.getMinecraft();
         if (!canRender(mc)) return;
         ScaledResolution sr = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
+        if (DeviceTerminalVisualizationState.factoryPresentation()) {
+            drawFactoryPower(mc, sr.getScaledWidth(), sr.getScaledHeight());
+            return;
+        }
         String notice = scanning != null
             ? StatCollector.translateToLocalFormatted("gtswn.device.visual.progress", cursor, scanning.entries.size())
             : DeviceTerminalClientCache.hasMorePending(terminal) ? tr("loading")
@@ -667,6 +685,46 @@ public final class DeviceTerminalAnchorRenderer {
         y = hudHint.draw(mc.fontRenderer, sr.getScaledWidth(), y, 0xDDDDDD);
         y = hudNotice.draw(mc.fontRenderer, sr.getScaledWidth(), y, target == null ? 0xBBBBBB : 0xFFD68D);
         hudCount.draw(mc.fontRenderer, sr.getScaledWidth(), y, 0xBBBBBB);
+    }
+
+    /** Factory projection owns placement; font size stays constant while its camera pans, rotates or zooms. */
+    private void drawFactoryPower(Minecraft mc, int width, int height) {
+        if (!DeviceTerminalVisualConfig.showLabels || !DeviceTerminalVisualConfig.showLabelPower) return;
+        int budget = Math.max(8, Math.min(64, DeviceTerminalVisualConfig.labelBudget));
+        try (GlScope ignored = new GlScope()) {
+            GL11.glDisable(GL11.GL_DEPTH_TEST);
+            GL11.glEnable(GL11.GL_TEXTURE_2D);
+            GL11.glEnable(GL11.GL_BLEND);
+            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+            for (Anchor anchor : visible) {
+                if (lastRenderedLabels >= budget || lastProjectedLabels >= 64) break;
+                Entry entry = anchor.entry;
+                if (entry.dim != mc.theWorld.provider.dimensionId || anchor.factoryPower == null
+                    || distance(entry, mc.thePlayer.posX, eyeY(mc), mc.thePlayer.posZ) > range() * range()) continue;
+                lastProjectedLabels++;
+                ProjectedPoint projected = WorldCameraHooks.projectWorld(
+                    EngineeringModeController.OWNER,
+                    mc.theWorld,
+                    entry.x + .5D,
+                    entry.y + 1.04D,
+                    entry.z + .5D);
+                if (projected == null || Math.abs(projected.ndcZ()) > 1D) continue;
+                int left = (int) Math.round((projected.ndcX() + 1D) * width * .5D - anchor.factoryPowerWidth * .5D);
+                int top = (int) Math.round((1D - projected.ndcY()) * height * .5D) - mc.fontRenderer.FONT_HEIGHT - 2;
+                candidateRectangle[0] = left;
+                candidateRectangle[1] = top;
+                candidateRectangle[2] = left + anchor.factoryPowerWidth;
+                candidateRectangle[3] = top + mc.fontRenderer.FONT_HEIGHT;
+                if (left < 2 || top < 2
+                    || candidateRectangle[2] > width - 2
+                    || candidateRectangle[3] > height - 2
+                    || !DeviceTerminalLabelLayout.fits(candidateRectangle, acceptedRectangles, lastRenderedLabels, 3D))
+                    continue;
+                mc.fontRenderer.drawStringWithShadow(anchor.factoryPower, left, top, 0xEEEEEE);
+                System.arraycopy(candidateRectangle, 0, acceptedRectangles, lastRenderedLabels * 4, 4);
+                lastRenderedLabels++;
+            }
+        }
     }
 
     /** Wrapping changes only with text, viewport or font mode; unchanged frames reuse line widths. */
@@ -777,6 +835,8 @@ public final class DeviceTerminalAnchorRenderer {
         final AxisAlignedBB heatBounds;
         String name;
         int width;
+        String factoryPower;
+        int factoryPowerWidth;
 
         Anchor(Entry entry, double distance) {
             this.entry = entry;
