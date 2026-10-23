@@ -15,6 +15,7 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
 
 import com.miaokatze.gtswn.client.TerminalBaubleController;
+import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Node;
@@ -51,16 +52,21 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     private final ZoomMotion zoom = new ZoomMotion(1, .125, 8);
     private WorldCameras.Lease lease;
     private World world;
+    private net.minecraft.entity.player.EntityPlayer sessionPlayer;
+    private Object sessionConnection;
+    private int sessionDimension;
     private double x, y, z, lastX, lastY, lastZ;
     private double yaw = 45, pitch = 60;
     private boolean following;
-    private HeightSlice slice = HeightSlice.disabled();
+    private final FactoryXrayState xray = new FactoryXrayState();
     private CameraSettings settings;
     private int settingsWidth, settingsHeight;
     private long settingsRevision = -1;
     private Target selected;
     private boolean pinned;
     private boolean cameraPanel;
+    private boolean preferenceSession;
+    private String sliceProfile = "";
 
     private EngineeringModeController() {}
 
@@ -68,6 +74,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         ClientRegistry.registerKeyBinding(TOGGLE);
         FactoryShortcuts.register();
         FactoryControlSettings.register();
+        FactoryDisplayPreferences.register();
         FMLCommonHandler.instance()
             .bus()
             .register(INSTANCE);
@@ -84,21 +91,38 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         else open();
     }
 
+    static void toggleFromBinding() {
+        if (isActive()) {
+            FactoryEntryHint.bindingUsed();
+            close();
+        } else {
+            open();
+            if (isActive()) FactoryEntryHint.bindingUsed();
+        }
+    }
+
     public static void open() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld == null || mc.thePlayer == null || mc.thePlayer.isDead) return;
         if (mc.currentScreen != null) mc.displayGuiScreen(null);
         if (isActive()) return;
         INSTANCE.world = mc.theWorld;
+        INSTANCE.sessionPlayer = mc.thePlayer;
+        INSTANCE.sessionConnection = mc.getNetHandler();
+        INSTANCE.sessionDimension = mc.theWorld.provider.dimensionId;
         INSTANCE.returnToPlayer();
         INSTANCE.lease = WorldCameras.tryActivate(OWNER, mc.theWorld, 20, INSTANCE, INSTANCE::revoked);
         if (!isActive()) {
             INSTANCE.world = null;
             mc.thePlayer.addChatMessage(new ChatComponentText("世界相机正在由其他模块使用，工厂模式未开启。"));
         } else {
-            FactoryEntryHint.opened();
-            EngineeringHud.activateOverview();
-            EngineeringTerminalHudSnapshot.tick(EngineeringDashboardCache.slot() >= 0);
+            INSTANCE.sliceProfile = FactoryDisplayPreferences.currentSliceProfile();
+            INSTANCE.restorePreferences();
+            EngineeringHud.restorePreferences();
+            WorkbenchHud.restorePreferences();
+            INSTANCE.preferenceSession = true;
+            EngineeringTerminalHudSnapshot
+                .tick(EngineeringDashboardCache.slot() >= 0 || EngineeringTerminalActions.deviceVisualizationEnabled());
         }
     }
 
@@ -109,16 +133,57 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     }
 
     private void revoked() {
+        rememberPreferences();
+        FactoryDisplayPreferences.save();
+        preferenceSession = false;
+        sliceProfile = "";
         FactoryShortcuts.cancelBinding();
         lease = null;
         world = null;
+        sessionPlayer = null;
+        sessionConnection = null;
         selected = null;
         pinned = false;
         cameraPanel = false;
-        slice = HeightSlice.disabled();
+        xray.reset();
         settings = null;
         EngineeringHud.reset();
         EngineeringTerminalHudSnapshot.close();
+    }
+
+    static String preferenceProfile() {
+        return INSTANCE.sliceProfile;
+    }
+
+    private void restorePreferences() {
+        yaw = FactoryDisplayPreferences.number(FactoryDisplayPreferences.Key.YAW);
+        pitch = FactoryDisplayPreferences.number(FactoryDisplayPreferences.Key.PITCH);
+        zoom.snap(FactoryDisplayPreferences.number(FactoryDisplayPreferences.Key.ZOOM));
+        following = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.FOLLOWING);
+        cameraPanel = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.CAMERA_PANEL);
+        xray.reset();
+        if (!sliceProfile.isEmpty()) xray.restore(
+            FactoryDisplayPreferences.decode(FactoryDisplayPreferences.text(sliceProfile + "_current")),
+            FactoryDisplayPreferences.decode(FactoryDisplayPreferences.text(sliceProfile + "_remembered")));
+        settings = null;
+    }
+
+    private void rememberPreferences() {
+        if (!preferenceSession) return;
+        WorkbenchHud.rememberPreferences();
+        EngineeringHud.rememberPreferences();
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.YAW, yaw);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.PITCH, pitch);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.ZOOM, zoom.target());
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.FOLLOWING, following);
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.CAMERA_PANEL, cameraPanel);
+        if (!sliceProfile.isEmpty()) {
+            FactoryDisplayPreferences
+                .text(sliceProfile + "_current", FactoryDisplayPreferences.encode(xray.requested()));
+            FactoryDisplayPreferences
+                .text(sliceProfile + "_remembered", FactoryDisplayPreferences.encode(xray.remembered()));
+        }
+        FactoryDisplayPreferences.saveIfDue();
     }
 
     public static void focus(int x, int y, int z) {
@@ -160,7 +225,18 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         settings = null;
     }
 
+    public boolean xrayEnabled() {
+        return xray.requested()
+            .enabled();
+    }
+
+    public void toggleXray() {
+        xray.toggle(y);
+        settings = null;
+    }
+
     public double mapPlaneY() {
+        HeightSlice slice = xray.requested();
         return slice.enabled() && slice.hasUpper() ? slice.maximumY() - .01 : y;
     }
 
@@ -202,7 +278,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (isActive() || !Keyboard.getEventKeyState() || Keyboard.isRepeatEvent()) return;
         int code = Keyboard.getEventKey();
         if (code != Keyboard.KEY_NONE && code == TOGGLE.getKeyCode() && code != TerminalBaubleController.keyCode())
-            toggle();
+            toggleFromBinding();
     }
 
     @SubscribeEvent
@@ -221,12 +297,19 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         }
         if (event.phase != TickEvent.Phase.END || !isActive()) return;
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.theWorld != world || mc.thePlayer == null || mc.thePlayer.isDead) {
+        if (mc.theWorld != world || mc.theWorld.provider.dimensionId != sessionDimension
+            || mc.thePlayer == null
+            || mc.thePlayer != sessionPlayer
+            || mc.getNetHandler() != sessionConnection
+            || mc.thePlayer.isDead) {
             close();
             return;
         }
         EngineeringHud.tickSources();
-        EngineeringTerminalHudSnapshot.tick(EngineeringDashboardCache.slot() >= 0);
+        WorkbenchHud.tick();
+        EngineeringTerminalHudSnapshot
+            .tick(EngineeringDashboardCache.slot() >= 0 || EngineeringTerminalActions.deviceVisualizationEnabled());
+        rememberPreferences();
         lastX = x;
         lastY = y;
         lastZ = z;
@@ -400,20 +483,14 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
                     .blockDebugReloads(true)
                     .exclusiveKeyboard(true)
                     .build())
-            .hud(
-                CameraSettings.Hud.builder()
-                    .crosshair(CameraSettings.Hud.Crosshair.HIDDEN)
-                    .panelVisible(cameraPanel)
-                    .panelPosition((int) (244 * scale), (int) (56 * scale))
-                    .panelWidth(Math.max(1, (int) (192 * scale)))
-                    .build())
+            .hud(EngineeringInputPolicy.hud(cameraPanel, scale))
             .navigation(
                 EngineeringInputPolicy.navigation(
                     following,
                     FactoryControlSettings.value(FactoryControlSettings.Setting.ROTATION),
                     FactoryControlSettings.value(FactoryControlSettings.Setting.WHEEL_ZOOM)))
             .guiPolicy(WorldCameras.GuiPolicy.KEEP)
-            .slice(slice)
+            .slice(xray.requested())
             .build();
         return settings;
     }
@@ -507,7 +584,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public void requestSlice(HeightSlice value) {
-        slice = value;
+        xray.request(value);
         settings = null;
     }
 

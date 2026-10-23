@@ -61,6 +61,12 @@ public final class DeviceTerminalClientCache {
         freshMillis = 40000L;
     }
 
+    /** Monotonic receipt marker, including valid no-change replies; factory re-entry must receive new authority. */
+    public static long receiptRevision(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        return cached == null ? 0 : cached.receiptRevision;
+    }
+
     public static boolean isFresh(UUID terminalId, long now) {
         Cached cached = CACHE.get(terminalId);
         return cached != null && cached.snapshot != null && now - cached.receivedAt < freshMillis;
@@ -83,7 +89,10 @@ public final class DeviceTerminalClientCache {
             if (cached != null && cached.snapshot != null
                 && cached.pendingPages == null
                 && version == cached.version
-                && pageTotal == cached.pageTotal) cached.receivedAt = System.currentTimeMillis();
+                && pageTotal == cached.pageTotal) {
+                cached.receivedAt = System.currentTimeMillis();
+                cached.receiptRevision++;
+            }
             return;
         }
         if (terminalId == null || pageTotal <= 0 || pageIndex < 0 || pageIndex >= pageTotal) {
@@ -99,6 +108,7 @@ public final class DeviceTerminalClientCache {
             return;
         }
         cached.receivedAt = System.currentTimeMillis();
+        cached.receiptRevision++;
         // 同版本迟到重复页（整批已提交、pending 已清、分页布局一致）：直接丢弃，不重开批次——
         // 重开会产生只含本页的不完整 pending 批次，令 hasMorePending 恒真并触发无效追加轮询
         // （v1.7.15 修复）。安全性依据服务端不变式「数据变更必然 version++」：同 version 的
@@ -193,6 +203,7 @@ public final class DeviceTerminalClientCache {
         /** 已提交快照的最新版本（前缀或整批，取较新提交者） */
         long version = -1L;
         long receivedAt;
+        long receiptRevision;
 
         /** 已提交快照（null=尚未有任何完整批次；部分前缀一旦提交即非 null） */
         Snapshot snapshot;

@@ -21,6 +21,17 @@ final class EngineeringInputPolicy {
                 && control != CameraControl.ZOOM;
     }
 
+    static CameraSettings.Hud hud(boolean cameraPanel, double scale) {
+        // Core chooses its compact X-ray bar or the combined camera panel from these two flags.
+        return CameraSettings.Hud.builder()
+            .crosshair(CameraSettings.Hud.Crosshair.HIDDEN)
+            .panelVisible(cameraPanel)
+            .sliceBarVisible(true)
+            .panelPosition((int) (264 * scale), (int) (56 * scale))
+            .panelWidth(Math.max(1, (int) (192 * scale)))
+            .build();
+    }
+
     static CameraSettings.Navigation navigation(boolean following) {
         return navigation(following, 1, 1);
     }

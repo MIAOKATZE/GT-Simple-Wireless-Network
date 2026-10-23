@@ -53,7 +53,8 @@ public final class FactoryShortcuts {
         FILTER,
         AUDIT,
         SCAN,
-        VISUAL;
+        VISUAL,
+        XRAY(Keyboard.KEY_X);
 
         final int defaultKey;
 
@@ -232,7 +233,7 @@ public final class FactoryShortcuts {
         // A shortcut rebound onto movement must not retain a state pressed before factory mode opened.
         KeyBinding.setKeyBindState(code, false);
         if (pressed && !repeat) {
-            if (action == Action.TOGGLE) EngineeringModeController.toggle();
+            if (action == Action.TOGGLE) EngineeringModeController.toggleFromBinding();
             else WorkbenchHud.shortcut(action);
         }
         return true;

@@ -20,8 +20,8 @@ public final class WorkbenchLayout {
 
     public WorkbenchLayout(int width, int height, boolean sidebarOpen, boolean railOpen, boolean powerOpen,
         boolean dashboardOpen, int railHeight, int powerHeight, boolean alertsOpen) {
-        cameraHints = new Rect(164, 8, Math.max(1, width - 238), 43);
-        shortcuts = new Rect(width - 68, 9, 60, 24);
+        cameraHints = new Rect(164, 8, Math.max(1, width - 278), 43);
+        shortcuts = new Rect(width - 108, 9, 100, 24);
         for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(8, 56 + i * 33, 28, 28);
         for (int i = 0; i < modes.length; i++) modes[i] = new Rect(8 + i * 31, 9, 27, 24);
         for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 56 + i * 33, 26, 27);

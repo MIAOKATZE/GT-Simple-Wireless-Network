@@ -30,6 +30,15 @@ public class DeviceTerminalVisualizationStateTest {
     }
 
     @Test
+    public void factoryDisplayOffMasksOrdinaryPresentationUntilFactoryExit() {
+        UUID ordinary = UUID.randomUUID(), factory = UUID.randomUUID();
+        org.junit.Assert.assertNull(DeviceTerminalVisualizationState.presentationOwner(true, false, factory, ordinary));
+        org.junit.Assert.assertNull(DeviceTerminalVisualizationState.presentationOwner(true, true, null, ordinary));
+        assertEquals(factory, DeviceTerminalVisualizationState.presentationOwner(true, true, factory, ordinary));
+        assertEquals(ordinary, DeviceTerminalVisualizationState.presentationOwner(false, false, factory, ordinary));
+    }
+
+    @Test
     public void restoreAcknowledgementsKeepSameTerminalClickClockAndCachedSlot() throws Exception {
         UUID first = UUID.randomUUID(), second = UUID.randomUUID();
         DeviceTerminalVisualizationState.clear();
