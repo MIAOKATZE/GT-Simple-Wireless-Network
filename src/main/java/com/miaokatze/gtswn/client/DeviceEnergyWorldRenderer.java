@@ -69,8 +69,8 @@ public final class DeviceEnergyWorldRenderer {
             return;
         }
         DeviceTerminalVisualConfig.load();
-        UUID held = DeviceTerminalVisualizationState.visualizationTerminalId();
-        if (!DeviceTerminalVisualConfig.enabled || !DeviceTerminalVisualizationState.active(held)) {
+        UUID held = DeviceTerminalVisualizationState.presentationTerminalId();
+        if (!DeviceTerminalVisualConfig.enabled || !DeviceTerminalVisualizationState.presentationActive(held)) {
             clear();
             return;
         }
@@ -279,7 +279,7 @@ public final class DeviceEnergyWorldRenderer {
     private int renderGate(Minecraft mc) {
         if (mc.theWorld == null || mc.thePlayer == null) return 1;
         if (!DeviceTerminalVisualConfig.enabled || terminal == null
-            || !terminal.equals(DeviceTerminalVisualizationState.visualizationTerminalId())) return 2;
+            || !terminal.equals(DeviceTerminalVisualizationState.presentationTerminalId())) return 2;
         return DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis()) ? 0 : 3;
     }
 

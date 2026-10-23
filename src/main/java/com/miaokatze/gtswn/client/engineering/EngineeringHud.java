@@ -573,34 +573,29 @@ public final class EngineeringHud extends Gui {
         hits.clear();
         if (PortableSuperDashboard.isOpen()) return;
         EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
+        FactoryPowerSelection.Region region = dragging ? selectionRegion()
+            : new FactoryPowerSelection.Region(minCellX, minCellZ, maxCellX, maxCellZ);
+        FactoryPowerPalette palette = FactoryPowerPalette
+            .forRegion(s, EngineeringDashboardCache.fresh(), region != null && region.valid(gtGrid) ? region : null);
         if (s == null) {
-            if (dragging) drawSelectionPreview(f, w, h, null);
+            if (dragging) drawSelectionPreview(f, w, h, null, region, palette);
             return;
         }
         if (grid) for (Cell c : s.cells) {
+            // Draw selected cells exactly once, with the preview's current range and opacity.
+            if (!dragging) {
+                drawPowerCell(f, w, h, c, s.axisSymmetrical, planeY, palette);
+                continue;
+            }
+            if (palette.contains(c)) continue;
             int x1 = EngineeringGrid.minBlock(c.x, gtGrid, s.axisSymmetrical),
                 z1 = EngineeringGrid.minBlock(c.z, gtGrid, s.axisSymmetrical);
             int x2 = EngineeringGrid.maxBlockExclusive(c.x, gtGrid, s.axisSymmetrical),
                 z2 = EngineeringGrid.maxBlockExclusive(c.z, gtGrid, s.axisSymmetrical);
-            double net = c.power == null ? 0 : c.power.instOut - c.power.instIn;
-            boolean unknown = !EngineeringDashboardCache.fresh() || c.unknown > 0
-                || s.review != null && (s.review.discovering || s.review.loadedChunks < s.review.totalChunks);
-            polygon(
-                x1,
-                z1,
-                x2,
-                z2,
-                planeY,
-                w,
-                h,
-                unknown ? 0x304B5F6B : net > 0 ? 0x3657C6A0 : net < 0 ? 0x365B9EDB : 0x304E7880);
-            int[] p = project((x1 + x2) / 2.0, planeY, (z1 + z2) / 2.0, w, h);
-            if (p != null && p[0] > 10 && p[0] < w - 10 && p[1] > 10 && p[1] < h - 10) {
-                text(f, c.x + "," + c.z, p[0] - 22, p[1] - 10, MUTED, 90);
-                text(f, unknown ? "?" : metric(net) + " EU/t", p[0] - 22, p[1] + 2, TEXT, 100);
-            }
+            polygon(x1, z1, x2, z2, planeY, w, h, FactoryPowerPalette.OUTSIDE);
         }
-        if (dragging) drawSelectionPreview(f, w, h, s);
+        if (dragging) drawSelectionPreview(f, w, h, s, region, palette);
+        else if (grid) drawPowerLegend(f, powerOverlayArea(w, h), palette);
         if (!showNodes) return;
         List<StableNodeClusters.Projection> projected = new ArrayList<>();
         Minecraft mc = Minecraft.getMinecraft();
@@ -635,8 +630,62 @@ public final class EngineeringHud extends Gui {
             : new int[] { (int) ((p.ndcX() + 1) * w / 2), (int) ((1 - p.ndcY()) * h / 2) };
     }
 
-    private static void drawSelectionPreview(FontRenderer f, int w, int h, EngineeringSnapshot s) {
-        FactoryPowerSelection.Region region = selectionRegion();
+    private static void drawPowerCell(FontRenderer f, int w, int h, Cell cell, boolean axis, double y,
+        FactoryPowerPalette palette) {
+        int x1 = EngineeringGrid.minBlock(cell.x, gtGrid, axis), z1 = EngineeringGrid.minBlock(cell.z, gtGrid, axis);
+        int x2 = EngineeringGrid.maxBlockExclusive(cell.x, gtGrid, axis),
+            z2 = EngineeringGrid.maxBlockExclusive(cell.z, gtGrid, axis);
+        polygon(x1, z1, x2, z2, y, w, h, palette.cellColor(cell));
+        int[] p = project((x1 + x2) / 2.0, y, (z1 + z2) / 2.0, w, h);
+        if (p == null || p[0] <= 10 || p[0] >= w - 10 || p[1] <= 10 || p[1] >= h - 10) return;
+        text(f, cell.x + "," + cell.z, p[0] - 22, p[1] - 10, MUTED, 90);
+        text(
+            f,
+            palette.known(cell) ? metric(FactoryPowerPalette.net(cell)) + " EU/t" : "?",
+            p[0] - 22,
+            p[1] + 2,
+            TEXT,
+            100);
+    }
+
+    private static WorkbenchLayout.Rect powerOverlayArea(int w, int h) {
+        WorkbenchLayout layout = WorkbenchHud.layout(w, h);
+        if (layout.dashboard != null) return null;
+        int left = layout.sidebar == null ? 43 : layout.sidebar.x + layout.sidebar.w + 7;
+        int right = w - 42;
+        if (layout.rail != null) right = Math.min(right, layout.rail.x - 8);
+        if (layout.power != null) right = Math.min(right, layout.power.x - 8);
+        int bottom = h - (selecting || !notice.isEmpty() ? 29 : 8);
+        if (layout.alerts != null) bottom = Math.min(bottom, layout.alerts.y - 5);
+        return new WorkbenchLayout.Rect(left, 56, right - left, bottom - 56);
+    }
+
+    private static void drawPowerLegend(FontRenderer f, WorkbenchLayout.Rect area, FactoryPowerPalette palette) {
+        if (area == null || area.w < 80) return;
+        String label = StatCollector.translateToLocalFormatted(
+            "gtswn.engineering.dash.power.net.range",
+            palette.hasValues ? metric(palette.min) : "?",
+            palette.hasValues ? metric(palette.max) : "?");
+        String unknown = tr("dash.unknown");
+        int boxWidth = Math.min(area.w, Math.max(220, f.getStringWidth(label) + 16));
+        List<String> lines = f.listFormattedStringToWidth(label, boxWidth - 16);
+        int boxHeight = lines.size() * 10 + 17;
+        if (boxHeight > area.h) return;
+        int left = area.x + (area.w - boxWidth) / 2, top = area.y + area.h - boxHeight;
+        rect(left, top, left + boxWidth, top + boxHeight, BACK);
+        for (int i = 0; i < lines.size(); i++) text(f, lines.get(i), left + 8, top + 4 + i * 10, TEXT, boxWidth - 16);
+        int barY = top + boxHeight - 10;
+        int barLeft = left + 8, barRight = left + boxWidth - f.getStringWidth(unknown) - 28;
+        for (int x = barLeft; x < barRight; x++) {
+            int color = palette.colorAt((x - barLeft) / (double) Math.max(1, barRight - barLeft - 1));
+            rect(x, barY, x + 1, barY + 6, color);
+        }
+        rect(barRight + 7, barY, barRight + 13, barY + 6, 0xFF4B5F6B);
+        text(f, unknown, barRight + 17, barY - 2, MUTED, boxWidth - 16);
+    }
+
+    private static void drawSelectionPreview(FontRenderer f, int w, int h, EngineeringSnapshot s,
+        FactoryPowerSelection.Region region, FactoryPowerPalette palette) {
         if (region == null) return;
         boolean valid = region.valid(gtGrid);
         boolean axis = EngineeringDashboardCache.axisSymmetrical();
@@ -651,8 +700,7 @@ public final class EngineeringHud extends Gui {
                     sampledCell = cell;
                     break;
                 }
-                int color = sampledCell == null || incomplete ? 0x183F5860 : 0x6058CFC0;
-                polygon(
+                if (sampledCell == null) polygon(
                     EngineeringGrid.minBlock(cx, gtGrid, axis),
                     EngineeringGrid.minBlock(cz, gtGrid, axis),
                     EngineeringGrid.maxBlockExclusive(cx, gtGrid, axis),
@@ -660,7 +708,8 @@ public final class EngineeringHud extends Gui {
                     planeY + .02,
                     w,
                     h,
-                    color);
+                    FactoryPowerPalette.UNKNOWN);
+                else drawPowerCell(f, w, h, sampledCell, axis, planeY + .02, palette);
                 if (sampledCell != null) {
                     sampled++;
                     monitored += sampledCell.monitored;
@@ -697,11 +746,14 @@ public final class EngineeringHud extends Gui {
         if (incomplete) content += " | " + tr("dash.discovering");
         if (s != null && !EngineeringDashboardCache.fresh()) content += " | " + tr("stale");
         if (s != null && !"ok".equals(s.status)) content += " | " + tr("dash.status." + s.status);
-        int boxWidth = Math.min(w - 32, Math.max(f.getStringWidth(range), f.getStringWidth(content)) + 16);
-        int left = (w - boxWidth) / 2;
-        rect(left, h - 55, left + boxWidth, h - 29, BACK);
-        text(f, range, left + 8, h - 52, valid ? ACCENT : LINK, boxWidth - 16);
-        text(f, content, left + 8, h - 41, MUTED, boxWidth - 16);
+        WorkbenchLayout.Rect area = powerOverlayArea(w, h);
+        if (area == null || area.w < 80 || area.h < 26) return;
+        int boxWidth = Math.min(area.w, Math.max(f.getStringWidth(range), f.getStringWidth(content)) + 16);
+        int left = area.x + (area.w - boxWidth) / 2, top = area.y + area.h - 26;
+        rect(left, top, left + boxWidth, top + 26, BACK);
+        text(f, range, left + 8, top + 3, valid ? ACCENT : LINK, boxWidth - 16);
+        text(f, content, left + 8, top + 14, MUTED, boxWidth - 16);
+        drawPowerLegend(f, new WorkbenchLayout.Rect(area.x, area.y, area.w, area.h - 30), palette);
     }
 
     private static void polygon(int x1, int z1, int x2, int z2, double y, int w, int h, int color) {
@@ -717,7 +769,7 @@ public final class EngineeringHud extends Gui {
         GL11.glBegin(GL11.GL_QUADS);
         for (int[] p : points) GL11.glVertex2i(p[0], p[1]);
         GL11.glEnd();
-        GL11.glColor4f(.35f, .7f, .75f, .7f);
+        GL11.glColor4f(.7f, .76f, .8f, .35f);
         GL11.glBegin(GL11.GL_LINE_LOOP);
         for (int[] p : points) GL11.glVertex2i(p[0], p[1]);
         GL11.glEnd();
