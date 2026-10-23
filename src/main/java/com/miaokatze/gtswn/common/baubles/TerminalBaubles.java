@@ -71,6 +71,12 @@ public final class TerminalBaubles {
         return player != null && Loader.isModLoaded("Baubles") ? Integration.inventory(player) : null;
     }
 
+    /** Server-side in-place NBT changes need Baubles' native slot packet, not only markDirty. */
+    public static void syncChangedStack(EntityPlayerMP player, ItemStack stack) {
+        IInventory inventory = inventory(player);
+        if (inventory != null && stack != null) Integration.syncChangedStack(inventory, stack);
+    }
+
     private static int[] selections(IInventory inventory) {
         int[] categories = new int[inventory.getSizeInventory()];
         for (int i = 0; i < categories.length; i++) categories[i] = category(inventory.getStackInSlot(i));
@@ -293,6 +299,17 @@ public final class TerminalBaubles {
 
         static IInventory inventory(EntityPlayer player) {
             return baubles.api.BaublesApi.getBaubles(player);
+        }
+
+        static boolean syncChangedStack(IInventory inventory, ItemStack stack) {
+            if (!(inventory instanceof baubles.common.container.InventoryBaubles baubles) || stack == null)
+                return false;
+            for (int slot = 0; slot < baubles.getSizeInventory(); slot++) if (baubles.getStackInSlot(slot) == stack) {
+                baubles.markDirty();
+                baubles.syncSlotToClients(slot);
+                return true;
+            }
+            return false;
         }
 
         static int emptyDedicatedSlot(IInventory inventory, ItemStack stack, int category) {

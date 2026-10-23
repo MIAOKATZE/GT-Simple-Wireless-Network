@@ -307,10 +307,8 @@ public final class DeviceTerminalVisualActionQueue {
             }
             ItemDeviceInfoTerminal.setVisualizationEnabled(held, enabled);
             player.inventory.markDirty();
-            if (accessory) {
-                IInventory baubles = TerminalBaubles.inventory(player);
-                if (baubles != null) baubles.markDirty();
-            } else player.playerNetServerHandler
+            if (accessory) TerminalBaubles.syncChangedStack(player, held);
+            else player.playerNetServerHandler
                 .sendPacket(new S2FPacketSetSlot(0, targetSlot < 9 ? 36 + targetSlot : targetSlot, held));
             if (!enabled) {
                 Session current = SESSIONS.get(player.getUniqueID());
