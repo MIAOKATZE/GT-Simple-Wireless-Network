@@ -37,6 +37,19 @@ public class WorkbenchLayoutTest {
     }
 
     @Test
+    public void cameraHintsAndKeysKeepTheirOwnSpaceAtMinimumAndWideCanvasSizes() {
+        for (int width : new int[] { 640, 800, 1280 }) {
+            WorkbenchLayout layout = new WorkbenchLayout(width, 400, true, true, true, false);
+            WorkbenchLayout.Rect lastMode = layout.modes[layout.modes.length - 1];
+            assertTrue(lastMode.x + lastMode.w <= layout.cameraHints.x);
+            assertTrue(layout.cameraHints.x + layout.cameraHints.w <= layout.shortcuts.x);
+            assertTrue(layout.cameraHints.y + layout.cameraHints.h <= layout.terminals[0].y);
+            assertTrue(layout.contains(layout.cameraHints.x + 1, layout.cameraHints.y + 1));
+            assertTrue(layout.contains(layout.shortcuts.x + 1, layout.shortcuts.y + 1));
+        }
+    }
+
+    @Test
     public void smallestFactoryCanvasFitsCommonActionsAndKeepsPanelsSeparate() {
         WorkbenchLayout layout = new WorkbenchLayout(640, 400, true, true, true, false, 500, 108);
         assertTrue(layout.sidebar.y + 69 + 7 * 23 <= layout.sidebar.y + layout.sidebar.h - 5);

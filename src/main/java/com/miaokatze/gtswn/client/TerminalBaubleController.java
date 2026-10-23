@@ -410,15 +410,26 @@ public final class TerminalBaubleController {
 
     private static FactoryEntryHintLayout.Bounds drawHud(Minecraft mc, List<String> lines) {
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
-        FontRenderer font = mc.fontRenderer;
+        return drawHud(
+            mc.fontRenderer,
+            lines,
+            10,
+            8,
+            resolution.getScaledWidth() - 20,
+            Math.max(20, resolution.getScaledHeight() / 3));
+    }
+
+    /** Shared hint card inside either the ordinary HUD or an already transformed world canvas. */
+    public static FactoryEntryHintLayout.Bounds drawHud(FontRenderer font, List<String> lines, int x, int y, int width,
+        int height) {
         int widest = 0;
         for (String line : lines) widest = Math.max(widest, font.getStringWidth(line));
-        float scale = Math.min(1, (resolution.getScaledWidth() - 20f) / (widest + 20));
-        scale = Math.min(scale, Math.max(20, resolution.getScaledHeight() / 3f) / (lines.size() * 11 + 12));
+        float scale = Math.min(1, Math.max(1, width) / (float) (widest + 20));
+        scale = Math.min(scale, Math.max(1, height) / (float) (lines.size() * 11 + 12));
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
         try {
-            GL11.glTranslatef(resolution.getScaledWidth() / 2f, 8, 0);
+            GL11.glTranslatef(x + width / 2f, y, 0);
             GL11.glScalef(scale, scale, 1);
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glEnable(GL11.GL_BLEND);
@@ -435,8 +446,8 @@ public final class TerminalBaubleController {
         }
         int half = (widest + 16) / 2;
         return new FactoryEntryHintLayout.Bounds(
-            (int) Math.floor(resolution.getScaledWidth() / 2f - half * scale),
-            8,
+            (int) Math.floor(x + width / 2f - half * scale),
+            y,
             (int) Math.ceil(half * 2 * scale),
             (int) Math.ceil((lines.size() * 11 + 6) * scale));
     }

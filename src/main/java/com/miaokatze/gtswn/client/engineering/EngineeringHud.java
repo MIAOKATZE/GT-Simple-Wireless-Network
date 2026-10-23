@@ -1,9 +1,7 @@
 package com.miaokatze.gtswn.client.engineering;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
@@ -30,6 +28,7 @@ import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Node;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Power;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
+import com.miaokatze.gtswn.common.engineering.NodePresentation;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
@@ -51,7 +50,8 @@ public final class EngineeringHud extends Gui {
     private static final int LINK = 0xFFF1BD70, QUANTUM = 0xFF8EB2FF, INC = 0xFFDA97F1;
     private static int activeSlot = -1;
     private static boolean grid, gtGrid, selecting, dragging, boundOnly;
-    private static int dragX, dragY, endX, endY, minCellX, minCellZ, maxCellX, maxCellZ;
+    private static final FactoryPowerSelection powerSelection = new FactoryPowerSelection();
+    private static int minCellX, minCellZ, maxCellX, maxCellZ;
     private static double dragWorldX, dragWorldZ, endWorldX, endWorldZ, planeY;
     private static String notice = "";
     private static Node selectedNode;
@@ -67,6 +67,7 @@ public final class EngineeringHud extends Gui {
         activeSource = Source.EMPTY;
         WorkbenchHud.reset();
         grid = gtGrid = selecting = dragging = boundOnly = false;
+        powerSelection.reset();
         selectedNode = null;
         notice = "";
         hits.clear();
@@ -135,7 +136,8 @@ public final class EngineeringHud extends Gui {
         EngineeringSnapshot ready = EngineeringDashboardCache.snapshot();
         if (pendingGt && ready != null && ready.slot == 2 && ready.patternResolved) {
             pendingGt = false;
-            gtGrid = true;
+            if ("dash.pattern.unknown".equals(notice)) notice = "";
+            syncPowerSelection();
             defaultRegion();
             subscribe(2, true);
         }
@@ -154,12 +156,6 @@ public final class EngineeringHud extends Gui {
                 rect((w - hintWidth) / 2, h - 25, (w + hintWidth) / 2, h - 7, BACK);
                 text(mc.fontRenderer, hint, (w - hintWidth) / 2 + 8, h - 20, ACCENT, hintWidth - 16);
             }
-            if (dragging) outline(
-                Math.min(dragX, endX),
-                Math.min(dragY, endY),
-                Math.max(dragX, endX),
-                Math.max(dragY, endY),
-                ACCENT);
         }
     }
 
@@ -167,7 +163,9 @@ public final class EngineeringHud extends Gui {
     public static void activateOverview() {
         overview = true;
         suspended = false;
+        activeSlot = -1;
         pendingGt = selecting = dragging = grid = gtGrid = boundOnly = false;
+        powerSelection.reset();
         notice = "";
         WorkbenchHud.reset();
         activateOverviewSource();
@@ -207,6 +205,9 @@ public final class EngineeringHud extends Gui {
             EngineeringDashboardCache.close();
             activeSlot = slot;
             activeSource = source;
+            powerSelection.reset();
+            pendingGt = false;
+            syncPowerSelection();
             grid = showNodes = false;
         }
     }
@@ -214,8 +215,12 @@ public final class EngineeringHud extends Gui {
     static void activateData(int slot) {
         Source source = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
         if (!source.present()) return;
+        if (!suspended && activeSlot == slot && activeSource.sameIdentity(source)) return;
         suspended = false;
         PortableSuperDashboard.close();
+        powerSelection.reset();
+        pendingGt = false;
+        syncPowerSelection();
         defaultRegion();
         subscribe(slot, false);
     }
@@ -238,11 +243,16 @@ public final class EngineeringHud extends Gui {
         PortableSuperDashboard.close();
         if (overview) activateOverviewSource();
         else if (current.present()) {
+            powerSelection.clearCustom();
+            syncPowerSelection();
             defaultRegion();
             subscribe(activeSlot, grid);
         } else {
             EngineeringDashboardCache.close();
             activeSource = Source.EMPTY;
+            powerSelection.reset();
+            pendingGt = false;
+            syncPowerSelection();
             grid = showNodes = false;
             selectedNode = null;
         }
@@ -265,6 +275,55 @@ public final class EngineeringHud extends Gui {
         return grid || showNodes;
     }
 
+    public static boolean gridMcActive() {
+        return activeSlot == 2 && powerSelection.visible() && !powerSelection.gt();
+    }
+
+    public static boolean gridGtActive() {
+        return activeSlot == 2 && powerSelection.gt();
+    }
+
+    public static boolean customSelectionActive() {
+        return activeSlot == 2 && powerSelection.custom();
+    }
+
+    public static boolean areaSelecting() {
+        return activeSlot == 2 && powerSelection.selecting();
+    }
+
+    public static boolean auditActive() {
+        return activeSlot == 2 && powerSelection.audit();
+    }
+
+    public static boolean boundScopeActive() {
+        return activeSlot == 2 && boundOnly;
+    }
+
+    /** Audit uses the current subscription and comparison baseline. */
+    public static void toggleAudit() {
+        Source source = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, 2);
+        if (!source.present()) return;
+        if (activeSlot != 2 || suspended) activateData(2);
+        overview = false;
+        boolean restore = powerSelection.toggleAudit();
+        syncPowerSelection();
+        notice = "";
+        if (restore) restoreDefaultRegion();
+        if (powerSelection.audit()) WorkbenchHud.inspect();
+    }
+
+    private static void syncPowerSelection() {
+        gtGrid = powerSelection.gt();
+        grid = powerSelection.visible() && !pendingGt;
+        selecting = powerSelection.selecting();
+        dragging = powerSelection.dragging();
+    }
+
+    private static void restoreDefaultRegion() {
+        defaultRegion();
+        if (activeSlot == 2) subscribe(2, grid);
+    }
+
     static List<String> dataLines() {
         return detailLines();
     }
@@ -276,11 +335,7 @@ public final class EngineeringHud extends Gui {
     static void toggleMap() {
         if (activeSlot < 0) return;
         if (activeSlot == 2) {
-            grid = !grid;
-            if (grid) {
-                defaultRegion();
-                subscribe(2, true);
-            }
+            toolAction(2, gtGrid ? 2 : 1);
         } else if (activeSlot > 0) showNodes = !showNodes;
     }
 
@@ -290,6 +345,7 @@ public final class EngineeringHud extends Gui {
         activeSource = Source.EMPTY;
         activeSlot = -1;
         grid = showNodes = pendingGt = dragging = selecting = false;
+        powerSelection.reset();
         selectedNode = null;
         PortableSuperDashboard.close();
         notice = "";
@@ -340,7 +396,7 @@ public final class EngineeringHud extends Gui {
                 lines.add(tr("dash.power.current") + " " + power(s.current, false));
                 lines.add(tr("dash.power.average") + " " + power(s.current, true));
                 lines.add(tr(s.coverageBoundOnly ? "dash.average.bound" : "dash.average.window"));
-                if (s.review != null) {
+                if (powerSelection.audit() && s.review != null) {
                     lines.add(
                         tr("dash.chunks") + " "
                             + s.review.loadedChunks
@@ -391,11 +447,7 @@ public final class EngineeringHud extends Gui {
     }
 
     private static boolean sameNode(Node a, Node b) {
-        return a.kind == b.kind && a.dim == b.dim
-            && a.x == b.x
-            && a.y == b.y
-            && a.z == b.z
-            && (a.kind != 1 || a.mode == b.mode && a.name.equals(b.name));
+        return NodePresentation.sameIdentity(a, b);
     }
 
     private static Node currentNode(EngineeringSnapshot s) {
@@ -481,7 +533,10 @@ public final class EngineeringHud extends Gui {
         hits.clear();
         if (PortableSuperDashboard.isOpen()) return;
         EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
-        if (s == null) return;
+        if (s == null) {
+            if (dragging) drawSelectionPreview(f, w, h, null);
+            return;
+        }
         if (grid) for (Cell c : s.cells) {
             int x1 = EngineeringGrid.minBlock(c.x, gtGrid, s.axisSymmetrical),
                 z1 = EngineeringGrid.minBlock(c.z, gtGrid, s.axisSymmetrical);
@@ -505,23 +560,23 @@ public final class EngineeringHud extends Gui {
                 text(f, unknown ? "?" : metric(net) + " EU/t", p[0] - 22, p[1] + 2, TEXT, 100);
             }
         }
+        if (dragging) drawSelectionPreview(f, w, h, s);
         if (!showNodes) return;
-        Map<Long, NodeHit> clusters = new LinkedHashMap<>();
+        List<StableNodeClusters.Projection> projected = new ArrayList<>();
+        Minecraft mc = Minecraft.getMinecraft();
         for (Node n : s.nodes) {
-            if (n.dim != Minecraft.getMinecraft().theWorld.provider.dimensionId) continue;
-            int[] p = project(n.x + .5, n.y + .5, n.z + .5, w, h);
-            if (p == null || p[0] < 10 || p[0] >= w - 10 || p[1] < 10 || p[1] > h - 10) continue;
-            long key = ((long) (p[0] / 24) << 32) ^ (p[1] / 24 & 0xffffffffL);
-            NodeHit hit = clusters.get(key);
-            if (hit == null) {
-                hit = new NodeHit(p[0], p[1]);
-                clusters.put(key, hit);
-            }
-            hit.nodes.add(n);
+            if (n.dim != mc.theWorld.provider.dimensionId) continue;
+            ProjectedPoint p = WorldCameraHooks
+                .projectWorld(EngineeringModeController.OWNER, mc.theWorld, n.x + .5, n.y + .5, n.z + .5);
+            if (p == null || Math.abs(p.ndcZ()) > 1) continue;
+            projected.add(new StableNodeClusters.Projection(n, (p.ndcX() + 1) * w / 2, (1 - p.ndcY()) * h / 2));
         }
-        for (NodeHit hit : clusters.values()) {
+        for (StableNodeClusters.Cluster cluster : nodeClusters
+            .update(s.sessionId, mc.theWorld.provider.dimensionId, w, h, projected)) {
+            NodeHit hit = new NodeHit(cluster);
+            if (hit.x < 10 || hit.x >= w - 10 || hit.y < 10 || hit.y > h - 10) continue;
             Node n = hit.nodes.get(0);
-            int color = !EngineeringDashboardCache.fresh() || !n.online ? MUTED
+            int color = !EngineeringDashboardCache.fresh() || !cluster.allOnline ? MUTED
                 : n.kind == 1 ? LINK : n.kind == 2 ? QUANTUM : INC;
             rect(hit.x - 7, hit.y - 7, hit.x + 8, hit.y + 8, BACK);
             outline(hit.x - 7, hit.y - 7, hit.x + 8, hit.y + 8, color);
@@ -538,6 +593,75 @@ public final class EngineeringHud extends Gui {
         ProjectedPoint p = WorldCameraHooks.projectWorld(EngineeringModeController.OWNER, mc.theWorld, x, y, z);
         return p == null || Math.abs(p.ndcZ()) > 1 ? null
             : new int[] { (int) ((p.ndcX() + 1) * w / 2), (int) ((1 - p.ndcY()) * h / 2) };
+    }
+
+    private static void drawSelectionPreview(FontRenderer f, int w, int h, EngineeringSnapshot s) {
+        FactoryPowerSelection.Region region = selectionRegion();
+        if (region == null) return;
+        boolean valid = region.valid(gtGrid);
+        boolean axis = EngineeringDashboardCache.axisSymmetrical();
+        boolean incomplete = s != null && s.review != null
+            && (s.review.discovering || s.review.loadedChunks < s.review.totalChunks);
+        int sampled = 0, monitored = 0, unknown = 0;
+        Power sampledPower = Power.ZERO;
+        if (valid) {
+            for (int cx = region.minX; cx <= region.maxX; cx++) for (int cz = region.minZ; cz <= region.maxZ; cz++) {
+                Cell sampledCell = null;
+                if (s != null) for (Cell cell : s.cells) if (cell.x == cx && cell.z == cz) {
+                    sampledCell = cell;
+                    break;
+                }
+                int color = sampledCell == null || incomplete ? 0x183F5860 : 0x6058CFC0;
+                polygon(
+                    EngineeringGrid.minBlock(cx, gtGrid, axis),
+                    EngineeringGrid.minBlock(cz, gtGrid, axis),
+                    EngineeringGrid.maxBlockExclusive(cx, gtGrid, axis),
+                    EngineeringGrid.maxBlockExclusive(cz, gtGrid, axis),
+                    planeY + .02,
+                    w,
+                    h,
+                    color);
+                if (sampledCell != null) {
+                    sampled++;
+                    monitored += sampledCell.monitored;
+                    unknown += sampledCell.unknown;
+                    if (sampledCell.power != null) sampledPower = sampledPower.plus(sampledCell.power);
+                }
+            }
+        }
+        String range = tr(gtGrid ? "dash.grid.gt" : "dash.grid.mc") + " | "
+            + region.count()
+            + " "
+            + tr("dash.selection.cells");
+        if (valid) range += " | X " + EngineeringGrid.minBlock(region.minX, gtGrid, axis)
+            + ".."
+            + (EngineeringGrid.maxBlockExclusive(region.maxX, gtGrid, axis) - 1)
+            + " / Z "
+            + EngineeringGrid.minBlock(region.minZ, gtGrid, axis)
+            + ".."
+            + (EngineeringGrid.maxBlockExclusive(region.maxZ, gtGrid, axis) - 1)
+            + " | Y "
+            + (int) planeY;
+        else range += " | " + tr("dash.selection.large");
+        String content = tr("dash.selection.sampled") + " " + sampled + "/" + region.count();
+        if (sampled > 0) content += " | " + tr("dash.coverage")
+            + " "
+            + monitored
+            + " | "
+            + tr("dash.unknown")
+            + " "
+            + unknown
+            + " | "
+            + power(sampledPower, false);
+        if (sampled < region.count()) content += " | " + tr("dash.selection.unsampled");
+        if (incomplete) content += " | " + tr("dash.discovering");
+        if (s != null && !EngineeringDashboardCache.fresh()) content += " | " + tr("stale");
+        if (s != null && !"ok".equals(s.status)) content += " | " + tr("dash.status." + s.status);
+        int boxWidth = Math.min(w - 32, Math.max(f.getStringWidth(range), f.getStringWidth(content)) + 16);
+        int left = (w - boxWidth) / 2;
+        rect(left, h - 55, left + boxWidth, h - 29, BACK);
+        text(f, range, left + 8, h - 52, valid ? ACCENT : LINK, boxWidth - 16);
+        text(f, content, left + 8, h - 41, MUTED, boxWidth - 16);
     }
 
     private static void polygon(int x1, int z1, int x2, int z2, double y, int w, int h, int color) {
@@ -573,49 +697,59 @@ public final class EngineeringHud extends Gui {
         int x = localX(mc, e.x), y = localY(mc, e.y), w = width(mc), h = height(mc);
         boolean press = e.button == 0 && e.buttonstate;
         if (dragging) {
-            endX = x;
-            endY = y;
             double[] p = planePoint(e.x, e.y);
             if (p != null) {
                 endWorldX = p[0];
                 endWorldZ = p[1];
             }
             if (e.button == 0 && !e.buttonstate) finishSelection();
-            return e.button != 1 && e.button != 2;
+            return true;
         }
         if (WorkbenchHud.mouse(x, y, w, h, e.button, e.buttonstate, e.dwheel)) return true;
         if (selecting && e.button == 0) {
             if (press) {
                 double[] p = planePoint(e.x, e.y);
                 if (p != null) {
-                    dragging = true;
-                    dragX = endX = x;
-                    dragY = endY = y;
+                    powerSelection.beginDrag();
+                    syncPowerSelection();
                     dragWorldX = endWorldX = p[0];
                     dragWorldZ = endWorldZ = p[1];
                 } else notice = "dash.pick.unavailable";
             }
             return true;
         }
-        if (press) for (NodeHit hit : hits) {
-            if (Math.abs(x - hit.x) > 10 || Math.abs(y - hit.y) > 10) continue;
-            int at = -1;
-            for (int i = 0; i < hit.nodes.size(); i++)
-                if (selectedNode != null && sameNode(hit.nodes.get(i), selectedNode)) at = i;
-            selectNode(hit.nodes.get((at + 1) % hit.nodes.size()));
-            return true;
+        if (selecting) return true;
+        if (press) {
+            List<Node> clicked = new ArrayList<>();
+            for (NodeHit hit : hits)
+                if (Math.abs(x - hit.x) <= 10 && Math.abs(y - hit.y) <= 10) clicked.addAll(hit.nodes);
+            if (!clicked.isEmpty()) {
+                // Distinct owner/role groups may overlap on screen; every current member remains reachable.
+                clicked.sort(NodePresentation.ORDER);
+                int at = -1;
+                for (int i = 0; i < clicked.size(); i++)
+                    if (selectedNode != null && sameNode(clicked.get(i), selectedNode)) at = i;
+                selectNode(clicked.get((at + 1) % clicked.size()));
+                return true;
+            }
         }
         return false;
     }
 
     static void cancelAreaDrag() {
-        if (dragging) dragging = selecting = false;
+        if (dragging || selecting) cancelCustomSelection();
+    }
+
+    private static void cancelCustomSelection() {
+        if (!powerSelection.clearCustom()) return;
+        syncPowerSelection();
+        notice = "";
+        restoreDefaultRegion();
     }
 
     static boolean escape() {
         if (dragging || selecting) {
-            dragging = selecting = false;
-            notice = "";
+            cancelCustomSelection();
             return true;
         }
         return WorkbenchHud.escape();
@@ -630,8 +764,6 @@ public final class EngineeringHud extends Gui {
         }
         suspended = false;
         overview = false;
-        boolean wasSelecting = selecting;
-        pendingGt = dragging = selecting = false;
         notice = "";
         if (slot == 0) {
             if (action == 0) {
@@ -639,27 +771,36 @@ public final class EngineeringHud extends Gui {
                 WorkbenchHud.openDashboard();
             } else activateData(0);
         } else if (slot == 2) {
+            if (activeSlot != 2) activateData(2);
             if (action == 5) {
                 EngineeringDashboardCache.baseline();
                 WorkbenchHud.inspect();
             } else if (action == 4) {
                 boundOnly = !boundOnly;
-                if (activeSlot != 2) defaultRegion();
-                subscribe(2, true);
+                subscribe(2, grid);
             } else if (action == 3) {
-                if (activeSlot != 2) {
-                    defaultRegion();
-                    subscribe(2, true);
-                }
-                selecting = !wasSelecting;
-            } else if (action == 1 || action == 2) {
                 EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
-                pendingGt = action == 2 && (s == null || s.slot != 2 || !s.patternResolved);
-                gtGrid = action == 2 && !pendingGt;
+                if (!powerSelection.custom() && !selecting && s != null && "denied".equals(s.status)) {
+                    notice = "dash.status.denied";
+                    return;
+                }
+                FactoryPowerSelection.Change change = powerSelection
+                    .custom(!pendingGt && EngineeringDashboardCache.patternResolved());
+                syncPowerSelection();
+                if (change == FactoryPowerSelection.Change.DEFAULT_REGION) restoreDefaultRegion();
+                else if (change == FactoryPowerSelection.Change.SELECTING) {
+                    planeY = EngineeringModeController.INSTANCE.mapPlaneY();
+                    clearTarget();
+                } else if (change == FactoryPowerSelection.Change.NEED_GRID) notice = "dash.selection.need.grid";
+                else if (change == FactoryPowerSelection.Change.NEED_PATTERN) notice = "dash.pattern.unknown";
+            } else if (action == 1 || action == 2) {
+                FactoryPowerSelection.Change change = powerSelection
+                    .grid(action == 2 ? FactoryPowerSelection.Grid.GT : FactoryPowerSelection.Grid.MC);
+                pendingGt = powerSelection.gt() && !EngineeringDashboardCache.patternResolved();
+                syncPowerSelection();
                 if (pendingGt) notice = "dash.pattern.unknown";
-                defaultRegion();
-                subscribe(2, true);
-            } else activateData(2);
+                if (change == FactoryPowerSelection.Change.DEFAULT_REGION) restoreDefaultRegion();
+            } else WorkbenchHud.inspect();
         } else if (action == 0) {
             if (activeSlot == slot) showNodes = !showNodes;
             else {
@@ -674,13 +815,19 @@ public final class EngineeringHud extends Gui {
     }
 
     private static void subscribe(int slot, boolean showGrid) {
+        if (slot != 2) {
+            powerSelection.reset();
+            pendingGt = false;
+            syncPowerSelection();
+        }
         activeSlot = slot;
         activeSource = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
         grid = showGrid;
         selectedNode = null;
         EngineeringModeController.INSTANCE.clearSelection();
         showNodes = false;
-        EngineeringDashboardCache.subscribe(slot, gtGrid, minCellX, minCellZ, maxCellX, maxCellZ, boundOnly);
+        EngineeringDashboardCache
+            .subscribe(slot, gtGrid && !pendingGt, minCellX, minCellZ, maxCellX, maxCellZ, boundOnly);
     }
 
     private static void defaultRegion() {
@@ -693,10 +840,9 @@ public final class EngineeringHud extends Gui {
                 : frame.pose()
                     .anchorZ();
         planeY = EngineeringModeController.INSTANCE.mapPlaneY();
-        EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
-        boolean pattern = s != null && s.axisSymmetrical;
-        int cx = EngineeringGrid.cellOfBlock((int) Math.floor(x), gtGrid, pattern),
-            cz = EngineeringGrid.cellOfBlock((int) Math.floor(z), gtGrid, pattern);
+        boolean pattern = EngineeringDashboardCache.axisSymmetrical();
+        int cx = EngineeringGrid.cellOfBlock((int) Math.floor(x), gtGrid && !pendingGt, pattern),
+            cz = EngineeringGrid.cellOfBlock((int) Math.floor(z), gtGrid && !pendingGt, pattern);
         minCellX = cx - 1;
         minCellZ = cz - 1;
         maxCellX = cx + 1;
@@ -726,23 +872,25 @@ public final class EngineeringHud extends Gui {
     }
 
     private static void finishSelection() {
-        dragging = false;
-        EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
-        boolean pattern = s != null && s.axisSymmetrical;
-        int x1 = EngineeringGrid.cellOfBlock((int) Math.floor(Math.min(dragWorldX, endWorldX)), gtGrid, pattern);
-        int z1 = EngineeringGrid.cellOfBlock((int) Math.floor(Math.min(dragWorldZ, endWorldZ)), gtGrid, pattern);
-        int x2 = EngineeringGrid.cellOfBlock((int) Math.floor(Math.max(dragWorldX, endWorldX)), gtGrid, pattern);
-        int z2 = EngineeringGrid.cellOfBlock((int) Math.floor(Math.max(dragWorldZ, endWorldZ)), gtGrid, pattern);
-        if ((long) (x2 - x1 + 1) * (z2 - z1 + 1) > 64) {
-            notice = "dash.selection.large";
+        FactoryPowerSelection.Region region = selectionRegion();
+        if (!powerSelection.finish(region)) {
+            syncPowerSelection();
+            notice = region == null ? "dash.pattern.unknown" : "dash.selection.large";
             return;
         }
-        minCellX = x1;
-        minCellZ = z1;
-        maxCellX = x2;
-        maxCellZ = z2;
-        selecting = false;
+        syncPowerSelection();
+        minCellX = region.minX;
+        minCellZ = region.minZ;
+        maxCellX = region.maxX;
+        maxCellZ = region.maxZ;
+        notice = "";
         subscribe(2, true);
+    }
+
+    private static FactoryPowerSelection.Region selectionRegion() {
+        if (pendingGt || gtGrid && !EngineeringDashboardCache.patternResolved()) return null;
+        return FactoryPowerSelection
+            .region(dragWorldX, dragWorldZ, endWorldX, endWorldZ, gtGrid, EngineeringDashboardCache.axisSymmetrical());
     }
 
     @SubscribeEvent
@@ -795,12 +943,15 @@ public final class EngineeringHud extends Gui {
     private static final class NodeHit {
 
         final int x, y;
-        final List<Node> nodes = new ArrayList<>();
+        final List<Node> nodes;
 
-        NodeHit(int x, int y) {
-            this.x = x;
-            this.y = y;
+        NodeHit(StableNodeClusters.Cluster cluster) {
+            x = cluster.x;
+            y = cluster.y;
+            nodes = cluster.nodes;
         }
     }
+
+    private static final StableNodeClusters nodeClusters = new StableNodeClusters();
 
 }

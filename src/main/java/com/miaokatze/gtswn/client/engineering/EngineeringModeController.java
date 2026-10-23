@@ -3,7 +3,6 @@ package com.miaokatze.gtswn.client.engineering;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.settings.KeyBinding;
-import net.minecraft.entity.SharedMonsterAttributes;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.MovingObjectPosition;
@@ -58,6 +57,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     private HeightSlice slice = HeightSlice.disabled();
     private CameraSettings settings;
     private int settingsWidth, settingsHeight;
+    private long settingsRevision = -1;
     private Target selected;
     private boolean pinned;
     private boolean cameraPanel;
@@ -67,6 +67,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     public static void register() {
         ClientRegistry.registerKeyBinding(TOGGLE);
         FactoryShortcuts.register();
+        FactoryControlSettings.register();
         FMLCommonHandler.instance()
             .bus()
             .register(INSTANCE);
@@ -206,6 +207,14 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
+        // Vanilla supplies acceleration, friction, collision, sprinting and server-authoritative movement.
+        // Only the heading changes: native forward must point towards the top of the camera's screen.
+        if (event.phase == TickEvent.Phase.START && isActive() && following && !FactoryShortcuts.isBinding()) {
+            Minecraft mc = Minecraft.getMinecraft();
+            if (mc.thePlayer != null
+                && EngineeringInputPolicy.worldInput(true, mc.currentScreen != null, mc.inGameHasFocus))
+                mc.thePlayer.rotationYaw = EngineeringMotion.playerYaw(yaw);
+        }
         if (event.phase == TickEvent.Phase.END) {
             FactoryShortcuts.poll();
             EngineeringDashboardCache.tick();
@@ -229,27 +238,14 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             z = selected.z + .5;
         } else if (following) {
             returnToPlayer();
-            double forward = key(mc.gameSettings.keyBindForward) - key(mc.gameSettings.keyBindBack);
-            double right = key(mc.gameSettings.keyBindRight) - key(mc.gameSettings.keyBindLeft);
-            if (forward != 0 || right != 0) {
-                // Native collision, gravity, jumping and friction still execute. Only horizontal intent is replaced.
-                double speed = mc.thePlayer.getEntityAttribute(SharedMonsterAttributes.movementSpeed)
-                    .getAttributeValue() * 2.16;
-                if (mc.thePlayer.isSneaking()) speed *= .3;
-                double[] motion = EngineeringMotion.playerDelta(yaw, forward, right, speed);
-                mc.thePlayer.motionX = motion[0];
-                mc.thePlayer.motionZ = motion[2];
-                float direction = (float) Math.toDegrees(Math.atan2(-motion[0], motion[2]));
-                mc.thePlayer.rotationYaw = direction;
-                mc.thePlayer.renderYawOffset = direction;
-            }
         } else {
             double[] delta = EngineeringMotion.delta(
                 yaw,
                 zoom.actual(),
                 key(mc.gameSettings.keyBindForward) - key(mc.gameSettings.keyBindBack),
                 key(mc.gameSettings.keyBindRight) - key(mc.gameSettings.keyBindLeft),
-                key(mc.gameSettings.keyBindJump) - key(mc.gameSettings.keyBindSneak));
+                key(mc.gameSettings.keyBindJump) - key(mc.gameSettings.keyBindSneak),
+                FactoryControlSettings.value(FactoryControlSettings.Setting.KEYBOARD_PAN));
             x += delta[0];
             y += delta[1];
             z += delta[2];
@@ -379,9 +375,11 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     public CameraSettings settings() {
         Minecraft mc = Minecraft.getMinecraft();
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
-        if (settingsWidth != resolution.getScaledWidth() || settingsHeight != resolution.getScaledHeight()) {
+        if (settingsWidth != resolution.getScaledWidth() || settingsHeight != resolution.getScaledHeight()
+            || settingsRevision != FactoryControlSettings.revision()) {
             settingsWidth = resolution.getScaledWidth();
             settingsHeight = resolution.getScaledHeight();
+            settingsRevision = FactoryControlSettings.revision();
             settings = null;
         }
         double scale = EngineeringHud.scale(settingsWidth, settingsHeight);
@@ -389,6 +387,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             .render(
                 CameraSettings.Render.builder()
                     .hideHand(true)
+                    .renderPlayerBody(true)
                     .disableFog(true)
                     .disableCull(true)
                     .disableVanillaFrustum(true)
@@ -396,7 +395,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             .input(
                 CameraSettings.Input.builder()
                     .freeCursor(true)
-                    .movement(following ? WorldCameras.MovementPolicy.HORIZONTAL : WorldCameras.MovementPolicy.ALL)
+                    .movement(following ? WorldCameras.MovementPolicy.NONE : WorldCameras.MovementPolicy.ALL)
                     .consumeHotbarScroll(true)
                     .blockDebugReloads(true)
                     .exclusiveKeyboard(true)
@@ -408,7 +407,11 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
                     .panelPosition((int) (244 * scale), (int) (56 * scale))
                     .panelWidth(Math.max(1, (int) (192 * scale)))
                     .build())
-            .navigation(EngineeringInputPolicy.navigation(following))
+            .navigation(
+                EngineeringInputPolicy.navigation(
+                    following,
+                    FactoryControlSettings.value(FactoryControlSettings.Setting.ROTATION),
+                    FactoryControlSettings.value(FactoryControlSettings.Setting.WHEEL_ZOOM)))
             .guiPolicy(WorldCameras.GuiPolicy.KEEP)
             .slice(slice)
             .build();
@@ -420,7 +423,12 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null) return false;
         Minecraft mc = Minecraft.getMinecraft();
         if (following
-            && (code == mc.gameSettings.keyBindJump.getKeyCode() || code == mc.gameSettings.keyBindSneak.getKeyCode()))
+            && (code == mc.gameSettings.keyBindForward.getKeyCode() || code == mc.gameSettings.keyBindBack.getKeyCode()
+                || code == mc.gameSettings.keyBindRight.getKeyCode()
+                || code == mc.gameSettings.keyBindLeft.getKeyCode()
+                || code == mc.gameSettings.keyBindJump.getKeyCode()
+                || code == mc.gameSettings.keyBindSneak.getKeyCode()
+                || code == mc.gameSettings.keyBindSprint.getKeyCode()))
             return true;
         return code == TerminalBaubleController.keyCode() || code == Keyboard.KEY_ESCAPE
             || code == Keyboard.KEY_F8
@@ -462,6 +470,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (!supports(CameraControl.PAN) || !Double.isFinite(dx) || !Double.isFinite(dy) || !Double.isFinite(dz))
             return;
         if (dx != 0 || dy != 0 || dz != 0) EngineeringHud.cancelAreaDrag();
+        double sensitivity = FactoryControlSettings.value(FactoryControlSettings.Setting.MOUSE_PAN);
+        dx *= sensitivity;
+        dy *= sensitivity;
+        dz *= sensitivity;
         pinned = false;
         x += dx;
         y += dy;
@@ -480,7 +492,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public void zoom(double factor) {
-        if (Double.isFinite(factor) && factor > 0) zoom.multiply(factor, 0);
+        if (Double.isFinite(factor) && factor > 0) {
+            if (factor != 1) EngineeringHud.cancelAreaDrag();
+            zoom.multiply(factor, 0);
+        }
     }
 
     @Override

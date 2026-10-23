@@ -18,6 +18,7 @@ public final class EngineeringDashboardCache {
     private static Source source = Source.EMPTY;
     private static int slot = -1, dim, minX, minZ, maxX, maxZ, lastTick;
     private static boolean gtGrid, boundOnly;
+    private static boolean patternKnown, axisPattern;
     private static EngineeringSnapshot snapshot;
     private static long received;
 
@@ -28,11 +29,26 @@ public final class EngineeringDashboardCache {
     }
 
     public static void subscribe(int selection, boolean gt, int x1, int z1, int x2, int z2, boolean onlyBound) {
-        close();
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld == null || mc.thePlayer == null || selection < 0 || selection >= 8) return;
         Source actual = EngineeringTerminalSources.resolve(mc.thePlayer, selection);
         if (!actual.present()) return;
+        int nextMinX = Math.min(x1, x2), nextMinZ = Math.min(z1, z2);
+        int nextMaxX = Math.max(x1, x2), nextMaxZ = Math.max(z1, z2);
+        if (session != 0 && world == mc.theWorld
+            && connection == mc.getNetHandler()
+            && slot == selection
+            && source.sameIdentity(actual)
+            && gtGrid == gt
+            && boundOnly == onlyBound
+            && minX == nextMinX
+            && minZ == nextMinZ
+            && maxX == nextMaxX
+            && maxZ == nextMaxZ) return;
+        // A replacement session closes the previous server collector itself; send one new request.
+        if (world != mc.theWorld || connection != mc.getNetHandler()) patternKnown = false;
+        snapshot = null;
+        received = 0;
         world = mc.theWorld;
         connection = mc.getNetHandler();
         slot = selection;
@@ -40,10 +56,10 @@ public final class EngineeringDashboardCache {
         dim = mc.theWorld.provider.dimensionId;
         gtGrid = gt;
         boundOnly = onlyBound;
-        minX = Math.min(x1, x2);
-        minZ = Math.min(z1, z2);
-        maxX = Math.max(x1, x2);
-        maxZ = Math.max(z1, z2);
+        minX = nextMinX;
+        minZ = nextMinZ;
+        maxX = nextMaxX;
+        maxZ = nextMaxZ;
         session = ++serial;
         send(true, false);
     }
@@ -74,12 +90,25 @@ public final class EngineeringDashboardCache {
             || connection != mc.getNetHandler()
             || !sameSource(mc)) return;
         snapshot = value;
+        if (value.slot == 2 && value.patternResolved) {
+            patternKnown = true;
+            axisPattern = value.axisSymmetrical;
+        }
         EngineeringGrid.applyPattern(value.axisSymmetrical);
         received = System.currentTimeMillis();
     }
 
     public static EngineeringSnapshot snapshot() {
         return snapshot;
+    }
+
+    static boolean patternResolved() {
+        Minecraft mc = Minecraft.getMinecraft();
+        return patternKnown && world == mc.theWorld && connection == mc.getNetHandler();
+    }
+
+    static boolean axisSymmetrical() {
+        return patternResolved() && axisPattern;
     }
 
     public static boolean fresh() {
@@ -108,6 +137,7 @@ public final class EngineeringDashboardCache {
         session = 0;
         slot = -1;
         snapshot = null;
+        patternKnown = false;
         world = connection = null;
         source = Source.EMPTY;
     }

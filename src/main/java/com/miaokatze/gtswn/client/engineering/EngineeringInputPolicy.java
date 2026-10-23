@@ -22,6 +22,10 @@ final class EngineeringInputPolicy {
     }
 
     static CameraSettings.Navigation navigation(boolean following) {
+        return navigation(following, 1, 1);
+    }
+
+    static CameraSettings.Navigation navigation(boolean following, double rotation, double wheel) {
         return CameraSettings.Navigation.builder()
             .pan(!following)
             .yaw(true)
@@ -29,8 +33,10 @@ final class EngineeringInputPolicy {
             .zoom(true)
             .reset(true)
             .rotateDrag(1, 0)
+            .rotationDegreesPerPixel(.35 * FactoryControlSettings.Setting.ROTATION.sanitize(rotation))
             .wheelZoom(CameraSettings.Navigation.WheelZoom.DIRECT)
             .wheelDeltaUnit(CameraSettings.Navigation.WheelDeltaUnit.AUTO)
+            .wheelSensitivity(FactoryControlSettings.Setting.WHEEL_ZOOM.sanitize(wheel))
             .pitchRange(15, 85)
             .scaleRange(2, 128)
             .basePixelsPerWorldUnit(16)

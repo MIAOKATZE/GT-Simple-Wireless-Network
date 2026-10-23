@@ -11,11 +11,16 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.network.play.server.S2FPacketSetSlot;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.util.ChatComponentTranslation;
 
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
+import com.miaokatze.gtswn.common.device.DeviceScanManager;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRequestQueue;
 import com.miaokatze.gtswn.common.device.DeviceTerminalTeleport;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
+import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -41,11 +46,20 @@ public final class DeviceTerminalVisualActionQueue {
         final UUID playerId;
         final String playerName;
         final PacketDeviceTerminalVisualAction message;
+        final PacketEngineeringDeviceAction factory;
 
         Pending(EntityPlayerMP player, PacketDeviceTerminalVisualAction message) {
             playerId = player.getUniqueID();
             playerName = player.getCommandSenderName();
             this.message = message;
+            factory = null;
+        }
+
+        Pending(EntityPlayerMP player, PacketEngineeringDeviceAction factory) {
+            playerId = player.getUniqueID();
+            playerName = player.getCommandSenderName();
+            message = PacketDeviceTerminalVisualAction.toggle(factory.terminalId);
+            this.factory = factory;
         }
     }
 
@@ -70,7 +84,7 @@ public final class DeviceTerminalVisualActionQueue {
 
     private static final class Rate {
 
-        final long[] actions = { Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE };
+        final long[] actions = { Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE };
         long expires;
     }
 
@@ -86,6 +100,17 @@ public final class DeviceTerminalVisualActionQueue {
         if (player == null || message == null || !message.valid()) return;
         Pending action = new Pending(player, message);
         String key = action.playerId + ":" + message.terminalId + ":" + message.action + ":" + message.key;
+        offer(key, action);
+    }
+
+    public static void enqueue(EntityPlayerMP player, PacketEngineeringDeviceAction message) {
+        if (player == null || message == null || !message.valid()) return;
+        Pending action = new Pending(player, message);
+        // A player has only two factory intents, even when stale UUIDs are spammed.
+        offer(action.playerId + ":factory:" + message.action, action);
+    }
+
+    private static void offer(String key, Pending action) {
         synchronized (PENDING) {
             int count = COUNTS.getOrDefault(action.playerId, 0);
             if (!PENDING.containsKey(key)) {
@@ -156,7 +181,8 @@ public final class DeviceTerminalVisualActionQueue {
             if (player == null || !pending.playerId.equals(player.getUniqueID())
                 || player.playerNetServerHandler == null) continue;
             try {
-                apply(player, pending.message, now);
+                if (pending.factory == null) apply(player, pending.message, now);
+                else applyEngineering(player, pending.factory, now);
             } catch (RuntimeException invalid) {
                 long clock = System.nanoTime();
                 if (lastErrorNanos == 0 || clock - lastErrorNanos >= 30_000_000_000L) {
@@ -165,6 +191,8 @@ public final class DeviceTerminalVisualActionQueue {
                         "[DeviceVisual] action failed for " + pending.playerId + " target " + pending.message.key,
                         invalid);
                 }
+                if (pending.factory != null)
+                    player.addChatMessage(new ChatComponentTranslation("gtswn.engineering.device.unavailable"));
                 if (pending.message.action == PacketDeviceTerminalVisualAction.ACTION_VISUAL_TELEPORT) report(
                     player,
                     pending.message.terminalId,
@@ -174,18 +202,49 @@ public final class DeviceTerminalVisualActionQueue {
         }
     }
 
+    private static void applyEngineering(EntityPlayerMP player, PacketEngineeringDeviceAction message, long now) {
+        Source source = EngineeringTerminalSources.resolve(player, 2);
+        if (player.isDead || player.getHealth() <= 0 || !message.matches(source)) {
+            player.addChatMessage(new ChatComponentTranslation("gtswn.engineering.device.source_unavailable"));
+            acknowledge(player, message.terminalId, isEnabled(player, message.terminalId));
+            return;
+        }
+        if (message.action == PacketEngineeringDeviceAction.SCAN) {
+            if (!rateAllowed(player.getUniqueID(), (byte) 3, now)) {
+                player.addChatMessage(new ChatComponentTranslation("gtswn.engineering.device.unavailable"));
+                return;
+            }
+            DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), message.terminalId);
+            DeviceScanManager.startScan(player, message.terminalId);
+        } else apply(player, PacketDeviceTerminalVisualAction.toggle(message.terminalId), now, source);
+    }
+
     private static void apply(EntityPlayerMP player, PacketDeviceTerminalVisualAction message, long now) {
+        apply(player, message, now, null);
+    }
+
+    private static void apply(EntityPlayerMP player, PacketDeviceTerminalVisualAction message, long now,
+        Source source) {
         if (!message.valid()) return;
         if (player.isDead || player.getHealth() <= 0) {
             rejectTravel(player, message, DeviceTerminalTeleport.Status.UNAVAILABLE_PLAYER);
             return;
         }
-        ItemStack held = player.getHeldItem();
+        ItemStack held = source == null ? player.getHeldItem() : source.stack;
         // The device list can be opened directly from a carried slot. Only visualization toggles
         // accept that carried identity; teleport/rename retain the existing held-terminal checks.
-        boolean accessory = false;
+        boolean accessory = source != null && source.origin == SourceOrigin.BAUBLE;
         int targetSlot = player.inventory.currentItem;
-        if (message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE
+        if (source != null && !accessory) {
+            targetSlot = -1;
+            for (int i = 0; i < player.inventory.mainInventory.length; i++)
+                if (player.inventory.mainInventory[i] == held) {
+                    targetSlot = i;
+                    break;
+                }
+            if (targetSlot < 0) return;
+        }
+        if (source == null && message.action == PacketDeviceTerminalVisualAction.ACTION_TOGGLE
             && !PacketDeviceTerminalVisualAction.NEW_TERMINAL.equals(message.terminalId)
             && !message.terminalId.equals(ItemDeviceInfoTerminal.readTerminalId(held))) {
             IInventory baubles = TerminalBaubles.inventory(player);
@@ -242,6 +301,8 @@ public final class DeviceTerminalVisualActionQueue {
                 if (!accessory) player.playerNetServerHandler
                     .sendPacket(new S2FPacketSetSlot(0, targetSlot < 9 ? 36 + targetSlot : targetSlot, held));
                 acknowledge(player, actual, false);
+                if (source != null)
+                    player.addChatMessage(new ChatComponentTranslation("gtswn.engineering.device.unavailable"));
                 return;
             }
             ItemDeviceInfoTerminal.setVisualizationEnabled(held, enabled);
@@ -283,7 +344,7 @@ public final class DeviceTerminalVisualActionQueue {
             RATES.put(id, rate);
         }
         long last = rate.actions[action];
-        if (last != Long.MIN_VALUE && now >= last && now - last < 5) return false;
+        if (last != Long.MIN_VALUE && now >= last && now - last < (action == 3 ? 20 : 5)) return false;
         rate.actions[action] = now;
         rate.expires = now + 1200;
         return true;

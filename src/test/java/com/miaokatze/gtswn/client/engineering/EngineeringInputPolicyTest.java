@@ -27,6 +27,16 @@ public class EngineeringInputPolicyTest {
     }
 
     @Test
+    public void sensitivityUsesCoreNavigationWithSafeFallbacks() {
+        CameraSettings.Navigation navigation = EngineeringInputPolicy.navigation(false, 2, .5);
+        assertEquals(.7, navigation.rotationDegreesPerPixel(), 1e-12);
+        assertEquals(.5, navigation.wheelSensitivity(), 1e-12);
+        CameraSettings.Navigation invalid = EngineeringInputPolicy.navigation(false, Double.NaN, -1);
+        assertEquals(.35, invalid.rotationDegreesPerPixel(), 1e-12);
+        assertEquals(1, invalid.wheelSensitivity(), 1e-12);
+    }
+
+    @Test
     public void realGuiAndLostFocusOwnInputUntilWorldContextReturns() {
         assertTrue(EngineeringInputPolicy.worldInput(true, false, true));
         assertFalse(EngineeringInputPolicy.worldInput(true, true, true));

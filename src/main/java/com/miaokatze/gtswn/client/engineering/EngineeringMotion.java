@@ -6,12 +6,23 @@ public final class EngineeringMotion {
     private EngineeringMotion() {}
 
     public static double[] delta(double yaw, double zoom, double forward, double right, double up) {
+        return delta(yaw, zoom, forward, right, up, 1);
+    }
+
+    public static double[] delta(double yaw, double zoom, double forward, double right, double up, double sensitivity) {
         if (!Double.isFinite(yaw) || !Double.isFinite(zoom)
             || zoom <= 0
             || !Double.isFinite(forward)
             || !Double.isFinite(right)
-            || !Double.isFinite(up)) return new double[] { 0, 0, 0 };
-        return heading(yaw, forward, right, up, .5 / zoom);
+            || !Double.isFinite(up)
+            || !Double.isFinite(sensitivity)
+            || sensitivity <= 0) return new double[] { 0, 0, 0 };
+        return heading(yaw, forward, right, up, .75 * sensitivity / zoom);
+    }
+
+    /** Minecraft forward uses +Z at yaw zero; camera forward uses -Z. */
+    static float playerYaw(double cameraYaw) {
+        return (float) ((cameraYaw + 180) % 360);
     }
 
     /** Player walking speed is world speed; zoom never enters this contract. */

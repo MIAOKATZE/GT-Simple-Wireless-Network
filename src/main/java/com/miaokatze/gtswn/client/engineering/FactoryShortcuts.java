@@ -50,7 +50,10 @@ public final class FactoryShortcuts {
         BASELINE,
         STOP,
         OVERVIEW,
-        FILTER;
+        FILTER,
+        AUDIT,
+        SCAN,
+        VISUAL;
 
         final int defaultKey;
 

@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.engineering;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -107,12 +108,7 @@ final class EngineeringNetworkCollector {
                         0));
             }
         }
-        nodes.sort(
-            Comparator.comparing((Node node) -> node.owner)
-                .thenComparingInt(node -> node.x)
-                .thenComparingInt(node -> node.y)
-                .thenComparingInt(node -> node.z)
-                .thenComparing(node -> node.name));
+        nodes.sort(NodePresentation.ORDER);
     }
 
     void quantum(EntityPlayerMP player, ItemStack stack) {
@@ -193,7 +189,9 @@ final class EngineeringNetworkCollector {
                         node.getAnchorZ(),
                         node.getBridgeUsedChannels()));
             }
-            for (WorldServer target : DimensionManager.getWorlds()) {
+            WorldServer[] targets = DimensionManager.getWorlds();
+            Arrays.sort(targets, Comparator.comparingInt(target -> target.provider.dimensionId));
+            for (WorldServer target : targets) {
                 int remaining = EngineeringSnapshot.MAX_NODES - nodes.size();
                 if (remaining <= 0 || !budget()) break;
                 for (QuantumIncorporationRegistry.Entry entry : QuantumIncorporationRegistry.get(target)
@@ -225,5 +223,6 @@ final class EngineeringNetworkCollector {
         } catch (appeng.me.GridAccessException offline) {
             status = "offline";
         }
+        nodes.sort(NodePresentation.ORDER);
     }
 }
