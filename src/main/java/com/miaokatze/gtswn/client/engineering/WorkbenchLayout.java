@@ -6,7 +6,7 @@ public final class WorkbenchLayout {
     public final Rect[] terminals = new Rect[8];
     public final Rect[] modes = new Rect[5];
     public final Rect[] tools = new Rect[5];
-    public final Rect sidebar, rail, power, dashboard, alerts;
+    public final Rect sidebar, rail, power, dashboard, alerts, shortcuts;
 
     public WorkbenchLayout(int width, int height, boolean sidebarOpen, boolean railOpen, boolean powerOpen,
         boolean dashboardOpen) {
@@ -20,17 +20,19 @@ public final class WorkbenchLayout {
 
     public WorkbenchLayout(int width, int height, boolean sidebarOpen, boolean railOpen, boolean powerOpen,
         boolean dashboardOpen, int railHeight, int powerHeight, boolean alertsOpen) {
+        shortcuts = new Rect(164, 9, Math.max(50, width - 420), 24);
         for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(8, 56 + i * 33, 28, 28);
         for (int i = 0; i < modes.length; i++) modes[i] = new Rect(8 + i * 31, 9, 27, 24);
         for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 56 + i * 33, 26, 27);
-        sidebar = sidebarOpen ? new Rect(43, 56, 194, Math.min(300, Math.max(200, height - 64))) : null;
-        rail = !dashboardOpen && railOpen ? new Rect(width - 252, 56, 210, Math.min(height - 180, railHeight)) : null;
+        sidebar = sidebarOpen ? new Rect(43, 56, 214, Math.min(336, Math.max(0, height - 64))) : null;
+        int railAvailable = Math.max(0, height - 64 - (powerOpen ? powerHeight + 8 : 0));
+        rail = !dashboardOpen && railOpen ? new Rect(width - 252, 56, 210, Math.min(railAvailable, railHeight)) : null;
         power = !dashboardOpen && powerOpen ? new Rect(width - 252, height - powerHeight - 8, 210, powerHeight) : null;
-        int left = sidebarOpen ? 244 : 43;
+        int left = sidebarOpen ? 264 : 43;
         dashboard = dashboardOpen ? new Rect(left, 56, width - left - 42, height - 64) : null;
-        int alertLeft = sidebarOpen ? 244 : 43;
+        int alertLeft = sidebarOpen ? 264 : 43;
         int alertRight = railOpen || powerOpen ? width - 260 : width - 42;
-        int alertWidth = Math.min(176, Math.max(80, alertRight - alertLeft));
+        int alertWidth = Math.min(176, Math.max(0, alertRight - alertLeft));
         alerts = !dashboardOpen && alertsOpen
             ? new Rect(alertLeft + (alertRight - alertLeft - alertWidth) / 2, height - 47, alertWidth, 30)
             : null;
@@ -40,7 +42,8 @@ public final class WorkbenchLayout {
         for (Rect r : terminals) if (r.contains(x, y)) return true;
         for (Rect r : modes) if (r.contains(x, y)) return true;
         for (Rect r : tools) if (r.contains(x, y)) return true;
-        return inside(sidebar, x, y) || inside(rail, x, y)
+        return shortcuts.contains(x, y) || inside(sidebar, x, y)
+            || inside(rail, x, y)
             || inside(power, x, y)
             || inside(dashboard, x, y)
             || inside(alerts, x, y);
