@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.world.World;
@@ -51,7 +52,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
     private static final String NBT_TYPES = "types";
 
     /** 节点索引（打包坐标 → 类型） */
-    private final Map<Long, Byte> nodes = new HashMap<>();
+    private final Map<Long, Byte> nodes = new TreeMap<>();
 
     public WirelessNodeRegistry(String name) {
         super(name);

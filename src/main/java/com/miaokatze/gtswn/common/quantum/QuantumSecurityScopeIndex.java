@@ -8,6 +8,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.WeakHashMap;
 
+import net.minecraft.world.World;
+
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 
 import appeng.api.networking.IGridHost;
@@ -19,9 +21,16 @@ public final class QuantumSecurityScopeIndex {
 
     private static final Map<TileEntityNetworkQuantumNode, Map<QuantumSecurityScopeIndex, Boolean>> OWNERS = new WeakHashMap<>();
 
+    private static final WeakPositionIndex<TileEntityNetworkQuantumNode> LOADED_OWNERS = new WeakPositionIndex<>();
+
     /** Existing live membership index only. Server main-thread iteration must be bounded by its caller. */
     public static Iterable<TileEntityNetworkQuantumNode> loadedOwners() {
-        return Collections.unmodifiableSet(OWNERS.keySet());
+        return LOADED_OWNERS.values();
+    }
+
+    /** Drop only this world's read index; a replacement world at the same DIM is a different lifecycle. */
+    static void worldUnloading(World world) {
+        LOADED_OWNERS.removeIf(owner -> owner.getWorldObj() == world);
     }
 
     private final Map<IGridNode, AnchorKey> nodes = new IdentityHashMap<>();
@@ -36,6 +45,8 @@ public final class QuantumSecurityScopeIndex {
         if (owner != null) {
             owners.computeIfAbsent(owner, ignored -> Collections.newSetFromMap(new IdentityHashMap<>()))
                 .add(node);
+            if (owner.getWorldObj() != null && !owner.getWorldObj().isRemote) LOADED_OWNERS
+                .put(owner, owner.getWorldObj().provider.dimensionId, owner.xCoord, owner.yCoord, owner.zCoord);
             OWNERS.computeIfAbsent(owner, ignored -> new WeakHashMap<>())
                 .put(this, Boolean.TRUE);
         }
@@ -52,7 +63,10 @@ public final class QuantumSecurityScopeIndex {
                 Map<QuantumSecurityScopeIndex, Boolean> indexes = OWNERS.get(owner);
                 if (indexes != null) {
                     indexes.remove(this);
-                    if (indexes.isEmpty()) OWNERS.remove(owner);
+                    if (indexes.isEmpty()) {
+                        OWNERS.remove(owner);
+                        LOADED_OWNERS.remove(owner);
+                    }
                 }
             }
         }

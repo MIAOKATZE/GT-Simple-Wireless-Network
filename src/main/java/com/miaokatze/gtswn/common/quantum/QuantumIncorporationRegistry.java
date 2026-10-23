@@ -307,7 +307,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     public java.util.List<Entry> snapshotSource(int dimension, Set<Long> members, int limit) {
         java.util.List<Entry> result = new ArrayList<>();
         if (members == null || limit <= 0) return result;
-        for (long member : members) {
+        for (long member : new java.util.TreeSet<>(members)) {
             Map<Long, Entry> indexed = sources.get(
                 new AnchorKey(
                     dimension,
@@ -339,7 +339,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     private void index(Entry entry) {
-        sources.computeIfAbsent(entry.anchorKey(), ignored -> new HashMap<>())
+        sources.computeIfAbsent(entry.anchorKey(), ignored -> new java.util.TreeMap<>())
             .put(entry.position, entry);
         chunks.computeIfAbsent(entryChunk(entry), ignored -> new HashMap<>())
             .put(entry.position, entry);

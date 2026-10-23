@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.audio.PositionedSoundRecord;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.item.ItemStack;
@@ -17,9 +18,14 @@ import net.minecraft.util.StatCollector;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.DevicePowerFilter;
+import com.miaokatze.gtswn.client.TerminalBaubleController;
+import com.miaokatze.gtswn.client.TerminalKeyNames;
+import com.miaokatze.gtswn.client.engineering.FactoryControlSettings.Preset;
+import com.miaokatze.gtswn.client.engineering.FactoryControlSettings.Setting;
 import com.miaokatze.gtswn.client.engineering.FactoryShortcuts.Action;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.client.gui.TerminalPresentation;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
@@ -28,6 +34,7 @@ import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Node;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
+import com.miaokatze.gtswn.common.engineering.NodePresentation;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
@@ -47,6 +54,7 @@ final class WorkbenchHud extends Gui {
     private static List<String> tooltip;
     private static FactoryMachineFilter machineFilter = FactoryMachineFilter.ALL;
     private static int powerFilter;
+    private static boolean mouseDispatch;
     private static final Action[] MODES = { Action.DASHBOARD, Action.CAMERA, Action.RETURN, Action.FOLLOW,
         Action.TOGGLE };
     private static final Action[] TOOLS = { Action.MONITOR, Action.POWER, Action.MAP, Action.REFRESH, Action.ALERTS };
@@ -127,13 +135,14 @@ final class WorkbenchHud extends Gui {
             Rect r = l.terminals[i];
             boolean present = equipped[i] != null;
             box(r, selectedSlot == i && sidebarOpen ? HEADER : BACK);
-            if (selectedSlot == i) drawRect(r.x, r.y, r.x + 2, r.y + r.h, ACCENT);
+            drawRect(r.x, r.y, r.x + 2, r.y + r.h, selectedSlot == i && sidebarOpen ? ACCENT : MUTED);
             ItemStack stack = present ? equipped[i] : TerminalPresentation.placeholder(i);
             TerminalPresentation.drawIcon(mc, f, stack, r.x + 5, r.y + 5, present, 18);
             if (r.contains(mouseX, mouseY)) {
                 tooltip = new ArrayList<>();
                 tooltip.add(stack.getDisplayName());
                 tooltip.add(tr("slot") + " " + (i + 1));
+                tooltip.add(tr(selectedSlot == i && sidebarOpen ? "state.on" : "state.off"));
                 tooltip.add(TerminalPresentation.identity(equipped[i], i));
                 if (!present) tooltip.add(tr("empty.slot"));
                 bindingTooltip(tooltip, terminalAction(i));
@@ -147,14 +156,20 @@ final class WorkbenchHud extends Gui {
             MODES[i],
             mouseX,
             mouseY,
-            i == 0 && dashboardMode || i == 1 && EngineeringModeController.INSTANCE.cameraPanel()
-                || i == 3 && EngineeringModeController.INSTANCE.following());
-        control(l.shortcuts, tr("factory") + " \u00b7 " + tr("shortcuts"), tr("shortcuts.hint"), () -> {
-            leaveCamera();
-            sidebarOpen = true;
-            page = 3;
-            sidebarScroll = 0;
-        });
+            Boolean.TRUE.equals(actionState(MODES[i])));
+        drawCameraHints(f, l.cameraHints);
+        box(l.shortcuts, sidebarOpen && page == 3 ? HEADER : BACK);
+        stateEdge(l.shortcuts, sidebarOpen && page == 3);
+        control(
+            l.shortcuts,
+            tr("shortcuts"),
+            tr("shortcuts.hint") + " - " + tr(sidebarOpen && page == 3 ? "state.on" : "state.off"),
+            () -> {
+                leaveCamera();
+                sidebarOpen = true;
+                page = 3;
+                sidebarScroll = 0;
+            });
         String[] toolKeys = { "monitor", "power", "map", "refresh", "alerts" };
         for (int i = 0; i < l.tools.length; i++) icon(
             l.tools[i],
@@ -163,7 +178,7 @@ final class WorkbenchHud extends Gui {
             TOOLS[i],
             mouseX,
             mouseY,
-            i == 0 && railOpen || i == 1 && powerOpen || i == 2 && EngineeringHud.mapVisible());
+            Boolean.TRUE.equals(actionState(TOOLS[i])));
         if (l.sidebar != null) drawSidebar(f, l.sidebar, mouseX, mouseY);
         if (l.rail != null) drawRail(f, l.rail, mouseX, mouseY);
         if (l.power != null) drawPower(f, l.power);
@@ -195,6 +210,148 @@ final class WorkbenchHud extends Gui {
         if (tooltip != null) drawTooltip(f, tooltip, mouseX, mouseY, width, height);
     }
 
+    private static void drawCameraHints(FontRenderer f, Rect r) {
+        Minecraft mc = Minecraft.getMinecraft();
+        List<String> lines = new ArrayList<>();
+        String movement = TerminalKeyNames.name(mc.gameSettings.keyBindForward.getKeyCode()) + "/"
+            + TerminalKeyNames.name(mc.gameSettings.keyBindLeft.getKeyCode())
+            + "/"
+            + TerminalKeyNames.name(mc.gameSettings.keyBindBack.getKeyCode())
+            + "/"
+            + TerminalKeyNames.name(mc.gameSettings.keyBindRight.getKeyCode());
+        lines.add(
+            TerminalBaubleController.row(
+                TerminalBaubleController.action(movement, "factory.pan"),
+                TerminalBaubleController.action(
+                    TerminalKeyNames.name(mc.gameSettings.keyBindJump.getKeyCode()) + "/"
+                        + TerminalKeyNames.name(mc.gameSettings.keyBindSneak.getKeyCode()),
+                    "factory.height")));
+        lines.add(
+            TerminalBaubleController.row(
+                TerminalBaubleController.action(TerminalKeyNames.name(-98), "factory.pan"),
+                TerminalBaubleController.action(TerminalKeyNames.name(-99), "factory.rotate"),
+                TerminalBaubleController.action(tr("input.wheel"), "factory.zoom")));
+        lines.add(
+            TerminalBaubleController.row(
+                TerminalBaubleController.action(FactoryShortcuts.hint(Action.RETURN), "factory.return"),
+                TerminalBaubleController.action(FactoryShortcuts.hint(Action.FOLLOW), "factory.follow"),
+                TerminalBaubleController.action(FactoryShortcuts.hint(Action.TOGGLE), "factory.exit")));
+        TerminalBaubleController.drawHud(f, lines, r.x, r.y, r.w, r.h);
+    }
+
+    private static void drawControlSettings(FontRenderer f, Rect r, int y) {
+        text(f, tr("controls.hint"), r.x + 8, y, MUTED, r.w - 16);
+        y += 18;
+        for (Setting setting : Setting.values()) {
+            Rect line = new Rect(r.x + 6, y, r.w - 12, 24);
+            box(line, HEADER);
+            String key = setting.name()
+                .toLowerCase(java.util.Locale.ROOT);
+            text(f, tr("controls." + key), line.x + 5, y + 8, TEXT, line.w - 106);
+            text(
+                f,
+                String.format(java.util.Locale.ROOT, "%.2fx", FactoryControlSettings.value(setting)),
+                line.x + line.w - 91,
+                y + 8,
+                ACCENT,
+                44);
+            control(
+                new Rect(line.x + line.w - 45, y + 2, 20, 20),
+                "-",
+                tr("controls.decrease"),
+                () -> FactoryControlSettings.adjust(setting, -1));
+            control(
+                new Rect(line.x + line.w - 22, y + 2, 20, 20),
+                "+",
+                tr("controls.increase"),
+                () -> FactoryControlSettings.adjust(setting, 1));
+            y += 28;
+        }
+        int w = (r.w - 16) / 3;
+        for (Preset preset : Preset.values()) {
+            Rect button = new Rect(r.x + 6 + preset.ordinal() * w, y + 3, w - 3, 21);
+            box(button, HEADER);
+            control(
+                button,
+                tr(
+                    "controls.preset." + preset.name()
+                        .toLowerCase(java.util.Locale.ROOT)),
+                tr("controls.preset.hint"),
+                () -> FactoryControlSettings.applyPreset(preset));
+        }
+        Rect reset = new Rect(r.x + 6, y + 32, r.w - 12, 21);
+        box(reset, HEADER);
+        control(reset, tr("controls.reset"), tr("controls.reset.hint"), FactoryControlSettings::resetDefaults);
+    }
+
+    private static Boolean actionState(Action action) {
+        boolean camera = EngineeringModeController.INSTANCE.cameraPanel();
+        switch (action) {
+            case DASHBOARD:
+                return dashboardMode && !camera;
+            case CAMERA:
+                return camera;
+            case FOLLOW:
+                return EngineeringModeController.INSTANCE.following();
+            case PIN:
+                return EngineeringModeController.INSTANCE.pinned();
+            case MONITOR:
+                return railOpen && !camera && !dashboardMode;
+            case POWER:
+                return powerOpen && !camera && !dashboardMode;
+            case MAP:
+                return EngineeringHud.mapVisible();
+            case ALERTS:
+                return alertsOpen;
+            case GRID_MC:
+                return EngineeringHud.gridMcActive();
+            case GRID_GT:
+                return EngineeringHud.gridGtActive();
+            case SELECT_AREA:
+                return EngineeringHud.customSelectionActive() || EngineeringHud.areaSelecting();
+            case AUDIT:
+                return EngineeringHud.auditActive();
+            case SCOPE:
+                return EngineeringHud.boundScopeActive();
+            case VISUAL:
+                return EngineeringTerminalActions.deviceVisualizationEnabled();
+            case FILTER:
+                return machineFilter != FactoryMachineFilter.ALL;
+            default:
+                return null;
+        }
+    }
+
+    private static String actionTip(Action action, String label) {
+        Boolean state = actionState(action);
+        String tip = label == null ? actionLabel(action) : label;
+        if (state != null && !tip.contains(tr("state.on")) && !tip.contains(tr("state.off")))
+            tip += " - " + tr(state ? "state.on" : "state.off");
+        if (action == Action.SELECT_AREA && !EngineeringHud.gridMcActive() && !EngineeringHud.gridGtActive())
+            tip += " - " + StatCollector.translateToLocal("gtswn.engineering.dash.selection.need.grid");
+        return tip;
+    }
+
+    private static void stateEdge(Rect r, boolean active) {
+        drawRect(r.x, r.y + r.h - 2, r.x + r.w, r.y + r.h, active ? ACCENT : MUTED);
+    }
+
+    private static void clickSound() {
+        Minecraft.getMinecraft()
+            .getSoundHandler()
+            .playSound(PositionedSoundRecord.func_147674_a(new ResourceLocation("gui.button.press"), 1.0F));
+    }
+
+    private static void acceptClick(Runnable action) {
+        clickSound();
+        mouseDispatch = true;
+        try {
+            action.run();
+        } finally {
+            mouseDispatch = false;
+        }
+    }
+
     private static void drawSidebar(FontRenderer f, Rect r, int mx, int my) {
         box(r, BACK);
         drawRect(r.x, r.y, r.x + r.w, r.y + 23, HEADER);
@@ -202,19 +359,24 @@ final class WorkbenchHud extends Gui {
         String name = source.stack != null ? source.stack.getDisplayName() : tr("source.none");
         text(f, name, r.x + 8, r.y + 7, ACCENT, r.w - 32);
         control(new Rect(r.x + r.w - 23, r.y + 2, 21, 19), "<", tr("collapse"), () -> sidebarOpen = false);
-        String[] tabs = { "functions", "data", "project", "shortcuts" };
+        String[] tabs = { "functions", "data", "project", "shortcuts", "controls" };
         int tabWidth = (r.w - 12) / tabs.length;
         for (int i = 0; i < tabs.length; i++) {
             final int tab = i;
             Rect tabRect = new Rect(r.x + 5 + i * tabWidth, r.y + 28, tabWidth - 2, 19);
             box(tabRect, page == i ? HEADER : 0xFF22313C);
-            control(tabRect, tr(tabs[i]), null, () -> {
+            if (page == i) stateEdge(tabRect, true);
+            control(tabRect, tr(tabs[i]), tr(tabs[i]) + " - " + tr(page == i ? "state.on" : "state.off"), () -> {
                 page = tab;
                 sidebarScroll = 0;
             });
         }
         text(f, sourceLabel(source), r.x + 8, r.y + 53, source.present() ? MUTED : WARN, r.w - 16);
         int y = r.y + 69;
+        if (page == 4) {
+            drawControlSettings(f, r, y);
+            return;
+        }
         if (page == 3) {
             drawShortcuts(f, r, y);
             return;
@@ -240,7 +402,9 @@ final class WorkbenchHud extends Gui {
                     actions,
                     Action.MONITOR,
                     Action.FILTER,
-                    Action.POWER,
+                    Action.SCAN,
+                    Action.VISUAL,
+                    Action.AUDIT,
                     Action.GRID_MC,
                     Action.GRID_GT,
                     Action.SELECT_AREA,
@@ -295,7 +459,11 @@ final class WorkbenchHud extends Gui {
     private static void action(Rect r, int y, String label, Action action) {
         if (y + 20 > r.y + r.h - 5) return;
         Rect button = new Rect(r.x + 6, y, r.w - 12, 20);
-        box(button, HEADER);
+        box(
+            button,
+            action == Action.SELECT_AREA && !EngineeringHud.gridMcActive() && !EngineeringHud.gridGtActive()
+                ? 0xFF22313C
+                : HEADER);
         control(button, label, label, () -> shortcut(action), action);
     }
 
@@ -311,7 +479,7 @@ final class WorkbenchHud extends Gui {
         boolean nodes = EngineeringHud.activeSlot() == 1 || EngineeringHud.activeSlot() >= 3;
         if (nodes && snapshot != null) {
             Map<String, List<Node>> owners = new LinkedHashMap<>();
-            for (Node node : snapshot.nodes)
+            for (Node node : NodePresentation.sorted(snapshot.nodes))
                 owners.computeIfAbsent(node.owner + "|" + node.dim, ignored -> new ArrayList<>())
                     .add(node);
             for (Map.Entry<String, List<Node>> group : owners.entrySet()) {
@@ -330,7 +498,9 @@ final class WorkbenchHud extends Gui {
                                 .size(),
                         0,
                         () -> { if (!collapsedOwners.add(key)) collapsedOwners.remove(key); },
-                        true));
+                        true,
+                        tr(collapsed ? "state.off" : "state.on"),
+                        null));
                 if (!collapsed) for (Node node : group.getValue()) rows.add(
                     new Row(
                         EngineeringHud.nodeRole(node) + " · " + node.x + "/" + node.y + "/" + node.z,
@@ -361,17 +531,23 @@ final class WorkbenchHud extends Gui {
         if (!nodes) {
             Rect filter = new Rect(r.x + 5, r.y + 43, r.w - 10, 18);
             box(filter, HEADER);
+            stateEdge(filter, machineFilter != FactoryMachineFilter.ALL);
             control(
                 filter,
                 tr("filter." + machineFilter.key()),
-                tr("filter.hint"),
+                tr("filter.hint") + " - " + tr(machineFilter != FactoryMachineFilter.ALL ? "state.on" : "state.off"),
                 () -> shortcut(Action.FILTER),
                 Action.FILTER);
             Rect direction = new Rect(r.x + 5, r.y + 64, r.w - 10, 17);
-            control(direction, tr("direction." + powerFilter), tr("direction.hint"), () -> {
-                powerFilter = (powerFilter + 1) % DevicePowerFilter.MODE_COUNT;
-                railScroll = 0;
-            });
+            stateEdge(direction, powerFilter != DevicePowerFilter.ALL);
+            control(
+                direction,
+                tr("direction." + powerFilter),
+                tr("direction.hint") + " - " + tr(powerFilter != DevicePowerFilter.ALL ? "state.on" : "state.off"),
+                () -> {
+                    powerFilter = (powerFilter + 1) % DevicePowerFilter.MODE_COUNT;
+                    railScroll = 0;
+                });
         }
         int top = r.y + (nodes ? 49 : 87);
         List<String> selected = nodes ? EngineeringHud.targetLines() : machineDetails(device);
@@ -569,6 +745,7 @@ final class WorkbenchHud extends Gui {
     static void shortcut(Action action) {
         if (action == null) return;
         controls.clear();
+        if (!mouseDispatch) clickSound();
         if (action.ordinal() >= Action.TERMINAL_0.ordinal() && action.ordinal() <= Action.TERMINAL_7.ordinal()) {
             int slot = action.ordinal() - Action.TERMINAL_0.ordinal();
             if (selectedSlot == slot && sidebarOpen) sidebarOpen = false;
@@ -623,9 +800,22 @@ final class WorkbenchHud extends Gui {
                 EngineeringDashboardCache.refresh();
                 break;
             case ALERTS:
-                machineFilter = FactoryMachineFilter.ATTENTION;
-                powerFilter = DevicePowerFilter.ALL;
-                showMachines();
+                alertsOpen = !alertsOpen;
+                if (alertsOpen) {
+                    machineFilter = FactoryMachineFilter.ATTENTION;
+                    powerFilter = DevicePowerFilter.ALL;
+                    showMachines();
+                }
+                break;
+            case AUDIT:
+                leaveCamera();
+                EngineeringHud.toggleAudit();
+                break;
+            case SCAN:
+                EngineeringTerminalActions.scanDevice();
+                break;
+            case VISUAL:
+                EngineeringTerminalActions.toggleDeviceVisualization();
                 break;
             case FILTER:
                 machineFilter = machineFilter.next();
@@ -696,8 +886,8 @@ final class WorkbenchHud extends Gui {
     }
 
     private static void clickAction(Action action, int button) {
-        if (button == 1) FactoryShortcuts.beginBinding(action);
-        else if (button == 0) shortcut(action);
+        if (button == 1) acceptClick(() -> FactoryShortcuts.beginBinding(action));
+        else if (button == 0) acceptClick(() -> shortcut(action));
     }
 
     static boolean mouse(int x, int y, int width, int height, int button, boolean pressed, int wheel) {
@@ -731,7 +921,7 @@ final class WorkbenchHud extends Gui {
         }
         // Embedded Portable retains both mouse buttons for its own screen controls.
         if (WorkbenchLayout.inside(l.dashboard, x, y) && PortableSuperDashboard.isOpen()) {
-            PortableSuperDashboard.click(x - l.dashboard.x, y - l.dashboard.y + 50, button);
+            acceptClick(() -> PortableSuperDashboard.click(x - l.dashboard.x, y - l.dashboard.y + 50, button));
             return true;
         }
         if (WorkbenchLayout.inside(l.alerts, x, y)) {
@@ -740,8 +930,8 @@ final class WorkbenchHud extends Gui {
         }
         for (int i = controls.size() - 1; i >= 0; i--) if (controls.get(i).rect.contains(x, y)) {
             Hit hit = controls.get(i);
-            if (button == 1 && hit.shortcut != null) FactoryShortcuts.beginBinding(hit.shortcut);
-            else if (button == 0) hit.action.run();
+            if (button == 1 && hit.shortcut != null) acceptClick(() -> FactoryShortcuts.beginBinding(hit.shortcut));
+            else if (button == 0) acceptClick(hit.action);
             break;
         }
         return true;
@@ -753,12 +943,18 @@ final class WorkbenchHud extends Gui {
 
     private static void control(Rect rect, String label, String tip, Runnable action, Action shortcut) {
         FontRenderer f = Minecraft.getMinecraft().fontRenderer;
+        Boolean state = shortcut == null ? null : actionState(shortcut);
+        if (state != null) {
+            stateEdge(rect, state);
+            tip = actionTip(shortcut, tip == null ? label : tip);
+        }
         text(f, label, rect.x + 5, rect.y + (rect.h - 8) / 2, TEXT, rect.w - 10);
         controls.add(new Hit(rect, action, tip, shortcut));
     }
 
     private static void icon(Rect r, int u, String tip, Action action, int mx, int my, boolean active) {
         box(r, active || r.contains(mx, my) ? HEADER : BACK);
+        if (actionState(action) != null) stateEdge(r, active);
         Minecraft.getMinecraft()
             .getTextureManager()
             .bindTexture(ATLAS);
@@ -766,7 +962,7 @@ final class WorkbenchHud extends Gui {
         PAINTER.drawTexturedModalRect(r.x + (r.w - 10) / 2, r.y + (r.h - 10) / 2, u, 40, 10, 10);
         if (r.contains(mx, my)) {
             tooltip = new ArrayList<>();
-            tooltip.add(tip);
+            tooltip.add(actionTip(action, tip));
             bindingTooltip(tooltip, action);
         }
     }

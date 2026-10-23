@@ -20,6 +20,7 @@ public final class QuantumTileLifecycle {
 
     public static void worldUnloading(World world) {
         UNLOADING.add(world);
+        QuantumSecurityScopeIndex.worldUnloading(world);
         QuantumPolicyEpoch.changed();
         QuantumNetworkSecurityRegistry.get(world)
             .clearPolicyCache();

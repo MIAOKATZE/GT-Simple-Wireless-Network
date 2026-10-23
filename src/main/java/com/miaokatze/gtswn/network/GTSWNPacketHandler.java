@@ -213,6 +213,11 @@ public class GTSWNPacketHandler {
             Side.SERVER);
         NETWORK
             .registerMessage(PacketEngineeringSnapshot.Handler.class, PacketEngineeringSnapshot.class, 34, Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketEngineeringDeviceAction.Handler.class,
+            PacketEngineeringDeviceAction.class,
+            35,
+            Side.SERVER);
         cpw.mods.fml.common.FMLCommonHandler.instance()
             .bus()
             .register(new com.miaokatze.gtswn.common.engineering.EngineeringDashboardSessions());
