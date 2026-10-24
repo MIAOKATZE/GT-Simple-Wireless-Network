@@ -16,6 +16,142 @@ public class DesktopDefaultMigrationTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void v217DefaultWithOnlyOperationalBindingsMigratesAndRetainsEveryReference() throws Exception {
+        DesktopLayout previous = boundV217Overview();
+        assertTrue(DesktopStore.untouchedLegacyDefault(previous));
+        assertMigratedReferences(previous);
+    }
+
+    @Test
+    public void olderDefaultWithOnlyScreenBindingsMigratesButMachineBindingsKeepTheirLayout() throws Exception {
+        for (boolean tall : new boolean[] { false, true }) {
+            DesktopLayout previous = DesktopTestLayouts.legacyDefault(tall);
+            bindScreensAndResource(previous);
+            assertTrue(DesktopStore.untouchedLegacyDefault(previous));
+            assertMigratedReferences(previous);
+            assertTrue(
+                previous.replace(
+                    previous.find("input")
+                        .boundDevice(new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4))));
+            assertFalse(DesktopStore.untouchedLegacyDefault(previous));
+            assertLayoutPreserved(previous);
+        }
+    }
+
+    private void assertMigratedReferences(DesktopLayout previous) throws Exception {
+        java.io.File folder = temporary.newFolder();
+        String profile = DesktopStore.profile("bound-default", "player");
+        DesktopStore old = new DesktopStore(folder);
+        old.put(profile, previous);
+        assertTrue(old.flush());
+        DesktopStore upgraded = new DesktopStore(folder);
+        DesktopLayout migrated = upgraded.load(profile);
+        assertEquals(
+            6,
+            migrated.widgets()
+                .size());
+        assertEquals(WidgetPresentation.GAUGE, migrated.find("wireless").presentation);
+        for (WidgetSpec widget : migrated.widgets()) {
+            WidgetSpec original = previous.find(widget.id);
+            if (original == null) continue;
+            assertEquals(original.screen, widget.screen);
+            assertEquals(original.device, widget.device);
+        }
+        ResourceBinding originalResource = previous.find("resources").resource;
+        ResourceBinding migratedResource = migrated.find("resources").resource;
+        assertEquals(originalResource.source, migratedResource.source);
+        assertEquals(originalResource.screen, migratedResource.screen);
+        assertEquals(originalResource.kind, migratedResource.kind);
+        assertEquals(originalResource.key, migratedResource.key);
+        assertEquals(originalResource.name, migratedResource.name);
+        assertTrue(upgraded.flush());
+        assertEquals(DesktopStore.encode(migrated), DesktopStore.encode(new DesktopStore(folder).load(profile)));
+    }
+
+    @Test
+    public void boundV217DefaultWithCustomizedAppearanceNeverMigrates() throws Exception {
+        DesktopLayout previous = boundV217Overview();
+        WidgetSpec original = previous.find("wireless");
+        WidgetSpec[] changes = { original.titled("My grid"), original.withBounds(-4, -4, 4, 2),
+            original.bordered(0x123456), original.configured("", Collections.emptyList(), 1),
+            original.presented(WidgetPresentation.BAR, "stored", null),
+            original.presented(WidgetPresentation.KPI, "netRate", null),
+            original.presented(WidgetPresentation.KPI, "stored", 100.0) };
+        for (WidgetSpec changed : changes) {
+            DesktopLayout custom = previous.copy();
+            assertTrue(custom.replace(changed));
+            assertFalse(DesktopStore.untouchedLegacyDefault(custom));
+            assertLayoutPreserved(custom);
+        }
+    }
+
+    private void assertLayoutPreserved(DesktopLayout layout) throws Exception {
+        java.io.File folder = temporary.newFolder();
+        String profile = DesktopStore.profile("bound-custom", "player");
+        DesktopStore old = new DesktopStore(folder);
+        old.put(profile, layout);
+        assertTrue(old.flush());
+        assertEquals(DesktopStore.encode(layout), DesktopStore.encode(new DesktopStore(folder).load(profile)));
+    }
+
+    @Test
+    public void malformedOperationalBindingOnV217DefaultCannotBeDiscardedByMigration() throws Exception {
+        for (String key : new String[] { "widget.1.screen.id", "widget.5.resource.key", "widget.7.source" }) {
+            java.io.File folder = temporary.newFolder();
+            String profile = DesktopStore.profile("v217-bound-invalid", "player");
+            Properties saved = DesktopStore.encode(boundV217Overview());
+            saved.setProperty(key, "invalid");
+            java.nio.file.Path path = folder.toPath()
+                .resolve(profile + ".properties");
+            try (java.io.OutputStream output = java.nio.file.Files.newOutputStream(path)) {
+                saved.store(output, "invalid operational binding");
+            }
+            byte[] original = java.nio.file.Files.readAllBytes(path);
+            DesktopStore restored = new DesktopStore(folder);
+            assertEquals(
+                8,
+                restored.load(profile)
+                    .widgets()
+                    .size());
+            assertTrue(restored.flush());
+            assertArrayEquals(original, java.nio.file.Files.readAllBytes(path));
+        }
+    }
+
+    private static DesktopLayout boundV217Overview() {
+        DesktopLayout previous = DesktopTestLayouts.v217Overview();
+        bindScreensAndResource(previous);
+        assertTrue(
+            previous.replace(
+                previous.find("netRate")
+                    .boundScreen(new ScreenBinding(UUID.randomUUID(), UUID.randomUUID()))));
+        assertTrue(
+            previous.replace(
+                previous.find("device")
+                    .boundDevice(new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4))));
+        return previous;
+    }
+
+    private static void bindScreensAndResource(DesktopLayout previous) {
+        for (String id : new String[] { "wireless", "history", "resources" }) {
+            assertTrue(
+                previous.replace(
+                    previous.find(id)
+                        .boundScreen(new ScreenBinding(UUID.randomUUID(), UUID.randomUUID()))));
+        }
+        ResourceBinding resource = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "v2:item:" + String.join("", Collections.nCopies(64, "a")),
+            "Circuit");
+        assertTrue(
+            previous.replace(
+                previous.find("resources")
+                    .boundResource(resource)));
+    }
+
+    @Test
     public void exactV217DefaultMigratesOnceAndPreservesCustomizedVersion() throws Exception {
         java.io.File folder = temporary.newFolder();
         String profile = DesktopStore.profile("v217", "player");
@@ -187,7 +323,7 @@ public class DesktopDefaultMigrationTest {
                 screen.replace(
                     screen.find("wireless")
                         .boundScreen(new ScreenBinding(UUID.randomUUID(), UUID.randomUUID()))));
-            assertFalse(DesktopStore.untouchedLegacyDefault(screen));
+            assertTrue(DesktopStore.untouchedLegacyDefault(screen));
         }
     }
 }

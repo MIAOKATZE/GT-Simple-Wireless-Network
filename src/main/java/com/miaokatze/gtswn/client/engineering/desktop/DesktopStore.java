@@ -51,7 +51,7 @@ public final class DesktopStore {
         Properties saved = read(profile);
         DesktopLayout layout = decode(saved);
         if (untouchedLegacyDefault(layout) && untouchedLegacyProperties(saved, layout)) {
-            layout = DesktopLayout.defaultLayout();
+            layout = migratedDefault(layout);
             put(profile, layout);
             putView(profile, new DesktopViewport());
         }
@@ -69,9 +69,9 @@ public final class DesktopStore {
         return true;
     }
 
-    /** Only exact shipped templates migrate; any custom display preference or reference is preserved. */
+    /** Only shipped display templates migrate; v2.0.17 operational references do not customize their appearance. */
     static boolean untouchedLegacyDefault(DesktopLayout layout) {
-        if (encode(layout).equals(encode(previousOverview()))) return true;
+        if (displayPreferences(layout).equals(encode(previousOverview()))) return true;
         String[] ids = { "machines", "input", "output", "wireless", "history", "region", "resources", "attention" };
         WidgetKind[] kinds = { WidgetKind.MACHINES, WidgetKind.INPUT, WidgetKind.OUTPUT, WidgetKind.WIRELESS,
             WidgetKind.HISTORY, WidgetKind.REGION, WidgetKind.RESOURCES, WidgetKind.ATTENTION };
@@ -90,8 +90,6 @@ public final class DesktopStore {
                 || widget.fieldsConfigured
                 || widget.displayColumns != 1
                 || widget.device != null
-                || widget.resource != null
-                || widget.screen != null
                 || widget.userTarget != null
                 || widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR
                 || widget.presentation != WidgetPresentation.DEFAULT) return false;
@@ -101,6 +99,47 @@ public final class DesktopStore {
             matchesTall &= geometryMatches(widget, tall[index]);
         }
         return matchesCompact || matchesTall;
+    }
+
+    private static Properties displayPreferences(DesktopLayout layout) {
+        Properties display = encode(layout);
+        for (int index = 0; index < layout.widgets()
+            .size(); index++) {
+            String prefix = "widget." + index + ".";
+            for (String suffix : new String[] { "source", "key", "dimension", "x", "y", "z", "meta", "resource.source",
+                "resource.screen", "resource.kind", "resource.key", "resource.name", "screen.source", "screen.id" })
+                display.remove(prefix + suffix);
+        }
+        return display;
+    }
+
+    /** Retain exact references by stable component ID while replacing only the untouched shipped display. */
+    private static DesktopLayout migratedDefault(DesktopLayout previous) {
+        DesktopLayout migrated = DesktopLayout.defaultLayout();
+        for (WidgetSpec widget : migrated.widgets()) {
+            WidgetSpec old = previous.find(widget.id);
+            if (old == null) continue;
+            WidgetSpec retained = new WidgetSpec(
+                widget.id,
+                widget.kind,
+                widget.column,
+                widget.row,
+                widget.columns,
+                widget.rows,
+                widget.title,
+                old.device,
+                widget.fields,
+                widget.displayColumns,
+                widget.fieldsConfigured,
+                widget.presentation,
+                widget.metricField,
+                widget.userTarget,
+                widget.borderColor,
+                old.resource,
+                old.screen);
+            if (!migrated.replace(retained)) throw new IllegalStateException("Invalid migrated widget: " + widget.id);
+        }
+        return migrated;
     }
 
     /** Frozen v2.0.17 template, kept independent of future presets for precise opt-in-free migration. */
