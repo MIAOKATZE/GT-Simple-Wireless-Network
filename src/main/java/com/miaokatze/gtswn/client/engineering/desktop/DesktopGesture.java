@@ -13,14 +13,20 @@ public final class DesktopGesture {
         DRAG
     }
 
-    private boolean active, selectedBefore, moved, dragging, moving;
+    private boolean active, selectedBefore, moved, dragging, moving, direct;
     private long pressedAt;
     private double startX, startY;
 
     public void begin(boolean selectedBefore, double x, double y, long now) {
+        begin(selectedBefore, false, x, y, now);
+    }
+
+    /** Visible resize handles and a selected title are immediate drag affordances. */
+    public void begin(boolean selectedBefore, boolean direct, double x, double y, long now) {
         cancel();
         active = true;
         this.selectedBefore = selectedBefore;
+        this.direct = direct;
         startX = x;
         startY = y;
         pressedAt = now;
@@ -42,10 +48,14 @@ public final class DesktopGesture {
         return moving;
     }
 
-    /** Returns true exactly once when the hold threshold is reached. */
+    /** Returns true once: after movement on a direct handle, or a stationary body hold. */
     public boolean update(double x, double y, long now) {
         if (!active || dragging) return false;
         double dx = x - startX, dy = y - startY;
+        if (direct && dx * dx + dy * dy > SLOP * SLOP) {
+            dragging = true;
+            return true;
+        }
         if (now - pressedAt < HOLD_NANOS && dx * dx + dy * dy > SLOP * SLOP) moved = true;
         if (moved || now - pressedAt < HOLD_NANOS) return false;
         dragging = true;
@@ -62,6 +72,6 @@ public final class DesktopGesture {
     }
 
     public void cancel() {
-        active = selectedBefore = moved = dragging = moving = false;
+        active = selectedBefore = moved = dragging = moving = direct = false;
     }
 }

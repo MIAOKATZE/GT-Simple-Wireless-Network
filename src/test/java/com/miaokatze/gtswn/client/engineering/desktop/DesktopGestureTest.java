@@ -7,6 +7,31 @@ import org.junit.Test;
 public class DesktopGestureTest {
 
     @Test
+    public void visibleResizeHandleStartsBeforeHoldThresholdAndCommitsOnRelease() {
+        DesktopGesture gesture = new DesktopGesture();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
+        DesktopDrag drag = new DesktopDrag();
+        gesture.begin(true, true, 0, 0, 0);
+        assertTrue(gesture.update(-128, -64, 1000000));
+        assertTrue(drag.begin(layout, "machines", DesktopDrag.Edge.TOP_LEFT, 0, 0));
+        assertTrue(gesture.moveAllowed(-128, -64));
+        assertTrue(drag.update(-128, -64));
+        assertEquals(6, layout.find("machines").columns);
+        assertEquals(DesktopGesture.Release.DRAG, gesture.release(-128, -64, 2000000, false));
+        assertTrue(drag.finish());
+        assertEquals(-2, layout.find("machines").column);
+        assertFalse(gesture.active());
+    }
+
+    @Test
+    public void directHandleClickStillSelectsWithoutJitterOrMovement() {
+        DesktopGesture gesture = new DesktopGesture();
+        gesture.begin(true, true, 0, 0, 0);
+        assertFalse(gesture.update(3, 4, 1000000));
+        assertEquals(DesktopGesture.Release.ACTIVATE, gesture.release(3, 4, 2000000, true));
+    }
+
+    @Test
     public void firstClickOnlySelectsAndSecondClickActivatesOnRelease() {
         DesktopGesture gesture = new DesktopGesture();
         gesture.begin(false, 100, 100, 0);
@@ -32,7 +57,7 @@ public class DesktopGestureTest {
     @Test
     public void longPressMovesOnlyAfterThresholdAndReleaseNeverActivates() {
         DesktopGesture gesture = new DesktopGesture();
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         WidgetSpec original = layout.find("machines");
         DesktopDrag drag = new DesktopDrag();
         gesture.begin(true, 30, 30, 0);
@@ -54,7 +79,7 @@ public class DesktopGestureTest {
     @Test
     public void cancellationRollsBackPreviewAndLateReleaseDoesNothing() {
         DesktopGesture gesture = new DesktopGesture();
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         WidgetSpec original = layout.find("machines");
         DesktopDrag drag = new DesktopDrag();
         gesture.begin(true, 0, 0, 0);

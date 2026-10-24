@@ -53,7 +53,7 @@ public class DesktopStoreTest {
             .toPath();
         String profile = DesktopStore.profile("world", "player");
         DesktopStore store = new DesktopStore(directory.toFile());
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         DesktopViewport view = new DesktopViewport();
         store.put(profile, layout);
         store.putView(profile, view);
@@ -98,7 +98,9 @@ public class DesktopStoreTest {
             -40,
             500,
             9,
-            7,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             "My machine",
             binding,
             Arrays.asList("status", "averageInput", "coordinates"),
@@ -144,7 +146,7 @@ public class DesktopStoreTest {
 
     @Test
     public void legacyFieldsInferExplicitSelectionOnlyWhenNonempty() {
-        Properties defaults = DesktopStore.encode(DesktopLayout.defaultLayout());
+        Properties defaults = DesktopStore.encode(DesktopTestLayouts.dragFixture());
         defaults.remove("widget.0.fieldsConfigured");
         assertFalse(
             DesktopStore.decode(defaults)
@@ -164,7 +166,9 @@ public class DesktopStoreTest {
         p.setProperty("widget.3.rows", "-1");
         DesktopLayout recovered = DesktopStore.decode(p);
         assertEquals(
-            5,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size() - 3,
             recovered.widgets()
                 .size());
         assertNotNull(recovered.find("resources"));
@@ -198,7 +202,9 @@ public class DesktopStoreTest {
         assertEquals(-1234, reopened.loadView(first).panX, 0);
         assertEquals(.5, reopened.loadView(first).scale, 0);
         assertEquals(
-            8,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             reopened.load(second)
                 .widgets()
                 .size());
@@ -245,7 +251,9 @@ public class DesktopStoreTest {
         Files.write(directory.resolve(profile + ".properties"), "schema=\\uBROKEN".getBytes("UTF-8"));
         DesktopStore store = new DesktopStore(directory.toFile());
         assertEquals(
-            8,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             store.load(profile)
                 .widgets()
                 .size());

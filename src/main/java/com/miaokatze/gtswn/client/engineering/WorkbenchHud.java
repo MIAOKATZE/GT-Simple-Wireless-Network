@@ -264,6 +264,8 @@ final class WorkbenchHud extends Gui {
         scrollBars.clear();
         if (dashboardMode) {
             FactoryDashboard.render(f, l.dashboard, mouseX, mouseY, width, height);
+            // A requested open is acknowledged only after its visible first frame completed.
+            FactoryDashboardHint.opened();
             return;
         }
         ItemStack[] equipped = TerminalBaubles.terminals(mc.thePlayer);
@@ -1037,6 +1039,8 @@ final class WorkbenchHud extends Gui {
 
     /** Restored dashboards reopen only against a currently available real terminal, outside rendering. */
     static void tick() {
+        // Chrome belongs to the world HUD even while the dashboard is closed. Preserve DOWN until UP.
+        FactoryChrome.maintainInput(!dashboardMode && EngineeringModeController.dashboardInputAllowed());
         if (task == 3 && (EngineeringHud.activeSlot() < 0 || EngineeringHud.activeSlot() == 2
             || EngineeringHud.activeSlot() == 0)) chooseNetworkSource();
         EngineeringTerminalHudSnapshot data = EngineeringTerminalHudSnapshot
@@ -1228,7 +1232,6 @@ final class WorkbenchHud extends Gui {
         suspendInput();
         FactoryChrome.clear();
         dashboardMode = true;
-        FactoryDashboardHint.opened();
     }
 
     /** Shared entry point for HUD buttons and configurable keyboard actions. */

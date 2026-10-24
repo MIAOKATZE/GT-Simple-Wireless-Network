@@ -11,8 +11,25 @@ import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 public class DesktopDragTest {
 
     @Test
+    public void resizeOvershootClampsAtCompactMinimumAndPreservesOppositeCorner() {
+        DesktopLayout layout = new DesktopLayout();
+        WidgetSpec card = new WidgetSpec("card", WidgetKind.DEVICE, 10, 20, 8, 7);
+        assertTrue(layout.add(card));
+        DesktopDrag drag = new DesktopDrag();
+        assertTrue(drag.begin(layout, card.id, DesktopDrag.Edge.TOP_LEFT, 0, 0));
+        assertTrue(drag.update(10000, 10000));
+        WidgetSpec small = layout.find(card.id);
+        assertEquals(3, small.columns);
+        assertEquals(3, small.rows);
+        assertEquals(18, small.column + small.columns);
+        assertEquals(27, small.row + small.rows);
+        drag.cancel();
+        assertSame(card, layout.find(card.id));
+    }
+
+    @Test
     public void snappedDragAcrossViewportCanCancelAndReturnToPressGeometry() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         WidgetSpec original = layout.find("machines");
         DesktopDrag drag = new DesktopDrag();
         assertTrue(drag.begin(layout, original.id, DesktopDrag.Edge.MOVE, 32, 32));
@@ -26,7 +43,7 @@ public class DesktopDragTest {
 
     @Test
     public void rejectedOverlapPreservesLastAcceptedPositionAndFinishCommitsIt() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         DesktopDrag drag = new DesktopDrag();
         drag.begin(layout, "machines", DesktopDrag.Edge.MOVE, 0, 0);
         assertTrue(drag.update(-256, 0));
@@ -39,7 +56,7 @@ public class DesktopDragTest {
 
     @Test
     public void cornerResizeKeepsOppositeCornerAndRejectsNonFiniteInput() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         DesktopDrag drag = new DesktopDrag();
         drag.begin(layout, "machines", DesktopDrag.Edge.TOP_LEFT, 0, 0);
         assertTrue(drag.update(-128, -128));

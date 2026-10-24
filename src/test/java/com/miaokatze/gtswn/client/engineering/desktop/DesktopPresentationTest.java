@@ -122,7 +122,7 @@ public class DesktopPresentationTest {
         p.remove("widget.0.fieldsConfigured");
         WidgetSpec legacy = DesktopStore.decode(p)
             .find("machines");
-        assertEquals(WidgetPresentation.DEFAULT, legacy.presentation);
+        assertEquals(WidgetPresentation.KPI, legacy.presentation);
         assertFalse(legacy.fieldsConfigured);
         assertNull(legacy.userTarget);
         assertEquals("count", legacy.metricField);
@@ -140,7 +140,9 @@ public class DesktopPresentationTest {
             DesktopStore.decode(p)
                 .find("machines").userTarget);
         assertEquals(
-            8,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             DesktopStore.decode(p)
                 .widgets()
                 .size());

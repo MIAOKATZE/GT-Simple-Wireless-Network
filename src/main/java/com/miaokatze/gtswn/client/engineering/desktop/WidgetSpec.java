@@ -40,7 +40,7 @@ public final class WidgetSpec {
         METRICS.put(WidgetKind.MACHINES, fieldList("count", "running", "idle", "stopped", "unknown"));
         METRICS.put(WidgetKind.INPUT, fieldList("input"));
         METRICS.put(WidgetKind.OUTPUT, fieldList("output"));
-        METRICS.put(WidgetKind.WIRELESS, fieldList("stored"));
+        METRICS.put(WidgetKind.WIRELESS, fieldList("stored", "netRate"));
         METRICS.put(WidgetKind.REGION, fieldList("monitored", "unknown", "loadedChunks", "totalChunks"));
         METRICS.put(WidgetKind.DEVICE, fieldList("instantInput", "instantOutput", "averageInput", "averageOutput"));
         for (WidgetKind kind : WidgetKind.values()) {
@@ -58,7 +58,7 @@ public final class WidgetSpec {
         FIELDS.put(WidgetKind.MACHINES, fieldList("status", "source", "updated"));
         FIELDS.put(WidgetKind.INPUT, fieldList("input", "status", "source", "updated"));
         FIELDS.put(WidgetKind.OUTPUT, fieldList("output", "status", "source", "updated"));
-        FIELDS.put(WidgetKind.WIRELESS, fieldList("stored", "source", "updated"));
+        FIELDS.put(WidgetKind.WIRELESS, fieldList("stored", "netRate", "status", "source", "updated"));
         FIELDS.put(WidgetKind.HISTORY, fieldList("source", "updated"));
         FIELDS.put(WidgetKind.RESOURCES, fieldList("source", "updated"));
         FIELDS.put(WidgetKind.ATTENTION, fieldList("status", "source", "updated"));
@@ -119,6 +119,7 @@ public final class WidgetSpec {
     public final Double userTarget;
     public final int borderColor;
     public final ResourceBinding resource;
+    public final ScreenBinding screen;
 
     public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows) {
         this(id, kind, column, row, columns, rows, "", null, Collections.<String>emptyList(), 1);
@@ -174,6 +175,30 @@ public final class WidgetSpec {
         DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
         WidgetPresentation presentation, String metricField, Double userTarget, int borderColor,
         ResourceBinding resource) {
+        this(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            resource == null ? null : new ScreenBinding(resource.source, resource.screen));
+    }
+
+    public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows, String title,
+        DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
+        WidgetPresentation presentation, String metricField, Double userTarget, int borderColor,
+        ResourceBinding resource, ScreenBinding screen) {
         if (id == null || !id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("id");
         this.id = id;
         this.kind = Objects.requireNonNull(kind, "kind");
@@ -193,12 +218,13 @@ public final class WidgetSpec {
         this.userTarget = userTarget;
         this.borderColor = 0xFF000000 | borderColor;
         this.resource = kind == WidgetKind.RESOURCES ? resource : null;
+        this.screen = kind.supportsScreenBinding() ? screen : null;
         this.column = column;
         this.row = row;
         this.columns = columns;
         this.rows = rows;
         this.title = cleanTitle(title);
-        this.device = kind == WidgetKind.DEVICE ? device : null;
+        this.device = kind.supportsDeviceBinding() ? device : null;
         this.displayColumns = Math.max(1, Math.min(4, displayColumns));
         this.fieldsConfigured = fieldsConfigured;
         List<String> selected = new ArrayList<>();
@@ -220,14 +246,14 @@ public final class WidgetSpec {
     }
 
     public int minColumns() {
-        int minimum = kind == WidgetKind.RESOURCES ? resource == null ? kind.minColumns : 4
+        int minimum = kind == WidgetKind.RESOURCES ? resource == null && screen != null ? kind.minColumns : 4
             : presentation == WidgetPresentation.DEFAULT ? kind.minColumns : presentation.minColumns;
         return Math.max(minimum, fields.isEmpty() ? 0 : Math.min(displayColumns, fields.size()) * 2);
     }
 
     public int minRows() {
         // Header/footer plus compact field rows, with room for wrapping long evidence or recipe descriptions.
-        int minimum = kind == WidgetKind.RESOURCES ? resource == null ? kind.minRows : 3
+        int minimum = kind == WidgetKind.RESOURCES ? resource == null && screen != null ? kind.minRows : 2
             : presentation == WidgetPresentation.DEFAULT ? kind.minRows : presentation.minRows;
         int pixels = presentation == WidgetPresentation.DEFAULT || presentation == WidgetPresentation.STATUS_LIST ? 56
             : presentation.minRows * DesktopLayout.CELL - 18;
@@ -281,7 +307,8 @@ public final class WidgetSpec {
             metricField,
             userTarget,
             borderColor,
-            resource);
+            resource,
+            screen);
     }
 
     public WidgetSpec titled(String title) {
@@ -301,7 +328,8 @@ public final class WidgetSpec {
             metricField,
             userTarget,
             borderColor,
-            resource);
+            resource,
+            screen);
     }
 
     public WidgetSpec configured(String title, List<String> fields, int displayColumns) {
@@ -321,7 +349,8 @@ public final class WidgetSpec {
             metricField,
             userTarget,
             borderColor,
-            resource);
+            resource,
+            screen);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -343,7 +372,8 @@ public final class WidgetSpec {
             metricField,
             userTarget,
             borderColor,
-            resource);
+            resource,
+            screen);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -365,7 +395,8 @@ public final class WidgetSpec {
             metricField,
             userTarget,
             color,
-            resource);
+            resource,
+            screen);
     }
 
     public WidgetSpec boundResource(ResourceBinding binding) {
@@ -385,6 +416,55 @@ public final class WidgetSpec {
             metricField,
             userTarget,
             borderColor,
+            binding,
+            binding == null ? screen : new ScreenBinding(binding.source, binding.screen));
+        return candidate
+            .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
+    }
+
+    /** Null deliberately represents a placed component waiting for the user to select a machine. */
+    public WidgetSpec boundDevice(DeviceBinding binding) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            binding,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen);
+    }
+
+    public WidgetSpec boundScreen(ScreenBinding binding) {
+        ResourceBinding retained = resource != null && binding != null
+            && resource.source.equals(binding.source)
+            && resource.screen.equals(binding.screen) ? resource : null;
+        WidgetSpec candidate = new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            retained,
             binding);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));

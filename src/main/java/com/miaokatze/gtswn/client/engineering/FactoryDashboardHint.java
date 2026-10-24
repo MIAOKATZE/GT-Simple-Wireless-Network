@@ -33,6 +33,7 @@ public final class FactoryDashboardHint {
         if (!ensure(mc) || !STATE.visible()) return;
         MinecraftGuidanceRenderer.render(
             mc,
+            FactoryGuidanceStyle.PALETTE,
             anchor,
             screenWidth,
             screenHeight,

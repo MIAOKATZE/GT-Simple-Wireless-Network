@@ -115,6 +115,7 @@ public final class FactoryEntryHint {
             .place(resolution.getScaledWidth(), resolution.getScaledHeight(), desiredWidth, terminal);
         MinecraftGuidanceRenderer.card(
             mc,
+            FactoryGuidanceStyle.PALETTE,
             new UiRect(box.x, box.y, box.width, box.height),
             resolution.getScaledWidth(),
             resolution.getScaledHeight(),

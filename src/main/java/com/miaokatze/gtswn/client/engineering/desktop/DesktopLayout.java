@@ -54,16 +54,7 @@ public final class DesktopLayout {
     }
 
     public static DesktopLayout defaultLayout() {
-        DesktopLayout layout = new DesktopLayout();
-        layout.add(new WidgetSpec("machines", WidgetKind.MACHINES, 0, 0, 4, 3));
-        layout.add(new WidgetSpec("input", WidgetKind.INPUT, 0, 3, 4, 2));
-        layout.add(new WidgetSpec("output", WidgetKind.OUTPUT, 4, 3, 4, 2));
-        layout.add(new WidgetSpec("wireless", WidgetKind.WIRELESS, 4, 0, 4, 3));
-        layout.add(new WidgetSpec("history", WidgetKind.HISTORY, 8, 0, 8, 4));
-        layout.add(new WidgetSpec("region", WidgetKind.REGION, 0, 5, 4, 3));
-        layout.add(new WidgetSpec("resources", WidgetKind.RESOURCES, 8, 4, 8, 4));
-        layout.add(new WidgetSpec("attention", WidgetKind.ATTENTION, 4, 5, 4, 3));
-        return layout;
+        return DesktopPreset.overviewLayout();
     }
 
     public boolean add(WidgetSpec widget) {
@@ -104,7 +95,7 @@ public final class DesktopLayout {
             0,
             0,
             4,
-            3).boundResource(binding);
+            2).boundResource(binding);
         return place(candidate);
     }
 
@@ -169,8 +160,7 @@ public final class DesktopLayout {
             || candidate.column < -MAX_COORD
             || candidate.row < -MAX_COORD
             || (long) candidate.column + candidate.columns > MAX_COORD
-            || (long) candidate.row + candidate.rows > MAX_COORD
-            || candidate.kind == WidgetKind.DEVICE && candidate.device == null) return false;
+            || (long) candidate.row + candidate.rows > MAX_COORD) return false;
         for (WidgetSpec other : widgets) {
             if (other.id.equals(ignoredId)) continue;
             if (candidate.column < other.column + other.columns && candidate.column + candidate.columns > other.column

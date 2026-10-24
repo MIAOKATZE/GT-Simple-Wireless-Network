@@ -144,15 +144,12 @@ public final class FactoryDashboard extends Gui {
             resourceKey = "";
             resourcePages.clear();
         }
-        WidgetResources.update(portableSource, panels);
+        WidgetResources.update(portableSource, panels, PortableSuperDashboard.screenIds());
         List<String> identities = PortableSuperDashboard.screenIds();
-        if (selectedScreen.isEmpty() && !identities.isEmpty()) selectedScreen = identities.get(0);
         screenIndex = identities.indexOf(selectedScreen);
-        Panel panel = selectedPanel(panels, selectedScreen);
-        if (panel != chartPanel) {
-            chartPanel = panel;
-            rebuildPlot();
-        }
+    }
+
+    private static void selectResourcePanel(Panel panel) {
         String signature = resourceKind + ":" + resourceSort + ":" + search.value;
         if (resourcePanel != panel || !resourceSignature.equals(signature)) {
             resourcePanel = panel;
@@ -198,7 +195,7 @@ public final class FactoryDashboard extends Gui {
             values = java.util.Arrays.copyOfRange(values, first, values.length);
             BigDecimal[] converted = new BigDecimal[values.length];
             for (int i = 0; i < values.length; i++) if (Double.isFinite(values[i])) converted[i] = decimal(values[i]);
-            plot = new FactoryTrend(converted);
+            plot = new FactoryTrend(converted, rate);
             return;
         }
         int size = p.render.eu.size();
@@ -218,7 +215,7 @@ public final class FactoryDashboard extends Gui {
                 exact[at] = null;
             }
         }
-        plot = new FactoryTrend(values);
+        plot = new FactoryTrend(values, rate);
         plotWindow = ticks.length >= 2
             ? com.miaokatze.gtswn.common.panel.WindowLabel.formatSpan(Math.max(0, ticks[ticks.length - 1] - ticks[0]))
             : "\u2014";
@@ -247,6 +244,20 @@ public final class FactoryDashboard extends Gui {
                 .capture(Minecraft.getMinecraft().thePlayer);
             card(f, r, FactoryDesktop.label(widget));
             if (r.contains(mx, my)) hover = FactoryDesktop.label(widget);
+            if (widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
+                || widget.kind == WidgetKind.RESOURCES) {
+                WidgetResources.ScreenReading screen = WidgetResources.readScreen(widget.screen);
+                if (screen.panel == null) {
+                    text(f, tr("screen." + screen.reason), r.x + 10, r.y + 36, AMBER, r.w - 20);
+                    bindingAction(f, r, widget, 60);
+                    return;
+                }
+                if (chartPanel != screen.panel) {
+                    chartPanel = screen.panel;
+                    rebuildPlot();
+                }
+                selectResourcePanel(screen.panel);
+            }
             if (!WidgetSpec.availableMetrics(widget.kind)
                 .isEmpty() && widget.presentation != WidgetPresentation.DEFAULT
                 && widget.presentation != WidgetPresentation.STATUS_LIST) {
@@ -274,7 +285,7 @@ public final class FactoryDashboard extends Gui {
                     drawKpi(f, r, 2, power, snapshot);
                     break;
                 case WIRELESS:
-                    drawKpi(f, r, 3, power, snapshot);
+                    drawGrid(f, r);
                     break;
                 case HISTORY:
                     drawTrend(f, r, mx, my);
@@ -333,11 +344,17 @@ public final class FactoryDashboard extends Gui {
 
     private static void drawFields(FontRenderer f, Rect r, WidgetSpec widget, EngineeringSnapshot power,
         EngineeringTerminalHudSnapshot snapshot) {
+        if (requiresDevice(widget) && widget.device == null) {
+            text(f, FactoryDesktop.tr("device.choose"), r.x + 12, r.y + 36, AMBER, r.w - 24);
+            bindingAction(f, r, widget, 60);
+            return;
+        }
         DesktopDeviceSources.Reading reading = widget.device == null ? null : DesktopDeviceSources.read(widget.device);
         Entry device = reading == null ? null : reading.entry;
         if (widget.device != null && device == null) {
             text(f, FactoryDesktop.tr("disconnected"), r.x + 12, r.y + 48, AMBER, r.w - 24);
             text(f, FactoryDesktop.tr("reason." + reading.reason), r.x + 12, r.y + 67, MUTED, r.w - 24);
+            bindingAction(f, r, widget, 85);
             return;
         }
         List<String> fields = DesktopFieldPolicy.fields(widget);
@@ -381,6 +398,7 @@ public final class FactoryDashboard extends Gui {
                         : powerStatus(power);
         if ("name".equals(field))
             return entry == null ? "—" : entry.displayName.isEmpty() ? entry.name : entry.displayName;
+        if ("status".equals(field) && widget.kind == WidgetKind.WIRELESS) return gridState(grid());
         if ("status".equals(field)) return entry != null
             ? StatCollector.translateToLocal("gtswn.factory.status." + FactoryMachineFilter.status(entry, true))
             : widget.kind == WidgetKind.MACHINES
@@ -417,11 +435,14 @@ public final class FactoryDashboard extends Gui {
             boolean input = "input".equals(field);
             if (entry != null) return FactoryMachineFilter.ignored(entry) ? "—"
                 : entry.evidenceKind >= 2 ? "?" : numeric(decimal(input ? entry.instIn : entry.instOut)) + " EU/t";
-            return valid ? FormatUtil.formatMetricDouble(input ? power.current.instIn : power.current.instOut) + " EU/t"
-                : "—";
+            return requiresDevice(widget) ? FactoryDesktop.tr("device.choose")
+                : valid ? FormatUtil.formatMetricDouble(input ? power.current.instIn : power.current.instOut) + " EU/t"
+                    : "—";
         }
-        if ("stored".equals(field) && PortableSuperDashboard.available(chartPanel)
-            && !chartPanel.currentEnergy.isEmpty()) return compact(chartPanel.currentEnergy) + " EU";
+        if (widget.kind == WidgetKind.WIRELESS && ("stored".equals(field) || "netRate".equals(field))) {
+            BigDecimal value = "netRate".equals(field) ? grid().netRate : grid().stored;
+            return value == null ? "—" : numeric(value) + ("netRate".equals(field) ? " EU/t" : " EU");
+        }
         return FactoryDesktop.tr("unavailable");
     }
 
@@ -454,16 +475,11 @@ public final class FactoryDashboard extends Gui {
     private static BigDecimal metric(WidgetSpec widget, EngineeringSnapshot power,
         EngineeringTerminalHudSnapshot snapshot) {
         String field = widget.metricField;
-        if (widget.kind == WidgetKind.DEVICE) {
+        if (requiresDevice(widget)) {
             DesktopDeviceSources.Reading reading = widget.device == null ? null
                 : DesktopDeviceSources.read(widget.device);
             Entry e = reading == null ? null : reading.entry;
-            if (e == null || FactoryMachineFilter.ignored(e) || e.evidenceKind >= 2) return null;
-            if ("instantInput".equals(field)) return decimal(e.instIn);
-            if ("instantOutput".equals(field)) return decimal(e.instOut);
-            if ("averageInput".equals(field)) return decimal(e.avgIn);
-            if ("averageOutput".equals(field)) return decimal(e.avgOut);
-            return null;
+            return deviceMetric(field, e);
         }
         if (widget.kind == WidgetKind.MACHINES) {
             if (!snapshot.device.fresh) return null;
@@ -473,12 +489,8 @@ public final class FactoryDashboard extends Gui {
                         : "stopped".equals(field) ? stopped : "unknown".equals(field) ? unknown : devices.size());
         }
         if (widget.kind == WidgetKind.WIRELESS) {
-            if (!PortableSuperDashboard.available(chartPanel) || chartPanel.currentEnergy.isEmpty()) return null;
-            try {
-                return new BigDecimal(chartPanel.currentEnergy);
-            } catch (NumberFormatException invalid) {
-                return null;
-            }
+            WirelessGridReading reading = grid();
+            return "netRate".equals(field) ? reading.netRate : reading.stored;
         }
         if (power == null || power.slot != 2 || !"ok".equals(power.status) || !EngineeringDashboardCache.fresh())
             return null;
@@ -488,8 +500,28 @@ public final class FactoryDashboard extends Gui {
             return power.review == null ? null : BigDecimal.valueOf(power.review.loadedChunks);
         if ("totalChunks".equals(field))
             return power.review == null ? null : BigDecimal.valueOf(power.review.totalChunks);
-        if (power.monitored <= 0) return null;
-        return "output".equals(field) ? decimal(power.current.instOut) : decimal(power.current.instIn);
+        return null;
+    }
+
+    static BigDecimal deviceMetric(String field, Entry entry) {
+        if (entry == null || FactoryMachineFilter.ignored(entry) || entry.evidenceKind >= 2) return null;
+        if ("input".equals(field) || "instantInput".equals(field)) return decimal(entry.instIn);
+        if ("output".equals(field) || "instantOutput".equals(field)) return decimal(entry.instOut);
+        if ("averageInput".equals(field)) return decimal(entry.avgIn);
+        if ("averageOutput".equals(field)) return decimal(entry.avgOut);
+        return null;
+    }
+
+    private static boolean requiresDevice(WidgetSpec widget) {
+        return widget.kind == WidgetKind.DEVICE || widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT;
+    }
+
+    private static WirelessGridReading grid() {
+        return WirelessGridReading.read(chartPanel, PortableSuperDashboard.available(chartPanel));
+    }
+
+    private static String gridState(WirelessGridReading reading) {
+        return tr("grid." + reading.state);
     }
 
     private static String numeric(BigDecimal value) {
@@ -508,25 +540,38 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static String unit(WidgetSpec widget) {
-        if (widget.kind == WidgetKind.WIRELESS) return "EU";
+        if (widget.kind == WidgetKind.WIRELESS) return "netRate".equals(widget.metricField) ? "EU/t" : "EU";
         return widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT || widget.kind == WidgetKind.DEVICE
             ? "EU/t"
             : FactoryDesktop.tr("metric." + widget.metricField);
     }
 
     private static void openWidget(WidgetSpec widget, Rect r) {
-        Runnable action = widget.kind == WidgetKind.MACHINES || widget.kind == WidgetKind.DEVICE
-            ? WorkbenchHud::openDevices
+        Runnable action = widget.kind == WidgetKind.MACHINES || requiresDevice(widget) ? WorkbenchHud::openDevices
             : widget.kind == WidgetKind.ATTENTION ? WorkbenchHud::openAttention
-                : widget.kind == WidgetKind.REGION ? () -> WorkbenchHud.switchTask(1)
-                    : widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT
-                        ? WorkbenchHud::openPowerReview
-                        : null;
+                : widget.kind == WidgetKind.REGION ? () -> WorkbenchHud.switchTask(1) : null;
         if (action != null) hits.add(new Hit(r, action));
     }
 
     private static void drawInstrument(FontRenderer f, Rect r, WidgetSpec widget, EngineeringSnapshot power,
         EngineeringTerminalHudSnapshot snapshot) {
+        if (requiresDevice(widget)) {
+            DesktopDeviceSources.Reading reading = widget.device == null ? null
+                : DesktopDeviceSources.read(widget.device);
+            if (reading == null || reading.entry == null) {
+                text(
+                    f,
+                    FactoryDesktop.tr(reading == null ? "device.choose" : "disconnected"),
+                    r.x + 10,
+                    r.y + 35,
+                    AMBER,
+                    r.w - 20);
+                if (reading != null)
+                    text(f, FactoryDesktop.tr("reason." + reading.reason), r.x + 10, r.y + 53, MUTED, r.w - 20);
+                bindingAction(f, r, widget, reading == null ? 60 : 74);
+                return;
+            }
+        }
         BigDecimal amount = metric(widget, power, snapshot);
         String value = numeric(amount), suffix = unit(widget);
         boolean stateRing = widget.kind == WidgetKind.MACHINES && widget.presentation == WidgetPresentation.DEFAULT;
@@ -547,9 +592,12 @@ public final class FactoryDashboard extends Gui {
             r.y + 29,
             MUTED,
             r.w - 20);
-        int color = widget.kind == WidgetKind.OUTPUT ? AMBER : CYAN;
+        int color = widget.kind == WidgetKind.OUTPUT
+            || widget.kind == WidgetKind.WIRELESS && "netRate".equals(widget.metricField)
+                && amount != null
+                && amount.signum() < 0 ? AMBER : CYAN;
         if (ring && bodyBottom - bodyTop >= 38) {
-            int diameter = Math.min(r.w - 24, bodyBottom - bodyTop);
+            int diameter = Math.min(104, Math.min(r.w - 24, bodyBottom - bodyTop));
             double cx = r.x + r.w / 2.0, cy = bodyTop + diameter / 2.0;
             DashboardVisuals.ring(cx, cy, diameter / 2.0 - 4, fraction, color);
             float scale = diameter >= 100 ? 1.65f : diameter >= 65 ? 1.3f : 1;
@@ -588,25 +636,67 @@ public final class FactoryDashboard extends Gui {
                         + " "
                         + suffix
                 : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
-                    : widget.kind == WidgetKind.WIRELESS
-                        ? chartPanel == null ? tr("no.screens") : chartPanel.binding.label()
+                    : widget.kind == WidgetKind.WIRELESS ? gridState(grid())
                         : widget.kind == WidgetKind.DEVICE ? FactoryDesktop.tr("metric." + widget.metricField)
                             : powerStatus(power);
         if (stateRing && !snapshot.device.fresh) foot = sourceQuality(snapshot.device);
         if (flow) {
-            text(f, powerScope(power), r.x + 10, r.y + r.h - 29, MUTED, r.w - 20);
+            text(
+                f,
+                widget.device.source.toString()
+                    .substring(0, 8),
+                r.x + 10,
+                r.y + r.h - 29,
+                MUTED,
+                r.w - 20);
             if (widget.presentation != WidgetPresentation.BAR && widget.presentation != WidgetPresentation.GAUGE)
-                foot = powerStatus(power) + (power == null ? "" : " / " + tr("unknown") + " " + power.unknown);
+                foot = tr("received");
         }
         text(f, foot, r.x + 9, r.y + r.h - 15, MUTED, r.w - 18);
+        if (widget.kind == WidgetKind.WIRELESS && r.h >= 105 && chartPanel != null)
+            text(f, chartPanel.binding.label(), r.x + 10, r.y + r.h - 29, MUTED, r.w - 20);
         if (hover != null && r.contains(localMouseX, localMouseY)) hover = FactoryDesktop.label(widget) + " · "
             + value
             + " "
             + suffix
             + " · "
             + foot
-            + (flow ? "\n" + powerScope(power) + "\n" + tr("flow.scope.hint") : "");
+            + (flow ? "\n" + widget.device.source
+                : widget.kind == WidgetKind.WIRELESS && chartPanel != null
+                    ? "\n" + chartPanel.binding.label() + "\n" + tr("grid.net.hint")
+                    : "");
         openWidget(widget, r);
+    }
+
+    private static void drawGrid(FontRenderer f, Rect r) {
+        WirelessGridReading reading = grid();
+        DashboardVisuals.label(f, numeric(reading.stored), r.x + 10, r.y + 31, r.w - 20, CYAN, 1.7f);
+        text(f, tr("grid.stored") + " / EU", r.x + 10, r.y + 53, MUTED, r.w - 20);
+        text(
+            f,
+            tr("grid.rate") + "  " + numeric(reading.netRate) + " EU/t",
+            r.x + 10,
+            r.y + 72,
+            reading.netRate != null && reading.netRate.signum() < 0 ? AMBER : CYAN,
+            r.w - 20);
+        text(f, gridState(reading), r.x + 10, r.y + 90, reading.netRate == null ? AMBER : TEXT, r.w - 20);
+        if (r.h >= 114) text(
+            f,
+            chartPanel == null ? tr("grid.missing") : chartPanel.binding.label(),
+            r.x + 10,
+            r.y + 104,
+            MUTED,
+            r.w - 20);
+        if (r.contains(localMouseX, localMouseY)) hover = tr("grid.stored") + ": "
+            + (reading.stored == null ? "—" : reading.stored.toPlainString())
+            + " EU\n"
+            + tr("grid.rate")
+            + ": "
+            + (reading.netRate == null ? "—" : reading.netRate.toPlainString())
+            + " EU/t\n"
+            + (chartPanel == null ? tr("grid.missing") : chartPanel.binding.label())
+            + "\n"
+            + tr("grid.net.hint");
     }
 
     private static void drawTrend(FontRenderer f, Rect r, int mx, int my) {
@@ -653,8 +743,8 @@ public final class FactoryDashboard extends Gui {
             MUTED,
             r.w - 24);
         // One quantity and one labelled axis. EU stock and its EU/t slope never share an unlabeled scale.
-        int x = r.x + 88, y = r.y + 99, w = Math.max(8, r.w - 103), h = Math.max(8, r.h - 143);
-        text(f, relative ? tr("relative") : plotUnit, r.x + 12, r.y + 85, MUTED, 72);
+        int x = r.x + 74, y = r.y + 84, w = Math.max(8, r.w - 86), h = Math.max(8, r.h - 116);
+        text(f, relative ? tr("relative") : plotUnit, r.x + 12, r.y + 76, MUTED, 60);
         for (int i = 0; i <= 2; i++) {
             int yy = y + h * i / 2;
             drawRect(x, yy, x + w, yy + 1, DashboardVisuals.TRACK);
@@ -665,7 +755,7 @@ public final class FactoryDashboard extends Gui {
                         .multiply(BigDecimal.valueOf(i / 2.0)))
                     .stripTrailingZeros()
                     .toPlainString();
-                text(f, axis(label), r.x + 12, yy - 4, MUTED, 69);
+                text(f, axis(label), r.x + 12, yy - 4, MUTED, 58);
             }
         }
         drawRect(x - 1, y, x, y + h + 1, EDGE);
@@ -706,32 +796,26 @@ public final class FactoryDashboard extends Gui {
 
     private static void drawRegion(FontRenderer f, Rect r, EngineeringSnapshot s) {
         boolean valid = s != null && s.slot == 2 && "ok".equals(s.status) && EngineeringDashboardCache.fresh();
-        boolean detail = r.h >= 130;
-        int top = detail ? 48 : 29;
-        if (detail || !valid) text(
+        text(
             f,
-            valid ? (s.coverageBoundOnly ? tr("bound") : tr("loaded.region")) : powerStatus(s),
-            r.x + 9,
-            r.y + 30,
+            valid ? tr(s.coverageBoundOnly ? "bound" : "loaded.region") : powerStatus(s),
+            r.x + 10,
+            r.y + 31,
             valid ? TEXT : AMBER,
-            r.w - 18);
-        int diameter = Math.min(r.w - 24, Math.max(0, r.h - top - 22));
-        if (diameter >= 20 && valid && s.review != null) {
-            drawReadingRing(
-                f,
-                r.x + r.w / 2.0,
-                r.y + top + diameter / 2.0,
-                diameter,
-                s.review.totalChunks > 0 ? s.review.loadedChunks / (double) s.review.totalChunks : null,
-                s.review.loadedChunks + "/" + s.review.totalChunks);
-        } else if (valid) {
-            text(f, tr("observed") + " " + s.monitored, r.x + 9, r.y + 48, CYAN, r.w - 18);
-        }
+            r.w - 20);
+        String chunks = valid && s.review != null ? s.review.loadedChunks + " / " + s.review.totalChunks : "—";
+        DashboardVisuals.label(f, chunks, r.x + 10, r.y + 49, r.w - 20, CYAN, 1.6f);
+        DashboardVisuals.bar(
+            new Rect(r.x + 10, r.y + 74, r.w - 20, 5),
+            valid && s.review != null && s.review.totalChunks > 0
+                ? s.review.loadedChunks / (double) s.review.totalChunks
+                : null,
+            CYAN);
         text(
             f,
             valid ? tr("observed") + " " + s.monitored + " / " + tr("unknown") + " " + s.unknown : tr("scope.device"),
             r.x + 9,
-            r.y + r.h - 16,
+            r.y + 91,
             MUTED,
             r.w - 18);
         hits.add(new Hit(r, () -> WorkbenchHud.switchTask(1)));
@@ -758,7 +842,7 @@ public final class FactoryDashboard extends Gui {
             resourcePages.clear();
         });
         final String cardId = painting == null ? "resources" : painting.id;
-        final int visible = Math.max(1, (r.h - 82) / 18);
+        final int visible = Math.max(1, Math.min(8, (r.h - 100) / 18));
         button(
             f,
             new Rect(r.x + r.w - 55, r.y + 3, 48, 16),
@@ -778,14 +862,6 @@ public final class FactoryDashboard extends Gui {
             r.y + 35,
             MUTED,
             r.w - 65);
-        button(f, new Rect(r.x + r.w - 55, r.y + 31, 48, 16), tr("source"), () -> {
-            List<String> identities = PortableSuperDashboard.screenIds();
-            if (!identities.isEmpty()) selectedScreen = identities
-                .get(Math.floorMod(identities.indexOf(selectedScreen) + 1, identities.size()));
-            chartPanel = null;
-            resourcePages.clear();
-            resourceKey = "";
-        });
         if (!PortableSuperDashboard.available(p) || !p.aeConnected) {
             text(f, tr("no.resources"), r.x + 9, r.y + 58, AMBER, r.w - 18);
             return;
@@ -836,21 +912,27 @@ public final class FactoryDashboard extends Gui {
                 () -> FactoryDesktop.mountResource(binding));
         }
         if (count == 0) text(f, tr("no.resources"), r.x + 9, r.y + 86, MUTED, r.w - 18);
+        else text(
+            f,
+            (start + 1) + "–" + Math.min(count, start + visible) + " / " + count,
+            r.x + 9,
+            r.y + 84 + visible * 18,
+            MUTED,
+            r.w - 18);
     }
 
     private static void drawResource(FontRenderer f, Rect r, WidgetSpec widget, int mx, int my) {
         WidgetResources.Reading reading = WidgetResources.read(widget.resource);
         Row row = reading.row;
         String name = row == null ? widget.resource.name : row.name;
-        drawResourceIcon(f, row, r.x + 12, r.y + 34, 28);
-        text(f, name, r.x + 48, r.y + 36, TEXT, r.w - 60);
-        text(f, tr(widget.resource.kind == 2 ? "fluids" : "items"), r.x + 48, r.y + 51, MUTED, r.w - 60);
-        DashboardVisuals.label(f, row == null ? "—" : compact(row.amount), r.x + 12, r.y + 76, r.w - 24, CYAN, 1.7f);
-        text(f, widget.resource.kind == 2 ? "mB" : tr("items"), r.x + 12, r.y + 97, MUTED, r.w - 24);
+        drawResourceIcon(f, row, r.x + 10, r.y + 30, 24);
+        text(f, name, r.x + 43, r.y + 32, TEXT, r.w - 53);
+        text(f, tr(widget.resource.kind == 2 ? "fluids" : "items"), r.x + 43, r.y + 45, MUTED, r.w - 53);
+        DashboardVisuals.label(f, row == null ? "—" : compact(row.amount), r.x + 10, r.y + 63, r.w - 20, CYAN, 1.7f);
         String change = row != null && rateKnown(reading.panel, row)
             ? FormatUtil.formatMetricDouble(row.rate) + (row.kind == 2 ? " mB/min" : "/min")
             : "—";
-        text(f, tr("net.change") + "  " + change, r.x + 12, r.y + 119, AMBER, r.w - 24);
+        text(f, tr("net.change") + "  " + change, r.x + 10, r.y + 86, AMBER, r.w - 20);
         String state = row == null ? tr("resource." + reading.reason)
             : reading.panel.binding.label() + " · " + tr("received");
         text(f, state, r.x + 12, r.y + r.h - 16, row == null ? AMBER : MUTED, r.w - 24);
@@ -907,13 +989,20 @@ public final class FactoryDashboard extends Gui {
             AMBER,
             r.w - 18);
         text(f, p != null && p.truncated ? tr("partial") : tr("attention.hint"), r.x + 9, r.y + 51, MUTED, r.w - 18);
-        int shown = Math.min(attention.size(), Math.max(0, (r.h - 73) / 19));
+        int shown = Math.min(attention.size(), Math.min(10, Math.max(0, (r.h - 87) / 19)));
         for (int i = 0; i < shown; i++) {
             Entry e = attention.get(i);
             int y = r.y + 70 + i * 19;
             drawRect(r.x + 8, y + 2, r.x + 11, y + 8, AMBER);
             text(f, e.displayName.isEmpty() ? e.name : e.displayName, r.x + 17, y, TEXT, r.w - 26);
         }
+        if (attention.size() > shown) text(
+            f,
+            StatCollector.translateToLocalFormatted("gtswn.factory.cockpit.list.more", attention.size() - shown),
+            r.x + 9,
+            r.y + 72 + shown * 19,
+            MUTED,
+            r.w - 18);
         hits.add(new Hit(r, WorkbenchHud::openAttention));
     }
 
@@ -1031,6 +1120,15 @@ public final class FactoryDashboard extends Gui {
         fill(r, EDGE);
         text(f, title, r.x + 5, r.y + (r.h - 8) / 2, TEXT, r.w - 10);
         hits.add(new Hit(r, action));
+    }
+
+    /** The desktop's existing select-then-activate gate owns the first click. */
+    private static void bindingAction(FontRenderer f, Rect r, WidgetSpec widget, int top) {
+        Runnable choose = () -> FactoryDesktop.requestBinding(widget.id);
+        String key = widget.kind.supportsScreenBinding()
+            ? widget.screen == null ? "binding.screen.choose" : "binding.screen.change"
+            : widget.device == null ? "binding.choose" : "binding.change";
+        button(f, new Rect(r.x + 10, r.y + top, Math.min(160, r.w - 20), 18), FactoryDesktop.tr(key), choose);
     }
 
     private static void fill(Rect r, int color) {

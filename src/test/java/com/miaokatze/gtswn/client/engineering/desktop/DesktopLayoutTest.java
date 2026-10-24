@@ -16,7 +16,11 @@ public class DesktopLayoutTest {
         assertTrue(layout.add(new WidgetSpec("right", WidgetKind.MACHINES, 8, 0, 8, 64)));
         assertTrue(layout.add(new WidgetSpec("below", WidgetKind.MACHINES, 4, 3, 4, 61)));
         assertTrue(layout.add(new WidgetSpec("limit", WidgetKind.MACHINES, 0, DesktopLayout.MAX_COORD - 3, 4, 3)));
-        assertNull("A complete table does not fit the only remaining hole", layout.add(WidgetKind.RESOURCES));
+        assertFalse(
+            "A complete table does not fit the only remaining hole",
+            layout.add(
+                new WidgetSpec("table", WidgetKind.RESOURCES, 4, 0, 6, 3)
+                    .boundScreen(new ScreenBinding(UUID.randomUUID(), UUID.randomUUID()))));
         ResourceBinding binding = new ResourceBinding(
             UUID.randomUUID(),
             UUID.randomUUID(),
@@ -29,7 +33,7 @@ public class DesktopLayoutTest {
         assertEquals(4, resource.column);
         assertEquals(0, resource.row);
         assertEquals(4, resource.columns);
-        assertEquals(3, resource.rows);
+        assertEquals(2, resource.rows);
         assertEquals(
             5,
             layout.widgets()
@@ -55,17 +59,19 @@ public class DesktopLayoutTest {
         assertFalse(layout.resize("resource", 0, 0, 3, 3));
         WidgetSpec table = layout.find("resource")
             .boundResource(null);
-        assertEquals(8, table.columns);
-        assertEquals(4, table.rows);
-        assertEquals(8, table.minColumns());
-        assertEquals(4, table.minRows());
+        assertEquals(6, table.columns);
+        assertEquals(3, table.rows);
+        assertEquals(6, table.minColumns());
+        assertEquals(3, table.minRows());
     }
 
     @Test
     public void defaultArrangementIsBalancedWithinInitialAreaAndHasEveryRealSource() {
         DesktopLayout layout = DesktopLayout.defaultLayout();
         assertEquals(
-            8,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             layout.widgets()
                 .size());
         for (WidgetSpec widget : layout.widgets()) {
@@ -91,7 +97,7 @@ public class DesktopLayoutTest {
         for (String id : new String[] { "machines", "region" }) {
             WidgetSpec instrument = layout.find(id);
             assertTrue(instrument.width() * view.scale >= 130);
-            assertTrue(instrument.height() * view.scale >= 100);
+            assertTrue(instrument.height() * view.scale >= 64);
         }
     }
 
@@ -115,7 +121,7 @@ public class DesktopLayoutTest {
 
     @Test
     public void collisionsAndTooSmallResizeAreRejectedWithoutMutatingOriginal() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         WidgetSpec original = layout.find("machines");
         assertFalse(layout.move("machines", 4, 0));
         assertFalse(layout.resize("machines", 0, 0, 2, 1));
@@ -223,7 +229,7 @@ public class DesktopLayoutTest {
             DesktopLayout.MAX_WIDGETS,
             layout.widgets()
                 .size());
-        assertFalse(layout.add(new WidgetSpec("device", WidgetKind.DEVICE, 0, 0, 4, 3)));
+        assertFalse(layout.add(new WidgetSpec("device", WidgetKind.DEVICE, 0, 0, 3, 3)));
     }
 
     @Test

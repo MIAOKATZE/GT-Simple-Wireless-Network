@@ -14,6 +14,16 @@ import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 public class DesktopCardGeometryTest {
 
     @Test
+    public void tinyOverviewFillUsesUserColorAndSelectedTitleHasAnExplicitDragRegion() {
+        WidgetSpec widget = new WidgetSpec("color", WidgetKind.DEVICE, 0, 0, 3, 3).bordered(0x12ABEF);
+        assertEquals(0xB012ABEF, DesktopCardGeometry.overviewFill(widget));
+        Rect bounds = new Rect(20, 30, 256, 128);
+        assertTrue(DesktopCardGeometry.titleHandle(bounds, .5, 40, 40));
+        assertFalse(DesktopCardGeometry.titleHandle(bounds, .5, 40, 45));
+        assertFalse(DesktopCardGeometry.titleHandle(bounds, 1, 22, 40));
+    }
+
+    @Test
     public void tinyOverviewCardsUseOnlyTheirPaintedBoundsAndCanReturnToSelectedAtOne() {
         WidgetSpec widget = new WidgetSpec("far", WidgetKind.DEVICE, -1000, 250000, 4, 3);
         DesktopViewport view = new DesktopViewport();

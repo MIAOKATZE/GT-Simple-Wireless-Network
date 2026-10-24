@@ -13,6 +13,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -47,7 +48,64 @@ public final class DesktopStore {
     }
 
     public DesktopLayout load(String profile) {
-        return decode(read(profile));
+        Properties saved = read(profile);
+        DesktopLayout layout = decode(saved);
+        if (untouchedLegacyDefault(layout) && untouchedLegacyProperties(saved, layout)) {
+            layout = DesktopLayout.defaultLayout();
+            put(profile, layout);
+            putView(profile, new DesktopViewport());
+        }
+        return layout;
+    }
+
+    /** Decoding may discard malformed optional values; their original presence must still prevent replacement. */
+    private static boolean untouchedLegacyProperties(Properties saved, DesktopLayout layout) {
+        Properties canonical = encode(layout);
+        for (String key : saved.stringPropertyNames()) {
+            if (key.equals("view.x") || key.equals("view.y") || key.equals("view.scale")) continue;
+            if (!saved.getProperty(key)
+                .equals(canonical.getProperty(key))) return false;
+        }
+        return true;
+    }
+
+    /** Only exact shipped templates migrate; any custom display preference or reference is preserved. */
+    static boolean untouchedLegacyDefault(DesktopLayout layout) {
+        String[] ids = { "machines", "input", "output", "wireless", "history", "region", "resources", "attention" };
+        WidgetKind[] kinds = { WidgetKind.MACHINES, WidgetKind.INPUT, WidgetKind.OUTPUT, WidgetKind.WIRELESS,
+            WidgetKind.HISTORY, WidgetKind.REGION, WidgetKind.RESOURCES, WidgetKind.ATTENTION };
+        int[][] compact = { { 0, 0, 4, 3 }, { 0, 3, 4, 2 }, { 4, 3, 4, 2 }, { 4, 0, 4, 3 }, { 8, 0, 8, 4 },
+            { 0, 5, 4, 3 }, { 8, 4, 8, 4 }, { 4, 5, 4, 3 } };
+        int[][] tall = { { 0, 0, 4, 2 }, { 4, 0, 4, 2 }, { 8, 0, 4, 2 }, { 12, 0, 4, 2 }, { 0, 2, 10, 5 },
+            { 10, 2, 6, 5 }, { 0, 7, 10, 7 }, { 10, 7, 6, 7 } };
+        if (layout.widgets()
+            .size() != ids.length) return false;
+        boolean matchesCompact = true, matchesTall = true;
+        for (int index = 0; index < ids.length; index++) {
+            WidgetSpec widget = layout.find(ids[index]);
+            if (widget == null || widget.kind != kinds[index]
+                || !widget.title.isEmpty()
+                || !widget.fields.isEmpty()
+                || widget.fieldsConfigured
+                || widget.displayColumns != 1
+                || widget.device != null
+                || widget.resource != null
+                || widget.screen != null
+                || widget.userTarget != null
+                || widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR
+                || widget.presentation != WidgetPresentation.DEFAULT) return false;
+            List<String> metrics = WidgetSpec.availableMetrics(widget.kind);
+            if (!widget.metricField.equals(metrics.isEmpty() ? "" : metrics.get(0))) return false;
+            matchesCompact &= geometryMatches(widget, compact[index]);
+            matchesTall &= geometryMatches(widget, tall[index]);
+        }
+        return matchesCompact || matchesTall;
+    }
+
+    private static boolean geometryMatches(WidgetSpec widget, int[] geometry) {
+        return widget.column == geometry[0] && widget.row == geometry[1]
+            && widget.columns == geometry[2]
+            && widget.rows == geometry[3];
     }
 
     public DesktopViewport loadView(String profile) {
@@ -181,6 +239,10 @@ public final class DesktopStore {
                 p.setProperty(prefix + "resource.key", widget.resource.key);
                 p.setProperty(prefix + "resource.name", widget.resource.name);
             }
+            if (widget.screen != null) {
+                p.setProperty(prefix + "screen.source", widget.screen.source.toString());
+                p.setProperty(prefix + "screen.id", widget.screen.screen.toString());
+            }
             // Optional schema-1 additions keep old files and template-empty field semantics intact.
             if (widget.presentation != WidgetPresentation.DEFAULT)
                 p.setProperty(prefix + "presentation", widget.presentation.name());
@@ -217,16 +279,7 @@ public final class DesktopStore {
             String prefix = "widget." + index + ".";
             try {
                 WidgetKind kind = WidgetKind.valueOf(p.getProperty(prefix + "kind", ""));
-                DeviceBinding binding = kind == WidgetKind.DEVICE
-                    ? new DeviceBinding(
-                        UUID.fromString(p.getProperty(prefix + "source", "")),
-                        p.getProperty(prefix + "key"),
-                        integer(p, prefix + "dimension"),
-                        integer(p, prefix + "x"),
-                        integer(p, prefix + "y"),
-                        integer(p, prefix + "z"),
-                        integer(p, prefix + "meta"))
-                    : null;
+                DeviceBinding binding = device(p, prefix, kind);
                 WidgetSpec widget = new WidgetSpec(
                     p.getProperty(prefix + "id"),
                     kind,
@@ -250,7 +303,8 @@ public final class DesktopStore {
                     metric(p, prefix, kind),
                     target(p, prefix, kind),
                     border(p, prefix),
-                    resource(p, prefix));
+                    resource(p, prefix),
+                    screen(p, prefix));
                 result.add(widget);
             } catch (IllegalArgumentException ignored) { /* Keep valid siblings. */ }
         }
@@ -260,6 +314,22 @@ public final class DesktopStore {
 
     private static int integer(Properties p, String key) {
         return Integer.parseInt(p.getProperty(key, ""));
+    }
+
+    private static DeviceBinding device(Properties p, String prefix, WidgetKind kind) {
+        if (!kind.supportsDeviceBinding() || !p.containsKey(prefix + "key")) return null;
+        try {
+            return new DeviceBinding(
+                UUID.fromString(p.getProperty(prefix + "source", "")),
+                p.getProperty(prefix + "key"),
+                integer(p, prefix + "dimension"),
+                integer(p, prefix + "x"),
+                integer(p, prefix + "y"),
+                integer(p, prefix + "z"),
+                integer(p, prefix + "meta"));
+        } catch (IllegalArgumentException invalid) {
+            return null;
+        }
     }
 
     private static int border(Properties p, String prefix) {
@@ -277,6 +347,18 @@ public final class DesktopStore {
                 integer(p, prefix + "resource.kind"),
                 p.getProperty(prefix + "resource.key"),
                 p.getProperty(prefix + "resource.name", ""));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static ScreenBinding screen(Properties p, String prefix) {
+        try {
+            if (p.containsKey(prefix + "screen.id")) return new ScreenBinding(
+                UUID.fromString(p.getProperty(prefix + "screen.source", "")),
+                UUID.fromString(p.getProperty(prefix + "screen.id", "")));
+            ResourceBinding legacy = resource(p, prefix);
+            return legacy == null ? null : new ScreenBinding(legacy.source, legacy.screen);
         } catch (IllegalArgumentException ignored) {
             return null;
         }

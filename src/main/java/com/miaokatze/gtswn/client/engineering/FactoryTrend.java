@@ -17,12 +17,30 @@ final class FactoryTrend {
     }
 
     FactoryTrend(BigDecimal[] values) {
-        BigDecimal min = BigDecimal.ZERO, max = BigDecimal.ZERO;
+        this(values, true);
+    }
+
+    /** Stock charts use their observed extent; signed rates retain a meaningful zero baseline. */
+    FactoryTrend(BigDecimal[] values, boolean includeZero) {
+        BigDecimal min = includeZero ? BigDecimal.ZERO : null, max = min;
         int known = 0;
         for (BigDecimal value : values) if (value != null) {
-            min = min.min(value);
-            max = max.max(value);
+            min = min == null ? value : min.min(value);
+            max = max == null ? value : max.max(value);
             known++;
+        }
+        if (min == null) min = max = BigDecimal.ZERO;
+        if (!includeZero && known > 0) {
+            boolean nonnegative = min.signum() >= 0;
+            BigDecimal padding = max.subtract(min)
+                .abs()
+                .multiply(new BigDecimal("0.1"));
+            if (padding.signum() == 0) padding = max.abs()
+                .multiply(new BigDecimal("0.05"))
+                .max(BigDecimal.ONE);
+            min = min.subtract(padding);
+            if (nonnegative) min = min.max(BigDecimal.ZERO);
+            max = max.add(padding);
         }
         knownPoints = known;
         minimum = min.toPlainString();

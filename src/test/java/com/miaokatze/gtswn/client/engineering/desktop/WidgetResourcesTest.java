@@ -82,6 +82,34 @@ public class WidgetResourcesTest {
         new ResourceBinding(UUID.randomUUID(), UUID.randomUUID(), 1, "item:minecraft:stone:0", "Stone");
     }
 
+    @Test
+    public void screenCardsRequireExactTerminalAndScreenWithoutFirstScreenFallback() {
+        UUID source = UUID.randomUUID(), screen = UUID.randomUUID();
+        ScreenBinding binding = new ScreenBinding(source, screen);
+        Panel panel = panel(screen);
+        java.util.List<Panel> panels = Collections.singletonList(panel);
+        java.util.List<String> ids = Collections.singletonList(screen.toString());
+        assertEquals("select", WidgetResources.readScreenCached(null, source, panels, ids, p -> true).reason);
+        assertEquals(
+            "source",
+            WidgetResources.readScreenCached(binding, UUID.randomUUID(), panels, ids, p -> true).reason);
+        assertSame(panel, WidgetResources.readScreenCached(binding, source, panels, ids, p -> true).panel);
+        assertEquals(
+            "binding",
+            WidgetResources.readScreenCached(binding, source, panels, Collections.emptyList(), p -> true).reason);
+        assertEquals(
+            "waiting",
+            WidgetResources.readScreenCached(binding, source, Collections.emptyList(), ids, p -> true).reason);
+        assertNull(WidgetResources.readScreenCached(binding, source, panels, ids, p -> false).panel);
+        panel.detail = true;
+        assertEquals("unavailable", WidgetResources.readScreenCached(binding, source, panels, ids, p -> false).reason);
+        Panel other = panel(UUID.randomUUID());
+        assertNull(
+            WidgetResources.readScreenCached(binding, source, Collections.singletonList(other), ids, p -> true).panel);
+        panel.state = 1;
+        assertEquals("unavailable", WidgetResources.readScreenCached(binding, source, panels, ids, p -> false).reason);
+    }
+
     private static Panel panel(UUID screen) {
         Panel panel = new Panel();
         panel.binding = new MonitorBindings.Binding(0, 0, 0, 0, screen);

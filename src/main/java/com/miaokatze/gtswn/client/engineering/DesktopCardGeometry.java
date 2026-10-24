@@ -74,6 +74,14 @@ final class DesktopCardGeometry {
                     : bottom && middleX ? DesktopDrag.Edge.BOTTOM : DesktopDrag.Edge.MOVE;
     }
 
+    static boolean titleHandle(Rect rect, double scale, double x, double y) {
+        return x >= rect.x + 10 && x < rect.x + rect.w - 10 && y >= rect.y && y < rect.y + 24 * scale;
+    }
+
+    static int overviewFill(WidgetSpec widget) {
+        return 0xB0000000 | widget.borderColor & 0xFFFFFF;
+    }
+
     static boolean hit(Rect rect, double x, double y, boolean handles) {
         int pad = handles ? 7 : 0;
         return x >= rect.x - pad && x < rect.x + rect.w + pad && y >= rect.y - pad && y < rect.y + rect.h + pad;

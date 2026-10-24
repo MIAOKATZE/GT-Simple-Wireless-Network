@@ -64,6 +64,13 @@ public final class DesktopDrag {
                 h -= (int) dy;
             }
             if (name.contains("BOTTOM")) h += (int) dy;
+            int clampedW = Math.max(original.minColumns(), Math.min(DesktopLayout.MAX_SIZE, w));
+            int clampedH = Math.max(original.minRows(), Math.min(DesktopLayout.MAX_SIZE, h));
+            // Dragging beyond the minimum stops at it, preserving the opposite edge instead of freezing the preview.
+            if (name.contains("LEFT")) c = original.column + original.columns - clampedW;
+            if (name.contains("TOP")) r = original.row + original.rows - clampedH;
+            w = clampedW;
+            h = clampedH;
         }
         preview = original.withBounds(c, r, w, h);
         return layout.replace(preview);

@@ -32,6 +32,18 @@ final class FactoryChrome {
 
     static void render(FontRenderer font, int width, int height, WorkbenchLayout l, boolean settings,
         Consumer<Action> action, Runnable toggleSettings) {
+        prepare(width, height, l, settings, action, toggleSettings, tr("settings"));
+        scene.find("command-FOLLOW")
+            .selected(EngineeringModeController.INSTANCE.following());
+        scene.find("command-CAMERA")
+            .selected(EngineeringModeController.INSTANCE.cameraPanel());
+        Minecraft mc = Minecraft.getMinecraft();
+        scene.render(new MinecraftUiRenderer(font, width, height, mc.displayWidth, mc.displayHeight));
+    }
+
+    /** Shared retained tree for rendering and headless input-lifecycle checks. No client state is read here. */
+    static void prepare(int width, int height, WorkbenchLayout l, boolean settings, Consumer<Action> action,
+        Runnable toggleSettings, String settingsLabel) {
         String next = width + ":" + height + ":" + settings;
         if (scene == null || !signature.equals(next) && scene.captured() == null) {
             if (scene != null) scene.close();
@@ -56,19 +68,18 @@ final class FactoryChrome {
                         }));
             }
             root.add(
-                UiNode.button("settings", tr("settings"), toggleSettings)
+                UiNode.button("settings", settingsLabel, toggleSettings)
                     .bounds(l.shortcuts.x, l.shortcuts.y, l.shortcuts.w, l.shortcuts.h)
                     .style(STYLE)
                     .selected(settings));
             scene = new UiScene(root);
         }
-        scene.find("command-FOLLOW")
-            .selected(EngineeringModeController.INSTANCE.following());
-        scene.find("command-CAMERA")
-            .selected(EngineeringModeController.INSTANCE.cameraPanel());
         scene.layout(width, height);
-        Minecraft mc = Minecraft.getMinecraft();
-        scene.render(new MinecraftUiRenderer(font, width, height, mc.displayWidth, mc.displayHeight));
+    }
+
+    /** Only this toolbar's world host can revoke its press; an unopened desktop cannot. */
+    static void maintainInput(boolean hostInputAllowed) {
+        if (!hostInputAllowed) blur();
     }
 
     static boolean mouse(int x, int y, int button, boolean pressed, int wheel) {

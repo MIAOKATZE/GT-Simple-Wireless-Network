@@ -8,15 +8,23 @@ public enum WidgetKind {
     OUTPUT(3, 2),
     WIRELESS(4, 2),
     HISTORY(8, 3),
-    RESOURCES(8, 4),
+    RESOURCES(6, 3),
     ATTENTION(4, 3),
-    REGION(4, 3),
-    DEVICE(4, 3);
+    REGION(4, 2),
+    DEVICE(3, 3);
 
     public final int minColumns, minRows;
 
     WidgetKind(int columns, int rows) {
         minColumns = columns;
         minRows = rows;
+    }
+
+    public boolean supportsDeviceBinding() {
+        return this == DEVICE || this == INPUT || this == OUTPUT;
+    }
+
+    public boolean supportsScreenBinding() {
+        return this == WIRELESS || this == HISTORY || this == RESOURCES;
     }
 }

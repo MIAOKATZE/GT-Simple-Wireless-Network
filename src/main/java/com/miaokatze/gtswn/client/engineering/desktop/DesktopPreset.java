@@ -1,6 +1,6 @@
 package com.miaokatze.gtswn.client.engineering.desktop;
 
-/** Candidate arrangements only. Applying one is a separate, explicitly confirmed editor action. */
+/** Independent compact arrangements; applying a preset is an explicit editor action. */
 public enum DesktopPreset {
 
     OVERVIEW,
@@ -10,55 +10,62 @@ public enum DesktopPreset {
     DIAGNOSTICS,
     REGIONS;
 
-    /** Always creates an independent layout; never edits a profile or invents a mounted device. */
     public DesktopLayout createLayout() {
-        if (this == OVERVIEW) return DesktopLayout.defaultLayout();
+        if (this == OVERVIEW) return overviewLayout();
         DesktopLayout layout = new DesktopLayout();
         switch (this) {
             case POWER:
-                add(layout, "input", WidgetKind.INPUT, WidgetPresentation.BAR, "input", 0, 0, 5, 3);
-                add(layout, "output", WidgetKind.OUTPUT, WidgetPresentation.BAR, "output", 5, 0, 5, 3);
-                add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.GAUGE, "stored", 10, 0, 6, 3);
-                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 3, 10, 8);
-                add(layout, "region", WidgetKind.REGION, WidgetPresentation.STATUS_LIST, "", 10, 3, 6, 5);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 8, 6, 6);
-                add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.KPI, "count", 0, 11, 10, 3);
+                add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 0, 0, 6, 2);
+                add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 6, 0, 6, 2);
+                add(layout, "region", WidgetKind.REGION, WidgetPresentation.DEFAULT, "", 12, 0, 4, 2);
+                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 2, 10, 4);
+                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 4);
                 break;
             case PRODUCTION:
                 machineCounts(layout);
-                add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.STATUS_LIST, "", 0, 2, 8, 6);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 8, 2, 8, 6);
-                add(layout, "input", WidgetKind.INPUT, WidgetPresentation.KPI, "input", 0, 8, 8, 3);
-                add(layout, "output", WidgetKind.OUTPUT, WidgetPresentation.KPI, "output", 8, 8, 8, 3);
-                add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 11, 16, 5);
+                add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.STATUS_LIST, "", 0, 2, 8, 3);
+                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 8, 2, 8, 3);
+                add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 5, 10, 3);
+                add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 10, 5, 6, 3);
                 break;
             case LOGISTICS:
-                add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 0, 10, 9);
-                add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 10, 0, 6, 3);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 3, 6, 6);
-                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 9, 16, 7);
+                add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 0, 10, 4);
+                add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 10, 0, 6, 2);
+                add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 10, 2, 6, 2);
+                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 4, 10, 3);
+                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 4, 6, 3);
                 break;
             case DIAGNOSTICS:
                 machineCounts(layout);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 0, 2, 10, 9);
-                add(layout, "region", WidgetKind.REGION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 6);
-                add(layout, "unknown", WidgetKind.MACHINES, WidgetPresentation.KPI, "unknown", 10, 8, 6, 3);
-                add(layout, "input", WidgetKind.INPUT, WidgetPresentation.STATUS_LIST, "", 0, 11, 8, 4);
-                add(layout, "output", WidgetKind.OUTPUT, WidgetPresentation.STATUS_LIST, "", 8, 11, 8, 4);
+                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 0, 2, 10, 4);
+                add(layout, "region", WidgetKind.REGION, WidgetPresentation.DEFAULT, "", 10, 2, 6, 2);
+                add(layout, "unknown", WidgetKind.MACHINES, WidgetPresentation.KPI, "unknown", 10, 4, 6, 2);
                 break;
             case REGIONS:
                 add(layout, "monitored", WidgetKind.REGION, WidgetPresentation.KPI, "monitored", 0, 0, 4, 2);
                 add(layout, "unknown", WidgetKind.REGION, WidgetPresentation.KPI, "unknown", 4, 0, 4, 2);
                 add(layout, "loaded", WidgetKind.REGION, WidgetPresentation.KPI, "loadedChunks", 8, 0, 4, 2);
                 add(layout, "chunks", WidgetKind.REGION, WidgetPresentation.KPI, "totalChunks", 12, 0, 4, 2);
-                add(layout, "region", WidgetKind.REGION, WidgetPresentation.STATUS_LIST, "", 0, 2, 10, 7);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 7);
-                add(layout, "input", WidgetKind.INPUT, WidgetPresentation.KPI, "input", 0, 9, 8, 3);
-                add(layout, "output", WidgetKind.OUTPUT, WidgetPresentation.KPI, "output", 8, 9, 8, 3);
+                add(layout, "region", WidgetKind.REGION, WidgetPresentation.STATUS_LIST, "", 0, 2, 10, 3);
+                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 3);
                 break;
             default:
                 throw new IllegalStateException(name());
         }
+        return layout;
+    }
+
+    /** New profiles and explicit preset application only; persisted arrangements are left intact. */
+    public static DesktopLayout overviewLayout() {
+        DesktopLayout layout = new DesktopLayout();
+        add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.KPI, "count", 8, 0, 4, 2);
+        add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 0, 0, 4, 2);
+        add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 4, 0, 4, 2);
+        add(layout, "region", WidgetKind.REGION, WidgetPresentation.DEFAULT, "", 12, 0, 4, 2);
+        add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 2, 10, 3);
+        add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 5, 10, 3);
+        add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 3);
+        add(layout, "device", WidgetKind.DEVICE, WidgetPresentation.DEFAULT, "", 10, 5, 6, 3);
         return layout;
     }
 

@@ -21,7 +21,7 @@ final class DesktopFieldPolicy {
             case OUTPUT:
                 return Arrays.asList("output", "status");
             case WIRELESS:
-                return Arrays.asList("stored", "source");
+                return Arrays.asList("stored", "netRate", "status", "source");
             case HISTORY:
             case RESOURCES:
                 return Arrays.asList("source", "updated");

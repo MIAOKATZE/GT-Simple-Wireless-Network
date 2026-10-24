@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.client.engineering;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
@@ -23,6 +24,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.ScreenBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetPresentation;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
@@ -69,6 +71,16 @@ final class FactoryDesktop {
     private static double pressLocalX, pressLocalY;
     private static final DesktopEditorScroll editorScroll = new DesktopEditorScroll();
     private static boolean edit, libraryOpen, propertiesOpen, initialView, canvasFocus, panning, dirty = true;
+    private static boolean bindingOpen, screenBindingOpen;
+    private static UUID pickerSource;
+    private static String sourceSignature = "";
+    private static List<DesktopDeviceSources.Source> pickerSources = Collections.emptyList();
+    private static List<Entry> pickerEntries = Collections.emptyList();
+    private static String pickerReason = "";
+    private static String screenSignature = "";
+    private static List<ScreenBinding> pickerScreens = Collections.emptyList();
+    private static final int BINDING_PAGE_SIZE = 16;
+    private static int bindingPage;
     private static double lastX, lastY, panBeforeX, panBeforeY;
 
     private static void ensure() {
@@ -89,6 +101,8 @@ final class FactoryDesktop {
         view = store.loadView(profile);
         initialView = view.scale == 1 && view.panX == 0 && view.panY == 0;
         selected = "";
+        bindingOpen = screenBindingOpen = false;
+        pickerSource = null;
         edit = canvasFocus = panning = false;
         drag.cancel();
         dirty = true;
@@ -99,16 +113,69 @@ final class FactoryDesktop {
         boolean showing = visible && EngineeringModeController.dashboardHostVisible();
         if (!showing || !EngineeringModeController.dashboardInputAllowed()) {
             FactoryDashboard.blur();
-            FactoryChrome.blur();
         }
         if (showing) {
+            refreshBindingSources();
+            DesktopDeviceSources.setSelectionSource(devicePickerActive() ? pickerSource : null);
             DesktopDeviceSources.setVisibleBindings(visibleDevices);
             DesktopDeviceSources.tick();
+            if (devicePickerActive() && pickerSource != null) {
+                List<Entry> entries = DesktopDeviceSources.choices(pickerSource);
+                String reason = DesktopDeviceSources.selectionReason(pickerSource);
+                if (entries != pickerEntries || !reason.equals(pickerReason)) {
+                    pickerEntries = entries;
+                    pickerReason = reason;
+                    dirty = true;
+                }
+            }
+            if (screenBindingOpen && edit && propertiesOpen) {
+                List<ScreenBinding> screens = WidgetResources.screenChoices();
+                StringBuilder signature = new StringBuilder();
+                for (ScreenBinding binding : screens) signature.append(binding.source)
+                    .append(binding.screen)
+                    .append(WidgetResources.screenLabel(binding))
+                    .append('\n');
+                if (!screenSignature.equals(signature.toString())) {
+                    screenSignature = signature.toString();
+                    pickerScreens = screens;
+                    dirty = true;
+                }
+            }
         } else {
             DesktopDeviceSources.release();
             visibleDevices.clear();
         }
         store.saveIfDue(System.nanoTime());
+    }
+
+    private static void refreshBindingSources() {
+        if (!devicePickerActive()) return;
+        List<DesktopDeviceSources.Source> sources = DesktopDeviceSources.sources();
+        StringBuilder signature = new StringBuilder();
+        boolean found = false;
+        for (DesktopDeviceSources.Source source : sources) {
+            signature.append(source.id)
+                .append(':')
+                .append(source.label)
+                .append('\n');
+            found |= source.id.equals(pickerSource);
+        }
+        if (!signature.toString()
+            .equals(sourceSignature)) {
+            sourceSignature = signature.toString();
+            pickerSources = sources;
+            dirty = true;
+        }
+        if (pickerSource != null && !found) {
+            pickerSource = null;
+            pickerEntries = Collections.emptyList();
+            dirty = true;
+        }
+    }
+
+    private static boolean devicePickerActive() {
+        WidgetSpec current = layout == null ? null : layout.find(selected);
+        return bindingOpen && edit && propertiesOpen && current != null && current.kind.supportsDeviceBinding();
     }
 
     static void flush() {
@@ -156,8 +223,35 @@ final class FactoryDesktop {
         return true;
     }
 
+    /** Existing click selection gating calls this only when the user activates this exact empty component. */
+    static void requestBinding(String id) {
+        WidgetSpec widget = layout == null ? null : layout.find(id);
+        if (widget == null || !widget.kind.supportsDeviceBinding() && !widget.kind.supportsScreenBinding()) return;
+        selected = widget.id;
+        edit = propertiesOpen = true;
+        libraryOpen = false;
+        bindingOpen = widget.kind.supportsDeviceBinding();
+        screenBindingOpen = widget.kind.supportsScreenBinding();
+        bindingPage = 0;
+        pickerSource = widget.device == null ? null : widget.device.source;
+        pickerEntries = Collections.emptyList();
+        if (bindingOpen) {
+            pickerSources = DesktopDeviceSources.sources();
+            sourceSignature = "";
+            refreshBindingSources();
+        }
+        if (screenBindingOpen) {
+            pickerScreens = WidgetResources.screenChoices();
+            screenSignature = "";
+        }
+        if (view.scale < DesktopCardGeometry.BORDER_LOD_SCALE) DesktopCardGeometry.focusAtOne(view, widget, canvas);
+        notice = "";
+        dirty = true;
+    }
+
     static String label(WidgetSpec widget) {
         if (!widget.title.isEmpty()) return widget.title;
+        if (widget.kind == WidgetKind.WIRELESS) return tr("metric." + widget.metricField);
         DesktopDeviceSources.Reading reading = widget.device == null ? null : DesktopDeviceSources.read(widget.device);
         Entry current = reading == null ? null : reading.entry;
         return DesktopCardLabel.title(
@@ -304,6 +398,8 @@ final class FactoryDesktop {
         }
         if (e.button == 0 && target != null) {
             boolean was = selected.equals(target.id);
+            if (!was) bindingOpen = screenBindingOpen = false;
+            if (!was) bindingPage = 0;
             selected = target.id;
             if (edit) {
                 propertiesOpen = true;
@@ -316,7 +412,9 @@ final class FactoryDesktop {
                 : DesktopDrag.Edge.MOVE;
             pressLocalX = x;
             pressLocalY = y;
-            gesture.begin(was, e.x, e.y, System.nanoTime());
+            boolean direct = edit && was
+                && (pressedEdge != DesktopDrag.Edge.MOVE || DesktopCardGeometry.titleHandle(r, view.scale, e.x, e.y));
+            gesture.begin(was, direct, e.x, e.y, System.nanoTime());
             e.capturePointer();
             e.consume();
             return;
@@ -355,7 +453,9 @@ final class FactoryDesktop {
             pressedWidget = "";
             changed(true);
             if (result == DesktopGesture.Release.ACTIVATE && !edit) {
-                if (view.scale < DesktopCardGeometry.BORDER_LOD_SCALE && target != null) {
+                if (target != null && (target.kind.supportsDeviceBinding() && target.device == null
+                    || target.kind.supportsScreenBinding() && target.screen == null)) requestBinding(target.id);
+                else if (view.scale < DesktopCardGeometry.BORDER_LOD_SCALE && target != null) {
                     DesktopCardGeometry.focusAtOne(view, target, canvas);
                     changed(false);
                 } else FactoryDashboard.widgetClick((int) e.x, (int) e.y);
@@ -595,10 +695,11 @@ final class FactoryDesktop {
             UiNode.label("add-title", tr("library"))
                 .size(width - 12, 14));
         for (WidgetKind kind : WidgetKind.values())
-            if (kind != WidgetKind.DEVICE) list.add(UiNode.button("add-" + kind, "+ " + kindLabel(kind), () -> {
+            list.add(UiNode.button("add-" + kind, "+ " + kindLabel(kind), () -> {
                 WidgetSpec added = layout.add(kind);
                 if (added == null) return;
                 selected = added.id;
+                bindingOpen = screenBindingOpen = false;
                 propertiesOpen = true;
                 libraryOpen = false;
                 view.panX = added.x() - 18 / view.scale;
@@ -606,10 +707,6 @@ final class FactoryDesktop {
                 changed(true);
             })
                 .size(width - 12, 25)
-                .style(BUTTON));
-        list.add(
-            UiNode.button("add-device", tr("device.add"), WorkbenchHud::openDevices)
-                .size(width - 12, 28)
                 .style(BUTTON));
         panel.add(list);
         return panel;
@@ -643,6 +740,8 @@ final class FactoryDesktop {
         body.add(
             UiNode.label("geometry", kindLabel(widget.kind) + " · " + widget.width() + " × " + widget.height())
                 .size(width - 16, 14));
+        if (widget.kind.supportsDeviceBinding()) addDeviceBinding(body, widget, width - 16);
+        if (widget.kind.supportsScreenBinding()) addScreenBinding(body, widget, width - 16);
         body.add(UiNode.textInput("custom-title", widget.title, value -> {
             WidgetSpec current = layout.find(selected);
             if (current != null && layout.replace(current.titled(value))) changed(false);
@@ -673,7 +772,7 @@ final class FactoryDesktop {
                 changed(true);
             }
         }));
-        if (widget.kind == WidgetKind.RESOURCES) {
+        if (widget.kind == WidgetKind.RESOURCES && widget.screen != null) {
             body.add(
                 button(
                     "resource-binding",
@@ -684,21 +783,39 @@ final class FactoryDesktop {
                     width - 16,
                     23,
                     () -> {
-                        WidgetSpec current = layout.find(widget.id);
-                        if (current == null) return;
-                        List<ResourceBinding> choices = WidgetResources.choices();
-                        int index = -1;
-                        for (int i = 0; i < choices.size(); i++) {
-                            ResourceBinding choice = choices.get(i);
-                            if (current.resource != null && current.resource.source.equals(choice.source)
-                                && current.resource.screen.equals(choice.screen)
-                                && current.resource.kind == choice.kind
-                                && current.resource.key.equals(choice.key)) index = i;
-                        }
-                        ResourceBinding next = choices.isEmpty() || index + 1 >= choices.size() ? null
-                            : choices.get(index + 1);
-                        if (layout.replace(current.boundResource(next))) changed(true);
+                        bindingOpen = !bindingOpen;
+                        screenBindingOpen = false;
+                        bindingPage = 0;
+                        dirty = true;
                     }));
+            if (bindingOpen) {
+                body.add(button("resource-list", tr("resource.all"), 0, 0, width - 16, 23, () -> {
+                    WidgetSpec current = layout.find(widget.id);
+                    if (current != null && layout.replace(current.boundResource(null))) {
+                        bindingOpen = false;
+                        changed(true);
+                    }
+                }));
+                List<ResourceBinding> choices = new ArrayList<>();
+                for (ResourceBinding choice : WidgetResources.choices())
+                    if (choice.source.equals(widget.screen.source) && choice.screen.equals(widget.screen.screen))
+                        choices.add(choice);
+                if (choices.isEmpty()) body.add(
+                    UiNode.label("resource-empty", tr("binding.resource.empty"))
+                        .size(width - 16, 26));
+                int start = bindingPageStart(choices.size());
+                addBindingPager(body, width - 16, choices.size());
+                for (int index = start; index < Math.min(choices.size(), start + BINDING_PAGE_SIZE); index++) {
+                    ResourceBinding choice = choices.get(index);
+                    body.add(button("resource-choice-" + index, choice.name, 0, 0, width - 16, 23, () -> {
+                        WidgetSpec current = layout.find(widget.id);
+                        if (current != null && layout.replace(current.boundResource(choice))) {
+                            bindingOpen = false;
+                            changed(true);
+                        }
+                    }));
+                }
+            }
         }
         body.add(
             button(
@@ -786,6 +903,194 @@ final class FactoryDesktop {
         return panel;
     }
 
+    private static void addScreenBinding(UiNode body, WidgetSpec widget, int width) {
+        body.add(
+            button(
+                "screen-binding",
+                tr(widget.screen == null ? "binding.screen.choose" : "binding.screen.change"),
+                0,
+                0,
+                width,
+                25,
+                () -> {
+                    screenBindingOpen = !screenBindingOpen;
+                    bindingOpen = false;
+                    bindingPage = 0;
+                    pickerScreens = WidgetResources.screenChoices();
+                    screenSignature = "";
+                    dirty = true;
+                }));
+        if (widget.screen != null) {
+            body.add(
+                UiNode.label("bound-screen", WidgetResources.screenLabel(widget.screen))
+                    .size(width, 18));
+            body.add(button("screen-unbind", tr("binding.screen.clear"), 0, 0, width, 22, () -> {
+                WidgetSpec current = layout.find(widget.id);
+                if (current != null && layout.replace(current.boundScreen(null))) {
+                    screenBindingOpen = bindingOpen = false;
+                    changed(true);
+                }
+            }));
+        }
+        if (!screenBindingOpen) return;
+        if (pickerScreens.isEmpty()) body.add(
+            UiNode.label("binding-no-screen", tr("binding.screen.empty"))
+                .size(width, 30));
+        int start = bindingPageStart(pickerScreens.size());
+        addBindingPager(body, width, pickerScreens.size());
+        for (int index = start; index < Math.min(pickerScreens.size(), start + BINDING_PAGE_SIZE); index++) {
+            ScreenBinding binding = pickerScreens.get(index);
+            body.add(button("binding-screen-" + index, WidgetResources.screenLabel(binding), 0, 0, width, 25, () -> {
+                WidgetSpec current = layout.find(widget.id);
+                if (current != null && WidgetResources.screenChoices()
+                    .contains(binding) && layout.replace(current.boundScreen(binding))) {
+                    screenBindingOpen = bindingOpen = false;
+                    changed(true);
+                } else {
+                    notice = tr(
+                        WidgetResources.screenChoices()
+                            .contains(binding) ? "no.space" : "binding.screen.empty");
+                    dirty = true;
+                }
+            }));
+        }
+    }
+
+    private static void addDeviceBinding(UiNode body, WidgetSpec widget, int width) {
+        body.add(
+            button(
+                "device-binding",
+                tr(widget.device == null ? "binding.choose" : "binding.change"),
+                0,
+                0,
+                width,
+                25,
+                () -> {
+                    bindingOpen = !bindingOpen;
+                    screenBindingOpen = false;
+                    bindingPage = 0;
+                    pickerSource = widget.device == null ? null : widget.device.source;
+                    pickerEntries = Collections.emptyList();
+                    pickerSources = DesktopDeviceSources.sources();
+                    sourceSignature = "";
+                    refreshBindingSources();
+                    dirty = true;
+                }));
+        if (widget.device != null) {
+            body.add(
+                UiNode.label("bound-source", tr("binding.current") + " " + shortId(widget.device.source))
+                    .size(width, 15));
+            body.add(button("device-unbind", tr("binding.clear"), 0, 0, width, 22, () -> {
+                WidgetSpec current = layout.find(widget.id);
+                if (current != null && layout.replace(current.boundDevice(null))) {
+                    bindingOpen = false;
+                    changed(true);
+                }
+            }));
+        }
+        if (!bindingOpen) return;
+        if (pickerSource == null) {
+            body.add(
+                UiNode.label("binding-source-title", tr("binding.source"))
+                    .size(width, 15));
+            if (pickerSources.isEmpty()) body.add(
+                UiNode.label("binding-no-source", tr("binding.source.empty"))
+                    .size(width, 30));
+            for (DesktopDeviceSources.Source source : pickerSources) body.add(
+                button(
+                    "binding-source-" + source.id,
+                    source.label + " · " + shortId(source.id),
+                    0,
+                    0,
+                    width,
+                    25,
+                    () -> {
+                        pickerSource = source.id;
+                        bindingPage = 0;
+                        pickerEntries = Collections.emptyList();
+                        pickerReason = "waiting";
+                        dirty = true;
+                    }));
+            return;
+        }
+        body.add(
+            button(
+                "binding-other-source",
+                tr("binding.source") + " · " + shortId(pickerSource),
+                0,
+                0,
+                width,
+                23,
+                () -> {
+                    pickerSource = null;
+                    pickerEntries = Collections.emptyList();
+                    dirty = true;
+                }));
+        if (pickerEntries.isEmpty()) body.add(
+            UiNode.label("binding-no-device", tr(pickerReason.isEmpty() ? "binding.device.empty" : "binding.waiting"))
+                .size(width, 30));
+        int start = bindingPageStart(pickerEntries.size());
+        addBindingPager(body, width, pickerEntries.size());
+        for (int index = start; index < Math.min(pickerEntries.size(), start + BINDING_PAGE_SIZE); index++) {
+            Entry entry = pickerEntries.get(index);
+            String name = entry.displayName == null || entry.displayName.isEmpty() ? entry.name : entry.displayName;
+            UUID source = pickerSource;
+            body.add(
+                button(
+                    "binding-device-" + index,
+                    name + " · " + entry.x + ", " + entry.y + ", " + entry.z,
+                    0,
+                    0,
+                    width,
+                    25,
+                    () -> {
+                        WidgetSpec current = layout.find(widget.id);
+                        DeviceBinding binding = DesktopDeviceSources.selectionReason(source)
+                            .isEmpty() ? DesktopDeviceSources.binding(source, entry) : null;
+                        if (current != null && binding != null && layout.replace(current.boundDevice(binding))) {
+                            bindingOpen = false;
+                            notice = "";
+                            changed(true);
+                        } else {
+                            notice = tr("binding.waiting");
+                            dirty = true;
+                        }
+                    }));
+        }
+    }
+
+    private static String shortId(UUID id) {
+        return id.toString()
+            .substring(0, 8);
+    }
+
+    private static int bindingPageStart(int count) {
+        bindingPage = Math.max(0, Math.min(bindingPage, Math.max(0, (count - 1) / BINDING_PAGE_SIZE)));
+        return bindingPage * BINDING_PAGE_SIZE;
+    }
+
+    private static void addBindingPager(UiNode body, int width, int count) {
+        if (count <= BINDING_PAGE_SIZE) return;
+        int pages = (count + BINDING_PAGE_SIZE - 1) / BINDING_PAGE_SIZE;
+        UiNode row = UiNode.panel("binding-pages")
+            .size(width, 23)
+            .layout(UiNode.Layout.ROW)
+            .gap(4)
+            .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)));
+        row.add(button("binding-previous", "<", 0, 0, 30, 23, () -> {
+            bindingPage = Math.max(0, bindingPage - 1);
+            dirty = true;
+        }));
+        row.add(
+            UiNode.label("binding-page", (bindingPage + 1) + " / " + pages)
+                .size(width - 68, 23));
+        row.add(button("binding-next", ">", 0, 0, 30, 23, () -> {
+            bindingPage = Math.min(pages - 1, bindingPage + 1);
+            dirty = true;
+        }));
+        body.add(row);
+    }
+
     private static void present(WidgetSpec current, WidgetPresentation form, String metric, Double target) {
         if (layout.replace(current.presented(form, metric, target))) {
             notice = "";
@@ -823,10 +1128,7 @@ final class FactoryDesktop {
         if (widget == null) return;
         if (view.scale < DesktopCardGeometry.BORDER_LOD_SCALE) {
             UiRect b = node.bounds();
-            renderer.fill(new UiRect(b.x, b.y, b.width, 1), widget.borderColor);
-            renderer.fill(new UiRect(b.x, b.y + b.height - 1, b.width, 1), widget.borderColor);
-            renderer.fill(new UiRect(b.x, b.y, 1, b.height), widget.borderColor);
-            renderer.fill(new UiRect(b.x + b.width - 1, b.y, 1, b.height), widget.borderColor);
+            renderer.fill(b, DesktopCardGeometry.overviewFill(widget));
             return;
         }
         CanvasTransform transform = DesktopCardGeometry.contentTransform(widget, view.transform(canvas.x, canvas.y));

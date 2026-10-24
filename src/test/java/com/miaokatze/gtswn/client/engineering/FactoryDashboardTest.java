@@ -91,6 +91,69 @@ public class FactoryDashboardTest {
     }
 
     @Test
+    public void legacyInputOutputMetricsReadOnlyTheSelectedDeviceAndMissingEvidenceStaysUnknown() {
+        Entry measured = new Entry(
+            "one",
+            "machine",
+            (byte) 1,
+            (byte) 0,
+            123,
+            456,
+            120,
+            450,
+            0,
+            10,
+            20,
+            30,
+            "",
+            "",
+            1,
+            (byte) 0,
+            (byte) 0);
+        assertEquals(0, new java.math.BigDecimal("123").compareTo(FactoryDashboard.deviceMetric("input", measured)));
+        assertEquals(0, new java.math.BigDecimal("456").compareTo(FactoryDashboard.deviceMetric("output", measured)));
+        assertNull(FactoryDashboard.deviceMetric("input", null));
+        Entry warming = new Entry(
+            "one",
+            "machine",
+            (byte) 1,
+            (byte) 0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            10,
+            20,
+            30,
+            "",
+            "",
+            1,
+            (byte) 2,
+            (byte) 0);
+        assertNull(FactoryDashboard.deviceMetric("input", warming));
+        Entry ignored = new Entry(
+            "one",
+            "machine",
+            (byte) 3,
+            (byte) 0,
+            123,
+            456,
+            120,
+            450,
+            0,
+            10,
+            20,
+            30,
+            "",
+            "",
+            1,
+            (byte) 0,
+            (byte) 0);
+        assertNull(FactoryDashboard.deviceMetric("output", ignored));
+    }
+
+    @Test
     public void narrowObjectsUseAFullHeightListAndSeparateInspectionPage() {
         WorkbenchLayout list = new WorkbenchLayout(
             480,

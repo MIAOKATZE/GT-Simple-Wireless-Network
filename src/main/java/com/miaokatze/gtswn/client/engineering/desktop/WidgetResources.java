@@ -15,12 +15,56 @@ public final class WidgetResources {
 
     private static UUID source;
     private static List<Panel> panels = Collections.emptyList();
+    private static List<String> screenIds = Collections.emptyList();
 
     private WidgetResources() {}
 
     public static void update(UUID currentSource, List<Panel> currentPanels) {
+        List<String> identities = new ArrayList<>();
+        if (currentPanels != null) for (Panel panel : currentPanels)
+            if (panel.binding != null) identities.add(panel.binding.panelId.toString());
+        update(currentSource, currentPanels, identities);
+    }
+
+    public static void update(UUID currentSource, List<Panel> currentPanels, List<String> identities) {
         source = currentSource;
         panels = currentPanels == null ? Collections.<Panel>emptyList() : currentPanels;
+        screenIds = identities == null ? Collections.<String>emptyList() : identities;
+    }
+
+    public static List<ScreenBinding> screenChoices() {
+        List<ScreenBinding> result = new ArrayList<>();
+        if (source != null)
+            for (Panel panel : panels) if (panel.binding != null && PortableSuperDashboard.available(panel))
+                result.add(new ScreenBinding(source, panel.binding.panelId));
+        return Collections.unmodifiableList(result);
+    }
+
+    public static String screenLabel(ScreenBinding binding) {
+        if (binding == null) return "";
+        if (binding.source.equals(source)) for (Panel panel : panels)
+            if (panel.binding != null && binding.screen.equals(panel.binding.panelId)) return panel.binding.label();
+        return binding.source.toString()
+            .substring(0, 8) + " / "
+            + binding.screen.toString()
+                .substring(0, 8);
+    }
+
+    public static ScreenReading readScreen(ScreenBinding binding) {
+        return readScreenCached(binding, source, panels, screenIds, PortableSuperDashboard::available);
+    }
+
+    static ScreenReading readScreenCached(ScreenBinding binding, UUID currentSource, List<Panel> values,
+        List<String> identities, Predicate<Panel> available) {
+        if (binding == null) return new ScreenReading(null, "select");
+        if (!binding.source.equals(currentSource)) return new ScreenReading(null, "source");
+        if (!identities.contains(binding.screen.toString())) return new ScreenReading(null, "binding");
+        for (Panel panel : values) {
+            if (panel.binding == null || !binding.screen.equals(panel.binding.panelId)) continue;
+            return available.test(panel) ? new ScreenReading(panel, "ok")
+                : new ScreenReading(null, panel.state == 0 && !panel.detail ? "waiting" : "unavailable");
+        }
+        return new ScreenReading(null, "waiting");
     }
 
     public static List<ResourceBinding> choices() {
@@ -77,6 +121,18 @@ public final class WidgetResources {
         private Reading(Panel panel, Row row, String reason) {
             this.panel = panel;
             this.row = row;
+            this.reason = reason;
+        }
+    }
+
+    public static final class ScreenReading {
+
+        public final Panel panel;
+        /** ok / select / source / binding / waiting / unavailable. */
+        public final String reason;
+
+        private ScreenReading(Panel panel, String reason) {
+            this.panel = panel;
             this.reason = reason;
         }
     }
