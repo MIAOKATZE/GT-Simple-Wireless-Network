@@ -314,8 +314,10 @@ public class ClientProxy extends CommonProxy {
         // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
         Minecraft minecraft = Minecraft.getMinecraft();
         World receivedWorld = minecraft.theWorld;
+        Object receivedConnection = minecraft.getNetHandler();
         minecraft.func_152344_a(() -> {
-            if (receivedWorld != null && receivedWorld == minecraft.theWorld) {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld
+                && receivedConnection == minecraft.getNetHandler()) {
                 DeviceTerminalClientCache.receivePage(terminalId, version, pageIndex, pageTotal, page);
             }
         });

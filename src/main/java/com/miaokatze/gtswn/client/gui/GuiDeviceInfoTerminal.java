@@ -577,6 +577,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             this.countMode = (this.countMode + 1) % 4;
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketDeviceTerminalAction(
+                    anchor,
                     PacketDeviceTerminalAction.ACTION_COUNT_MODE,
                     (byte) 0,
                     (byte) 0,
@@ -655,6 +656,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         refreshEntries();
         GTSWNPacketHandler.NETWORK.sendToServer(
             new PacketDeviceTerminalAction(
+                anchor,
                 PacketDeviceTerminalAction.ACTION_SORT,
                 (byte) this.sortColumn,
                 (byte) (this.sortDesc ? PacketDeviceTerminalAction.DIR_DESC : PacketDeviceTerminalAction.DIR_ASC),
@@ -666,24 +668,23 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 列表传送按钮回调：发包 10 action 3（服务端 3s 冷却 + 经验复查扣减权威执行）。 */
     void sendTeleport(String key) {
-        GTSWNPacketHandler.NETWORK.sendToServer(
-            new PacketDeviceTerminalAction(
-                PacketDeviceTerminalAction.ACTION_TELEPORT,
-                (byte) 0,
-                (byte) 0,
-                (byte) 0,
-                key));
+        sendTargetAction(PacketDeviceTerminalAction.ACTION_TELEPORT, key);
     }
 
     /** 列表 Ctrl+点击回调：发包 10 action 2 远程解绑（无确认，服务端 removeBinding 权威执行）。 */
     void sendUnbind(String key) {
-        GTSWNPacketHandler.NETWORK.sendToServer(
-            new PacketDeviceTerminalAction(
-                PacketDeviceTerminalAction.ACTION_UNBIND,
-                (byte) 0,
-                (byte) 0,
-                (byte) 0,
-                key));
+        sendTargetAction(PacketDeviceTerminalAction.ACTION_UNBIND, key);
+    }
+
+    private void sendTargetAction(byte action, String key) {
+        if (anchor == null) return;
+        for (Entry entry : sortedEntries) {
+            if (!entry.key.equals(key)) continue;
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                new PacketDeviceTerminalAction(anchor, action, (byte) 0, (byte) 0, (byte) 0, key)
+                    .targetMetaTileId(entry.metaTileId));
+            return;
+        }
     }
 
     /** Recognition preference belongs to the opened terminal; the next server snapshot updates the row. */

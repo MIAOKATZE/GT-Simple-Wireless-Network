@@ -49,7 +49,7 @@ final class EngineeringInputPolicy {
             .wheelDeltaUnit(CameraSettings.Navigation.WheelDeltaUnit.AUTO)
             .wheelSensitivity(FactoryControlSettings.Setting.WHEEL_ZOOM.sanitize(wheel))
             .pitchRange(15, 85)
-            .scaleRange(2, 128)
+            .scaleRange(.4, 128)
             .basePixelsPerWorldUnit(16)
             .sliceRange(0, 256)
             .build();

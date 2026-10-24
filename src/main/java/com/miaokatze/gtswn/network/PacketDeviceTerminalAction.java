@@ -15,7 +15,8 @@ import io.netty.buffer.ByteBuf;
 /**
  * 客户端→服务端 动作包：设备信息终端 GUI 操作（discriminator = 10，阶段 D3）。
  * <p>
- * 字段：action（byte）+ 列 byte + 方向 byte + 计数法 byte + key（str，正则校验）。
+ * 字段：action + 列 + 方向 + 计数法 + key + 实际终端 UUID；解绑/传送另带已显示目标的 metaTileId。
+ * 全服经验配置不绑定物品；识别初始引导仅允许显式零 UUID 对应未初始化的当前手持终端。
  * <ul>
  * <li>{@link #ACTION_SORT} = 0 排序（column 0-4 NAME/STATE/INST/AVG/POS + direction 0/1）</li>
  * <li>{@link #ACTION_COUNT_MODE} = 1 计数法（0-3 NORMAL/SCIENTIFIC/THOUSANDS/VOLTAGE）</li>
@@ -96,6 +97,7 @@ public class PacketDeviceTerminalAction implements IMessage {
     /** 目标机器键（动作 2/3 用，dim:x:y:z） */
     private String key = "";
     private UUID terminalId;
+    private int targetMetaTileId = -1;
 
     /** Forge 反射无参构造（反序列化时必需） */
     public PacketDeviceTerminalAction() {}
@@ -106,6 +108,12 @@ public class PacketDeviceTerminalAction implements IMessage {
         this.direction = direction;
         this.countMode = countMode;
         this.key = key == null ? "" : key;
+    }
+
+    public PacketDeviceTerminalAction(UUID terminalId, byte action, byte column, byte direction, byte countMode,
+        String key) {
+        this(action, column, direction, countMode, key);
+        this.terminalId = terminalId;
     }
 
     public static PacketDeviceTerminalAction cycleRecognition(UUID terminalId, String key) {
@@ -119,6 +127,11 @@ public class PacketDeviceTerminalAction implements IMessage {
         return packet;
     }
 
+    public PacketDeviceTerminalAction targetMetaTileId(int metaTileId) {
+        this.targetMetaTileId = metaTileId;
+        return this;
+    }
+
     @Override
     public void toBytes(ByteBuf buf) {
         buf.writeByte(action);
@@ -126,22 +139,31 @@ public class PacketDeviceTerminalAction implements IMessage {
         buf.writeByte(direction);
         buf.writeByte(countMode);
         ByteBufUtils.writeUTF8String(buf, key);
-        if (action == ACTION_CYCLE_RECOGNITION) {
+        if (terminalId != null) {
             buf.writeLong(terminalId.getMostSignificantBits());
             buf.writeLong(terminalId.getLeastSignificantBits());
+            if (action == ACTION_UNBIND || action == ACTION_TELEPORT) buf.writeInt(targetMetaTileId);
         }
     }
 
     @Override
     public void fromBytes(ByteBuf buf) {
         try {
+            if (buf.readableBytes() > 256) {
+                action = -1;
+                return;
+            }
             action = buf.readByte();
             column = buf.readByte();
             direction = buf.readByte();
             countMode = buf.readByte();
             String readKey = ByteBufUtils.readUTF8String(buf);
             key = readKey != null && readKey.length() <= MAX_KEY_LEN ? readKey : "";
-            terminalId = action == ACTION_CYCLE_RECOGNITION ? new UUID(buf.readLong(), buf.readLong()) : null;
+            boolean target = action == ACTION_UNBIND || action == ACTION_TELEPORT;
+            terminalId = buf.readableBytes() == (target ? 20 : 16) ? new UUID(buf.readLong(), buf.readLong()) : null;
+            if (terminalId != null && target) targetMetaTileId = buf.readInt();
+            if (terminalId == null && action != ACTION_SET_TELEPORT_COST) action = -1;
+            if (buf.readableBytes() != 0) action = -1;
         } catch (Exception e) {
             // 坏包退化为无动作（action 超界由队列侧忽略）
             action = -1;
@@ -161,8 +183,15 @@ public class PacketDeviceTerminalAction implements IMessage {
             if (PerformanceAudit.enabled()) PerformanceAudit.recordPacketReceived(10);
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
             if (player != null) {
-                DeviceTerminalActionQueue
-                    .enqueue(player, msg.action, msg.column, msg.direction, msg.countMode, msg.key, msg.terminalId);
+                DeviceTerminalActionQueue.enqueue(
+                    player,
+                    msg.action,
+                    msg.column,
+                    msg.direction,
+                    msg.countMode,
+                    msg.key,
+                    msg.terminalId,
+                    msg.targetMetaTileId);
             }
             return null;
         }

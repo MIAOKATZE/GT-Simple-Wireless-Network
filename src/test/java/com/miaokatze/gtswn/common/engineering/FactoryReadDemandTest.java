@@ -30,14 +30,23 @@ public class FactoryReadDemandTest {
         UUID id = ItemDeviceInfoTerminal.getOrCreateTerminalId(stack);
         Entry entry = new Entry("0:0:64:0", "machine", (byte) 1, (byte) 0, 32, 0, 32, 0, 0, 0, 64, 0, "", "");
         DeviceTerminalClientCache.receivePage(id, 1, 0, 1, Collections.singletonList(entry));
-        Method capture = EngineeringTerminalHudSnapshot.class.getDeclaredMethod("device", Source.class);
+        // Assemble the view with the lifecycle gate's explicit result. Receipt/source admission is
+        // exercised separately by FactoryVisualizationReceiptTest without constructing a game client.
+        Method capture = EngineeringTerminalHudSnapshot.class
+            .getDeclaredMethod("device", Source.class, DeviceTerminalClientCache.Snapshot.class);
         capture.setAccessible(true);
         Field reading = EngineeringTerminalHudSnapshot.class.getDeclaredField("deviceReading");
         reading.setAccessible(true);
         try {
             reading.setBoolean(null, true);
             EngineeringTerminalHudSnapshot.Source view = (EngineeringTerminalHudSnapshot.Source) capture
-                .invoke(null, new Source(stack, SourceOrigin.INVENTORY));
+                .invoke(null, new Source(stack, SourceOrigin.INVENTORY), null);
+            assertTrue(view.enabled);
+            assertFalse(view.fresh);
+            assertTrue(view.devices.isEmpty());
+            assertFalse(view.itemDisplayEnabled);
+            view = (EngineeringTerminalHudSnapshot.Source) capture
+                .invoke(null, new Source(stack, SourceOrigin.INVENTORY), DeviceTerminalClientCache.getSnapshot(id));
             assertTrue(view.enabled);
             assertTrue(view.fresh);
             assertFalse(view.itemDisplayEnabled);
@@ -45,7 +54,7 @@ public class FactoryReadDemandTest {
             assertFalse(ItemDeviceInfoTerminal.isVisualizationEnabled(stack));
             reading.setBoolean(null, false);
             view = (EngineeringTerminalHudSnapshot.Source) capture
-                .invoke(null, new Source(stack, SourceOrigin.INVENTORY));
+                .invoke(null, new Source(stack, SourceOrigin.INVENTORY), DeviceTerminalClientCache.getSnapshot(id));
             assertFalse(view.enabled);
             assertTrue(view.devices.isEmpty());
             assertFalse(ItemDeviceInfoTerminal.isVisualizationEnabled(stack));

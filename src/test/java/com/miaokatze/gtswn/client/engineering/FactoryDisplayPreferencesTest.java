@@ -47,7 +47,10 @@ public class FactoryDisplayPreferencesTest {
         first.put(Key.NODE_5, 1);
         first.put(Key.MACHINE_FILTER, 6);
         first.put(Key.YAW, 71.5);
-        first.put(Key.ZOOM, 2.75);
+        first.put(Key.ZOOM, .025);
+        first.put(Key.DASHBOARD_PRESET, 2);
+        first.put(Key.DASHBOARD_CARDS, 11);
+        first.put(Key.DASHBOARD_REVERSE, 1);
         String profile = FactoryDisplayPreferences.profile("local:world1", "player1", 0);
         HeightSlice slice = HeightSlice.between(23, 77, 1.5)
             .withFeatheredCaps(true)
@@ -62,7 +65,7 @@ public class FactoryDisplayPreferencesTest {
         assertEquals("", reloaded.text(FactoryDisplayPreferences.profile("local:world1", "player2", 0)));
         assertEquals("", reloaded.text(FactoryDisplayPreferences.profile("local:world1", "player1", 1)));
         assertEquals("", reloaded.text(FactoryDisplayPreferences.profile("server:world1", "player1", 0)));
-        reloaded.put(Key.ZOOM, 2.75);
+        reloaded.put(Key.ZOOM, .025);
         reloaded.text(profile, reloaded.text(profile));
         assertFalse(reloaded.dirty());
     }
@@ -89,6 +92,7 @@ public class FactoryDisplayPreferencesTest {
     public void corruptValuesCannotProduceInvalidCameraOrUiState() {
         assertEquals(45, Key.YAW.sanitize(Double.NaN), 0);
         assertEquals(8, Key.ZOOM.sanitize(1000), 0);
+        assertEquals(.025, Key.ZOOM.sanitize(0), 0);
         assertEquals(0, Key.GRID.sanitize(-10), 0);
         assertEquals(3, Key.PAGE.sanitize(99), 0);
         assertFalse(

@@ -299,7 +299,7 @@ public final class DeviceTerminalTeleport {
         }
     }
 
-    private static boolean holdsTerminal(EntityPlayerMP player, UUID terminalId, boolean heldOnly) {
+    public static boolean holdsTerminal(EntityPlayerMP player, UUID terminalId, boolean heldOnly) {
         if (terminalId == null) return false;
         if (heldOnly) {
             net.minecraft.item.ItemStack held = player.getHeldItem();
@@ -308,6 +308,12 @@ public final class DeviceTerminalTeleport {
                 && terminalId.equals(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(held));
         }
         for (net.minecraft.item.ItemStack stack : player.inventory.mainInventory) {
+            if (stack != null && stack.getItem() instanceof com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal
+                && terminalId.equals(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(stack)))
+                return true;
+        }
+        for (net.minecraft.item.ItemStack stack : com.miaokatze.gtswn.common.baubles.TerminalBaubles
+            .terminals(player)) {
             if (stack != null && stack.getItem() instanceof com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal
                 && terminalId.equals(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(stack)))
                 return true;

@@ -36,16 +36,23 @@ public final class TerminalBaubles {
     private static final Map<UUID, Request> PENDING = new ConcurrentHashMap<>();
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
     private static boolean initialized;
+    private static boolean baublesAvailable;
 
     private TerminalBaubles() {}
 
     public static void init() {
         if (initialized) return;
+        baublesAvailable = Loader.isModLoaded("Baubles");
         initialized = true;
-        if (Loader.isModLoaded("Baubles")) Integration.register();
+        if (baublesAvailable) Integration.register();
         FMLCommonHandler.instance()
             .bus()
             .register(new Events());
+    }
+
+    /** Optional integrations are resolved during mod initialization, before any player inventory ticks. */
+    static boolean isBaublesAvailable() {
+        return baublesAvailable;
     }
 
     public static int category(ItemStack stack) {
@@ -68,7 +75,7 @@ public final class TerminalBaubles {
     }
 
     public static IInventory inventory(EntityPlayer player) {
-        return player != null && Loader.isModLoaded("Baubles") ? Integration.inventory(player) : null;
+        return player != null && baublesAvailable ? Integration.inventory(player) : null;
     }
 
     /** Server-side in-place NBT changes need Baubles' native slot packet, not only markDirty. */
@@ -99,6 +106,7 @@ public final class TerminalBaubles {
 
     public static void onEquipped(ItemStack stack, EntityLivingBase entity) {
         if (!(entity instanceof EntityPlayerMP player) || category(stack) < 0) return;
+        TerminalAcquisitionHint.observe(stack, entity);
         initialize(stack, player);
         NBTTagCompound root = player.getEntityData();
         NBTTagCompound persisted = root.getCompoundTag(EntityPlayer.PERSISTED_NBT_TAG);

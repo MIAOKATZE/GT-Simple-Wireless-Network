@@ -49,7 +49,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         "key.gtswn.engineering",
         Keyboard.KEY_F12,
         "key.categories.gtswn.factory");
-    private final ZoomMotion zoom = new ZoomMotion(1, .125, 8);
+    private final ZoomMotion zoom = new ZoomMotion(1, .025, 8);
     private WorldCameras.Lease lease;
     private World world;
     private net.minecraft.entity.player.EntityPlayer sessionPlayer;
@@ -241,6 +241,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     }
 
     public void selectPosition(int bx, int by, int bz, String name) {
+        WorkbenchHud.worldSelectionChanged();
         selected = new Target(bx, by, bz, name);
         pinned = false;
     }
@@ -265,7 +266,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     }
 
     public void select(Entry entry) {
-        if (entry == null || world == null || entry.dim != world.provider.dimensionId) return;
+        if (entry == null || world == null || entry.dim != world.provider.dimensionId) {
+            clearSelection();
+            return;
+        }
         selected = new Target(entry.x, entry.y, entry.z, entry.displayName.isEmpty() ? entry.name : entry.displayName);
         pinned = false;
     }
@@ -314,7 +318,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         lastY = y;
         lastZ = z;
         if (!EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
-            || FactoryShortcuts.isBinding()) return;
+            || FactoryShortcuts.isBinding()
+            || WorkbenchHud.typing()) return;
         if (pinned && selected != null) {
             x = selected.x + .5;
             y = selected.y + .5;
@@ -336,6 +341,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     }
 
     private static int key(KeyBinding key) {
+        if (WorkbenchHud.typing()) return 0;
         int code = key.getKeyCode();
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null
             || com.miaokatze.gtswn.client.TerminalWheelInput.suppresses(code)) return 0;
@@ -359,6 +365,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (event.button == 0 || event.button == 1) {
             event.setCanceled(true);
             if (event.button == 0 && event.buttonstate) {
+                WorkbenchHud.worldSelectionChanged();
                 Target target = pick(event.x, event.y);
                 if (target != null && selected != null && target.matches(selected)) {
                     if (pinned) pinned = false;
@@ -497,6 +504,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowKey(int code) {
+        if (WorkbenchHud.typing()) return false;
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null) return false;
         Minecraft mc = Minecraft.getMinecraft();
         if (following
@@ -515,6 +523,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowRawKey(int code) {
+        if (!FactoryShortcuts.isBinding()
+            && WorkbenchHud.key(code, Keyboard.getEventCharacter(), Keyboard.getEventKeyState())) return false;
         if (FactoryShortcuts.consumeKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent())) return false;
         // Vanilla opens the pause menu before FML KeyInputEvent. Handle world Esc at Core's earlier queue boundary.
         // Core bypasses this callback while a real GUI is open, so that GUI retains its normal Esc behavior.

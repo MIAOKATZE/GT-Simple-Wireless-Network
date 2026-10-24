@@ -24,6 +24,7 @@ public final class GuiEngineeringBoard extends GtswnMuiScreen {
     @Override
     public void onUpdate() {
         super.onUpdate();
+        PortableSuperDashboard.tick();
         if (!PortableSuperDashboard.isOpen()) mc.displayGuiScreen(null);
     }
 
@@ -43,8 +44,25 @@ public final class GuiEngineeringBoard extends GtswnMuiScreen {
 
         @Override
         public Result onMousePressed(int button) {
-            PortableSuperDashboard.click(getContext().getMouseX(), getContext().getMouseY(), button);
+            if (!PortableSuperDashboard.pointer(getContext().getMouseX(), getContext().getMouseY(), button, true))
+                PortableSuperDashboard.click(getContext().getMouseX(), getContext().getMouseY(), button);
             return Result.SUCCESS;
+        }
+
+        @Override
+        public boolean onMouseRelease(int button) {
+            PortableSuperDashboard.pointer(getContext().getMouseX(), getContext().getMouseY(), button, false);
+            return true;
+        }
+
+        @Override
+        public void onMouseDrag(int button, long timeSinceClick) {
+            PortableSuperDashboard.pointer(getContext().getMouseX(), getContext().getMouseY(), button, true);
+        }
+
+        @Override
+        public Result onKeyPressed(char typedChar, int keyCode) {
+            return PortableSuperDashboard.key(keyCode, true) ? Result.SUCCESS : Result.IGNORE;
         }
 
         @Override

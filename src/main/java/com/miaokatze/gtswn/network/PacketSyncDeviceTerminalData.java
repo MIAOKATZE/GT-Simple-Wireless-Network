@@ -131,12 +131,21 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             version = buf.readLong();
             pageIndex = buf.readInt();
             pageTotal = buf.readInt();
-            entryTotal = Math.min(buf.readInt(), MAX_ENTRIES);
-            int count = Math.min(buf.readInt(), MAX_ENTRIES);
+            entryTotal = buf.readInt();
+            int count = buf.readInt();
+            if (version < 0 || pageTotal <= 0
+                || pageTotal > 8
+                || pageIndex < -1
+                || pageIndex >= pageTotal
+                || entryTotal < 0
+                || entryTotal > MAX_ENTRIES
+                || count < 0
+                || count > 128
+                || pageIndex == -1 && count != 0) throw new IllegalArgumentException("Invalid device page header");
             for (int i = 0; i < count; i++) {
-                // 单条最小防御：可读字节枯竭即停止（保留已解析前缀）
+                // A truncated page cannot acknowledge a complete page or refresh its authority.
                 if (buf.readableBytes() <= 0) {
-                    break;
+                    throw new IllegalArgumentException("Truncated device page");
                 }
                 try {
                     String key = ByteBufUtils.readUTF8String(buf);
@@ -161,10 +170,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     String displayName = ByteBufUtils.readUTF8String(buf);
                     byte nameColor = buf.readByte();
                     boolean nameBold = buf.readBoolean();
-                    // key 正则校验：非法键跳过该条（不阻断后续条目）
+                    // Reject the whole page; skipping a row would misrepresent completeness.
                     if (key == null || !KEY_PATTERN.matcher(key)
                         .matches()) {
-                        continue;
+                        throw new IllegalArgumentException("Invalid device key");
                     }
                     entries.add(
                         new Entry(
@@ -191,8 +200,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                             capabilityMask,
                             recognitionMode));
                 } catch (Exception e) {
-                    // 单条损坏（字符串长度越界等）：截断解析，保留已解析前缀
-                    break;
+                    throw new IllegalArgumentException("Malformed device page", e);
                 }
             }
         } catch (Exception e) {

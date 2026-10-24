@@ -392,6 +392,7 @@ public class ItemNetworkQuantumTerminal extends Item
     /** Local format/source-event pull; matching format+epoch does no lookup and chests are never scanned. */
     @Override
     public void onUpdate(ItemStack stack, World world, Entity entity, int slot, boolean held) {
+        com.miaokatze.gtswn.common.baubles.TerminalAcquisitionHint.observe(stack, entity);
         if (world.isRemote || !(entity instanceof EntityPlayer)) return;
         NBTTagCompound tag = stack.getTagCompound();
         if (tag == null || tag.getByte(NBT_BOUND) != 1) return;
@@ -712,7 +713,9 @@ public class ItemNetworkQuantumTerminal extends Item
 
     @Override
     @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
-    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        com.miaokatze.gtswn.common.baubles.TerminalAcquisitionHint.observe(stack, player);
+    }
 
     @Override
     @cpw.mods.fml.common.Optional.Method(modid = "Baubles")

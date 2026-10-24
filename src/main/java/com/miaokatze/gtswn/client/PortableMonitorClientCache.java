@@ -87,10 +87,23 @@ public final class PortableMonitorClientCache {
         session();
         stack = currentStack(stack);
         UUID id = MonitorBindings.id(stack);
-        if (id == null || sessionPlayer == null) return;
+        if (id == null || sessionPlayer == null || !PortableWirelessNetworkMonitor.isMonitorBound(stack)) return;
         if (CACHE.size() >= 32 && !CACHE.containsKey(id)) CACHE.clear();
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
         cache.stack = stack;
+        String owner = PortableWirelessNetworkMonitor.getOwnerUUID(stack);
+        if (!cache.owner.isEmpty() && !owner.equals(cache.owner)) {
+            cache.snapshot = cache.mutationResponse = null;
+            cache.renderSnapshot = null;
+            cache.views.clear();
+            cache.viewVersions.clear();
+            cache.viewSources.clear();
+            cache.inFlight = false;
+            cache.action = 0;
+            cache.receivedAt = 0;
+            cache.dirty = true;
+        }
+        cache.owner = owner;
         boolean dashboard = Minecraft.getMinecraft().currentScreen == null && cache.dashboardSelected >= 0;
         int selected = dashboard ? cache.dashboardSelected : cache.selected;
         long revision = MonitorBindings.revision(stack);
@@ -128,6 +141,7 @@ public final class PortableMonitorClientCache {
             if (request.selected < 0 && request.pins.isEmpty() && request.action == 0) return;
             cache.sequence = request.sequence;
             cache.request = request;
+            cache.requestOwner = owner;
             cache.dashboardRequest = dashboard;
             cache.inFlight = true;
             cache.dirty = false;
@@ -216,8 +230,10 @@ public final class PortableMonitorClientCache {
 
     public static void viewing(ItemStack stack, int index) {
         session();
+        UUID previous = MonitorBindings.id(stack);
         stack = currentStack(stack);
         UUID id = MonitorBindings.id(stack);
+        if (id == null && index < 0) id = previous;
         if (id == null) return;
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
         if (cache.selected != index) {
@@ -229,7 +245,9 @@ public final class PortableMonitorClientCache {
     /** Independent foreground demand; closing the engineering board never changes the ordinary viewer's selection. */
     public static void dashboardViewing(ItemStack stack, int index) {
         session();
+        UUID previous = MonitorBindings.id(stack);
         UUID id = MonitorBindings.id(currentStack(stack));
+        if (id == null && index < 0) id = previous;
         if (id == null) return;
         Cached cache = CACHE.computeIfAbsent(id, ignored -> new Cached());
         if (cache.dashboardSelected != index) {
@@ -262,6 +280,13 @@ public final class PortableMonitorClientCache {
         session();
         Cached cache = CACHE.get(response.terminalId);
         if (cache == null || !cache.inFlight || cache.sequence != response.sequence) return;
+        cache.stack = currentStack(cache.stack);
+        if (cache.stack == null || !response.terminalId.equals(MonitorBindings.id(cache.stack))
+            || !cache.requestOwner.equals(PortableWirelessNetworkMonitor.getOwnerUUID(cache.stack))) {
+            cache.inFlight = false;
+            cache.snapshot = null;
+            return;
+        }
         if (cache.snapshot != null) for (PacketSyncPortableMonitor.Panel panel : response.panels) {
             if (panel.detail && panel.render == null)
                 for (PacketSyncPortableMonitor.Panel old : cache.snapshot.panels) {
@@ -288,14 +313,15 @@ public final class PortableMonitorClientCache {
                 cache.viewSources.remove(cache.request.targetPanel);
             }
         }
-        cache.receivedAt = System.currentTimeMillis();
         cache.inFlight = false;
-        cache.stack = currentStack(cache.stack);
         if (response.bindingRevision < MonitorBindings.revision(cache.stack)) {
             cache.dirty = true;
             return;
         }
+        cache.receivedAt = System.currentTimeMillis();
+        cache.receiptRevision++;
         cache.snapshot = response;
+        cache.owner = cache.requestOwner;
         Set<UUID> retainedPanels = new HashSet<>();
         for (PacketSyncPortableMonitor.Panel panel : response.panels) retainedPanels.add(panel.binding.panelId);
         cache.views.keySet()
@@ -334,26 +360,29 @@ public final class PortableMonitorClientCache {
     /** Inventory synchronization can replace an ItemStack while a screen still holds its old reference. */
     public static ItemStack currentStack(ItemStack previous) {
         EntityPlayer player = Minecraft.getMinecraft().thePlayer;
-        if (player == null) return previous;
+        if (player == null) return null;
         UUID id = MonitorBindings.id(previous);
         if (id == null) {
             ItemStack held = player.getHeldItem();
             return PortableWirelessNetworkMonitor.isMonitorBound(held)
                 && PortableWirelessNetworkMonitor.isMonitorBound(previous)
                 && PortableWirelessNetworkMonitor.getOwnerUUID(held)
-                    .equals(PortableWirelessNetworkMonitor.getOwnerUUID(previous)) ? held : previous;
+                    .equals(PortableWirelessNetworkMonitor.getOwnerUUID(previous)) ? held : null;
         }
         ItemStack held = player.getHeldItem();
-        if (id.equals(MonitorBindings.id(held))) return held;
+        if (id.equals(MonitorBindings.id(held)) && PortableWirelessNetworkMonitor.isMonitorBound(held)) return held;
         try {
             IInventory baubles = BaublesApi.getBaubles(player);
             if (baubles != null) for (int i = 0; i < baubles.getSizeInventory(); i++) {
                 ItemStack stack = baubles.getStackInSlot(i);
-                if (id.equals(MonitorBindings.id(stack))) return stack;
+                if (id.equals(MonitorBindings.id(stack)) && PortableWirelessNetworkMonitor.isMonitorBound(stack))
+                    return stack;
             }
         } catch (NoClassDefFoundError ignored) {}
-        for (ItemStack stack : player.inventory.mainInventory) if (id.equals(MonitorBindings.id(stack))) return stack;
-        return previous;
+        for (ItemStack stack : player.inventory.mainInventory)
+            if (id.equals(MonitorBindings.id(stack)) && PortableWirelessNetworkMonitor.isMonitorBound(stack))
+                return stack;
+        return null;
     }
 
     public static PortablePanelView view(ItemStack stack, int index) {
@@ -381,7 +410,18 @@ public final class PortableMonitorClientCache {
         stack = currentStack(stack);
         Cached cache = CACHE.get(MonitorBindings.id(stack));
         return cache == null || cache.snapshot == null
+            || !cache.owner.equals(PortableWirelessNetworkMonitor.getOwnerUUID(stack))
             || cache.snapshot.bindingRevision < MonitorBindings.revision(stack) ? null : cache.snapshot;
+    }
+
+    public static long receiptRevision(ItemStack stack) {
+        Cached cache = CACHE.get(MonitorBindings.id(currentStack(stack)));
+        return cache == null ? 0 : cache.receiptRevision;
+    }
+
+    public static long receivedAtMillis(ItemStack stack) {
+        Cached cache = CACHE.get(MonitorBindings.id(currentStack(stack)));
+        return cache == null ? 0 : cache.receivedAt;
     }
 
     /** The actual mutation ACK, including its binding count even if a newer S2F already arrived. */
@@ -394,7 +434,9 @@ public final class PortableMonitorClientCache {
     public static boolean stale(ItemStack stack) {
         stack = currentStack(stack);
         Cached cache = CACHE.get(MonitorBindings.id(stack));
-        return cache == null
+        return cache == null || cache.snapshot == null
+            || !cache.owner.equals(PortableWirelessNetworkMonitor.getOwnerUUID(stack))
+            || cache.snapshot.bindingRevision < MonitorBindings.revision(stack)
             || System.currentTimeMillis() - cache.receivedAt > Math.max(10000, Config.hudUpdateInterval * 150L);
     }
 
@@ -789,6 +831,8 @@ public final class PortableMonitorClientCache {
         int sequence, action, value, result;
         UUID targetPanel = new UUID(0, 0);
         long sentAt, receivedAt;
+        long receiptRevision;
+        String owner = "", requestOwner = "";
         long bindingRevision = Long.MIN_VALUE;
         boolean inFlight;
         boolean dirty;

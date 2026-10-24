@@ -17,6 +17,8 @@ public class EngineeringInputPolicyTest {
         assertEquals(CameraSettings.Navigation.WheelZoom.DIRECT, navigation.wheelZoom());
         assertEquals(CameraSettings.Navigation.WheelDeltaUnit.AUTO, navigation.wheelDeltaUnit());
         assertTrue(navigation.zoom());
+        assertEquals(.4, navigation.minScale(), 1e-12);
+        assertEquals(128, navigation.maxScale(), 1e-12);
         assertEquals(1, navigation.rotateButton());
         assertEquals(0, navigation.rotateKey());
         assertEquals(2, navigation.panButton());
@@ -78,5 +80,8 @@ public class EngineeringInputPolicyTest {
         double[] close = EngineeringMotion.delta(45, 2, 1, 1, 0);
         double[] far = EngineeringMotion.delta(45, .5, 1, 1, 0);
         for (int i = 0; i < close.length; i++) assertEquals(close[i] * 4, far[i], 1e-12);
+        double[] previousLimit = EngineeringMotion.delta(45, .125, 1, 1, 0);
+        double[] expandedLimit = EngineeringMotion.delta(45, .025, 1, 1, 0);
+        for (int i = 0; i < previousLimit.length; i++) assertEquals(previousLimit[i] * 5, expandedLimit[i], 1e-12);
     }
 }

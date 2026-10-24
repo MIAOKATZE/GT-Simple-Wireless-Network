@@ -168,10 +168,19 @@ public final class EngineeringTerminalHudSnapshot {
 
     private static Source device(EngineeringTerminalSources.Source selected) {
         UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
+        DeviceTerminalClientCache.Snapshot authorized = deviceReading ? visualizationSnapshot(id)
+            : DeviceTerminalClientCache.getSnapshot(id);
+        return device(selected, authorized);
+    }
+
+    /** Pure view assembly after the client lifecycle/receipt gate has selected an authorized snapshot. */
+    private static Source device(EngineeringTerminalSources.Source selected,
+        DeviceTerminalClientCache.Snapshot authorized) {
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
         boolean itemEnabled = ItemDeviceInfoTerminal.isVisualizationEnabled(selected.stack);
         boolean enabled = deviceReading && selected.present()
             || itemEnabled && DeviceTerminalVisualizationState.active(id);
-        DeviceTerminalClientCache.Snapshot snapshot = enabled ? DeviceTerminalClientCache.getSnapshot(id) : null;
+        DeviceTerminalClientCache.Snapshot snapshot = enabled ? authorized : null;
         return new Source(
             id,
             selected.origin,
@@ -180,7 +189,10 @@ public final class EngineeringTerminalHudSnapshot {
             snapshot != null && DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()),
             Collections.emptyList(),
             Collections.emptyList(),
-            snapshot == null ? Collections.emptyList() : snapshot.entries);
+            snapshot == null ? Collections.emptyList() : snapshot.entries,
+            DeviceTerminalClientCache.receiptRevision(id),
+            snapshot != null && DeviceTerminalClientCache.hasMorePending(id),
+            snapshot == null ? 0 : DeviceTerminalClientCache.receivedAtMillis(id));
     }
 
     private static Source portable(EngineeringTerminalSources.Source selected) {
@@ -220,7 +232,10 @@ public final class EngineeringTerminalHudSnapshot {
             enabled && (selectedByHud && hud.fresh() || !PortableMonitorClientCache.stale(stack)),
             basic,
             lines,
-            Collections.emptyList());
+            Collections.emptyList(),
+            PortableMonitorClientCache.receiptRevision(stack),
+            false,
+            PortableMonitorClientCache.receivedAtMillis(stack));
     }
 
     public static final class Source {
@@ -241,15 +256,30 @@ public final class EngineeringTerminalHudSnapshot {
         public final List<String> basicLines;
         public final List<PortableMonitorClientCache.PinnedLine> pinnedLines;
         public final List<Entry> devices;
+        public final long revision, receivedAtMillis;
+        public final boolean partial;
+
+        public long ageMillis() {
+            return receivedAtMillis == 0 ? Long.MAX_VALUE : Math.max(0, System.currentTimeMillis() - receivedAtMillis);
+        }
 
         private Source(UUID terminalId, SourceOrigin origin, boolean enabled, boolean itemDisplayEnabled, boolean fresh,
             List<String> basic, List<PortableMonitorClientCache.PinnedLine> pinned, List<Entry> devices) {
+            this(terminalId, origin, enabled, itemDisplayEnabled, fresh, basic, pinned, devices, 0, false, 0);
+        }
+
+        private Source(UUID terminalId, SourceOrigin origin, boolean enabled, boolean itemDisplayEnabled, boolean fresh,
+            List<String> basic, List<PortableMonitorClientCache.PinnedLine> pinned, List<Entry> devices, long revision,
+            boolean partial, long receivedAtMillis) {
             this.terminalId = terminalId;
             this.origin = origin;
             this.bauble = origin == SourceOrigin.BAUBLE;
             this.enabled = enabled;
             this.itemDisplayEnabled = itemDisplayEnabled;
             this.fresh = fresh;
+            this.revision = revision;
+            this.partial = partial;
+            this.receivedAtMillis = receivedAtMillis;
             this.basicLines = Collections.unmodifiableList(new ArrayList<>(basic));
             this.pinnedLines = Collections.unmodifiableList(new ArrayList<>(pinned));
             this.devices = Collections.unmodifiableList(new ArrayList<>(devices));

@@ -55,9 +55,14 @@ public final class DeviceTerminalActionQueue {
 
     public static void enqueue(EntityPlayerMP player, byte action, byte column, byte direction, byte countMode,
         String key, UUID terminalId) {
+        enqueue(player, action, column, direction, countMode, key, terminalId, -1);
+    }
+
+    public static void enqueue(EntityPlayerMP player, byte action, byte column, byte direction, byte countMode,
+        String key, UUID terminalId, int targetMetaTileId) {
         if (player == null || action < 0
             || action > PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION
-            || (action == PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION && terminalId == null)) return;
+            || (action != PacketDeviceTerminalAction.ACTION_SET_TELEPORT_COST && terminalId == null)) return;
         UUID id = player.getUniqueID();
         String token = id + ":"
             + action
@@ -72,7 +77,9 @@ public final class DeviceTerminalActionQueue {
                 if (PENDING.size() >= MAX_PENDING || count >= MAX_PLAYER_PENDING) return;
                 PENDING_COUNTS.put(id, count + 1);
             }
-            PENDING.put(token, new Action(player, action, column, direction, countMode, key, terminalId));
+            PENDING.put(
+                token,
+                new Action(player, action, column, direction, countMode, key, terminalId, targetMetaTileId));
         }
     }
 
@@ -144,11 +151,16 @@ public final class DeviceTerminalActionQueue {
 
     private static void apply(EntityPlayerMP player, Action action) {
         if (!isOnline(player)) return;
+        if (action.action == PacketDeviceTerminalAction.ACTION_SET_TELEPORT_COST) {
+            if (action.key.matches("[0-9]{1,7}")) DeviceTerminalSettings.get(player.worldObj)
+                .setTeleportCost(player, Integer.parseInt(action.key));
+            return;
+        }
         if (action.action == PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION) {
-            ItemStack held = player.getHeldItem();
+            boolean bootstrap = new UUID(0, 0).equals(action.terminalId);
+            ItemStack held = bootstrap ? player.getHeldItem() : findTerminalStack(player, action.terminalId);
             if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)) return;
             UUID heldId = ItemDeviceInfoTerminal.readTerminalId(held);
-            boolean bootstrap = new UUID(0, 0).equals(action.terminalId);
             if (bootstrap ? heldId != null : !action.terminalId.equals(heldId)) return;
             DeviceTerminalRecognitionMode.cycle(player, held, action.key);
             return;
@@ -159,6 +171,21 @@ public final class DeviceTerminalActionQueue {
             return;
         }
         UUID terminalId = ItemDeviceInfoTerminal.ensureTerminalIdSynced(player, stack);
+        if (action.action == PacketDeviceTerminalAction.ACTION_UNBIND
+            || action.action == PacketDeviceTerminalAction.ACTION_TELEPORT) {
+            DeviceTerminalDataStore.TerminalData data = DeviceTerminalDataStore.get(player.worldObj)
+                .getTerminal(terminalId);
+            DeviceTerminalDataStore.MachineRecord record = data == null ? null : data.records.get(action.key);
+            if (record == null || record.metaTileId != action.targetMetaTileId) {
+                DeviceTerminalRequestQueue.invalidate(player);
+                com.miaokatze.gtswn.common.device.DeviceTerminalTeleport.feedback(
+                    player,
+                    new com.miaokatze.gtswn.common.device.DeviceTerminalTeleport.Outcome(
+                        com.miaokatze.gtswn.common.device.DeviceTerminalTeleport.Status.STALE_TARGET,
+                        0));
+                return;
+            }
+        }
         // 会话内新获得终端补登记活跃索引（否则采样调度跳过直到重登）
         DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
         switch (action.action) {
@@ -193,13 +220,6 @@ public final class DeviceTerminalActionQueue {
             case PacketDeviceTerminalAction.ACTION_TELEPORT: {
                 teleport(player, terminalId, action.key);
                 break;
-            }
-            case PacketDeviceTerminalAction.ACTION_SET_TELEPORT_COST: {
-                if (action.key.matches("[0-9]{1,7}")) {
-                    DeviceTerminalSettings.get(player.worldObj)
-                        .setTeleportCost(player, Integer.parseInt(action.key));
-                }
-                return;
             }
             default:
                 // 未知动作：忽略
@@ -252,22 +272,23 @@ public final class DeviceTerminalActionQueue {
         }
     }
 
-    /** 物品栏首台设备信息终端（手持优先，其次主背包扫描；与请求队列同款解析规则） */
+    /** Resolve only the opened UUID across held, inventory and accessory locations; never choose a substitute. */
     private static ItemStack findTerminalStack(EntityPlayerMP player, UUID requested) {
+        if (requested == null) return null;
         ItemStack held = player.getHeldItem();
         if (held != null && held.getItem() instanceof ItemDeviceInfoTerminal
-            && (requested == null || requested.equals(ItemDeviceInfoTerminal.readTerminalId(held)))) {
+            && requested.equals(ItemDeviceInfoTerminal.readTerminalId(held))) {
             return held;
         }
         for (ItemStack stack : player.inventory.mainInventory) {
             if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal
-                && (requested == null || requested.equals(ItemDeviceInfoTerminal.readTerminalId(stack)))) {
+                && requested.equals(ItemDeviceInfoTerminal.readTerminalId(stack))) {
                 return stack;
             }
         }
         for (ItemStack stack : com.miaokatze.gtswn.common.baubles.TerminalBaubles.terminals(player)) {
             if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal
-                && (requested == null || requested.equals(ItemDeviceInfoTerminal.readTerminalId(stack)))) return stack;
+                && requested.equals(ItemDeviceInfoTerminal.readTerminalId(stack))) return stack;
         }
         return null;
     }
@@ -282,10 +303,12 @@ public final class DeviceTerminalActionQueue {
         final byte countMode;
         final String key;
         final UUID terminalId;
+        final int targetMetaTileId;
 
         Action(EntityPlayerMP player, byte action, byte column, byte direction, byte countMode, String key,
-            UUID terminalId) {
+            UUID terminalId, int targetMetaTileId) {
             this.terminalId = terminalId;
+            this.targetMetaTileId = targetMetaTileId;
             this.player = player;
             this.action = action;
             this.column = column;
