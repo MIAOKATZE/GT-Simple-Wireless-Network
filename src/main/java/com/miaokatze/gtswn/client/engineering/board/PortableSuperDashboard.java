@@ -58,7 +58,12 @@ public final class PortableSuperDashboard extends Gui {
     private static long revision;
     private static List<String> basic = new ArrayList<>();
     private static boolean embedded;
+    private static Runnable userClose;
     private static int embeddedX, embeddedY, virtualWidth, virtualHeight;
+    private static int trackTop, trackBottom, dragY, dragScroll;
+    private static boolean draggingScroll;
+    private static EngineeringTerminalSources.Source sourceIdentity = EngineeringTerminalSources.Source.EMPTY;
+    private static long initialReceipt;
 
     private PortableSuperDashboard() {}
 
@@ -70,6 +75,9 @@ public final class PortableSuperDashboard extends Gui {
         if (id == null || mc.thePlayer == null || EngineeringTerminalSources.resolve(mc.thePlayer, 0).stack != source)
             return;
         stack = source;
+        sourceIdentity = EngineeringTerminalSources.resolve(mc.thePlayer, 0);
+        PortableMonitorClientCache.snapshot(source);
+        initialReceipt = PortableMonitorClientCache.receiptRevision(source);
         terminal = id;
         world = mc.theWorld;
         player = mc.thePlayer;
@@ -94,11 +102,66 @@ public final class PortableSuperDashboard extends Gui {
         return open;
     }
 
+    /** Host intent is distinct from close(), which also serves identity/lifecycle invalidation. */
+    public static void onUserClose(Runnable callback) {
+        userClose = callback;
+    }
+
+    private static void requestClose() {
+        Runnable callback = userClose;
+        close();
+        if (callback != null) callback.run();
+    }
+
+    /** Scheduling belongs to the client tick, never to draw/hover/resize. */
+    public static void tick() {
+        update();
+    }
+
+    /** Read-only projection of the existing authorized, fairly polled screen cards. */
+    public static List<Panel> panels() {
+        List<Panel> result = new ArrayList<>();
+        if (!open || layout == null) return result;
+        for (String id : layout.order) {
+            if (layout.hidden.contains(id)) continue;
+            Card card = cards.get(id);
+            if (card == null || card.summary == null) continue;
+            if (card.summary.state != 0 || card.detail == null || expired(card)) result.add(card.summary);
+            else result.add(card.detail);
+        }
+        return java.util.Collections.unmodifiableList(result);
+    }
+
+    public static int boundScreens() {
+        return bindings.size();
+    }
+
+    /** Layout identities include screens whose first reply has not arrived yet. */
+    public static List<String> screenIds() {
+        List<String> result = new ArrayList<>();
+        if (open && layout != null) for (String id : layout.order) if (!layout.hidden.contains(id)) result.add(id);
+        return java.util.Collections.unmodifiableList(result);
+    }
+
+    public static boolean available(Panel panel) {
+        if (panel == null || panel.state != 0 || panel.binding == null) return false;
+        Card card = cards.get(panel.binding.panelId.toString());
+        return card != null && card.detail == panel && !expired(card);
+    }
+
+    private static boolean expired(Card card) {
+        return card.received == 0 || System.currentTimeMillis() - card.received
+            > Math.max(10000L, Math.max(1, bindings.size()) * Math.max(1100L, Config.hudUpdateInterval * 50L) * 2);
+    }
+
     public static void close() {
         if (stack != null) PortableMonitorClientCache.dashboardViewing(stack, -1);
         open = settings = false;
+        draggingScroll = false;
+        userClose = null;
         stack = null;
         terminal = null;
+        sourceIdentity = EngineeringTerminalSources.Source.EMPTY;
         world = connection = player = null;
         lastSnapshot = null;
         identity = null;
@@ -127,6 +190,7 @@ public final class PortableSuperDashboard extends Gui {
             layout = store.load(identity, ids);
             // A binding edit cannot leave previously authorized rows or graphs on screen.
             cards.clear();
+            initialReceipt = PortableMonitorClientCache.receiptRevision(stack);
             rowPages.clear();
             lastSnapshot = null;
             scroll = 0;
@@ -146,16 +210,21 @@ public final class PortableSuperDashboard extends Gui {
         }
         if (lastTick == mc.thePlayer.ticksExisted) return true;
         lastTick = mc.thePlayer.ticksExisted;
-        ItemStack current = EngineeringTerminalSources.resolve(mc.thePlayer, 0).stack;
-        if (!terminal.equals(MonitorBindings.id(current))) {
+        EngineeringTerminalSources.Source currentSource = EngineeringTerminalSources.resolve(mc.thePlayer, 0);
+        ItemStack current = currentSource.stack;
+        if (!sourceIdentity.sameIdentity(currentSource) || !terminal.equals(MonitorBindings.id(current))) {
             close();
             return false;
         }
         stack = current;
         refreshBindings();
         EngineeringTerminalHudSnapshot.Source source = EngineeringTerminalHudSnapshot.capture(mc.thePlayer).portable;
-        basic = terminal.equals(source.terminalId) ? source.basicLines : java.util.Collections.emptyList();
-        PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.snapshot(stack);
+        basic = terminal.equals(source.terminalId) && PortableMonitorClientCache.receiptRevision(stack) > initialReceipt
+            ? source.basicLines
+            : java.util.Collections.emptyList();
+        PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.receiptRevision(stack) > initialReceipt
+            ? PortableMonitorClientCache.snapshot(stack)
+            : null;
         if (snapshot != null && snapshot != lastSnapshot) {
             lastSnapshot = snapshot;
             long now = System.currentTimeMillis();
@@ -217,7 +286,7 @@ public final class PortableSuperDashboard extends Gui {
     }
 
     public static void render(int screenWidth, int screenHeight, int mouseX, int mouseY) {
-        if (!update()) return;
+        if (!open || layout == null) return;
         width = screenWidth;
         height = screenHeight;
         FontRenderer font = Minecraft.getMinecraft().fontRenderer;
@@ -230,7 +299,7 @@ public final class PortableSuperDashboard extends Gui {
         drawRect(10, 50, width - 10, 73, HEADER);
         text(font, tr("title"), 19, 58, ACCENT, width - 198);
         button(font, width - 166, 53, 96, tr("settings"), () -> settings = !settings, false);
-        button(font, width - 65, 53, 47, tr("close"), PortableSuperDashboard::close, false);
+        button(font, width - 65, 53, 47, tr("close"), PortableSuperDashboard::requestClose, false);
         int viewBottom = height - 26;
         if (layout.overview) {
             drawRect(18, TOP, width - 18, TOP + 78, CARD);
@@ -283,6 +352,8 @@ public final class PortableSuperDashboard extends Gui {
             text(font, tr("hidden.all"), 26, start + 12, MUTED, width - 52);
         if (maxScroll > 0) {
             int track = Math.max(1, viewBottom - start), thumb = Math.max(14, track * track / (track + maxScroll));
+            trackTop = start;
+            trackBottom = viewBottom;
             int at = start + (track - thumb) * scroll / Math.max(1, maxScroll);
             drawRect(width - 15, start, width - 12, viewBottom, HEADER);
             drawRect(width - 15, at, width - 12, at + thumb, ACCENT);
@@ -549,6 +620,56 @@ public final class PortableSuperDashboard extends Gui {
                 hit.action.run();
                 break;
             }
+        }
+        return true;
+    }
+
+    public static boolean pointer(int x, int y, int button, boolean pressed) {
+        if (draggingScroll) {
+            if (button == 0 && !pressed) draggingScroll = false;
+            else scroll = Math.max(
+                0,
+                Math.min(
+                    maxScroll,
+                    dragScroll
+                        + (y - dragY) * (maxScroll + trackBottom - trackTop) / Math.max(1, trackBottom - trackTop)));
+            return true;
+        }
+        if (open && !settings
+            && maxScroll > 0
+            && button == 0
+            && pressed
+            && x >= width - 18
+            && x < width - 8
+            && y >= trackTop
+            && y < trackBottom) {
+            draggingScroll = true;
+            dragY = y;
+            dragScroll = scroll;
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean pointerCaptured() {
+        return draggingScroll;
+    }
+
+    public static boolean key(int code, boolean pressed) {
+        int direction = code == org.lwjgl.input.Keyboard.KEY_PRIOR ? -1
+            : code == org.lwjgl.input.Keyboard.KEY_NEXT ? 1 : 0;
+        if (direction == 0 && code != org.lwjgl.input.Keyboard.KEY_HOME && code != org.lwjgl.input.Keyboard.KEY_END)
+            return false;
+        if (pressed) {
+            if (code == org.lwjgl.input.Keyboard.KEY_HOME) {
+                if (settings) menuScroll = 0;
+                else scroll = 0;
+            } else if (code == org.lwjgl.input.Keyboard.KEY_END) {
+                if (settings) menuScroll = menuMax;
+                else scroll = maxScroll;
+            } else if (settings)
+                menuScroll = Math.max(0, Math.min(menuMax, menuScroll + direction * Math.max(1, height - 112)));
+            else scroll = Math.max(0, Math.min(maxScroll, scroll + direction * Math.max(1, trackBottom - trackTop)));
         }
         return true;
     }

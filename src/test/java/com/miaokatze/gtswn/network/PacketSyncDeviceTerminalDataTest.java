@@ -152,6 +152,24 @@ public class PacketSyncDeviceTerminalDataTest {
     }
 
     @Test
+    public void truncatedPageCannotMasqueradeAsACompletePrefix() {
+        Entry row = new Entry("0:1:64:2", "Machine", (byte) 1, (byte) 0, 1, 0, 1, 0, 0, 1, 64, 2, "", "");
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            new PacketSyncDeviceTerminalData(UUID.randomUUID(), 1, 0, 1, 2, Arrays.asList(row, row)).toBytes(bytes);
+            bytes.writerIndex(bytes.writerIndex() - 1);
+            PacketSyncDeviceTerminalData decoded = new PacketSyncDeviceTerminalData();
+            decoded.fromBytes(bytes);
+            org.junit.Assert.assertNull(decoded.getTerminalId());
+            assertTrue(
+                decoded.getEntries()
+                    .isEmpty());
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
     public void ignoredWireEntryCannotLeakAnyPowerOrRecipeValues() {
         Entry ignored = new Entry(
             "0:1:64:2",

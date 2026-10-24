@@ -11,6 +11,32 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 public class DeviceTerminalDeliverySnapshotTest {
 
     @Test
+    public void alternatingTerminalsRetainTheirOwnContinuationAndOnePlayerThrottle() {
+        DeviceTerminalRequestQueue.PlayerState player = new DeviceTerminalRequestQueue.PlayerState();
+        java.util.UUID a = java.util.UUID.randomUUID(), b = java.util.UUID.randomUUID();
+        DeviceTerminalRequestQueue.SentState first = player.terminal(a);
+        first.prepareSnapshot(terminal(1024), -1, false, true);
+        first.pagesSent = 2;
+        DeviceTerminalRequestQueue.SentState second = player.terminal(b);
+        second.prepareSnapshot(terminal(512), -1, false, true);
+        second.pagesSent = 4;
+        assertSame(first, player.terminal(a));
+        assertEquals(2, player.terminal(a).pagesSent);
+        assertEquals(4, player.terminal(b).pagesSent);
+        assertTrue(player.admit(20));
+        assertFalse(player.admit(20));
+        assertFalse(player.admit(24));
+        assertTrue(player.admit(25));
+        player.terminal(java.util.UUID.randomUUID());
+        player.terminal(java.util.UUID.randomUUID());
+        player.terminal(a); // recently read A must survive a fifth source.
+        player.terminal(java.util.UUID.randomUUID());
+        assertEquals(4, player.terminals.size());
+        assertSame(first, player.terminal(a));
+        assertFalse(player.terminals.containsKey(b));
+    }
+
+    @Test
     public void continuousHundredMachineSamplesCannotRestartEightPageContinuation() {
         DeviceTerminalDataStore.TerminalData data = terminal(1024);
         DeviceTerminalRequestQueue.SentState state = new DeviceTerminalRequestQueue.SentState();

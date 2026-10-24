@@ -8,8 +8,50 @@ import org.junit.Test;
 
 import com.miaokatze.miaokatzecore.client.camera.CameraControl;
 import com.miaokatze.miaokatzecore.client.camera.CameraSettings;
+import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
 
 public class EngineeringInputPolicyTest {
+
+    @Test
+    public void desktopOwnsMovementAndCameraInputRegardlessOfPointerOrFollowing() {
+        assertFalse(EngineeringInputPolicy.worldNavigation(true, false, true, true));
+        assertTrue(EngineeringInputPolicy.worldNavigation(true, false, true, false));
+        for (boolean following : new boolean[] { false, true }) {
+            assertFalse(EngineeringInputPolicy.playerMovement(following, true));
+            assertEquals(WorldCameras.MovementPolicy.ALL, EngineeringInputPolicy.movement(following, true));
+            for (boolean captured : new boolean[] { false, true }) for (boolean overHud : new boolean[] { false, true })
+                for (CameraControl control : CameraControl.values())
+                    assertFalse(EngineeringInputPolicy.pointerControl(control, following, captured, overHud, true));
+        }
+        assertTrue(EngineeringInputPolicy.playerMovement(true, false));
+        assertEquals(WorldCameras.MovementPolicy.NONE, EngineeringInputPolicy.movement(true, false));
+        assertEquals(WorldCameras.MovementPolicy.ALL, EngineeringInputPolicy.movement(false, false));
+    }
+
+    @Test
+    public void pageSpecificSettingsDisableDesktopWorldControlsAndRestoreWorldSettings() {
+        CameraSettings.Navigation desktop = EngineeringInputPolicy.navigation(false, 2, .5, true);
+        assertFalse(desktop.pan());
+        assertFalse(desktop.yaw());
+        assertFalse(desktop.pitch());
+        assertFalse(desktop.zoom());
+        assertFalse(desktop.reset());
+        CameraSettings.Hud hud = EngineeringInputPolicy.hud(true, 1, true);
+        assertFalse(hud.panelVisible());
+        assertFalse(hud.sliceBarVisible());
+        CameraSettings.Navigation world = EngineeringInputPolicy.navigation(false, 2, .5, false);
+        assertTrue(world.pan());
+        assertTrue(world.yaw());
+        assertTrue(world.pitch());
+        assertTrue(world.zoom());
+        assertTrue(world.reset());
+        assertTrue(
+            EngineeringInputPolicy.hud(true, 1, false)
+                .panelVisible());
+        assertTrue(
+            EngineeringInputPolicy.hud(false, 1, false)
+                .sliceBarVisible());
+    }
 
     @Test
     public void normalWheelUsesCoreDirectZoomAndExistingDragButtons() {
@@ -17,6 +59,8 @@ public class EngineeringInputPolicyTest {
         assertEquals(CameraSettings.Navigation.WheelZoom.DIRECT, navigation.wheelZoom());
         assertEquals(CameraSettings.Navigation.WheelDeltaUnit.AUTO, navigation.wheelDeltaUnit());
         assertTrue(navigation.zoom());
+        assertEquals(.4, navigation.minScale(), 1e-12);
+        assertEquals(128, navigation.maxScale(), 1e-12);
         assertEquals(1, navigation.rotateButton());
         assertEquals(0, navigation.rotateKey());
         assertEquals(2, navigation.panButton());
@@ -78,5 +122,8 @@ public class EngineeringInputPolicyTest {
         double[] close = EngineeringMotion.delta(45, 2, 1, 1, 0);
         double[] far = EngineeringMotion.delta(45, .5, 1, 1, 0);
         for (int i = 0; i < close.length; i++) assertEquals(close[i] * 4, far[i], 1e-12);
+        double[] previousLimit = EngineeringMotion.delta(45, .125, 1, 1, 0);
+        double[] expandedLimit = EngineeringMotion.delta(45, .025, 1, 1, 0);
+        for (int i = 0; i < previousLimit.length; i++) assertEquals(previousLimit[i] * 5, expandedLimit[i], 1e-12);
     }
 }

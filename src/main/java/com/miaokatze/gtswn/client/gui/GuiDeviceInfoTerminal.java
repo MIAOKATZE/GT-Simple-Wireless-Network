@@ -26,6 +26,8 @@ import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
+import com.miaokatze.gtswn.client.engineering.FactoryDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
@@ -187,6 +189,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 滚动列表控件（initGui 创建） */
     private GuiDeviceEntryList entryList;
     private GuiDeviceNameEditor nameEditor;
+    private Entry selectedDesktopEntry;
 
     /**
      * 构造：锚点 UUID + 初始 UI 偏好来源 stack（排序列/方向/计数法，只读）。
@@ -267,6 +270,19 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         getMainPanel().child(entryList);
         nameEditor = new GuiDeviceNameEditor(this);
         powerMenu = IPanelHandler.simple(getMainPanel(), (parent, player) -> buildPowerMenu(), true);
+        getMainPanel().child(
+            GtswnMuiWidgets
+                .button(
+                    "device.desktop.mount",
+                    () -> tr("gtswn.device.gui.mount"),
+                    8,
+                    235,
+                    150,
+                    14,
+                    () -> DesktopDeviceSources.binding(anchor, selectedDesktopEntry) != null,
+                    () -> FactoryDashboard.mount(anchor, selectedDesktopEntry))
+                .tooltip(
+                    t -> t.addLine(com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.gui.mount.hint"))));
         getMainPanel().child(
             GtswnMuiWidgets
                 .button(
@@ -401,6 +417,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         if (!java.util.Objects.equals(resolved, this.anchor)) {
             closeNameEditor();
             this.anchor = resolved;
+            this.selectedDesktopEntry = null;
             this.displayedVersion = Long.MIN_VALUE;
             this.displayedEntryCount = -1;
         }
@@ -577,6 +594,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             this.countMode = (this.countMode + 1) % 4;
             GTSWNPacketHandler.NETWORK.sendToServer(
                 new PacketDeviceTerminalAction(
+                    anchor,
                     PacketDeviceTerminalAction.ACTION_COUNT_MODE,
                     (byte) 0,
                     (byte) 0,
@@ -655,6 +673,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         refreshEntries();
         GTSWNPacketHandler.NETWORK.sendToServer(
             new PacketDeviceTerminalAction(
+                anchor,
                 PacketDeviceTerminalAction.ACTION_SORT,
                 (byte) this.sortColumn,
                 (byte) (this.sortDesc ? PacketDeviceTerminalAction.DIR_DESC : PacketDeviceTerminalAction.DIR_ASC),
@@ -666,24 +685,23 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 列表传送按钮回调：发包 10 action 3（服务端 3s 冷却 + 经验复查扣减权威执行）。 */
     void sendTeleport(String key) {
-        GTSWNPacketHandler.NETWORK.sendToServer(
-            new PacketDeviceTerminalAction(
-                PacketDeviceTerminalAction.ACTION_TELEPORT,
-                (byte) 0,
-                (byte) 0,
-                (byte) 0,
-                key));
+        sendTargetAction(PacketDeviceTerminalAction.ACTION_TELEPORT, key);
     }
 
     /** 列表 Ctrl+点击回调：发包 10 action 2 远程解绑（无确认，服务端 removeBinding 权威执行）。 */
     void sendUnbind(String key) {
-        GTSWNPacketHandler.NETWORK.sendToServer(
-            new PacketDeviceTerminalAction(
-                PacketDeviceTerminalAction.ACTION_UNBIND,
-                (byte) 0,
-                (byte) 0,
-                (byte) 0,
-                key));
+        sendTargetAction(PacketDeviceTerminalAction.ACTION_UNBIND, key);
+    }
+
+    private void sendTargetAction(byte action, String key) {
+        if (anchor == null) return;
+        for (Entry entry : sortedEntries) {
+            if (!entry.key.equals(key)) continue;
+            GTSWNPacketHandler.NETWORK.sendToServer(
+                new PacketDeviceTerminalAction(anchor, action, (byte) 0, (byte) 0, (byte) 0, key)
+                    .targetMetaTileId(entry.metaTileId));
+            return;
+        }
     }
 
     /** Recognition preference belongs to the opened terminal; the next server snapshot updates the row. */
@@ -786,10 +804,23 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 底行固定操作提示。 */
     private void drawFooter() {
         this.fontRendererObj.drawString(
-            this.fontRendererObj.trimStringToWidth(tr("gtswn.device.gui.footer"), 328),
-            this.guiLeft + 8,
+            this.fontRendererObj.trimStringToWidth(tr("gtswn.device.gui.footer"), 178),
+            this.guiLeft + 162,
             this.guiTop + FOOTER_Y,
             GtswnGuiPalette.TEXT_MUTED);
+    }
+
+    void selectDesktopEntry(Entry entry) {
+        selectedDesktopEntry = entry;
+    }
+
+    boolean desktopEntrySelected(Entry entry) {
+        return selectedDesktopEntry != null && entry.key.equals(selectedDesktopEntry.key)
+            && entry.dim == selectedDesktopEntry.dim
+            && entry.x == selectedDesktopEntry.x
+            && entry.y == selectedDesktopEntry.y
+            && entry.z == selectedDesktopEntry.z
+            && entry.metaTileId == selectedDesktopEntry.metaTileId;
     }
 
     /**

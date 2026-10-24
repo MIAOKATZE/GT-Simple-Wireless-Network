@@ -70,6 +70,35 @@ public class DeviceTerminalClientCacheTest {
     }
 
     @Test
+    public void latePageCannotRollBackANewerPendingBatchOrRefreshItsAuthority() {
+        UUID id = UUID.randomUUID();
+        DeviceTerminalClientCache
+            .receivePage(id, 1L, 0, 1, Arrays.asList(entry("old-a"), entry("old-b"), entry("old-c")));
+        DeviceTerminalClientCache.receivePage(id, 3L, 0, 2, Collections.singletonList(entry("new-a")));
+        long receipt = DeviceTerminalClientCache.receiptRevision(id);
+        DeviceTerminalClientCache.receivePage(id, 2L, 1, 2, Collections.singletonList(entry("late")));
+        assertEquals(receipt, DeviceTerminalClientCache.receiptRevision(id));
+        assertEquals(
+            3L,
+            DeviceTerminalClientCache.requestMetadata(id)
+                .getKnownVersion());
+        assertEquals(1, DeviceTerminalClientCache.receivedPages(id));
+        assertEquals(2, DeviceTerminalClientCache.totalPages(id));
+        DeviceTerminalClientCache.receivePage(id, 3L, 1, 2, Collections.singletonList(entry("new-b")));
+        assertEquals(3L, DeviceTerminalClientCache.getSnapshot(id).version);
+        assertEquals("new-b", DeviceTerminalClientCache.getSnapshot(id).entries.get(1).key);
+    }
+
+    @Test
+    public void impossiblePageCountsAndNullPagesCannotCreateAnUnboundedBatch() {
+        UUID id = UUID.randomUUID();
+        DeviceTerminalClientCache.receivePage(id, 1L, 0, 9, Collections.singletonList(entry("bad")));
+        DeviceTerminalClientCache.receivePage(id, 1L, 0, 1, null);
+        assertNull(DeviceTerminalClientCache.getSnapshot(id));
+        assertEquals(0, DeviceTerminalClientCache.receiptRevision(id));
+    }
+
+    @Test
     public void freshnessTracksServerSamplingWindowAndRejectsExpiredCache() {
         UUID id = UUID.randomUUID();
         DeviceTerminalClientCache.handleSettings(0, true, 60);

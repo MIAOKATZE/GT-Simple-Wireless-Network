@@ -21,6 +21,7 @@ public final class EngineeringDashboardCache {
     private static boolean patternKnown, axisPattern;
     private static EngineeringSnapshot snapshot;
     private static long received;
+    private static long revision;
 
     private EngineeringDashboardCache() {}
 
@@ -30,9 +31,15 @@ public final class EngineeringDashboardCache {
 
     public static void subscribe(int selection, boolean gt, int x1, int z1, int x2, int z2, boolean onlyBound) {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.theWorld == null || mc.thePlayer == null || selection < 0 || selection >= 8) return;
+        if (mc.theWorld == null || mc.thePlayer == null || selection < 0 || selection >= 8) {
+            close();
+            return;
+        }
         Source actual = EngineeringTerminalSources.resolve(mc.thePlayer, selection);
-        if (!actual.present()) return;
+        if (!actual.present()) {
+            close();
+            return;
+        }
         int nextMinX = Math.min(x1, x2), nextMinZ = Math.min(z1, z2);
         int nextMaxX = Math.max(x1, x2), nextMaxZ = Math.max(z1, z2);
         if (session != 0 && world == mc.theWorld
@@ -49,6 +56,7 @@ public final class EngineeringDashboardCache {
         if (world != mc.theWorld || connection != mc.getNetHandler()) patternKnown = false;
         snapshot = null;
         received = 0;
+        revision++;
         world = mc.theWorld;
         connection = mc.getNetHandler();
         slot = selection;
@@ -88,8 +96,10 @@ public final class EngineeringDashboardCache {
             || value.slot != slot
             || world != mc.theWorld
             || connection != mc.getNetHandler()
-            || !sameSource(mc)) return;
+            || !sameSource(mc)
+            || snapshot != null && value.serverTick < snapshot.serverTick) return;
         snapshot = value;
+        revision++;
         if (value.slot == 2 && value.patternResolved) {
             patternKnown = true;
             axisPattern = value.axisSymmetrical;
@@ -115,6 +125,15 @@ public final class EngineeringDashboardCache {
         return snapshot != null && System.currentTimeMillis() - received < 3500;
     }
 
+    /** Transport age and business status are independent; callers must also inspect snapshot.status. */
+    public static long ageMillis() {
+        return snapshot == null || received == 0 ? Long.MAX_VALUE : Math.max(0, System.currentTimeMillis() - received);
+    }
+
+    public static long revision() {
+        return revision;
+    }
+
     public static int slot() {
         return slot;
     }
@@ -132,18 +151,26 @@ public final class EngineeringDashboardCache {
     }
 
     public static void close() {
+        if (session == 0 && snapshot == null && world == null) return;
         Minecraft mc = Minecraft.getMinecraft();
         if (session != 0 && world == mc.theWorld && connection == mc.getNetHandler()) send(false, true);
         session = 0;
         slot = -1;
         snapshot = null;
+        received = 0;
+        revision++;
         patternKnown = false;
         world = connection = null;
         source = Source.EMPTY;
     }
 
     private static boolean sameSource(Minecraft mc) {
-        if (mc.thePlayer == null || slot < 0 || slot >= 8) return false;
+        if (mc.thePlayer == null || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0
+            || mc.thePlayer.worldObj != mc.theWorld
+            || mc.thePlayer.dimension != dim
+            || slot < 0
+            || slot >= 8) return false;
         return source.sameIdentity(EngineeringTerminalSources.resolve(mc.thePlayer, slot));
     }
 

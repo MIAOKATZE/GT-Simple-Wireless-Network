@@ -111,7 +111,7 @@ public final class EngineeringHud extends Gui {
     }
 
     public static double scale(int width, int height) {
-        return Math.max(.1, Math.min(1, Math.min((width - 16) / 640.0, (height - 12) / 400.0)));
+        return Math.max(.1, Math.min(1, Math.min((width - 16) / 480.0, (height - 12) / 300.0)));
     }
 
     private static CanvasTransform canvas(Minecraft mc) {
@@ -166,14 +166,6 @@ public final class EngineeringHud extends Gui {
             || mc.currentScreen != null
             || mc.thePlayer == null) return;
         int w = width(mc), h = height(mc);
-        EngineeringSnapshot ready = EngineeringDashboardCache.snapshot();
-        if (pendingGt && ready != null && ready.slot == 2 && ready.patternResolved) {
-            pendingGt = false;
-            if ("dash.pattern.unknown".equals(notice)) notice = "";
-            syncPowerSelection();
-            defaultRegion();
-            subscribe(2, true);
-        }
         try (GlScope ignored = new GlScope()) {
             double s = canvas(mc).scale();
             GL11.glScaled(s, s, 1);
@@ -181,7 +173,7 @@ public final class EngineeringHud extends Gui {
             GL11.glDisable(GL11.GL_CULL_FACE);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            drawMap(mc.fontRenderer, w, h);
+            if (WorkbenchHud.worldView()) drawMap(mc.fontRenderer, w, h);
             WorkbenchHud.render(w, h, localX(mc, Mouse.getX()), localY(mc, Mouse.getY()));
             if (selecting || !notice.isEmpty()) {
                 String hint = tr(notice.isEmpty() ? "dash.selection.hint" : notice);
@@ -260,8 +252,36 @@ public final class EngineeringHud extends Gui {
         subscribe(slot, slot == 2 && grid);
     }
 
+    static void useTaskSource(int slot) {
+        overview = false;
+        if (slot < 0 && activeSlot < 0 && suspended) return;
+        if (slot < 0 || !EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot)
+            .present()) {
+            suspended = true;
+            activeSlot = -1;
+            activeSource = Source.EMPTY;
+            EngineeringDashboardCache.close();
+            return;
+        }
+        activateData(slot);
+    }
+
+    static void useOverviewSource() {
+        overview = true;
+        suspended = false;
+        activateOverviewSource();
+    }
+
     /** Source replacement/removal invalidates the previous subscription before choosing a new overview source. */
     public static void tickSources() {
+        EngineeringSnapshot ready = EngineeringDashboardCache.snapshot();
+        if (pendingGt && ready != null && ready.slot == 2 && ready.patternResolved) {
+            pendingGt = false;
+            if ("dash.pattern.unknown".equals(notice)) notice = "";
+            syncPowerSelection();
+            defaultRegion();
+            subscribe(2, true);
+        }
         if (suspended) return;
         if (overview && activeSlot < 0) {
             activateOverviewSource();
@@ -780,6 +800,7 @@ public final class EngineeringHud extends Gui {
     static boolean blocksNavigation(int displayX, int displayY) {
         Minecraft mc = Minecraft.getMinecraft();
         int x = localX(mc, displayX), y = localY(mc, displayY), w = width(mc), h = height(mc);
+        if (FactoryDesktop.pointerCaptured()) return true;
         return WorkbenchHud.layout(w, h)
             .contains(x, y);
     }

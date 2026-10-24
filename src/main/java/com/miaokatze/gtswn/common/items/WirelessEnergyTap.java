@@ -60,6 +60,11 @@ import gregtech.common.covers.Cover;
 public class WirelessEnergyTap extends Item
     implements baubles.api.IBauble, baubles.api.expanded.IBaubleExpanded, IWirelessTermHandler {
 
+    @Override
+    public void onUpdate(ItemStack stack, World world, net.minecraft.entity.Entity entity, int slot, boolean held) {
+        com.miaokatze.gtswn.common.baubles.TerminalAcquisitionHint.observe(stack, entity);
+    }
+
     /** 仅供社区按类型识别，不接管 AE 无线终端。 */
     @Override
     public boolean canHandle(ItemStack stack) {
@@ -684,7 +689,9 @@ public class WirelessEnergyTap extends Item
 
     @Override
     @cpw.mods.fml.common.Optional.Method(modid = "Baubles")
-    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {}
+    public void onWornTick(ItemStack stack, net.minecraft.entity.EntityLivingBase player) {
+        com.miaokatze.gtswn.common.baubles.TerminalAcquisitionHint.observe(stack, player);
+    }
 
     @Override
     @cpw.mods.fml.common.Optional.Method(modid = "Baubles")

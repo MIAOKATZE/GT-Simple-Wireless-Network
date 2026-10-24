@@ -151,6 +151,7 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
         else if (Interactable.hasControlDown()) host.sendUnbind(entry.key);
         else if (Interactable.hasShiftDown()) host.cycleRecognition(entry.key);
         else if (teleport) host.sendTeleport(entry.key);
+        else host.selectDesktopEntry(entry);
         return true;
     }
 
@@ -166,7 +167,7 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
 
         // 行 hover 高亮（贴图化新增视觉项，契约 §3 #13 / §6 ④）：鼠标在行矩形内先画 row_hover 底再画内容；
         // 仅视觉，不改上方 inRow/inNameCol 命中与 tooltip 悬浮判定
-        if (inRow) {
+        if (inRow || host.desktopEntrySelected(entry)) {
             GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.ROW_HOVER, 4, 0, y, 426, slotHeight, host.guiZLevel());
         }
 

@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.client.engineering;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -19,6 +20,8 @@ final class StableNodeClusters {
     private Map<Identity, Bucket> previous = new HashMap<>();
     private long session = Long.MIN_VALUE;
     private int width, height, dimension;
+    private Node[] orderingSource = new Node[0];
+    private Integer[] order = new Integer[0];
 
     List<Cluster> update(long sessionId, int dim, int w, int h, List<Projection> projected) {
         if (session != sessionId || dimension != dim || width != w || height != h) previous.clear();
@@ -26,12 +29,12 @@ final class StableNodeClusters {
         dimension = dim;
         width = w;
         height = h;
-        // Sorting before accumulation also makes floating-point centers invariant under input permutations.
-        List<Projection> ordered = new ArrayList<>(projected);
-        ordered.sort((first, second) -> NodePresentation.ORDER.compare(first.node, second.node));
+        // Nodes are immutable. Camera motion changes only their projections, so sort once per input snapshot.
+        updateOrder(projected);
         Map<Identity, Bucket> next = new HashMap<>();
         Map<Bucket, Accumulator> buckets = new LinkedHashMap<>();
-        for (Projection point : ordered) {
+        for (int index : order) {
+            Projection point = projected.get(index);
             Node node = point.node;
             if (node.dim != dim || !Double.isFinite(point.x) || !Double.isFinite(point.y)) continue;
             Identity identity = NodePresentation.identity(node);
@@ -46,6 +49,23 @@ final class StableNodeClusters {
         List<Cluster> result = new ArrayList<>(buckets.size());
         for (Accumulator accumulator : buckets.values()) result.add(accumulator.finish());
         return result;
+    }
+
+    private void updateOrder(List<Projection> projected) {
+        boolean changed = orderingSource.length != projected.size();
+        for (int i = 0; !changed && i < orderingSource.length; i++)
+            changed = orderingSource[i] != projected.get(i).node;
+        if (!changed) return;
+        orderingSource = new Node[projected.size()];
+        order = new Integer[projected.size()];
+        for (int i = 0; i < order.length; i++) {
+            orderingSource[i] = projected.get(i).node;
+            order[i] = i;
+        }
+        // Stable sorting also preserves floating-point centers and click cycling under input permutations.
+        Arrays.sort(
+            order,
+            (first, second) -> NodePresentation.ORDER.compare(orderingSource[first], orderingSource[second]));
     }
 
     static final class Projection {

@@ -67,6 +67,21 @@ public final class DeviceTerminalClientCache {
         return cached == null ? 0 : cached.receiptRevision;
     }
 
+    public static long receivedAtMillis(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        return cached == null ? 0 : cached.receivedAt;
+    }
+
+    public static int receivedPages(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        return cached == null ? 0 : cached.pendingPages == null ? cached.pageTotal : cached.pendingPages.size();
+    }
+
+    public static int totalPages(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        return cached == null ? 0 : cached.pageTotal;
+    }
+
     public static boolean isFresh(UUID terminalId, long now) {
         Cached cached = CACHE.get(terminalId);
         return cached != null && cached.snapshot != null && now - cached.receivedAt < freshMillis;
@@ -95,7 +110,13 @@ public final class DeviceTerminalClientCache {
             }
             return;
         }
-        if (terminalId == null || pageTotal <= 0 || pageIndex < 0 || pageIndex >= pageTotal) {
+        if (terminalId == null || version < 0
+            || pageTotal <= 0
+            || pageTotal > 8
+            || pageIndex < 0
+            || pageIndex >= pageTotal
+            || page == null
+            || page.size() > 128) {
             return;
         }
         Cached cached = CACHE.get(terminalId);
@@ -103,7 +124,9 @@ public final class DeviceTerminalClientCache {
             cached = new Cached();
             CACHE.put(terminalId, cached);
         }
-        if (version < cached.version) {
+        long knownVersion = cached.pendingPages == null ? cached.version
+            : Math.max(cached.version, cached.pendingVersion);
+        if (version < knownVersion) {
             // 旧版本页迟达（服务端已重发更高版本）：丢弃防回退
             return;
         }
@@ -118,8 +141,6 @@ public final class DeviceTerminalClientCache {
             return;
         }
         // 批次切换判据：已提交版本与在途批次版本的较大者（在途页重复到达不重开批，只幂等覆盖）
-        long knownVersion = cached.pendingPages == null ? cached.version
-            : Math.max(cached.version, cached.pendingVersion);
         if (version > knownVersion || cached.pendingPages == null
             || cached.pendingVersion != version
             || cached.pageTotal != pageTotal) {
@@ -193,7 +214,7 @@ public final class DeviceTerminalClientCache {
 
         Snapshot(long version, List<Entry> entries) {
             this.version = version;
-            this.entries = entries;
+            this.entries = java.util.Collections.unmodifiableList(new ArrayList<>(entries));
         }
     }
 

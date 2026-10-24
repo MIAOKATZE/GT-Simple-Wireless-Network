@@ -13,6 +13,7 @@ import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalVisualizationState;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.common.hud.HudController;
@@ -20,7 +21,6 @@ import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.config.Config;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /** Read-only factory demand backed by the existing terminal queues and HUD cache owner. */
@@ -35,7 +35,6 @@ public final class EngineeringTerminalHudSnapshot {
     private static EngineeringTerminalSources.Source deviceDemand = EngineeringTerminalSources.Source.EMPTY;
     private static Object demandWorld, demandConnection;
     private static EntityPlayer demandPlayer;
-    private static int lastDeviceRequest = Integer.MIN_VALUE;
     private static long initialDeviceReceipt;
 
     public final Source device;
@@ -81,7 +80,7 @@ public final class EngineeringTerminalHudSnapshot {
         }
         if (!deviceReading) {
             deviceDemand = EngineeringTerminalSources.Source.EMPTY;
-            lastDeviceRequest = Integer.MIN_VALUE;
+            DesktopDeviceSources.clearFactory();
             return;
         }
         EngineeringTerminalSources.Source current = EngineeringTerminalSources.resolve(mc.thePlayer, 2);
@@ -89,21 +88,14 @@ public final class EngineeringTerminalHudSnapshot {
             deviceDemand = current;
             initialDeviceReceipt = DeviceTerminalClientCache
                 .receiptRevision(ItemDeviceInfoTerminal.readTerminalId(current.stack));
-            lastDeviceRequest = Integer.MIN_VALUE;
             cached = null;
         }
-        if (!current.present()) return;
-        UUID id = ItemDeviceInfoTerminal.readTerminalId(current.stack);
-        // Factory owns this polling demand even when its labels are off; the ordinary renderer is paused here.
-        int now = mc.thePlayer.ticksExisted;
-        int interval = DeviceTerminalClientCache.hasMorePending(id) ? 5 : 20;
-        if (lastDeviceRequest == Integer.MIN_VALUE || now < lastDeviceRequest || now - lastDeviceRequest >= interval) {
-            GTSWNPacketHandler.NETWORK.sendToServer(
-                lastDeviceRequest == Integer.MIN_VALUE
-                    ? new com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData(id, -1, false)
-                    : DeviceTerminalClientCache.requestMetadata(id));
-            lastDeviceRequest = now;
+        if (!current.present()) {
+            DesktopDeviceSources.tickFactory(null);
+            return;
         }
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(current.stack);
+        DesktopDeviceSources.tickFactory(id);
     }
 
     /** Rendering cannot borrow a prior source/connection cache or a normal ACK for another UUID. */
@@ -138,7 +130,7 @@ public final class EngineeringTerminalHudSnapshot {
         deviceDemand = EngineeringTerminalSources.Source.EMPTY;
         demandWorld = demandConnection = null;
         demandPlayer = null;
-        lastDeviceRequest = Integer.MIN_VALUE;
+        DesktopDeviceSources.clearFactory();
         cached = null;
         if (hud != null) hud.setFactoryReading(false);
     }
@@ -168,10 +160,19 @@ public final class EngineeringTerminalHudSnapshot {
 
     private static Source device(EngineeringTerminalSources.Source selected) {
         UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
+        DeviceTerminalClientCache.Snapshot authorized = deviceReading ? visualizationSnapshot(id)
+            : DeviceTerminalClientCache.getSnapshot(id);
+        return device(selected, authorized);
+    }
+
+    /** Pure view assembly after the client lifecycle/receipt gate has selected an authorized snapshot. */
+    private static Source device(EngineeringTerminalSources.Source selected,
+        DeviceTerminalClientCache.Snapshot authorized) {
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
         boolean itemEnabled = ItemDeviceInfoTerminal.isVisualizationEnabled(selected.stack);
         boolean enabled = deviceReading && selected.present()
             || itemEnabled && DeviceTerminalVisualizationState.active(id);
-        DeviceTerminalClientCache.Snapshot snapshot = enabled ? DeviceTerminalClientCache.getSnapshot(id) : null;
+        DeviceTerminalClientCache.Snapshot snapshot = enabled ? authorized : null;
         return new Source(
             id,
             selected.origin,
@@ -180,7 +181,10 @@ public final class EngineeringTerminalHudSnapshot {
             snapshot != null && DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()),
             Collections.emptyList(),
             Collections.emptyList(),
-            snapshot == null ? Collections.emptyList() : snapshot.entries);
+            snapshot == null ? Collections.emptyList() : snapshot.entries,
+            DeviceTerminalClientCache.receiptRevision(id),
+            snapshot != null && DeviceTerminalClientCache.hasMorePending(id),
+            snapshot == null ? 0 : DeviceTerminalClientCache.receivedAtMillis(id));
     }
 
     private static Source portable(EngineeringTerminalSources.Source selected) {
@@ -220,7 +224,10 @@ public final class EngineeringTerminalHudSnapshot {
             enabled && (selectedByHud && hud.fresh() || !PortableMonitorClientCache.stale(stack)),
             basic,
             lines,
-            Collections.emptyList());
+            Collections.emptyList(),
+            PortableMonitorClientCache.receiptRevision(stack),
+            false,
+            PortableMonitorClientCache.receivedAtMillis(stack));
     }
 
     public static final class Source {
@@ -241,15 +248,30 @@ public final class EngineeringTerminalHudSnapshot {
         public final List<String> basicLines;
         public final List<PortableMonitorClientCache.PinnedLine> pinnedLines;
         public final List<Entry> devices;
+        public final long revision, receivedAtMillis;
+        public final boolean partial;
+
+        public long ageMillis() {
+            return receivedAtMillis == 0 ? Long.MAX_VALUE : Math.max(0, System.currentTimeMillis() - receivedAtMillis);
+        }
 
         private Source(UUID terminalId, SourceOrigin origin, boolean enabled, boolean itemDisplayEnabled, boolean fresh,
             List<String> basic, List<PortableMonitorClientCache.PinnedLine> pinned, List<Entry> devices) {
+            this(terminalId, origin, enabled, itemDisplayEnabled, fresh, basic, pinned, devices, 0, false, 0);
+        }
+
+        private Source(UUID terminalId, SourceOrigin origin, boolean enabled, boolean itemDisplayEnabled, boolean fresh,
+            List<String> basic, List<PortableMonitorClientCache.PinnedLine> pinned, List<Entry> devices, long revision,
+            boolean partial, long receivedAtMillis) {
             this.terminalId = terminalId;
             this.origin = origin;
             this.bauble = origin == SourceOrigin.BAUBLE;
             this.enabled = enabled;
             this.itemDisplayEnabled = itemDisplayEnabled;
             this.fresh = fresh;
+            this.revision = revision;
+            this.partial = partial;
+            this.receivedAtMillis = receivedAtMillis;
             this.basicLines = Collections.unmodifiableList(new ArrayList<>(basic));
             this.pinnedLines = Collections.unmodifiableList(new ArrayList<>(pinned));
             this.devices = Collections.unmodifiableList(new ArrayList<>(devices));

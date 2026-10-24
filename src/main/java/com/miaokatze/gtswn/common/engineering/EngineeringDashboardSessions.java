@@ -9,6 +9,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
+import net.minecraft.server.MinecraftServer;
 
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot.Power;
@@ -40,9 +41,13 @@ public final class EngineeringDashboardSessions {
     }
 
     private static boolean connected(EntityPlayerMP player) {
-        return player != null && player.isEntityAlive()
+        MinecraftServer server = MinecraftServer.getServer();
+        return server != null && player != null
+            && player.isEntityAlive()
             && player.playerNetServerHandler != null
-            && player.playerNetServerHandler.netManager.isChannelOpen();
+            && player.playerNetServerHandler.netManager.isChannelOpen()
+            && server.getConfigurationManager()
+                .func_152612_a(player.getCommandSenderName()) == player;
     }
 
     @SubscribeEvent
