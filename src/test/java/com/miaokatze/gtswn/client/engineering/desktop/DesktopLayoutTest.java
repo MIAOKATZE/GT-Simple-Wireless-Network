@@ -23,6 +23,24 @@ public class DesktopLayoutTest {
             assertTrue(widget.y() + widget.height() <= DesktopLayout.DEFAULT_SIZE);
             assertNull(widget.device);
         }
+        assertEquals(
+            1024,
+            layout.bounds()
+                .width(),
+            0);
+        assertEquals(
+            512,
+            layout.bounds()
+                .height(),
+            0);
+        DesktopViewport view = new DesktopViewport();
+        view.fit(layout, 640, 308);
+        assertTrue("Default fit uses most of a widescreen viewport", view.scale > .5);
+        for (String id : new String[] { "machines", "region" }) {
+            WidgetSpec instrument = layout.find(id);
+            assertTrue(instrument.width() * view.scale >= 130);
+            assertTrue(instrument.height() * view.scale >= 100);
+        }
     }
 
     @Test
@@ -37,7 +55,8 @@ public class DesktopLayoutTest {
             6400,
             layout.find("machines")
                 .y());
-        assertTrue(layout.move("machines", -DesktopLayout.MAX_COORD, DesktopLayout.MAX_COORD - 2));
+        assertTrue(
+            layout.move("machines", -DesktopLayout.MAX_COORD, DesktopLayout.MAX_COORD - layout.find("machines").rows));
         assertFalse(layout.move("machines", Integer.MAX_VALUE, 0));
         assertFalse(layout.move("machines", 0, Integer.MIN_VALUE));
     }

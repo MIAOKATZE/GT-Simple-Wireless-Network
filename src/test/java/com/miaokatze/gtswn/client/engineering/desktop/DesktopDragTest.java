@@ -45,7 +45,7 @@ public class DesktopDragTest {
         assertTrue(drag.update(-128, -128));
         WidgetSpec resized = layout.find("machines");
         assertEquals(4, resized.column + resized.columns);
-        assertEquals(2, resized.row + resized.rows);
+        assertEquals(3, resized.row + resized.rows);
         assertFalse(drag.update(Double.NaN, 0));
         assertFalse(drag.update(Double.MAX_VALUE, 0));
         assertFalse(drag.update(-Double.MAX_VALUE, 0));
@@ -71,7 +71,7 @@ public class DesktopDragTest {
     @Test
     public void overviewFitsDefaultAndNewlyMountedCardsInsideSmallViewportWithMargins() {
         DesktopLayout layout = DesktopLayout.defaultLayout();
-        assertNotNull(layout.add(WidgetKind.HISTORY));
+        assertNotNull(layout.add(WidgetKind.HISTORY, 0, 16));
         assertNotNull(layout.addDevice(new DeviceBinding(UUID.randomUUID(), "mounted", 0, 1, 2, 3, 4)));
         DesktopViewport view = new DesktopViewport();
         view.fit(layout, 360, 230);

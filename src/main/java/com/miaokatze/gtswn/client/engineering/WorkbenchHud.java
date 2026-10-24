@@ -180,7 +180,7 @@ final class WorkbenchHud extends Gui {
             .capture(Minecraft.getMinecraft().thePlayer);
         boolean nodes = task == 3 || EngineeringHud.activeSlot() == 1 || EngineeringHud.activeSlot() >= 3;
         int count = nodes ? visibleNodeRows(snapshot) : filteredCount(data.device);
-        int railHeight = Math.max(126, (nodes ? 69 : 96) + Math.min(8, count) * 23) + (EngineeringHud.targetLines()
+        int railHeight = WorkbenchLayout.railHeight(nodes, count) + (EngineeringHud.targetLines()
             .isEmpty() ? 0 : 94);
         int powerHeight = Math.min(108, 42 + Math.max(3, data.portable.basicLines.size() + 1) * 13);
         boolean camera = EngineeringModeController.INSTANCE.cameraPanel();
@@ -738,13 +738,19 @@ final class WorkbenchHud extends Gui {
             tr("desktop.mount"),
             tr("desktop.mount.hint"),
             () -> mountSelection(device));
-        int top = r.y + (nodes ? 49 : 131);
+        int top = r.y + (nodes ? WorkbenchLayout.NODE_ROWS_TOP : WorkbenchLayout.DEVICE_ROWS_TOP);
         List<String> selected = nodes ? EngineeringHud.targetLines() : machineDetails(device);
         boolean separate = task >= 2 && !sidebarOpen;
         int detailHeight = separate || selected.isEmpty() ? 0
-            : Math.max(0, Math.min(112, Math.min(r.h / 2, r.y + r.h - top - 31)));
-        int bottom = r.y + r.h - 8 - detailHeight;
-        int count = Math.max(0, (bottom - top) / 23);
+            : Math.max(
+                0,
+                Math.min(
+                    112,
+                    Math.min(
+                        r.h / 2,
+                        r.y + r.h - top - WorkbenchLayout.RAIL_ROW_HEIGHT - WorkbenchLayout.RAIL_BOTTOM)));
+        int bottom = r.y + r.h - WorkbenchLayout.RAIL_BOTTOM - detailHeight;
+        int count = Math.max(0, (bottom - top) / WorkbenchLayout.RAIL_ROW_HEIGHT);
         railVisible = count;
         railScroll = railModel.measure(rows.size(), count, railScroll);
         detailRect = detailHeight == 0 ? null
@@ -763,7 +769,11 @@ final class WorkbenchHud extends Gui {
             MUTED);
         for (int i = 0; i < count && i + railScroll < rows.size(); i++) {
             Row row = rows.get(i + railScroll);
-            Rect hit = new Rect(r.x + 5, top + i * 23, r.w - 10, 22);
+            Rect hit = new Rect(
+                r.x + 5,
+                top + i * WorkbenchLayout.RAIL_ROW_HEIGHT,
+                r.w - 10,
+                WorkbenchLayout.RAIL_ROW_HEIGHT - 1);
             boolean chosen = row.entry != null && selectedRecord != null
                 && selectedRecord.matches(device.terminalId, row.entry);
             if (hit.contains(mx, my) || chosen) box(hit, HEADER);

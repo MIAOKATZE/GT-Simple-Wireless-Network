@@ -55,14 +55,14 @@ public final class DesktopLayout {
 
     public static DesktopLayout defaultLayout() {
         DesktopLayout layout = new DesktopLayout();
-        layout.add(new WidgetSpec("machines", WidgetKind.MACHINES, 0, 0, 4, 2));
-        layout.add(new WidgetSpec("input", WidgetKind.INPUT, 4, 0, 4, 2));
-        layout.add(new WidgetSpec("output", WidgetKind.OUTPUT, 8, 0, 4, 2));
-        layout.add(new WidgetSpec("wireless", WidgetKind.WIRELESS, 12, 0, 4, 2));
-        layout.add(new WidgetSpec("history", WidgetKind.HISTORY, 0, 2, 10, 5));
-        layout.add(new WidgetSpec("region", WidgetKind.REGION, 10, 2, 6, 5));
-        layout.add(new WidgetSpec("resources", WidgetKind.RESOURCES, 0, 7, 10, 7));
-        layout.add(new WidgetSpec("attention", WidgetKind.ATTENTION, 10, 7, 6, 7));
+        layout.add(new WidgetSpec("machines", WidgetKind.MACHINES, 0, 0, 4, 3));
+        layout.add(new WidgetSpec("input", WidgetKind.INPUT, 0, 3, 4, 2));
+        layout.add(new WidgetSpec("output", WidgetKind.OUTPUT, 4, 3, 4, 2));
+        layout.add(new WidgetSpec("wireless", WidgetKind.WIRELESS, 4, 0, 4, 3));
+        layout.add(new WidgetSpec("history", WidgetKind.HISTORY, 8, 0, 8, 4));
+        layout.add(new WidgetSpec("region", WidgetKind.REGION, 0, 5, 4, 3));
+        layout.add(new WidgetSpec("resources", WidgetKind.RESOURCES, 8, 4, 8, 4));
+        layout.add(new WidgetSpec("attention", WidgetKind.ATTENTION, 4, 5, 4, 3));
         return layout;
     }
 

@@ -9,6 +9,31 @@ import org.junit.Test;
 public class WorkbenchLayoutTest {
 
     @Test
+    public void deviceListKeepsASelectableRowBesideTheTerminalSidebarAndPower() {
+        WorkbenchLayout layout = new WorkbenchLayout(640, 360, true, true, true, false, 126, 108, true, true, true);
+        assertEquals(162, WorkbenchLayout.railHeight(false, 1));
+        int rowTop = layout.rail.y + WorkbenchLayout.DEVICE_ROWS_TOP;
+        int bottom = layout.rail.y + layout.rail.h - WorkbenchLayout.RAIL_BOTTOM;
+        assertTrue(rowTop + WorkbenchLayout.RAIL_ROW_HEIGHT <= bottom);
+        assertTrue(layout.contains(layout.rail.x + 6, rowTop + 10));
+        assertTrue(layout.sidebar.x + layout.sidebar.w < layout.rail.x);
+        assertTrue(layout.rail.y + layout.rail.h < layout.power.y);
+        for (WorkbenchLayout.Rect terminal : layout.terminals) assertTrue(terminal.x + terminal.w < layout.sidebar.x);
+    }
+
+    @Test
+    public void shortCanvasAndExpandedObjectListGivePriorityToListRows() {
+        WorkbenchLayout compact = new WorkbenchLayout(640, 300, true, true, true, false, 126, 108, true, true, true);
+        assertEquals(null, compact.power);
+        assertTrue(compact.rail.h >= WorkbenchLayout.railHeight(false, 1));
+        assertTrue(compact.rail.y + compact.rail.h <= 300);
+        WorkbenchLayout objects = new WorkbenchLayout(640, 360, false, true, true, false, 200, 108, true, true, true);
+        assertEquals(null, objects.power);
+        assertEquals(null, objects.alerts);
+        for (WorkbenchLayout.Rect terminal : objects.terminals) assertTrue(terminal.x + terminal.w < objects.rail.x);
+    }
+
+    @Test
     public void dockAndWorkbenchControlsShareBoundsWithoutBlockingTheWorldCenter() {
         WorkbenchLayout layout = new WorkbenchLayout(800, 450, false, true, true, false);
         assertEquals(8, layout.terminals.length);

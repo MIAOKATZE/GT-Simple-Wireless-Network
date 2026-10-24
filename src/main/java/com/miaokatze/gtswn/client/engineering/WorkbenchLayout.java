@@ -3,6 +3,16 @@ package com.miaokatze.gtswn.client.engineering;
 /** One geometry contract for world HUD drawing, hit testing, hover and Core navigation exclusion. */
 public final class WorkbenchLayout {
 
+    static final int DEVICE_ROWS_TOP = 131, NODE_ROWS_TOP = 49, RAIL_ROW_HEIGHT = 23, RAIL_BOTTOM = 8;
+    private static final int MIN_RAIL_HEIGHT = DEVICE_ROWS_TOP + RAIL_ROW_HEIGHT + RAIL_BOTTOM;
+
+    static int railHeight(boolean nodes, int count) {
+        return Math.max(
+            MIN_RAIL_HEIGHT,
+            (nodes ? NODE_ROWS_TOP : DEVICE_ROWS_TOP) + Math.max(1, Math.min(8, count)) * RAIL_ROW_HEIGHT
+                + RAIL_BOTTOM);
+    }
+
     public final Rect[] terminals = new Rect[8];
     public final Rect[] modes = new Rect[5];
     public final Rect[] tools = new Rect[5];
@@ -80,20 +90,27 @@ public final class WorkbenchLayout {
         for (int i = 0; i < modes.length; i++) modes[i] = new Rect(8 + i * 31, 9, 27, 24);
         for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 56 + i * 33, 26, 27);
         sidebar = sidebarOpen && !dashboardOpen ? new Rect(43, 42, 214, Math.min(336, Math.max(0, height - 50))) : null;
-        int railAvailable = Math.max(0, height - 50 - (powerOpen ? powerHeight + 8 : 0));
         boolean splitObjects = objectsPage && !sidebarOpen && !dashboardOpen && railOpen;
+        int contentHeight = Math.max(0, height - 50);
+        // An explicitly opened list must retain a selectable row. Secondary power content yields on short canvases.
+        boolean showPower = !dashboardOpen && powerOpen
+            && !splitObjects
+            && (!railOpen || contentHeight - powerHeight - 8 >= MIN_RAIL_HEIGHT);
+        int railAvailable = Math.max(0, contentHeight - (showPower ? powerHeight + 8 : 0));
         int objectWidth = width >= 600 ? (width - 95) * 3 / 5 : width - 95;
         rail = splitObjects ? new Rect(43, 42, objectWidth, height - 50)
-            : !dashboardOpen && railOpen ? new Rect(width - 252, 42, 210, Math.min(railAvailable, railHeight)) : null;
+            : !dashboardOpen && railOpen
+                ? new Rect(width - 252, 42, 210, Math.min(railAvailable, Math.max(MIN_RAIL_HEIGHT, railHeight)))
+                : null;
         inspector = !splitObjects ? null
             : width >= 600 ? new Rect(51 + objectWidth, 42, width - objectWidth - 93, height - 50)
                 : inspectorOpen ? new Rect(rail.x, rail.y, rail.w, rail.h) : null;
-        power = !dashboardOpen && powerOpen ? new Rect(width - 252, height - powerHeight - 8, 210, powerHeight) : null;
+        power = showPower ? new Rect(width - 252, height - powerHeight - 8, 210, powerHeight) : null;
         dashboard = dashboardOpen ? new Rect(0, 0, width, height) : null;
         int alertLeft = sidebarOpen ? 264 : 43;
         int alertRight = railOpen || powerOpen ? width - 260 : width - 42;
         int alertWidth = Math.min(176, Math.max(0, alertRight - alertLeft));
-        alerts = !dashboardOpen && alertsOpen
+        alerts = !dashboardOpen && alertsOpen && !splitObjects
             ? new Rect(alertLeft + (alertRight - alertLeft - alertWidth) / 2, height - 47, alertWidth, 30)
             : null;
         for (int i = 0; i < tasks.length; i++) tasks[i] = new Rect(0, 0, 0, 0);

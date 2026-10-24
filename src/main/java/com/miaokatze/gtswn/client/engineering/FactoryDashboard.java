@@ -645,11 +645,24 @@ public final class FactoryDashboard extends Gui {
                 AMBER);
         } else {
             BigDecimal value = metric(widget, power, snapshot);
-            boolean ring = r.w >= 52 && r.h >= 80
-                && (widget.presentation == WidgetPresentation.GAUGE
-                    || widget.kind == WidgetKind.MACHINES && widget.presentation == WidgetPresentation.DEFAULT);
-            if (r.h >= top + 9 && !ring)
-                DashboardVisuals.label(f, numeric(value), r.x + 6, r.y + top, width, CYAN, r.h >= 46 ? 1.15f : .8f);
+            boolean region = widget.kind == WidgetKind.REGION && widget.presentation == WidgetPresentation.DEFAULT;
+            boolean regionKnown = region && power != null
+                && power.slot == 2
+                && "ok".equals(power.status)
+                && EngineeringDashboardCache.fresh()
+                && power.review != null;
+            int ringDiameter = Math.min(width - 4, r.h - top - 5);
+            boolean ring = ringDiameter >= 20 && (widget.presentation == WidgetPresentation.GAUGE
+                || (widget.kind == WidgetKind.MACHINES || widget.kind == WidgetKind.REGION)
+                    && widget.presentation == WidgetPresentation.DEFAULT);
+            if (r.h >= top + 9 && !ring) DashboardVisuals.label(
+                f,
+                numeric(value),
+                r.x + 6,
+                r.y + top,
+                width,
+                CYAN,
+                r.w >= 100 && r.h >= 56 ? 1.5f : r.h >= 46 ? 1.15f : .8f);
             if (r.h >= 58 && !ring) text(f, unit(widget), r.x + 6, r.y + top + 16, MUTED, width);
             Double fraction = value != null && widget.userTarget != null
                 ? value.divide(BigDecimal.valueOf(widget.userTarget), java.math.MathContext.DECIMAL64)
@@ -659,19 +672,14 @@ public final class FactoryDashboard extends Gui {
                 : null;
             if (widget.kind == WidgetKind.MACHINES && widget.presentation == WidgetPresentation.DEFAULT)
                 fraction = snapshot.device.fresh && !devices.isEmpty() ? running / (double) devices.size() : null;
+            if (region) fraction = regionKnown && power.review.totalChunks > 0
+                ? power.review.loadedChunks / (double) power.review.totalChunks
+                : null;
             if (ring) {
-                int diameter = Math.min(width - 4, r.h - top - 10);
-                double cx = r.x + r.w / 2.0, cy = r.y + top + diameter / 2.0;
-                DashboardVisuals.ring(cx, cy, diameter / 2.0 - 2, fraction, CYAN);
-                String number = numeric(value);
-                DashboardVisuals.label(
-                    f,
-                    number,
-                    (int) cx - Math.min(diameter - 12, f.getStringWidth(number)) / 2,
-                    (int) cy - 4,
-                    diameter - 12,
-                    CYAN,
-                    1);
+                String number = region
+                    ? regionKnown ? power.review.loadedChunks + "/" + power.review.totalChunks : "\u2014"
+                    : numeric(value);
+                drawReadingRing(f, r.x + r.w / 2.0, r.y + top + ringDiameter / 2.0, ringDiameter, fraction, number);
             } else if (r.h > 30) DashboardVisuals.bar(new Rect(r.x + 6, r.y + r.h - 7, width, 3), fraction, CYAN);
             if (r.contains(FactoryDesktop.pointerX(), FactoryDesktop.pointerY()))
                 hover = FactoryDesktop.label(widget) + " · " + numeric(value) + " " + unit(widget);
@@ -723,7 +731,12 @@ public final class FactoryDashboard extends Gui {
                 text(f, comparison, r.x + 9, r.y + 82, TEXT, r.w - 18);
                 text(
                     f,
-                    tr("modeled") + " " + (s.review == null ? "?" : s.review.modeled) + " · ? " + s.unknown,
+                    tr("modeled") + " "
+                        + (s.review == null ? "?" : s.review.modeled)
+                        + " / "
+                        + tr("unknown")
+                        + " "
+                        + s.unknown,
                     r.x + 9,
                     r.y + 101,
                     MUTED,
@@ -782,43 +795,50 @@ public final class FactoryDashboard extends Gui {
 
     private static void drawRegion(FontRenderer f, Rect r, EngineeringSnapshot s) {
         boolean valid = s != null && s.slot == 2 && "ok".equals(s.status) && EngineeringDashboardCache.fresh();
-        text(
+        boolean detail = r.h >= 130;
+        int top = detail ? 48 : 29;
+        if (detail || !valid) text(
             f,
             valid ? (s.coverageBoundOnly ? tr("bound") : tr("loaded.region")) : powerStatus(s),
             r.x + 9,
             r.y + 30,
             valid ? TEXT : AMBER,
             r.w - 18);
-        int diameter = Math.min(r.w - 26, Math.max(0, r.h - 86));
-        if (diameter >= 48 && valid && s.review != null) {
-            double cx = r.x + r.w / 2.0, cy = r.y + 48 + diameter / 2.0;
-            DashboardVisuals.ring(
-                cx,
-                cy,
-                diameter / 2.0 - 3,
-                s.review.totalChunks > 0 ? s.review.loadedChunks / (double) s.review.totalChunks : null,
-                CYAN);
-            String value = s.review.loadedChunks + "/" + s.review.totalChunks;
-            DashboardVisuals.label(
+        int diameter = Math.min(r.w - 24, Math.max(0, r.h - top - 22));
+        if (diameter >= 20 && valid && s.review != null) {
+            drawReadingRing(
                 f,
-                value,
-                (int) cx - Math.min(diameter - 14, f.getStringWidth(value)) / 2,
-                (int) cy - 4,
-                diameter - 14,
-                CYAN,
-                1);
+                r.x + r.w / 2.0,
+                r.y + top + diameter / 2.0,
+                diameter,
+                s.review.totalChunks > 0 ? s.review.loadedChunks / (double) s.review.totalChunks : null,
+                s.review.loadedChunks + "/" + s.review.totalChunks);
         } else if (valid) {
             text(f, tr("observed") + " " + s.monitored, r.x + 9, r.y + 48, CYAN, r.w - 18);
-            if (r.h >= 108) text(f, "? " + s.unknown, r.x + 9, r.y + 64, AMBER, r.w - 18);
         }
         text(
             f,
-            valid ? tr("observed") + " " + s.monitored + " ? ? " + s.unknown : tr("scope.device"),
+            valid ? tr("observed") + " " + s.monitored + " / " + tr("unknown") + " " + s.unknown : tr("scope.device"),
             r.x + 9,
             r.y + r.h - 16,
             MUTED,
             r.w - 18);
         hits.add(new Hit(r, () -> WorkbenchHud.switchTask(1)));
+    }
+
+    private static void drawReadingRing(FontRenderer f, double cx, double cy, int diameter, Double fraction,
+        String value) {
+        DashboardVisuals.ring(cx, cy, diameter / 2.0 - 2, fraction, CYAN);
+        float textScale = diameter < 38 ? .75f : 1;
+        int available = diameter - 6;
+        DashboardVisuals.label(
+            f,
+            value,
+            (int) cx - Math.min(available, (int) (f.getStringWidth(value) * textScale)) / 2,
+            (int) cy - 4,
+            available,
+            CYAN,
+            textScale);
     }
 
     private static void drawResources(FontRenderer f, Rect r, int mx, int my) {
