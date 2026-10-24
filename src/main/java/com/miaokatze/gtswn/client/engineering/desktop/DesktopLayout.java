@@ -94,6 +94,20 @@ public final class DesktopLayout {
         return add(WidgetKind.DEVICE, binding);
     }
 
+    /** Bind before placement so a precise resource can use a compact free space atomically. */
+    public WidgetSpec addResource(ResourceBinding binding) {
+        if (binding == null || widgets.size() >= MAX_WIDGETS) return null;
+        WidgetSpec candidate = new WidgetSpec(
+            UUID.randomUUID()
+                .toString(),
+            WidgetKind.RESOURCES,
+            0,
+            0,
+            4,
+            3).boundResource(binding);
+        return place(candidate);
+    }
+
     private WidgetSpec add(WidgetKind kind, DeviceBinding binding) {
         if (kind == null || widgets.size() >= MAX_WIDGETS) return null;
         WidgetSpec candidate = new WidgetSpec(
@@ -110,6 +124,10 @@ public final class DesktopLayout {
                 : Collections.<String>emptyList(),
             1);
         candidate = candidate.withBounds(0, 0, candidate.minColumns(), candidate.minRows());
+        return place(candidate);
+    }
+
+    private WidgetSpec place(WidgetSpec candidate) {
         // Bounded search in the compact area; then append beneath the occupied area.
         for (int row = 0; row < 64; row++) for (int col = 0; col <= 16 - candidate.columns; col++) {
             WidgetSpec at = candidate.withBounds(col, row, candidate.columns, candidate.rows);

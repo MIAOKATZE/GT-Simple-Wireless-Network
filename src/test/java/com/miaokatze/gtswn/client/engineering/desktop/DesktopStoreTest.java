@@ -18,6 +18,36 @@ public class DesktopStoreTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void borderAndExactResourceIdentitySurviveConfigurationAndPersistence() {
+        String key = "v2:item:" + String.join("", java.util.Collections.nCopies(64, "a"));
+        ResourceBinding binding = new ResourceBinding(UUID.randomUUID(), UUID.randomUUID(), 1, key, "Circuit");
+        WidgetSpec spec = new WidgetSpec("bound", WidgetKind.RESOURCES, 0, 0, 8, 4).boundResource(binding)
+            .bordered(0x15ABEF)
+            .titled("Custom")
+            .configured("Custom", java.util.Collections.singletonList("source"), 1)
+            .presented(WidgetPresentation.STATUS_LIST, "", null)
+            .withBounds(-8, -4, 8, 4);
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(spec));
+        Properties data = DesktopStore.encode(layout);
+        WidgetSpec restored = DesktopStore.decode(data)
+            .find("bound");
+        assertEquals(0xFF15ABEF, restored.borderColor);
+        assertEquals(binding.source, restored.resource.source);
+        assertEquals(binding.screen, restored.resource.screen);
+        assertEquals(key, restored.resource.key);
+        assertEquals(1, restored.resource.kind);
+        assertEquals("Circuit", restored.resource.name);
+        assertFalse(data.containsKey("widget.0.amount"));
+        assertFalse(data.containsKey("widget.0.rate"));
+        data.setProperty("widget.0.borderColor", "invalid");
+        assertEquals(
+            WidgetSpec.DEFAULT_BORDER_COLOR,
+            DesktopStore.decode(data)
+                .find("bound").borderColor);
+    }
+
+    @Test
     public void pendingCommittedSnapshotDoesNotFollowUnreleasedGeometryAndViewportEdits() throws Exception {
         Path directory = temporary.newFolder()
             .toPath();

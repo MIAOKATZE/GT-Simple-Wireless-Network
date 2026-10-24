@@ -7,17 +7,16 @@ import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
-import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.common.config.Configuration;
 
-import org.lwjgl.opengl.GL11;
-
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
+import com.miaokatze.miaokatzecore.api.ui.component.UiRect;
+import com.miaokatze.miaokatzecore.client.ui.MinecraftGuidanceRenderer;
 
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.relauncher.Side;
@@ -114,34 +113,14 @@ public final class FactoryEntryHint {
         int desiredWidth = Math.min(208, Math.max(font.getStringWidth(title), font.getStringWidth(detail)) + 20);
         FactoryEntryHintLayout.Bounds box = FactoryEntryHintLayout
             .place(resolution.getScaledWidth(), resolution.getScaledHeight(), desiredWidth, terminal);
-        double breath = .5 + .5 * Math.sin(now() / 420.0);
-        int accent = ((int) (165 + breath * 90) << 24) | 0x73D7D0;
-        GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
-        GL11.glPushMatrix();
-        try {
-            GL11.glDisable(GL11.GL_DEPTH_TEST);
-            GL11.glEnable(GL11.GL_BLEND);
-            GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            Gui.drawRect(box.x, box.y, box.right(), box.bottom(), 0xCF142124);
-            Gui.drawRect(box.x, box.y, box.right(), box.y + 1, accent);
-            Gui.drawRect(box.x, box.y, box.x + 2, box.bottom(), accent);
-            font.drawStringWithShadow(fit(font, title, box.width - 20), box.x + 7, box.y + 5, 0xE8F5F4);
-            font.drawStringWithShadow(fit(font, detail, box.width - 14), box.x + 7, box.y + 19, 0x9EBCBE);
-            int arrowY = box.y + 7 + (int) Math.round(breath * 2);
-            Gui.drawRect(box.right() - 11, arrowY, box.right() - 6, arrowY + 1, accent);
-            Gui.drawRect(box.right() - 10, arrowY + 1, box.right() - 7, arrowY + 2, accent);
-            Gui.drawRect(box.right() - 9, arrowY + 2, box.right() - 8, arrowY + 3, accent);
-        } finally {
-            GL11.glPopMatrix();
-            GL11.glPopAttrib();
-        }
-    }
-
-    private static String fit(FontRenderer font, String value, int width) {
-        if (width <= 0) return "";
-        if (font.getStringWidth(value) <= width) return value;
-        if (font.getStringWidth("...") > width) return font.trimStringToWidth(value, width);
-        return font.trimStringToWidth(value, width - font.getStringWidth("...")) + "...";
+        MinecraftGuidanceRenderer.card(
+            mc,
+            new UiRect(box.x, box.y, box.width, box.height),
+            resolution.getScaledWidth(),
+            resolution.getScaledHeight(),
+            title,
+            detail,
+            now());
     }
 
     private static String text(String suffix, Object... args) {

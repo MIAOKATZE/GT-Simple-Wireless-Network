@@ -172,6 +172,15 @@ public final class DesktopStore {
             p.setProperty(prefix + "fields", String.join(",", widget.fields));
             p.setProperty(prefix + "fieldsConfigured", Boolean.toString(widget.fieldsConfigured));
             p.setProperty(prefix + "displayColumns", Integer.toString(widget.displayColumns));
+            if (widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR)
+                p.setProperty(prefix + "borderColor", Integer.toHexString(widget.borderColor & 0xFFFFFF));
+            if (widget.resource != null) {
+                p.setProperty(prefix + "resource.source", widget.resource.source.toString());
+                p.setProperty(prefix + "resource.screen", widget.resource.screen.toString());
+                p.setProperty(prefix + "resource.kind", Integer.toString(widget.resource.kind));
+                p.setProperty(prefix + "resource.key", widget.resource.key);
+                p.setProperty(prefix + "resource.name", widget.resource.name);
+            }
             // Optional schema-1 additions keep old files and template-empty field semantics intact.
             if (widget.presentation != WidgetPresentation.DEFAULT)
                 p.setProperty(prefix + "presentation", widget.presentation.name());
@@ -239,7 +248,9 @@ public final class DesktopStore {
                                     .isEmpty()))),
                     presentation(p, prefix, kind),
                     metric(p, prefix, kind),
-                    target(p, prefix, kind));
+                    target(p, prefix, kind),
+                    border(p, prefix),
+                    resource(p, prefix));
                 result.add(widget);
             } catch (IllegalArgumentException ignored) { /* Keep valid siblings. */ }
         }
@@ -249,6 +260,26 @@ public final class DesktopStore {
 
     private static int integer(Properties p, String key) {
         return Integer.parseInt(p.getProperty(key, ""));
+    }
+
+    private static int border(Properties p, String prefix) {
+        String value = p.getProperty(prefix + "borderColor", "");
+        return value.matches("[0-9a-fA-F]{1,6}") ? 0xFF000000 | Integer.parseInt(value, 16)
+            : WidgetSpec.DEFAULT_BORDER_COLOR;
+    }
+
+    private static ResourceBinding resource(Properties p, String prefix) {
+        if (!p.containsKey(prefix + "resource.key")) return null;
+        try {
+            return new ResourceBinding(
+                UUID.fromString(p.getProperty(prefix + "resource.source", "")),
+                UUID.fromString(p.getProperty(prefix + "resource.screen", "")),
+                integer(p, prefix + "resource.kind"),
+                p.getProperty(prefix + "resource.key"),
+                p.getProperty(prefix + "resource.name", ""));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private static WidgetPresentation presentation(Properties p, String prefix, WidgetKind kind) {

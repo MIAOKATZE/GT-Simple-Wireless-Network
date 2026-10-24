@@ -13,23 +13,29 @@ import net.minecraft.util.StatCollector;
 
 import org.lwjgl.opengl.GL11;
 
+import com.cleanroommc.modularui.drawable.FluidDrawable;
+import com.cleanroommc.modularui.drawable.ItemDrawable;
+import com.cleanroommc.modularui.screen.viewport.GuiContext;
+import com.cleanroommc.modularui.theme.WidgetTheme;
 import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
+import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetPresentation;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
-import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Panel;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Row;
+import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 import com.miaokatze.miaokatzecore.client.render.GlScope;
 
 /** Cockpit over existing authorized caches. No sampling or network work occurs in draw methods. */
@@ -41,7 +47,6 @@ public final class FactoryDashboard extends Gui {
     private static final List<Hit> hits = new ArrayList<>();
     private static int screenIndex, resourceKind = 1, window;
     private static final DesktopResourcePages resourcePages = new DesktopResourcePages();
-    private static final int preset = 0;
     private static boolean rate;
     private static List<Entry> devices = Collections.emptyList(), attention = Collections.emptyList();
     private static long deviceRevision = Long.MIN_VALUE;
@@ -51,7 +56,6 @@ public final class FactoryDashboard extends Gui {
     private static List<Panel> panels = Collections.emptyList();
     private static Panel chartPanel;
     private static String resourceKey = "";
-    private static int selectedResourceKind = 1;
     private static FactoryTrend plot;
     private static long[] ticks = new long[0];
     private static String[] exact = new String[0];
@@ -68,6 +72,11 @@ public final class FactoryDashboard extends Gui {
     private static String portableBinding = "";
     private static WidgetSpec painting;
     private static Rect paintingBounds;
+    private static CanvasTransform paintingTransform = CanvasTransform.identity();
+    private static int localMouseX, localMouseY;
+    private static final ItemDrawable resourceItem = new ItemDrawable();
+    private static final FluidDrawable resourceFluid = new FluidDrawable();
+    private static final WidgetTheme iconTheme = WidgetTheme.whiteTextShadow(16, 16, null);
 
     private FactoryDashboard() {}
 
@@ -97,6 +106,7 @@ public final class FactoryDashboard extends Gui {
         ticks = new long[0];
         exact = new String[0];
         hits.clear();
+        WidgetResources.update(null, Collections.emptyList());
     }
 
     static void tick(EngineeringTerminalHudSnapshot snapshot) {
@@ -134,6 +144,7 @@ public final class FactoryDashboard extends Gui {
             resourceKey = "";
             resourcePages.clear();
         }
+        WidgetResources.update(portableSource, panels);
         List<String> identities = PortableSuperDashboard.screenIds();
         if (selectedScreen.isEmpty() && !identities.isEmpty()) selectedScreen = identities.get(0);
         screenIndex = identities.indexOf(selectedScreen);
@@ -177,15 +188,12 @@ public final class FactoryDashboard extends Gui {
         exact = new String[0];
         Panel p = chartPanel;
         if (!PortableSuperDashboard.available(p)) return;
-        if (!resourceKey.isEmpty() && !resourceKey.equals(p.chartKey)) return;
-        boolean ae = !resourceKey.isEmpty() && resourceKey.equals(p.chartKey);
-        plotUnit = ae ? (selectedResourceKind == 2 ? rate ? "mB/min" : "mB" : rate ? "/min" : tr("items"))
-            : rate ? "EU/t" : "EU";
-        plotWindow = ae ? p.aeWindow : p.window;
+        plotUnit = rate ? "EU/t" : "EU";
+        plotWindow = p.window;
         plotSource = p.binding.label();
         relative = p.render == null;
         if (relative) {
-            double[] values = ae ? rate ? p.aeRateChart : p.aeChart : rate ? p.euRateChart : p.euChart;
+            double[] values = rate ? p.euRateChart : p.euChart;
             int first = Math.max(0, values.length - Math.max(1, (values.length + (1 << window) - 1) / (1 << window)));
             values = java.util.Arrays.copyOfRange(values, first, values.length);
             BigDecimal[] converted = new BigDecimal[values.length];
@@ -193,31 +201,27 @@ public final class FactoryDashboard extends Gui {
             plot = new FactoryTrend(converted);
             return;
         }
-        int size = ae ? p.render.ae.size() : p.render.eu.size();
+        int size = p.render.eu.size();
         int start = Math.max(0, size - Math.max(1, (size + (1 << window) - 1) / (1 << window)));
         BigDecimal[] values = new BigDecimal[size - start];
         ticks = new long[values.length];
         exact = new String[values.length];
         for (int i = start; i < size; i++) {
             int at = i - start;
-            if (ae) {
-                AEMonitorSample s = p.render.ae.get(i);
-                ticks[at] = s.tick;
-                exact[at] = rate ? Double.toString(s.rate) : Long.toString(s.amount);
-                values[at] = rate ? decimal(s.rate) : BigDecimal.valueOf(s.amount);
-            } else {
-                NetworkInfoSample s = p.render.eu.get(i);
-                ticks[at] = s.tick;
-                exact[at] = rate ? Double.toString(s.eut) : s.eu.toString();
-                values[at] = rate ? decimal(s.eut) : new BigDecimal(s.eu);
+            NetworkInfoSample sample = p.render.eu.get(i);
+            ticks[at] = sample.tick;
+            exact[at] = rate ? Double.toString(sample.eut) : sample.eu.toString();
+            values[at] = rate ? decimal(sample.eut) : new BigDecimal(sample.eu);
+            // The first zero can be the sampler's cold-start sentinel; a nonzero stored rate is real evidence.
+            if (rate && i == 0 && sample.eut == 0 || values[at] == null) {
+                values[at] = null;
+                exact[at] = null;
             }
         }
         plot = new FactoryTrend(values);
         plotWindow = ticks.length >= 2
             ? com.miaokatze.gtswn.common.panel.WindowLabel.formatSpan(Math.max(0, ticks[ticks.length - 1] - ticks[0]))
             : "\u2014";
-        if (ae && com.miaokatze.gtswn.common.panel.AEMonitorIdentity.isLegacy(p.chartKey))
-            plotWindow += " / " + StatCollector.translateToLocal("gtswn.network_info.ae.legacy");
     }
 
     static void render(FontRenderer f, Rect r, int mx, int my, int canvasWidth, int canvasHeight) {
@@ -231,19 +235,18 @@ public final class FactoryDashboard extends Gui {
         return FactoryDesktop.mount(source, entry);
     }
 
-    static void paintWidget(FontRenderer f, WidgetSpec widget, Rect r, int mx, int my) {
+    static void paintWidget(FontRenderer f, WidgetSpec widget, Rect r, int mx, int my, CanvasTransform widgetToScreen) {
         painting = widget;
         paintingBounds = r;
+        paintingTransform = widgetToScreen;
+        localMouseX = mx;
+        localMouseY = my;
         try {
             EngineeringSnapshot power = EngineeringDashboardCache.snapshot();
             EngineeringTerminalHudSnapshot snapshot = EngineeringTerminalHudSnapshot
                 .capture(Minecraft.getMinecraft().thePlayer);
             card(f, r, FactoryDesktop.label(widget));
             if (r.contains(mx, my)) hover = FactoryDesktop.label(widget);
-            if (r.w < 100 || r.h < 88) {
-                drawCompact(f, r, widget, power, snapshot);
-                return;
-            }
             if (!WidgetSpec.availableMetrics(widget.kind)
                 .isEmpty() && widget.presentation != WidgetPresentation.DEFAULT
                 && widget.presentation != WidgetPresentation.STATUS_LIST) {
@@ -274,21 +277,14 @@ public final class FactoryDashboard extends Gui {
                     drawKpi(f, r, 3, power, snapshot);
                     break;
                 case HISTORY:
-                    if (r.w < 205 || r.h < 124) {
-                        drawCompact(f, r, widget, power, snapshot);
-                        break;
-                    }
                     drawTrend(f, r, mx, my);
                     break;
                 case REGION:
                     drawRegion(f, r, power);
                     break;
                 case RESOURCES:
-                    if (r.w < 215 || r.h < 136) {
-                        drawCompact(f, r, widget, power, snapshot);
-                        break;
-                    }
-                    drawResources(f, r, mx, my);
+                    if (widget.resource == null) drawResources(f, r, mx, my);
+                    else drawResource(f, r, widget, mx, my);
                     break;
                 case ATTENTION:
                     drawAttention(f, r, snapshot.device, power);
@@ -299,6 +295,7 @@ public final class FactoryDashboard extends Gui {
         } finally {
             painting = null;
             paintingBounds = null;
+            paintingTransform = CanvasTransform.identity();
         }
     }
 
@@ -354,7 +351,7 @@ public final class FactoryDashboard extends Gui {
             DashboardVisuals.label(f, FactoryDesktop.tr("field." + field), x, y, cellWidth - 6, MUTED, .85f);
             String fieldText = fieldValue(field, widget, device, power, snapshot);
             text(f, fieldText, x, y + 12, TEXT, cellWidth - 6);
-            if (new Rect(x, y, cellWidth - 6, 25).contains(FactoryDesktop.pointerX(), FactoryDesktop.pointerY()))
+            if (new Rect(x, y, cellWidth - 6, 25).contains(localMouseX, localMouseY))
                 hover = FactoryDesktop.tr("field." + field) + ": " + fieldText;
             drawRect(x, y + 25, x + cellWidth - 8, y + 26, DashboardVisuals.TRACK);
         }
@@ -375,7 +372,7 @@ public final class FactoryDashboard extends Gui {
                 : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
                     || widget.kind == WidgetKind.RESOURCES
                         ? chartPanel == null ? tr("no.screens") : chartPanel.binding.label()
-                        : powerStatus(power);
+                        : powerScope(power);
         if ("updated".equals(field)) return entry != null ? tr("received")
             : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
                 : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
@@ -393,15 +390,15 @@ public final class FactoryDashboard extends Gui {
             return entry == null ? "—" : "DIM " + entry.dim + " · " + entry.x + "/" + entry.y + "/" + entry.z;
         if (entry != null) {
             boolean known = !FactoryMachineFilter.ignored(entry) && entry.evidenceKind < 2;
-            if ("instantInput".equals(field))
-                return known ? FormatUtil.formatMetricDouble(entry.instIn) + " EU/t" : "?";
-            if ("instantOutput".equals(field))
-                return known ? FormatUtil.formatMetricDouble(entry.instOut) + " EU/t" : "?";
+            if ("instantInput".equals(field)) return known ? numeric(decimal(entry.instIn)) + " EU/t" : "?";
+            if ("instantOutput".equals(field)) return known ? numeric(decimal(entry.instOut)) + " EU/t" : "?";
             if ("averageInput".equals(field)) return known ? FormatUtil.formatMetricDouble(entry.avgIn) + " EU/t" : "?";
             if ("averageOutput".equals(field))
                 return known ? FormatUtil.formatMetricDouble(entry.avgOut) + " EU/t" : "?";
-            if ("recipeInput".equals(field)) return entry.recipeIn.isEmpty() ? "—" : entry.recipeIn;
-            if ("recipeOutput".equals(field)) return entry.recipeOut.isEmpty() ? "—" : entry.recipeOut;
+            if ("recipeInput".equals(field))
+                return entry.recipeIn.isEmpty() ? FactoryDesktop.tr("unavailable") : entry.recipeIn;
+            if ("recipeOutput".equals(field))
+                return entry.recipeOut.isEmpty() ? FactoryDesktop.tr("unavailable") : entry.recipeOut;
             if ("recognition".equals(field)) return StatCollector
                 .translateToLocal("gtswn.device.gui.recognition." + (entry.recognitionMode == 2 ? "ignored" : "track"));
             if ("evidence".equals(field)) return StatCollector.translateToLocal(
@@ -419,8 +416,7 @@ public final class FactoryDashboard extends Gui {
         if ("input".equals(field) || "output".equals(field)) {
             boolean input = "input".equals(field);
             if (entry != null) return FactoryMachineFilter.ignored(entry) ? "—"
-                : entry.evidenceKind >= 2 ? "?"
-                    : FormatUtil.formatMetricDouble(input ? entry.instIn : entry.instOut) + " EU/t";
+                : entry.evidenceKind >= 2 ? "?" : numeric(decimal(input ? entry.instIn : entry.instOut)) + " EU/t";
             return valid ? FormatUtil.formatMetricDouble(input ? power.current.instIn : power.current.instOut) + " EU/t"
                 : "—";
         }
@@ -498,6 +494,11 @@ public final class FactoryDashboard extends Gui {
 
     private static String numeric(BigDecimal value) {
         if (value == null) return "—";
+        if (value.abs()
+            .compareTo(BigDecimal.TEN.pow(18)) >= 0)
+            return "≈" + value.round(new java.math.MathContext(4))
+                .stripTrailingZeros()
+                .toEngineeringString();
         if (value.scale() <= 0 || value.stripTrailingZeros()
             .scale() <= 0) return FormatUtil.formatMetric(value.toBigInteger());
         double number = value.doubleValue();
@@ -537,7 +538,15 @@ public final class FactoryDashboard extends Gui {
                 .doubleValue();
         if (stateRing)
             fraction = snapshot.device.fresh && !devices.isEmpty() ? running / (double) devices.size() : null;
-        int bodyTop = r.y + 30, bodyBottom = r.y + r.h - 24;
+        boolean flow = widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT;
+        int bodyTop = r.y + (flow ? 44 : 30), bodyBottom = r.y + r.h - (flow ? 41 : 24);
+        if (flow) text(
+            f,
+            tr(widget.kind == WidgetKind.INPUT ? "flow.into" : "flow.outof"),
+            r.x + 10,
+            r.y + 29,
+            MUTED,
+            r.w - 20);
         int color = widget.kind == WidgetKind.OUTPUT ? AMBER : CYAN;
         if (ring && bodyBottom - bodyTop >= 38) {
             int diameter = Math.min(r.w - 24, bodyBottom - bodyTop);
@@ -566,15 +575,8 @@ public final class FactoryDashboard extends Gui {
             DashboardVisuals.label(f, value, r.x + 10, bodyTop + 3, r.w - 20, color, scale);
             text(f, suffix, r.x + 10, bodyTop + 23, MUTED, r.w - 20);
             if (bodyBottom - bodyTop > 49) {
-                Double barValue = fraction;
-                if (widget.presentation == WidgetPresentation.DEFAULT
-                    && (widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT)
-                    && amount != null
-                    && power != null) {
-                    double total = Math.max(0, power.current.instIn) + Math.max(0, power.current.instOut);
-                    barValue = total > 0 ? amount.doubleValue() / total : null;
-                }
-                DashboardVisuals.bar(new Rect(r.x + 10, bodyBottom - 9, r.w - 20, 5), barValue, color);
+                if (widget.userTarget != null)
+                    DashboardVisuals.bar(new Rect(r.x + 10, bodyBottom - 9, r.w - 20, 5), fraction, color);
             }
         }
         String foot = stateRing
@@ -591,160 +593,23 @@ public final class FactoryDashboard extends Gui {
                         : widget.kind == WidgetKind.DEVICE ? FactoryDesktop.tr("metric." + widget.metricField)
                             : powerStatus(power);
         if (stateRing && !snapshot.device.fresh) foot = sourceQuality(snapshot.device);
-        if (widget.presentation == WidgetPresentation.DEFAULT && amount != null
-            && (widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT))
-            foot = FactoryDesktop.tr("flow.share") + " / " + foot;
+        if (flow) {
+            text(f, powerScope(power), r.x + 10, r.y + r.h - 29, MUTED, r.w - 20);
+            if (widget.presentation != WidgetPresentation.BAR && widget.presentation != WidgetPresentation.GAUGE)
+                foot = powerStatus(power) + (power == null ? "" : " / " + tr("unknown") + " " + power.unknown);
+        }
         text(f, foot, r.x + 9, r.y + r.h - 15, MUTED, r.w - 18);
-        if (hover != null && r.contains(FactoryDesktop.pointerX(), FactoryDesktop.pointerY()))
-            hover = FactoryDesktop.label(widget) + " · " + value + " " + suffix + " · " + foot;
-        openWidget(widget, r);
-    }
-
-    private static void drawCompact(FontRenderer f, Rect r, WidgetSpec widget, EngineeringSnapshot power,
-        EngineeringTerminalHudSnapshot snapshot) {
-        int top = Math.min(22, Math.max(9, r.h / 4)) + 5;
-        int width = Math.max(1, r.w - 12);
-        if (r.w < 22 || r.h < 24) {
-            drawRect(r.x + 1, r.y + r.h / 2, r.x + Math.max(2, r.w - 1), r.y + r.h / 2 + 1, CYAN);
-            if (r.contains(FactoryDesktop.pointerX(), FactoryDesktop.pointerY()))
-                hover = FactoryDesktop.label(widget) + (WidgetSpec.availableMetrics(widget.kind)
-                    .isEmpty() ? "" : " / " + numeric(metric(widget, power, snapshot)) + " " + unit(widget));
-            openWidget(widget, r);
-            return;
-        }
-        if (widget.kind == WidgetKind.HISTORY) {
-            boolean valid = plot != null && plot.normalized.length >= 2 && PortableSuperDashboard.available(chartPanel);
-            text(f, valid ? plotUnit : tr("no.history"), r.x + 6, r.y + top, valid ? CYAN : AMBER, width);
-            if (valid) DashboardVisuals.trend(
-                new Rect(r.x + 6, r.y + top + 14, width, Math.max(2, r.h - top - 20)),
-                plot.normalized,
-                relative ? null : ticks,
-                CYAN);
-            else DashboardVisuals.bar(new Rect(r.x + 6, r.y + r.h - 6, width, 2), null, CYAN);
-        } else if (widget.kind == WidgetKind.RESOURCES) {
-            boolean available = PortableSuperDashboard.available(chartPanel);
-            text(
-                f,
-                available ? Integer.toString(resources.size()) + " " + tr(resourceKind == 1 ? "items" : "fluids")
-                    : tr("no.resources"),
-                r.x + 6,
-                r.y + top,
-                available ? CYAN : AMBER,
-                width);
-            int lines = Math.max(0, (r.h - top - 18) / 15);
-            for (int i = 0; i < Math.min(lines, resources.size()); i++) {
-                Row row = resources.get(i);
-                text(f, row.name, r.x + 6, r.y + top + 17 + i * 15, TEXT, width * 2 / 3);
-                text(f, compact(row.amount), r.x + 6 + width * 2 / 3, r.y + top + 17 + i * 15, CYAN, width / 3);
-            }
-        } else if (widget.kind == WidgetKind.ATTENTION) {
-            text(f, snapshot.device.fresh ? Integer.toString(attention.size()) : "?", r.x + 6, r.y + top, AMBER, width);
-            DashboardVisuals.bar(
-                new Rect(r.x + 6, r.y + r.h - 7, width, 3),
-                snapshot.device.fresh && !devices.isEmpty() ? attention.size() / (double) devices.size() : null,
-                AMBER);
-        } else {
-            BigDecimal value = metric(widget, power, snapshot);
-            boolean region = widget.kind == WidgetKind.REGION && widget.presentation == WidgetPresentation.DEFAULT;
-            boolean regionKnown = region && power != null
-                && power.slot == 2
-                && "ok".equals(power.status)
-                && EngineeringDashboardCache.fresh()
-                && power.review != null;
-            int ringDiameter = Math.min(width - 4, r.h - top - 5);
-            boolean ring = ringDiameter >= 20 && (widget.presentation == WidgetPresentation.GAUGE
-                || (widget.kind == WidgetKind.MACHINES || widget.kind == WidgetKind.REGION)
-                    && widget.presentation == WidgetPresentation.DEFAULT);
-            if (r.h >= top + 9 && !ring) DashboardVisuals.label(
-                f,
-                numeric(value),
-                r.x + 6,
-                r.y + top,
-                width,
-                CYAN,
-                r.w >= 100 && r.h >= 56 ? 1.5f : r.h >= 46 ? 1.15f : .8f);
-            if (r.h >= 58 && !ring) text(f, unit(widget), r.x + 6, r.y + top + 16, MUTED, width);
-            Double fraction = value != null && widget.userTarget != null
-                ? value.divide(BigDecimal.valueOf(widget.userTarget), java.math.MathContext.DECIMAL64)
-                    .max(BigDecimal.ZERO)
-                    .min(BigDecimal.ONE)
-                    .doubleValue()
-                : null;
-            if (widget.kind == WidgetKind.MACHINES && widget.presentation == WidgetPresentation.DEFAULT)
-                fraction = snapshot.device.fresh && !devices.isEmpty() ? running / (double) devices.size() : null;
-            if (region) fraction = regionKnown && power.review.totalChunks > 0
-                ? power.review.loadedChunks / (double) power.review.totalChunks
-                : null;
-            if (ring) {
-                String number = region
-                    ? regionKnown ? power.review.loadedChunks + "/" + power.review.totalChunks : "\u2014"
-                    : numeric(value);
-                drawReadingRing(f, r.x + r.w / 2.0, r.y + top + ringDiameter / 2.0, ringDiameter, fraction, number);
-            } else if (r.h > 30) DashboardVisuals.bar(new Rect(r.x + 6, r.y + r.h - 7, width, 3), fraction, CYAN);
-            if (r.contains(FactoryDesktop.pointerX(), FactoryDesktop.pointerY()))
-                hover = FactoryDesktop.label(widget) + " · " + numeric(value) + " " + unit(widget);
-        }
+        if (hover != null && r.contains(localMouseX, localMouseY)) hover = FactoryDesktop.label(widget) + " · "
+            + value
+            + " "
+            + suffix
+            + " · "
+            + foot
+            + (flow ? "\n" + powerScope(power) + "\n" + tr("flow.scope.hint") : "");
         openWidget(widget, r);
     }
 
     private static void drawTrend(FontRenderer f, Rect r, int mx, int my) {
-        if (preset == 2) {
-            EngineeringSnapshot s = EngineeringDashboardCache.snapshot();
-            if (s != null && "ok".equals(s.status) && s.slot == 2 && EngineeringDashboardCache.fresh()) {
-                text(
-                    f,
-                    tr("power.observed") + " · " + (s.coverageBoundOnly ? tr("bound") : "20t"),
-                    r.x + 9,
-                    r.y + 24,
-                    MUTED,
-                    r.w - 18);
-                text(
-                    f,
-                    "→ " + FormatUtil.formatMetricDouble(s.current.instIn) + " EU/t",
-                    r.x + 9,
-                    r.y + 44,
-                    CYAN,
-                    r.w - 18);
-                text(
-                    f,
-                    "← " + FormatUtil.formatMetricDouble(s.current.instOut) + " EU/t",
-                    r.x + 9,
-                    r.y + 61,
-                    AMBER,
-                    r.w - 18);
-                double scale = Math.max(1, Math.max(s.current.instIn, s.current.instOut));
-                drawRect(r.x + 9, r.y + 55, r.x + 9 + (int) ((r.w - 18) * (s.current.instIn / scale)), r.y + 58, CYAN);
-                drawRect(
-                    r.x + 9,
-                    r.y + 72,
-                    r.x + 9 + (int) ((r.w - 18) * (s.current.instOut / scale)),
-                    r.y + 75,
-                    AMBER);
-                String comparison = s.review == null || !s.review.comparable ? tr("not.comparable")
-                    : "Δ "
-                        + FormatUtil
-                            .formatMetricDouble(s.review.comparableCurrent.instIn - s.review.comparableBefore.instIn)
-                        + " EU/t · "
-                        + s.review.comparableMonitored
-                        + " "
-                        + tr("intersection");
-                text(f, comparison, r.x + 9, r.y + 82, TEXT, r.w - 18);
-                text(
-                    f,
-                    tr("modeled") + " "
-                        + (s.review == null ? "?" : s.review.modeled)
-                        + " / "
-                        + tr("unknown")
-                        + " "
-                        + s.unknown,
-                    r.x + 9,
-                    r.y + 101,
-                    MUTED,
-                    r.w - 18);
-            } else text(f, powerStatus(s), r.x + 9, r.y + 35, AMBER, r.w - 18);
-            hits.add(new Hit(r, WorkbenchHud::openPowerReview));
-            return;
-        }
         button(f, new Rect(r.x + r.w - 126, r.y + 3, 58, 16), tr(rate ? "net.change" : "stock"), () -> {
             rate = !rate;
             rebuildPlot();
@@ -757,39 +622,85 @@ public final class FactoryDashboard extends Gui {
                 window = (window + 1) % 3;
                 rebuildPlot();
             });
-        if (plot == null || plot.normalized.length < 2 || !PortableSuperDashboard.available(chartPanel)) {
-            text(f, tr("no.history"), r.x + 9, r.y + 40, AMBER, r.w - 18);
-            text(f, tr("no.history.hint"), r.x + 9, r.y + 58, MUTED, r.w - 18);
+        if (plot == null || plot.knownPoints == 0 || !PortableSuperDashboard.available(chartPanel)) {
+            text(f, tr("no.history"), r.x + 12, r.y + 42, AMBER, r.w - 24);
+            text(f, tr("no.history.hint"), r.x + 12, r.y + 60, MUTED, r.w - 24);
             return;
         }
-        text(
+        int lineColor = rate ? AMBER : CYAN;
+        String quantity = relative ? tr("relative") : tr(rate ? "net.change" : "stock");
+        text(f, quantity + (relative ? "" : " / " + plotUnit), r.x + 12, r.y + 32, MUTED, r.w - 24);
+        String current = relative || exact.length == 0 ? null : exact[exact.length - 1];
+        if (r.contains(mx, my)) hover = quantity + ": "
+            + (current == null ? "—" : current)
+            + (relative ? "" : " " + plotUnit)
+            + "\n"
+            + plotSource;
+        DashboardVisuals.label(
             f,
-            (relative ? tr("relative") : plotUnit) + " · " + plotWindow + metadata(plotSource, tr("received")),
-            r.x + 9,
-            r.y + 35,
-            MUTED,
-            r.w - 18);
-        int x = r.x + 9, y = r.y + 54, w = r.w - 18, h = Math.max(8, r.h - 83);
-        if (!relative)
-            text(f, axis(plot.minimum) + " … " + axis(plot.maximum) + " " + plotUnit, x, r.y + r.h - 11, MUTED, w);
-        for (int i = 0; i <= 3; i++) drawRect(x, y + h * i / 3, x + w, y + h * i / 3 + 1, EDGE);
-        if (!relative) drawRect(x, y + (int) (h * (1 - plot.zero)), x + w, y + (int) (h * (1 - plot.zero)) + 1, MUTED);
-        DashboardVisuals.trend(new Rect(x, y, w, h), plot.normalized, relative ? null : ticks, CYAN);
+            current == null ? "\u2014" : numeric(new BigDecimal(current)),
+            r.x + 12,
+            r.y + 47,
+            r.w - 24,
+            lineColor,
+            1.65f);
         text(
             f,
             relative ? tr("relative.hint")
-                : ticks[0] + "t → " + ticks[ticks.length - 1] + "t · " + ticks.length + " " + tr("samples"),
-            r.x + 9,
-            r.y + r.h - 23,
+                : plotWindow + " / " + ticks.length + " " + tr("samples") + " / " + tr("game.time"),
+            r.x + 12,
+            r.y + 70,
             MUTED,
-            r.w - 18);
-        if (r.contains(mx, my) && !relative && exact.length > 0) {
+            r.w - 24);
+        // One quantity and one labelled axis. EU stock and its EU/t slope never share an unlabeled scale.
+        int x = r.x + 88, y = r.y + 99, w = Math.max(8, r.w - 103), h = Math.max(8, r.h - 143);
+        text(f, relative ? tr("relative") : plotUnit, r.x + 12, r.y + 85, MUTED, 72);
+        for (int i = 0; i <= 2; i++) {
+            int yy = y + h * i / 2;
+            drawRect(x, yy, x + w, yy + 1, DashboardVisuals.TRACK);
+            if (!relative) {
+                BigDecimal minimum = new BigDecimal(plot.minimum), maximum = new BigDecimal(plot.maximum);
+                String label = maximum.subtract(
+                    maximum.subtract(minimum)
+                        .multiply(BigDecimal.valueOf(i / 2.0)))
+                    .stripTrailingZeros()
+                    .toPlainString();
+                text(f, axis(label), r.x + 12, yy - 4, MUTED, 69);
+            }
+        }
+        drawRect(x - 1, y, x, y + h + 1, EDGE);
+        if (!relative && plot.zero > 0 && plot.zero < 1) {
+            int zeroY = y + (int) Math.round(h * (1 - plot.zero));
+            drawRect(x, zeroY, x + w, zeroY + 1, MUTED);
+        }
+        DashboardVisuals.trend(new Rect(x, y, w, h), plot.normalized, relative ? null : ticks, lineColor);
+        String left = relative ? "0%" : ticks.length < 2 ? "0t" : "-" + (ticks[ticks.length - 1] - ticks[0]) + "t";
+        text(f, left, x, y + h + 7, MUTED, w / 2);
+        String right = relative ? "100%" : "0t";
+        text(f, right, x + w - f.getStringWidth(right), y + h + 7, MUTED, w / 2);
+        text(
+            f,
+            plotSource + " / " + (rate ? tr("net.only") : tr("received")),
+            r.x + 12,
+            r.y + r.h - 14,
+            MUTED,
+            r.w - 24);
+        if (new Rect(x, y, w, h).contains(mx, my) && !relative && exact.length > 0) {
             double selectedTick = ticks[0]
-                + Math.max(0, Math.min(1, (mx - x) / (double) Math.max(1, w))) * (ticks[ticks.length - 1] - ticks[0]);
+                + Math.max(0, Math.min(1, (mx - x) / (double) w)) * (ticks[ticks.length - 1] - ticks[0]);
             int at = 0;
             for (int i = 1; i < ticks.length; i++)
                 if (Math.abs(ticks[i] - selectedTick) < Math.abs(ticks[at] - selectedTick)) at = i;
-            hover = exact[at] + " " + plotUnit + " · " + ticks[at] + "t · " + tr("game.time");
+            hover = quantity + ": "
+                + (exact[at] == null ? "\u2014" : exact[at])
+                + " "
+                + plotUnit
+                + "\n"
+                + ticks[at]
+                + "t / "
+                + tr("game.time")
+                + "\n"
+                + plotSource;
         }
     }
 
@@ -875,14 +786,15 @@ public final class FactoryDashboard extends Gui {
             resourcePages.clear();
             resourceKey = "";
         });
-        if (!PortableSuperDashboard.available(p)) {
+        if (!PortableSuperDashboard.available(p) || !p.aeConnected) {
             text(f, tr("no.resources"), r.x + 9, r.y + 58, AMBER, r.w - 18);
             return;
         }
-        searchRect = new Rect(r.x + 6, r.y + 60, Math.max(40, r.w - 91), 17);
+        Rect localSearch = new Rect(r.x + 6, r.y + 60, Math.max(40, r.w - 91), 17);
+        searchRect = screenRect(localSearch);
         button(
             f,
-            searchRect,
+            localSearch,
             (search.focused ? "> " : "") + (search.value.isEmpty() ? tr("search") : search.value),
             () -> search.focused = true);
         button(
@@ -897,7 +809,8 @@ public final class FactoryDashboard extends Gui {
             Rect line = new Rect(r.x + 6, r.y + 82 + (index - start) * 18, r.w - 12, 17);
             if (line.contains(mx, my) || row.key.equals(resourceKey)) fill(line, EDGE);
             String amount = row.amount + (row.kind == 2 ? " mB" : "");
-            text(f, row.name, line.x + 3, line.y + 4, TEXT, line.w / 3 - 4);
+            drawResourceIcon(f, row, line.x + 2, line.y, 16);
+            text(f, row.name, line.x + 22, line.y + 4, TEXT, line.w / 3 - 23);
             text(f, amount, line.x + line.w / 3, line.y + 4, CYAN, line.w / 3 - 3);
             text(
                 f,
@@ -906,7 +819,7 @@ public final class FactoryDashboard extends Gui {
                 line.x + line.w * 2 / 3,
                 line.y + 4,
                 rateKnown(p, row) ? AMBER : MUTED,
-                line.w / 3 - 3);
+                line.w / 3 - 23);
             if (line.contains(mx, my)) hover = row.name + " · "
                 + amount
                 + " · "
@@ -914,14 +827,74 @@ public final class FactoryDashboard extends Gui {
                     : tr("not.monitored"))
                 + " · "
                 + tr("net.only");
-            hits.add(new Hit(line, () -> {
-                resourceKey = row.key;
-                selectedResourceKind = row.kind;
-                rate = true;
-                rebuildPlot();
-            }));
+            hits.add(new Hit(line, () -> { resourceKey = resourceKey.equals(row.key) ? "" : row.key; }));
+            ResourceBinding binding = WidgetResources.binding(p, row);
+            if (binding != null) button(
+                f,
+                new Rect(line.x + line.w - 18, line.y, 17, 17),
+                "+",
+                () -> FactoryDesktop.mountResource(binding));
         }
         if (count == 0) text(f, tr("no.resources"), r.x + 9, r.y + 86, MUTED, r.w - 18);
+    }
+
+    private static void drawResource(FontRenderer f, Rect r, WidgetSpec widget, int mx, int my) {
+        WidgetResources.Reading reading = WidgetResources.read(widget.resource);
+        Row row = reading.row;
+        String name = row == null ? widget.resource.name : row.name;
+        drawResourceIcon(f, row, r.x + 12, r.y + 34, 28);
+        text(f, name, r.x + 48, r.y + 36, TEXT, r.w - 60);
+        text(f, tr(widget.resource.kind == 2 ? "fluids" : "items"), r.x + 48, r.y + 51, MUTED, r.w - 60);
+        DashboardVisuals.label(f, row == null ? "—" : compact(row.amount), r.x + 12, r.y + 76, r.w - 24, CYAN, 1.7f);
+        text(f, widget.resource.kind == 2 ? "mB" : tr("items"), r.x + 12, r.y + 97, MUTED, r.w - 24);
+        String change = row != null && rateKnown(reading.panel, row)
+            ? FormatUtil.formatMetricDouble(row.rate) + (row.kind == 2 ? " mB/min" : "/min")
+            : "—";
+        text(f, tr("net.change") + "  " + change, r.x + 12, r.y + 119, AMBER, r.w - 24);
+        String state = row == null ? tr("resource." + reading.reason)
+            : reading.panel.binding.label() + " · " + tr("received");
+        text(f, state, r.x + 12, r.y + r.h - 16, row == null ? AMBER : MUTED, r.w - 24);
+        if (r.contains(mx, my)) hover = name + "\n"
+            + (row == null ? state
+                : row.amount + (row.kind == 2 ? " mB" : " " + tr("items")) + "\n" + tr("net.only") + ": " + change)
+            + "\n"
+            + widget.resource.screen
+            + "\n"
+            + widget.resource.key;
+    }
+
+    /** Use the original NBT-preserving packet icon; missing identity never becomes a guessed stack. */
+    private static void drawResourceIcon(FontRenderer f, Row row, int x, int y, int size) {
+        try (GlScope ignored = new GlScope()) {
+            GL11.glColor4f(1, 1, 1, 1);
+            if (row != null && row.icon != null && row.kind == 1 && row.icon.item != null)
+                resourceItem.setItem(row.icon.item)
+                    .draw(GuiContext.getDefault(), x, y, size, size, iconTheme);
+            else if (row != null && row.icon != null && row.kind == 2 && row.icon.fluid != null)
+                resourceFluid.setFluid(row.icon.fluid)
+                    .draw(GuiContext.getDefault(), x, y, size, size, iconTheme);
+            else {
+                fill(new Rect(x, y, size, size), DashboardVisuals.TRACK);
+                text(f, "?", x + size / 2 - 2, y + size / 2 - 4, MUTED, size - 2);
+            }
+        }
+    }
+
+    private static String powerScope(EngineeringSnapshot power) {
+        if (power == null) return tr("no.power");
+        return tr(power.coverageBoundOnly ? "bound" : "loaded.region") + " · "
+            + tr("observed")
+            + " "
+            + power.monitored
+            + (power.review == null ? "" : " · " + tr("modeled") + " " + power.review.modeled);
+    }
+
+    private static Rect screenRect(Rect r) {
+        int left = (int) Math.floor(paintingTransform.toScreenX(r.x));
+        int top = (int) Math.floor(paintingTransform.toScreenY(r.y));
+        int right = (int) Math.ceil(paintingTransform.toScreenX(r.x + r.w));
+        int bottom = (int) Math.ceil(paintingTransform.toScreenY(r.y + r.h));
+        return new Rect(left, top, right - left, bottom - top);
     }
 
     private static void drawAttention(FontRenderer f, Rect r, EngineeringTerminalHudSnapshot.Source d,
@@ -1006,26 +979,28 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static boolean rateKnown(Panel panel, Row row) {
-        return row.monitored && Double.isFinite(row.rate)
-            && (row.rate != 0 || row.key.equals(panel.chartKey) && panel.render != null && panel.render.ae.size() >= 2);
+        return WidgetResources.rateKnown(panel, row);
     }
 
     private static String axis(String value) {
         BigDecimal number = new BigDecimal(value);
-        return value.length() <= 12 ? value
-            : "≈" + number.round(new java.math.MathContext(4))
+        return value.length() <= 9 ? value
+            : "≈" + number.round(new java.math.MathContext(3))
+                .stripTrailingZeros()
                 .toEngineeringString();
     }
 
     private static String powerStatus(EngineeringSnapshot s) {
         return s == null || s.slot != 2 ? tr("no.power")
             : !"ok".equals(s.status) ? StatCollector.translateToLocal("gtswn.engineering.dash.status." + s.status)
-                : !EngineeringDashboardCache.fresh() ? tr("stale") : s.truncated ? tr("partial") : tr("received");
+                : !EngineeringDashboardCache.fresh() ? tr("stale")
+                    : s.truncated || s.unknown > 0 || s.review != null && s.review.discovering ? tr("partial")
+                        : tr("received");
     }
 
     private static String compact(String value) {
         try {
-            return FormatUtil.formatMetric(new BigInteger(value));
+            return numeric(new BigDecimal(value));
         } catch (NumberFormatException ignored) {
             return value;
         }
@@ -1034,8 +1009,9 @@ public final class FactoryDashboard extends Gui {
     private static void card(FontRenderer f, Rect r, String title) {
         int header = Math.min(22, Math.max(9, r.h / 4));
         drawRect(r.x + 1, r.y + 1, r.x + r.w - 1, r.y + header, DashboardVisuals.HEADER);
-        drawRect(r.x + 1, r.y + 1, r.x + Math.min(r.w - 1, 28), r.y + 2, CYAN);
-        drawRect(r.x, r.y + header, r.x + r.w, r.y + header + 1, EDGE);
+        int border = painting == null ? EDGE : painting.borderColor;
+        drawRect(r.x + 1, r.y + 1, r.x + Math.min(r.w - 1, 28), r.y + 2, border);
+        drawRect(r.x + 1, r.y + header, r.x + r.w - 1, r.y + header + 1, border);
         int reserve = painting == null ? 0
             : ((painting.kind == WidgetKind.HISTORY && r.w >= 205 && r.h >= 124
                 || painting.kind == WidgetKind.RESOURCES && r.w >= 215 && r.h >= 136)
@@ -1077,9 +1053,13 @@ public final class FactoryDashboard extends Gui {
         final Runnable action;
 
         Hit(Rect rect, Runnable action) {
-            this.rect = rect;
+            this.rect = screenRect(rect);
             this.action = action;
         }
+    }
+
+    private static BigDecimal decimal(long value) {
+        return BigDecimal.valueOf(value);
     }
 
     private static BigDecimal decimal(double value) {

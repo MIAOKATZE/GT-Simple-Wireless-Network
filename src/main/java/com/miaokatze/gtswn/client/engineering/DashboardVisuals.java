@@ -68,8 +68,8 @@ final class DashboardVisuals extends Gui {
 
     /** Join only adjacent finite samples; missing samples remain visible gaps. */
     static void trend(Rect r, double[] values, long[] ticks, int color) {
-        if (values == null || values.length < 2 || r.w < 2 || r.h < 2) return;
-        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT);
+        if (values == null || values.length == 0 || r.w < 2 || r.h < 2) return;
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT | GL11.GL_LINE_BIT | GL11.GL_POINT_BIT);
         try {
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glColor4f((color >> 16 & 255) / 255f, (color >> 8 & 255) / 255f, (color & 255) / 255f, 1);
@@ -78,12 +78,21 @@ final class DashboardVisuals extends Gui {
             for (int i = 1; i < values.length; i++) {
                 if (!Double.isFinite(values[i - 1]) || !Double.isFinite(values[i])) continue;
                 for (int j = i - 1; j <= i; j++) {
-                    double position = ticks != null && ticks.length == values.length
-                        && ticks[ticks.length - 1] > ticks[0]
-                            ? (ticks[j] - ticks[0]) / (double) (ticks[ticks.length - 1] - ticks[0])
-                            : j / (double) (values.length - 1);
+                    double position = FactoryTrend.timePosition(j, values.length, ticks);
                     GL11.glVertex2d(r.x + position * r.w, r.y + (1 - values[j]) * r.h);
                 }
+            }
+            GL11.glEnd();
+            // A single sample (including a point between missing neighbors) is evidence, not a line.
+            GL11.glPointSize(3);
+            GL11.glBegin(GL11.GL_POINTS);
+            for (int i = 0; i < values.length; i++) {
+                if (!Double.isFinite(values[i])) continue;
+                boolean isolated = (i == 0 || !Double.isFinite(values[i - 1]))
+                    && (i == values.length - 1 || !Double.isFinite(values[i + 1]));
+                if (isolated) GL11.glVertex2d(
+                    r.x + FactoryTrend.timePosition(i, values.length, ticks) * r.w,
+                    r.y + (1 - values[i]) * r.h);
             }
             GL11.glEnd();
         } finally {

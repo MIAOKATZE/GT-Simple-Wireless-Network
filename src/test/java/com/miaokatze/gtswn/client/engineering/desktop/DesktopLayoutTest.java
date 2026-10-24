@@ -10,6 +10,58 @@ import org.junit.Test;
 public class DesktopLayoutTest {
 
     @Test
+    public void exactResourcePlacementUsesCompactHoleWithoutAnIntermediateTable() {
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(new WidgetSpec("left", WidgetKind.MACHINES, 0, 0, 4, 64)));
+        assertTrue(layout.add(new WidgetSpec("right", WidgetKind.MACHINES, 8, 0, 8, 64)));
+        assertTrue(layout.add(new WidgetSpec("below", WidgetKind.MACHINES, 4, 3, 4, 61)));
+        assertTrue(layout.add(new WidgetSpec("limit", WidgetKind.MACHINES, 0, DesktopLayout.MAX_COORD - 3, 4, 3)));
+        assertNull("A complete table does not fit the only remaining hole", layout.add(WidgetKind.RESOURCES));
+        ResourceBinding binding = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "v2:item:" + String.join("", java.util.Collections.nCopies(64, "a")),
+            "Circuit");
+        WidgetSpec resource = layout.addResource(binding);
+        assertNotNull(resource);
+        assertSame(binding, resource.resource);
+        assertEquals(4, resource.column);
+        assertEquals(0, resource.row);
+        assertEquals(4, resource.columns);
+        assertEquals(3, resource.rows);
+        assertEquals(
+            5,
+            layout.widgets()
+                .size());
+    }
+
+    @Test
+    public void resourceCardsKeepSavedGeometryButAllowCompactResizeAndRestoreTableMinimum() {
+        ResourceBinding binding = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            2,
+            "v2:fluid:" + String.join("", java.util.Collections.nCopies(64, "b")),
+            "Steam");
+        WidgetSpec old = new WidgetSpec("resource", WidgetKind.RESOURCES, 0, 0, 8, 4).boundResource(binding);
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(old));
+        WidgetSpec restored = DesktopStore.decode(DesktopStore.encode(layout))
+            .find("resource");
+        assertEquals(8, restored.columns);
+        assertEquals(4, restored.rows);
+        assertTrue(layout.resize("resource", 0, 0, 4, 3));
+        assertFalse(layout.resize("resource", 0, 0, 3, 3));
+        WidgetSpec table = layout.find("resource")
+            .boundResource(null);
+        assertEquals(8, table.columns);
+        assertEquals(4, table.rows);
+        assertEquals(8, table.minColumns());
+        assertEquals(4, table.minRows());
+    }
+
+    @Test
     public void defaultArrangementIsBalancedWithinInitialAreaAndHasEveryRealSource() {
         DesktopLayout layout = DesktopLayout.defaultLayout();
         assertEquals(

@@ -53,6 +53,18 @@ public class FactoryDashboardTest {
     }
 
     @Test
+    public void shortAndIrregularHistoryKeepsRealTimeAndMissingValues() {
+        assertEquals(1, FactoryTrend.timePosition(0, 1, new long[] { 40 }), 0);
+        assertEquals(.1, FactoryTrend.timePosition(1, 3, new long[] { 100, 110, 200 }), 1e-12);
+        assertEquals(.5, FactoryTrend.timePosition(1, 3, new long[] { Long.MIN_VALUE, 0, Long.MAX_VALUE }), 1e-12);
+        FactoryTrend single = new FactoryTrend(new BigInteger[] { BigInteger.TEN });
+        assertEquals(1, single.normalized[0], 0);
+        FactoryTrend missing = new FactoryTrend(new BigInteger[] { null, null });
+        assertTrue(Double.isNaN(missing.normalized[0]));
+        assertTrue(Double.isNaN(missing.normalized[1]));
+    }
+
+    @Test
     public void crossDimensionRecordAndSourceStayIndependentOfWorldLocation() {
         UUID source = UUID.randomUUID();
         Entry local = entry(0), remote = entry(-1);

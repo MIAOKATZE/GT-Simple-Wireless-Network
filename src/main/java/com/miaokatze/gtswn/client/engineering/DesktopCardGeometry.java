@@ -10,6 +10,22 @@ import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 /** Screen geometry shared by card drawing, picking and visible resize handles. */
 final class DesktopCardGeometry {
 
+    static final int GAP = 8;
+    static final double BORDER_LOD_SCALE = .18;
+
+    static Rect canonical(WidgetSpec widget) {
+        return new Rect(0, 0, widget.width() - GAP, widget.height() - GAP);
+    }
+
+    static CanvasTransform contentTransform(WidgetSpec widget, CanvasTransform viewport) {
+        return new CanvasTransform(
+            0,
+            0,
+            viewport.toScreenX(widget.x() + GAP / 2.0),
+            viewport.toScreenY(widget.y() + GAP / 2.0),
+            viewport.scale());
+    }
+
     static boolean showResizeHandles(double scale) {
         return scale >= .25;
     }
@@ -26,7 +42,7 @@ final class DesktopCardGeometry {
     }
 
     static int gap(double scale) {
-        return Math.max(2, Math.min(8, (int) Math.round(8 * scale)));
+        return Math.max(0, (int) Math.round(GAP * scale));
     }
 
     static double gridOffset(double scale) {
@@ -34,12 +50,14 @@ final class DesktopCardGeometry {
     }
 
     static Rect bounds(WidgetSpec widget, CanvasTransform transform) {
-        int gap = gap(transform.scale());
+        CanvasTransform content = contentTransform(widget, transform);
+        Rect local = canonical(widget);
+        int left = (int) Math.floor(content.toScreenX(0)), top = (int) Math.floor(content.toScreenY(0));
         return new Rect(
-            (int) Math.round(transform.toScreenX(widget.x())) + gap / 2,
-            (int) Math.round(transform.toScreenY(widget.y())) + gap / 2,
-            Math.max(1, (int) Math.round(widget.width() * transform.scale()) - gap),
-            Math.max(1, (int) Math.round(widget.height() * transform.scale()) - gap));
+            left,
+            top,
+            Math.max(1, (int) Math.ceil(content.toScreenX(local.w)) - left),
+            Math.max(1, (int) Math.ceil(content.toScreenY(local.h)) - top));
     }
 
     static DesktopDrag.Edge edge(Rect rect, double x, double y) {

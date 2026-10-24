@@ -194,6 +194,11 @@ public final class FactoryShortcuts {
         KeyBinding.unPressAllKeys();
     }
 
+    static void fenceDashboardExit() {
+        BARRIER.open();
+        fenceHeldKeys();
+    }
+
     static void poll() {
         BARRIER.poll(TerminalKeyNames::isDown);
     }

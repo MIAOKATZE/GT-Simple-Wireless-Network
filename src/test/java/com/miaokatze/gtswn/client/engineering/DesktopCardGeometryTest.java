@@ -71,7 +71,31 @@ public class DesktopCardGeometryTest {
             double grid = transform.toScreenX(4 * 64);
             assertEquals(grid, (left.x + left.w + right.x) / 2.0, 1.0);
             assertTrue(left.w > 1);
-            assertTrue(right.x > left.x + left.w);
+            assertTrue(right.x >= left.x + left.w - 1);
+        }
+    }
+
+    @Test
+    public void canonicalContentAndMouseCoordinatesRemainIdenticalAcrossZooms() {
+        WidgetSpec widget = new WidgetSpec("trend", WidgetKind.HISTORY, -3, 5, 8, 4);
+        Rect canonical = DesktopCardGeometry.canonical(widget);
+        assertEquals(504, canonical.w);
+        assertEquals(248, canonical.h);
+        for (double scale : new double[] { .025, .18, .37, 1, 2.5, 4 }) {
+            CanvasTransform viewport = new CanvasTransform(-123, 211, 31, 79, scale);
+            CanvasTransform content = DesktopCardGeometry.contentTransform(widget, viewport);
+            assertEquals(viewport.toScreenX(widget.x() + 4), content.toScreenX(0), 1e-9);
+            assertEquals(viewport.toScreenY(widget.y() + 4), content.toScreenY(0), 1e-9);
+            // A chart point and a resource row preserve their canonical hit position and aspect ratio.
+            assertEquals(177.5, content.toLocalX(content.toScreenX(177.5)), 1e-9);
+            assertEquals(96.25, content.toLocalY(content.toScreenY(96.25)), 1e-9);
+            assertEquals(
+                canonical.w / (double) canonical.h,
+                (content.toScreenX(canonical.w) - content.toScreenX(0))
+                    / (content.toScreenY(canonical.h) - content.toScreenY(0)),
+                1e-9);
+            Rect bounds = DesktopCardGeometry.bounds(widget, viewport);
+            assertTrue(DesktopCardGeometry.hit(bounds, content.toScreenX(177.5), content.toScreenY(96.25), false));
         }
     }
 

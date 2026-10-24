@@ -19,6 +19,7 @@ public final class WorkbenchLayout {
     public final Rect[] tasks = new Rect[4];
     public final Rect sources;
     public final Rect sidebar, rail, power, dashboard, alerts, shortcuts, cameraHints, inspector;
+    public final Rect worldViewport;
 
     public WorkbenchLayout(int width, int height, boolean sidebarOpen, boolean railOpen, boolean powerOpen,
         boolean dashboardOpen) {
@@ -87,7 +88,8 @@ public final class WorkbenchLayout {
         shortcuts = dashboardOpen ? new Rect(0, 0, 0, 0) : new Rect(width - 64, 9, 56, 24);
         int terminalStep = Math.min(33, Math.max(28, (height - 48) / 8));
         for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(8, 42 + i * terminalStep, 28, 28);
-        for (int i = 0; i < modes.length; i++) modes[i] = new Rect(8 + i * 31, 9, 27, 24);
+        modes[0] = new Rect(8, 9, 92, 24);
+        for (int i = 1; i < modes.length; i++) modes[i] = new Rect(104 + (i - 1) * 31, 9, 27, 24);
         for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 56 + i * 33, 26, 27);
         sidebar = sidebarOpen && !dashboardOpen ? new Rect(43, 42, 214, Math.min(336, Math.max(0, height - 50))) : null;
         boolean splitObjects = objectsPage && !sidebarOpen && !dashboardOpen && railOpen;
@@ -115,6 +117,11 @@ public final class WorkbenchLayout {
             : null;
         for (int i = 0; i < tasks.length; i++) tasks[i] = new Rect(0, 0, 0, 0);
         sources = new Rect(0, 0, 0, 0);
+        int worldLeft = sidebar == null ? 43 : sidebar.x + sidebar.w + 8;
+        int worldRight = rail != null ? rail.x - 8 : power != null ? power.x - 8 : width - 42;
+        int worldBottom = alerts == null ? height - 8 : alerts.y - 8;
+        worldViewport = dashboardOpen ? new Rect(0, 0, 0, 0)
+            : new Rect(worldLeft, 42, worldRight - worldLeft, worldBottom - 42);
         if (dashboardOpen) {
             for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(0, 0, 0, 0);
             for (int i = 0; i < modes.length; i++) modes[i] = new Rect(0, 0, 0, 0);

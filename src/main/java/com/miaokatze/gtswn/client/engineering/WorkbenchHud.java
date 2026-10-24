@@ -15,6 +15,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.StatCollector;
 
+import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.DevicePowerFilter;
@@ -37,6 +38,7 @@ import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceO
 import com.miaokatze.gtswn.common.engineering.NodePresentation;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
+import com.miaokatze.miaokatzecore.api.ui.component.UiRect;
 
 /** Factory workbench: Outpost's monitor rail, power card and dashboard stay inside the world view. */
 final class WorkbenchHud extends Gui {
@@ -335,6 +337,10 @@ final class WorkbenchHud extends Gui {
             Rect strip = new Rect((width - promptWidth) / 2, 36, promptWidth, 18);
             box(strip, BACK);
             text(f, prompt, strip.x + 8, strip.y + 5, WARN, strip.w - 16);
+        }
+        if (!settingsOpen && !FactoryShortcuts.isBinding()) {
+            Rect anchor = l.modes[0];
+            FactoryDashboardHint.render(new UiRect(anchor.x, anchor.y, anchor.w, anchor.h), width, height);
         }
         if (tooltip != null) drawTooltip(f, tooltip, mouseX, mouseY, width, height);
     }
@@ -1039,7 +1045,8 @@ final class WorkbenchHud extends Gui {
             selectedRecord = null;
             EngineeringModeController.INSTANCE.clearSelection();
         }
-        if (dashboardMode && !PortableSuperDashboard.isOpen()) {
+        if (!dashboardVisible()) PortableSuperDashboard.close();
+        if (dashboardVisible() && !PortableSuperDashboard.isOpen()) {
             Source portable = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, 0);
             if (portable.present()) {
                 PortableSuperDashboard.open(portable.stack);
@@ -1055,10 +1062,13 @@ final class WorkbenchHud extends Gui {
             openDashboard();
             return;
         }
-        boolean returningToWorld = dashboardMode && destination == 1;
+        boolean leavingDashboard = dashboardMode;
+        boolean returningToWorld = leavingDashboard && destination == 1;
         dashboardMode = false;
         PortableSuperDashboard.close();
         suspendInput();
+        if (leavingDashboard) FactoryShortcuts.fenceDashboardExit();
+        if (EngineeringModeController.closeDashboardScreen()) return;
         // Closing the overlay retains the world tools, source and camera that were underneath it.
         if (returningToWorld) return;
         search.focused = false;
@@ -1097,7 +1107,11 @@ final class WorkbenchHud extends Gui {
     }
 
     static boolean dashboardVisible() {
-        return EngineeringInputPolicy.overlayVisible(dashboardMode, Minecraft.getMinecraft().gameSettings.hideGUI);
+        return dashboardMode && EngineeringModeController.dashboardHostVisible();
+    }
+
+    static boolean dashboardOpen() {
+        return dashboardMode;
     }
 
     static void worldSelectionChanged() {
@@ -1126,7 +1140,15 @@ final class WorkbenchHud extends Gui {
 
     static boolean key(int code, char character, boolean pressed) {
         if (Minecraft.getMinecraft().gameSettings.hideGUI) return false;
-        if (dashboardMode) return FactoryDashboard.key(code, character, pressed);
+        if (dashboardMode) {
+            if (!EngineeringModeController.dashboardInputAllowed()) return true;
+            if (!FactoryDashboard.typing() && (code == Keyboard.KEY_E
+                || code == Minecraft.getMinecraft().gameSettings.keyBindInventory.getKeyCode())) {
+                if (pressed && !Keyboard.isRepeatEvent()) switchTask(1);
+                return true;
+            }
+            return FactoryDashboard.key(code, character, pressed);
+        }
         if (FactoryChrome.key(code, character, pressed)) return true;
         if (search.focused) {
             if (pressed) {
@@ -1189,6 +1211,7 @@ final class WorkbenchHud extends Gui {
     }
 
     static void openPowerReview() {
+        if (EngineeringModeController.closeDashboardScreen()) return;
         switchTask(1);
         EngineeringHud.activateData(2);
         if (!EngineeringHud.gridMcActive() && !EngineeringHud.gridGtActive()) EngineeringHud.toolAction(2, 1);
@@ -1205,6 +1228,7 @@ final class WorkbenchHud extends Gui {
         suspendInput();
         FactoryChrome.clear();
         dashboardMode = true;
+        FactoryDashboardHint.opened();
     }
 
     /** Shared entry point for HUD buttons and configurable keyboard actions. */
@@ -1330,6 +1354,7 @@ final class WorkbenchHud extends Gui {
     }
 
     private static void showMachines() {
+        if (EngineeringModeController.closeDashboardScreen()) return;
         leaveCamera();
         dashboardMode = false;
         PortableSuperDashboard.close();
@@ -1368,6 +1393,7 @@ final class WorkbenchHud extends Gui {
     static boolean mouse(int x, int y, int width, int height, int button, boolean pressed, int wheel) {
         if (Minecraft.getMinecraft().gameSettings.hideGUI) return false;
         if (dashboardMode) {
+            if (!EngineeringModeController.dashboardInputAllowed()) return true;
             FactoryDashboard.mouse(x, y, button, pressed, wheel);
             return true;
         }
@@ -1461,7 +1487,10 @@ final class WorkbenchHud extends Gui {
             .getTextureManager()
             .bindTexture(ATLAS);
         GL11.glColor4f(1, 1, 1, 1);
-        PAINTER.drawTexturedModalRect(r.x + (r.w - 10) / 2, r.y + (r.h - 10) / 2, u, 40, 10, 10);
+        int iconX = action == Action.DASHBOARD ? r.x + 7 : r.x + (r.w - 10) / 2;
+        PAINTER.drawTexturedModalRect(iconX, r.y + (r.h - 10) / 2, u, 40, 10, 10);
+        if (action == Action.DASHBOARD)
+            text(Minecraft.getMinecraft().fontRenderer, tr("dashboard"), r.x + 23, r.y + 8, TEXT, r.w - 28);
         if (r.contains(mx, my)) {
             tooltip = new ArrayList<>();
             tooltip.add(actionTip(action, tip));

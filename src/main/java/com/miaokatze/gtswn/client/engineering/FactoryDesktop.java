@@ -11,17 +11,21 @@ import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.util.StatCollector;
 
 import org.lwjgl.input.Keyboard;
+import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopGesture;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetPresentation;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
@@ -59,6 +63,10 @@ final class FactoryDesktop {
     private static int mouseX, mouseY, screenWidth, screenHeight;
     private static final List<DeviceBinding> visibleDevices = new ArrayList<>();
     private static final DesktopDrag drag = new DesktopDrag();
+    private static final DesktopGesture gesture = new DesktopGesture();
+    private static String pressedWidget = "";
+    private static DesktopDrag.Edge pressedEdge;
+    private static double pressLocalX, pressLocalY;
     private static final DesktopEditorScroll editorScroll = new DesktopEditorScroll();
     private static boolean edit, libraryOpen, propertiesOpen, initialView, canvasFocus, panning, dirty = true;
     private static double lastX, lastY, panBeforeX, panBeforeY;
@@ -88,12 +96,12 @@ final class FactoryDesktop {
 
     static void tick(boolean visible) {
         ensure();
-        Minecraft mc = Minecraft.getMinecraft();
-        if (mc.currentScreen != null || !mc.inGameHasFocus) {
+        boolean showing = visible && EngineeringModeController.dashboardHostVisible();
+        if (!showing || !EngineeringModeController.dashboardInputAllowed()) {
             FactoryDashboard.blur();
             FactoryChrome.blur();
         }
-        if (visible) {
+        if (showing) {
             DesktopDeviceSources.setVisibleBindings(visibleDevices);
             DesktopDeviceSources.tick();
         } else {
@@ -104,7 +112,7 @@ final class FactoryDesktop {
     }
 
     static void flush() {
-        if (drag.active() || panning) return;
+        if (gesture.active() || drag.active() || panning) return;
         if (store != null && layout != null) {
             store.put(profile, layout);
             store.putView(profile, view);
@@ -113,7 +121,7 @@ final class FactoryDesktop {
     }
 
     private static void changed(boolean structure) {
-        if (drag.active() || panning) return;
+        if (gesture.active() || drag.active() || panning) return;
         store.put(profile, layout);
         store.putView(profile, view);
         dirty |= structure;
@@ -122,8 +130,8 @@ final class FactoryDesktop {
     static boolean mount(UUID source, Entry entry) {
         DeviceBinding binding = DesktopDeviceSources.binding(source, entry);
         if (binding == null) return false;
-        EngineeringModeController.open();
-        if (!EngineeringModeController.isActive()) return false;
+        if (!EngineeringModeController.dashboardHostVisible()) EngineeringModeController.open();
+        if (!EngineeringModeController.dashboardHostVisible()) return false;
         ensure();
         WidgetSpec widget = layout.addDevice(binding);
         if (widget == null) return false;
@@ -134,6 +142,17 @@ final class FactoryDesktop {
         libraryOpen = false;
         changed(true);
         WorkbenchHud.openDashboard();
+        return true;
+    }
+
+    static boolean mountResource(ResourceBinding binding) {
+        if (binding == null) return false;
+        ensure();
+        WidgetSpec widget = layout.addResource(binding);
+        if (widget == null) return false;
+        selected = widget.id;
+        DesktopCardGeometry.focusAtOne(view, widget, canvas);
+        changed(true);
         return true;
     }
 
@@ -181,7 +200,8 @@ final class FactoryDesktop {
 
     static boolean key(int code, char character, boolean pressed) {
         if (scene == null || code == Keyboard.KEY_ESCAPE) return false;
-        if ((drag.active() || panning) && (code == Keyboard.KEY_DELETE || code == Keyboard.KEY_TAB)) return true;
+        if ((gesture.active() || drag.active() || panning) && (code == Keyboard.KEY_DELETE || code == Keyboard.KEY_TAB))
+            return true;
         if (pressed && scene.keyTyped(
             character,
             code,
@@ -282,29 +302,25 @@ final class FactoryDesktop {
             e.consume();
             return;
         }
-        if (e.button == 0 && edit && target != null) {
+        if (e.button == 0 && target != null) {
             boolean was = selected.equals(target.id);
             selected = target.id;
-            propertiesOpen = true;
-            libraryOpen = false;
+            if (edit) {
+                propertiesOpen = true;
+                libraryOpen = false;
+            }
             dirty = true;
-            if (!DesktopCardGeometry.showResizeHandles(view.scale)) {
-                e.consume();
-                return;
-            }
             Rect r = bounds(target, view.transform(canvas.x, canvas.y));
-            DesktopDrag.Edge edge = was ? edge(r, e.x, e.y) : DesktopDrag.Edge.MOVE;
-            if (edge != DesktopDrag.Edge.MOVE || e.y < r.y + 28
-                || e.x < r.x + 10
-                || e.x >= r.x + r.w - 10
-                || e.y >= r.y + r.h - 10) {
-                drag.begin(layout, selected, edge, x, y);
-                e.capturePointer();
-            }
+            pressedWidget = target.id;
+            pressedEdge = edit && was && DesktopCardGeometry.showResizeHandles(view.scale) ? edge(r, e.x, e.y)
+                : DesktopDrag.Edge.MOVE;
+            pressLocalX = x;
+            pressLocalY = y;
+            gesture.begin(was, e.x, e.y, System.nanoTime());
+            e.capturePointer();
             e.consume();
             return;
         }
-        if (e.button == 0 && target != null) FactoryDashboard.widgetClick((int) e.x, (int) e.y);
         e.consume();
     }
 
@@ -314,13 +330,38 @@ final class FactoryDesktop {
             lastX = e.x;
             lastY = e.y;
         }
-        if (drag.active()) drag.update(view.toLocalX(e.x, canvas.x), view.toLocalY(e.y, canvas.y));
-        if (panning || drag.active()) e.consume();
+        advanceGesture(e.x, e.y);
+        if (panning || gesture.active() || drag.active()) e.consume();
+    }
+
+    private static void advanceGesture(double x, double y) {
+        if (gesture.update(x, y, System.nanoTime())) {
+            drag.begin(layout, pressedWidget, pressedEdge, pressLocalX, pressLocalY);
+        }
+        if (drag.active() && gesture.moveAllowed(x, y))
+            drag.update(view.toLocalX(x, canvas.x), view.toLocalY(y, canvas.y));
     }
 
     private static void up(UiEvent e) {
         move(e);
-        if (panning || drag.active()) {
+        if (gesture.active()) {
+            WidgetSpec target = hit(view.toLocalX(e.x, canvas.x), view.toLocalY(e.y, canvas.y));
+            DesktopGesture.Release result = gesture.release(
+                e.x,
+                e.y,
+                System.nanoTime(),
+                target != null && target.id.equals(pressedWidget) && canvas.contains((int) e.x, (int) e.y));
+            drag.finish();
+            pressedWidget = "";
+            changed(true);
+            if (result == DesktopGesture.Release.ACTIVATE && !edit) {
+                if (view.scale < DesktopCardGeometry.BORDER_LOD_SCALE && target != null) {
+                    DesktopCardGeometry.focusAtOne(view, target, canvas);
+                    changed(false);
+                } else FactoryDashboard.widgetClick((int) e.x, (int) e.y);
+            }
+            e.consume();
+        } else if (panning || drag.active()) {
             panning = false;
             drag.finish();
             changed(true);
@@ -329,7 +370,9 @@ final class FactoryDesktop {
     }
 
     private static void cancelGesture() {
-        if (!drag.active() && !panning) return;
+        if (!gesture.active() && !drag.active() && !panning) return;
+        gesture.cancel();
+        pressedWidget = "";
         drag.cancel();
         if (panning) {
             view.panX = panBeforeX;
@@ -351,6 +394,8 @@ final class FactoryDesktop {
         screenWidth = width;
         screenHeight = height;
         boolean resized = area == null || area.x != r.x || area.y != r.y || area.w != r.w || area.h != r.h;
+        if (resized) blur();
+        advanceGesture(mx, my);
         area = r;
         if (scene == null || (dirty || resized) && scene.captured() == null) build();
         zoomLabel.text(Math.round(view.scale * 100) + "%");
@@ -367,13 +412,13 @@ final class FactoryDesktop {
             if (visible && widget.device != null) visibleDevices.add(widget.device);
             scene.find("selection-" + widget.id)
                 .size(b.w, b.h)
-                .visible(edit && selected.equals(widget.id));
+                .visible(selected.equals(widget.id));
         }
         scene.layout(width, height);
         Minecraft mc = Minecraft.getMinecraft();
         scene.render(new MinecraftUiRenderer(f, width, height, mc.displayWidth, mc.displayHeight));
         UiNode hovered = scene.hitTest(mx, my);
-        if (!edit && !panning && hovered != null && hovered.id.startsWith("card-"))
+        if (!edit && !panning && !gesture.active() && hovered != null && hovered.id.startsWith("card-"))
             FactoryDashboard.drawHover(f, mx, my, width, height);
     }
 
@@ -412,7 +457,7 @@ final class FactoryDesktop {
         for (WidgetSpec widget : layout.widgets()) {
             UiNode card = UiNode.panel("card-" + widget.id)
                 .overflowClip(true)
-                .style(new UiStyle(new UiStyle.Paint(DashboardVisuals.CARD, DashboardVisuals.EDGE, TEXT)))
+                .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)))
                 .onDraw((node, renderer) -> drawWidget(layout.find(widget.id), node, renderer));
             card.add(
                 UiNode.panel("selection-" + widget.id)
@@ -431,7 +476,15 @@ final class FactoryDesktop {
             UiNode.label("desktop-title", tr("title"))
                 .bounds(10, 12, Math.max(1, area.w - 300), 12));
         int controlsX = Math.max(4, area.w - (edit ? 342 : 276));
-        shell.add(button("back-world", tr("back.world"), controlsX, 6, 54, 22, () -> WorkbenchHud.switchTask(1)));
+        shell.add(
+            button(
+                "back-world",
+                tr(EngineeringModeController.isActive() ? "back.world" : "back.view"),
+                controlsX,
+                6,
+                54,
+                22,
+                () -> WorkbenchHud.switchTask(1)));
         shell.add(button("edit", tr(edit ? "done" : "edit"), controlsX + 58, 6, 64, 22, () -> {
             FactoryDashboard.blur();
             edit = !edit;
@@ -598,6 +651,56 @@ final class FactoryDesktop {
             .maxLength(64)
             .style(BUTTON));
         body.add(
+            UiNode.label("border-label", tr("border.color"))
+                .size(width - 16, 13));
+        UiNode borderInput = UiNode
+            .textInput("border-color", String.format(Locale.ROOT, "%06X", widget.borderColor & 0xFFFFFF), value -> {})
+            .size(width - 16, 23)
+            .maxLength(7)
+            .style(BUTTON);
+        body.add(borderInput);
+        body.add(button("apply-border", tr("border.apply"), 0, 0, width - 16, 22, () -> {
+            String value = borderInput.text()
+                .trim();
+            if (value.startsWith("#")) value = value.substring(1);
+            if (!value.matches("[0-9a-fA-F]{6}")) {
+                notice = tr("border.invalid");
+                return;
+            }
+            WidgetSpec current = layout.find(widget.id);
+            if (current != null && layout.replace(current.bordered(Integer.parseInt(value, 16)))) {
+                notice = "";
+                changed(true);
+            }
+        }));
+        if (widget.kind == WidgetKind.RESOURCES) {
+            body.add(
+                button(
+                    "resource-binding",
+                    tr("resource.target") + ": "
+                        + (widget.resource == null ? tr("resource.all") : widget.resource.name),
+                    0,
+                    0,
+                    width - 16,
+                    23,
+                    () -> {
+                        WidgetSpec current = layout.find(widget.id);
+                        if (current == null) return;
+                        List<ResourceBinding> choices = WidgetResources.choices();
+                        int index = -1;
+                        for (int i = 0; i < choices.size(); i++) {
+                            ResourceBinding choice = choices.get(i);
+                            if (current.resource != null && current.resource.source.equals(choice.source)
+                                && current.resource.screen.equals(choice.screen)
+                                && current.resource.kind == choice.kind
+                                && current.resource.key.equals(choice.key)) index = i;
+                        }
+                        ResourceBinding next = choices.isEmpty() || index + 1 >= choices.size() ? null
+                            : choices.get(index + 1);
+                        if (layout.replace(current.boundResource(next))) changed(true);
+                    }));
+        }
+        body.add(
             button(
                 "presentation",
                 tr("presentation") + ": "
@@ -709,6 +812,7 @@ final class FactoryDesktop {
         for (double y = firstY; y < canvas.y + canvas.h; y += step)
             renderer.fill(new UiRect(canvas.x, y, canvas.w, 1), GRID);
         CanvasTransform transform = view.transform(canvas.x, canvas.y);
+        if (view.scale < DesktopCardGeometry.BORDER_LOD_SCALE) return;
         for (WidgetSpec widget : layout.widgets()) {
             Rect b = bounds(widget, transform);
             if (intersects(b, canvas)) renderer.fill(new UiRect(b.x + 2, b.y + 3, b.w, b.h), 0x50000000);
@@ -717,9 +821,29 @@ final class FactoryDesktop {
 
     private static void drawWidget(WidgetSpec widget, UiNode node, UiRenderer renderer) {
         if (widget == null) return;
-        UiRect b = node.bounds();
-        Rect r = new Rect((int) b.x, (int) b.y, (int) b.width, (int) b.height);
-        FactoryDashboard.paintWidget(font, widget, r, mouseX, mouseY);
+        if (view.scale < DesktopCardGeometry.BORDER_LOD_SCALE) {
+            UiRect b = node.bounds();
+            renderer.fill(new UiRect(b.x, b.y, b.width, 1), widget.borderColor);
+            renderer.fill(new UiRect(b.x, b.y + b.height - 1, b.width, 1), widget.borderColor);
+            renderer.fill(new UiRect(b.x, b.y, 1, b.height), widget.borderColor);
+            renderer.fill(new UiRect(b.x + b.width - 1, b.y, 1, b.height), widget.borderColor);
+            return;
+        }
+        CanvasTransform transform = DesktopCardGeometry.contentTransform(widget, view.transform(canvas.x, canvas.y));
+        GL11.glPushMatrix();
+        try {
+            GL11.glTranslated(transform.toScreenX(0), transform.toScreenY(0), 0);
+            GL11.glScaled(transform.scale(), transform.scale(), 1);
+            FactoryDashboard.paintWidget(
+                font,
+                widget,
+                DesktopCardGeometry.canonical(widget),
+                (int) Math.floor(transform.toLocalX(mouseX)),
+                (int) Math.floor(transform.toLocalY(mouseY)),
+                transform);
+        } finally {
+            GL11.glPopMatrix();
+        }
     }
 
     private static Rect bounds(WidgetSpec w, CanvasTransform t) {
@@ -735,7 +859,7 @@ final class FactoryDesktop {
         r.fill(new UiRect(b.x, b.y + b.h - 2, b.w, 2), ACCENT);
         r.fill(new UiRect(b.x, b.y, 2, b.h), ACCENT);
         r.fill(new UiRect(b.x + b.w - 2, b.y, 2, b.h), ACCENT);
-        if (!DesktopCardGeometry.showResizeHandles(view.scale)) return;
+        if (!edit || !DesktopCardGeometry.showResizeHandles(view.scale)) return;
         for (int x : new int[] { b.x + 3, b.x + b.w / 2, b.x + b.w - 3 })
             for (int y : new int[] { b.y + 3, b.y + b.h / 2, b.y + b.h - 3 })
                 if (x != b.x + b.w / 2 || y != b.y + b.h / 2) r.fill(new UiRect(x - 3, y - 3, 6, 6), ACCENT);

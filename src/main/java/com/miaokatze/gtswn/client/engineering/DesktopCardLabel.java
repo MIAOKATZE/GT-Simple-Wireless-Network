@@ -8,6 +8,7 @@ final class DesktopCardLabel {
 
     static String title(WidgetSpec widget, String fallback, String currentDisplayName, String currentName) {
         if (!widget.title.isEmpty()) return widget.title;
+        if (widget.resource != null && !widget.resource.name.isEmpty()) return widget.resource.name;
         if (widget.kind != WidgetKind.DEVICE || widget.device == null) return fallback;
         String name = currentDisplayName == null || currentDisplayName.isEmpty() ? currentName : currentDisplayName;
         if (name == null || name.isEmpty()) name = fallback;

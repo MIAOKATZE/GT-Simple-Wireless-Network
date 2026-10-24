@@ -9,6 +9,23 @@ import org.junit.Test;
 public class WorkbenchLayoutTest {
 
     @Test
+    public void onlyDashboardEntryIsWideAndLabelsStayInsideUncoveredWorld() {
+        WorkbenchLayout layout = new WorkbenchLayout(800, 450, true, true, true, false, 200, 108, true);
+        assertEquals(92, layout.modes[0].w);
+        for (int i = 1; i < layout.modes.length; i++) {
+            assertEquals(27, layout.modes[i].w);
+            assertTrue(layout.modes[i - 1].x + layout.modes[i - 1].w < layout.modes[i].x);
+        }
+        assertTrue(layout.worldViewport.x > layout.sidebar.x + layout.sidebar.w);
+        assertTrue(layout.worldViewport.x + layout.worldViewport.w < layout.rail.x);
+        assertTrue(layout.worldViewport.y > layout.modes[0].y + layout.modes[0].h);
+        assertTrue(layout.worldViewport.y + layout.worldViewport.h < layout.alerts.y);
+        WorkbenchLayout dashboard = new WorkbenchLayout(800, 450, true, true, true, true);
+        assertEquals(0, dashboard.worldViewport.w);
+        assertEquals(0, dashboard.worldViewport.h);
+    }
+
+    @Test
     public void deviceListKeepsASelectableRowBesideTheTerminalSidebarAndPower() {
         WorkbenchLayout layout = new WorkbenchLayout(640, 360, true, true, true, false, 126, 108, true, true, true);
         assertEquals(162, WorkbenchLayout.railHeight(false, 1));

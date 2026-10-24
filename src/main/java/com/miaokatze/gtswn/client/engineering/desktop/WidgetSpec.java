@@ -11,6 +11,8 @@ import java.util.Objects;
 /** Immutable geometry and display preferences. Coordinates and sizes are grid cells. */
 public final class WidgetSpec {
 
+    public static final int DEFAULT_BORDER_COLOR = 0xFF38576E;
+
     public static final List<String> AVAILABLE_FIELDS = Collections.unmodifiableList(
         Arrays.asList(
             "name",
@@ -115,6 +117,8 @@ public final class WidgetSpec {
     public final String metricField;
     /** Optional user-entered goal in the metric's own units; never a measured device capacity. */
     public final Double userTarget;
+    public final int borderColor;
+    public final ResourceBinding resource;
 
     public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows) {
         this(id, kind, column, row, columns, rows, "", null, Collections.<String>emptyList(), 1);
@@ -147,6 +151,29 @@ public final class WidgetSpec {
     public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows, String title,
         DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
         WidgetPresentation presentation, String metricField, Double userTarget) {
+        this(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            DEFAULT_BORDER_COLOR,
+            null);
+    }
+
+    public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows, String title,
+        DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
+        WidgetPresentation presentation, String metricField, Double userTarget, int borderColor,
+        ResourceBinding resource) {
         if (id == null || !id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("id");
         this.id = id;
         this.kind = Objects.requireNonNull(kind, "kind");
@@ -164,6 +191,8 @@ public final class WidgetSpec {
             throw new IllegalArgumentException("userTarget");
         this.metricField = metric;
         this.userTarget = userTarget;
+        this.borderColor = 0xFF000000 | borderColor;
+        this.resource = kind == WidgetKind.RESOURCES ? resource : null;
         this.column = column;
         this.row = row;
         this.columns = columns;
@@ -191,13 +220,15 @@ public final class WidgetSpec {
     }
 
     public int minColumns() {
-        int minimum = presentation == WidgetPresentation.DEFAULT ? kind.minColumns : presentation.minColumns;
+        int minimum = kind == WidgetKind.RESOURCES ? resource == null ? kind.minColumns : 4
+            : presentation == WidgetPresentation.DEFAULT ? kind.minColumns : presentation.minColumns;
         return Math.max(minimum, fields.isEmpty() ? 0 : Math.min(displayColumns, fields.size()) * 2);
     }
 
     public int minRows() {
         // Header/footer plus compact field rows, with room for wrapping long evidence or recipe descriptions.
-        int minimum = presentation == WidgetPresentation.DEFAULT ? kind.minRows : presentation.minRows;
+        int minimum = kind == WidgetKind.RESOURCES ? resource == null ? kind.minRows : 3
+            : presentation == WidgetPresentation.DEFAULT ? kind.minRows : presentation.minRows;
         int pixels = presentation == WidgetPresentation.DEFAULT || presentation == WidgetPresentation.STATUS_LIST ? 56
             : presentation.minRows * DesktopLayout.CELL - 18;
         for (int index = 0; index < fields.size(); index += displayColumns) {
@@ -248,7 +279,9 @@ public final class WidgetSpec {
             fieldsConfigured,
             presentation,
             metricField,
-            userTarget);
+            userTarget,
+            borderColor,
+            resource);
     }
 
     public WidgetSpec titled(String title) {
@@ -266,7 +299,9 @@ public final class WidgetSpec {
             fieldsConfigured,
             presentation,
             metricField,
-            userTarget);
+            userTarget,
+            borderColor,
+            resource);
     }
 
     public WidgetSpec configured(String title, List<String> fields, int displayColumns) {
@@ -284,7 +319,9 @@ public final class WidgetSpec {
             true,
             presentation,
             metricField,
-            userTarget);
+            userTarget,
+            borderColor,
+            resource);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -304,7 +341,51 @@ public final class WidgetSpec {
             fieldsConfigured,
             presentation,
             metricField,
-            userTarget);
+            userTarget,
+            borderColor,
+            resource);
+        return candidate
+            .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
+    }
+
+    public WidgetSpec bordered(int color) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            color,
+            resource);
+    }
+
+    public WidgetSpec boundResource(ResourceBinding binding) {
+        WidgetSpec candidate = new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            binding);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }

@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.client.engineering;
 
+import org.lwjgl.input.Keyboard;
+
 import com.miaokatze.miaokatzecore.client.camera.CameraControl;
 import com.miaokatze.miaokatzecore.client.camera.CameraSettings;
 import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
@@ -8,6 +10,25 @@ import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
 final class EngineeringInputPolicy {
 
     private EngineeringInputPolicy() {}
+
+    static boolean dashboardHostVisible(boolean live, boolean hidden, boolean directScreen, boolean factory,
+        boolean screenOpen) {
+        return live && !hidden && (directScreen || factory && !screenOpen);
+    }
+
+    static boolean dashboardInputAllowed(boolean visible, boolean displayFocused, boolean directScreen,
+        boolean worldFocused) {
+        return visible && displayFocused && (directScreen || worldFocused);
+    }
+
+    static boolean dashboardBinding(int code, int dashboard, int factory, int wheel) {
+        return code > Keyboard.KEY_NONE && code < Keyboard.KEYBOARD_SIZE
+            && code == dashboard
+            && code != factory
+            && code != wheel
+            && code != Keyboard.KEY_ESCAPE
+            && code != Keyboard.KEY_F1;
+    }
 
     static boolean overlayVisible(boolean dashboardOpen, boolean hidden) {
         return dashboardOpen && !hidden;
