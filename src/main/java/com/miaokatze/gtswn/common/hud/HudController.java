@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.hud;
 
 import java.math.BigInteger;
+import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
@@ -12,6 +13,7 @@ import net.minecraft.util.StatCollector;
 import com.miaokatze.gtswn.common.charging.MonitorBattery;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
+import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
 import com.miaokatze.gtswn.config.Config;
@@ -41,6 +43,9 @@ public final class HudController {
     private boolean engineeringMode;
     private boolean factoryReading;
     private long lastResponseMillis;
+    private WirelessReading wirelessReading;
+    private String wirelessValue;
+    private ItemStack wirelessSource;
 
     /** A transient read demand on this sampler; never writes the monitor's HUD mode or owner. */
     public void setFactoryReading(boolean reading) {
@@ -61,6 +66,9 @@ public final class HudController {
         if (!session.change(world, player, connection)) return false;
         state.resetForSession(preserveHistory);
         lastResponseMillis = 0;
+        wirelessReading = null;
+        wirelessValue = null;
+        wirelessSource = null;
         return true;
     }
 
@@ -209,6 +217,50 @@ public final class HudController {
     public boolean fresh() {
         return state.syncedEuStr != null && lastResponseMillis > 0
             && System.currentTimeMillis() - lastResponseMillis < Math.max(3500L, Config.hudUpdateInterval * 150L);
+    }
+
+    /** Numeric view of the same accepted receipts and bounded history used by the portable HUD. */
+    public WirelessReading wirelessReading() {
+        if (!state.hudEnabled || !fresh() || state.parsedOwnerUuid == null) return null;
+        List<NetworkInfoSample> history = state.dataSet.snapshot();
+        if (wirelessReading != null && wirelessReading.history == history
+            && wirelessSource == state.monitorStack
+            && java.util.Objects.equals(wirelessValue, state.syncedEuStr)
+            && wirelessReading.owner.equals(state.parsedOwnerUuid)
+            && wirelessReading.receivedAtMillis == lastResponseMillis) return wirelessReading;
+        try {
+            wirelessValue = state.syncedEuStr;
+            wirelessSource = state.monitorStack;
+            wirelessReading = new WirelessReading(
+                state.parsedOwnerUuid,
+                new BigInteger(state.syncedEuStr),
+                history,
+                lastResponseMillis,
+                state.monitorStack == null ? "" : state.monitorStack.getDisplayName());
+            return wirelessReading;
+        } catch (NumberFormatException invalid) {
+            wirelessReading = null;
+            wirelessValue = null;
+            return null;
+        }
+    }
+
+    public static final class WirelessReading {
+
+        public final UUID owner;
+        public final BigInteger stored;
+        public final List<NetworkInfoSample> history;
+        public final long receivedAtMillis;
+        public final String sourceLabel;
+
+        private WirelessReading(UUID owner, BigInteger stored, List<NetworkInfoSample> history, long receivedAtMillis,
+            String sourceLabel) {
+            this.owner = owner;
+            this.stored = stored;
+            this.history = history;
+            this.receivedAtMillis = receivedAtMillis;
+            this.sourceLabel = sourceLabel;
+        }
     }
 
     public boolean hasBattery() {

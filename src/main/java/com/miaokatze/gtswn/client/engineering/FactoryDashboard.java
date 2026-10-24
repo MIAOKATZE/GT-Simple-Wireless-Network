@@ -60,7 +60,7 @@ public final class FactoryDashboard extends Gui {
     private static long[] ticks = new long[0];
     private static String[] exact = new String[0];
     private static String plotUnit = "EU", plotWindow = "", plotSource = "", hover;
-    private static boolean relative;
+    private static WirelessGridReading terminalGrid;
     private static final FactoryTextSearch search = new FactoryTextSearch();
     private static Rect searchRect;
     private static List<Row> resources = Collections.emptyList();
@@ -94,6 +94,7 @@ public final class FactoryDashboard extends Gui {
     }
 
     static void clear() {
+        PortableSuperDashboard.factoryScreens(false);
         FactoryDesktop.suspend();
         search.focused = false;
         devices = attention = Collections.emptyList();
@@ -103,6 +104,7 @@ public final class FactoryDashboard extends Gui {
         portableBinding = "";
         selectedScreen = "";
         plot = null;
+        terminalGrid = null;
         ticks = new long[0];
         exact = new String[0];
         hits.clear();
@@ -110,6 +112,7 @@ public final class FactoryDashboard extends Gui {
     }
 
     static void tick(EngineeringTerminalHudSnapshot snapshot) {
+        PortableSuperDashboard.factoryScreens(WorkbenchHud.dashboardVisible());
         FactoryDesktop.tick(WorkbenchHud.dashboardVisible());
         EngineeringTerminalHudSnapshot.Source source = snapshot.device;
         if (deviceRevision != source.revision || deviceFresh != source.fresh
@@ -131,7 +134,7 @@ public final class FactoryDashboard extends Gui {
             }
             attention = Collections.unmodifiableList(warnings);
         }
-        panels = PortableSuperDashboard.panels();
+        panels = PortableSuperDashboard.mountedPanels();
         com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source actual = com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources
             .resolve(Minecraft.getMinecraft().thePlayer, 0);
         String nextBinding = actual.origin + ":" + actual.binding;
@@ -144,9 +147,15 @@ public final class FactoryDashboard extends Gui {
             resourceKey = "";
             resourcePages.clear();
         }
-        WidgetResources.update(portableSource, panels, PortableSuperDashboard.screenIds());
-        List<String> identities = PortableSuperDashboard.screenIds();
+        WidgetResources.update(portableSource, panels, PortableSuperDashboard.mountedScreenIds());
+        List<String> identities = PortableSuperDashboard.mountedScreenIds();
         screenIndex = identities.indexOf(selectedScreen);
+        WirelessGridReading nextGrid = WirelessGridReading.readTerminal();
+        boolean changed = terminalGrid == null || terminalGrid.receivedAtMillis != nextGrid.receivedAtMillis
+            || terminalGrid.fresh != nextGrid.fresh
+            || terminalGrid.history != nextGrid.history;
+        terminalGrid = nextGrid;
+        if (changed) rebuildPlot();
     }
 
     private static void selectResourcePanel(Panel panel) {
@@ -183,42 +192,28 @@ public final class FactoryDashboard extends Gui {
         plot = null;
         ticks = new long[0];
         exact = new String[0];
-        Panel p = chartPanel;
-        if (!PortableSuperDashboard.available(p)) return;
+        WirelessGridReading reading = grid();
+        if (!reading.fresh || reading.history.isEmpty()) return;
         plotUnit = rate ? "EU/t" : "EU";
-        plotWindow = p.window;
-        plotSource = p.binding.label();
-        relative = p.render == null;
-        if (relative) {
-            double[] values = rate ? p.euRateChart : p.euChart;
-            int first = Math.max(0, values.length - Math.max(1, (values.length + (1 << window) - 1) / (1 << window)));
-            values = java.util.Arrays.copyOfRange(values, first, values.length);
-            BigDecimal[] converted = new BigDecimal[values.length];
-            for (int i = 0; i < values.length; i++) if (Double.isFinite(values[i])) converted[i] = decimal(values[i]);
-            plot = new FactoryTrend(converted, rate);
-            return;
-        }
-        int size = p.render.eu.size();
+        plotSource = reading.source;
+        int size = reading.history.size();
         int start = Math.max(0, size - Math.max(1, (size + (1 << window) - 1) / (1 << window)));
         BigDecimal[] values = new BigDecimal[size - start];
         ticks = new long[values.length];
         exact = new String[values.length];
         for (int i = start; i < size; i++) {
             int at = i - start;
-            NetworkInfoSample sample = p.render.eu.get(i);
+            NetworkInfoSample sample = reading.history.get(i);
             ticks[at] = sample.tick;
-            exact[at] = rate ? Double.toString(sample.eut) : sample.eu.toString();
+            exact[at] = rate ? Double.isFinite(sample.eut) ? Double.toString(sample.eut) : null : sample.eu.toString();
             values[at] = rate ? decimal(sample.eut) : new BigDecimal(sample.eu);
-            // The first zero can be the sampler's cold-start sentinel; a nonzero stored rate is real evidence.
-            if (rate && i == 0 && sample.eut == 0 || values[at] == null) {
+            if (values[at] == null) {
                 values[at] = null;
                 exact[at] = null;
             }
         }
         plot = new FactoryTrend(values, rate);
-        plotWindow = ticks.length >= 2
-            ? com.miaokatze.gtswn.common.panel.WindowLabel.formatSpan(Math.max(0, ticks[ticks.length - 1] - ticks[0]))
-            : "\u2014";
+        plotWindow = ticks.length >= 2 ? FactoryChartGeometry.span(ticks[ticks.length - 1], ticks[0]) : "0 s";
     }
 
     static void render(FontRenderer f, Rect r, int mx, int my, int canvasWidth, int canvasHeight) {
@@ -244,18 +239,14 @@ public final class FactoryDashboard extends Gui {
                 .capture(Minecraft.getMinecraft().thePlayer);
             card(f, r, FactoryDesktop.label(widget));
             if (r.contains(mx, my)) hover = FactoryDesktop.label(widget);
-            if (widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
-                || widget.kind == WidgetKind.RESOURCES) {
+            if (widget.kind == WidgetKind.RESOURCES) {
                 WidgetResources.ScreenReading screen = WidgetResources.readScreen(widget.screen);
                 if (screen.panel == null) {
                     text(f, tr("screen." + screen.reason), r.x + 10, r.y + 36, AMBER, r.w - 20);
                     bindingAction(f, r, widget, 60);
                     return;
                 }
-                if (chartPanel != screen.panel) {
-                    chartPanel = screen.panel;
-                    rebuildPlot();
-                }
+                chartPanel = screen.panel;
                 selectResourcePanel(screen.panel);
             }
             if (!WidgetSpec.availableMetrics(widget.kind)
@@ -386,14 +377,14 @@ public final class FactoryDashboard extends Gui {
         if ("source".equals(field)) return widget.device != null ? widget.device.source.toString()
             .substring(0, 8)
             : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
-                : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
-                    || widget.kind == WidgetKind.RESOURCES
+                : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY ? grid().source
+                    : widget.kind == WidgetKind.RESOURCES
                         ? chartPanel == null ? tr("no.screens") : chartPanel.binding.label()
                         : powerScope(power);
         if ("updated".equals(field)) return entry != null ? tr("received")
             : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
-                : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
-                    || widget.kind == WidgetKind.RESOURCES
+                : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY ? gridState(grid())
+                    : widget.kind == WidgetKind.RESOURCES
                         ? PortableSuperDashboard.available(chartPanel) ? tr("received") : tr("stale")
                         : powerStatus(power);
         if ("name".equals(field))
@@ -517,7 +508,7 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static WirelessGridReading grid() {
-        return WirelessGridReading.read(chartPanel, PortableSuperDashboard.available(chartPanel));
+        return terminalGrid == null ? WirelessGridReading.readTerminal() : terminalGrid;
     }
 
     private static String gridState(WirelessGridReading reading) {
@@ -574,8 +565,20 @@ public final class FactoryDashboard extends Gui {
         }
         BigDecimal amount = metric(widget, power, snapshot);
         String value = numeric(amount), suffix = unit(widget);
-        boolean stateRing = widget.kind == WidgetKind.MACHINES && widget.presentation == WidgetPresentation.DEFAULT;
-        boolean ring = stateRing || widget.presentation == WidgetPresentation.GAUGE;
+        boolean stateRing = widget.kind == WidgetKind.MACHINES && widget.userTarget == null
+            && (widget.presentation == WidgetPresentation.DEFAULT || widget.presentation == WidgetPresentation.GAUGE);
+        if (widget.kind == WidgetKind.WIRELESS && widget.presentation == WidgetPresentation.GAUGE
+            && widget.userTarget == null
+            && r.h >= 170
+            && r.w >= 150) {
+            drawGridDial(f, r, widget);
+            return;
+        }
+        if (stateRing && r.h >= 190 && r.w >= 150) {
+            drawMachineDial(f, r, widget, snapshot, amount);
+            openWidget(widget, r);
+            return;
+        }
         Double fraction = widget.userTarget == null || amount == null ? null
             : amount.divide(BigDecimal.valueOf(widget.userTarget), java.math.MathContext.DECIMAL64)
                 .max(BigDecimal.ZERO)
@@ -583,49 +586,23 @@ public final class FactoryDashboard extends Gui {
                 .doubleValue();
         if (stateRing)
             fraction = snapshot.device.fresh && !devices.isEmpty() ? running / (double) devices.size() : null;
-        boolean flow = widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT;
-        int bodyTop = r.y + (flow ? 44 : 30), bodyBottom = r.y + r.h - (flow ? 41 : 24);
-        if (flow) text(
-            f,
-            tr(widget.kind == WidgetKind.INPUT ? "flow.into" : "flow.outof"),
-            r.x + 10,
-            r.y + 29,
-            MUTED,
-            r.w - 20);
         int color = widget.kind == WidgetKind.OUTPUT
             || widget.kind == WidgetKind.WIRELESS && "netRate".equals(widget.metricField)
                 && amount != null
                 && amount.signum() < 0 ? AMBER : CYAN;
-        if (ring && bodyBottom - bodyTop >= 38) {
-            int diameter = Math.min(104, Math.min(r.w - 24, bodyBottom - bodyTop));
-            double cx = r.x + r.w / 2.0, cy = bodyTop + diameter / 2.0;
-            DashboardVisuals.ring(cx, cy, diameter / 2.0 - 4, fraction, color);
-            float scale = diameter >= 100 ? 1.65f : diameter >= 65 ? 1.3f : 1;
-            int textWidth = diameter - 18;
-            DashboardVisuals.label(
-                f,
-                value,
-                (int) cx - Math.min(textWidth, (int) (f.getStringWidth(value) * scale)) / 2,
-                (int) cy - 6,
-                textWidth,
-                color,
-                scale);
-            if (diameter >= 65) DashboardVisuals.label(
-                f,
-                stateRing ? FactoryDesktop.tr("metric.count") : suffix,
-                (int) cx - textWidth / 2,
-                (int) cy + 10,
-                textWidth,
-                MUTED,
-                .85f);
+        boolean ring = widget.presentation == WidgetPresentation.GAUGE && r.h >= 170;
+        int valueY = r.y + 32;
+        if (ring) {
+            int diameter = Math.min(r.w - 32, r.h - 70);
+            double cx = r.x + r.w / 2.0, cy = r.y + 32 + diameter / 2.0;
+            FactoryDashboardArt.dial(cx, cy, diameter / 2.0 - 5, fraction, color);
+            centered(f, value, (int) cx, (int) cy - 10, diameter - 38, color, diameter >= 130 ? 2.1f : 1.4f);
+            centered(f, suffix, (int) cx, (int) cy + 13, diameter - 38, MUTED, .85f);
         } else {
-            float scale = r.w >= 220 ? 2.0f : 1.5f;
-            DashboardVisuals.label(f, value, r.x + 10, bodyTop + 3, r.w - 20, color, scale);
-            text(f, suffix, r.x + 10, bodyTop + 23, MUTED, r.w - 20);
-            if (bodyBottom - bodyTop > 49) {
-                if (widget.userTarget != null)
-                    DashboardVisuals.bar(new Rect(r.x + 10, bodyBottom - 9, r.w - 20, 5), fraction, color);
-            }
+            DashboardVisuals.label(f, value, r.x + 11, valueY, r.w - 22, color, r.w >= 240 ? 2.1f : 1.6f);
+            text(f, suffix, r.x + 12, valueY + 25, MUTED, r.w - 24);
+            if (widget.presentation == WidgetPresentation.BAR && r.h >= 105)
+                DashboardVisuals.bar(new Rect(r.x + 12, valueY + 45, r.w - 24, 5), fraction, color);
         }
         String foot = stateRing
             ? countLabel("running", running) + " / " + (snapshot.device.fresh ? devices.size() : "?")
@@ -639,64 +616,125 @@ public final class FactoryDashboard extends Gui {
                     : widget.kind == WidgetKind.WIRELESS ? gridState(grid())
                         : widget.kind == WidgetKind.DEVICE ? FactoryDesktop.tr("metric." + widget.metricField)
                             : powerStatus(power);
-        if (stateRing && !snapshot.device.fresh) foot = sourceQuality(snapshot.device);
-        if (flow) {
-            text(
+        if (widget.kind == WidgetKind.WIRELESS && !ring) {
+            WirelessGridReading reading = grid();
+            boolean net = "netRate".equals(widget.metricField);
+            if (r.h >= 115 && widget.presentation != WidgetPresentation.BAR) text(
                 f,
-                widget.device.source.toString()
-                    .substring(0, 8),
-                r.x + 10,
-                r.y + r.h - 29,
-                MUTED,
-                r.w - 20);
-            if (widget.presentation != WidgetPresentation.BAR && widget.presentation != WidgetPresentation.GAUGE)
-                foot = tr("received");
+                tr(net ? "grid.stored" : "grid.rate") + "  "
+                    + numeric(net ? reading.stored : reading.netRate)
+                    + (net ? " EU" : " EU/t"),
+                r.x + 12,
+                r.y + 77,
+                net || reading.netRate == null || reading.netRate.signum() >= 0 ? TEXT : AMBER,
+                r.w - 24);
+            if (r.h >= 130) text(f, reading.source, r.x + 12, r.y + r.h - 29, MUTED, r.w - 24);
         }
-        text(f, foot, r.x + 9, r.y + r.h - 15, MUTED, r.w - 18);
-        if (widget.kind == WidgetKind.WIRELESS && r.h >= 105 && chartPanel != null)
-            text(f, chartPanel.binding.label(), r.x + 10, r.y + r.h - 29, MUTED, r.w - 20);
-        if (hover != null && r.contains(localMouseX, localMouseY)) hover = FactoryDesktop.label(widget) + " · "
+        if (widget.kind == WidgetKind.MACHINES && r.h >= 115 && !ring) text(
+            f,
+            snapshot.device.fresh ? deviceCountFoot() : sourceQuality(snapshot.device),
+            r.x + 12,
+            r.y + 77,
+            MUTED,
+            r.w - 24);
+        if (requiresDevice(widget) && r.h >= 120) text(
+            f,
+            widget.device.source.toString()
+                .substring(0, 8),
+            r.x + 12,
+            r.y + r.h - 29,
+            MUTED,
+            r.w - 24);
+        text(f, foot, r.x + 11, r.y + r.h - 15, MUTED, r.w - 22);
+        if (r.contains(localMouseX, localMouseY)) hover = FactoryDesktop.label(widget) + " \u00B7 "
             + value
             + " "
             + suffix
-            + " · "
+            + " \u00B7 "
             + foot
-            + (flow ? "\n" + widget.device.source
-                : widget.kind == WidgetKind.WIRELESS && chartPanel != null
-                    ? "\n" + chartPanel.binding.label() + "\n" + tr("grid.net.hint")
-                    : "");
+            + (widget.kind == WidgetKind.WIRELESS ? "\n" + grid().source + "\n" + tr("grid.net.hint") : "");
         openWidget(widget, r);
     }
 
-    private static void drawGrid(FontRenderer f, Rect r) {
-        WirelessGridReading reading = grid();
-        DashboardVisuals.label(f, numeric(reading.stored), r.x + 10, r.y + 31, r.w - 20, CYAN, 1.7f);
-        text(f, tr("grid.stored") + " / EU", r.x + 10, r.y + 53, MUTED, r.w - 20);
-        text(
+    private static void centered(FontRenderer font, String value, int x, int y, int width, int color, float scale) {
+        float fit = Math.min(scale, width / (float) Math.max(1, font.getStringWidth(value)));
+        DashboardVisuals.label(font, value, x - (int) (font.getStringWidth(value) * fit) / 2, y, width, color, fit);
+    }
+
+    private static void drawMachineDial(FontRenderer f, Rect r, WidgetSpec widget,
+        EngineeringTerminalHudSnapshot snapshot, BigDecimal amount) {
+        boolean fresh = snapshot.device.fresh;
+        int diameter = Math.min(240, Math.min(r.w - 38, r.h - 100));
+        int cx = r.x + r.w / 2, cy = r.y + 37 + diameter / 2;
+        Double fraction = fresh && !devices.isEmpty() ? running / (double) devices.size() : null;
+        FactoryDashboardArt.dial(cx, cy, diameter / 2.0 - 5, fraction, CYAN);
+        centered(f, fresh ? numeric(amount) : "\u2014", cx, cy - 18, diameter - 48, CYAN, diameter >= 150 ? 3f : 1.6f);
+        centered(f, FactoryDesktop.tr("metric." + widget.metricField), cx, cy + 12, diameter - 48, TEXT, .9f);
+        centered(
             f,
-            tr("grid.rate") + "  " + numeric(reading.netRate) + " EU/t",
-            r.x + 10,
-            r.y + 72,
-            reading.netRate != null && reading.netRate.signum() < 0 ? AMBER : CYAN,
-            r.w - 20);
-        text(f, gridState(reading), r.x + 10, r.y + 90, reading.netRate == null ? AMBER : TEXT, r.w - 20);
-        if (r.h >= 114) text(
-            f,
-            chartPanel == null ? tr("grid.missing") : chartPanel.binding.label(),
-            r.x + 10,
-            r.y + 104,
+            (fresh ? running : "?") + " / " + (fresh ? devices.size() : "?") + " " + tr("running"),
+            cx,
+            cy + 29,
+            diameter - 40,
             MUTED,
-            r.w - 20);
+            .8f);
+        String[] states = { "idle", "stopped", "unknown" };
+        int[] counts = { idle, stopped, unknown };
+        int statWidth = (r.w - 24) / 3, statY = r.y + r.h - 43;
+        for (int i = 0; i < states.length; i++) {
+            int x = r.x + 12 + i * statWidth;
+            drawRect(x, statY - 7, x + statWidth - 6, statY - 6, DashboardVisuals.TRACK);
+            DashboardVisuals.label(f, FactoryDesktop.tr("metric." + states[i]), x, statY, statWidth - 6, MUTED, .8f);
+            text(f, fresh ? Integer.toString(counts[i]) : "\u2014", x, statY + 12, i > 0 ? AMBER : TEXT, statWidth - 6);
+        }
+        text(f, sourceQuality(snapshot.device), r.x + 12, r.y + r.h - 13, MUTED, r.w - 24);
+        if (r.contains(localMouseX, localMouseY))
+            hover = FactoryDesktop.label(widget) + "\n" + deviceCountFoot() + "\n" + sourceQuality(snapshot.device);
+    }
+
+    private static void drawGridDial(FontRenderer f, Rect r, WidgetSpec widget) {
+        WirelessGridReading reading = grid();
+        int diameter = Math.min(250, Math.min(r.w - 42, r.h - 90));
+        int cx = r.x + r.w / 2, cy = r.y + 38 + diameter / 2;
+        int color = reading.netRate != null && reading.netRate.signum() < 0 ? AMBER : CYAN;
+        // This is an open-ended stock, so its ornamental ring has no fill percentage or capacity scale.
+        FactoryDashboardArt.stockDial(cx, cy, diameter / 2.0 - 5, reading.stored != null, color);
+        boolean net = "netRate".equals(widget.metricField);
+        centered(
+            f,
+            numeric(net ? reading.netRate : reading.stored),
+            cx,
+            cy - 17,
+            diameter - 49,
+            color,
+            diameter >= 160 ? 2.7f : 1.7f);
+        centered(f, net ? "EU/t" : "EU", cx, cy + 13, diameter - 52, MUTED, 1);
+        centered(f, gridState(reading), cx, cy + 31, diameter - 50, TEXT, .85f);
+        int secondaryY = r.y + r.h - 43;
+        drawRect(r.x + 13, secondaryY - 8, r.x + r.w - 13, secondaryY - 7, DashboardVisuals.EDGE);
+        text(f, tr(net ? "grid.stored" : "grid.rate"), r.x + 14, secondaryY, MUTED, r.w / 2 - 18);
+        String secondary = numeric(net ? reading.stored : reading.netRate) + (net ? " EU" : " EU/t");
+        text(f, secondary, r.x + r.w / 2, secondaryY, color, r.w / 2 - 14);
+        text(f, reading.source, r.x + 14, r.y + r.h - 16, MUTED, r.w - 28);
         if (r.contains(localMouseX, localMouseY)) hover = tr("grid.stored") + ": "
-            + (reading.stored == null ? "—" : reading.stored.toPlainString())
+            + (reading.stored == null ? "\u2014" : reading.stored.toPlainString())
             + " EU\n"
             + tr("grid.rate")
             + ": "
-            + (reading.netRate == null ? "—" : reading.netRate.toPlainString())
+            + (reading.netRate == null ? "\u2014" : reading.netRate.toPlainString())
             + " EU/t\n"
-            + (chartPanel == null ? tr("grid.missing") : chartPanel.binding.label())
+            + reading.source
             + "\n"
-            + tr("grid.net.hint");
+            + tr("grid.open.ended");
+    }
+
+    private static void drawGrid(FontRenderer f, Rect r) {
+        drawInstrument(
+            f,
+            r,
+            painting,
+            EngineeringDashboardCache.snapshot(),
+            EngineeringTerminalHudSnapshot.capture(Minecraft.getMinecraft().thePlayer));
     }
 
     private static void drawTrend(FontRenderer f, Rect r, int mx, int my) {
@@ -712,82 +750,94 @@ public final class FactoryDashboard extends Gui {
                 window = (window + 1) % 3;
                 rebuildPlot();
             });
-        if (plot == null || plot.knownPoints == 0 || !PortableSuperDashboard.available(chartPanel)) {
+        if (plot == null || plot.knownPoints == 0 || !grid().fresh) {
             text(f, tr("no.history"), r.x + 12, r.y + 42, AMBER, r.w - 24);
             text(f, tr("no.history.hint"), r.x + 12, r.y + 60, MUTED, r.w - 24);
             return;
         }
         int lineColor = rate ? AMBER : CYAN;
-        String quantity = relative ? tr("relative") : tr(rate ? "net.change" : "stock");
-        text(f, quantity + (relative ? "" : " / " + plotUnit), r.x + 12, r.y + 32, MUTED, r.w - 24);
-        String current = relative || exact.length == 0 ? null : exact[exact.length - 1];
-        if (r.contains(mx, my)) hover = quantity + ": "
-            + (current == null ? "—" : current)
-            + (relative ? "" : " " + plotUnit)
-            + "\n"
-            + plotSource;
+        String quantity = tr(rate ? "net.change" : "stock");
+        FactoryChartGeometry geometry = new FactoryChartGeometry(r);
+        Rect graph = geometry.plot;
+        String current = exact.length == 0 ? null : exact[exact.length - 1];
         DashboardVisuals.label(
             f,
             current == null ? "\u2014" : numeric(new BigDecimal(current)),
             r.x + 12,
-            r.y + 47,
-            r.w - 24,
+            geometry.valueY,
+            Math.max(40, r.w - 114),
             lineColor,
-            1.65f);
+            r.w >= 300 ? 1.8f : 1.4f);
+        DashboardVisuals.label(f, quantity + " / " + plotUnit, r.x + r.w - 104, geometry.valueY + 4, 92, MUTED, .85f);
         text(
             f,
-            relative ? tr("relative.hint")
-                : plotWindow + " / " + ticks.length + " " + tr("samples") + " / " + tr("game.time"),
+            plotWindow + " \u00B7 " + ticks.length + " " + tr("samples") + " \u00B7 " + tr("game.time"),
             r.x + 12,
-            r.y + 70,
+            geometry.metadataY,
             MUTED,
             r.w - 24);
-        // One quantity and one labelled axis. EU stock and its EU/t slope never share an unlabeled scale.
-        int x = r.x + 74, y = r.y + 84, w = Math.max(8, r.w - 86), h = Math.max(8, r.h - 116);
-        text(f, relative ? tr("relative") : plotUnit, r.x + 12, r.y + 76, MUTED, 60);
-        for (int i = 0; i <= 2; i++) {
-            int yy = y + h * i / 2;
-            drawRect(x, yy, x + w, yy + 1, DashboardVisuals.TRACK);
-            if (!relative) {
-                BigDecimal minimum = new BigDecimal(plot.minimum), maximum = new BigDecimal(plot.maximum);
-                String label = maximum.subtract(
-                    maximum.subtract(minimum)
-                        .multiply(BigDecimal.valueOf(i / 2.0)))
-                    .stripTrailingZeros()
-                    .toPlainString();
-                text(f, axis(label), r.x + 12, yy - 4, MUTED, 58);
-            }
+        int divisions = graph.h >= 36 ? 2 : 1;
+        BigDecimal minimum = new BigDecimal(plot.minimum), maximum = new BigDecimal(plot.maximum);
+        for (int i = 0; i <= divisions; i++) {
+            int yy = graph.y + graph.h * i / divisions;
+            drawRect(graph.x, yy, graph.x + graph.w, yy + 1, DashboardVisuals.TRACK);
+            BigDecimal value = maximum.subtract(
+                maximum.subtract(minimum)
+                    .multiply(BigDecimal.valueOf(i / (double) divisions)));
+            DashboardVisuals.label(f, numeric(value), geometry.axisX, yy - 4, geometry.axisWidth - 7, MUTED, .8f);
         }
-        drawRect(x - 1, y, x, y + h + 1, EDGE);
-        if (!relative && plot.zero > 0 && plot.zero < 1) {
-            int zeroY = y + (int) Math.round(h * (1 - plot.zero));
-            drawRect(x, zeroY, x + w, zeroY + 1, MUTED);
+        for (int i = 1; i <= 3; i++) {
+            int xx = graph.x + graph.w * i / 4;
+            drawRect(xx, graph.y, xx + 1, graph.y + graph.h, 0xFF15384F);
         }
-        DashboardVisuals.trend(new Rect(x, y, w, h), plot.normalized, relative ? null : ticks, lineColor);
-        String left = relative ? "0%" : ticks.length < 2 ? "0t" : "-" + (ticks[ticks.length - 1] - ticks[0]) + "t";
-        text(f, left, x, y + h + 7, MUTED, w / 2);
-        String right = relative ? "100%" : "0t";
-        text(f, right, x + w - f.getStringWidth(right), y + h + 7, MUTED, w / 2);
-        text(
-            f,
-            plotSource + " / " + (rate ? tr("net.only") : tr("received")),
-            r.x + 12,
-            r.y + r.h - 14,
-            MUTED,
-            r.w - 24);
-        if (new Rect(x, y, w, h).contains(mx, my) && !relative && exact.length > 0) {
-            double selectedTick = ticks[0]
-                + Math.max(0, Math.min(1, (mx - x) / (double) w)) * (ticks[ticks.length - 1] - ticks[0]);
-            int at = 0;
-            for (int i = 1; i < ticks.length; i++)
-                if (Math.abs(ticks[i] - selectedTick) < Math.abs(ticks[at] - selectedTick)) at = i;
+        drawRect(graph.x - 1, graph.y, graph.x, graph.y + graph.h + 1, EDGE);
+        if (plot.zero > 0 && plot.zero < 1) {
+            int zeroY = graph.y + (int) Math.round(graph.h * (1 - plot.zero));
+            drawRect(graph.x, zeroY, graph.x + graph.w, zeroY + 1, MUTED);
+        }
+        boolean bars = painting.presentation == WidgetPresentation.BARS
+            || painting.presentation == WidgetPresentation.COMBO;
+        if (bars) FactoryDashboardArt.bars(
+            graph,
+            plot.normalized,
+            ticks,
+            plot.zero,
+            lineColor,
+            painting.presentation == WidgetPresentation.COMBO);
+        if (painting.presentation != WidgetPresentation.BARS)
+            DashboardVisuals.trend(graph, plot.normalized, ticks, lineColor);
+        // A point remains visible for a lone or zero-height bar, and missing evidence stays a gap.
+        if (painting.presentation == WidgetPresentation.BARS && plot.knownPoints == 1)
+            DashboardVisuals.trend(graph, plot.normalized, ticks, lineColor);
+        String left = FactoryChartGeometry.age(ticks[ticks.length - 1], ticks[0]);
+        text(f, left, graph.x, geometry.timeY, MUTED, graph.w / 2 - 2);
+        String right = "0 s";
+        text(f, right, graph.x + graph.w - f.getStringWidth(right), geometry.timeY, MUTED, graph.w / 2);
+        if (graph.w >= 210) {
+            long middle = FactoryChartGeometry.middleTick(ticks[0], ticks[ticks.length - 1]);
+            centered(
+                f,
+                FactoryChartGeometry.age(ticks[ticks.length - 1], middle),
+                graph.x + graph.w / 2,
+                geometry.timeY,
+                graph.w / 3,
+                MUTED,
+                .85f);
+        }
+        text(f, plotSource, r.x + 12, geometry.footerY, MUTED, r.w - 24);
+        if (r.contains(mx, my))
+            hover = quantity + ": " + (current == null ? "\u2014" : current) + " " + plotUnit + "\n" + plotSource;
+        if (graph.contains(mx, my) && exact.length > 0) {
+            int at = FactoryChartGeometry.nearest(ticks, Math.max(0, Math.min(1, (mx - graph.x) / (double) graph.w)));
+            int xx = graph.x + (int) Math.round(FactoryTrend.timePosition(at, ticks.length, ticks) * graph.w);
+            drawRect(xx, graph.y, xx + 1, graph.y + graph.h, 0x887DA6B8);
             hover = quantity + ": "
                 + (exact[at] == null ? "\u2014" : exact[at])
                 + " "
                 + plotUnit
                 + "\n"
-                + ticks[at]
-                + "t / "
+                + FactoryChartGeometry.age(ticks[ticks.length - 1], ticks[at])
+                + " \u00B7 "
                 + tr("game.time")
                 + "\n"
                 + plotSource;
@@ -1096,6 +1146,7 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static void card(FontRenderer f, Rect r, String title) {
+        FactoryDashboardArt.card(r);
         int header = Math.min(22, Math.max(9, r.h / 4));
         drawRect(r.x + 1, r.y + 1, r.x + r.w - 1, r.y + header, DashboardVisuals.HEADER);
         int border = painting == null ? EDGE : painting.borderColor;

@@ -11,6 +11,33 @@ import org.junit.Test;
 public class DesktopPresentationTest {
 
     @Test
+    public void historicalFormsPersistWithoutChangingSourceIdentityOrAddingNumericMetrics() {
+        ScreenBinding source = new ScreenBinding(java.util.UUID.randomUUID(), java.util.UUID.randomUUID());
+        for (WidgetPresentation form : Arrays
+            .asList(WidgetPresentation.TREND, WidgetPresentation.BARS, WidgetPresentation.COMBO)) {
+            DesktopLayout layout = new DesktopLayout();
+            WidgetSpec chart = new WidgetSpec("history", WidgetKind.HISTORY, 0, 0, 10, 3).boundScreen(source)
+                .presented(form, "", null);
+            assertTrue(layout.add(chart));
+            WidgetSpec restored = DesktopStore.decode(DesktopStore.encode(layout))
+                .find("history");
+            assertEquals(form, restored.presentation);
+            assertEquals(source, restored.screen);
+            assertEquals("", restored.metricField);
+            assertNull(restored.userTarget);
+            assertTrue(layout.fits(chart, chart.id));
+        }
+        for (WidgetKind kind : WidgetKind.values()) if (kind != WidgetKind.HISTORY) {
+            assertFalse(
+                WidgetSpec.availablePresentations(kind)
+                    .contains(WidgetPresentation.BARS));
+            assertFalse(
+                WidgetSpec.availablePresentations(kind)
+                    .contains(WidgetPresentation.COMBO));
+        }
+    }
+
+    @Test
     public void presetsAreIndependentValidCandidatesWithinInitialAreaWithoutFabricatedTargetsOrBindings() {
         DesktopLayout existing = DesktopLayout.defaultLayout();
         assertTrue(existing.move("machines", -20, -20));
@@ -48,7 +75,11 @@ public class DesktopPresentationTest {
     @Test
     public void formsAndMetricsComeOnlyFromSupportedDataAndGoalsMustBePositiveFinite() {
         assertEquals(
-            Arrays.asList(WidgetPresentation.DEFAULT, WidgetPresentation.TREND),
+            Arrays.asList(
+                WidgetPresentation.DEFAULT,
+                WidgetPresentation.TREND,
+                WidgetPresentation.BARS,
+                WidgetPresentation.COMBO),
             WidgetSpec.availablePresentations(WidgetKind.HISTORY));
         assertFalse(
             WidgetSpec.availablePresentations(WidgetKind.DEVICE)

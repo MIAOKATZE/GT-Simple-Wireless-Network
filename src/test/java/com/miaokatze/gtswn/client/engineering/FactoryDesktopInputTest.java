@@ -17,6 +17,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.miaokatzecore.api.ui.component.UiEvent;
@@ -35,7 +36,7 @@ public class FactoryDesktopInputTest {
 
     private void prepare(boolean editing, boolean selected, WidgetKind kind) throws Exception {
         layout = new DesktopLayout();
-        WidgetSpec card = new WidgetSpec("card", kind, 0, 0, 6, 5);
+        WidgetSpec card = new WidgetSpec("card", kind, 0, 0, Math.max(6, kind.minColumns), Math.max(5, kind.minRows));
         assertTrue(layout.add(card));
         DesktopViewport viewport = new DesktopViewport();
         Rect bounds = DesktopCardGeometry.bounds(card, viewport.transform(0, 0));
@@ -63,6 +64,9 @@ public class FactoryDesktopInputTest {
         set("scene", scene);
         set("selected", selected ? "card" : "");
         set("edit", editing);
+        set("bindingOpen", false);
+        set("screenBindingOpen", false);
+        set("propertiesOpen", false);
         set("store", new DesktopStore(null));
         set("profile", DesktopStore.profile("headless", "player"));
     }
@@ -75,9 +79,9 @@ public class FactoryDesktopInputTest {
 
     @Test
     public void everyVisibleHandleResizesImmediatelyThroughActualSceneCapture() throws Exception {
-        for (DesktopDrag.Edge edge : DesktopDrag.Edge.values()) {
+        for (boolean editing : new boolean[] { false, true }) for (DesktopDrag.Edge edge : DesktopDrag.Edge.values()) {
             if (edge == DesktopDrag.Edge.MOVE) continue;
-            prepare(true, true);
+            prepare(editing, true);
             Rect bounds = DesktopCardGeometry.bounds(layout.find("card"), new DesktopViewport().transform(0, 0));
             String name = edge.name();
             double x = name.contains("LEFT") ? bounds.x + 3
@@ -182,8 +186,9 @@ public class FactoryDesktopInputTest {
     }
 
     @Test
-    public void emptyScreenCardFirstClickSelectsAndSecondClickOpensItsBindingEditor() throws Exception {
-        prepare(false, false, WidgetKind.WIRELESS);
+    public void emptyResourceCardFirstClickSelectsAndSecondClickOpensItsBindingEditor() throws Exception {
+        WidgetResources.update(null, Collections.emptyList());
+        prepare(false, false, WidgetKind.RESOURCES);
         set("propertiesOpen", false);
         set("screenBindingOpen", false);
         assertTrue(scene.pointerDown(100, 100, 0));
@@ -200,13 +205,38 @@ public class FactoryDesktopInputTest {
     }
 
     @Test
-    public void browseModeDoesNotTreatSelectionBorderAsAnEditableResizeHandle() throws Exception {
+    public void browseModeResizesFromSelectedHandles() throws Exception {
         prepare(false, true);
         assertTrue(scene.pointerDown(377, 313, 0));
         assertTrue(scene.pointerMove(441, 377));
         assertTrue(scene.pointerUp(441, 377, 0));
+        assertEquals(7, layout.find("card").columns);
+        assertEquals(6, layout.find("card").rows);
+    }
+
+    @Test
+    public void handleTapDoesNotActivateTheEmptyMachineBinding() throws Exception {
+        prepare(false, true);
+        scene.pointerDown(377, 313, 0);
+        scene.pointerUp(377, 313, 0);
+        assertFalse((Boolean) get("edit"));
+        assertFalse((Boolean) get("bindingOpen"));
         assertEquals(6, layout.find("card").columns);
         assertEquals(5, layout.find("card").rows);
+    }
+
+    @Test
+    public void terminalGridAndEuTrendDoNotOpenScreenSelectionOnSecondClick() throws Exception {
+        for (WidgetKind kind : new WidgetKind[] { WidgetKind.WIRELESS, WidgetKind.HISTORY }) {
+            prepare(false, false, kind);
+            scene.pointerDown(100, 100, 0);
+            scene.pointerUp(100, 100, 0);
+            scene.pointerDown(100, 100, 0);
+            scene.pointerUp(100, 100, 0);
+            assertFalse((Boolean) get("screenBindingOpen"));
+            assertFalse((Boolean) get("edit"));
+            scene.close();
+        }
     }
 
     private static void dispatch(String name, UiEvent event) {

@@ -110,6 +110,30 @@ public class WidgetResourcesTest {
         assertEquals("unavailable", WidgetResources.readScreenCached(binding, source, panels, ids, p -> false).reason);
     }
 
+    @Test
+    public void automaticSourceUsesEveryMountIncludingWaitingScreensAndNeverOverridesExplicitIdentity() {
+        UUID source = UUID.randomUUID(), first = UUID.randomUUID(), second = UUID.randomUUID();
+        try {
+            WidgetResources.update(source, Collections.emptyList(), Collections.singletonList(first.toString()));
+            assertEquals(first, WidgetResources.defaultScreen().screen);
+            assertEquals("waiting", WidgetResources.readScreen(null).reason);
+            assertEquals(
+                1,
+                WidgetResources.screenChoices()
+                    .size());
+            WidgetResources
+                .update(source, Collections.emptyList(), java.util.Arrays.asList(first.toString(), second.toString()));
+            assertNull(WidgetResources.defaultScreen());
+            assertEquals("select", WidgetResources.readScreen(null).reason);
+            assertEquals("waiting", WidgetResources.readScreen(new ScreenBinding(source, second)).reason);
+            assertEquals("binding", WidgetResources.readScreen(new ScreenBinding(source, UUID.randomUUID())).reason);
+            WidgetResources.update(null, Collections.emptyList(), Collections.singletonList(first.toString()));
+            assertNull(WidgetResources.defaultScreen());
+        } finally {
+            WidgetResources.update(null, Collections.emptyList());
+        }
+    }
+
     private static Panel panel(UUID screen) {
         Panel panel = new Panel();
         panel.binding = new MonitorBindings.Binding(0, 0, 0, 0, screen);

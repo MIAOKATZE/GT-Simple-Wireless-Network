@@ -2,21 +2,58 @@ package com.miaokatze.gtswn.client.engineering;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Collections;
+import java.util.List;
 
+import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
+import com.miaokatze.gtswn.common.hud.HudController;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Panel;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Row;
 
-/** A projection of one authorized information screen, never a sum of observed machines. */
+/** Read-only user grid projection from the portable terminal's original HUD sampler. */
 final class WirelessGridReading {
 
     final BigDecimal stored, netRate;
     final String state;
+    final String source;
+    final boolean fresh;
+    final long receivedAtMillis;
+    final List<NetworkInfoSample> history;
 
     private WirelessGridReading(BigDecimal stored, BigDecimal netRate, String state) {
+        this(stored, netRate, state, "", false, 0, Collections.emptyList());
+    }
+
+    private WirelessGridReading(BigDecimal stored, BigDecimal netRate, String state, String source, boolean fresh,
+        long receivedAtMillis, List<NetworkInfoSample> history) {
         this.stored = stored;
         this.netRate = netRate;
         this.state = state;
+        this.source = source;
+        this.fresh = fresh;
+        this.receivedAtMillis = receivedAtMillis;
+        this.history = history;
+    }
+
+    static WirelessGridReading readTerminal() {
+        HudController.WirelessReading value = EngineeringTerminalHudSnapshot.wirelessGrid();
+        if (value == null) return new WirelessGridReading(null, null, "missing");
+        return readTerminal(value.stored, value.history, value.sourceLabel, value.receivedAtMillis);
+    }
+
+    static WirelessGridReading readTerminal(BigInteger stored, List<NetworkInfoSample> history, String source,
+        long receivedAtMillis) {
+        NetworkInfoSample newest = history.isEmpty() ? null : history.get(history.size() - 1);
+        BigDecimal rate = newest != null && Double.isFinite(newest.eut) ? BigDecimal.valueOf(newest.eut) : null;
+        return new WirelessGridReading(
+            new BigDecimal(stored),
+            rate,
+            rate == null ? "warming" : rate.signum() > 0 ? "charging" : rate.signum() < 0 ? "discharging" : "stable",
+            source,
+            true,
+            receivedAtMillis,
+            history);
     }
 
     /** Caller supplies the existing screen cache's freshness/identity gate. Missing is never zero. */

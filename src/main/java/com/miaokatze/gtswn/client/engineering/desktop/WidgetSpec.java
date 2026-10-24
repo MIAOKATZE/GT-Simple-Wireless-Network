@@ -51,8 +51,11 @@ public final class WidgetSpec {
                 forms.add(WidgetPresentation.BAR);
                 forms.add(WidgetPresentation.GAUGE);
             }
-            if (kind == WidgetKind.HISTORY) forms.add(WidgetPresentation.TREND);
-            else forms.add(WidgetPresentation.STATUS_LIST);
+            if (kind == WidgetKind.HISTORY) {
+                forms.add(WidgetPresentation.TREND);
+                forms.add(WidgetPresentation.BARS);
+                forms.add(WidgetPresentation.COMBO);
+            } else forms.add(WidgetPresentation.STATUS_LIST);
             PRESENTATIONS.put(kind, Collections.unmodifiableList(forms));
         }
         FIELDS.put(WidgetKind.MACHINES, fieldList("status", "source", "updated"));

@@ -10,11 +10,49 @@ import org.junit.Test;
 
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
+import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Panel;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Row;
 import com.miaokatze.gtswn.network.PortablePanelRenderData;
 
 public class WirelessGridReadingTest {
+
+    @Test
+    public void terminalProjectionReusesExactHudHistoryWithoutAnyMountedScreen() {
+        EUDataSet sampler = new EUDataSet(3);
+        BigInteger huge = BigInteger.TEN.pow(400);
+        sampler.add(huge, 100);
+        WirelessGridReading cold = WirelessGridReading.readTerminal(huge, sampler.snapshot(), "Terminal", 123);
+        assertEquals(new BigDecimal(huge), cold.stored);
+        assertNull(cold.netRate);
+        assertEquals("warming", cold.state);
+        assertTrue(Double.isNaN(cold.history.get(0).eut));
+        sampler.add(huge.subtract(BigInteger.valueOf(975)), 150);
+        WirelessGridReading live = WirelessGridReading.readTerminal(huge, sampler.snapshot(), "Terminal", 124);
+        assertEquals(-19.5, live.netRate.doubleValue(), 0);
+        assertEquals(sampler.calculateRecentEUT(), live.netRate.doubleValue(), 0);
+        assertEquals("discharging", live.state);
+        assertEquals("Terminal", live.source);
+        assertTrue(live.fresh);
+        assertEquals(124, live.receivedAtMillis);
+        assertEquals(1, cold.history.size());
+        sampler.add(huge.subtract(BigInteger.valueOf(975)), 200);
+        assertEquals("stable", WirelessGridReading.readTerminal(huge, sampler.snapshot(), "Terminal", 125).state);
+        sampler.add(huge, 250);
+        assertEquals(
+            3,
+            sampler.snapshot()
+                .size());
+        assertEquals(100, cold.history.get(0).tick);
+    }
+
+    @Test(expected = UnsupportedOperationException.class)
+    public void terminalHistoryCannotMutateOriginalHudSampler() {
+        EUDataSet sampler = new EUDataSet();
+        sampler.add(BigInteger.TEN, 100);
+        sampler.snapshot()
+            .clear();
+    }
 
     @Test
     public void missingRevokedAndUnavailableScreensNeverBecomeZero() {

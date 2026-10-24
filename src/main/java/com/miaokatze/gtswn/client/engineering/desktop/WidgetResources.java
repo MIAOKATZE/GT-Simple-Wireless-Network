@@ -28,16 +28,31 @@ public final class WidgetResources {
 
     public static void update(UUID currentSource, List<Panel> currentPanels, List<String> identities) {
         source = currentSource;
-        panels = currentPanels == null ? Collections.<Panel>emptyList() : currentPanels;
-        screenIds = identities == null ? Collections.<String>emptyList() : identities;
+        panels = currentPanels == null ? Collections.<Panel>emptyList()
+            : Collections.unmodifiableList(new ArrayList<>(currentPanels));
+        screenIds = identities == null ? Collections.<String>emptyList()
+            : Collections.unmodifiableList(new ArrayList<>(identities));
     }
 
     public static List<ScreenBinding> screenChoices() {
         List<ScreenBinding> result = new ArrayList<>();
-        if (source != null)
-            for (Panel panel : panels) if (panel.binding != null && PortableSuperDashboard.available(panel))
-                result.add(new ScreenBinding(source, panel.binding.panelId));
+        if (source != null) for (String id : screenIds) {
+            try {
+                result.add(new ScreenBinding(source, UUID.fromString(id)));
+            } catch (IllegalArgumentException invalid) {}
+        }
         return Collections.unmodifiableList(result);
+    }
+
+    /** All received terminal screen summaries/details; callers still check readScreen before using values. */
+    public static List<Panel> availableScreens() {
+        return Collections.unmodifiableList(panels);
+    }
+
+    /** The only unambiguous automatic source is exactly one current mount, even before its first receipt. */
+    public static ScreenBinding defaultScreen() {
+        List<ScreenBinding> choices = screenChoices();
+        return choices.size() == 1 ? choices.get(0) : null;
     }
 
     public static String screenLabel(ScreenBinding binding) {
@@ -51,7 +66,12 @@ public final class WidgetResources {
     }
 
     public static ScreenReading readScreen(ScreenBinding binding) {
-        return readScreenCached(binding, source, panels, screenIds, PortableSuperDashboard::available);
+        return readScreenCached(
+            binding == null ? defaultScreen() : binding,
+            source,
+            panels,
+            screenIds,
+            PortableSuperDashboard::available);
     }
 
     static ScreenReading readScreenCached(ScreenBinding binding, UUID currentSource, List<Panel> values,

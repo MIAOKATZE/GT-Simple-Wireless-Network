@@ -26,6 +26,7 @@ import com.cleanroommc.modularui.widget.ParentWidget;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
+import com.miaokatze.gtswn.common.panel.NetworkChartStyle;
 import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -60,6 +61,8 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
     private TextFieldWidget screenColorField;
     private static final int PALETTE_PAGE = 90;
     private static final int PALETTE_TOGGLE = 91;
+    private static final int CHART_STYLE = 92;
+    private NetworkChartStyle chartStyleDraft;
     private static final String[] PALETTE_KEYS = { "energyFlatColor", "energyUpColor", "energyDownColor",
         "rateFlatColor", "rateUpColor", "rateDownColor" };
     private final TextFieldWidget[] paletteFields = new TextFieldWidget[6];
@@ -160,6 +163,8 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
 
     /** 初始化 EU 标签页原有按钮 0-8 与 textFields（从原 initGui 抽取） */
     private void initEUTabControls() {
+        if (chartStyleDraft == null) chartStyleDraft = panel.getChartStyle();
+        addButton(CHART_STYLE, left + 12, top + 253, 150, 16, getChartStyleText());
         addButton(
             PALETTE_PAGE,
             left + 320,
@@ -413,6 +418,12 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
     }
 
     private void action(int id) {
+        if (id == CHART_STYLE) {
+            chartStyleDraft = NetworkChartStyle.fromId((chartStyleDraft.ordinal() + 1) % 3);
+            buttons.get(id)
+                .overlay(IKey.str(getChartStyleText()));
+            return;
+        }
         if (id == PALETTE_PAGE) {
             if (palettePage) paletteDraft = buildPaletteConfig();
             else chartDraft = buildChartConfig();
@@ -444,8 +455,9 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
                     panel.xCoord,
                     panel.yCoord,
                     panel.zCoord,
-                    (palettePage ? chartDraft + "\n" + buildPaletteConfig()
-                        : buildChartConfig() + "\n" + paletteDraft)));
+                    (palettePage ? chartDraft + "\n" + buildPaletteConfig() : buildChartConfig() + "\n" + paletteDraft)
+                        + "\nchartStyle="
+                        + chartStyleDraft.ordinal()));
         } else if (id == AE_APPLY_BUTTON) {
             // AE 图表配置应用
             GTSWNPacketHandler.NETWORK.sendToServer(
@@ -912,6 +924,13 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
             + "\n"
             + "screenColor="
             + screenColorField.getText();
+    }
+
+    private String getChartStyleText() {
+        return tr("gtswn.network_info.gui.chart_style") + ": "
+            + tr(
+                "gtswn.network_info.gui.chart_style." + chartStyleDraft.name()
+                    .toLowerCase(java.util.Locale.ROOT));
     }
 
     /** 打包 AE 图表配置为 TileEntity.applyAEChartConfig 可解析的字符串 */

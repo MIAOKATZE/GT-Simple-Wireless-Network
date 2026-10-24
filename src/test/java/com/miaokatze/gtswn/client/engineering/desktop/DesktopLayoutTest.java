@@ -10,6 +10,21 @@ import org.junit.Test;
 public class DesktopLayoutTest {
 
     @Test
+    public void compactUnboundResourcePreferencesRemainReadableWhenAutomaticSourceIsIntroduced() {
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(new WidgetSpec("customStock", WidgetKind.RESOURCES, -8, -4, 4, 2).titled("Stock")));
+        WidgetSpec restored = DesktopStore.decode(DesktopStore.encode(layout))
+            .find("customStock");
+        assertNotNull(restored);
+        assertEquals(4, restored.columns);
+        assertEquals(2, restored.rows);
+        assertEquals(-8, restored.column);
+        assertEquals("Stock", restored.title);
+        assertNull(restored.screen);
+        assertNull(restored.resource);
+    }
+
+    @Test
     public void exactResourcePlacementUsesCompactHoleWithoutAnIntermediateTable() {
         DesktopLayout layout = new DesktopLayout();
         assertTrue(layout.add(new WidgetSpec("left", WidgetKind.MACHINES, 0, 0, 4, 64)));
@@ -94,7 +109,7 @@ public class DesktopLayoutTest {
         DesktopViewport view = new DesktopViewport();
         view.fit(layout, 640, 308);
         assertTrue("Default fit uses most of a widescreen viewport", view.scale > .5);
-        for (String id : new String[] { "machines", "region" }) {
+        for (String id : new String[] { "machines", "wireless" }) {
             WidgetSpec instrument = layout.find(id);
             assertTrue(instrument.width() * view.scale >= 130);
             assertTrue(instrument.height() * view.scale >= 64);

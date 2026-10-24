@@ -127,6 +127,43 @@ public class HudLifecycleTest {
         state.lastUpdateRealTimeMs = System.currentTimeMillis();
     }
 
+    @Test
+    public void numericProjectionSharesOriginalSamplerAndCachesUntilAnAcceptedValueChanges() throws Exception {
+        HudController controller = new HudController();
+        HudState state = state(controller);
+        seed(state);
+        // No Item lookup or icon construction belongs to this numeric cache test.
+        state.monitorStack = null;
+        Field receipt = HudController.class.getDeclaredField("lastResponseMillis");
+        receipt.setAccessible(true);
+        receipt.setLong(controller, System.currentTimeMillis());
+        HudController.WirelessReading first = controller.wirelessReading();
+        assertEquals(BigInteger.valueOf(900), first.stored);
+        assertEquals(state.dataSet.calculateRecentEUT(), first.history.get(1).eut, 0);
+        org.junit.Assert.assertSame(first, controller.wirelessReading());
+        org.junit.Assert.assertSame(first.history, state.dataSet.snapshot());
+        state.dataSet.add(BigInteger.valueOf(1000), 100100);
+        state.syncedEuStr = "1000";
+        HudController.WirelessReading next = controller.wirelessReading();
+        org.junit.Assert.assertNotSame(first, next);
+        assertEquals(2, first.history.size());
+        assertEquals(3, next.history.size());
+        assertEquals(BigInteger.valueOf(1000), next.stored);
+        state.syncedEuStr = "invalid";
+        assertNull(controller.wirelessReading());
+        assertNull(controller.wirelessReading());
+        state.syncedEuStr = "1000";
+        receipt.setLong(controller, 1);
+        assertNull(controller.wirelessReading());
+        receipt.setLong(controller, System.currentTimeMillis());
+        state.selectMonitor(
+            null,
+            UUID.randomUUID()
+                .toString(),
+            1);
+        assertNull(controller.wirelessReading());
+    }
+
     private static void assertCleared(HudState state) {
         assertFalse(state.hudEnabled);
         assertEquals(0, state.displayMode);

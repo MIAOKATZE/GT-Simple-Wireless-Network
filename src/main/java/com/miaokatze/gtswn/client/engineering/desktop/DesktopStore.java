@@ -71,6 +71,7 @@ public final class DesktopStore {
 
     /** Only exact shipped templates migrate; any custom display preference or reference is preserved. */
     static boolean untouchedLegacyDefault(DesktopLayout layout) {
+        if (encode(layout).equals(encode(previousOverview()))) return true;
         String[] ids = { "machines", "input", "output", "wireless", "history", "region", "resources", "attention" };
         WidgetKind[] kinds = { WidgetKind.MACHINES, WidgetKind.INPUT, WidgetKind.OUTPUT, WidgetKind.WIRELESS,
             WidgetKind.HISTORY, WidgetKind.REGION, WidgetKind.RESOURCES, WidgetKind.ATTENTION };
@@ -100,6 +101,25 @@ public final class DesktopStore {
             matchesTall &= geometryMatches(widget, tall[index]);
         }
         return matchesCompact || matchesTall;
+    }
+
+    /** Frozen v2.0.17 template, kept independent of future presets for precise opt-in-free migration. */
+    private static DesktopLayout previousOverview() {
+        String[] ids = { "machines", "wireless", "netRate", "region", "history", "resources", "attention", "device" };
+        WidgetKind[] kinds = { WidgetKind.MACHINES, WidgetKind.WIRELESS, WidgetKind.WIRELESS, WidgetKind.REGION,
+            WidgetKind.HISTORY, WidgetKind.RESOURCES, WidgetKind.ATTENTION, WidgetKind.DEVICE };
+        WidgetPresentation[] forms = { WidgetPresentation.KPI, WidgetPresentation.KPI, WidgetPresentation.KPI,
+            WidgetPresentation.DEFAULT, WidgetPresentation.TREND, WidgetPresentation.STATUS_LIST,
+            WidgetPresentation.STATUS_LIST, WidgetPresentation.DEFAULT };
+        String[] metrics = { "count", "stored", "netRate", "", "", "", "", "" };
+        int[][] bounds = { { 8, 0, 4, 2 }, { 0, 0, 4, 2 }, { 4, 0, 4, 2 }, { 12, 0, 4, 2 }, { 0, 2, 10, 3 },
+            { 0, 5, 10, 3 }, { 10, 2, 6, 3 }, { 10, 5, 6, 3 } };
+        DesktopLayout layout = new DesktopLayout();
+        for (int i = 0; i < ids.length; i++) {
+            int[] b = bounds[i];
+            layout.add(new WidgetSpec(ids[i], kinds[i], b[0], b[1], b[2], b[3]).presented(forms[i], metrics[i], null));
+        }
+        return layout;
     }
 
     private static boolean geometryMatches(WidgetSpec widget, int[] geometry) {

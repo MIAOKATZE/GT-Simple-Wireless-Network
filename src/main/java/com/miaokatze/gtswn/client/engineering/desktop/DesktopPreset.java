@@ -15,24 +15,25 @@ public enum DesktopPreset {
         DesktopLayout layout = new DesktopLayout();
         switch (this) {
             case POWER:
-                add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 0, 0, 6, 2);
-                add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 6, 0, 6, 2);
-                add(layout, "region", WidgetKind.REGION, WidgetPresentation.DEFAULT, "", 12, 0, 4, 2);
-                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 2, 10, 4);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 4);
+                add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 0, 0, 8, 2);
+                add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 8, 0, 8, 2);
+                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.COMBO, "", 0, 2, 10, 4);
+                add(layout, "deviceInput", WidgetKind.DEVICE, WidgetPresentation.KPI, "instantInput", 10, 2, 6, 2);
+                add(layout, "deviceOutput", WidgetKind.DEVICE, WidgetPresentation.KPI, "instantOutput", 10, 4, 6, 2);
                 break;
             case PRODUCTION:
                 machineCounts(layout);
-                add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.STATUS_LIST, "", 0, 2, 8, 3);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 8, 2, 8, 3);
-                add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 5, 10, 3);
-                add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 10, 5, 6, 3);
+                add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.GAUGE, "running", 10, 2, 6, 6);
+                add(layout, "device", WidgetKind.DEVICE, WidgetPresentation.DEFAULT, "", 0, 2, 5, 3);
+                add(layout, "deviceInput", WidgetKind.DEVICE, WidgetPresentation.KPI, "instantInput", 5, 2, 5, 3);
+                add(layout, "deviceOutput", WidgetKind.DEVICE, WidgetPresentation.BAR, "averageOutput", 0, 5, 5, 3);
+                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 5, 5, 5, 3);
                 break;
             case LOGISTICS:
                 add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 0, 10, 4);
                 add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 10, 0, 6, 2);
                 add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 10, 2, 6, 2);
-                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 4, 10, 3);
+                add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.BARS, "", 0, 4, 10, 3);
                 add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 4, 6, 3);
                 break;
             case DIAGNOSTICS:
@@ -58,13 +59,11 @@ public enum DesktopPreset {
     /** New profiles and explicit preset application only; persisted arrangements are left intact. */
     public static DesktopLayout overviewLayout() {
         DesktopLayout layout = new DesktopLayout();
-        add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.KPI, "count", 8, 0, 4, 2);
-        add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 0, 0, 4, 2);
-        add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 4, 0, 4, 2);
-        add(layout, "region", WidgetKind.REGION, WidgetPresentation.DEFAULT, "", 12, 0, 4, 2);
-        add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.TREND, "", 0, 2, 10, 3);
+        add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.KPI, "count", 0, 0, 5, 2);
+        add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.GAUGE, "stored", 10, 0, 6, 5);
+        add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 5, 0, 5, 2);
+        add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.COMBO, "", 0, 2, 10, 3);
         add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 5, 10, 3);
-        add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 3);
         add(layout, "device", WidgetKind.DEVICE, WidgetPresentation.DEFAULT, "", 10, 5, 6, 3);
         return layout;
     }

@@ -16,6 +16,68 @@ public class DesktopDefaultMigrationTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void exactV217DefaultMigratesOnceAndPreservesCustomizedVersion() throws Exception {
+        java.io.File folder = temporary.newFolder();
+        String profile = DesktopStore.profile("v217", "player");
+        DesktopStore old = new DesktopStore(folder);
+        DesktopLayout previous = DesktopTestLayouts.v217Overview();
+        assertTrue(DesktopStore.untouchedLegacyDefault(previous));
+        old.put(profile, previous);
+        DesktopViewport view = new DesktopViewport();
+        view.panX = 500;
+        old.putView(profile, view);
+        assertTrue(old.flush());
+        DesktopStore upgraded = new DesktopStore(folder);
+        assertEquals(DesktopStore.encode(DesktopLayout.defaultLayout()), DesktopStore.encode(upgraded.load(profile)));
+        assertEquals(0, upgraded.loadView(profile).panX, 0);
+        assertTrue(upgraded.flush());
+        assertFalse(DesktopStore.untouchedLegacyDefault(new DesktopStore(folder).load(profile)));
+
+        WidgetSpec original = previous.find("machines");
+        WidgetSpec[] changes = { original.titled("mine"), original.bordered(0x123456),
+            original.configured("", Collections.emptyList(), 1),
+            original.presented(WidgetPresentation.KPI, "running", null),
+            original.presented(WidgetPresentation.KPI, "count", 16.0), original.withBounds(-4, -4, 4, 2) };
+        for (WidgetSpec changed : changes) {
+            DesktopLayout custom = previous.copy();
+            assertTrue(custom.replace(changed));
+            assertFalse(DesktopStore.untouchedLegacyDefault(custom));
+            old.put(profile, custom);
+            old.putView(profile, view);
+            assertTrue(old.flush());
+            DesktopStore restored = new DesktopStore(folder);
+            assertEquals(DesktopStore.encode(custom), DesktopStore.encode(restored.load(profile)));
+            assertEquals(500, restored.loadView(profile).panX, 0);
+        }
+    }
+
+    @Test
+    public void v217MalformedOrFuturePreferencesPreserveOriginalFileAndViewport() throws Exception {
+        for (String suffix : new String[] { "screen.id", "presentation", "metricField", "futurePreference" }) {
+            java.io.File folder = temporary.newFolder();
+            String profile = DesktopStore.profile("v217-raw", "player");
+            Properties saved = DesktopStore.encode(DesktopTestLayouts.v217Overview());
+            saved.setProperty("widget.0." + suffix, "invalid");
+            saved.setProperty("view.x", "500");
+            java.nio.file.Path path = folder.toPath()
+                .resolve(profile + ".properties");
+            try (java.io.OutputStream output = java.nio.file.Files.newOutputStream(path)) {
+                saved.store(output, "custom");
+            }
+            byte[] original = java.nio.file.Files.readAllBytes(path);
+            DesktopStore restored = new DesktopStore(folder);
+            assertEquals(
+                8,
+                restored.load(profile)
+                    .widgets()
+                    .size());
+            assertEquals(500, restored.loadView(profile).panX, 0);
+            assertTrue(restored.flush());
+            assertArrayEquals(original, java.nio.file.Files.readAllBytes(path));
+        }
+    }
+
+    @Test
     public void malformedOptionalBindingsAndDisplayPreferencesNeverTriggerMigration() throws Exception {
         for (String suffix : new String[] { "source", "resource.source", "screen.id", "userTarget", "presentation",
             "borderColor", "metricField" }) assertRawPreferencePreserved(suffix, "invalid");
