@@ -2,10 +2,10 @@ package com.miaokatze.gtswn.common.panel;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -14,7 +14,7 @@ import net.minecraftforge.common.util.Constants;
 /**
  * AE 监视数据集（每网络信息屏一份，每个被监视物品/流体独立维护 8 窗口 × 61 点 FIFO）。
  * <p>
- * key 为字符串标识（{@code item:<registryName>:<meta>} 或 {@code fluid:<fluidName>}）。
+ * key 为数量无关的 v2 完整身份；旧无 descriptor 的 key 保留为 legacy，不猜测归属或拼接。
  * <p>
  * O2-14：每 key 的 8 窗口结构收敛为一条 {@link Chain}（{@link WindowChain} 骨架的 AE 薄壳，
  * 懒创建窗口），原 8 series Map + 7 counter Map 的并行结构改为 {@code Map<String, Chain>} 单维；
@@ -71,6 +71,24 @@ public class AEMonitorDataSet {
     /** 每 key 一条独立采样链（O2-14：原 15 张并行 Map 的单维化） */
     private final Map<String, Chain> chains = new HashMap<>();
 
+    /** Full identity descriptors are stored with new series; legacy history has none. */
+    private final Map<String, NBTTagCompound> identities = new HashMap<>();
+
+    public void registerIdentity(String key, NBTTagCompound descriptor) {
+        if (key != null && descriptor != null && !AEMonitorIdentity.isLegacy(key)) {
+            identities.putIfAbsent(key, (NBTTagCompound) descriptor.copy());
+        }
+    }
+
+    public NBTTagCompound identityDescriptor(String key) {
+        NBTTagCompound descriptor = identities.get(key);
+        return descriptor == null ? null : (NBTTagCompound) descriptor.copy();
+    }
+
+    public boolean isLegacy(String key) {
+        return AEMonitorIdentity.isLegacy(key);
+    }
+
     // 每个 key 独立的采样锁（world tick），距离上次采样 ≥ 100 ticks 才允许新采样
     private final Map<String, Long> lastSampleTick = new HashMap<>();
 
@@ -125,7 +143,7 @@ public class AEMonitorDataSet {
     }
 
     /**
-     * 计算指定 key 在 5 分钟窗口内的平均变化率（amount / minute）。
+     * 计算指定 key 在基础采样窗口实际跨度内的平均变化率（amount / minute）。
      * <p>
      * 使用 {@code series5m} 窗口的首尾两个采样点：
      * {@code (last.amount - first.amount) / (last.tick - first.tick) * 1200.0}。
@@ -134,7 +152,7 @@ public class AEMonitorDataSet {
      * @param key 被监视物品/流体的字符串标识
      * @return 平均变化率（每分钟数量变化）；样本不足或 tick 差非正则返回 0.0
      */
-    public double averageRate300s(String key) {
+    public double averageRate(String key) {
         Chain chain = chains.get(key);
         if (chain == null || chain.size(WINDOW_5_MIN) < 2) {
             return 0.0D;
@@ -147,6 +165,16 @@ public class AEMonitorDataSet {
             return 0.0D;
         }
         return (last.amount - first.amount) / (double) tickDiff * 1200.0D;
+    }
+
+    /** Compatibility alias: the fixed-point window does not necessarily span 300 seconds. */
+    @Deprecated
+    public double averageRate300s(String key) {
+        return averageRate(key);
+    }
+
+    public long spanTicks(String key, int window) {
+        return WindowLabel.spanTicks(query(key, window));
     }
 
     /**
@@ -186,6 +214,7 @@ public class AEMonitorDataSet {
      */
     public void clear(String key) {
         chains.remove(key);
+        identities.remove(key);
         lastSampleTick.remove(key);
     }
 
@@ -194,6 +223,7 @@ public class AEMonitorDataSet {
      */
     public void clear() {
         chains.clear();
+        identities.clear();
         lastSampleTick.clear();
     }
 
@@ -202,7 +232,7 @@ public class AEMonitorDataSet {
      * 与原 series5m.keySet() 口径一致——readFromNBT 未带 series5m 键的 entry 不计入）。
      */
     public Set<String> getKeys() {
-        Set<String> keys = new HashSet<>();
+        Set<String> keys = new TreeSet<>();
         for (Map.Entry<String, Chain> entry : chains.entrySet()) {
             if (entry.getValue()
                 .hasWindow(WINDOW_5_MIN)) {
@@ -222,6 +252,8 @@ public class AEMonitorDataSet {
         for (String key : getKeys()) {
             NBTTagCompound entry = new NBTTagCompound();
             entry.setString("key", key);
+            NBTTagCompound descriptor = identities.get(key);
+            if (descriptor != null) entry.setTag("identity", descriptor.copy());
 
             NBTTagCompound data = new NBTTagCompound();
             chains.get(key)
@@ -255,6 +287,9 @@ public class AEMonitorDataSet {
             String key = entry.getString("key");
             if (key == null || key.isEmpty()) {
                 continue;
+            }
+            if (entry.hasKey("identity", Constants.NBT.TAG_COMPOUND)) {
+                registerIdentity(key, entry.getCompoundTag("identity"));
             }
             NBTTagCompound data = entry.getCompoundTag("data");
             getOrCreateChain(key).readWindowsFromNBT(data);

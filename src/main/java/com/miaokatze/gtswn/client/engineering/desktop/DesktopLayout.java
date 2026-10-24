@@ -15,6 +15,39 @@ public final class DesktopLayout {
         return Collections.unmodifiableList(widgets);
     }
 
+    /** Occupied desktop pixels; an empty layout retains its initial 1024-square reference area. */
+    public Bounds bounds() {
+        if (widgets.isEmpty()) return new Bounds(0, 0, DEFAULT_SIZE, DEFAULT_SIZE);
+        int left = Integer.MAX_VALUE, top = left, right = Integer.MIN_VALUE, bottom = right;
+        for (WidgetSpec widget : widgets) {
+            left = Math.min(left, widget.x());
+            top = Math.min(top, widget.y());
+            right = Math.max(right, widget.x() + widget.width());
+            bottom = Math.max(bottom, widget.y() + widget.height());
+        }
+        return new Bounds(left, top, right, bottom);
+    }
+
+    public static final class Bounds {
+
+        public final int left, top, right, bottom;
+
+        private Bounds(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+        }
+
+        public int width() {
+            return right - left;
+        }
+
+        public int height() {
+            return bottom - top;
+        }
+    }
+
     public WidgetSpec find(String id) {
         for (WidgetSpec widget : widgets) if (widget.id.equals(id)) return widget;
         return null;
@@ -22,14 +55,14 @@ public final class DesktopLayout {
 
     public static DesktopLayout defaultLayout() {
         DesktopLayout layout = new DesktopLayout();
-        layout.add(new WidgetSpec("machines", WidgetKind.MACHINES, 0, 0, 4, 2));
-        layout.add(new WidgetSpec("input", WidgetKind.INPUT, 4, 0, 4, 2));
-        layout.add(new WidgetSpec("output", WidgetKind.OUTPUT, 8, 0, 4, 2));
-        layout.add(new WidgetSpec("wireless", WidgetKind.WIRELESS, 12, 0, 4, 2));
-        layout.add(new WidgetSpec("history", WidgetKind.HISTORY, 0, 2, 10, 5));
-        layout.add(new WidgetSpec("region", WidgetKind.REGION, 10, 2, 6, 5));
-        layout.add(new WidgetSpec("resources", WidgetKind.RESOURCES, 0, 7, 10, 7));
-        layout.add(new WidgetSpec("attention", WidgetKind.ATTENTION, 10, 7, 6, 7));
+        layout.add(new WidgetSpec("machines", WidgetKind.MACHINES, 0, 0, 4, 3));
+        layout.add(new WidgetSpec("input", WidgetKind.INPUT, 0, 3, 4, 2));
+        layout.add(new WidgetSpec("output", WidgetKind.OUTPUT, 4, 3, 4, 2));
+        layout.add(new WidgetSpec("wireless", WidgetKind.WIRELESS, 4, 0, 4, 3));
+        layout.add(new WidgetSpec("history", WidgetKind.HISTORY, 8, 0, 8, 4));
+        layout.add(new WidgetSpec("region", WidgetKind.REGION, 0, 5, 4, 3));
+        layout.add(new WidgetSpec("resources", WidgetKind.RESOURCES, 8, 4, 8, 4));
+        layout.add(new WidgetSpec("attention", WidgetKind.ATTENTION, 4, 5, 4, 3));
         return layout;
     }
 

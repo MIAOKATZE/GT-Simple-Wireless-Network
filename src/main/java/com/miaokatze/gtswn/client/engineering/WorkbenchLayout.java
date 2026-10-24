@@ -3,7 +3,15 @@ package com.miaokatze.gtswn.client.engineering;
 /** One geometry contract for world HUD drawing, hit testing, hover and Core navigation exclusion. */
 public final class WorkbenchLayout {
 
-    private final int applicationWidth;
+    static final int DEVICE_ROWS_TOP = 131, NODE_ROWS_TOP = 49, RAIL_ROW_HEIGHT = 23, RAIL_BOTTOM = 8;
+    private static final int MIN_RAIL_HEIGHT = DEVICE_ROWS_TOP + RAIL_ROW_HEIGHT + RAIL_BOTTOM;
+
+    static int railHeight(boolean nodes, int count) {
+        return Math.max(
+            MIN_RAIL_HEIGHT,
+            (nodes ? NODE_ROWS_TOP : DEVICE_ROWS_TOP) + Math.max(1, Math.min(8, count)) * RAIL_ROW_HEIGHT
+                + RAIL_BOTTOM);
+    }
 
     public final Rect[] terminals = new Rect[8];
     public final Rect[] modes = new Rect[5];
@@ -74,53 +82,47 @@ public final class WorkbenchLayout {
     public WorkbenchLayout(int width, int height, boolean sidebarOpen, boolean railOpen, boolean powerOpen,
         boolean dashboardOpen, int railHeight, int powerHeight, boolean alertsOpen, boolean taskNavigation,
         boolean objectsPage, boolean inspectorOpen) {
-        applicationWidth = taskNavigation ? width : 0;
-        cameraHints = taskNavigation ? new Rect(282, 36, Math.max(1, width - 398), 20)
-            : new Rect(164, 8, Math.max(1, width - 278), 43);
-        shortcuts = new Rect(width - 108, 9, 100, 24);
-        for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(8, 56 + i * 33, 28, 28);
+        // Floating controls own only their painted bounds; the space between them remains world input.
+        cameraHints = new Rect(0, 0, 0, 0);
+        shortcuts = dashboardOpen ? new Rect(0, 0, 0, 0) : new Rect(width - 64, 9, 56, 24);
+        int terminalStep = Math.min(33, Math.max(28, (height - 48) / 8));
+        for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(8, 42 + i * terminalStep, 28, 28);
         for (int i = 0; i < modes.length; i++) modes[i] = new Rect(8 + i * 31, 9, 27, 24);
         for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 56 + i * 33, 26, 27);
-        sidebar = sidebarOpen
-            ? new Rect(
-                43,
-                taskNavigation ? 62 : 56,
-                214,
-                Math.min(336, Math.max(0, height - (taskNavigation ? 70 : 64))))
-            : null;
-        int railAvailable = Math.max(0, height - 64 - (powerOpen ? powerHeight + 8 : 0));
+        sidebar = sidebarOpen && !dashboardOpen ? new Rect(43, 42, 214, Math.min(336, Math.max(0, height - 50))) : null;
         boolean splitObjects = objectsPage && !sidebarOpen && !dashboardOpen && railOpen;
-        int objectWidth = width >= 600 ? (width - 60) * 3 / 5 : width - 60;
-        rail = splitObjects ? new Rect(8, 62, objectWidth, height - 70)
-            : !dashboardOpen && railOpen ? new Rect(width - 252, 62, 210, Math.min(railAvailable, railHeight)) : null;
+        int contentHeight = Math.max(0, height - 50);
+        // An explicitly opened list must retain a selectable row. Secondary power content yields on short canvases.
+        boolean showPower = !dashboardOpen && powerOpen
+            && !splitObjects
+            && (!railOpen || contentHeight - powerHeight - 8 >= MIN_RAIL_HEIGHT);
+        int railAvailable = Math.max(0, contentHeight - (showPower ? powerHeight + 8 : 0));
+        int objectWidth = width >= 600 ? (width - 95) * 3 / 5 : width - 95;
+        rail = splitObjects ? new Rect(43, 42, objectWidth, height - 50)
+            : !dashboardOpen && railOpen
+                ? new Rect(width - 252, 42, 210, Math.min(railAvailable, Math.max(MIN_RAIL_HEIGHT, railHeight)))
+                : null;
         inspector = !splitObjects ? null
-            : width >= 600 ? new Rect(16 + objectWidth, 62, width - objectWidth - 58, height - 70)
+            : width >= 600 ? new Rect(51 + objectWidth, 42, width - objectWidth - 93, height - 50)
                 : inspectorOpen ? new Rect(rail.x, rail.y, rail.w, rail.h) : null;
-        power = !dashboardOpen && powerOpen ? new Rect(width - 252, height - powerHeight - 8, 210, powerHeight) : null;
-        int left = sidebarOpen ? 264 : taskNavigation ? 8 : 43;
-        dashboard = dashboardOpen ? new Rect(left, 60, width - left - (taskNavigation ? 8 : 42), height - 68) : null;
+        power = showPower ? new Rect(width - 252, height - powerHeight - 8, 210, powerHeight) : null;
+        dashboard = dashboardOpen ? new Rect(0, 0, width, height) : null;
         int alertLeft = sidebarOpen ? 264 : 43;
         int alertRight = railOpen || powerOpen ? width - 260 : width - 42;
         int alertWidth = Math.min(176, Math.max(0, alertRight - alertLeft));
-        alerts = !dashboardOpen && alertsOpen
+        alerts = !dashboardOpen && alertsOpen && !splitObjects
             ? new Rect(alertLeft + (alertRight - alertLeft - alertWidth) / 2, height - 47, alertWidth, 30)
             : null;
-        int tabWidth = Math.min(88, Math.max(40, (width - 238) / 4));
-        for (int i = 0; i < tasks.length; i++)
-            tasks[i] = taskNavigation ? new Rect(120 + i * (tabWidth + 2), 8, tabWidth, 24) : new Rect(0, 0, 0, 0);
-        sources = taskNavigation ? new Rect(width - 108, 36, 100, 20) : new Rect(0, 0, 0, 0);
-        if (taskNavigation) {
-            modes[0] = new Rect(0, 0, 0, 0);
-            for (int i = 1; i < modes.length; i++) modes[i] = new Rect(8 + (i - 1) * 68, 36, 64, 20);
-            for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 62 + i * 33, 26, 27);
-            for (int i = 0; i < terminals.length; i++)
-                terminals[i] = sidebarOpen ? new Rect(8, 62 + i * 33, 28, 28) : new Rect(0, 0, 0, 0);
-            if (dashboardOpen) for (int i = 0; i < tools.length; i++) tools[i] = new Rect(0, 0, 0, 0);
+        for (int i = 0; i < tasks.length; i++) tasks[i] = new Rect(0, 0, 0, 0);
+        sources = new Rect(0, 0, 0, 0);
+        if (dashboardOpen) {
+            for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(0, 0, 0, 0);
+            for (int i = 0; i < modes.length; i++) modes[i] = new Rect(0, 0, 0, 0);
+            for (int i = 0; i < tools.length; i++) tools[i] = new Rect(0, 0, 0, 0);
         }
     }
 
     public boolean contains(int x, int y) {
-        if (x >= 0 && x < applicationWidth && y >= 0 && y < 60) return true;
         for (Rect r : terminals) if (r.contains(x, y)) return true;
         for (Rect r : modes) if (r.contains(x, y)) return true;
         for (Rect r : tools) if (r.contains(x, y)) return true;

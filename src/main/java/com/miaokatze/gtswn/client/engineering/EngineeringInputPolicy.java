@@ -9,6 +9,10 @@ final class EngineeringInputPolicy {
 
     private EngineeringInputPolicy() {}
 
+    static boolean overlayVisible(boolean dashboardOpen, boolean hidden) {
+        return dashboardOpen && !hidden;
+    }
+
     static boolean worldInput(boolean active, boolean screenOpen, boolean focused) {
         return active && !screenOpen && focused;
     }
@@ -44,11 +48,15 @@ final class EngineeringInputPolicy {
     }
 
     static CameraSettings.Hud hud(boolean cameraPanel, double scale, boolean desktop) {
+        return hud(cameraPanel, scale, desktop, false);
+    }
+
+    static CameraSettings.Hud hud(boolean cameraPanel, double scale, boolean desktop, boolean hidden) {
         // Core chooses its compact X-ray bar or the combined camera panel from these two flags.
         return CameraSettings.Hud.builder()
             .crosshair(CameraSettings.Hud.Crosshair.HIDDEN)
-            .panelVisible(cameraPanel && !desktop)
-            .sliceBarVisible(!desktop)
+            .panelVisible(cameraPanel && !desktop && !hidden)
+            .sliceBarVisible(!desktop && !hidden)
             .panelPosition((int) (264 * scale), (int) (56 * scale))
             .panelWidth(Math.max(1, (int) (192 * scale)))
             .build();

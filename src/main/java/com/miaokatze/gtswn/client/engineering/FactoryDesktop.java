@@ -16,10 +16,12 @@ import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetPresentation;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
@@ -34,7 +36,8 @@ import com.miaokatze.miaokatzecore.client.ui.MinecraftUiRenderer;
 /** Local business desktop; Core owns component layout, clipping, focus and pointer capture. */
 final class FactoryDesktop {
 
-    private static final int BACK = 0xFF15202A, GRID = 0xFF24333E, TEXT = 0xFFE8ECE8, ACCENT = 0xFF75C3B7;
+    private static final int BACK = DashboardVisuals.BACK, GRID = 0x503B647D, TEXT = DashboardVisuals.TEXT,
+        ACCENT = DashboardVisuals.CYAN;
     private static final UiStyle PANEL = new UiStyle(new UiStyle.Paint(0xFF1D2D38, 0xFF344955, TEXT));
     private static final UiStyle BUTTON = new UiStyle(
         new UiStyle.Paint(0xFF2B414E, 0xFF3C5563, TEXT),
@@ -44,6 +47,7 @@ final class FactoryDesktop {
         new UiStyle.Paint(0xFF26343C, 0xFF344955, 0xFF9AAEB8));
     private static DesktopStore store;
     private static DesktopLayout layout;
+    private static DesktopPreset pendingPreset;
     private static DesktopViewport view;
     private static String profile = "", selected = "";
     private static UiScene scene;
@@ -56,7 +60,7 @@ final class FactoryDesktop {
     private static final List<DeviceBinding> visibleDevices = new ArrayList<>();
     private static final DesktopDrag drag = new DesktopDrag();
     private static final DesktopEditorScroll editorScroll = new DesktopEditorScroll();
-    private static boolean edit, canvasFocus, panning, dirty = true;
+    private static boolean edit, libraryOpen, propertiesOpen, initialView, canvasFocus, panning, dirty = true;
     private static double lastX, lastY, panBeforeX, panBeforeY;
 
     private static void ensure() {
@@ -75,6 +79,7 @@ final class FactoryDesktop {
         profile = next;
         layout = store.load(profile);
         view = store.loadView(profile);
+        initialView = view.scale == 1 && view.panX == 0 && view.panY == 0;
         selected = "";
         edit = canvasFocus = panning = false;
         drag.cancel();
@@ -125,7 +130,8 @@ final class FactoryDesktop {
         selected = widget.id;
         view.panX = widget.x() - 18 / view.scale;
         view.panY = widget.y() - 18 / view.scale;
-        edit = true;
+        edit = propertiesOpen = true;
+        libraryOpen = false;
         changed(true);
         WorkbenchHud.openDashboard();
         return true;
@@ -160,8 +166,14 @@ final class FactoryDesktop {
         if (scene == null) return false;
         if (pressed && button >= 0 && !canvas.contains(x, y)) canvasFocus = false;
         if (wheel != 0 && scene.captured() != null) return true;
+        if (button >= 0 && pressed) FactoryDashboard.blurResourceSearch(-1, -1);
+        UiNode library = scene.find("library"), properties = scene.find("properties");
+        boolean tools = library != null && library.bounds()
+            .contains(x, y) || properties != null
+                && properties.bounds()
+                    .contains(x, y);
         boolean used;
-        if (wheel != 0) used = scene.scroll(x, y, canvas.contains(x, y) ? wheel : -Math.signum(wheel) * 24);
+        if (wheel != 0) used = scene.scroll(x, y, !tools && canvas.contains(x, y) ? wheel : -Math.signum(wheel) * 24);
         else if (button >= 0) used = pressed ? scene.pointerDown(x, y, button) : scene.pointerUp(x, y, button);
         else used = scene.pointerMove(x, y) || pointerCaptured();
         return used || area.contains(x, y);
@@ -189,6 +201,11 @@ final class FactoryDesktop {
     static boolean escape() {
         if (scene != null && (scene.captured() != null || scene.focused() != null)) {
             scene.blur();
+            return true;
+        }
+        if (libraryOpen || propertiesOpen) {
+            libraryOpen = propertiesOpen = false;
+            dirty = true;
             return true;
         }
         if (edit) {
@@ -219,6 +236,14 @@ final class FactoryDesktop {
 
     static boolean typing() {
         return scene != null && scene.focused() != null && scene.focused().kind == UiNode.Kind.TEXT_INPUT;
+    }
+
+    static int pointerX() {
+        return mouseX;
+    }
+
+    static int pointerY() {
+        return mouseY;
     }
 
     static boolean pointerCaptured() {
@@ -260,6 +285,8 @@ final class FactoryDesktop {
         if (e.button == 0 && edit && target != null) {
             boolean was = selected.equals(target.id);
             selected = target.id;
+            propertiesOpen = true;
+            libraryOpen = false;
             dirty = true;
             if (!DesktopCardGeometry.showResizeHandles(view.scale)) {
                 e.consume();
@@ -277,7 +304,7 @@ final class FactoryDesktop {
             e.consume();
             return;
         }
-        if (e.button == 0 && target != null && view.scale >= .65) FactoryDashboard.widgetClick((int) e.x, (int) e.y);
+        if (e.button == 0 && target != null) FactoryDashboard.widgetClick((int) e.x, (int) e.y);
         e.consume();
     }
 
@@ -338,11 +365,6 @@ final class FactoryDesktop {
             node.bounds(b.x - canvas.x, b.y - canvas.y, b.w, b.h)
                 .visible(visible);
             if (visible && widget.device != null) visibleDevices.add(widget.device);
-            UiNode title = scene.find("title-" + widget.id);
-            int reserved = DesktopCardGeometry.headerReserved(widget);
-            title.text(label(widget))
-                .size(Math.max(1, b.w - reserved), 27)
-                .visible(view.scale >= .65);
             scene.find("selection-" + widget.id)
                 .size(b.w, b.h)
                 .visible(edit && selected.equals(widget.id));
@@ -350,6 +372,9 @@ final class FactoryDesktop {
         scene.layout(width, height);
         Minecraft mc = Minecraft.getMinecraft();
         scene.render(new MinecraftUiRenderer(f, width, height, mc.displayWidth, mc.displayHeight));
+        UiNode hovered = scene.hitTest(mx, my);
+        if (!edit && !panning && hovered != null && hovered.id.startsWith("card-"))
+            FactoryDashboard.drawHover(f, mx, my, width, height);
     }
 
     private static void build() {
@@ -363,37 +388,15 @@ final class FactoryDesktop {
             .bounds(area.x, area.y, area.w, area.h)
             .style(new UiStyle(new UiStyle.Paint(BACK, 0xFF344955, TEXT)));
         root.add(shell);
-        shell.add(
-            UiNode.label("desktop-title", tr("title"))
-                .bounds(12, 11, Math.max(40, area.w - 310), 12));
-        shell.add(button("edit", tr(edit ? "done" : "edit"), area.w - 242, 5, 66, 22, () -> {
-            edit = !edit;
-            canvasFocus = false;
-            changed(true);
-        }));
-        zoomLabel = button("zoom", "100%", area.w - 171, 5, 50, 22, () -> {
-            WidgetSpec target = layout.find(selected);
-            if (target != null) DesktopCardGeometry.focusAtOne(view, target, canvas);
-            else view.zoomAt(1 / view.scale, canvas.x + canvas.w / 2.0, canvas.y + canvas.h / 2.0, canvas.x, canvas.y);
-            changed(false);
-        });
-        shell.add(zoomLabel);
-        shell.add(button("origin", tr("home"), area.w - 116, 5, 50, 22, () -> {
-            view.scale = 1;
-            view.panX = view.panY = -16;
-            changed(false);
-        }));
-        shell.add(button("fit", tr("fit"), area.w - 61, 5, 50, 22, () -> {
+        canvas = new Rect(area.x, area.y + 34, area.w, Math.max(1, area.h - 52));
+        if (initialView) {
             view.fit(layout, canvas.w, canvas.h);
-            changed(false);
-        }));
-        int left = edit ? Math.min(126, Math.max(94, area.w / 6)) : 0,
-            right = edit ? Math.min(204, Math.max(150, area.w / 4)) : 0;
-        canvas = new Rect(area.x + left, area.y + 33, Math.max(1, area.w - left - right), Math.max(1, area.h - 53));
+            initialView = false;
+        }
         UiNode canvasNode = UiNode.panel("canvas")
-            .bounds(left, 33, canvas.w, canvas.h)
+            .bounds(0, 34, canvas.w, canvas.h)
             .overflowClip(true)
-            .style(new UiStyle(new UiStyle.Paint(BACK, 0, TEXT)))
+            .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)))
             .onDraw(FactoryDesktop::drawGrid)
             .on(UiEvent.Type.DOWN, FactoryDesktop::down)
             .on(UiEvent.Type.MOVE, FactoryDesktop::move)
@@ -409,12 +412,8 @@ final class FactoryDesktop {
         for (WidgetSpec widget : layout.widgets()) {
             UiNode card = UiNode.panel("card-" + widget.id)
                 .overflowClip(true)
-                .style(new UiStyle(new UiStyle.Paint(0xFFF0F0E8, 0xFFD0DAD8, 0xFF253C48)))
+                .style(new UiStyle(new UiStyle.Paint(DashboardVisuals.CARD, DashboardVisuals.EDGE, TEXT)))
                 .onDraw((node, renderer) -> drawWidget(layout.find(widget.id), node, renderer));
-            card.add(
-                UiNode.label("title-" + widget.id, label(widget))
-                    .bounds(0, 0, widget.width(), 27)
-                    .style(new UiStyle(new UiStyle.Paint(0xFFE0E7E5, 0xFFD1D9D9, 0xFF253C48))));
             card.add(
                 UiNode.panel("selection-" + widget.id)
                     .bounds(0, 0, widget.width(), widget.height())
@@ -427,9 +426,43 @@ final class FactoryDesktop {
             canvasNode.add(card);
         }
         shell.add(canvasNode);
+        // Tools float above the full-size canvas; editing never squeezes the dashboard.
+        shell.add(
+            UiNode.label("desktop-title", tr("title"))
+                .bounds(10, 12, Math.max(1, area.w - 300), 12));
+        int controlsX = Math.max(4, area.w - (edit ? 342 : 276));
+        shell.add(button("back-world", tr("back.world"), controlsX, 6, 54, 22, () -> WorkbenchHud.switchTask(1)));
+        shell.add(button("edit", tr(edit ? "done" : "edit"), controlsX + 58, 6, 64, 22, () -> {
+            FactoryDashboard.blur();
+            edit = !edit;
+            libraryOpen = propertiesOpen = canvasFocus = false;
+            changed(true);
+        }));
+        int toolsX = controlsX + 126;
         if (edit) {
-            shell.add(library(left));
-            shell.add(properties(left + canvas.w, right));
+            shell.add(button("library-toggle", tr("library"), toolsX, 6, 62, 22, () -> {
+                FactoryDashboard.blur();
+                libraryOpen = !libraryOpen;
+                propertiesOpen = false;
+                dirty = true;
+            }));
+            toolsX += 66;
+        }
+        zoomLabel = button("zoom", "100%", toolsX, 6, 48, 22, () -> {
+            WidgetSpec target = layout.find(selected);
+            if (target != null) DesktopCardGeometry.focusAtOne(view, target, canvas);
+            else view.zoomAt(1 / view.scale, canvas.x + canvas.w / 2.0, canvas.y + canvas.h / 2.0, canvas.x, canvas.y);
+            changed(false);
+        });
+        shell.add(zoomLabel);
+        shell.add(button("fit", tr("fit"), toolsX + 52, 6, 48, 22, () -> {
+            view.fit(layout, canvas.w, canvas.h);
+            changed(false);
+        }));
+        if (edit && libraryOpen) shell.add(library(Math.min(184, area.w - 12)));
+        if (edit && propertiesOpen && layout.find(selected) != null) {
+            int width = Math.min(230, Math.max(170, area.w / 3));
+            shell.add(properties(Math.max(0, area.w - width - 6), width));
         }
         statusLabel = UiNode.label("desktop-hint", tr(edit ? "hint.edit" : "hint.browse"))
             .bounds(12, area.h - 15, area.w - 24, 12);
@@ -448,23 +481,73 @@ final class FactoryDesktop {
 
     private static UiNode library(int width) {
         UiNode panel = UiNode.panel("library")
-            .bounds(0, 33, width, canvas.h)
+            .bounds(6, 36, width, Math.max(1, canvas.h - 4))
             .style(PANEL)
             .overflowClip(true);
+        panel.add(button("close-library", "x", width - 26, 5, 20, 20, () -> {
+            libraryOpen = false;
+            pendingPreset = null;
+            dirty = true;
+        }));
         panel.add(
             UiNode.label("library-title", tr("library"))
-                .bounds(10, 12, width - 20, 12));
+                .bounds(10, 12, width - 40, 12));
         UiNode list = UiNode.panel("library-list")
             .bounds(6, 34, width - 12, Math.max(1, canvas.h - 42))
             .layout(UiNode.Layout.COLUMN)
             .gap(6)
             .scrollable(true)
             .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)));
+        list.add(
+            UiNode.label("presets-title", tr("presets"))
+                .size(width - 12, 14));
+        if (pendingPreset != null) {
+            list.add(
+                UiNode.label("preset-confirm", tr("preset.replace"))
+                    .size(width - 12, 14));
+            list.add(
+                UiNode.button(
+                    "apply-preset",
+                    tr("preset.apply") + " "
+                        + tr(
+                            "preset." + pendingPreset.name()
+                                .toLowerCase(Locale.ROOT)),
+                    () -> {
+                        layout = pendingPreset.createLayout();
+                        pendingPreset = null;
+                        selected = "";
+                        libraryOpen = propertiesOpen = false;
+                        view.fit(layout, canvas.w, canvas.h);
+                        notice = tr("preset.applied");
+                        changed(true);
+                    })
+                    .size(width - 12, 25)
+                    .style(BUTTON));
+        }
+        for (DesktopPreset preset : DesktopPreset.values()) {
+            list.add(
+                UiNode.button(
+                    "preset-" + preset.name(),
+                    tr(
+                        "preset." + preset.name()
+                            .toLowerCase(Locale.ROOT)),
+                    () -> {
+                        pendingPreset = preset;
+                        dirty = true;
+                    })
+                    .size(width - 12, 23)
+                    .style(BUTTON));
+        }
+        list.add(
+            UiNode.label("add-title", tr("library"))
+                .size(width - 12, 14));
         for (WidgetKind kind : WidgetKind.values())
             if (kind != WidgetKind.DEVICE) list.add(UiNode.button("add-" + kind, "+ " + kindLabel(kind), () -> {
                 WidgetSpec added = layout.add(kind);
                 if (added == null) return;
                 selected = added.id;
+                propertiesOpen = true;
+                libraryOpen = false;
                 view.panX = added.x() - 18 / view.scale;
                 view.panY = added.y() - 18 / view.scale;
                 changed(true);
@@ -481,12 +564,16 @@ final class FactoryDesktop {
 
     private static UiNode properties(int x, int width) {
         UiNode panel = UiNode.panel("properties")
-            .bounds(x, 33, width, canvas.h)
+            .bounds(x, 36, width, Math.max(1, canvas.h - 4))
             .style(PANEL)
             .overflowClip(true);
+        panel.add(button("close-properties", "x", width - 26, 5, 20, 20, () -> {
+            propertiesOpen = false;
+            dirty = true;
+        }));
         panel.add(
             UiNode.label("properties-title", tr("properties"))
-                .bounds(10, 12, width - 20, 12));
+                .bounds(10, 12, width - 40, 12));
         WidgetSpec widget = layout.find(selected);
         if (widget == null) {
             panel.add(
@@ -510,6 +597,59 @@ final class FactoryDesktop {
             .size(width - 16, 23)
             .maxLength(64)
             .style(BUTTON));
+        body.add(
+            button(
+                "presentation",
+                tr("presentation") + ": "
+                    + tr(
+                        "presentation." + widget.presentation.name()
+                            .toLowerCase(Locale.ROOT)),
+                0,
+                0,
+                width - 16,
+                23,
+                () -> {
+                    WidgetSpec current = layout.find(widget.id);
+                    if (current == null) return;
+                    List<WidgetPresentation> forms = WidgetSpec.availablePresentations(current.kind);
+                    WidgetPresentation next = forms.get((forms.indexOf(current.presentation) + 1) % forms.size());
+                    present(current, next, current.metricField, current.userTarget);
+                }));
+        List<String> metrics = WidgetSpec.availableMetrics(widget.kind);
+        if (!metrics.isEmpty()) {
+            body.add(
+                button("metric", tr("metric") + ": " + tr("metric." + widget.metricField), 0, 0, width - 16, 23, () -> {
+                    WidgetSpec current = layout.find(widget.id);
+                    if (current == null) return;
+                    String metric = metrics.get((metrics.indexOf(current.metricField) + 1) % metrics.size());
+                    present(current, current.presentation, metric, null);
+                }));
+            body.add(
+                UiNode.label("target-label", tr("target.user"))
+                    .size(width - 16, 13));
+            UiNode targetInput = UiNode
+                .textInput(
+                    "user-target",
+                    widget.userTarget == null ? "" : Double.toString(widget.userTarget),
+                    value -> {})
+                .size(width - 16, 23)
+                .maxLength(32)
+                .style(BUTTON);
+            body.add(targetInput);
+            body.add(button("apply-target", tr("target.apply"), 0, 0, width - 16, 22, () -> {
+                WidgetSpec current = layout.find(widget.id);
+                if (current == null) return;
+                try {
+                    String value = targetInput.text()
+                        .trim();
+                    Double target = value.isEmpty() ? null : Double.valueOf(value);
+                    if (target != null && (!Double.isFinite(target) || target <= 0)) throw new NumberFormatException();
+                    present(current, current.presentation, current.metricField, target);
+                } catch (IllegalArgumentException invalid) {
+                    notice = tr("target.invalid");
+                }
+            }));
+        }
         body.add(button("columns", tr("columns") + ": " + widget.displayColumns, 0, 0, width - 16, 22, () -> {
             WidgetSpec current = layout.find(widget.id);
             if (current != null) configure(current, DesktopFieldPolicy.fields(current), current.displayColumns % 4 + 1);
@@ -543,6 +683,13 @@ final class FactoryDesktop {
         return panel;
     }
 
+    private static void present(WidgetSpec current, WidgetPresentation form, String metric, Double target) {
+        if (layout.replace(current.presented(form, metric, target))) {
+            notice = "";
+            changed(true);
+        } else notice = tr("no.space");
+    }
+
     private static void configure(WidgetSpec widget, List<String> fields, int columns) {
         WidgetSpec current = layout.find(widget.id);
         if (current == null) return;
@@ -555,7 +702,8 @@ final class FactoryDesktop {
     private static void drawGrid(UiNode node, UiRenderer renderer) {
         double step = DesktopLayout.CELL * view.scale;
         while (step < 20) step *= 2;
-        double firstX = canvas.x - view.panX * view.scale % step, firstY = canvas.y - view.panY * view.scale % step;
+        double firstX = canvas.x + DesktopCardGeometry.gridOffset(view.scale) - view.panX * view.scale % step,
+            firstY = canvas.y + DesktopCardGeometry.gridOffset(view.scale) - view.panY * view.scale % step;
         for (double x = firstX; x < canvas.x + canvas.w; x += step)
             renderer.fill(new UiRect(x, canvas.y, 1, canvas.h), GRID);
         for (double y = firstY; y < canvas.y + canvas.h; y += step)
@@ -571,10 +719,7 @@ final class FactoryDesktop {
         if (widget == null) return;
         UiRect b = node.bounds();
         Rect r = new Rect((int) b.x, (int) b.y, (int) b.width, (int) b.height);
-        if (view.scale < .65) {
-            renderer.fill(b, 0xFF304753);
-            if (r.w > 45 && r.h > 16) renderer.text(label(widget), r.x + 6, r.y + 6, TEXT);
-        } else FactoryDashboard.paintWidget(font, widget, r, mouseX, mouseY);
+        FactoryDashboard.paintWidget(font, widget, r, mouseX, mouseY);
     }
 
     private static Rect bounds(WidgetSpec w, CanvasTransform t) {

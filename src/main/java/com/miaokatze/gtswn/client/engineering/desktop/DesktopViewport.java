@@ -46,22 +46,28 @@ public final class DesktopViewport {
     public void fit(DesktopLayout layout, double width, double height) {
         if (layout == null || width <= 32 || height <= 32 || !Double.isFinite(width) || !Double.isFinite(height))
             return;
-        if (layout.widgets()
-            .isEmpty()) {
-            panX = panY = 0;
-            scale = 1;
-            return;
-        }
-        double minX = Double.POSITIVE_INFINITY, minY = minX, maxX = Double.NEGATIVE_INFINITY, maxY = maxX;
-        for (WidgetSpec widget : layout.widgets()) {
-            minX = Math.min(minX, widget.x());
-            minY = Math.min(minY, widget.y());
-            maxX = Math.max(maxX, widget.x() + widget.width());
-            maxY = Math.max(maxY, widget.y() + widget.height());
-        }
-        scale = Math.max(MIN_SCALE, Math.min(1, Math.min((width - 32) / (maxX - minX), (height - 32) / (maxY - minY))));
-        panX = (minX + maxX - width / scale) / 2;
-        panY = (minY + maxY - height / scale) / 2;
+        DesktopLayout.Bounds bounds = layout.bounds();
+        scale = Math
+            .max(MIN_SCALE, Math.min(1, Math.min((width - 32) / bounds.width(), (height - 32) / bounds.height())));
+        center(layout, width, height);
+    }
+
+    /** Centers occupied geometry without changing zoom; grid cell boundaries remain the seam centerlines. */
+    public void center(DesktopLayout layout, double width, double height) {
+        if (layout == null || width <= 0 || height <= 0 || !Double.isFinite(width) || !Double.isFinite(height)) return;
+        sanitize();
+        DesktopLayout.Bounds bounds = layout.bounds();
+        panX = (bounds.left + bounds.right - width / scale) / 2;
+        panY = (bounds.top + bounds.bottom - height / scale) / 2;
+        sanitize();
+    }
+
+    /** Centers the initial arrangement area at the current zoom, without clamping future navigation to it. */
+    public void centerInitial(double width, double height) {
+        if (width <= 0 || height <= 0 || !Double.isFinite(width) || !Double.isFinite(height)) return;
+        sanitize();
+        panX = (DesktopLayout.DEFAULT_SIZE - width / scale) / 2;
+        panY = (DesktopLayout.DEFAULT_SIZE - height / scale) / 2;
         sanitize();
     }
 

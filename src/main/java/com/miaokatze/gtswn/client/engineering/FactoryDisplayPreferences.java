@@ -20,8 +20,8 @@ public final class FactoryDisplayPreferences {
     enum Key {
 
         SIDEBAR(0),
-        RAIL(1),
-        POWER(1),
+        RAIL(0),
+        POWER(0),
         DASHBOARD(1),
         TASK(0, 0, 3),
         DASHBOARD_PRESET(0, 0, 2),

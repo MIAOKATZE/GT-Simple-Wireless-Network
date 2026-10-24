@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Set;
 
 import net.minecraft.entity.player.EntityPlayer;
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -258,7 +257,7 @@ public final class AEMonitorController {
             if (sample != null) {
                 monitorLatest.put(key, sample);
             }
-            monitorAvg300s.put(key, dataSet.averageRate300s(key));
+            monitorAvg300s.put(key, dataSet.averageRate(key));
         }
         for (FluidStack fluid : monitoredFluids) {
             String key = aeKey(fluid);
@@ -267,7 +266,7 @@ public final class AEMonitorController {
             if (sample != null) {
                 monitorLatest.put(key, sample);
             }
-            monitorAvg300s.put(key, dataSet.averageRate300s(key));
+            monitorAvg300s.put(key, dataSet.averageRate(key));
         }
 
         return new AEAssemblyCache.Assembly(
@@ -346,7 +345,17 @@ public final class AEMonitorController {
         long timeMs = System.currentTimeMillis();
 
         // G4：合并走势图与监控列表（chart 绑定在前，与原逐段写入顺序一致），按现行策略收集
-        Map<String, Long> amounts = collectWithReconciliation(tick, mergeMonitoredItems(), mergeMonitoredFluids());
+        List<ItemStack> items = mergeMonitoredItems();
+        List<FluidStack> fluids = mergeMonitoredFluids();
+        Map<String, Long> amounts = collectWithReconciliation(tick, items, fluids);
+        for (ItemStack item : items) {
+            String key = aeKey(item);
+            if (key != null) dataSet.registerIdentity(key, AEMonitorIdentity.descriptor(item));
+        }
+        for (FluidStack fluid : fluids) {
+            String key = aeKey(fluid);
+            if (key != null) dataSet.registerIdentity(key, AEMonitorIdentity.descriptor(fluid));
+        }
 
         boolean wroteAny = false;
         for (Map.Entry<String, Long> entry : amounts.entrySet()) {
@@ -571,23 +580,22 @@ public final class AEMonitorController {
      * 生成 AE 走势图/实时监控的物品 key。
      *
      * @param stack 物品堆（null 或空返回 null）
-     * @return item:&lt;registryName&gt;:&lt;meta&gt;
+     * @return versioned item identity including the complete tag digest; quantity is ignored
      */
     public static String aeKey(ItemStack stack) {
         if (stack == null || stack.getItem() == null) return null;
-        return "item:" + Item.itemRegistry.getNameForObject(stack.getItem()) + ":" + stack.getItemDamage();
+        return AEMonitorIdentity.key(stack);
     }
 
     /**
      * 生成 AE 走势图/实时监控的流体 key。
      *
      * @param fluid 流体堆（null 或空返回 null）
-     * @return fluid:&lt;fluidName&gt;
+     * @return versioned fluid identity including the complete tag digest; quantity is ignored
      */
     public static String aeKey(FluidStack fluid) {
         if (fluid == null || fluid.getFluid() == null) return null;
-        return "fluid:" + fluid.getFluid()
-            .getName();
+        return AEMonitorIdentity.key(fluid);
     }
 
     // ==================== 标签页与绑定操作（PacketUpdateAETabState 七 actionType 的服务端入口）====================
@@ -608,7 +616,7 @@ public final class AEMonitorController {
      * @return true=新绑定, false=清除绑定
      */
     public boolean setChartItem(ItemStack stack) {
-        if (stack != null && chartItem != null && ItemStack.areItemStacksEqual(chartItem, stack)) {
+        if (stack != null && chartItem != null && aeKey(chartItem).equals(aeKey(stack))) {
             clearAEData(aeKey(chartItem));
             chartItem = null;
             bindingVersion++; // G4：绑定集变化，装配缓存失效
@@ -630,9 +638,7 @@ public final class AEMonitorController {
 
     /** 绑定走势图流体 */
     public boolean setChartFluid(FluidStack fluid) {
-        if (fluid != null && chartFluid != null
-            && fluid.getFluid()
-                .equals(chartFluid.getFluid())) {
+        if (fluid != null && chartFluid != null && aeKey(fluid).equals(aeKey(chartFluid))) {
             clearAEData(aeKey(chartFluid));
             chartFluid = null;
             bindingVersion++; // G4：绑定集变化，装配缓存失效
@@ -700,7 +706,7 @@ public final class AEMonitorController {
     public boolean toggleItemMonitor(ItemStack stack) {
         if (stack == null) return false;
         for (int i = 0; i < monitoredItems.size(); i++) {
-            if (ItemStack.areItemStacksEqual(monitoredItems.get(i), stack)) {
+            if (aeKey(monitoredItems.get(i)).equals(aeKey(stack))) {
                 clearAEData(aeKey(monitoredItems.get(i)));
                 monitoredItems.remove(i);
                 bindingVersion++; // G4：绑定集变化，装配缓存失效
@@ -723,9 +729,7 @@ public final class AEMonitorController {
     public boolean toggleFluidMonitor(FluidStack fluid) {
         if (fluid == null) return false;
         for (int i = 0; i < monitoredFluids.size(); i++) {
-            if (monitoredFluids.get(i)
-                .getFluid()
-                .equals(fluid.getFluid())) {
+            if (aeKey(monitoredFluids.get(i)).equals(aeKey(fluid))) {
                 clearAEData(aeKey(monitoredFluids.get(i)));
                 monitoredFluids.remove(i);
                 bindingVersion++; // G4：绑定集变化，装配缓存失效

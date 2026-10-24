@@ -371,12 +371,19 @@ public final class EUCacheBridge {
     /**
      * S35 描述包 EU 缓存段读取（原 TE.readSyncData 的四键段，读取全守卫语义保持；G3 三档应用）：
      * euSyncKind=0 全量 → samples 整窗替换 + 记录 seq + 解除失步锁；
+     * euSyncKind=1 且 seq 等于最近已接收版本 → 幂等 no-op，不改变失步状态；
      * euSyncKind=1 增量 → 上次 seq+1 == 本次 seq 且未失步时按 tick 去重追加并回卷
      * {@link WindowChain#CAPACITY}（窗口语义不变 = 始终最新 61 点，与服务端 FIFO 一致），
      * 否则置失步锁：保留旧窗口、四键照常应用，等待下一次全量档包（冷启动/窗口切换/兜底轮换/
      * 新连接推送）整体替换自愈。
      */
     public void readSync(NBTTagCompound tag) {
+        // S35 may describe the same version more than once. A repeated delta is a complete no-op,
+        // including while waiting for a full snapshot after a genuine gap.
+        if (tag.hasKey("euSyncKind") && tag.hasKey("euSyncSeq")
+            && tag.getInteger("euSyncKind") == 1
+            && lastSyncSeq >= 0L
+            && tag.getLong("euSyncSeq") == lastSyncSeq) return;
         if (tag.hasKey("cachedEu")) {
             try {
                 cachedEu = new BigInteger(tag.getString("cachedEu"));

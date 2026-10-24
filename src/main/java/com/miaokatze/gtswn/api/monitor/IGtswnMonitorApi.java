@@ -69,7 +69,7 @@ public interface IGtswnMonitorApi {
     Optional<Double> getNetworkAverageEut(UUID owner, int windowId);
 
     /**
-     * 查询指定网络信息屏的 AE 监视快照（全部被监视 key 的最新数量与 5 分钟平均速率）。
+     * 查询指定网络信息屏的 AE 监视快照（全部已存系列的最新数量、实际跨度平均速率及 legacy 标记）。
      * <p>
      * 字段语义见 {@link AEMonitorSnapshot}。信息屏从未记录任何 key 时返回 empty。
      *
@@ -86,8 +86,8 @@ public interface IGtswnMonitorApi {
      *
      * @param panelWorld 信息屏方块所在的世界实例；null 返回 empty
      * @param panelKey   信息屏坐标字符串 {@code dimensionId:x:y:z}；null 或空串返回 empty
-     * @param subKey     被监视物品/流体的字符串标识（{@code item:<registryName>:<meta>} 或
-     *                   {@code fluid:<fluidName>}）；null 或空串返回 empty
+     * @param subKey     快照返回的完整版本化物品/流体身份；旧未版本化 key 仍可查询 legacy 历史，
+     *                   其 NBT 归属未知，不能与新系列自动拼接；null 或空串返回 empty
      * @param windowId   窗口编号，合法范围 0-7；越界返回 empty
      * @return 该 key 的历史样本；数据集不存在返回 empty（key 无样本时返回样本数为 0 的窗口）
      */

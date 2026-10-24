@@ -9,6 +9,7 @@ import net.minecraftforge.common.util.Constants;
 
 /**
  * 8 窗口 61 点 FIFO 采样链泛型骨架（O2-14，原 SWN-OPT-07 方案 C）。
+ * 窗口名称是默认采样间隔下的名义档位；实际覆盖时长由首末样本 tick 决定，尤其 AE 采样间隔可配置。
  * <p>
  * EU 侧（{@link NetworkInfoDataSet}）与 AE 侧（{@code AEMonitorDataSet.Chain}）此前
  * 各持一份互为类型替换拷贝的窗口容器与 8 级嵌套流入链——本骨架单源承载：

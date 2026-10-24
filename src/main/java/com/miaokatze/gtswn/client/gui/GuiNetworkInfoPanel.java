@@ -666,6 +666,14 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
     private void drawAEChartTab() {
         ItemStack item = panel.getChartItem();
         FluidStack fluid = panel.getChartFluid();
+        String coverage = StatCollector.translateToLocalFormatted(
+            "gtswn.network_info.gui.ae.window.actual",
+            WindowLabel.actualSpan(panel.getAEChartSamples()));
+        fontRendererObj.drawString(
+            fontRendererObj.trimStringToWidth(coverage, 134),
+            left + 204,
+            top + 78,
+            GtswnGuiPalette.TEXT_BODY);
 
         // 未绑定：显示空提示与右键配置提示
         if (item == null && fluid == null) {
@@ -931,7 +939,7 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
 
     /** 根据 AE 时长窗口常量生成按钮显示文本（E4 窗口枚举化：langKey 映射迁入 WindowLabel） */
     private String getAEWindowDisplay(int window) {
-        return tr("gtswn.network_info.gui.ae.window") + ": "
+        return tr("gtswn.network_info.gui.ae.window.nominal") + ": "
             + tr(
                 WindowLabel.of(window)
                     .langKey());

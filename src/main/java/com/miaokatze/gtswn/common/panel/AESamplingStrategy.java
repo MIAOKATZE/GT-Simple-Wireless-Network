@@ -75,9 +75,8 @@ public interface AESamplingStrategy {
     }
 
     /**
-     * 一次迭代实现：经 {@link AEMonitorController.AEQuery#bulkAmounts} 单遍遍历 AE2
-     * item/fluid storage list，以 aeKey 字符串匹配收集全部被监视 key（TE 侧实现，
-     * 未命中 key 以 0 计）。同 item+meta 异 NBT 变体的迭代序歧义由控制器同 tick 对账兜底。
+     * 批量实现（保留原策略类名）：经 {@link AEMonitorController.AEQuery#bulkAmounts} 每通道获取一次
+     * storage list，再以原生 findPrecise 查询完整身份，未命中 key 以 0 计。
      */
     final class SingleIteration implements AESamplingStrategy {
 

@@ -95,16 +95,20 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
         Map<String, BigInteger> amounts = new LinkedHashMap<>();
         Map<String, Double> rates = new LinkedHashMap<>();
+        Map<String, Long> spans = new LinkedHashMap<>();
         List<String> keys = new ArrayList<>();
+        List<String> legacyKeys = new ArrayList<>();
         for (String key : dataSet.getKeys()) {
             AEMonitorSample newest = dataSet.newest(key);
             if (newest == null) continue;
             keys.add(key);
             amounts.put(key, BigInteger.valueOf(newest.amount));
-            rates.put(key, dataSet.averageRate300s(key));
+            rates.put(key, dataSet.averageRate(key));
+            spans.put(key, dataSet.spanTicks(key, AEMonitorDataSet.WINDOW_5_MIN));
+            if (dataSet.isLegacy(key)) legacyKeys.add(key);
         }
         if (keys.isEmpty()) return Optional.empty();
-        return Optional.of(new AEMonitorSnapshot(panelKey, amounts, rates, keys));
+        return Optional.of(new AEMonitorSnapshot(panelKey, amounts, rates, keys, spans, legacyKeys));
     }
 
     @Override

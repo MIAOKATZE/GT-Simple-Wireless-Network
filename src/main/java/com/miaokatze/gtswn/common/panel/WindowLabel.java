@@ -1,5 +1,8 @@
 package com.miaokatze.gtswn.common.panel;
 
+import java.util.List;
+import java.util.Locale;
+
 /**
  * 检测时长窗口枚举（O2-A04 窗口枚举化 = E 线 E4）：统一承载窗口常量 → 短名（TESR 时间轴
  * 标签与 GUI EU 窗口按钮）与 GUI langKey（AE 窗口按钮本地化显示）两套显示映射，外加环进
@@ -57,6 +60,35 @@ public enum WindowLabel {
     /** 窗口常量 → 枚举；越界/未知值回落 5m（与原各 switch default 分支一致） */
     public static WindowLabel of(int window) {
         return window >= 0 && window < BY_WINDOW.length ? BY_WINDOW[window] : MIN_5;
+    }
+
+    /** Actual game-time coverage; a fixed 61-point capacity does not imply a fixed duration. */
+    public static long spanTicks(List<AEMonitorSample> samples) {
+        if (samples == null || samples.size() < 2) return 0L;
+        return Math.max(0L, samples.get(samples.size() - 1).tick - samples.get(0).tick);
+    }
+
+    public static String actualSpan(List<AEMonitorSample> samples) {
+        return formatSpan(spanTicks(samples));
+    }
+
+    /** Game time (20 ticks/second), independent of server/client configuration. */
+    public static String formatSpan(long ticks) {
+        if (ticks <= 0L) return "—";
+        double seconds = ticks / 20.0D;
+        double value = seconds;
+        String unit = "s";
+        if (seconds >= 86400.0D) {
+            value = seconds / 86400.0D;
+            unit = "d";
+        } else if (seconds >= 3600.0D) {
+            value = seconds / 3600.0D;
+            unit = "h";
+        } else if (seconds >= 60.0D) {
+            value = seconds / 60.0D;
+            unit = "m";
+        }
+        return String.format(Locale.ROOT, value == Math.floor(value) ? "%.0f%s" : "%.1f%s", value, unit);
     }
 
     /**

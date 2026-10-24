@@ -172,6 +172,14 @@ public final class DesktopStore {
             p.setProperty(prefix + "fields", String.join(",", widget.fields));
             p.setProperty(prefix + "fieldsConfigured", Boolean.toString(widget.fieldsConfigured));
             p.setProperty(prefix + "displayColumns", Integer.toString(widget.displayColumns));
+            // Optional schema-1 additions keep old files and template-empty field semantics intact.
+            if (widget.presentation != WidgetPresentation.DEFAULT)
+                p.setProperty(prefix + "presentation", widget.presentation.name());
+            if (!widget.metricField.isEmpty() && !widget.metricField.equals(
+                WidgetSpec.availableMetrics(widget.kind)
+                    .get(0)))
+                p.setProperty(prefix + "metricField", widget.metricField);
+            if (widget.userTarget != null) p.setProperty(prefix + "userTarget", widget.userTarget.toString());
             DeviceBinding b = widget.device;
             if (b != null) {
                 p.setProperty(prefix + "source", b.source.toString());
@@ -228,7 +236,10 @@ public final class DesktopStore {
                             prefix + "fieldsConfigured",
                             Boolean.toString(
                                 !p.getProperty(prefix + "fields", "")
-                                    .isEmpty()))));
+                                    .isEmpty()))),
+                    presentation(p, prefix, kind),
+                    metric(p, prefix, kind),
+                    target(p, prefix, kind));
                 result.add(widget);
             } catch (IllegalArgumentException ignored) { /* Keep valid siblings. */ }
         }
@@ -238,6 +249,33 @@ public final class DesktopStore {
 
     private static int integer(Properties p, String key) {
         return Integer.parseInt(p.getProperty(key, ""));
+    }
+
+    private static WidgetPresentation presentation(Properties p, String prefix, WidgetKind kind) {
+        try {
+            WidgetPresentation form = WidgetPresentation.valueOf(p.getProperty(prefix + "presentation", "DEFAULT"));
+            if (WidgetSpec.availablePresentations(kind)
+                .contains(form)) return form;
+        } catch (IllegalArgumentException ignored) { /* Future forms keep the existing data source. */ }
+        return WidgetPresentation.DEFAULT;
+    }
+
+    private static String metric(Properties p, String prefix, WidgetKind kind) {
+        String metric = p.getProperty(prefix + "metricField", "");
+        if (kind == WidgetKind.DEVICE) {
+            if ("input".equals(metric)) metric = "instantInput";
+            if ("output".equals(metric)) metric = "instantOutput";
+        }
+        return WidgetSpec.availableMetrics(kind)
+            .contains(metric) ? metric : "";
+    }
+
+    private static Double target(Properties p, String prefix, WidgetKind kind) {
+        double target = number(p, prefix + "userTarget", 0);
+        if (!p.getProperty(prefix + "metricField", "")
+            .isEmpty() && metric(p, prefix, kind).isEmpty()) return null;
+        return target > 0 && !WidgetSpec.availableMetrics(kind)
+            .isEmpty() ? target : null;
     }
 
     private static double number(Properties p, String key, double fallback) {

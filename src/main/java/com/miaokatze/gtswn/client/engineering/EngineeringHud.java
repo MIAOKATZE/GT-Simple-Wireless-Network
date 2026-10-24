@@ -164,6 +164,7 @@ public final class EngineeringHud extends Gui {
         Minecraft mc = Minecraft.getMinecraft();
         if (event.type != RenderGameOverlayEvent.ElementType.ALL || !EngineeringModeController.isActive()
             || mc.currentScreen != null
+            || mc.gameSettings.hideGUI
             || mc.thePlayer == null) return;
         int w = width(mc), h = height(mc);
         try (GlScope ignored = new GlScope()) {
@@ -175,7 +176,7 @@ public final class EngineeringHud extends Gui {
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             if (WorkbenchHud.worldView()) drawMap(mc.fontRenderer, w, h);
             WorkbenchHud.render(w, h, localX(mc, Mouse.getX()), localY(mc, Mouse.getY()));
-            if (selecting || !notice.isEmpty()) {
+            if (WorkbenchHud.worldView() && (selecting || !notice.isEmpty())) {
                 String hint = tr(notice.isEmpty() ? "dash.selection.hint" : notice);
                 int hintWidth = Math.min(w - 32, mc.fontRenderer.getStringWidth(hint) + 16);
                 rect((w - hintWidth) / 2, h - 25, (w + hintWidth) / 2, h - 7, BACK);
@@ -799,6 +800,7 @@ public final class EngineeringHud extends Gui {
     /** Core raw navigation precedes Forge; supports() consults this hit test before capturing a pointer. */
     static boolean blocksNavigation(int displayX, int displayY) {
         Minecraft mc = Minecraft.getMinecraft();
+        if (mc.gameSettings.hideGUI) return false;
         int x = localX(mc, displayX), y = localY(mc, displayY), w = width(mc), h = height(mc);
         if (FactoryDesktop.pointerCaptured()) return true;
         return WorkbenchHud.layout(w, h)
@@ -807,6 +809,7 @@ public final class EngineeringHud extends Gui {
 
     static boolean mouse(MouseEvent e) {
         Minecraft mc = Minecraft.getMinecraft();
+        if (mc.gameSettings.hideGUI) return false;
         int x = localX(mc, e.x), y = localY(mc, e.y), w = width(mc), h = height(mc);
         boolean press = e.button == 0 && e.buttonstate;
         if (dragging) {
@@ -1015,7 +1018,10 @@ public final class EngineeringHud extends Gui {
     public void world(RenderWorldLastEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
         Target target = EngineeringModeController.INSTANCE.selected();
-        if (!EngineeringModeController.isActive() || target == null || mc.renderViewEntity == null) return;
+        if (!EngineeringModeController.isActive() || target == null
+            || mc.renderViewEntity == null
+            || mc.gameSettings.hideGUI
+            || WorkbenchHud.dashboardVisible()) return;
         Entity view = mc.renderViewEntity;
         double x = view.lastTickPosX + (view.posX - view.lastTickPosX) * event.partialTicks;
         double y = view.lastTickPosY + (view.posY - view.lastTickPosY) * event.partialTicks;

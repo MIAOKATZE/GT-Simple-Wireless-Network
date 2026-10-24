@@ -1,6 +1,6 @@
 package com.miaokatze.gtswn.network;
 
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 
 import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
@@ -17,6 +17,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -28,6 +29,7 @@ import appeng.tile.networking.TileCableBus;
 import appeng.util.Platform;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -106,6 +108,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
     private static final class SwapJob {
 
         final EntityPlayerMP player;
+        final int dimension;
         final int x;
         final int y;
         final int z;
@@ -115,6 +118,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         SwapJob(EntityPlayerMP player, int x, int y, int z, int side, boolean removeCore) {
             this.removeCore = removeCore;
             this.player = player;
+            this.dimension = player.dimension;
             this.x = x;
             this.y = y;
             this.z = z;
@@ -123,7 +127,12 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
     }
 
     /** 待处理作业队列（Netty 线程生产 / 主线程消费，仅服务端非空） */
-    private static final ConcurrentLinkedQueue<SwapJob> QUEUE = new ConcurrentLinkedQueue<>();
+    private static final int MAX_PENDING = 256, TICK_BUDGET = 8;
+    private static final ArrayBlockingQueue<SwapJob> QUEUE = new ArrayBlockingQueue<>(MAX_PENDING);
+
+    public static void clear() {
+        QUEUE.clear();
+    }
 
     /** 包 13 注册时同步挂载本排水器（双端安全：客户端队列恒空） */
     public static void register() {
@@ -136,12 +145,18 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
     public static class DrainListener {
 
         @SubscribeEvent
+        public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+            QUEUE.removeIf(job -> job.player == event.player);
+        }
+
+        @SubscribeEvent
         public void onServerTick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) {
                 return;
             }
-            SwapJob job;
-            while ((job = QUEUE.poll()) != null) {
+            for (int processed = 0; processed < TICK_BUDGET; processed++) {
+                SwapJob job = QUEUE.poll();
+                if (job == null) break;
                 try {
                     handleSwap(job);
                 } catch (Throwable t) {
@@ -158,7 +173,8 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         public IMessage onMessage(PacketQuantumTerminalSwapBus msg, MessageContext ctx) {
             EntityPlayerMP player = ctx.getServerHandler().playerEntity;
             if (player != null) {
-                QUEUE.add(new SwapJob(player, msg.x, msg.y, msg.z, msg.side, msg.removeCore));
+                // Full queue rejects the new intent; never coalesce or overwrite ordered world mutations.
+                QUEUE.offer(new SwapJob(player, msg.x, msg.y, msg.z, msg.side, msg.removeCore));
             }
             return null;
         }
@@ -171,6 +187,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
      */
     private static void handleSwap(SwapJob job) {
         EntityPlayerMP player = job.player;
+        if (!PlayerRequestQueue.isOnline(player) || player.dimension != job.dimension) return;
         handleInteraction(player, job.x, job.y, job.z, job.side, job.removeCore);
     }
 

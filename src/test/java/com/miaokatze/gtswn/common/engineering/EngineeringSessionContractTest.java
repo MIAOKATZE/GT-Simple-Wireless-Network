@@ -5,6 +5,7 @@ import static org.junit.Assert.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -110,6 +111,75 @@ public class EngineeringSessionContractTest {
             }
         } finally {
             sent.remove(owner.id);
+        }
+    }
+
+    @Test
+    public void saturatedSubscriptionsRotateAcrossEightyOneAndOneHundredSixtyPlayers() throws Exception {
+        assertFairRotation(81, 4);
+        assertFairRotation(160, 4);
+    }
+
+    @Test
+    public void rotationAlsoProgressesWhenTimeBudgetAllowsOnlyOneRefresh() throws Exception {
+        assertFairRotation(81, 1);
+    }
+
+    @Test
+    public void serverStopDropsPendingSubscriptionsAndPublicationCooldowns() throws Exception {
+        Player player = player(UUID.randomUUID());
+        EngineeringDashboardSessions.enqueue(player, request(1, false));
+        map("LAST_SENT").put(player.id, Long.valueOf(123));
+        EngineeringDashboardSessions.clear();
+        assertTrue(map("PENDING").isEmpty());
+        assertTrue(map("SESSIONS").isEmpty());
+        assertTrue(map("LAST_SENT").isEmpty());
+    }
+
+    private static void assertFairRotation(int count, int perTick) throws Exception {
+        Map<UUID, Object> sessions = map("SESSIONS");
+        Class<?> type = Class.forName(EngineeringDashboardSessions.class.getName() + "$Session");
+        Constructor<?> constructor = type
+            .getDeclaredConstructor(EntityPlayerMP.class, ItemStack.class, PacketEngineeringSubscribe.class);
+        constructor.setAccessible(true);
+        Field sent = type.getDeclaredField("sent");
+        sent.setAccessible(true);
+        Field tick = EngineeringDashboardSessions.class.getDeclaredField("tick");
+        tick.setAccessible(true);
+        long originalTick = tick.getLong(null);
+        Method next = EngineeringDashboardSessions.class.getDeclaredMethod("nextDueSession");
+        next.setAccessible(true);
+        Map<Object, Integer> counts = new IdentityHashMap<>();
+        sessions.clear();
+        try {
+            tick.setLong(null, 0);
+            for (int i = 0; i < count; i++) {
+                Player player = player(new UUID(0, i));
+                Object session = constructor.newInstance(player, new ItemStack(new Item()), request(1, false));
+                sent.setLong(session, -EngineeringDashboardSessions.UPDATE_TICKS);
+                sessions.put(player.id, session);
+                counts.put(session, 0);
+            }
+            for (int now = 0; now < count * 3; now++) {
+                tick.setLong(null, now);
+                for (int attempt = 0; attempt < perTick; attempt++) {
+                    Object selected = next.invoke(null);
+                    assertNotNull(selected);
+                    assertTrue(now - sent.getLong(selected) >= EngineeringDashboardSessions.UPDATE_TICKS);
+                    sent.setLong(selected, now);
+                    counts.put(selected, counts.get(selected) + 1);
+                }
+            }
+            int min = Integer.MAX_VALUE, max = 0;
+            for (int served : counts.values()) {
+                min = Math.min(min, served);
+                max = Math.max(max, served);
+            }
+            assertTrue("Every subscription must eventually be served", min > 0);
+            assertTrue("Overload must slow all subscribers fairly", max - min <= 1);
+        } finally {
+            sessions.clear();
+            tick.setLong(null, originalTick);
         }
     }
 }
