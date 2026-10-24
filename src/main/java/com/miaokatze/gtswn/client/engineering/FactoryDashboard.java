@@ -282,8 +282,7 @@ final class FactoryDashboard extends Gui {
         String value = "—", foot;
         if (index == 0) {
             value = s.device.fresh ? Integer.toString(devices.size()) : "—";
-            foot = s.device.fresh ? running + "/" + idle + "/" + stopped + " · " + sourceQuality(s.device)
-                : sourceQuality(s.device);
+            foot = s.device.fresh ? deviceCountFoot() : sourceQuality(s.device);
         } else if (index < 3) {
             if (valid && p.monitored > 0)
                 value = FormatUtil.formatMetricDouble(index == 1 ? p.current.instIn : p.current.instOut) + " EU/t";
@@ -301,6 +300,16 @@ final class FactoryDashboard extends Gui {
         GL11.glScalef(1.25f, 1.25f, 1);
         text(f, value, 0, 0, TEXT, (int) ((r.w - 18) / 1.25));
         GL11.glPopMatrix();
+        if (index == 0 && s.device.fresh && f.getStringWidth(foot) > r.w - 18) {
+            text(
+                f,
+                countLabel("running", running) + " · " + countLabel("idle", idle),
+                r.x + 9,
+                r.y + 34,
+                MUTED,
+                r.w - 18);
+            foot = countLabel("stopped", stopped);
+        }
         text(f, foot, r.x + 9, r.y + 43, MUTED, r.w - 18);
         hits.add(new Hit(r, index == 0 ? WorkbenchHud::openDevices : index < 3 ? WorkbenchHud::openPowerReview : () -> {
             resourceKey = "";
@@ -444,7 +453,7 @@ final class FactoryDashboard extends Gui {
                         + s.review.totalChunks
                         + (s.review.discovering ? " · " + tr("discovering") : ""),
                     r.x + 9,
-                    r.y + 76,
+                    r.y + FactoryDashboardLayout.regionLoadedLineY(r.h),
                     MUTED,
                     r.w - 18);
             }
@@ -653,6 +662,17 @@ final class FactoryDashboard extends Gui {
             : s.receivedAtMillis == 0 ? StatCollector.translateToLocal("gtswn.factory.waiting")
                 : !s.fresh ? tr("stale")
                     : s.partial ? tr("partial") + " · " + s.devices.size() : tr("received") + " · " + s.devices.size();
+    }
+
+    private static String deviceCountFoot() {
+        return countLabel("running", running) + " · "
+            + countLabel("idle", idle)
+            + " · "
+            + countLabel("stopped", stopped);
+    }
+
+    private static String countLabel(String state, int count) {
+        return StatCollector.translateToLocalFormatted("gtswn.factory.cockpit.device." + state, count);
     }
 
     private static boolean rateKnown(Panel panel, Row row) {

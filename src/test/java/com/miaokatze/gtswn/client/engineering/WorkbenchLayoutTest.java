@@ -60,4 +60,19 @@ public class WorkbenchLayoutTest {
         assertTrue(layout.contains(layout.shortcuts.x + 4, layout.shortcuts.y + 4));
     }
 
+    @Test
+    public void taskNavigationKeepsCameraHintsAndRegionRowsSeparate() {
+        for (int width : new int[] { 480, 640, 1280 }) {
+            WorkbenchLayout layout = new WorkbenchLayout(width, 400, false, false, false, false, 200, 108, false, true);
+            assertEquals(24, layout.cameraHints.h);
+            assertTrue(layout.cameraHints.y + layout.cameraHints.h <= layout.tasks[0].y);
+            assertTrue(layout.cameraHints.contains(layout.cameraHints.x + 1, layout.cameraHints.y + 22));
+        }
+        for (int height : new int[] { 100, 124 }) {
+            int loaded = FactoryDashboardLayout.regionLoadedLineY(height);
+            assertTrue(loaded - 59 >= 12);
+            assertTrue(height - 17 - loaded >= 12);
+        }
+    }
+
 }

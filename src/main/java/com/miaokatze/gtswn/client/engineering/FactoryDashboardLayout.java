@@ -9,6 +9,10 @@ final class FactoryDashboardLayout {
     final Rect trend, region, resources, attention;
     final int contentHeight;
 
+    static int regionLoadedLineY(int height) {
+        return Math.min(76, height - 29);
+    }
+
     FactoryDashboardLayout(int width, int preset, boolean wide, boolean reverse) {
         int gap = 8, columns = width >= 540 && wide ? 4 : 2;
         int cardWidth = (width - gap * (columns - 1)) / columns;

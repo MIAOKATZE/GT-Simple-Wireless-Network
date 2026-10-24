@@ -42,6 +42,7 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 final class WorkbenchHud extends Gui {
 
     private static final int BACK = 0xE8172029, HEADER = 0xEE2B3E4B, TEXT = 0xFFE4EEF3;
+    private static final int CHROME = 0xFF172029, CHROME_SELECTED = 0xFF2B3E4B;
     private static final int MUTED = 0xFF91A6B2, ACCENT = 0xFF69D8CA, WARN = 0xFFF0BB70, STOPPED = 0xFFEE827E;
     private static final ResourceLocation ATLAS = new ResourceLocation("gtswn", "textures/gui/factory_atlas.png");
     private static final WorkbenchHud PAINTER = new WorkbenchHud();
@@ -263,7 +264,7 @@ final class WorkbenchHud extends Gui {
             Source actual = EngineeringTerminalSources.resolve(mc.thePlayer, i);
             boolean present = actual.present();
             boolean active = selectedSlot == i && sidebarOpen && !settingsOpen;
-            box(r, active ? HEADER : BACK);
+            box(r, active ? CHROME_SELECTED : CHROME);
             drawRect(r.x, r.y, r.x + 2, r.y + r.h, active ? ACCENT : MUTED);
             ItemStack stack = present ? actual.stack : TerminalPresentation.placeholder(i);
             TerminalPresentation.drawIcon(mc, f, stack, r.x + 5, r.y + 5, present, 18);
@@ -287,27 +288,22 @@ final class WorkbenchHud extends Gui {
             mouseX,
             mouseY,
             Boolean.TRUE.equals(actionState(MODES[i])));
-        if (dashboardMode) text(
-            f,
-            "GTSWN · " + tr("cockpit.preset.0"),
-            l.cameraHints.x + 6,
-            l.cameraHints.y + 7,
-            ACCENT,
-            l.cameraHints.w - 12);
+        if (dashboardMode)
+            text(f, "GTSWN · " + tr("task.0"), l.cameraHints.x + 6, l.cameraHints.y + 7, ACCENT, l.cameraHints.w - 12);
         else drawCameraHints(f, l.cameraHints);
         for (int i = 0; i < l.tasks.length; i++) {
             final int destination = i;
-            box(l.tasks[i], task == i ? HEADER : BACK);
+            box(l.tasks[i], task == i ? CHROME_SELECTED : CHROME);
             if (task == i) stateEdge(l.tasks[i], true);
             control(l.tasks[i], tr("task." + i), tr("task." + i), () -> switchTask(destination));
         }
-        box(l.sources, sidebarOpen ? HEADER : BACK);
+        box(l.sources, sidebarOpen ? CHROME_SELECTED : CHROME);
         control(l.sources, tr("sources"), tr("sources.hint"), () -> {
             sidebarOpen = !sidebarOpen;
             if (sidebarOpen && selectedSlot < 0)
                 selectedSlot = EngineeringHud.activeSlot() < 0 ? 2 : EngineeringHud.activeSlot();
         });
-        box(l.shortcuts, settingsOpen ? HEADER : BACK);
+        box(l.shortcuts, settingsOpen ? CHROME_SELECTED : CHROME);
         stateEdge(l.shortcuts, settingsOpen);
         control(
             l.shortcuts,
@@ -382,12 +378,10 @@ final class WorkbenchHud extends Gui {
                 TerminalBaubleController.action(TerminalKeyNames.name(-98), "factory.pan"),
                 TerminalBaubleController.action(TerminalKeyNames.name(-99), "factory.rotate"),
                 TerminalBaubleController.action(tr("input.wheel"), "factory.zoom")));
-        lines.add(
-            TerminalBaubleController.row(
-                TerminalBaubleController.action(FactoryShortcuts.hint(Action.RETURN), "factory.return"),
-                TerminalBaubleController.action(FactoryShortcuts.hint(Action.FOLLOW), "factory.follow"),
-                TerminalBaubleController.action(FactoryShortcuts.hint(Action.TOGGLE), "factory.exit")));
-        TerminalBaubleController.drawHud(f, lines, r.x, r.y, r.w, r.h);
+        // Return/follow/exit keep their current bindings in the corresponding toolbar tooltips.
+        // Draw and navigation exclusion share this two-line rectangle at the normal font size.
+        box(r, 0xFF101010);
+        for (int i = 0; i < lines.size(); i++) text(f, lines.get(i), r.x + 6, r.y + 2 + i * 11, TEXT, r.w - 12);
     }
 
     private static void drawControlSettings(FontRenderer f, Rect r, int y) {
@@ -1415,7 +1409,7 @@ final class WorkbenchHud extends Gui {
 
     private static void icon(Rect r, int u, String tip, Action action, int mx, int my, boolean active) {
         if (r.w == 0 || r.h == 0) return;
-        box(r, active || r.contains(mx, my) ? HEADER : BACK);
+        box(r, active || r.contains(mx, my) ? CHROME_SELECTED : CHROME);
         if (actionState(action) != null) stateEdge(r, active);
         Minecraft.getMinecraft()
             .getTextureManager()

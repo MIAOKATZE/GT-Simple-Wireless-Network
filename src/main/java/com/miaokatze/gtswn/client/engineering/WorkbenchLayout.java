@@ -72,7 +72,7 @@ public final class WorkbenchLayout {
     public WorkbenchLayout(int width, int height, boolean sidebarOpen, boolean railOpen, boolean powerOpen,
         boolean dashboardOpen, int railHeight, int powerHeight, boolean alertsOpen, boolean taskNavigation,
         boolean objectsPage, boolean inspectorOpen) {
-        cameraHints = new Rect(164, 8, Math.max(1, width - 278), 43);
+        cameraHints = new Rect(164, 8, Math.max(1, width - 278), taskNavigation ? 24 : 43);
         shortcuts = new Rect(width - 108, 9, 100, 24);
         for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(8, 56 + i * 33, 28, 28);
         for (int i = 0; i < modes.length; i++) modes[i] = new Rect(8 + i * 31, 9, 27, 24);
