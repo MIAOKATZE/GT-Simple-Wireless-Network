@@ -800,6 +800,7 @@ public final class EngineeringHud extends Gui {
     static boolean blocksNavigation(int displayX, int displayY) {
         Minecraft mc = Minecraft.getMinecraft();
         int x = localX(mc, displayX), y = localY(mc, displayY), w = width(mc), h = height(mc);
+        if (FactoryDesktop.pointerCaptured()) return true;
         return WorkbenchHud.layout(w, h)
             .contains(x, y);
     }

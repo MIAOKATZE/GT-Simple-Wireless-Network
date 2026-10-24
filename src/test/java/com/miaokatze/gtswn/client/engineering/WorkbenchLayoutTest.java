@@ -61,12 +61,17 @@ public class WorkbenchLayoutTest {
     }
 
     @Test
-    public void taskNavigationKeepsCameraHintsAndRegionRowsSeparate() {
+    public void applicationHeaderKeepsTextNavigationAndCommandsSeparate() {
         for (int width : new int[] { 480, 640, 1280 }) {
             WorkbenchLayout layout = new WorkbenchLayout(width, 400, false, false, false, false, 200, 108, false, true);
-            assertEquals(24, layout.cameraHints.h);
-            assertTrue(layout.cameraHints.y + layout.cameraHints.h <= layout.tasks[0].y);
-            assertTrue(layout.cameraHints.contains(layout.cameraHints.x + 1, layout.cameraHints.y + 22));
+            assertEquals(20, layout.cameraHints.h);
+            assertTrue(layout.tasks[3].x + layout.tasks[3].w <= layout.shortcuts.x);
+            assertTrue(layout.tasks[0].y + layout.tasks[0].h <= layout.cameraHints.y);
+            assertTrue(layout.modes[4].x + layout.modes[4].w <= layout.cameraHints.x);
+            assertTrue(layout.cameraHints.x + layout.cameraHints.w <= layout.sources.x);
+            assertTrue(layout.cameraHints.contains(layout.cameraHints.x + 1, layout.cameraHints.y + 18));
+            assertTrue(layout.contains(15, 15));
+            assertTrue(layout.contains(width - 1, 58));
         }
         for (int height : new int[] { 100, 124 }) {
             int loaded = FactoryDashboardLayout.regionLoadedLineY(height);

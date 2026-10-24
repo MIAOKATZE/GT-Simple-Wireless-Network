@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.device;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -47,7 +48,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
     private static final int PAGES_PER_BURST = 2;
 
     /** 玩家 UUID → (终端 UUID → 发送进度)（仅主线程访问；登出清理防残留） */
-    private static final Map<UUID, SentState> SENT = new HashMap<>();
+    private static final Map<UUID, PlayerState> SENT = new HashMap<>();
     private static final long MIN_REQUEST_INTERVAL_TICKS = 5;
     private static final long SNAPSHOT_IDLE_TTL_TICKS = 600;
     private static long lastPurgeTick = Long.MIN_VALUE;
@@ -60,16 +61,43 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
 
     private DeviceTerminalRequestQueue() {}
 
+    /** Four bounded deliveries share the original player-level throttle and burst budget. */
+    static final class PlayerState {
+
+        final Map<UUID, SentState> terminals = new LinkedHashMap<>(4, .75f, true);
+        long lastProcessed = Long.MIN_VALUE;
+
+        SentState terminal(UUID id) {
+            SentState state = terminals.get(id);
+            if (state == null) {
+                if (terminals.size() >= 4) terminals.remove(
+                    terminals.keySet()
+                        .iterator()
+                        .next());
+                state = new SentState();
+                state.terminalId = id;
+                terminals.put(id, state);
+            }
+            return state;
+        }
+
+        boolean admit(long now) {
+            if (lastProcessed != Long.MIN_VALUE && now >= lastProcessed
+                && now - lastProcessed < MIN_REQUEST_INTERVAL_TICKS) return false;
+            lastProcessed = now;
+            return true;
+        }
+    }
+
     /** 单终端发送进度：批次版本 + 已发页数 + 整批发完标记（版本跳过的零发包判据） */
     static final class SentState {
 
         UUID terminalId;
-        long lastProcessed = Long.MIN_VALUE;
         long lastSent = Long.MIN_VALUE;
         int entryTotal;
         int pageTotal;
 
-        // One bounded immutable delivery per player; live sampling cannot restart its continuation.
+        // One bounded immutable delivery per terminal; live sampling cannot restart its continuation.
         List<Entry> snapshot;
 
         /** 已发送批次的数据版本（-1=从未发送） */
@@ -181,7 +209,8 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                 .func_152612_a(player.getCommandSenderName()) != player) return;
             ItemStack stack = findTerminalStack(player, request.terminalId);
             if (stack == null) {
-                SENT.remove(player.getUniqueID());
+                PlayerState denied = SENT.get(player.getUniqueID());
+                if (denied != null) denied.terminals.remove(request.terminalId);
                 // 发送者已不持有终端（GUI 关闭后残留轮询）：静默丢弃
                 return;
             }
@@ -190,11 +219,10 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             if (overworld == null) {
                 return;
             }
-            SentState state = sentState(player.getUniqueID(), terminalId);
             long now = overworld.getTotalWorldTime();
-            if (state.lastProcessed != Long.MIN_VALUE && now >= state.lastProcessed
-                && now - state.lastProcessed < MIN_REQUEST_INTERVAL_TICKS) return;
-            state.lastProcessed = now;
+            PlayerState playerState = SENT.computeIfAbsent(player.getUniqueID(), ignored -> new PlayerState());
+            if (!playerState.admit(now)) return;
+            SentState state = playerState.terminal(terminalId);
             DeviceTerminalSettings.get(overworld)
                 .sync(player);
             com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.refresh(player, terminalId);
@@ -261,17 +289,6 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                 com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG.error("[设备终端] 请求装配异常（本条丢弃）", t);
             }
         }
-    }
-
-    /** 取或建玩家 → 终端的发送进度（仅主线程） */
-    private static SentState sentState(UUID playerId, UUID terminalId) {
-        SentState state = SENT.get(playerId);
-        if (state == null || !terminalId.equals(state.terminalId)) {
-            state = new SentState();
-            state.terminalId = terminalId;
-            SENT.put(playerId, state);
-        }
-        return state;
     }
 
     /** 有记录的有效条目数（绑定键遍历，零分配；boundKeys 与 records 理论对称，缺记录防御跳过） */

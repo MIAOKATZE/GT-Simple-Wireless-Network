@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.client.engineering;
 
 import com.miaokatze.miaokatzecore.client.camera.CameraControl;
 import com.miaokatze.miaokatzecore.client.camera.CameraSettings;
+import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
 
 /** World keyboard polling and raw pointer capture have separate ownership rules. */
 final class EngineeringInputPolicy {
@@ -10,6 +11,23 @@ final class EngineeringInputPolicy {
 
     static boolean worldInput(boolean active, boolean screenOpen, boolean focused) {
         return active && !screenOpen && focused;
+    }
+
+    static boolean worldNavigation(boolean active, boolean screenOpen, boolean focused, boolean desktop) {
+        return worldInput(active, screenOpen, focused) && !desktop;
+    }
+
+    static boolean playerMovement(boolean following, boolean desktop) {
+        return following && !desktop;
+    }
+
+    static WorldCameras.MovementPolicy movement(boolean following, boolean desktop) {
+        return playerMovement(following, desktop) ? WorldCameras.MovementPolicy.NONE : WorldCameras.MovementPolicy.ALL;
+    }
+
+    static boolean pointerControl(CameraControl control, boolean following, boolean captured, boolean overHud,
+        boolean desktop) {
+        return !desktop && pointerControl(control, following, captured, overHud);
     }
 
     static boolean pointerControl(CameraControl control, boolean following, boolean captured, boolean overHud) {
@@ -22,11 +40,15 @@ final class EngineeringInputPolicy {
     }
 
     static CameraSettings.Hud hud(boolean cameraPanel, double scale) {
+        return hud(cameraPanel, scale, false);
+    }
+
+    static CameraSettings.Hud hud(boolean cameraPanel, double scale, boolean desktop) {
         // Core chooses its compact X-ray bar or the combined camera panel from these two flags.
         return CameraSettings.Hud.builder()
             .crosshair(CameraSettings.Hud.Crosshair.HIDDEN)
-            .panelVisible(cameraPanel)
-            .sliceBarVisible(true)
+            .panelVisible(cameraPanel && !desktop)
+            .sliceBarVisible(!desktop)
             .panelPosition((int) (264 * scale), (int) (56 * scale))
             .panelWidth(Math.max(1, (int) (192 * scale)))
             .build();
@@ -37,12 +59,16 @@ final class EngineeringInputPolicy {
     }
 
     static CameraSettings.Navigation navigation(boolean following, double rotation, double wheel) {
+        return navigation(following, rotation, wheel, false);
+    }
+
+    static CameraSettings.Navigation navigation(boolean following, double rotation, double wheel, boolean desktop) {
         return CameraSettings.Navigation.builder()
-            .pan(!following)
-            .yaw(true)
-            .pitch(true)
-            .zoom(true)
-            .reset(true)
+            .pan(!desktop && !following)
+            .yaw(!desktop)
+            .pitch(!desktop)
+            .zoom(!desktop)
+            .reset(!desktop)
             .rotateDrag(1, 0)
             .rotationDegreesPerPixel(.35 * FactoryControlSettings.Setting.ROTATION.sanitize(rotation))
             .wheelZoom(CameraSettings.Navigation.WheelZoom.DIRECT)

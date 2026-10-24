@@ -17,7 +17,11 @@ import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
+import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
@@ -25,19 +29,16 @@ import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Panel;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Row;
-import com.miaokatze.miaokatzecore.client.render.GlScope;
 
 /** Cockpit over existing authorized caches. No sampling or network work occurs in draw methods. */
-final class FactoryDashboard extends Gui {
+public final class FactoryDashboard extends Gui {
 
-    private static final int BACK = 0xF210161D, CARD = 0xF21B252E, EDGE = 0xFF30414D;
-    private static final int TEXT = 0xFFE4EDF2, MUTED = 0xFF94A7B5, CYAN = 0xFF66DDD2, AMBER = 0xFFE9BA71;
+    private static final int BACK = 0xFF15202A, CARD = 0xFFF0F0E8, EDGE = 0xFFD1D9D9;
+    private static final int TEXT = 0xFF253C48, MUTED = 0xFF617681, CYAN = 0xFF287F78, AMBER = 0xFF9D6F33;
     private static final List<Hit> hits = new ArrayList<>();
-    private static final ScrollModel scroll = new ScrollModel();
-    private static int preset, cardMask = 15, screenIndex, resourceKind = 1, resourcePage, window, editorHitStart;
-    private static boolean wide = true, reverse, edit, rate, history, dragging;
-    private static Rect area, track;
-    private static int dragStart, dragOffset;
+    private static int screenIndex, resourceKind = 1, resourcePage, window;
+    private static final int preset = 0;
+    private static boolean rate;
     private static List<Entry> devices = Collections.emptyList(), attention = Collections.emptyList();
     private static long deviceRevision = Long.MIN_VALUE;
     private static boolean deviceFresh;
@@ -61,33 +62,25 @@ final class FactoryDashboard extends Gui {
     private static java.util.UUID portableSource;
     private static String selectedScreen = "";
     private static String portableBinding = "";
+    private static WidgetSpec painting;
 
     private FactoryDashboard() {}
 
     static void restore() {
-        preset = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.DASHBOARD_PRESET);
-        cardMask = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.DASHBOARD_CARDS);
-        wide = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.DASHBOARD_WIDE);
-        reverse = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.DASHBOARD_REVERSE);
-        history = edit = dragging = false;
         deviceRevision = Long.MIN_VALUE;
         portableSource = null;
         portableBinding = "";
         selectedScreen = "";
         chartPanel = null;
-        scroll.set(0);
     }
 
     static void remember() {
-        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.DASHBOARD_PRESET, preset);
-        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.DASHBOARD_CARDS, cardMask);
-        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.DASHBOARD_WIDE, wide);
-        FactoryDisplayPreferences.put(FactoryDisplayPreferences.Key.DASHBOARD_REVERSE, reverse);
         if (portableSource != null && !selectedScreen.isEmpty())
             FactoryDisplayPreferences.text("cockpit_screen_" + portableSource, selectedScreen);
     }
 
     static void clear() {
+        FactoryDesktop.suspend();
         search.focused = false;
         devices = attention = Collections.emptyList();
         panels = Collections.emptyList();
@@ -99,11 +92,10 @@ final class FactoryDashboard extends Gui {
         ticks = new long[0];
         exact = new String[0];
         hits.clear();
-        area = track = null;
-        history = edit = dragging = false;
     }
 
     static void tick(EngineeringTerminalHudSnapshot snapshot) {
+        FactoryDesktop.tick(WorkbenchHud.dashboardVisible());
         EngineeringTerminalHudSnapshot.Source source = snapshot.device;
         if (deviceRevision != source.revision || deviceFresh != source.fresh
             || !java.util.Objects.equals(deviceSource, source.terminalId)) {
@@ -219,60 +211,165 @@ final class FactoryDashboard extends Gui {
     }
 
     static void render(FontRenderer f, Rect r, int mx, int my, int canvasWidth, int canvasHeight) {
-        area = r;
-        hover = null;
         hits.clear();
-        fill(r, BACK);
-        text(f, "GTSWN / " + tr("preset." + preset), r.x + 10, r.y + 8, CYAN, r.w - 218);
-        button(f, new Rect(r.x + r.w - 208, r.y + 3, 70, 20), tr("presets"), () -> {
-            preset = (preset + 1) % 3;
-            resourceKey = "";
-            scroll.set(0);
-            rebuildPlot();
-        });
-        button(f, new Rect(r.x + r.w - 134, r.y + 3, 62, 20), tr("layout"), () -> edit = !edit);
-        button(f, new Rect(r.x + r.w - 68, r.y + 3, 60, 20), tr("screens"), () -> history = !history);
-        if (history) {
-            if (PortableSuperDashboard.isOpen()) PortableSuperDashboard
-                .renderEmbedded(r.x + 2, r.y + 27, r.w - 4, r.h - 29, mx, my, canvasWidth, canvasHeight);
-            else text(f, tr("no.screens"), r.x + 12, r.y + 40, AMBER, r.w - 24);
+        FactoryDesktop.render(f, r, mx, my, canvasWidth, canvasHeight);
+    }
+
+    public static boolean mount(java.util.UUID source, Entry entry) {
+        return FactoryDesktop.mount(source, entry);
+    }
+
+    static void paintWidget(FontRenderer f, WidgetSpec widget, Rect r, int mx, int my) {
+        painting = widget;
+        try {
+            EngineeringSnapshot power = EngineeringDashboardCache.snapshot();
+            EngineeringTerminalHudSnapshot snapshot = EngineeringTerminalHudSnapshot
+                .capture(Minecraft.getMinecraft().thePlayer);
+            if (!DesktopFieldPolicy.keepsBody(widget.kind)
+                && (widget.fieldsConfigured || widget.kind == WidgetKind.DEVICE)) {
+                drawFields(f, r, widget, power, snapshot);
+                return;
+            }
+            switch (widget.kind) {
+                case MACHINES:
+                    drawKpi(f, r, 0, power, snapshot);
+                    break;
+                case INPUT:
+                    drawKpi(f, r, 1, power, snapshot);
+                    break;
+                case OUTPUT:
+                    drawKpi(f, r, 2, power, snapshot);
+                    break;
+                case WIRELESS:
+                    drawKpi(f, r, 3, power, snapshot);
+                    break;
+                case HISTORY:
+                    drawTrend(f, r, mx, my);
+                    break;
+                case REGION:
+                    drawRegion(f, r, power);
+                    break;
+                case RESOURCES:
+                    drawResources(f, r, mx, my);
+                    break;
+                case ATTENTION:
+                    drawAttention(f, r, snapshot.device, power);
+                    break;
+                default:
+                    break;
+            }
+        } finally {
+            painting = null;
+        }
+    }
+
+    static void widgetClick(int x, int y) {
+        if (!WorkbenchLayout.inside(searchRect, x, y)) search.focused = false;
+        for (int i = hits.size() - 1; i >= 0; i--) if (hits.get(i).rect.contains(x, y)) {
+            hits.get(i).action.run();
             return;
         }
-        EngineeringSnapshot power = EngineeringDashboardCache.snapshot();
-        EngineeringTerminalHudSnapshot snapshot = EngineeringTerminalHudSnapshot
-            .capture(Minecraft.getMinecraft().thePlayer);
-        text(
-            f,
-            tr("scope.authorized") + " · DIM "
-                + Minecraft.getMinecraft().theWorld.provider.dimensionId
-                + " · "
-                + sourceQuality(snapshot.device),
-            r.x + 10,
-            r.y + 29,
-            MUTED,
-            r.w - 20);
-        text(f, tr("scope.network"), r.x + 10, r.y + 42, MUTED, r.w - 20);
-        int top = r.y + 60, bottom = r.y + r.h - 20;
-        FactoryDashboardLayout g = new FactoryDashboardLayout(r.w - 24, preset, wide, reverse);
-        scroll.measure(g.contentHeight, bottom - top, scroll.offset());
-        try (GlScope ignored = new GlScope()) {
-            clip(r.x, top, r.w, bottom - top, canvasWidth, canvasHeight);
-            for (int i = 0; i < 4; i++) drawKpi(f, translated(g.kpis[i], r.x + 10, top), i, power, snapshot);
-            if ((cardMask & 1) != 0) drawTrend(f, translated(g.trend, r.x + 10, top), mx, my);
-            if ((cardMask & 2) != 0) drawRegion(f, translated(g.region, r.x + 10, top), power);
-            if ((cardMask & 4) != 0) drawResources(f, translated(g.resources, r.x + 10, top), mx, my);
-            if ((cardMask & 8) != 0) drawAttention(f, translated(g.attention, r.x + 10, top), snapshot.device, power);
+    }
+
+    static void blurResourceSearch(int x, int y) {
+        if (!WorkbenchLayout.inside(searchRect, x, y)) search.focused = false;
+    }
+
+    private static void drawFields(FontRenderer f, Rect r, WidgetSpec widget, EngineeringSnapshot power,
+        EngineeringTerminalHudSnapshot snapshot) {
+        card(f, r, FactoryDesktop.label(widget));
+        DesktopDeviceSources.Reading reading = widget.device == null ? null : DesktopDeviceSources.read(widget.device);
+        Entry device = reading == null ? null : reading.entry;
+        if (widget.device != null && device == null) {
+            text(f, FactoryDesktop.tr("disconnected"), r.x + 12, r.y + 48, AMBER, r.w - 24);
+            text(f, FactoryDesktop.tr("reason." + reading.reason), r.x + 12, r.y + 67, MUTED, r.w - 24);
+            return;
         }
-        track = scroll.maximum() > 0 ? new Rect(r.x + r.w - 6, top, 4, bottom - top) : null;
-        if (track != null) {
-            fill(track, EDGE);
-            int thumb = Math.max(16, track.h * track.h / Math.max(1, g.contentHeight));
-            int y = track.y + (track.h - thumb) * scroll.offset() / scroll.maximum();
-            fill(new Rect(track.x, y, track.w, thumb), CYAN);
+        List<String> fields = DesktopFieldPolicy.fields(widget);
+        if (fields.isEmpty()) text(f, FactoryDesktop.tr("fields.empty"), r.x + 12, r.y + 43, MUTED, r.w - 24);
+        int columns = Math.min(widget.displayColumns, Math.max(1, r.w / 110));
+        int cellWidth = (r.w - 24) / columns;
+        for (int index = 0; index < fields.size(); index++) {
+            int x = r.x + 12 + index % columns * cellWidth, y = r.y + 42 + index / columns * 18;
+            if (y + 10 >= r.y + r.h) break;
+            String field = fields.get(index);
+            String label = FactoryDesktop.tr("field." + field);
+            int labelWidth = Math.min(cellWidth / 2, f.getStringWidth(label) + 8);
+            text(f, label, x, y, MUTED, labelWidth - 6);
+            text(
+                f,
+                fieldValue(field, widget, device, power, snapshot),
+                x + labelWidth,
+                y,
+                TEXT,
+                cellWidth - labelWidth - 5);
         }
-        text(f, hover == null ? tr("limits") : hover, r.x + 10, r.y + r.h - 14, hover == null ? MUTED : CYAN, r.w - 20);
-        editorHitStart = hits.size();
-        if (edit) drawEditor(f, r);
+    }
+
+    private static String fieldValue(String field, WidgetSpec widget, Entry entry, EngineeringSnapshot power,
+        EngineeringTerminalHudSnapshot snapshot) {
+        boolean valid = power != null && power.slot == 2
+            && "ok".equals(power.status)
+            && EngineeringDashboardCache.fresh()
+            && power.monitored > 0;
+        if ("source".equals(field)) return widget.device != null ? widget.device.source.toString()
+            .substring(0, 8)
+            : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
+                : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
+                    || widget.kind == WidgetKind.RESOURCES
+                        ? chartPanel == null ? tr("no.screens") : chartPanel.binding.label()
+                        : powerStatus(power);
+        if ("updated".equals(field)) return entry != null ? tr("received")
+            : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
+                : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY
+                    || widget.kind == WidgetKind.RESOURCES
+                        ? PortableSuperDashboard.available(chartPanel) ? tr("received") : tr("stale")
+                        : powerStatus(power);
+        if ("name".equals(field))
+            return entry == null ? "—" : entry.displayName.isEmpty() ? entry.name : entry.displayName;
+        if ("status".equals(field)) return entry != null
+            ? StatCollector.translateToLocal("gtswn.factory.status." + FactoryMachineFilter.status(entry, true))
+            : widget.kind == WidgetKind.MACHINES
+                ? snapshot.device.fresh ? deviceCountFoot() : sourceQuality(snapshot.device)
+                : powerStatus(power);
+        if ("coordinates".equals(field))
+            return entry == null ? "—" : "DIM " + entry.dim + " · " + entry.x + "/" + entry.y + "/" + entry.z;
+        if (entry != null) {
+            boolean known = !FactoryMachineFilter.ignored(entry) && entry.evidenceKind < 2;
+            if ("instantInput".equals(field))
+                return known ? FormatUtil.formatMetricDouble(entry.instIn) + " EU/t" : "?";
+            if ("instantOutput".equals(field))
+                return known ? FormatUtil.formatMetricDouble(entry.instOut) + " EU/t" : "?";
+            if ("averageInput".equals(field)) return known ? FormatUtil.formatMetricDouble(entry.avgIn) + " EU/t" : "?";
+            if ("averageOutput".equals(field))
+                return known ? FormatUtil.formatMetricDouble(entry.avgOut) + " EU/t" : "?";
+            if ("recipeInput".equals(field)) return entry.recipeIn.isEmpty() ? "—" : entry.recipeIn;
+            if ("recipeOutput".equals(field)) return entry.recipeOut.isEmpty() ? "—" : entry.recipeOut;
+            if ("recognition".equals(field)) return StatCollector
+                .translateToLocal("gtswn.device.gui.recognition." + (entry.recognitionMode == 2 ? "ignored" : "track"));
+            if ("evidence".equals(field)) return StatCollector.translateToLocal(
+                "gtswn.device.gui.tooltip.evidence." + (entry.evidenceKind == 1 ? "model"
+                    : entry.evidenceKind == 2 ? "warming" : entry.evidenceKind == 3 ? "unavailable" : "measured"));
+            if ("capabilities".equals(field)) {
+                int roles = entry.capabilityMask & (DevicePowerCapabilities.EU_IN | DevicePowerCapabilities.EU_OUT);
+                return FactoryDesktop.tr(
+                    "capability." + (roles == 3 ? "both"
+                        : roles == DevicePowerCapabilities.EU_IN ? "input"
+                            : roles == DevicePowerCapabilities.EU_OUT ? "output" : "unknown"));
+            }
+            if ("type".equals(field)) return entry.name + " · #" + entry.metaTileId;
+        }
+        if ("input".equals(field) || "output".equals(field)) {
+            boolean input = "input".equals(field);
+            if (entry != null) return FactoryMachineFilter.ignored(entry) ? "—"
+                : entry.evidenceKind >= 2 ? "?"
+                    : FormatUtil.formatMetricDouble(input ? entry.instIn : entry.instOut) + " EU/t";
+            return valid ? FormatUtil.formatMetricDouble(input ? power.current.instIn : power.current.instOut) + " EU/t"
+                : "—";
+        }
+        if ("stored".equals(field) && PortableSuperDashboard.available(chartPanel)
+            && !chartPanel.currentEnergy.isEmpty()) return compact(chartPanel.currentEnergy) + " EU";
+        return FactoryDesktop.tr("unavailable");
     }
 
     private static void drawKpi(FontRenderer f, Rect r, int index, EngineeringSnapshot p,
@@ -296,21 +393,21 @@ final class FactoryDashboard extends Gui {
                 : chartPanel.binding.label();
         }
         GL11.glPushMatrix();
-        GL11.glTranslatef(r.x + 9, r.y + 23, 0);
-        GL11.glScalef(1.25f, 1.25f, 1);
-        text(f, value, 0, 0, TEXT, (int) ((r.w - 18) / 1.25));
+        GL11.glTranslatef(r.x + 12, r.y + 43, 0);
+        GL11.glScalef(1.65f, 1.65f, 1);
+        text(f, value, 0, 0, TEXT, (int) ((r.w - 24) / 1.65));
         GL11.glPopMatrix();
         if (index == 0 && s.device.fresh && f.getStringWidth(foot) > r.w - 18) {
             text(
                 f,
                 countLabel("running", running) + " · " + countLabel("idle", idle),
                 r.x + 9,
-                r.y + 34,
+                r.y + r.h - 32,
                 MUTED,
                 r.w - 18);
             foot = countLabel("stopped", stopped);
         }
-        text(f, foot, r.x + 9, r.y + 43, MUTED, r.w - 18);
+        text(f, foot, r.x + 12, r.y + r.h - 18, MUTED, r.w - 24);
         hits.add(new Hit(r, index == 0 ? WorkbenchHud::openDevices : index < 3 ? WorkbenchHud::openPowerReview : () -> {
             resourceKey = "";
             rebuildPlot();
@@ -390,18 +487,18 @@ final class FactoryDashboard extends Gui {
         }
         text(
             f,
-            (relative ? tr("relative") : plotUnit) + " · " + plotWindow + " · " + plotSource,
+            (relative ? tr("relative") : plotUnit) + " · " + plotWindow + metadata(plotSource, tr("received")),
             r.x + 9,
-            r.y + 25,
+            r.y + 35,
             MUTED,
             r.w - 18);
-        int x = r.x + 9, y = r.y + 44, w = r.w - 18, h = r.h - 73;
+        int x = r.x + 9, y = r.y + 54, w = r.w - 18, h = Math.max(8, r.h - 83);
         if (!relative)
             text(f, axis(plot.minimum) + " … " + axis(plot.maximum) + " " + plotUnit, x, r.y + r.h - 11, MUTED, w);
         for (int i = 0; i <= 3; i++) drawRect(x, y + h * i / 3, x + w, y + h * i / 3 + 1, EDGE);
         if (!relative) drawRect(x, y + (int) (h * (1 - plot.zero)), x + w, y + (int) (h * (1 - plot.zero)) + 1, MUTED);
         GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glColor4f(.4f, .87f, .82f, 1);
+        GL11.glColor4f(.16f, .5f, .47f, 1);
         GL11.glPointSize(2);
         GL11.glBegin(GL11.GL_POINTS);
         for (int i = 0; i < plot.normalized.length; i++) if (Double.isFinite(plot.normalized[i])) {
@@ -438,7 +535,7 @@ final class FactoryDashboard extends Gui {
             f,
             s != null && s.slot == 2 ? s.coverageBoundOnly ? tr("bound") : tr("loaded.region") : tr("scope.device"),
             r.x + 9,
-            r.y + 25,
+            r.y + 35,
             TEXT,
             r.w - 18);
         if (r.h > 70) {
@@ -472,17 +569,14 @@ final class FactoryDashboard extends Gui {
         Panel p = chartPanel;
         text(
             f,
-            p == null
-                ? selectedScreen.isEmpty() ? tr("no.screens")
-                    : selectedScreen.substring(0, Math.min(8, selectedScreen.length())) + " · "
-                        + StatCollector.translateToLocal("gtswn.factory.waiting")
-                : p.binding.label() + " · "
-                    + (p.state == 0 ? p.aeWindow : PortableMonitorClientCache.stateText(p.state)),
+            p == null ? tr("no.screens")
+                : metadata(p.binding.label(), p.state == 0 ? p.aeWindow : PortableMonitorClientCache.stateText(p.state))
+                    .replaceFirst("^ · ", ""),
             r.x + 9,
-            r.y + 25,
+            r.y + 35,
             MUTED,
             r.w - 65);
-        button(f, new Rect(r.x + r.w - 55, r.y + 23, 48, 16), tr("source"), () -> {
+        button(f, new Rect(r.x + r.w - 55, r.y + 31, 48, 16), tr("source"), () -> {
             List<String> identities = PortableSuperDashboard.screenIds();
             if (!identities.isEmpty()) selectedScreen = identities
                 .get(Math.floorMod(identities.indexOf(selectedScreen) + 1, identities.size()));
@@ -491,10 +585,10 @@ final class FactoryDashboard extends Gui {
             resourceKey = "";
         });
         if (!PortableSuperDashboard.available(p)) {
-            text(f, tr("no.resources"), r.x + 9, r.y + 49, AMBER, r.w - 18);
+            text(f, tr("no.resources"), r.x + 9, r.y + 58, AMBER, r.w - 18);
             return;
         }
-        searchRect = new Rect(r.x + 6, r.y + 42, Math.max(40, r.w - 91), 17);
+        searchRect = new Rect(r.x + 6, r.y + 60, Math.max(40, r.w - 91), 17);
         button(
             f,
             searchRect,
@@ -502,15 +596,15 @@ final class FactoryDashboard extends Gui {
             () -> search.focused = true);
         button(
             f,
-            new Rect(r.x + r.w - 82, r.y + 42, 76, 17),
+            new Rect(r.x + r.w - 82, r.y + 60, 76, 17),
             tr("sort." + resourceSort),
             () -> resourceSort = (resourceSort + 1) % 3);
         int count = resources.size();
-        int visible = Math.max(1, (r.h - 62) / 18), pages = Math.max(1, (count + visible - 1) / visible);
+        int visible = Math.max(1, (r.h - 82) / 18), pages = Math.max(1, (count + visible - 1) / visible);
         resourcePage %= pages;
         for (int index = resourcePage * visible; index < Math.min(count, (resourcePage + 1) * visible); index++) {
             Row row = resources.get(index);
-            Rect line = new Rect(r.x + 6, r.y + 62 + (index % visible) * 18, r.w - 12, 17);
+            Rect line = new Rect(r.x + 6, r.y + 82 + (index % visible) * 18, r.w - 12, 17);
             if (line.contains(mx, my) || row.key.equals(resourceKey)) fill(line, EDGE);
             String amount = row.amount + (row.kind == 2 ? " mB" : "");
             text(f, row.name, line.x + 3, line.y + 4, TEXT, line.w / 3 - 4);
@@ -537,7 +631,7 @@ final class FactoryDashboard extends Gui {
                 rebuildPlot();
             }));
         }
-        if (count == 0) text(f, tr("no.resources"), r.x + 9, r.y + 65, MUTED, r.w - 18);
+        if (count == 0) text(f, tr("no.resources"), r.x + 9, r.y + 86, MUTED, r.w - 18);
     }
 
     private static void drawAttention(FontRenderer f, Rect r, EngineeringTerminalHudSnapshot.Source d,
@@ -547,7 +641,7 @@ final class FactoryDashboard extends Gui {
             f,
             d.fresh ? stopped + " " + tr("stopped") + " · " + unknown + " " + tr("unknown") : sourceQuality(d),
             r.x + 9,
-            r.y + 26,
+            r.y + 36,
             AMBER,
             r.w - 18);
         text(f, p != null && p.truncated ? tr("partial") : tr("attention.hint"), r.x + 9, r.y + 43, MUTED, r.w - 18);
@@ -559,61 +653,8 @@ final class FactoryDashboard extends Gui {
         hits.add(new Hit(r, WorkbenchHud::openAttention));
     }
 
-    private static void drawEditor(FontRenderer f, Rect r) {
-        Rect menu = new Rect(r.x + r.w - Math.min(228, r.w - 16) - 8, r.y + 26, Math.min(228, r.w - 16), 168);
-        fill(menu, BACK);
-        for (int i = 0; i < 4; i++) {
-            final int bit = 1 << i;
-            button(
-                f,
-                new Rect(menu.x + 5, menu.y + 5 + i * 23, menu.w - 10, 20),
-                ((cardMask & bit) != 0 ? "[+] " : "[-] ") + tr("card." + i),
-                () -> cardMask ^= bit);
-        }
-        button(
-            f,
-            new Rect(menu.x + 5, menu.y + 99, menu.w - 10, 20),
-            tr(wide ? "width.wide" : "width.narrow"),
-            () -> wide = !wide);
-        button(f, new Rect(menu.x + 5, menu.y + 122, menu.w - 10, 20), tr("reorder"), () -> reverse = !reverse);
-        text(f, tr("layout.local"), menu.x + 7, menu.y + 150, MUTED, menu.w - 14);
-    }
-
     static boolean mouse(int x, int y, int button, boolean pressed, int wheel) {
-        if (history && area != null && PortableSuperDashboard.pointerCaptured())
-            return PortableSuperDashboard.pointer(x - area.x - 2, y - area.y - 27 + 50, button, pressed);
-        if (pressed && button == 0 && !WorkbenchLayout.inside(searchRect, x, y)) search.focused = false;
-        if (dragging) {
-            if (button == 0 && !pressed) dragging = false;
-            else if (track != null)
-                scroll.set(dragOffset + (y - dragStart) * (scroll.maximum() + track.h) / Math.max(1, track.h));
-            return true;
-        }
-        if (area == null || !area.contains(x, y)) return false;
-        if (history && y >= area.y + 27) {
-            if (PortableSuperDashboard.pointer(x - area.x - 2, y - area.y - 27 + 50, button, pressed)) return true;
-            if (wheel != 0) PortableSuperDashboard.wheel(x - area.x - 2, y - area.y - 27 + 50, wheel);
-            if (pressed && button >= 0) PortableSuperDashboard.click(x - area.x - 2, y - area.y - 27 + 50, button);
-            return true;
-        }
-        if (wheel != 0) {
-            if (!edit) scroll.move(wheel > 0 ? -28 : 28);
-            return true;
-        }
-        if (!pressed || button != 0) return true;
-        if (track != null && new Rect(track.x - 3, track.y, 10, track.h).contains(x, y)) {
-            dragging = true;
-            dragStart = y;
-            dragOffset = scroll.offset();
-            return true;
-        }
-        for (int i = hits.size() - 1; i >= 0; i--) if (hits.get(i).rect.contains(x, y)) {
-            if (edit && i >= 3 && i < editorHitStart) return true;
-            if (i >= 3 && !edit && (y < area.y + 60 || y >= area.y + area.h - 20)) return true;
-            hits.get(i).action.run();
-            return true;
-        }
-        return true;
+        return FactoryDesktop.mouse(x, y, button, pressed, wheel);
     }
 
     static boolean escape() {
@@ -621,24 +662,19 @@ final class FactoryDashboard extends Gui {
             search.focused = false;
             return true;
         }
-        if (edit || history) {
-            edit = history = false;
-            return true;
-        }
-        return false;
+        return FactoryDesktop.escape();
     }
 
     static boolean typing() {
-        return search.focused;
+        return search.focused || FactoryDesktop.typing();
     }
 
     static void blur() {
         search.focused = false;
-        dragging = false;
+        FactoryDesktop.blur();
     }
 
     static boolean key(int code, char character, boolean pressed) {
-        if (history && PortableSuperDashboard.key(code, pressed)) return true;
         if (search.focused) {
             if (pressed) {
                 if (code == org.lwjgl.input.Keyboard.KEY_ESCAPE || code == org.lwjgl.input.Keyboard.KEY_RETURN)
@@ -650,11 +686,7 @@ final class FactoryDashboard extends Gui {
             }
             return true;
         }
-        return WorkbenchHud.scrollKey(scroll, code, pressed);
-    }
-
-    private static Rect translated(Rect r, int x, int y) {
-        return new Rect(x + r.x, y + r.y - scroll.offset(), r.w, r.h);
+        return FactoryDesktop.key(code, character, pressed);
     }
 
     private static String sourceQuality(EngineeringTerminalHudSnapshot.Source s) {
@@ -662,6 +694,13 @@ final class FactoryDashboard extends Gui {
             : s.receivedAtMillis == 0 ? StatCollector.translateToLocal("gtswn.factory.waiting")
                 : !s.fresh ? tr("stale")
                     : s.partial ? tr("partial") + " · " + s.devices.size() : tr("received") + " · " + s.devices.size();
+    }
+
+    private static String metadata(String source, String updated) {
+        String text = "";
+        if (painting == null || DesktopFieldPolicy.show(painting, "source")) text = " · " + source;
+        if (painting == null || DesktopFieldPolicy.show(painting, "updated")) text += " · " + updated;
+        return text;
     }
 
     private static String deviceCountFoot() {
@@ -702,9 +741,12 @@ final class FactoryDashboard extends Gui {
     }
 
     private static void card(FontRenderer f, Rect r, String title) {
+        if (painting != null) return;
+        drawRect(r.x + 2, r.y + 3, r.x + r.w + 2, r.y + r.h + 3, 0x40000000);
         fill(r, CARD);
-        drawRect(r.x, r.y, r.x + 2, r.y + r.h, CYAN);
-        text(f, title, r.x + 9, r.y + 7, MUTED, r.w - 18);
+        drawRect(r.x, r.y, r.x + r.w, r.y + 27, 0xFFE0E7E5);
+        drawRect(r.x, r.y + 27, r.x + r.w, r.y + 28, EDGE);
+        text(f, painting == null ? title : FactoryDesktop.label(painting), r.x + 12, r.y + 9, TEXT, r.w - 24);
     }
 
     private static void button(FontRenderer f, Rect r, String title, Runnable action) {
@@ -719,17 +761,6 @@ final class FactoryDashboard extends Gui {
 
     private static void text(FontRenderer font, String value, int x, int y, int color, int width) {
         font.drawString(font.trimStringToWidth(value, Math.max(1, width)), x, y, color);
-    }
-
-    private static void clip(int x, int y, int width, int height, int canvasWidth, int canvasHeight) {
-        Minecraft mc = Minecraft.getMinecraft();
-        double sx = mc.displayWidth / (double) canvasWidth, sy = mc.displayHeight / (double) canvasHeight;
-        GL11.glEnable(GL11.GL_SCISSOR_TEST);
-        GL11.glScissor(
-            (int) (x * sx),
-            (int) (mc.displayHeight - (y + height) * sy),
-            Math.max(0, (int) (width * sx)),
-            Math.max(0, (int) (height * sy)));
     }
 
     private static String tr(String key) {

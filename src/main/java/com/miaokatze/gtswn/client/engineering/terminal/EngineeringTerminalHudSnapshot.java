@@ -13,6 +13,7 @@ import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalVisualizationState;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.common.hud.HudController;
@@ -20,7 +21,6 @@ import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.config.Config;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /** Read-only factory demand backed by the existing terminal queues and HUD cache owner. */
@@ -35,7 +35,6 @@ public final class EngineeringTerminalHudSnapshot {
     private static EngineeringTerminalSources.Source deviceDemand = EngineeringTerminalSources.Source.EMPTY;
     private static Object demandWorld, demandConnection;
     private static EntityPlayer demandPlayer;
-    private static int lastDeviceRequest = Integer.MIN_VALUE;
     private static long initialDeviceReceipt;
 
     public final Source device;
@@ -81,7 +80,7 @@ public final class EngineeringTerminalHudSnapshot {
         }
         if (!deviceReading) {
             deviceDemand = EngineeringTerminalSources.Source.EMPTY;
-            lastDeviceRequest = Integer.MIN_VALUE;
+            DesktopDeviceSources.clearFactory();
             return;
         }
         EngineeringTerminalSources.Source current = EngineeringTerminalSources.resolve(mc.thePlayer, 2);
@@ -89,21 +88,14 @@ public final class EngineeringTerminalHudSnapshot {
             deviceDemand = current;
             initialDeviceReceipt = DeviceTerminalClientCache
                 .receiptRevision(ItemDeviceInfoTerminal.readTerminalId(current.stack));
-            lastDeviceRequest = Integer.MIN_VALUE;
             cached = null;
         }
-        if (!current.present()) return;
-        UUID id = ItemDeviceInfoTerminal.readTerminalId(current.stack);
-        // Factory owns this polling demand even when its labels are off; the ordinary renderer is paused here.
-        int now = mc.thePlayer.ticksExisted;
-        int interval = DeviceTerminalClientCache.hasMorePending(id) ? 5 : 20;
-        if (lastDeviceRequest == Integer.MIN_VALUE || now < lastDeviceRequest || now - lastDeviceRequest >= interval) {
-            GTSWNPacketHandler.NETWORK.sendToServer(
-                lastDeviceRequest == Integer.MIN_VALUE
-                    ? new com.miaokatze.gtswn.network.PacketRequestDeviceTerminalData(id, -1, false)
-                    : DeviceTerminalClientCache.requestMetadata(id));
-            lastDeviceRequest = now;
+        if (!current.present()) {
+            DesktopDeviceSources.tickFactory(null);
+            return;
         }
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(current.stack);
+        DesktopDeviceSources.tickFactory(id);
     }
 
     /** Rendering cannot borrow a prior source/connection cache or a normal ACK for another UUID. */
@@ -138,7 +130,7 @@ public final class EngineeringTerminalHudSnapshot {
         deviceDemand = EngineeringTerminalSources.Source.EMPTY;
         demandWorld = demandConnection = null;
         demandPlayer = null;
-        lastDeviceRequest = Integer.MIN_VALUE;
+        DesktopDeviceSources.clearFactory();
         cached = null;
         if (hud != null) hud.setFactoryReading(false);
     }

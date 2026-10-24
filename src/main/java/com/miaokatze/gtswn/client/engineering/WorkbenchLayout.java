@@ -3,6 +3,8 @@ package com.miaokatze.gtswn.client.engineering;
 /** One geometry contract for world HUD drawing, hit testing, hover and Core navigation exclusion. */
 public final class WorkbenchLayout {
 
+    private final int applicationWidth;
+
     public final Rect[] terminals = new Rect[8];
     public final Rect[] modes = new Rect[5];
     public final Rect[] tools = new Rect[5];
@@ -72,12 +74,20 @@ public final class WorkbenchLayout {
     public WorkbenchLayout(int width, int height, boolean sidebarOpen, boolean railOpen, boolean powerOpen,
         boolean dashboardOpen, int railHeight, int powerHeight, boolean alertsOpen, boolean taskNavigation,
         boolean objectsPage, boolean inspectorOpen) {
-        cameraHints = new Rect(164, 8, Math.max(1, width - 278), taskNavigation ? 24 : 43);
+        applicationWidth = taskNavigation ? width : 0;
+        cameraHints = taskNavigation ? new Rect(282, 36, Math.max(1, width - 398), 20)
+            : new Rect(164, 8, Math.max(1, width - 278), 43);
         shortcuts = new Rect(width - 108, 9, 100, 24);
         for (int i = 0; i < terminals.length; i++) terminals[i] = new Rect(8, 56 + i * 33, 28, 28);
         for (int i = 0; i < modes.length; i++) modes[i] = new Rect(8 + i * 31, 9, 27, 24);
         for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 56 + i * 33, 26, 27);
-        sidebar = sidebarOpen ? new Rect(43, 56, 214, Math.min(336, Math.max(0, height - 64))) : null;
+        sidebar = sidebarOpen
+            ? new Rect(
+                43,
+                taskNavigation ? 62 : 56,
+                214,
+                Math.min(336, Math.max(0, height - (taskNavigation ? 70 : 64))))
+            : null;
         int railAvailable = Math.max(0, height - 64 - (powerOpen ? powerHeight + 8 : 0));
         boolean splitObjects = objectsPage && !sidebarOpen && !dashboardOpen && railOpen;
         int objectWidth = width >= 600 ? (width - 60) * 3 / 5 : width - 60;
@@ -95,11 +105,14 @@ public final class WorkbenchLayout {
         alerts = !dashboardOpen && alertsOpen
             ? new Rect(alertLeft + (alertRight - alertLeft - alertWidth) / 2, height - 47, alertWidth, 30)
             : null;
-        int tabWidth = Math.min(88, Math.max(52, (width - 124) / 4));
+        int tabWidth = Math.min(88, Math.max(40, (width - 238) / 4));
         for (int i = 0; i < tasks.length; i++)
-            tasks[i] = taskNavigation ? new Rect(8 + i * (tabWidth + 2), 36, tabWidth, 20) : new Rect(0, 0, 0, 0);
+            tasks[i] = taskNavigation ? new Rect(120 + i * (tabWidth + 2), 8, tabWidth, 24) : new Rect(0, 0, 0, 0);
         sources = taskNavigation ? new Rect(width - 108, 36, 100, 20) : new Rect(0, 0, 0, 0);
         if (taskNavigation) {
+            modes[0] = new Rect(0, 0, 0, 0);
+            for (int i = 1; i < modes.length; i++) modes[i] = new Rect(8 + (i - 1) * 68, 36, 64, 20);
+            for (int i = 0; i < tools.length; i++) tools[i] = new Rect(width - 34, 62 + i * 33, 26, 27);
             for (int i = 0; i < terminals.length; i++)
                 terminals[i] = sidebarOpen ? new Rect(8, 62 + i * 33, 28, 28) : new Rect(0, 0, 0, 0);
             if (dashboardOpen) for (int i = 0; i < tools.length; i++) tools[i] = new Rect(0, 0, 0, 0);
@@ -107,6 +120,7 @@ public final class WorkbenchLayout {
     }
 
     public boolean contains(int x, int y) {
+        if (x >= 0 && x < applicationWidth && y >= 0 && y < 60) return true;
         for (Rect r : terminals) if (r.contains(x, y)) return true;
         for (Rect r : modes) if (r.contains(x, y)) return true;
         for (Rect r : tools) if (r.contains(x, y)) return true;

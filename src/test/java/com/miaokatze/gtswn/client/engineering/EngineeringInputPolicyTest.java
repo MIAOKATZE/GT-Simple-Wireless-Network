@@ -8,8 +8,50 @@ import org.junit.Test;
 
 import com.miaokatze.miaokatzecore.client.camera.CameraControl;
 import com.miaokatze.miaokatzecore.client.camera.CameraSettings;
+import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
 
 public class EngineeringInputPolicyTest {
+
+    @Test
+    public void desktopOwnsMovementAndCameraInputRegardlessOfPointerOrFollowing() {
+        assertFalse(EngineeringInputPolicy.worldNavigation(true, false, true, true));
+        assertTrue(EngineeringInputPolicy.worldNavigation(true, false, true, false));
+        for (boolean following : new boolean[] { false, true }) {
+            assertFalse(EngineeringInputPolicy.playerMovement(following, true));
+            assertEquals(WorldCameras.MovementPolicy.ALL, EngineeringInputPolicy.movement(following, true));
+            for (boolean captured : new boolean[] { false, true }) for (boolean overHud : new boolean[] { false, true })
+                for (CameraControl control : CameraControl.values())
+                    assertFalse(EngineeringInputPolicy.pointerControl(control, following, captured, overHud, true));
+        }
+        assertTrue(EngineeringInputPolicy.playerMovement(true, false));
+        assertEquals(WorldCameras.MovementPolicy.NONE, EngineeringInputPolicy.movement(true, false));
+        assertEquals(WorldCameras.MovementPolicy.ALL, EngineeringInputPolicy.movement(false, false));
+    }
+
+    @Test
+    public void pageSpecificSettingsDisableDesktopWorldControlsAndRestoreWorldSettings() {
+        CameraSettings.Navigation desktop = EngineeringInputPolicy.navigation(false, 2, .5, true);
+        assertFalse(desktop.pan());
+        assertFalse(desktop.yaw());
+        assertFalse(desktop.pitch());
+        assertFalse(desktop.zoom());
+        assertFalse(desktop.reset());
+        CameraSettings.Hud hud = EngineeringInputPolicy.hud(true, 1, true);
+        assertFalse(hud.panelVisible());
+        assertFalse(hud.sliceBarVisible());
+        CameraSettings.Navigation world = EngineeringInputPolicy.navigation(false, 2, .5, false);
+        assertTrue(world.pan());
+        assertTrue(world.yaw());
+        assertTrue(world.pitch());
+        assertTrue(world.zoom());
+        assertTrue(world.reset());
+        assertTrue(
+            EngineeringInputPolicy.hud(true, 1, false)
+                .panelVisible());
+        assertTrue(
+            EngineeringInputPolicy.hud(false, 1, false)
+                .sliceBarVisible());
+    }
 
     @Test
     public void normalWheelUsesCoreDirectZoomAndExistingDragButtons() {

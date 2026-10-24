@@ -62,6 +62,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     private CameraSettings settings;
     private int settingsWidth, settingsHeight;
     private long settingsRevision = -1;
+    private boolean settingsDesktop;
     private Target selected;
     private boolean pinned;
     private boolean cameraPanel;
@@ -291,8 +292,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         // Only the heading changes: native forward must point towards the top of the camera's screen.
         if (event.phase == TickEvent.Phase.START && isActive() && following && !FactoryShortcuts.isBinding()) {
             Minecraft mc = Minecraft.getMinecraft();
-            if (mc.thePlayer != null
-                && EngineeringInputPolicy.worldInput(true, mc.currentScreen != null, mc.inGameHasFocus))
+            if (mc.thePlayer != null && EngineeringInputPolicy
+                .worldNavigation(true, mc.currentScreen != null, mc.inGameHasFocus, WorkbenchHud.dashboardVisible()))
                 mc.thePlayer.rotationYaw = EngineeringMotion.playerYaw(yaw);
         }
         if (event.phase == TickEvent.Phase.END) {
@@ -317,7 +318,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         lastX = x;
         lastY = y;
         lastZ = z;
-        if (!EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
+        if (!EngineeringInputPolicy
+            .worldNavigation(isActive(), mc.currentScreen != null, mc.inGameHasFocus, WorkbenchHud.dashboardVisible())
             || FactoryShortcuts.isBinding()
             || WorkbenchHud.typing()) return;
         if (pinned && selected != null) {
@@ -341,7 +343,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     }
 
     private static int key(KeyBinding key) {
-        if (WorkbenchHud.typing()) return 0;
+        if (WorkbenchHud.dashboardVisible() || WorkbenchHud.typing()) return 0;
         int code = key.getKeyCode();
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null
             || com.miaokatze.gtswn.client.TerminalWheelInput.suppresses(code)) return 0;
@@ -359,6 +361,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             return;
         }
         if (EngineeringHud.mouse(event)) {
+            event.setCanceled(true);
+            return;
+        }
+        if (WorkbenchHud.dashboardVisible()) {
             event.setCanceled(true);
             return;
         }
@@ -464,12 +470,15 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     @Override
     public CameraSettings settings() {
         Minecraft mc = Minecraft.getMinecraft();
+        boolean desktop = WorkbenchHud.dashboardVisible();
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
         if (settingsWidth != resolution.getScaledWidth() || settingsHeight != resolution.getScaledHeight()
-            || settingsRevision != FactoryControlSettings.revision()) {
+            || settingsRevision != FactoryControlSettings.revision()
+            || settingsDesktop != desktop) {
             settingsWidth = resolution.getScaledWidth();
             settingsHeight = resolution.getScaledHeight();
             settingsRevision = FactoryControlSettings.revision();
+            settingsDesktop = desktop;
             settings = null;
         }
         double scale = EngineeringHud.scale(settingsWidth, settingsHeight);
@@ -485,17 +494,18 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             .input(
                 CameraSettings.Input.builder()
                     .freeCursor(true)
-                    .movement(following ? WorldCameras.MovementPolicy.NONE : WorldCameras.MovementPolicy.ALL)
+                    .movement(EngineeringInputPolicy.movement(following, desktop))
                     .consumeHotbarScroll(true)
                     .blockDebugReloads(true)
                     .exclusiveKeyboard(true)
                     .build())
-            .hud(EngineeringInputPolicy.hud(cameraPanel, scale))
+            .hud(EngineeringInputPolicy.hud(cameraPanel, scale, desktop))
             .navigation(
                 EngineeringInputPolicy.navigation(
                     following,
                     FactoryControlSettings.value(FactoryControlSettings.Setting.ROTATION),
-                    FactoryControlSettings.value(FactoryControlSettings.Setting.WHEEL_ZOOM)))
+                    FactoryControlSettings.value(FactoryControlSettings.Setting.WHEEL_ZOOM),
+                    desktop))
             .guiPolicy(WorldCameras.GuiPolicy.KEEP)
             .slice(xray.requested())
             .build();
@@ -507,7 +517,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (WorkbenchHud.typing()) return false;
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null) return false;
         Minecraft mc = Minecraft.getMinecraft();
-        if (following
+        if (EngineeringInputPolicy.playerMovement(following, WorkbenchHud.dashboardVisible())
             && (code == mc.gameSettings.keyBindForward.getKeyCode() || code == mc.gameSettings.keyBindBack.getKeyCode()
                 || code == mc.gameSettings.keyBindRight.getKeyCode()
                 || code == mc.gameSettings.keyBindLeft.getKeyCode()
@@ -543,13 +553,15 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     @Override
     public boolean supports(CameraControl control) {
         Minecraft mc = Minecraft.getMinecraft();
-        return EngineeringInputPolicy.worldInput(isActive(), mc.currentScreen != null, mc.inGameHasFocus)
+        return EngineeringInputPolicy
+            .worldNavigation(isActive(), mc.currentScreen != null, mc.inGameHasFocus, WorkbenchHud.dashboardVisible())
             && !FactoryShortcuts.isBinding()
             && EngineeringInputPolicy.pointerControl(
                 control,
                 following,
                 WorldCameraHooks.pointerCaptured(),
-                EngineeringHud.blocksNavigation(Mouse.getEventX(), Mouse.getEventY()));
+                EngineeringHud.blocksNavigation(Mouse.getEventX(), Mouse.getEventY()),
+                WorkbenchHud.dashboardVisible());
     }
 
     @Override
@@ -572,6 +584,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public void rotate(double dyaw, double dpitch) {
+        if (WorkbenchHud.dashboardVisible()) return;
         if (dyaw != 0 || dpitch != 0) EngineeringHud.cancelAreaDrag();
         if (Double.isFinite(dyaw)) yaw = (yaw + dyaw) % 360;
         if (Double.isFinite(dpitch)) pitch = Math.max(15, Math.min(85, pitch + dpitch));
@@ -579,6 +592,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public void zoom(double factor) {
+        if (WorkbenchHud.dashboardVisible()) return;
         if (Double.isFinite(factor) && factor > 0) {
             if (factor != 1) EngineeringHud.cancelAreaDrag();
             zoom.multiply(factor, 0);
@@ -587,6 +601,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public void resetView() {
+        if (WorkbenchHud.dashboardVisible()) return;
         yaw = 45;
         pitch = 60;
         zoom.snap(1);
@@ -594,6 +609,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public void requestSlice(HeightSlice value) {
+        if (WorkbenchHud.dashboardVisible()) return;
         xray.request(value);
         settings = null;
     }
