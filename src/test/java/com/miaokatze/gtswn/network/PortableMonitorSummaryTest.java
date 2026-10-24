@@ -38,7 +38,7 @@ public class PortableMonitorSummaryTest {
                 PacketSyncPortableMonitor.Panel summary = decoded.panels.get(0);
                 assertEquals("Owner", summary.ownerName);
                 assertEquals("5m", summary.window);
-                assertEquals("8h", summary.aeWindow);
+                assertEquals("—", summary.aeWindow);
                 assertEquals(2, summary.tab);
                 assertEquals(1, summary.displayMode);
                 assertEquals(connected, summary.aeConnected);

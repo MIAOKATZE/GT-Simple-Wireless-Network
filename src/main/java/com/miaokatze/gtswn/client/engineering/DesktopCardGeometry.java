@@ -25,12 +25,21 @@ final class DesktopCardGeometry {
         return widget.kind == WidgetKind.HISTORY ? 132 : widget.kind == WidgetKind.RESOURCES ? 112 : 0;
     }
 
+    static int gap(double scale) {
+        return Math.max(2, Math.min(8, (int) Math.round(8 * scale)));
+    }
+
+    static double gridOffset(double scale) {
+        return 0;
+    }
+
     static Rect bounds(WidgetSpec widget, CanvasTransform transform) {
+        int gap = gap(transform.scale());
         return new Rect(
-            (int) Math.round(transform.toScreenX(widget.x())),
-            (int) Math.round(transform.toScreenY(widget.y())),
-            Math.max(1, (int) Math.round(widget.width() * transform.scale()) - 8),
-            Math.max(1, (int) Math.round(widget.height() * transform.scale()) - 8));
+            (int) Math.round(transform.toScreenX(widget.x())) + gap / 2,
+            (int) Math.round(transform.toScreenY(widget.y())) + gap / 2,
+            Math.max(1, (int) Math.round(widget.width() * transform.scale()) - gap),
+            Math.max(1, (int) Math.round(widget.height() * transform.scale()) - gap));
     }
 
     static DesktopDrag.Edge edge(Rect rect, double x, double y) {

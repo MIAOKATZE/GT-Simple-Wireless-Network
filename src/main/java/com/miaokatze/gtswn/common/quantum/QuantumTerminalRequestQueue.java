@@ -42,9 +42,18 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
         INSTANCE.offer(player, player);
     }
 
-    /** 主线程逐条处理；本 tick 内排空当前快照 */
+    /** 主线程每 tick 最多处理 64 条查询。 */
     public static void drain() {
-        INSTANCE.drainAll();
+        INSTANCE.drainAtMost(64);
+    }
+
+    public static void onLogout(EntityPlayerMP player) {
+        INSTANCE.discardPlayer(player);
+    }
+
+    public static void clear() {
+        INSTANCE.clearPending();
+        lastLoggedNanos = 0L;
     }
 
     @Override
@@ -62,7 +71,7 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
     @Override
     protected void process(EntityPlayerMP player) {
         try {
-            if (player.playerNetServerHandler == null) {
+            if (!isOnline(player)) {
                 // 已掉线：静默丢弃
                 return;
             }

@@ -13,6 +13,51 @@ import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
 public class EngineeringInputPolicyTest {
 
     @Test
+    public void hiddenHudHasNoCameraWidgetsWhileWorldNavigationRemainsEnabled() {
+        CameraSettings.Hud hidden = EngineeringInputPolicy.hud(true, 1, false, true);
+        assertFalse(hidden.panelVisible());
+        assertFalse(hidden.sliceBarVisible());
+        assertTrue(EngineeringInputPolicy.worldNavigation(true, false, true, false));
+        assertTrue(
+            EngineeringInputPolicy.navigation(false, 1, 1, false)
+                .pan());
+        assertTrue(
+            EngineeringInputPolicy.navigation(false, 1, 1, false)
+                .yaw());
+        assertTrue(
+            EngineeringInputPolicy.hud(true, 1, false, false)
+                .panelVisible());
+        assertTrue(
+            EngineeringInputPolicy.hud(true, 1, false, false)
+                .sliceBarVisible());
+    }
+
+    @Test
+    public void f1TemporarilyReleasesAnOpenDashboardWithoutClosingIt() {
+        boolean dashboardOpen = true;
+        boolean visible = EngineeringInputPolicy.overlayVisible(dashboardOpen, false);
+        assertTrue(visible);
+        assertFalse(EngineeringInputPolicy.worldNavigation(true, false, true, visible));
+        visible = EngineeringInputPolicy.overlayVisible(dashboardOpen, true);
+        assertFalse(visible);
+        assertTrue(EngineeringInputPolicy.worldNavigation(true, false, true, visible));
+        assertTrue(EngineeringInputPolicy.playerMovement(true, visible));
+        CameraSettings.Navigation navigation = EngineeringInputPolicy.navigation(false, 1, 1, visible);
+        assertTrue(navigation.pan());
+        assertTrue(navigation.yaw());
+        assertTrue(navigation.pitch());
+        assertTrue(navigation.zoom());
+        assertTrue(navigation.reset());
+        assertTrue(EngineeringInputPolicy.pointerControl(CameraControl.ZOOM, false, false, false, visible));
+        visible = EngineeringInputPolicy.overlayVisible(dashboardOpen, false);
+        assertTrue(visible);
+        assertFalse(EngineeringInputPolicy.worldNavigation(true, false, true, visible));
+        assertFalse(
+            EngineeringInputPolicy.navigation(false, 1, 1, visible)
+                .pan());
+    }
+
+    @Test
     public void desktopOwnsMovementAndCameraInputRegardlessOfPointerOrFollowing() {
         assertFalse(EngineeringInputPolicy.worldNavigation(true, false, true, true));
         assertTrue(EngineeringInputPolicy.worldNavigation(true, false, true, false));

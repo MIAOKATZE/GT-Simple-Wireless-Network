@@ -63,6 +63,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     private int settingsWidth, settingsHeight;
     private long settingsRevision = -1;
     private boolean settingsDesktop;
+    private boolean hudHidden;
     private Target selected;
     private boolean pinned;
     private boolean cameraPanel;
@@ -121,6 +122,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             INSTANCE.restorePreferences();
             EngineeringHud.restorePreferences();
             WorkbenchHud.restorePreferences();
+            INSTANCE.hudHidden = mc.gameSettings.hideGUI;
             INSTANCE.preferenceSession = true;
             EngineeringTerminalHudSnapshot
                 .tick(EngineeringDashboardCache.slot() >= 0 || EngineeringTerminalActions.deviceVisualizationEnabled());
@@ -288,6 +290,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
+        if (isActive()) syncHudVisibility();
         // Vanilla supplies acceleration, friction, collision, sprinting and server-authoritative movement.
         // Only the heading changes: native forward must point towards the top of the camera's screen.
         if (event.phase == TickEvent.Phase.START && isActive() && following && !FactoryShortcuts.isBinding()) {
@@ -470,6 +473,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     @Override
     public CameraSettings settings() {
         Minecraft mc = Minecraft.getMinecraft();
+        syncHudVisibility();
         boolean desktop = WorkbenchHud.dashboardVisible();
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
         if (settingsWidth != resolution.getScaledWidth() || settingsHeight != resolution.getScaledHeight()
@@ -499,7 +503,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
                     .blockDebugReloads(true)
                     .exclusiveKeyboard(true)
                     .build())
-            .hud(EngineeringInputPolicy.hud(cameraPanel, scale, desktop))
+            .hud(EngineeringInputPolicy.hud(cameraPanel, scale, desktop, hudHidden))
             .navigation(
                 EngineeringInputPolicy.navigation(
                     following,
@@ -514,6 +518,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowKey(int code) {
+        // F1 belongs to vanilla even while a text field or shortcut-binding prompt owns focus.
+        if (code == Keyboard.KEY_F1) return true;
         if (WorkbenchHud.typing()) return false;
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null) return false;
         Minecraft mc = Minecraft.getMinecraft();
@@ -533,6 +539,31 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowRawKey(int code) {
+        syncHudVisibility();
+        if (code == Keyboard.KEY_F1) {
+            if (Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent()) {
+                WorkbenchHud.suspendInput();
+                KeyBinding.unPressAllKeys();
+            }
+            return true;
+        }
+        if (hudHidden) {
+            if (code == Keyboard.KEY_ESCAPE) {
+                if (Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent()) close();
+                return false;
+            }
+            FactoryShortcuts.Action action = FactoryShortcuts.action(code);
+            if (action != null && action != FactoryShortcuts.Action.TOGGLE
+                && action != FactoryShortcuts.Action.RETURN
+                && action != FactoryShortcuts.Action.FOLLOW
+                && action != FactoryShortcuts.Action.XRAY
+                && action != FactoryShortcuts.Action.PIN) {
+                KeyBinding.setKeyBindState(code, false);
+                return false;
+            }
+            if (FactoryShortcuts.consumeKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent())) return false;
+            return allowKey(code);
+        }
         if (!FactoryShortcuts.isBinding()
             && WorkbenchHud.key(code, Keyboard.getEventCharacter(), Keyboard.getEventKeyState())) return false;
         if (FactoryShortcuts.consumeKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent())) return false;
@@ -543,6 +574,16 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             return false;
         }
         return allowKey(code);
+    }
+
+    private void syncHudVisibility() {
+        boolean hidden = Minecraft.getMinecraft().gameSettings.hideGUI;
+        if (hudHidden == hidden) return;
+        hudHidden = hidden;
+        settings = null;
+        WorkbenchHud.suspendInput();
+        // Releases from before F1 must not leave vanilla movement stuck after focus is relinquished.
+        KeyBinding.unPressAllKeys();
     }
 
     @Override

@@ -53,7 +53,9 @@ public final class PortableMonitorPins {
     }
 
     private static boolean stockRow(String key) {
-        return key.startsWith("item:") || key.startsWith("fluid:");
+        return key.startsWith("item:") || key.startsWith("fluid:")
+            || key.startsWith("v2:item:")
+            || key.startsWith("v2:fluid:");
     }
 
     /** Expand only this panel's touched legacy component; other terminals retain their exact entries. */

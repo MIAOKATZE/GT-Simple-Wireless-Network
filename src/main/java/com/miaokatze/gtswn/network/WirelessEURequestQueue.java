@@ -43,9 +43,17 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
         }
     }
 
-    /** 主线程逐条处理；本 tick 内排空当前快照 */
+    /** 主线程每 tick 最多处理 64 条查询。 */
     public static void drain() {
-        INSTANCE.drainAll();
+        INSTANCE.drainAtMost(64);
+    }
+
+    public static void onLogout(EntityPlayerMP player) {
+        INSTANCE.discardPlayer(player);
+    }
+
+    public static void clear() {
+        INSTANCE.clearPending();
     }
 
     @Override
@@ -57,7 +65,7 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
     @Override
     protected void process(Request request) {
         try {
-            if (request.player.playerNetServerHandler == null) {
+            if (!isOnline(request.player)) {
                 return;
             }
             // B2-03 持有校验：仅当请求玩家实际持有绑定到该 UUID 的便携监测终端时才查询回发，

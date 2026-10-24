@@ -319,7 +319,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         drawScaledCentered(font, font.trimStringToWidth(rateLabel, textW), textX, textW, lineY, rateColor, scale);
         lineY += lineStep;
 
-        // 第4行：平均变化速率（基于当前窗口61点首尾差值法，与AE实时监控的averageRate300s算法一致）
+        // 第4行：平均变化速率（基于当前窗口首末实际 tick 差，与 AE 实时监控 averageRate 一致）
         // 数字保持默认深色，不按正负着色
         double avgRate = 0.0D;
         if (samples.size() >= 2) {
@@ -464,10 +464,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 font.drawString(label, x + w + 8, ty - 4, 0xFF7A18);
             }
         }
+        long spanTicks = WindowLabel.spanTicks(panel.getAEChartSamples());
         for (int i = 0; i < 5; i++) {
             int tx = x + i * w / 4;
             fillRect(tx, y + h, Math.max(1, thickness), 4, TICK_COLOR);
-            String label = i == 0 ? "-" + aeWindowName(panel.getAETrackingWindow())
+            String label = i == 0 ? (spanTicks > 0L ? "-" : "") + WindowLabel.formatSpan(spanTicks)
                 : i == 4 ? tr("gtswn.network_info.screen.now") : "";
             if (!label.isEmpty()) {
                 font.drawString(label, tx - font.getStringWidth(label) / 2, y + h + 8, 0x4E5964);
@@ -1644,9 +1645,4 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         return 0x6B7680;
     }
 
-    /** 根据 AE 时间窗口常量返回显示名称（E4 窗口枚举化：短名映射迁入 WindowLabel） */
-    private static String aeWindowName(int window) {
-        return WindowLabel.of(window)
-            .shortName();
-    }
 }

@@ -53,11 +53,26 @@ public class DesktopCardGeometryTest {
     public void paintedGapAndPointerGapUseTheSameBounds() {
         WidgetSpec widget = new WidgetSpec("card", WidgetKind.INPUT, 0, 0, 4, 2);
         Rect rect = DesktopCardGeometry.bounds(widget, new CanvasTransform(0, 0, 20, 30, .5));
-        assertEquals(120, rect.w);
-        assertEquals(56, rect.h);
-        assertTrue(DesktopCardGeometry.hit(rect, 139, 85, false));
-        assertFalse(DesktopCardGeometry.hit(rect, 140, 85, false));
-        assertTrue(DesktopCardGeometry.hit(rect, 143, 85, true));
+        assertEquals(124, rect.w);
+        assertEquals(60, rect.h);
+        assertEquals(22, rect.x);
+        assertEquals(32, rect.y);
+        assertTrue(DesktopCardGeometry.hit(rect, 145, 91, false));
+        assertFalse(DesktopCardGeometry.hit(rect, 146, 91, false));
+        assertTrue(DesktopCardGeometry.hit(rect, 149, 91, true));
+    }
+
+    @Test
+    public void gridBoundaryIsAtTheMiddleOfTheGapAtEveryZoom() {
+        for (double scale : new double[] { .025, .125, .25, .5, 1, 2 }) {
+            CanvasTransform transform = new CanvasTransform(0, 0, 0, 0, scale);
+            Rect left = DesktopCardGeometry.bounds(new WidgetSpec("left", WidgetKind.INPUT, 0, 0, 4, 2), transform);
+            Rect right = DesktopCardGeometry.bounds(new WidgetSpec("right", WidgetKind.INPUT, 4, 0, 4, 2), transform);
+            double grid = transform.toScreenX(4 * 64);
+            assertEquals(grid, (left.x + left.w + right.x) / 2.0, 1.0);
+            assertTrue(left.w > 1);
+            assertTrue(right.x > left.x + left.w);
+        }
     }
 
     @Test

@@ -4,13 +4,10 @@ import java.lang.ref.WeakReference;
 import java.math.BigInteger;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
-import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
@@ -38,6 +35,7 @@ import appeng.api.networking.IGridNode;
 import appeng.api.storage.IMEMonitor;
 import appeng.api.storage.data.IAEFluidStack;
 import appeng.api.storage.data.IAEItemStack;
+import appeng.api.storage.data.IItemList;
 import appeng.api.util.AECableType;
 import appeng.api.util.DimensionalCoord;
 import appeng.me.GridAccessException;
@@ -373,9 +371,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     /**
-     * G4（SingleIteration 策略）：一次迭代批量收集——单遍遍历本屏 AE2 item/fluid storage list，
-     * 以 aeKey 字符串匹配全部被监视 key（首中即记；同 item+meta 异 NBT 变体的迭代序歧义由
-     * AEMonitorController 同 tick 对账失配降级兜底）。未命中 key 以 0 计，与逐 key findPrecise
+     * 批量收集：每通道只获取一次 storage list，再对绑定使用 AE 原生 findPrecise，
+     * 保留完整 NBT 精确查询语义。未命中 key 以 0 计，与逐 key findPrecise
      * 未命中返回 0 的现状语义一致；grid 不可达（断电/拆线/网络重组）时保持全 0 返回，
      * 同样由对账判定一致性。
      *
@@ -400,31 +397,28 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (worldObj == null || worldObj.isRemote || gridProxy == null) {
             return result;
         }
-        Set<String> matched = new HashSet<>();
         try {
-            for (IAEItemStack stored : gridProxy.getStorage()
+            IItemList<IAEItemStack> itemList = gridProxy.getStorage()
                 .getItemInventory()
-                .getStorageList()) {
-                if (stored == null || stored.getItem() == null) continue;
-                String name = Item.itemRegistry.getNameForObject(stored.getItem());
-                if (name == null) continue;
-                String key = "item:" + name + ":" + stored.getItemDamage();
-                if (result.containsKey(key) && matched.add(key)) {
-                    result.put(key, Long.valueOf(stored.getStackSize()));
-                }
+                .getStorageList();
+            for (ItemStack item : items) {
+                String key = AEMonitorController.aeKey(item);
+                if (key == null) continue;
+                IAEItemStack stored = itemList.findPrecise(AEItemStack.create(item));
+                result.put(key, stored == null ? 0L : stored.getStackSize());
             }
-            for (IAEFluidStack stored : gridProxy.getStorage()
+            IItemList<IAEFluidStack> fluidList = gridProxy.getStorage()
                 .getFluidInventory()
-                .getStorageList()) {
-                if (stored == null || stored.getFluid() == null) continue;
-                String key = "fluid:" + stored.getFluid()
-                    .getName();
-                if (result.containsKey(key) && matched.add(key)) {
-                    result.put(key, Long.valueOf(stored.getStackSize()));
-                }
+                .getStorageList();
+            for (FluidStack fluid : fluids) {
+                String key = AEMonitorController.aeKey(fluid);
+                if (key == null) continue;
+                IAEFluidStack stored = fluidList.findPrecise(AEFluidStack.create(fluid));
+                result.put(key, stored == null ? 0L : stored.getStackSize());
             }
         } catch (GridAccessException e) {
-            // 与 per-key 路径同语义：grid 不可达视为未命中（保持 0 默认），由对账判定一致性
+            // A disconnected grid has no current observable inventory.
+            result.replaceAll((key, value) -> 0L);
         }
         return result;
     }

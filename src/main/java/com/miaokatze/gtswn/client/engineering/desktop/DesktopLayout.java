@@ -15,6 +15,39 @@ public final class DesktopLayout {
         return Collections.unmodifiableList(widgets);
     }
 
+    /** Occupied desktop pixels; an empty layout retains its initial 1024-square reference area. */
+    public Bounds bounds() {
+        if (widgets.isEmpty()) return new Bounds(0, 0, DEFAULT_SIZE, DEFAULT_SIZE);
+        int left = Integer.MAX_VALUE, top = left, right = Integer.MIN_VALUE, bottom = right;
+        for (WidgetSpec widget : widgets) {
+            left = Math.min(left, widget.x());
+            top = Math.min(top, widget.y());
+            right = Math.max(right, widget.x() + widget.width());
+            bottom = Math.max(bottom, widget.y() + widget.height());
+        }
+        return new Bounds(left, top, right, bottom);
+    }
+
+    public static final class Bounds {
+
+        public final int left, top, right, bottom;
+
+        private Bounds(int left, int top, int right, int bottom) {
+            this.left = left;
+            this.top = top;
+            this.right = right;
+            this.bottom = bottom;
+        }
+
+        public int width() {
+            return right - left;
+        }
+
+        public int height() {
+            return bottom - top;
+        }
+    }
+
     public WidgetSpec find(String id) {
         for (WidgetSpec widget : widgets) if (widget.id.equals(id)) return widget;
         return null;
