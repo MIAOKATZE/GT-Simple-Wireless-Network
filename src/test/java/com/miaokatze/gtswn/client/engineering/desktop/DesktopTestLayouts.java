@@ -66,4 +66,21 @@ final class DesktopTestLayouts {
         layout.add(new WidgetSpec("device", WidgetKind.DEVICE, 10, 5, 6, 3));
         return layout;
     }
+
+    /** Frozen shipped geometry; do not derive this fixture from the evolving presets. */
+    static DesktopLayout v219Overview() {
+        DesktopLayout layout = v218Overview();
+        layout.replace(
+            layout.find("resources")
+                .withAutoResource(true));
+        for (int index = 0; index < 4; index++) {
+            if (!layout.add(
+                new WidgetSpec("resource" + (index + 1), WidgetKind.RESOURCES, index * 4, 8, 4, 2)
+                    .presented(WidgetPresentation.STATUS_LIST, "", null)
+                    .withSingleResource(true)
+                    .withAutoResource(true)))
+                throw new AssertionError(index);
+        }
+        return layout;
+    }
 }

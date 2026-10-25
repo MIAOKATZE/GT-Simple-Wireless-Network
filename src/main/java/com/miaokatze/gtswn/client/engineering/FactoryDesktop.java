@@ -6,9 +6,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.util.StatCollector;
 
 import org.lwjgl.input.Keyboard;
@@ -16,16 +18,19 @@ import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopAutoBind;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopGesture;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetCode;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.ScreenBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetEffects;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetPresentation;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
@@ -55,6 +60,9 @@ final class FactoryDesktop {
     private static DesktopStore store;
     private static DesktopLayout layout;
     private static DesktopPreset pendingPreset;
+    private static DesktopLayout pendingImport;
+    private static String presetDraft = "";
+    private static boolean importingPreset;
     private static DesktopViewport view;
     private static String profile = "", selected = "";
     private static UiScene scene;
@@ -109,6 +117,8 @@ final class FactoryDesktop {
         view = store.loadView(profile);
         initialView = !store.hasView(profile);
         selected = "";
+        clearPresetImport();
+        pendingPreset = null;
         bindingOpen = screenBindingOpen = resourceAdding = choosingDeviceSource = false;
         pickerSource = null;
         deviceSearch.value = resourceSearch.value = screenSearch.value = "";
@@ -130,7 +140,7 @@ final class FactoryDesktop {
             long now = System.nanoTime();
             if (nextDefaultBindingCheck == 0 || now - nextDefaultBindingCheck >= 0) {
                 nextDefaultBindingCheck = now + 1000000000L;
-                if (WidgetResources.initializeDefaults(layout)) changed(true);
+                if (DesktopAutoBind.initializeAvailable(layout)) changed(true);
             }
             refreshBindingSources();
             DesktopDeviceSources.setSelectionSource(devicePickerActive() ? pickerSource : null);
@@ -342,11 +352,25 @@ final class FactoryDesktop {
         if (scene == null || code == Keyboard.KEY_ESCAPE) return false;
         if ((gesture.active() || drag.active() || panning) && (code == Keyboard.KEY_DELETE || code == Keyboard.KEY_TAB))
             return true;
+        boolean control = pressed
+            && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL));
+        if (pressed && control && typing()) {
+            if (code == Keyboard.KEY_V) {
+                scene.insertText(GuiScreen.getClipboardString());
+                return true;
+            }
+            if (code == Keyboard.KEY_C || code == Keyboard.KEY_X) {
+                String copied = scene.selectedText();
+                if (!copied.isEmpty()) GuiScreen.setClipboardString(copied);
+                if (code == Keyboard.KEY_X) scene.insertText("");
+                return true;
+            }
+        }
         if (pressed && scene.keyTyped(
             character,
             code,
             Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT),
-            Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL))) return true;
+            control)) return true;
         if (edit && canvasFocus && scene.focused() == null && code == Keyboard.KEY_DELETE) {
             if (pressed && !selected.isEmpty()) {
                 layout.remove(selected);
@@ -361,6 +385,12 @@ final class FactoryDesktop {
     static boolean escape() {
         if (scene != null && (scene.captured() != null || scene.focused() != null)) {
             scene.blur();
+            return true;
+        }
+        if (importingPreset || pendingPreset != null) {
+            clearPresetImport();
+            pendingPreset = null;
+            dirty = true;
             return true;
         }
         if (libraryOpen || propertiesOpen) {
@@ -570,6 +600,8 @@ final class FactoryDesktop {
 
     private static void build() {
         String focusedInput = typing() ? scene.focused().id : "";
+        String focusedDraft = typing() ? scene.focused()
+            .text() : "";
         editorScroll.capture(scene, selected);
         if (scene != null) scene.close();
         UiNode root = UiNode.panel("desktop")
@@ -674,7 +706,13 @@ final class FactoryDesktop {
         scene = new UiScene(root);
         scene.layout(screenWidth, screenHeight);
         editorScroll.restore(scene);
-        if (!focusedInput.isEmpty()) scene.focus(scene.find(focusedInput));
+        if (!focusedInput.isEmpty()) {
+            UiNode input = scene.find(focusedInput);
+            if (input != null) {
+                input.text(focusedDraft);
+                scene.focus(input);
+            }
+        }
         dirty = false;
     }
 
@@ -693,6 +731,7 @@ final class FactoryDesktop {
             libraryOpen = false;
             resourceAdding = false;
             pendingPreset = null;
+            clearPresetImport();
             dirty = true;
         }));
         panel.add(
@@ -727,45 +766,27 @@ final class FactoryDesktop {
         list.add(
             UiNode.label("presets-title", tr("presets"))
                 .size(width - 12, 14));
-        if (pendingPreset != null) {
-            list.add(
-                UiNode.label("preset-confirm", tr("preset.replace"))
-                    .size(width - 12, 14));
-            list.add(
-                UiNode.button(
-                    "apply-preset",
-                    tr("preset.apply") + " "
-                        + tr(
-                            "preset." + pendingPreset.name()
-                                .toLowerCase(Locale.ROOT)),
-                    () -> {
-                        layout = pendingPreset.createLayout();
-                        WidgetResources.initializeDefaults(layout);
-                        nextDefaultBindingCheck = System.nanoTime() + 1000000000L;
-                        pendingPreset = null;
-                        selected = "";
-                        libraryOpen = propertiesOpen = false;
-                        view.reset(layout, canvas.w, canvas.h);
-                        notice = tr("preset.applied");
-                        changed(true);
-                    })
-                    .size(width - 12, 25)
-                    .style(BUTTON));
-        }
         for (DesktopPreset preset : DesktopPreset.values()) {
-            list.add(
-                UiNode.button(
-                    "preset-" + preset.name(),
-                    tr(
-                        "preset." + preset.name()
-                            .toLowerCase(Locale.ROOT)),
-                    () -> {
-                        pendingPreset = preset;
-                        dirty = true;
-                    })
-                    .size(width - 12, 23)
-                    .style(BUTTON));
+            String id = "preset-" + preset.name();
+            if (pendingPreset == preset) {
+                list.add(presetActions(id, width - 12, preset::createLayout));
+            } else {
+                list.add(
+                    UiNode.button(
+                        id,
+                        tr(
+                            "preset." + preset.name()
+                                .toLowerCase(Locale.ROOT)),
+                        () -> {
+                            pendingPreset = preset;
+                            pendingImport = null;
+                            dirty = true;
+                        })
+                        .size(width - 12, 23)
+                        .style(BUTTON));
+            }
         }
+        addPresetSharing(list, width - 12);
         list.add(
             UiNode.label("add-title", tr("library"))
                 .size(width - 12, 14));
@@ -786,6 +807,222 @@ final class FactoryDesktop {
                 .style(BUTTON));
         panel.add(list);
         return panel;
+    }
+
+    private static UiNode presetActions(String id, int width, Supplier<DesktopLayout> template) {
+        UiNode row = UiNode.panel(id + "-actions")
+            .size(width, 23);
+        int half = (width - 4) / 2;
+        row.add(
+            button(id + "-replace", tr("preset.overwrite"), 0, 0, half, 23, () -> applyPreset(template.get(), false)));
+        row.add(
+            button(
+                id + "-append",
+                tr("preset.append"),
+                half + 4,
+                0,
+                width - half - 4,
+                23,
+                () -> applyPreset(template.get(), true)));
+        return row;
+    }
+
+    private static void applyPreset(DesktopLayout template, boolean append) {
+        if (template == null) {
+            notice = tr("preset.invalid");
+            return;
+        }
+        DesktopLayout prepared = DesktopAutoBind.initialize(template);
+        if (append) {
+            List<WidgetSpec> added = layout.appendPreset(prepared);
+            if (added.isEmpty()) {
+                notice = tr("no.space");
+                return;
+            }
+            WidgetSpec first = added.get(0);
+            selected = first.id;
+            view.panX = first.x() - 18 / view.scale;
+            view.panY = first.y() - 18 / view.scale;
+        } else {
+            layout = prepared;
+            selected = "";
+            view.reset(layout, canvas.w, canvas.h);
+        }
+        DesktopAutoBind.initializeAvailable(layout);
+        nextDefaultBindingCheck = System.nanoTime() + 1000000000L;
+        pendingPreset = null;
+        clearPresetImport();
+        libraryOpen = propertiesOpen = false;
+        bindingOpen = screenBindingOpen = resourceAdding = choosingDeviceSource = false;
+        notice = tr(append ? "preset.appended" : "preset.applied");
+        changed(true);
+    }
+
+    private static void clearPresetImport() {
+        importingPreset = false;
+        pendingImport = null;
+        presetDraft = "";
+    }
+
+    private static void addPresetSharing(UiNode list, int width) {
+        list.add(
+            UiNode.label("preset-share-title", tr("preset.share"))
+                .size(width, 14));
+        list.add(button("preset-export", tr("preset.export"), 0, 0, width, 23, () -> {
+            try {
+                GuiScreen.setClipboardString(DesktopPresetCode.export(layout));
+                notice = tr("preset.copied");
+            } catch (IllegalArgumentException invalid) {
+                notice = tr("preset.export.failed");
+            }
+        }));
+        if (!importingPreset) {
+            list.add(button("preset-import", tr("preset.import"), 0, 0, width, 23, () -> {
+                importingPreset = true;
+                pendingPreset = null;
+                dirty = true;
+            }));
+            return;
+        }
+        list.add(
+            UiNode.label("preset-code-label", tr("preset.code"))
+                .size(width, 14));
+        list.add(UiNode.textInput("preset-code", presetDraft, value -> {
+            presetDraft = value;
+            if (pendingImport != null) {
+                pendingImport = null;
+                dirty = true;
+            }
+        })
+            .size(width, 23)
+            .maxLength(DesktopPresetCode.MAX_CODE_LENGTH)
+            .style(BUTTON));
+        if (pendingImport == null) {
+            list.add(
+                button(
+                    "preset-validate",
+                    tr("preset.validate"),
+                    0,
+                    0,
+                    width,
+                    23,
+                    FactoryDesktop::validatePresetImport));
+        } else {
+            list.add(presetActions("preset-import", width, () -> pendingImport));
+        }
+        list.add(button("preset-import-cancel", tr("preset.cancel"), 0, 0, width, 23, () -> {
+            clearPresetImport();
+            notice = "";
+            dirty = true;
+        }));
+    }
+
+    private static void validatePresetImport() {
+        try {
+            pendingImport = DesktopPresetCode.decode(presetDraft);
+            pendingPreset = null;
+            notice = tr("preset.valid");
+        } catch (IllegalArgumentException invalid) {
+            pendingImport = null;
+            notice = tr("preset.invalid");
+        }
+        dirty = true;
+    }
+
+    private static void addEffectsProperties(UiNode body, WidgetSpec widget, int width) {
+        body.add(
+            UiNode.label("effects-title", tr("effects"))
+                .size(width, 14));
+        body.add(
+            button(
+                "effects-style",
+                tr("effects.style") + ": "
+                    + tr(
+                        "effects.style." + widget.effects.style.name()
+                            .toLowerCase(Locale.ROOT)),
+                0,
+                0,
+                width,
+                23,
+                () -> {
+                    WidgetSpec current = layout.find(widget.id);
+                    if (current == null) return;
+                    WidgetEffects.Style[] styles = WidgetEffects.Style.values();
+                    style(
+                        current,
+                        current.effects.withStyle(styles[(current.effects.style.ordinal() + 1) % styles.length]));
+                }));
+        body.add(
+            button(
+                "effects-animation",
+                tr("effects.animation") + ": " + tr(widget.effects.animated ? "effects.on" : "effects.off"),
+                0,
+                0,
+                width,
+                23,
+                () -> {
+                    WidgetSpec current = layout.find(widget.id);
+                    if (current != null) style(current, current.effects.withAnimated(!current.effects.animated));
+                }));
+        body.add(
+            UiNode.label("effects-speed-label", tr("effects.speed"))
+                .size(width, 13));
+        UiNode speed = UiNode.textInput("effects-speed", Double.toString(widget.effects.speed), value -> {})
+            .size(width, 23)
+            .maxLength(16)
+            .style(BUTTON);
+        body.add(speed);
+        body.add(
+            UiNode.label("effects-intensity-label", tr("effects.intensity"))
+                .size(width, 13));
+        UiNode intensity = UiNode.textInput("effects-intensity", Double.toString(widget.effects.intensity), value -> {})
+            .size(width, 23)
+            .maxLength(16)
+            .style(BUTTON);
+        body.add(intensity);
+        body.add(
+            UiNode.label("effects-accent-label", tr("effects.accent"))
+                .size(width, 13));
+        UiNode accent = UiNode
+            .textInput(
+                "effects-accent",
+                String.format(Locale.ROOT, "%06X", widget.effects.accentColor & 0xFFFFFF),
+                value -> {})
+            .size(width, 23)
+            .maxLength(7)
+            .style(BUTTON);
+        body.add(accent);
+        body.add(button("effects-apply", tr("effects.apply"), 0, 0, width, 23, () -> {
+            WidgetSpec current = layout.find(widget.id);
+            if (current == null) return;
+            try {
+                String color = accent.text()
+                    .trim();
+                if (color.startsWith("#")) color = color.substring(1);
+                if (!color.matches("[0-9a-fA-F]{6}")) throw new IllegalArgumentException();
+                style(
+                    current,
+                    new WidgetEffects(
+                        current.effects.style,
+                        current.effects.animated,
+                        Integer.parseInt(color, 16),
+                        Double.parseDouble(
+                            speed.text()
+                                .trim()),
+                        Double.parseDouble(
+                            intensity.text()
+                                .trim())));
+            } catch (IllegalArgumentException invalid) {
+                notice = tr("effects.invalid");
+            }
+        }));
+    }
+
+    private static void style(WidgetSpec widget, WidgetEffects effects) {
+        if (layout.replace(widget.styled(effects))) {
+            notice = "";
+            changed(true);
+        }
     }
 
     private static UiNode properties(int x, int width) {
@@ -852,6 +1089,7 @@ final class FactoryDesktop {
                 changed(true);
             }
         }));
+        addEffectsProperties(body, widget, width - 16);
         body.add(
             button(
                 "presentation",

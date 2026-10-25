@@ -104,7 +104,7 @@ public class DesktopLayoutTest {
                 .width(),
             0);
         assertEquals(
-            640,
+            448,
             layout.bounds()
                 .height(),
             0);

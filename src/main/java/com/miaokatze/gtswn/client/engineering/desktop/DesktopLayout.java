@@ -2,7 +2,10 @@ package com.miaokatze.gtswn.client.engineering.desktop;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /** Sparse desktop: 1024 is the initial arrangement, never a canvas boundary. */
@@ -133,6 +136,90 @@ public final class DesktopLayout {
     public boolean remove(String id) {
         WidgetSpec widget = find(id);
         return widget != null && widgets.remove(widget);
+    }
+
+    /** Append an independent, unbound template beside the current desktop. Empty means no change. */
+    public List<WidgetSpec> appendPreset(DesktopLayout template) {
+        Bounds occupied = bounds();
+        return appendPreset(
+            template,
+            widgets.isEmpty() ? 0 : occupied.right / CELL + 1,
+            widgets.isEmpty() ? 0 : occupied.top / CELL);
+    }
+
+    /**
+     * Place a whole template near its requested top-left corner, preserving every relative position. Search only
+     * obstacle edges, never the million-cell canvas. Original widgets and terminal references remain untouched.
+     */
+    public List<WidgetSpec> appendPreset(DesktopLayout template, int anchorColumn, int anchorRow) {
+        if (template == null || template.widgets.isEmpty() || widgets.size() + template.widgets.size() > MAX_WIDGETS)
+            return Collections.emptyList();
+        List<WidgetSpec> incoming = new ArrayList<>(template.widgets);
+        int left = Integer.MAX_VALUE, top = left, right = Integer.MIN_VALUE, bottom = right;
+        for (WidgetSpec widget : incoming) {
+            left = Math.min(left, widget.column);
+            top = Math.min(top, widget.row);
+            right = Math.max(right, widget.column + widget.columns);
+            bottom = Math.max(bottom, widget.row + widget.rows);
+        }
+        long minX = -MAX_COORD - (long) left, maxX = MAX_COORD - (long) right;
+        long minY = -MAX_COORD - (long) top, maxY = MAX_COORD - (long) bottom;
+        if (minX > maxX || minY > maxY) return Collections.emptyList();
+        long wantedX = clamp((long) anchorColumn - left, minX, maxX);
+        long wantedY = clamp((long) anchorRow - top, minY, maxY);
+        Set<Long> rows = new TreeSet<>();
+        rows.add(wantedY);
+        rows.add(minY);
+        rows.add(maxY);
+        for (WidgetSpec old : widgets) for (WidgetSpec next : incoming) {
+            rows.add(clamp((long) old.row + old.rows - next.row, minY, maxY));
+            rows.add(clamp((long) old.row - next.row - next.rows, minY, maxY));
+        }
+        long bestX = 0, bestY = 0, bestDistance = Long.MAX_VALUE;
+        for (long dy : rows) {
+            List<long[]> forbidden = new ArrayList<>();
+            for (WidgetSpec old : widgets) for (WidgetSpec next : incoming) {
+                if (next.row + dy >= (long) old.row + old.rows || next.row + dy + next.rows <= old.row) continue;
+                forbidden.add(
+                    new long[] { (long) old.column - next.column - next.columns + 1,
+                        (long) old.column + old.columns - next.column - 1 });
+            }
+            forbidden.sort(Comparator.comparingLong(interval -> interval[0]));
+            long availableFrom = minX;
+            for (int index = 0; index <= forbidden.size() && availableFrom <= maxX; index++) {
+                long blockedFrom = index == forbidden.size() ? maxX + 1 : forbidden.get(index)[0];
+                long availableTo = Math.min(maxX, blockedFrom - 1);
+                if (availableFrom <= availableTo) {
+                    long dx = clamp(wantedX, availableFrom, availableTo);
+                    long distance = Math.abs(dx - wantedX) + Math.abs(dy - wantedY);
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestX = dx;
+                        bestY = dy;
+                    }
+                }
+                if (index < forbidden.size()) availableFrom = Math.max(availableFrom, forbidden.get(index)[1] + 1);
+            }
+        }
+        if (bestDistance == Long.MAX_VALUE) return Collections.emptyList();
+        DesktopLayout staged = copy();
+        List<WidgetSpec> added = new ArrayList<>();
+        for (WidgetSpec widget : incoming) {
+            WidgetSpec candidate = widget.asTemplate()
+                .withAutoResource(widget.kind == WidgetKind.RESOURCES)
+                .withId(
+                    UUID.randomUUID()
+                        .toString())
+                .withBounds((int) (widget.column + bestX), (int) (widget.row + bestY), widget.columns, widget.rows);
+            if (!staged.add(candidate)) return Collections.emptyList();
+            added.add(candidate);
+        }
+        widgets.addAll(added);
+        return Collections.unmodifiableList(added);
+    }
+
+    private static long clamp(long value, long minimum, long maximum) {
+        return Math.max(minimum, Math.min(maximum, value));
     }
 
     public boolean replace(WidgetSpec candidate) {

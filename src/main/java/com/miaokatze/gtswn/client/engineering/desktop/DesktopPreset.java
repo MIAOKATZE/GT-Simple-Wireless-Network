@@ -34,7 +34,7 @@ public enum DesktopPreset {
                 add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.KPI, "stored", 10, 0, 6, 2);
                 add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 10, 2, 6, 2);
                 add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.BARS, "", 0, 4, 10, 3);
-                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 4, 6, 3);
+                add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 4, 6, 5);
                 resourceStrip(layout, 7);
                 layout.replace(
                     layout.find("resources")
@@ -67,20 +67,19 @@ public enum DesktopPreset {
         add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.GAUGE, "stored", 10, 0, 6, 5);
         add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 5, 0, 5, 2);
         add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.COMBO, "", 0, 2, 10, 3);
-        add(layout, "resources", WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", 0, 5, 10, 3);
-        add(layout, "device", WidgetKind.DEVICE, WidgetPresentation.DEFAULT, "", 10, 5, 6, 3);
+        resourceStrip(layout, 5);
+        add(layout, "status", WidgetKind.MACHINES, WidgetPresentation.STATUS_LIST, "running", 10, 5, 6, 2);
         layout.replace(
-            layout.find("resources")
-                .withAutoResource(true));
-        resourceStrip(layout, 8);
+            layout.find("status")
+                .styled(WidgetEffects.DEFAULT.withStyle(WidgetEffects.Style.SIGNAL)));
         return layout;
     }
 
-    /** Four real independent monitors, initialized once from authorized mounted inventory receipts. */
+    /** Five compact independent monitors, initialized once from authorized mounted inventory receipts. */
     private static void resourceStrip(DesktopLayout layout, int row) {
-        for (int index = 0; index < 4; index++) {
+        for (int index = 0; index < 5; index++) {
             String id = "resource" + (index + 1);
-            add(layout, id, WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", index * 4, row, 4, 2);
+            add(layout, id, WidgetKind.RESOURCES, WidgetPresentation.STATUS_LIST, "", index * 2, row, 2, 2);
             layout.replace(
                 layout.find(id)
                     .withSingleResource(true)

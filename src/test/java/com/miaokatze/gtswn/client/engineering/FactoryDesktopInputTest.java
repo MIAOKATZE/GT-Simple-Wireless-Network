@@ -13,9 +13,12 @@ import org.junit.Test;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetCode;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetEffects;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
@@ -66,7 +69,15 @@ public class FactoryDesktopInputTest {
         set("selected", selected ? "card" : "");
         set("edit", editing);
         set("bindingOpen", false);
+        set("pendingPreset", null);
+        set("pendingImport", null);
+        set("presetDraft", "");
+        set("importingPreset", false);
+        set("initialView", false);
+        set("notice", "");
         set("screenBindingOpen", false);
+        set("resourceAdding", false);
+        set("choosingDeviceSource", false);
         set("propertiesOpen", false);
         set("store", new DesktopStore(null));
         set("profile", DesktopStore.profile("headless", "player"));
@@ -297,6 +308,192 @@ public class FactoryDesktopInputTest {
             assertFalse((Boolean) get("edit"));
             scene.close();
         }
+    }
+
+    @Test
+    public void presetClickSplitsOnlyItsOriginalRowWithoutChangingDesktop() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        rebuild();
+        UiNode original = scene.find("preset-POWER");
+        double originalY = original.bounds().y;
+        double originalHeight = original.bounds().height;
+        activate("preset-POWER");
+        assertSame(layout, get("layout"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        rebuild();
+        assertNull(scene.find("preset-POWER"));
+        assertNull(scene.find("preset-confirm"));
+        assertNull(scene.find("apply-preset"));
+        UiNode left = scene.find("preset-POWER-replace"), right = scene.find("preset-POWER-append");
+        assertNotNull(left);
+        assertNotNull(right);
+        assertEquals(originalY, left.bounds().y, 0);
+        assertEquals(originalY, right.bounds().y, 0);
+        assertEquals(originalHeight, left.bounds().height, 0);
+        assertTrue(
+            left.bounds()
+                .right() < right.bounds().x);
+        assertNotNull(scene.find("preset-PRODUCTION"));
+    }
+
+    @Test
+    public void importedCodeValidationIsReadOnlyAndAppendPreservesExistingCardAndZoom() throws Exception {
+        prepare(true, true, WidgetKind.WIRELESS);
+        DesktopLayout template = new DesktopLayout();
+        assertNotNull(template.add(WidgetKind.WIRELESS));
+        set("libraryOpen", true);
+        set("importingPreset", true);
+        set("presetDraft", DesktopPresetCode.export(template));
+        rebuild();
+        WidgetSpec original = layout.find("card");
+        activate("preset-validate");
+        assertSame(layout, get("layout"));
+        assertSame(original, layout.find("card"));
+        DesktopLayout pending = (DesktopLayout) get("pendingImport");
+        assertNotNull(pending);
+        for (WidgetSpec widget : pending.widgets()) {
+            assertNull(widget.device);
+            assertNull(widget.screen);
+            assertNull(widget.resource);
+            assertFalse(widget.autoDevicePending);
+            assertFalse(widget.autoResourcePending);
+        }
+        rebuild();
+        activate("preset-import-append");
+        assertSame(layout, get("layout"));
+        assertSame(original, layout.find("card"));
+        assertEquals(
+            2,
+            layout.widgets()
+                .size());
+        assertEquals(1, ((DesktopViewport) get("view")).scale, 0);
+        assertNull(get("pendingImport"));
+        assertFalse((Boolean) get("importingPreset"));
+    }
+
+    @Test
+    public void invalidImportAndCancelKeepTheCurrentDesktop() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        set("importingPreset", true);
+        set("presetDraft", "invalid");
+        rebuild();
+        activate("preset-validate");
+        assertSame(layout, get("layout"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertNull(get("pendingImport"));
+        rebuild();
+        assertNotNull(scene.find("preset-validate"));
+        assertNull(scene.find("preset-import-replace"));
+        activate("preset-import-cancel");
+        assertFalse((Boolean) get("importingPreset"));
+        assertEquals("", get("presetDraft"));
+        assertSame(layout, get("layout"));
+    }
+
+    @Test
+    public void presetCodeAllowsLongSingleLineDraftAndRetainsFocusAcrossRebuild() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        set("importingPreset", true);
+        rebuild();
+        UiNode input = scene.find("preset-code");
+        scene.focus(input);
+        String longCode = String.join("", Collections.nCopies(4096, "A"));
+        assertTrue(scene.insertText(longCode));
+        assertEquals(longCode, get("presetDraft"));
+        assertFalse((Boolean) get("dirty"));
+        rebuild();
+        assertEquals("preset-code", scene.focused().id);
+        assertEquals(
+            longCode,
+            scene.focused()
+                .text());
+        assertEquals(
+            23,
+            scene.focused()
+                .bounds().height,
+            0);
+        assertTrue(FactoryDesktop.escape());
+        assertFalse(FactoryDesktop.typing());
+        assertTrue((Boolean) get("importingPreset"));
+        assertTrue(FactoryDesktop.escape());
+        assertFalse((Boolean) get("importingPreset"));
+        assertTrue((Boolean) get("libraryOpen"));
+    }
+
+    @Test
+    public void importedOverwriteReplacesTheDesktopOnlyAfterTheExplicitChoice() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        set("importingPreset", true);
+        set("presetDraft", DesktopPresetCode.export(DesktopPreset.POWER.createLayout()));
+        rebuild();
+        activate("preset-validate");
+        assertNotNull(layout.find("card"));
+        rebuild();
+        activate("preset-import-replace");
+        DesktopLayout replaced = (DesktopLayout) get("layout");
+        assertNotSame(layout, replaced);
+        assertNull(replaced.find("card"));
+        assertEquals(
+            DesktopPreset.POWER.createLayout()
+                .widgets()
+                .size(),
+            replaced.widgets()
+                .size());
+    }
+
+    @Test
+    public void effectsEditorCyclesStyleAndAnimationAndValidatesAllParametersTogether() throws Exception {
+        prepare(true, true, WidgetKind.WIRELESS);
+        set("propertiesOpen", true);
+        set("libraryOpen", false);
+        rebuild();
+        activate("effects-style");
+        assertEquals(WidgetEffects.Style.SIGNAL, layout.find("card").effects.style);
+        rebuild();
+        activate("effects-animation");
+        assertFalse(layout.find("card").effects.animated);
+        rebuild();
+        scene.find("effects-speed")
+            .text("4");
+        scene.find("effects-intensity")
+            .text("0.5");
+        scene.find("effects-accent")
+            .text("FFAA66");
+        activate("effects-apply");
+        assertEquals(1, layout.find("card").effects.speed, 0);
+        scene.find("effects-speed")
+            .text("2.5");
+        activate("effects-apply");
+        WidgetEffects applied = layout.find("card").effects;
+        assertEquals(2.5, applied.speed, 0);
+        assertEquals(0.5, applied.intensity, 0);
+        assertEquals(0xFFFFAA66, applied.accentColor);
+        assertEquals(WidgetEffects.Style.SIGNAL, applied.style);
+        assertFalse(applied.animated);
+    }
+
+    private void rebuild() throws Exception {
+        Method build = FactoryDesktop.class.getDeclaredMethod("build");
+        build.setAccessible(true);
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+    }
+
+    private void activate(String id) {
+        UiNode button = scene.find(id);
+        assertNotNull(id, button);
+        scene.focus(button);
+        assertTrue(scene.keyTyped('\0', 28, false, false));
     }
 
     private static void dispatch(String name, UiEvent event) {

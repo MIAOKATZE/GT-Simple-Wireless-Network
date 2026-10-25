@@ -127,6 +127,8 @@ public final class WidgetSpec {
     public final boolean autoResourcePending;
     public final boolean averageRate;
     public final int averageWindowSeconds;
+    public final WidgetEffects effects;
+    public final boolean autoDevicePending;
 
     public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows) {
         this(id, kind, column, row, columns, rows, "", null, Collections.<String>emptyList(), 1);
@@ -227,17 +229,21 @@ public final class WidgetSpec {
             true,
             30,
             false,
-            resource != null);
+            resource != null,
+            WidgetEffects.DEFAULT,
+            false);
     }
 
     private WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows, String title,
         DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
         WidgetPresentation presentation, String metricField, Double userTarget, int borderColor,
         ResourceBinding resource, ScreenBinding screen, boolean averageRate, int averageWindowSeconds,
-        boolean autoResourcePending, boolean singleResource) {
+        boolean autoResourcePending, boolean singleResource, WidgetEffects effects, boolean autoDevicePending) {
         if (id == null || !id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("id");
         this.id = id;
+        this.effects = Objects.requireNonNull(effects, "effects");
         this.kind = Objects.requireNonNull(kind, "kind");
+        this.autoDevicePending = kind.supportsDeviceBinding() && device == null && autoDevicePending;
         this.presentation = Objects.requireNonNull(presentation, "presentation");
         if (!availablePresentations(kind).contains(presentation)) throw new IllegalArgumentException("presentation");
         String metric = metricField == null ? "" : metricField;
@@ -355,7 +361,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
     }
 
     public WidgetSpec titled(String title) {
@@ -380,7 +388,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
     }
 
     public WidgetSpec configured(String title, List<String> fields, int displayColumns) {
@@ -405,7 +415,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -432,7 +444,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -460,7 +474,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
     }
 
     public WidgetSpec withAutoResource(boolean pending) {
@@ -485,7 +501,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             pending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
     }
 
     /** A placed single-resource slot retains its mode when its selected entry is cleared. */
@@ -511,7 +529,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
     }
 
     public WidgetSpec bordered(int color) {
@@ -536,7 +556,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
     }
 
     public WidgetSpec boundResource(ResourceBinding binding) {
@@ -561,7 +583,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             false,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -589,7 +613,9 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             autoResourcePending,
-            singleResource);
+            singleResource,
+            effects,
+            false);
     }
 
     public WidgetSpec boundScreen(ScreenBinding binding) {
@@ -617,8 +643,124 @@ public final class WidgetSpec {
             averageRate,
             averageWindowSeconds,
             false,
-            singleResource);
+            singleResource,
+            effects,
+            autoDevicePending);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
+
+    public WidgetSpec styled(WidgetEffects effects) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource,
+            effects,
+            autoDevicePending);
+    }
+
+    public WidgetSpec withAutoDevice(boolean pending) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource,
+            effects,
+            pending);
+    }
+
+    public WidgetSpec renamed(String id) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource,
+            effects,
+            autoDevicePending);
+    }
+
+    public WidgetSpec withId(String id) {
+        return renamed(id);
+    }
+
+    /** Transferable appearance and geometry, with fresh local source discovery after import. */
+    public WidgetSpec asTemplate() {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            null,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            null,
+            null,
+            averageRate,
+            averageWindowSeconds,
+            kind == WidgetKind.RESOURCES,
+            singleResource,
+            effects,
+            kind.supportsDeviceBinding());
+    }
+
 }

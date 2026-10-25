@@ -7,7 +7,7 @@ import org.junit.Test;
 public class DesktopPresetDataTest {
 
     @Test
-    public void overviewFitsSixteenByTenCanvasAndAddsFourIndependentResourceMonitors() {
+    public void overviewFitsSixteenBySevenCanvasWithFiveSmallResourcesAndLiveMachineStatus() {
         DesktopLayout layout = DesktopPreset.overviewLayout();
         assertEquals(
             10,
@@ -18,7 +18,7 @@ public class DesktopPresetDataTest {
             layout.bounds()
                 .width());
         assertEquals(
-            10 * DesktopLayout.CELL,
+            7 * DesktopLayout.CELL,
             layout.bounds()
                 .height());
         assertEquals(WidgetKind.WIRELESS, layout.find("wireless").kind);
@@ -31,26 +31,45 @@ public class DesktopPresetDataTest {
         assertEquals(10, layout.find("wireless").column);
         assertEquals(5, layout.find("wireless").rows);
         assertEquals(WidgetPresentation.COMBO, layout.find("history").presentation);
-        assertEquals(3, layout.find("resources").rows);
-        assertEquals(WidgetKind.DEVICE, layout.find("device").kind);
-        for (int index = 1; index <= 4; index++) {
+        assertNull(layout.find("resources"));
+        assertNull(layout.find("device"));
+        assertEquals(WidgetKind.MACHINES, layout.find("status").kind);
+        assertEquals(WidgetPresentation.STATUS_LIST, layout.find("status").presentation);
+        assertEquals(10, layout.find("status").column);
+        assertEquals(5, layout.find("status").row);
+        assertEquals(6, layout.find("status").columns);
+        assertEquals(2, layout.find("status").rows);
+        for (int index = 1; index <= 5; index++) {
             WidgetSpec resource = layout.find("resource" + index);
             assertEquals(WidgetKind.RESOURCES, resource.kind);
             assertTrue(resource.autoResourcePending);
             assertTrue(resource.singleResource);
-            assertEquals((index - 1) * 4, resource.column);
-            assertEquals(8, resource.row);
-            assertEquals(4, resource.columns);
+            assertEquals((index - 1) * 2, resource.column);
+            assertEquals(5, resource.row);
+            assertEquals(2, resource.columns);
             assertEquals(2, resource.rows);
             assertNull(resource.resource);
         }
-        assertFalse(layout.find("resources").singleResource);
         for (WidgetSpec widget : layout.widgets()) {
             assertTrue(layout.fits(widget, widget.id));
             assertNull(widget.screen);
             assertNull(widget.device);
             assertNull(widget.userTarget);
             assertFalse(widget.kind == WidgetKind.INPUT || widget.kind == WidgetKind.OUTPUT);
+        }
+    }
+
+    @Test
+    public void logisticsAlsoUsesFiveTwoByTwoResourceSlots() {
+        DesktopLayout layout = DesktopPreset.LOGISTICS.createLayout();
+        for (int index = 1; index <= 5; index++) {
+            WidgetSpec resource = layout.find("resource" + index);
+            assertEquals((index - 1) * 2, resource.column);
+            assertEquals(7, resource.row);
+            assertEquals(2, resource.columns);
+            assertEquals(2, resource.rows);
+            assertTrue(resource.singleResource);
+            assertTrue(resource.autoResourcePending);
         }
     }
 

@@ -198,19 +198,33 @@ public class DesktopStoreTest {
 
     @Test
     public void badOrUnknownWidgetDoesNotDiscardValidSiblings() {
-        Properties p = DesktopStore.encode(DesktopLayout.defaultLayout());
+        DesktopLayout original = DesktopLayout.defaultLayout();
+        Properties p = DesktopStore.encode(original);
         p.setProperty("widget.1.kind", "FUTURE_PLUGIN");
         p.setProperty("widget.2.column", "2147483647");
         p.setProperty("widget.3.rows", "-1");
         DesktopLayout recovered = DesktopStore.decode(p);
         assertEquals(
-            DesktopLayout.defaultLayout()
-                .widgets()
+            original.widgets()
                 .size() - 3,
             recovered.widgets()
                 .size());
-        assertNotNull(recovered.find("resources"));
-        assertNotNull(recovered.find("machines"));
+        for (int index = 0; index < original.widgets()
+            .size(); index++) {
+            WidgetSpec widget = original.widgets()
+                .get(index);
+            WidgetSpec retained = recovered.find(widget.id);
+            if (index >= 1 && index <= 3) {
+                assertNull(retained);
+            } else {
+                assertNotNull(retained);
+                assertEquals(widget.kind, retained.kind);
+                assertEquals(widget.column, retained.column);
+                assertEquals(widget.row, retained.row);
+                assertEquals(widget.columns, retained.columns);
+                assertEquals(widget.rows, retained.rows);
+            }
+        }
     }
 
     @Test

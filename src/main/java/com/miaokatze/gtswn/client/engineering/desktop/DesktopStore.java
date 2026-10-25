@@ -70,8 +70,8 @@ public final class DesktopStore {
 
     /** Only shipped display templates migrate; operational references do not customize their appearance. */
     static boolean untouchedLegacyDefault(DesktopLayout layout) {
-        Properties display = displayPreferences(layout);
-        if (display.equals(encode(previousOverview())) || display.equals(encode(v218Overview()))) return true;
+        if (matchesDisplay(layout, previousOverview()) || matchesDisplay(layout, v218Overview())
+            || matchesDisplay(layout, v219Overview())) return true;
         String[] ids = { "machines", "input", "output", "wireless", "history", "region", "resources", "attention" };
         WidgetKind[] kinds = { WidgetKind.MACHINES, WidgetKind.INPUT, WidgetKind.OUTPUT, WidgetKind.WIRELESS,
             WidgetKind.HISTORY, WidgetKind.REGION, WidgetKind.RESOURCES, WidgetKind.ATTENTION };
@@ -96,6 +96,8 @@ public final class DesktopStore {
                 || widget.autoResourcePending
                 || widget.singleResource != (widget.resource != null)
                 || widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR
+                || !defaultEffects(widget.effects)
+                || widget.autoDevicePending
                 || widget.presentation != WidgetPresentation.DEFAULT) return false;
             List<String> metrics = WidgetSpec.availableMetrics(widget.kind);
             if (!widget.metricField.equals(metrics.isEmpty() ? "" : metrics.get(0))) return false;
@@ -105,14 +107,26 @@ public final class DesktopStore {
         return matchesCompact || matchesTall;
     }
 
-    private static Properties displayPreferences(DesktopLayout layout) {
+    private static boolean matchesDisplay(DesktopLayout layout, DesktopLayout template) {
+        return displayPreferences(layout, template).equals(displayPreferences(template, template));
+    }
+
+    private static Properties displayPreferences(DesktopLayout layout, DesktopLayout template) {
         Properties display = encode(layout);
         for (int index = 0; index < layout.widgets()
             .size(); index++) {
             String prefix = "widget." + index + ".";
             for (String suffix : new String[] { "source", "key", "dimension", "x", "y", "z", "meta", "resource.source",
-                "resource.screen", "resource.kind", "resource.key", "resource.name", "screen.source", "screen.id" })
-                display.remove(prefix + suffix);
+                "resource.screen", "resource.kind", "resource.key", "resource.name", "screen.source", "screen.id",
+                "autoResourcePending", "autoDevicePending" }) display.remove(prefix + suffix);
+            WidgetSpec widget = layout.widgets()
+                .get(index);
+            WidgetSpec original = template.find(widget.id);
+            // Selecting an exact row implicitly switches mode; compare that operational consequence
+            // with the frozen template, while retaining explicit unbound display-mode changes.
+            boolean singleResource = widget.resource != null && original != null ? original.singleResource
+                : widget.singleResource;
+            display.setProperty(prefix + "singleResource", Boolean.toString(singleResource));
         }
         return display;
     }
@@ -141,9 +155,24 @@ public final class DesktopStore {
                 widget.borderColor,
                 old.resource,
                 old.screen).withRate(old.averageRate, old.averageWindowSeconds)
-                    .withAutoResource(widget.autoResourcePending && old.resource == null && old.screen == null)
-                    .withSingleResource(old.singleResource);
+                    .withAutoResource(
+                        widget.autoResourcePending && old.autoResourcePending
+                            && old.resource == null
+                            && old.screen == null)
+                    .withSingleResource(old.singleResource)
+                    .withAutoDevice(old.autoDevicePending)
+                    .styled(widget.effects);
             if (!migrated.replace(retained)) throw new IllegalStateException("Invalid migrated widget: " + widget.id);
+        }
+        // A previous template may contain operational cards removed from the new visual arrangement.
+        // Retain those exact cards below it rather than losing an explicitly chosen source.
+        for (WidgetSpec old : previous.widgets()) {
+            if (migrated.find(old.id) != null || old.device == null && old.resource == null && old.screen == null)
+                continue;
+            int bottom = 0;
+            for (WidgetSpec widget : migrated.widgets()) bottom = Math.max(bottom, widget.row + widget.rows);
+            if (!migrated.add(old.withBounds(old.column, bottom, old.columns, old.rows)))
+                throw new IllegalStateException("Invalid retained widget: " + old.id);
         }
         return migrated;
     }
@@ -183,6 +212,22 @@ public final class DesktopStore {
             layout.add(
                 new WidgetSpec(ids[index], kinds[index], b[0], b[1], b[2], b[3])
                     .presented(forms[index], metrics[index], null));
+        }
+        return layout;
+    }
+
+    /** Frozen v2.0.19 template, including its four independent resource slots. */
+    private static DesktopLayout v219Overview() {
+        DesktopLayout layout = v218Overview();
+        layout.replace(
+            layout.find("resources")
+                .withAutoResource(true));
+        for (int index = 0; index < 4; index++) {
+            WidgetSpec widget = new WidgetSpec("resource" + (index + 1), WidgetKind.RESOURCES, index * 4, 8, 4, 2)
+                .presented(WidgetPresentation.STATUS_LIST, "", null)
+                .withSingleResource(true)
+                .withAutoResource(true);
+            if (!layout.add(widget)) throw new IllegalStateException("Invalid frozen resource slot");
         }
         return layout;
     }
@@ -323,6 +368,8 @@ public final class DesktopStore {
             if (widget.averageWindowSeconds != 30)
                 p.setProperty(prefix + "averageWindowSeconds", Integer.toString(widget.averageWindowSeconds));
             if (widget.autoResourcePending) p.setProperty(prefix + "autoResourcePending", "true");
+            if (widget.autoDevicePending) p.setProperty(prefix + "autoDevicePending", "true");
+            writeEffects(p, prefix, widget.effects);
             if (widget.singleResource && widget.resource == null) p.setProperty(prefix + "singleResource", "true");
             if (widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR)
                 p.setProperty(prefix + "borderColor", Integer.toHexString(widget.borderColor & 0xFFFFFF));
@@ -402,7 +449,9 @@ public final class DesktopStore {
                         .withRate(
                             Boolean.parseBoolean(p.getProperty(prefix + "averageRate", "true")),
                             (int) number(p, prefix + "averageWindowSeconds", 30))
-                        .withAutoResource(Boolean.parseBoolean(p.getProperty(prefix + "autoResourcePending", "false")));
+                        .withAutoResource(Boolean.parseBoolean(p.getProperty(prefix + "autoResourcePending", "false")))
+                        .withAutoDevice(Boolean.parseBoolean(p.getProperty(prefix + "autoDevicePending", "false")))
+                        .styled(effects(p, prefix));
                 if (p.containsKey(prefix + "singleResource"))
                     widget = widget.withSingleResource(Boolean.parseBoolean(p.getProperty(prefix + "singleResource")));
                 result.add(widget);
@@ -414,6 +463,45 @@ public final class DesktopStore {
 
     private static int integer(Properties p, String key) {
         return Integer.parseInt(p.getProperty(key, ""));
+    }
+
+    private static boolean defaultEffects(WidgetEffects effects) {
+        WidgetEffects standard = WidgetEffects.DEFAULT;
+        return effects.style == standard.style && effects.animated == standard.animated
+            && effects.accentColor == standard.accentColor
+            && effects.speed == standard.speed
+            && effects.intensity == standard.intensity;
+    }
+
+    /** Omit defaults so old schema-1 files remain canonical for precise template migration. */
+    private static void writeEffects(Properties p, String prefix, WidgetEffects effects) {
+        WidgetEffects standard = WidgetEffects.DEFAULT;
+        if (effects.style != standard.style) p.setProperty(prefix + "effects.style", effects.style.name());
+        if (effects.animated != standard.animated)
+            p.setProperty(prefix + "effects.animated", Boolean.toString(effects.animated));
+        if (effects.accentColor != standard.accentColor)
+            p.setProperty(prefix + "effects.accent", Integer.toHexString(effects.accentColor & 0xFFFFFF));
+        if (effects.speed != standard.speed) p.setProperty(prefix + "effects.speed", Double.toString(effects.speed));
+        if (effects.intensity != standard.intensity)
+            p.setProperty(prefix + "effects.intensity", Double.toString(effects.intensity));
+    }
+
+    private static WidgetEffects effects(Properties p, String prefix) {
+        WidgetEffects standard = WidgetEffects.DEFAULT;
+        WidgetEffects.Style style = standard.style;
+        try {
+            style = WidgetEffects.Style.valueOf(p.getProperty(prefix + "effects.style", standard.style.name()));
+        } catch (IllegalArgumentException ignored) {}
+        String color = p.getProperty(prefix + "effects.accent", "");
+        int accent = color.matches("[0-9a-fA-F]{1,6}") ? Integer.parseInt(color, 16) : standard.accentColor;
+        double speed = number(p, prefix + "effects.speed", standard.speed);
+        double intensity = number(p, prefix + "effects.intensity", standard.intensity);
+        return new WidgetEffects(
+            style,
+            Boolean.parseBoolean(p.getProperty(prefix + "effects.animated", "true")),
+            accent,
+            speed < 0 || speed > 3 ? standard.speed : speed,
+            intensity < 0 || intensity > 1 ? standard.intensity : intensity);
     }
 
     private static DeviceBinding device(Properties p, String prefix, WidgetKind kind) {

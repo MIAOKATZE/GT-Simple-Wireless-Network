@@ -28,16 +28,17 @@ public class WidgetResourcesTest {
         b.rows.add(row(1, 'a')); // The same resource on another network is not another useful default monitor.
         b.rows.add(row(2, 'c'));
         b.rows.add(row(1, 'd'));
+        b.rows.add(row(2, 'd'));
         java.util.List<Panel> panels = java.util.Arrays.asList(b, a);
         java.util.List<String> mounts = java.util.Arrays.asList(second.toString(), first.toString());
         DesktopLayout layout = DesktopPreset.overviewLayout();
         assertTrue(WidgetResources.initializeDefaultsCached(layout, source, panels, mounts, p -> true));
-        assertEquals(first, layout.find("resources").screen.screen);
         assertEquals(row(1, 'a').key, layout.find("resource1").resource.key);
         assertEquals(row(1, 'b').key, layout.find("resource2").resource.key);
         assertEquals(row(1, 'd').key, layout.find("resource3").resource.key);
         assertEquals(row(2, 'c').key, layout.find("resource4").resource.key);
-        for (int index = 1; index <= 4; index++) assertFalse(layout.find("resource" + index).autoResourcePending);
+        assertEquals(row(2, 'd').key, layout.find("resource5").resource.key);
+        for (int index = 1; index <= 5; index++) assertFalse(layout.find("resource" + index).autoResourcePending);
         java.util.Properties initialized = DesktopStore.encode(layout);
         Collections.reverse(a.rows);
         assertFalse(
@@ -103,6 +104,30 @@ public class WidgetResourcesTest {
             + String.join("", Collections.nCopies(64, String.valueOf(digest)));
         row.name = "Resource " + digest;
         return row;
+    }
+
+    @Test
+    public void appendedUnboundResourceTemplatesInitializeOnceFromStableAuthorizedReceipts() {
+        DesktopLayout template = new DesktopLayout();
+        assertTrue(template.add(new WidgetSpec("single", WidgetKind.RESOURCES, 0, 0, 2, 2).withSingleResource(true)));
+        assertTrue(template.add(new WidgetSpec("table", WidgetKind.RESOURCES, 2, 0, 6, 3)));
+        DesktopLayout layout = new DesktopLayout();
+        java.util.List<WidgetSpec> appended = layout.appendPreset(template);
+        assertEquals(2, appended.size());
+        UUID source = UUID.randomUUID(), first = UUID.fromString("00000000-0000-0000-0000-000000000001"),
+            second = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        Panel a = panel(first), b = panel(second);
+        a.rows.add(row(1, 'a'));
+        b.rows.add(row(1, 'b'));
+        java.util.List<String> mounts = java.util.Arrays.asList(second.toString(), first.toString());
+        assertTrue(
+            WidgetResources.initializeDefaultsCached(layout, source, java.util.Arrays.asList(b, a), mounts, p -> true));
+        assertEquals(first, layout.find(appended.get(0).id).resource.screen);
+        assertEquals(first, layout.find(appended.get(1).id).screen.screen);
+        java.util.Properties snapshot = DesktopStore.encode(layout);
+        assertFalse(
+            WidgetResources.initializeDefaultsCached(layout, source, java.util.Arrays.asList(a, b), mounts, p -> true));
+        assertEquals(snapshot, DesktopStore.encode(layout));
     }
 
     @Test

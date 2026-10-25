@@ -16,7 +16,7 @@ public class DesktopDefaultMigrationTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
-    public void v218DefaultGainsFourMonitorsOnceWhilePreservingBindingsAndSavedZoom() throws Exception {
+    public void v218DefaultGainsCompactMonitorsAndRetainsRemovedBoundCardsAndSavedZoom() throws Exception {
         DesktopLayout previous = DesktopTestLayouts.v218Overview();
         bindScreensAndResource(previous);
         DeviceBinding machine = new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4);
@@ -37,7 +37,7 @@ public class DesktopDefaultMigrationTest {
         DesktopStore upgraded = new DesktopStore(folder);
         DesktopLayout migrated = upgraded.load(profile);
         assertEquals(
-            10,
+            12,
             migrated.widgets()
                 .size());
         assertEquals(machine, migrated.find("device").device);
@@ -88,10 +88,13 @@ public class DesktopDefaultMigrationTest {
         assertTrue(old.flush());
         DesktopStore upgraded = new DesktopStore(folder);
         DesktopLayout migrated = upgraded.load(profile);
+        int retained = 0;
+        DesktopLayout fresh = DesktopLayout.defaultLayout();
+        for (WidgetSpec original : previous.widgets()) if (fresh.find(original.id) == null
+            && (original.device != null || original.resource != null || original.screen != null)) retained++;
         assertEquals(
-            DesktopLayout.defaultLayout()
-                .widgets()
-                .size(),
+            fresh.widgets()
+                .size() + retained,
             migrated.widgets()
                 .size());
         assertEquals(WidgetPresentation.GAUGE, migrated.find("wireless").presentation);
@@ -101,6 +104,9 @@ public class DesktopDefaultMigrationTest {
             assertEquals(original.screen, widget.screen);
             assertEquals(original.device, widget.device);
         }
+        for (WidgetSpec original : previous.widgets())
+            if (original.device != null || original.resource != null || original.screen != null)
+                assertNotNull("Retained binding for " + original.id, migrated.find(original.id));
         ResourceBinding originalResource = previous.find("resources").resource;
         ResourceBinding migratedResource = migrated.find("resources").resource;
         assertEquals(originalResource.source, migratedResource.source);
@@ -110,6 +116,70 @@ public class DesktopDefaultMigrationTest {
         assertEquals(originalResource.name, migratedResource.name);
         assertTrue(upgraded.flush());
         assertEquals(DesktopStore.encode(migrated), DesktopStore.encode(new DesktopStore(folder).load(profile)));
+    }
+
+    @Test
+    public void exactV219DefaultKeepsAllFourResourceBindingsAndAddsOnlyOneNewPendingSlot() throws Exception {
+        DesktopLayout previous = DesktopTestLayouts.v219Overview();
+        UUID source = UUID.randomUUID(), screen = UUID.randomUUID();
+        for (int index = 1; index <= 4; index++) {
+            ResourceBinding binding = new ResourceBinding(
+                source,
+                screen,
+                1,
+                "v2:item:" + String.join("", Collections.nCopies(64, Integer.toString(index))),
+                "Resource " + index);
+            assertTrue(
+                previous.replace(
+                    previous.find("resource" + index)
+                        .boundResource(binding)));
+        }
+        assertTrue(DesktopStore.untouchedLegacyDefault(previous));
+        java.io.File folder = temporary.newFolder();
+        String profile = DesktopStore.profile("v219-bound", "player");
+        DesktopStore old = new DesktopStore(folder);
+        old.put(profile, previous);
+        DesktopViewport view = new DesktopViewport();
+        view.scale = .43;
+        view.panX = -123;
+        old.putView(profile, view);
+        assertTrue(old.flush());
+        DesktopStore restored = new DesktopStore(folder);
+        DesktopLayout upgraded = restored.load(profile);
+        assertEquals(
+            10,
+            upgraded.widgets()
+                .size());
+        for (int index = 1; index <= 4; index++) {
+            WidgetSpec widget = upgraded.find("resource" + index);
+            ResourceBinding expected = previous.find(widget.id).resource;
+            assertEquals(expected.source, widget.resource.source);
+            assertEquals(expected.screen, widget.resource.screen);
+            assertEquals(expected.key, widget.resource.key);
+            assertEquals(2, widget.columns);
+            assertEquals(2, widget.rows);
+            assertFalse(widget.autoResourcePending);
+        }
+        assertTrue(upgraded.find("resource5").autoResourcePending);
+        assertEquals(.43, restored.loadView(profile).scale, 0);
+        assertEquals(-123, restored.loadView(profile).panX, 0);
+        assertTrue(restored.flush());
+        assertEquals(DesktopStore.encode(upgraded), DesktopStore.encode(new DesktopStore(folder).load(profile)));
+    }
+
+    @Test
+    public void v219GeometryOrStyleCustomizationPreventsMigration() throws Exception {
+        DesktopLayout previous = DesktopTestLayouts.v219Overview();
+        assertTrue(
+            previous.replace(
+                previous.find("resource3")
+                    .titled("Reserve")));
+        assertFalse(DesktopStore.untouchedLegacyDefault(previous));
+        assertLayoutPreserved(previous);
+        previous = DesktopTestLayouts.v219Overview();
+        assertTrue(previous.move("resource4", -4, 12));
+        assertFalse(DesktopStore.untouchedLegacyDefault(previous));
+        assertLayoutPreserved(previous);
     }
 
     @Test
