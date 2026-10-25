@@ -7,10 +7,10 @@ import org.junit.Test;
 public class DesktopPresetDataTest {
 
     @Test
-    public void overviewFitsCompactSixteenByEightCanvasAndUsesGridStockAndNetChange() {
+    public void overviewFitsSixteenByTenCanvasAndAddsFourIndependentResourceMonitors() {
         DesktopLayout layout = DesktopPreset.overviewLayout();
         assertEquals(
-            6,
+            10,
             layout.widgets()
                 .size());
         assertEquals(
@@ -18,7 +18,7 @@ public class DesktopPresetDataTest {
             layout.bounds()
                 .width());
         assertEquals(
-            8 * DesktopLayout.CELL,
+            10 * DesktopLayout.CELL,
             layout.bounds()
                 .height());
         assertEquals(WidgetKind.WIRELESS, layout.find("wireless").kind);
@@ -33,6 +33,18 @@ public class DesktopPresetDataTest {
         assertEquals(WidgetPresentation.COMBO, layout.find("history").presentation);
         assertEquals(3, layout.find("resources").rows);
         assertEquals(WidgetKind.DEVICE, layout.find("device").kind);
+        for (int index = 1; index <= 4; index++) {
+            WidgetSpec resource = layout.find("resource" + index);
+            assertEquals(WidgetKind.RESOURCES, resource.kind);
+            assertTrue(resource.autoResourcePending);
+            assertTrue(resource.singleResource);
+            assertEquals((index - 1) * 4, resource.column);
+            assertEquals(8, resource.row);
+            assertEquals(4, resource.columns);
+            assertEquals(2, resource.rows);
+            assertNull(resource.resource);
+        }
+        assertFalse(layout.find("resources").singleResource);
         for (WidgetSpec widget : layout.widgets()) {
             assertTrue(layout.fits(widget, widget.id));
             assertNull(widget.screen);

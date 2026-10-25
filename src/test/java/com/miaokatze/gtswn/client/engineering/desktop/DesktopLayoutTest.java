@@ -56,7 +56,7 @@ public class DesktopLayoutTest {
     }
 
     @Test
-    public void resourceCardsKeepSavedGeometryButAllowCompactResizeAndRestoreTableMinimum() {
+    public void resourceCardsKeepSavedGeometryAndClearingAnEntryKeepsCompactSingleMonitor() {
         ResourceBinding binding = new ResourceBinding(
             UUID.randomUUID(),
             UUID.randomUUID(),
@@ -71,13 +71,15 @@ public class DesktopLayoutTest {
         assertEquals(8, restored.columns);
         assertEquals(4, restored.rows);
         assertTrue(layout.resize("resource", 0, 0, 4, 3));
-        assertFalse(layout.resize("resource", 0, 0, 3, 3));
-        WidgetSpec table = layout.find("resource")
+        assertTrue(layout.resize("resource", 0, 0, 2, 1));
+        assertFalse(layout.resize("resource", 0, 0, 1, 1));
+        WidgetSpec cleared = layout.find("resource")
             .boundResource(null);
-        assertEquals(6, table.columns);
-        assertEquals(3, table.rows);
-        assertEquals(6, table.minColumns());
-        assertEquals(3, table.minRows());
+        assertTrue(cleared.singleResource);
+        assertEquals(2, cleared.columns);
+        assertEquals(1, cleared.rows);
+        assertEquals(2, cleared.minColumns());
+        assertEquals(1, cleared.minRows());
     }
 
     @Test
@@ -102,13 +104,13 @@ public class DesktopLayoutTest {
                 .width(),
             0);
         assertEquals(
-            512,
+            640,
             layout.bounds()
                 .height(),
             0);
         DesktopViewport view = new DesktopViewport();
-        view.fit(layout, 640, 308);
-        assertTrue("Default fit uses most of a widescreen viewport", view.scale > .5);
+        view.reset(layout, 640, 308);
+        assertEquals(.6, view.scale, 0);
         for (String id : new String[] { "machines", "wireless" }) {
             WidgetSpec instrument = layout.find(id);
             assertTrue(instrument.width() * view.scale >= 130);

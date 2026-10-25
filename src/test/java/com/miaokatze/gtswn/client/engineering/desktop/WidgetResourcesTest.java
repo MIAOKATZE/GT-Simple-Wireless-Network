@@ -18,6 +18,94 @@ public class WidgetResourcesTest {
     private static final String ITEM = "v2:item:" + String.join("", Collections.nCopies(64, "a"));
 
     @Test
+    public void defaultResourceMonitorsPickDistinctStableMountedEntriesAndKeepExactSelections() {
+        UUID source = UUID.randomUUID();
+        UUID first = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID second = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        Panel a = panel(first), b = panel(second);
+        a.rows.add(row(1, 'b'));
+        a.rows.add(row(1, 'a'));
+        b.rows.add(row(1, 'a')); // The same resource on another network is not another useful default monitor.
+        b.rows.add(row(2, 'c'));
+        b.rows.add(row(1, 'd'));
+        java.util.List<Panel> panels = java.util.Arrays.asList(b, a);
+        java.util.List<String> mounts = java.util.Arrays.asList(second.toString(), first.toString());
+        DesktopLayout layout = DesktopPreset.overviewLayout();
+        assertTrue(WidgetResources.initializeDefaultsCached(layout, source, panels, mounts, p -> true));
+        assertEquals(first, layout.find("resources").screen.screen);
+        assertEquals(row(1, 'a').key, layout.find("resource1").resource.key);
+        assertEquals(row(1, 'b').key, layout.find("resource2").resource.key);
+        assertEquals(row(1, 'd').key, layout.find("resource3").resource.key);
+        assertEquals(row(2, 'c').key, layout.find("resource4").resource.key);
+        for (int index = 1; index <= 4; index++) assertFalse(layout.find("resource" + index).autoResourcePending);
+        java.util.Properties initialized = DesktopStore.encode(layout);
+        Collections.reverse(a.rows);
+        assertFalse(
+            WidgetResources.initializeDefaultsCached(layout, source, java.util.Arrays.asList(a, b), mounts, p -> {
+                fail("A fully initialized desktop must not rescan inventory receipts");
+                return false;
+            }));
+        assertEquals(initialized, DesktopStore.encode(layout));
+        assertTrue(
+            layout.replace(
+                layout.find("resource1")
+                    .boundResource(null)
+                    .boundScreen(null)));
+        DesktopLayout restored = DesktopStore.decode(DesktopStore.encode(layout));
+        assertFalse(WidgetResources.initializeDefaultsCached(restored, source, panels, mounts, p -> true));
+        assertNull(restored.find("resource1").resource);
+        assertNull(restored.find("resource1").screen);
+        assertFalse(restored.find("resource1").autoResourcePending);
+    }
+
+    @Test
+    public void initializationWaitsForAuthorizedAeReceiptAndNeverOverridesExplicitOrCustomCards() {
+        UUID source = UUID.randomUUID(), screen = UUID.randomUUID(), revoked = UUID.randomUUID();
+        Panel mounted = panel(screen), unmounted = panel(revoked);
+        mounted.rows.add(row(1, 'a'));
+        unmounted.rows.add(row(1, 'b'));
+        DesktopLayout layout = DesktopPreset.overviewLayout();
+        ScreenBinding explicit = new ScreenBinding(source, UUID.randomUUID());
+        assertTrue(layout.move("resource1", -8, 8));
+        assertTrue(
+            layout.replace(
+                layout.find("resource1")
+                    .boundScreen(explicit)));
+        assertTrue(layout.add(new WidgetSpec("custom", WidgetKind.RESOURCES, 0, 10, 4, 2)));
+        java.util.List<Panel> panels = java.util.Arrays.asList(unmounted, mounted);
+        java.util.List<String> mounts = Collections.singletonList(screen.toString());
+        assertFalse(WidgetResources.initializeDefaultsCached(layout, source, panels, mounts, p -> false));
+        mounted.aeConnected = false;
+        assertFalse(WidgetResources.initializeDefaultsCached(layout, source, panels, mounts, p -> true));
+        mounted.aeConnected = true;
+        assertTrue(WidgetResources.initializeDefaultsCached(layout, source, panels, mounts, p -> true));
+        assertEquals(explicit, layout.find("resource1").screen);
+        assertNull(layout.find("resource1").resource);
+        assertEquals(row(1, 'a').key, layout.find("resource2").resource.key);
+        assertNull(layout.find("resource3").resource);
+        assertTrue(layout.find("resource3").autoResourcePending);
+        assertNull(layout.find("custom").screen);
+        assertNull(layout.find("custom").resource);
+        assertEquals(
+            1,
+            WidgetResources.choicesCached(source, panels, mounts, p -> true)
+                .size());
+        mounted.rows.add(row(2, 'c'));
+        assertTrue(WidgetResources.initializeDefaultsCached(layout, source, panels, mounts, p -> true));
+        assertEquals(row(2, 'c').key, layout.find("resource3").resource.key);
+        assertNull(layout.find("resource4").resource);
+    }
+
+    private static Row row(int kind, char digest) {
+        Row row = new Row();
+        row.kind = kind;
+        row.key = (kind == 1 ? "v2:item:" : "v2:fluid:")
+            + String.join("", Collections.nCopies(64, String.valueOf(digest)));
+        row.name = "Resource " + digest;
+        return row;
+    }
+
+    @Test
     public void sourceScreenTypeAndFullIdentityAreAllRequired() {
         UUID source = UUID.randomUUID(), screen = UUID.randomUUID();
         ResourceBinding binding = new ResourceBinding(source, screen, 1, ITEM, "Same display name");

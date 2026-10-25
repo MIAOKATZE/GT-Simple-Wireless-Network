@@ -3,7 +3,7 @@ package com.miaokatze.gtswn.client.engineering;
 /** One geometry contract for world HUD drawing, hit testing, hover and Core navigation exclusion. */
 public final class WorkbenchLayout {
 
-    static final int DEVICE_ROWS_TOP = 131, NODE_ROWS_TOP = 49, RAIL_ROW_HEIGHT = 23, RAIL_BOTTOM = 8;
+    static final int DEVICE_ROWS_TOP = 131, NODE_ROWS_TOP = 90, RAIL_ROW_HEIGHT = 23, RAIL_BOTTOM = 8;
     private static final int MIN_RAIL_HEIGHT = DEVICE_ROWS_TOP + RAIL_ROW_HEIGHT + RAIL_BOTTOM;
 
     static int railHeight(boolean nodes, int count) {

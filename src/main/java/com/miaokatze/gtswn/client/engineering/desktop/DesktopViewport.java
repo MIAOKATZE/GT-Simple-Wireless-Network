@@ -5,8 +5,8 @@ import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 /** A local view over a sparse desktop; translation is in desktop pixels. */
 public final class DesktopViewport {
 
-    public static final double MIN_SCALE = .025, MAX_SCALE = 4;
-    public double panX, panY, scale = 1;
+    public static final double MIN_SCALE = .025, MAX_SCALE = 4, DEFAULT_SCALE = .6;
+    public double panX, panY, scale = DEFAULT_SCALE;
 
     public CanvasTransform transform(double viewportX, double viewportY) {
         sanitize();
@@ -52,6 +52,13 @@ public final class DesktopViewport {
         center(layout, width, height);
     }
 
+    /** Initial view, reset and explicit preset application share the same readable default zoom. */
+    public void reset(DesktopLayout layout, double width, double height) {
+        scale = DEFAULT_SCALE;
+        panX = panY = 0;
+        center(layout, width, height);
+    }
+
     /** Centers occupied geometry without changing zoom; grid cell boundaries remain the seam centerlines. */
     public void center(DesktopLayout layout, double width, double height) {
         if (layout == null || width <= 0 || height <= 0 || !Double.isFinite(width) || !Double.isFinite(height)) return;
@@ -84,6 +91,6 @@ public final class DesktopViewport {
         double limit = (double) DesktopLayout.MAX_COORD * DesktopLayout.CELL;
         panX = Double.isFinite(panX) ? Math.max(-limit, Math.min(limit, panX)) : 0;
         panY = Double.isFinite(panY) ? Math.max(-limit, Math.min(limit, panY)) : 0;
-        scale = Double.isFinite(scale) ? Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)) : 1;
+        scale = Double.isFinite(scale) ? Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale)) : DEFAULT_SCALE;
     }
 }

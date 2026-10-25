@@ -2,7 +2,10 @@ package com.miaokatze.gtswn.client.engineering.desktop;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Predicate;
 
@@ -88,19 +91,84 @@ public final class WidgetResources {
     }
 
     public static List<ResourceBinding> choices() {
+        return choicesCached(source, panels, screenIds, PortableSuperDashboard::available);
+    }
+
+    static List<ResourceBinding> choicesCached(UUID currentSource, List<Panel> currentPanels, List<String> identities,
+        Predicate<Panel> available) {
         List<ResourceBinding> result = new ArrayList<>();
-        if (source != null) for (Panel panel : panels) {
-            if (!PortableSuperDashboard.available(panel) || !panel.aeConnected) continue;
+        if (currentSource != null) for (Panel panel : currentPanels) {
+            if (panel.binding == null || !identities.contains(panel.binding.panelId.toString())
+                || !available.test(panel)
+                || !panel.aeConnected) continue;
             for (Row row : panel.rows) {
-                ResourceBinding binding = binding(panel, row);
-                if (binding != null) result.add(binding);
+                try {
+                    result.add(new ResourceBinding(currentSource, panel.binding.panelId, row.kind, row.key, row.name));
+                } catch (IllegalArgumentException invalid) { /* Ignore incomplete or old resource identities. */ }
             }
         }
+        result.sort(
+            Comparator.comparing((ResourceBinding value) -> value.screen.toString())
+                .thenComparingInt(value -> value.kind)
+                .thenComparing(value -> value.key));
         return Collections.unmodifiableList(result);
     }
 
+    /** Consume only the pending shipped defaults. Explicit selections and explicit clears never reinitialize. */
+    public static boolean initializeDefaults(DesktopLayout layout) {
+        return initializeDefaultsCached(layout, source, panels, screenIds, PortableSuperDashboard::available);
+    }
+
+    static boolean initializeDefaultsCached(DesktopLayout layout, UUID currentSource, List<Panel> currentPanels,
+        List<String> identities, Predicate<Panel> available) {
+        if (layout == null || currentSource == null) return false;
+        boolean pending = false;
+        for (WidgetSpec widget : layout.widgets())
+            if (widget.kind == WidgetKind.RESOURCES && widget.autoResourcePending) {
+                pending = true;
+                break;
+            }
+        if (!pending) return false;
+        List<ResourceBinding> candidates = choicesCached(currentSource, currentPanels, identities, available);
+        Set<String> used = new HashSet<>();
+        for (WidgetSpec widget : layout.widgets())
+            if (widget.resource != null) used.add(resourceIdentity(widget.resource));
+        boolean changed = false;
+        for (WidgetSpec widget : layout.widgets()) {
+            if (widget.kind != WidgetKind.RESOURCES || !widget.autoResourcePending) continue;
+            if (widget.resource != null || widget.screen != null) {
+                changed |= layout.replace(widget.withAutoResource(false));
+                continue;
+            }
+            if (!widget.singleResource) {
+                // The inventory overview needs no row, so an empty but accessible AE mount is also useful.
+                List<ScreenBinding> screens = new ArrayList<>();
+                for (Panel panel : currentPanels)
+                    if (panel.binding != null && identities.contains(panel.binding.panelId.toString())
+                        && panel.aeConnected
+                        && available.test(panel)) screens.add(new ScreenBinding(currentSource, panel.binding.panelId));
+                screens.sort(Comparator.comparing(value -> value.screen.toString()));
+                if (!screens.isEmpty()) changed |= layout.replace(widget.boundScreen(screens.get(0)));
+            } else {
+                for (ResourceBinding candidate : candidates) {
+                    if (!used.add(resourceIdentity(candidate))) continue;
+                    changed |= layout.replace(widget.boundResource(candidate));
+                    break;
+                }
+            }
+        }
+        return changed;
+    }
+
+    private static String resourceIdentity(ResourceBinding binding) {
+        return binding.kind + ":" + binding.key;
+    }
+
     public static ResourceBinding binding(Panel panel, Row row) {
-        if (source == null || panel == null || panel.binding == null || row == null) return null;
+        if (source == null || panel == null
+            || panel.binding == null
+            || row == null
+            || !screenIds.contains(panel.binding.panelId.toString())) return null;
         try {
             return new ResourceBinding(source, panel.binding.panelId, row.kind, row.key, row.name);
         } catch (IllegalArgumentException invalid) {
@@ -109,6 +177,8 @@ public final class WidgetResources {
     }
 
     public static Reading read(ResourceBinding binding) {
+        if (binding != null && !screenIds.contains(binding.screen.toString()))
+            return new Reading(null, null, "unavailable");
         return readCached(binding, source, panels, PortableSuperDashboard::available);
     }
 

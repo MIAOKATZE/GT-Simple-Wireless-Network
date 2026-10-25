@@ -84,6 +84,7 @@ final class WorkbenchHud extends Gui {
     private static final Set<String> collapsedOwners = new HashSet<>();
     private static List<String> tooltip;
     private static FactoryMachineFilter machineFilter = FactoryMachineFilter.ALL;
+    private static int nodeFilter;
     private static int powerFilter;
     private static boolean mouseDispatch;
     private static final Action[] MODES = { Action.DASHBOARD, Action.CAMERA, Action.RETURN, Action.FOLLOW,
@@ -108,6 +109,7 @@ final class WorkbenchHud extends Gui {
         alertsOpen = true;
         selectedSlot = -1;
         machineFilter = FactoryMachineFilter.ALL;
+        nodeFilter = 0;
         powerFilter = DevicePowerFilter.ALL;
         page = sidebarScroll = railScroll = detailScroll = 0;
         settingsPage = settingsScroll = 0;
@@ -628,7 +630,7 @@ final class WorkbenchHud extends Gui {
         boolean rebuild = rowsRevision != device.revision || !java.util.Objects.equals(rowsSource, device.terminalId)
             || rowsSnapshot != (nodes ? snapshot : null)
             || rowsFresh != device.fresh
-            || rowsFilter != machineFilter.ordinal() + (nodes ? 100 : 0)
+            || rowsFilter != (nodes ? 100 + nodeFilter : machineFilter.ordinal())
             || rowsPower != powerFilter
             || builtOwners != ownersRevision;
         rebuild |= !builtSearch.equals(search.value);
@@ -639,19 +641,35 @@ final class WorkbenchHud extends Gui {
             rowsSource = device.terminalId;
             rowsSnapshot = nodes ? snapshot : null;
             rowsFresh = device.fresh;
-            rowsFilter = machineFilter.ordinal() + (nodes ? 100 : 0);
+            rowsFilter = nodes ? 100 + nodeFilter : machineFilter.ordinal();
             rowsPower = powerFilter;
             builtOwners = ownersRevision;
             if (nodes && snapshot != null && "ok".equals(snapshot.status)) {
                 Map<String, List<Node>> owners = new LinkedHashMap<>();
-                for (Node node : NodePresentation.sorted(snapshot.nodes))
+                for (Node node : NodePresentation.sorted(snapshot.nodes)) {
+                    if (nodeFilter == 1 && !node.online || nodeFilter == 2 && node.online) continue;
+                    if (!search.matches(
+                        node.ownerName + " "
+                            + node.owner
+                            + " "
+                            + EngineeringHud.nodeRole(node)
+                            + " "
+                            + node.dim
+                            + " "
+                            + node.x
+                            + "/"
+                            + node.y
+                            + "/"
+                            + node.z))
+                        continue;
                     owners.computeIfAbsent(node.owner + "|" + node.dim, ignored -> new ArrayList<>())
                         .add(node);
+                }
                 for (Map.Entry<String, List<Node>> group : owners.entrySet()) {
                     String key = group.getKey();
                     Node first = group.getValue()
                         .get(0);
-                    boolean collapsed = collapsedOwners.contains(key);
+                    boolean collapsed = search.value.isEmpty() && collapsedOwners.contains(key);
                     String owner = first.ownerName.isEmpty() ? tr("owner.unknown") : first.ownerName;
                     rows.add(
                         new Row(
@@ -678,8 +696,13 @@ final class WorkbenchHud extends Gui {
             }
             if (!nodes) for (Entry e : device.devices) {
                 if (!machineFilter.matches(e, device.fresh, powerFilter)) continue;
-                if (!search.matches(e.name + " " + e.displayName + " " + e.dim + " " + e.x + "/" + e.y + "/" + e.z))
-                    continue;
+                if (!search.matchesDevice(
+                    e,
+                    device.terminalId + " "
+                        + originLabel(device.origin)
+                        + " "
+                        + tr("status." + FactoryMachineFilter.status(e, device.fresh)),
+                    device.fresh)) continue;
                 String statusKey = FactoryMachineFilter.status(e, device.fresh);
                 rows.add(new Row(e, tr("status." + statusKey), statusKey));
             }
@@ -732,12 +755,26 @@ final class WorkbenchHud extends Gui {
                     railScroll = 0;
                 });
         }
-        searchRect = nodes ? null : new Rect(r.x + 5, r.y + 85, r.w - 10, 18);
+        if (nodes) {
+            String[] states = { "all", "on", "off" };
+            int filterWidth = (r.w - 10) / states.length;
+            for (int index = 0; index < states.length; index++) {
+                final int filter = index;
+                Rect chip = new Rect(r.x + 5 + index * filterWidth, r.y + 45, filterWidth - 2, 18);
+                box(chip, nodeFilter == index ? HEADER : 0xFF18252F);
+                control(chip, tr(index == 0 ? "filter.all" : "state." + states[index]), tr("filter.hint"), () -> {
+                    nodeFilter = filter;
+                    railScroll = keyRow = 0;
+                });
+            }
+        }
+        searchRect = new Rect(r.x + 5, r.y + (nodes ? 66 : 85), r.w - 10, 18);
         if (searchRect != null) {
             box(searchRect, search.focused ? HEADER : 0xFF121B23);
             control(
                 searchRect,
-                (search.focused ? "> " : "") + (search.value.isEmpty() ? tr("search.devices") : search.value),
+                (search.focused ? "> " : "")
+                    + (search.value.isEmpty() ? tr(nodes ? "search.nodes" : "search.devices") : search.value),
                 tr("search.hint"),
                 () -> search.focused = true);
         }
@@ -763,18 +800,25 @@ final class WorkbenchHud extends Gui {
         railScroll = railModel.measure(rows.size(), count, railScroll);
         detailRect = detailHeight == 0 ? null
             : new Rect(r.x + 5, r.y + r.h - detailHeight + 23, r.w - 10, Math.max(0, detailHeight - 28));
-        if (rows.isEmpty()) drawLines(
-            f,
-            java.util.Arrays.asList(
-                nodes && snapshot != null && !successful ? status
-                    : tr(!nodes && !device.devices.isEmpty() ? "filter.empty" : "list.empty"),
-                tr(!nodes && !device.devices.isEmpty() ? "filter.empty.hint" : "list.hint")),
-            r.x + 8,
-            top,
-            r.w - 16,
-            bottom,
-            0,
-            MUTED);
+        if (rows.isEmpty())
+            drawLines(
+                f,
+                java.util.Arrays
+                    .asList(
+                        nodes && snapshot != null && !successful ? status
+                            : tr(
+                                !search.value.isEmpty() || nodes && nodeFilter != 0
+                                    || !nodes && !device.devices.isEmpty() ? "filter.empty" : "list.empty"),
+                        tr(
+                            !search.value.isEmpty() || nodes && nodeFilter != 0 || !nodes && !device.devices.isEmpty()
+                                ? "filter.empty.hint"
+                                : "list.hint")),
+                r.x + 8,
+                top,
+                r.w - 16,
+                bottom,
+                0,
+                MUTED);
         for (int i = 0; i < count && i + railScroll < rows.size(); i++) {
             Row row = rows.get(i + railScroll);
             Rect hit = new Rect(
@@ -1153,7 +1197,6 @@ final class WorkbenchHud extends Gui {
             }
             return FactoryDashboard.key(code, character, pressed);
         }
-        if (FactoryChrome.key(code, character, pressed)) return true;
         if (search.focused) {
             if (pressed) {
                 if (code == org.lwjgl.input.Keyboard.KEY_ESCAPE || code == org.lwjgl.input.Keyboard.KEY_RETURN)
@@ -1161,10 +1204,11 @@ final class WorkbenchHud extends Gui {
                 else if (code == org.lwjgl.input.Keyboard.KEY_BACK) search.backspace();
                 else if (code == org.lwjgl.input.Keyboard.KEY_DELETE) search.value = "";
                 else search.character(character);
-                railScroll = 0;
+                railScroll = keyRow = 0;
             }
             return true;
         }
+        if (FactoryChrome.key(code, character, pressed)) return true;
         if (task < 2 && !sidebarOpen) return false;
         if (code == org.lwjgl.input.Keyboard.KEY_TAB) {
             if (pressed) focusRegion = (focusRegion + 1) % 3;

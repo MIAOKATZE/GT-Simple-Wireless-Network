@@ -123,6 +123,10 @@ public final class WidgetSpec {
     public final int borderColor;
     public final ResourceBinding resource;
     public final ScreenBinding screen;
+    public final boolean singleResource;
+    public final boolean autoResourcePending;
+    public final boolean averageRate;
+    public final int averageWindowSeconds;
 
     public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows) {
         this(id, kind, column, row, columns, rows, "", null, Collections.<String>emptyList(), 1);
@@ -202,6 +206,35 @@ public final class WidgetSpec {
         DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
         WidgetPresentation presentation, String metricField, Double userTarget, int borderColor,
         ResourceBinding resource, ScreenBinding screen) {
+        this(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            true,
+            30,
+            false,
+            resource != null);
+    }
+
+    private WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows, String title,
+        DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
+        WidgetPresentation presentation, String metricField, Double userTarget, int borderColor,
+        ResourceBinding resource, ScreenBinding screen, boolean averageRate, int averageWindowSeconds,
+        boolean autoResourcePending, boolean singleResource) {
         if (id == null || !id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("id");
         this.id = id;
         this.kind = Objects.requireNonNull(kind, "kind");
@@ -222,6 +255,10 @@ public final class WidgetSpec {
         this.borderColor = 0xFF000000 | borderColor;
         this.resource = kind == WidgetKind.RESOURCES ? resource : null;
         this.screen = kind.supportsScreenBinding() ? screen : null;
+        this.singleResource = kind == WidgetKind.RESOURCES && (singleResource || resource != null);
+        this.autoResourcePending = kind == WidgetKind.RESOURCES && autoResourcePending;
+        this.averageRate = averageRate;
+        this.averageWindowSeconds = Math.max(1, Math.min(3600, averageWindowSeconds));
         this.column = column;
         this.row = row;
         this.columns = columns;
@@ -249,12 +286,15 @@ public final class WidgetSpec {
     }
 
     public int minColumns() {
-        int minimum = kind == WidgetKind.RESOURCES ? resource == null && screen != null ? kind.minColumns : 4
+        int minimum = kind == WidgetKind.RESOURCES
+            ? !singleResource && resource == null && screen != null ? kind.minColumns : 2
             : presentation == WidgetPresentation.DEFAULT ? kind.minColumns : presentation.minColumns;
         return Math.max(minimum, fields.isEmpty() ? 0 : Math.min(displayColumns, fields.size()) * 2);
     }
 
     public int minRows() {
+        // Single-resource cards adapt down to an icon and amount; detail stays available on hover.
+        if (kind == WidgetKind.RESOURCES && (singleResource || resource != null || screen == null)) return 1;
         // Header/footer plus compact field rows, with room for wrapping long evidence or recipe descriptions.
         int minimum = kind == WidgetKind.RESOURCES ? resource == null && screen != null ? kind.minRows : 2
             : presentation == WidgetPresentation.DEFAULT ? kind.minRows : presentation.minRows;
@@ -311,7 +351,11 @@ public final class WidgetSpec {
             userTarget,
             borderColor,
             resource,
-            screen);
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
     }
 
     public WidgetSpec titled(String title) {
@@ -332,7 +376,11 @@ public final class WidgetSpec {
             userTarget,
             borderColor,
             resource,
-            screen);
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
     }
 
     public WidgetSpec configured(String title, List<String> fields, int displayColumns) {
@@ -353,7 +401,11 @@ public final class WidgetSpec {
             userTarget,
             borderColor,
             resource,
-            screen);
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -376,9 +428,90 @@ public final class WidgetSpec {
             userTarget,
             borderColor,
             resource,
-            screen);
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
+    }
+
+    /** Applies to the grid change reading; stored EU remains the latest exact stock. */
+    public WidgetSpec withRate(boolean averageRate, int averageWindowSeconds) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
+    }
+
+    public WidgetSpec withAutoResource(boolean pending) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            pending,
+            singleResource);
+    }
+
+    /** A placed single-resource slot retains its mode when its selected entry is cleared. */
+    public WidgetSpec withSingleResource(boolean singleResource) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
     }
 
     public WidgetSpec bordered(int color) {
@@ -399,7 +532,11 @@ public final class WidgetSpec {
             userTarget,
             color,
             resource,
-            screen);
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
     }
 
     public WidgetSpec boundResource(ResourceBinding binding) {
@@ -420,7 +557,11 @@ public final class WidgetSpec {
             userTarget,
             borderColor,
             binding,
-            binding == null ? screen : new ScreenBinding(binding.source, binding.screen));
+            binding == null ? screen : new ScreenBinding(binding.source, binding.screen),
+            averageRate,
+            averageWindowSeconds,
+            false,
+            singleResource);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -444,7 +585,11 @@ public final class WidgetSpec {
             userTarget,
             borderColor,
             resource,
-            screen);
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource);
     }
 
     public WidgetSpec boundScreen(ScreenBinding binding) {
@@ -468,7 +613,11 @@ public final class WidgetSpec {
             userTarget,
             borderColor,
             retained,
-            binding);
+            binding,
+            averageRate,
+            averageWindowSeconds,
+            false,
+            singleResource);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }

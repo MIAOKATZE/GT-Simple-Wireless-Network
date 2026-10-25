@@ -46,4 +46,24 @@ final class DesktopTestLayouts {
         }
         return layout;
     }
+
+    static DesktopLayout v218Overview() {
+        DesktopLayout layout = new DesktopLayout();
+        layout.add(
+            new WidgetSpec("machines", WidgetKind.MACHINES, 0, 0, 5, 2)
+                .presented(WidgetPresentation.KPI, "count", null));
+        layout.add(
+            new WidgetSpec("wireless", WidgetKind.WIRELESS, 10, 0, 6, 5)
+                .presented(WidgetPresentation.GAUGE, "stored", null));
+        layout.add(
+            new WidgetSpec("netRate", WidgetKind.WIRELESS, 5, 0, 5, 2)
+                .presented(WidgetPresentation.KPI, "netRate", null));
+        layout.add(
+            new WidgetSpec("history", WidgetKind.HISTORY, 0, 2, 10, 3).presented(WidgetPresentation.COMBO, "", null));
+        layout.add(
+            new WidgetSpec("resources", WidgetKind.RESOURCES, 0, 5, 10, 3)
+                .presented(WidgetPresentation.STATUS_LIST, "", null));
+        layout.add(new WidgetSpec("device", WidgetKind.DEVICE, 10, 5, 6, 3));
+        return layout;
+    }
 }

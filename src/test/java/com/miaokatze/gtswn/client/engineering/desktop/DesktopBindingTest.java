@@ -82,8 +82,19 @@ public class DesktopBindingTest {
         assertNull(single.boundScreen(null).resource);
         assertEquals(4, single.boundScreen(null).columns);
         assertEquals(2, single.boundScreen(null).rows);
-        assertEquals(6, single.boundScreen(another).columns);
-        assertEquals(3, single.boundScreen(another).rows);
+        assertEquals(4, single.boundScreen(another).columns);
+        assertEquals(2, single.boundScreen(another).rows);
+        assertTrue(single.boundScreen(another).singleResource);
+        assertEquals(
+            6,
+            single.boundResource(null)
+                .withSingleResource(false)
+                .boundScreen(another).columns);
+        assertEquals(
+            3,
+            single.boundResource(null)
+                .withSingleResource(false)
+                .boundScreen(another).rows);
         DesktopLayout compact = new DesktopLayout();
         assertTrue(compact.add(single));
         assertTrue(compact.replace(single.boundScreen(null)));

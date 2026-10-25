@@ -53,7 +53,6 @@ public final class DesktopStore {
         if (untouchedLegacyDefault(layout) && untouchedLegacyProperties(saved, layout)) {
             layout = migratedDefault(layout);
             put(profile, layout);
-            putView(profile, new DesktopViewport());
         }
         return layout;
     }
@@ -69,9 +68,10 @@ public final class DesktopStore {
         return true;
     }
 
-    /** Only shipped display templates migrate; v2.0.17 operational references do not customize their appearance. */
+    /** Only shipped display templates migrate; operational references do not customize their appearance. */
     static boolean untouchedLegacyDefault(DesktopLayout layout) {
-        if (displayPreferences(layout).equals(encode(previousOverview()))) return true;
+        Properties display = displayPreferences(layout);
+        if (display.equals(encode(previousOverview())) || display.equals(encode(v218Overview()))) return true;
         String[] ids = { "machines", "input", "output", "wireless", "history", "region", "resources", "attention" };
         WidgetKind[] kinds = { WidgetKind.MACHINES, WidgetKind.INPUT, WidgetKind.OUTPUT, WidgetKind.WIRELESS,
             WidgetKind.HISTORY, WidgetKind.REGION, WidgetKind.RESOURCES, WidgetKind.ATTENTION };
@@ -91,6 +91,10 @@ public final class DesktopStore {
                 || widget.displayColumns != 1
                 || widget.device != null
                 || widget.userTarget != null
+                || !widget.averageRate
+                || widget.averageWindowSeconds != 30
+                || widget.autoResourcePending
+                || widget.singleResource != (widget.resource != null)
                 || widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR
                 || widget.presentation != WidgetPresentation.DEFAULT) return false;
             List<String> metrics = WidgetSpec.availableMetrics(widget.kind);
@@ -136,7 +140,9 @@ public final class DesktopStore {
                 widget.userTarget,
                 widget.borderColor,
                 old.resource,
-                old.screen);
+                old.screen).withRate(old.averageRate, old.averageWindowSeconds)
+                    .withAutoResource(widget.autoResourcePending && old.resource == null && old.screen == null)
+                    .withSingleResource(old.singleResource);
             if (!migrated.replace(retained)) throw new IllegalStateException("Invalid migrated widget: " + widget.id);
         }
         return migrated;
@@ -161,6 +167,26 @@ public final class DesktopStore {
         return layout;
     }
 
+    /** Frozen v2.0.18 display; never derive an old template from the current preset. */
+    private static DesktopLayout v218Overview() {
+        String[] ids = { "machines", "wireless", "netRate", "history", "resources", "device" };
+        WidgetKind[] kinds = { WidgetKind.MACHINES, WidgetKind.WIRELESS, WidgetKind.WIRELESS, WidgetKind.HISTORY,
+            WidgetKind.RESOURCES, WidgetKind.DEVICE };
+        WidgetPresentation[] forms = { WidgetPresentation.KPI, WidgetPresentation.GAUGE, WidgetPresentation.KPI,
+            WidgetPresentation.COMBO, WidgetPresentation.STATUS_LIST, WidgetPresentation.DEFAULT };
+        String[] metrics = { "count", "stored", "netRate", "", "", "" };
+        int[][] bounds = { { 0, 0, 5, 2 }, { 10, 0, 6, 5 }, { 5, 0, 5, 2 }, { 0, 2, 10, 3 }, { 0, 5, 10, 3 },
+            { 10, 5, 6, 3 } };
+        DesktopLayout layout = new DesktopLayout();
+        for (int index = 0; index < ids.length; index++) {
+            int[] b = bounds[index];
+            layout.add(
+                new WidgetSpec(ids[index], kinds[index], b[0], b[1], b[2], b[3])
+                    .presented(forms[index], metrics[index], null));
+        }
+        return layout;
+    }
+
     private static boolean geometryMatches(WidgetSpec widget, int[] geometry) {
         return widget.column == geometry[0] && widget.row == geometry[1]
             && widget.columns == geometry[2]
@@ -172,9 +198,13 @@ public final class DesktopStore {
         DesktopViewport view = new DesktopViewport();
         view.panX = number(p, "view.x", 0);
         view.panY = number(p, "view.y", 0);
-        view.scale = number(p, "view.scale", 1);
+        view.scale = number(p, "view.scale", DesktopViewport.DEFAULT_SCALE);
         view.sanitize();
         return view;
+    }
+
+    public boolean hasView(String profile) {
+        return read(profile).containsKey("view.scale");
     }
 
     public void put(String profile, DesktopLayout layout) {
@@ -289,6 +319,11 @@ public final class DesktopStore {
             p.setProperty(prefix + "fields", String.join(",", widget.fields));
             p.setProperty(prefix + "fieldsConfigured", Boolean.toString(widget.fieldsConfigured));
             p.setProperty(prefix + "displayColumns", Integer.toString(widget.displayColumns));
+            if (!widget.averageRate) p.setProperty(prefix + "averageRate", "false");
+            if (widget.averageWindowSeconds != 30)
+                p.setProperty(prefix + "averageWindowSeconds", Integer.toString(widget.averageWindowSeconds));
+            if (widget.autoResourcePending) p.setProperty(prefix + "autoResourcePending", "true");
+            if (widget.singleResource && widget.resource == null) p.setProperty(prefix + "singleResource", "true");
             if (widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR)
                 p.setProperty(prefix + "borderColor", Integer.toHexString(widget.borderColor & 0xFFFFFF));
             if (widget.resource != null) {
@@ -363,7 +398,13 @@ public final class DesktopStore {
                     target(p, prefix, kind),
                     border(p, prefix),
                     resource(p, prefix),
-                    screen(p, prefix));
+                    screen(p, prefix))
+                        .withRate(
+                            Boolean.parseBoolean(p.getProperty(prefix + "averageRate", "true")),
+                            (int) number(p, prefix + "averageWindowSeconds", 30))
+                        .withAutoResource(Boolean.parseBoolean(p.getProperty(prefix + "autoResourcePending", "false")));
+                if (p.containsKey(prefix + "singleResource"))
+                    widget = widget.withSingleResource(Boolean.parseBoolean(p.getProperty(prefix + "singleResource")));
                 result.add(widget);
             } catch (IllegalArgumentException ignored) { /* Keep valid siblings. */ }
         }

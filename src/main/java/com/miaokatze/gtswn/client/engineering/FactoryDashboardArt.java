@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.client.engineering;
 
+import java.math.BigDecimal;
+
 import org.lwjgl.opengl.GL11;
 
 import com.cleanroommc.modularui.drawable.GuiDraw;
@@ -18,7 +20,8 @@ final class FactoryDashboardArt {
     }
 
     /** Symmetric ornamental brackets have no start/end fill or percentage semantics. */
-    static void stockDial(double x, double y, double radius, boolean known, int color) {
+    static void stockDial(double x, double y, double radius, boolean known, BigDecimal rate, double seconds,
+        int color) {
         try (GlScope ignored = new GlScope()) {
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glDisable(GL11.GL_LIGHTING);
@@ -26,10 +29,12 @@ final class FactoryDashboardArt {
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             for (int i = 0; i < 60; i++)
                 arc(x, y, radius + 5, i % 5 == 0 ? 3 : 1.4, i / 60.0, (i + .16) / 60.0, DashboardVisuals.EDGE);
+            double phase = known ? GridDialMotion.phase(seconds, rate) : 0;
             for (int i = 0; i < 3; i++) {
-                double from = i / 3.0 + .04;
+                double from = i / 3.0 + .04 + phase;
                 arc(x, y, radius, Math.max(3, radius * .045), from, from + .23, known ? color : DashboardVisuals.TRACK);
-                arc(x, y, radius - 5, .7, from, from + .23, DashboardVisuals.EDGE);
+                double innerFrom = i / 3.0 + .04 - phase;
+                arc(x, y, radius - 5, .7, innerFrom, innerFrom + .23, DashboardVisuals.EDGE);
             }
             arc(x, y, radius - 13, .7, 0, 1, DashboardVisuals.EDGE);
             arc(x, y, radius - 17, .7, .08, .42, DashboardVisuals.TRACK);

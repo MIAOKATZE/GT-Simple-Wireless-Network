@@ -7,6 +7,23 @@ import org.junit.Test;
 public class DesktopViewportTest {
 
     @Test
+    public void initialResetAndEveryPresetUseSixtyPercentWhileCenterPreservesSavedZoom() {
+        DesktopViewport view = new DesktopViewport();
+        assertEquals(.6, view.scale, 0);
+        for (DesktopPreset preset : DesktopPreset.values()) {
+            DesktopLayout layout = preset.createLayout();
+            view.scale = 1.7;
+            view.reset(layout, 800, 600);
+            assertEquals(.6, view.scale, 0);
+            assertEquals((layout.bounds().left + layout.bounds().right) / 2.0, view.toLocalX(400, 0), 1e-9);
+            assertEquals((layout.bounds().top + layout.bounds().bottom) / 2.0, view.toLocalY(300, 0), 1e-9);
+            view.scale = .37;
+            view.center(layout, 640, 400);
+            assertEquals(.37, view.scale, 0);
+        }
+    }
+
+    @Test
     public void emptyInitialAreaFitsCenteredAndDoesNotBecomeACanvasBoundary() {
         DesktopLayout layout = new DesktopLayout();
         DesktopViewport view = new DesktopViewport();

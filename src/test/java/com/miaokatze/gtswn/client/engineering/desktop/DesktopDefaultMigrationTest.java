@@ -16,6 +16,48 @@ public class DesktopDefaultMigrationTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void v218DefaultGainsFourMonitorsOnceWhilePreservingBindingsAndSavedZoom() throws Exception {
+        DesktopLayout previous = DesktopTestLayouts.v218Overview();
+        bindScreensAndResource(previous);
+        DeviceBinding machine = new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4);
+        assertTrue(
+            previous.replace(
+                previous.find("device")
+                    .boundDevice(machine)));
+        assertTrue(DesktopStore.untouchedLegacyDefault(previous));
+        java.io.File folder = temporary.newFolder();
+        String profile = DesktopStore.profile("v218", "player");
+        DesktopStore old = new DesktopStore(folder);
+        old.put(profile, previous);
+        DesktopViewport view = new DesktopViewport();
+        view.scale = .37;
+        view.panX = 83;
+        old.putView(profile, view);
+        assertTrue(old.flush());
+        DesktopStore upgraded = new DesktopStore(folder);
+        DesktopLayout migrated = upgraded.load(profile);
+        assertEquals(
+            10,
+            migrated.widgets()
+                .size());
+        assertEquals(machine, migrated.find("device").device);
+        assertEquals(previous.find("resources").resource.key, migrated.find("resources").resource.key);
+        assertFalse(migrated.find("resources").autoResourcePending);
+        assertTrue(migrated.find("resource1").autoResourcePending);
+        assertEquals(.37, upgraded.loadView(profile).scale, 0);
+        assertEquals(83, upgraded.loadView(profile).panX, 0);
+        assertTrue(upgraded.flush());
+        assertEquals(DesktopStore.encode(migrated), DesktopStore.encode(new DesktopStore(folder).load(profile)));
+        DesktopLayout custom = previous.copy();
+        assertTrue(
+            custom.replace(
+                custom.find("netRate")
+                    .withRate(false, 180)));
+        assertFalse(DesktopStore.untouchedLegacyDefault(custom));
+        assertLayoutPreserved(custom);
+    }
+
+    @Test
     public void v217DefaultWithOnlyOperationalBindingsMigratesAndRetainsEveryReference() throws Exception {
         DesktopLayout previous = boundV217Overview();
         assertTrue(DesktopStore.untouchedLegacyDefault(previous));
@@ -47,7 +89,9 @@ public class DesktopDefaultMigrationTest {
         DesktopStore upgraded = new DesktopStore(folder);
         DesktopLayout migrated = upgraded.load(profile);
         assertEquals(
-            6,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             migrated.widgets()
                 .size());
         assertEquals(WidgetPresentation.GAUGE, migrated.find("wireless").presentation);
@@ -165,7 +209,7 @@ public class DesktopDefaultMigrationTest {
         assertTrue(old.flush());
         DesktopStore upgraded = new DesktopStore(folder);
         assertEquals(DesktopStore.encode(DesktopLayout.defaultLayout()), DesktopStore.encode(upgraded.load(profile)));
-        assertEquals(0, upgraded.loadView(profile).panX, 0);
+        assertEquals(500, upgraded.loadView(profile).panX, 0);
         assertTrue(upgraded.flush());
         assertFalse(DesktopStore.untouchedLegacyDefault(new DesktopStore(folder).load(profile)));
 
@@ -256,7 +300,7 @@ public class DesktopDefaultMigrationTest {
     }
 
     @Test
-    public void exactLegacyTemplatesUpgradeOnceAndResetOnlyTheirSavedViewport() throws Exception {
+    public void exactLegacyTemplatesUpgradeOnceAndPreserveTheirSavedViewport() throws Exception {
         for (boolean tall : new boolean[] { false, true }) {
             java.io.File folder = temporary.newFolder();
             String profile = DesktopStore.profile("world" + tall, "player");
@@ -283,8 +327,8 @@ public class DesktopDefaultMigrationTest {
             assertNull(
                 upgraded.load(profile)
                     .find("input"));
-            assertEquals(1, upgraded.loadView(profile).scale, 0);
-            assertEquals(0, upgraded.loadView(profile).panX, 0);
+            assertEquals(.2, upgraded.loadView(profile).scale, 0);
+            assertEquals(500, upgraded.loadView(profile).panX, 0);
             assertTrue(upgraded.flush());
             DesktopLayout persisted = new DesktopStore(folder).load(profile);
             assertFalse(DesktopStore.untouchedLegacyDefault(persisted));

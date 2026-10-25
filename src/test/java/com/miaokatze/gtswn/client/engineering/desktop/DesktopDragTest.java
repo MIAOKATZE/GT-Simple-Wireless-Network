@@ -73,6 +73,7 @@ public class DesktopDragTest {
     @Test
     public void zoomAnchorsCursorAndPanRemainsInDesktopCoordinates() {
         DesktopViewport view = new DesktopViewport();
+        view.scale = 1;
         view.panX = -200;
         view.panY = 300;
         double x = view.toLocalX(250, 10), y = view.toLocalY(200, 20);
@@ -82,7 +83,7 @@ public class DesktopDragTest {
         view.pan(64, -32);
         assertEquals(x - 128, view.toLocalX(250, 10), 1e-9);
         assertEquals(y + 64, view.toLocalY(200, 20), 1e-9);
-        assertEquals(1, new DesktopViewport().scale, 0);
+        assertEquals(.6, new DesktopViewport().scale, 0);
     }
 
     @Test

@@ -4,6 +4,8 @@ import static org.junit.Assert.*;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.UUID;
 
 import org.junit.Test;
@@ -16,6 +18,58 @@ import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Row;
 import com.miaokatze.gtswn.network.PortablePanelRenderData;
 
 public class WirelessGridReadingTest {
+
+    @Test
+    public void averageUsesRealTickWeightsAndClipsOldestIntervalWithoutAveragingStock() {
+        BigInteger huge = BigInteger.TEN.pow(400);
+        java.util.List<NetworkInfoSample> history = Arrays.asList(
+            new NetworkInfoSample(0, 0, huge, Double.NaN),
+            new NetworkInfoSample(0, 20, huge.add(BigInteger.valueOf(200)), 10),
+            new NetworkInfoSample(0, 100, huge.add(BigInteger.valueOf(1800)), 20));
+        WirelessGridReading value = WirelessGridReading.readTerminal(huge, history, "", 1);
+        assertEquals(
+            18,
+            value.rate(true, 30)
+                .doubleValue(),
+            0);
+        assertEquals(
+            20,
+            value.rate(true, 4)
+                .doubleValue(),
+            0);
+        assertEquals(
+            20,
+            value.rate(false, 30)
+                .doubleValue(),
+            0);
+        assertEquals(new BigDecimal(huge), value.stored);
+    }
+
+    @Test
+    public void averageStopsAtGapsAndCannotTurnMissingOrColdDataIntoZero() {
+        assertNull(WirelessGridReading.averageRate(Collections.emptyList(), 30));
+        java.util.List<NetworkInfoSample> gap = Arrays.asList(
+            new NetworkInfoSample(0, 0, BigInteger.ZERO, Double.NaN),
+            new NetworkInfoSample(0, 20, BigInteger.valueOf(200), 10),
+            new NetworkInfoSample(0, 40, BigInteger.valueOf(500), Double.NaN),
+            new NetworkInfoSample(0, 60, BigInteger.valueOf(900), 20));
+        assertEquals(
+            20,
+            WirelessGridReading.averageRate(gap, 30)
+                .doubleValue(),
+            0);
+        assertNull(WirelessGridReading.averageRate(gap.subList(0, 3), 30));
+        assertNull(WirelessGridReading.averageRate(gap.subList(0, 1), 30));
+        assertNull(
+            WirelessGridReading.averageRate(
+                Arrays.asList(
+                    new NetworkInfoSample(0, 60, BigInteger.TEN, 0),
+                    new NetworkInfoSample(0, 60, BigInteger.TEN, 0)),
+                30));
+        assertNull(
+            WirelessGridReading.readTerminal(BigInteger.TEN, Collections.emptyList(), "", 1)
+                .rate(true, 30));
+    }
 
     @Test
     public void terminalProjectionReusesExactHudHistoryWithoutAnyMountedScreen() {
@@ -57,6 +111,10 @@ public class WirelessGridReadingTest {
     @Test
     public void missingRevokedAndUnavailableScreensNeverBecomeZero() {
         assertNull(WirelessGridReading.read(null, false).stored);
+        assertEquals(
+            "missing",
+            WirelessGridReading.read(null, false)
+                .state(true, 30));
         Panel panel = panel();
         panel.currentEnergy = "0";
         assertNull(WirelessGridReading.read(panel, false).stored);

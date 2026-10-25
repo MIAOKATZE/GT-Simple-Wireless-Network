@@ -18,6 +18,44 @@ public class DesktopStoreTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void ratePreferencesAndPendingInitializationSurviveEveryStoredCopy() {
+        DesktopLayout layout = DesktopPreset.overviewLayout();
+        WidgetSpec rate = layout.find("netRate")
+            .withRate(false, 240);
+        assertTrue(layout.replace(rate));
+        DesktopLayout restored = DesktopStore.decode(DesktopStore.encode(layout.copy()));
+        assertFalse(restored.find("netRate").averageRate);
+        assertEquals(240, restored.find("netRate").averageWindowSeconds);
+        assertTrue(restored.find("resource1").autoResourcePending);
+        assertTrue(restored.find("resource1").singleResource);
+        assertFalse(restored.find("netRate").autoResourcePending);
+        WidgetSpec cleared = restored.find("resource1")
+            .boundResource(null)
+            .boundScreen(null);
+        assertTrue(restored.replace(cleared));
+        assertFalse(
+            DesktopStore.decode(DesktopStore.encode(restored))
+                .find("resource1").autoResourcePending);
+        assertTrue(
+            DesktopStore.decode(DesktopStore.encode(restored))
+                .find("resource1").singleResource);
+    }
+
+    @Test
+    public void missingViewportUsesSixtyPercentButSavedOneHundredPercentIsExplicit() {
+        DesktopStore store = new DesktopStore(null);
+        String profile = DesktopStore.profile("world", "player");
+        assertFalse(store.hasView(profile));
+        assertEquals(.6, store.loadView(profile).scale, 0);
+        DesktopViewport saved = new DesktopViewport();
+        saved.scale = 1;
+        store.putView(profile, saved);
+        store.put(profile, DesktopPreset.overviewLayout());
+        assertTrue(store.hasView(profile));
+        assertEquals(1, store.loadView(profile).scale, 0);
+    }
+
+    @Test
     public void borderAndExactResourceIdentitySurviveConfigurationAndPersistence() {
         String key = "v2:item:" + String.join("", java.util.Collections.nCopies(64, "a"));
         ResourceBinding binding = new ResourceBinding(UUID.randomUUID(), UUID.randomUUID(), 1, key, "Circuit");

@@ -2,8 +2,11 @@ package com.miaokatze.gtswn.client.engineering;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.MathContext;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.common.hud.HudController;
@@ -20,6 +23,7 @@ final class WirelessGridReading {
     final boolean fresh;
     final long receivedAtMillis;
     final List<NetworkInfoSample> history;
+    private final Map<Integer, BigDecimal> averages = new HashMap<>();
 
     private WirelessGridReading(BigDecimal stored, BigDecimal netRate, String state) {
         this(stored, netRate, state, "", false, 0, Collections.emptyList());
@@ -54,6 +58,49 @@ final class WirelessGridReading {
             true,
             receivedAtMillis,
             history);
+    }
+
+    BigDecimal rate(boolean average, int seconds) {
+        if (!average) return netRate;
+        int window = Math.max(1, Math.min(3600, seconds));
+        if (!averages.containsKey(window)) averages.put(window, averageRate(history, window));
+        return averages.get(window);
+    }
+
+    String state(boolean average, int seconds) {
+        return "missing".equals(state) ? state : state(rate(average, seconds));
+    }
+
+    private static String state(BigDecimal value) {
+        return value == null ? "warming"
+            : value.signum() > 0 ? "charging" : value.signum() < 0 ? "discharging" : "stable";
+    }
+
+    /**
+     * Time-weighted slope over the cached contiguous suffix. Clip the oldest interval at the window boundary;
+     * sparse samples therefore have their real tick weight. Never bridge a missing or reversed interval.
+     */
+    static BigDecimal averageRate(List<NetworkInfoSample> history, int seconds) {
+        if (history.size() < 2) return null;
+        NetworkInfoSample latest = history.get(history.size() - 1);
+        long window = Math.max(1, Math.min(3600, seconds)) * 20L;
+        long cutoff = latest.tick < Long.MIN_VALUE + window ? Long.MIN_VALUE : latest.tick - window;
+        BigDecimal change = BigDecimal.ZERO;
+        long elapsed = 0;
+        for (int i = history.size() - 1; i > 0; i--) {
+            NetworkInfoSample end = history.get(i), start = history.get(i - 1);
+            if (!Double.isFinite(end.eut) || end.tick <= start.tick || end.tick <= cutoff) break;
+            long duration = end.tick - start.tick;
+            if (duration <= 0) break;
+            long overlap = end.tick - Math.max(start.tick, cutoff);
+            BigDecimal delta = new BigDecimal(end.eu.subtract(start.eu));
+            change = change.add(
+                delta.multiply(BigDecimal.valueOf(overlap))
+                    .divide(BigDecimal.valueOf(duration), MathContext.DECIMAL128));
+            elapsed += overlap;
+            if (start.tick <= cutoff) break;
+        }
+        return elapsed == 0 ? null : change.divide(BigDecimal.valueOf(elapsed), MathContext.DECIMAL128);
     }
 
     /** Caller supplies the existing screen cache's freshness/identity gate. Missing is never zero. */

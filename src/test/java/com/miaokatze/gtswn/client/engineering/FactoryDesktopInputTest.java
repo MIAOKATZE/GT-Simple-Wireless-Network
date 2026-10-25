@@ -39,6 +39,7 @@ public class FactoryDesktopInputTest {
         WidgetSpec card = new WidgetSpec("card", kind, 0, 0, Math.max(6, kind.minColumns), Math.max(5, kind.minRows));
         assertTrue(layout.add(card));
         DesktopViewport viewport = new DesktopViewport();
+        viewport.scale = 1;
         Rect bounds = DesktopCardGeometry.bounds(card, viewport.transform(0, 0));
         UiNode canvas = UiNode.panel("canvas")
             .bounds(0, 0, 1400, 1000)
@@ -69,6 +70,12 @@ public class FactoryDesktopInputTest {
         set("propertiesOpen", false);
         set("store", new DesktopStore(null));
         set("profile", DesktopStore.profile("headless", "player"));
+        set("screenWidth", 1400);
+        set("screenHeight", 1000);
+        set("pickerFilter", FactoryMachineFilter.ALL);
+        set("pickerPower", com.miaokatze.gtswn.client.DevicePowerFilter.ALL);
+        set("pickerReason", "");
+        ((FactoryTextSearch) get("deviceSearch")).value = "";
     }
 
     @After
@@ -82,7 +89,8 @@ public class FactoryDesktopInputTest {
         for (boolean editing : new boolean[] { false, true }) for (DesktopDrag.Edge edge : DesktopDrag.Edge.values()) {
             if (edge == DesktopDrag.Edge.MOVE) continue;
             prepare(editing, true);
-            Rect bounds = DesktopCardGeometry.bounds(layout.find("card"), new DesktopViewport().transform(0, 0));
+            Rect bounds = DesktopCardGeometry
+                .bounds(layout.find("card"), ((DesktopViewport) get("view")).transform(0, 0));
             String name = edge.name();
             double x = name.contains("LEFT") ? bounds.x + 3
                 : name.contains("RIGHT") ? bounds.x + bounds.w - 3 : bounds.x + bounds.w / 2.0;
@@ -183,6 +191,58 @@ public class FactoryDesktopInputTest {
         scene.pointerDown(100, 100, 0);
         scene.pointerUp(100, 100, 0);
         assertFalse((Boolean) get("edit"));
+    }
+
+    @Test
+    public void searchResetsLastPageAndKeepsTypingFocusAcrossActualDesktopRebuild() throws Exception {
+        prepare(true, true);
+        set("bindingOpen", true);
+        set("propertiesOpen", true);
+        set("libraryOpen", false);
+        set("pickerSource", UUID.randomUUID());
+        set(
+            "pickerEntries",
+            Collections.singletonList(
+                new Entry(
+                    "machine",
+                    "Machine",
+                    (byte) 1,
+                    (byte) 0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    2,
+                    3,
+                    "",
+                    "",
+                    4,
+                    (byte) 0,
+                    (byte) 0)));
+        Method build = FactoryDesktop.class.getDeclaredMethod("build");
+        build.setAccessible(true);
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+        scene.focus(scene.find("device-search"));
+        set("bindingPage", 255);
+        assertTrue(scene.keyTyped('m', 50, false, false));
+        assertEquals(0, get("bindingPage"));
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+        assertEquals("device-search", scene.focused().id);
+        assertTrue(FactoryDesktop.typing());
+        assertTrue(FactoryDesktop.key(org.lwjgl.input.Keyboard.KEY_DELETE, '\0', false));
+        assertNotNull(layout.find("card"));
+        assertTrue(scene.keyTyped('a', 30, false, false));
+        assertEquals("ma", ((FactoryTextSearch) get("deviceSearch")).value);
+        scene.keyTyped('z', 44, false, false);
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+        assertNotNull(scene.find("device-search-empty"));
+        assertNull(scene.find("binding-device-0"));
+        assertEquals("device-search", scene.focused().id);
     }
 
     @Test
