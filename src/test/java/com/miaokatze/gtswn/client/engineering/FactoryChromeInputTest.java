@@ -9,6 +9,7 @@ import java.util.List;
 
 import org.junit.After;
 import org.junit.Test;
+import org.lwjgl.input.Keyboard;
 
 import com.miaokatze.gtswn.client.engineering.FactoryShortcuts.Action;
 import com.miaokatze.miaokatzecore.client.camera.CameraControl;
@@ -103,6 +104,30 @@ public class FactoryChromeInputTest {
         assertTrue(actions.isEmpty());
         FactoryChrome.mouse(28, 21, 0, true, 0);
         worldTick(true, false, false, true);
+        FactoryChrome.mouse(28, 21, 0, false, 0);
+        assertEquals(java.util.Collections.singletonList(Action.DASHBOARD), actions);
+    }
+
+    @Test
+    public void f1RoundTripCancelsCapturedPressWithoutReplayingItOnRestore() {
+        prepare(640, 400);
+        FactoryChrome.mouse(28, 21, 0, true, 0);
+        boolean[] hidden = { false };
+        Runnable visibilityChange = () -> {
+            hidden[0] = !hidden[0];
+            // WorkbenchHud.suspendInput uses the same production blur boundary.
+            FactoryChrome.blur();
+        };
+        assertTrue(EngineeringInputPolicy.visibilityKey(Keyboard.KEY_F1, true, false, true, visibilityChange));
+        worldTick(true, hidden[0], false, true);
+        assertTrue(EngineeringInputPolicy.visibilityKey(Keyboard.KEY_F1, true, true, true, visibilityChange));
+        assertTrue(hidden[0]);
+        assertTrue(EngineeringInputPolicy.visibilityKey(Keyboard.KEY_F1, false, false, true, visibilityChange));
+        assertTrue(EngineeringInputPolicy.visibilityKey(Keyboard.KEY_F1, true, false, true, visibilityChange));
+        worldTick(true, hidden[0], false, true);
+        FactoryChrome.mouse(28, 21, 0, false, 0);
+        assertTrue(actions.isEmpty());
+        FactoryChrome.mouse(28, 21, 0, true, 0);
         FactoryChrome.mouse(28, 21, 0, false, 0);
         assertEquals(java.util.Collections.singletonList(Action.DASHBOARD), actions);
     }

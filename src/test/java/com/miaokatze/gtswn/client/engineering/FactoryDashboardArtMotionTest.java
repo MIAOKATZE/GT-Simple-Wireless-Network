@@ -23,4 +23,20 @@ public class FactoryDashboardArtMotionTest {
     private static double shortestTurn(double turn) {
         return turn - Math.floor(turn + .5);
     }
+
+    @Test
+    public void sweepAndPulseEnterAndLeaveWithZeroOpacityAndSmoothVelocity() {
+        double epsilon = 1e-5;
+        assertEquals(0, FactoryDashboardArt.cycleEnvelope(0), 0);
+        assertEquals(0, FactoryDashboardArt.cycleEnvelope(1), 1e-30);
+        assertEquals(FactoryDashboardArt.cycleEnvelope(epsilon), FactoryDashboardArt.cycleEnvelope(1 - epsilon), 1e-15);
+        assertTrue(FactoryDashboardArt.cycleEnvelope(epsilon) / epsilon < .001);
+        assertEquals(0, FactoryDashboardArt.edgeEnvelope(0), 0);
+        assertEquals(0, FactoryDashboardArt.edgeEnvelope(1), 0);
+        assertEquals(1, FactoryDashboardArt.edgeEnvelope(.5), 0);
+        assertEquals(0, FactoryDashboardArt.smooth(0), 0);
+        assertEquals(1, FactoryDashboardArt.smooth(1), 0);
+        assertTrue(FactoryDashboardArt.smooth(epsilon) / epsilon < .001);
+        assertTrue((1 - FactoryDashboardArt.smooth(1 - epsilon)) / epsilon < .001);
+    }
 }

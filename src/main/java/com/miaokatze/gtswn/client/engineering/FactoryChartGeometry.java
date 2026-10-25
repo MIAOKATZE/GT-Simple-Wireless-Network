@@ -59,11 +59,82 @@ final class FactoryChartGeometry {
         return nearest;
     }
 
-    /** Half-width follows local time spacing; irregular neighbors cannot paint through each other. */
+    /** Linear time coordinate with room for complete endpoint bars. Shared by line, bars and hover. */
+    static double timeX(double position, int width) {
+        double inset = Math.min(9, width * .1);
+        return inset + position * Math.max(0, width - 2 * inset);
+    }
+
+    static double timePosition(double x, int width) {
+        double inset = Math.min(9, width * .1);
+        return Math.max(0, Math.min(1, (x - inset) / Math.max(1, width - 2 * inset)));
+    }
+
+    /** One width for the entire series, even with irregularly spaced timestamps. */
     static double barHalfWidth(int index, int count, long[] ticks, int width) {
-        double x = FactoryTrend.timePosition(index, count, ticks);
-        double before = index == 0 ? 1 : x - FactoryTrend.timePosition(index - 1, count, ticks);
-        double after = index + 1 == count ? 1 : FactoryTrend.timePosition(index + 1, count, ticks) - x;
-        return Math.max(0, Math.min(9, Math.min(before, after) * width * .36));
+        double gap = 1;
+        for (int i = 1; i < count; i++) gap = Math
+            .min(gap, FactoryTrend.timePosition(i, count, ticks) - FactoryTrend.timePosition(i - 1, count, ticks));
+        return Math.max(0, Math.min(Math.min(9, width * .1), gap * (width - 2 * Math.min(9, width * .1)) * .38));
+    }
+
+    /** Dense data uses equal real-time bins. Each occupied bin preserves the observed min/max envelope. */
+    static final class Bars {
+
+        final double[] x, low, high;
+        final int[] counts;
+        final double halfWidth;
+        final boolean aggregated;
+
+        Bars(double[] values, long[] ticks, int width) {
+            double half = barHalfWidth(0, values.length, ticks, width);
+            aggregated = half < .85 && values.length > 1;
+            int bins = aggregated ? Math.max(1, (int) ((timeX(1, width) - timeX(0, width)) / 3)) : values.length;
+            x = new double[bins];
+            low = new double[bins];
+            high = new double[bins];
+            counts = new int[bins];
+            boolean[] missing = new boolean[bins];
+            java.util.Arrays.fill(low, Double.NaN);
+            java.util.Arrays.fill(high, Double.NaN);
+            double pitch = (timeX(1, width) - timeX(0, width)) / Math.max(1, bins);
+            halfWidth = aggregated ? pitch * .38 : half;
+            for (int i = 0; i < bins; i++) x[i] = aggregated ? timeX(0, width) + (i + .5) * pitch
+                : timeX(FactoryTrend.timePosition(i, values.length, ticks), width);
+            for (int i = 0; i < values.length; i++) {
+                int bin = aggregated
+                    ? Math.min(bins - 1, (int) (FactoryTrend.timePosition(i, values.length, ticks) * bins))
+                    : i;
+                if (!Double.isFinite(values[i])) {
+                    missing[bin] = true;
+                    continue;
+                }
+                low[bin] = counts[bin] == 0 ? values[i] : Math.min(low[bin], values[i]);
+                high[bin] = counts[bin] == 0 ? values[i] : Math.max(high[bin], values[i]);
+                counts[bin]++;
+            }
+            // A bin containing missing evidence remains a gap; it never bridges a missing sample.
+            for (int i = 0; i < bins; i++) if (missing[i]) low[i] = high[i] = Double.NaN;
+        }
+    }
+
+    /** Pick precision from the visible range, so nearby large values get distinct labels. */
+    static String axisLabel(java.math.BigDecimal value, java.math.BigDecimal range) {
+        java.math.BigDecimal magnitude = value.abs()
+            .max(range.abs());
+        String[] units = { "", "k", "M", "G", "T", "P", "E" };
+        int group = 0;
+        java.math.BigDecimal scale = java.math.BigDecimal.ONE;
+        while (group < units.length - 1
+            && magnitude.compareTo(scale.multiply(java.math.BigDecimal.valueOf(1000))) >= 0) {
+            group++;
+            scale = scale.multiply(java.math.BigDecimal.valueOf(1000));
+        }
+        java.math.BigDecimal step = range.abs()
+            .divide(scale, java.math.MathContext.DECIMAL64);
+        int decimals = step.signum() == 0 ? 0 : Math.max(0, 1 - (step.precision() - step.scale() - 1));
+        return value.divide(scale, decimals, java.math.RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+            .toPlainString() + units[group];
     }
 }

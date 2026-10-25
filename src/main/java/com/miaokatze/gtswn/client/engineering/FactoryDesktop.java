@@ -3,8 +3,10 @@ package com.miaokatze.gtswn.client.engineering;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -17,7 +19,9 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.DevicePowerFilter;
+import com.miaokatze.gtswn.client.engineering.DashboardIcons.Icon;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopAutoBind;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
@@ -48,15 +52,28 @@ import com.miaokatze.miaokatzecore.client.ui.MinecraftUiRenderer;
 /** Local business desktop; Core owns component layout, clipping, focus and pointer capture. */
 final class FactoryDesktop {
 
-    private static final int BACK = DashboardVisuals.BACK, GRID = 0x503B647D, TEXT = DashboardVisuals.TEXT,
-        ACCENT = DashboardVisuals.CYAN;
-    private static final UiStyle PANEL = new UiStyle(new UiStyle.Paint(0xFF1D2D38, 0xFF344955, TEXT));
-    private static final UiStyle BUTTON = new UiStyle(
-        new UiStyle.Paint(0xFF2B414E, 0xFF3C5563, TEXT),
-        new UiStyle.Paint(0xFF3B5866, ACCENT, TEXT),
-        new UiStyle.Paint(0xFF1B353F, ACCENT, TEXT),
-        new UiStyle.Paint(0xFF376359, ACCENT, TEXT),
-        new UiStyle.Paint(0xFF26343C, 0xFF344955, 0xFF9AAEB8));
+    private static int BACK = DashboardVisuals.BACK, GRID = 0x503B647D, TEXT = DashboardVisuals.TEXT,
+        ACCENT = DashboardVisuals.CYAN, MUTED = DashboardVisuals.MUTED;
+    private static UiStyle PANEL = UiStyle.DEFAULT, BUTTON = UiStyle.DEFAULT;
+    private static final Map<String, String> tooltips = new HashMap<>();
+
+    private static void palette() {
+        DashboardTheme theme = layout.theme();
+        DesktopSourcePreview.theme(theme);
+        BACK = theme.background;
+        GRID = theme.grid;
+        TEXT = theme.text;
+        ACCENT = theme.accent;
+        MUTED = theme.muted;
+        PANEL = new UiStyle(new UiStyle.Paint(theme.cardTop, theme.edge, TEXT));
+        BUTTON = new UiStyle(
+            new UiStyle.Paint(theme.header, theme.edge, TEXT),
+            new UiStyle.Paint(theme.track, ACCENT, TEXT),
+            new UiStyle.Paint(theme.cardBottom, ACCENT, TEXT),
+            new UiStyle.Paint(theme.track, ACCENT, ACCENT),
+            new UiStyle.Paint(theme.cardBottom, theme.edge, MUTED));
+    }
+
     private static DesktopStore store;
     private static DesktopLayout layout;
     private static DesktopPreset pendingPreset;
@@ -565,6 +582,7 @@ final class FactoryDesktop {
     static void render(FontRenderer f, Rect r, int mx, int my, int width, int height) {
         ensure();
         font = f;
+        FactoryDashboard.theme(layout.theme());
         mouseX = mx;
         mouseY = my;
         screenWidth = width;
@@ -592,13 +610,23 @@ final class FactoryDesktop {
         }
         scene.layout(width, height);
         Minecraft mc = Minecraft.getMinecraft();
-        scene.render(new MinecraftUiRenderer(f, width, height, mc.displayWidth, mc.displayHeight));
+        MinecraftUiRenderer renderer = new MinecraftUiRenderer(f, width, height, mc.displayWidth, mc.displayHeight);
+        scene.render(renderer);
         UiNode hovered = scene.hitTest(mx, my);
         if (!edit && !panning && !gesture.active() && hovered != null && hovered.id.startsWith("card-"))
             FactoryDashboard.drawHover(f, mx, my, width, height);
+        renderer.begin(CanvasTransform.identity());
+        try {
+            drawTooltip(renderer, hovered, mx, my, width, height);
+        } finally {
+            renderer.end();
+        }
     }
 
     private static void build() {
+        palette();
+        tooltips.clear();
+        DesktopToolbarGeometry toolbar = new DesktopToolbarGeometry(area.w, edit);
         String focusedInput = typing() ? scene.focused().id : "";
         String focusedDraft = typing() ? scene.focused()
             .text() : "";
@@ -610,15 +638,15 @@ final class FactoryDesktop {
             .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)));
         UiNode shell = UiNode.panel("desktop-shell")
             .bounds(area.x, area.y, area.w, area.h)
-            .style(new UiStyle(new UiStyle.Paint(BACK, 0xFF344955, TEXT)));
+            .style(new UiStyle(new UiStyle.Paint(BACK, layout.theme().edge, TEXT)));
         root.add(shell);
-        canvas = new Rect(area.x, area.y + 34, area.w, Math.max(1, area.h - 52));
+        canvas = new Rect(area.x, area.y + toolbar.height, area.w, Math.max(1, area.h - toolbar.height - 18));
         if (initialView) {
             view.reset(layout, canvas.w, canvas.h);
             initialView = false;
         }
         UiNode canvasNode = UiNode.panel("canvas")
-            .bounds(0, 34, canvas.w, canvas.h)
+            .bounds(0, toolbar.height, canvas.w, canvas.h)
             .overflowClip(true)
             .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)))
             .onDraw(FactoryDesktop::drawGrid)
@@ -651,36 +679,31 @@ final class FactoryDesktop {
         }
         shell.add(canvasNode);
         // Tools float above the full-size canvas; editing never squeezes the dashboard.
+        UiRect title = toolbar.title;
         shell.add(
             UiNode.label("desktop-title", tr("title"))
-                .bounds(10, 12, Math.max(1, area.w - 300), 12));
-        int controlsX = Math.max(4, area.w - (edit ? 342 : 276));
+                .bounds(title.x, title.y, title.width, title.height));
         shell.add(
-            button(
+            toolbarButton(
+                toolbar,
                 "back-world",
                 tr(EngineeringModeController.isActive() ? "back.world" : "back.view"),
-                controlsX,
-                6,
-                54,
-                22,
+                Icon.BACK,
                 () -> WorkbenchHud.switchTask(1)));
-        shell.add(button("edit", tr(edit ? "done" : "edit"), controlsX + 58, 6, 64, 22, () -> {
+        shell.add(toolbarButton(toolbar, "edit", tr(edit ? "done" : "edit"), edit ? Icon.CHECK : Icon.EDIT, () -> {
             FactoryDashboard.blur();
             edit = !edit;
             libraryOpen = propertiesOpen = canvasFocus = false;
             changed(true);
-        }));
-        int toolsX = controlsX + 126;
-        if (edit) {
-            shell.add(button("library-toggle", tr("library"), toolsX, 6, 62, 22, () -> {
-                FactoryDashboard.blur();
-                libraryOpen = !libraryOpen;
-                propertiesOpen = false;
-                dirty = true;
-            }));
-            toolsX += 66;
-        }
-        zoomLabel = button("zoom", "60%", toolsX, 6, 48, 22, () -> {
+        }).selected(edit));
+        if (edit) shell.add(toolbarButton(toolbar, "library-toggle", tr("library"), Icon.LIBRARY, () -> {
+            FactoryDashboard.blur();
+            libraryOpen = !libraryOpen;
+            propertiesOpen = false;
+            dirty = true;
+        }).selected(libraryOpen));
+        UiRect zoom = toolbar.controls.get("zoom");
+        zoomLabel = button("zoom", "60%", zoom.x, zoom.y, zoom.width, zoom.height, () -> {
             WidgetSpec target = layout.find(selected);
             nextDefaultBindingCheck = 0;
             view.reset(layout, canvas.w, canvas.h);
@@ -690,11 +713,29 @@ final class FactoryDesktop {
             }
             changed(false);
         });
+        tooltips.put("zoom", tr("zoom.reset"));
         shell.add(zoomLabel);
-        shell.add(button("fit", tr("fit"), toolsX + 52, 6, 48, 22, () -> {
+        shell.add(toolbarButton(toolbar, "fit", tr("fit"), Icon.FIT, () -> {
             view.fit(layout, canvas.w, canvas.h);
             changed(false);
         }));
+        shell.add(
+            toolbarButton(
+                toolbar,
+                "theme",
+                tr("theme") + ": "
+                    + tr(
+                        "theme." + layout.theme()
+                            .name()
+                            .toLowerCase(Locale.ROOT)),
+                Icon.THEME,
+                () -> {
+                    DashboardTheme[] themes = DashboardTheme.values();
+                    layout.setTheme(
+                        themes[(layout.theme()
+                            .ordinal() + 1) % themes.length]);
+                    changed(true);
+                }));
         if (edit && libraryOpen) shell.add(library(Math.min(resourceAdding ? 290 : 230, area.w - 12)));
         if (edit && propertiesOpen && layout.find(selected) != null) {
             int width = Math.min(230, Math.max(170, area.w / 3));
@@ -703,6 +744,7 @@ final class FactoryDesktop {
         statusLabel = UiNode.label("desktop-hint", tr(edit ? "hint.edit" : "hint.browse"))
             .bounds(12, area.h - 15, area.w - 24, 12);
         shell.add(statusLabel);
+        themeLabels(root);
         scene = new UiScene(root);
         scene.layout(screenWidth, screenHeight);
         editorScroll.restore(scene);
@@ -716,18 +758,125 @@ final class FactoryDesktop {
         dirty = false;
     }
 
+    private static UiNode toolbarButton(DesktopToolbarGeometry toolbar, String id, String tooltip, Icon icon,
+        Runnable action) {
+        UiRect rect = toolbar.controls.get(id);
+        return iconButton(id, tooltip, icon, rect.x, rect.y, rect.width, rect.height, action);
+    }
+
+    private static UiNode iconButton(String id, String tooltip, Icon icon, double x, double y, double w, double h,
+        Runnable action) {
+        tooltips.put(id, tooltip);
+        return UiNode.button(id, "", action)
+            .bounds(x, y, w, h)
+            .style(BUTTON)
+            .onDraw((node, renderer) -> {
+                UiRect rect = node.bounds();
+                double size = Math.min(16, Math.min(rect.width - 6, rect.height - 6));
+                DashboardIcons.draw(
+                    renderer,
+                    icon,
+                    rect.x + (rect.width - size) / 2,
+                    rect.y + (rect.height - size) / 2,
+                    size,
+                    node.enabled() ? TEXT : MUTED);
+            });
+    }
+
     private static UiNode button(String id, String label, double x, double y, double w, double h, Runnable action) {
+        Icon icon = actionIcon(id);
+        if (icon != null) return iconButton(id, label.isEmpty() ? tr(id) : label, icon, x, y, w, h, action)
+            .selected(id.equals("device-binding") && bindingOpen || id.equals("screen-binding") && screenBindingOpen);
+        if (id.equals("presentation") || id.equals("metric")
+            || id.equals("columns")
+            || id.equals("effects-style")
+            || id.equals("resource-binding"))
+            return iconTextButton(
+                id,
+                label,
+                id.equals("resource-binding") ? Icon.RESOURCE : Icon.SETTINGS,
+                x,
+                y,
+                w,
+                h,
+                action);
+        if (!label.isEmpty()) tooltips.put(id, label);
         return UiNode.button(id, label, action)
             .bounds(x, y, w, h)
             .style(BUTTON);
     }
 
+    private static Icon kindIcon(WidgetKind kind) {
+        switch (kind) {
+            case WIRELESS:
+                return Icon.WIRELESS;
+            case HISTORY:
+                return Icon.HISTORY;
+            case RESOURCES:
+                return Icon.RESOURCE;
+            case DEVICE:
+                return Icon.MACHINE;
+            default:
+                return Icon.GAUGE;
+        }
+    }
+
+    private static UiNode iconTextButton(String id, String label, Icon icon, double x, double y, double w, double h,
+        Runnable action) {
+        tooltips.put(id, label);
+        return UiNode.button(id, "", action)
+            .bounds(x, y, w, h)
+            .style(BUTTON)
+            .onDraw((node, renderer) -> {
+                UiRect rect = node.bounds();
+                int color = node.enabled() ? TEXT : MUTED;
+                DashboardIcons.draw(renderer, icon, rect.x + 5, rect.y + (rect.height - 16) / 2, 16, color);
+                String visible = label;
+                double available = Math.max(0, rect.width - 30);
+                while (!visible.isEmpty() && renderer.textWidth(visible) > available)
+                    visible = visible.substring(0, visible.length() - 1);
+                renderer.text(visible, rect.x + 26, rect.y + (rect.height - renderer.textHeight()) / 2, color);
+            });
+    }
+
+    private static Icon actionIcon(String id) {
+        if (id.startsWith("close-")) return Icon.CLOSE;
+        if (id.equals("remove")) return Icon.DELETE;
+        if (id.equals("binding-previous")) return Icon.PREVIOUS;
+        if (id.equals("binding-next")) return Icon.NEXT;
+        if (id.endsWith("-unbind")) return Icon.UNLINK;
+        if (id.equals("device-binding") || id.equals("screen-binding")) return Icon.LINK;
+        if (id.equals("apply-border") || id.equals("apply-target") || id.equals("effects-apply")) return Icon.CHECK;
+        return null;
+    }
+
+    private static void themeLabels(UiNode node) {
+        if (node.kind == UiNode.Kind.LABEL) node.style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)));
+        for (UiNode child : node.children()) themeLabels(child);
+    }
+
+    /** Final screen-space pass: toolbar/property tooltips must escape canvas and panel clips. */
+    private static void drawTooltip(UiRenderer renderer, UiNode hovered, int x, int y, int width, int height) {
+        String text = hovered == null ? null : tooltips.get(hovered.id);
+        if (text == null || text.isEmpty() || pointerCaptured()) return;
+        int maxWidth = Math.max(1, Math.min(280, width - 16));
+        List<String> lines = font.listFormattedStringToWidth(text, maxWidth - 12);
+        double boxWidth = 16;
+        for (String line : lines) boxWidth = Math.max(boxWidth, renderer.textWidth(line) + 12);
+        double boxHeight = lines.size() * 11 + 10;
+        double left = Math.max(2, Math.min(x + 12, width - boxWidth - 2));
+        double top = Math.max(2, Math.min(y + 16, height - boxHeight - 2));
+        renderer.fill(new UiRect(left - 1, top - 1, boxWidth + 2, boxHeight + 2), layout.theme().edge);
+        renderer.fill(new UiRect(left, top, boxWidth, boxHeight), BACK);
+        for (int i = 0; i < lines.size(); i++) renderer.text(lines.get(i), left + 6, top + 5 + i * 11, TEXT);
+    }
+
     private static UiNode library(int width) {
         UiNode panel = UiNode.panel("library")
-            .bounds(6, 36, width, Math.max(1, canvas.h - 4))
+            .bounds(6, canvas.y - area.y + 2, width, Math.max(1, canvas.h - 4))
             .style(PANEL)
             .overflowClip(true);
-        panel.add(button("close-library", "x", width - 26, 5, 20, 20, () -> {
+        panel.add(button("close-library", tr("close"), width - 26, 5, 20, 20, () -> {
             libraryOpen = false;
             resourceAdding = false;
             pendingPreset = null;
@@ -791,7 +940,7 @@ final class FactoryDesktop {
             UiNode.label("add-title", tr("library"))
                 .size(width - 12, 14));
         for (WidgetKind kind : WidgetKind.values())
-            list.add(UiNode.button("add-" + kind, "+ " + kindLabel(kind), () -> {
+            list.add(iconTextButton("add-" + kind, kindLabel(kind), kindIcon(kind), 0, 0, width - 12, 25, () -> {
                 WidgetSpec added = layout.add(kind);
                 if (added == null) return;
                 selected = added.id;
@@ -802,9 +951,7 @@ final class FactoryDesktop {
                 view.panX = added.x() - 18 / view.scale;
                 view.panY = added.y() - 18 / view.scale;
                 changed(true);
-            })
-                .size(width - 12, 25)
-                .style(BUTTON));
+            }));
         panel.add(list);
         return panel;
     }
@@ -981,6 +1128,14 @@ final class FactoryDesktop {
             .style(BUTTON);
         body.add(intensity);
         body.add(
+            UiNode.label("effects-glow-label", tr("effects.glow"))
+                .size(width, 13));
+        UiNode glow = UiNode.textInput("effects-glow", Double.toString(widget.effects.glow), value -> {})
+            .size(width, 23)
+            .maxLength(16)
+            .style(BUTTON);
+        body.add(glow);
+        body.add(
             UiNode.label("effects-accent-label", tr("effects.accent"))
                 .size(width, 13));
         UiNode accent = UiNode
@@ -1011,6 +1166,9 @@ final class FactoryDesktop {
                                 .trim()),
                         Double.parseDouble(
                             intensity.text()
+                                .trim()),
+                        Double.parseDouble(
+                            glow.text()
                                 .trim())));
             } catch (IllegalArgumentException invalid) {
                 notice = tr("effects.invalid");
@@ -1027,10 +1185,10 @@ final class FactoryDesktop {
 
     private static UiNode properties(int x, int width) {
         UiNode panel = UiNode.panel("properties")
-            .bounds(x, 36, width, Math.max(1, canvas.h - 4))
+            .bounds(x, canvas.y - area.y + 2, width, Math.max(1, canvas.h - 4))
             .style(PANEL)
             .overflowClip(true);
-        panel.add(button("close-properties", "x", width - 26, 5, 20, 20, () -> {
+        panel.add(button("close-properties", tr("close"), width - 26, 5, 20, 20, () -> {
             propertiesOpen = false;
             dirty = true;
         }));
@@ -1584,7 +1742,7 @@ final class FactoryDesktop {
                     node.bounds(),
                     5,
                     30,
-                    DashboardVisuals.MUTED);
+                    MUTED);
             }));
         }
     }
@@ -1645,17 +1803,17 @@ final class FactoryDesktop {
             .layout(UiNode.Layout.ROW)
             .gap(4)
             .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)));
-        row.add(button("binding-previous", "<", 0, 0, 30, 23, () -> {
+        row.add(button("binding-previous", tr("page.previous"), 0, 0, 30, 23, () -> {
             bindingPage = Math.max(0, bindingPage - 1);
             dirty = true;
-        }));
+        }).enabled(bindingPage > 0));
         row.add(
             UiNode.label("binding-page", (bindingPage + 1) + " / " + pages)
                 .size(width - 68, 23));
-        row.add(button("binding-next", ">", 0, 0, 30, 23, () -> {
+        row.add(button("binding-next", tr("page.next"), 0, 0, 30, 23, () -> {
             bindingPage = Math.min(pages - 1, bindingPage + 1);
             dirty = true;
-        }));
+        }).enabled(bindingPage < pages - 1));
         body.add(row);
     }
 
@@ -1710,7 +1868,8 @@ final class FactoryDesktop {
                 DesktopCardGeometry.canonical(widget),
                 (int) Math.floor(transform.toLocalX(mouseX)),
                 (int) Math.floor(transform.toLocalY(mouseY)),
-                transform);
+                transform,
+                renderer);
         } finally {
             GL11.glPopMatrix();
         }

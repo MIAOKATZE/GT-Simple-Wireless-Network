@@ -8,6 +8,7 @@ import com.cleanroommc.modularui.drawable.FluidDrawable;
 import com.cleanroommc.modularui.drawable.ItemDrawable;
 import com.cleanroommc.modularui.screen.viewport.GuiContext;
 import com.cleanroommc.modularui.theme.WidgetTheme;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.ScreenBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
@@ -25,7 +26,13 @@ final class DesktopSourcePreview {
     private static final FluidDrawable FLUID = new FluidDrawable();
     private static final WidgetTheme ICON_THEME = WidgetTheme.whiteTextShadow(16, 16, null);
 
+    private static DashboardTheme theme = DashboardTheme.STANDARD;
+
     private DesktopSourcePreview() {}
+
+    static void theme(DashboardTheme value) {
+        theme = value;
+    }
 
     static String screenTitle(ScreenBinding binding) {
         int index = WidgetResources.screenChoices()
@@ -55,14 +62,7 @@ final class DesktopSourcePreview {
     }
 
     static void screen(FontRenderer font, UiRenderer renderer, UiRect bounds, ScreenBinding binding) {
-        line(
-            font,
-            renderer,
-            screenTitle(binding) + " · " + screenSummary(binding),
-            bounds,
-            5,
-            4,
-            DashboardVisuals.TEXT);
+        line(font, renderer, screenTitle(binding) + " · " + screenSummary(binding), bounds, 5, 4, theme.text);
         Panel panel = WidgetResources.readScreen(binding).panel;
         StringBuilder preview = new StringBuilder();
         if (panel != null) for (Row row : panel.rows) {
@@ -74,8 +74,8 @@ final class DesktopSourcePreview {
             if (preview.length() > 100) break;
         }
         if (preview.length() == 0) preview.append(FactoryDesktop.tr("binding.screen.content.empty"));
-        line(font, renderer, preview.toString(), bounds, 5, 17, DashboardVisuals.CYAN);
-        line(font, renderer, WidgetResources.screenLabel(binding), bounds, 5, 30, DashboardVisuals.MUTED);
+        line(font, renderer, preview.toString(), bounds, 5, 17, theme.accent);
+        line(font, renderer, WidgetResources.screenLabel(binding), bounds, 5, 30, theme.muted);
     }
 
     static void resource(FontRenderer font, UiRenderer renderer, UiRect bounds, ResourceBinding binding) {
@@ -89,14 +89,14 @@ final class DesktopSourcePreview {
             else if (row != null && row.icon != null && row.kind == 2 && row.icon.fluid != null)
                 FLUID.setFluid(row.icon.fluid)
                     .draw(GuiContext.getDefault(), x, y, 16, 16, ICON_THEME);
-            else renderer.text("?", x + 5, y + 4, DashboardVisuals.MUTED);
+            else renderer.text("?", x + 5, y + 4, theme.muted);
         }
-        line(font, renderer, binding.name, bounds, 24, 4, DashboardVisuals.TEXT);
+        line(font, renderer, binding.name, bounds, 24, 4, theme.text);
         String amount = row == null ? "—" : row.amount + (row.kind == 2 ? " mB" : "");
         String rate = WidgetResources.rateKnown(reading.panel, row)
             ? FormatUtil.formatMetricDouble(row.rate) + (row.kind == 2 ? " mB/min" : "/min")
             : "—";
-        line(font, renderer, amount + " · " + rate, bounds, 24, 17, DashboardVisuals.CYAN);
+        line(font, renderer, amount + " · " + rate, bounds, 24, 17, theme.accent);
     }
 
     static void line(FontRenderer font, UiRenderer renderer, String text, UiRect bounds, int x, int y, int color) {

@@ -13,6 +13,20 @@ public final class DesktopLayout {
 
     public static final int DEFAULT_SIZE = 1024, CELL = 64, MAX_COORD = 1000000, MAX_SIZE = 64, MAX_WIDGETS = 32;
     private final List<WidgetSpec> widgets = new ArrayList<>();
+    private DashboardTheme theme = DashboardTheme.STANDARD;
+
+    public DashboardTheme theme() {
+        return theme;
+    }
+
+    public void setTheme(DashboardTheme theme) {
+        this.theme = java.util.Objects.requireNonNull(theme, "theme");
+    }
+
+    public DesktopLayout withTheme(DashboardTheme theme) {
+        setTheme(theme);
+        return this;
+    }
 
     public List<WidgetSpec> widgets() {
         return Collections.unmodifiableList(widgets);
@@ -264,6 +278,7 @@ public final class DesktopLayout {
 
     public DesktopLayout copy() {
         DesktopLayout copy = new DesktopLayout();
+        copy.theme = theme;
         copy.widgets.addAll(widgets);
         return copy;
     }

@@ -579,8 +579,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowKey(int code) {
-        // F1 belongs to vanilla even while a text field or shortcut-binding prompt owns focus.
-        if (code == Keyboard.KEY_F1) return true;
+        // F1 is handled once at the raw queue boundary, before vanilla or any focused editor.
+        if (code == Keyboard.KEY_F1) return false;
         if (WorkbenchHud.typing()) return false;
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null) return false;
         Minecraft mc = Minecraft.getMinecraft();
@@ -601,13 +601,12 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     @Override
     public boolean allowRawKey(int code) {
         syncHudVisibility();
-        if (code == Keyboard.KEY_F1) {
-            if (Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent()) {
-                WorkbenchHud.suspendInput();
-                KeyBinding.unPressAllKeys();
-            }
-            return true;
-        }
+        if (EngineeringInputPolicy
+            .visibilityKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent(), Display.isActive(), () -> {
+                Minecraft mc = Minecraft.getMinecraft();
+                mc.gameSettings.hideGUI = !mc.gameSettings.hideGUI;
+                syncHudVisibility();
+            })) return false;
         if (!FactoryShortcuts.isBinding() && !WorkbenchHud.typing()
             && dashboardBinding(code)
             && FactoryShortcuts.action(code) == null) {

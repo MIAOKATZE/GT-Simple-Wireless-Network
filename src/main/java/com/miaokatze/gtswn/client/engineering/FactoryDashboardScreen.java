@@ -94,16 +94,26 @@ final class FactoryDashboardScreen extends GuiScreen {
     }
 
     @Override
+    public void handleKeyboardInput() {
+        syncVisibility();
+        // GuiScreen drains its own queue, bypassing Core's Minecraft.runTick raw-key boundary.
+        // Handle the full F1 sequence here so neither keyTyped nor global dispatch can see it twice.
+        if (EngineeringInputPolicy.visibilityKey(
+            Keyboard.getEventKey(),
+            Keyboard.getEventKeyState(),
+            Keyboard.isRepeatEvent(),
+            Display.isActive() && sessionValid() && client.currentScreen == this,
+            () -> {
+                client.gameSettings.hideGUI = !client.gameSettings.hideGUI;
+                syncVisibility();
+            })) return;
+        super.handleKeyboardInput();
+    }
+
+    @Override
     protected void keyTyped(char character, int code) {
         // F1/Esc remain usable while hidden, but no input is accepted by an inactive native window.
         if (!Display.isActive() || !sessionValid() || client.currentScreen != this) return;
-        if (code == Keyboard.KEY_F1) {
-            if (!Keyboard.isRepeatEvent()) {
-                client.gameSettings.hideGUI = !client.gameSettings.hideGUI;
-                syncVisibility();
-            }
-            return;
-        }
         if (code == Keyboard.KEY_ESCAPE) {
             if (!Keyboard.isRepeatEvent()) {
                 if (hidden) client.displayGuiScreen(null);

@@ -18,7 +18,7 @@ public final class DesktopAutoBind {
     /** New copy for every application; neither a shared template nor the previous desktop is changed. */
     public static DesktopLayout initialize(DesktopLayout template) {
         if (template == null) throw new IllegalArgumentException("template");
-        DesktopLayout result = new DesktopLayout();
+        DesktopLayout result = new DesktopLayout().withTheme(template.theme());
         for (WidgetSpec widget : template.widgets()) {
             WidgetSpec clean = new WidgetSpec(
                 widget.id,

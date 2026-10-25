@@ -17,7 +17,8 @@ import java.util.zip.Inflater;
 /** Versioned visual-only wire format. Operational references and readings have no representation here. */
 public final class DesktopPresetCode {
 
-    public static final String PREFIX = "GTSWN-DESKTOP:1:";
+    public static final String PREFIX = "GTSWN-DESKTOP:2:";
+    public static final String V1_PREFIX = "GTSWN-DESKTOP:1:";
     public static final int MAX_CODE_LENGTH = 32768, MAX_DECOMPRESSED_BYTES = 65536;
 
     private DesktopPresetCode() {}
@@ -27,6 +28,9 @@ public final class DesktopPresetCode {
         try {
             ByteArrayOutputStream raw = new ByteArrayOutputStream();
             DataOutputStream output = new DataOutputStream(raw);
+            output.writeUTF(
+                layout.theme()
+                    .name());
             output.writeInt(
                 layout.widgets()
                     .size());
@@ -57,6 +61,7 @@ public final class DesktopPresetCode {
                 output.writeInt(widget.effects.accentColor);
                 output.writeDouble(widget.effects.speed);
                 output.writeDouble(widget.effects.intensity);
+                output.writeDouble(widget.effects.glow);
             }
             output.flush();
             if (raw.size() > MAX_DECOMPRESSED_BYTES) throw new IllegalArgumentException("size");
@@ -79,9 +84,10 @@ public final class DesktopPresetCode {
     public static DesktopLayout decode(String code) {
         if (code == null || code.length() > MAX_CODE_LENGTH) throw new IllegalArgumentException("preset size");
         String value = code.trim();
-        if (value.length() > MAX_CODE_LENGTH || !value.startsWith(PREFIX))
+        boolean legacy = value.startsWith(V1_PREFIX);
+        if (value.length() > MAX_CODE_LENGTH || !legacy && !value.startsWith(PREFIX))
             throw new IllegalArgumentException("version or size");
-        String encoded = value.substring(PREFIX.length());
+        String encoded = value.substring((legacy ? V1_PREFIX : PREFIX).length());
         if (encoded.isEmpty() || !encoded.matches("[A-Za-z0-9_-]+")) throw new IllegalArgumentException("encoding");
         try {
             byte[] packed = Base64.getUrlDecoder()
@@ -91,9 +97,10 @@ public final class DesktopPresetCode {
                 .encodeToString(packed)
                 .equals(encoded)) throw new IllegalArgumentException("encoding");
             DataInputStream input = new DataInputStream(new ByteArrayInputStream(inflate(packed)));
+            DashboardTheme theme = legacy ? DashboardTheme.STANDARD : DashboardTheme.valueOf(input.readUTF());
             int count = input.readInt();
             if (count < 0 || count > DesktopLayout.MAX_WIDGETS) throw new IllegalArgumentException("count");
-            DesktopLayout result = new DesktopLayout();
+            DesktopLayout result = new DesktopLayout().withTheme(theme);
             for (int index = 0; index < count; index++) {
                 String id = input.readUTF();
                 if (!id.matches("card([1-9]|[12][0-9]|3[0-2])")) throw new IllegalArgumentException("id");
@@ -135,7 +142,8 @@ public final class DesktopPresetCode {
                     animated,
                     accent,
                     input.readDouble(),
-                    input.readDouble());
+                    input.readDouble(),
+                    legacy ? WidgetEffects.DEFAULT.glow : input.readDouble());
                 WidgetSpec widget = new WidgetSpec(
                     id,
                     kind,

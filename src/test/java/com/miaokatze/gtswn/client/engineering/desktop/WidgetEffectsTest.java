@@ -55,4 +55,26 @@ public class WidgetEffectsTest {
     public void nonFiniteSpeedCannotReachAnimationClock() {
         WidgetEffects.DEFAULT.withSpeed(Double.NaN);
     }
+
+    @Test
+    public void everyEffectsCopyPreservesIndependentGlowAndNewStyles() {
+        WidgetEffects glow = WidgetEffects.DEFAULT.withGlow(1.7);
+        WidgetEffects[] copies = { glow.withAnimated(false), glow.withAccentColor(0x123456), glow.withSpeed(.5),
+            glow.withIntensity(.2), glow.withStyle(WidgetEffects.Style.PRISM),
+            glow.withStyle(WidgetEffects.Style.WAVE) };
+        for (WidgetEffects copy : copies) assertEquals(1.7, copy.glow, 0);
+        assertEquals(.85, new WidgetEffects(WidgetEffects.Style.ORBITAL, true, 0, 1, 1).glow, 0);
+        assertEquals(0, glow.withGlow(0).glow, 0);
+        assertEquals(2, glow.withGlow(2).glow, 0);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void nonFiniteGlowCannotReachRenderer() {
+        WidgetEffects.DEFAULT.withGlow(Double.NaN);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void unboundedGlowIsRejected() {
+        WidgetEffects.DEFAULT.withGlow(2.01);
+    }
 }

@@ -28,8 +28,8 @@ public class DesktopPresetCodeTest {
             1,
             "v2:item:" + String.join("", Collections.nCopies(64, "b")),
             "PRIVATE_RESOURCE_NAME");
-        WidgetEffects effects = new WidgetEffects(WidgetEffects.Style.SEGMENTED, false, 0x224466, 2.25, .4);
-        DesktopLayout original = new DesktopLayout();
+        WidgetEffects effects = new WidgetEffects(WidgetEffects.Style.SEGMENTED, false, 0x224466, 2.25, .4, 1.6);
+        DesktopLayout original = new DesktopLayout().withTheme(DashboardTheme.INDUSTRIAL);
         assertTrue(
             original.add(
                 new WidgetSpec(
@@ -58,6 +58,8 @@ public class DesktopPresetCodeTest {
                 original.widgets()
                     .get(0).id));
         DesktopLayout restored = DesktopPresetCode.decode(code);
+        assertTrue(code.startsWith("GTSWN-DESKTOP:2:"));
+        assertEquals(DashboardTheme.INDUSTRIAL, restored.theme());
         WidgetSpec reading = restored.find("card1");
         assertNull(reading.device);
         assertNull(restored.find("card2").resource);
@@ -74,6 +76,7 @@ public class DesktopPresetCodeTest {
         assertEquals(0xFF224466, reading.effects.accentColor);
         assertEquals(2.25, reading.effects.speed, 0);
         assertEquals(.4, reading.effects.intensity, 0);
+        assertEquals(1.6, reading.effects.glow, 0);
         assertFalse(reading.averageRate);
         assertEquals(120, reading.averageWindowSeconds);
         assertEquals(code, DesktopPresetCode.export(restored));
@@ -82,7 +85,7 @@ public class DesktopPresetCodeTest {
 
     @Test
     public void rejectsUnknownVersionsDamagedEncodingAndOversizedStreams() throws Exception {
-        reject("GTSWN-DESKTOP:2:AAAA");
+        reject("GTSWN-DESKTOP:3:AAAA");
         reject(DesktopPresetCode.PREFIX + "%%%");
         reject(DesktopPresetCode.PREFIX + "AAAA");
         reject(DesktopPresetCode.PREFIX + String.join("", Collections.nCopies(DesktopPresetCode.MAX_CODE_LENGTH, "a")));
@@ -112,6 +115,36 @@ public class DesktopPresetCodeTest {
                 .size());
     }
 
+    @Test
+    public void versionOneCardsRetainTheirVisualsAndReceiveStandardThemeAndDefaultGlow() throws Exception {
+        DesktopLayout restored = DesktopPresetCode.decode(cards(2, "card1", 0, "source", "card2", 8, "source"));
+        assertEquals(DashboardTheme.STANDARD, restored.theme());
+        assertEquals(WidgetEffects.DEFAULT.glow, restored.find("card1").effects.glow, 0);
+        assertEquals(WidgetEffects.Style.ORBITAL, restored.find("card2").effects.style);
+        assertTrue(
+            DesktopPresetCode.export(restored)
+                .startsWith(DesktopPresetCode.PREFIX));
+    }
+
+    @Test
+    public void versionTwoRoundTripsEveryThemeAndNewStyle() {
+        for (DashboardTheme theme : DashboardTheme.values())
+            for (WidgetEffects.Style style : WidgetEffects.Style.values()) {
+                DesktopLayout layout = new DesktopLayout().withTheme(theme);
+                assertTrue(
+                    layout.add(
+                        new WidgetSpec("test", WidgetKind.MACHINES, 0, 0, 4, 3).styled(
+                            WidgetEffects.DEFAULT.withStyle(style)
+                                .withGlow(0))));
+                String code = DesktopPresetCode.export(layout);
+                DesktopLayout restored = DesktopPresetCode.decode(code);
+                assertEquals(theme, restored.theme());
+                assertEquals(style, restored.find("card1").effects.style);
+                assertEquals(0, restored.find("card1").effects.glow, 0);
+                assertEquals(code, DesktopPresetCode.export(restored));
+            }
+    }
+
     private static void reject(String code) {
         DesktopLayout previous = DesktopPreset.overviewLayout();
         Properties before = DesktopStore.encode(previous);
@@ -130,7 +163,7 @@ public class DesktopPresetCodeTest {
         card(out, first, firstColumn, firstField);
         card(out, second, secondColumn, secondField);
         out.flush();
-        return pack(bytes.toByteArray());
+        return pack(bytes.toByteArray(), DesktopPresetCode.V1_PREFIX);
     }
 
     private static void card(DataOutputStream out, String id, int column, String field) throws Exception {
@@ -160,11 +193,15 @@ public class DesktopPresetCodeTest {
     }
 
     private static String pack(byte[] raw) throws Exception {
+        return pack(raw, DesktopPresetCode.PREFIX);
+    }
+
+    private static String pack(byte[] raw, String prefix) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         try (DeflaterOutputStream out = new DeflaterOutputStream(bytes)) {
             out.write(raw);
         }
-        return DesktopPresetCode.PREFIX + Base64.getUrlEncoder()
+        return prefix + Base64.getUrlEncoder()
             .withoutPadding()
             .encodeToString(bytes.toByteArray());
     }

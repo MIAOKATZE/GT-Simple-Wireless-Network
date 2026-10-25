@@ -64,4 +64,50 @@ public class FactoryChartGeometryTest {
         assertEquals(-1, FactoryChartGeometry.middleTick(Long.MIN_VALUE, Long.MAX_VALUE));
         assertEquals(Long.MAX_VALUE, FactoryChartGeometry.middleTick(Long.MAX_VALUE, Long.MAX_VALUE));
     }
+
+    @Test
+    public void irregularSamplesShareOneWidthAndEndpointsKeepTheirEntireBar() {
+        long[] ticks = { 0, 30, 72, 100, 160 };
+        FactoryChartGeometry.Bars bars = new FactoryChartGeometry.Bars(new double[] { .1, .5, .3, .9, .6 }, ticks, 300);
+        assertFalse(bars.aggregated);
+        for (int i = 0; i < ticks.length; i++) {
+            assertEquals(bars.halfWidth, FactoryChartGeometry.barHalfWidth(i, ticks.length, ticks, 300), 0);
+            assertTrue(bars.x[i] - bars.halfWidth >= 0);
+            assertTrue(bars.x[i] + bars.halfWidth <= 300);
+            assertEquals(ticks[i] / 160.0, FactoryChartGeometry.timePosition(bars.x[i], 300), 1e-12);
+            if (i > 0) assertTrue(bars.x[i] - bars.x[i - 1] > bars.halfWidth * 2);
+        }
+    }
+
+    @Test
+    public void denseBinsPreserveSignedExtremaAndDoNotFillUnobservedIntervalsOrMissingSamples() {
+        long[] ticks = { 0, 1, 2, 50, 51, 1000 };
+        FactoryChartGeometry.Bars bars = new FactoryChartGeometry.Bars(
+            new double[] { .2, .9, -.4, .8, Double.NaN, .6 },
+            ticks,
+            100);
+        assertTrue(bars.aggregated);
+        assertEquals(-.4, bars.low[0], 0);
+        assertEquals(.9, bars.high[0], 0);
+        assertEquals(3, bars.counts[0]);
+        assertTrue(Double.isNaN(bars.low[1]));
+        assertTrue(Double.isNaN(bars.high[1]));
+        assertTrue(Double.isNaN(bars.low[2]));
+        assertEquals(.6, bars.high[bars.high.length - 1], 0);
+        assertEquals(.5, FactoryChartGeometry.timePosition(50, 100), 0);
+    }
+
+    @Test
+    public void largeNearbyValuesGetDistinctAxisLabelsIncludingNegativeAndSubUnitRanges() {
+        java.math.BigDecimal range = new java.math.BigDecimal("10000000");
+        java.math.BigDecimal base = new java.math.BigDecimal("15000000000000");
+        String low = FactoryChartGeometry.axisLabel(base, range);
+        String high = FactoryChartGeometry.axisLabel(base.add(range), range);
+        assertNotEquals(low, high);
+        assertEquals("15T", low);
+        assertEquals("15.00001T", high);
+        assertEquals(
+            "-0.0012",
+            FactoryChartGeometry.axisLabel(new java.math.BigDecimal("-.0012"), new java.math.BigDecimal(".0001")));
+    }
 }

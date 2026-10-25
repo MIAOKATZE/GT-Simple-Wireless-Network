@@ -62,6 +62,11 @@ public final class DesktopStore {
         Properties canonical = encode(layout);
         for (String key : saved.stringPropertyNames()) {
             if (key.equals("view.x") || key.equals("view.y") || key.equals("view.scale")) continue;
+            if (key.equals("theme") && saved.getProperty(key)
+                .equals(
+                    layout.theme()
+                        .name()))
+                continue;
             if (!saved.getProperty(key)
                 .equals(canonical.getProperty(key))) return false;
         }
@@ -113,6 +118,8 @@ public final class DesktopStore {
 
     private static Properties displayPreferences(DesktopLayout layout, DesktopLayout template) {
         Properties display = encode(layout);
+        // A desktop-wide theme preference survives a shipped-template geometry migration.
+        display.remove("theme");
         for (int index = 0; index < layout.widgets()
             .size(); index++) {
             String prefix = "widget." + index + ".";
@@ -133,7 +140,8 @@ public final class DesktopStore {
 
     /** Retain exact references by stable component ID while replacing only the untouched shipped display. */
     private static DesktopLayout migratedDefault(DesktopLayout previous) {
-        DesktopLayout migrated = DesktopLayout.defaultLayout();
+        DesktopLayout migrated = DesktopLayout.defaultLayout()
+            .withTheme(previous.theme());
         for (WidgetSpec widget : migrated.widgets()) {
             WidgetSpec old = previous.find(widget.id);
             if (old == null) continue;
@@ -346,6 +354,10 @@ public final class DesktopStore {
     public static Properties encode(DesktopLayout layout) {
         Properties p = new Properties();
         p.setProperty("schema", Integer.toString(SCHEMA));
+        if (layout.theme() != DashboardTheme.STANDARD) p.setProperty(
+            "theme",
+            layout.theme()
+                .name());
         p.setProperty(
             "count",
             Integer.toString(
@@ -407,15 +419,19 @@ public final class DesktopStore {
     }
 
     public static DesktopLayout decode(Properties p) {
-        if (!p.containsKey("schema") || !p.containsKey("count")) return DesktopLayout.defaultLayout();
+        DashboardTheme theme = theme(p);
+        if (!p.containsKey("schema") || !p.containsKey("count")) return DesktopLayout.defaultLayout()
+            .withTheme(theme);
         int count;
         try {
-            if (Integer.parseInt(p.getProperty("schema")) < 1) return DesktopLayout.defaultLayout();
+            if (Integer.parseInt(p.getProperty("schema")) < 1) return DesktopLayout.defaultLayout()
+                .withTheme(theme);
             count = Math.max(0, Math.min(DesktopLayout.MAX_WIDGETS, Integer.parseInt(p.getProperty("count"))));
         } catch (IllegalArgumentException ignored) {
-            return DesktopLayout.defaultLayout();
+            return DesktopLayout.defaultLayout()
+                .withTheme(theme);
         }
-        DesktopLayout result = new DesktopLayout();
+        DesktopLayout result = new DesktopLayout().withTheme(theme);
         for (int index = 0; index < count; index++) {
             String prefix = "widget." + index + ".";
             try {
@@ -458,7 +474,16 @@ public final class DesktopStore {
             } catch (IllegalArgumentException ignored) { /* Keep valid siblings. */ }
         }
         return result.widgets()
-            .isEmpty() && count > 0 ? DesktopLayout.defaultLayout() : result;
+            .isEmpty() && count > 0 ? DesktopLayout.defaultLayout()
+                .withTheme(theme) : result;
+    }
+
+    private static DashboardTheme theme(Properties p) {
+        try {
+            return DashboardTheme.valueOf(p.getProperty("theme", "STANDARD"));
+        } catch (IllegalArgumentException ignored) {
+            return DashboardTheme.STANDARD;
+        }
     }
 
     private static int integer(Properties p, String key) {
@@ -470,7 +495,8 @@ public final class DesktopStore {
         return effects.style == standard.style && effects.animated == standard.animated
             && effects.accentColor == standard.accentColor
             && effects.speed == standard.speed
-            && effects.intensity == standard.intensity;
+            && effects.intensity == standard.intensity
+            && effects.glow == standard.glow;
     }
 
     /** Omit defaults so old schema-1 files remain canonical for precise template migration. */
@@ -484,6 +510,7 @@ public final class DesktopStore {
         if (effects.speed != standard.speed) p.setProperty(prefix + "effects.speed", Double.toString(effects.speed));
         if (effects.intensity != standard.intensity)
             p.setProperty(prefix + "effects.intensity", Double.toString(effects.intensity));
+        if (effects.glow != standard.glow) p.setProperty(prefix + "effects.glow", Double.toString(effects.glow));
     }
 
     private static WidgetEffects effects(Properties p, String prefix) {
@@ -496,12 +523,14 @@ public final class DesktopStore {
         int accent = color.matches("[0-9a-fA-F]{1,6}") ? Integer.parseInt(color, 16) : standard.accentColor;
         double speed = number(p, prefix + "effects.speed", standard.speed);
         double intensity = number(p, prefix + "effects.intensity", standard.intensity);
+        double glow = number(p, prefix + "effects.glow", standard.glow);
         return new WidgetEffects(
             style,
             Boolean.parseBoolean(p.getProperty(prefix + "effects.animated", "true")),
             accent,
             speed < 0 || speed > 3 ? standard.speed : speed,
-            intensity < 0 || intensity > 1 ? standard.intensity : intensity);
+            intensity < 0 || intensity > 1 ? standard.intensity : intensity,
+            glow < 0 || glow > 2 ? standard.glow : glow);
     }
 
     private static DeviceBinding device(Properties p, String prefix, WidgetKind kind) {

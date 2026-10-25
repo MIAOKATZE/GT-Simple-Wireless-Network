@@ -19,6 +19,12 @@ final class DesktopResourcePages {
         anchors.put(id, next >= count ? 0 : next);
     }
 
+    void previous(String id, int count, int visible) {
+        int rows = Math.max(1, visible);
+        int previous = start(id, count, rows) - rows;
+        anchors.put(id, previous < 0 ? Math.max(0, (count - 1) / rows * rows) : previous);
+    }
+
     void clear() {
         anchors.clear();
     }

@@ -11,15 +11,34 @@ final class DashboardMotion {
     static final class State {
 
         final GridDialMotion grid = new GridDialMotion();
-        double phase;
+        private FactoryChartGeometry.Bars bars;
+        private double[] barValues;
+        private long[] barTicks;
+        private int barWidth;
+        double phase, velocity;
         long frame, lastNanos;
         boolean started;
 
-        void advance(long now, WidgetEffects effects) {
-            if (started && effects.animated) {
-                double dt = Math.max(0, Math.min(.1, (now - lastNanos) / 1_000_000_000.0));
-                phase = (phase + dt * .18 * effects.speed) % 1;
+        FactoryChartGeometry.Bars bars(double[] values, long[] ticks, int width) {
+            if (bars == null || barValues != values || barTicks != ticks || barWidth != width) {
+                bars = new FactoryChartGeometry.Bars(values, ticks, width);
+                barValues = values;
+                barTicks = ticks;
+                barWidth = width;
             }
+            return bars;
+        }
+
+        void advance(long now, WidgetEffects effects) {
+            if (started && effects.animated && effects.speed > 0) {
+                double dt = Math.max(0, Math.min(.1, (now - lastNanos) / 1_000_000_000.0));
+                double target = .18 * effects.speed;
+                double decay = Math.exp(-5 * dt);
+                double distance = target * dt + (velocity - target) * (1 - decay) / 5;
+                velocity = target + (velocity - target) * decay;
+                phase = (phase + distance) % 1;
+            }
+            if (!effects.animated || effects.speed == 0) velocity = 0;
             started = true;
             lastNanos = now;
         }

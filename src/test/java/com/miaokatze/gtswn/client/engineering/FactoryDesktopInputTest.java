@@ -7,10 +7,13 @@ import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.UUID;
 
+import net.minecraft.client.Minecraft;
+
 import org.junit.After;
 import org.junit.Test;
 
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
@@ -25,6 +28,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.miaokatzecore.api.ui.component.UiEvent;
 import com.miaokatze.miaokatzecore.api.ui.component.UiNode;
+import com.miaokatze.miaokatzecore.api.ui.component.UiRect;
 import com.miaokatze.miaokatzecore.api.ui.component.UiScene;
 
 /** Real Core pointer capture/bubbling into production desktop handlers, without rendering or starting Minecraft. */
@@ -178,6 +182,25 @@ public class FactoryDesktopInputTest {
             body.children()
                 .stream()
                 .anyMatch(node -> node.id.equals("binding-device-4095")));
+        UiNode pages = body.children()
+            .stream()
+            .filter(node -> node.id.equals("binding-pages"))
+            .findFirst()
+            .get();
+        assertTrue(
+            pages.children()
+                .stream()
+                .filter(node -> node.id.equals("binding-previous"))
+                .findFirst()
+                .get()
+                .enabled());
+        assertFalse(
+            pages.children()
+                .stream()
+                .filter(node -> node.id.equals("binding-next"))
+                .findFirst()
+                .get()
+                .enabled());
         set("pickerEntries", Collections.nCopies(3, entry));
         UiNode smaller = UiNode.panel("smaller");
         method.invoke(null, smaller, layout.find("card"), 210);
@@ -469,6 +492,8 @@ public class FactoryDesktopInputTest {
             .text("0.5");
         scene.find("effects-accent")
             .text("FFAA66");
+        scene.find("effects-glow")
+            .text("1.6");
         activate("effects-apply");
         assertEquals(1, layout.find("card").effects.speed, 0);
         scene.find("effects-speed")
@@ -478,8 +503,119 @@ public class FactoryDesktopInputTest {
         assertEquals(2.5, applied.speed, 0);
         assertEquals(0.5, applied.intensity, 0);
         assertEquals(0xFFFFAA66, applied.accentColor);
+        assertEquals(1.6, applied.glow, 0);
         assertEquals(WidgetEffects.Style.SIGNAL, applied.style);
         assertFalse(applied.animated);
+    }
+
+    @Test
+    public void toolbarWrapsWithinTheShellAndReservesSpaceForItsTitle() throws Exception {
+        for (boolean editing : new boolean[] { false, true }) {
+            for (int width : new int[] { 80, 160, 240, 320, 640, 1400 }) {
+                DesktopToolbarGeometry geometry = new DesktopToolbarGeometry(width, editing);
+                for (UiRect control : geometry.controls.values()) {
+                    assertTrue(control.x >= 0);
+                    assertTrue(control.right() <= width);
+                    assertTrue(control.bottom() <= geometry.height);
+                    assertTrue(control.width >= 24);
+                    assertTrue(control.height >= 24);
+                    assertTrue(control.y >= geometry.title.bottom() || control.x >= geometry.title.right());
+                    for (UiRect other : geometry.controls.values()) {
+                        if (control == other) continue;
+                        assertTrue(
+                            control.intersect(other)
+                                .empty());
+                    }
+                }
+            }
+        }
+        prepare(true, true);
+        set("area", new Rect(0, 0, 240, 300));
+        set("screenWidth", 240);
+        set("screenHeight", 300);
+        rebuild();
+        UiNode back = scene.find("back-world");
+        assertEquals("", back.text());
+        assertEquals(24, back.bounds().width, 0);
+        assertTrue(
+            ((Rect) get("canvas")).y >= back.bounds()
+                .bottom());
+        assertNotNull(scene.find("theme"));
+    }
+
+    @Test
+    public void themeButtonCyclesEveryPaletteAndPreservesBindingsAndViewport() throws Exception {
+        prepare(true, true);
+        WidgetSpec widget = layout.find("card")
+            .boundDevice(new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4));
+        layout.replace(widget);
+        DesktopViewport viewport = (DesktopViewport) get("view");
+        viewport.panX = 123;
+        viewport.panY = -45;
+        viewport.scale = .75;
+        set("libraryOpen", false);
+        for (DashboardTheme expected : new DashboardTheme[] { DashboardTheme.RETRO, DashboardTheme.INDUSTRIAL,
+            DashboardTheme.MINIMAL, DashboardTheme.STANDARD }) {
+            rebuild();
+            activate("theme");
+            assertEquals(expected, layout.theme());
+            assertSame(layout, get("layout"));
+            assertSame(widget, layout.find("card"));
+            assertEquals(123, viewport.panX, 0);
+            assertEquals(-45, viewport.panY, 0);
+            assertEquals(.75, viewport.scale, 0);
+        }
+    }
+
+    @Test
+    public void componentLibraryAndBindingActionsKeepTheirStableInputIdsAndHoverDescriptions() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        rebuild();
+        assertEquals(
+            "",
+            scene.find("add-WIRELESS")
+                .text());
+        assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("add-WIRELESS"));
+        int before = layout.widgets()
+            .size();
+        activate("add-WIRELESS");
+        assertEquals(
+            before + 1,
+            layout.widgets()
+                .size());
+        set("selected", "card");
+        set("libraryOpen", false);
+        set("propertiesOpen", true);
+        rebuild();
+        assertEquals(
+            "",
+            scene.find("device-binding")
+                .text());
+        assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("device-binding"));
+        // The real binding action queries carried terminals. Supply a no-player client holder only
+        // for this headless event test; no Minecraft constructor, display or network is started.
+        Field minecraftSingleton = Minecraft.class.getDeclaredField("theMinecraft");
+        minecraftSingleton.setAccessible(true);
+        Object previousMinecraft = minecraftSingleton.get(null);
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field unsafeSingleton = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeSingleton.setAccessible(true);
+        Object emptyMinecraft = unsafeClass.getMethod("allocateInstance", Class.class)
+            .invoke(unsafeSingleton.get(null), Minecraft.class);
+        try {
+            minecraftSingleton.set(null, emptyMinecraft);
+            activate("device-binding");
+            assertTrue((Boolean) get("bindingOpen"));
+            rebuild();
+            assertTrue(
+                scene.find("device-binding")
+                    .selected());
+            assertNotNull(scene.find("binding-no-source"));
+            assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("device-binding"));
+        } finally {
+            minecraftSingleton.set(null, previousMinecraft);
+        }
     }
 
     private void rebuild() throws Exception {

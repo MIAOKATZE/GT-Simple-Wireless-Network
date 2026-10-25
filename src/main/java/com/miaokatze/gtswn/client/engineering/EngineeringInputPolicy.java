@@ -11,6 +11,14 @@ final class EngineeringInputPolicy {
 
     private EngineeringInputPolicy() {}
 
+    /** Both GUI and world hosts own F1 before text fields, binding prompts and vanilla dispatch. */
+    static boolean visibilityKey(int code, boolean pressed, boolean repeat, boolean focused, Runnable toggle) {
+        if (code != Keyboard.KEY_F1) return false;
+        // Consume the complete sequence. Passing repeats to vanilla would toggle hideGUI again.
+        if (focused && pressed && !repeat) toggle.run();
+        return true;
+    }
+
     static boolean dashboardHostVisible(boolean live, boolean hidden, boolean directScreen, boolean factory,
         boolean screenOpen) {
         return live && !hidden && (directScreen || factory && !screenOpen);
