@@ -118,6 +118,25 @@ final class FactoryChartGeometry {
         }
     }
 
+    static String axisLabel(java.math.BigDecimal value, java.math.BigDecimal range,
+        com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat format) {
+        int exponent = 0;
+        if (value.signum() != 0) {
+            int order = value.precision() - value.scale() - 1;
+            if (format == com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat.SCIENTIFIC)
+                exponent = order;
+            else if (format == com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat.METRIC)
+                exponent = Math.min(15, Math.max(0, order / 3 * 3));
+        }
+        java.math.BigDecimal step = range.abs()
+            .movePointLeft(exponent)
+            .stripTrailingZeros();
+        int decimals = step.signum() == 0 ? 1 : Math.max(1, 1 - (step.precision() - step.scale() - 1));
+        if (decimals > 12)
+            return com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat.NORMAL.format(value);
+        return format.format(value, decimals);
+    }
+
     /** Pick precision from the visible range, so nearby large values get distinct labels. */
     static String axisLabel(java.math.BigDecimal value, java.math.BigDecimal range) {
         java.math.BigDecimal magnitude = value.abs()

@@ -150,6 +150,7 @@ public final class WidgetSpec {
     public final int averageWindowSeconds;
     public final WidgetEffects effects;
     public final boolean autoDevicePending;
+    public final WidgetNumberFormat numberFormat;
 
     public WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows) {
         this(id, kind, column, row, columns, rows, "", null, Collections.<String>emptyList(), 1);
@@ -252,16 +253,19 @@ public final class WidgetSpec {
             false,
             resource != null,
             WidgetEffects.DEFAULT,
-            false);
+            false,
+            WidgetNumberFormat.METRIC);
     }
 
     private WidgetSpec(String id, WidgetKind kind, int column, int row, int columns, int rows, String title,
         DeviceBinding device, List<String> fields, int displayColumns, boolean fieldsConfigured,
         WidgetPresentation presentation, String metricField, Double userTarget, int borderColor,
         ResourceBinding resource, ScreenBinding screen, boolean averageRate, int averageWindowSeconds,
-        boolean autoResourcePending, boolean singleResource, WidgetEffects effects, boolean autoDevicePending) {
+        boolean autoResourcePending, boolean singleResource, WidgetEffects effects, boolean autoDevicePending,
+        WidgetNumberFormat numberFormat) {
         if (id == null || !id.matches("[A-Za-z0-9_-]{1,64}")) throw new IllegalArgumentException("id");
         this.id = id;
+        this.numberFormat = Objects.requireNonNull(numberFormat, "numberFormat");
         this.effects = Objects.requireNonNull(effects, "effects");
         this.kind = Objects.requireNonNull(kind, "kind");
         this.autoDevicePending = kind.supportsDeviceBinding() && device == null && autoDevicePending;
@@ -384,7 +388,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
     }
 
     public WidgetSpec titled(String title) {
@@ -411,7 +416,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
     }
 
     public WidgetSpec configured(String title, List<String> fields, int displayColumns) {
@@ -438,7 +444,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -467,7 +474,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -497,7 +505,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
     }
 
     public WidgetSpec withAutoResource(boolean pending) {
@@ -524,7 +533,8 @@ public final class WidgetSpec {
             pending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
     }
 
     /** A placed single-resource slot retains its mode when its selected entry is cleared. */
@@ -552,7 +562,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
     }
 
     public WidgetSpec bordered(int color) {
@@ -579,7 +590,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
     }
 
     public WidgetSpec boundResource(ResourceBinding binding) {
@@ -606,7 +618,8 @@ public final class WidgetSpec {
             false,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -636,7 +649,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            false);
+            false,
+            numberFormat);
     }
 
     public WidgetSpec boundScreen(ScreenBinding binding) {
@@ -666,7 +680,8 @@ public final class WidgetSpec {
             false,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
         return candidate
             .withBounds(column, row, Math.max(columns, candidate.minColumns()), Math.max(rows, candidate.minRows()));
     }
@@ -695,7 +710,36 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
+    }
+
+    public WidgetSpec withNumberFormat(WidgetNumberFormat numberFormat) {
+        return new WidgetSpec(
+            id,
+            kind,
+            column,
+            row,
+            columns,
+            rows,
+            title,
+            device,
+            fields,
+            displayColumns,
+            fieldsConfigured,
+            presentation,
+            metricField,
+            userTarget,
+            borderColor,
+            resource,
+            screen,
+            averageRate,
+            averageWindowSeconds,
+            autoResourcePending,
+            singleResource,
+            effects,
+            autoDevicePending,
+            numberFormat);
     }
 
     public WidgetSpec withAutoDevice(boolean pending) {
@@ -722,7 +766,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            pending);
+            pending,
+            numberFormat);
     }
 
     public WidgetSpec renamed(String id) {
@@ -749,7 +794,8 @@ public final class WidgetSpec {
             autoResourcePending,
             singleResource,
             effects,
-            autoDevicePending);
+            autoDevicePending,
+            numberFormat);
     }
 
     public WidgetSpec withId(String id) {
@@ -781,7 +827,8 @@ public final class WidgetSpec {
             kind == WidgetKind.RESOURCES,
             singleResource,
             effects,
-            kind.supportsDeviceBinding());
+            kind.supportsDeviceBinding(),
+            numberFormat);
     }
 
 }

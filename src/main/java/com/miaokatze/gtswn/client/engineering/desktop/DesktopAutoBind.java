@@ -39,6 +39,7 @@ public final class DesktopAutoBind {
                 null,
                 null).withSingleResource(widget.singleResource)
                     .withRate(widget.averageRate, widget.averageWindowSeconds)
+                    .withNumberFormat(widget.numberFormat)
                     .styled(widget.effects)
                     .withAutoResource(widget.kind == WidgetKind.RESOURCES)
                     .withAutoDevice(widget.kind.supportsDeviceBinding());

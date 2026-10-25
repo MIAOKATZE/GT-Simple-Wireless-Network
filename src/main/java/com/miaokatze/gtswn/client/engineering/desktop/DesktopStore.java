@@ -101,6 +101,7 @@ public final class DesktopStore {
                 || widget.autoResourcePending
                 || widget.singleResource != (widget.resource != null)
                 || widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR
+                || widget.numberFormat != WidgetNumberFormat.METRIC
                 || !defaultEffects(widget.effects)
                 || widget.autoDevicePending
                 || widget.presentation != WidgetPresentation.DEFAULT) return false;
@@ -168,7 +169,8 @@ public final class DesktopStore {
                             && old.screen == null)
                     .withSingleResource(old.singleResource)
                     .withAutoDevice(old.autoDevicePending)
-                    .styled(widget.effects);
+                    .styled(widget.effects)
+                    .withNumberFormat(old.numberFormat);
             if (!migrated.replace(retained)) throw new IllegalStateException("Invalid migrated widget: " + widget.id);
         }
         // A previous template may contain operational cards removed from the new visual arrangement.
@@ -425,6 +427,8 @@ public final class DesktopStore {
                 p.setProperty(prefix + "averageWindowSeconds", Integer.toString(widget.averageWindowSeconds));
             if (widget.autoResourcePending) p.setProperty(prefix + "autoResourcePending", "true");
             if (widget.autoDevicePending) p.setProperty(prefix + "autoDevicePending", "true");
+            if (widget.numberFormat != WidgetNumberFormat.METRIC)
+                p.setProperty(prefix + "numberFormat", widget.numberFormat.name());
             writeEffects(p, prefix, widget.effects);
             if (widget.singleResource && widget.resource == null) p.setProperty(prefix + "singleResource", "true");
             if (widget.borderColor != WidgetSpec.DEFAULT_BORDER_COLOR)
@@ -511,7 +515,8 @@ public final class DesktopStore {
                             (int) number(p, prefix + "averageWindowSeconds", 30))
                         .withAutoResource(Boolean.parseBoolean(p.getProperty(prefix + "autoResourcePending", "false")))
                         .withAutoDevice(Boolean.parseBoolean(p.getProperty(prefix + "autoDevicePending", "false")))
-                        .styled(effects(p, prefix));
+                        .styled(effects(p, prefix))
+                        .withNumberFormat(WidgetNumberFormat.read(p.getProperty(prefix + "numberFormat")));
                 if (p.containsKey(prefix + "singleResource"))
                     widget = widget.withSingleResource(Boolean.parseBoolean(p.getProperty(prefix + "singleResource")));
                 result.add(widget);

@@ -58,7 +58,7 @@ public class DesktopPresetCodeTest {
                 original.widgets()
                     .get(0).id));
         DesktopLayout restored = DesktopPresetCode.decode(code);
-        assertTrue(code.startsWith("GTSWN-DESKTOP:2:"));
+        assertTrue(code.startsWith(DesktopPresetCode.PREFIX));
         assertEquals(DashboardTheme.INDUSTRIAL, restored.theme());
         WidgetSpec reading = restored.find("card1");
         assertNull(reading.device);
@@ -143,6 +143,29 @@ public class DesktopPresetCodeTest {
                 assertEquals(0, restored.find("card1").effects.glow, 0);
                 assertEquals(code, DesktopPresetCode.export(restored));
             }
+    }
+
+    @Test
+    public void versionThreeSharesNotationAndOldVersionTwoDefaultsToMetric() throws Exception {
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(
+            layout.add(
+                new WidgetSpec("private", WidgetKind.WIRELESS, 0, 0, 4, 3)
+                    .withNumberFormat(WidgetNumberFormat.NORMAL)));
+        String code = DesktopPresetCode.export(layout);
+        assertTrue(code.startsWith("GTSWN-DESKTOP:3:"));
+        assertEquals(
+            WidgetNumberFormat.NORMAL,
+            DesktopPresetCode.decode(code)
+                .find("card1").numberFormat);
+        assertEquals(code, DesktopPresetCode.export(DesktopAutoBind.initialize(layout)));
+        byte[] payload = raw(code);
+        // V2 is exactly this one-card visual payload without the final UTF notation field.
+        byte[] v2 = Arrays.copyOf(payload, payload.length - 2 - "NORMAL".length());
+        DesktopLayout old = DesktopPresetCode.decode(pack(v2, DesktopPresetCode.V2_PREFIX));
+        assertEquals(WidgetNumberFormat.METRIC, old.find("card1").numberFormat);
+        assertEquals(layout.theme(), old.theme());
+        assertEquals(layout.find("private").effects.glow, old.find("card1").effects.glow, 0);
     }
 
     private static void reject(String code) {

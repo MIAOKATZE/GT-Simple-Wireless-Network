@@ -39,6 +39,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.ScreenBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetEffects;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetPresentation;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
@@ -771,6 +772,13 @@ final class FactoryDesktop {
             node.bounds(b.x - canvas.x, b.y - canvas.y, b.w, b.h)
                 .visible(visible);
             if (visible && widget.device != null) visibleDevices.add(widget.device);
+            UiNode format = scene.find("number-format-" + widget.id);
+            if (format != null) {
+                double scale = view.scale;
+                int reserve = widget.kind == WidgetKind.HISTORY ? 84 : 30;
+                format.bounds(b.w - reserve * scale, 3 * scale, 24 * scale, 16 * scale)
+                    .visible(scale >= DesktopCardGeometry.BORDER_LOD_SCALE);
+            }
             scene.find("selection-" + widget.id)
                 .size(b.w, b.h)
                 .visible(
@@ -844,6 +852,7 @@ final class FactoryDesktop {
                         UiRect b = node.bounds();
                         selection(renderer, new Rect((int) b.x, (int) b.y, (int) b.width, (int) b.height));
                     }));
+            if (supportsNumberFormat(widget)) card.add(numberFormatButton(widget));
             canvasNode.add(card);
         }
         canvasNode.add(
@@ -961,6 +970,65 @@ final class FactoryDesktop {
             }
         }
         dirty = false;
+    }
+
+    static boolean supportsNumberFormat(WidgetSpec widget) {
+        return widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY;
+    }
+
+    /** Own capture bypasses card selection, while a moved/cancelled press cannot change the notation. */
+    private static UiNode numberFormatButton(WidgetSpec widget) {
+        String id = "number-format-" + widget.id;
+        String mode = widget.numberFormat == WidgetNumberFormat.NORMAL ? "N"
+            : widget.numberFormat == WidgetNumberFormat.SCIENTIFIC ? "E" : "K";
+        tooltips.put(
+            id,
+            tr("number.format") + ": "
+                + tr("number.format." + widget.numberFormat.name())
+                + "\n"
+                + tr("number.format.next")
+                + ": "
+                + tr(
+                    "number.format." + widget.numberFormat.next()
+                        .name()));
+        Runnable change = () -> {
+            WidgetSpec current = layout.find(widget.id);
+            if (pendingExit == null && current != null
+                && layout.replace(current.withNumberFormat(current.numberFormat.next()))) changed(true);
+        };
+        double[] press = new double[2];
+        boolean[] active = new boolean[1];
+        int reserve = widget.kind == WidgetKind.HISTORY ? 84 : 30;
+        return UiNode.button(id, mode, change)
+            .bounds(
+                (widget.width() - DesktopCardGeometry.GAP - reserve) * view.scale,
+                3 * view.scale,
+                24 * view.scale,
+                16 * view.scale)
+            .style(BUTTON)
+            .on(UiEvent.Type.DOWN, e -> {
+                active[0] = e.button == 0 && pendingExit == null;
+                press[0] = e.x;
+                press[1] = e.y;
+                e.capturePointer();
+                e.consume();
+            })
+            .on(UiEvent.Type.MOVE, e -> {
+                if (Math.hypot(e.x - press[0], e.y - press[1]) > 4) active[0] = false;
+                e.consume();
+            })
+            .on(UiEvent.Type.UP, e -> {
+                if (active[0] && e.button == 0
+                    && e.currentTarget.bounds()
+                        .contains(e.x, e.y)
+                    && Math.hypot(e.x - press[0], e.y - press[1]) <= 4) change.run();
+                active[0] = false;
+                e.consume();
+            })
+            .on(UiEvent.Type.CANCEL, e -> {
+                active[0] = false;
+                e.consume();
+            });
     }
 
     private static UiNode toolbarButton(DesktopToolbarGeometry toolbar, String id, String tooltip, Icon icon,

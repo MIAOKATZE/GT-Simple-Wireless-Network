@@ -23,6 +23,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetEffects;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
@@ -104,6 +105,53 @@ public class FactoryDesktopInputTest {
     public void resetCapture() throws Exception {
         if (scene != null) scene.blur();
         set("scene", null);
+    }
+
+    @Test
+    public void cardNotationChangesOnFirstClickAndPersistsOnlyAtTheExplicitSaveCheckpoint() throws Exception {
+        for (boolean editing : new boolean[] { false, true }) {
+            prepare(editing, false, WidgetKind.WIRELESS);
+            rebuild();
+            Rect card = DesktopCardGeometry
+                .bounds(layout.find("card"), ((DesktopViewport) get("view")).transform(0, 0));
+            scene.find("card-card")
+                .bounds(card.x, card.y, card.w, card.h);
+            scene.layout(1400, 1000);
+            UiRect control = scene.find("number-format-card")
+                .bounds();
+            double x = control.x + control.width / 2, y = control.y + control.height / 2;
+            assertEquals("number-format-card", scene.hitTest(x, y).id);
+            assertTrue(scene.pointerDown(x, y, 0));
+            assertEquals("number-format-card", scene.captured().id);
+            assertTrue(scene.pointerUp(x, y, 0));
+            assertEquals("", get("selected"));
+            assertEquals(WidgetNumberFormat.NORMAL, layout.find("card").numberFormat);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+            assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("number-format-card"));
+
+            FactoryDesktop.flush();
+            DesktopStore store = (DesktopStore) get("store");
+            assertEquals(
+                WidgetNumberFormat.METRIC,
+                store.load((String) get("profile"))
+                    .find("card").numberFormat);
+            scene.pointerDown(x, y, 0);
+            scene.pointerMove(x - 20, y);
+            scene.pointerMove(x, y);
+            scene.pointerUp(x, y, 0);
+            assertEquals(WidgetNumberFormat.NORMAL, layout.find("card").numberFormat);
+            scene.pointerDown(x, y, 0);
+            scene.blur();
+            scene.pointerUp(x, y, 0);
+            assertEquals(WidgetNumberFormat.NORMAL, layout.find("card").numberFormat);
+            activate("save");
+            assertFalse(FactoryDesktop.hasUnsavedChanges());
+            assertEquals(
+                WidgetNumberFormat.NORMAL,
+                store.load((String) get("profile"))
+                    .find("card").numberFormat);
+            scene.close();
+        }
     }
 
     @Test

@@ -17,7 +17,8 @@ import java.util.zip.Inflater;
 /** Versioned visual-only wire format. Operational references and readings have no representation here. */
 public final class DesktopPresetCode {
 
-    public static final String PREFIX = "GTSWN-DESKTOP:2:";
+    public static final String PREFIX = "GTSWN-DESKTOP:3:";
+    public static final String V2_PREFIX = "GTSWN-DESKTOP:2:";
     public static final String V1_PREFIX = "GTSWN-DESKTOP:1:";
     public static final int MAX_CODE_LENGTH = 32768, MAX_DECOMPRESSED_BYTES = 65536;
 
@@ -62,6 +63,7 @@ public final class DesktopPresetCode {
                 output.writeDouble(widget.effects.speed);
                 output.writeDouble(widget.effects.intensity);
                 output.writeDouble(widget.effects.glow);
+                output.writeUTF(widget.numberFormat.name());
             }
             output.flush();
             if (raw.size() > MAX_DECOMPRESSED_BYTES) throw new IllegalArgumentException("size");
@@ -85,9 +87,10 @@ public final class DesktopPresetCode {
         if (code == null || code.length() > MAX_CODE_LENGTH) throw new IllegalArgumentException("preset size");
         String value = code.trim();
         boolean legacy = value.startsWith(V1_PREFIX);
-        if (value.length() > MAX_CODE_LENGTH || !legacy && !value.startsWith(PREFIX))
+        boolean v2 = value.startsWith(V2_PREFIX);
+        if (value.length() > MAX_CODE_LENGTH || !legacy && !v2 && !value.startsWith(PREFIX))
             throw new IllegalArgumentException("version or size");
-        String encoded = value.substring((legacy ? V1_PREFIX : PREFIX).length());
+        String encoded = value.substring((legacy ? V1_PREFIX : v2 ? V2_PREFIX : PREFIX).length());
         if (encoded.isEmpty() || !encoded.matches("[A-Za-z0-9_-]+")) throw new IllegalArgumentException("encoding");
         try {
             byte[] packed = Base64.getUrlDecoder()
@@ -144,6 +147,8 @@ public final class DesktopPresetCode {
                     input.readDouble(),
                     input.readDouble(),
                     legacy ? WidgetEffects.DEFAULT.glow : input.readDouble());
+                WidgetNumberFormat format = legacy || v2 ? WidgetNumberFormat.METRIC
+                    : WidgetNumberFormat.valueOf(input.readUTF());
                 WidgetSpec widget = new WidgetSpec(
                     id,
                     kind,
@@ -163,7 +168,8 @@ public final class DesktopPresetCode {
                     null,
                     null).withSingleResource(single)
                         .withRate(average, window)
-                        .styled(effects);
+                        .styled(effects)
+                        .withNumberFormat(format);
                 if (!widget.title.equals(title) || widget.borderColor != border || !result.add(widget))
                     throw new IllegalArgumentException("invalid card or overlap");
             }
