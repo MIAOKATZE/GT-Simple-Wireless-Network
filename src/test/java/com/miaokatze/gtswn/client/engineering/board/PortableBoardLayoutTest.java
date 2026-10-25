@@ -100,6 +100,24 @@ public class PortableBoardLayoutTest {
     }
 
     @Test
+    public void factoryUsesSameFairQueueAcrossAllMountsWhileOriginalBoardKeepsHiddenPreference() {
+        PortableBoardLayout layout = new PortableBoardLayout();
+        List<String> mounts = Arrays.asList("visible", "hidden", "waiting");
+        layout.reconcile(mounts);
+        layout.hidden.add("hidden");
+        Map<String, Long> attempts = new HashMap<>();
+        attempts.put("visible", 30L);
+        attempts.put("hidden", 10L);
+        attempts.put("waiting", 20L);
+        assertEquals("hidden", layout.nextSource(mounts, Collections.emptyList(), attempts, true));
+        attempts.put("hidden", 40L);
+        assertEquals("waiting", layout.nextSource(mounts, Collections.emptyList(), attempts, true));
+        assertEquals(Collections.singletonList("hidden"), layout.hidden);
+        attempts.put("hidden", 0L);
+        assertEquals("waiting", layout.nextSource(mounts, Collections.emptyList(), attempts));
+    }
+
+    @Test
     public void preferencesPersistOnlyToTheirOwnSourceAndMalformedFilesRecover() throws Exception {
         Path directory = temporary.newFolder()
             .toPath();

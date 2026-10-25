@@ -20,6 +20,7 @@ import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.engineering.EngineeringModeController.Target;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.common.engineering.EngineeringGrid;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
@@ -45,8 +46,8 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 /** Factory world markers and workbench. Terminal actions stay in the same non-modal world HUD. */
 public final class EngineeringHud extends Gui {
 
-    private static final int BACK = 0xEC141E27, HEADER = 0xF0263946;
-    private static final int ACCENT = 0xFF67D8CD, TEXT = 0xFFE2EEF4, MUTED = 0xFF92A7B4;
+    private static int BACK = 0xEC141E27, HEADER = 0xF0263946;
+    private static int ACCENT = 0xFF67D8CD, TEXT = 0xFFE2EEF4, MUTED = 0xFF92A7B4;
     private static final int LINK = 0xFFF1BD70, QUANTUM = 0xFF8EB2FF, INC = 0xFFDA97F1;
     private static int activeSlot = -1;
     private static boolean grid, gtGrid, selecting, dragging, boundOnly;
@@ -161,9 +162,16 @@ public final class EngineeringHud extends Gui {
 
     @SubscribeEvent
     public void render(RenderGameOverlayEvent.Post event) {
+        DashboardTheme theme = FactoryDisplayPreferences.theme();
+        BACK = 0xEC000000 | theme.cardBottom & 0xFFFFFF;
+        HEADER = theme.header;
+        ACCENT = theme.accent;
+        TEXT = theme.text;
+        MUTED = theme.muted;
         Minecraft mc = Minecraft.getMinecraft();
         if (event.type != RenderGameOverlayEvent.ElementType.ALL || !EngineeringModeController.isActive()
             || mc.currentScreen != null
+            || mc.gameSettings.hideGUI
             || mc.thePlayer == null) return;
         int w = width(mc), h = height(mc);
         try (GlScope ignored = new GlScope()) {
@@ -175,7 +183,7 @@ public final class EngineeringHud extends Gui {
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
             if (WorkbenchHud.worldView()) drawMap(mc.fontRenderer, w, h);
             WorkbenchHud.render(w, h, localX(mc, Mouse.getX()), localY(mc, Mouse.getY()));
-            if (selecting || !notice.isEmpty()) {
+            if (WorkbenchHud.worldView() && (selecting || !notice.isEmpty())) {
                 String hint = tr(notice.isEmpty() ? "dash.selection.hint" : notice);
                 int hintWidth = Math.min(w - 32, mc.fontRenderer.getStringWidth(hint) + 16);
                 rect((w - hintWidth) / 2, h - 25, (w + hintWidth) / 2, h - 7, BACK);
@@ -799,6 +807,7 @@ public final class EngineeringHud extends Gui {
     /** Core raw navigation precedes Forge; supports() consults this hit test before capturing a pointer. */
     static boolean blocksNavigation(int displayX, int displayY) {
         Minecraft mc = Minecraft.getMinecraft();
+        if (mc.gameSettings.hideGUI) return false;
         int x = localX(mc, displayX), y = localY(mc, displayY), w = width(mc), h = height(mc);
         if (FactoryDesktop.pointerCaptured()) return true;
         return WorkbenchHud.layout(w, h)
@@ -807,6 +816,7 @@ public final class EngineeringHud extends Gui {
 
     static boolean mouse(MouseEvent e) {
         Minecraft mc = Minecraft.getMinecraft();
+        if (mc.gameSettings.hideGUI) return false;
         int x = localX(mc, e.x), y = localY(mc, e.y), w = width(mc), h = height(mc);
         boolean press = e.button == 0 && e.buttonstate;
         if (dragging) {
@@ -1015,7 +1025,10 @@ public final class EngineeringHud extends Gui {
     public void world(RenderWorldLastEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
         Target target = EngineeringModeController.INSTANCE.selected();
-        if (!EngineeringModeController.isActive() || target == null || mc.renderViewEntity == null) return;
+        if (!EngineeringModeController.isActive() || target == null
+            || mc.renderViewEntity == null
+            || mc.gameSettings.hideGUI
+            || WorkbenchHud.dashboardVisible()) return;
         Entity view = mc.renderViewEntity;
         double x = view.lastTickPosX + (view.posX - view.lastTickPosX) * event.partialTicks;
         double y = view.lastTickPosY + (view.posY - view.lastTickPosY) * event.partialTicks;

@@ -53,6 +53,18 @@ public class FactoryDashboardTest {
     }
 
     @Test
+    public void shortAndIrregularHistoryKeepsRealTimeAndMissingValues() {
+        assertEquals(1, FactoryTrend.timePosition(0, 1, new long[] { 40 }), 0);
+        assertEquals(.1, FactoryTrend.timePosition(1, 3, new long[] { 100, 110, 200 }), 1e-12);
+        assertEquals(.5, FactoryTrend.timePosition(1, 3, new long[] { Long.MIN_VALUE, 0, Long.MAX_VALUE }), 1e-12);
+        FactoryTrend single = new FactoryTrend(new BigInteger[] { BigInteger.TEN });
+        assertEquals(1, single.normalized[0], 0);
+        FactoryTrend missing = new FactoryTrend(new BigInteger[] { null, null });
+        assertTrue(Double.isNaN(missing.normalized[0]));
+        assertTrue(Double.isNaN(missing.normalized[1]));
+    }
+
+    @Test
     public void crossDimensionRecordAndSourceStayIndependentOfWorldLocation() {
         UUID source = UUID.randomUUID();
         Entry local = entry(0), remote = entry(-1);
@@ -76,6 +88,69 @@ public class FactoryDashboardTest {
         assertEquals(96, search.value.length());
         search.character('\n');
         assertEquals(96, search.value.length());
+    }
+
+    @Test
+    public void legacyInputOutputMetricsReadOnlyTheSelectedDeviceAndMissingEvidenceStaysUnknown() {
+        Entry measured = new Entry(
+            "one",
+            "machine",
+            (byte) 1,
+            (byte) 0,
+            123,
+            456,
+            120,
+            450,
+            0,
+            10,
+            20,
+            30,
+            "",
+            "",
+            1,
+            (byte) 0,
+            (byte) 0);
+        assertEquals(0, new java.math.BigDecimal("123").compareTo(FactoryDashboard.deviceMetric("input", measured)));
+        assertEquals(0, new java.math.BigDecimal("456").compareTo(FactoryDashboard.deviceMetric("output", measured)));
+        assertNull(FactoryDashboard.deviceMetric("input", null));
+        Entry warming = new Entry(
+            "one",
+            "machine",
+            (byte) 1,
+            (byte) 0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            10,
+            20,
+            30,
+            "",
+            "",
+            1,
+            (byte) 2,
+            (byte) 0);
+        assertNull(FactoryDashboard.deviceMetric("input", warming));
+        Entry ignored = new Entry(
+            "one",
+            "machine",
+            (byte) 3,
+            (byte) 0,
+            123,
+            456,
+            120,
+            450,
+            0,
+            10,
+            20,
+            30,
+            "",
+            "",
+            1,
+            (byte) 0,
+            (byte) 0);
+        assertNull(FactoryDashboard.deviceMetric("output", ignored));
     }
 
     @Test

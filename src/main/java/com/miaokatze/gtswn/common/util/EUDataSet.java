@@ -4,10 +4,12 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.nbt.NBTTagCompound;
 
+import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.util.FormatUtil.Measurement;
 
 /**
@@ -68,6 +70,7 @@ public class EUDataSet {
 
     /** 内部存储：index 0 = 最旧，index size-1 = 最新（初始容量仅为性能提示，实际容量由 capacity 决定） */
     private final List<Measurement> data = new ArrayList<>();
+    private List<NetworkInfoSample> snapshot;
 
     /**
      * 长期静默状态标志。
@@ -101,6 +104,7 @@ public class EUDataSet {
             // null 值不记录，与原 recordMeasurement 行为一致
             return;
         }
+        snapshot = null;
 
         // === 长期静默模式：数据集只有 2 个数据点 ===
         if (longTermSilent) {
@@ -212,6 +216,7 @@ public class EUDataSet {
      * 用于 gap 检测清空、退出长期静默冷启动等场景。
      */
     public void clear() {
+        snapshot = null;
         data.clear();
         longTermSilent = false;
     }
@@ -244,6 +249,20 @@ public class EUDataSet {
             return 0.0;
         }
         return calculateSlope(data.get(data.size() - 2), data.get(data.size() - 1));
+    }
+
+    /** Bounded immutable view of this sampler; the first rate has no preceding observation. */
+    public List<NetworkInfoSample> snapshot() {
+        if (snapshot != null) return snapshot;
+        List<NetworkInfoSample> result = new ArrayList<>(data.size());
+        for (int i = 0; i < data.size(); i++) {
+            Measurement current = data.get(i);
+            double rate = i == 0 || current.tick <= data.get(i - 1).tick ? Double.NaN
+                : calculateSlope(data.get(i - 1), current);
+            result.add(new NetworkInfoSample(0, current.tick, current.value, rate));
+        }
+        snapshot = Collections.unmodifiableList(result);
+        return snapshot;
     }
 
     private static double calculateSlope(Measurement oldest, Measurement newest) {
@@ -322,6 +341,7 @@ public class EUDataSet {
      * @param key    存储键名（通常为 "measurementHistory"）
      */
     public void loadFromNBT(NBTTagCompound parent, String key) {
+        snapshot = null;
         // 先清空现有数据（含 longTermSilent 标志）
         data.clear();
         longTermSilent = false;

@@ -1,5 +1,7 @@
 package com.miaokatze.gtswn.client.engineering;
 
+import org.lwjgl.input.Keyboard;
+
 import com.miaokatze.miaokatzecore.client.camera.CameraControl;
 import com.miaokatze.miaokatzecore.client.camera.CameraSettings;
 import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
@@ -8,6 +10,37 @@ import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
 final class EngineeringInputPolicy {
 
     private EngineeringInputPolicy() {}
+
+    /** Both GUI and world hosts own F1 before text fields, binding prompts and vanilla dispatch. */
+    static boolean visibilityKey(int code, boolean pressed, boolean repeat, boolean focused, Runnable toggle) {
+        if (code != Keyboard.KEY_F1) return false;
+        // Consume the complete sequence. Passing repeats to vanilla would toggle hideGUI again.
+        if (focused && pressed && !repeat) toggle.run();
+        return true;
+    }
+
+    static boolean dashboardHostVisible(boolean live, boolean hidden, boolean directScreen, boolean factory,
+        boolean screenOpen) {
+        return live && !hidden && (directScreen || factory && !screenOpen);
+    }
+
+    static boolean dashboardInputAllowed(boolean visible, boolean displayFocused, boolean directScreen,
+        boolean worldFocused) {
+        return visible && displayFocused && (directScreen || worldFocused);
+    }
+
+    static boolean dashboardBinding(int code, int dashboard, int factory, int wheel) {
+        return code > Keyboard.KEY_NONE && code < Keyboard.KEYBOARD_SIZE
+            && code == dashboard
+            && code != factory
+            && code != wheel
+            && code != Keyboard.KEY_ESCAPE
+            && code != Keyboard.KEY_F1;
+    }
+
+    static boolean overlayVisible(boolean dashboardOpen, boolean hidden) {
+        return dashboardOpen && !hidden;
+    }
 
     static boolean worldInput(boolean active, boolean screenOpen, boolean focused) {
         return active && !screenOpen && focused;
@@ -44,11 +77,15 @@ final class EngineeringInputPolicy {
     }
 
     static CameraSettings.Hud hud(boolean cameraPanel, double scale, boolean desktop) {
+        return hud(cameraPanel, scale, desktop, false);
+    }
+
+    static CameraSettings.Hud hud(boolean cameraPanel, double scale, boolean desktop, boolean hidden) {
         // Core chooses its compact X-ray bar or the combined camera panel from these two flags.
         return CameraSettings.Hud.builder()
             .crosshair(CameraSettings.Hud.Crosshair.HIDDEN)
-            .panelVisible(cameraPanel && !desktop)
-            .sliceBarVisible(!desktop)
+            .panelVisible(cameraPanel && !desktop && !hidden)
+            .sliceBarVisible(!desktop && !hidden)
             .panelPosition((int) (264 * scale), (int) (56 * scale))
             .panelWidth(Math.max(1, (int) (192 * scale)))
             .build();

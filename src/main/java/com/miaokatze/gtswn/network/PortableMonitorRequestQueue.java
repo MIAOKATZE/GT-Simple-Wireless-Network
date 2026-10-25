@@ -228,6 +228,7 @@ public final class PortableMonitorRequestQueue {
         String chartKey = panel.getChartItem() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartItem())
             : panel.getChartFluid() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartFluid()) : null;
         data.chartKey = chartKey == null ? "" : chartKey;
+        data.aeWindow = aeWindow(set, chartKey, panel.getAETrackingWindow());
         if (requestedPins.contains(AE_GRAPH) || requestedPins.contains(PortableMonitorPins.AE_TITLE)
             || requestedPins.contains(PortableMonitorPins.AE_PLOT)) {
             addItem(data, keys, set, panel.getChartItem(), true, requestedPins, false);
@@ -254,8 +255,7 @@ public final class PortableMonitorRequestQueue {
     static void fillSummary(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel) {
         data.ownerName = panel.getOwnerName();
         data.window = panel.getWindowName();
-        data.aeWindow = WindowLabel.of(panel.getAETrackingWindow())
-            .shortName();
+        data.aeWindow = WindowLabel.formatSpan(0L);
         data.displayMode = panel.getDisplayMode();
         data.palette = panel.getTrendLinePalette();
         data.tab = panel.getCurrentTab();
@@ -264,6 +264,10 @@ public final class PortableMonitorRequestQueue {
 
     public static boolean needsEUChart(boolean detail, Set<String> pins, boolean legacyCharts) {
         return detail || pins.contains(EU_GRAPH) || pins.contains(PortableMonitorPins.EU_PLOT);
+    }
+
+    static String aeWindow(AEMonitorDataSet set, String key, int window) {
+        return WindowLabel.formatSpan(set == null || key == null ? 0L : set.spanTicks(key, window));
     }
 
     public static boolean needsAEChart(boolean detail, Set<String> pins) {
@@ -364,7 +368,7 @@ public final class PortableMonitorRequestQueue {
         AEMonitorSample latest = set == null ? null : set.newest(key);
         row.amount = latest == null ? "..." : Long.toString(latest.amount);
         row.rate = latest == null ? 0 : latest.rate;
-        row.average = set == null ? 0 : set.averageRate300s(key);
+        row.average = set == null ? 0 : set.averageRate(key);
         data.rows.add(row);
         keys.put(key, row);
     }

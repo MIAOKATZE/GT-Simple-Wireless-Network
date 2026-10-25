@@ -7,11 +7,42 @@ import java.util.UUID;
 
 import org.junit.Test;
 
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopInformationTemplate;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 
 public class DesktopCardLabelTest {
+
+    @Test
+    public void defaultClockTitlesFollowTheSelectedSourceWithoutSavingTranslatedUserTitles() {
+        WidgetSpec local = DesktopInformationTemplate.LOCAL_CLOCK.create("local");
+        assertEquals("", local.title);
+        assertEquals("gtswn.factory.desktop.info.localClock", DesktopCardLabel.informationTitleKey(local));
+        assertEquals(
+            "gtswn.factory.desktop.info.gameClock",
+            DesktopCardLabel.informationTitleKey(DesktopInformationTemplate.GAME_CLOCK.create("game")));
+        assertEquals(
+            "gtswn.factory.desktop.info.analogClock",
+            DesktopCardLabel.informationTitleKey(DesktopInformationTemplate.ANALOG_CLOCK.create("face")));
+        assertEquals("Office", DesktopCardLabel.title(local.titled("Office"), "Clock", null, null));
+    }
+
+    @Test
+    public void preciseResourceUsesItsNameUntilUserSetsACustomTitle() {
+        ResourceBinding binding = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "v2:item:" + String.join("", Collections.nCopies(64, "a")),
+            "Circuit");
+        WidgetSpec widget = new WidgetSpec("resource", WidgetKind.RESOURCES, 0, 0, 4, 3).boundResource(binding);
+        assertEquals("Circuit", DesktopCardLabel.title(widget, "Resources", null, null));
+        assertEquals(
+            "Assembly stock",
+            DesktopCardLabel.title(widget.titled("Assembly stock"), "Resources", null, null));
+    }
 
     private WidgetSpec device() {
         return new WidgetSpec(

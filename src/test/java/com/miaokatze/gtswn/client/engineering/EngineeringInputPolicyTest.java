@@ -5,12 +5,95 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
+import org.lwjgl.input.Keyboard;
 
 import com.miaokatze.miaokatzecore.client.camera.CameraControl;
 import com.miaokatze.miaokatzecore.client.camera.CameraSettings;
 import com.miaokatze.miaokatzecore.client.camera.WorldCameras;
 
 public class EngineeringInputPolicyTest {
+
+    @Test
+    public void dashboardRemainsVisibleOnFocusLossButOnlyItsFocusedHostAcceptsInput() {
+        boolean direct = EngineeringInputPolicy.dashboardHostVisible(true, false, true, false, true);
+        assertTrue(direct);
+        assertFalse(EngineeringInputPolicy.dashboardInputAllowed(direct, false, true, false));
+        assertTrue(EngineeringInputPolicy.dashboardInputAllowed(direct, true, true, false));
+        boolean factory = EngineeringInputPolicy.dashboardHostVisible(true, false, false, true, false);
+        assertTrue(factory);
+        assertFalse(EngineeringInputPolicy.dashboardInputAllowed(factory, false, false, true));
+        assertFalse(EngineeringInputPolicy.dashboardInputAllowed(factory, true, false, false));
+        assertTrue(EngineeringInputPolicy.dashboardInputAllowed(factory, true, false, true));
+        assertFalse(EngineeringInputPolicy.dashboardHostVisible(true, true, true, false, true));
+        assertFalse(EngineeringInputPolicy.dashboardHostVisible(false, false, true, false, true));
+        assertFalse(EngineeringInputPolicy.dashboardHostVisible(true, false, false, true, true));
+    }
+
+    @Test
+    public void dashboardEntryKeepsFactoryWheelAndReservedKeysUnambiguous() {
+        assertTrue(
+            EngineeringInputPolicy.dashboardBinding(Keyboard.KEY_G, Keyboard.KEY_G, Keyboard.KEY_F12, Keyboard.KEY_C));
+        assertFalse(
+            EngineeringInputPolicy
+                .dashboardBinding(Keyboard.KEY_NONE, Keyboard.KEY_NONE, Keyboard.KEY_F12, Keyboard.KEY_C));
+        assertFalse(
+            EngineeringInputPolicy
+                .dashboardBinding(Keyboard.KEY_F12, Keyboard.KEY_F12, Keyboard.KEY_F12, Keyboard.KEY_C));
+        assertFalse(
+            EngineeringInputPolicy.dashboardBinding(Keyboard.KEY_C, Keyboard.KEY_C, Keyboard.KEY_F12, Keyboard.KEY_C));
+        assertFalse(
+            EngineeringInputPolicy
+                .dashboardBinding(Keyboard.KEY_ESCAPE, Keyboard.KEY_ESCAPE, Keyboard.KEY_F12, Keyboard.KEY_C));
+        assertFalse(
+            EngineeringInputPolicy
+                .dashboardBinding(Keyboard.KEY_F1, Keyboard.KEY_F1, Keyboard.KEY_F12, Keyboard.KEY_C));
+        assertFalse(EngineeringInputPolicy.dashboardBinding(-99, -99, Keyboard.KEY_F12, Keyboard.KEY_C));
+    }
+
+    @Test
+    public void hiddenHudHasNoCameraWidgetsWhileWorldNavigationRemainsEnabled() {
+        CameraSettings.Hud hidden = EngineeringInputPolicy.hud(true, 1, false, true);
+        assertFalse(hidden.panelVisible());
+        assertFalse(hidden.sliceBarVisible());
+        assertTrue(EngineeringInputPolicy.worldNavigation(true, false, true, false));
+        assertTrue(
+            EngineeringInputPolicy.navigation(false, 1, 1, false)
+                .pan());
+        assertTrue(
+            EngineeringInputPolicy.navigation(false, 1, 1, false)
+                .yaw());
+        assertTrue(
+            EngineeringInputPolicy.hud(true, 1, false, false)
+                .panelVisible());
+        assertTrue(
+            EngineeringInputPolicy.hud(true, 1, false, false)
+                .sliceBarVisible());
+    }
+
+    @Test
+    public void f1TemporarilyReleasesAnOpenDashboardWithoutClosingIt() {
+        boolean dashboardOpen = true;
+        boolean visible = EngineeringInputPolicy.overlayVisible(dashboardOpen, false);
+        assertTrue(visible);
+        assertFalse(EngineeringInputPolicy.worldNavigation(true, false, true, visible));
+        visible = EngineeringInputPolicy.overlayVisible(dashboardOpen, true);
+        assertFalse(visible);
+        assertTrue(EngineeringInputPolicy.worldNavigation(true, false, true, visible));
+        assertTrue(EngineeringInputPolicy.playerMovement(true, visible));
+        CameraSettings.Navigation navigation = EngineeringInputPolicy.navigation(false, 1, 1, visible);
+        assertTrue(navigation.pan());
+        assertTrue(navigation.yaw());
+        assertTrue(navigation.pitch());
+        assertTrue(navigation.zoom());
+        assertTrue(navigation.reset());
+        assertTrue(EngineeringInputPolicy.pointerControl(CameraControl.ZOOM, false, false, false, visible));
+        visible = EngineeringInputPolicy.overlayVisible(dashboardOpen, false);
+        assertTrue(visible);
+        assertFalse(EngineeringInputPolicy.worldNavigation(true, false, true, visible));
+        assertFalse(
+            EngineeringInputPolicy.navigation(false, 1, 1, visible)
+                .pan());
+    }
 
     @Test
     public void desktopOwnsMovementAndCameraInputRegardlessOfPointerOrFollowing() {

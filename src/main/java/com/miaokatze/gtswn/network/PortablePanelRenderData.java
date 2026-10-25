@@ -17,7 +17,7 @@ public final class PortablePanelRenderData {
     private static final String[] INTS = { "trackingWindow", "briefRatio", "displayMode", "chartBorderThickness",
         "trendLineThickness", "trendLineSmoothing", "trendLineSplineType", "aeTrackingWindow", "aeChartBorderThickness",
         "aeTrendLineThickness", "aeTrendLineSmoothing", "aeTrendLineSplineType", "aeMonitorFontSize",
-        "aeMonitorRenderMode", "aeMonitorIconSize" };
+        "aeMonitorRenderMode", "aeMonitorIconSize", "chartStyle" };
     private static final String[] BOOLS = { "showBriefEnergy", "showBriefStatus", "showChartEnergy", "showChartStatus",
         "showAEBrief", "showAEChartAmount", "showAEChartRate", "aeMonitorBold", "portableCold", "portableLongSilent",
         "trendDirectionColors" };

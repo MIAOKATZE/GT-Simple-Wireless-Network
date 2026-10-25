@@ -66,10 +66,16 @@ public final class PortableBoardLayout {
      * Foreground priority is bounded; unsuccessful attempts also age so an unloaded screen cannot monopolize polling.
      */
     public String nextSource(List<String> panels, List<String> visible, Map<String, Long> attempted) {
+        return nextSource(panels, visible, attempted, false);
+    }
+
+    /** The factory dashboard uses terminal mounts, independently of this board's hidden-card preference. */
+    public String nextSource(List<String> panels, List<String> visible, Map<String, Long> attempted,
+        boolean allMounted) {
         long oldest = Long.MAX_VALUE;
         String selected = null;
         for (String id : panels) {
-            if (hidden.contains(id)) continue;
+            if (!allMounted && hidden.contains(id)) continue;
             long score = attempted.getOrDefault(id, 0L);
             if (visible.contains(id)) score -= Math.max(1100L, panels.size() * 550L);
             if (score < oldest) {

@@ -39,6 +39,7 @@ public final class PanelConfigStore {
     private String eutAxisMin = "";
     private String eutAxisMax = "";
     private int chartBorderThickness = 3;
+    private NetworkChartStyle chartStyle = NetworkChartStyle.LINE;
     private String chartBackgroundColor = "";
     private int trendLineThickness = 3;
     private int trendLineSmoothing = 2;
@@ -77,7 +78,7 @@ public final class PanelConfigStore {
     /**
      * 解析 EU 图表配置字符串，每行 key=value。
      * <p>
-     * 支持键：energyMin/energyMax/eutMin/eutMax/border/chartBg/line/smoothing/screenColor。
+     * 支持键：energyMin/energyMax/eutMin/eutMax/border/chartBg/chartStyle/line/smoothing/screenColor。
      *
      * @param payload 配置文本
      */
@@ -105,6 +106,8 @@ public final class PanelConfigStore {
                 chartBorderThickness = clampInt(value, chartBorderThickness, 1, 8);
             } else if ("chartBg".equals(key)) {
                 chartBackgroundColor = cleanColorText(value);
+            } else if ("chartStyle".equals(key)) {
+                chartStyle = NetworkChartStyle.fromText(value);
             } else if ("line".equals(key)) {
                 trendLineThickness = clampInt(value, trendLineThickness, 1, 8);
             } else if ("smoothing".equals(key)) {
@@ -379,6 +382,10 @@ public final class PanelConfigStore {
         return chartBorderThickness;
     }
 
+    public NetworkChartStyle getChartStyle() {
+        return chartStyle;
+    }
+
     public String getChartBackgroundColorText() {
         return chartBackgroundColor;
     }
@@ -610,6 +617,7 @@ public final class PanelConfigStore {
         tag.setString("eutAxisMin", eutAxisMin);
         tag.setString("eutAxisMax", eutAxisMax);
         tag.setInteger("chartBorderThickness", chartBorderThickness);
+        tag.setInteger("chartStyle", chartStyle.ordinal());
         tag.setString("chartBackgroundColor", chartBackgroundColor);
         tag.setInteger("trendLineThickness", trendLineThickness);
         tag.setInteger("trendLineSmoothing", trendLineSmoothing);
@@ -619,6 +627,7 @@ public final class PanelConfigStore {
 
     private void readChartConfig(NBTTagCompound tag) {
         readTrendPalette(tag);
+        chartStyle = NetworkChartStyle.fromId(tag.getInteger("chartStyle"));
         energyAxisMin = tag.hasKey("energyAxisMin") ? tag.getString("energyAxisMin") : "";
         energyAxisMax = tag.hasKey("energyAxisMax") ? tag.getString("energyAxisMax") : "";
         eutAxisMin = tag.hasKey("eutAxisMin") ? tag.getString("eutAxisMin") : "";

@@ -1,0 +1,1422 @@
+package com.miaokatze.gtswn.client.engineering;
+
+import static org.junit.Assert.*;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.UUID;
+
+import net.minecraft.client.Minecraft;
+
+import org.junit.After;
+import org.junit.Test;
+
+import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopHistory;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopInformationTemplate;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetCode;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetPlacement;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
+import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetEffects;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
+import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
+import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
+import com.miaokatze.miaokatzecore.api.ui.component.UiEvent;
+import com.miaokatze.miaokatzecore.api.ui.component.UiNode;
+import com.miaokatze.miaokatzecore.api.ui.component.UiRect;
+import com.miaokatze.miaokatzecore.api.ui.component.UiScene;
+
+/** Real Core pointer capture/bubbling into production desktop handlers, without rendering or starting Minecraft. */
+public class FactoryDesktopInputTest {
+
+    private static boolean controlPressed;
+    private DesktopLayout layout;
+    private UiScene scene;
+
+    private void prepare(boolean editing, boolean selected) throws Exception {
+        prepare(editing, selected, WidgetKind.DEVICE);
+    }
+
+    private void prepare(boolean editing, boolean selected, WidgetKind kind) throws Exception {
+        layout = new DesktopLayout();
+        WidgetSpec card = new WidgetSpec("card", kind, 0, 0, Math.max(6, kind.minColumns), Math.max(5, kind.minRows));
+        assertTrue(layout.add(card));
+        DesktopViewport viewport = new DesktopViewport();
+        viewport.scale = 1;
+        Rect bounds = DesktopCardGeometry.bounds(card, viewport.transform(0, 0));
+        UiNode canvas = UiNode.panel("canvas")
+            .bounds(0, 0, 1400, 1000)
+            .overflowClip(true)
+            .on(UiEvent.Type.DOWN, e -> dispatch("down", e))
+            .on(UiEvent.Type.MOVE, e -> dispatch("move", e))
+            .on(UiEvent.Type.UP, e -> dispatch("up", e))
+            .on(UiEvent.Type.CANCEL, e -> FactoryDesktop.blur());
+        canvas.add(
+            UiNode.panel("card-card")
+                .bounds(bounds.x, bounds.y, bounds.w, bounds.h)
+                .overflowClip(true)
+                .add(
+                    UiNode.panel("selection-card")
+                        .bounds(0, 0, bounds.w, bounds.h)
+                        .pointerTransparent(true)));
+        scene = new UiScene(canvas);
+        scene.layout(1400, 1000);
+        controlPressed = false;
+        set("layout", layout);
+        set("saves", new com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession(layout));
+        set("history", new DesktopHistory(layout));
+        ((com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection) get("selection")).only("");
+        set("pendingExit", null);
+        set("shareOpen", false);
+        set("libraryOpen", false);
+        set("view", viewport);
+        set("canvas", new Rect(0, 0, 1400, 1000));
+        set("area", new Rect(0, 0, 1400, 1000));
+        set("scene", scene);
+        set("selected", selected ? "card" : "");
+        set("edit", editing);
+        set("bindingOpen", false);
+        set("pendingPreset", null);
+        set("pendingImport", null);
+        set("placement", null);
+        set("presetDraft", "");
+        set("importingPreset", false);
+        set("initialView", false);
+        set("notice", "");
+        set("screenBindingOpen", false);
+        set("resourceAdding", false);
+        set("choosingDeviceSource", false);
+        set("propertiesOpen", false);
+        set("store", new DesktopStore(null));
+        set("profile", DesktopStore.profile("headless", "player"));
+        set("screenWidth", 1400);
+        set("screenHeight", 1000);
+        set("pickerFilter", FactoryMachineFilter.ALL);
+        set("pickerPower", com.miaokatze.gtswn.client.DevicePowerFilter.ALL);
+        set("pickerReason", "");
+        ((FactoryTextSearch) get("deviceSearch")).value = "";
+    }
+
+    @After
+    public void resetCapture() throws Exception {
+        FactoryDesktop.blur();
+        set("scene", null);
+    }
+
+    @Test
+    public void cardNotationChangesOnFirstClickAndPersistsOnlyAtTheExplicitSaveCheckpoint() throws Exception {
+        for (boolean editing : new boolean[] { false, true }) {
+            prepare(editing, false, WidgetKind.WIRELESS);
+            rebuild();
+            Rect card = DesktopCardGeometry
+                .bounds(layout.find("card"), ((DesktopViewport) get("view")).transform(0, 0));
+            scene.find("card-card")
+                .bounds(card.x, card.y, card.w, card.h);
+            scene.layout(1400, 1000);
+            UiRect control = scene.find("number-format-card")
+                .bounds();
+            double x = control.x + control.width / 2, y = control.y + control.height / 2;
+            assertEquals("number-format-card", scene.hitTest(x, y).id);
+            assertTrue(scene.pointerDown(x, y, 0));
+            assertEquals("number-format-card", scene.captured().id);
+            assertTrue(scene.pointerUp(x, y, 0));
+            assertEquals("", get("selected"));
+            assertEquals(WidgetNumberFormat.NORMAL, layout.find("card").numberFormat);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+            assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("number-format-card"));
+
+            FactoryDesktop.flush();
+            DesktopStore store = (DesktopStore) get("store");
+            assertEquals(
+                WidgetNumberFormat.METRIC,
+                store.load((String) get("profile"))
+                    .find("card").numberFormat);
+            scene.pointerDown(x, y, 0);
+            scene.pointerMove(x - 20, y);
+            scene.pointerMove(x, y);
+            scene.pointerUp(x, y, 0);
+            assertEquals(WidgetNumberFormat.NORMAL, layout.find("card").numberFormat);
+            scene.pointerDown(x, y, 0);
+            scene.blur();
+            scene.pointerUp(x, y, 0);
+            assertEquals(WidgetNumberFormat.NORMAL, layout.find("card").numberFormat);
+            activate("save");
+            assertFalse(FactoryDesktop.hasUnsavedChanges());
+            assertEquals(
+                WidgetNumberFormat.NORMAL,
+                store.load((String) get("profile"))
+                    .find("card").numberFormat);
+            scene.close();
+        }
+    }
+
+    @Test
+    public void everyVisibleHandleResizesImmediatelyThroughActualSceneCapture() throws Exception {
+        for (boolean editing : new boolean[] { false, true }) for (DesktopDrag.Edge edge : DesktopDrag.Edge.values()) {
+            if (edge == DesktopDrag.Edge.MOVE) continue;
+            prepare(editing, true);
+            Rect bounds = DesktopCardGeometry
+                .bounds(layout.find("card"), ((DesktopViewport) get("view")).transform(0, 0));
+            String name = edge.name();
+            double x = name.contains("LEFT") ? bounds.x + 3
+                : name.contains("RIGHT") ? bounds.x + bounds.w - 3 : bounds.x + bounds.w / 2.0;
+            double y = name.contains("TOP") ? bounds.y + 3
+                : name.contains("BOTTOM") ? bounds.y + bounds.h - 3 : bounds.y + bounds.h / 2.0;
+            double dx = name.contains("LEFT") ? -64 : name.contains("RIGHT") ? 64 : 0;
+            double dy = name.contains("TOP") ? -64 : name.contains("BOTTOM") ? 64 : 0;
+            assertEquals(edge, DesktopCardGeometry.edge(bounds, x, y));
+            assertTrue(scene.pointerDown(x, y, 0));
+            assertEquals("canvas", scene.captured().id);
+            assertTrue(scene.pointerMove(x + dx, y + dy));
+            assertTrue(scene.pointerUp(x + dx, y + dy, 0));
+            assertNull(scene.captured());
+            assertEquals(edge.name(), dx == 0 ? 6 : 7, layout.find("card").columns);
+            assertEquals(edge.name(), dy == 0 ? 5 : 6, layout.find("card").rows);
+            if (editing) {
+                historyKey(false);
+                assertEquals(6, currentLayout().find("card").columns);
+                assertEquals(5, currentLayout().find("card").rows);
+                historyKey(true);
+                assertEquals(edge.name(), dx == 0 ? 6 : 7, currentLayout().find("card").columns);
+                assertEquals(edge.name(), dy == 0 ? 5 : 6, currentLayout().find("card").rows);
+            }
+            scene.close();
+        }
+    }
+
+    @Test
+    public void firstClickSelectsThenTitleDragMovesAndCaptureLossRestoresGeometry() throws Exception {
+        prepare(true, false);
+        assertTrue(scene.pointerDown(100, 14, 0));
+        assertTrue(scene.pointerUp(100, 14, 0));
+        assertEquals("card", get("selected"));
+        WidgetSpec original = layout.find("card");
+        assertTrue(scene.pointerDown(100, 14, 0));
+        assertTrue(scene.pointerMove(228, 14));
+        assertEquals(2, layout.find("card").column);
+        scene.blur();
+        assertSame(original, layout.find("card"));
+        assertNull(scene.captured());
+        scene.pointerUp(228, 14, 0);
+        assertSame(original, layout.find("card"));
+    }
+
+    @Test
+    public void deviceSelectorBuildsAtMostSixteenRowsAndClampsPageWhenTheLiveListShrinks() throws Exception {
+        prepare(true, true);
+        set("bindingOpen", true);
+        set("pickerSource", UUID.randomUUID());
+        Entry entry = new Entry(
+            "key",
+            "Machine",
+            (byte) 1,
+            (byte) 0,
+            1,
+            2,
+            1,
+            2,
+            0,
+            1,
+            2,
+            3,
+            "",
+            "",
+            4,
+            (byte) 2,
+            (byte) 0);
+        set("pickerEntries", Collections.nCopies(4096, entry));
+        set("bindingPage", 255);
+        UiNode body = UiNode.panel("body");
+        Method method = FactoryDesktop.class
+            .getDeclaredMethod("addDeviceBinding", UiNode.class, WidgetSpec.class, int.class);
+        method.setAccessible(true);
+        method.invoke(null, body, layout.find("card"), 210);
+        assertEquals(
+            16,
+            body.children()
+                .stream()
+                .filter(node -> node.id.startsWith("binding-device-"))
+                .count());
+        assertTrue(
+            body.children()
+                .stream()
+                .anyMatch(node -> node.id.equals("binding-device-4095")));
+        UiNode pages = body.children()
+            .stream()
+            .filter(node -> node.id.equals("binding-pages"))
+            .findFirst()
+            .get();
+        assertTrue(
+            pages.children()
+                .stream()
+                .filter(node -> node.id.equals("binding-previous"))
+                .findFirst()
+                .get()
+                .enabled());
+        assertFalse(
+            pages.children()
+                .stream()
+                .filter(node -> node.id.equals("binding-next"))
+                .findFirst()
+                .get()
+                .enabled());
+        set("pickerEntries", Collections.nCopies(3, entry));
+        UiNode smaller = UiNode.panel("smaller");
+        method.invoke(null, smaller, layout.find("card"), 210);
+        assertEquals(0, get("bindingPage"));
+        assertEquals(
+            3,
+            smaller.children()
+                .stream()
+                .filter(node -> node.id.startsWith("binding-device-"))
+                .count());
+    }
+
+    @Test
+    public void existingDeviceBindingDoesNotForceBrowseActivationIntoTheEditor() throws Exception {
+        prepare(false, false);
+        assertTrue(
+            layout.replace(
+                layout.find("card")
+                    .boundDevice(new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4))));
+        scene.pointerDown(100, 100, 0);
+        scene.pointerUp(100, 100, 0);
+        scene.pointerDown(100, 100, 0);
+        scene.pointerUp(100, 100, 0);
+        assertFalse((Boolean) get("edit"));
+    }
+
+    @Test
+    public void searchResetsLastPageAndKeepsTypingFocusAcrossActualDesktopRebuild() throws Exception {
+        prepare(true, true);
+        set("bindingOpen", true);
+        set("propertiesOpen", true);
+        set("libraryOpen", false);
+        set("pickerSource", UUID.randomUUID());
+        set(
+            "pickerEntries",
+            Collections.singletonList(
+                new Entry(
+                    "machine",
+                    "Machine",
+                    (byte) 1,
+                    (byte) 0,
+                    1,
+                    0,
+                    1,
+                    0,
+                    0,
+                    1,
+                    2,
+                    3,
+                    "",
+                    "",
+                    4,
+                    (byte) 0,
+                    (byte) 0)));
+        Method build = FactoryDesktop.class.getDeclaredMethod("build");
+        build.setAccessible(true);
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+        scene.focus(scene.find("device-search"));
+        set("bindingPage", 255);
+        assertTrue(scene.keyTyped('m', 50, false, false));
+        assertEquals(0, get("bindingPage"));
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+        assertEquals("device-search", scene.focused().id);
+        assertTrue(FactoryDesktop.typing());
+        assertTrue(FactoryDesktop.key(org.lwjgl.input.Keyboard.KEY_DELETE, '\0', false));
+        assertNotNull(layout.find("card"));
+        assertTrue(scene.keyTyped('a', 30, false, false));
+        assertEquals("ma", ((FactoryTextSearch) get("deviceSearch")).value);
+        scene.keyTyped('z', 44, false, false);
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+        assertNotNull(scene.find("device-search-empty"));
+        assertNull(scene.find("binding-device-0"));
+        assertEquals("device-search", scene.focused().id);
+    }
+
+    @Test
+    public void emptyResourceCardFirstClickSelectsAndSecondClickOpensItsBindingEditor() throws Exception {
+        WidgetResources.update(null, Collections.emptyList());
+        prepare(false, false, WidgetKind.RESOURCES);
+        set("propertiesOpen", false);
+        set("screenBindingOpen", false);
+        assertTrue(scene.pointerDown(100, 100, 0));
+        assertTrue(scene.pointerUp(100, 100, 0));
+        assertEquals("card", get("selected"));
+        assertFalse((Boolean) get("edit"));
+        assertFalse((Boolean) get("screenBindingOpen"));
+        assertTrue(scene.pointerDown(100, 100, 0));
+        assertTrue(scene.pointerUp(100, 100, 0));
+        assertTrue((Boolean) get("edit"));
+        assertTrue((Boolean) get("propertiesOpen"));
+        assertTrue((Boolean) get("screenBindingOpen"));
+        assertEquals("card", get("selected"));
+    }
+
+    @Test
+    public void browseModeResizesFromSelectedHandles() throws Exception {
+        prepare(false, true);
+        assertTrue(scene.pointerDown(377, 313, 0));
+        assertTrue(scene.pointerMove(441, 377));
+        assertTrue(scene.pointerUp(441, 377, 0));
+        assertEquals(7, layout.find("card").columns);
+        assertEquals(6, layout.find("card").rows);
+    }
+
+    @Test
+    public void handleTapDoesNotActivateTheEmptyMachineBinding() throws Exception {
+        prepare(false, true);
+        scene.pointerDown(377, 313, 0);
+        scene.pointerUp(377, 313, 0);
+        assertFalse((Boolean) get("edit"));
+        assertFalse((Boolean) get("bindingOpen"));
+        assertEquals(6, layout.find("card").columns);
+        assertEquals(5, layout.find("card").rows);
+    }
+
+    @Test
+    public void terminalGridAndEuTrendDoNotOpenScreenSelectionOnSecondClick() throws Exception {
+        for (WidgetKind kind : new WidgetKind[] { WidgetKind.WIRELESS, WidgetKind.HISTORY }) {
+            prepare(false, false, kind);
+            scene.pointerDown(100, 100, 0);
+            scene.pointerUp(100, 100, 0);
+            scene.pointerDown(100, 100, 0);
+            scene.pointerUp(100, 100, 0);
+            assertFalse((Boolean) get("screenBindingOpen"));
+            assertFalse((Boolean) get("edit"));
+            scene.close();
+        }
+    }
+
+    @Test
+    public void presetClickSplitsOnlyItsOriginalRowWithoutChangingDesktop() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        rebuild();
+        UiNode original = scene.find("preset-POWER");
+        double originalY = original.bounds().y;
+        double originalHeight = original.bounds().height;
+        activate("preset-POWER");
+        assertSame(layout, get("layout"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        rebuild();
+        assertNull(scene.find("preset-POWER"));
+        assertNull(scene.find("preset-confirm"));
+        assertNull(scene.find("apply-preset"));
+        UiNode left = scene.find("preset-POWER-replace"), right = scene.find("preset-POWER-append");
+        assertNotNull(left);
+        assertNotNull(right);
+        assertEquals(originalY, left.bounds().y, 0);
+        assertEquals(originalY, right.bounds().y, 0);
+        assertEquals(originalHeight, left.bounds().height, 0);
+        assertTrue(
+            left.bounds()
+                .right() < right.bounds().x);
+        assertNotNull(scene.find("preset-PRODUCTION"));
+    }
+
+    @Test
+    public void importedCodeValidationIsReadOnlyAndAppendPreservesExistingCardAndZoom() throws Exception {
+        prepare(true, true, WidgetKind.WIRELESS);
+        DesktopLayout template = new DesktopLayout();
+        assertNotNull(template.add(WidgetKind.WIRELESS));
+        set("shareOpen", true);
+        set("importingPreset", true);
+        set("presetDraft", DesktopPresetCode.export(template));
+        rebuild();
+        WidgetSpec original = layout.find("card");
+        activate("preset-validate");
+        assertSame(layout, get("layout"));
+        assertSame(original, layout.find("card"));
+        DesktopLayout pending = (DesktopLayout) get("pendingImport");
+        assertNotNull(pending);
+        for (WidgetSpec widget : pending.widgets()) {
+            assertNull(widget.device);
+            assertNull(widget.screen);
+            assertNull(widget.resource);
+            assertFalse(widget.autoDevicePending);
+            assertFalse(widget.autoResourcePending);
+        }
+        rebuild();
+        String exported = DesktopPresetCode.export(layout);
+        DesktopViewport view = (DesktopViewport) get("view");
+        double panX = view.panX, panY = view.panY;
+        activate("preset-import-append");
+        assertSame(layout, get("layout"));
+        assertSame(original, layout.find("card"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        assertEquals(exported, DesktopPresetCode.export(layout));
+        assertEquals(panX, view.panX, 0);
+        assertEquals(panY, view.panY, 0);
+        rebuild();
+        scene.pointerMove(800, 500);
+        DesktopPresetPlacement placement = (DesktopPresetPlacement) get("placement");
+        WidgetSpec ghost = placement.widgets()
+            .get(0);
+        assertTrue(scene.pointerDown(800, 500, 0));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertTrue(scene.pointerUp(800, 500, 0));
+        assertEquals(
+            2,
+            layout.widgets()
+                .size());
+        WidgetSpec placed = layout.widgets()
+            .get(1);
+        assertEquals(ghost.column, placed.column);
+        assertEquals(ghost.row, placed.row);
+        assertNull(get("placement"));
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+        FactoryDesktop.flush();
+        assertEquals(
+            1,
+            ((DesktopStore) get("store")).load((String) get("profile"))
+                .widgets()
+                .size());
+        assertEquals(1, ((DesktopViewport) get("view")).scale, 0);
+        assertNull(get("pendingImport"));
+        assertFalse((Boolean) get("importingPreset"));
+    }
+
+    @Test
+    public void builtinAppendButtonReleaseCannotPlaceAndCanvasGhostBlocksExistingCardControls() throws Exception {
+        prepare(true, true, WidgetKind.WIRELESS);
+        set("libraryOpen", true);
+        rebuild();
+        activate("preset-POWER");
+        rebuild();
+        UiRect button = scene.find("preset-POWER-append")
+            .bounds();
+        double x = button.x + button.width / 2, y = button.y + button.height / 2;
+        assertTrue(scene.pointerDown(x, y, 0));
+        assertTrue(scene.pointerUp(x, y, 0));
+        assertNotNull(get("placement"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        rebuild();
+        UiRect format = scene.find("number-format-card")
+            .bounds();
+        x = format.x + format.width / 2;
+        y = format.y + format.height / 2;
+        assertEquals("preset-placement", scene.hitTest(x, y).id);
+        scene.pointerDown(x, y, 0);
+        scene.pointerUp(x, y, 0);
+        assertNotNull(get("placement"));
+        assertEquals(WidgetNumberFormat.METRIC, layout.find("card").numberFormat);
+        assertEquals("card", get("selected"));
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        scene.pointerMove(800, 500);
+        scene.pointerUp(800, 500, 0);
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        scene.pointerDown(800, 500, 0);
+        scene.pointerMove(840, 500);
+        scene.pointerMove(800, 500);
+        scene.pointerUp(800, 500, 0);
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertNotNull(get("placement"));
+        scene.pointerDown(800, 500, 0);
+        scene.pointerUp(800, 500, 0);
+        assertNull(scene.captured());
+        assertNull(get("placement"));
+        assertEquals(
+            1 + DesktopPreset.POWER.createLayout()
+                .widgets()
+                .size(),
+            layout.widgets()
+                .size());
+    }
+
+    @Test
+    public void realOverviewGroupsPlaceAtAdjacentEdgesAfterPanningAndZoomingWithNoDuplicateIdRejection()
+        throws Exception {
+        prepare(true, false);
+        layout = DesktopLayout.defaultLayout();
+        int templateCards = layout.widgets()
+            .size();
+        set("layout", layout);
+        set("saves", new com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession(layout));
+        set("history", new DesktopHistory(layout));
+        Method apply = FactoryDesktop.class.getDeclaredMethod("applyPreset", DesktopLayout.class, boolean.class);
+        apply.setAccessible(true);
+        DesktopViewport view = (DesktopViewport) get("view");
+        for (int group = 1; group <= 3; group++) {
+            apply.invoke(null, DesktopPreset.OVERVIEW.createLayout(), true);
+            rebuild();
+            Rect canvas = (Rect) get("canvas");
+            view.scale = .2 * group;
+            view.panX = (group * 16 - 1) * 64 + .25 - (600 - canvas.x) / view.scale;
+            view.panY = .25 - (400 - canvas.y) / view.scale;
+            scene.pointerMove(600, 400);
+            DesktopPresetPlacement pending = (DesktopPresetPlacement) get("placement");
+            assertEquals(DesktopLayout.PlacementStatus.OVERLAP, pending.status(layout));
+            scene.pointerDown(600, 400, 0);
+            scene.pointerUp(600, 400, 0);
+            assertSame(pending, get("placement"));
+            assertEquals(
+                templateCards * group,
+                layout.widgets()
+                    .size());
+            view.panX += 64;
+            scene.pointerMove(600, 400);
+            assertEquals(DesktopLayout.PlacementStatus.VALID, pending.status(layout));
+            assertTrue(scene.pointerDown(600, 400, 2));
+            assertTrue(scene.pointerMove(620, 410));
+            assertTrue(scene.pointerUp(620, 410, 2));
+            double scale = view.scale;
+            assertTrue(scene.scroll(620, 410, 1));
+            assertTrue(view.scale > scale);
+            scene.pointerMove(620, 410);
+            java.util.List<WidgetSpec> ghosts = pending.widgets();
+            assertEquals(
+                group * 16,
+                ghosts.stream()
+                    .mapToInt(widget -> widget.column)
+                    .min()
+                    .getAsInt());
+            assertEquals(
+                0,
+                ghosts.stream()
+                    .mapToInt(widget -> widget.row)
+                    .min()
+                    .getAsInt());
+            scene.pointerDown(620, 410, 0);
+            scene.pointerUp(620, 410, 0);
+            assertNull(get("placement"));
+            assertEquals(
+                templateCards * (group + 1),
+                layout.widgets()
+                    .size());
+            for (int index = 0; index < templateCards; index++) {
+                WidgetSpec placed = layout.widgets()
+                    .get(templateCards * group + index);
+                assertEquals(ghosts.get(index).column, placed.column);
+                assertEquals(ghosts.get(index).row, placed.row);
+                assertEquals(ghosts.get(index).columns, placed.columns);
+                assertEquals(ghosts.get(index).rows, placed.rows);
+            }
+        }
+        java.util.Properties appended = DesktopStore.encode(currentLayout());
+        historyKey(false);
+        assertEquals(
+            templateCards * 3,
+            currentLayout().widgets()
+                .size());
+        historyKey(true);
+        assertEquals(appended, DesktopStore.encode(currentLayout()));
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+        FactoryDesktop.flush();
+        assertEquals(
+            templateCards,
+            ((DesktopStore) get("store")).load((String) get("profile"))
+                .widgets()
+                .size());
+    }
+
+    @Test
+    public void everyLibraryComponentWaitsForAnExactCanvasClickAndCanBeCancelledWithoutSaving() throws Exception {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (WidgetKind kind : WidgetKind.values()) if (kind != WidgetKind.CLOCK) ids.add("add-" + kind);
+        for (DesktopInformationTemplate template : DesktopInformationTemplate.values()) ids.add("add-" + template);
+        for (String id : ids) {
+            prepare(true, false);
+            set("libraryOpen", true);
+            rebuild();
+            activate(id);
+            assertEquals(
+                id,
+                1,
+                layout.widgets()
+                    .size());
+            assertFalse(id, FactoryDesktop.hasUnsavedChanges());
+            assertNotNull(id, get("placement"));
+            rebuild();
+            scene.pointerMove(800, 500);
+            DesktopPresetPlacement pending = (DesktopPresetPlacement) get("placement");
+            WidgetSpec ghost = pending.widgets()
+                .get(0);
+            assertTrue(id, pending.valid(layout));
+            scene.pointerDown(800, 500, 0);
+            scene.pointerUp(800, 500, 0);
+            assertNull(id, get("placement"));
+            assertEquals(
+                id,
+                2,
+                layout.widgets()
+                    .size());
+            WidgetSpec placed = layout.widgets()
+                .get(1);
+            assertEquals(id, ghost.column, placed.column);
+            assertEquals(id, ghost.row, placed.row);
+            assertTrue(id, FactoryDesktop.hasUnsavedChanges());
+        }
+        prepare(true, false);
+        assertTrue(layout.move("card", -10, 0));
+        ResourceBinding chosen = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "v2:item:" + String.join("", Collections.nCopies(64, "b")),
+            "Exact");
+        Field singleton = Minecraft.class.getDeclaredField("theMinecraft");
+        singleton.setAccessible(true);
+        Object previous = singleton.get(null);
+        Class<?> unsafe = Class.forName("sun.misc.Unsafe");
+        Field allocator = unsafe.getDeclaredField("theUnsafe");
+        allocator.setAccessible(true);
+        try {
+            singleton.set(
+                null,
+                unsafe.getMethod("allocateInstance", Class.class)
+                    .invoke(allocator.get(null), Minecraft.class));
+            set("profile", DesktopStore.profile(EngineeringModeController.preferenceProfile(), ""));
+            assertTrue(FactoryDesktop.mountResource(chosen));
+            assertEquals(
+                1,
+                layout.widgets()
+                    .size());
+            rebuild();
+            scene.pointerMove(800, 500);
+            DesktopPresetPlacement pending = (DesktopPresetPlacement) get("placement");
+            assertSame(
+                chosen,
+                pending.widgets()
+                    .get(0).resource);
+            assertTrue(FactoryDesktop.escape());
+            assertNull(get("placement"));
+            assertEquals(
+                1,
+                layout.widgets()
+                    .size());
+            assertEquals(-10, layout.find("card").column);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+            assertTrue(FactoryDesktop.mountResource(chosen));
+            rebuild();
+            scene.pointerDown(800, 500, 0);
+            scene.pointerUp(800, 500, 0);
+            assertSame(
+                chosen,
+                layout.widgets()
+                    .get(1).resource);
+        } finally {
+            singleton.set(null, previous);
+        }
+    }
+
+    @Test
+    public void placementCoversExistingOverflowScrollControlsAndCancellingPreservesTheDraft() throws Exception {
+        prepare(true, false);
+        layout = new DesktopLayout();
+        WidgetSpec widget = new WidgetSpec("scroll", WidgetKind.CLOCK, 0, 0, 2, 2)
+            .configured("", java.util.Arrays.asList("localTime", "localDate", "timezone", "gameTime", "gameDay"), 1);
+        assertTrue(layout.add(widget));
+        set("layout", layout);
+        set("saves", new com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession(layout));
+        assertTrue(layout.move("scroll", 1, 0));
+        widget = layout.find("scroll");
+        Method apply = FactoryDesktop.class.getDeclaredMethod("applyPreset", DesktopLayout.class, boolean.class);
+        apply.setAccessible(true);
+        apply.invoke(null, DesktopPreset.OVERVIEW.createLayout(), true);
+        rebuild();
+        Rect canvas = (Rect) get("canvas");
+        DesktopViewport view = (DesktopViewport) get("view");
+        UiNode card = scene.find("card-scroll");
+        Rect bounds = DesktopCardGeometry.bounds(widget, view.transform(canvas.x, canvas.y));
+        card.bounds(bounds.x - canvas.x, bounds.y - canvas.y, bounds.w, bounds.h);
+        DashboardCardScroll.update(card, widget, view.scale, false);
+        scene.layout(1400, 1000);
+        assertTrue(DashboardCardScroll.overflowing(widget.id));
+        assertFalse(
+            scene.find("card-scroll-scroll")
+                .visible());
+        double x = bounds.x + bounds.w - 3, y = bounds.y + bounds.h / 2;
+        assertEquals("preset-placement", scene.hitTest(x, y).id);
+        scene.pointerDown(x, y, 0);
+        scene.pointerUp(x, y, 0);
+        assertNotNull(get("placement"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertTrue(FactoryDesktop.escape());
+        assertNull(scene.captured());
+        assertEquals(1, layout.find("scroll").column);
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
+    public void cancelledPlacementReleasesCaptureAndPreservesAnExistingUnsavedDraft() throws Exception {
+        for (int cancel = 0; cancel < 3; cancel++) {
+            prepare(true, true);
+            assertTrue(layout.move("card", -8, 0));
+            Method apply = FactoryDesktop.class.getDeclaredMethod("applyPreset", DesktopLayout.class, boolean.class);
+            apply.setAccessible(true);
+            apply.invoke(null, DesktopPreset.POWER.createLayout(), true);
+            rebuild();
+            scene.pointerDown(800, 500, 0);
+            assertNotNull(scene.captured());
+            if (cancel == 0) assertTrue(FactoryDesktop.escape());
+            else if (cancel == 1) scene.blur();
+            else assertTrue(FactoryDesktop.mouse(800, 500, 1, true, 0));
+            assertNull(get("placement"));
+            assertNull(scene.captured());
+            scene.pointerUp(800, 500, 0);
+            assertEquals(
+                1,
+                layout.widgets()
+                    .size());
+            assertEquals(-8, layout.find("card").column);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+            FactoryDesktop.flush();
+            assertEquals(
+                0,
+                ((DesktopStore) get("store")).load((String) get("profile"))
+                    .find("card").column);
+            scene.close();
+        }
+    }
+
+    @Test
+    public void placementDoesNotCreateAnExitPromptAndAnOverlayCannotReceiveAPlacementRelease() throws Exception {
+        prepare(true, false);
+        Method apply = FactoryDesktop.class.getDeclaredMethod("applyPreset", DesktopLayout.class, boolean.class);
+        apply.setAccessible(true);
+        apply.invoke(null, DesktopPreset.POWER.createLayout(), true);
+        rebuild();
+        UiNode blocker = UiNode.panel("blocking-panel")
+            .bounds(760, 480, 100, 100)
+            .visible(false);
+        scene.root()
+            .add(blocker);
+        scene.layout(1400, 1000);
+        scene.pointerDown(800, 500, 0);
+        blocker.visible(true);
+        scene.pointerUp(800, 500, 0);
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertNotNull(get("placement"));
+        assertNull(scene.captured());
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        boolean[] exited = { false };
+        assertTrue(FactoryDesktop.requestExit(() -> exited[0] = true));
+        assertTrue(exited[0]);
+        assertNull(get("pendingExit"));
+        assertNull(get("placement"));
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
+    public void invalidImportAndCancelKeepTheCurrentDesktop() throws Exception {
+        prepare(true, true);
+        set("shareOpen", true);
+        set("importingPreset", true);
+        set("presetDraft", "invalid");
+        rebuild();
+        activate("preset-validate");
+        assertSame(layout, get("layout"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertNull(get("pendingImport"));
+        rebuild();
+        assertNotNull(scene.find("preset-validate"));
+        assertNull(scene.find("preset-import-replace"));
+        activate("preset-import-cancel");
+        assertFalse((Boolean) get("importingPreset"));
+        assertEquals("", get("presetDraft"));
+        assertSame(layout, get("layout"));
+    }
+
+    @Test
+    public void presetCodeAllowsLongSingleLineDraftAndRetainsFocusAcrossRebuild() throws Exception {
+        prepare(true, true);
+        set("shareOpen", true);
+        set("importingPreset", true);
+        rebuild();
+        UiNode input = scene.find("preset-code");
+        scene.focus(input);
+        String longCode = String.join("", Collections.nCopies(4096, "A"));
+        assertTrue(scene.insertText(longCode));
+        assertEquals(longCode, get("presetDraft"));
+        assertFalse((Boolean) get("dirty"));
+        rebuild();
+        assertEquals("preset-code", scene.focused().id);
+        assertEquals(
+            longCode,
+            scene.focused()
+                .text());
+        assertEquals(
+            23,
+            scene.focused()
+                .bounds().height,
+            0);
+        assertTrue(FactoryDesktop.escape());
+        assertFalse(FactoryDesktop.typing());
+        assertTrue((Boolean) get("importingPreset"));
+        assertTrue(FactoryDesktop.escape());
+        assertFalse((Boolean) get("importingPreset"));
+        assertTrue((Boolean) get("shareOpen"));
+    }
+
+    @Test
+    public void importedOverwriteReplacesTheDesktopOnlyAfterTheExplicitChoice() throws Exception {
+        prepare(true, true);
+        set("shareOpen", true);
+        set("importingPreset", true);
+        set("presetDraft", DesktopPresetCode.export(DesktopPreset.POWER.createLayout()));
+        rebuild();
+        activate("preset-validate");
+        assertNotNull(layout.find("card"));
+        rebuild();
+        activate("preset-import-replace");
+        DesktopLayout replaced = (DesktopLayout) get("layout");
+        assertNotSame(layout, replaced);
+        assertNull(replaced.find("card"));
+        assertEquals(
+            DesktopPreset.POWER.createLayout()
+                .widgets()
+                .size(),
+            replaced.widgets()
+                .size());
+    }
+
+    @Test
+    public void effectsEditorCyclesStyleAndAnimationAndValidatesAllParametersTogether() throws Exception {
+        prepare(true, true, WidgetKind.WIRELESS);
+        set("propertiesOpen", true);
+        set("libraryOpen", false);
+        rebuild();
+        activate("effects-style");
+        assertEquals(WidgetEffects.Style.SIGNAL, layout.find("card").effects.style);
+        rebuild();
+        activate("effects-animation");
+        assertFalse(layout.find("card").effects.animated);
+        rebuild();
+        scene.find("effects-speed")
+            .text("4");
+        scene.find("effects-intensity")
+            .text("0.5");
+        scene.find("effects-accent")
+            .text("FFAA66");
+        scene.find("effects-glow")
+            .text("1.6");
+        activate("effects-apply");
+        assertEquals(1, layout.find("card").effects.speed, 0);
+        scene.find("effects-speed")
+            .text("2.5");
+        activate("effects-apply");
+        WidgetEffects applied = layout.find("card").effects;
+        assertEquals(2.5, applied.speed, 0);
+        assertEquals(0.5, applied.intensity, 0);
+        assertEquals(0xFFFFAA66, applied.accentColor);
+        assertEquals(1.6, applied.glow, 0);
+        assertEquals(WidgetEffects.Style.SIGNAL, applied.style);
+        assertFalse(applied.animated);
+    }
+
+    @Test
+    public void toolbarWrapsWithinTheShellAndReservesSpaceForItsTitle() throws Exception {
+        for (boolean editing : new boolean[] { false, true }) {
+            for (int width : new int[] { 80, 160, 240, 320, 640, 1400 }) {
+                DesktopToolbarGeometry geometry = new DesktopToolbarGeometry(width, editing);
+                for (UiRect control : geometry.controls.values()) {
+                    assertTrue(control.x >= 0);
+                    assertTrue(control.right() <= width);
+                    assertTrue(control.bottom() <= geometry.height);
+                    assertTrue(control.width >= 24);
+                    assertTrue(control.height >= 24);
+                    assertTrue(control.y >= geometry.title.bottom() || control.x >= geometry.title.right());
+                    for (UiRect other : geometry.controls.values()) {
+                        if (control == other) continue;
+                        assertTrue(
+                            control.intersect(other)
+                                .empty());
+                    }
+                }
+            }
+        }
+        prepare(true, true);
+        set("area", new Rect(0, 0, 240, 300));
+        set("screenWidth", 240);
+        set("screenHeight", 300);
+        rebuild();
+        UiNode back = scene.find("back-world");
+        assertEquals("", back.text());
+        assertEquals(24, back.bounds().width, 0);
+        assertTrue(
+            ((Rect) get("canvas")).y >= back.bounds()
+                .bottom());
+        assertNotNull(scene.find("theme"));
+    }
+
+    @Test
+    public void themeButtonCyclesEveryPaletteAndPreservesBindingsAndViewport() throws Exception {
+        prepare(true, true);
+        WidgetSpec widget = layout.find("card")
+            .boundDevice(new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4));
+        layout.replace(widget);
+        DesktopViewport viewport = (DesktopViewport) get("view");
+        viewport.panX = 123;
+        viewport.panY = -45;
+        viewport.scale = .75;
+        set("libraryOpen", false);
+        for (DashboardTheme expected : new DashboardTheme[] { DashboardTheme.RETRO, DashboardTheme.INDUSTRIAL,
+            DashboardTheme.MINIMAL, DashboardTheme.STANDARD }) {
+            rebuild();
+            activate("theme");
+            assertEquals(expected, layout.theme());
+            assertSame(layout, get("layout"));
+            assertSame(widget, layout.find("card"));
+            assertEquals(123, viewport.panX, 0);
+            assertEquals(-45, viewport.panY, 0);
+            assertEquals(.75, viewport.scale, 0);
+        }
+    }
+
+    @Test
+    public void componentLibraryAndBindingActionsKeepTheirStableInputIdsAndHoverDescriptions() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        rebuild();
+        assertEquals(
+            "",
+            scene.find("add-WIRELESS")
+                .text());
+        assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("add-WIRELESS"));
+        int before = layout.widgets()
+            .size();
+        activate("add-WIRELESS");
+        assertEquals(
+            before,
+            layout.widgets()
+                .size());
+        assertNotNull(get("placement"));
+        rebuild();
+        scene.pointerDown(800, 500, 0);
+        scene.pointerUp(800, 500, 0);
+        assertNull(get("placement"));
+        assertEquals(
+            before + 1,
+            layout.widgets()
+                .size());
+        set("selected", "card");
+        set("libraryOpen", false);
+        set("propertiesOpen", true);
+        rebuild();
+        assertEquals(
+            "",
+            scene.find("device-binding")
+                .text());
+        assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("device-binding"));
+        // The real binding action queries carried terminals. Supply a no-player client holder only
+        // for this headless event test; no Minecraft constructor, display or network is started.
+        Field minecraftSingleton = Minecraft.class.getDeclaredField("theMinecraft");
+        minecraftSingleton.setAccessible(true);
+        Object previousMinecraft = minecraftSingleton.get(null);
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field unsafeSingleton = unsafeClass.getDeclaredField("theUnsafe");
+        unsafeSingleton.setAccessible(true);
+        Object emptyMinecraft = unsafeClass.getMethod("allocateInstance", Class.class)
+            .invoke(unsafeSingleton.get(null), Minecraft.class);
+        try {
+            minecraftSingleton.set(null, emptyMinecraft);
+            activate("device-binding");
+            assertTrue((Boolean) get("bindingOpen"));
+            rebuild();
+            assertTrue(
+                scene.find("device-binding")
+                    .selected());
+            assertNotNull(scene.find("binding-no-source"));
+            assertTrue(((java.util.Map<?, ?>) get("tooltips")).containsKey("device-binding"));
+        } finally {
+            minecraftSingleton.set(null, previousMinecraft);
+        }
+    }
+
+    @Test
+    public void ctrlMarqueeAndClickSelectThenMoveTheWholeGroupAndCancelRestoresAll() throws Exception {
+        prepare(true, false);
+        WidgetSpec second = new WidgetSpec("second", WidgetKind.DEVICE, 7, 0, 3, 3);
+        assertTrue(layout.add(second));
+        ((com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession) get("saves")).accept(layout);
+        controlPressed = true;
+        assertTrue(scene.pointerDown(800, 400, 0));
+        assertTrue(scene.pointerMove(0, 0));
+        assertTrue(scene.pointerUp(0, 0, 0));
+        com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection selected = (com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection) get(
+            "selection");
+        assertEquals(
+            2,
+            selected.ids()
+                .size());
+        controlPressed = false;
+        WidgetSpec first = layout.find("card");
+        assertTrue(scene.pointerDown(100, 100, 0));
+        assertTrue(scene.pointerMove(164, 164));
+        assertEquals(1, layout.find("card").column);
+        assertEquals(8, layout.find("second").column);
+        scene.blur();
+        assertSame(first, layout.find("card"));
+        assertSame(second, layout.find("second"));
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        controlPressed = true;
+        assertTrue(scene.pointerDown(100, 100, 0));
+        assertTrue(scene.pointerUp(100, 100, 0));
+        assertFalse(
+            selected.ids()
+                .contains("card"));
+        assertTrue(
+            selected.ids()
+                .contains("second"));
+    }
+
+    @Test
+    public void unsavedExitModalBlocksUnderlyingToolsAndSupportsCancelDiscardAndSave() throws Exception {
+        prepare(true, true);
+        assertTrue(layout.move("card", 2, 0));
+        int[] exits = { 0 };
+        FactoryDesktop.requestExit(() -> exits[0]++);
+        rebuild();
+        assertNotNull(scene.find("save-modal"));
+        assertEquals(0, exits[0]);
+        UiNode theme = scene.find("theme");
+        scene.focus(theme);
+        assertNull(scene.focused());
+        activate("cancel-exit");
+        assertNull(get("pendingExit"));
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+        FactoryDesktop.requestExit(() -> exits[0]++);
+        rebuild();
+        activate("discard-exit");
+        assertEquals(1, exits[0]);
+        assertEquals(0, ((DesktopLayout) get("layout")).find("card").column);
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        DesktopLayout draft = (DesktopLayout) get("layout");
+        assertTrue(draft.move("card", 3, 0));
+        FactoryDesktop.requestExit(() -> exits[0]++);
+        rebuild();
+        activate("save-exit");
+        assertEquals(2, exits[0]);
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        assertEquals(
+            3,
+            ((DesktopStore) get("store")).load((String) get("profile"))
+                .find("card").column);
+    }
+
+    @Test
+    public void failedExplicitSaveKeepsTheModalDraftAndCallbackPending() throws Exception {
+        prepare(true, true);
+        java.io.File blockedDirectory = java.io.File.createTempFile("gtswn-save-", ".blocked");
+        try {
+            set("store", new DesktopStore(blockedDirectory));
+            assertTrue(layout.move("card", 2, 0));
+            int[] exits = { 0 };
+            FactoryDesktop.requestExit(() -> exits[0]++);
+            rebuild();
+            activate("save-exit");
+            assertEquals(0, exits[0]);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+            assertNotNull(get("pendingExit"));
+            assertTrue(((DesktopStore) get("store")).saveIfDue(System.nanoTime()));
+            assertEquals(2, layout.find("card").column);
+            rebuild();
+            assertNotNull(scene.find("save-feedback"));
+        } finally {
+            assertTrue(blockedDirectory.delete());
+        }
+    }
+
+    @Test
+    public void shareHasItsOwnToolbarPanelAndViewportAutosaveNeverStoresADraft() throws Exception {
+        prepare(true, true);
+        DesktopStore store = (DesktopStore) get("store");
+        String profile = (String) get("profile");
+        store.put(profile, layout);
+        store.flush();
+        assertTrue(layout.move("card", 3, 0));
+        rebuild();
+        activate("share");
+        rebuild();
+        assertNotNull(scene.find("share-panel"));
+        assertNotNull(scene.find("preset-export"));
+        assertNull(scene.find("library"));
+        FactoryDesktop.flush();
+        assertTrue(store.saveIfDue(System.nanoTime()));
+        assertEquals(
+            0,
+            store.load(profile)
+                .find("card").column);
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
+    public void historyShortcutsRestoreThemeTitleAndSavedCheckpointWithoutEatingFocusedText() throws Exception {
+        prepare(true, true);
+        set("propertiesOpen", true);
+        rebuild();
+        activate("theme");
+        rebuild();
+        UiNode title = scene.find("custom-title");
+        scene.focus(title);
+        assertTrue(scene.insertText("A"));
+        assertTrue(scene.insertText("B"));
+        assertTrue(scene.insertText("C"));
+        assertTrue(FactoryDesktop.key(44, '\0', true, false, true));
+        assertEquals("ABC", layout.find("card").title);
+        assertTrue(FactoryDesktop.key(21, '\0', true, false, true));
+        assertEquals("ABC", layout.find("card").title);
+        assertTrue(FactoryDesktop.key(28, '\0', true, false, false));
+        historyKey(false);
+        assertEquals("", currentLayout().find("card").title);
+        assertEquals(DashboardTheme.RETRO, currentLayout().theme());
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+        historyKey(false);
+        assertEquals(DashboardTheme.STANDARD, currentLayout().theme());
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        historyKey(true);
+        assertEquals(DashboardTheme.RETRO, currentLayout().theme());
+        rebuild();
+        activate("save");
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        historyKey(true);
+        assertEquals("ABC", currentLayout().find("card").title);
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+        historyKey(false);
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        historyKey(false);
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
+    public void completedGroupDragIsOneHistoryActionAndCancelledGestureAddsNothing() throws Exception {
+        prepare(true, true);
+        assertTrue(layout.add(new WidgetSpec("second", WidgetKind.DEVICE, 7, 0, 3, 3)));
+        set("history", new DesktopHistory(layout));
+        com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection selected = (com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection) get(
+            "selection");
+        selected.only("card");
+        selected.toggle("second");
+        assertTrue(scene.pointerDown(100, 100, 0));
+        assertTrue(scene.pointerMove(164, 164));
+        historyKey(false);
+        assertEquals(1, layout.find("card").column);
+        assertEquals(8, layout.find("second").column);
+        assertTrue(scene.pointerMove(228, 228));
+        assertTrue(scene.pointerUp(228, 228, 0));
+        historyKey(false);
+        assertEquals(0, currentLayout().find("card").column);
+        assertEquals(7, currentLayout().find("second").column);
+        historyKey(false);
+        assertEquals(0, currentLayout().find("card").column);
+        historyKey(true);
+        assertEquals(2, currentLayout().find("card").column);
+        assertEquals(9, currentLayout().find("second").column);
+        rebuild();
+        // A cancelled resize changes the preview, then restores it without adding a command.
+        layout = currentLayout();
+        set("selected", "card");
+        selected.only("card");
+        ((DesktopViewport) get("view")).scale = 1;
+        Rect b = DesktopCardGeometry
+            .bounds(layout.find("card"), ((DesktopViewport) get("view")).transform(0, ((Rect) get("canvas")).y));
+        scene.find("card-card")
+            .bounds(b.x, b.y - ((Rect) get("canvas")).y, b.w, b.h);
+        scene.layout(1400, 1000);
+        scene.pointerDown(b.x + b.w - 3, b.y + b.h - 3, 0);
+        scene.pointerMove(b.x + b.w + 61, b.y + b.h + 61);
+        assertEquals(7, layout.find("card").columns);
+        FactoryDesktop.blur();
+        assertEquals(6, layout.find("card").columns);
+        historyKey(false);
+        assertEquals(0, currentLayout().find("card").column);
+        assertEquals(6, currentLayout().find("card").columns);
+    }
+
+    @Test
+    public void ghostCancelAndModalNeverConsumeHistoryAndConfirmedAdditionRetainsIdentityOnRedo() throws Exception {
+        prepare(true, true);
+        set("libraryOpen", true);
+        rebuild();
+        activate("theme");
+        rebuild();
+        activate("add-WIRELESS");
+        historyKey(false);
+        assertEquals(DashboardTheme.RETRO, layout.theme());
+        FactoryDesktop.escape();
+        historyKey(false);
+        assertEquals(DashboardTheme.STANDARD, currentLayout().theme());
+        historyKey(true);
+        set("libraryOpen", true);
+        rebuild();
+        activate("add-WIRELESS");
+        rebuild();
+        scene.pointerDown(800, 500, 0);
+        scene.pointerUp(800, 500, 0);
+        assertEquals(
+            2,
+            currentLayout().widgets()
+                .size());
+        String id = (String) get("selected");
+        FactoryDesktop.requestExit(() -> {});
+        rebuild();
+        historyKey(false);
+        assertEquals(
+            2,
+            currentLayout().widgets()
+                .size());
+        activate("cancel-exit");
+        historyKey(false);
+        assertEquals(
+            1,
+            currentLayout().widgets()
+                .size());
+        assertEquals("", get("selected"));
+        historyKey(true);
+        assertNotNull(currentLayout().find(id));
+        assertEquals(
+            2,
+            currentLayout().widgets()
+                .size());
+    }
+
+    @Test
+    public void explicitImportedOverwriteCanBeUndoneAndNewSettingsDiscardRedo() throws Exception {
+        prepare(true, true);
+        WidgetSpec bound = layout.find("card")
+            .boundDevice(new DeviceBinding(UUID.randomUUID(), "key", 0, 1, 2, 3, 4));
+        layout.replace(bound);
+        set("history", new DesktopHistory(layout));
+        set("shareOpen", true);
+        set("importingPreset", true);
+        set("presetDraft", DesktopPresetCode.export(DesktopPreset.POWER.createLayout()));
+        rebuild();
+        activate("preset-validate");
+        rebuild();
+        activate("preset-import-replace");
+        assertNull(currentLayout().find("card"));
+        historyKey(false);
+        assertSame(bound, currentLayout().find("card"));
+        rebuild();
+        activate("theme");
+        historyKey(true);
+        assertSame(bound, currentLayout().find("card"));
+        assertEquals(DashboardTheme.RETRO, currentLayout().theme());
+    }
+
+    @Test
+    public void styleAndGroupedDeletionRestoreAsSeparateActionsWithBindingsIntact() throws Exception {
+        prepare(true, true, WidgetKind.WIRELESS);
+        DeviceBinding binding = new DeviceBinding(UUID.randomUUID(), "machine", 0, 1, 2, 3, 4);
+        layout.add(new WidgetSpec("second", WidgetKind.DEVICE, 7, 0, 3, 3).boundDevice(binding));
+        set("history", new DesktopHistory(layout));
+        set("propertiesOpen", true);
+        rebuild();
+        activate("effects-style");
+        assertEquals(WidgetEffects.Style.SIGNAL, layout.find("card").effects.style);
+        com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection selected = (com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection) get(
+            "selection");
+        selected.only("card");
+        selected.toggle("second");
+        set("canvasFocus", true);
+        scene.focus(null);
+        assertTrue(FactoryDesktop.key(211, '\0', true, false, false));
+        assertTrue(
+            currentLayout().widgets()
+                .isEmpty());
+        historyKey(false);
+        assertEquals(
+            2,
+            currentLayout().widgets()
+                .size());
+        assertSame(binding, currentLayout().find("second").device);
+        assertEquals(WidgetEffects.Style.SIGNAL, currentLayout().find("card").effects.style);
+        historyKey(false);
+        assertEquals(WidgetEffects.Style.ORBITAL, currentLayout().find("card").effects.style);
+        historyKey(true);
+        historyKey(true);
+        assertTrue(
+            currentLayout().widgets()
+                .isEmpty());
+    }
+
+    private void historyKey(boolean redo) {
+        assertTrue(FactoryDesktop.key(redo ? 21 : 44, '\0', true, false, true));
+    }
+
+    private DesktopLayout currentLayout() throws Exception {
+        return (DesktopLayout) get("layout");
+    }
+
+    private void rebuild() throws Exception {
+        Method build = FactoryDesktop.class.getDeclaredMethod("build");
+        build.setAccessible(true);
+        build.invoke(null);
+        scene = (UiScene) get("scene");
+    }
+
+    private void activate(String id) {
+        UiNode button = scene.find(id);
+        assertNotNull(id, button);
+        scene.focus(button);
+        assertTrue(scene.keyTyped('\0', 28, false, false));
+    }
+
+    private static void dispatch(String name, UiEvent event) {
+        try {
+            Method method = controlPressed && name.equals("down")
+                ? FactoryDesktop.class.getDeclaredMethod(name, UiEvent.class, boolean.class)
+                : FactoryDesktop.class.getDeclaredMethod(name, UiEvent.class);
+            method.setAccessible(true);
+            if (controlPressed && name.equals("down")) method.invoke(null, event, true);
+            else method.invoke(null, event);
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
+    private static Object get(String name) throws Exception {
+        Field field = FactoryDesktop.class.getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(null);
+    }
+
+    private static void set(String name, Object value) throws Exception {
+        Field field = FactoryDesktop.class.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(null, value);
+    }
+}

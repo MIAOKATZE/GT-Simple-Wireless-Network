@@ -31,6 +31,29 @@ public class PacketPortableMonitorTest {
     }
 
     @Test
+    public void protocol59IsRejectedBeforeNewChartStyleScalarCanShiftThePayload() {
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            new PacketRequestPortableMonitor(UUID.randomUUID(), 1, 0, 0).toBytes(bytes);
+            bytes.setByte(4, 59);
+            PacketRequestPortableMonitor request = new PacketRequestPortableMonitor();
+            request.fromBytes(bytes);
+            assertFalse(request.valid);
+            assertEquals(5, bytes.readerIndex());
+            bytes.clear();
+            new PacketSyncPortableMonitor(UUID.randomUUID(), 1, 1).toBytes(bytes);
+            bytes.setByte(4, 59);
+            PacketSyncPortableMonitor response = new PacketSyncPortableMonitor();
+            response.fromBytes(bytes);
+            assertFalse(response.valid);
+            assertTrue(response.panels.isEmpty());
+            assertEquals(5, bytes.readerIndex());
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
     public void removalUsesStablePanelIdentityAndReceivesExplicitAcknowledgement() {
         PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(UUID.randomUUID(), 93, 1, 15);
         request.targetPanel = UUID.randomUUID();

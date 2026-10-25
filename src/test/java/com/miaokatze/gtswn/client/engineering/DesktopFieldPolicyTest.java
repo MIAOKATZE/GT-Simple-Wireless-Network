@@ -14,6 +14,15 @@ import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 public class DesktopFieldPolicyTest {
 
     @Test
+    public void deviceRecipeDescriptionsAreVisibleByDefaultAndCanBeExplicitlyHidden() {
+        WidgetSpec device = new WidgetSpec("device", WidgetKind.DEVICE, 0, 0, 3, 3);
+        assertTrue(DesktopFieldPolicy.show(device, "recipeInput"));
+        assertTrue(DesktopFieldPolicy.show(device, "recipeOutput"));
+        assertFalse(
+            DesktopFieldPolicy.show(device.configured("", Collections.singletonList("status"), 1), "recipeInput"));
+    }
+
+    @Test
     public void explicitEmptySurvivesTitleBoundsAndPersistenceWithoutRestoringDefaults() {
         WidgetSpec original = new WidgetSpec("input", WidgetKind.INPUT, 0, 0, 4, 2);
         assertTrue(DesktopFieldPolicy.show(original, "input"));

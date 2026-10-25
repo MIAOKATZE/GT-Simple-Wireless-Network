@@ -1,6 +1,6 @@
 package com.miaokatze.gtswn.network;
 
-import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ArrayBlockingQueue;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
@@ -12,10 +12,12 @@ import net.minecraftforge.fluids.FluidStack;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
 /**
@@ -24,13 +26,13 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * 线程事实（B2-01）：{@code SimpleChannelHandlerWrapper} 在 Netty 网络线程调用 onMessage，
  * 包 2/3 Handler 原先直改 {@link TileEntityNetworkInfoPanel} 世界态，与主线程
  * sampleAENetwork 的 for-each（AEMonitorDataSet 窗口 Map）并发。本队列把世界态修改全部
- * 归位服务端主线程，语义变化仅「配置应用延迟 ≤1 tick」（玩家无感）。
+ * 归位服务端主线程，积压时保留已接收操作的 FIFO 顺序，跨 tick 有界处理。
  * <p>
  * 设计取舍：
  * <ul>
  * <li><b>无同玩家去重门</b>（不继承 {@code PlayerRequestQueue}）：包 0/5 是幂等状态查询可去重，
  * 面板操作是异质变更序列——同 tick 内「清空全部 → 重新绑定」合法，去重会丢操作；
- * {@link ConcurrentLinkedQueue} FIFO 天然保到达序，满足同玩家连点操作的顺序要求。</li>
+ * {@link ArrayBlockingQueue} FIFO 保到达序，满队列仅拒绝新操作，不覆盖已有操作。</li>
  * <li><b>自宿主 drain（swn-survey-a 方案 (c)）</b>：本类自带 @SubscribeEvent ServerTickEvent(END)
  * 监听，不挂 {@code QuantumControllerEventHandler}（避免与 B2-05 同文件串行、面板操作挂量子域
  * 语义不当）也不挂 {@code NetworkInfoMonitorScheduler}（panel→network 会成新环）——零新增
@@ -44,7 +46,8 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 public final class PanelActionQueue {
 
     /** 待处理操作队列（仅缓存载荷，主线程 drain 时再复验在线/距离/TE 类型） */
-    private static final ConcurrentLinkedQueue<PanelAction> PENDING = new ConcurrentLinkedQueue<>();
+    private static final int MAX_PENDING = 1024, TICK_BUDGET = 64;
+    private static final ArrayBlockingQueue<PanelAction> PENDING = new ArrayBlockingQueue<>(MAX_PENDING);
 
     private PanelActionQueue() {}
 
@@ -59,35 +62,37 @@ public final class PanelActionQueue {
 
     /** Netty 线程入队：包 2 信息屏配置操作（EU/AE 图表配置行协议与 action 按钮） */
     public static void enqueueConfig(EntityPlayerMP player, int x, int y, int z, int action, String chartConfig) {
+        if (player == null) return;
         ConfigAction pending = new ConfigAction(player, x, y, z, action, chartConfig);
-        PENDING.add(pending);
-        pending.trace(false);
+        if (PENDING.offer(pending)) pending.trace(false);
     }
 
     /** Netty 线程入队：包 3 AE 标签页切换与监视列表操作 */
     public static void enqueueAETab(EntityPlayerMP player, int x, int y, int z, byte actionType, int tabIndex,
         NBTTagCompound stackData) {
+        if (player == null) return;
         AETabAction pending = new AETabAction(player, x, y, z, actionType, tabIndex, stackData);
-        PENDING.add(pending);
-        pending.trace(false);
+        if (PENDING.offer(pending)) pending.trace(false);
     }
 
     /**
-     * 主线程逐条处理：复验在线/距离/TE 类型后应用（本 tick 内排空当前快照）。
+     * 主线程逐条处理：复验在线/维度/距离/TE 类型后应用，每 tick 最多 64 条。
      * <p>
      * 复验失败（掉线/远离/方块已破坏替换）静默丢弃，与旧 Netty 直改路径的 8 格拦截语义一致。
      */
     public static void drain() {
-        PanelAction action;
-        while ((action = PENDING.poll()) != null) {
+        for (int processed = 0; processed < TICK_BUDGET; processed++) {
+            PanelAction action = PENDING.poll();
+            if (action == null) break;
             EntityPlayerMP player = action.player;
-            if (player == null || player.playerNetServerHandler == null) {
+            if (!PlayerRequestQueue.isOnline(player) || player.dimension != action.dimension) {
                 continue;
             }
             World world = player.worldObj;
             if (world == null || player.getDistanceSq(action.x + 0.5D, action.y + 0.5D, action.z + 0.5D) > 64D) {
                 continue;
             }
+            if (!world.blockExists(action.x, action.y, action.z)) continue;
             TileEntity tile = world.getTileEntity(action.x, action.y, action.z);
             if (!(tile instanceof TileEntityNetworkInfoPanel)) {
                 continue;
@@ -108,11 +113,25 @@ public final class PanelActionQueue {
         drain();
     }
 
+    @SubscribeEvent
+    public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!(event.player instanceof EntityPlayerMP)) return;
+        EntityPlayerMP player = (EntityPlayerMP) event.player;
+        PENDING.removeIf(action -> action.player == player);
+        WirelessEURequestQueue.onLogout(player);
+        com.miaokatze.gtswn.common.quantum.QuantumTerminalRequestQueue.onLogout(player);
+    }
+
+    public static void clear() {
+        PENDING.clear();
+    }
+
     /** 面板操作载荷：发起玩家 + 目标信息屏坐标，apply 为逐字搬迁的操作逻辑 */
     private abstract static class PanelAction {
 
         /** 发起玩家（Netty 线程捕获引用，drain 时复验在线） */
         protected final EntityPlayerMP player;
+        protected final int dimension;
 
         /** 目标信息屏坐标 */
         protected final int x;
@@ -124,6 +143,7 @@ public final class PanelActionQueue {
 
         PanelAction(EntityPlayerMP player, int x, int y, int z) {
             this.player = player;
+            this.dimension = player.dimension;
             this.x = x;
             this.y = y;
             this.z = z;

@@ -14,6 +14,16 @@ import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 public class DesktopCardGeometryTest {
 
     @Test
+    public void tinyOverviewFillUsesUserColorAndSelectedTitleHasAnExplicitDragRegion() {
+        WidgetSpec widget = new WidgetSpec("color", WidgetKind.DEVICE, 0, 0, 3, 3).bordered(0x12ABEF);
+        assertEquals(0xB012ABEF, DesktopCardGeometry.overviewFill(widget));
+        Rect bounds = new Rect(20, 30, 256, 128);
+        assertTrue(DesktopCardGeometry.titleHandle(bounds, .5, 40, 40));
+        assertFalse(DesktopCardGeometry.titleHandle(bounds, .5, 40, 45));
+        assertFalse(DesktopCardGeometry.titleHandle(bounds, 1, 22, 40));
+    }
+
+    @Test
     public void tinyOverviewCardsUseOnlyTheirPaintedBoundsAndCanReturnToSelectedAtOne() {
         WidgetSpec widget = new WidgetSpec("far", WidgetKind.DEVICE, -1000, 250000, 4, 3);
         DesktopViewport view = new DesktopViewport();
@@ -33,11 +43,12 @@ public class DesktopCardGeometryTest {
     }
 
     @Test
-    public void configuredMetadataNeverCoversChartAndResourceHeaderControls() {
+    public void configuredMetadataReservesOnlyControlsThatRemainInTheHeader() {
         for (WidgetKind kind : new WidgetKind[] { WidgetKind.HISTORY, WidgetKind.RESOURCES }) {
             WidgetSpec widget = new WidgetSpec("card", kind, 0, 0, 10, 7);
             int reserved = DesktopCardGeometry.headerReserved(widget);
-            assertTrue(reserved > 0);
+            if (kind == WidgetKind.HISTORY) assertTrue(reserved > 0);
+            else assertEquals(0, reserved);
             assertEquals(
                 reserved,
                 DesktopCardGeometry
@@ -53,11 +64,50 @@ public class DesktopCardGeometryTest {
     public void paintedGapAndPointerGapUseTheSameBounds() {
         WidgetSpec widget = new WidgetSpec("card", WidgetKind.INPUT, 0, 0, 4, 2);
         Rect rect = DesktopCardGeometry.bounds(widget, new CanvasTransform(0, 0, 20, 30, .5));
-        assertEquals(120, rect.w);
-        assertEquals(56, rect.h);
-        assertTrue(DesktopCardGeometry.hit(rect, 139, 85, false));
-        assertFalse(DesktopCardGeometry.hit(rect, 140, 85, false));
-        assertTrue(DesktopCardGeometry.hit(rect, 143, 85, true));
+        assertEquals(124, rect.w);
+        assertEquals(60, rect.h);
+        assertEquals(22, rect.x);
+        assertEquals(32, rect.y);
+        assertTrue(DesktopCardGeometry.hit(rect, 145, 91, false));
+        assertFalse(DesktopCardGeometry.hit(rect, 146, 91, false));
+        assertTrue(DesktopCardGeometry.hit(rect, 149, 91, true));
+    }
+
+    @Test
+    public void gridBoundaryIsAtTheMiddleOfTheGapAtEveryZoom() {
+        for (double scale : new double[] { .025, .125, .25, .5, 1, 2 }) {
+            CanvasTransform transform = new CanvasTransform(0, 0, 0, 0, scale);
+            Rect left = DesktopCardGeometry.bounds(new WidgetSpec("left", WidgetKind.INPUT, 0, 0, 4, 2), transform);
+            Rect right = DesktopCardGeometry.bounds(new WidgetSpec("right", WidgetKind.INPUT, 4, 0, 4, 2), transform);
+            double grid = transform.toScreenX(4 * 64);
+            assertEquals(grid, (left.x + left.w + right.x) / 2.0, 1.0);
+            assertTrue(left.w > 1);
+            assertTrue(right.x >= left.x + left.w - 1);
+        }
+    }
+
+    @Test
+    public void canonicalContentAndMouseCoordinatesRemainIdenticalAcrossZooms() {
+        WidgetSpec widget = new WidgetSpec("trend", WidgetKind.HISTORY, -3, 5, 8, 4);
+        Rect canonical = DesktopCardGeometry.canonical(widget);
+        assertEquals(504, canonical.w);
+        assertEquals(248, canonical.h);
+        for (double scale : new double[] { .025, .18, .37, 1, 2.5, 4 }) {
+            CanvasTransform viewport = new CanvasTransform(-123, 211, 31, 79, scale);
+            CanvasTransform content = DesktopCardGeometry.contentTransform(widget, viewport);
+            assertEquals(viewport.toScreenX(widget.x() + 4), content.toScreenX(0), 1e-9);
+            assertEquals(viewport.toScreenY(widget.y() + 4), content.toScreenY(0), 1e-9);
+            // A chart point and a resource row preserve their canonical hit position and aspect ratio.
+            assertEquals(177.5, content.toLocalX(content.toScreenX(177.5)), 1e-9);
+            assertEquals(96.25, content.toLocalY(content.toScreenY(96.25)), 1e-9);
+            assertEquals(
+                canonical.w / (double) canonical.h,
+                (content.toScreenX(canonical.w) - content.toScreenX(0))
+                    / (content.toScreenY(canonical.h) - content.toScreenY(0)),
+                1e-9);
+            Rect bounds = DesktopCardGeometry.bounds(widget, viewport);
+            assertTrue(DesktopCardGeometry.hit(bounds, content.toScreenX(177.5), content.toScreenY(96.25), false));
+        }
     }
 
     @Test

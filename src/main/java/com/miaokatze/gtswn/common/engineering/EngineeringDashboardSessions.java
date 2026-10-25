@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.common.engineering;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -32,7 +33,7 @@ public final class EngineeringDashboardSessions {
 
     public static final int TTL_TICKS = 200, UPDATE_TICKS = 20;
     private static final Map<UUID, Pending> PENDING = new ConcurrentHashMap<>();
-    private static final Map<UUID, Session> SESSIONS = new HashMap<>();
+    private static final Map<UUID, Session> SESSIONS = new LinkedHashMap<>();
     private static final Map<UUID, Long> LAST_SENT = new HashMap<>();
     private static long tick;
 
@@ -59,7 +60,6 @@ public final class EngineeringDashboardSessions {
             accept(entry.getValue());
         }
         long deadline = System.nanoTime() + 6_000_000L;
-        int updates = 0;
         Iterator<Session> iterator = SESSIONS.values()
             .iterator();
         while (iterator.hasNext()) {
@@ -69,18 +69,21 @@ public final class EngineeringDashboardSessions {
                 session.close();
                 iterator.remove();
                 if (connected(session.player)) send(session.empty("expired"), session.player);
-                continue;
             }
-            if (tick - session.sent < UPDATE_TICKS || updates >= 4 || System.nanoTime() > deadline) continue;
+        }
+        // Expiration still checks every subscription. Refresh work advances a stable rotation across ticks,
+        // so a saturated prefix cannot repeatedly consume all four slots before later players are considered.
+        for (int updates = 0; updates < 4 && System.nanoTime() <= deadline; updates++) {
+            Session session = nextDueSession();
+            if (session == null) break;
             session.sent = tick;
             LAST_SENT.put(session.player.getUniqueID(), tick);
-            updates++;
             try {
                 Source actual = EngineeringTerminalSources.resolve(session.player, session.view.slot);
                 if (actual.stack != session.terminal || !session.source.sameIdentity(actual)) {
                     send(session.empty(actual.present() ? "expired" : "empty"), session.player);
                     session.close();
-                    iterator.remove();
+                    SESSIONS.remove(session.player.getUniqueID());
                     continue;
                 }
                 send(session.snapshot(TerminalBaubles.terminals(session.player)), session.player);
@@ -88,9 +91,31 @@ public final class EngineeringDashboardSessions {
                 GTSimpleWirelessNetwork.LOG.error("[Engineering dashboard] Subscription failed", failure);
                 send(session.empty("error"), session.player);
                 session.close();
-                iterator.remove();
+                SESSIONS.remove(session.player.getUniqueID());
             }
         }
+    }
+
+    private static Session nextDueSession() {
+        for (int remaining = SESSIONS.size(); remaining > 0; remaining--) {
+            Iterator<Map.Entry<UUID, Session>> iterator = SESSIONS.entrySet()
+                .iterator();
+            Map.Entry<UUID, Session> entry = iterator.next();
+            UUID id = entry.getKey();
+            Session session = entry.getValue();
+            iterator.remove();
+            SESSIONS.put(id, session);
+            if (tick - session.sent >= UPDATE_TICKS) return session;
+        }
+        return null;
+    }
+
+    public static void clear() {
+        PENDING.clear();
+        for (Session session : SESSIONS.values()) session.close();
+        SESSIONS.clear();
+        LAST_SENT.clear();
+        tick = 0L;
     }
 
     private static void accept(Pending pending) {

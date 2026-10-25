@@ -11,8 +11,25 @@ import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 public class DesktopDragTest {
 
     @Test
+    public void resizeOvershootClampsAtCompactMinimumAndPreservesOppositeCorner() {
+        DesktopLayout layout = new DesktopLayout();
+        WidgetSpec card = new WidgetSpec("card", WidgetKind.DEVICE, 10, 20, 8, 7);
+        assertTrue(layout.add(card));
+        DesktopDrag drag = new DesktopDrag();
+        assertTrue(drag.begin(layout, card.id, DesktopDrag.Edge.TOP_LEFT, 0, 0));
+        assertTrue(drag.update(10000, 10000));
+        WidgetSpec small = layout.find(card.id);
+        assertEquals(3, small.columns);
+        assertEquals(3, small.rows);
+        assertEquals(18, small.column + small.columns);
+        assertEquals(27, small.row + small.rows);
+        drag.cancel();
+        assertSame(card, layout.find(card.id));
+    }
+
+    @Test
     public void snappedDragAcrossViewportCanCancelAndReturnToPressGeometry() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         WidgetSpec original = layout.find("machines");
         DesktopDrag drag = new DesktopDrag();
         assertTrue(drag.begin(layout, original.id, DesktopDrag.Edge.MOVE, 32, 32));
@@ -26,7 +43,7 @@ public class DesktopDragTest {
 
     @Test
     public void rejectedOverlapPreservesLastAcceptedPositionAndFinishCommitsIt() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         DesktopDrag drag = new DesktopDrag();
         drag.begin(layout, "machines", DesktopDrag.Edge.MOVE, 0, 0);
         assertTrue(drag.update(-256, 0));
@@ -39,13 +56,13 @@ public class DesktopDragTest {
 
     @Test
     public void cornerResizeKeepsOppositeCornerAndRejectsNonFiniteInput() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         DesktopDrag drag = new DesktopDrag();
         drag.begin(layout, "machines", DesktopDrag.Edge.TOP_LEFT, 0, 0);
         assertTrue(drag.update(-128, -128));
         WidgetSpec resized = layout.find("machines");
         assertEquals(4, resized.column + resized.columns);
-        assertEquals(2, resized.row + resized.rows);
+        assertEquals(3, resized.row + resized.rows);
         assertFalse(drag.update(Double.NaN, 0));
         assertFalse(drag.update(Double.MAX_VALUE, 0));
         assertFalse(drag.update(-Double.MAX_VALUE, 0));
@@ -56,6 +73,7 @@ public class DesktopDragTest {
     @Test
     public void zoomAnchorsCursorAndPanRemainsInDesktopCoordinates() {
         DesktopViewport view = new DesktopViewport();
+        view.scale = 1;
         view.panX = -200;
         view.panY = 300;
         double x = view.toLocalX(250, 10), y = view.toLocalY(200, 20);
@@ -65,13 +83,13 @@ public class DesktopDragTest {
         view.pan(64, -32);
         assertEquals(x - 128, view.toLocalX(250, 10), 1e-9);
         assertEquals(y + 64, view.toLocalY(200, 20), 1e-9);
-        assertEquals(1, new DesktopViewport().scale, 0);
+        assertEquals(.6, new DesktopViewport().scale, 0);
     }
 
     @Test
     public void overviewFitsDefaultAndNewlyMountedCardsInsideSmallViewportWithMargins() {
         DesktopLayout layout = DesktopLayout.defaultLayout();
-        assertNotNull(layout.add(WidgetKind.HISTORY));
+        assertNotNull(layout.add(WidgetKind.HISTORY, 0, 16));
         assertNotNull(layout.addDevice(new DeviceBinding(UUID.randomUUID(), "mounted", 0, 1, 2, 3, 4)));
         DesktopViewport view = new DesktopViewport();
         view.fit(layout, 360, 230);

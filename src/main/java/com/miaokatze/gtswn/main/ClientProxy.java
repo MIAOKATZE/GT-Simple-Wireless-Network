@@ -117,6 +117,7 @@ public class ClientProxy extends CommonProxy {
         com.miaokatze.gtswn.client.PortableMonitorClientCache.registerKey();
         TerminalBaubleController.register();
         com.miaokatze.gtswn.client.engineering.EngineeringModeController.register();
+        com.miaokatze.gtswn.client.engineering.DashboardInformation.register();
         FMLCommonHandler.instance()
             .bus()
             .register(new com.miaokatze.gtswn.client.PortableMonitorClientCache.TickListener());

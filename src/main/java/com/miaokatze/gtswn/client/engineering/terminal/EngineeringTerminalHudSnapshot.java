@@ -51,6 +51,32 @@ public final class EngineeringTerminalHudSnapshot {
         cached = null;
     }
 
+    /** Read-only user-grid data; mounted screens and their coordinates do not participate. */
+    public static HudController.WirelessReading wirelessGrid() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (!factoryReading || hud == null
+            || mc.thePlayer == null
+            || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0
+            || demandPlayer != mc.thePlayer
+            || demandWorld != mc.theWorld
+            || demandConnection != mc.getNetHandler()
+            || mc.getNetHandler() == null
+            || hud.captureSession(
+                mc.theWorld,
+                mc.thePlayer,
+                mc.getNetHandler()
+                    .getNetworkManager())
+                == null)
+            return null;
+        EngineeringTerminalSources.Source selected = EngineeringTerminalSources.resolve(mc.thePlayer, 0);
+        if (!selected.present() || !selected.binding.equals(EngineeringTerminalSources.binding(hud.monitorStack())))
+            return null;
+        HudController.WirelessReading value = hud.wirelessReading();
+        return value != null && value.owner.toString()
+            .equals(PortableWirelessNetworkMonitor.getOwnerUUID(selected.stack)) ? value : null;
+    }
+
     /** Explicit lifecycle demand, never a side effect of capture/render and never a visualization toggle. */
     public static void tick(boolean reading) {
         Minecraft mc = Minecraft.getMinecraft();

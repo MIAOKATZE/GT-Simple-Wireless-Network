@@ -1,6 +1,8 @@
 package com.miaokatze.gtswn.client.render;
 
 import java.math.BigInteger;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -25,6 +27,7 @@ import net.minecraftforge.fluids.FluidStack;
 import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
+import com.miaokatze.gtswn.common.panel.NetworkChartStyle;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.panel.TrendLinePalette;
@@ -319,7 +322,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         drawScaledCentered(font, font.trimStringToWidth(rateLabel, textW), textX, textW, lineY, rateColor, scale);
         lineY += lineStep;
 
-        // 第4行：平均变化速率（基于当前窗口61点首尾差值法，与AE实时监控的averageRate300s算法一致）
+        // 第4行：平均变化速率（基于当前窗口首末实际 tick 差，与 AE 实时监控 averageRate 一致）
         // 数字保持默认深色，不按正负着色
         double avgRate = 0.0D;
         if (samples.size() >= 2) {
@@ -464,10 +467,11 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 font.drawString(label, x + w + 8, ty - 4, 0xFF7A18);
             }
         }
+        long spanTicks = WindowLabel.spanTicks(panel.getAEChartSamples());
         for (int i = 0; i < 5; i++) {
             int tx = x + i * w / 4;
             fillRect(tx, y + h, Math.max(1, thickness), 4, TICK_COLOR);
-            String label = i == 0 ? "-" + aeWindowName(panel.getAETrackingWindow())
+            String label = i == 0 ? (spanTicks > 0L ? "-" : "") + WindowLabel.formatSpan(spanTicks)
                 : i == 4 ? tr("gtswn.network_info.screen.now") : "";
             if (!label.isEmpty()) {
                 font.drawString(label, tx - font.getStringWidth(label) / 2, y + h + 8, 0x4E5964);
@@ -1075,13 +1079,29 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         double[] eutValues = panel.isShowChartStatus()
             ? activePortable == null ? eutValues(samples) : activePortable.power
             : null;
+        NetworkChartStyle style = panel.getChartStyle();
         double[] energyRange = energyValues == null ? null
             : range(energyValues, panel.getEnergyAxisMin(), panel.getEnergyAxisMax());
         double[] eutRange = eutValues == null ? null : range(eutValues, panel.getEutAxisMin(), panel.getEutAxisMax());
+        boolean energyBars = style != NetworkChartStyle.LINE;
+        boolean eutBars = style == NetworkChartStyle.BAR;
+        if (energyBars) energyRange = NetworkChartMath.includeZero(energyRange);
+        if (eutBars) eutRange = NetworkChartMath.includeZero(eutRange);
         drawAcademicAxes(panel, font, plotX, plotY, plotW, plotH, energyRange, eutRange, displayMode);
+        drawChartLegend(font, panel, x, y + 11, w, energyBars, eutBars);
         // chart 固定 overlay 布局：EU 与 EU/t 叠加在同一绘图区
         if (energyValues != null) {
-            drawSeries(
+            if (energyBars) drawBars(
+                energyValues,
+                energyRange,
+                plotX,
+                plotY,
+                plotW,
+                plotH,
+                panel.getTrendLinePalette().energyFlat,
+                0,
+                eutBars && eutValues != null ? 2 : 1);
+            else drawSeries(
                 energyValues,
                 energyRange,
                 plotX,
@@ -1096,7 +1116,17 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 false);
         }
         if (eutValues != null) {
-            drawSeries(
+            if (eutBars) drawBars(
+                eutValues,
+                eutRange,
+                plotX,
+                plotY,
+                plotW,
+                plotH,
+                panel.getTrendLinePalette().rateFlat,
+                energyValues != null ? 1 : 0,
+                energyValues != null ? 2 : 1);
+            else drawSeries(
                 eutValues,
                 eutRange,
                 plotX,
@@ -1110,6 +1140,81 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
                 panel.getTrendLinePalette(),
                 true);
         }
+        if (energyBars || eutBars) {
+            drawZeroLine(font, energyRange, plotX, plotY, plotW, plotH, ENERGY_COLOR, false);
+            drawZeroLine(font, eutRange, plotX, plotY, plotW, plotH, EUT_COLOR, true);
+        }
+    }
+
+    private void drawChartLegend(FontRenderer font, TileEntityNetworkInfoPanel panel, int x, int y, int w,
+        boolean energyBars, boolean eutBars) {
+        int cellW = w / 2 - 4;
+        if (panel.isShowChartEnergy()) {
+            String label = tr("gtswn.network_info.screen.legend.eu_" + (energyBars ? "bar" : "line"));
+            drawScaledCentered(
+                font,
+                label,
+                x,
+                cellW,
+                y,
+                panel.getTrendLinePalette().energyFlat,
+                Math.min(1F, cellW / (float) Math.max(1, font.getStringWidth(label))));
+        }
+        if (panel.isShowChartStatus()) {
+            String label = tr("gtswn.network_info.screen.legend.eut_" + (eutBars ? "bar" : "line"));
+            drawScaledCentered(
+                font,
+                label,
+                x + w / 2 + 4,
+                cellW,
+                y,
+                panel.getTrendLinePalette().rateFlat,
+                Math.min(1F, cellW / (float) Math.max(1, font.getStringWidth(label))));
+        }
+    }
+
+    private void drawZeroLine(FontRenderer font, double[] range, int x, int y, int w, int h, int color,
+        boolean alternate) {
+        double zero = NetworkChartMath.normalize(0, range);
+        if (!Double.isFinite(zero) || zero < 0 || zero > 1) return;
+        int baseline = y + h - (int) Math.round(zero * h);
+        for (int dx = alternate ? 4 : 0; dx < w; dx += 8) fillRect(x + dx, baseline, Math.min(4, w - dx), 1, color);
+        String label = alternate ? "0 EU/t" : "0 EU";
+        float scale = Math.min(1F, Math.max(1, w / 2 - 4) / (float) font.getStringWidth(label));
+        drawScaledString(
+            font,
+            label,
+            alternate ? x + w - (int) (font.getStringWidth(label) * scale) - 2 : x + 2,
+            Math.max(y + 2, Math.min(y + h - 10, baseline - 9)),
+            color,
+            scale);
+    }
+
+    private void drawBars(double[] values, double[] range, int x, int y, int w, int h, int color, int group,
+        int groups) {
+        double zero = NetworkChartMath.normalize(0, range);
+        if (!Double.isFinite(zero)) return;
+        GL11.glPushAttrib(GL11.GL_ENABLE_BIT | GL11.GL_CURRENT_BIT);
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glDisable(GL11.GL_CULL_FACE);
+        GL11.glDisable(GL11.GL_BLEND);
+        setColor(color);
+        GL11.glBegin(GL11.GL_QUADS);
+        for (int i = 0; i < values.length; i++) {
+            double value = NetworkChartMath.normalize(values[i], range);
+            if (!Double.isFinite(value)) continue; // unknown is a gap, never a zero-height observation
+            value = Math.max(0, Math.min(1, value));
+            double[] bounds = NetworkChartMath.barBounds(i, values.length, group, groups);
+            double left = x + bounds[0] * w, right = x + bounds[1] * w;
+            double top = y + h - Math.max(zero, value) * h;
+            double bottom = y + h - Math.min(zero, value) * h;
+            GL11.glVertex3d(left, top, 0);
+            GL11.glVertex3d(right, top, 0);
+            GL11.glVertex3d(right, bottom, 0);
+            GL11.glVertex3d(left, bottom, 0);
+        }
+        GL11.glEnd();
+        GL11.glPopAttrib();
     }
 
     private void drawAcademicAxes(TileEntityNetworkInfoPanel panel, FontRenderer font, int x, int y, int w, int h,
@@ -1161,8 +1266,6 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         if (values == null || values.length < 2 || h <= 2 || range == null) {
             return;
         }
-        // smoothing 配置映射为样条分段数（仅默认过点样条使用）：0=线性(1段)，1..12 → 4..26 段
-        int segments = smoothing <= 0 ? 1 : smoothing * 2 + 2;
         // 样条类型分派：0=过点样条（Fritsch-Carlson 单调 Hermite，默认）、1=拟合样条（Chaikin 切角，
         // 平滑强度决定切角轮数）、2=折线样条（每段单段插值即直线直连）、3=数字样条（阶跃保持方块波形）
         double[][] path;
@@ -1171,23 +1274,7 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
             : activePortable.paths.computeIfAbsent(range, ignored -> new HashMap<>());
         path = savedPaths == null ? null : savedPaths.get(pathKey);
         if (path == null) {
-            double[] safeValues = normalizedValues(values, range);
-            if (safeValues == null) return;
-            switch (splineType) {
-                case 1:
-                    path = chaikinPath(safeValues, fitIterations(smoothing));
-                    break;
-                case 2:
-                    path = monotoneCubicPath(safeValues, 1);
-                    break;
-                case 3:
-                    path = stepPath(safeValues);
-                    break;
-                case 0:
-                default:
-                    path = monotoneCubicPath(safeValues, segments);
-                    break;
-            }
+            path = chartPath(values, range, splineType, smoothing);
             if (savedPaths != null) savedPaths.put(pathKey, path);
         }
 
@@ -1196,29 +1283,61 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         boolean directional = palette != null && palette.enabled;
         // One batch; both endpoints of a segment receive its direction colour.
         // Direction comes from the final spline path before screen Y is inverted.
-        GL11.glBegin(directional ? GL11.GL_LINES : GL11.GL_LINE_STRIP);
+        GL11.glBegin(GL11.GL_LINES);
         double denom = values.length - 1;
-        if (!directional) {
-            setColor(palette == null ? color : palette.segmentColor(0, 0, rate));
-            for (double[] point : path) {
-                double px = x + point[0] / denom * w;
-                double py = y + h - point[1] * h;
-                if (Double.isFinite(px) && Double.isFinite(py)) GL11.glVertex3d(px, py, 0.0D);
-            }
-        } else for (int i = 1; i < path.length; i++) {
+        if (!directional) setColor(palette == null ? color : palette.segmentColor(0, 0, rate));
+        for (int i = 1; i < path.length; i++) {
             double px0 = x + path[i - 1][0] / denom * w;
             double py0 = y + h - path[i - 1][1] * h;
             double px1 = x + path[i][0] / denom * w;
             double py1 = y + h - path[i][1] * h;
             if (!Double.isFinite(px0) || !Double.isFinite(py0) || !Double.isFinite(px1) || !Double.isFinite(py1))
                 continue;
-            setColor(palette.segmentColor(path[i - 1][1], path[i][1], rate));
+            if (directional) setColor(palette.segmentColor(path[i - 1][1], path[i][1], rate));
             GL11.glVertex3d(px0, py0, 0.0D);
             GL11.glVertex3d(px1, py1, 0.0D);
         }
         GL11.glEnd();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
         GL11.glColor4f(1F, 1F, 1F, 1F);
+    }
+
+    /** Build splines for each finite run independently; the separator forbids bridging an unknown sample. */
+    private static double[][] chartPath(double[] values, double[] range, int splineType, int smoothing) {
+        double[] normalized = normalizedValues(values, range);
+        if (normalized != null) return splinePath(normalized, splineType, smoothing);
+        List<double[]> path = new ArrayList<>();
+        int start = 0;
+        while (start < values.length) {
+            while (start < values.length && !Double.isFinite(values[start])) start++;
+            int end = start;
+            while (end < values.length && Double.isFinite(values[end])) end++;
+            if (end > start) {
+                double[] run = normalizedValues(Arrays.copyOfRange(values, start, end), range);
+                if (run != null) {
+                    if (!path.isEmpty()) path.add(new double[] { Double.NaN, Double.NaN });
+                    for (double[] point : splinePath(run, splineType, smoothing)) {
+                        point[0] += start;
+                        path.add(point);
+                    }
+                }
+            }
+            start = end;
+        }
+        return path.toArray(new double[path.size()][]);
+    }
+
+    private static double[][] splinePath(double[] values, int splineType, int smoothing) {
+        switch (splineType) {
+            case 1:
+                return chaikinPath(values, fitIterations(smoothing));
+            case 2:
+                return monotoneCubicPath(values, 1);
+            case 3:
+                return stepPath(values);
+            default:
+                return monotoneCubicPath(values, smoothing <= 0 ? 1 : smoothing * 2 + 2);
+        }
     }
 
     private static double[] energyValues(List<NetworkInfoSample> samples) {
@@ -1644,9 +1763,4 @@ public class RenderNetworkInfoPanel extends TileEntitySpecialRenderer {
         return 0x6B7680;
     }
 
-    /** 根据 AE 时间窗口常量返回显示名称（E4 窗口枚举化：短名映射迁入 WindowLabel） */
-    private static String aeWindowName(int window) {
-        return WindowLabel.of(window)
-            .shortName();
-    }
 }

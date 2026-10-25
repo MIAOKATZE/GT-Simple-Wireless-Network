@@ -1,8 +1,11 @@
 package com.miaokatze.gtswn.client.engineering.desktop;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -25,7 +28,7 @@ public final class DesktopDeviceSources {
 
     private static final Map<UUID, Demand> DEMANDS = new LinkedHashMap<>();
     private static final Set<UUID> VISIBLE = new LinkedHashSet<>();
-    private static UUID factorySource, cursor;
+    private static UUID factorySource, selectionSource, cursor;
     private static EntityPlayer player;
     private static Object world, connection;
     private static int lastRequest = Integer.MIN_VALUE;
@@ -37,6 +40,52 @@ public final class DesktopDeviceSources {
         if (bindings != null) for (DeviceBinding binding : bindings) {
             if (binding != null) VISIBLE.add(binding.source);
         }
+    }
+
+    /** One open selector shares the same bounded polling budget as all visible cards. */
+    public static void setSelectionSource(UUID source) {
+        selectionSource = source;
+    }
+
+    /** Only terminals currently carried by this local player; baubles appear first. */
+    public static List<Source> sources() {
+        EntityPlayer owner = Minecraft.getMinecraft().thePlayer;
+        if (owner == null || owner.isDead || owner.getHealth() <= 0) return Collections.emptyList();
+        Map<UUID, Source> sources = new LinkedHashMap<>();
+        IInventory baubles = TerminalBaubles.inventory(owner);
+        if (baubles != null) for (int index = 0; index < baubles.getSizeInventory(); index++)
+            addSource(sources, baubles.getStackInSlot(index));
+        for (ItemStack stack : owner.inventory.mainInventory) addSource(sources, stack);
+        return Collections.unmodifiableList(new ArrayList<>(sources.values()));
+    }
+
+    private static void addSource(Map<UUID, Source> sources, ItemStack stack) {
+        if (stack == null || !(stack.getItem() instanceof ItemDeviceInfoTerminal)) return;
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(stack);
+        if (id != null && !sources.containsKey(id)) sources.put(id, new Source(id, stack.getDisplayName()));
+    }
+
+    /** Complete live candidates only. No separate request or per-card copy of machine data. */
+    public static List<Entry> choices(UUID source) {
+        if (!selectionReason(source).isEmpty()) return Collections.emptyList();
+        DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(source);
+        return snapshot == null ? Collections.<Entry>emptyList() : snapshot.entries;
+    }
+
+    public static String selectionReason(UUID source) {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (source == null || player == null
+            || player != mc.thePlayer
+            || world != mc.theWorld
+            || connection != mc.getNetHandler()
+            || player.isDead
+            || player.getHealth() <= 0) return "source";
+        Demand demand = DEMANDS.get(source);
+        if (demand == null) return "inactive";
+        if (demand.held == null || !demand.held.available(source)) return "source";
+        return DeviceTerminalClientCache.receiptRevision(source) <= demand.initialReceipt
+            || !DeviceTerminalClientCache.isFresh(source, System.currentTimeMillis())
+            || DeviceTerminalClientCache.hasMorePending(source) ? "waiting" : "";
     }
 
     /** The existing factory owner shares its request with cards using the same terminal. */
@@ -53,6 +102,7 @@ public final class DesktopDeviceSources {
     /** Hiding the canvas releases only its extra sources. */
     public static void release() {
         VISIBLE.clear();
+        selectionSource = null;
         DEMANDS.keySet()
             .removeIf(id -> !id.equals(factorySource));
         if (factorySource == null) reset();
@@ -75,12 +125,8 @@ public final class DesktopDeviceSources {
             world = mc.theWorld;
             connection = mc.getNetHandler();
         }
-        Set<UUID> selected = new LinkedHashSet<>();
-        if (factorySource != null && find(player, factorySource) != null) selected.add(factorySource);
-        for (UUID id : VISIBLE) {
-            if (selected.size() >= 4) break;
-            if (find(player, id) != null) selected.add(id);
-        }
+        Set<UUID> selected = DesktopDevicePolling
+            .sources(factorySource, selectionSource, VISIBLE, id -> find(player, id) != null);
         DEMANDS.keySet()
             .retainAll(selected);
         for (UUID id : selected) {
@@ -111,7 +157,8 @@ public final class DesktopDeviceSources {
         Minecraft mc = Minecraft.getMinecraft();
         if (source == null || entry == null
             || find(mc.thePlayer, source) == null
-            || !DeviceTerminalClientCache.isFresh(source, System.currentTimeMillis())) return null;
+            || !DeviceTerminalClientCache.isFresh(source, System.currentTimeMillis())
+            || DeviceTerminalClientCache.hasMorePending(source)) return null;
         DeviceTerminalClientCache.Snapshot snapshot = DeviceTerminalClientCache.getSnapshot(source);
         if (snapshot == null) return null;
         DeviceBinding binding = new DeviceBinding(
@@ -231,6 +278,17 @@ public final class DesktopDeviceSources {
         private Reading(Entry entry, String reason) {
             this.entry = entry;
             this.reason = reason;
+        }
+    }
+
+    public static final class Source {
+
+        public final UUID id;
+        public final String label;
+
+        private Source(UUID id, String label) {
+            this.id = id;
+            this.label = label;
         }
     }
 }

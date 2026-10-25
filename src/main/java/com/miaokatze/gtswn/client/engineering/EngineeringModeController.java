@@ -13,6 +13,7 @@ import net.minecraftforge.common.MinecraftForge;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.input.Mouse;
+import org.lwjgl.opengl.Display;
 
 import com.miaokatze.gtswn.client.TerminalBaubleController;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
@@ -50,6 +51,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         Keyboard.KEY_F12,
         "key.categories.gtswn.factory");
     private final ZoomMotion zoom = new ZoomMotion(1, .025, 8);
+    public static final KeyBinding DASHBOARD = new KeyBinding(
+        "key.gtswn.dashboard",
+        Keyboard.KEY_F10,
+        "key.categories.gtswn.factory");
     private WorldCameras.Lease lease;
     private World world;
     private net.minecraft.entity.player.EntityPlayer sessionPlayer;
@@ -63,6 +68,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     private int settingsWidth, settingsHeight;
     private long settingsRevision = -1;
     private boolean settingsDesktop;
+    private boolean hudHidden;
     private Target selected;
     private boolean pinned;
     private boolean cameraPanel;
@@ -73,6 +79,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     public static void register() {
         ClientRegistry.registerKeyBinding(TOGGLE);
+        ClientRegistry.registerKeyBinding(DASHBOARD);
         FactoryShortcuts.register();
         FactoryControlSettings.register();
         FactoryDisplayPreferences.register();
@@ -81,10 +88,54 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             .register(INSTANCE);
         MinecraftForge.EVENT_BUS.register(INSTANCE);
         MinecraftForge.EVENT_BUS.register(new EngineeringHud());
+        MinecraftForge.EVENT_BUS.register(FactoryDashboardHint.INSTANCE);
     }
 
     public static boolean isActive() {
         return INSTANCE.lease != null && INSTANCE.lease.active();
+    }
+
+    /** A normal-view dashboard borrows vanilla GUI focus, never a world-camera lease. */
+    public static boolean dashboardHostVisible() {
+        Minecraft mc = Minecraft.getMinecraft();
+        boolean live = mc.thePlayer != null && !mc.thePlayer.isDead
+            && mc.thePlayer.getHealth() > 0
+            && mc.theWorld != null;
+        boolean direct = mc.currentScreen instanceof FactoryDashboardScreen
+            && ((FactoryDashboardScreen) mc.currentScreen).sessionValid();
+        return EngineeringInputPolicy
+            .dashboardHostVisible(live, mc.gameSettings.hideGUI, direct, isActive(), mc.currentScreen != null);
+    }
+
+    /** Losing OS focus releases interaction ownership without erasing the visible dashboard. */
+    public static boolean dashboardInputAllowed() {
+        Minecraft mc = Minecraft.getMinecraft();
+        return EngineeringInputPolicy.dashboardInputAllowed(
+            dashboardHostVisible(),
+            Display.isActive(),
+            mc.currentScreen instanceof FactoryDashboardScreen,
+            mc.inGameHasFocus);
+    }
+
+    public static WorkbenchLayout.Rect worldViewport(int width, int height) {
+        return WorkbenchHud.layout(width, height).worldViewport;
+    }
+
+    public static void openDashboard() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null || mc.thePlayer == null
+            || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0
+            || mc.currentScreen != null) return;
+        if (isActive()) WorkbenchHud.openDashboard();
+        else mc.displayGuiScreen(new FactoryDashboardScreen());
+    }
+
+    static boolean closeDashboardScreen() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (!(mc.currentScreen instanceof FactoryDashboardScreen)) return false;
+        ((FactoryDashboardScreen) mc.currentScreen).requestClose();
+        return true;
     }
 
     public static void toggle() {
@@ -105,6 +156,10 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     public static void open() {
         Minecraft mc = Minecraft.getMinecraft();
         if (mc.theWorld == null || mc.thePlayer == null || mc.thePlayer.isDead) return;
+        if (mc.currentScreen instanceof FactoryDashboardScreen) {
+            ((FactoryDashboardScreen) mc.currentScreen).requestClose(EngineeringModeController::open);
+            return;
+        }
         if (mc.currentScreen != null) mc.displayGuiScreen(null);
         if (isActive()) return;
         INSTANCE.world = mc.theWorld;
@@ -121,6 +176,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             INSTANCE.restorePreferences();
             EngineeringHud.restorePreferences();
             WorkbenchHud.restorePreferences();
+            FactoryDashboardHint.tick(mc);
+            INSTANCE.hudHidden = mc.gameSettings.hideGUI;
             INSTANCE.preferenceSession = true;
             EngineeringTerminalHudSnapshot
                 .tick(EngineeringDashboardCache.slot() >= 0 || EngineeringTerminalActions.deviceVisualizationEnabled());
@@ -128,9 +185,25 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     }
 
     public static void close() {
+        if (WorkbenchHud.dashboardOpen()) {
+            revealExitPrompt();
+            FactoryDesktop.requestExit(EngineeringModeController::closeForced);
+        } else closeForced();
+    }
+
+    /** Session revocation must never wait for an editor prompt after death or disconnect. */
+    private static void closeForced() {
         WorldCameras.Lease old = INSTANCE.lease;
         if (old != null) old.close();
         else INSTANCE.revoked();
+    }
+
+    static void revealExitPrompt() {
+        if (!FactoryDesktop.hasUnsavedChanges()) return;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null || mc.gameSettings == null || !mc.gameSettings.hideGUI) return;
+        mc.gameSettings.hideGUI = false;
+        INSTANCE.syncHudVisibility();
     }
 
     private void revoked() {
@@ -150,9 +223,13 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         settings = null;
         EngineeringHud.reset();
         EngineeringTerminalHudSnapshot.close();
+        FactoryDashboardHint.close();
     }
 
     static String preferenceProfile() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.currentScreen instanceof FactoryDashboardScreen)
+            return ((FactoryDashboardScreen) mc.currentScreen).preferenceProfile();
         return INSTANCE.sliceProfile;
     }
 
@@ -278,16 +355,24 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     @SubscribeEvent
     public void keys(InputEvent.KeyInputEvent event) {
         Minecraft mc = Minecraft.getMinecraft();
-        if (mc.currentScreen != null || mc.thePlayer == null) return;
+        if (mc.currentScreen != null || mc.thePlayer == null || !mc.inGameHasFocus) return;
         // Active input is handled at Core's raw queue boundary, so it cannot also fire here.
         if (isActive() || !Keyboard.getEventKeyState() || Keyboard.isRepeatEvent()) return;
         int code = Keyboard.getEventKey();
+        if (FactoryShortcuts.suppresses(code)) return;
         if (code != Keyboard.KEY_NONE && code == TOGGLE.getKeyCode() && code != TerminalBaubleController.keyCode())
             toggleFromBinding();
+        else if (dashboardBinding(code)) openDashboard();
+    }
+
+    private static boolean dashboardBinding(int code) {
+        return EngineeringInputPolicy
+            .dashboardBinding(code, DASHBOARD.getKeyCode(), TOGGLE.getKeyCode(), TerminalBaubleController.keyCode());
     }
 
     @SubscribeEvent
     public void tick(TickEvent.ClientTickEvent event) {
+        if (isActive()) syncHudVisibility();
         // Vanilla supplies acceleration, friction, collision, sprinting and server-authoritative movement.
         // Only the heading changes: native forward must point towards the top of the camera's screen.
         if (event.phase == TickEvent.Phase.START && isActive() && following && !FactoryShortcuts.isBinding()) {
@@ -299,6 +384,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
         if (event.phase == TickEvent.Phase.END) {
             FactoryShortcuts.poll();
             EngineeringDashboardCache.tick();
+            FactoryDashboardHint.tick(Minecraft.getMinecraft());
         }
         if (event.phase != TickEvent.Phase.END || !isActive()) return;
         Minecraft mc = Minecraft.getMinecraft();
@@ -307,13 +393,14 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             || mc.thePlayer != sessionPlayer
             || mc.getNetHandler() != sessionConnection
             || mc.thePlayer.isDead) {
-            close();
+            closeForced();
             return;
         }
         EngineeringHud.tickSources();
         WorkbenchHud.tick();
-        EngineeringTerminalHudSnapshot
-            .tick(EngineeringDashboardCache.slot() >= 0 || EngineeringTerminalActions.deviceVisualizationEnabled());
+        EngineeringTerminalHudSnapshot.tick(
+            WorkbenchHud.dashboardVisible() || EngineeringDashboardCache.slot() >= 0
+                || EngineeringTerminalActions.deviceVisualizationEnabled());
         rememberPreferences();
         lastX = x;
         lastY = y;
@@ -470,6 +557,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
     @Override
     public CameraSettings settings() {
         Minecraft mc = Minecraft.getMinecraft();
+        syncHudVisibility();
         boolean desktop = WorkbenchHud.dashboardVisible();
         ScaledResolution resolution = new ScaledResolution(mc, mc.displayWidth, mc.displayHeight);
         if (settingsWidth != resolution.getScaledWidth() || settingsHeight != resolution.getScaledHeight()
@@ -499,7 +587,7 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
                     .blockDebugReloads(true)
                     .exclusiveKeyboard(true)
                     .build())
-            .hud(EngineeringInputPolicy.hud(cameraPanel, scale, desktop))
+            .hud(EngineeringInputPolicy.hud(cameraPanel, scale, desktop, hudHidden))
             .navigation(
                 EngineeringInputPolicy.navigation(
                     following,
@@ -514,6 +602,8 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowKey(int code) {
+        // F1 is handled once at the raw queue boundary, before vanilla or any focused editor.
+        if (code == Keyboard.KEY_F1) return false;
         if (WorkbenchHud.typing()) return false;
         if (FactoryShortcuts.suppresses(code) || FactoryShortcuts.action(code) != null) return false;
         Minecraft mc = Minecraft.getMinecraft();
@@ -533,6 +623,48 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
 
     @Override
     public boolean allowRawKey(int code) {
+        syncHudVisibility();
+        if (EngineeringInputPolicy
+            .visibilityKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent(), Display.isActive(), () -> {
+                Minecraft mc = Minecraft.getMinecraft();
+                mc.gameSettings.hideGUI = !mc.gameSettings.hideGUI;
+                syncHudVisibility();
+            })) return false;
+        if (!FactoryShortcuts.isBinding() && !WorkbenchHud.typing()
+            && dashboardBinding(code)
+            && FactoryShortcuts.action(code) == null) {
+            KeyBinding.setKeyBindState(code, false);
+            if (Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent()) {
+                if (WorkbenchHud.dashboardOpen()) WorkbenchHud.switchTask(1);
+                else WorkbenchHud.openDashboard();
+            }
+            return false;
+        }
+        if (hudHidden) {
+            if (code == Keyboard.KEY_ESCAPE) {
+                if (Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent()) {
+                    if (WorkbenchHud.dashboardOpen()) WorkbenchHud.switchTask(1);
+                    else close();
+                }
+                return false;
+            }
+            if (WorkbenchHud.dashboardOpen() && (code == Keyboard.KEY_E
+                || code == Minecraft.getMinecraft().gameSettings.keyBindInventory.getKeyCode())) {
+                if (Keyboard.getEventKeyState() && !Keyboard.isRepeatEvent()) WorkbenchHud.switchTask(1);
+                return false;
+            }
+            FactoryShortcuts.Action action = FactoryShortcuts.action(code);
+            if (action != null && action != FactoryShortcuts.Action.TOGGLE
+                && action != FactoryShortcuts.Action.RETURN
+                && action != FactoryShortcuts.Action.FOLLOW
+                && action != FactoryShortcuts.Action.XRAY
+                && action != FactoryShortcuts.Action.PIN) {
+                KeyBinding.setKeyBindState(code, false);
+                return false;
+            }
+            if (FactoryShortcuts.consumeKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent())) return false;
+            return allowKey(code);
+        }
         if (!FactoryShortcuts.isBinding()
             && WorkbenchHud.key(code, Keyboard.getEventCharacter(), Keyboard.getEventKeyState())) return false;
         if (FactoryShortcuts.consumeKey(code, Keyboard.getEventKeyState(), Keyboard.isRepeatEvent())) return false;
@@ -543,6 +675,16 @@ public final class EngineeringModeController implements WorldCameras.Source, Cam
             return false;
         }
         return allowKey(code);
+    }
+
+    private void syncHudVisibility() {
+        boolean hidden = Minecraft.getMinecraft().gameSettings.hideGUI;
+        if (hudHidden == hidden) return;
+        hudHidden = hidden;
+        settings = null;
+        WorkbenchHud.suspendInput();
+        // Releases from before F1 must not leave vanilla movement stuck after focus is relinquished.
+        KeyBinding.unPressAllKeys();
     }
 
     @Override

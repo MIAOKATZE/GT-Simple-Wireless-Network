@@ -15,8 +15,9 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.StatCollector;
 
-import org.lwjgl.opengl.GL11;
+import org.lwjgl.input.Keyboard;
 
+import com.cleanroommc.modularui.drawable.GuiDraw;
 import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.TerminalBaubleController;
 import com.miaokatze.gtswn.client.TerminalKeyNames;
@@ -25,6 +26,7 @@ import com.miaokatze.gtswn.client.engineering.FactoryControlSettings.Setting;
 import com.miaokatze.gtswn.client.engineering.FactoryShortcuts.Action;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.client.gui.TerminalPresentation;
@@ -37,18 +39,17 @@ import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceO
 import com.miaokatze.gtswn.common.engineering.NodePresentation;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
+import com.miaokatze.miaokatzecore.api.ui.component.UiRect;
 
 /** Factory workbench: Outpost's monitor rail, power card and dashboard stay inside the world view. */
 final class WorkbenchHud extends Gui {
 
-    private static final int BACK = 0xFF1C2A35, HEADER = 0xFF344A59, TEXT = 0xFFE7ECEA;
-    private static final int CHROME = 0xFF1C2A35, CHROME_SELECTED = 0xFF344A59;
-    private static final int MUTED = 0xFF91A6B2, ACCENT = 0xFF69D8CA, WARN = 0xFFF0BB70, STOPPED = 0xFFEE827E;
-    private static final ResourceLocation ATLAS = new ResourceLocation("gtswn", "textures/gui/factory_atlas.png");
-    private static final WorkbenchHud PAINTER = new WorkbenchHud();
+    private static int BACK = 0xFF1C2A35, HEADER = 0xFF344A59, TEXT = 0xFFE7ECEA;
+    private static int CHROME = 0xFF1C2A35, CHROME_SELECTED = 0xFF344A59;
+    private static int MUTED = 0xFF91A6B2, ACCENT = 0xFF69D8CA, WARN = 0xFFF0BB70, STOPPED = 0xFFEE827E;
     private static final int[] MODE_ICONS = { 48, 0, 24, 12, 84 }, TOOL_ICONS = { 12, 36, 60, 24, 72 };
-    private static boolean sidebarOpen, railOpen, powerOpen, dashboardMode = true, alertsOpen = true;
-    private static int task;
+    private static boolean sidebarOpen, railOpen, powerOpen, dashboardMode, alertsOpen = true;
+    private static int task = 1;
     private static SelectedMachineRecord selectedRecord;
     private static final ScrollModel sidebarModel = new ScrollModel(), detailModel = new ScrollModel(),
         railModel = new ScrollModel();
@@ -82,6 +83,7 @@ final class WorkbenchHud extends Gui {
     private static final Set<String> collapsedOwners = new HashSet<>();
     private static List<String> tooltip;
     private static FactoryMachineFilter machineFilter = FactoryMachineFilter.ALL;
+    private static int nodeFilter;
     private static int powerFilter;
     private static boolean mouseDispatch;
     private static final Action[] MODES = { Action.DASHBOARD, Action.CAMERA, Action.RETURN, Action.FOLLOW,
@@ -92,19 +94,21 @@ final class WorkbenchHud extends Gui {
 
     static void reset() {
         sidebarOpen = false;
-        dashboardMode = true;
-        task = 0;
+        dashboardMode = false;
+        task = 1;
         selectedRecord = null;
         search.focused = false;
         search.value = "";
         detailRect = null;
         rowsRevision = Long.MIN_VALUE;
         FactoryDashboard.clear();
+        FactoryChrome.clear();
         settingsOpen = false;
         railOpen = powerOpen = false;
         alertsOpen = true;
         selectedSlot = -1;
         machineFilter = FactoryMachineFilter.ALL;
+        nodeFilter = 0;
         powerFilter = DevicePowerFilter.ALL;
         page = sidebarScroll = railScroll = detailScroll = 0;
         settingsPage = settingsScroll = 0;
@@ -140,12 +144,12 @@ final class WorkbenchHud extends Gui {
 
     static void restorePreferences() {
         FactoryDashboard.restore();
-        task = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.TASK);
+        // A new factory session always opens on the world. The dashboard is an in-session overlay.
+        task = 1;
         sidebarOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.SIDEBAR);
         railOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.RAIL);
         powerOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.POWER);
-        dashboardMode = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.DASHBOARD);
-        if (task == 0) dashboardMode = true;
+        dashboardMode = false;
         alertsOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.ALERTS);
         settingsOpen = FactoryDisplayPreferences.flag(FactoryDisplayPreferences.Key.SETTINGS);
         selectedSlot = FactoryDisplayPreferences.integer(FactoryDisplayPreferences.Key.SELECTED_SLOT);
@@ -165,6 +169,13 @@ final class WorkbenchHud extends Gui {
     }
 
     static void select(int slot) {
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                select(slot);
+            });
+            return;
+        }
         leaveCamera();
         closeSettings();
         selectedSlot = slot;
@@ -178,7 +189,7 @@ final class WorkbenchHud extends Gui {
             .capture(Minecraft.getMinecraft().thePlayer);
         boolean nodes = task == 3 || EngineeringHud.activeSlot() == 1 || EngineeringHud.activeSlot() >= 3;
         int count = nodes ? visibleNodeRows(snapshot) : filteredCount(data.device);
-        int railHeight = Math.max(126, (nodes ? 69 : 96) + Math.min(8, count) * 23) + (EngineeringHud.targetLines()
+        int railHeight = WorkbenchLayout.railHeight(nodes, count) + (EngineeringHud.targetLines()
             .isEmpty() ? 0 : 94);
         int powerHeight = Math.min(108, 42 + Math.max(3, data.portable.basicLines.size() + 1) * 13);
         boolean camera = EngineeringModeController.INSTANCE.cameraPanel();
@@ -199,6 +210,11 @@ final class WorkbenchHud extends Gui {
     }
 
     static boolean escape() {
+        if (dashboardMode) {
+            if (FactoryDashboard.escape()) return true;
+            switchTask(1);
+            return true;
+        }
         if (FactoryChrome.escape()) return true;
         if (inspectorFullscreen && (selectedRecord != null || !EngineeringHud.targetLines()
             .isEmpty())) {
@@ -208,11 +224,6 @@ final class WorkbenchHud extends Gui {
         }
         if (settingsOpen) {
             closeSettings();
-            return true;
-        }
-        if (dashboardMode) {
-            if (FactoryDashboard.escape()) return true;
-            switchTask(1);
             return true;
         }
         if (sidebarOpen) {
@@ -246,18 +257,32 @@ final class WorkbenchHud extends Gui {
     }
 
     static void inspect() {
-        if (dashboardMode) switchTask(2);
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(2);
+                inspect();
+            });
+            return;
+        }
         railOpen = true;
         detailScroll = 0;
     }
 
     static void render(int width, int height, int mouseX, int mouseY) {
+        applyTheme();
         Minecraft mc = Minecraft.getMinecraft();
         FontRenderer f = mc.fontRenderer;
         WorkbenchLayout l = layout(width, height);
         tooltip = null;
         controls.clear();
         scrollBars.clear();
+        if (dashboardMode) {
+            FactoryDashboard.render(f, l.dashboard, mouseX, mouseY, width, height);
+            // A requested open is acknowledged only after its visible first frame completed.
+            FactoryDashboardHint.opened();
+            FactoryDashboardHint.render(width, height);
+            return;
+        }
         ItemStack[] equipped = TerminalBaubles.terminals(mc.thePlayer);
         for (int i = 0; i < 8; i++) {
             Rect r = l.terminals[i];
@@ -280,23 +305,16 @@ final class WorkbenchHud extends Gui {
                 bindingTooltip(tooltip, terminalAction(i));
             }
         }
-        FactoryChrome.render(
-            f,
-            width,
-            height,
-            l,
-            task,
-            dashboardMode,
-            sidebarOpen,
-            settingsOpen,
-            WorkbenchHud::shortcut,
-            WorkbenchHud::switchTask,
-            () -> {
-                sidebarOpen = !sidebarOpen;
-                if (sidebarOpen && selectedSlot < 0)
-                    selectedSlot = EngineeringHud.activeSlot() < 0 ? 2 : EngineeringHud.activeSlot();
-            },
-            WorkbenchHud::toggleSettings);
+        FactoryChrome.render(f, width, height, l, settingsOpen, WorkbenchHud::shortcut, WorkbenchHud::toggleSettings);
+        String[] modeKeys = { "dashboard", "camera", "return", "following", "exit" };
+        for (int i = 0; i < MODES.length; i++) icon(
+            l.modes[i],
+            MODE_ICONS[i],
+            tr(modeKeys[i]),
+            MODES[i],
+            mouseX,
+            mouseY,
+            Boolean.TRUE.equals(actionState(MODES[i])));
         String[] toolKeys = { "monitor", "power", "map", "refresh", "alerts" };
         for (int i = 0; i < l.tools.length; i++) icon(
             l.tools[i],
@@ -325,10 +343,6 @@ final class WorkbenchHud extends Gui {
             text(f, tr("alerts") + " · " + warningCount(source), l.alerts.x + 8, l.alerts.y + 5, WARN, l.alerts.w - 16);
             text(f, tr("alerts.hint"), l.alerts.x + 8, l.alerts.y + 17, MUTED, l.alerts.w - 16);
         }
-        if (l.dashboard != null) {
-            Rect r = l.dashboard;
-            FactoryDashboard.render(f, r, mouseX, mouseY, width, height);
-        }
         for (Hit hit : controls) if (hit.rect.contains(mouseX, mouseY) && hit.tip != null) {
             tooltip = new ArrayList<>();
             tooltip.add(hit.tip);
@@ -340,6 +354,10 @@ final class WorkbenchHud extends Gui {
             Rect strip = new Rect((width - promptWidth) / 2, 36, promptWidth, 18);
             box(strip, BACK);
             text(f, prompt, strip.x + 8, strip.y + 5, WARN, strip.w - 16);
+        }
+        if (!settingsOpen && !FactoryShortcuts.isBinding()) {
+            Rect anchor = l.modes[0];
+            FactoryDashboardHint.render(new UiRect(anchor.x, anchor.y, anchor.w, anchor.h), width, height);
         }
         if (tooltip != null) drawTooltip(f, tooltip, mouseX, mouseY, width, height);
     }
@@ -567,7 +585,7 @@ final class WorkbenchHud extends Gui {
         drawRect(r.x, r.y, r.x + r.w, r.y + 23, HEADER);
         text(f, tr("settings"), r.x + 8, r.y + 7, ACCENT, r.w - 32);
         control(new Rect(r.x + r.w - 23, r.y + 2, 21, 19), "<", tr("collapse"), WorkbenchHud::closeSettings);
-        String[] tabs = { "shortcuts", "controls" };
+        String[] tabs = { "shortcuts", "controls", "appearance" };
         int tabWidth = (r.w - 12) / tabs.length;
         for (int i = 0; i < tabs.length; i++) {
             final int tab = i;
@@ -580,7 +598,22 @@ final class WorkbenchHud extends Gui {
             });
         }
         if (settingsPage == 0) drawShortcuts(f, r, r.y + 56, FactoryShortcutPages.global(), true);
-        else drawControlSettings(f, r, r.y + 56);
+        else if (settingsPage == 1) drawControlSettings(f, r, r.y + 56);
+        else drawAppearance(f, r, r.y + 56);
+    }
+
+    private static void drawAppearance(FontRenderer f, Rect r, int y) {
+        for (DashboardTheme choice : DashboardTheme.values()) {
+            Rect row = new Rect(r.x + 6, y, r.w - 12, 24);
+            box(row, choice == FactoryDisplayPreferences.theme() ? HEADER : BACK);
+            if (choice == FactoryDisplayPreferences.theme()) stateEdge(row, true);
+            control(
+                row,
+                StatCollector.translateToLocal(choice.translationKey()),
+                tr("appearance.hint"),
+                () -> FactoryDisplayPreferences.theme(choice));
+            y += 28;
+        }
     }
 
     private static void drawShortcuts(FontRenderer f, Rect r, int y, Action[] actions, boolean global) {
@@ -625,7 +658,7 @@ final class WorkbenchHud extends Gui {
         boolean rebuild = rowsRevision != device.revision || !java.util.Objects.equals(rowsSource, device.terminalId)
             || rowsSnapshot != (nodes ? snapshot : null)
             || rowsFresh != device.fresh
-            || rowsFilter != machineFilter.ordinal() + (nodes ? 100 : 0)
+            || rowsFilter != (nodes ? 100 + nodeFilter : machineFilter.ordinal())
             || rowsPower != powerFilter
             || builtOwners != ownersRevision;
         rebuild |= !builtSearch.equals(search.value);
@@ -636,19 +669,35 @@ final class WorkbenchHud extends Gui {
             rowsSource = device.terminalId;
             rowsSnapshot = nodes ? snapshot : null;
             rowsFresh = device.fresh;
-            rowsFilter = machineFilter.ordinal() + (nodes ? 100 : 0);
+            rowsFilter = nodes ? 100 + nodeFilter : machineFilter.ordinal();
             rowsPower = powerFilter;
             builtOwners = ownersRevision;
             if (nodes && snapshot != null && "ok".equals(snapshot.status)) {
                 Map<String, List<Node>> owners = new LinkedHashMap<>();
-                for (Node node : NodePresentation.sorted(snapshot.nodes))
+                for (Node node : NodePresentation.sorted(snapshot.nodes)) {
+                    if (nodeFilter == 1 && !node.online || nodeFilter == 2 && node.online) continue;
+                    if (!search.matches(
+                        node.ownerName + " "
+                            + node.owner
+                            + " "
+                            + EngineeringHud.nodeRole(node)
+                            + " "
+                            + node.dim
+                            + " "
+                            + node.x
+                            + "/"
+                            + node.y
+                            + "/"
+                            + node.z))
+                        continue;
                     owners.computeIfAbsent(node.owner + "|" + node.dim, ignored -> new ArrayList<>())
                         .add(node);
+                }
                 for (Map.Entry<String, List<Node>> group : owners.entrySet()) {
                     String key = group.getKey();
                     Node first = group.getValue()
                         .get(0);
-                    boolean collapsed = collapsedOwners.contains(key);
+                    boolean collapsed = search.value.isEmpty() && collapsedOwners.contains(key);
                     String owner = first.ownerName.isEmpty() ? tr("owner.unknown") : first.ownerName;
                     rows.add(
                         new Row(
@@ -675,8 +724,13 @@ final class WorkbenchHud extends Gui {
             }
             if (!nodes) for (Entry e : device.devices) {
                 if (!machineFilter.matches(e, device.fresh, powerFilter)) continue;
-                if (!search.matches(e.name + " " + e.displayName + " " + e.dim + " " + e.x + "/" + e.y + "/" + e.z))
-                    continue;
+                if (!search.matchesDevice(
+                    e,
+                    device.terminalId + " "
+                        + originLabel(device.origin)
+                        + " "
+                        + tr("status." + FactoryMachineFilter.status(e, device.fresh)),
+                    device.fresh)) continue;
                 String statusKey = FactoryMachineFilter.status(e, device.fresh);
                 rows.add(new Row(e, tr("status." + statusKey), statusKey));
             }
@@ -729,12 +783,26 @@ final class WorkbenchHud extends Gui {
                     railScroll = 0;
                 });
         }
-        searchRect = nodes ? null : new Rect(r.x + 5, r.y + 85, r.w - 10, 18);
+        if (nodes) {
+            String[] states = { "all", "on", "off" };
+            int filterWidth = (r.w - 10) / states.length;
+            for (int index = 0; index < states.length; index++) {
+                final int filter = index;
+                Rect chip = new Rect(r.x + 5 + index * filterWidth, r.y + 45, filterWidth - 2, 18);
+                box(chip, nodeFilter == index ? HEADER : 0xFF18252F);
+                control(chip, tr(index == 0 ? "filter.all" : "state." + states[index]), tr("filter.hint"), () -> {
+                    nodeFilter = filter;
+                    railScroll = keyRow = 0;
+                });
+            }
+        }
+        searchRect = new Rect(r.x + 5, r.y + (nodes ? 66 : 85), r.w - 10, 18);
         if (searchRect != null) {
             box(searchRect, search.focused ? HEADER : 0xFF121B23);
             control(
                 searchRect,
-                (search.focused ? "> " : "") + (search.value.isEmpty() ? tr("search.devices") : search.value),
+                (search.focused ? "> " : "")
+                    + (search.value.isEmpty() ? tr(nodes ? "search.nodes" : "search.devices") : search.value),
                 tr("search.hint"),
                 () -> search.focused = true);
         }
@@ -743,32 +811,49 @@ final class WorkbenchHud extends Gui {
             tr("desktop.mount"),
             tr("desktop.mount.hint"),
             () -> mountSelection(device));
-        int top = r.y + (nodes ? 49 : 131);
+        int top = r.y + (nodes ? WorkbenchLayout.NODE_ROWS_TOP : WorkbenchLayout.DEVICE_ROWS_TOP);
         List<String> selected = nodes ? EngineeringHud.targetLines() : machineDetails(device);
         boolean separate = task >= 2 && !sidebarOpen;
         int detailHeight = separate || selected.isEmpty() ? 0
-            : Math.max(0, Math.min(112, Math.min(r.h / 2, r.y + r.h - top - 31)));
-        int bottom = r.y + r.h - 8 - detailHeight;
-        int count = Math.max(0, (bottom - top) / 23);
+            : Math.max(
+                0,
+                Math.min(
+                    112,
+                    Math.min(
+                        r.h / 2,
+                        r.y + r.h - top - WorkbenchLayout.RAIL_ROW_HEIGHT - WorkbenchLayout.RAIL_BOTTOM)));
+        int bottom = r.y + r.h - WorkbenchLayout.RAIL_BOTTOM - detailHeight;
+        int count = Math.max(0, (bottom - top) / WorkbenchLayout.RAIL_ROW_HEIGHT);
         railVisible = count;
         railScroll = railModel.measure(rows.size(), count, railScroll);
         detailRect = detailHeight == 0 ? null
             : new Rect(r.x + 5, r.y + r.h - detailHeight + 23, r.w - 10, Math.max(0, detailHeight - 28));
-        if (rows.isEmpty()) drawLines(
-            f,
-            java.util.Arrays.asList(
-                nodes && snapshot != null && !successful ? status
-                    : tr(!nodes && !device.devices.isEmpty() ? "filter.empty" : "list.empty"),
-                tr(!nodes && !device.devices.isEmpty() ? "filter.empty.hint" : "list.hint")),
-            r.x + 8,
-            top,
-            r.w - 16,
-            bottom,
-            0,
-            MUTED);
+        if (rows.isEmpty())
+            drawLines(
+                f,
+                java.util.Arrays
+                    .asList(
+                        nodes && snapshot != null && !successful ? status
+                            : tr(
+                                !search.value.isEmpty() || nodes && nodeFilter != 0
+                                    || !nodes && !device.devices.isEmpty() ? "filter.empty" : "list.empty"),
+                        tr(
+                            !search.value.isEmpty() || nodes && nodeFilter != 0 || !nodes && !device.devices.isEmpty()
+                                ? "filter.empty.hint"
+                                : "list.hint")),
+                r.x + 8,
+                top,
+                r.w - 16,
+                bottom,
+                0,
+                MUTED);
         for (int i = 0; i < count && i + railScroll < rows.size(); i++) {
             Row row = rows.get(i + railScroll);
-            Rect hit = new Rect(r.x + 5, top + i * 23, r.w - 10, 22);
+            Rect hit = new Rect(
+                r.x + 5,
+                top + i * WorkbenchLayout.RAIL_ROW_HEIGHT,
+                r.w - 10,
+                WorkbenchLayout.RAIL_ROW_HEIGHT - 1);
             boolean chosen = row.entry != null && selectedRecord != null
                 && selectedRecord.matches(device.terminalId, row.entry);
             if (hit.contains(mx, my) || chosen) box(hit, HEADER);
@@ -1026,7 +1111,8 @@ final class WorkbenchHud extends Gui {
 
     /** Restored dashboards reopen only against a currently available real terminal, outside rendering. */
     static void tick() {
-        if (EngineeringModeController.INSTANCE.cameraPanel() && dashboardMode) switchTask(1);
+        // Chrome belongs to the world HUD even while the dashboard is closed. Preserve DOWN until UP.
+        FactoryChrome.maintainInput(!dashboardMode && EngineeringModeController.dashboardInputAllowed());
         if (task == 3 && (EngineeringHud.activeSlot() < 0 || EngineeringHud.activeSlot() == 2
             || EngineeringHud.activeSlot() == 0)) chooseNetworkSource();
         EngineeringTerminalHudSnapshot data = EngineeringTerminalHudSnapshot
@@ -1035,7 +1121,8 @@ final class WorkbenchHud extends Gui {
             selectedRecord = null;
             EngineeringModeController.INSTANCE.clearSelection();
         }
-        if (dashboardMode && !PortableSuperDashboard.isOpen()) {
+        if (!dashboardVisible()) PortableSuperDashboard.close();
+        if (dashboardVisible() && !PortableSuperDashboard.isOpen()) {
             Source portable = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, 0);
             if (portable.present()) {
                 PortableSuperDashboard.open(portable.stack);
@@ -1046,18 +1133,40 @@ final class WorkbenchHud extends Gui {
         FactoryDashboard.tick(data);
     }
 
+    private static void requestDashboardExit(Runnable accepted) {
+        EngineeringModeController.revealExitPrompt();
+        FactoryDesktop.requestExit(accepted);
+    }
+
     static void switchTask(int destination) {
+        if (dashboardMode && destination != 0) {
+            requestDashboardExit(() -> switchTaskAccepted(destination));
+            return;
+        }
+        switchTaskAccepted(destination);
+    }
+
+    private static void switchTaskAccepted(int destination) {
+        if (destination == 0) {
+            openDashboard();
+            return;
+        }
+        boolean leavingDashboard = dashboardMode;
+        boolean returningToWorld = leavingDashboard && destination == 1;
+        dashboardMode = false;
+        PortableSuperDashboard.close();
+        suspendInput();
+        if (leavingDashboard) FactoryShortcuts.fenceDashboardExit();
+        if (EngineeringModeController.closeDashboardScreen()) return;
+        // Closing the overlay retains the world tools, source and camera that were underneath it.
+        if (returningToWorld) return;
         search.focused = false;
-        FactoryDashboard.blur();
         leaveCamera();
         closeSettings();
-        task = Math.max(0, Math.min(3, destination));
-        dashboardMode = task == 0;
+        task = Math.max(1, Math.min(3, destination));
         sidebarOpen = false;
-        if (!dashboardMode) PortableSuperDashboard.close();
         railOpen = task >= 2;
         powerOpen = false;
-        if (task == 0) EngineeringHud.useOverviewSource();
         if (task == 2) EngineeringHud.useTaskSource(2);
         if (task == 3) chooseNetworkSource();
     }
@@ -1083,10 +1192,14 @@ final class WorkbenchHud extends Gui {
     }
 
     static boolean worldView() {
-        return !dashboardMode && task == 1;
+        return !dashboardVisible();
     }
 
     static boolean dashboardVisible() {
+        return dashboardMode && EngineeringModeController.dashboardHostVisible();
+    }
+
+    static boolean dashboardOpen() {
         return dashboardMode;
     }
 
@@ -1095,12 +1208,36 @@ final class WorkbenchHud extends Gui {
     }
 
     static boolean typing() {
-        return search.focused || dashboardMode && FactoryDashboard.typing();
+        return !Minecraft.getMinecraft().gameSettings.hideGUI
+            && (search.focused || dashboardMode && FactoryDashboard.typing());
+    }
+
+    /** Cancel interaction ownership without discarding the world state or the dashboard layout. */
+    static void suspendInput() {
+        search.focused = false;
+        searchRect = null;
+        scrollDrag = null;
+        focusRegion = 0;
+        controls.clear();
+        scrollBars.clear();
+        tooltip = null;
+        FactoryShortcuts.cancelBinding();
+        FactoryChrome.blur();
+        FactoryDashboard.blur();
+        EngineeringHud.cancelAreaDrag();
     }
 
     static boolean key(int code, char character, boolean pressed) {
-        if (dashboardMode && FactoryDashboard.key(code, character, pressed)) return true;
-        if (FactoryChrome.key(code, character, pressed)) return true;
+        if (Minecraft.getMinecraft().gameSettings.hideGUI) return false;
+        if (dashboardMode) {
+            if (!EngineeringModeController.dashboardInputAllowed()) return true;
+            if (!FactoryDashboard.typing() && (code == Keyboard.KEY_E
+                || code == Minecraft.getMinecraft().gameSettings.keyBindInventory.getKeyCode())) {
+                if (pressed && !Keyboard.isRepeatEvent()) switchTask(1);
+                return true;
+            }
+            return FactoryDashboard.key(code, character, pressed);
+        }
         if (search.focused) {
             if (pressed) {
                 if (code == org.lwjgl.input.Keyboard.KEY_ESCAPE || code == org.lwjgl.input.Keyboard.KEY_RETURN)
@@ -1108,10 +1245,11 @@ final class WorkbenchHud extends Gui {
                 else if (code == org.lwjgl.input.Keyboard.KEY_BACK) search.backspace();
                 else if (code == org.lwjgl.input.Keyboard.KEY_DELETE) search.value = "";
                 else search.character(character);
-                railScroll = 0;
+                railScroll = keyRow = 0;
             }
             return true;
         }
+        if (FactoryChrome.key(code, character, pressed)) return true;
         if (task < 2 && !sidebarOpen) return false;
         if (code == org.lwjgl.input.Keyboard.KEY_TAB) {
             if (pressed) focusRegion = (focusRegion + 1) % 3;
@@ -1162,6 +1300,14 @@ final class WorkbenchHud extends Gui {
     }
 
     static void openPowerReview() {
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                openPowerReview();
+            });
+            return;
+        }
+        if (EngineeringModeController.closeDashboardScreen()) return;
         switchTask(1);
         EngineeringHud.activateData(2);
         if (!EngineeringHud.gridMcActive() && !EngineeringHud.gridGtActive()) EngineeringHud.toolAction(2, 1);
@@ -1174,12 +1320,38 @@ final class WorkbenchHud extends Gui {
     }
 
     static void openDashboard() {
-        switchTask(0);
+        if (dashboardMode) return;
+        suspendInput();
+        FactoryChrome.clear();
+        dashboardMode = true;
     }
 
     /** Shared entry point for HUD buttons and configurable keyboard actions. */
     static void shortcut(Action action) {
         if (action == null) return;
+        if (dashboardMode && leavesDashboard(action)) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                if (action != Action.DASHBOARD) shortcutAccepted(action);
+            });
+            return;
+        }
+        shortcutAccepted(action);
+    }
+
+    static boolean leavesDashboard(Action action) {
+        if (action == null) return false;
+        if (action.ordinal() >= Action.TERMINAL_0.ordinal() && action.ordinal() <= Action.TERMINAL_7.ordinal())
+            return true;
+        return action == Action.TOGGLE || action == Action.DASHBOARD
+            || action == Action.CAMERA
+            || action == Action.MONITOR
+            || action == Action.POWER
+            || action == Action.ALERTS
+            || action == Action.FILTER;
+    }
+
+    private static void shortcutAccepted(Action action) {
         controls.clear();
         if (!mouseDispatch) clickSound();
         if (action.ordinal() >= Action.TERMINAL_0.ordinal() && action.ordinal() <= Action.TERMINAL_7.ordinal()) {
@@ -1300,6 +1472,14 @@ final class WorkbenchHud extends Gui {
     }
 
     private static void showMachines() {
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                showMachines();
+            });
+            return;
+        }
+        if (EngineeringModeController.closeDashboardScreen()) return;
         leaveCamera();
         dashboardMode = false;
         PortableSuperDashboard.close();
@@ -1336,9 +1516,13 @@ final class WorkbenchHud extends Gui {
     }
 
     static boolean mouse(int x, int y, int width, int height, int button, boolean pressed, int wheel) {
+        if (Minecraft.getMinecraft().gameSettings.hideGUI) return false;
+        if (dashboardMode) {
+            if (!EngineeringModeController.dashboardInputAllowed()) return true;
+            FactoryDashboard.mouse(x, y, button, pressed, wheel);
+            return true;
+        }
         WorkbenchLayout l = layout(width, height);
-        if (FactoryDesktop.pointerCaptured() && dashboardMode)
-            return FactoryDashboard.mouse(x, y, button, pressed, wheel);
         if (button >= 0 && pressed) FactoryDesktop.focusOutside(x, y);
         if (FactoryChrome.mouse(x, y, button, pressed, wheel)) return true;
         if (pressed && button == 0) {
@@ -1361,7 +1545,6 @@ final class WorkbenchHud extends Gui {
             scrollDrag = bar;
             return true;
         }
-        if (dashboardMode && l.dashboard != null && FactoryDashboard.mouse(x, y, button, pressed, wheel)) return true;
         if (!l.contains(x, y)) return false;
         if (wheel != 0) {
             int delta = wheel > 0 ? -2 : 2;
@@ -1425,11 +1608,10 @@ final class WorkbenchHud extends Gui {
         if (r.w == 0 || r.h == 0) return;
         box(r, active || r.contains(mx, my) ? CHROME_SELECTED : CHROME);
         if (actionState(action) != null) stateEdge(r, active);
-        Minecraft.getMinecraft()
-            .getTextureManager()
-            .bindTexture(ATLAS);
-        GL11.glColor4f(1, 1, 1, 1);
-        PAINTER.drawTexturedModalRect(r.x + (r.w - 10) / 2, r.y + (r.h - 10) / 2, u, 40, 10, 10);
+        int iconX = action == Action.DASHBOARD ? r.x + 7 : r.x + (r.w - 10) / 2;
+        DashboardIcons.drawAtlas(u, iconX, r.y + (r.h - 10) / 2, ACCENT);
+        if (action == Action.DASHBOARD)
+            text(Minecraft.getMinecraft().fontRenderer, tr("dashboard"), r.x + 23, r.y + 8, TEXT, r.w - 28);
         if (r.contains(mx, my)) {
             tooltip = new ArrayList<>();
             tooltip.add(actionTip(action, tip));
@@ -1479,13 +1661,37 @@ final class WorkbenchHud extends Gui {
         int h = wrapped.size() * 13 + 10;
         x = Math.max(4, Math.min(x + 12, width - w - 16));
         y = Math.max(4, Math.min(y + 12, height - h - 4));
-        drawRect(x, y, x + w + 12, y + h, 0xFA101923);
+        box(new Rect(x, y, w + 12, h), BACK);
         for (int i = 0; i < wrapped.size(); i++)
             text(f, wrapped.get(i), x + 6, y + 5 + i * 13, i == 0 ? ACCENT : TEXT, w);
     }
 
+    private static void applyTheme() {
+        DashboardTheme theme = FactoryDisplayPreferences.theme();
+        BACK = CHROME = theme.cardBottom;
+        HEADER = CHROME_SELECTED = theme.header;
+        TEXT = theme.text;
+        MUTED = theme.muted;
+        ACCENT = theme.accent;
+        WARN = theme.warning;
+    }
+
     private static void box(Rect r, int color) {
+        DashboardTheme theme = FactoryDisplayPreferences.theme();
+        if (color == 0xFF22313C || color == 0xFF18252F || color == 0xFF121B23) color = theme.cardBottom;
         drawRect(r.x, r.y, r.x + r.w, r.y + r.h, color);
+        if (r.w <= 2 || r.h <= 2) return;
+        if (theme == DashboardTheme.STANDARD) {
+            GuiDraw.drawVerticalGradientRect(
+                r.x + 1,
+                r.y + 1,
+                r.w - 2,
+                r.h - 2,
+                DashboardTheme.mix(color, theme.cardTop, .22),
+                color);
+        }
+        drawRect(r.x, r.y, r.x + r.w, r.y + 1, DashboardTheme.mix(color, theme.edge, .55));
+        drawRect(r.x, r.y + r.h - 1, r.x + r.w, r.y + r.h, DashboardTheme.mix(color, theme.background, .65));
     }
 
     private static void text(FontRenderer f, String text, int x, int y, int color, int width) {

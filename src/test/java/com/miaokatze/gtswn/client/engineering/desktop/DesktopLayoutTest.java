@@ -10,10 +10,83 @@ import org.junit.Test;
 public class DesktopLayoutTest {
 
     @Test
+    public void compactUnboundResourcePreferencesRemainReadableWhenAutomaticSourceIsIntroduced() {
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(new WidgetSpec("customStock", WidgetKind.RESOURCES, -8, -4, 4, 2).titled("Stock")));
+        WidgetSpec restored = DesktopStore.decode(DesktopStore.encode(layout))
+            .find("customStock");
+        assertNotNull(restored);
+        assertEquals(4, restored.columns);
+        assertEquals(2, restored.rows);
+        assertEquals(-8, restored.column);
+        assertEquals("Stock", restored.title);
+        assertNull(restored.screen);
+        assertNull(restored.resource);
+    }
+
+    @Test
+    public void exactResourcePlacementUsesCompactHoleWithoutAnIntermediateTable() {
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(new WidgetSpec("left", WidgetKind.MACHINES, 0, 0, 4, 64)));
+        assertTrue(layout.add(new WidgetSpec("right", WidgetKind.MACHINES, 8, 0, 8, 64)));
+        assertTrue(layout.add(new WidgetSpec("below", WidgetKind.MACHINES, 4, 3, 4, 61)));
+        assertTrue(layout.add(new WidgetSpec("limit", WidgetKind.MACHINES, 0, DesktopLayout.MAX_COORD - 3, 4, 3)));
+        assertFalse(
+            "A complete table does not fit the only remaining hole",
+            layout.add(
+                new WidgetSpec("table", WidgetKind.RESOURCES, 4, 0, 6, 3)
+                    .boundScreen(new ScreenBinding(UUID.randomUUID(), UUID.randomUUID()))));
+        ResourceBinding binding = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "v2:item:" + String.join("", java.util.Collections.nCopies(64, "a")),
+            "Circuit");
+        WidgetSpec resource = layout.addResource(binding);
+        assertNotNull(resource);
+        assertSame(binding, resource.resource);
+        assertEquals(4, resource.column);
+        assertEquals(0, resource.row);
+        assertEquals(4, resource.columns);
+        assertEquals(2, resource.rows);
+        assertEquals(
+            5,
+            layout.widgets()
+                .size());
+    }
+
+    @Test
+    public void resourceCardsKeepSavedGeometryAndClearingAnEntryKeepsCompactSingleMonitor() {
+        ResourceBinding binding = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            2,
+            "v2:fluid:" + String.join("", java.util.Collections.nCopies(64, "b")),
+            "Steam");
+        WidgetSpec old = new WidgetSpec("resource", WidgetKind.RESOURCES, 0, 0, 8, 4).boundResource(binding);
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(old));
+        WidgetSpec restored = DesktopStore.decode(DesktopStore.encode(layout))
+            .find("resource");
+        assertEquals(8, restored.columns);
+        assertEquals(4, restored.rows);
+        assertTrue(layout.resize("resource", 0, 0, 4, 3));
+        assertTrue(layout.resize("resource", 0, 0, 2, 1));
+        assertFalse(layout.resize("resource", 0, 0, 1, 1));
+        WidgetSpec cleared = layout.find("resource")
+            .boundResource(null);
+        assertTrue(cleared.singleResource);
+        assertEquals(2, cleared.columns);
+        assertEquals(1, cleared.rows);
+        assertEquals(2, cleared.minColumns());
+        assertEquals(1, cleared.minRows());
+    }
+
+    @Test
     public void defaultArrangementIsBalancedWithinInitialAreaAndHasEveryRealSource() {
         DesktopLayout layout = DesktopLayout.defaultLayout();
         assertEquals(
-            8,
+            16,
             layout.widgets()
                 .size());
         for (WidgetSpec widget : layout.widgets()) {
@@ -22,6 +95,28 @@ public class DesktopLayoutTest {
             assertTrue(widget.x() + widget.width() <= DesktopLayout.DEFAULT_SIZE);
             assertTrue(widget.y() + widget.height() <= DesktopLayout.DEFAULT_SIZE);
             assertNull(widget.device);
+        }
+        assertEquals(
+            1024,
+            layout.bounds()
+                .width(),
+            0);
+        assertEquals(
+            576,
+            layout.bounds()
+                .height(),
+            0);
+        // Information leads the overview; the seven-row operational area follows below it.
+        assertEquals(0, layout.find("gameClock").row);
+        assertEquals(2, layout.find("gameClock").rows);
+        assertEquals(WidgetKind.CLOCK, layout.find("gameClock").kind);
+        DesktopViewport view = new DesktopViewport();
+        view.reset(layout, 640, 308);
+        assertEquals(.6, view.scale, 0);
+        for (String id : new String[] { "machines", "wireless" }) {
+            WidgetSpec instrument = layout.find(id);
+            assertTrue(instrument.width() * view.scale >= 130);
+            assertTrue(instrument.height() * view.scale >= 64);
         }
     }
 
@@ -37,14 +132,15 @@ public class DesktopLayoutTest {
             6400,
             layout.find("machines")
                 .y());
-        assertTrue(layout.move("machines", -DesktopLayout.MAX_COORD, DesktopLayout.MAX_COORD - 2));
+        assertTrue(
+            layout.move("machines", -DesktopLayout.MAX_COORD, DesktopLayout.MAX_COORD - layout.find("machines").rows));
         assertFalse(layout.move("machines", Integer.MAX_VALUE, 0));
         assertFalse(layout.move("machines", 0, Integer.MIN_VALUE));
     }
 
     @Test
     public void collisionsAndTooSmallResizeAreRejectedWithoutMutatingOriginal() {
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         WidgetSpec original = layout.find("machines");
         assertFalse(layout.move("machines", 4, 0));
         assertFalse(layout.resize("machines", 0, 0, 2, 1));
@@ -152,7 +248,7 @@ public class DesktopLayoutTest {
             DesktopLayout.MAX_WIDGETS,
             layout.widgets()
                 .size());
-        assertFalse(layout.add(new WidgetSpec("device", WidgetKind.DEVICE, 0, 0, 4, 3)));
+        assertFalse(layout.add(new WidgetSpec("device", WidgetKind.DEVICE, 0, 0, 3, 3)));
     }
 
     @Test

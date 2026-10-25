@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.client.renderer.culling.Frustrum;
@@ -31,7 +32,9 @@ import net.minecraftforge.event.world.WorldEvent;
 
 import org.lwjgl.opengl.GL11;
 
+import com.miaokatze.gtswn.client.engineering.EngineeringHud;
 import com.miaokatze.gtswn.client.engineering.EngineeringModeController;
+import com.miaokatze.gtswn.client.engineering.WorkbenchLayout;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
@@ -54,6 +57,7 @@ public final class DeviceTerminalAnchorRenderer {
     public static final DeviceTerminalAnchorRenderer INSTANCE = new DeviceTerminalAnchorRenderer();
     private final List<Anchor> visible = new ArrayList<>();
     private final List<Anchor> drawn = new ArrayList<>(512);
+    private final DevicePowerClusterLayout factoryClusters = new DevicePowerClusterLayout();
     public int lastRenderedMarkers;
     public int lastRenderedLabels;
     public int lastMarkerBatches;
@@ -689,42 +693,117 @@ public final class DeviceTerminalAnchorRenderer {
 
     /** Factory projection owns placement; font size stays constant while its camera pans, rotates or zooms. */
     private void drawFactoryPower(Minecraft mc, int width, int height) {
+        lastRenderedLabels = lastProjectedLabels = 0;
         if (!DeviceTerminalVisualConfig.showLabels || !DeviceTerminalVisualConfig.showLabelPower) return;
         int budget = Math.max(8, Math.min(64, DeviceTerminalVisualConfig.labelBudget));
+        double hudScale = EngineeringHud.scale(width, height);
+        WorkbenchLayout.Rect viewport = EngineeringModeController
+            .worldViewport((int) (width / hudScale), (int) (height / hudScale));
+        DevicePowerClusterLayout.Bounds bounds = new DevicePowerClusterLayout.Bounds(
+            (int) Math.ceil(viewport.x * hudScale) + 2,
+            (int) Math.ceil(viewport.y * hudScale) + 2,
+            (int) Math.floor((viewport.x + viewport.w) * hudScale) - 2,
+            (int) Math.floor((viewport.y + viewport.h) * hudScale) - 2);
+        if (bounds.right - bounds.left < 28 || bounds.bottom - bounds.top < 40) return;
+        List<DevicePowerClusterLayout.Point> points = new ArrayList<>();
+        boolean fresh = DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis());
+        for (Anchor anchor : visible) {
+            if (lastProjectedLabels >= DevicePowerClusterLayout.MAX_POINTS) break;
+            Entry entry = anchor.entry;
+            if (entry.dim != mc.theWorld.provider.dimensionId || anchor.factoryPower == null
+                || distance(entry, mc.thePlayer.posX, eyeY(mc), mc.thePlayer.posZ) > range() * range()) continue;
+            lastProjectedLabels++;
+            ProjectedPoint projected = WorldCameraHooks.projectWorld(
+                EngineeringModeController.OWNER,
+                mc.theWorld,
+                entry.x + .5D,
+                entry.y + 1.04D,
+                entry.z + .5D);
+            if (projected == null || Math.abs(projected.ndcZ()) > 1D) continue;
+            DevicePowerClusterLayout.Reading reading = DeviceEnergyWorldRenderer.ignored(entry)
+                ? DevicePowerClusterLayout.Reading.IGNORED
+                : !fresh || !anchor.available ? DevicePowerClusterLayout.Reading.UNAVAILABLE
+                    : entry.evidenceKind >= 2 || entry.instIn < 0 || entry.instOut < 0
+                        ? DevicePowerClusterLayout.Reading.UNKNOWN
+                        : DevicePowerClusterLayout.Reading.CONFIRMED;
+            String detail = fresh ? anchor.factoryPower : factoryPowerText(entry, false);
+            points.add(
+                new DevicePowerClusterLayout.Point(
+                    entry.key,
+                    (projected.ndcX() + 1D) * width * .5D,
+                    (1D - projected.ndcY()) * height * .5D,
+                    entry.instIn,
+                    entry.instOut,
+                    reading,
+                    detail,
+                    fresh ? anchor.factoryPowerWidth : mc.fontRenderer.getStringWidth(detail),
+                    mc.fontRenderer.FONT_HEIGHT));
+        }
+        DevicePowerClusterLayout.Result layout = factoryClusters.layout(
+            points,
+            bounds,
+            budget,
+            (group, availableWidth) -> measureFactoryGroup(mc.fontRenderer, group, availableWidth));
         try (GlScope ignored = new GlScope()) {
             GL11.glDisable(GL11.GL_DEPTH_TEST);
             GL11.glEnable(GL11.GL_TEXTURE_2D);
             GL11.glEnable(GL11.GL_BLEND);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            for (Anchor anchor : visible) {
-                if (lastRenderedLabels >= budget || lastProjectedLabels >= 64) break;
-                Entry entry = anchor.entry;
-                if (entry.dim != mc.theWorld.provider.dimensionId || anchor.factoryPower == null
-                    || distance(entry, mc.thePlayer.posX, eyeY(mc), mc.thePlayer.posZ) > range() * range()) continue;
-                lastProjectedLabels++;
-                ProjectedPoint projected = WorldCameraHooks.projectWorld(
-                    EngineeringModeController.OWNER,
-                    mc.theWorld,
-                    entry.x + .5D,
-                    entry.y + 1.04D,
-                    entry.z + .5D);
-                if (projected == null || Math.abs(projected.ndcZ()) > 1D) continue;
-                int left = (int) Math.round((projected.ndcX() + 1D) * width * .5D - anchor.factoryPowerWidth * .5D);
-                int top = (int) Math.round((1D - projected.ndcY()) * height * .5D) - mc.fontRenderer.FONT_HEIGHT - 2;
-                candidateRectangle[0] = left;
-                candidateRectangle[1] = top;
-                candidateRectangle[2] = left + anchor.factoryPowerWidth;
-                candidateRectangle[3] = top + mc.fontRenderer.FONT_HEIGHT;
-                if (left < 2 || top < 2
-                    || candidateRectangle[2] > width - 2
-                    || candidateRectangle[3] > height - 2
-                    || !DeviceTerminalLabelLayout.fits(candidateRectangle, acceptedRectangles, lastRenderedLabels, 3D))
-                    continue;
-                mc.fontRenderer.drawStringWithShadow(anchor.factoryPower, left, top, 0xEEEEEE);
-                System.arraycopy(candidateRectangle, 0, acceptedRectangles, lastRenderedLabels * 4, 4);
+            GL11.glEnable(GL11.GL_SCISSOR_TEST);
+            int scissorLeft = (int) Math.ceil(bounds.left * mc.displayWidth / (double) width);
+            int scissorRight = (int) Math.floor(bounds.right * mc.displayWidth / (double) width);
+            int scissorBottom = (int) Math.ceil((height - bounds.bottom) * mc.displayHeight / (double) height);
+            int scissorTop = (int) Math.floor((height - bounds.top) * mc.displayHeight / (double) height);
+            GL11.glScissor(scissorLeft, scissorBottom, scissorRight - scissorLeft, scissorTop - scissorBottom);
+            for (DevicePowerClusterLayout.Group group : layout.groups) {
+                if (group.points.size() > 1 || group.remainder) {
+                    Gui.drawRect(group.left, group.top, group.left + group.width, group.top + group.height, 0xB01C2A35);
+                }
+                int textY = group.top;
+                for (String line : group.lines) {
+                    mc.fontRenderer.drawStringWithShadow(line, group.left, textY, 0xEEEEEE);
+                    textY += mc.fontRenderer.FONT_HEIGHT + 1;
+                }
                 lastRenderedLabels++;
             }
         }
+    }
+
+    private static void measureFactoryGroup(FontRenderer font, DevicePowerClusterLayout.Group group, int maxWidth) {
+        List<String> raw = new ArrayList<>();
+        if (group.points.size() == 1 && !group.remainder) {
+            DevicePowerClusterLayout.Point point = group.points.get(0);
+            if (point.width <= maxWidth) {
+                group.lines = new String[] { point.detail };
+                group.width = point.width;
+                group.height = point.height;
+                return;
+            }
+            raw.add(point.detail);
+        } else {
+            raw.add(
+                StatCollector.translateToLocalFormatted(
+                    "gtswn.device.visual.cluster." + (group.remainder ? "remainder" : "nearby"),
+                    group.points.size(),
+                    group.confirmed));
+            String input = group.confirmed == 0 ? "?" : DevicePowerClusterLayout.formatTotal(group.input);
+            String output = group.confirmed == 0 ? "?" : DevicePowerClusterLayout.formatTotal(group.output);
+            raw.add("\u00a76\u2193" + input + " \u00a7a\u2191" + output + "\u00a77 EU/t");
+            if (group.unknown + group.unavailable + group.ignored != 0) {
+                raw.add(
+                    StatCollector.translateToLocalFormatted(
+                        "gtswn.device.visual.cluster.unresolved",
+                        group.unknown,
+                        group.unavailable,
+                        group.ignored));
+            }
+        }
+        List<String> lines = new ArrayList<>();
+        for (String line : raw) lines.addAll(font.listFormattedStringToWidth(line, Math.max(1, maxWidth)));
+        group.lines = lines.toArray(new String[0]);
+        group.width = 0;
+        for (String line : group.lines) group.width = Math.max(group.width, font.getStringWidth(line));
+        group.height = group.lines.length * (font.FONT_HEIGHT + 1) - 1;
     }
 
     /** Wrapping changes only with text, viewport or font mode; unchanged frames reuse line widths. */
@@ -799,6 +878,7 @@ public final class DeviceTerminalAnchorRenderer {
     }
 
     private void reset() {
+        factoryClusters.clear();
         visible.clear();
         drawn.clear();
         building.clear();

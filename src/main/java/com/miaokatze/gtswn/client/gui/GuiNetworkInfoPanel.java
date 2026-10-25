@@ -26,6 +26,7 @@ import com.cleanroommc.modularui.widget.ParentWidget;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
+import com.miaokatze.gtswn.common.panel.NetworkChartStyle;
 import com.miaokatze.gtswn.common.panel.WindowLabel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -60,6 +61,8 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
     private TextFieldWidget screenColorField;
     private static final int PALETTE_PAGE = 90;
     private static final int PALETTE_TOGGLE = 91;
+    private static final int CHART_STYLE = 92;
+    private NetworkChartStyle chartStyleDraft;
     private static final String[] PALETTE_KEYS = { "energyFlatColor", "energyUpColor", "energyDownColor",
         "rateFlatColor", "rateUpColor", "rateDownColor" };
     private final TextFieldWidget[] paletteFields = new TextFieldWidget[6];
@@ -160,6 +163,8 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
 
     /** 初始化 EU 标签页原有按钮 0-8 与 textFields（从原 initGui 抽取） */
     private void initEUTabControls() {
+        if (chartStyleDraft == null) chartStyleDraft = panel.getChartStyle();
+        addButton(CHART_STYLE, left + 12, top + 253, 150, 16, getChartStyleText());
         addButton(
             PALETTE_PAGE,
             left + 320,
@@ -413,6 +418,12 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
     }
 
     private void action(int id) {
+        if (id == CHART_STYLE) {
+            chartStyleDraft = NetworkChartStyle.fromId((chartStyleDraft.ordinal() + 1) % 3);
+            buttons.get(id)
+                .overlay(IKey.str(getChartStyleText()));
+            return;
+        }
         if (id == PALETTE_PAGE) {
             if (palettePage) paletteDraft = buildPaletteConfig();
             else chartDraft = buildChartConfig();
@@ -444,8 +455,9 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
                     panel.xCoord,
                     panel.yCoord,
                     panel.zCoord,
-                    (palettePage ? chartDraft + "\n" + buildPaletteConfig()
-                        : buildChartConfig() + "\n" + paletteDraft)));
+                    (palettePage ? chartDraft + "\n" + buildPaletteConfig() : buildChartConfig() + "\n" + paletteDraft)
+                        + "\nchartStyle="
+                        + chartStyleDraft.ordinal()));
         } else if (id == AE_APPLY_BUTTON) {
             // AE 图表配置应用
             GTSWNPacketHandler.NETWORK.sendToServer(
@@ -666,6 +678,14 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
     private void drawAEChartTab() {
         ItemStack item = panel.getChartItem();
         FluidStack fluid = panel.getChartFluid();
+        String coverage = StatCollector.translateToLocalFormatted(
+            "gtswn.network_info.gui.ae.window.actual",
+            WindowLabel.actualSpan(panel.getAEChartSamples()));
+        fontRendererObj.drawString(
+            fontRendererObj.trimStringToWidth(coverage, 134),
+            left + 204,
+            top + 78,
+            GtswnGuiPalette.TEXT_BODY);
 
         // 未绑定：显示空提示与右键配置提示
         if (item == null && fluid == null) {
@@ -906,6 +926,13 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
             + screenColorField.getText();
     }
 
+    private String getChartStyleText() {
+        return tr("gtswn.network_info.gui.chart_style") + ": "
+            + tr(
+                "gtswn.network_info.gui.chart_style." + chartStyleDraft.name()
+                    .toLowerCase(java.util.Locale.ROOT));
+    }
+
     /** 打包 AE 图表配置为 TileEntity.applyAEChartConfig 可解析的字符串 */
     private String buildAEChartConfig() {
         return "aeMin=" + aeAxisMinField.getText()
@@ -931,7 +958,7 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
 
     /** 根据 AE 时长窗口常量生成按钮显示文本（E4 窗口枚举化：langKey 映射迁入 WindowLabel） */
     private String getAEWindowDisplay(int window) {
-        return tr("gtswn.network_info.gui.ae.window") + ": "
+        return tr("gtswn.network_info.gui.ae.window.nominal") + ": "
             + tr(
                 WindowLabel.of(window)
                     .langKey());

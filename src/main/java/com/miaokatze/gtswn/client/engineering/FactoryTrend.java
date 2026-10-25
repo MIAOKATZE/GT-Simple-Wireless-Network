@@ -10,17 +10,39 @@ final class FactoryTrend {
     final double[] normalized;
     final String minimum, maximum;
     final double zero;
+    final int knownPoints;
 
     FactoryTrend(BigInteger[] values) {
         this(decimals(values));
     }
 
     FactoryTrend(BigDecimal[] values) {
-        BigDecimal min = BigDecimal.ZERO, max = BigDecimal.ZERO;
+        this(values, true);
+    }
+
+    /** Stock charts use their observed extent; signed rates retain a meaningful zero baseline. */
+    FactoryTrend(BigDecimal[] values, boolean includeZero) {
+        BigDecimal min = includeZero ? BigDecimal.ZERO : null, max = min;
+        int known = 0;
         for (BigDecimal value : values) if (value != null) {
-            min = min.min(value);
-            max = max.max(value);
+            min = min == null ? value : min.min(value);
+            max = max == null ? value : max.max(value);
+            known++;
         }
+        if (min == null) min = max = BigDecimal.ZERO;
+        if (!includeZero && known > 0) {
+            boolean nonnegative = min.signum() >= 0;
+            BigDecimal padding = max.subtract(min)
+                .abs()
+                .multiply(new BigDecimal("0.1"));
+            if (padding.signum() == 0) padding = max.abs()
+                .multiply(new BigDecimal("0.05"))
+                .max(BigDecimal.ONE);
+            min = min.subtract(padding);
+            if (nonnegative) min = min.max(BigDecimal.ZERO);
+            max = max.add(padding);
+        }
+        knownPoints = known;
         minimum = min.toPlainString();
         maximum = max.toPlainString();
         normalized = new double[values.length];
@@ -41,5 +63,22 @@ final class FactoryTrend {
             : value.subtract(min)
                 .divide(span, MathContext.DECIMAL64)
                 .doubleValue();
+    }
+
+    /** Irregular sample intervals retain their real positions; a lone observation sits at now. */
+    static double timePosition(int index, int count, long[] ticks) {
+        if (count <= 1) return 1;
+        if (ticks != null && ticks.length == count && ticks[count - 1] > ticks[0]) {
+            long span = ticks[count - 1] - ticks[0], elapsed = ticks[index] - ticks[0];
+            if (span > 0 && elapsed >= 0) return elapsed / (double) span;
+            return BigDecimal.valueOf(ticks[index])
+                .subtract(BigDecimal.valueOf(ticks[0]))
+                .divide(
+                    BigDecimal.valueOf(ticks[count - 1])
+                        .subtract(BigDecimal.valueOf(ticks[0])),
+                    MathContext.DECIMAL64)
+                .doubleValue();
+        }
+        return index / (double) (count - 1);
     }
 }

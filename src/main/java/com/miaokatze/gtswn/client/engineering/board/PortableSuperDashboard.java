@@ -58,6 +58,7 @@ public final class PortableSuperDashboard extends Gui {
     private static long revision;
     private static List<String> basic = new ArrayList<>();
     private static boolean embedded;
+    private static boolean factoryScreens;
     private static Runnable userClose;
     private static int embeddedX, embeddedY, virtualWidth, virtualHeight;
     private static int trackTop, trackBottom, dragY, dragScroll;
@@ -118,6 +119,14 @@ public final class PortableSuperDashboard extends Gui {
         update();
     }
 
+    /** Shares the original fair scheduler; a separate board's hidden-card preference is presentation only. */
+    public static void factoryScreens(boolean reading) {
+        if (factoryScreens == reading) return;
+        factoryScreens = reading;
+        requestedIndex = -1;
+        requestedId = null;
+    }
+
     /** Read-only projection of the existing authorized, fairly polled screen cards. */
     public static List<Panel> panels() {
         List<Panel> result = new ArrayList<>();
@@ -134,6 +143,30 @@ public final class PortableSuperDashboard extends Gui {
 
     public static int boundScreens() {
         return bindings.size();
+    }
+
+    /** All terminal mounts, including cards hidden only in the original board's layout. */
+    public static List<String> mountedScreenIds() {
+        List<String> result = new ArrayList<>();
+        if (open) for (MonitorBindings.Binding binding : bindings) result.add(binding.panelId.toString());
+        return java.util.Collections.unmodifiableList(result);
+    }
+
+    /** Existing receipts only; this projection never requests a screen or reads a world tile. */
+    public static List<Panel> mountedPanels() {
+        List<Panel> result = new ArrayList<>();
+        if (open) for (MonitorBindings.Binding binding : bindings) {
+            Card card = cards.get(binding.panelId.toString());
+            if (card != null && card.summary != null) {
+                result
+                    .add(card.summary.state == 0 && card.detail != null && !expired(card) ? card.detail : card.summary);
+            } else {
+                Panel waiting = new Panel();
+                waiting.binding = binding;
+                result.add(waiting);
+            }
+        }
+        return java.util.Collections.unmodifiableList(result);
     }
 
     /** Layout identities include screens whose first reply has not arrived yet. */
@@ -157,6 +190,7 @@ public final class PortableSuperDashboard extends Gui {
     public static void close() {
         if (stack != null) PortableMonitorClientCache.dashboardViewing(stack, -1);
         open = settings = false;
+        factoryScreens = false;
         draggingScroll = false;
         userClose = null;
         stack = null;
@@ -247,7 +281,7 @@ public final class PortableSuperDashboard extends Gui {
         }
         // Hold one target until an ACK. Frontmost cards get a bounded age bonus, while every other
         // visible-in-layout card eventually becomes older; unloaded screens cannot starve the rest.
-        if (requestedIndex < 0 || layout.hidden.contains(requestedId)) {
+        if (requestedIndex < 0 || !factoryScreens && layout.hidden.contains(requestedId)) {
             requestedIndex = nextSelection();
             requestedId = requestedIndex < 0 ? null : bindings.get(requestedIndex).panelId.toString();
         }
@@ -261,7 +295,9 @@ public final class PortableSuperDashboard extends Gui {
         Map<String, Long> attempted = new HashMap<>();
         for (Map.Entry<String, Card> entry : cards.entrySet())
             attempted.put(entry.getKey(), entry.getValue().attempted);
-        String selected = layout.nextSource(layout.order, visible, attempted);
+        String selected = factoryScreens
+            ? layout.nextSource(mountedScreenIds(), java.util.Collections.emptyList(), attempted, true)
+            : layout.nextSource(layout.order, visible, attempted);
         for (int i = 0; i < bindings.size(); i++) if (bindings.get(i).panelId.toString()
             .equals(selected)) return i;
         return -1;

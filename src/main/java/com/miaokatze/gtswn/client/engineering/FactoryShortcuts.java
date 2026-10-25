@@ -128,6 +128,10 @@ public final class FactoryShortcuts {
             : BINDINGS.getOrDefault(action, Keyboard.KEY_NONE);
     }
 
+    static int dashboardKeyCode() {
+        return keyCode(Action.DASHBOARD);
+    }
+
     private static void saveBindings() {
         try {
             if (configuration == null) configuration = new Configuration(configFile());
@@ -192,6 +196,11 @@ public final class FactoryShortcuts {
         for (int button = 0; button < buttons; button++) codes[Keyboard.KEYBOARD_SIZE + button] = button - 100;
         BARRIER.close(codes, TerminalKeyNames::isDown);
         KeyBinding.unPressAllKeys();
+    }
+
+    static void fenceDashboardExit() {
+        BARRIER.open();
+        fenceHeldKeys();
     }
 
     static void poll() {

@@ -18,12 +18,111 @@ public class DesktopStoreTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void maximumComplexLayoutSurvivesARealDiskFlushAndAFreshStoreLoad() throws Exception {
+        Path directory = temporary.newFolder()
+            .toPath();
+        DesktopLayout layout = new DesktopLayout();
+        String title = String.join("", java.util.Collections.nCopies(64, "\u65f6"));
+        String key = String.join("", java.util.Collections.nCopies(256, "\u8bbe"));
+        for (int index = 0; index < DesktopLayout.MAX_WIDGETS; index++) {
+            DeviceBinding binding = new DeviceBinding(UUID.randomUUID(), key, -1, index, -100, 123456, 1234);
+            WidgetSpec card = new WidgetSpec("complex-" + index, WidgetKind.DEVICE, index * 4, 0, 4, 32)
+                .configured(title, WidgetSpec.availableFields(WidgetKind.DEVICE), 1)
+                .boundDevice(binding)
+                .withNumberFormat(WidgetNumberFormat.SCIENTIFIC)
+                .withRate(false, 3600);
+            assertTrue(layout.add(card));
+        }
+        String profile = DesktopStore.profile("disk-boundary", "player");
+        DesktopStore writer = new DesktopStore(directory.toFile());
+        writer.put(profile, layout);
+        assertTrue(writer.flush());
+        long bytes = Files.size(directory.resolve(profile + ".properties"));
+        assertTrue("Regression fixture must exceed the former 128-card disk limit", bytes > 1048576);
+        assertTrue(bytes <= DesktopStore.MAX_FILE_BYTES);
+        DesktopLayout restored = new DesktopStore(directory.toFile()).load(profile);
+        assertEquals(
+            DesktopLayout.MAX_WIDGETS,
+            restored.widgets()
+                .size());
+        assertEquals(DesktopStore.encode(layout), DesktopStore.encode(restored));
+    }
+
+    @Test
+    public void ratePreferencesAndPendingInitializationSurviveEveryStoredCopy() {
+        DesktopLayout layout = DesktopPreset.overviewLayout();
+        WidgetSpec rate = layout.find("netRate")
+            .withRate(false, 240);
+        assertTrue(layout.replace(rate));
+        DesktopLayout restored = DesktopStore.decode(DesktopStore.encode(layout.copy()));
+        assertFalse(restored.find("netRate").averageRate);
+        assertEquals(240, restored.find("netRate").averageWindowSeconds);
+        assertTrue(restored.find("resource1").autoResourcePending);
+        assertTrue(restored.find("resource1").singleResource);
+        assertFalse(restored.find("netRate").autoResourcePending);
+        WidgetSpec cleared = restored.find("resource1")
+            .boundResource(null)
+            .boundScreen(null);
+        assertTrue(restored.replace(cleared));
+        assertFalse(
+            DesktopStore.decode(DesktopStore.encode(restored))
+                .find("resource1").autoResourcePending);
+        assertTrue(
+            DesktopStore.decode(DesktopStore.encode(restored))
+                .find("resource1").singleResource);
+    }
+
+    @Test
+    public void missingViewportUsesSixtyPercentButSavedOneHundredPercentIsExplicit() {
+        DesktopStore store = new DesktopStore(null);
+        String profile = DesktopStore.profile("world", "player");
+        assertFalse(store.hasView(profile));
+        assertEquals(.6, store.loadView(profile).scale, 0);
+        DesktopViewport saved = new DesktopViewport();
+        saved.scale = 1;
+        store.putView(profile, saved);
+        store.put(profile, DesktopPreset.overviewLayout());
+        assertTrue(store.hasView(profile));
+        assertEquals(1, store.loadView(profile).scale, 0);
+    }
+
+    @Test
+    public void borderAndExactResourceIdentitySurviveConfigurationAndPersistence() {
+        String key = "v2:item:" + String.join("", java.util.Collections.nCopies(64, "a"));
+        ResourceBinding binding = new ResourceBinding(UUID.randomUUID(), UUID.randomUUID(), 1, key, "Circuit");
+        WidgetSpec spec = new WidgetSpec("bound", WidgetKind.RESOURCES, 0, 0, 8, 4).boundResource(binding)
+            .bordered(0x15ABEF)
+            .titled("Custom")
+            .configured("Custom", java.util.Collections.singletonList("source"), 1)
+            .presented(WidgetPresentation.STATUS_LIST, "", null)
+            .withBounds(-8, -4, 8, 4);
+        DesktopLayout layout = new DesktopLayout();
+        assertTrue(layout.add(spec));
+        Properties data = DesktopStore.encode(layout);
+        WidgetSpec restored = DesktopStore.decode(data)
+            .find("bound");
+        assertEquals(0xFF15ABEF, restored.borderColor);
+        assertEquals(binding.source, restored.resource.source);
+        assertEquals(binding.screen, restored.resource.screen);
+        assertEquals(key, restored.resource.key);
+        assertEquals(1, restored.resource.kind);
+        assertEquals("Circuit", restored.resource.name);
+        assertFalse(data.containsKey("widget.0.amount"));
+        assertFalse(data.containsKey("widget.0.rate"));
+        data.setProperty("widget.0.borderColor", "invalid");
+        assertEquals(
+            WidgetSpec.DEFAULT_BORDER_COLOR,
+            DesktopStore.decode(data)
+                .find("bound").borderColor);
+    }
+
+    @Test
     public void pendingCommittedSnapshotDoesNotFollowUnreleasedGeometryAndViewportEdits() throws Exception {
         Path directory = temporary.newFolder()
             .toPath();
         String profile = DesktopStore.profile("world", "player");
         DesktopStore store = new DesktopStore(directory.toFile());
-        DesktopLayout layout = DesktopLayout.defaultLayout();
+        DesktopLayout layout = DesktopTestLayouts.dragFixture();
         DesktopViewport view = new DesktopViewport();
         store.put(profile, layout);
         store.putView(profile, view);
@@ -68,7 +167,9 @@ public class DesktopStoreTest {
             -40,
             500,
             9,
-            7,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             "My machine",
             binding,
             Arrays.asList("status", "averageInput", "coordinates"),
@@ -114,7 +215,7 @@ public class DesktopStoreTest {
 
     @Test
     public void legacyFieldsInferExplicitSelectionOnlyWhenNonempty() {
-        Properties defaults = DesktopStore.encode(DesktopLayout.defaultLayout());
+        Properties defaults = DesktopStore.encode(DesktopTestLayouts.dragFixture());
         defaults.remove("widget.0.fieldsConfigured");
         assertFalse(
             DesktopStore.decode(defaults)
@@ -128,17 +229,33 @@ public class DesktopStoreTest {
 
     @Test
     public void badOrUnknownWidgetDoesNotDiscardValidSiblings() {
-        Properties p = DesktopStore.encode(DesktopLayout.defaultLayout());
+        DesktopLayout original = DesktopLayout.defaultLayout();
+        Properties p = DesktopStore.encode(original);
         p.setProperty("widget.1.kind", "FUTURE_PLUGIN");
         p.setProperty("widget.2.column", "2147483647");
         p.setProperty("widget.3.rows", "-1");
         DesktopLayout recovered = DesktopStore.decode(p);
         assertEquals(
-            5,
+            original.widgets()
+                .size() - 3,
             recovered.widgets()
                 .size());
-        assertNotNull(recovered.find("resources"));
-        assertNotNull(recovered.find("machines"));
+        for (int index = 0; index < original.widgets()
+            .size(); index++) {
+            WidgetSpec widget = original.widgets()
+                .get(index);
+            WidgetSpec retained = recovered.find(widget.id);
+            if (index >= 1 && index <= 3) {
+                assertNull(retained);
+            } else {
+                assertNotNull(retained);
+                assertEquals(widget.kind, retained.kind);
+                assertEquals(widget.column, retained.column);
+                assertEquals(widget.row, retained.row);
+                assertEquals(widget.columns, retained.columns);
+                assertEquals(widget.rows, retained.rows);
+            }
+        }
     }
 
     @Test
@@ -168,7 +285,9 @@ public class DesktopStoreTest {
         assertEquals(-1234, reopened.loadView(first).panX, 0);
         assertEquals(.5, reopened.loadView(first).scale, 0);
         assertEquals(
-            8,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             reopened.load(second)
                 .widgets()
                 .size());
@@ -215,7 +334,9 @@ public class DesktopStoreTest {
         Files.write(directory.resolve(profile + ".properties"), "schema=\\uBROKEN".getBytes("UTF-8"));
         DesktopStore store = new DesktopStore(directory.toFile());
         assertEquals(
-            8,
+            DesktopLayout.defaultLayout()
+                .widgets()
+                .size(),
             store.load(profile)
                 .widgets()
                 .size());

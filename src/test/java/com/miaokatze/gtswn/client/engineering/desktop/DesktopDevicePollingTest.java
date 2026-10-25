@@ -11,6 +11,26 @@ import org.junit.Test;
 public class DesktopDevicePollingTest {
 
     @Test
+    public void openSelectorGetsBudgetAheadOfFourVisibleSourcesAndLostPossessionDropsImmediately() {
+        UUID factory = UUID.randomUUID(), choice = UUID.randomUUID(), a = UUID.randomUUID(), b = UUID.randomUUID(),
+            c = UUID.randomUUID(), d = UUID.randomUUID();
+        java.util.Set<UUID> held = new java.util.HashSet<>(Arrays.asList(factory, choice, a, b, c, d));
+        assertEquals(
+            Arrays.asList(factory, choice, a, b),
+            new java.util.ArrayList<>(
+                DesktopDevicePolling.sources(factory, choice, Arrays.asList(a, a, b, c, d), held::contains)));
+        held.remove(choice);
+        assertEquals(
+            Arrays.asList(factory, a, b, c),
+            new java.util.ArrayList<>(
+                DesktopDevicePolling.sources(factory, choice, Arrays.asList(a, b, c, d), held::contains)));
+        held.clear();
+        assertTrue(
+            DesktopDevicePolling.sources(factory, choice, Arrays.asList(a, b, c, d), held::contains)
+                .isEmpty());
+    }
+
+    @Test
     public void nativeViewerPausesSharedDispatchAndClosingItResumesTheNextFairSource() {
         UUID a = UUID.randomUUID(), b = UUID.randomUUID();
         java.util.concurrent.atomic.AtomicInteger considered = new java.util.concurrent.atomic.AtomicInteger();
