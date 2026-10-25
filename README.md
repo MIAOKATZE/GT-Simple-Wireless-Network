@@ -244,46 +244,48 @@ Bind supported GT working machines for status (Running/Idle/Stopped), actual EU 
 
 从工厂全景到单台设备，将电网、机器、资源和信息屏集中到自己的监控界面。/ Bring grids, machines, resources and info panels into one workspace, from a factory overview to individual devices.
 
-- **自由观察 / Free camera**：默认 F12 打开工厂模式，平移、旋转、缩放视角，查看设备状态与能耗热图，搜索并定位设备和网络节点。/ F12 opens Factory Mode by default; pan, rotate and zoom, inspect status and energy heatmaps, and search for machines and network nodes.
-- **自定义仪表 / Custom dashboard**：默认 F10 直接打开，四种主题、最多 512 个组件，自由组合电网、设备、资源、图表与时钟信息。/ F10 opens the dashboard by default; four themes and up to 512 widgets for grids, machines, resources, charts and clock information.
-- **布局编辑 / Layout editing**：Ctrl 框选或多选，移动、缩放与设置组件；Ctrl+Z / Ctrl+Y 撤销与重做，手动保存布局。/ Ctrl-select groups, move, resize and configure widgets; Ctrl+Z / Ctrl+Y undo and redo, with explicit layout saving.
-- **预设拼接与分享 / Preset placement & sharing**：预设以轮廓预览定位后放置，可覆盖或追加；分享码只含外观与布局，不携带数据源绑定，导入后按需绑定。/ Preview preset outlines before placement, replace or append layouts, and share visual presets without data-source bindings; bind sources after import.
+- **自由观察 / Free camera**：默认 F12 打开工厂模式，平移、旋转、缩放视角，查看设备状态与能耗热图；搜索设备和网络节点，快速定位目标。/ F12 opens Factory Mode by default; pan, rotate and zoom, inspect machine status and energy heatmaps, and search for machines or network nodes to locate them.
+- **自定义仪表 / Custom dashboard**：默认 F10 直接打开，四种主题、最多 512 个组件，组合电网、设备、资源、图表与时钟信息；内容超出卡片时可滚轮浏览或拖动滚动条，Ctrl+滚轮缩放画布。/ F10 opens the dashboard by default; combine up to 512 widgets across four themes. Scroll overflowing card content with the wheel or scrollbar, and use Ctrl+wheel to zoom the canvas.
+- **读数与图表 / Readings & charts**：支持的卡片可直接切换普通、科学或千位缩写计数；电网净变化可选瞬时或时间窗平均，平均窗口可设 1–3600 秒，并显示 A + 电压等级后缀。/ Supported cards offer Normal, Scientific and Metric notation controls. Grid net change supports instant or averaged readings with a 1–3600s window and an amperage + voltage-tier suffix.
+- **来源绑定 / Source binding**：从携带的终端中选择机器、信息屏或 AE 资源，按名称、坐标或来源搜索，并可更换或解除绑定；应用预设时自动尝试使用当前可用来源，仍可手动调整。/ Choose machines, info panels or AE resources from carried terminals; search by name, coordinates or source, then change or clear bindings. Applied presets try available local sources automatically, with manual adjustment afterward.
+- **布局编辑与保存 / Layout editing & saving**：Ctrl+拖动框选、Ctrl+点击多选，移动、缩放并设置组件；Ctrl+Z / Ctrl+Y 撤销与重做。手动保存布局，退出时若有未保存修改，可选择保存或放弃。/ Ctrl+drag selects an area and Ctrl+click selects multiple widgets; move, resize and configure them, with Ctrl+Z / Ctrl+Y undo and redo. Save layouts explicitly; leaving with unsaved edits offers save or discard choices.
+- **预设拼接与分享 / Preset placement & sharing**：组件库预设和导入布局可覆盖或追加；追加时以轮廓预览定位，左键放置，右键或 Esc 取消。分享码只含外观与布局，不携带原数据源绑定，便于在自己的工厂复用。/ Replace or append library presets and imported layouts. Position the outline preview when appending, left-click to place, or right-click / Esc to cancel. Sharing codes carry visual layouts without the original data-source bindings for reuse in your own factory.
 
 ### 工厂模式：设备状态与能源热图集中查看 / Factory Mode: Machine Status & Energy Heatmaps
 
-<p align="center"><img src="images/v2.0.25/factory-mode.png" alt="工厂模式 / Factory Mode" width="700"></p>
+<p align="center"><img src="images/v2.0.25/factory-mode.png" alt="工厂模式 / Factory Mode" width="650"></p>
 
 ### 工厂全景：从整体布局查看生产现场 / Factory Overview: Explore the Production Floor
 
-<p align="center"><img src="images/v2.0.25/factory-overview.png" alt="工厂模式全景 / Factory overview" width="700"></p>
+<p align="center"><img src="images/v2.0.25/factory-overview.png" alt="工厂模式全景 / Factory overview" width="650"></p>
 
 ### 自由视角：平移、旋转与缩放观察工厂 / Free Camera: Pan, Rotate & Zoom
 
-<p align="center"><img src="images/v2.0.25/factory-camera.png" alt="工厂模式可变视角 / Factory camera views" width="700"></p>
+<p align="center"><img src="images/v2.0.25/factory-camera.png" alt="工厂模式可变视角 / Factory camera views" width="650"></p>
 
 ### 自定义仪表盘：把常用监控集中在一处 / Custom Dashboard: Your Monitoring Workspace
 
-<p align="center"><img src="images/v2.0.25/dashboard.png" alt="仪表盘模式 / Dashboard" width="700"></p>
+<p align="center"><img src="images/v2.0.25/dashboard.png" alt="仪表盘模式 / Dashboard" width="650"></p>
 
 ### 四种外观：标准、复古、工业与简约 / Four Themes: Standard, Retro, Industrial & Minimal
 
-<p align="center"><img src="images/v2.0.25/dashboard-themes.png" alt="仪表盘四种主题 / Four dashboard themes" width="700"></p>
+<p align="center"><img src="images/v2.0.25/dashboard-themes.png" alt="仪表盘四种主题 / Four dashboard themes" width="650"></p>
 
 ### 自由扩展：组合多种组件与监控内容 / Expand Your Dashboard: Combine Widgets & Readings
 
-<p align="center"><img src="images/v2.0.25/dashboard-expandability.png" alt="仪表盘扩展展示 / Dashboard expandability" width="700"></p>
+<p align="center"><img src="images/v2.0.25/dashboard-expandability.png" alt="仪表盘扩展展示 / Dashboard expandability" width="650"></p>
 
 ### 组件库与预设：按需选择、自由拼接 / Widget Library & Presets: Choose, Place & Combine
 
-<p align="center"><img src="images/v2.0.25/preset-placement.png" alt="组件库预设自由拼接 / Widget library and preset placement" width="700"></p>
+<p align="center"><img src="images/v2.0.25/preset-placement.png" alt="组件库预设自由拼接 / Widget library and preset placement" width="650"></p>
 
 ### 预设分享：导出与导入自己的布局 / Preset Sharing: Export & Import Your Layouts
 
-<p align="center"><img src="images/v2.0.25/preset-sharing.png" alt="预设分享系统 / Preset sharing" width="700"></p>
+<p align="center"><img src="images/v2.0.25/preset-sharing.png" alt="预设分享系统 / Preset sharing" width="650"></p>
 
 ### 组件编辑：调整样式、内容与显示方式 / Widget Editor: Customize Style, Content & Display
 
-<p align="center"><img src="images/v2.0.25/widget-editor.png" alt="组件设置与编辑 / Widget settings and editing" width="700"></p>
+<p align="center"><img src="images/v2.0.25/widget-editor.png" alt="组件设置与编辑 / Widget settings and editing" width="650"></p>
 
 ## BQ 任务包 / BetterQuesting Quests
 
