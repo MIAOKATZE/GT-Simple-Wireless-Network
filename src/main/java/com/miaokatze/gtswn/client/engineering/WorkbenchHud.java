@@ -16,8 +16,8 @@ import net.minecraft.util.ResourceLocation;
 import net.minecraft.util.StatCollector;
 
 import org.lwjgl.input.Keyboard;
-import org.lwjgl.opengl.GL11;
 
+import com.cleanroommc.modularui.drawable.GuiDraw;
 import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.TerminalBaubleController;
 import com.miaokatze.gtswn.client.TerminalKeyNames;
@@ -26,6 +26,7 @@ import com.miaokatze.gtswn.client.engineering.FactoryControlSettings.Setting;
 import com.miaokatze.gtswn.client.engineering.FactoryShortcuts.Action;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalActions;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.client.gui.TerminalPresentation;
@@ -43,11 +44,9 @@ import com.miaokatze.miaokatzecore.api.ui.component.UiRect;
 /** Factory workbench: Outpost's monitor rail, power card and dashboard stay inside the world view. */
 final class WorkbenchHud extends Gui {
 
-    private static final int BACK = 0xFF1C2A35, HEADER = 0xFF344A59, TEXT = 0xFFE7ECEA;
-    private static final int CHROME = 0xFF1C2A35, CHROME_SELECTED = 0xFF344A59;
-    private static final int MUTED = 0xFF91A6B2, ACCENT = 0xFF69D8CA, WARN = 0xFFF0BB70, STOPPED = 0xFFEE827E;
-    private static final ResourceLocation ATLAS = new ResourceLocation("gtswn", "textures/gui/factory_atlas.png");
-    private static final WorkbenchHud PAINTER = new WorkbenchHud();
+    private static int BACK = 0xFF1C2A35, HEADER = 0xFF344A59, TEXT = 0xFFE7ECEA;
+    private static int CHROME = 0xFF1C2A35, CHROME_SELECTED = 0xFF344A59;
+    private static int MUTED = 0xFF91A6B2, ACCENT = 0xFF69D8CA, WARN = 0xFFF0BB70, STOPPED = 0xFFEE827E;
     private static final int[] MODE_ICONS = { 48, 0, 24, 12, 84 }, TOOL_ICONS = { 12, 36, 60, 24, 72 };
     private static boolean sidebarOpen, railOpen, powerOpen, dashboardMode, alertsOpen = true;
     private static int task = 1;
@@ -170,7 +169,13 @@ final class WorkbenchHud extends Gui {
     }
 
     static void select(int slot) {
-        if (dashboardMode) switchTask(1);
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                select(slot);
+            });
+            return;
+        }
         leaveCamera();
         closeSettings();
         selectedSlot = slot;
@@ -252,12 +257,19 @@ final class WorkbenchHud extends Gui {
     }
 
     static void inspect() {
-        if (dashboardMode) switchTask(2);
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(2);
+                inspect();
+            });
+            return;
+        }
         railOpen = true;
         detailScroll = 0;
     }
 
     static void render(int width, int height, int mouseX, int mouseY) {
+        applyTheme();
         Minecraft mc = Minecraft.getMinecraft();
         FontRenderer f = mc.fontRenderer;
         WorkbenchLayout l = layout(width, height);
@@ -268,6 +280,7 @@ final class WorkbenchHud extends Gui {
             FactoryDashboard.render(f, l.dashboard, mouseX, mouseY, width, height);
             // A requested open is acknowledged only after its visible first frame completed.
             FactoryDashboardHint.opened();
+            FactoryDashboardHint.render(width, height);
             return;
         }
         ItemStack[] equipped = TerminalBaubles.terminals(mc.thePlayer);
@@ -572,7 +585,7 @@ final class WorkbenchHud extends Gui {
         drawRect(r.x, r.y, r.x + r.w, r.y + 23, HEADER);
         text(f, tr("settings"), r.x + 8, r.y + 7, ACCENT, r.w - 32);
         control(new Rect(r.x + r.w - 23, r.y + 2, 21, 19), "<", tr("collapse"), WorkbenchHud::closeSettings);
-        String[] tabs = { "shortcuts", "controls" };
+        String[] tabs = { "shortcuts", "controls", "appearance" };
         int tabWidth = (r.w - 12) / tabs.length;
         for (int i = 0; i < tabs.length; i++) {
             final int tab = i;
@@ -585,7 +598,22 @@ final class WorkbenchHud extends Gui {
             });
         }
         if (settingsPage == 0) drawShortcuts(f, r, r.y + 56, FactoryShortcutPages.global(), true);
-        else drawControlSettings(f, r, r.y + 56);
+        else if (settingsPage == 1) drawControlSettings(f, r, r.y + 56);
+        else drawAppearance(f, r, r.y + 56);
+    }
+
+    private static void drawAppearance(FontRenderer f, Rect r, int y) {
+        for (DashboardTheme choice : DashboardTheme.values()) {
+            Rect row = new Rect(r.x + 6, y, r.w - 12, 24);
+            box(row, choice == FactoryDisplayPreferences.theme() ? HEADER : BACK);
+            if (choice == FactoryDisplayPreferences.theme()) stateEdge(row, true);
+            control(
+                row,
+                StatCollector.translateToLocal(choice.translationKey()),
+                tr("appearance.hint"),
+                () -> FactoryDisplayPreferences.theme(choice));
+            y += 28;
+        }
     }
 
     private static void drawShortcuts(FontRenderer f, Rect r, int y, Action[] actions, boolean global) {
@@ -1105,7 +1133,20 @@ final class WorkbenchHud extends Gui {
         FactoryDashboard.tick(data);
     }
 
+    private static void requestDashboardExit(Runnable accepted) {
+        EngineeringModeController.revealExitPrompt();
+        FactoryDesktop.requestExit(accepted);
+    }
+
     static void switchTask(int destination) {
+        if (dashboardMode && destination != 0) {
+            requestDashboardExit(() -> switchTaskAccepted(destination));
+            return;
+        }
+        switchTaskAccepted(destination);
+    }
+
+    private static void switchTaskAccepted(int destination) {
         if (destination == 0) {
             openDashboard();
             return;
@@ -1259,6 +1300,13 @@ final class WorkbenchHud extends Gui {
     }
 
     static void openPowerReview() {
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                openPowerReview();
+            });
+            return;
+        }
         if (EngineeringModeController.closeDashboardScreen()) return;
         switchTask(1);
         EngineeringHud.activateData(2);
@@ -1281,6 +1329,29 @@ final class WorkbenchHud extends Gui {
     /** Shared entry point for HUD buttons and configurable keyboard actions. */
     static void shortcut(Action action) {
         if (action == null) return;
+        if (dashboardMode && leavesDashboard(action)) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                if (action != Action.DASHBOARD) shortcutAccepted(action);
+            });
+            return;
+        }
+        shortcutAccepted(action);
+    }
+
+    static boolean leavesDashboard(Action action) {
+        if (action == null) return false;
+        if (action.ordinal() >= Action.TERMINAL_0.ordinal() && action.ordinal() <= Action.TERMINAL_7.ordinal())
+            return true;
+        return action == Action.TOGGLE || action == Action.DASHBOARD
+            || action == Action.CAMERA
+            || action == Action.MONITOR
+            || action == Action.POWER
+            || action == Action.ALERTS
+            || action == Action.FILTER;
+    }
+
+    private static void shortcutAccepted(Action action) {
         controls.clear();
         if (!mouseDispatch) clickSound();
         if (action.ordinal() >= Action.TERMINAL_0.ordinal() && action.ordinal() <= Action.TERMINAL_7.ordinal()) {
@@ -1401,6 +1472,13 @@ final class WorkbenchHud extends Gui {
     }
 
     private static void showMachines() {
+        if (dashboardMode) {
+            requestDashboardExit(() -> {
+                switchTaskAccepted(1);
+                showMachines();
+            });
+            return;
+        }
         if (EngineeringModeController.closeDashboardScreen()) return;
         leaveCamera();
         dashboardMode = false;
@@ -1530,12 +1608,8 @@ final class WorkbenchHud extends Gui {
         if (r.w == 0 || r.h == 0) return;
         box(r, active || r.contains(mx, my) ? CHROME_SELECTED : CHROME);
         if (actionState(action) != null) stateEdge(r, active);
-        Minecraft.getMinecraft()
-            .getTextureManager()
-            .bindTexture(ATLAS);
-        GL11.glColor4f(1, 1, 1, 1);
         int iconX = action == Action.DASHBOARD ? r.x + 7 : r.x + (r.w - 10) / 2;
-        PAINTER.drawTexturedModalRect(iconX, r.y + (r.h - 10) / 2, u, 40, 10, 10);
+        DashboardIcons.drawAtlas(u, iconX, r.y + (r.h - 10) / 2, ACCENT);
         if (action == Action.DASHBOARD)
             text(Minecraft.getMinecraft().fontRenderer, tr("dashboard"), r.x + 23, r.y + 8, TEXT, r.w - 28);
         if (r.contains(mx, my)) {
@@ -1587,13 +1661,37 @@ final class WorkbenchHud extends Gui {
         int h = wrapped.size() * 13 + 10;
         x = Math.max(4, Math.min(x + 12, width - w - 16));
         y = Math.max(4, Math.min(y + 12, height - h - 4));
-        drawRect(x, y, x + w + 12, y + h, 0xFA101923);
+        box(new Rect(x, y, w + 12, h), BACK);
         for (int i = 0; i < wrapped.size(); i++)
             text(f, wrapped.get(i), x + 6, y + 5 + i * 13, i == 0 ? ACCENT : TEXT, w);
     }
 
+    private static void applyTheme() {
+        DashboardTheme theme = FactoryDisplayPreferences.theme();
+        BACK = CHROME = theme.cardBottom;
+        HEADER = CHROME_SELECTED = theme.header;
+        TEXT = theme.text;
+        MUTED = theme.muted;
+        ACCENT = theme.accent;
+        WARN = theme.warning;
+    }
+
     private static void box(Rect r, int color) {
+        DashboardTheme theme = FactoryDisplayPreferences.theme();
+        if (color == 0xFF22313C || color == 0xFF18252F || color == 0xFF121B23) color = theme.cardBottom;
         drawRect(r.x, r.y, r.x + r.w, r.y + r.h, color);
+        if (r.w <= 2 || r.h <= 2) return;
+        if (theme == DashboardTheme.STANDARD) {
+            GuiDraw.drawVerticalGradientRect(
+                r.x + 1,
+                r.y + 1,
+                r.w - 2,
+                r.h - 2,
+                DashboardTheme.mix(color, theme.cardTop, .22),
+                color);
+        }
+        drawRect(r.x, r.y, r.x + r.w, r.y + 1, DashboardTheme.mix(color, theme.edge, .55));
+        drawRect(r.x, r.y + r.h - 1, r.x + r.w, r.y + r.h, DashboardTheme.mix(color, theme.background, .65));
     }
 
     private static void text(FontRenderer f, String text, int x, int y, int color, int width) {

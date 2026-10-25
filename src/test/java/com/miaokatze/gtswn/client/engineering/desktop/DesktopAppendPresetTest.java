@@ -17,14 +17,21 @@ public class DesktopAppendPresetTest {
         DesktopLayout layout = DesktopPreset.overviewLayout();
         WidgetSpec original = layout.find("wireless");
         Properties originalData = DesktopStore.encode(layout);
-        DesktopLayout template = DesktopPreset.overviewLayout();
+        DesktopLayout template = new DesktopLayout();
+        for (int i = 0; i < 8; i++) assertNotNull(template.add(WidgetKind.SESSION, i * 3, 0));
         List<WidgetSpec> first = layout.appendPreset(template, 0, 0);
         List<WidgetSpec> second = layout.appendPreset(template, 0, 0);
-        assertEquals(10, first.size());
-        assertEquals(10, second.size());
+        assertEquals(
+            template.widgets()
+                .size(),
+            first.size());
+        assertEquals(
+            template.widgets()
+                .size(),
+            second.size());
         assertSame(original, layout.find("wireless"));
         assertEquals(
-            30,
+            31,
             layout.widgets()
                 .size());
         Set<String> ids = new HashSet<>();

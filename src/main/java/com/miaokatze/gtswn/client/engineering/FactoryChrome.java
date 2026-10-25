@@ -10,6 +10,7 @@ import org.lwjgl.input.Keyboard;
 
 import com.miaokatze.gtswn.client.engineering.FactoryShortcuts.Action;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.miaokatzecore.api.ui.component.UiEvent;
 import com.miaokatze.miaokatzecore.api.ui.component.UiNode;
 import com.miaokatze.miaokatzecore.api.ui.component.UiScene;
@@ -19,12 +20,8 @@ import com.miaokatze.miaokatzecore.client.ui.MinecraftUiRenderer;
 /** Compact world controls, with Core retaining pointer capture and keyboard focus. */
 final class FactoryChrome {
 
-    private static final UiStyle STYLE = new UiStyle(
-        new UiStyle.Paint(0xFF1C2D38, 0xFF304652, 0xFFE7ECEA),
-        new UiStyle.Paint(0xFF344D5B, 0xFF577382, 0xFFFFFFFF),
-        new UiStyle.Paint(0xFF203B46, 0xFF75C3B7, 0xFFFFFFFF),
-        new UiStyle.Paint(0xFF375C5B, 0xFF75C3B7, 0xFFFFFFFF),
-        new UiStyle.Paint(0xFF172731, 0xFF304652, 0xFF879CA8));
+    private static DashboardTheme styledTheme;
+    private static UiStyle styledPalette;
     private static UiScene scene;
     private static String signature = "";
 
@@ -44,7 +41,18 @@ final class FactoryChrome {
     /** Shared retained tree for rendering and headless input-lifecycle checks. No client state is read here. */
     static void prepare(int width, int height, WorkbenchLayout l, boolean settings, Consumer<Action> action,
         Runnable toggleSettings, String settingsLabel) {
-        String next = width + ":" + height + ":" + settings;
+        DashboardTheme theme = FactoryDisplayPreferences.theme();
+        if (styledTheme != theme) {
+            styledTheme = theme;
+            styledPalette = new UiStyle(
+                new UiStyle.Paint(theme.cardBottom, theme.edge, theme.text),
+                new UiStyle.Paint(theme.header, theme.accent, theme.text),
+                new UiStyle.Paint(theme.track, theme.accent, theme.text),
+                new UiStyle.Paint(theme.header, theme.accent, theme.text),
+                new UiStyle.Paint(theme.cardBottom, theme.edge, theme.muted));
+        }
+        UiStyle style = styledPalette;
+        String next = width + ":" + height + ":" + settings + ":" + theme;
         if (scene == null || !signature.equals(next) && scene.captured() == null) {
             if (scene != null) scene.close();
             signature = next;
@@ -59,7 +67,7 @@ final class FactoryChrome {
                 root.add(
                     UiNode.button("command-" + command, "", () -> action.accept(command))
                         .bounds(r.x, r.y, r.w, r.h)
-                        .style(STYLE)
+                        .style(style)
                         .on(UiEvent.Type.DOWN, e -> {
                             if (e.button == 1) {
                                 FactoryShortcuts.beginBinding(command);
@@ -70,7 +78,7 @@ final class FactoryChrome {
             root.add(
                 UiNode.button("settings", settingsLabel, toggleSettings)
                     .bounds(l.shortcuts.x, l.shortcuts.y, l.shortcuts.w, l.shortcuts.h)
-                    .style(STYLE)
+                    .style(style)
                     .selected(settings));
             scene = new UiScene(root);
         }

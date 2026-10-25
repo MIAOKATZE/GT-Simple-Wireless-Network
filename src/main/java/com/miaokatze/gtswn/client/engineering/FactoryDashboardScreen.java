@@ -116,15 +116,16 @@ final class FactoryDashboardScreen extends GuiScreen {
         if (!Display.isActive() || !sessionValid() || client.currentScreen != this) return;
         if (code == Keyboard.KEY_ESCAPE) {
             if (!Keyboard.isRepeatEvent()) {
-                if (hidden) client.displayGuiScreen(null);
+                if (hidden) requestClose();
                 else WorkbenchHud.escape();
             }
             return;
         }
         if (hidden) {
             if (!Keyboard.isRepeatEvent()
-                && (code == Keyboard.KEY_E || code == client.gameSettings.keyBindInventory.getKeyCode()))
-                client.displayGuiScreen(null);
+                && (code == Keyboard.KEY_E || code == client.gameSettings.keyBindInventory.getKeyCode()
+                    || code != Keyboard.KEY_NONE && code == EngineeringModeController.DASHBOARD.getKeyCode()))
+                requestClose();
             return;
         }
         if (!WorkbenchHud.typing() && code != Keyboard.KEY_NONE
@@ -140,6 +141,21 @@ final class FactoryDashboardScreen extends GuiScreen {
         hidden = client.gameSettings.hideGUI;
         WorkbenchHud.suspendInput();
         KeyBinding.unPressAllKeys();
+    }
+
+    void requestClose() {
+        requestClose(() -> {});
+    }
+
+    void requestClose(Runnable afterClose) {
+        if (closed || client.currentScreen != this) return;
+        EngineeringModeController.revealExitPrompt();
+        syncVisibility();
+        FactoryDesktop.requestExit(() -> {
+            if (!sessionValid() || client.currentScreen != this) return;
+            client.displayGuiScreen(null);
+            afterClose.run();
+        });
     }
 
     @Override

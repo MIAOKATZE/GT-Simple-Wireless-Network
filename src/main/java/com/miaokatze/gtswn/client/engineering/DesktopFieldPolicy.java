@@ -13,6 +13,16 @@ final class DesktopFieldPolicy {
     static List<String> fields(WidgetSpec widget) {
         if (widget.fieldsConfigured) return widget.fields;
         switch (widget.kind) {
+            case CLOCK:
+                return Arrays.asList("localTime", "localDate", "timezone");
+            case SESSION:
+                return Arrays.asList("sessionDuration", "connection");
+            case TEAM:
+                return Arrays.asList("teamName", "teamRole");
+            case PLAYER:
+                return Arrays.asList("playerName", "health", "food", "level");
+            case WORLD:
+                return Arrays.asList("dimension", "coordinates", "weather");
             case MACHINES:
             case ATTENTION:
                 return Collections.singletonList("status");

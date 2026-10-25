@@ -57,6 +57,7 @@ public enum DesktopPreset {
             default:
                 throw new IllegalStateException(name());
         }
+        informationStrip(layout, this == PRODUCTION || this == DIAGNOSTICS);
         return layout;
     }
 
@@ -72,7 +73,26 @@ public enum DesktopPreset {
         layout.replace(
             layout.find("status")
                 .styled(WidgetEffects.DEFAULT.withStyle(WidgetEffects.Style.SIGNAL)));
+        informationStrip(layout, true);
         return layout;
+    }
+
+    /** Appended only when creating a fresh preset; persisted layouts have their own migration policy. */
+    private static void informationStrip(DesktopLayout layout, boolean player) {
+        int row = layout.bounds().bottom / DesktopLayout.CELL;
+        WidgetKind[] kinds = { WidgetKind.CLOCK, WidgetKind.CLOCK, WidgetKind.SESSION, WidgetKind.TEAM,
+            player ? WidgetKind.PLAYER : WidgetKind.WORLD };
+        String[] ids = { "clock", "gameClock", "session", "team", player ? "player" : "world" };
+        for (int i = 0; i < kinds.length; i++) {
+            add(layout, ids[i], kinds[i], WidgetPresentation.DEFAULT, "", i * 3, row, i == 4 ? 4 : 3, 3);
+            if (i < 2) layout.replace(
+                layout.find(ids[i])
+                    .configured(
+                        "",
+                        (i == 0 ? DesktopInformationTemplate.LOCAL_CLOCK : DesktopInformationTemplate.GAME_CLOCK)
+                            .fields(),
+                        1));
+        }
     }
 
     /** Five compact independent monitors, initialized once from authorized mounted inventory receipts. */

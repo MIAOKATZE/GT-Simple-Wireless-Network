@@ -244,6 +244,21 @@ public final class DesktopLayout {
         return true;
     }
 
+    /** Validate the complete result before replacing any member, preserving display order. */
+    public boolean replaceAll(java.util.Collection<WidgetSpec> replacements) {
+        if (replacements == null) return false;
+        java.util.Map<String, WidgetSpec> incoming = new java.util.HashMap<>();
+        for (WidgetSpec widget : replacements) {
+            if (widget == null || find(widget.id) == null || incoming.put(widget.id, widget) != null) return false;
+        }
+        DesktopLayout candidate = new DesktopLayout();
+        for (WidgetSpec widget : widgets)
+            if (!candidate.add(incoming.containsKey(widget.id) ? incoming.get(widget.id) : widget)) return false;
+        widgets.clear();
+        widgets.addAll(candidate.widgets);
+        return true;
+    }
+
     public boolean move(String id, int column, int row) {
         WidgetSpec widget = find(id);
         return widget != null && replace(widget.withBounds(column, row, widget.columns, widget.rows));

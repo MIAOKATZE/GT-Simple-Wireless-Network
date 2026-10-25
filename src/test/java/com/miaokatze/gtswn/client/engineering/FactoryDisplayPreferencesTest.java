@@ -41,7 +41,8 @@ public class FactoryDisplayPreferencesTest {
         assertFalse(file.exists());
         first.put(Key.SELECTED_SLOT, 5);
         first.put(Key.PAGE, 3);
-        first.put(Key.SETTINGS_PAGE, 1);
+        first.put(Key.SETTINGS_PAGE, 2);
+        first.put(Key.FACTORY_THEME, 3);
         first.put(Key.RAIL, 0);
         first.put(Key.GRID, 2);
         first.put(Key.NODE_5, 1);
@@ -71,6 +72,22 @@ public class FactoryDisplayPreferencesTest {
     }
 
     @Test
+    public void factoryThemesSurviveRestartAndOlderPreferencesDefaultToStandard() {
+        File file = new File(temporary.getRoot(), "theme.cfg");
+        FactoryDisplayPreferences.Store store = new FactoryDisplayPreferences.Store(file);
+        assertEquals(0, store.number(Key.FACTORY_THEME), 0);
+        for (com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme theme : com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme
+            .values()) {
+            store.put(Key.FACTORY_THEME, theme.ordinal());
+            store.put(Key.SIDEBAR, 1);
+            store.save();
+            store = new FactoryDisplayPreferences.Store(file);
+            assertEquals(theme.ordinal(), store.number(Key.FACTORY_THEME), 0);
+            assertEquals(1, store.number(Key.SIDEBAR), 0);
+        }
+    }
+
+    @Test
     public void continuousCameraChangesCoalesceAndExplicitCloseCanFlushImmediately() {
         File file = new File(temporary.getRoot(), "display.cfg");
         FactoryDisplayPreferences.Store store = new FactoryDisplayPreferences.Store(file);
@@ -95,6 +112,8 @@ public class FactoryDisplayPreferencesTest {
         assertEquals(.025, Key.ZOOM.sanitize(0), 0);
         assertEquals(0, Key.GRID.sanitize(-10), 0);
         assertEquals(3, Key.PAGE.sanitize(99), 0);
+        assertEquals(0, Key.FACTORY_THEME.sanitize(Double.NaN), 0);
+        assertEquals(3, Key.FACTORY_THEME.sanitize(99), 0);
         assertFalse(
             FactoryDisplayPreferences.decode("1,1,90,20,.25,true,true")
                 .enabled());

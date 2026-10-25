@@ -140,8 +140,7 @@ public final class DesktopStore {
 
     /** Retain exact references by stable component ID while replacing only the untouched shipped display. */
     private static DesktopLayout migratedDefault(DesktopLayout previous) {
-        DesktopLayout migrated = DesktopLayout.defaultLayout()
-            .withTheme(previous.theme());
+        DesktopLayout migrated = v221Overview().withTheme(previous.theme());
         for (WidgetSpec widget : migrated.widgets()) {
             WidgetSpec old = previous.find(widget.id);
             if (old == null) continue;
@@ -240,6 +239,32 @@ public final class DesktopStore {
         return layout;
     }
 
+    /** Freeze the historical migration target; future presets must never add new cards to saved desktops. */
+    static DesktopLayout v221Overview() {
+        DesktopLayout result = new DesktopLayout();
+        result.add(
+            new WidgetSpec("machines", WidgetKind.MACHINES, 0, 0, 5, 2)
+                .presented(WidgetPresentation.KPI, "count", null));
+        result.add(
+            new WidgetSpec("wireless", WidgetKind.WIRELESS, 10, 0, 6, 5)
+                .presented(WidgetPresentation.GAUGE, "stored", null));
+        result.add(
+            new WidgetSpec("netRate", WidgetKind.WIRELESS, 5, 0, 5, 2)
+                .presented(WidgetPresentation.KPI, "netRate", null));
+        result.add(
+            new WidgetSpec("history", WidgetKind.HISTORY, 0, 2, 10, 3).presented(WidgetPresentation.COMBO, "", null));
+        for (int index = 0; index < 5; index++) result.add(
+            new WidgetSpec("resource" + (index + 1), WidgetKind.RESOURCES, index * 2, 5, 2, 2)
+                .presented(WidgetPresentation.STATUS_LIST, "", null)
+                .withSingleResource(true)
+                .withAutoResource(true));
+        result.add(
+            new WidgetSpec("status", WidgetKind.MACHINES, 10, 5, 6, 2)
+                .presented(WidgetPresentation.STATUS_LIST, "running", null)
+                .styled(WidgetEffects.DEFAULT.withStyle(WidgetEffects.Style.SIGNAL)));
+        return result;
+    }
+
     private static boolean geometryMatches(WidgetSpec widget, int[] geometry) {
         return widget.column == geometry[0] && widget.row == geometry[1]
             && widget.columns == geometry[2]
@@ -258,6 +283,20 @@ public final class DesktopStore {
 
     public boolean hasView(String profile) {
         return read(profile).containsKey("view.scale");
+    }
+
+    /** A failed explicit save never leaves the rejected draft queued for the automatic writer. */
+    public boolean saveLayout(String profile, DesktopLayout layout, DesktopViewport view) {
+        Properties previous = new Properties();
+        previous.putAll(read(profile));
+        boolean wasDirty = dirty.contains(profile);
+        put(profile, layout);
+        putView(profile, view);
+        if (flushProfiles(java.util.Collections.singleton(profile))) return true;
+        profiles.put(profile, previous);
+        if (wasDirty) dirty.add(profile);
+        else dirty.remove(profile);
+        return false;
     }
 
     public void put(String profile, DesktopLayout layout) {
@@ -315,12 +354,17 @@ public final class DesktopStore {
     }
 
     public boolean flush() {
+        return flushProfiles(new HashSet<>(dirty));
+    }
+
+    private boolean flushProfiles(Set<String> requested) {
         if (directory == null) {
-            dirty.clear();
+            dirty.removeAll(requested);
             return true;
         }
         boolean success = true;
-        for (String profile : new HashSet<>(dirty)) {
+        for (String profile : requested) {
+            if (!dirty.contains(profile)) continue;
             Path temp = null;
             try {
                 Files.createDirectories(directory);

@@ -128,6 +128,10 @@ public final class FactoryShortcuts {
             : BINDINGS.getOrDefault(action, Keyboard.KEY_NONE);
     }
 
+    static int dashboardKeyCode() {
+        return keyCode(Action.DASHBOARD);
+    }
+
     private static void saveBindings() {
         try {
             if (configuration == null) configuration = new Configuration(configFile());

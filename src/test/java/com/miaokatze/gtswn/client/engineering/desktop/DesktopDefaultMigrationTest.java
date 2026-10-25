@@ -89,7 +89,7 @@ public class DesktopDefaultMigrationTest {
         DesktopStore upgraded = new DesktopStore(folder);
         DesktopLayout migrated = upgraded.load(profile);
         int retained = 0;
-        DesktopLayout fresh = DesktopLayout.defaultLayout();
+        DesktopLayout fresh = DesktopStore.v221Overview();
         for (WidgetSpec original : previous.widgets()) if (fresh.find(original.id) == null
             && (original.device != null || original.resource != null || original.screen != null)) retained++;
         assertEquals(
@@ -278,7 +278,7 @@ public class DesktopDefaultMigrationTest {
         old.putView(profile, view);
         assertTrue(old.flush());
         DesktopStore upgraded = new DesktopStore(folder);
-        assertEquals(DesktopStore.encode(DesktopLayout.defaultLayout()), DesktopStore.encode(upgraded.load(profile)));
+        assertEquals(DesktopStore.encode(DesktopStore.v221Overview()), DesktopStore.encode(upgraded.load(profile)));
         assertEquals(500, upgraded.loadView(profile).panX, 0);
         assertTrue(upgraded.flush());
         assertFalse(DesktopStore.untouchedLegacyDefault(new DesktopStore(folder).load(profile)));
@@ -385,7 +385,7 @@ public class DesktopDefaultMigrationTest {
             assertTrue(old.flush());
             DesktopStore upgraded = new DesktopStore(folder);
             assertEquals(
-                DesktopLayout.defaultLayout()
+                DesktopStore.v221Overview()
                     .widgets()
                     .size(),
                 upgraded.load(profile)
@@ -403,7 +403,7 @@ public class DesktopDefaultMigrationTest {
             DesktopLayout persisted = new DesktopStore(folder).load(profile);
             assertFalse(DesktopStore.untouchedLegacyDefault(persisted));
             assertEquals(
-                DesktopLayout.defaultLayout()
+                DesktopStore.v221Overview()
                     .widgets()
                     .size(),
                 persisted.widgets()

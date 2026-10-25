@@ -86,9 +86,7 @@ public class DesktopLayoutTest {
     public void defaultArrangementIsBalancedWithinInitialAreaAndHasEveryRealSource() {
         DesktopLayout layout = DesktopLayout.defaultLayout();
         assertEquals(
-            DesktopLayout.defaultLayout()
-                .widgets()
-                .size(),
+            15,
             layout.widgets()
                 .size());
         for (WidgetSpec widget : layout.widgets()) {
@@ -104,10 +102,14 @@ public class DesktopLayoutTest {
                 .width(),
             0);
         assertEquals(
-            448,
+            640,
             layout.bounds()
                 .height(),
             0);
+        // The original seven-row operational area stays intact; information occupies rows 7-9.
+        assertEquals(7, layout.find("gameClock").row);
+        assertEquals(3, layout.find("gameClock").rows);
+        assertEquals(WidgetKind.CLOCK, layout.find("gameClock").kind);
         DesktopViewport view = new DesktopViewport();
         view.reset(layout, 640, 308);
         assertEquals(.6, view.scale, 0);

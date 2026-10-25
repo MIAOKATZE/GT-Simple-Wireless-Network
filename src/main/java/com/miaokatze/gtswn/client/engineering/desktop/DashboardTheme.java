@@ -41,6 +41,15 @@ public enum DashboardTheme {
         this.glowMultiplier = glowMultiplier;
     }
 
+    /** Material interpolation keeps shading within the selected palette. */
+    public static int mix(int first, int second, double fraction) {
+        double amount = Math.max(0, Math.min(1, fraction));
+        int r = (int) Math.round((first >> 16 & 255) * (1 - amount) + (second >> 16 & 255) * amount);
+        int g = (int) Math.round((first >> 8 & 255) * (1 - amount) + (second >> 8 & 255) * amount);
+        int b = (int) Math.round((first & 255) * (1 - amount) + (second & 255) * amount);
+        return 0xFF000000 | r << 16 | g << 8 | b;
+    }
+
     public String translationKey() {
         return "gtswn.desktop.theme." + name().toLowerCase(java.util.Locale.ROOT);
     }

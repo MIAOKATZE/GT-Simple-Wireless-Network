@@ -34,6 +34,7 @@ import com.miaokatze.miaokatzecore.api.ui.component.UiScene;
 /** Real Core pointer capture/bubbling into production desktop handlers, without rendering or starting Minecraft. */
 public class FactoryDesktopInputTest {
 
+    private static boolean controlPressed;
     private DesktopLayout layout;
     private UiScene scene;
 
@@ -65,7 +66,13 @@ public class FactoryDesktopInputTest {
                         .pointerTransparent(true)));
         scene = new UiScene(canvas);
         scene.layout(1400, 1000);
+        controlPressed = false;
         set("layout", layout);
+        set("saves", new com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession(layout));
+        ((com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection) get("selection")).only("");
+        set("pendingExit", null);
+        set("shareOpen", false);
+        set("libraryOpen", false);
         set("view", viewport);
         set("canvas", new Rect(0, 0, 1400, 1000));
         set("area", new Rect(0, 0, 1400, 1000));
@@ -368,7 +375,7 @@ public class FactoryDesktopInputTest {
         prepare(true, true, WidgetKind.WIRELESS);
         DesktopLayout template = new DesktopLayout();
         assertNotNull(template.add(WidgetKind.WIRELESS));
-        set("libraryOpen", true);
+        set("shareOpen", true);
         set("importingPreset", true);
         set("presetDraft", DesktopPresetCode.export(template));
         rebuild();
@@ -401,7 +408,7 @@ public class FactoryDesktopInputTest {
     @Test
     public void invalidImportAndCancelKeepTheCurrentDesktop() throws Exception {
         prepare(true, true);
-        set("libraryOpen", true);
+        set("shareOpen", true);
         set("importingPreset", true);
         set("presetDraft", "invalid");
         rebuild();
@@ -424,7 +431,7 @@ public class FactoryDesktopInputTest {
     @Test
     public void presetCodeAllowsLongSingleLineDraftAndRetainsFocusAcrossRebuild() throws Exception {
         prepare(true, true);
-        set("libraryOpen", true);
+        set("shareOpen", true);
         set("importingPreset", true);
         rebuild();
         UiNode input = scene.find("preset-code");
@@ -449,13 +456,13 @@ public class FactoryDesktopInputTest {
         assertTrue((Boolean) get("importingPreset"));
         assertTrue(FactoryDesktop.escape());
         assertFalse((Boolean) get("importingPreset"));
-        assertTrue((Boolean) get("libraryOpen"));
+        assertTrue((Boolean) get("shareOpen"));
     }
 
     @Test
     public void importedOverwriteReplacesTheDesktopOnlyAfterTheExplicitChoice() throws Exception {
         prepare(true, true);
-        set("libraryOpen", true);
+        set("shareOpen", true);
         set("importingPreset", true);
         set("presetDraft", DesktopPresetCode.export(DesktopPreset.POWER.createLayout()));
         rebuild();
@@ -618,6 +625,123 @@ public class FactoryDesktopInputTest {
         }
     }
 
+    @Test
+    public void ctrlMarqueeAndClickSelectThenMoveTheWholeGroupAndCancelRestoresAll() throws Exception {
+        prepare(true, false);
+        WidgetSpec second = new WidgetSpec("second", WidgetKind.DEVICE, 7, 0, 3, 3);
+        assertTrue(layout.add(second));
+        ((com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession) get("saves")).accept(layout);
+        controlPressed = true;
+        assertTrue(scene.pointerDown(800, 400, 0));
+        assertTrue(scene.pointerMove(0, 0));
+        assertTrue(scene.pointerUp(0, 0, 0));
+        com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection selected = (com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection) get(
+            "selection");
+        assertEquals(
+            2,
+            selected.ids()
+                .size());
+        controlPressed = false;
+        WidgetSpec first = layout.find("card");
+        assertTrue(scene.pointerDown(100, 100, 0));
+        assertTrue(scene.pointerMove(164, 164));
+        assertEquals(1, layout.find("card").column);
+        assertEquals(8, layout.find("second").column);
+        scene.blur();
+        assertSame(first, layout.find("card"));
+        assertSame(second, layout.find("second"));
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        controlPressed = true;
+        assertTrue(scene.pointerDown(100, 100, 0));
+        assertTrue(scene.pointerUp(100, 100, 0));
+        assertFalse(
+            selected.ids()
+                .contains("card"));
+        assertTrue(
+            selected.ids()
+                .contains("second"));
+    }
+
+    @Test
+    public void unsavedExitModalBlocksUnderlyingToolsAndSupportsCancelDiscardAndSave() throws Exception {
+        prepare(true, true);
+        assertTrue(layout.move("card", 2, 0));
+        int[] exits = { 0 };
+        FactoryDesktop.requestExit(() -> exits[0]++);
+        rebuild();
+        assertNotNull(scene.find("save-modal"));
+        assertEquals(0, exits[0]);
+        UiNode theme = scene.find("theme");
+        scene.focus(theme);
+        assertNull(scene.focused());
+        activate("cancel-exit");
+        assertNull(get("pendingExit"));
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+        FactoryDesktop.requestExit(() -> exits[0]++);
+        rebuild();
+        activate("discard-exit");
+        assertEquals(1, exits[0]);
+        assertEquals(0, ((DesktopLayout) get("layout")).find("card").column);
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        DesktopLayout draft = (DesktopLayout) get("layout");
+        assertTrue(draft.move("card", 3, 0));
+        FactoryDesktop.requestExit(() -> exits[0]++);
+        rebuild();
+        activate("save-exit");
+        assertEquals(2, exits[0]);
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        assertEquals(
+            3,
+            ((DesktopStore) get("store")).load((String) get("profile"))
+                .find("card").column);
+    }
+
+    @Test
+    public void failedExplicitSaveKeepsTheModalDraftAndCallbackPending() throws Exception {
+        prepare(true, true);
+        java.io.File blockedDirectory = java.io.File.createTempFile("gtswn-save-", ".blocked");
+        try {
+            set("store", new DesktopStore(blockedDirectory));
+            assertTrue(layout.move("card", 2, 0));
+            int[] exits = { 0 };
+            FactoryDesktop.requestExit(() -> exits[0]++);
+            rebuild();
+            activate("save-exit");
+            assertEquals(0, exits[0]);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+            assertNotNull(get("pendingExit"));
+            assertTrue(((DesktopStore) get("store")).saveIfDue(System.nanoTime()));
+            assertEquals(2, layout.find("card").column);
+            rebuild();
+            assertNotNull(scene.find("save-feedback"));
+        } finally {
+            assertTrue(blockedDirectory.delete());
+        }
+    }
+
+    @Test
+    public void shareHasItsOwnToolbarPanelAndViewportAutosaveNeverStoresADraft() throws Exception {
+        prepare(true, true);
+        DesktopStore store = (DesktopStore) get("store");
+        String profile = (String) get("profile");
+        store.put(profile, layout);
+        store.flush();
+        assertTrue(layout.move("card", 3, 0));
+        rebuild();
+        activate("share");
+        rebuild();
+        assertNotNull(scene.find("share-panel"));
+        assertNotNull(scene.find("preset-export"));
+        assertNull(scene.find("library"));
+        FactoryDesktop.flush();
+        assertTrue(store.saveIfDue(System.nanoTime()));
+        assertEquals(
+            0,
+            store.load(profile)
+                .find("card").column);
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+    }
+
     private void rebuild() throws Exception {
         Method build = FactoryDesktop.class.getDeclaredMethod("build");
         build.setAccessible(true);
@@ -634,9 +758,12 @@ public class FactoryDesktopInputTest {
 
     private static void dispatch(String name, UiEvent event) {
         try {
-            Method method = FactoryDesktop.class.getDeclaredMethod(name, UiEvent.class);
+            Method method = controlPressed && name.equals("down")
+                ? FactoryDesktop.class.getDeclaredMethod(name, UiEvent.class, boolean.class)
+                : FactoryDesktop.class.getDeclaredMethod(name, UiEvent.class);
             method.setAccessible(true);
-            method.invoke(null, event);
+            if (controlPressed && name.equals("down")) method.invoke(null, event, true);
+            else method.invoke(null, event);
         } catch (ReflectiveOperationException exception) {
             throw new AssertionError(exception);
         }

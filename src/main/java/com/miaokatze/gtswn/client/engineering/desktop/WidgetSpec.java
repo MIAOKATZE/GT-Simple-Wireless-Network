@@ -32,7 +32,23 @@ public final class WidgetSpec {
             "evidence",
             "recognition",
             "capabilities",
-            "type"));
+            "type",
+            "localTime",
+            "localDate",
+            "timezone",
+            "gameTime",
+            "gameDay",
+            "sessionDuration",
+            "connection",
+            "teamName",
+            "teamRole",
+            "teamId",
+            "playerName",
+            "health",
+            "food",
+            "level",
+            "dimension",
+            "weather"));
     private static final Map<WidgetKind, List<String>> FIELDS = new EnumMap<>(WidgetKind.class);
     private static final Map<WidgetKind, List<String>> METRICS = new EnumMap<>(WidgetKind.class);
     private static final Map<WidgetKind, List<WidgetPresentation>> PRESENTATIONS = new EnumMap<>(WidgetKind.class);
@@ -58,6 +74,11 @@ public final class WidgetSpec {
             } else forms.add(WidgetPresentation.STATUS_LIST);
             PRESENTATIONS.put(kind, Collections.unmodifiableList(forms));
         }
+        FIELDS.put(WidgetKind.CLOCK, fieldList("localTime", "localDate", "timezone", "gameTime", "gameDay"));
+        FIELDS.put(WidgetKind.SESSION, fieldList("sessionDuration", "connection"));
+        FIELDS.put(WidgetKind.TEAM, fieldList("teamName", "teamRole", "teamId"));
+        FIELDS.put(WidgetKind.PLAYER, fieldList("playerName", "health", "food", "level"));
+        FIELDS.put(WidgetKind.WORLD, fieldList("dimension", "coordinates", "weather"));
         FIELDS.put(WidgetKind.MACHINES, fieldList("status", "source", "updated"));
         FIELDS.put(WidgetKind.INPUT, fieldList("input", "status", "source", "updated"));
         FIELDS.put(WidgetKind.OUTPUT, fieldList("output", "status", "source", "updated"));

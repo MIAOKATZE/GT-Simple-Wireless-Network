@@ -11,6 +11,7 @@ import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraftforge.common.config.Configuration;
 
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.miaokatzecore.api.camera.HeightSlice;
 
@@ -35,7 +36,7 @@ public final class FactoryDisplayPreferences {
         SIDEBAR_SCROLL(0, 0, 100000),
         RAIL_SCROLL(0, 0, 100000),
         DETAIL_SCROLL(0, 0, 100000),
-        SETTINGS_PAGE(0, 0, 1),
+        SETTINGS_PAGE(0, 0, 2),
         SETTINGS_SCROLL(0, 0, 100000),
         MACHINE_FILTER(0, 0, 7),
         POWER_FILTER(0, 0, 2),
@@ -56,7 +57,8 @@ public final class FactoryDisplayPreferences {
         ZOOM(1, .025, 8),
         FOLLOWING(0),
         CAMERA_PANEL(0),
-        DEVICE_VISUALIZATION(0);
+        DEVICE_VISUALIZATION(0),
+        FACTORY_THEME(0, 0, 3);
 
         final double initial, min, max;
 
@@ -122,6 +124,15 @@ public final class FactoryDisplayPreferences {
 
     static void saveIfDue() {
         store.saveIfDue(System.nanoTime());
+    }
+
+    public static DashboardTheme theme() {
+        return DashboardTheme.values()[integer(Key.FACTORY_THEME)];
+    }
+
+    static void theme(DashboardTheme value) {
+        put(Key.FACTORY_THEME, value.ordinal());
+        save();
     }
 
     public static boolean deviceVisualization() {

@@ -15,9 +15,10 @@ final class DesktopToolbarGeometry {
 
     DesktopToolbarGeometry(int width, boolean editing) {
         int available = Math.max(1, width - 12);
-        String[] ids = editing ? new String[] { "back-world", "edit", "library-toggle", "zoom", "fit", "theme" }
-            : new String[] { "back-world", "edit", "zoom", "fit", "theme" };
-        int required = editing ? 184 : 156;
+        String[] ids = editing
+            ? new String[] { "back-world", "edit", "library-toggle", "save", "share", "zoom", "fit", "theme" }
+            : new String[] { "back-world", "edit", "save", "share", "zoom", "fit", "theme" };
+        int required = editing ? 240 : 212;
         boolean inlineTitle = available >= required + 100;
         title = new UiRect(6, inlineTitle ? 11 : 4, inlineTitle ? available - required - 8 : available, 12);
         int x = inlineTitle ? width - 6 - required : 6;

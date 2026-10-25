@@ -7,10 +7,10 @@ import org.junit.Test;
 public class DesktopPresetDataTest {
 
     @Test
-    public void overviewFitsSixteenBySevenCanvasWithFiveSmallResourcesAndLiveMachineStatus() {
+    public void overviewAddsInformationBelowOriginalSixteenBySevenContent() {
         DesktopLayout layout = DesktopPreset.overviewLayout();
         assertEquals(
-            10,
+            15,
             layout.widgets()
                 .size());
         assertEquals(
@@ -18,7 +18,7 @@ public class DesktopPresetDataTest {
             layout.bounds()
                 .width());
         assertEquals(
-            7 * DesktopLayout.CELL,
+            10 * DesktopLayout.CELL,
             layout.bounds()
                 .height());
         assertEquals(WidgetKind.WIRELESS, layout.find("wireless").kind);
@@ -50,6 +50,14 @@ public class DesktopPresetDataTest {
             assertEquals(2, resource.rows);
             assertNull(resource.resource);
         }
+        for (String id : new String[] { "clock", "gameClock", "session", "team", "player" }) {
+            WidgetSpec information = layout.find(id);
+            assertTrue(information.kind.isInformation());
+            assertEquals(7, information.row);
+            assertEquals(3, information.rows);
+        }
+        assertEquals(java.util.Arrays.asList("gameTime", "gameDay"), layout.find("gameClock").fields);
+        assertEquals(java.util.Arrays.asList("localTime", "localDate", "timezone"), layout.find("clock").fields);
         for (WidgetSpec widget : layout.widgets()) {
             assertTrue(layout.fits(widget, widget.id));
             assertNull(widget.screen);

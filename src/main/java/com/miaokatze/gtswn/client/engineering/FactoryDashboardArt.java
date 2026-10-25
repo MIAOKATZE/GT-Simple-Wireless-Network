@@ -40,11 +40,20 @@ final class FactoryDashboardArt {
             GuiDraw.drawVerticalGradientRect(r.x, r.y, r.w, r.h, theme.cardTop, theme.cardBottom);
             prepare();
             int accent = effectAccent(effects);
-            int grid = alpha(theme.grid, theme == DashboardTheme.MINIMAL ? .4 : .7);
+            int grid = alpha(
+                theme.grid,
+                theme == DashboardTheme.STANDARD ? .23 : theme == DashboardTheme.MINIMAL ? .4 : .7);
             int step = theme == DashboardTheme.RETRO ? 16 : effects.style == Style.SEGMENTED ? 16 : 24;
             for (int x = r.x + step; x < r.x + r.w; x += step) quad(x, r.y + 23, x + .6, r.y + r.h - 2, grid);
             for (int y = r.y + 24; y < r.y + r.h; y += step) quad(r.x + 2, y, r.x + r.w - 2, y + .6, grid);
-            if (theme == DashboardTheme.RETRO) {
+            if (theme == DashboardTheme.STANDARD) {
+                // Quiet glass grain under content; bevels stay within the existing card bounds.
+                for (int y = r.y + 26; y < r.y + r.h - 2; y += 6)
+                    quad(r.x + 2, y, r.x + r.w - 2, y + .5, alpha(theme.text, .018));
+                quad(r.x + 1, r.y + 1, r.x + r.w - 1, r.y + 2, alpha(theme.accent, .26));
+                quad(r.x + 1, r.y + 2, r.x + 2, r.y + r.h - 2, alpha(theme.text, .07));
+                quad(r.x + 1, r.y + r.h - 2, r.x + r.w - 1, r.y + r.h - 1, alpha(theme.background, .75));
+            } else if (theme == DashboardTheme.RETRO) {
                 for (int x = r.x + 8; x < r.x + r.w - 6; x += 64) for (int y = r.y + 32; y < r.y + r.h - 7; y += 64) {
                     quad(x - 2, y, x + 3, y + .6, alpha(theme.muted, .26));
                     quad(x, y - 2, x + .6, y + 3, alpha(theme.muted, .26));

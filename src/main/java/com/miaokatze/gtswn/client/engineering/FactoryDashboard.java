@@ -273,6 +273,10 @@ public final class FactoryDashboard extends Gui {
                 .capture(Minecraft.getMinecraft().thePlayer);
             card(f, r, FactoryDesktop.label(widget));
             if (r.contains(mx, my)) hover = FactoryDesktop.label(widget);
+            if (widget.kind.isInformation()) {
+                drawInformation(f, r, widget);
+                return;
+            }
             if (widget.kind == WidgetKind.RESOURCES && widget.singleResource && widget.resource == null) {
                 String message = tr(widget.autoResourcePending ? "resource.pending" : "resource.choose");
                 text(f, message, r.x + 10, r.y + 33, MUTED, r.w - 20);
@@ -344,6 +348,84 @@ public final class FactoryDashboard extends Gui {
             paintingBounds = null;
             paintingTransform = CanvasTransform.identity();
         }
+    }
+
+    /** Information cards read only the immutable tick snapshot, including their hover details. */
+    private static void drawInformation(FontRenderer font, Rect r, WidgetSpec widget) {
+        List<String> fields = DesktopFieldPolicy.fields(widget);
+        List<String> availableFields = new ArrayList<>();
+        List<String> availableValues = new ArrayList<>();
+        StringBuilder details = new StringBuilder(
+            FactoryDesktop.tr(
+                "info.help." + widget.kind.name()
+                    .toLowerCase(java.util.Locale.ROOT)));
+        for (String field : fields) {
+            String value = DashboardInformation.value(field);
+            if (value == null) continue;
+            availableFields.add(field);
+            availableValues.add(value);
+            details.append("\n")
+                .append(FactoryDesktop.tr("field." + field))
+                .append(": ")
+                .append(value);
+        }
+        InformationCardLayout geometry = new InformationCardLayout(r, widget.displayColumns, availableFields.size());
+        for (int index = 0; index < geometry.cells.size(); index++) {
+            InformationCardLayout.Cell cell = geometry.cells.get(index);
+            Rect bounds = cell.bounds;
+            String label = FactoryDesktop.tr("field." + availableFields.get(index));
+            String value = availableValues.get(index);
+            switch (cell.form) {
+                case HERO:
+                    DashboardVisuals
+                        .label(font, value, bounds.x, bounds.y + 1, bounds.w, accent(), bounds.w >= 210 ? 1.65f : 1.2f);
+                    text(font, label, bounds.x, bounds.y + 25, MUTED, bounds.w);
+                    break;
+                case ROW:
+                    int labelWidth = Math.min(90, bounds.w * 45 / 100);
+                    DashboardVisuals.label(font, label, bounds.x, bounds.y + 2, labelWidth, MUTED, .8f);
+                    String fitted = font.trimStringToWidth(value, Math.max(1, bounds.w - labelWidth - 8));
+                    text(
+                        font,
+                        fitted,
+                        bounds.x + bounds.w - font.getStringWidth(fitted),
+                        bounds.y + 2,
+                        TEXT,
+                        bounds.w - labelWidth - 8);
+                    break;
+                case STACK:
+                    DashboardVisuals.label(font, label, bounds.x, bounds.y + 1, bounds.w, MUTED, .8f);
+                    text(font, value, bounds.x, bounds.y + 11, TEXT, bounds.w);
+                    drawRect(
+                        bounds.x,
+                        bounds.y + bounds.h - 2,
+                        bounds.x + bounds.w,
+                        bounds.y + bounds.h - 1,
+                        theme.track);
+                    break;
+                default:
+                    break;
+            }
+        }
+        if (geometry.hidden > 0) text(font, "+" + geometry.hidden, r.x + r.w - 36, r.y + r.h - 12, MUTED, 26);
+        if (widget.kind == WidgetKind.TEAM && !fields.contains("teamId")) {
+            String identity = DashboardInformation.value("teamId");
+            if (identity != null) details.append("\n")
+                .append(FactoryDesktop.tr("field.teamId"))
+                .append(": ")
+                .append(identity);
+        }
+        if (availableFields.isEmpty() && !fields.isEmpty()) {
+            text(
+                font,
+                FactoryDesktop.tr(widget.kind == WidgetKind.TEAM ? "info.teamUnavailable" : "info.unavailable"),
+                r.x + 12,
+                r.y + 38,
+                MUTED,
+                r.w - 24);
+        }
+        if (fields.isEmpty()) text(font, FactoryDesktop.tr("fields.empty"), r.x + 12, r.y + 38, MUTED, r.w - 24);
+        if (r.contains(localMouseX, localMouseY)) hover = details.toString();
     }
 
     static void widgetClick(int x, int y) {

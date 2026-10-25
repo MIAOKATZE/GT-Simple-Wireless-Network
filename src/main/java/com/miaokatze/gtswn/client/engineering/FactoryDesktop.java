@@ -26,9 +26,12 @@ import com.miaokatze.gtswn.client.engineering.desktop.DesktopAutoBind;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopGesture;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopInformationTemplate;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetCode;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
@@ -61,7 +64,7 @@ final class FactoryDesktop {
         DashboardTheme theme = layout.theme();
         DesktopSourcePreview.theme(theme);
         BACK = theme.background;
-        GRID = theme.grid;
+        GRID = (theme.grid & 0x00FFFFFF) | ((theme.grid >>> 24) / 4 << 24);
         TEXT = theme.text;
         ACCENT = theme.accent;
         MUTED = theme.muted;
@@ -76,6 +79,10 @@ final class FactoryDesktop {
 
     private static DesktopStore store;
     private static DesktopLayout layout;
+    private static DesktopSaveSession saves;
+    private static final DesktopSelection selection = new DesktopSelection();
+    private static Runnable pendingExit;
+    private static boolean shareOpen;
     private static DesktopPreset pendingPreset;
     private static DesktopLayout pendingImport;
     private static String presetDraft = "";
@@ -131,6 +138,10 @@ final class FactoryDesktop {
         flush();
         profile = next;
         layout = store.load(profile);
+        saves = new DesktopSaveSession(layout);
+        pendingExit = null;
+        shareOpen = false;
+        selection.only("");
         view = store.loadView(profile);
         initialView = !store.hasView(profile);
         selected = "";
@@ -157,7 +168,16 @@ final class FactoryDesktop {
             long now = System.nanoTime();
             if (nextDefaultBindingCheck == 0 || now - nextDefaultBindingCheck >= 0) {
                 nextDefaultBindingCheck = now + 1000000000L;
-                if (DesktopAutoBind.initializeAvailable(layout)) changed(true);
+                if (DesktopAutoBind.initializeAvailable(layout)) {
+                    // Automatic binding is system initialization, independent of a user's draft.
+                    if (saves != null) {
+                        DesktopLayout baseline = saves.saved();
+                        DesktopAutoBind.initializeAvailable(baseline);
+                        saves.accept(baseline);
+                        store.put(profile, baseline);
+                    }
+                    dirty = true;
+                }
             }
             refreshBindingSources();
             DesktopDeviceSources.setSelectionSource(devicePickerActive() ? pickerSource : null);
@@ -247,7 +267,7 @@ final class FactoryDesktop {
     static void flush() {
         if (gesture.active() || drag.active() || panning) return;
         if (store != null && layout != null) {
-            store.put(profile, layout);
+            store.put(profile, saves == null ? layout : saves.saved());
             store.putView(profile, view);
             store.flush();
         }
@@ -255,9 +275,57 @@ final class FactoryDesktop {
 
     private static void changed(boolean structure) {
         if (gesture.active() || drag.active() || panning) return;
-        store.put(profile, layout);
+        if (saves == null) saves = new DesktopSaveSession(store.load(profile));
         store.putView(profile, view);
         dirty |= structure;
+    }
+
+    static boolean hasUnsavedChanges() {
+        return saves != null && layout != null && saves.unsaved(layout);
+    }
+
+    /** All voluntary host exits run their original operation only after the user's decision. */
+    static boolean requestExit(Runnable accepted) {
+        if (pendingExit != null) return true;
+        blur();
+        if (!hasUnsavedChanges()) {
+            accepted.run();
+            return true;
+        }
+        EngineeringModeController.revealExitPrompt();
+        pendingExit = accepted;
+        dirty = true;
+        return true;
+    }
+
+    private static boolean saveLayout() {
+        blur();
+        if (saves == null) saves = new DesktopSaveSession(store.load(profile));
+        boolean saved = saves.save(store, profile, layout, view);
+        notice = tr(saved ? "save.success" : "save.failed");
+        dirty = true;
+        return saved;
+    }
+
+    private static void resolveExit(boolean save) {
+        if (pendingExit == null) return;
+        if (save && !saveLayout()) return;
+        if (!save) {
+            layout = saves.saved();
+            selected = "";
+            selection.only("");
+            bindingOpen = screenBindingOpen = false;
+        }
+        Runnable accepted = pendingExit;
+        pendingExit = null;
+        dirty = true;
+        accepted.run();
+    }
+
+    private static void finishEditing() {
+        edit = libraryOpen = propertiesOpen = shareOpen = canvasFocus = false;
+        clearPresetImport();
+        dirty = true;
     }
 
     static boolean mount(UUID source, Entry entry) {
@@ -269,6 +337,7 @@ final class FactoryDesktop {
         WidgetSpec widget = layout.addDevice(binding);
         if (widget == null) return false;
         selected = widget.id;
+        selection.only(selected);
         view.panX = widget.x() - 18 / view.scale;
         view.panY = widget.y() - 18 / view.scale;
         edit = propertiesOpen = true;
@@ -284,6 +353,7 @@ final class FactoryDesktop {
         WidgetSpec widget = layout.addResource(binding);
         if (widget == null) return false;
         selected = widget.id;
+        selection.only(selected);
         DesktopCardGeometry.focusAtOne(view, widget, canvas);
         changed(true);
         return true;
@@ -294,6 +364,7 @@ final class FactoryDesktop {
         WidgetSpec widget = layout == null ? null : layout.find(id);
         if (widget == null || !widget.kind.supportsDeviceBinding() && widget.kind != WidgetKind.RESOURCES) return;
         selected = widget.id;
+        selection.only(selected);
         edit = propertiesOpen = true;
         libraryOpen = false;
         bindingOpen = widget.kind.supportsDeviceBinding();
@@ -350,27 +421,41 @@ final class FactoryDesktop {
 
     static boolean mouse(int x, int y, int button, boolean pressed, int wheel) {
         if (scene == null) return false;
+        if (pendingExit != null && scene.find("save-modal") == null && scene.captured() == null) build();
         if (pressed && button >= 0 && !canvas.contains(x, y)) canvasFocus = false;
         if (wheel != 0 && scene.captured() != null) return true;
         if (button >= 0 && pressed) FactoryDashboard.blurResourceSearch(-1, -1);
-        UiNode library = scene.find("library"), properties = scene.find("properties");
+        UiNode library = scene.find("library"), properties = scene.find("properties"),
+            share = scene.find("share-panel");
         boolean tools = library != null && library.bounds()
             .contains(x, y) || properties != null
                 && properties.bounds()
-                    .contains(x, y);
+                    .contains(x, y)
+            || share != null && share.bounds()
+                .contains(x, y);
         boolean used;
         if (wheel != 0) used = scene.scroll(x, y, !tools && canvas.contains(x, y) ? wheel : -Math.signum(wheel) * 24);
         else if (button >= 0) used = pressed ? scene.pointerDown(x, y, button) : scene.pointerUp(x, y, button);
         else used = scene.pointerMove(x, y) || pointerCaptured();
-        return used || area.contains(x, y);
+        return used || pendingExit != null || area.contains(x, y);
     }
 
     static boolean key(int code, char character, boolean pressed) {
         if (scene == null || code == Keyboard.KEY_ESCAPE) return false;
-        if ((gesture.active() || drag.active() || panning) && (code == Keyboard.KEY_DELETE || code == Keyboard.KEY_TAB))
+        if (pendingExit != null) {
+            if (scene.find("save-modal") == null && scene.captured() == null) build();
+            if (pressed && (code == Keyboard.KEY_TAB || code == Keyboard.KEY_RETURN))
+                scene.keyTyped(character, code, shiftDown(), controlDown());
             return true;
+        }
+        if ((gesture.active() || drag.active() || panning || selection.active())
+            && (code == Keyboard.KEY_DELETE || code == Keyboard.KEY_TAB)) return true;
         boolean control = pressed
             && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL));
+        if (pressed && control && code == Keyboard.KEY_S && !typing()) {
+            saveLayout();
+            return true;
+        }
         if (pressed && control && typing()) {
             if (code == Keyboard.KEY_V) {
                 scene.insertText(GuiScreen.getClipboardString());
@@ -390,8 +475,10 @@ final class FactoryDesktop {
             control)) return true;
         if (edit && canvasFocus && scene.focused() == null && code == Keyboard.KEY_DELETE) {
             if (pressed && !selected.isEmpty()) {
-                layout.remove(selected);
+                syncSelection();
+                for (String id : new ArrayList<>(selection.ids())) layout.remove(id);
                 selected = "";
+                selection.only("");
                 changed(true);
             }
             return true;
@@ -400,6 +487,11 @@ final class FactoryDesktop {
     }
 
     static boolean escape() {
+        if (pendingExit != null) {
+            pendingExit = null;
+            dirty = true;
+            return true;
+        }
         if (scene != null && (scene.captured() != null || scene.focused() != null)) {
             scene.blur();
             return true;
@@ -410,14 +502,13 @@ final class FactoryDesktop {
             dirty = true;
             return true;
         }
-        if (libraryOpen || propertiesOpen) {
-            libraryOpen = propertiesOpen = false;
+        if (libraryOpen || propertiesOpen || shareOpen) {
+            libraryOpen = propertiesOpen = shareOpen = false;
             dirty = true;
             return true;
         }
         if (edit) {
-            edit = canvasFocus = false;
-            changed(true);
+            requestExit(FactoryDesktop::finishEditing);
             return true;
         }
         return false;
@@ -434,6 +525,8 @@ final class FactoryDesktop {
     }
 
     static void suspend() {
+        pendingExit = null;
+        dirty = true;
         blur();
         flush();
         DesktopDeviceSources.release();
@@ -461,21 +554,70 @@ final class FactoryDesktop {
         CanvasTransform transform = view.transform(canvas.x, canvas.y);
         double sx = transform.toScreenX(x), sy = transform.toScreenY(y);
         WidgetSpec current = layout.find(selected);
-        if (current != null && DesktopCardGeometry
-            .hit(bounds(current, transform), sx, sy, DesktopCardGeometry.showResizeHandles(view.scale))) return current;
+        if (current != null && DesktopCardGeometry.hit(
+            bounds(current, transform),
+            sx,
+            sy,
+            selection.ids()
+                .size() < 2 && DesktopCardGeometry.showResizeHandles(view.scale)))
+            return current;
         for (WidgetSpec widget : layout.widgets())
             if (DesktopCardGeometry.hit(bounds(widget, transform), sx, sy, false)) return widget;
         return null;
     }
 
+    private static boolean controlDown() {
+        return Keyboard.isCreated()
+            && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL));
+    }
+
+    private static boolean shiftDown() {
+        return Keyboard.isCreated()
+            && (Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT));
+    }
+
+    private static void syncSelection() {
+        if (selected.isEmpty() || !selection.ids()
+            .contains(selected)) selection.only(selected);
+        java.util.Set<String> valid = new java.util.HashSet<>();
+        for (WidgetSpec widget : layout.widgets()) valid.add(widget.id);
+        selection.retain(valid);
+    }
+
     private static void down(UiEvent e) {
+        down(e, controlDown());
+    }
+
+    private static void down(UiEvent e, boolean control) {
+        if (pendingExit != null) {
+            e.consume();
+            return;
+        }
+        syncSelection();
         FactoryDashboard.blurResourceSearch((int) e.x, (int) e.y);
         canvasFocus = true;
         double x = view.toLocalX(e.x, canvas.x), y = view.toLocalY(e.y, canvas.y);
         WidgetSpec target = hit(x, y);
+        if (edit && control && e.button == 0) {
+            if (target == null) {
+                selection.begin(x, y);
+            } else {
+                selection.toggle(target.id);
+                selected = selection.ids()
+                    .isEmpty() ? ""
+                        : selection.ids()
+                            .iterator()
+                            .next();
+                dirty = true;
+            }
+            e.capturePointer();
+            e.consume();
+            return;
+        }
         if (e.button == 2 || e.button == 0 && target == null) {
             if (target == null) {
                 selected = "";
+                selection.only("");
                 dirty = true;
             }
             panning = true;
@@ -488,7 +630,9 @@ final class FactoryDesktop {
             return;
         }
         if (e.button == 0 && target != null) {
-            boolean was = selected.equals(target.id);
+            boolean was = selection.ids()
+                .contains(target.id);
+            if (!was) selection.only(target.id);
             if (!was) bindingOpen = screenBindingOpen = false;
             if (!was) bindingPage = 0;
             selected = target.id;
@@ -499,11 +643,13 @@ final class FactoryDesktop {
             dirty = true;
             Rect r = bounds(target, view.transform(canvas.x, canvas.y));
             pressedWidget = target.id;
-            pressedEdge = was && DesktopCardGeometry.showResizeHandles(view.scale) ? edge(r, e.x, e.y)
-                : DesktopDrag.Edge.MOVE;
+            pressedEdge = was && selection.ids()
+                .size() < 2 && DesktopCardGeometry.showResizeHandles(view.scale) ? edge(r, e.x, e.y)
+                    : DesktopDrag.Edge.MOVE;
             pressLocalX = x;
             pressLocalY = y;
-            boolean direct = was && (pressedEdge != DesktopDrag.Edge.MOVE
+            boolean direct = was && (edit && selection.ids()
+                .size() > 1 || pressedEdge != DesktopDrag.Edge.MOVE
                 || edit && DesktopCardGeometry.titleHandle(r, view.scale, e.x, e.y));
             gesture.begin(was, direct, e.x, e.y, System.nanoTime());
             e.capturePointer();
@@ -514,6 +660,11 @@ final class FactoryDesktop {
     }
 
     private static void move(UiEvent e) {
+        if (selection.active()) {
+            selection.update(layout, view.toLocalX(e.x, canvas.x), view.toLocalY(e.y, canvas.y));
+            e.consume();
+            return;
+        }
         if (panning) {
             view.pan(e.x - lastX, e.y - lastY);
             lastX = e.x;
@@ -525,7 +676,10 @@ final class FactoryDesktop {
 
     private static void advanceGesture(double x, double y) {
         if (gesture.update(x, y, System.nanoTime())) {
-            drag.begin(layout, pressedWidget, pressedEdge, pressLocalX, pressLocalY);
+            if (edit && selection.ids()
+                .size() > 1 && pressedEdge == DesktopDrag.Edge.MOVE)
+                drag.beginGroup(layout, selection.ids(), pressedWidget, pressLocalX, pressLocalY);
+            else drag.begin(layout, pressedWidget, pressedEdge, pressLocalX, pressLocalY);
         }
         if (drag.active() && gesture.moveAllowed(x, y))
             drag.update(view.toLocalX(x, canvas.x), view.toLocalY(y, canvas.y));
@@ -533,6 +687,17 @@ final class FactoryDesktop {
 
     private static void up(UiEvent e) {
         move(e);
+        if (selection.active()) {
+            selection.finish();
+            selected = selection.ids()
+                .isEmpty() ? ""
+                    : selection.ids()
+                        .iterator()
+                        .next();
+            dirty = true;
+            e.consume();
+            return;
+        }
         if (gesture.active()) {
             WidgetSpec target = hit(view.toLocalX(e.x, canvas.x), view.toLocalY(e.y, canvas.y));
             DesktopGesture.Release result = gesture.release(
@@ -563,6 +728,7 @@ final class FactoryDesktop {
     }
 
     private static void cancelGesture() {
+        if (selection.active()) selection.cancel();
         if (!gesture.active() && !drag.active() && !panning) return;
         gesture.cancel();
         pressedWidget = "";
@@ -590,6 +756,7 @@ final class FactoryDesktop {
         boolean resized = area == null || area.x != r.x || area.y != r.y || area.w != r.w || area.h != r.h;
         if (resized) blur();
         advanceGesture(mx, my);
+        if (!selection.active()) syncSelection();
         area = r;
         if (scene == null || (dirty || resized) && scene.captured() == null) build();
         zoomLabel.text(Math.round(view.scale * 100) + "%");
@@ -606,7 +773,9 @@ final class FactoryDesktop {
             if (visible && widget.device != null) visibleDevices.add(widget.device);
             scene.find("selection-" + widget.id)
                 .size(b.w, b.h)
-                .visible(selected.equals(widget.id));
+                .visible(
+                    selection.ids()
+                        .contains(widget.id));
         }
         scene.layout(width, height);
         Minecraft mc = Minecraft.getMinecraft();
@@ -677,6 +846,20 @@ final class FactoryDesktop {
                     }));
             canvasNode.add(card);
         }
+        canvasNode.add(
+            UiNode.panel("marquee")
+                .bounds(0, 0, canvas.w, canvas.h)
+                .pointerTransparent(true)
+                .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)))
+                .onDraw((node, renderer) -> {
+                    if (!selection.active()) return;
+                    CanvasTransform transform = view.transform(canvas.x, canvas.y);
+                    double left = transform.toScreenX(selection.left()), top = transform.toScreenY(selection.top());
+                    double width = (selection.right() - selection.left()) * view.scale;
+                    double height = (selection.bottom() - selection.top()) * view.scale;
+                    renderer.fill(new UiRect(left, top, width, height), 0x3038BEEB);
+                    selectionOutline(renderer, new Rect((int) left, (int) top, (int) width, (int) height));
+                }));
         shell.add(canvasNode);
         // Tools float above the full-size canvas; editing never squeezes the dashboard.
         UiRect title = toolbar.title;
@@ -692,16 +875,32 @@ final class FactoryDesktop {
                 () -> WorkbenchHud.switchTask(1)));
         shell.add(toolbarButton(toolbar, "edit", tr(edit ? "done" : "edit"), edit ? Icon.CHECK : Icon.EDIT, () -> {
             FactoryDashboard.blur();
-            edit = !edit;
-            libraryOpen = propertiesOpen = canvasFocus = false;
-            changed(true);
+            if (edit) requestExit(FactoryDesktop::finishEditing);
+            else {
+                edit = true;
+                libraryOpen = propertiesOpen = canvasFocus = false;
+                dirty = true;
+            }
         }).selected(edit));
         if (edit) shell.add(toolbarButton(toolbar, "library-toggle", tr("library"), Icon.LIBRARY, () -> {
             FactoryDashboard.blur();
             libraryOpen = !libraryOpen;
-            propertiesOpen = false;
+            propertiesOpen = shareOpen = false;
             dirty = true;
         }).selected(libraryOpen));
+        shell.add(
+            toolbarButton(
+                toolbar,
+                "save",
+                tr(hasUnsavedChanges() ? "save.unsaved" : "save"),
+                Icon.SAVE,
+                FactoryDesktop::saveLayout));
+        shell.add(toolbarButton(toolbar, "share", tr("preset.share"), Icon.SHARE, () -> {
+            FactoryDashboard.blur();
+            shareOpen = !shareOpen;
+            libraryOpen = propertiesOpen = false;
+            dirty = true;
+        }).selected(shareOpen));
         UiRect zoom = toolbar.controls.get("zoom");
         zoomLabel = button("zoom", "60%", zoom.x, zoom.y, zoom.width, zoom.height, () -> {
             WidgetSpec target = layout.find(selected);
@@ -741,9 +940,15 @@ final class FactoryDesktop {
             int width = Math.min(230, Math.max(170, area.w / 3));
             shell.add(properties(Math.max(0, area.w - width - 6), width));
         }
+        if (shareOpen) shell.add(sharePanel(Math.min(300, area.w - 12)));
         statusLabel = UiNode.label("desktop-hint", tr(edit ? "hint.edit" : "hint.browse"))
             .bounds(12, area.h - 15, area.w - 24, 12);
         shell.add(statusLabel);
+        if (pendingExit != null) {
+            shell.enabled(false);
+            root.add(exitDialog());
+            focusedInput = "";
+        }
         themeLabels(root);
         scene = new UiScene(root);
         scene.layout(screenWidth, screenHeight);
@@ -935,25 +1140,97 @@ final class FactoryDesktop {
                         .style(BUTTON));
             }
         }
-        addPresetSharing(list, width - 12);
         list.add(
             UiNode.label("add-title", tr("library"))
                 .size(width - 12, 14));
-        for (WidgetKind kind : WidgetKind.values())
+        for (DesktopInformationTemplate template : DesktopInformationTemplate.values()) {
+            list.add(
+                iconTextButton(
+                    "add-" + template.name(),
+                    StatCollector.translateToLocal(template.titleKey()),
+                    Icon.GAUGE,
+                    0,
+                    0,
+                    width - 12,
+                    25,
+                    () -> {
+                        WidgetSpec added = layout.add(WidgetKind.CLOCK);
+                        if (added == null) return;
+                        layout.replace(
+                            added
+                                .configured(StatCollector.translateToLocal(template.titleKey()), template.fields(), 1));
+                        selectAdded(added);
+                    }));
+        }
+        for (WidgetKind kind : WidgetKind.values()) {
+            if (kind == WidgetKind.CLOCK) continue;
             list.add(iconTextButton("add-" + kind, kindLabel(kind), kindIcon(kind), 0, 0, width - 12, 25, () -> {
                 WidgetSpec added = layout.add(kind);
                 if (added == null) return;
-                selected = added.id;
-                bindingOpen = screenBindingOpen = false;
-                choosingDeviceSource = false;
-                propertiesOpen = true;
-                libraryOpen = false;
-                view.panX = added.x() - 18 / view.scale;
-                view.panY = added.y() - 18 / view.scale;
-                changed(true);
+                selectAdded(added);
             }));
+        }
         panel.add(list);
         return panel;
+    }
+
+    private static void selectAdded(WidgetSpec added) {
+        selected = added.id;
+        selection.only(selected);
+        bindingOpen = screenBindingOpen = choosingDeviceSource = false;
+        propertiesOpen = true;
+        libraryOpen = shareOpen = false;
+        view.panX = added.x() - 18 / view.scale;
+        view.panY = added.y() - 18 / view.scale;
+        changed(true);
+    }
+
+    private static UiNode sharePanel(int width) {
+        UiNode panel = UiNode.panel("share-panel")
+            .bounds(6, canvas.y - area.y + 2, width, Math.max(1, canvas.h - 4))
+            .style(PANEL)
+            .overflowClip(true);
+        panel.add(button("close-share", tr("close"), width - 26, 5, 20, 20, () -> {
+            shareOpen = false;
+            clearPresetImport();
+            dirty = true;
+        }));
+        UiNode list = UiNode.panel("share-list")
+            .bounds(6, 34, width - 12, Math.max(1, canvas.h - 42))
+            .layout(UiNode.Layout.COLUMN)
+            .gap(6)
+            .scrollable(true)
+            .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)));
+        addPresetSharing(list, width - 12);
+        panel.add(list);
+        return panel;
+    }
+
+    private static UiNode exitDialog() {
+        UiNode overlay = UiNode.panel("save-modal")
+            .bounds(0, 0, screenWidth, screenHeight)
+            .style(new UiStyle(new UiStyle.Paint(0xA0000000, 0, TEXT)))
+            .on(UiEvent.Type.DOWN, e -> { if (e.target.id.equals("save-modal")) e.consume(); })
+            .on(UiEvent.Type.UP, e -> { if (e.target.id.equals("save-modal")) e.consume(); })
+            .on(UiEvent.Type.SCROLL, UiEvent::consume);
+        int width = Math.min(310, screenWidth - 12);
+        UiNode dialog = UiNode.panel("save-dialog")
+            .bounds((screenWidth - width) / 2, Math.max(6, (screenHeight - 182) / 2), width, 182)
+            .style(PANEL);
+        dialog.add(
+            UiNode.label("save-question", tr("save.question"))
+                .bounds(10, 12, width - 20, 30));
+        dialog.add(button("save-exit", tr("save.exit"), 10, 49, width - 20, 26, () -> resolveExit(true)));
+        dialog.add(button("discard-exit", tr("save.discard"), 10, 82, width - 20, 26, () -> resolveExit(false)));
+        dialog.add(button("cancel-exit", tr("preset.cancel"), 10, 115, width - 20, 26, () -> {
+            pendingExit = null;
+            dirty = true;
+        }));
+        if (!notice.isEmpty()) dialog.add(
+            UiNode.label("save-feedback", notice)
+                .bounds(10, 153, width - 20, 22));
+        overlay.add(dialog);
+        return overlay;
     }
 
     private static UiNode presetActions(String id, int width, Supplier<DesktopLayout> template) {
@@ -988,18 +1265,20 @@ final class FactoryDesktop {
             }
             WidgetSpec first = added.get(0);
             selected = first.id;
+            selection.only(selected);
             view.panX = first.x() - 18 / view.scale;
             view.panY = first.y() - 18 / view.scale;
         } else {
             layout = prepared;
             selected = "";
+            selection.only("");
             view.reset(layout, canvas.w, canvas.h);
         }
         DesktopAutoBind.initializeAvailable(layout);
         nextDefaultBindingCheck = System.nanoTime() + 1000000000L;
         pendingPreset = null;
         clearPresetImport();
-        libraryOpen = propertiesOpen = false;
+        libraryOpen = propertiesOpen = shareOpen = false;
         bindingOpen = screenBindingOpen = resourceAdding = choosingDeviceSource = false;
         notice = tr(append ? "preset.appended" : "preset.applied");
         changed(true);
@@ -1026,6 +1305,7 @@ final class FactoryDesktop {
         if (!importingPreset) {
             list.add(button("preset-import", tr("preset.import"), 0, 0, width, 23, () -> {
                 importingPreset = true;
+                edit = true;
                 pendingPreset = null;
                 dirty = true;
             }));
@@ -1327,8 +1607,10 @@ final class FactoryDesktop {
         body.add(fields);
         panel.add(body);
         panel.add(button("remove", tr("remove"), 8, canvas.h - 31, width - 16, 23, () -> {
-            layout.remove(selected);
+            syncSelection();
+            for (String id : new ArrayList<>(selection.ids())) layout.remove(id);
             selected = "";
+            selection.only("");
             changed(true);
         }));
         return panel;
@@ -1884,13 +2166,18 @@ final class FactoryDesktop {
     }
 
     private static void selection(UiRenderer r, Rect b) {
+        selectionOutline(r, b);
+        if (selection.ids()
+            .size() > 1 || !DesktopCardGeometry.showResizeHandles(view.scale)) return;
+        for (int x : new int[] { b.x + 3, b.x + b.w / 2, b.x + b.w - 3 })
+            for (int y : new int[] { b.y + 3, b.y + b.h / 2, b.y + b.h - 3 })
+                if (x != b.x + b.w / 2 || y != b.y + b.h / 2) r.fill(new UiRect(x - 3, y - 3, 6, 6), ACCENT);
+    }
+
+    private static void selectionOutline(UiRenderer r, Rect b) {
         r.fill(new UiRect(b.x, b.y, b.w, 2), ACCENT);
         r.fill(new UiRect(b.x, b.y + b.h - 2, b.w, 2), ACCENT);
         r.fill(new UiRect(b.x, b.y, 2, b.h), ACCENT);
         r.fill(new UiRect(b.x + b.w - 2, b.y, 2, b.h), ACCENT);
-        if (!DesktopCardGeometry.showResizeHandles(view.scale)) return;
-        for (int x : new int[] { b.x + 3, b.x + b.w / 2, b.x + b.w - 3 })
-            for (int y : new int[] { b.y + 3, b.y + b.h / 2, b.y + b.h - 3 })
-                if (x != b.x + b.w / 2 || y != b.y + b.h / 2) r.fill(new UiRect(x - 3, y - 3, 6, 6), ACCENT);
     }
 }

@@ -20,6 +20,7 @@ import org.lwjgl.opengl.GL11;
 
 import com.miaokatze.gtswn.client.engineering.EngineeringModeController.Target;
 import com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard;
+import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.common.engineering.EngineeringGrid;
 import com.miaokatze.gtswn.common.engineering.EngineeringSnapshot;
@@ -45,8 +46,8 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 /** Factory world markers and workbench. Terminal actions stay in the same non-modal world HUD. */
 public final class EngineeringHud extends Gui {
 
-    private static final int BACK = 0xEC141E27, HEADER = 0xF0263946;
-    private static final int ACCENT = 0xFF67D8CD, TEXT = 0xFFE2EEF4, MUTED = 0xFF92A7B4;
+    private static int BACK = 0xEC141E27, HEADER = 0xF0263946;
+    private static int ACCENT = 0xFF67D8CD, TEXT = 0xFFE2EEF4, MUTED = 0xFF92A7B4;
     private static final int LINK = 0xFFF1BD70, QUANTUM = 0xFF8EB2FF, INC = 0xFFDA97F1;
     private static int activeSlot = -1;
     private static boolean grid, gtGrid, selecting, dragging, boundOnly;
@@ -161,6 +162,12 @@ public final class EngineeringHud extends Gui {
 
     @SubscribeEvent
     public void render(RenderGameOverlayEvent.Post event) {
+        DashboardTheme theme = FactoryDisplayPreferences.theme();
+        BACK = 0xEC000000 | theme.cardBottom & 0xFFFFFF;
+        HEADER = theme.header;
+        ACCENT = theme.accent;
+        TEXT = theme.text;
+        MUTED = theme.muted;
         Minecraft mc = Minecraft.getMinecraft();
         if (event.type != RenderGameOverlayEvent.ElementType.ALL || !EngineeringModeController.isActive()
             || mc.currentScreen != null
