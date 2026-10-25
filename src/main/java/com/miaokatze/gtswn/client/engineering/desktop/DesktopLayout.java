@@ -152,6 +152,46 @@ public final class DesktopLayout {
         return widget != null && widgets.remove(widget);
     }
 
+    /** Exact top-left placement for a preview: never searches, clamps or moves existing cards. */
+    public boolean canAppendPresetExact(DesktopLayout template, int anchorColumn, int anchorRow) {
+        return !exactPreset(template, anchorColumn, anchorRow).isEmpty();
+    }
+
+    /** Validate every card first, then append the complete unbound group with fresh local identities. */
+    public List<WidgetSpec> appendPresetExact(DesktopLayout template, int anchorColumn, int anchorRow) {
+        List<WidgetSpec> candidates = exactPreset(template, anchorColumn, anchorRow);
+        if (candidates.isEmpty()) return Collections.emptyList();
+        List<WidgetSpec> added = new ArrayList<>();
+        for (WidgetSpec candidate : candidates) added.add(
+            candidate.withId(
+                UUID.randomUUID()
+                    .toString()));
+        widgets.addAll(added);
+        return Collections.unmodifiableList(added);
+    }
+
+    private List<WidgetSpec> exactPreset(DesktopLayout template, int anchorColumn, int anchorRow) {
+        if (template == null || template.widgets.isEmpty() || widgets.size() + template.widgets.size() > MAX_WIDGETS)
+            return Collections.emptyList();
+        int left = Integer.MAX_VALUE, top = Integer.MAX_VALUE;
+        for (WidgetSpec widget : template.widgets) {
+            left = Math.min(left, widget.column);
+            top = Math.min(top, widget.row);
+        }
+        DesktopLayout incoming = new DesktopLayout();
+        for (WidgetSpec widget : template.widgets) {
+            long column = (long) anchorColumn + widget.column - left;
+            long row = (long) anchorRow + widget.row - top;
+            if (column < -MAX_COORD || row < -MAX_COORD
+                || column + widget.columns > MAX_COORD
+                || row + widget.rows > MAX_COORD) return Collections.emptyList();
+            WidgetSpec candidate = widget.asTemplate()
+                .withBounds((int) column, (int) row, widget.columns, widget.rows);
+            if (!fits(candidate, null) || !incoming.add(candidate)) return Collections.emptyList();
+        }
+        return incoming.widgets;
+    }
+
     /** Append an independent, unbound template beside the current desktop. Empty means no change. */
     public List<WidgetSpec> appendPreset(DesktopLayout template) {
         Bounds occupied = bounds();

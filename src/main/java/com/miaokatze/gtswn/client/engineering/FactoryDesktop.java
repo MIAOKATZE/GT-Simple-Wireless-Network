@@ -30,6 +30,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.DesktopInformationTemplate
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetCode;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetPlacement;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopSelection;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
@@ -86,6 +87,7 @@ final class FactoryDesktop {
     private static boolean shareOpen;
     private static DesktopPreset pendingPreset;
     private static DesktopLayout pendingImport;
+    private static DesktopPresetPlacement placement;
     private static String presetDraft = "";
     private static boolean importingPreset;
     private static DesktopViewport view;
@@ -422,6 +424,10 @@ final class FactoryDesktop {
 
     static boolean mouse(int x, int y, int button, boolean pressed, int wheel) {
         if (scene == null) return false;
+        if (placement != null && button == 1) {
+            if (pressed) blur();
+            return true;
+        }
         if (pendingExit != null && scene.find("save-modal") == null && scene.captured() == null) build();
         if (pressed && button >= 0 && !canvas.contains(x, y)) canvasFocus = false;
         if (wheel != 0 && scene.captured() != null) return true;
@@ -443,6 +449,7 @@ final class FactoryDesktop {
 
     static boolean key(int code, char character, boolean pressed) {
         if (scene == null || code == Keyboard.KEY_ESCAPE) return false;
+        if (placement != null && code == Keyboard.KEY_DELETE) return true;
         if (pendingExit != null) {
             if (scene.find("save-modal") == null && scene.captured() == null) build();
             if (pressed && (code == Keyboard.KEY_TAB || code == Keyboard.KEY_RETURN))
@@ -457,6 +464,7 @@ final class FactoryDesktop {
             saveLayout();
             return true;
         }
+        if (placement != null) return true;
         if (pressed && control && typing()) {
             if (code == Keyboard.KEY_V) {
                 scene.insertText(GuiScreen.getClipboardString());
@@ -488,6 +496,10 @@ final class FactoryDesktop {
     }
 
     static boolean escape() {
+        if (placement != null) {
+            blur();
+            return true;
+        }
         if (pendingExit != null) {
             pendingExit = null;
             dirty = true;
@@ -516,6 +528,7 @@ final class FactoryDesktop {
     }
 
     static void blur() {
+        cancelPlacement();
         if (scene != null) scene.blur();
         cancelGesture();
         canvasFocus = false;
@@ -594,6 +607,24 @@ final class FactoryDesktop {
             e.consume();
             return;
         }
+        if (placement != null) {
+            if (e.button == 1) {
+                blur();
+            } else if (e.button == 0) {
+                pointPlacement(e.x, e.y);
+                placement.press(e.x, e.y);
+                e.capturePointer();
+            } else if (e.button == 2) {
+                panning = true;
+                lastX = e.x;
+                lastY = e.y;
+                panBeforeX = view.panX;
+                panBeforeY = view.panY;
+                e.capturePointer();
+            }
+            e.consume();
+            return;
+        }
         syncSelection();
         FactoryDashboard.blurResourceSearch((int) e.x, (int) e.y);
         canvasFocus = true;
@@ -661,6 +692,17 @@ final class FactoryDesktop {
     }
 
     private static void move(UiEvent e) {
+        if (placement != null) {
+            if (panning) {
+                view.pan(e.x - lastX, e.y - lastY);
+                lastX = e.x;
+                lastY = e.y;
+            }
+            pointPlacement(e.x, e.y);
+            placement.move(e.x, e.y);
+            e.consume();
+            return;
+        }
         if (selection.active()) {
             selection.update(layout, view.toLocalX(e.x, canvas.x), view.toLocalY(e.y, canvas.y));
             e.consume();
@@ -687,6 +729,31 @@ final class FactoryDesktop {
     }
 
     private static void up(UiEvent e) {
+        if (placement != null) {
+            move(e);
+            if (panning && e.button == 2) {
+                panning = false;
+                changed(false);
+            } else if (e.button == 0 && !panning) {
+                UiNode hovered = scene.hitTest(e.x, e.y);
+                List<WidgetSpec> added = placement.release(
+                    layout,
+                    e.x,
+                    e.y,
+                    canvas.contains((int) e.x, (int) e.y) && hovered != null && hovered.id.equals("preset-placement"));
+                if (!added.isEmpty()) {
+                    placement = null;
+                    selected = added.get(0).id;
+                    selection.only(selected);
+                    DesktopAutoBind.initializeAvailable(layout);
+                    nextDefaultBindingCheck = System.nanoTime() + 1000000000L;
+                    notice = tr("preset.appended");
+                    changed(true);
+                }
+            }
+            e.consume();
+            return;
+        }
         move(e);
         if (selection.active()) {
             selection.finish();
@@ -742,6 +809,17 @@ final class FactoryDesktop {
         dirty = true;
     }
 
+    private static void cancelPlacement() {
+        if (placement == null) return;
+        placement = null;
+        notice = "";
+        dirty = true;
+    }
+
+    private static void pointPlacement(double x, double y) {
+        if (placement != null) placement.point(view.toLocalX(x, canvas.x), view.toLocalY(y, canvas.y));
+    }
+
     private static DesktopDrag.Edge edge(Rect r, double x, double y) {
         return DesktopCardGeometry.edge(r, x, y);
     }
@@ -761,7 +839,10 @@ final class FactoryDesktop {
         area = r;
         if (scene == null || (dirty || resized) && scene.captured() == null) build();
         zoomLabel.text(Math.round(view.scale * 100) + "%");
-        statusLabel.text(notice.isEmpty() ? tr(edit ? "hint.edit" : "hint.browse") : notice);
+        if (placement != null) pointPlacement(mx, my);
+        statusLabel.text(
+            placement != null ? tr(placement.valid(layout) ? "placement.hint" : "placement.blocked")
+                : notice.isEmpty() ? tr(edit ? "hint.edit" : "hint.browse") : notice);
         CanvasTransform t = view.transform(canvas.x, canvas.y);
         visibleDevices.clear();
         for (WidgetSpec widget : layout.widgets()) {
@@ -830,7 +911,10 @@ final class FactoryDesktop {
             .on(UiEvent.Type.DOWN, FactoryDesktop::down)
             .on(UiEvent.Type.MOVE, FactoryDesktop::move)
             .on(UiEvent.Type.UP, FactoryDesktop::up)
-            .on(UiEvent.Type.CANCEL, e -> cancelGesture())
+            .on(UiEvent.Type.CANCEL, e -> {
+                cancelPlacement();
+                cancelGesture();
+            })
             .on(UiEvent.Type.SCROLL, e -> {
                 if (!drag.active() && !panning) {
                     view.zoomAt(e.wheel > 0 ? 1.12 : 1 / 1.12, e.x, e.y, canvas.x, canvas.y);
@@ -866,9 +950,13 @@ final class FactoryDesktop {
                     double left = transform.toScreenX(selection.left()), top = transform.toScreenY(selection.top());
                     double width = (selection.right() - selection.left()) * view.scale;
                     double height = (selection.bottom() - selection.top()) * view.scale;
-                    renderer.fill(new UiRect(left, top, width, height), 0x3038BEEB);
                     selectionOutline(renderer, new Rect((int) left, (int) top, (int) width, (int) height));
                 }));
+        if (placement != null) canvasNode.add(
+            UiNode.panel("preset-placement")
+                .bounds(0, 0, canvas.w, canvas.h)
+                .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)))
+                .onDraw((node, renderer) -> drawPlacement(renderer)));
         shell.add(canvasNode);
         // Tools float above the full-size canvas; editing never squeezes the dashboard.
         UiRect title = toolbar.title;
@@ -1324,20 +1412,24 @@ final class FactoryDesktop {
             notice = tr("preset.invalid");
             return;
         }
-        DesktopLayout prepared = DesktopAutoBind.initialize(template);
         if (append) {
-            List<WidgetSpec> added = layout.appendPreset(prepared);
-            if (added.isEmpty()) {
+            if (template.widgets()
+                .isEmpty()) {
                 notice = tr("no.space");
                 return;
             }
-            WidgetSpec first = added.get(0);
-            selected = first.id;
-            selection.only(selected);
-            view.panX = first.x() - 18 / view.scale;
-            view.panY = first.y() - 18 / view.scale;
+            placement = new DesktopPresetPlacement(template);
+            pointPlacement(mouseX, mouseY);
+            pendingPreset = null;
+            clearPresetImport();
+            libraryOpen = propertiesOpen = shareOpen = false;
+            bindingOpen = screenBindingOpen = resourceAdding = choosingDeviceSource = false;
+            notice = "";
+            dirty = true;
+            return;
         } else {
-            layout = prepared;
+            cancelPlacement();
+            layout = DesktopAutoBind.initialize(template);
             selected = "";
             selection.only("");
             view.reset(layout, canvas.w, canvas.h);
@@ -2222,6 +2314,71 @@ final class FactoryDesktop {
                 renderer);
         } finally {
             GL11.glPopMatrix();
+        }
+    }
+
+    /** Geometry-only ghost: no card painter, readings, subscriptions or actionable children. */
+    private static void drawPlacement(UiRenderer renderer) {
+        if (placement == null) return;
+        DashboardTheme theme = layout.theme();
+        boolean valid = placement.valid(layout);
+        int outline = valid ? theme.positive : theme.warning;
+        CanvasTransform transform = view.transform(canvas.x, canvas.y);
+        for (WidgetSpec widget : placement.widgets()) {
+            Rect b = bounds(widget, transform);
+            if (!intersects(b, canvas)) continue;
+            renderer.fill(new UiRect(b.x, b.y, b.w, b.h), (theme.cardBottom & 0xFFFFFF) | 0x90000000);
+            double header = Math.min(b.h, Math.max(3, 22 * view.scale));
+            renderer.fill(new UiRect(b.x, b.y, b.w, header), (theme.header & 0xFFFFFF) | 0xB0000000);
+            renderer.fill(new UiRect(b.x, b.y, b.w, 2), outline);
+            renderer.fill(new UiRect(b.x, b.y + b.h - 2, b.w, 2), outline);
+            renderer.fill(new UiRect(b.x, b.y, 2, b.h), outline);
+            renderer.fill(new UiRect(b.x + b.w - 2, b.y, 2, b.h), outline);
+            double inset = Math.max(4, 12 * view.scale), x = b.x + inset, y = b.y + header + inset;
+            double width = Math.max(1, b.w - inset * 2), height = Math.max(1, b.h - header - inset * 2);
+            int ink = (theme.accent & 0xFFFFFF) | 0x80000000;
+            if (widget.kind == WidgetKind.HISTORY || widget.presentation == WidgetPresentation.BARS
+                || widget.presentation == WidgetPresentation.TREND
+                || widget.presentation == WidgetPresentation.COMBO) {
+                for (int i = 0; i < 7; i++) {
+                    double h = height * (.25 + (i * 3 % 7) / 10.0);
+                    renderer.fill(new UiRect(x + width * i / 7, y + height - h, width / 10, h), ink);
+                }
+            } else if (widget.presentation == WidgetPresentation.GAUGE) {
+                double radius = Math.max(1, Math.min(width, height) * .35);
+                for (int i = 0; i < 20; i++) {
+                    double angle = i * Math.PI / 10;
+                    renderer.fill(
+                        new UiRect(
+                            x + width / 2 + Math.cos(angle) * radius,
+                            y + height / 2 + Math.sin(angle) * radius,
+                            Math.max(2, radius / 5),
+                            Math.max(2, radius / 5)),
+                        ink);
+                }
+            } else {
+                int lines = widget.presentation == WidgetPresentation.KPI
+                    || widget.presentation == WidgetPresentation.BAR ? 2 : 4;
+                for (int i = 0; i < lines; i++) renderer.fill(
+                    new UiRect(
+                        x,
+                        y + height * (i + .5) / lines,
+                        width * (i == 0 ? .72 : .45),
+                        Math.max(2, 4 * view.scale)),
+                    ink);
+            }
+            if (!valid) {
+                renderer.fill(new UiRect(b.x + b.w - 9, b.y + 5, 3, 8), outline);
+                renderer.fill(new UiRect(b.x + b.w - 9, b.y + 15, 3, 3), outline);
+            }
+            if (b.w > 64 && b.h > 40 && header >= 12) {
+                String kind = kindLabel(widget.kind);
+                String title = !widget.title.isEmpty() ? widget.title
+                    : widget.kind == WidgetKind.WIRELESS ? tr("metric." + widget.metricField) : kind;
+                if (!title.equals(kind)) title += " / " + kind;
+                if (font != null) title = font.trimStringToWidth(title, Math.max(1, b.w - 24));
+                renderer.text(title, b.x + 6, b.y + 4, theme.text);
+            }
         }
     }
 

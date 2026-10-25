@@ -1673,3 +1673,5 @@ gtswn.factory.desktop.number.format.SCIENTIFIC=科学计数（E）
 gtswn.factory.desktop.number.format.METRIC=千位缩写，1 位小数（K）
 gtswn.factory.desktop.number.format.next=单击切换为
 gtswn.factory.cockpit.grid.tier.hint=A + 电压等级仅用于净变化 EU/t；（A ?）表示数值超出了等级格式化器可表示的范围。
+gtswn.factory.desktop.placement.hint=左键放置 · 中键平移 · 右键 / Esc 取消
+gtswn.factory.desktop.placement.blocked=无法放置：重叠、越界或超过 32 张 · 右键 / Esc 取消

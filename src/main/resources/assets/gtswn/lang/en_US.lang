@@ -1673,3 +1673,5 @@ gtswn.factory.desktop.number.format.SCIENTIFIC=Scientific (E)
 gtswn.factory.desktop.number.format.METRIC=Thousands, 1 decimal (K)
 gtswn.factory.desktop.number.format.next=Click to switch to
 gtswn.factory.cockpit.grid.tier.hint=A + voltage tier describes net EU/t only. (A ?) means the rate exceeds the tier formatter's numeric range.
+gtswn.factory.desktop.placement.hint=Click to place | Middle drag to pan | Right click / Esc to cancel
+gtswn.factory.desktop.placement.blocked=Blocked: overlap, boundary or 32-card limit | Right click / Esc to cancel
