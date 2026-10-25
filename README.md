@@ -11,13 +11,13 @@
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
-此版本客户端与服务端均必须安装前置库 [MIAOKATZE Core 0.1.8](https://github.com/MIAOKATZE/MIAOKATZE-Core)（最低版本：0.1.8）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
+此版本客户端与服务端均必须安装前置库 [MIAOKATZE Core 0.1.21](https://github.com/MIAOKATZE/MIAOKATZE-Core)（最低版本：0.1.21）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
 
 仅支持 GTNH 2.9.0 RC 版本。自 v2.0.0 起，建议 GTIT、GTSWN、GTSR 三者一起更新。
 
-为 GTNH 提供 **无线 EU 监控、传输与红石控制**，包括便携/方块监视器、链路终端与覆盖板、信息屏、ME 量子接入和设备信息终端；均为 LV 阶段科技。
+为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；设备均可在 LV 阶段制作。
 
-**Wireless EU monitoring, transfer and redstone control** for GTNH: portable/block monitors, link terminals and covers, info panels, ME quantum access and device terminals, all available at LV tier.
+**Wireless EU transfer, energy and machine monitoring, and ME quantum access** for GTNH, brought together in Factory Mode and a customizable dashboard. All devices are craftable at LV tier.
 
 > [!NOTE]
 > 非官方模组，讨论时请注意场合。/ Unofficial mod; please avoid discussing it in official GTNH forums.
@@ -239,6 +239,51 @@ Bind supported GT working machines for status (Running/Idle/Stopped), actual EU 
 <p align="center"><img src="images/v1.8.62/device-terminal-visualization.png" alt="设备标签与热图 / Device labels and heat" width="310"> <img src="images/v1.8.62/device-terminal-settings.png" alt="热图、标签与全服设置 / Heat, label and server settings" width="310"><br><em>设备可视化与设置 / Device visualization and settings</em></p>
 
 **LV 有序配方（v1.7.8 起）/ LV shaped recipe (since v1.7.8)**：LV 传感器 / Sensor ×2 + LV 发射器 / Emitter ×2 + 钢板 / Steel Plate ×3 + 电脑屏幕覆盖板 / Computer Screen Cover ×1 + 末影珍珠 / Ender Pearl ×1 → 设备信息终端 / Device Info Terminal ×1。
+
+## 工厂模式与自定义仪表盘 / Factory Mode & Custom Dashboard
+
+从工厂全景到单台设备，将电网、机器、资源和信息屏集中到自己的监控界面。/ Bring grids, machines, resources and info panels into one workspace, from a factory overview to individual devices.
+
+- **自由观察 / Free camera**：默认 F12 打开工厂模式，平移、旋转、缩放视角，查看设备状态与能耗热图，搜索并定位设备和网络节点。/ F12 opens Factory Mode by default; pan, rotate and zoom, inspect status and energy heatmaps, and search for machines and network nodes.
+- **自定义仪表 / Custom dashboard**：默认 F10 直接打开，四种主题、最多 512 个组件，自由组合电网、设备、资源、图表与时钟信息。/ F10 opens the dashboard by default; four themes and up to 512 widgets for grids, machines, resources, charts and clock information.
+- **布局编辑 / Layout editing**：Ctrl 框选或多选，移动、缩放与设置组件；Ctrl+Z / Ctrl+Y 撤销与重做，手动保存布局。/ Ctrl-select groups, move, resize and configure widgets; Ctrl+Z / Ctrl+Y undo and redo, with explicit layout saving.
+- **预设拼接与分享 / Preset placement & sharing**：预设以轮廓预览定位后放置，可覆盖或追加；分享码只含外观与布局，不携带数据源绑定，导入后按需绑定。/ Preview preset outlines before placement, replace or append layouts, and share visual presets without data-source bindings; bind sources after import.
+
+### 工厂模式：设备状态与能源热图集中查看 / Factory Mode: Machine Status & Energy Heatmaps
+
+<p align="center"><img src="images/v2.0.25/factory-mode.png" alt="工厂模式 / Factory Mode" width="700"></p>
+
+### 工厂全景：从整体布局查看生产现场 / Factory Overview: Explore the Production Floor
+
+<p align="center"><img src="images/v2.0.25/factory-overview.png" alt="工厂模式全景 / Factory overview" width="700"></p>
+
+### 自由视角：平移、旋转与缩放观察工厂 / Free Camera: Pan, Rotate & Zoom
+
+<p align="center"><img src="images/v2.0.25/factory-camera.png" alt="工厂模式可变视角 / Factory camera views" width="700"></p>
+
+### 自定义仪表盘：把常用监控集中在一处 / Custom Dashboard: Your Monitoring Workspace
+
+<p align="center"><img src="images/v2.0.25/dashboard.png" alt="仪表盘模式 / Dashboard" width="700"></p>
+
+### 四种外观：标准、复古、工业与简约 / Four Themes: Standard, Retro, Industrial & Minimal
+
+<p align="center"><img src="images/v2.0.25/dashboard-themes.png" alt="仪表盘四种主题 / Four dashboard themes" width="700"></p>
+
+### 自由扩展：组合多种组件与监控内容 / Expand Your Dashboard: Combine Widgets & Readings
+
+<p align="center"><img src="images/v2.0.25/dashboard-expandability.png" alt="仪表盘扩展展示 / Dashboard expandability" width="700"></p>
+
+### 组件库与预设：按需选择、自由拼接 / Widget Library & Presets: Choose, Place & Combine
+
+<p align="center"><img src="images/v2.0.25/preset-placement.png" alt="组件库预设自由拼接 / Widget library and preset placement" width="700"></p>
+
+### 预设分享：导出与导入自己的布局 / Preset Sharing: Export & Import Your Layouts
+
+<p align="center"><img src="images/v2.0.25/preset-sharing.png" alt="预设分享系统 / Preset sharing" width="700"></p>
+
+### 组件编辑：调整样式、内容与显示方式 / Widget Editor: Customize Style, Content & Display
+
+<p align="center"><img src="images/v2.0.25/widget-editor.png" alt="组件设置与编辑 / Widget settings and editing" width="700"></p>
 
 ## BQ 任务包 / BetterQuesting Quests
 
