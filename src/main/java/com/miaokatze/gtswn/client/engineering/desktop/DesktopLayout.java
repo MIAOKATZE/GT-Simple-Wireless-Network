@@ -11,7 +11,7 @@ import java.util.UUID;
 /** Sparse desktop: 1024 is the initial arrangement, never a canvas boundary. */
 public final class DesktopLayout {
 
-    public static final int DEFAULT_SIZE = 1024, CELL = 64, MAX_COORD = 1000000, MAX_SIZE = 64, MAX_WIDGETS = 128;
+    public static final int DEFAULT_SIZE = 1024, CELL = 64, MAX_COORD = 1000000, MAX_SIZE = 64, MAX_WIDGETS = 512;
 
     public enum PlacementStatus {
         VALID,

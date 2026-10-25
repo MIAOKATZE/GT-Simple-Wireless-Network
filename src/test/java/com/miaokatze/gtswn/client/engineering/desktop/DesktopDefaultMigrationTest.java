@@ -16,6 +16,37 @@ public class DesktopDefaultMigrationTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void savedV224InformationFootersArePreservedForEveryOperationalPreset() throws Exception {
+        for (DesktopPreset preset : DesktopPreset.values()) {
+            if (preset == DesktopPreset.INFORMATION) continue;
+            DesktopLayout previous = preset.createLayout();
+            for (WidgetSpec widget : new java.util.ArrayList<>(previous.widgets()))
+                if (widget.kind.isInformation()) assertTrue(previous.remove(widget.id));
+            if (preset == DesktopPreset.OVERVIEW) {
+                for (WidgetSpec widget : new java.util.ArrayList<>(previous.widgets())) assertTrue(
+                    previous.replace(widget.withBounds(widget.column, widget.row - 2, widget.columns, widget.rows)));
+            }
+            int row = previous.bounds().bottom / DesktopLayout.CELL;
+            boolean player = preset == DesktopPreset.OVERVIEW || preset == DesktopPreset.PRODUCTION
+                || preset == DesktopPreset.DIAGNOSTICS;
+            String[] ids = { "clock", "gameClock", "session", "team", player ? "player" : "world" };
+            WidgetKind[] kinds = { WidgetKind.CLOCK, WidgetKind.CLOCK, WidgetKind.SESSION, WidgetKind.TEAM,
+                player ? WidgetKind.PLAYER : WidgetKind.WORLD };
+            for (int index = 0; index < ids.length; index++) {
+                WidgetSpec widget = new WidgetSpec(ids[index], kinds[index], index * 2, row, 2, 2);
+                if (index < 2) widget = widget.configured(
+                    "",
+                    (index == 0 ? DesktopInformationTemplate.LOCAL_CLOCK : DesktopInformationTemplate.GAME_CLOCK)
+                        .fields(),
+                    1);
+                assertTrue(previous.add(widget));
+            }
+            assertFalse(DesktopStore.untouchedLegacyDefault(previous));
+            assertLayoutPreserved(previous);
+        }
+    }
+
+    @Test
     public void v218DefaultGainsCompactMonitorsAndRetainsRemovedBoundCardsAndSavedZoom() throws Exception {
         DesktopLayout previous = DesktopTestLayouts.v218Overview();
         bindScreensAndResource(previous);

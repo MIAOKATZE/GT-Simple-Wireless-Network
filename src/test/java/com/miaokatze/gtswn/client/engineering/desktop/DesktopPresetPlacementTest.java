@@ -14,7 +14,7 @@ public class DesktopPresetPlacementTest {
         DesktopLayout desktop = DesktopLayout.defaultLayout(), template = DesktopPreset.OVERVIEW.createLayout();
         int cards = template.widgets()
             .size();
-        assertEquals(15, cards);
+        assertEquals(16, cards);
         int groups = DesktopLayout.MAX_WIDGETS / cards;
         for (int group = 1; group < groups; group++) {
             assertEquals(DesktopLayout.PlacementStatus.OVERLAP, desktop.checkPresetExact(template, group * 16 - 1, 0));

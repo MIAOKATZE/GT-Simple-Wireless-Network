@@ -8,7 +8,8 @@ public enum DesktopPreset {
     PRODUCTION,
     LOGISTICS,
     DIAGNOSTICS,
-    REGIONS;
+    REGIONS,
+    INFORMATION;
 
     public DesktopLayout createLayout() {
         if (this == OVERVIEW) return overviewLayout();
@@ -54,39 +55,43 @@ public enum DesktopPreset {
                 add(layout, "region", WidgetKind.REGION, WidgetPresentation.STATUS_LIST, "", 0, 2, 10, 3);
                 add(layout, "attention", WidgetKind.ATTENTION, WidgetPresentation.STATUS_LIST, "", 10, 2, 6, 3);
                 break;
+            case INFORMATION:
+                informationCards(layout, 6, 0);
+                break;
             default:
                 throw new IllegalStateException(name());
         }
-        informationStrip(layout, this == PRODUCTION || this == DIAGNOSTICS);
         return layout;
     }
 
     /** New profiles and explicit preset application only; persisted arrangements are left intact. */
     public static DesktopLayout overviewLayout() {
         DesktopLayout layout = new DesktopLayout();
-        add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.KPI, "count", 0, 0, 5, 2);
-        add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.GAUGE, "stored", 10, 0, 6, 5);
-        add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 5, 0, 5, 2);
-        add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.COMBO, "", 0, 2, 10, 3);
-        resourceStrip(layout, 5);
-        add(layout, "status", WidgetKind.MACHINES, WidgetPresentation.STATUS_LIST, "running", 10, 5, 6, 2);
+        informationCards(layout, 16, 0);
+        add(layout, "machines", WidgetKind.MACHINES, WidgetPresentation.KPI, "count", 0, 2, 5, 2);
+        add(layout, "wireless", WidgetKind.WIRELESS, WidgetPresentation.GAUGE, "stored", 10, 2, 6, 5);
+        add(layout, "netRate", WidgetKind.WIRELESS, WidgetPresentation.KPI, "netRate", 5, 2, 5, 2);
+        add(layout, "history", WidgetKind.HISTORY, WidgetPresentation.COMBO, "", 0, 4, 10, 3);
+        resourceStrip(layout, 7);
+        add(layout, "status", WidgetKind.MACHINES, WidgetPresentation.STATUS_LIST, "running", 10, 7, 6, 2);
         layout.replace(
             layout.find("status")
                 .styled(WidgetEffects.DEFAULT.withStyle(WidgetEffects.Style.SIGNAL)));
-        informationStrip(layout, true);
         return layout;
     }
 
-    /** Appended only when creating a fresh preset; persisted layouts have their own migration policy. */
-    private static void informationStrip(DesktopLayout layout, boolean player) {
-        int row = layout.bounds().bottom / DesktopLayout.CELL;
+    /** Fresh presets only; persisted layouts have their own migration policy. */
+    private static void informationCards(DesktopLayout layout, int columns, int row) {
         WidgetKind[] kinds = { WidgetKind.CLOCK, WidgetKind.CLOCK, WidgetKind.SESSION, WidgetKind.TEAM,
-            player ? WidgetKind.PLAYER : WidgetKind.WORLD };
-        String[] ids = { "clock", "gameClock", "session", "team", player ? "player" : "world" };
-        int column = 0;
+            WidgetKind.PLAYER, WidgetKind.WORLD };
+        String[] ids = { "clock", "gameClock", "session", "team", "player", "world" };
+        int cardsPerRow = columns / 2;
         for (int i = 0; i < kinds.length; i++) {
-            int width = 2;
-            add(layout, ids[i], kinds[i], WidgetPresentation.DEFAULT, "", column, row, width, 2);
+            int column = i % cardsPerRow * 2;
+            int cardRow = row + i / cardsPerRow * 2;
+            // World coordinates use the remaining overview width; clocks retain their compact size.
+            int width = i == kinds.length - 1 ? columns - column : 2;
+            add(layout, ids[i], kinds[i], WidgetPresentation.DEFAULT, "", column, cardRow, width, 2);
             if (i < 2) layout.replace(
                 layout.find(ids[i])
                     .configured(
@@ -94,7 +99,6 @@ public enum DesktopPreset {
                         (i == 0 ? DesktopInformationTemplate.LOCAL_CLOCK : DesktopInformationTemplate.GAME_CLOCK)
                             .fields(),
                         1));
-            column += width;
         }
     }
 

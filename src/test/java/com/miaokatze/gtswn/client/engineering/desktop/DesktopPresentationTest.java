@@ -149,24 +149,27 @@ public class DesktopPresentationTest {
 
     @Test
     public void legacySchemaAndMalformedOptionalPreferencesKeepValidLayout() {
-        Properties p = DesktopStore.encode(DesktopLayout.defaultLayout());
-        p.remove("widget.0.fieldsConfigured");
+        DesktopLayout layout = DesktopLayout.defaultLayout();
+        Properties p = DesktopStore.encode(layout);
+        String prefix = "widget." + layout.widgets()
+            .indexOf(layout.find("machines")) + ".";
+        p.remove(prefix + "fieldsConfigured");
         WidgetSpec legacy = DesktopStore.decode(p)
             .find("machines");
         assertEquals(WidgetPresentation.KPI, legacy.presentation);
         assertFalse(legacy.fieldsConfigured);
         assertNull(legacy.userTarget);
         assertEquals("count", legacy.metricField);
-        p.setProperty("widget.0.presentation", "FUTURE_FORM");
-        p.setProperty("widget.0.metricField", "capacity");
-        p.setProperty("widget.0.userTarget", "999");
+        p.setProperty(prefix + "presentation", "FUTURE_FORM");
+        p.setProperty(prefix + "metricField", "capacity");
+        p.setProperty(prefix + "userTarget", "999");
         WidgetSpec restored = DesktopStore.decode(p)
             .find("machines");
         assertNotNull(restored);
         assertEquals(WidgetPresentation.DEFAULT, restored.presentation);
         assertEquals("count", restored.metricField);
         assertNull(restored.userTarget);
-        p.setProperty("widget.0.userTarget", "NaN");
+        p.setProperty(prefix + "userTarget", "NaN");
         assertNull(
             DesktopStore.decode(p)
                 .find("machines").userTarget);

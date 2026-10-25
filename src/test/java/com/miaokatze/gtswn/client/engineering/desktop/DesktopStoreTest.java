@@ -38,7 +38,7 @@ public class DesktopStoreTest {
         writer.put(profile, layout);
         assertTrue(writer.flush());
         long bytes = Files.size(directory.resolve(profile + ".properties"));
-        assertTrue("Regression fixture must exceed the former disk limit", bytes > 131072);
+        assertTrue("Regression fixture must exceed the former 128-card disk limit", bytes > 1048576);
         assertTrue(bytes <= DesktopStore.MAX_FILE_BYTES);
         DesktopLayout restored = new DesktopStore(directory.toFile()).load(profile);
         assertEquals(

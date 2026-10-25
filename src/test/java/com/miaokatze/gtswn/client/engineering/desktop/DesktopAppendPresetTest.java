@@ -15,6 +15,8 @@ public class DesktopAppendPresetTest {
     @Test
     public void repeatedAppendKeepsOriginalCardsAndRelativeGeometryWithIndependentIds() {
         DesktopLayout layout = DesktopPreset.overviewLayout();
+        int originalCount = layout.widgets()
+            .size();
         WidgetSpec original = layout.find("wireless");
         Properties originalData = DesktopStore.encode(layout);
         DesktopLayout template = new DesktopLayout();
@@ -31,7 +33,8 @@ public class DesktopAppendPresetTest {
             second.size());
         assertSame(original, layout.find("wireless"));
         assertEquals(
-            31,
+            originalCount + 2 * template.widgets()
+                .size(),
             layout.widgets()
                 .size());
         Set<String> ids = new HashSet<>();

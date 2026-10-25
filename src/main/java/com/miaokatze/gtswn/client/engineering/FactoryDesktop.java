@@ -26,6 +26,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.DesktopAutoBind;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopGesture;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopHistory;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopInformationTemplate;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
@@ -82,6 +83,7 @@ final class FactoryDesktop {
     private static DesktopStore store;
     private static DesktopLayout layout;
     private static DesktopSaveSession saves;
+    private static DesktopHistory history;
     private static final DesktopSelection selection = new DesktopSelection();
     private static Runnable pendingExit;
     private static boolean shareOpen;
@@ -143,6 +145,7 @@ final class FactoryDesktop {
         layout = store.load(profile);
         DashboardCardScroll.clear();
         saves = new DesktopSaveSession(layout);
+        history = new DesktopHistory(layout);
         pendingExit = null;
         shareOpen = false;
         selection.only("");
@@ -172,7 +175,9 @@ final class FactoryDesktop {
             long now = System.nanoTime();
             if (nextDefaultBindingCheck == 0 || now - nextDefaultBindingCheck >= 0) {
                 nextDefaultBindingCheck = now + 1000000000L;
+                DesktopLayout beforeInitialization = layout.copy();
                 if (DesktopAutoBind.initializeAvailable(layout)) {
+                    if (history != null) history.acceptAutomatic(beforeInitialization, layout);
                     // Automatic binding is system initialization, independent of a user's draft.
                     if (saves != null) {
                         DesktopLayout baseline = saves.saved();
@@ -280,6 +285,8 @@ final class FactoryDesktop {
     private static void changed(boolean structure) {
         if (gesture.active() || drag.active() || panning) return;
         if (saves == null) saves = new DesktopSaveSession(store.load(profile));
+        if (history == null) history = new DesktopHistory(saves.saved());
+        history.record(layout, typing() ? scene.focused() : null);
         store.putView(profile, view);
         dirty |= structure;
     }
@@ -316,6 +323,7 @@ final class FactoryDesktop {
         if (save && !saveLayout()) return;
         if (!save) {
             layout = saves.saved();
+            if (history != null) history.reset(layout);
             selected = "";
             selection.only("");
             bindingOpen = screenBindingOpen = false;
@@ -413,6 +421,7 @@ final class FactoryDesktop {
 
     static boolean mouse(int x, int y, int button, boolean pressed, int wheel) {
         if (scene == null) return false;
+        if (pressed && button >= 0 && history != null) history.endGroup();
         if (placement != null && button == 1) {
             if (pressed) blur();
             return true;
@@ -437,18 +446,35 @@ final class FactoryDesktop {
     }
 
     static boolean key(int code, char character, boolean pressed) {
+        return key(code, character, pressed, shiftDown(), controlDown());
+    }
+
+    /** Host modifiers are explicit here so text and desktop shortcuts share the same focus policy. */
+    static boolean key(int code, char character, boolean pressed, boolean shift, boolean control) {
         if (scene == null || code == Keyboard.KEY_ESCAPE) return false;
         if (placement != null && code == Keyboard.KEY_DELETE) return true;
         if (pendingExit != null) {
             if (scene.find("save-modal") == null && scene.captured() == null) build();
             if (pressed && (code == Keyboard.KEY_TAB || code == Keyboard.KEY_RETURN))
-                scene.keyTyped(character, code, shiftDown(), controlDown());
+                scene.keyTyped(character, code, shift, control);
             return true;
         }
         if ((gesture.active() || drag.active() || panning || selection.active())
             && (code == Keyboard.KEY_DELETE || code == Keyboard.KEY_TAB)) return true;
-        boolean control = pressed
-            && (Keyboard.isKeyDown(Keyboard.KEY_LCONTROL) || Keyboard.isKeyDown(Keyboard.KEY_RCONTROL));
+        if (control && (code == Keyboard.KEY_Z || code == Keyboard.KEY_Y)) {
+            if (typing()) {
+                if (pressed) scene.keyTyped(character, code, shift, true);
+            } else if (pressed && edit
+                && placement == null
+                && !gesture.active()
+                && !drag.active()
+                && !panning
+                && !selection.active()
+                && scene.captured() == null) {
+                    restoreHistory(code == Keyboard.KEY_Y);
+                }
+            return true;
+        }
         if (pressed && control && code == Keyboard.KEY_S && !typing()) {
             saveLayout();
             return true;
@@ -466,11 +492,8 @@ final class FactoryDesktop {
                 return true;
             }
         }
-        if (pressed && scene.keyTyped(
-            character,
-            code,
-            Keyboard.isKeyDown(Keyboard.KEY_LSHIFT) || Keyboard.isKeyDown(Keyboard.KEY_RSHIFT),
-            control)) return true;
+        if (pressed && (code == Keyboard.KEY_TAB || code == Keyboard.KEY_RETURN) && history != null) history.endGroup();
+        if (pressed && scene.keyTyped(character, code, shift, control)) return true;
         if (edit && canvasFocus && scene.focused() == null && code == Keyboard.KEY_DELETE) {
             if (pressed && !selected.isEmpty()) {
                 syncSelection();
@@ -482,6 +505,26 @@ final class FactoryDesktop {
             return true;
         }
         return typing();
+    }
+
+    private static void restoreHistory(boolean redo) {
+        if (history == null) return;
+        DesktopLayout restored = redo ? history.redo() : history.undo();
+        if (restored == null) {
+            notice = tr(redo ? "history.no_redo" : "history.no_undo");
+        } else {
+            blur();
+            layout = restored;
+            if (layout.find(selected) == null) selected = "";
+            syncSelection();
+            bindingOpen = screenBindingOpen = resourceAdding = choosingDeviceSource = false;
+            pickerSource = null;
+            pendingPreset = null;
+            clearPresetImport();
+            DashboardCardScroll.retain(layout.widgets());
+            notice = tr(redo ? "history.redo" : "history.undo");
+        }
+        dirty = true;
     }
 
     static boolean escape() {
@@ -517,6 +560,7 @@ final class FactoryDesktop {
     }
 
     static void blur() {
+        if (history != null) history.endGroup();
         cancelPlacement();
         if (scene != null) scene.blur();
         cancelGesture();
