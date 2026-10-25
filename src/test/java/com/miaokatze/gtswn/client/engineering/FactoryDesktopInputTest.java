@@ -15,6 +15,7 @@ import org.junit.Test;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
 import com.miaokatze.gtswn.client.engineering.desktop.DashboardTheme;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopDrag;
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopInformationTemplate;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopLayout;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPreset;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetCode;
@@ -22,6 +23,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.DesktopPresetPlacement;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopStore;
 import com.miaokatze.gtswn.client.engineering.desktop.DesktopViewport;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
+import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetEffects;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat;
@@ -546,6 +548,202 @@ public class FactoryDesktopInputTest {
     }
 
     @Test
+    public void realOverviewGroupsPlaceAtAdjacentEdgesAfterPanningAndZoomingWithNoDuplicateIdRejection()
+        throws Exception {
+        prepare(true, false);
+        layout = DesktopLayout.defaultLayout();
+        set("layout", layout);
+        set("saves", new com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession(layout));
+        Method apply = FactoryDesktop.class.getDeclaredMethod("applyPreset", DesktopLayout.class, boolean.class);
+        apply.setAccessible(true);
+        DesktopViewport view = (DesktopViewport) get("view");
+        for (int group = 1; group <= 3; group++) {
+            apply.invoke(null, DesktopPreset.OVERVIEW.createLayout(), true);
+            rebuild();
+            Rect canvas = (Rect) get("canvas");
+            view.scale = .2 * group;
+            view.panX = (group * 16 - 1) * 64 + .25 - (600 - canvas.x) / view.scale;
+            view.panY = .25 - (400 - canvas.y) / view.scale;
+            scene.pointerMove(600, 400);
+            DesktopPresetPlacement pending = (DesktopPresetPlacement) get("placement");
+            assertEquals(DesktopLayout.PlacementStatus.OVERLAP, pending.status(layout));
+            scene.pointerDown(600, 400, 0);
+            scene.pointerUp(600, 400, 0);
+            assertSame(pending, get("placement"));
+            assertEquals(
+                15 * group,
+                layout.widgets()
+                    .size());
+            view.panX += 64;
+            scene.pointerMove(600, 400);
+            assertEquals(DesktopLayout.PlacementStatus.VALID, pending.status(layout));
+            assertTrue(scene.pointerDown(600, 400, 2));
+            assertTrue(scene.pointerMove(620, 410));
+            assertTrue(scene.pointerUp(620, 410, 2));
+            double scale = view.scale;
+            assertTrue(scene.scroll(620, 410, 1));
+            assertTrue(view.scale > scale);
+            scene.pointerMove(620, 410);
+            java.util.List<WidgetSpec> ghosts = pending.widgets();
+            assertEquals(group * 16, ghosts.get(0).column);
+            assertEquals(0, ghosts.get(0).row);
+            scene.pointerDown(620, 410, 0);
+            scene.pointerUp(620, 410, 0);
+            assertNull(get("placement"));
+            assertEquals(
+                15 * (group + 1),
+                layout.widgets()
+                    .size());
+            for (int index = 0; index < 15; index++) {
+                WidgetSpec placed = layout.widgets()
+                    .get(15 * group + index);
+                assertEquals(ghosts.get(index).column, placed.column);
+                assertEquals(ghosts.get(index).row, placed.row);
+                assertEquals(ghosts.get(index).columns, placed.columns);
+                assertEquals(ghosts.get(index).rows, placed.rows);
+            }
+        }
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+        FactoryDesktop.flush();
+        assertEquals(
+            15,
+            ((DesktopStore) get("store")).load((String) get("profile"))
+                .widgets()
+                .size());
+    }
+
+    @Test
+    public void everyLibraryComponentWaitsForAnExactCanvasClickAndCanBeCancelledWithoutSaving() throws Exception {
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (WidgetKind kind : WidgetKind.values()) if (kind != WidgetKind.CLOCK) ids.add("add-" + kind);
+        for (DesktopInformationTemplate template : DesktopInformationTemplate.values()) ids.add("add-" + template);
+        for (String id : ids) {
+            prepare(true, false);
+            set("libraryOpen", true);
+            rebuild();
+            activate(id);
+            assertEquals(
+                id,
+                1,
+                layout.widgets()
+                    .size());
+            assertFalse(id, FactoryDesktop.hasUnsavedChanges());
+            assertNotNull(id, get("placement"));
+            rebuild();
+            scene.pointerMove(800, 500);
+            DesktopPresetPlacement pending = (DesktopPresetPlacement) get("placement");
+            WidgetSpec ghost = pending.widgets()
+                .get(0);
+            assertTrue(id, pending.valid(layout));
+            scene.pointerDown(800, 500, 0);
+            scene.pointerUp(800, 500, 0);
+            assertNull(id, get("placement"));
+            assertEquals(
+                id,
+                2,
+                layout.widgets()
+                    .size());
+            WidgetSpec placed = layout.widgets()
+                .get(1);
+            assertEquals(id, ghost.column, placed.column);
+            assertEquals(id, ghost.row, placed.row);
+            assertTrue(id, FactoryDesktop.hasUnsavedChanges());
+        }
+        prepare(true, false);
+        assertTrue(layout.move("card", -10, 0));
+        ResourceBinding chosen = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "v2:item:" + String.join("", Collections.nCopies(64, "b")),
+            "Exact");
+        Field singleton = Minecraft.class.getDeclaredField("theMinecraft");
+        singleton.setAccessible(true);
+        Object previous = singleton.get(null);
+        Class<?> unsafe = Class.forName("sun.misc.Unsafe");
+        Field allocator = unsafe.getDeclaredField("theUnsafe");
+        allocator.setAccessible(true);
+        try {
+            singleton.set(
+                null,
+                unsafe.getMethod("allocateInstance", Class.class)
+                    .invoke(allocator.get(null), Minecraft.class));
+            set("profile", DesktopStore.profile(EngineeringModeController.preferenceProfile(), ""));
+            assertTrue(FactoryDesktop.mountResource(chosen));
+            assertEquals(
+                1,
+                layout.widgets()
+                    .size());
+            rebuild();
+            scene.pointerMove(800, 500);
+            DesktopPresetPlacement pending = (DesktopPresetPlacement) get("placement");
+            assertSame(
+                chosen,
+                pending.widgets()
+                    .get(0).resource);
+            assertTrue(FactoryDesktop.escape());
+            assertNull(get("placement"));
+            assertEquals(
+                1,
+                layout.widgets()
+                    .size());
+            assertEquals(-10, layout.find("card").column);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+            assertTrue(FactoryDesktop.mountResource(chosen));
+            rebuild();
+            scene.pointerDown(800, 500, 0);
+            scene.pointerUp(800, 500, 0);
+            assertSame(
+                chosen,
+                layout.widgets()
+                    .get(1).resource);
+        } finally {
+            singleton.set(null, previous);
+        }
+    }
+
+    @Test
+    public void placementCoversExistingOverflowScrollControlsAndCancellingPreservesTheDraft() throws Exception {
+        prepare(true, false);
+        layout = new DesktopLayout();
+        WidgetSpec widget = new WidgetSpec("scroll", WidgetKind.CLOCK, 0, 0, 2, 2)
+            .configured("", java.util.Arrays.asList("localTime", "localDate", "timezone", "gameTime", "gameDay"), 1);
+        assertTrue(layout.add(widget));
+        set("layout", layout);
+        set("saves", new com.miaokatze.gtswn.client.engineering.desktop.DesktopSaveSession(layout));
+        assertTrue(layout.move("scroll", 1, 0));
+        widget = layout.find("scroll");
+        Method apply = FactoryDesktop.class.getDeclaredMethod("applyPreset", DesktopLayout.class, boolean.class);
+        apply.setAccessible(true);
+        apply.invoke(null, DesktopPreset.OVERVIEW.createLayout(), true);
+        rebuild();
+        Rect canvas = (Rect) get("canvas");
+        DesktopViewport view = (DesktopViewport) get("view");
+        UiNode card = scene.find("card-scroll");
+        Rect bounds = DesktopCardGeometry.bounds(widget, view.transform(canvas.x, canvas.y));
+        card.bounds(bounds.x - canvas.x, bounds.y - canvas.y, bounds.w, bounds.h);
+        DashboardCardScroll.update(card, widget, view.scale, false);
+        scene.layout(1400, 1000);
+        assertTrue(DashboardCardScroll.overflowing(widget.id));
+        assertFalse(
+            scene.find("card-scroll-scroll")
+                .visible());
+        double x = bounds.x + bounds.w - 3, y = bounds.y + bounds.h / 2;
+        assertEquals("preset-placement", scene.hitTest(x, y).id);
+        scene.pointerDown(x, y, 0);
+        scene.pointerUp(x, y, 0);
+        assertNotNull(get("placement"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertTrue(FactoryDesktop.escape());
+        assertNull(scene.captured());
+        assertEquals(1, layout.find("scroll").column);
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
     public void cancelledPlacementReleasesCaptureAndPreservesAnExistingUnsavedDraft() throws Exception {
         for (int cancel = 0; cancel < 3; cancel++) {
             prepare(true, true);
@@ -790,6 +988,15 @@ public class FactoryDesktopInputTest {
         int before = layout.widgets()
             .size();
         activate("add-WIRELESS");
+        assertEquals(
+            before,
+            layout.widgets()
+                .size());
+        assertNotNull(get("placement"));
+        rebuild();
+        scene.pointerDown(800, 500, 0);
+        scene.pointerUp(800, 500, 0);
+        assertNull(get("placement"));
         assertEquals(
             before + 1,
             layout.widgets()

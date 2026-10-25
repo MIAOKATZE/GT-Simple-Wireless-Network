@@ -83,8 +83,10 @@ public enum DesktopPreset {
         WidgetKind[] kinds = { WidgetKind.CLOCK, WidgetKind.CLOCK, WidgetKind.SESSION, WidgetKind.TEAM,
             player ? WidgetKind.PLAYER : WidgetKind.WORLD };
         String[] ids = { "clock", "gameClock", "session", "team", player ? "player" : "world" };
+        int column = 0;
         for (int i = 0; i < kinds.length; i++) {
-            add(layout, ids[i], kinds[i], WidgetPresentation.DEFAULT, "", i * 3, row, i == 4 ? 4 : 3, 3);
+            int width = 2;
+            add(layout, ids[i], kinds[i], WidgetPresentation.DEFAULT, "", column, row, width, 2);
             if (i < 2) layout.replace(
                 layout.find(ids[i])
                     .configured(
@@ -92,6 +94,7 @@ public enum DesktopPreset {
                         (i == 0 ? DesktopInformationTemplate.LOCAL_CLOCK : DesktopInformationTemplate.GAME_CLOCK)
                             .fields(),
                         1));
+            column += width;
         }
     }
 

@@ -38,8 +38,7 @@ final class DesktopCardGeometry {
     }
 
     static int headerReserved(WidgetSpec widget) {
-        return widget.kind == WidgetKind.HISTORY ? 132
-            : widget.kind == WidgetKind.RESOURCES ? 112 : widget.kind == WidgetKind.WIRELESS ? 30 : 0;
+        return widget.kind == WidgetKind.HISTORY ? 132 : widget.kind == WidgetKind.WIRELESS ? 30 : 0;
     }
 
     static int gap(double scale) {

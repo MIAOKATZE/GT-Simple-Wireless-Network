@@ -107,7 +107,10 @@ public class DesktopPresetCodeTest {
         reject(cards(2, "card1", 0, "source", "card1", 8, "source"));
         reject(cards(2, "card1", 0, "source", "card2", 0, "source"));
         reject(cards(2, "card1", 0, "source", "card2", Integer.MAX_VALUE, "source"));
-        reject(cards(33, "card1", 0, "source", "card2", 8, "source"));
+        reject(cards(DesktopLayout.MAX_WIDGETS + 1, "card1", 0, "source", "card2", 8, "source"));
+        reject(cards(2, "card0", 0, "source", "card2", 8, "source"));
+        reject(cards(2, "card01", 0, "source", "card2", 8, "source"));
+        reject(cards(2, "card" + (DesktopLayout.MAX_WIDGETS + 1), 0, "source", "card2", 8, "source"));
         assertEquals(
             2,
             DesktopPresetCode.decode(cards(2, "card1", 0, "source", "card2", 8, "source"))
@@ -124,6 +127,46 @@ public class DesktopPresetCodeTest {
         assertTrue(
             DesktopPresetCode.export(restored)
                 .startsWith(DesktopPresetCode.PREFIX));
+    }
+
+    @Test
+    public void maximumCardCountRoundTripsThroughStoreAndEverySupportedCodeVersion() throws Exception {
+        DesktopLayout layout = new DesktopLayout();
+        String title = String.join("", Collections.nCopies(64, "\u65f6"));
+        for (int index = 0; index < DesktopLayout.MAX_WIDGETS; index++) {
+            assertTrue(
+                layout.add(
+                    new WidgetSpec("private" + index, WidgetKind.DEVICE, index * 4, 0, 4, 32)
+                        .configured(title, WidgetSpec.availableFields(WidgetKind.DEVICE), 1)));
+        }
+        assertEquals(
+            DesktopStore.encode(layout),
+            DesktopStore.encode(DesktopStore.decode(DesktopStore.encode(layout))));
+        String code = DesktopPresetCode.export(layout);
+        assertTrue(code.length() <= DesktopPresetCode.MAX_CODE_LENGTH);
+        assertTrue(raw(code).length <= DesktopPresetCode.MAX_DECOMPRESSED_BYTES);
+        assertEquals(code, DesktopPresetCode.export(DesktopPresetCode.decode(code)));
+        assertNotNull(
+            DesktopPresetCode.decode(code)
+                .find("card" + DesktopLayout.MAX_WIDGETS));
+        for (String prefix : new String[] { DesktopPresetCode.V1_PREFIX, DesktopPresetCode.V2_PREFIX }) {
+            ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+            DataOutputStream output = new DataOutputStream(bytes);
+            boolean v2 = prefix.equals(DesktopPresetCode.V2_PREFIX);
+            if (v2) output.writeUTF("STANDARD");
+            output.writeInt(DesktopLayout.MAX_WIDGETS);
+            for (int index = 0; index < DesktopLayout.MAX_WIDGETS; index++) {
+                card(output, "card" + (index + 1), index * 4, "source");
+                if (v2) output.writeDouble(WidgetEffects.DEFAULT.glow);
+            }
+            output.flush();
+            DesktopLayout restored = DesktopPresetCode.decode(pack(bytes.toByteArray(), prefix));
+            assertEquals(
+                DesktopLayout.MAX_WIDGETS,
+                restored.widgets()
+                    .size());
+            assertNotNull(restored.find("card" + DesktopLayout.MAX_WIDGETS));
+        }
     }
 
     @Test

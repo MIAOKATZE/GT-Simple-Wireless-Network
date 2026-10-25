@@ -40,6 +40,7 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Panel;
 import com.miaokatze.gtswn.network.PacketSyncPortableMonitor.Row;
 import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
+import com.miaokatze.miaokatzecore.api.ui.component.UiRect;
 import com.miaokatze.miaokatzecore.api.ui.component.UiRenderer;
 import com.miaokatze.miaokatzecore.client.render.GlScope;
 
@@ -86,6 +87,8 @@ public final class FactoryDashboard extends Gui {
     private static Rect paintingBounds;
     private static CanvasTransform paintingTransform = CanvasTransform.identity();
     private static int localMouseX, localMouseY;
+    private static int paintingScroll;
+    private static Rect paintingViewport;
     private static final ItemDrawable resourceItem = new ItemDrawable();
     private static final FluidDrawable resourceFluid = new FluidDrawable();
     private static final WidgetTheme iconTheme = WidgetTheme.whiteTextShadow(16, 16, null);
@@ -131,6 +134,7 @@ public final class FactoryDashboard extends Gui {
         exact = new String[0];
         hits.clear();
         motion.clear();
+        DashboardCardScroll.clear();
         WidgetResources.update(null, Collections.emptyList());
     }
 
@@ -270,12 +274,34 @@ public final class FactoryDashboard extends Gui {
         paintingTransform = widgetToScreen;
         localMouseX = mx;
         localMouseY = my;
+        boolean clippedBody = false;
         try {
             EngineeringSnapshot power = EngineeringDashboardCache.snapshot();
             EngineeringTerminalHudSnapshot snapshot = EngineeringTerminalHudSnapshot
                 .capture(Minecraft.getMinecraft().thePlayer);
             card(f, r, FactoryDesktop.label(widget));
             if (r.contains(mx, my)) hover = FactoryDesktop.label(widget);
+            int contentHeight = scrollContentHeight(widget, r.w - DashboardCardScroll.BAR);
+            if (contentHeight > 0) {
+                paintingViewport = new Rect(
+                    r.x + 1,
+                    r.y + DashboardCardScroll.TOP,
+                    Math.max(0, r.w - 2),
+                    Math.max(0, r.h - DashboardCardScroll.TOP - DashboardCardScroll.BOTTOM));
+                if (renderer != null) {
+                    Rect clip = screenRect(paintingViewport);
+                    renderer.pushClip(new UiRect(clip.x, clip.y, clip.w, clip.h));
+                    clippedBody = true;
+                }
+                paintingScroll = DashboardCardScroll.offset(widget.id);
+                GL11.glPushMatrix();
+                GL11.glTranslated(0, -paintingScroll, 0);
+                if (paintingViewport.contains(mx, my)) localMouseY += paintingScroll;
+                else localMouseY = Integer.MIN_VALUE / 2;
+                if (DashboardCardScroll.overflowing(widget.id))
+                    r = new Rect(r.x, r.y, r.w - DashboardCardScroll.BAR, r.h);
+                paintingBounds = new Rect(r.x, r.y, r.w, Math.max(r.h, DashboardCardScroll.TOP + contentHeight + 8));
+            }
             if (widget.kind.isInformation()) {
                 drawInformation(f, r, widget);
                 return;
@@ -307,9 +333,7 @@ public final class FactoryDashboard extends Gui {
                 drawMachineList(f, r, snapshot);
                 return;
             }
-            if (!DesktopFieldPolicy.keepsBody(widget.kind)
-                && (widget.fieldsConfigured || widget.kind == WidgetKind.DEVICE
-                    || widget.presentation == WidgetPresentation.STATUS_LIST && widget.kind != WidgetKind.ATTENTION)) {
+            if (fieldBody(widget)) {
                 drawFields(f, r, widget, power, snapshot);
                 return;
             }
@@ -333,8 +357,8 @@ public final class FactoryDashboard extends Gui {
                     drawRegion(f, r, power);
                     break;
                 case RESOURCES:
-                    if (widget.resource == null) drawResources(f, r, mx, my);
-                    else drawResource(f, r, widget, mx, my);
+                    if (widget.resource == null) drawResources(f, r, localMouseX, localMouseY);
+                    else drawResource(f, r, widget, localMouseX, localMouseY);
                     break;
                 case ATTENTION:
                     drawAttention(f, r, snapshot.device, power);
@@ -343,92 +367,82 @@ public final class FactoryDashboard extends Gui {
                     break;
             }
         } finally {
+            if (paintingViewport != null) GL11.glPopMatrix();
+            if (clippedBody) renderer.popClip();
             if (controlHover != null) hover = controlHover;
+            if (paintingViewport != null && paintingViewport.contains(mx, my)
+                && DashboardCardScroll.overflowing(widget.id))
+                hover = (hover == null ? "" : hover + "\n") + FactoryDesktop.tr("scroll.hint");
             paintingRenderer = null;
             controlHover = null;
             painting = null;
             paintingMotion = null;
             paintingBounds = null;
             paintingTransform = CanvasTransform.identity();
+            paintingScroll = 0;
+            paintingViewport = null;
         }
     }
 
-    /** Information cards read only the immutable tick snapshot, including their hover details. */
+    static DashboardTheme scrollTheme() {
+        return theme;
+    }
+
+    static String scrollSource(WidgetSpec widget) {
+        if (widget.kind != WidgetKind.RESOURCES) return "";
+        WidgetResources.ScreenReading reading = WidgetResources.readScreen(widget.screen);
+        return portableBinding + ":"
+            + resourceKind
+            + ":"
+            + resourceSort
+            + ":"
+            + search.value
+            + ":"
+            + (reading.panel == null ? reading.reason : reading.panel.binding.panelId);
+    }
+
+    private static boolean fieldBody(WidgetSpec widget) {
+        return !DesktopFieldPolicy.keepsBody(widget.kind) && (widget.fieldsConfigured || requiresDevice(widget)
+            || widget.kind == WidgetKind.WIRELESS
+            || widget.presentation == WidgetPresentation.STATUS_LIST && widget.kind != WidgetKind.ATTENTION);
+    }
+
+    /** Natural body extent, in canonical card pixels; never changes saved widget geometry. */
+    static int scrollContentHeight(WidgetSpec widget, int width) {
+        if (widget.kind.isInformation()) return 5 + DashboardInformationCards.contentHeight(widget, width);
+        if (!WidgetSpec.availableMetrics(widget.kind)
+            .isEmpty() && widget.presentation != WidgetPresentation.DEFAULT
+            && widget.presentation != WidgetPresentation.STATUS_LIST) return 0;
+        if (widget.presentation == WidgetPresentation.STATUS_LIST && widget.kind == WidgetKind.MACHINES) {
+            if (!deviceFresh) return 20;
+            int columns = DesktopCardGeometry.canonical(widget).h < 150 && width >= 260 ? 2 : 1;
+            return 7 + ((4 + columns - 1) / columns) * 38;
+        }
+        if (fieldBody(widget)) {
+            int columns = Math.min(widget.displayColumns, Math.max(1, width / 130));
+            int rows = (DesktopFieldPolicy.fields(widget)
+                .size() + columns
+                - 1) / columns;
+            if (requiresDevice(widget) && widget.device == null) return 56;
+            if (widget.device != null && DesktopDeviceSources.read(widget.device).entry == null) return 82;
+            return 5 + rows * 29;
+        }
+        if (widget.kind == WidgetKind.RESOURCES && widget.resource == null && !widget.singleResource) {
+            // Measurement happens for every card before painting; resolve this card's own cached screen.
+            WidgetResources.ScreenReading reading = WidgetResources.readScreen(widget.screen);
+            if (reading.panel == null) return 56;
+            selectResourcePanel(reading.panel);
+            if (!PortableSuperDashboard.available(reading.panel) || !reading.panel.aeConnected) return 49;
+            return Math.max(79, 62 + resources.size() * 18);
+        }
+        if (widget.kind == WidgetKind.ATTENTION) return 49 + attention.size() * 19;
+        if (widget.kind == WidgetKind.REGION) return 79;
+        return 0;
+    }
+
     private static void drawInformation(FontRenderer font, Rect r, WidgetSpec widget) {
-        List<String> fields = DesktopFieldPolicy.fields(widget);
-        List<String> availableFields = new ArrayList<>();
-        List<String> availableValues = new ArrayList<>();
-        StringBuilder details = new StringBuilder(
-            FactoryDesktop.tr(
-                "info.help." + widget.kind.name()
-                    .toLowerCase(java.util.Locale.ROOT)));
-        for (String field : fields) {
-            String value = DashboardInformation.value(field);
-            if (value == null) continue;
-            availableFields.add(field);
-            availableValues.add(value);
-            details.append("\n")
-                .append(FactoryDesktop.tr("field." + field))
-                .append(": ")
-                .append(value);
-        }
-        InformationCardLayout geometry = new InformationCardLayout(r, widget.displayColumns, availableFields.size());
-        for (int index = 0; index < geometry.cells.size(); index++) {
-            InformationCardLayout.Cell cell = geometry.cells.get(index);
-            Rect bounds = cell.bounds;
-            String label = FactoryDesktop.tr("field." + availableFields.get(index));
-            String value = availableValues.get(index);
-            switch (cell.form) {
-                case HERO:
-                    DashboardVisuals
-                        .label(font, value, bounds.x, bounds.y + 1, bounds.w, accent(), bounds.w >= 210 ? 1.65f : 1.2f);
-                    text(font, label, bounds.x, bounds.y + 25, MUTED, bounds.w);
-                    break;
-                case ROW:
-                    int labelWidth = Math.min(90, bounds.w * 45 / 100);
-                    DashboardVisuals.label(font, label, bounds.x, bounds.y + 2, labelWidth, MUTED, .8f);
-                    String fitted = font.trimStringToWidth(value, Math.max(1, bounds.w - labelWidth - 8));
-                    text(
-                        font,
-                        fitted,
-                        bounds.x + bounds.w - font.getStringWidth(fitted),
-                        bounds.y + 2,
-                        TEXT,
-                        bounds.w - labelWidth - 8);
-                    break;
-                case STACK:
-                    DashboardVisuals.label(font, label, bounds.x, bounds.y + 1, bounds.w, MUTED, .8f);
-                    text(font, value, bounds.x, bounds.y + 11, TEXT, bounds.w);
-                    drawRect(
-                        bounds.x,
-                        bounds.y + bounds.h - 2,
-                        bounds.x + bounds.w,
-                        bounds.y + bounds.h - 1,
-                        theme.track);
-                    break;
-                default:
-                    break;
-            }
-        }
-        if (geometry.hidden > 0) text(font, "+" + geometry.hidden, r.x + r.w - 36, r.y + r.h - 12, MUTED, 26);
-        if (widget.kind == WidgetKind.TEAM && !fields.contains("teamId")) {
-            String identity = DashboardInformation.value("teamId");
-            if (identity != null) details.append("\n")
-                .append(FactoryDesktop.tr("field.teamId"))
-                .append(": ")
-                .append(identity);
-        }
-        if (availableFields.isEmpty() && !fields.isEmpty()) {
-            text(
-                font,
-                FactoryDesktop.tr(widget.kind == WidgetKind.TEAM ? "info.teamUnavailable" : "info.unavailable"),
-                r.x + 12,
-                r.y + 38,
-                MUTED,
-                r.w - 24);
-        }
-        if (fields.isEmpty()) text(font, FactoryDesktop.tr("fields.empty"), r.x + 12, r.y + 38, MUTED, r.w - 24);
-        if (r.contains(localMouseX, localMouseY)) hover = details.toString();
+        String details = DashboardInformationCards.draw(font, r, widget, theme, 0);
+        if (paintingBounds.contains(localMouseX, localMouseY)) hover = details;
     }
 
     static void widgetClick(int x, int y) {
@@ -482,8 +496,7 @@ public final class FactoryDashboard extends Gui {
         if (fields.isEmpty()) text(f, FactoryDesktop.tr("fields.empty"), r.x + 10, r.y + 34, MUTED, r.w - 20);
         int columns = Math.min(widget.displayColumns, Math.max(1, r.w / 130));
         int cellWidth = (r.w - 20) / columns;
-        int visibleRows = Math.max(0, (r.h - 36) / 29);
-        for (int index = 0; index < Math.min(fields.size(), visibleRows * columns); index++) {
+        for (int index = 0; index < fields.size(); index++) {
             int x = r.x + 10 + index % columns * cellWidth, y = r.y + 30 + index / columns * 29;
             String field = fields.get(index);
             int labelInset = 0;
@@ -523,8 +536,6 @@ public final class FactoryDashboard extends Gui {
                     effects(),
                     accent());
         }
-        if (fields.size() > visibleRows * columns)
-            text(f, "+" + (fields.size() - visibleRows * columns), r.x + r.w - 30, r.y + r.h - 12, MUTED, 24);
         openWidget(widget, r);
     }
 
@@ -613,7 +624,6 @@ public final class FactoryDashboard extends Gui {
         int cellWidth = (r.w - 20) / columns;
         for (int i = 0; i < states.length; i++) {
             int x = r.x + 10 + i % columns * cellWidth, y = r.y + 32 + i / columns * 38;
-            if (y + 25 > r.y + r.h - 8) break;
             int color = i == 0 ? accent() : i >= 2 ? AMBER : MUTED;
             FactoryDashboardArt.status(x + 8, y + 6, i, counts[i] > 0, phase(), effects(), color);
             text(font, FactoryDesktop.tr("metric." + states[i]), x + 23, y + 2, MUTED, cellWidth - 62);
@@ -1144,27 +1154,13 @@ public final class FactoryDashboard extends Gui {
     private static void drawResources(FontRenderer f, Rect r, int mx, int my) {
         button(
             f,
-            new Rect(r.x + r.w - 82, r.y + 3, 24, 16),
+            new Rect(r.x + r.w - 30, r.y + 30, 24, 16),
             resourceKind == 1 ? Icon.INVENTORY : Icon.FLUID,
             tr(resourceKind == 1 ? "items" : "fluids"),
             () -> {
                 resourceKind = resourceKind == 1 ? 2 : 1;
                 resourcePages.clear();
             });
-        final String cardId = painting == null ? "resources" : painting.id;
-        final int visible = Math.max(1, Math.min(8, (r.h - 100) / 18));
-        button(
-            f,
-            new Rect(r.x + r.w - 55, r.y + 3, 23, 16),
-            Icon.PREVIOUS,
-            tr("previous"),
-            () -> resourcePages.previous(cardId, resources.size(), visible));
-        button(
-            f,
-            new Rect(r.x + r.w - 30, r.y + 3, 23, 16),
-            Icon.NEXT,
-            tr("next"),
-            () -> resourcePages.next(cardId, resources.size(), visible));
         Panel p = chartPanel;
         text(
             f,
@@ -1178,7 +1174,7 @@ public final class FactoryDashboard extends Gui {
             r.x + 9,
             r.y + 35,
             MUTED,
-            r.w - 65);
+            r.w - 46);
         if (!PortableSuperDashboard.available(p) || !p.aeConnected) {
             text(f, tr("no.resources"), r.x + 9, r.y + 58, AMBER, r.w - 18);
             return;
@@ -1197,10 +1193,11 @@ public final class FactoryDashboard extends Gui {
             tr("sort." + resourceSort),
             () -> resourceSort = (resourceSort + 1) % 3);
         int count = resources.size();
-        int start = resourcePages.start(cardId, count, visible);
-        for (int index = start; index < Math.min(count, start + visible); index++) {
+        int first = Math.max(0, (paintingScroll + DashboardCardScroll.TOP - 82) / 18);
+        int last = Math.min(count, (paintingScroll + r.h - DashboardCardScroll.BOTTOM - 82 + 17) / 18 + 1);
+        for (int index = first; index < last; index++) {
             Row row = resources.get(index);
-            Rect line = new Rect(r.x + 6, r.y + 82 + (index - start) * 18, r.w - 12, 17);
+            Rect line = new Rect(r.x + 6, r.y + 82 + index * 18, r.w - 12, 17);
             if (line.contains(mx, my) || row.key.equals(resourceKey)) fill(line, EDGE);
             String amount = row.amount + (row.kind == 2 ? " mB" : "");
             drawResourceIcon(f, row, line.x + 2, line.y, 16);
@@ -1208,7 +1205,7 @@ public final class FactoryDashboard extends Gui {
                 new Rect(line.x + 22, line.y + 15, line.w - 45, 1),
                 rateKnown(p, row) && row.rate != 0,
                 row.rate < 0 ? -1 : 1,
-                (phase() + (index - start) * .11) % 1,
+                (phase() + index * .11) % 1,
                 effects(),
                 row.rate < 0 ? AMBER : accent());
             text(f, row.name, line.x + 22, line.y + 4, TEXT, line.w / 3 - 23);
@@ -1238,13 +1235,6 @@ public final class FactoryDashboard extends Gui {
                 () -> FactoryDesktop.mountResource(binding));
         }
         if (count == 0) text(f, tr("no.resources"), r.x + 9, r.y + 86, MUTED, r.w - 18);
-        else text(
-            f,
-            (start + 1) + "–" + Math.min(count, start + visible) + " / " + count,
-            r.x + 9,
-            r.y + 84 + visible * 18,
-            MUTED,
-            r.w - 18);
     }
 
     private static void drawResource(FontRenderer f, Rect r, WidgetSpec widget, int mx, int my) {
@@ -1329,9 +1319,9 @@ public final class FactoryDashboard extends Gui {
 
     private static Rect screenRect(Rect r) {
         int left = (int) Math.floor(paintingTransform.toScreenX(r.x));
-        int top = (int) Math.floor(paintingTransform.toScreenY(r.y));
+        int top = (int) Math.floor(paintingTransform.toScreenY(r.y - paintingScroll));
         int right = (int) Math.ceil(paintingTransform.toScreenX(r.x + r.w));
-        int bottom = (int) Math.ceil(paintingTransform.toScreenY(r.y + r.h));
+        int bottom = (int) Math.ceil(paintingTransform.toScreenY(r.y + r.h - paintingScroll));
         return new Rect(left, top, right - left, bottom - top);
     }
 
@@ -1345,20 +1335,14 @@ public final class FactoryDashboard extends Gui {
             AMBER,
             r.w - 18);
         text(f, p != null && p.truncated ? tr("partial") : tr("attention.hint"), r.x + 9, r.y + 51, MUTED, r.w - 18);
-        int shown = Math.min(attention.size(), Math.min(10, Math.max(0, (r.h - 87) / 19)));
-        for (int i = 0; i < shown; i++) {
+        int first = Math.max(0, (paintingScroll + DashboardCardScroll.TOP - 70) / 19);
+        int last = Math.min(attention.size(), (paintingScroll + r.h - DashboardCardScroll.BOTTOM - 70 + 18) / 19 + 1);
+        for (int i = first; i < last; i++) {
             Entry e = attention.get(i);
             int y = r.y + 70 + i * 19;
             drawRect(r.x + 8, y + 2, r.x + 11, y + 8, AMBER);
             text(f, e.displayName.isEmpty() ? e.name : e.displayName, r.x + 17, y, TEXT, r.w - 26);
         }
-        if (attention.size() > shown) text(
-            f,
-            StatCollector.translateToLocalFormatted("gtswn.factory.cockpit.list.more", attention.size() - shown),
-            r.x + 9,
-            r.y + 72 + shown * 19,
-            MUTED,
-            r.w - 18);
         hits.add(new Hit(r, WorkbenchHud::openAttention));
     }
 
@@ -1531,7 +1515,30 @@ public final class FactoryDashboard extends Gui {
         final Runnable action;
 
         Hit(Rect rect, Runnable action) {
-            this.rect = screenRect(rect);
+            boolean wholeBody = paintingViewport != null && paintingBounds != null
+                && rect.x == paintingBounds.x
+                && rect.y == paintingBounds.y
+                && rect.w == paintingBounds.w;
+            Rect screen = wholeBody
+                ? new Rect(
+                    (int) Math.floor(paintingTransform.toScreenX(paintingViewport.x)),
+                    (int) Math.floor(paintingTransform.toScreenY(paintingViewport.y)),
+                    (int) Math.ceil(paintingViewport.w * paintingTransform.scale()),
+                    (int) Math.ceil(paintingViewport.h * paintingTransform.scale()))
+                : screenRect(rect);
+            if (paintingViewport != null) {
+                int left = (int) Math.floor(paintingTransform.toScreenX(paintingViewport.x));
+                int top = (int) Math.floor(paintingTransform.toScreenY(paintingViewport.y));
+                int right = (int) Math.ceil(paintingTransform.toScreenX(paintingViewport.x + paintingViewport.w));
+                int bottom = (int) Math.ceil(paintingTransform.toScreenY(paintingViewport.y + paintingViewport.h));
+                int x = Math.max(screen.x, left), y = Math.max(screen.y, top);
+                screen = new Rect(
+                    x,
+                    y,
+                    Math.max(0, Math.min(screen.x + screen.w, right) - x),
+                    Math.max(0, Math.min(screen.y + screen.h, bottom) - y));
+            }
+            this.rect = screen;
             this.action = action;
         }
     }

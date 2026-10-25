@@ -64,7 +64,8 @@ public class DesktopAppendPresetTest {
     @Test
     public void cardinalityFailureDoesNotPartiallyAppend() {
         DesktopLayout layout = new DesktopLayout();
-        for (int index = 0; index < 23; index++) assertNotNull(layout.add(WidgetKind.MACHINES, index * 5, 0));
+        for (int index = 0; index < DesktopLayout.MAX_WIDGETS - 1; index++)
+            assertNotNull(layout.add(WidgetKind.MACHINES, index * 5, 0));
         Properties before = DesktopStore.encode(layout);
         assertTrue(
             layout.appendPreset(DesktopPreset.overviewLayout())

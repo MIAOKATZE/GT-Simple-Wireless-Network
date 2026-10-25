@@ -13,6 +13,17 @@ import com.gtnewhorizon.gtnhlib.teams.Team;
 public class DashboardInformationTest {
 
     @Test
+    public void playerMetersUseActualDenominatorsAndMissingOrInvalidDataStaysUnknown() {
+        assertEquals(.25, DashboardInformation.meterFraction(5, 20), 0);
+        assertEquals(.5, DashboardInformation.meterFraction(20, 40), 0);
+        assertEquals(0, DashboardInformation.meterFraction(-1, 20), 0);
+        assertEquals(1, DashboardInformation.meterFraction(30, 20), 0);
+        assertNull(DashboardInformation.meterFraction(10, 0));
+        assertNull(DashboardInformation.meterFraction(Double.NaN, 20));
+        assertNull(DashboardInformation.meterFraction(10, Double.POSITIVE_INFINITY));
+    }
+
+    @Test
     public void worldClockUsesMinecraftSixAmOffsetAndWrapsAtMidnight() {
         assertEquals("06:00", DashboardInformation.gameTime(0));
         assertEquals("12:00", DashboardInformation.gameTime(6000));

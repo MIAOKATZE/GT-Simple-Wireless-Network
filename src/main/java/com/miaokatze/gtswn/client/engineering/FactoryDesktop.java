@@ -141,6 +141,7 @@ final class FactoryDesktop {
         flush();
         profile = next;
         layout = store.load(profile);
+        DashboardCardScroll.clear();
         saves = new DesktopSaveSession(layout);
         pendingExit = null;
         shareOpen = false;
@@ -337,15 +338,7 @@ final class FactoryDesktop {
         if (!EngineeringModeController.dashboardHostVisible()) EngineeringModeController.open();
         if (!EngineeringModeController.dashboardHostVisible()) return false;
         ensure();
-        WidgetSpec widget = layout.addDevice(binding);
-        if (widget == null) return false;
-        selected = widget.id;
-        selection.only(selected);
-        view.panX = widget.x() - 18 / view.scale;
-        view.panY = widget.y() - 18 / view.scale;
-        edit = propertiesOpen = true;
-        libraryOpen = false;
-        changed(true);
+        if (!beginSinglePlacement(newWidget(WidgetKind.DEVICE).boundDevice(binding))) return false;
         WorkbenchHud.openDashboard();
         return true;
     }
@@ -353,13 +346,7 @@ final class FactoryDesktop {
     static boolean mountResource(ResourceBinding binding) {
         if (binding == null) return false;
         ensure();
-        WidgetSpec widget = layout.addResource(binding);
-        if (widget == null) return false;
-        selected = widget.id;
-        selection.only(selected);
-        DesktopCardGeometry.focusAtOne(view, widget, canvas);
-        changed(true);
-        return true;
+        return beginSinglePlacement(newWidget(WidgetKind.RESOURCES).boundResource(binding));
     }
 
     /** Existing click selection gating calls this only when the user activates this exact empty component. */
@@ -398,6 +385,8 @@ final class FactoryDesktop {
 
     static String label(WidgetSpec widget) {
         if (!widget.title.isEmpty()) return widget.title;
+        String informationTitle = DesktopCardLabel.informationTitleKey(widget);
+        if (informationTitle != null) return StatCollector.translateToLocal(informationTitle);
         if (widget.kind == WidgetKind.WIRELESS) return tr("metric." + widget.metricField);
         DesktopDeviceSources.Reading reading = widget.device == null ? null : DesktopDeviceSources.read(widget.device);
         Entry current = reading == null ? null : reading.entry;
@@ -545,6 +534,7 @@ final class FactoryDesktop {
         flush();
         DesktopDeviceSources.release();
         visibleDevices.clear();
+        DashboardCardScroll.clear();
         FactoryChrome.blur();
     }
 
@@ -742,12 +732,14 @@ final class FactoryDesktop {
                     e.y,
                     canvas.contains((int) e.x, (int) e.y) && hovered != null && hovered.id.equals("preset-placement"));
                 if (!added.isEmpty()) {
+                    boolean single = placement.single();
                     placement = null;
                     selected = added.get(0).id;
                     selection.only(selected);
                     DesktopAutoBind.initializeAvailable(layout);
                     nextDefaultBindingCheck = System.nanoTime() + 1000000000L;
-                    notice = tr("preset.appended");
+                    propertiesOpen = single;
+                    notice = tr(single ? "placement.added" : "preset.appended");
                     changed(true);
                 }
             }
@@ -841,10 +833,10 @@ final class FactoryDesktop {
         zoomLabel.text(Math.round(view.scale * 100) + "%");
         if (placement != null) pointPlacement(mx, my);
         statusLabel.text(
-            placement != null ? tr(placement.valid(layout) ? "placement.hint" : "placement.blocked")
-                : notice.isEmpty() ? tr(edit ? "hint.edit" : "hint.browse") : notice);
+            placement != null ? placementHint() : notice.isEmpty() ? tr(edit ? "hint.edit" : "hint.browse") : notice);
         CanvasTransform t = view.transform(canvas.x, canvas.y);
         visibleDevices.clear();
+        DashboardCardScroll.retain(layout.widgets());
         for (WidgetSpec widget : layout.widgets()) {
             UiNode node = scene.find("card-" + widget.id);
             if (node == null) continue;
@@ -852,6 +844,11 @@ final class FactoryDesktop {
             boolean visible = intersects(b, canvas);
             node.bounds(b.x - canvas.x, b.y - canvas.y, b.w, b.h)
                 .visible(visible);
+            DashboardCardScroll.update(
+                node,
+                widget,
+                view.scale,
+                placement == null && visible && view.scale >= DesktopCardGeometry.BORDER_LOD_SCALE);
             if (visible && widget.device != null) visibleDevices.add(widget.device);
             UiNode format = scene.find("number-format-" + widget.id);
             if (format != null) {
@@ -867,11 +864,15 @@ final class FactoryDesktop {
                         .contains(widget.id));
         }
         scene.layout(width, height);
+        for (WidgetSpec widget : layout.widgets()) DashboardCardScroll.restore(scene.find("card-" + widget.id), widget);
         Minecraft mc = Minecraft.getMinecraft();
         MinecraftUiRenderer renderer = new MinecraftUiRenderer(f, width, height, mc.displayWidth, mc.displayHeight);
         scene.render(renderer);
         UiNode hovered = scene.hitTest(mx, my);
-        if (!edit && !panning && !gesture.active() && hovered != null && hovered.id.startsWith("card-"))
+        if (!edit && !panning
+            && !gesture.active()
+            && !DashboardCardScroll.cardId(hovered)
+                .isEmpty())
             FactoryDashboard.drawHover(f, mx, my, width, height);
         renderer.begin(CanvasTransform.identity());
         try {
@@ -883,6 +884,7 @@ final class FactoryDesktop {
 
     private static void build() {
         palette();
+        DashboardCardScroll.retain(layout.widgets());
         tooltips.clear();
         DesktopToolbarGeometry toolbar = new DesktopToolbarGeometry(area.w, edit);
         String focusedInput = typing() ? scene.focused().id : "";
@@ -927,6 +929,7 @@ final class FactoryDesktop {
                 .overflowClip(true)
                 .style(new UiStyle(new UiStyle.Paint(0, 0, TEXT)))
                 .onDraw((node, renderer) -> drawWidget(layout.find(widget.id), node, renderer));
+            DashboardCardScroll.attach(card, widget, FactoryDesktop::controlDown);
             card.add(
                 UiNode.panel("selection-" + widget.id)
                     .bounds(0, 0, widget.width(), widget.height())
@@ -1310,35 +1313,82 @@ final class FactoryDesktop {
                     width - 12,
                     25,
                     () -> {
-                        WidgetSpec added = layout.add(WidgetKind.CLOCK);
-                        if (added == null) return;
-                        layout.replace(
-                            added
-                                .configured(StatCollector.translateToLocal(template.titleKey()), template.fields(), 1));
-                        selectAdded(added);
+                        beginSinglePlacement(
+                            template.create(
+                                UUID.randomUUID()
+                                    .toString()));
                     }));
         }
         for (WidgetKind kind : WidgetKind.values()) {
             if (kind == WidgetKind.CLOCK) continue;
-            list.add(iconTextButton("add-" + kind, kindLabel(kind), kindIcon(kind), 0, 0, width - 12, 25, () -> {
-                WidgetSpec added = layout.add(kind);
-                if (added == null) return;
-                selectAdded(added);
-            }));
+            list.add(
+                iconTextButton(
+                    "add-" + kind,
+                    kindLabel(kind),
+                    kindIcon(kind),
+                    0,
+                    0,
+                    width - 12,
+                    25,
+                    () -> { beginSinglePlacement(newWidget(kind)); }));
         }
         panel.add(list);
         return panel;
     }
 
-    private static void selectAdded(WidgetSpec added) {
-        selected = added.id;
-        selection.only(selected);
-        bindingOpen = screenBindingOpen = choosingDeviceSource = false;
-        propertiesOpen = true;
-        libraryOpen = shareOpen = false;
-        view.panX = added.x() - 18 / view.scale;
-        view.panY = added.y() - 18 / view.scale;
-        changed(true);
+    private static WidgetSpec newWidget(WidgetKind kind) {
+        WidgetSpec widget = new WidgetSpec(
+            UUID.randomUUID()
+                .toString(),
+            kind,
+            0,
+            0,
+            kind.minColumns,
+            kind.minRows);
+        if (kind == WidgetKind.DEVICE)
+            widget = widget.configured("", java.util.Arrays.asList("status", "instantInput", "instantOutput"), 1);
+        return widget.withBounds(0, 0, widget.minColumns(), widget.minRows());
+    }
+
+    private static boolean beginSinglePlacement(WidgetSpec widget) {
+        placement = DesktopPresetPlacement.single(widget);
+        beginPlacement();
+        return true;
+    }
+
+    private static void beginPlacement() {
+        cancelGesture();
+        pointPlacement(mouseX, mouseY);
+        pendingPreset = null;
+        clearPresetImport();
+        edit = true;
+        libraryOpen = propertiesOpen = shareOpen = false;
+        bindingOpen = screenBindingOpen = resourceAdding = choosingDeviceSource = false;
+        notice = "";
+        dirty = true;
+    }
+
+    private static String placementHint() {
+        switch (placement.status(layout)) {
+            case VALID:
+                return tr(placement.single() ? "placement.single.hint" : "placement.hint");
+            case CARD_LIMIT:
+                return StatCollector.translateToLocalFormatted(
+                    "gtswn.factory.desktop.placement.limit",
+                    DesktopLayout.MAX_WIDGETS,
+                    layout.widgets()
+                        .size(),
+                    placement.count());
+            case OUT_OF_BOUNDS:
+                return StatCollector
+                    .translateToLocalFormatted("gtswn.factory.desktop.placement.boundary", DesktopLayout.MAX_COORD);
+            case OVERLAP:
+                return tr("placement.overlap");
+            case INVALID_GEOMETRY:
+                return tr("placement.geometry");
+            default:
+                return tr("placement.single.hint");
+        }
     }
 
     private static UiNode sharePanel(int width) {
@@ -1419,13 +1469,7 @@ final class FactoryDesktop {
                 return;
             }
             placement = new DesktopPresetPlacement(template);
-            pointPlacement(mouseX, mouseY);
-            pendingPreset = null;
-            clearPresetImport();
-            libraryOpen = propertiesOpen = shareOpen = false;
-            bindingOpen = screenBindingOpen = resourceAdding = choosingDeviceSource = false;
-            notice = "";
-            dirty = true;
+            beginPlacement();
             return;
         } else {
             cancelPlacement();
@@ -1908,10 +1952,7 @@ final class FactoryDesktop {
                 }
                 if (widgetId == null) {
                     if (mountResource(choice)) {
-                        libraryOpen = resourceAdding = false;
-                        propertiesOpen = true;
-                        bindingOpen = screenBindingOpen = false;
-                        changed(true);
+                        dirty = true;
                     } else notice = tr("no.space");
                 } else {
                     WidgetSpec current = layout.find(widgetId);
@@ -2344,37 +2385,40 @@ final class FactoryDesktop {
                     double h = height * (.25 + (i * 3 % 7) / 10.0);
                     renderer.fill(new UiRect(x + width * i / 7, y + height - h, width / 10, h), ink);
                 }
-            } else if (widget.presentation == WidgetPresentation.GAUGE) {
-                double radius = Math.max(1, Math.min(width, height) * .35);
-                for (int i = 0; i < 20; i++) {
-                    double angle = i * Math.PI / 10;
-                    renderer.fill(
+            } else if (widget.presentation == WidgetPresentation.GAUGE
+                || widget.presentation == WidgetPresentation.CLOCK_FACE) {
+                    double radius = Math.max(1, Math.min(width, height) * .35);
+                    for (int i = 0; i < 20; i++) {
+                        double angle = i * Math.PI / 10;
+                        renderer.fill(
+                            new UiRect(
+                                x + width / 2 + Math.cos(angle) * radius,
+                                y + height / 2 + Math.sin(angle) * radius,
+                                Math.max(2, radius / 5),
+                                Math.max(2, radius / 5)),
+                            ink);
+                    }
+                } else {
+                    int lines = widget.presentation == WidgetPresentation.KPI
+                        || widget.presentation == WidgetPresentation.BAR ? 2 : 4;
+                    for (int i = 0; i < lines; i++) renderer.fill(
                         new UiRect(
-                            x + width / 2 + Math.cos(angle) * radius,
-                            y + height / 2 + Math.sin(angle) * radius,
-                            Math.max(2, radius / 5),
-                            Math.max(2, radius / 5)),
+                            x,
+                            y + height * (i + .5) / lines,
+                            width * (i == 0 ? .72 : .45),
+                            Math.max(2, 4 * view.scale)),
                         ink);
                 }
-            } else {
-                int lines = widget.presentation == WidgetPresentation.KPI
-                    || widget.presentation == WidgetPresentation.BAR ? 2 : 4;
-                for (int i = 0; i < lines; i++) renderer.fill(
-                    new UiRect(
-                        x,
-                        y + height * (i + .5) / lines,
-                        width * (i == 0 ? .72 : .45),
-                        Math.max(2, 4 * view.scale)),
-                    ink);
-            }
             if (!valid) {
                 renderer.fill(new UiRect(b.x + b.w - 9, b.y + 5, 3, 8), outline);
                 renderer.fill(new UiRect(b.x + b.w - 9, b.y + 15, 3, 3), outline);
             }
             if (b.w > 64 && b.h > 40 && header >= 12) {
                 String kind = kindLabel(widget.kind);
+                String informationTitle = DesktopCardLabel.informationTitleKey(widget);
                 String title = !widget.title.isEmpty() ? widget.title
-                    : widget.kind == WidgetKind.WIRELESS ? tr("metric." + widget.metricField) : kind;
+                    : informationTitle != null ? StatCollector.translateToLocal(informationTitle)
+                        : widget.kind == WidgetKind.WIRELESS ? tr("metric." + widget.metricField) : kind;
                 if (!title.equals(kind)) title += " / " + kind;
                 if (font != null) title = font.trimStringToWidth(title, Math.max(1, b.w - 24));
                 renderer.text(title, b.x + 6, b.y + 4, theme.text);

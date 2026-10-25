@@ -18,6 +18,37 @@ public class DesktopStoreTest {
     public TemporaryFolder temporary = new TemporaryFolder();
 
     @Test
+    public void maximumComplexLayoutSurvivesARealDiskFlushAndAFreshStoreLoad() throws Exception {
+        Path directory = temporary.newFolder()
+            .toPath();
+        DesktopLayout layout = new DesktopLayout();
+        String title = String.join("", java.util.Collections.nCopies(64, "\u65f6"));
+        String key = String.join("", java.util.Collections.nCopies(256, "\u8bbe"));
+        for (int index = 0; index < DesktopLayout.MAX_WIDGETS; index++) {
+            DeviceBinding binding = new DeviceBinding(UUID.randomUUID(), key, -1, index, -100, 123456, 1234);
+            WidgetSpec card = new WidgetSpec("complex-" + index, WidgetKind.DEVICE, index * 4, 0, 4, 32)
+                .configured(title, WidgetSpec.availableFields(WidgetKind.DEVICE), 1)
+                .boundDevice(binding)
+                .withNumberFormat(WidgetNumberFormat.SCIENTIFIC)
+                .withRate(false, 3600);
+            assertTrue(layout.add(card));
+        }
+        String profile = DesktopStore.profile("disk-boundary", "player");
+        DesktopStore writer = new DesktopStore(directory.toFile());
+        writer.put(profile, layout);
+        assertTrue(writer.flush());
+        long bytes = Files.size(directory.resolve(profile + ".properties"));
+        assertTrue("Regression fixture must exceed the former disk limit", bytes > 131072);
+        assertTrue(bytes <= DesktopStore.MAX_FILE_BYTES);
+        DesktopLayout restored = new DesktopStore(directory.toFile()).load(profile);
+        assertEquals(
+            DesktopLayout.MAX_WIDGETS,
+            restored.widgets()
+                .size());
+        assertEquals(DesktopStore.encode(layout), DesktopStore.encode(restored));
+    }
+
+    @Test
     public void ratePreferencesAndPendingInitializationSurviveEveryStoredCopy() {
         DesktopLayout layout = DesktopPreset.overviewLayout();
         WidgetSpec rate = layout.find("netRate")

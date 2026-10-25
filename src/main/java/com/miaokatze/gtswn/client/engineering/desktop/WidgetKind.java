@@ -12,11 +12,11 @@ public enum WidgetKind {
     ATTENTION(4, 3),
     REGION(4, 2),
     DEVICE(3, 3),
-    CLOCK(3, 2),
-    SESSION(3, 2),
-    TEAM(3, 2),
-    PLAYER(3, 2),
-    WORLD(3, 2);
+    CLOCK(2, 2),
+    SESSION(2, 2),
+    TEAM(2, 2),
+    PLAYER(2, 2),
+    WORLD(2, 2);
 
     public final int minColumns, minRows;
 

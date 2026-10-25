@@ -7,12 +7,27 @@ import java.util.UUID;
 
 import org.junit.Test;
 
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopInformationTemplate;
 import com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.ResourceBinding;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetKind;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 
 public class DesktopCardLabelTest {
+
+    @Test
+    public void defaultClockTitlesFollowTheSelectedSourceWithoutSavingTranslatedUserTitles() {
+        WidgetSpec local = DesktopInformationTemplate.LOCAL_CLOCK.create("local");
+        assertEquals("", local.title);
+        assertEquals("gtswn.factory.desktop.info.localClock", DesktopCardLabel.informationTitleKey(local));
+        assertEquals(
+            "gtswn.factory.desktop.info.gameClock",
+            DesktopCardLabel.informationTitleKey(DesktopInformationTemplate.GAME_CLOCK.create("game")));
+        assertEquals(
+            "gtswn.factory.desktop.info.analogClock",
+            DesktopCardLabel.informationTitleKey(DesktopInformationTemplate.ANALOG_CLOCK.create("face")));
+        assertEquals("Office", DesktopCardLabel.title(local.titled("Office"), "Clock", null, null));
+    }
 
     @Test
     public void preciseResourceUsesItsNameUntilUserSetsACustomTitle() {

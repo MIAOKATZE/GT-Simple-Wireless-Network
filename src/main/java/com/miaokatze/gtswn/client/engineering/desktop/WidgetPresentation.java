@@ -10,7 +10,8 @@ public enum WidgetPresentation {
     TREND(6, 3),
     BARS(6, 3),
     COMBO(6, 3),
-    STATUS_LIST(3, 2);
+    STATUS_LIST(3, 2),
+    CLOCK_FACE(2, 3);
 
     public final int minColumns, minRows;
 

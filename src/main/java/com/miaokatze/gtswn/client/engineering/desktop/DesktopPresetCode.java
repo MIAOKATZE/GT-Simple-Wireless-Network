@@ -20,7 +20,9 @@ public final class DesktopPresetCode {
     public static final String PREFIX = "GTSWN-DESKTOP:3:";
     public static final String V2_PREFIX = "GTSWN-DESKTOP:2:";
     public static final String V1_PREFIX = "GTSWN-DESKTOP:1:";
-    public static final int MAX_CODE_LENGTH = 32768, MAX_DECOMPRESSED_BYTES = 65536;
+    // A card has a 64-character title, a kind-specific finite field list and bounded visual settings.
+    public static final int MAX_DECOMPRESSED_BYTES = DesktopLayout.MAX_WIDGETS * 1024;
+    public static final int MAX_CODE_LENGTH = (MAX_DECOMPRESSED_BYTES + 1024) * 4 / 3 + PREFIX.length();
 
     private DesktopPresetCode() {}
 
@@ -106,7 +108,7 @@ public final class DesktopPresetCode {
             DesktopLayout result = new DesktopLayout().withTheme(theme);
             for (int index = 0; index < count; index++) {
                 String id = input.readUTF();
-                if (!id.matches("card([1-9]|[12][0-9]|3[0-2])")) throw new IllegalArgumentException("id");
+                if (!validCardId(id)) throw new IllegalArgumentException("id");
                 WidgetKind kind = WidgetKind.valueOf(input.readUTF());
                 int column = input.readInt(), row = input.readInt(), columns = input.readInt(), rows = input.readInt();
                 String title = input.readUTF();
@@ -184,6 +186,12 @@ public final class DesktopPresetCode {
         int value = input.readUnsignedByte();
         if (value > 1) throw new IllegalArgumentException("boolean");
         return value == 1;
+    }
+
+    private static boolean validCardId(String id) {
+        if (!id.matches("card[1-9][0-9]{0,8}")) return false;
+        int number = Integer.parseInt(id.substring(4));
+        return number <= DesktopLayout.MAX_WIDGETS;
     }
 
     private static byte[] inflate(byte[] packed) throws DataFormatException {

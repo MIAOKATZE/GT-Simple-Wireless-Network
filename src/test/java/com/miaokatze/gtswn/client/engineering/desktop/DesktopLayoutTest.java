@@ -102,13 +102,13 @@ public class DesktopLayoutTest {
                 .width(),
             0);
         assertEquals(
-            640,
+            576,
             layout.bounds()
                 .height(),
             0);
-        // The original seven-row operational area stays intact; information occupies rows 7-9.
+        // The original seven-row operational area stays intact; information occupies rows 7-8.
         assertEquals(7, layout.find("gameClock").row);
-        assertEquals(3, layout.find("gameClock").rows);
+        assertEquals(2, layout.find("gameClock").rows);
         assertEquals(WidgetKind.CLOCK, layout.find("gameClock").kind);
         DesktopViewport view = new DesktopViewport();
         view.reset(layout, 640, 308);

@@ -422,7 +422,7 @@ final class FactoryDashboardArt {
         }
     }
 
-    private static void arc(double x, double y, double radius, double thickness, double from, double to, int color) {
+    static void arc(double x, double y, double radius, double thickness, double from, double to, int color) {
         GL11.glColor4f(
             (color >> 16 & 255) / 255f,
             (color >> 8 & 255) / 255f,

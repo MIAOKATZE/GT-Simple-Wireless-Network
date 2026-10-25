@@ -8,6 +8,7 @@ import java.util.List;
 public final class DesktopPresetPlacement {
 
     private final DesktopLayout template = new DesktopLayout();
+    private final boolean preserveBindings;
     private final int left, top;
     private List<WidgetSpec> positioned = Collections.emptyList();
     private int column, row;
@@ -15,16 +16,38 @@ public final class DesktopPresetPlacement {
     private double pressX, pressY;
 
     public DesktopPresetPlacement(DesktopLayout source) {
+        this(source, false);
+    }
+
+    private DesktopPresetPlacement(DesktopLayout source, boolean preserveBindings) {
         if (source == null || source.widgets()
             .isEmpty()) throw new IllegalArgumentException("template");
+        this.preserveBindings = preserveBindings;
         int minX = Integer.MAX_VALUE, minY = Integer.MAX_VALUE;
         for (WidgetSpec widget : source.widgets()) {
-            if (!template.add(widget.asTemplate())) throw new IllegalArgumentException("template geometry");
+            if (!template.add(preserveBindings ? widget : widget.asTemplate()))
+                throw new IllegalArgumentException("template geometry");
             minX = Math.min(minX, widget.column);
             minY = Math.min(minY, widget.row);
         }
         left = minX;
         top = minY;
+    }
+
+    /** Trusted local choice retains its exact source; shared and built-in presets use the source-free constructor. */
+    public static DesktopPresetPlacement single(WidgetSpec widget) {
+        DesktopLayout source = new DesktopLayout();
+        if (!source.add(widget)) throw new IllegalArgumentException("widget geometry");
+        return new DesktopPresetPlacement(source, true);
+    }
+
+    public int count() {
+        return template.widgets()
+            .size();
+    }
+
+    public boolean single() {
+        return preserveBindings;
     }
 
     public void point(double localX, double localY) {
@@ -47,7 +70,12 @@ public final class DesktopPresetPlacement {
     }
 
     public boolean valid(DesktopLayout layout) {
-        return pointed && layout.canAppendPresetExact(template, column, row);
+        return status(layout) == DesktopLayout.PlacementStatus.VALID;
+    }
+
+    public DesktopLayout.PlacementStatus status(DesktopLayout layout) {
+        return pointed ? layout.checkExact(template, column, row, preserveBindings)
+            : DesktopLayout.PlacementStatus.EMPTY;
     }
 
     public void press(double screenX, double screenY) {
@@ -66,6 +94,6 @@ public final class DesktopPresetPlacement {
         move(screenX, screenY);
         boolean commit = pressed && !dragged && inside && valid(layout);
         pressed = false;
-        return commit ? layout.appendPresetExact(template, column, row) : Collections.emptyList();
+        return commit ? layout.appendExact(template, column, row, preserveBindings) : Collections.emptyList();
     }
 }

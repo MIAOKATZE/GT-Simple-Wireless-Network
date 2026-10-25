@@ -11,7 +11,17 @@ import java.util.UUID;
 /** Sparse desktop: 1024 is the initial arrangement, never a canvas boundary. */
 public final class DesktopLayout {
 
-    public static final int DEFAULT_SIZE = 1024, CELL = 64, MAX_COORD = 1000000, MAX_SIZE = 64, MAX_WIDGETS = 32;
+    public static final int DEFAULT_SIZE = 1024, CELL = 64, MAX_COORD = 1000000, MAX_SIZE = 64, MAX_WIDGETS = 128;
+
+    public enum PlacementStatus {
+        VALID,
+        EMPTY,
+        CARD_LIMIT,
+        OUT_OF_BOUNDS,
+        OVERLAP,
+        INVALID_GEOMETRY
+    }
+
     private final List<WidgetSpec> widgets = new ArrayList<>();
     private DashboardTheme theme = DashboardTheme.STANDARD;
 
@@ -154,15 +164,27 @@ public final class DesktopLayout {
 
     /** Exact top-left placement for a preview: never searches, clamps or moves existing cards. */
     public boolean canAppendPresetExact(DesktopLayout template, int anchorColumn, int anchorRow) {
-        return !exactPreset(template, anchorColumn, anchorRow).isEmpty();
+        return checkPresetExact(template, anchorColumn, anchorRow) == PlacementStatus.VALID;
+    }
+
+    public PlacementStatus checkPresetExact(DesktopLayout template, int anchorColumn, int anchorRow) {
+        return exactPreset(template, anchorColumn, anchorRow, false).status;
     }
 
     /** Validate every card first, then append the complete unbound group with fresh local identities. */
     public List<WidgetSpec> appendPresetExact(DesktopLayout template, int anchorColumn, int anchorRow) {
-        List<WidgetSpec> candidates = exactPreset(template, anchorColumn, anchorRow);
-        if (candidates.isEmpty()) return Collections.emptyList();
+        return appendExact(template, anchorColumn, anchorRow, false);
+    }
+
+    PlacementStatus checkExact(DesktopLayout template, int column, int row, boolean preserveBindings) {
+        return exactPreset(template, column, row, preserveBindings).status;
+    }
+
+    List<WidgetSpec> appendExact(DesktopLayout template, int anchorColumn, int anchorRow, boolean preserveBindings) {
+        ExactPlacement checked = exactPreset(template, anchorColumn, anchorRow, preserveBindings);
+        if (checked.status != PlacementStatus.VALID) return Collections.emptyList();
         List<WidgetSpec> added = new ArrayList<>();
-        for (WidgetSpec candidate : candidates) added.add(
+        for (WidgetSpec candidate : checked.widgets) added.add(
             candidate.withId(
                 UUID.randomUUID()
                     .toString()));
@@ -170,9 +192,11 @@ public final class DesktopLayout {
         return Collections.unmodifiableList(added);
     }
 
-    private List<WidgetSpec> exactPreset(DesktopLayout template, int anchorColumn, int anchorRow) {
-        if (template == null || template.widgets.isEmpty() || widgets.size() + template.widgets.size() > MAX_WIDGETS)
-            return Collections.emptyList();
+    private ExactPlacement exactPreset(DesktopLayout template, int anchorColumn, int anchorRow,
+        boolean preserveBindings) {
+        if (template == null || template.widgets.isEmpty()) return new ExactPlacement(PlacementStatus.EMPTY);
+        if (widgets.size() + template.widgets.size() > MAX_WIDGETS)
+            return new ExactPlacement(PlacementStatus.CARD_LIMIT);
         int left = Integer.MAX_VALUE, top = Integer.MAX_VALUE;
         for (WidgetSpec widget : template.widgets) {
             left = Math.min(left, widget.column);
@@ -184,12 +208,31 @@ public final class DesktopLayout {
             long row = (long) anchorRow + widget.row - top;
             if (column < -MAX_COORD || row < -MAX_COORD
                 || column + widget.columns > MAX_COORD
-                || row + widget.rows > MAX_COORD) return Collections.emptyList();
-            WidgetSpec candidate = widget.asTemplate()
+                || row + widget.rows > MAX_COORD) return new ExactPlacement(PlacementStatus.OUT_OF_BOUNDS);
+            WidgetSpec candidate = (preserveBindings ? widget : widget.asTemplate())
                 .withBounds((int) column, (int) row, widget.columns, widget.rows);
-            if (!fits(candidate, null) || !incoming.add(candidate)) return Collections.emptyList();
+            if (candidate.columns < candidate.minColumns() || candidate.rows < candidate.minRows()
+                || candidate.columns > MAX_SIZE
+                || candidate.rows > MAX_SIZE) return new ExactPlacement(PlacementStatus.INVALID_GEOMETRY);
+            if (!fits(candidate, null) || !incoming.add(candidate)) return new ExactPlacement(PlacementStatus.OVERLAP);
         }
-        return incoming.widgets;
+        return new ExactPlacement(incoming.widgets);
+    }
+
+    private static final class ExactPlacement {
+
+        final PlacementStatus status;
+        final List<WidgetSpec> widgets;
+
+        ExactPlacement(PlacementStatus status) {
+            this.status = status;
+            widgets = Collections.emptyList();
+        }
+
+        ExactPlacement(List<WidgetSpec> widgets) {
+            status = PlacementStatus.VALID;
+            this.widgets = widgets;
+        }
     }
 
     /** Append an independent, unbound template beside the current desktop. Empty means no change. */

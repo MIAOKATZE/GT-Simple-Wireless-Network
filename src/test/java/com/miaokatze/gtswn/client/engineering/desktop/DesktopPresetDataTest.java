@@ -18,7 +18,7 @@ public class DesktopPresetDataTest {
             layout.bounds()
                 .width());
         assertEquals(
-            10 * DesktopLayout.CELL,
+            9 * DesktopLayout.CELL,
             layout.bounds()
                 .height());
         assertEquals(WidgetKind.WIRELESS, layout.find("wireless").kind);
@@ -54,7 +54,8 @@ public class DesktopPresetDataTest {
             WidgetSpec information = layout.find(id);
             assertTrue(information.kind.isInformation());
             assertEquals(7, information.row);
-            assertEquals(3, information.rows);
+            assertEquals(2, information.rows);
+            assertEquals(2, information.columns);
         }
         assertEquals(java.util.Arrays.asList("gameTime", "gameDay"), layout.find("gameClock").fields);
         assertEquals(java.util.Arrays.asList("localTime", "localDate", "timezone"), layout.find("clock").fields);

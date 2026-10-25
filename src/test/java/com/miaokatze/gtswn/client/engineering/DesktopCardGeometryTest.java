@@ -43,11 +43,12 @@ public class DesktopCardGeometryTest {
     }
 
     @Test
-    public void configuredMetadataNeverCoversChartAndResourceHeaderControls() {
+    public void configuredMetadataReservesOnlyControlsThatRemainInTheHeader() {
         for (WidgetKind kind : new WidgetKind[] { WidgetKind.HISTORY, WidgetKind.RESOURCES }) {
             WidgetSpec widget = new WidgetSpec("card", kind, 0, 0, 10, 7);
             int reserved = DesktopCardGeometry.headerReserved(widget);
-            assertTrue(reserved > 0);
+            if (kind == WidgetKind.HISTORY) assertTrue(reserved > 0);
+            else assertEquals(0, reserved);
             assertEquals(
                 reserved,
                 DesktopCardGeometry

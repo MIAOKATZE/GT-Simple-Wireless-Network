@@ -72,6 +72,7 @@ public final class WidgetSpec {
                 forms.add(WidgetPresentation.BARS);
                 forms.add(WidgetPresentation.COMBO);
             } else forms.add(WidgetPresentation.STATUS_LIST);
+            if (kind == WidgetKind.CLOCK) forms.add(WidgetPresentation.CLOCK_FACE);
             PRESENTATIONS.put(kind, Collections.unmodifiableList(forms));
         }
         FIELDS.put(WidgetKind.CLOCK, fieldList("localTime", "localDate", "timezone", "gameTime", "gameDay"));
@@ -317,6 +318,12 @@ public final class WidgetSpec {
     }
 
     public int minColumns() {
+        if (kind.isInformation()) {
+            int count = informationFields().size();
+            if (presentation == WidgetPresentation.CLOCK_FACE && clockSourceField() != null) count--;
+            int columns = Math.min(displayColumns, Math.max(1, count));
+            return Math.max(2, (24 + columns * 76 + DesktopLayout.CELL - 1) / DesktopLayout.CELL);
+        }
         int minimum = kind == WidgetKind.RESOURCES
             ? !singleResource && resource == null && screen != null ? kind.minColumns : 2
             : presentation == WidgetPresentation.DEFAULT ? kind.minColumns : presentation.minColumns;
@@ -324,6 +331,8 @@ public final class WidgetSpec {
     }
 
     public int minRows() {
+        // Information fields scroll inside a stable compact viewport instead of enlarging the card.
+        if (kind.isInformation()) return presentation == WidgetPresentation.CLOCK_FACE ? 3 : 2;
         // Single-resource cards adapt down to an icon and amount; detail stays available on hover.
         if (kind == WidgetKind.RESOURCES && (singleResource || resource != null || screen == null)) return 1;
         // Header/footer plus compact field rows, with room for wrapping long evidence or recipe descriptions.
@@ -342,6 +351,35 @@ public final class WidgetSpec {
             pixels += rowPixels;
         }
         return Math.max(minimum, (pixels + DesktopLayout.CELL - 1) / DesktopLayout.CELL);
+    }
+
+    /** Clock defaults must agree with its field renderer, including intentionally empty selections. */
+    public List<String> clockFields() {
+        return informationFields();
+    }
+
+    public List<String> informationFields() {
+        if (fieldsConfigured) return fields;
+        switch (kind) {
+            case CLOCK:
+                return fieldList("localTime", "localDate", "timezone");
+            case SESSION:
+                return fieldList("sessionDuration", "connection");
+            case TEAM:
+                return fieldList("teamName", "teamRole");
+            case PLAYER:
+                return fieldList("playerName", "health", "food", "level");
+            case WORLD:
+                return fieldList("dimension", "coordinates", "weather");
+            default:
+                return fields;
+        }
+    }
+
+    /** Local civil time wins when both sources are selected; game time is Minecraft's day/night clock. */
+    public String clockSourceField() {
+        List<String> selected = clockFields();
+        return selected.contains("localTime") ? "localTime" : selected.contains("gameTime") ? "gameTime" : null;
     }
 
     public int x() {

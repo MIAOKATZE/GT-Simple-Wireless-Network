@@ -10,6 +10,78 @@ import org.junit.Test;
 public class DesktopPresetPlacementTest {
 
     @Test
+    public void realOverviewCanBePlacedRepeatedlyAtTouchingEdgesUntilTheExplicitBoundedLimit() {
+        DesktopLayout desktop = DesktopLayout.defaultLayout(), template = DesktopPreset.OVERVIEW.createLayout();
+        int cards = template.widgets()
+            .size();
+        assertEquals(15, cards);
+        int groups = DesktopLayout.MAX_WIDGETS / cards;
+        for (int group = 1; group < groups; group++) {
+            assertEquals(DesktopLayout.PlacementStatus.OVERLAP, desktop.checkPresetExact(template, group * 16 - 1, 0));
+            assertEquals(DesktopLayout.PlacementStatus.VALID, desktop.checkPresetExact(template, group * 16, 0));
+            assertEquals(
+                cards,
+                desktop.appendPresetExact(template, group * 16, 0)
+                    .size());
+        }
+        assertEquals(
+            groups * cards,
+            desktop.widgets()
+                .size());
+        String before = DesktopPresetCode.export(desktop);
+        assertEquals(DesktopLayout.PlacementStatus.CARD_LIMIT, desktop.checkPresetExact(template, groups * 16, 0));
+        assertTrue(
+            desktop.appendPresetExact(template, groups * 16, 0)
+                .isEmpty());
+        assertEquals(before, DesktopPresetCode.export(desktop));
+        DesktopLayout empty = new DesktopLayout();
+        assertEquals(
+            DesktopLayout.PlacementStatus.OUT_OF_BOUNDS,
+            empty.checkPresetExact(template, DesktopLayout.MAX_COORD - 15, 0));
+        assertEquals(
+            DesktopLayout.PlacementStatus.VALID,
+            empty.checkPresetExact(template, DesktopLayout.MAX_COORD - 16, 0));
+    }
+
+    @Test
+    public void localSingleChoiceRetainsExactBindingsAndMinimumGeometryThroughPreviewAndCommit() {
+        DeviceBinding device = new DeviceBinding(UUID.randomUUID(), "chosen", 0, 1, 2, 3, 4);
+        ResourceBinding resource = new ResourceBinding(
+            UUID.randomUUID(),
+            UUID.randomUUID(),
+            1,
+            "v2:item:" + String.join("", java.util.Collections.nCopies(64, "a")),
+            "chosen");
+        for (WidgetSpec source : new WidgetSpec[] {
+            new WidgetSpec("chosen-device", WidgetKind.DEVICE, 0, 0, 4, 5).boundDevice(device),
+            new WidgetSpec("chosen-resource", WidgetKind.RESOURCES, 0, 0, 2, 1).boundResource(resource) }) {
+            DesktopLayout desktop = new DesktopLayout();
+            DesktopPresetPlacement placement = DesktopPresetPlacement.single(source);
+            placement.point(-64, 128);
+            WidgetSpec ghost = placement.widgets()
+                .get(0);
+            assertSame(source.device, ghost.device);
+            assertSame(source.resource, ghost.resource);
+            assertFalse(ghost.autoDevicePending);
+            assertFalse(ghost.autoResourcePending);
+            assertTrue(
+                desktop.widgets()
+                    .isEmpty());
+            assertTrue(placement.valid(desktop));
+            placement.press(500, 300);
+            WidgetSpec placed = placement.release(desktop, 500, 300, true)
+                .get(0);
+            assertSame(source.device, placed.device);
+            assertSame(source.resource, placed.resource);
+            assertEquals(-1, placed.column);
+            assertEquals(2, placed.row);
+            assertEquals(source.columns, placed.columns);
+            assertEquals(source.rows, placed.rows);
+            assertNotEquals(source.id, placed.id);
+        }
+    }
+
+    @Test
     public void transformedPreviewAndExactCommitPreserveSparseRelativeGeometryAndPreferences() {
         DesktopLayout template = new DesktopLayout();
         DeviceBinding binding = new DeviceBinding(UUID.randomUUID(), "source", 0, 1, 2, 3, 4);

@@ -4,11 +4,12 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
-/** Two explicit basic clock elements sharing the same source kind and visual-only fields. */
+/** Basic clock elements sharing the same source kind and visual-only fields. */
 public enum DesktopInformationTemplate {
 
     LOCAL_CLOCK("localClock", "localTime", "localDate", "timezone"),
-    GAME_CLOCK("gameClock", "gameTime", "gameDay");
+    GAME_CLOCK("gameClock", "gameTime", "gameDay"),
+    ANALOG_CLOCK("analogClock", "localTime");
 
     private final String key;
     private final List<String> fields;
@@ -27,6 +28,8 @@ public enum DesktopInformationTemplate {
     }
 
     public WidgetSpec create(String id) {
-        return new WidgetSpec(id, WidgetKind.CLOCK, 0, 0, 3, 3).configured("", fields, 1);
+        WidgetSpec widget = new WidgetSpec(id, WidgetKind.CLOCK, 0, 0, 2, 2).configured("", fields, 1);
+        if (this == ANALOG_CLOCK) widget = widget.presented(WidgetPresentation.CLOCK_FACE, "", null);
+        return widget.withBounds(0, 0, widget.minColumns(), widget.minRows());
     }
 }

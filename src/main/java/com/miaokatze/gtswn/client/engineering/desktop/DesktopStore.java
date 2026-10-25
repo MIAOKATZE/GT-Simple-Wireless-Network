@@ -23,6 +23,9 @@ import java.util.UUID;
 public final class DesktopStore {
 
     public static final int SCHEMA = 1;
+    // Properties escape Unicode to six ASCII bytes per UTF-16 unit and repeat the widget key prefixes.
+    // Keep the disk budget separate from the compact, source-free sharing format.
+    public static final int MAX_FILE_BYTES = DesktopLayout.MAX_WIDGETS * 8192;
     private final Path directory;
     private final Map<String, Properties> profiles = new HashMap<>();
     private final Set<String> dirty = new HashSet<>();
@@ -335,7 +338,7 @@ public final class DesktopStore {
         if (directory != null) {
             Path file = directory.resolve(profile + ".properties");
             try {
-                if (Files.isRegularFile(file) && Files.size(file) <= 131072) {
+                if (Files.isRegularFile(file) && Files.size(file) <= MAX_FILE_BYTES) {
                     try (InputStream input = Files.newInputStream(file)) {
                         p.load(input);
                     }

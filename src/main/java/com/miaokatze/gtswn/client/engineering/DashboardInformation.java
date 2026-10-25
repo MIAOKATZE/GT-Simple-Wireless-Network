@@ -29,6 +29,8 @@ public final class DashboardInformation {
     private static final DateTimeFormatter CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.ROOT);
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ROOT);
     private static volatile Map<String, String> values = Collections.emptyMap();
+    private static volatile Long gameTicks;
+    private static volatile Map<String, Double> fractions = Collections.emptyMap();
     private final Session session = new Session();
     private long nextRefresh;
 
@@ -44,6 +46,22 @@ public final class DashboardInformation {
         return values.get(field);
     }
 
+    static Double fraction(String field) {
+        return fractions.get(field);
+    }
+
+    static Double meterFraction(double value, double maximum) {
+        return !Double.isFinite(value) || !Double.isFinite(maximum) || maximum <= 0 ? null
+            : Math.max(0, Math.min(1, value / maximum));
+    }
+
+    /** Local hands use the same system time zone as digital values, with subsecond motion at draw time. */
+    static DashboardClock clock(String source) {
+        if (source == null || value(source) == null) return null;
+        return DashboardClock
+            .read(source, Instant.ofEpochMilli(System.currentTimeMillis()), ZoneId.systemDefault(), gameTicks);
+    }
+
     @SubscribeEvent
     public void connected(FMLNetworkEvent.ClientConnectedToServerEvent event) {
         session.observe(event.manager, System.nanoTime());
@@ -54,6 +72,8 @@ public final class DashboardInformation {
     public void disconnected(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
         if (session.disconnect(event.manager)) {
             values = Collections.emptyMap();
+            gameTicks = null;
+            fractions = Collections.emptyMap();
             nextRefresh = 0;
         }
     }
@@ -68,9 +88,12 @@ public final class DashboardInformation {
         long now = System.nanoTime();
         // The connection owns the clock: dimension travel and respawn do not restart it.
         session.observe(connection, now);
+        // Observe world time every client tick, including stopped/reversed daylight cycles. Never extrapolate it.
+        gameTicks = mc.theWorld == null ? null : mc.theWorld.getWorldTime();
         if (now < nextRefresh) return;
         nextRefresh = now + 1_000_000_000L;
         Map<String, String> snapshot = new LinkedHashMap<>();
+        Map<String, Double> meters = new LinkedHashMap<>();
         ZonedDateTime local = Instant.ofEpochMilli(System.currentTimeMillis())
             .atZone(ZoneId.systemDefault());
         snapshot.put("localTime", CLOCK.format(local));
@@ -96,6 +119,13 @@ public final class DashboardInformation {
                 player.getFoodStats()
                     .getFoodLevel() + " / 20");
             snapshot.put("level", Integer.toString(player.experienceLevel));
+            meters.put("health", meterFraction(player.getHealth(), player.getMaxHealth()));
+            meters.put(
+                "food",
+                meterFraction(
+                    player.getFoodStats()
+                        .getFoodLevel(),
+                    20));
             snapshot.put("dimension", world.provider.getDimensionName() + " (" + world.provider.dimensionId + ")");
             snapshot.put(
                 "coordinates",
@@ -106,6 +136,7 @@ public final class DashboardInformation {
             putTeam(snapshot, TeamManagerClient.GetTeam(), TeamManagerClient.getRole());
         }
         values = Collections.unmodifiableMap(snapshot);
+        fractions = Collections.unmodifiableMap(meters);
     }
 
     static void putTeam(Map<String, String> snapshot, Team team, TeamRole role) {
