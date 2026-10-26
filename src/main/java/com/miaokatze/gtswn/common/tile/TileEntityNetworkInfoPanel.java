@@ -1002,11 +1002,22 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         readSyncData(tag);
         // === AE 标签页字段读取（E5 迁入 AEMonitorController.readTabState）===
         controller.readTabState(tag);
-        if (tag.hasKey("proxy")) {
+        pendingProxyNBT = null;
+        if (tag.hasKey("proxy", 10) && tag.getCompoundTag("proxy")
+            .hasKey("g", 4)
+            && tag.getCompoundTag("proxy")
+                .getLong("g") >= 0) {
+            // AENetworkProxy expects the named parent wrapper, even when node creation is deferred.
+            // Keep a detached copy: passing only the inner compound makes native g/p/k default to zero.
+            NBTTagCompound proxyData = new NBTTagCompound();
+            proxyData.setTag(
+                "proxy",
+                tag.getCompoundTag("proxy")
+                    .copy());
             if (worldObj != null && !worldObj.isRemote) {
-                getProxy().readFromNBT(tag);
+                getProxy().readFromNBT(proxyData);
             } else {
-                pendingProxyNBT = tag.getCompoundTag("proxy");
+                pendingProxyNBT = proxyData;
             }
         }
     }

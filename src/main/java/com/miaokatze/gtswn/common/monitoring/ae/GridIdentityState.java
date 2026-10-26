@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.monitoring.ae;
 
 import java.util.UUID;
+import java.util.function.Consumer;
 
 /** Constant-size identity state. An origin is shared only by native storage transfers, not by coordinates. */
 final class GridIdentityState {
@@ -11,9 +12,21 @@ final class GridIdentityState {
         int liveGrids;
         int unsettledGrids;
         boolean retired;
+        private Consumer<UUID> retirement;
 
         Origin(UUID id) {
             this.id = id;
+        }
+
+        void persistRetirement(Consumer<UUID> listener) {
+            retirement = listener;
+            if (retired && id != null) listener.accept(id);
+        }
+
+        void retire() {
+            if (retired) return;
+            retired = true;
+            if (id != null && retirement != null) retirement.accept(id);
         }
     }
 
@@ -32,8 +45,8 @@ final class GridIdentityState {
         } else if (origin.id == null && !origin.retired) {
             attach(incoming); // A new, never-published cable grid adds no prior authorization.
         } else if (incoming.id != null || incoming.retired) {
-            origin.retired = true;
-            incoming.retired = true;
+            origin.retire();
+            incoming.retire();
             attach(new Origin(null));
         }
     }
@@ -44,13 +57,15 @@ final class GridIdentityState {
     }
 
     Origin split() {
-        if (published && origin != null) origin.retired = true;
+        // A weakly retained empty native grid can transfer storage through onSplit after an unload.
+        // Only a donor with surviving nodes is an immediate published split boundary.
+        if (published && nodes > 0 && origin != null) origin.retire();
         changed();
         return transfer();
     }
 
     void invalidate() {
-        if (origin != null) origin.retired = true;
+        if (origin != null) origin.retire();
         changed();
     }
 
@@ -82,7 +97,7 @@ final class GridIdentityState {
         }
         setStable(true);
         if (origin != null && origin.unsettledGrids > 0) return;
-        if (origin != null && origin.liveGrids > 1) origin.retired = true;
+        if (origin != null && origin.liveGrids > 1) origin.retire();
         if (origin == null || origin.retired || origin.id == null) attach(new Origin(UUID.randomUUID()));
         ready = true;
         published = true;

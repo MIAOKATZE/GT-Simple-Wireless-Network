@@ -6,12 +6,16 @@ import java.util.UUID;
 import java.util.WeakHashMap;
 
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.world.World;
+
+import com.miaokatze.gtswn.mixins.ae2.MonitorGridStorageAccessor;
 
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.IGridStorage;
 import appeng.api.networking.pathing.IPathingGrid;
+import appeng.me.GridStorage;
 
 /**
  * AE-native persistence adapter. AE's IGrid.getId() is session-random and is deliberately unused.
@@ -32,12 +36,16 @@ public final class MonitorIdentityGridCache implements IMonitorIdentityCache {
     private final IGrid grid;
     private final GridIdentityState state = new GridIdentityState();
     private boolean server;
+    private World world;
+    private AEGridIdentityData persistence;
+    private Long nativeStorageId;
+    private IGridStorage pendingStorage;
 
     public MonitorIdentityGridCache(IGrid grid) {
         this.grid = grid;
     }
 
-    /** Server-stop lifecycle only; durable identities remain in native AE storage. */
+    /** Server-stop lifecycle only; durable committed identities also live in independent world saved data. */
     public static void clearSession() {
         TRANSFERS.clear();
         REMOVALS.clear();
@@ -62,7 +70,11 @@ public final class MonitorIdentityGridCache implements IMonitorIdentityCache {
         // Native transfers are synchronous, so no unmatched removal can cross an update tick.
         REMOVALS.clear();
         observeGeneration();
-        if (server) state.update(booting());
+        restorePending();
+        if (server) {
+            state.update(booting());
+            commitIdentity();
+        }
     }
 
     private boolean booting() {
@@ -72,8 +84,13 @@ public final class MonitorIdentityGridCache implements IMonitorIdentityCache {
 
     @Override
     public void addNode(IGridNode node, IGridHost host) {
-        if (node != null && node.getWorld() != null && !node.getWorld().isRemote) server = true;
+        if (node != null && node.getWorld() != null && !node.getWorld().isRemote) {
+            server = true;
+            world = node.getWorld();
+            rememberNativeStorage();
+        }
         observeGeneration();
+        restorePending();
         WeakReference<MonitorIdentityGridCache> previous = node == null ? null : REMOVALS.remove(node);
         MonitorIdentityGridCache source = previous == null ? null : previous.get();
         if (source != null && source != this) state.join(source.state.transfer());
@@ -108,6 +125,14 @@ public final class MonitorIdentityGridCache implements IMonitorIdentityCache {
     @Override
     public void onJoin(IGridStorage storage) {
         if (storage == null) return;
+        // Native split transfers use a temporary GridStorage with ID 0 and no grid. Real ID 0 is
+        // valid too: only the actual storage adopted by this grid may consult durable provenance.
+        if (isNativeStorage(storage)) {
+            nativeStorageId = storage.getID();
+            pendingStorage = storage;
+            restorePending();
+            return;
+        }
         GridIdentityState.Origin origin = TRANSFERS.get(storage);
         if (origin == null) {
             origin = read(storage.dataObject());
@@ -118,7 +143,40 @@ public final class MonitorIdentityGridCache implements IMonitorIdentityCache {
 
     @Override
     public void populateGridStorage(IGridStorage storage) {
+        if (isNativeStorage(storage)) {
+            nativeStorageId = storage.getID();
+            commitIdentity();
+        }
         transfer(storage);
+    }
+
+    private boolean isNativeStorage(IGridStorage storage) {
+        return storage instanceof GridStorage && ((GridStorage) storage).getGrid() == grid && grid != null;
+    }
+
+    private void restorePending() {
+        if (pendingStorage == null || world == null || !server) return;
+        if (persistence == null) persistence = AEGridIdentityData.get(world);
+        IGridStorage storage = pendingStorage;
+        pendingStorage = null;
+        GridIdentityState.Origin origin = persistence
+            .restore(storage.getID(), storage.dataObject(), TRANSFERS.get(storage));
+        TRANSFERS.put(storage, origin);
+        state.join(origin);
+    }
+
+    private void rememberNativeStorage() {
+        if (!(grid instanceof MonitorGridStorageAccessor)) return;
+        IGridStorage storage = ((MonitorGridStorageAccessor) grid).gtswn$getMonitorStorage();
+        if (isNativeStorage(storage) && storage.getID() >= 0) nativeStorageId = storage.getID();
+    }
+
+    private void commitIdentity() {
+        if (world == null || !server || state.current(booting()) == null) return;
+        rememberNativeStorage();
+        if (nativeStorageId == null) return;
+        if (persistence == null) persistence = AEGridIdentityData.get(world);
+        if (!persistence.commit(nativeStorageId, state.transfer())) state.invalidate();
     }
 
     private void transfer(IGridStorage storage) {

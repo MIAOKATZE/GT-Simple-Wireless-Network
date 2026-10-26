@@ -31,6 +31,12 @@ public final class CommandMonitorProfile extends CommandBase {
     }
 
     @Override
+    public boolean canCommandSenderUseCommand(ICommandSender sender) {
+        // Native 1.7 still rejects level-zero commands for non-OP players; profile ACLs guard each operation.
+        return sender instanceof EntityPlayerMP || super.canCommandSenderUseCommand(sender);
+    }
+
+    @Override
     public String getCommandUsage(ICommandSender sender) {
         return "/monitorprofile ui | list | create | import | recover|release <profile> | share|revoke|transfer <profile> <player UUID>"
             + " | rename <profile> <name...> | offline|web <profile> on|off | detach <profile> <dim:x:y:z> | status <profile>";
