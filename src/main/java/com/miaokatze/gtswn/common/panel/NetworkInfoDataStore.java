@@ -4,11 +4,15 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.function.Function;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
+
+import gregtech.common.misc.spaceprojects.SpaceProjectManager;
 
 /**
  * 网络信息屏数据集存储（每世界一份，perWorldStorage 落盘）。
@@ -17,14 +21,14 @@ import com.miaokatze.gtswn.common.util.SavedDataUtil;
  * {@link AbstractDataSetStore} 骨架承载（O2-15）；本类保留 EU 侧自有部分：
  * key 语义说明、活跃条目快照与结构修订号。
  * <p>
- * key 语义变更：早期版本为每屏独立的 datasetId（UUID 字符串），
- * 现改为玩家 ownerUUID.toString()，同一玩家的所有网络信息屏共享同一份数据集
- * （getOrCreate 传入的 id 应为玩家 ownerUUID.toString()）。
- * 旧 datasetId-keyed 数据无法适配新机制 → 反序列化时直接丢弃（readFromNBT 内未匹配新格式则空集）。
+ * Live keys are {@code eu:account:<leader UUID>} for the actual GT wireless account. Same-team owners
+ * share a sample lock and history. Old owner/dataset UUID entries remain untouched legacy archives;
+ * a current team membership cannot prove which native account produced an old per-owner series.
  */
 public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSet> {
 
     private static final String DATA_NAME = "gtswn_network_info_data";
+    private static final String NATIVE_PREFIX = "eu:account:";
 
     /**
      * 数据集结构修订号（O2-28）：{@link #remove} / {@link #cleanupStale} 实际移除条目时 +1。
@@ -54,6 +58,46 @@ public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSe
     @Override
     public NetworkInfoDataSet getIfPresent(String id) {
         return super.getIfPresent(id);
+    }
+
+    /** Resolve the actual native wireless account, never substitute a member UUID on failure. */
+    public static UUID resolveAccount(UUID owner) {
+        return resolveAccount(owner, SpaceProjectManager::getLeader);
+    }
+
+    static UUID resolveAccount(UUID owner, Function<UUID, UUID> resolver) {
+        if (owner == null) return null;
+        try {
+            return resolver.apply(owner);
+        } catch (RuntimeException unavailable) {
+            return null;
+        }
+    }
+
+    public static String nativeKey(UUID account) {
+        if (account == null) throw new IllegalArgumentException("Native EU account required");
+        return NATIVE_PREFIX + account;
+    }
+
+    /** Legacy owner UUIDs are deliberately not accepted as proven native sampling identities. */
+    public static UUID nativeAccount(String key) {
+        if (key == null || !key.startsWith(NATIVE_PREFIX)) return null;
+        try {
+            String id = key.substring(NATIVE_PREFIX.length());
+            UUID account = UUID.fromString(id);
+            return account.toString()
+                .equals(id) ? account : null;
+        } catch (IllegalArgumentException invalid) {
+            return null;
+        }
+    }
+
+    public NetworkInfoDataSet getOrCreateNative(UUID account) {
+        return account == null ? null : getOrCreate(nativeKey(account));
+    }
+
+    public NetworkInfoDataSet getNativeIfPresent(UUID account) {
+        return account == null ? null : getIfPresent(nativeKey(account));
     }
 
     @Override

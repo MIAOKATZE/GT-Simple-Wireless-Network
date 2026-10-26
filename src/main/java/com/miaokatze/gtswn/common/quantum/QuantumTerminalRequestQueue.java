@@ -7,7 +7,6 @@ import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety;
 import com.miaokatze.gtswn.network.PacketSyncQuantumTerminalDataLite;
 
@@ -49,6 +48,7 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
 
     public static void onLogout(EntityPlayerMP player) {
         INSTANCE.discardPlayer(player);
+        com.miaokatze.gtswn.network.telemetry.TelemetryTransport.cancel(player, "quantum-terminal");
     }
 
     public static void clear() {
@@ -76,6 +76,13 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
                 return;
             }
             ItemStack held = player.getHeldItem();
+            if (!authorizedRead(player, held)) {
+                deny(player);
+                return;
+            }
+            final int heldSlot = player.inventory.currentItem;
+            final Object connection = player.playerNetServerHandler.netManager;
+            final int[] expectedAnchor = com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal.getAnchor(held);
             // v1.6.19：性能审计——装配耗时采样（开关关闭时零开销）
             long t0 = PerformanceAudit.start();
             QuantumNetworkData data = QuantumNetworkData.assemble(player, held);
@@ -97,9 +104,43 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
             boolean canChange = data.online && !data.networkSafetyIdentity.isEmpty()
                 && QuantumTerminalAccess.canChangeNetworkSafety(player, held);
             long safetyToken = PacketSetQuantumNetworkSafety.issueToken(player, held, data, canChange);
-            GTSWNPacketHandler.NETWORK.sendTo(
-                new PacketSyncQuantumTerminalDataLite(data, Config.quantumSafetyEnabled, canChange, safetyToken),
-                player);
+            PacketSyncQuantumTerminalDataLite reply = new PacketSyncQuantumTerminalDataLite(
+                data,
+                Config.quantumSafetyEnabled,
+                canChange,
+                safetyToken);
+            final String expectedIdentity = data.networkSafetyIdentity;
+            if (!data.online) {
+                com.miaokatze.gtswn.network.telemetry.TelemetryTransport.cancel(player, "quantum-terminal");
+                com.miaokatze.gtswn.network.telemetry.TelemetryTransport.control(player, reply);
+            } else com.miaokatze.gtswn.network.telemetry.TelemetryTransport
+                .offer(player, "quantum-terminal", reply, () -> {
+                    try {
+                        boolean allowed = isOnline(player) && player.playerNetServerHandler.netManager == connection
+                            && player.inventory.currentItem == heldSlot
+                            && player.getHeldItem() == held
+                            && java.util.Arrays.equals(
+                                expectedAnchor,
+                                com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal.getAnchor(held))
+                            && authorizedRead(player, held)
+                            && (!canChange || QuantumTerminalAccess.canChangeNetworkSafety(player, held));
+                        if (allowed && expectedAnchor != null) {
+                            net.minecraft.world.World world = net.minecraftforge.common.DimensionManager
+                                .getWorld(expectedAnchor[0]);
+                            allowed = expectedIdentity.equals(
+                                QuantumTerminalAccess.networkSafetyIdentity(
+                                    world,
+                                    expectedAnchor[1],
+                                    expectedAnchor[2],
+                                    expectedAnchor[3]));
+                        }
+                        if (!allowed) deny(player);
+                        return allowed;
+                    } catch (RuntimeException unavailable) {
+                        deny(player);
+                        return false;
+                    }
+                }, null);
             // v1.6.19：性能审计——正常回包计数
             PerformanceAudit.recordTerminalReply();
         } catch (Throwable t) {
@@ -110,13 +151,7 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
                 GTSimpleWirelessNetwork.LOG.error("[量子终端] 装配网络数据异常，回发离线快照", t);
             }
             try {
-                QuantumNetworkData fallback = QuantumNetworkData.offlineFromStack(player.getHeldItem());
-                if (fallback == null) {
-                    fallback = new QuantumNetworkData();
-                }
-                GTSWNPacketHandler.NETWORK.sendTo(
-                    new PacketSyncQuantumTerminalDataLite(fallback, Config.quantumSafetyEnabled, false, 0L),
-                    player);
+                deny(player);
                 // v1.6.19：性能审计——兜底回包计数
                 PerformanceAudit.recordTerminalReply();
             } catch (Throwable ignored) {
@@ -124,4 +159,20 @@ public final class QuantumTerminalRequestQueue extends PlayerRequestQueue<Entity
             }
         }
     }
+
+    private static boolean authorizedRead(EntityPlayerMP player, ItemStack held) {
+        return com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, held, false)
+            && (QuantumTerminalAccess.validate(player, held) || QuantumTerminalAccess.canManage(player, held)
+                || QuantumTerminalAccess.canChangeNetworkSafety(player, held));
+    }
+
+    /** Revocation clears even a legacy GUI and invalidates any outstanding safety capability. */
+    private static void deny(EntityPlayerMP player) {
+        QuantumNetworkData empty = new QuantumNetworkData();
+        PacketSetQuantumNetworkSafety.issueToken(player, player.getHeldItem(), empty, false);
+        com.miaokatze.gtswn.network.telemetry.TelemetryTransport.cancel(player, "quantum-terminal");
+        com.miaokatze.gtswn.network.telemetry.TelemetryTransport
+            .control(player, new PacketSyncQuantumTerminalDataLite(empty, Config.quantumSafetyEnabled, false, 0L));
+    }
+
 }

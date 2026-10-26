@@ -15,6 +15,12 @@ import net.minecraft.world.World;
  */
 public interface PanelBroadcastPort {
 
+    /** Routine EU sampling uses per-recipient transport; description/config changes remain normal S35 updates. */
+    default void broadcastEULiveData(com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel panel) {
+        panel.getWorldObj()
+            .markBlockForUpdate(panel.xCoord, panel.yCoord, panel.zCoord);
+    }
+
     /**
      * 向信息屏周围 64 格客户端推送 AE 监控数据（原 TE 内联 sendToAllAround + PacketSyncAEMonitorData，
      * 中心点 +0.5D 与 64D 半径逐字一致）。

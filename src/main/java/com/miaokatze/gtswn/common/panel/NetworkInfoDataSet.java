@@ -35,6 +35,10 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
     // chunk 加载后首 tick 即写入 lastRequestTick，无采样空窗。
     private long lastRequestTick = -1L;
 
+    /** Short server observation demand; independent of the public API's legacy 6000-tick lease. */
+    private long observationIssued = -1L, observationUntil = -1L, observationClock = -1L;
+    public static final long MAX_OBSERVATION_TICKS = 200L;
+
     /**
      * 局部 EU/t 计算数据集（per-player 共享，从 TileEntity 迁移至此）。
      * <p>
@@ -138,6 +142,28 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
     }
 
     /**
+     * Main-thread renewal from a validated screen, portable observer or explicit authorized job.
+     * Duration is in server ticks, capped at 200; active through {@code tick + duration - 1}.
+     * Nonpositive durations do not renew. A shorter renewal cannot shorten another observer's lease.
+     * This ephemeral lease never extends the separate legacy {@link #updateRequestTick(long)} contract.
+     */
+    public void renewObservation(long tick, long durationTicks) {
+        if (tick < 0 || durationTicks <= 0) return;
+        observeClock(tick);
+        long duration = Math.min(MAX_OBSERVATION_TICKS, durationTicks);
+        long until = tick > Long.MAX_VALUE - duration ? Long.MAX_VALUE : tick + duration;
+        observationIssued = tick;
+        observationUntil = Math.max(observationUntil, until);
+    }
+
+    private void observeClock(long tick) {
+        if (observationClock >= 0 && tick < observationClock) {
+            observationIssued = observationUntil = -1L;
+        }
+        observationClock = tick;
+    }
+
+    /**
      * 调度器判断该 dataSet 是否活跃（5 分钟 = 6000t 内有请求）。
      * <p>
      * 5 分钟超时仅停止采样，dataSet 保留（由 FIFO 自动溢出，不主动清理）。
@@ -150,7 +176,11 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
         if (lastRequestTick >= 0L && (currentTick < lastRequestTick || currentTick - lastRequestTick >= 6000L)) {
             lastRequestTick = -1L;
         }
-        return lastRequestTick >= 0L;
+        observeClock(currentTick);
+        if (observationIssued >= 0L && (currentTick < observationIssued || currentTick >= observationUntil)) {
+            observationIssued = observationUntil = -1L;
+        }
+        return lastRequestTick >= 0L || observationIssued >= 0L;
     }
 
     /**
@@ -193,6 +223,7 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
         clearWindows();
         lastSampleTick = -1L;
         sampleClockReset = false;
+        observationIssued = observationUntil = observationClock = -1L;
         // v1.5.16：清空 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）
         eutDataSet.clear();
     }

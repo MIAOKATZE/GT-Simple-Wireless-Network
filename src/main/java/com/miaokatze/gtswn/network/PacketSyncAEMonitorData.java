@@ -41,6 +41,7 @@ public class PacketSyncAEMonitorData implements IMessage {
      * 推导 = 2 × aeMaxMonitoredItems 上限（物品+流体，Config 钳制 1-256）= 2 × 256 = 512。
      */
     private static final int MAX_MONITOR_KEYS = 512;
+    public boolean valid;
 
     /** 目标信息屏坐标 */
     private int x, y, z;
@@ -66,6 +67,7 @@ public class PacketSyncAEMonitorData implements IMessage {
 
     public PacketSyncAEMonitorData(int x, int y, int z, String chartKey, List<AEMonitorSample> chartSamples,
         Map<String, AEMonitorSample> monitorLatest, Map<String, Double> monitorAvg300s) {
+        this.valid = true;
         this.x = x;
         this.y = y;
         this.z = z;
@@ -113,40 +115,39 @@ public class PacketSyncAEMonitorData implements IMessage {
 
     @Override
     public void fromBytes(ByteBuf buf) {
-        x = buf.readInt();
-        y = buf.readInt();
-        z = buf.readInt();
-
+        valid = false;
         chartSamples = new ArrayList<>();
         monitorLatest = new HashMap<>();
         monitorAvg300s = new HashMap<>();
-
-        boolean hasChart = buf.readBoolean();
-        if (hasChart) {
-            chartKey = ByteBufUtils.readUTF8String(buf);
-            int sampleCount = buf.readInt();
-            // 防御性上限（B2-12）：走势图样本不会超过 FIFO 容量 61（与包 6 entryCount 钳制同范式）
-            sampleCount = Math.min(sampleCount, WindowChain.CAPACITY);
-            for (int i = 0; i < sampleCount; i++) {
-                chartSamples.add(readSample(buf));
+        if (buf.readableBytes() < 17 || buf.readableBytes() > 1024 * 1024) return;
+        try {
+            x = buf.readInt();
+            y = buf.readInt();
+            z = buf.readInt();
+            if (buf.readBoolean()) {
+                chartKey = ByteBufUtils.readUTF8String(buf);
+                if (chartKey.length() > 256) return;
+                int count = PacketSyncPortableMonitor.count(buf.readInt(), WindowChain.CAPACITY);
+                for (int i = 0; i < count; i++) chartSamples.add(readSample(buf));
+            } else chartKey = null;
+            int count = PacketSyncPortableMonitor.count(buf.readInt(), MAX_MONITOR_KEYS);
+            for (int i = 0; i < count; i++) {
+                String key = ByteBufUtils.readUTF8String(buf);
+                if (key.length() > 256 || monitorLatest.containsKey(key) || monitorAvg300s.containsKey(key)) return;
+                int flags = buf.readUnsignedByte();
+                if (flags < 1 || flags > 3) return;
+                if ((flags & 1) != 0) monitorLatest.put(key, readSample(buf));
+                if ((flags & 2) != 0) {
+                    double average = buf.readDouble();
+                    if (!Double.isFinite(average)) return;
+                    monitorAvg300s.put(key, average);
+                }
             }
-        } else {
-            chartKey = null;
-        }
-
-        // O2-20：合并 key 集读取，flags（bit0=hasLatest，bit1=hasAvg）标记各段有无
-        int monitorCount = buf.readInt();
-        // 防御性上限（B2-12）：见 MAX_MONITOR_KEYS 注释（2 × 256 推导）
-        monitorCount = Math.min(monitorCount, MAX_MONITOR_KEYS);
-        for (int i = 0; i < monitorCount; i++) {
-            String key = ByteBufUtils.readUTF8String(buf);
-            int flags = buf.readByte() & 0xFF;
-            if ((flags & 1) != 0) {
-                monitorLatest.put(key, readSample(buf));
-            }
-            if ((flags & 2) != 0) {
-                monitorAvg300s.put(key, buf.readDouble());
-            }
+            valid = !buf.isReadable();
+        } catch (RuntimeException malformed) {
+            chartSamples.clear();
+            monitorLatest.clear();
+            monitorAvg300s.clear();
         }
     }
 
@@ -167,6 +168,7 @@ public class PacketSyncAEMonitorData implements IMessage {
         long tick = buf.readLong();
         long amount = buf.readLong();
         double rate = buf.readDouble();
+        if (!Double.isFinite(rate)) throw new IllegalArgumentException("Non-finite AE sample");
         return new AEMonitorSample(0L, tick, amount, rate);
     }
 
@@ -195,7 +197,7 @@ public class PacketSyncAEMonitorData implements IMessage {
             }
             // 委托给 @SidedProxy：服务端调用 CommonProxy 空实现，客户端调用 ClientProxy 实际处理
             // 这样 Handler 类方法体不引用任何 @SideOnly 客户端类，避免 registerMessage 时的类加载崩溃
-            GTSimpleWirelessNetwork.proxy.handleSyncAEMonitorData(msg);
+            if (msg.valid) GTSimpleWirelessNetwork.proxy.handleSyncAEMonitorData(msg);
             return null;
         }
     }

@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.api.monitor;
 
 import java.math.BigInteger;
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -16,10 +17,10 @@ import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
+import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 
 import cpw.mods.fml.common.FMLCommonHandler;
-import gregtech.common.misc.WirelessNetworkManager;
 
 /**
  * 监控 API 默认实现（包私有，不属于公共 javadoc 契约，外部勿直接引用）。
@@ -39,7 +40,7 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
         if (overworld == null || owner == null) return Optional.empty();
 
         NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(overworld)
-            .getIfPresent(owner.toString());
+            .getNativeIfPresent(NetworkInfoDataStore.resolveAccount(owner));
         if (dataSet == null) return Optional.empty();
 
         NetworkInfoSample newest = dataSet.newest();
@@ -55,7 +56,7 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
         if (overworld == null || owner == null || !isValidWindow(windowId)) return Optional.empty();
 
         NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(overworld)
-            .getIfPresent(owner.toString());
+            .getNativeIfPresent(NetworkInfoDataStore.resolveAccount(owner));
         if (dataSet == null) return Optional.empty();
 
         List<NetworkInfoSample> raw = dataSet.query(windowId);
@@ -73,7 +74,7 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
         if (overworld == null || owner == null || !isValidWindow(windowId)) return Optional.empty();
 
         NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(overworld)
-            .getIfPresent(owner.toString());
+            .getNativeIfPresent(NetworkInfoDataStore.resolveAccount(owner));
         if (dataSet == null) return Optional.empty();
 
         List<NetworkInfoSample> samples = dataSet.query(windowId);
@@ -131,9 +132,10 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
         World overworld = serverOverworld();
         if (overworld == null || owner == null) return false;
 
-        // 激活语义对齐信息屏每 tick 请求刷新（EUCacheBridge.tickServer 首段）
+        UUID account = NetworkInfoDataStore.resolveAccount(owner);
+        if (account == null) return false;
         NetworkInfoDataStore.get(overworld)
-            .getOrCreate(owner.toString())
+            .getOrCreateNative(account)
             .updateRequestTick(overworld.getTotalWorldTime());
         return true;
     }
@@ -143,18 +145,18 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
         World overworld = serverOverworld();
         if (overworld == null || owner == null) return false;
 
+        UUID account = NetworkInfoDataStore.resolveAccount(owner);
+        if (account == null) return false;
         NetworkInfoDataStore store = NetworkInfoDataStore.get(overworld);
-        NetworkInfoDataSet dataSet = store.getOrCreate(owner.toString());
-        long tick = overworld.getTotalWorldTime();
-        // 采样锁：100t 内已有采样则去重（多屏共享语义一致）
-        if (!dataSet.tryAcquireSampleLock(tick)) return false;
-
-        // 与调度器单条采样体一致：读 GT 无线网络 EU → addSample（内部计算瞬时 EU/t）→ markDirty
-        BigInteger eu = WirelessNetworkManager.getUserEU(owner);
-        if (eu == null) eu = BigInteger.ZERO;
-        dataSet.addSample(eu, tick, System.currentTimeMillis());
-        store.markDirty();
-        return true;
+        NetworkInfoDataSet dataSet = store.getOrCreateNative(account);
+        boolean sampled = NetworkInfoMonitorScheduler.sampleNativeEntry(
+            new AbstractMap.SimpleImmutableEntry<>(NetworkInfoDataStore.nativeKey(account), dataSet),
+            overworld.getTotalWorldTime(),
+            System.currentTimeMillis(),
+            NetworkInfoDataStore::resolveAccount,
+            id -> com.miaokatze.gtswn.common.monitoring.NativeWirelessEUSnapshot.balance(overworld, id));
+        if (sampled) store.markDirty();
+        return sampled;
     }
 
     /** 取 AE 监视数据集（只读查询，panelWorld/panelKey 非法或数据集不存在返回 null） */

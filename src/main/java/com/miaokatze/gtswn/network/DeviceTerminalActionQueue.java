@@ -161,6 +161,8 @@ public final class DeviceTerminalActionQueue {
             ItemStack held = bootstrap ? player.getHeldItem() : findTerminalStack(player, action.terminalId);
             if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)) return;
             UUID heldId = ItemDeviceInfoTerminal.readTerminalId(held);
+            if (heldId != null && !com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .canModify(player.getUniqueID(), heldId)) return;
             if (bootstrap ? heldId != null : !action.terminalId.equals(heldId)) return;
             DeviceTerminalRecognitionMode.cycle(player, held, action.key);
             return;
@@ -171,6 +173,8 @@ public final class DeviceTerminalActionQueue {
             return;
         }
         UUID terminalId = ItemDeviceInfoTerminal.ensureTerminalIdSynced(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+            .canModify(player.getUniqueID(), terminalId)) return;
         if (action.action == PacketDeviceTerminalAction.ACTION_UNBIND
             || action.action == PacketDeviceTerminalAction.ACTION_TELEPORT) {
             DeviceTerminalDataStore.TerminalData data = DeviceTerminalDataStore.get(player.worldObj)
@@ -214,6 +218,8 @@ public final class DeviceTerminalActionQueue {
                     .matches()) {
                     DeviceTerminalDataStore.get(player.worldObj)
                         .removeBinding(terminalId, action.key);
+                    com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                        .detachSource(player.getUniqueID(), terminalId, action.key);
                 }
                 break;
             }
@@ -225,6 +231,10 @@ public final class DeviceTerminalActionQueue {
                 // 未知动作：忽略
                 return;
         }
+        if (action.action == PacketDeviceTerminalAction.ACTION_SORT
+            || action.action == PacketDeviceTerminalAction.ACTION_COUNT_MODE)
+            com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .saveDitPresentation(player, stack);
         if (action.action == PacketDeviceTerminalAction.ACTION_UNBIND
             || action.action == PacketDeviceTerminalAction.ACTION_TELEPORT
             || action.action == PacketDeviceTerminalAction.ACTION_CYCLE_RECOGNITION) {

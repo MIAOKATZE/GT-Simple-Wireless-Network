@@ -91,12 +91,17 @@ public class DeviceEventHandler {
         String localName = mte.getLocalName();
         // 登记 / 覆盖（重放同位机器刷新 owner 与显示名，幂等）
         DeviceRegistryData.get(event.world)
-            .register(key, event.player.getUniqueID(), localName, ((IGregTechTileEntity) te).getMetaTileID());
+            .registerPlacement(key, event.player.getUniqueID(), localName, ((IGregTechTileEntity) te).getMetaTileID());
         // 放置者背包内的终端逐台自动绑定 + 轻提示（同时补登记活跃索引，覆盖会话内新获得终端）
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(event.world);
         byte powerType = DeviceMachineTypes.isGeneratorMachine(mte) ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
             : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
         for (UUID terminalId : collectTerminalIds(event.player)) {
+            // Explicit profiles have fixed source imports; automatic placement must not silently expand them.
+            com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+                .get(event.world);
+            if (profiles.profileForTerminal(terminalId) != null
+                || !profiles.canModify(event.player.getUniqueID(), terminalId)) continue;
             DeviceTerminalDataStore.ensureActiveTerminal(event.player.getUniqueID(), terminalId);
             DeviceTerminalDataStore.AddResult result = store.addBinding(
                 terminalId,

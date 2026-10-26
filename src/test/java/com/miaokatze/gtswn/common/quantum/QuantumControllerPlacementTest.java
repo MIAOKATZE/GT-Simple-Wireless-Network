@@ -216,6 +216,36 @@ public class QuantumControllerPlacementTest {
     }
 
     @Test
+    public void publicationReadsExistingStatsWithoutSamplingOrRefreshingTimestamp() throws Exception {
+        FixtureWorld world = world();
+        controller(world, 0);
+        QuantumControllerRegistry.get(world)
+            .quantize(0, 64, 0);
+        IGrid grid = grid();
+        AnchorKey key = new AnchorKey(0, 0, 64, 0);
+        try {
+            QuantumNetworkStatsCache.clear();
+            world.time = 120;
+            assertNull(QuantumNetworkStatsCache.getCached(key, world, grid));
+            QuantumNetworkStatsCache.Snapshot first = QuantumNetworkStatsCache.getOrCompute(key, world, grid);
+            assertNotNull(first);
+            assertEquals(120, first.sampleTick);
+            world.time = 150;
+            assertSame(first, QuantumNetworkStatsCache.getOrCompute(key, world, grid));
+            assertEquals(120, first.sampleTick);
+            world.time = 240;
+            assertSame(first, QuantumNetworkStatsCache.getCached(key, world, grid));
+            assertEquals(120, QuantumNetworkStatsCache.getCached(key, world, grid).sampleTick);
+            QuantumNetworkStatsCache.Snapshot renewed = QuantumNetworkStatsCache.getOrCompute(key, world, grid);
+            assertNotSame(first, renewed);
+            assertEquals(240, renewed.sampleTick);
+            assertNull(QuantumNetworkStatsCache.getCached(key, world, grid()));
+        } finally {
+            QuantumNetworkStatsCache.clear();
+        }
+    }
+
+    @Test
     public void expansionRejectsInPlaceIdentityMutationWithoutRefreshingOldEvidence() throws Exception {
         FixtureWorld world = world();
         Controller first = controller(world, 0);
@@ -390,6 +420,7 @@ public class QuantumControllerPlacementTest {
     static class FixtureWorld extends World {
 
         Map<Long, TileEntity> tiles;
+        long time;
         java.util.Set<Long> unloaded = new HashSet<>();
         java.util.Set<Long> loadedAir = new HashSet<>();
 
@@ -436,7 +467,7 @@ public class QuantumControllerPlacementTest {
 
         @Override
         public long getTotalWorldTime() {
-            return 0;
+            return time;
         }
     }
 }

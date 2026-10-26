@@ -90,6 +90,10 @@ public final class DeviceTerminalTeleport {
             || server.getConfigurationManager()
                 .func_152612_a(player.getCommandSenderName()) != player)
             return outcome(Status.UNAVAILABLE_PLAYER);
+        com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+            .get(player.worldObj);
+        if (!profiles.canRead(player.getUniqueID(), terminalId)
+            || !profiles.canModify(player.getUniqueID(), terminalId)) return outcome(Status.INVALID_TARGET);
         if (!holdsTerminal(player, terminalId, visual)) return outcome(Status.INVALID_TARGET);
         if (visual && !com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.isEnabled(player, terminalId))
             return outcome(Status.INACTIVE);

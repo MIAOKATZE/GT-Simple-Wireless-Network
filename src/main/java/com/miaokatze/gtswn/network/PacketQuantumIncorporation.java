@@ -105,7 +105,8 @@ public class PacketQuantumIncorporation implements IMessage {
         World world = player.worldObj;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
-        if (!QuantumTerminalAccess.validate(player, held)) {
+        if (!QuantumTerminalAccess.validate(player, held)
+            || !com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, held, true)) {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }

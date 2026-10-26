@@ -181,7 +181,9 @@ public class ContainerTerminal extends ModularContainer {
     /** Server-thread-only mutation, followed by vanilla slot synchronization. */
     public boolean renameTerminal(EntityPlayer player, int window, int slot, long token, String expectedName,
         String name) {
-        if (!checkRenameContext(player, window, slot, token, expectedName)) return false;
+        if (!checkRenameContext(player, window, slot, token, expectedName)
+            || !com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, terminal, true))
+            return false;
         String normalized = TerminalNameRules.normalize(name);
         if (normalized == null || !checkRenameContext(player, window, slot, token, expectedName)) return false;
         if (normalized.isEmpty()) terminal.func_135074_t();

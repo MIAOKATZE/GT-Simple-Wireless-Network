@@ -63,30 +63,59 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
 
     @Override
     public void fromBytes(ByteBuf buf) {
-        QuantumNetworkData d = new QuantumNetworkData();
-        d.online = buf.readBoolean();
-        d.anchorDim = buf.readInt();
-        d.anchorX = buf.readInt();
-        d.anchorY = buf.readInt();
-        d.anchorZ = buf.readInt();
-        d.usedChannels = buf.readInt();
-        d.totalChannels = buf.readInt();
-        d.quantumNodeCount = buf.readInt();
-        d.channelsInfinite = buf.readBoolean();
-        if (buf.readableBytes() >= 8) {
-            d.incorporationCount = buf.readInt();
-            d.incorporationChannels = buf.readInt();
+        data = null;
+        try {
+            if (buf.readableBytes() < 30 || buf.readableBytes() > 1024) return;
+            QuantumNetworkData d = new QuantumNetworkData();
+            d.online = bool(buf);
+            d.anchorDim = buf.readInt();
+            d.anchorX = buf.readInt();
+            d.anchorY = buf.readInt();
+            d.anchorZ = buf.readInt();
+            d.usedChannels = count(buf.readInt());
+            d.totalChannels = count(buf.readInt());
+            d.quantumNodeCount = count(buf.readInt());
+            d.channelsInfinite = bool(buf);
+            if (buf.isReadable()) {
+                if (buf.readableBytes() < 8) return;
+                d.incorporationCount = count(buf.readInt());
+                d.incorporationChannels = count(buf.readInt());
+            }
+            if (buf.isReadable()) {
+                if (buf.readableBytes() < 3) return;
+                d.globalSafetyEnabled = bool(buf);
+                d.networkSafetyEnabled = bool(buf);
+                d.canChangeNetworkSafety = bool(buf);
+                if (buf.isReadable()) {
+                    d.networkSafetyIdentity = ByteBufUtils.readUTF8String(buf);
+                    if (d.networkSafetyIdentity.length() > 256) return;
+                }
+                if (buf.isReadable()) {
+                    if (buf.readableBytes() != 8 && buf.readableBytes() != 9) return;
+                    d.networkSafetyRequestToken = buf.readLong();
+                    if (buf.isReadable()) d.managementOnly = bool(buf);
+                }
+            }
+            if (!buf.isReadable()) {
+                data = d;
+                globalSafetyEnabled = d.globalSafetyEnabled;
+                canChangeNetworkSafety = d.canChangeNetworkSafety;
+                networkSafetyRequestToken = d.networkSafetyRequestToken;
+            }
+        } catch (RuntimeException malformed) {
+            data = null;
         }
-        // Old payloads retain local safety=false and capability=false.
-        if (buf.readableBytes() >= 3) {
-            d.globalSafetyEnabled = buf.readBoolean();
-            d.networkSafetyEnabled = buf.readBoolean();
-            d.canChangeNetworkSafety = buf.readBoolean();
-            if (buf.isReadable()) d.networkSafetyIdentity = ByteBufUtils.readUTF8String(buf);
-            if (buf.readableBytes() >= 8) d.networkSafetyRequestToken = buf.readLong();
-            if (buf.isReadable()) d.managementOnly = buf.readBoolean();
-        }
-        this.data = d;
+    }
+
+    private static boolean bool(ByteBuf buf) {
+        int value = buf.readUnsignedByte();
+        if (value > 1) throw new IllegalArgumentException("Invalid quantum boolean");
+        return value == 1;
+    }
+
+    private static int count(int value) {
+        if (value < 0) throw new IllegalArgumentException("Invalid quantum count");
+        return value;
     }
 
     /** @return 网络快照数据（仅 16 字段有效，其余为类默认值） */
@@ -105,7 +134,7 @@ public class PacketSyncQuantumTerminalDataLite implements IMessage {
         @Override
         public IMessage onMessage(PacketSyncQuantumTerminalDataLite msg, MessageContext ctx) {
             // 包注册在 CLIENT，但防御性校验 side 避免异常场景
-            if (ctx.side.isServer()) {
+            if (ctx.side.isServer() || msg.data == null) {
                 return null;
             }
             // 委托给 @SidedProxy：服务端调用 CommonProxy 空实现，客户端调用 ClientProxy 实际处理

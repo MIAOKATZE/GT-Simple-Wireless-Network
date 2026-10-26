@@ -43,7 +43,19 @@ final class WirelessGridReading {
     static WirelessGridReading readTerminal() {
         HudController.WirelessReading value = EngineeringTerminalHudSnapshot.wirelessGrid();
         if (value == null) return new WirelessGridReading(null, null, "missing");
-        return readTerminal(value.stored, value.history, value.sourceLabel, value.receivedAtMillis);
+        WirelessGridReading reading = readTerminal(
+            value.stored,
+            value.history,
+            value.sourceLabel,
+            value.receivedAtMillis);
+        return new WirelessGridReading(
+            reading.stored,
+            reading.netRate,
+            reading.state,
+            reading.source,
+            EngineeringTerminalHudSnapshot.wirelessGridFresh(),
+            reading.receivedAtMillis,
+            reading.history);
     }
 
     static WirelessGridReading readTerminal(BigInteger stored, List<NetworkInfoSample> history, String source,

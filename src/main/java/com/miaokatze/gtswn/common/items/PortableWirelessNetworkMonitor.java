@@ -189,8 +189,17 @@ public class PortableWirelessNetworkMonitor extends Item
             if (aPlayer.isSneaking() && isMonitorBound(aStack)
                 && aPlayer.getUniqueID()
                     .toString()
-                    .equals(getOwnerUUID(aStack)))
+                    .equals(getOwnerUUID(aStack))
+                || aPlayer.isSneaking()
+                    && com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.hasProfileReference(aStack))
                 GTSimpleWirelessNetwork.proxy.openPortableMonitorGui(aStack);
+            return aStack;
+        }
+        if (com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.hasProfileReference(aStack)) {
+            com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+                .get(aWorld);
+            if (profiles.canUsePortable(aPlayer.getUniqueID(), aStack) && !aPlayer.isSneaking())
+                toggleHUDMode(aStack, aPlayer);
             return aStack;
         }
         // 确保 NBT 已初始化

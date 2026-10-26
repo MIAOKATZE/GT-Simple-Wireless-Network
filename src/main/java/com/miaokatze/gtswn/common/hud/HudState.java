@@ -48,6 +48,8 @@ final class HudState {
      */
     EUDataSet dataSet = new EUDataSet(EUDataSet.hudCapacityFor(Config.hudUpdateInterval));
     int samplingInterval = Config.hudUpdateInterval;
+    String historySourceToken;
+    long historySourceTick = -1L;
 
     /** 缓存的 EU/t 文本 */
     String cachedEUTText = "";
@@ -94,6 +96,8 @@ final class HudState {
         this.hudEnabled = false;
         this.displayMode = 0;
         this.historyOwnerUUID = null;
+        this.historySourceToken = null;
+        this.historySourceTick = -1L;
     }
 
     /**
@@ -103,12 +107,33 @@ final class HudState {
     void resetForSession(boolean preserveHistory) {
         EUDataSet history = this.dataSet;
         String historyOwner = cachedOwnerUUID != null ? cachedOwnerUUID : historyOwnerUUID;
+        String nativeSource = historySourceToken;
+        long nativeTick = historySourceTick;
         if (preserveHistory) this.dataSet = new EUDataSet(EUDataSet.hudCapacityFor(samplingInterval));
         clearCache();
         if (preserveHistory) {
             this.dataSet = history;
             this.historyOwnerUUID = historyOwner;
+            this.historySourceToken = nativeSource;
+            this.historySourceTick = nativeTick;
         }
+    }
+
+    /** Applied only after the live request-token/connection/possession checks in HudController. */
+    boolean acceptMeasurement(com.miaokatze.gtswn.common.monitoring.WirelessEUPayload sample, long localTick) {
+        if (sample == null) return false;
+        if (sample.sourceToken == null && historySourceToken != null) return false;
+        long tick = sample.sourceToken == null ? localTick : sample.tick;
+        boolean changed = sample.sourceToken != null && !sample.sourceToken.equals(historySourceToken);
+        if (!changed && sample.sourceToken != null && tick <= historySourceTick) return false;
+        if (changed) {
+            dataSet.clear();
+            cachedEUTText = cachedRealtimeEUTText = "";
+        }
+        historySourceToken = sample.sourceToken;
+        historySourceTick = tick;
+        dataSet.add(sample.amount, tick);
+        return true;
     }
 
     void selectMonitor(ItemStack stack, String owner, int mode) {

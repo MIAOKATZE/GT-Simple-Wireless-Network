@@ -220,6 +220,14 @@ public class ItemDeviceInfoTerminal extends Item
         if (player instanceof EntityPlayerMP visualPlayer
             && com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.shouldConsumeVanillaUse(visualPlayer, stack))
             return true;
+        UUID profileTerminal = readTerminalId(stack);
+        if (profileTerminal != null) {
+            com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+                .get(world);
+            if (!profiles.canModify(player.getUniqueID(), profileTerminal)) return true;
+            // Profiles import a fixed authorized source set. Use a legacy terminal to prepare a new import.
+            if (!player.isSneaking() && profiles.profileForTerminal(profileTerminal) != null) return true;
+        }
         // Native/server callers retain the same mode action; the normal client sends an explicit action before C08.
         if (player.isSneaking()) {
             ensureTerminalIdSynced(player, stack);
@@ -461,6 +469,11 @@ public class ItemDeviceInfoTerminal extends Item
      */
     private static void syncHeldSlot(EntityPlayerMP player, ItemStack stack) {
         player.playerNetServerHandler.sendPacket(new S2FPacketSetSlot(0, 36 + player.inventory.currentItem, stack));
+    }
+
+    /** Profile recovery updates only the actual server-held item. */
+    public static void syncHeldTerminalSlot(EntityPlayerMP player) {
+        syncHeldSlot(player, player.getHeldItem());
     }
 
     /** Reusing unchanged NBT must not replace the client's held stack/re-equip the terminal on each right-click. */

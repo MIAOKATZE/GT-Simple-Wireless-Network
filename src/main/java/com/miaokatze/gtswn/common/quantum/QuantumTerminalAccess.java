@@ -147,6 +147,8 @@ public final class QuantumTerminalAccess {
     public static boolean validate(EntityPlayer player, ItemStack stack) {
         if (!isTerminal(stack) || player == null || player.worldObj == null || player.worldObj.isRemote) return false;
         synchronize(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, false))
+            return false;
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return true;
         World world = DimensionManager.getWorld(anchor[0]);
@@ -157,6 +159,8 @@ public final class QuantumTerminalAccess {
     public static boolean canManage(EntityPlayer player, ItemStack stack) {
         if (!isTerminal(stack) || player == null || player.worldObj == null || player.worldObj.isRemote) return false;
         synchronize(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
+            return false;
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return true;
         World world = DimensionManager.getWorld(anchor[0]);
@@ -168,12 +172,16 @@ public final class QuantumTerminalAccess {
     public static boolean canAccessAnchor(EntityPlayer player, ItemStack stack, World world, int x, int y, int z) {
         if (!isTerminal(stack) || player == null || world == null || world.isRemote) return false;
         synchronize(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
+            return false;
         return permits(player, stack, world, x, y, z, false);
     }
 
     public static boolean canManageAnchor(EntityPlayer player, ItemStack stack, World world, int x, int y, int z) {
         if (!isTerminal(stack) || player == null || world == null || world.isRemote) return false;
         synchronize(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
+            return false;
         return permits(player, stack, world, x, y, z, true);
     }
 
@@ -201,6 +209,8 @@ public final class QuantumTerminalAccess {
     public static boolean canChangeNetworkSafety(EntityPlayer player, ItemStack stack) {
         if (!isTerminal(stack) || player == null || player.worldObj == null || player.worldObj.isRemote) return false;
         synchronize(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
+            return false;
         int[] anchor = ItemNetworkQuantumTerminal.getAnchor(stack);
         if (anchor == null) return false;
         World world = DimensionManager.getWorld(anchor[0]);

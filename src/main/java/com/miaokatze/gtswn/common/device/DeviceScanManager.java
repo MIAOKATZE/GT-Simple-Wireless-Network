@@ -128,6 +128,11 @@ public final class DeviceScanManager {
 
     /** 幂等启动：重复蓄力不会取消现有任务。 */
     public static void startScan(EntityPlayerMP player, UUID terminalId) {
+        if (player == null || !com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+            .canModify(player.getUniqueID(), terminalId)
+            || com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .profileForTerminal(terminalId) != null)
+            return;
         if (player == null || !DeviceTerminalTeleport.holdsTerminal(player, terminalId, false)) return;
         UUID playerId = player.getUniqueID();
         if (STATES.containsKey(playerId)) return;
@@ -184,6 +189,14 @@ public final class DeviceScanManager {
         state.running = true;
         try {
             EntityPlayerMP player = state.player;
+            if (!com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .canModify(player.getUniqueID(), state.terminalId)) {
+                state.cancelled = true;
+                state.running = false;
+                STATES.remove(player.getUniqueID());
+                SCAN_ANCHORS.remove(player.getUniqueID());
+                return;
+            }
             if (player.playerNetServerHandler == null) {
                 STATES.remove(player.getUniqueID());
                 return;
@@ -438,6 +451,14 @@ public final class DeviceScanManager {
                 continue;
             }
             EntityPlayerMP player = state.player;
+            if (!com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .canModify(player.getUniqueID(), state.terminalId)) {
+                state.cancelled = true;
+                state.running = false;
+                STATES.remove(player.getUniqueID());
+                SCAN_ANCHORS.remove(player.getUniqueID());
+                continue;
+            }
             STATES.remove(player.getUniqueID());
             ScanAnchors capture = SCAN_ANCHORS.remove(player.getUniqueID());
             Map<String, MachineAnchor> anchors = capture == null ? null : capture.machines;

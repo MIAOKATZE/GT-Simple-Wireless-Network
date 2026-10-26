@@ -96,6 +96,7 @@ public final class MonitorBindings {
 
     public static boolean bind(ItemStack stack, EntityPlayer player, TileEntityNetworkInfoPanel panel) {
         if (player.worldObj.isRemote) return true;
+        if (com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.hasProfileReference(stack)) return true;
         if (!PortableWirelessNetworkMonitor.isMonitorBound(stack) || !player.getUniqueID()
             .toString()
             .equals(PortableWirelessNetworkMonitor.getOwnerUUID(stack))) {

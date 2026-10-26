@@ -78,6 +78,7 @@ public final class PortableMonitorClientCache {
     /** Only transient HUD/UI snapshots; configured pins and terminal NBT remain untouched. */
     public static void resetForHudSession() {
         CACHE.clear();
+        PanelHistoryClientCache.clear();
         nextGlobalRequest = 0;
         legacyChartServer = false;
         sessionPlayer = null;
@@ -139,8 +140,29 @@ public final class PortableMonitorClientCache {
             request.selected = selected;
             selectRequest(request, stack, cache.snapshot);
             configureChartReuse(request, cache.snapshot);
+            request.rawHistory = com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                .clientSupports(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PORTABLE);
+            if (request.rawHistory && cache.snapshot != null)
+                for (PacketSyncPortableMonitor.Panel panel : cache.snapshot.panels)
+                    if (panel.binding.panelId.equals(request.selectedPanel) && completeBase(panel))
+                        request.knownConfigVersion = panel.configVersion;
             request.charts = Config.hudRenderMode == 2;
             subscribeRequest(request, Config.hudPinnedEntries);
+            if (request.rawHistory && request.action == 0 && cache.snapshot != null && cache.snapshot.rawHistory)
+                for (PacketSyncPortableMonitor.Panel panel : cache.snapshot.panels) {
+                    if (panel.metadataVersion > 0)
+                        request.metadataVersions.put(panel.binding.panelId, panel.metadataVersion);
+                    if (panel.state == 0 && panel.render != null
+                        && panel.renderVersion > 0
+                        && panel.configVersion > 0
+                        && panel.historyFields > 0)
+                        request.historyCursors.put(
+                            panel.binding.panelId,
+                            new PacketRequestPortableMonitor.HistoryCursor(
+                                panel.renderVersion,
+                                panel.configVersion,
+                                panel.historyFields));
+                }
             if (request.selected < 0 && request.pins.isEmpty() && request.action == 0) return;
             cache.sequence = request.sequence;
             cache.request = request;
@@ -152,7 +174,9 @@ public final class PortableMonitorClientCache {
         }
         cache.sentAt = now;
         nextGlobalRequest = now + 1100;
-        GTSWNPacketHandler.NETWORK.sendToServer(cache.request);
+        GTSWNPacketHandler.NETWORK.sendToServer(
+            cache.request.rawHistory ? new com.miaokatze.gtswn.network.PacketRequestPortableHistory(cache.request)
+                : cache.request);
     }
 
     public static boolean action(ItemStack stack, int action, int value) {
@@ -216,7 +240,8 @@ public final class PortableMonitorClientCache {
     /** Learn old-server fallback only from an acknowledged identical base, never from a changed generation. */
     static void observeChartReuse(PacketSyncPortableMonitor response, PacketSyncPortableMonitor previous,
         PacketRequestPortableMonitor request) {
-        if (!request.reuseCharts || request.action != 0
+        if (response.rawHistory || !request.reuseCharts
+            || request.action != 0
             || request.knownRenderVersion <= 0
             || previous == null
             || request.sequence != response.sequence
@@ -255,7 +280,34 @@ public final class PortableMonitorClientCache {
     /** Called only after the live owner/session/sequence checks; incomplete replies never become fresh snapshots. */
     static boolean restoreSnapshot(PacketSyncPortableMonitor response, PacketSyncPortableMonitor previous,
         PacketRequestPortableMonitor request) {
+        if (response.rawHistory && (!request.rawHistory || !request.terminalId.equals(response.terminalId)
+            || request.sequence != response.sequence)) return false;
         for (PacketSyncPortableMonitor.Panel panel : response.panels) {
+            if (response.rawHistory) {
+                PacketSyncPortableMonitor.Panel metadataBase = null;
+                if (previous != null && response.terminalId.equals(previous.terminalId))
+                    for (PacketSyncPortableMonitor.Panel old : previous.panels)
+                        if (sameSource(old.binding, panel.binding)) {
+                            metadataBase = old;
+                            break;
+                        }
+                if (panel.metadataUnchanged
+                    && request.metadataVersions.getOrDefault(panel.binding.panelId, 0L) != panel.metadataVersion)
+                    return false;
+                if (!com.miaokatze.gtswn.network.PortablePanelMetadata.restore(panel, metadataBase)) return false;
+            }
+            if (response.rawHistory && panel.historyPatch != null) {
+                PacketSyncPortableMonitor.Panel base = null;
+                if (previous != null && response.terminalId.equals(previous.terminalId))
+                    for (PacketSyncPortableMonitor.Panel old : previous.panels)
+                        if (sameSource(old.binding, panel.binding)) {
+                            base = old;
+                            break;
+                        }
+                if (panel.state != 0 || !panel.historyPatch.apply(panel, base)) return false;
+                panel.historyPatch = null;
+                continue;
+            }
             if (!panel.detail || panel.state != 0 || panel.render != null) continue;
             if (request.action != 0 || request.knownRenderVersion != panel.renderVersion
                 || !request.terminalId.equals(response.terminalId)
@@ -374,6 +426,18 @@ public final class PortableMonitorClientCache {
     public static void receive(PacketSyncPortableMonitor response) {
         session();
         Cached cache = CACHE.get(response.terminalId);
+        if (cache != null && cache.sequence == response.sequence && response.result == 2 && response.panels.isEmpty()) {
+            com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard.revoke(response.terminalId);
+            cache.snapshot = cache.renderSnapshot = cache.mutationResponse = null;
+            cache.views.clear();
+            cache.viewVersions.clear();
+            cache.viewSources.clear();
+            cache.inFlight = false;
+            cache.receivedAt = 0;
+            cache.result = 2;
+            cache.dirty = true;
+            return;
+        }
         if (cache == null || !cache.inFlight || cache.sequence != response.sequence) return;
         cache.stack = currentStack(cache.stack);
         if (cache.stack == null || !response.terminalId.equals(MonitorBindings.id(cache.stack))
@@ -382,6 +446,7 @@ public final class PortableMonitorClientCache {
             cache.snapshot = null;
             return;
         }
+        com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard.invalidateMetadata(response);
         observeChartReuse(response, cache.snapshot, cache.request);
         boolean complete = restoreSnapshot(response, cache.snapshot, cache.request);
         if (cache.request.action != 0) {

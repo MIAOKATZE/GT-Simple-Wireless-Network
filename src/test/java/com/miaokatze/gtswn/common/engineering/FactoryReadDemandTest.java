@@ -51,6 +51,22 @@ public class FactoryReadDemandTest {
             assertTrue(view.fresh);
             assertFalse(view.itemDisplayEnabled);
             assertSame(entry, view.devices.get(0));
+            Method historical = EngineeringTerminalHudSnapshot.class.getDeclaredMethod(
+                "device",
+                Source.class,
+                DeviceTerminalClientCache.Snapshot.class,
+                boolean.class,
+                long.class);
+            historical.setAccessible(true);
+            view = (EngineeringTerminalHudSnapshot.Source) historical.invoke(
+                null,
+                new Source(stack, SourceOrigin.INVENTORY),
+                DeviceTerminalClientCache.getSnapshot(id),
+                false,
+                123L);
+            assertFalse(view.fresh);
+            assertSame(entry, view.devices.get(0));
+            assertEquals(123L, view.receivedAtMillis);
             assertFalse(ItemDeviceInfoTerminal.isVisualizationEnabled(stack));
             reading.setBoolean(null, false);
             view = (EngineeringTerminalHudSnapshot.Source) capture

@@ -29,6 +29,8 @@ public final class PacketSyncPortableMonitor implements IMessage {
     /** 0 snapshot, 1 mutation applied, 2 current terminal owner required, 3 target no longer bound. */
     public int result;
     public boolean valid;
+    /** Local envelope marker; protocol-60 serialization deliberately ignores it. */
+    public boolean rawHistory;
     public final List<Panel> panels = new ArrayList<>();
 
     public PacketSyncPortableMonitor() {}
@@ -265,6 +267,12 @@ public final class PacketSyncPortableMonitor implements IMessage {
         public double[] euChart = new double[0], aeChart = new double[0];
         public double[] euRateChart = new double[0], aeRateChart = new double[0];
         public long renderVersion;
+        public long configVersion;
+        public boolean historyReset;
+        public int historyFields;
+        public long metadataVersion;
+        public boolean metadataUnchanged;
+        public PortableHistoryPatch historyPatch;
         /** Explicit negotiated omission, never an empty-history replacement. Cleared after client reconstruction. */
         public boolean chartsUnchanged;
         public PortablePanelRenderData render;
@@ -276,6 +284,7 @@ public final class PacketSyncPortableMonitor implements IMessage {
         public int kind;
         public String key = "", name = "", amount = "";
         public double rate, average;
+        public long sampleTime, sampleTick;
         public boolean monitored;
         public PortableMonitorIcon icon;
     }

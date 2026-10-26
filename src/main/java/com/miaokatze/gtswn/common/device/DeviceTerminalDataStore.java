@@ -101,6 +101,38 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         return data;
     }
 
+    /** Explicit non-destructive import: legacy copies retain their original scope and history. */
+    public void copyForProfile(UUID legacyId, UUID profileId) {
+        if (terminals.containsKey(profileId)) return;
+        TerminalData copy = new TerminalData();
+        TerminalData original = terminals.get(legacyId);
+        if (original != null) {
+            NBTTagCompound tag = new NBTTagCompound();
+            original.writeToNBT(tag);
+            copy.readFromNBT(tag);
+        }
+        copy.profileManaged = true;
+        terminals.put(profileId, copy);
+        markDirty();
+    }
+
+    /** Exact holders only, for current ACL checks; no retained EntityPlayer references. */
+    public static Set<UUID> holders(UUID terminalId) {
+        Set<UUID> result = new HashSet<>();
+        for (Map.Entry<UUID, Set<UUID>> entry : PLAYER_TERMINALS.entrySet()) if (entry.getValue()
+            .contains(terminalId)) result.add(entry.getKey());
+        return result;
+    }
+
+    /** Monotonic empty/reset delivery revision; never uses a poison MAX_VALUE sentinel. */
+    public long bumpVersion(UUID terminalId) {
+        TerminalData data = terminals.get(terminalId);
+        if (data == null) return -1;
+        if (data.version < Long.MAX_VALUE) data.version++;
+        markDirty();
+        return data.version;
+    }
+
     /** 查询终端数据（只读，不存在返回 null，不创建） */
     public TerminalData getTerminal(UUID terminalId) {
         return terminals.get(terminalId);
@@ -356,6 +388,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
     public int removeKeyFromAll(String key) {
         int affected = 0;
         for (TerminalData data : terminals.values()) {
+            if (data.profileManaged) continue; // Historical profile survives source removal/replacement.
             boolean removed = data.boundKeys.remove(key);
             removed |= data.records.remove(key) != null;
             if (removed) {
@@ -441,6 +474,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
      */
     public static final class TerminalData {
 
+        public boolean profileManaged;
+
         /** 绑定机器键（dim:x:y:z，插入序） */
         public final LinkedHashSet<String> boundKeys = new LinkedHashSet<>();
 
@@ -452,6 +487,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         public long version;
 
         void readFromNBT(NBTTagCompound tag) {
+            profileManaged = tag.getBoolean("monitorProfile");
             boundKeys.clear();
             NBTTagList bound = tag.getTagList("bound", Constants.NBT.TAG_COMPOUND);
             for (int i = 0; i < bound.tagCount(); i++) {
@@ -486,6 +522,7 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         }
 
         void writeToNBT(NBTTagCompound tag) {
+            tag.setBoolean("monitorProfile", profileManaged);
             NBTTagList bound = new NBTTagList();
             for (String key : boundKeys) {
                 NBTTagCompound entry = new NBTTagCompound();

@@ -30,6 +30,7 @@ public final class EngineeringTerminalHudSnapshot {
     private static EntityPlayer lastPlayer;
     private static Object lastWorld, lastConnection;
     private static int lastTick = Integer.MIN_VALUE;
+    private static boolean lastPaused;
     private static EngineeringTerminalHudSnapshot cached;
     private static boolean factoryReading, deviceReading;
     private static EngineeringTerminalSources.Source deviceDemand = EngineeringTerminalSources.Source.EMPTY;
@@ -54,7 +55,8 @@ public final class EngineeringTerminalHudSnapshot {
     /** Read-only user-grid data; mounted screens and their coordinates do not participate. */
     public static HudController.WirelessReading wirelessGrid() {
         Minecraft mc = Minecraft.getMinecraft();
-        if (!factoryReading || hud == null
+        if (mc == null || !factoryReading
+            || hud == null
             || mc.thePlayer == null
             || mc.thePlayer.isDead
             || mc.thePlayer.getHealth() <= 0
@@ -70,11 +72,21 @@ public final class EngineeringTerminalHudSnapshot {
                 == null)
             return null;
         EngineeringTerminalSources.Source selected = EngineeringTerminalSources.resolve(mc.thePlayer, 0);
-        if (!selected.present() || !selected.binding.equals(EngineeringTerminalSources.binding(hud.monitorStack())))
-            return null;
-        HudController.WirelessReading value = hud.wirelessReading();
+        if (!selected.present()) return null;
+        HudController.WirelessReading value = hud.wirelessDisplayReading();
         return value != null && value.owner.toString()
             .equals(PortableWirelessNetworkMonitor.getOwnerUUID(selected.stack)) ? value : null;
+    }
+
+    public static boolean wirelessGridFresh() {
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc == null) return false;
+        EngineeringTerminalSources.Source selected = EngineeringTerminalSources.resolve(mc.thePlayer, 0);
+        return wirelessGrid() != null && hud != null
+            && hud.factoryFresh()
+            && !mc.isGamePaused()
+            && selected.present()
+            && selected.binding.equals(EngineeringTerminalSources.binding(hud.monitorStack()));
     }
 
     /** Explicit lifecycle demand, never a side effect of capture/render and never a visualization toggle. */
@@ -127,7 +139,8 @@ public final class EngineeringTerminalHudSnapshot {
     /** Rendering cannot borrow a prior source/connection cache or a normal ACK for another UUID. */
     public static DeviceTerminalClientCache.Snapshot visualizationSnapshot(UUID id) {
         Minecraft mc = Minecraft.getMinecraft();
-        if (id == null || !deviceReading
+        if (mc == null || id == null
+            || !deviceReading
             || demandPlayer != mc.thePlayer
             || demandWorld != mc.theWorld
             || demandConnection != mc.getNetHandler()
@@ -148,6 +161,17 @@ public final class EngineeringTerminalHudSnapshot {
     static boolean acceptsVisualization(UUID requested, UUID actual, boolean sameSource, long before, long receipt,
         boolean fresh) {
         return requested != null && requested.equals(actual) && sameSource && receipt > before && fresh;
+    }
+
+    public static void invalidateDisplay() {
+        cached = null;
+    }
+
+    public static void resetSession() {
+        close();
+        lastPlayer = null;
+        lastWorld = lastConnection = null;
+        lastTick = Integer.MIN_VALUE;
     }
 
     public static void close() {
@@ -173,11 +197,13 @@ public final class EngineeringTerminalHudSnapshot {
         if (cached != null && lastPlayer == player
             && lastWorld == mc.theWorld
             && lastConnection == connection
-            && lastTick == player.ticksExisted) return cached;
+            && lastTick == player.ticksExisted
+            && lastPaused == mc.isGamePaused()) return cached;
         lastPlayer = player;
         lastWorld = mc.theWorld;
         lastConnection = connection;
         lastTick = player.ticksExisted;
+        lastPaused = mc.isGamePaused();
         EngineeringTerminalSources.Source device = EngineeringTerminalSources.resolve(player, 2);
         EngineeringTerminalSources.Source portable = EngineeringTerminalSources.resolve(player, 0);
         cached = new EngineeringTerminalHudSnapshot(device(device), portable(portable));
@@ -186,14 +212,32 @@ public final class EngineeringTerminalHudSnapshot {
 
     private static Source device(EngineeringTerminalSources.Source selected) {
         UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
-        DeviceTerminalClientCache.Snapshot authorized = deviceReading ? visualizationSnapshot(id)
+        DeviceTerminalClientCache.Snapshot authorized = deviceReading ? DesktopDeviceSources.displaySnapshot(id)
             : DeviceTerminalClientCache.getSnapshot(id);
-        return device(selected, authorized);
+        Minecraft mc = Minecraft.getMinecraft();
+        boolean live = authorized != null && mc != null
+            && !mc.isGamePaused()
+            && (deviceReading ? visualizationSnapshot(id) == authorized
+                : DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()));
+        long receivedAt = deviceReading ? DesktopDeviceSources.displayReceivedAt(id)
+            : DeviceTerminalClientCache.receivedAtMillis(id);
+        return device(selected, authorized, live, receivedAt);
     }
 
-    /** Pure view assembly after the client lifecycle/receipt gate has selected an authorized snapshot. */
+    /** Pure view assembly when the caller has already admitted a current authorized snapshot. */
     private static Source device(EngineeringTerminalSources.Source selected,
         DeviceTerminalClientCache.Snapshot authorized) {
+        UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
+        return device(
+            selected,
+            authorized,
+            DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()),
+            DeviceTerminalClientCache.receivedAtMillis(id));
+    }
+
+    /** Display history and current receipt authority are passed separately by the runtime gate. */
+    private static Source device(EngineeringTerminalSources.Source selected,
+        DeviceTerminalClientCache.Snapshot authorized, boolean live, long receivedAt) {
         UUID id = ItemDeviceInfoTerminal.readTerminalId(selected.stack);
         boolean itemEnabled = ItemDeviceInfoTerminal.isVisualizationEnabled(selected.stack);
         boolean enabled = deviceReading && selected.present()
@@ -204,13 +248,13 @@ public final class EngineeringTerminalHudSnapshot {
             selected.origin,
             enabled,
             itemEnabled,
-            snapshot != null && DeviceTerminalClientCache.isFresh(id, System.currentTimeMillis()),
+            snapshot != null && live,
             Collections.emptyList(),
             Collections.emptyList(),
             snapshot == null ? Collections.emptyList() : snapshot.entries,
             DeviceTerminalClientCache.receiptRevision(id),
             snapshot != null && DeviceTerminalClientCache.hasMorePending(id),
-            snapshot == null ? 0 : DeviceTerminalClientCache.receivedAtMillis(id));
+            snapshot == null ? 0 : receivedAt);
     }
 
     private static Source portable(EngineeringTerminalSources.Source selected) {
@@ -247,7 +291,10 @@ public final class EngineeringTerminalHudSnapshot {
             selected.origin,
             enabled,
             itemEnabled,
-            enabled && (selectedByHud && hud.fresh() || !PortableMonitorClientCache.stale(stack)),
+            enabled && Minecraft.getMinecraft() != null
+                && !Minecraft.getMinecraft()
+                    .isGamePaused()
+                && (selectedByHud && hud.fresh() || !PortableMonitorClientCache.stale(stack)),
             basic,
             lines,
             Collections.emptyList(),

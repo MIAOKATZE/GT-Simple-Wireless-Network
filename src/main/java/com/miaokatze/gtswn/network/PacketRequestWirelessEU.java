@@ -81,6 +81,12 @@ public class PacketRequestWirelessEU implements IMessage {
                 return null;
             }
 
+            if (com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PROBE.equals(uuidStr)) {
+                com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                    .enqueue(ctx.getServerHandler().playerEntity, message.requestToken);
+                return null;
+            }
+
             // 解析 UUID；非法格式静默丢弃，避免服务端日志被刷屏
             UUID uuid;
             try {

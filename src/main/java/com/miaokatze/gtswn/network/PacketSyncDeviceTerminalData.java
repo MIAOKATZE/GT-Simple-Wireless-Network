@@ -215,7 +215,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         if (value == null) {
             return "";
         }
-        return value.length() > cap ? value.substring(0, cap) : value;
+        if (value.length() <= cap) return value;
+        int end = cap;
+        if (end > 0 && Character.isHighSurrogate(value.charAt(end - 1))) end--;
+        return value.substring(0, end);
     }
 
     // ==================== 客户端读取 getter ====================

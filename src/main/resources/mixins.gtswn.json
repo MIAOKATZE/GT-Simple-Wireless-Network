@@ -18,6 +18,7 @@
     "ae2.CableBusStorageMixin",
     "ae2.QuantumCableBusContainerMixin",
     "minecraft.QuantumIncorporationIdentityMixin",
+    "minecraft.MonitorDeviceIdentityMixin",
     "minecraft.QuantumChunkLifecycleMixin",
     "gregtech.DeviceControllerTickMixin",
     "gregtech.DeviceEnergyMutationMixin",

@@ -47,12 +47,20 @@ public class DeviceRegistryData extends WorldSavedData {
         public String localName;
         /** Last observed identity, allowing unloaded registry candidates to retain their default recognition policy. */
         public final int metaTileId;
+        /** Native installation identity; replacement never reuses the old source history. */
+        public final UUID sourceId;
+        public boolean instanceVerified;
 
         public DeviceEntry(UUID owner, String localName) {
             this(owner, localName, -1);
         }
 
         public DeviceEntry(UUID owner, String localName, int metaTileId) {
+            this(owner, localName, metaTileId, UUID.randomUUID());
+        }
+
+        public DeviceEntry(UUID owner, String localName, int metaTileId, UUID sourceId) {
+            this.sourceId = sourceId;
             this.owner = owner;
             this.localName = localName;
             this.metaTileId = metaTileId;
@@ -92,10 +100,53 @@ public class DeviceRegistryData extends WorldSavedData {
         if (existing != null && java.util.Objects.equals(existing.owner, owner)
             && java.util.Objects.equals(existing.localName, localName)
             && existing.metaTileId == metaTileId) return false;
-        devices.put(key, new DeviceEntry(owner, localName, metaTileId));
+        UUID sourceId = existing != null && existing.metaTileId == metaTileId ? existing.sourceId : UUID.randomUUID();
+        DeviceEntry replacement = new DeviceEntry(owner, localName, metaTileId, sourceId);
+        replacement.instanceVerified = existing != null && existing.sourceId.equals(sourceId)
+            && existing.instanceVerified;
+        devices.put(key, replacement);
         markDirty();
         if (DebugTestGate.probesActive()) TestWorldProbes.deviceKey(key, Type.DEVICE_REGISTER);
         return isNew;
+    }
+
+    /** A placement is an installation boundary, including identical machine/owner at the same coordinates. */
+    public void registerPlacement(String key, UUID owner, String localName, int metaTileId) {
+        devices.put(key, new DeviceEntry(owner, localName, metaTileId));
+        markDirty();
+        if (DebugTestGate.probesActive()) TestWorldProbes.deviceKey(key, Type.DEVICE_REGISTER);
+    }
+
+    /** Binds a lazily assigned persisted native token; uninstrumented tiles fail closed. */
+    public DeviceEntry bindLiveInstance(String key, net.minecraft.tileentity.TileEntity tile) {
+        DeviceEntry entry = devices.get(key);
+        if (entry == null || !(tile instanceof com.miaokatze.gtswn.common.monitoring.MonitorDeviceIdentity))
+            return null;
+        com.miaokatze.gtswn.common.monitoring.MonitorDeviceIdentity marker = (com.miaokatze.gtswn.common.monitoring.MonitorDeviceIdentity) tile;
+        UUID actual;
+        if (!entry.instanceVerified) {
+            // First authorized import/actual placement chooses a registry installation, never copies an item's old
+            // marker.
+            actual = entry.sourceId;
+            marker.gtswn$setMonitorDeviceIdentity(actual.toString());
+            tile.markDirty();
+        } else {
+            try {
+                actual = UUID.fromString(marker.gtswn$getMonitorDeviceIdentity());
+            } catch (IllegalArgumentException absent) {
+                actual = UUID.randomUUID();
+                marker.gtswn$setMonitorDeviceIdentity(actual.toString());
+                tile.markDirty();
+            }
+        }
+        if (!entry.instanceVerified || !entry.sourceId.equals(actual)) {
+            DeviceEntry verified = new DeviceEntry(entry.owner, entry.localName, entry.metaTileId, actual);
+            verified.instanceVerified = true;
+            devices.put(key, verified);
+            markDirty();
+            entry = verified;
+        }
+        return entry;
     }
 
     /** 查询条目（只读，不存在返回 null） */
@@ -148,7 +199,10 @@ public class DeviceRegistryData extends WorldSavedData {
                     new DeviceEntry(
                         UUID.fromString(ownerStr),
                         entry.getString("name"),
-                        entry.hasKey("metaTileId") ? entry.getInteger("metaTileId") : -1));
+                        entry.hasKey("metaTileId") ? entry.getInteger("metaTileId") : -1,
+                        entry.hasKey("sourceId") ? UUID.fromString(entry.getString("sourceId")) : UUID.randomUUID()));
+                if (!entry.hasKey("sourceId")) markDirty();
+                devices.get(key).instanceVerified = entry.getBoolean("instanceVerified");
             } catch (IllegalArgumentException e) {
                 // 坏 UUID 数据跳过（不阻断其余条目加载）
             }
@@ -161,6 +215,8 @@ public class DeviceRegistryData extends WorldSavedData {
         for (Map.Entry<String, DeviceEntry> entry : devices.entrySet()) {
             NBTTagCompound entryTag = new NBTTagCompound();
             entryTag.setString("key", entry.getKey());
+            entryTag.setString("sourceId", entry.getValue().sourceId.toString());
+            entryTag.setBoolean("instanceVerified", entry.getValue().instanceVerified);
             entryTag.setString("owner", entry.getValue().owner.toString());
             entryTag.setString("name", entry.getValue().localName == null ? "" : entry.getValue().localName);
             entryTag.setInteger("metaTileId", entry.getValue().metaTileId);

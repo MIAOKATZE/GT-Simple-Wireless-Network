@@ -251,6 +251,8 @@ public class ItemNetworkQuantumTerminal extends Item
             return false;
         }
         QuantumTerminalAccess.synchronize(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
+            return true;
         if (QuantumIncorporationRegistry.isIncorporated(world, x, y, z)) {
             if (!QuantumTerminalAccess.validate(player, stack)) return true;
             QuantumIncorporationRegistry.Entry entry = QuantumIncorporationRegistry.get(world)
@@ -498,7 +500,8 @@ public class ItemNetworkQuantumTerminal extends Item
      * 连网络主人自己的网络也桥接不上。
      */
     public static void applyAnchorToNode(ItemStack stack, TileEntityNetworkQuantumNode node, EntityPlayer player) {
-        if (!QuantumTerminalAccess.validate(player, stack)) return;
+        if (!QuantumTerminalAccess.validate(player, stack)
+            || !com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true)) return;
         NBTTagCompound tag = stack.stackTagCompound;
         node.setAnchor(
             tag.getInteger(NBT_ANCHOR_DIM),

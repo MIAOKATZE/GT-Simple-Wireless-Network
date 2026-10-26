@@ -481,10 +481,39 @@ public class ClientProxy extends CommonProxy {
     public void handleSyncPortableMonitor(com.miaokatze.gtswn.network.PacketSyncPortableMonitor message) {
         Minecraft minecraft = Minecraft.getMinecraft();
         EntityPlayer receivedPlayer = minecraft.thePlayer;
+        World receivedWorld = minecraft.theWorld;
+        Object receivedConnection = minecraft.getNetHandler();
         minecraft.func_152344_a(() -> {
-            if (receivedPlayer != null && receivedPlayer == minecraft.thePlayer) {
+            if (receivedPlayer != null && receivedPlayer == minecraft.thePlayer
+                && receivedWorld == minecraft.theWorld
+                && receivedConnection == minecraft.getNetHandler()) {
                 com.miaokatze.gtswn.client.PortableMonitorClientCache.receive(message);
             }
+        });
+    }
+
+    @Override
+    public void handleSyncDeviceTerminalDelta(com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta message) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World world = minecraft.theWorld;
+        Object connection = minecraft.getNetHandler();
+        EntityPlayer player = minecraft.thePlayer;
+        minecraft.func_152344_a(() -> {
+            if (world != null && world == minecraft.theWorld
+                && connection == minecraft.getNetHandler()
+                && player == minecraft.thePlayer)
+                com.miaokatze.gtswn.client.DeviceTerminalClientCache.receiveDelta(message);
+        });
+    }
+
+    @Override
+    public void handleSyncPanelHistory(com.miaokatze.gtswn.network.PacketSyncPanelHistory message) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World world = minecraft.theWorld;
+        Object connection = minecraft.getNetHandler();
+        minecraft.func_152344_a(() -> {
+            if (world != null && world == minecraft.theWorld && connection == minecraft.getNetHandler())
+                com.miaokatze.gtswn.client.PanelHistoryClientCache.receive(message);
         });
     }
 

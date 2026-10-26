@@ -28,6 +28,24 @@ public final class PacketRequestPortableMonitor implements IMessage {
     public UUID selectedPanel = new UUID(0, 0);
     public boolean charts;
     public long knownRenderVersion;
+    /** Only set by the separately negotiated history request, never encoded in protocol 60. */
+    public boolean rawHistory;
+    public long knownConfigVersion;
+    public final Map<UUID, HistoryCursor> historyCursors = new HashMap<>();
+    public final Map<UUID, Long> metadataVersions = new HashMap<>();
+
+    public static final class HistoryCursor {
+
+        public final long version, configVersion;
+        public final int fields;
+
+        public HistoryCursor(long version, long configVersion, int fields) {
+            this.version = version;
+            this.configVersion = configVersion;
+            this.fields = fields;
+        }
+    }
+
     /** Protocol-60 opt-in: a complemented revision on the wire; legacy servers safely send a full body. */
     public boolean reuseCharts;
     public final Map<UUID, Set<String>> pins = new HashMap<>();

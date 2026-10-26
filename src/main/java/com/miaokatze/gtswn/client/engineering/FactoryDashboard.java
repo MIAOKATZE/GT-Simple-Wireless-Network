@@ -152,13 +152,12 @@ public final class FactoryDashboard extends Gui {
             running = idle = stopped = unknown = 0;
             List<Entry> warnings = new ArrayList<>();
             for (Entry entry : devices) {
-                String state = FactoryMachineFilter.status(entry, source.fresh);
+                String state = FactoryMachineFilter.status(entry, true);
                 if ("running".equals(state)) running++;
                 else if ("idle".equals(state)) idle++;
                 else if ("stopped".equals(state)) stopped++;
                 if (!FactoryMachineFilter.ignored(entry) && entry.evidenceKind == 3) unknown++;
-                if (FactoryMachineFilter.ATTENTION.matches(entry, source.fresh, DevicePowerFilter.ALL))
-                    warnings.add(entry);
+                if (FactoryMachineFilter.ATTENTION.matches(entry, true, DevicePowerFilter.ALL)) warnings.add(entry);
             }
             attention = Collections.unmodifiableList(warnings);
         }
@@ -192,7 +191,7 @@ public final class FactoryDashboard extends Gui {
             resourcePanel = panel;
             resourceSignature = signature;
             List<Row> filtered = new ArrayList<>();
-            if (PortableSuperDashboard.available(panel))
+            if (PortableSuperDashboard.displayable(panel))
                 for (Row row : panel.rows) if (row.kind == resourceKind && search.matches(row.name)) filtered.add(row);
             filtered.sort(
                 (a, b) -> resourceSort == 2 ? Double.compare(b.rate, a.rate)
@@ -221,7 +220,7 @@ public final class FactoryDashboard extends Gui {
         ticks = new long[0];
         exact = new String[0];
         WirelessGridReading reading = grid();
-        if (!reading.fresh || reading.history.isEmpty()) return;
+        if (reading.history.isEmpty()) return;
         plotUnit = rate ? "EU/t" : "EU";
         plotSource = reading.source;
         int size = reading.history.size();
@@ -276,7 +275,7 @@ public final class FactoryDashboard extends Gui {
         localMouseY = my;
         boolean clippedBody = false;
         try {
-            EngineeringSnapshot power = EngineeringDashboardCache.snapshot();
+            EngineeringSnapshot power = EngineeringDashboardCache.displaySnapshot();
             EngineeringTerminalHudSnapshot snapshot = EngineeringTerminalHudSnapshot
                 .capture(Minecraft.getMinecraft().thePlayer);
             card(f, r, FactoryDesktop.label(widget));
@@ -314,7 +313,7 @@ public final class FactoryDashboard extends Gui {
                 return;
             }
             if (widget.kind == WidgetKind.RESOURCES && widget.resource == null) {
-                WidgetResources.ScreenReading screen = WidgetResources.readScreen(widget.screen);
+                WidgetResources.ScreenReading screen = WidgetResources.displayScreen(widget.screen);
                 if (screen.panel == null) {
                     text(f, tr("screen." + screen.reason), r.x + 10, r.y + 36, AMBER, r.w - 20);
                     bindingAction(f, r, widget, 60);
@@ -369,6 +368,28 @@ public final class FactoryDashboard extends Gui {
         } finally {
             if (paintingViewport != null) GL11.glPopMatrix();
             if (clippedBody) renderer.popClip();
+            String continuity = widget.device != null ? deviceDisplayStatus(widget)
+                : widget.kind == WidgetKind.REGION ? powerStatus(EngineeringDashboardCache.displaySnapshot()) : "";
+            if (widget.device != null && !DesktopDeviceSources.read(widget.device)
+                .live() || widget.kind == WidgetKind.REGION && !EngineeringDashboardCache.fresh())
+                text(f, continuity, r.x + 8, r.y + r.h - 12, AMBER, r.w - 16);
+            if (widget.kind == WidgetKind.MACHINES
+                && !EngineeringTerminalHudSnapshot.capture(Minecraft.getMinecraft().thePlayer).device.fresh
+                || (widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY) && !grid().fresh
+                    && grid().stored != null)
+                text(f, historicalStatus(), r.x + 8, r.y + r.h - 12, AMBER, r.w - 16);
+            if (widget.kind == WidgetKind.RESOURCES) {
+                Panel displayed = widget.resource == null ? WidgetResources.displayScreen(widget.screen).panel
+                    : WidgetResources.display(widget.resource).panel;
+                if (PortableSuperDashboard.displayable(displayed) && !PortableSuperDashboard.available(displayed)) text(
+                    f,
+                    StatCollector
+                        .translateToLocal("gtswn.telemetry.display." + PortableSuperDashboard.displayStatus(displayed)),
+                    r.x + 8,
+                    r.y + r.h - 12,
+                    AMBER,
+                    r.w - 16);
+            }
             if (controlHover != null) hover = controlHover;
             if (paintingViewport != null && paintingViewport.contains(mx, my)
                 && DashboardCardScroll.overflowing(widget.id))
@@ -390,7 +411,7 @@ public final class FactoryDashboard extends Gui {
 
     static String scrollSource(WidgetSpec widget) {
         if (widget.kind != WidgetKind.RESOURCES) return "";
-        WidgetResources.ScreenReading reading = WidgetResources.readScreen(widget.screen);
+        WidgetResources.ScreenReading reading = WidgetResources.displayScreen(widget.screen);
         return portableBinding + ":"
             + resourceKind
             + ":"
@@ -414,7 +435,7 @@ public final class FactoryDashboard extends Gui {
             .isEmpty() && widget.presentation != WidgetPresentation.DEFAULT
             && widget.presentation != WidgetPresentation.STATUS_LIST) return 0;
         if (widget.presentation == WidgetPresentation.STATUS_LIST && widget.kind == WidgetKind.MACHINES) {
-            if (!deviceFresh) return 20;
+            if (devices.isEmpty() && deviceRevision == Long.MIN_VALUE) return 20;
             int columns = DesktopCardGeometry.canonical(widget).h < 150 && width >= 260 ? 2 : 1;
             return 7 + ((4 + columns - 1) / columns) * 38;
         }
@@ -429,10 +450,10 @@ public final class FactoryDashboard extends Gui {
         }
         if (widget.kind == WidgetKind.RESOURCES && widget.resource == null && !widget.singleResource) {
             // Measurement happens for every card before painting; resolve this card's own cached screen.
-            WidgetResources.ScreenReading reading = WidgetResources.readScreen(widget.screen);
+            WidgetResources.ScreenReading reading = WidgetResources.displayScreen(widget.screen);
             if (reading.panel == null) return 56;
             selectResourcePanel(reading.panel);
-            if (!PortableSuperDashboard.available(reading.panel) || !reading.panel.aeConnected) return 49;
+            if (!PortableSuperDashboard.displayable(reading.panel) || !reading.panel.aeConnected) return 49;
             return Math.max(79, 62 + resources.size() * 18);
         }
         if (widget.kind == WidgetKind.ATTENTION) return 49 + attention.size() * 19;
@@ -541,10 +562,7 @@ public final class FactoryDashboard extends Gui {
 
     private static String fieldValue(String field, WidgetSpec widget, Entry entry, EngineeringSnapshot power,
         EngineeringTerminalHudSnapshot snapshot) {
-        boolean valid = power != null && power.slot == 2
-            && "ok".equals(power.status)
-            && EngineeringDashboardCache.fresh()
-            && power.monitored > 0;
+        boolean valid = power != null && power.slot == 2 && "ok".equals(power.status) && power.monitored > 0;
         if ("source".equals(field)) return widget.device != null ? widget.device.source.toString()
             .substring(0, 8)
             : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
@@ -552,7 +570,7 @@ public final class FactoryDashboard extends Gui {
                     : widget.kind == WidgetKind.RESOURCES
                         ? chartPanel == null ? tr("no.screens") : chartPanel.binding.label()
                         : powerScope(power);
-        if ("updated".equals(field)) return entry != null ? tr("received")
+        if ("updated".equals(field)) return entry != null ? deviceDisplayStatus(widget)
             : widget.kind == WidgetKind.MACHINES ? sourceQuality(snapshot.device)
                 : widget.kind == WidgetKind.WIRELESS || widget.kind == WidgetKind.HISTORY ? gridState(widget)
                     : widget.kind == WidgetKind.RESOURCES
@@ -561,8 +579,9 @@ public final class FactoryDashboard extends Gui {
         if ("name".equals(field))
             return entry == null ? "—" : entry.displayName.isEmpty() ? entry.name : entry.displayName;
         if ("status".equals(field) && widget.kind == WidgetKind.WIRELESS) return gridState(widget);
-        if ("status".equals(field)) return entry != null
-            ? StatCollector.translateToLocal("gtswn.factory.status." + FactoryMachineFilter.status(entry, true))
+        if ("status".equals(field)) return entry != null ? DesktopDeviceSources.read(widget.device)
+            .live() ? StatCollector.translateToLocal("gtswn.factory.status." + FactoryMachineFilter.status(entry, true))
+                : deviceDisplayStatus(widget)
             : widget.kind == WidgetKind.MACHINES
                 ? snapshot.device.fresh ? deviceCountFoot() : sourceQuality(snapshot.device)
                 : powerStatus(power);
@@ -614,7 +633,7 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static void drawMachineList(FontRenderer font, Rect r, EngineeringTerminalHudSnapshot snapshot) {
-        if (!snapshot.device.fresh) {
+        if (snapshot.device.receivedAtMillis == 0) {
             text(font, sourceQuality(snapshot.device), r.x + 10, r.y + 33, AMBER, r.w - 20);
             return;
         }
@@ -625,14 +644,15 @@ public final class FactoryDashboard extends Gui {
         for (int i = 0; i < states.length; i++) {
             int x = r.x + 10 + i % columns * cellWidth, y = r.y + 32 + i / columns * 38;
             int color = i == 0 ? accent() : i >= 2 ? AMBER : MUTED;
-            FactoryDashboardArt.status(x + 8, y + 6, i, counts[i] > 0, phase(), effects(), color);
+            FactoryDashboardArt
+                .status(x + 8, y + 6, i, snapshot.device.fresh && counts[i] > 0, phase(), effects(), color);
             text(font, FactoryDesktop.tr("metric." + states[i]), x + 23, y + 2, MUTED, cellWidth - 62);
             text(font, Integer.toString(counts[i]), x + cellWidth - 33, y + 2, color, 29);
             Rect bar = new Rect(x + 23, y + 18, cellWidth - 31, 3);
             FactoryDashboardArt.bar(bar, devices.isEmpty() ? null : counts[i] / (double) devices.size(), color);
             FactoryDashboardArt.flow(
                 new Rect(bar.x, bar.y + 4, bar.w, 1),
-                i == 0 && counts[i] > 0,
+                snapshot.device.fresh && i == 0 && counts[i] > 0,
                 1,
                 (phase() + i * .19) % 1,
                 effects(),
@@ -651,7 +671,7 @@ public final class FactoryDashboard extends Gui {
             return deviceMetric(field, e);
         }
         if (widget.kind == WidgetKind.MACHINES) {
-            if (!snapshot.device.fresh) return null;
+            if (snapshot.device.receivedAtMillis == 0) return null;
             return BigDecimal.valueOf(
                 "running".equals(field) ? running
                     : "idle".equals(field) ? idle
@@ -661,8 +681,7 @@ public final class FactoryDashboard extends Gui {
             WirelessGridReading reading = grid();
             return "netRate".equals(field) ? gridRate(widget) : reading.stored;
         }
-        if (power == null || power.slot != 2 || !"ok".equals(power.status) || !EngineeringDashboardCache.fresh())
-            return null;
+        if (power == null || power.slot != 2 || !"ok".equals(power.status)) return null;
         if ("monitored".equals(field)) return BigDecimal.valueOf(power.monitored);
         if ("unknown".equals(field)) return BigDecimal.valueOf(power.unknown);
         if ("loadedChunks".equals(field))
@@ -686,7 +705,8 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static WirelessGridReading grid() {
-        return terminalGrid == null ? WirelessGridReading.readTerminal() : terminalGrid;
+        // Revalidate pause/source/freshness even when paused game ticks do not run the factory tick.
+        return WirelessGridReading.readTerminal();
     }
 
     private static BigDecimal gridRate(WidgetSpec widget) {
@@ -694,6 +714,7 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static String gridState(WidgetSpec widget) {
+        if (grid().stored != null && !grid().fresh) return historicalStatus();
         return tr("grid." + grid().state(widget.averageRate, widget.averageWindowSeconds));
     }
 
@@ -815,7 +836,11 @@ public final class FactoryDashboard extends Gui {
                 : widget.kind == WidgetKind.MACHINES ? BigDecimal.valueOf(running) : amount;
             FactoryDashboardArt.flow(
                 new Rect(r.x + 12, valueY + 38, r.w - 24, 2),
-                activity != null && activity.signum() != 0,
+                activity != null && activity.signum() != 0
+                    && (widget.device == null || DesktopDeviceSources.read(widget.device)
+                        .live())
+                    && (widget.kind != WidgetKind.MACHINES || snapshot.device.fresh)
+                    && (widget.kind != WidgetKind.WIRELESS || grid().fresh),
                 activity == null ? 0 : activity.signum(),
                 phase(),
                 effects(),
@@ -888,7 +913,7 @@ public final class FactoryDashboard extends Gui {
 
     private static void drawMachineDial(FontRenderer f, Rect r, WidgetSpec widget,
         EngineeringTerminalHudSnapshot snapshot, BigDecimal amount) {
-        boolean fresh = snapshot.device.fresh;
+        boolean fresh = snapshot.device.receivedAtMillis > 0;
         int diameter = Math.min(240, Math.min(r.w - 38, r.h - 100));
         int cx = r.x + r.w / 2, cy = r.y + 37 + diameter / 2;
         Double fraction = fresh && !devices.isEmpty() ? running / (double) devices.size() : null;
@@ -976,7 +1001,7 @@ public final class FactoryDashboard extends Gui {
             f,
             r,
             painting,
-            EngineeringDashboardCache.snapshot(),
+            EngineeringDashboardCache.displaySnapshot(),
             EngineeringTerminalHudSnapshot.capture(Minecraft.getMinecraft().thePlayer));
     }
 
@@ -999,7 +1024,9 @@ public final class FactoryDashboard extends Gui {
                 window = (window + 1) % 3;
                 rebuildPlot();
             });
-        if (plot == null || plot.knownPoints == 0 || !grid().fresh) {
+        if (plot == null || plot.knownPoints == 0
+            || grid().stored == null
+            || terminalGrid != null && terminalGrid.history != grid().history) {
             text(f, tr("no.history"), r.x + 12, r.y + 42, AMBER, r.w - 24);
             text(f, tr("no.history.hint"), r.x + 12, r.y + 60, MUTED, r.w - 24);
             return;
@@ -1110,10 +1137,11 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static void drawRegion(FontRenderer f, Rect r, EngineeringSnapshot s) {
-        boolean valid = s != null && s.slot == 2 && "ok".equals(s.status) && EngineeringDashboardCache.fresh();
+        boolean valid = s != null && s.slot == 2 && "ok".equals(s.status);
         text(
             f,
-            valid ? tr(s.coverageBoundOnly ? "bound" : "loaded.region") : powerStatus(s),
+            valid && EngineeringDashboardCache.fresh() ? tr(s.coverageBoundOnly ? "bound" : "loaded.region")
+                : powerStatus(s),
             r.x + 10,
             r.y + 31,
             valid ? TEXT : AMBER,
@@ -1175,7 +1203,7 @@ public final class FactoryDashboard extends Gui {
             r.y + 35,
             MUTED,
             r.w - 46);
-        if (!PortableSuperDashboard.available(p) || !p.aeConnected) {
+        if (!PortableSuperDashboard.displayable(p) || !p.aeConnected) {
             text(f, tr("no.resources"), r.x + 9, r.y + 58, AMBER, r.w - 18);
             return;
         }
@@ -1203,7 +1231,7 @@ public final class FactoryDashboard extends Gui {
             drawResourceIcon(f, row, line.x + 2, line.y, 16);
             FactoryDashboardArt.flow(
                 new Rect(line.x + 22, line.y + 15, line.w - 45, 1),
-                rateKnown(p, row) && row.rate != 0,
+                PortableSuperDashboard.available(p) && rateKnown(p, row) && row.rate != 0,
                 row.rate < 0 ? -1 : 1,
                 (phase() + index * .11) % 1,
                 effects(),
@@ -1238,7 +1266,7 @@ public final class FactoryDashboard extends Gui {
     }
 
     private static void drawResource(FontRenderer f, Rect r, WidgetSpec widget, int mx, int my) {
-        WidgetResources.Reading reading = WidgetResources.read(widget.resource);
+        WidgetResources.Reading reading = WidgetResources.display(widget.resource);
         Row row = reading.row;
         String name = row == null ? widget.resource.name : row.name;
         boolean compact = r.h < 112;
@@ -1267,7 +1295,7 @@ public final class FactoryDashboard extends Gui {
             text(f, change, r.x + 10, r.y + 101, rateKnown && row.rate < 0 ? AMBER : accent(), r.w - 20);
             FactoryDashboardArt.flow(
                 new Rect(r.x + 10, r.y + 82, r.w - 20, 2),
-                rateKnown && row.rate != 0,
+                PortableSuperDashboard.available(reading.panel) && rateKnown && row.rate != 0,
                 rateKnown && row.rate < 0 ? -1 : 1,
                 phase(),
                 effects(),
@@ -1382,10 +1410,16 @@ public final class FactoryDashboard extends Gui {
         return FactoryDesktop.key(code, character, pressed);
     }
 
+    private static String historicalStatus() {
+        return StatCollector.translateToLocal(
+            "gtswn.telemetry.display." + (Minecraft.getMinecraft()
+                .isGamePaused() ? "paused" : "stale"));
+    }
+
     private static String sourceQuality(EngineeringTerminalHudSnapshot.Source s) {
         return s.terminalId == null ? tr("no.device")
             : s.receivedAtMillis == 0 ? StatCollector.translateToLocal("gtswn.factory.waiting")
-                : !s.fresh ? tr("stale")
+                : !s.fresh ? historicalStatus()
                     : s.partial ? tr("partial") + " · " + s.devices.size() : tr("received") + " · " + s.devices.size();
     }
 
@@ -1419,10 +1453,19 @@ public final class FactoryDashboard extends Gui {
                 .toEngineeringString();
     }
 
+    private static String deviceDisplayStatus(WidgetSpec widget) {
+        DesktopDeviceSources.Reading reading = DesktopDeviceSources.read(widget.device);
+        return reading.live() ? StatCollector.translateToLocal("gtswn.telemetry.display.live")
+            : StatCollector
+                .translateToLocal("gtswn.telemetry.display." + (reading.entry == null ? "waiting" : reading.reason));
+    }
+
     private static String powerStatus(EngineeringSnapshot s) {
         return s == null || s.slot != 2 ? tr("no.power")
             : !"ok".equals(s.status) ? StatCollector.translateToLocal("gtswn.engineering.dash.status." + s.status)
-                : !EngineeringDashboardCache.fresh() ? tr("stale")
+                : !EngineeringDashboardCache.fresh()
+                    ? StatCollector
+                        .translateToLocal("gtswn.telemetry.display." + EngineeringDashboardCache.displayStatus())
                     : s.truncated || s.unknown > 0 || s.review != null && s.review.discovering ? tr("partial")
                         : tr("received");
     }

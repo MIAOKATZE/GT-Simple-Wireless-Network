@@ -32,7 +32,14 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 public final class DeviceTerminalClientCache {
 
     /** 终端实例 UUID → 缓存条目（仅客户端主线程访问：写入经 func_152344_a 调度，读取在 GUI 线程=主线程） */
-    private static final Map<UUID, Cached> CACHE = new HashMap<>();
+    private static final Map<UUID, Cached> CACHE = new java.util.LinkedHashMap<UUID, Cached>(4, .75f, true) {
+
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<UUID, Cached> eldest) {
+            return size() > 4;
+        }
+    };
+    private static UUID transportSession = UUID.randomUUID();
 
     private static int teleportCost = 1;
     private static boolean canConfigure;
@@ -56,6 +63,7 @@ public final class DeviceTerminalClientCache {
 
     public static void clear() {
         CACHE.clear();
+        transportSession = UUID.randomUUID();
         teleportCost = 1;
         canConfigure = false;
         freshMillis = 40000L;
@@ -67,6 +75,12 @@ public final class DeviceTerminalClientCache {
         return cached == null ? 0 : cached.receiptRevision;
     }
 
+    /** Read-only authorization generation; display caches must discard prior-generation rows. */
+    public static long authorizationEpoch(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        return cached == null ? -1 : cached.epoch;
+    }
+
     public static long receivedAtMillis(UUID terminalId) {
         Cached cached = CACHE.get(terminalId);
         return cached == null ? 0 : cached.receivedAt;
@@ -74,7 +88,9 @@ public final class DeviceTerminalClientCache {
 
     public static int receivedPages(UUID terminalId) {
         Cached cached = CACHE.get(terminalId);
-        return cached == null ? 0 : cached.pendingPages == null ? cached.pageTotal : cached.pendingPages.size();
+        return cached == null ? 0
+            : cached.deltaPages != null ? cached.deltaPages.size()
+                : cached.pendingPages == null ? cached.pageTotal : cached.pendingPages.size();
     }
 
     public static int totalPages(UUID terminalId) {
@@ -89,16 +105,143 @@ public final class DeviceTerminalClientCache {
 
     public static PacketRequestDeviceTerminalData requestMetadata(UUID terminalId) {
         Cached cached = CACHE.get(terminalId);
+        if (terminalId != null && com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+            .clientSupports(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.DIT)) {
+            return compactRequestMetadata(terminalId);
+        }
         long version = cached == null ? -1L
             : cached.pendingPages == null ? cached.version : Math.max(cached.version, cached.pendingVersion);
         boolean complete = cached != null && cached.snapshot != null && cached.pendingPages == null;
         return new PacketRequestDeviceTerminalData(terminalId, version, complete);
     }
 
+    /** Explicit builder also used by protocol tests; callers must negotiate before sending. */
+    public static com.miaokatze.gtswn.network.PacketRequestDeviceTerminalDelta compactRequestMetadata(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        return new com.miaokatze.gtswn.network.PacketRequestDeviceTerminalDelta(
+            terminalId,
+            transportSession,
+            cached == null ? 0 : cached.epoch,
+            cached == null ? -1 : cached.completeVersion,
+            cached == null || cached.deltaPages == null ? -1 : cached.deltaVersion);
+    }
+
+    /** Negotiated pages are decoded against a separate COMPLETE baseline, never the display prefix. */
+    public static void receiveDelta(com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta packet) {
+        if (packet.getTerminalId() == null || !transportSession.equals(packet.getSession())) return;
+        UUID id = packet.getTerminalId();
+        Cached cached = CACHE.get(id);
+        if (cached == null) {
+            cached = new Cached();
+            CACHE.put(id, cached);
+        }
+        if (packet.getEpoch() < cached.epoch) return;
+        int kind = packet.getKind();
+        if (kind == com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta.REVOKED) {
+            com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources.revoke(id);
+            cached.epoch = packet.getEpoch();
+            cached.completeVersion = -1;
+            cached.completeRows = null;
+            cached.deltaPages = null;
+            cached.pendingPages = null;
+            cached.snapshot = null;
+            cached.version = -1;
+            cached.receivedAt = 0;
+            cached.receiptRevision++;
+            return;
+        }
+        if (packet.getEpoch() != cached.epoch) {
+            if (kind != com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta.FULL || packet.getPageIndex() != 0)
+                return;
+            com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources.revoke(id);
+            cached.epoch = packet.getEpoch();
+            cached.completeVersion = -1;
+            cached.completeRows = null;
+            cached.deltaPages = null;
+            cached.pendingPages = null;
+            // An epoch/source boundary must not keep displaying a previous authorization's rows.
+            cached.snapshot = null;
+            cached.version = -1;
+        }
+        if (kind == com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta.KEEPALIVE) {
+            if (cached.completeRows != null && cached.deltaPages == null
+                && packet.getVersion() == cached.completeVersion
+                && packet.getEntryTotal() == cached.completeRows.size()) {
+                cached.receivedAt = System.currentTimeMillis();
+                cached.receiptRevision++;
+            }
+            return;
+        }
+        if (packet.getVersion() <= cached.completeVersion) return;
+        if (kind == com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta.DELTA
+            && (cached.completeRows == null || packet.getBaseVersion() != cached.completeVersion)) {
+            requireFull(cached);
+            return;
+        }
+        if (cached.deltaPages != null && packet.getVersion() < cached.deltaVersion) return;
+        if (cached.deltaPages == null || packet.getVersion() != cached.deltaVersion) {
+            cached.deltaPages = new HashMap<>();
+            cached.deltaVersion = packet.getVersion();
+            cached.deltaBaseVersion = packet.getBaseVersion();
+            cached.deltaEntryTotal = packet.getEntryTotal();
+            cached.pageTotal = packet.getPageTotal();
+        }
+        if (cached.deltaBaseVersion != packet.getBaseVersion() || cached.pageTotal != packet.getPageTotal()
+            || cached.deltaEntryTotal != packet.getEntryTotal()) {
+            requireFull(cached);
+            return;
+        }
+        try {
+            List<Entry> rows = com.miaokatze.gtswn.common.device.DeviceTerminalDeltaCodec.decode(
+                cached.completeRows,
+                kind == com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta.DELTA,
+                packet.getPayload());
+            int expected = Math.min(128, packet.getEntryTotal() - packet.getPageIndex() * 128);
+            if (rows.size() != expected) {
+                requireFull(cached);
+                return;
+            }
+            cached.deltaPages.put(packet.getPageIndex(), rows);
+            if (cached.deltaPages.size() != cached.pageTotal) return;
+            List<Entry> assembled = new ArrayList<>(cached.deltaEntryTotal);
+            java.util.Set<String> keys = new java.util.HashSet<>();
+            for (int index = 0; index < cached.pageTotal; index++) {
+                List<Entry> page = cached.deltaPages.get(index);
+                if (page == null) return;
+                for (Entry row : page) if (!keys.add(row.key)) {
+                    requireFull(cached);
+                    return;
+                }
+                assembled.addAll(page);
+            }
+            cached.snapshot = new Snapshot(cached.deltaVersion, assembled);
+            cached.completeRows = cached.snapshot.entries;
+            cached.completeVersion = cached.deltaVersion;
+            cached.version = cached.deltaVersion;
+            cached.deltaPages = null;
+            cached.pendingPages = null;
+            cached.receivedAt = System.currentTimeMillis();
+            cached.receiptRevision++;
+        } catch (IllegalArgumentException malformed) {
+            requireFull(cached);
+        }
+    }
+
+    private static void requireFull(Cached cached) {
+        cached.completeRows = null;
+        cached.completeVersion = -1;
+        cached.deltaPages = null;
+        // Keep the last display as explicitly stale, but never acknowledge it as a baseline.
+        cached.receivedAt = 0;
+    }
+
     /**
      * 接收单页（主线程）：同 version 分页累积，整批到齐整体替换 / 未到齐提交连续前缀。
      */
     public static void receivePage(UUID terminalId, long version, int pageIndex, int pageTotal, List<Entry> page) {
+        Cached compact = CACHE.get(terminalId);
+        if (compact != null && compact.epoch > 0) return; // Delayed legacy pages cannot overwrite the negotiated
+                                                          // session.
         if (terminalId != null && pageIndex == -1) {
             Cached cached = CACHE.get(terminalId);
             if (cached != null && cached.snapshot != null
@@ -200,7 +343,8 @@ public final class DeviceTerminalClientCache {
      */
     public static boolean hasMorePending(UUID terminalId) {
         Cached cached = CACHE.get(terminalId);
-        return cached != null && cached.pendingPages != null && cached.pendingPages.size() < cached.pageTotal;
+        return cached != null && (cached.deltaPages != null && cached.deltaPages.size() < cached.pageTotal
+            || cached.pendingPages != null && cached.pendingPages.size() < cached.pageTotal);
     }
 
     /** 整体快照（不可变视图：version + 按绑定序的条目；增量分页期可能为连续前缀） */
@@ -220,6 +364,11 @@ public final class DeviceTerminalClientCache {
 
     /** 单终端缓存条目：已提交快照 + 进行中批次 */
     private static final class Cached {
+
+        long epoch, completeVersion = -1, deltaVersion = -1, deltaBaseVersion = -1;
+        int deltaEntryTotal;
+        List<Entry> completeRows;
+        Map<Integer, List<Entry>> deltaPages;
 
         /** 已提交快照的最新版本（前缀或整批，取较新提交者） */
         long version = -1L;

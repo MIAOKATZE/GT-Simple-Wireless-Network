@@ -4,6 +4,7 @@ import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
@@ -12,7 +13,6 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
-import gregtech.common.misc.WirelessNetworkManager;
 
 /**
  * 无线 EU 监控调度器（per-player 全局采样）。
@@ -129,18 +129,14 @@ public class NetworkInfoMonitorScheduler {
         // getActiveEntries 返回快照 List，避免 ConcurrentModificationException
         for (Map.Entry<String, NetworkInfoDataSet> entry : activeEntriesForSampling(store, tick, clockRewound)) {
             try {
-                String uid = entry.getKey();
-                UUID uuid = UUID.fromString(uid);
-                BigInteger eu = WirelessNetworkManager.getUserEU(uuid);
-                if (eu == null) eu = BigInteger.ZERO;
-
-                NetworkInfoDataSet dataSet = entry.getValue();
-                // 全局采样锁（多屏共享去重，距离上次采样 ≥ 100t 才允许新采样）
-                if (!dataSet.tryAcquireSampleLock(tick)) continue;
-
-                // addSample 内部通过 eutDataSet 计算瞬时 EU/t
-                dataSet.addSample(eu, tick, timeMs);
-                store.markDirty();
+                if (sampleNativeEntry(
+                    entry,
+                    tick,
+                    timeMs,
+                    NetworkInfoDataStore::resolveAccount,
+                    account -> com.miaokatze.gtswn.common.monitoring.NativeWirelessEUSnapshot
+                        .balance(overworld, account)))
+                    store.markDirty();
             } catch (Exception e) {
                 // 单个 dataSet 采样异常不影响其他 dataSet
                 long now = System.nanoTime();
@@ -150,6 +146,20 @@ public class NetworkInfoMonitorScheduler {
                 }
             }
         }
+    }
+
+    /** Same native dataset/lock is used by panels, explicit jobs and the public immediate-sample API. */
+    public static boolean sampleNativeEntry(Map.Entry<String, NetworkInfoDataSet> entry, long tick, long timeMs,
+        Function<UUID, UUID> accountResolver, Function<UUID, BigInteger> energyReader) {
+        UUID account = NetworkInfoDataStore.nativeAccount(entry.getKey());
+        if (account == null || !account.equals(accountResolver.apply(account))) return false;
+        NetworkInfoDataSet dataSet = entry.getValue();
+        if (!dataSet.tryAcquireSampleLock(tick)) return false;
+        BigInteger eu = energyReader.apply(account);
+        // Missing native data and a membership change during the read are gaps, not measured zeroes.
+        if (eu == null || !account.equals(accountResolver.apply(account))) return false;
+        dataSet.addSample(eu, tick, timeMs);
+        return true;
     }
 
     static List<Map.Entry<String, NetworkInfoDataSet>> activeEntriesForSampling(NetworkInfoDataStore store, long tick,

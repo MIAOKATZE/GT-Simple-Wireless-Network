@@ -16,7 +16,6 @@ import net.minecraft.world.World;
 import net.minecraftforge.fluids.FluidContainerRegistry;
 import net.minecraftforge.fluids.FluidStack;
 
-import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.screen.ScreenStructureUtil;
@@ -203,13 +202,9 @@ public class BlockNetworkInfoPanel extends BlockContainer {
         if (tile instanceof TileEntityNetworkInfoPanel) {
             TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
             panel.detachScreen();
-            // 服务端清理该坐标在 AEMonitorDataStore 中的数据，防止破坏后残留 AE 监控数据
+            // A screen is a reference, not the lifetime owner of monitoring history.
+            // Source-qualified series and legacy archives survive block destruction for explicit recovery/cleanup.
             if (!world.isRemote) {
-                String dataKey = panel.getAEMonitorDataKey();
-                if (dataKey != null) {
-                    AEMonitorDataStore.get(world)
-                        .remove(dataKey);
-                }
                 // v1.5.15：捕获 screen 边界用于后续定向重建
                 NetworkScreen screen = panel.getScreen();
                 if (screen != null) {

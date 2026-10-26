@@ -1,0 +1,68 @@
+# Read-only dashboard v1
+
+## What is implemented
+
+An optional Java 8 JDK `HttpServer` adapter serves a real HTML dashboard with status cards and raw-history charts. It consumes immutable, owner-authorized profile snapshots built on the **Minecraft server thread**; HTTP workers never inspect a World, TileEntity, player, inventory, registry, or sampler. There are no HTTP mutation endpoints, source queries, command execution, or automatic offline jobs.
+
+### Owner consent and OP dashboard composition
+
+Dashboard **configuration is OP-only**, not merely the global service switch. Owner consent never creates a public page by itself.
+
+1. The owner holds a supported terminal and uses `/monitorprofile import` to recover/import its server-authorized fixed source references. Import consumes no item. Existing terminal reference migration can update the held terminal's reference.
+2. The owner finds the profile via `/monitorprofile list`, then grants explicit consent with `/monitorprofile web <profile UUID> on`. This allows an OP to include it in a dashboard visible to **every holder of the operator's dashboard bearer token**, not just in-game ACL readers. Consent is necessary but not sufficient for publication.
+3. An OP (permission level 2) uses `/gtswnweb create <name>`, then `/gtswnweb add <dashboard UUID> <consented profile UUID>` or `/gtswnweb add-held <dashboard UUID>`. `add-held` copies only the existing profile reference into a virtual view: it neither changes nor consumes the held item and creates no fake ItemStack. The dashboard can group up to eight consented profiles. Unsupported/unimported held terminals are rejected, not silently granted ownership.
+4. The OP explicitly runs `/gtswnweb enable <dashboard UUID>`. Only enabled dashboards count against the global default-one dashboard quota. Up to 64 saved definitions may exist; configuration permits up to 16 simultaneously enabled dashboards. This limit is not a viewer limit. `/gtswnweb list`, `remove <dashboard> <profile>`, `disable <dashboard>` and `delete <dashboard>` are also OP-only. Deleting a dashboard does not delete profiles or histories.
+5. The owner revokes consent with `/monitorprofile web <profile UUID> off`. Consent/ACL/source revocation immediately removes only the dashboard groups referencing that profile; unrelated pages remain available even before the next publication. Unlisted profiles cannot invalidate dashboard data. Per-tick registry validation blocks any group containing an invalid source, and repeated blocked checks do not clear healthy groups. A blocked group retains its definition until an OP removes the invalid reference or consent becomes valid again. Already delivered data cannot be retracted from a viewer; active responses close and later requests cannot retrieve revoked data.
+
+The supplied browser clears cached content while hidden, on errors, logout, and auth denial. Publication does **not** keep sampling alive while an owner is offline: an explicit persistent offline job is separate, quota-limited, and cannot force chunks. Without an observer or such a job, the browser shows cached/unavailable data rather than inventing fresh samples.
+
+There is no new graphical dashboard drag/drop configuration GUI in v1. The implemented OP command interface (`add-held` ghost import) and browser dashboard are distinct from any general profile recovery GUI. A dashboard graphical drag/drop workflow must not be described as completed. Source support comes from the profile exporter; there is no arbitrary coordinate or network-ID lookup endpoint.
+
+## Operator provisioning (manual; no secrets in the repository)
+
+The feature defaults **off**. Configuration is server/operator controlled. The `monitoring` category in `config/gtswn/gtswn_network.cfg` supplies `ReadonlyWebService.Settings`:
+
+| Setting | Default | Bound/meaning |
+| --- | --- | --- |
+| `WebEnabled` | false | Disabled startup creates no listener |
+| `WebBindAddress` | 127.0.0.1 | Only literal `127.0.0.1` or `::1` accepted |
+| `WebPort` | 8765 | 1024–65535 |
+| `WebMaxDashboards` | 1 | 1–16, global enabled-dashboard quota, **not viewer count** |
+| `WebTokenHashEnvironment` | GTSWN_WEB_TOKEN_SHA256 | Environment variable name, not the secret/hash itself |
+| `WebBytesPerSecond` | 131072 | 1024–16777216; separate from Minecraft uplink budget |
+
+The operator must privately provision a cryptographically random, high-entropy bearer token (at least 32 allowed characters; recommend at least 256 random bits), compute its SHA-256 digest, and place the 64-hex-character digest in the named server-process environment variable. The token itself is given privately only to intended dashboard viewers. Do not use a human password: this is high-entropy bearer-token authentication, **not** a password KDF. There is deliberately no default token, token-generation endpoint, credential written into config, or token in command arguments/URLs/logs. Missing/malformed hash prevents listener startup. Revoking/rotating credentials requires stopping and restarting the service with the new environment; it is not a live environment poll.
+
+No real credential has been created as part of implementation. Test fixtures are conspicuously synthetic and must never be deployed.
+
+### Local and public access
+
+Local access uses `http://127.0.0.1:8765/` (or configured IPv6 loopback). For remote access, the operator must separately deploy a trusted TLS reverse proxy on the **same host**, proxying only to this loopback service. The public origin must use HTTPS; the browser refuses a token on non-local plaintext HTTP. The adapter does not bind a public interface and has no flag to bypass that restriction.
+
+The proxy must preserve `Authorization` and `If-None-Match`, never log Authorization values, never put tokens in query strings, disable shared caching of `/api/snapshots`, enforce a maximum of 16 upstream connections and a short queue, and impose request-header/body/response/idle deadlines and rate limits. Keep its origin fixed, do not forward an arbitrary user-selected backend, and do not publish Minecraft ports as part of this setup. Proxy/domain/certificate/firewall deployment is a separate operator task, not performed here.
+
+JDK 8's embedded server does not expose a portable hard cap for **all accepted sockets**, nor a portable strict raw request-line/header-byte admission limit. The handler's URI and header-character limits run after JDK parsing, so the proxy must enforce raw byte limits before forwarding. The adapter bounds worker threads, queue, active handlers, idle sockets, request headers and deadlines; the reverse proxy is required to bound public connection admission. Its `sun.net.httpserver.*` parser/deadline properties are JVM-wide and initialized on the first embedded HttpServer use. If another mod starts one first, supply the documented properties at JVM launch or use a separately verified proxy to enforce these limits. Do not claim the adapter alone is hardened against arbitrary direct untrusted connection floods.
+
+## Protocol and limits
+
+- Exact routes: `GET`/`HEAD` `/`, `/dashboard.js`, `/dashboard.css`, `/api/snapshots`. Static shell/assets contain no profile data. API requires one `Authorization: Bearer …` header. No query parameters, encoded alternate paths, request bodies, or transfer encodings are accepted.
+- Dashboard auth is checked **before** ETag handling, so an unauthenticated conditional request cannot bypass authentication. No cookies, CORS permission, localStorage, sessionStorage, URL secrets, redirects or service worker.
+- Browser polls every 2 seconds plus up to 250 ms jitter while visible; only one request can be outstanding. Hidden tabs abort and clear; failures back off to at most about 30 seconds. Unlock tokens live only in tab memory.
+- Each authorized content revision has a SHA-256 ETag and cached plain/gzip representations. Unchanged content reuses its encoded representation. Authenticated `304` and `HEAD` avoid sending a body. Gzip quality zero is honored. Static assets have a one-hour browser cache; private API content is `no-store` with explicit in-memory ETag handling.
+- DTO: at most 128 cards, 120 raw tail-history points per card, 256 characters per text. JSON additionally fairly divides a whole-projection budget of 128 encoded cards and the response text budget among the authorized dashboards, preserving each dashboard's metadata even when its cards cannot fit; it truncates each dashboard at or below 20,000 characters and the complete response below 256 KiB, visibly marking truncation and omitted-card counts. Missing/nonfinite points are JSON null and chart gaps; zero remains a real value.
+- At most eight active handlers, 2–4 worker threads, executor queue 16, listen backlog 16, five-second exchange watchdog, five-second JDK request/response/idle settings and at most 16 idle connections. JDK timer resolution/platform behavior can extend close latency; see public-proxy admission requirement above.
+- 32 distinct request headers, 48 total values, 8192 header characters after parsing, 128-character paths; 40 requests/sec with burst 80; authentication failures refill one/sec with burst 20. These are global bounds, not unbounded per-IP maps.
+- HTTP egress is a separate global token bucket. All success/error/conditional/head responses reserve a conservative 1024-byte header allowance plus actual encoded body length. Burst is at least 256 KiB + 1024 bytes so a maximum response can fit. This is application-layer budgeting, **not measured NIC/TLS/TCP wire bytes**; HTTP traffic still consumes the same server uplink. Saturation returns 429 when budget permits, otherwise closes without a response.
+- CSP, `nosniff`, no-referrer, and frame denial protect the static shell. Display text is assigned using `textContent`, never HTML interpolation.
+
+## Lifecycle integration and rollback
+
+Root server lifecycle calls `configure(Settings)` then `start()` only on explicitly enabled startup. Main-thread per-tick validation calls `WebDashboardRegistry.get(world).revalidate(profiles)`; bounded export calls `registry.exportSnapshots(profiles)` and `ReadonlyWebService.publish(...)` every 40 ticks. The registry exports only explicitly enabled OP definitions and resolves each consented profile with `canPublish(id)` / `exportWebSnapshot(id)`. Authorization changes call `revoke(profileId)` synchronously; a bounded immutable profile-to-dashboard membership index removes only the associated pages, never unrelated pages; unknown profile IDs are no-ops. OP structural edits may clear all caches. The membership index resets on service/session stop. Shutdown calls `stop()`, clears projections, closes active responses/listener and shuts down executors. HTTP never renews an in-game sampling lease. Encoding is synchronous on the publishing thread, not an unbounded worker backlog: at most 16 dashboards × 8 fixed profile references, a fair total budget of 128 source cards enforced before DIT/portable history copies, at most 120 history points per card, shared-profile DTO memoization per publication, memoized native authorization per profile per tick, a global cap of 4096 source-reference checks across distinct enabled profile IDs (enforced before add/enable/restored activation), and early per-dashboard/response text caps. Repeated profile references use the maximum required share once, never a new sampling path. The lifecycle bridge publishes at most once per 40 ticks while authorization remains revalidated every tick. Changed payloads gzip once, unchanged payloads reuse compressed bytes. These are deterministic work/allocation bounds, not measured TPS guarantees.
+
+Rollback: disable the global web option and restart. Persisted OP dashboard definitions and owner consent/job intent remain and is not silently deleted. Stop separately deployed reverse-proxy access as appropriate. Do not delete legacy histories or credentials as part of an automatic rollback.
+
+## Verification boundary
+
+`ReadonlyWebAdapterTest` uses fake `HttpExchange` objects and a deliberately non-secret fixture. It covers auth-before-304, readonly route/body/header rejection, safe assets, ETag/HEAD/gzip, immutable histories, dashboard-vs-viewer quota, truncation, budgets, revocation, and disabled startup without credentials. `WebDashboardRegistryTest` additionally checks consent alone creates no page, OP authority, fixed consented groups, enabled-page quotas, grouped revocation, persistence/revalidation, and fair bounded card projection, source-budget enforcement after restore, repeated blocked-group stability, unlisted profile invalidation no-ops, and immediate scoped revocation of all associated pages without blanking unrelated pages. Tests do not create a real listener or real credentials. Compilation/test results are recorded in the enclosing change's validation report, not asserted merely because tests exist.
+
+Not performed here: production listening, TLS/proxy deployment, real credentials, world entry, in-game GUI interaction, loaded/unloaded world behavior trials, multi-viewer load/slow-client testing, or claims of measured bandwidth/TPS improvements. These require the user's later stable-platform acceptance run.

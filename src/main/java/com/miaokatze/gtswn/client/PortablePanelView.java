@@ -76,6 +76,8 @@ public final class PortablePanelView extends TileEntityNetworkInfoPanel {
             }
             fingerprint = fingerprint * 31 + row.key.hashCode();
             fingerprint = fingerprint * 31 + row.amount.hashCode();
+            fingerprint = fingerprint * 31 + row.sampleTime;
+            fingerprint = fingerprint * 31 + row.sampleTick;
             fingerprint = fingerprint * 31 + Double.doubleToLongBits(row.rate);
             fingerprint = fingerprint * 31 + Double.doubleToLongBits(row.average);
             fingerprint = fingerprint * 31 + (row.monitored ? 1 : 0);
@@ -111,8 +113,9 @@ public final class PortablePanelView extends TileEntityNetworkInfoPanel {
                 if (row.monitored && item != null) items.add(item);
                 if (row.monitored && fluid != null) fluids.add(fluid);
                 try {
-                    latest
-                        .put(row.key, new AEMonitorSample(source.sampleTime, 0, Long.parseLong(row.amount), row.rate));
+                    latest.put(
+                        row.key,
+                        new AEMonitorSample(row.sampleTime, row.sampleTick, Long.parseLong(row.amount), row.rate));
                 } catch (NumberFormatException ignored) {}
                 averages.put(row.key, row.average);
             }

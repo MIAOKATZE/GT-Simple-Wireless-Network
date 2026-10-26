@@ -13,15 +13,21 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.world.World;
 import net.minecraftforge.common.util.Constants;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.common.monitoring.MonitoringProfiles;
+import com.miaokatze.gtswn.common.monitoring.SourceKey;
+import com.miaokatze.gtswn.common.monitoring.ae.IMonitorIdentityCache;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+
+import appeng.api.networking.IGrid;
 
 /**
  * AE 监控网络语义域（O2-04 = E 线 E5，四域拆分第四步）：采样门控与推送、标签页状态与绑定操作、
@@ -51,6 +57,11 @@ public final class AEMonitorController {
 
         boolean isConnected();
 
+        /** Actual live AE grid object; unknown identity must never share observations. */
+        default Object gridIdentity() {
+            return null;
+        }
+
         long itemAmount(ItemStack stack);
 
         long fluidAmount(FluidStack fluid);
@@ -59,10 +70,21 @@ public final class AEMonitorController {
          * G4：一次迭代批量收集——单遍遍历本屏 AE2 item/fluid storage list，以 aeKey 匹配
          * 全部被监视 key（首中即记，未命中以 0 计）。每屏 gridProxy 各自独立、跨维度屏各自
          * 世界，收集天然按本屏节点分组；网络重组/断电后 grid 不可达抛 GridAccessException
-         * 时实现方按全 0 返回，由控制器侧对账判定一致性。
+         * 时实现方抛出异常，由控制器跳过该轮，不能当成零库存样本。
          */
         Map<String, Long> bulkAmounts(List<ItemStack> items, List<FluidStack> fluids);
     }
+
+    private static final AESharedSampling SHARED_SAMPLING = new AESharedSampling();
+    private final AEMonitorInterest interest = new AEMonitorInterest();
+    private final AEMonitorInterest jobInterest = new AEMonitorInterest();
+    private Object samplingWorld;
+    private Object interestScanWorld;
+    private long interestScanTick = Long.MIN_VALUE;
+    private long lastObservedTick = Long.MIN_VALUE;
+    private Object identityWorld;
+    private SourceKey sourceKey;
+    private String sourceDataKey;
 
     private final TileEntityNetworkInfoPanel core;
     private final AEQuery query;
@@ -155,11 +177,55 @@ public final class AEMonitorController {
      * @param worldTick 当前世界 tick
      */
     public void tickSampling(long worldTick) {
-        if (Config.aeChartEnabled
-            && (lastAESampleTick < 0L || worldTick - lastAESampleTick >= Config.aeSampleInterval)) {
+        if (core.getWorldObj() == null || core.getWorldObj().isRemote) return;
+        if (samplingWorld != core.getWorldObj() || worldTick < lastObservedTick) {
+            samplingWorld = core.getWorldObj();
+            lastAESampleTick = -1L;
+            reconcileStartTick = lastReconcileTick = -1L;
+        }
+        lastObservedTick = worldTick;
+        if (Config.aeChartEnabled && hasSamplingInterest()
+            && sampleDue(lastAESampleTick, worldTick, Config.aeSampleInterval)) {
             sampleAENetwork(worldTick);
             lastAESampleTick = worldTick;
         }
+    }
+
+    /** Shared EU/AE observation check, including physical 64-block screens and bounded departure grace. */
+    public boolean hasSamplingInterest() {
+        if (core.getWorldObj() == null || core.getWorldObj().isRemote) return false;
+        World world = core.getWorldObj();
+        long tick = world.getTotalWorldTime();
+        // EU and AE ask on the same tick; do not scan the dimension's players twice.
+        if (interestScanWorld != world || interestScanTick != tick) {
+            interestScanWorld = world;
+            interestScanTick = tick;
+            if (hasNearbyReceiver()) interest.renew(world, tick);
+        }
+        return interest.active(world, tick) || jobInterest.active(world, tick);
+    }
+
+    /** Align active panels to the same native period; a newly observed panel still gets an immediate sample. */
+    static boolean sampleDue(long previous, long tick, int interval) {
+        long period = Math.max(1, interval);
+        return previous < 0 || tick < previous || tick / period > previous / period;
+    }
+
+    /** Only call after server-side possession/binding/ACL validation of a portable request. */
+    public void renewPortableInterest() {
+        if (core.getWorldObj() != null && !core.getWorldObj().isRemote) interest.renew(
+            core.getWorldObj(),
+            core.getWorldObj()
+                .getTotalWorldTime());
+    }
+
+    /** Explicit jobs renew independently; online observers leaving never cancel an active job. */
+    public void renewMonitoringJobInterest(long ticks) {
+        if (core.getWorldObj() != null && !core.getWorldObj().isRemote) jobInterest.renew(
+            core.getWorldObj(),
+            core.getWorldObj()
+                .getTotalWorldTime(),
+            ticks);
     }
 
     /**
@@ -335,6 +401,11 @@ public final class AEMonitorController {
             return;
         }
 
+        Object grid = query.gridIdentity();
+        if (grid == null) {
+            pushAEMonitorOffline();
+            return;
+        }
         String dataKey = dataKey(core);
         if (dataKey == null) {
             return;
@@ -347,7 +418,25 @@ public final class AEMonitorController {
         // G4：合并走势图与监控列表（chart 绑定在前，与原逐段写入顺序一致），按现行策略收集
         List<ItemStack> items = mergeMonitoredItems();
         List<FluidStack> fluids = mergeMonitoredFluids();
-        Map<String, Long> amounts = collectWithReconciliation(tick, items, fluids);
+        Set<String> requested = new HashSet<>();
+        for (ItemStack item : items) if (aeKey(item) != null) requested.add(aeKey(item));
+        for (FluidStack fluid : fluids) if (aeKey(fluid) != null) requested.add(aeKey(fluid));
+        Map<String, Long> amounts = SHARED_SAMPLING.collect(core.getWorldObj(), grid, tick, requested, missing -> {
+            List<ItemStack> missingItems = new ArrayList<>();
+            List<FluidStack> missingFluids = new ArrayList<>();
+            for (ItemStack item : items) if (missing.contains(aeKey(item))) missingItems.add(item);
+            for (FluidStack fluid : fluids) if (missing.contains(aeKey(fluid))) missingFluids.add(fluid);
+            Map<String, Long> collected = collectWithReconciliation(tick, missingItems, missingFluids);
+            return query.isConnected() && grid == query.gridIdentity() ? collected : Collections.emptyMap();
+        });
+        // Reorganization or loss of power while reading is a gap, never a new zero inventory sample.
+        if (!query.isConnected() || grid != query.gridIdentity()
+            || !dataKey.equals(dataKey(core))
+            || !amounts.keySet()
+                .containsAll(requested)) {
+            pushAEMonitorOffline();
+            return;
+        }
         for (ItemStack item : items) {
             String key = aeKey(item);
             if (key != null) dataSet.registerIdentity(key, AEMonitorIdentity.descriptor(item));
@@ -562,18 +651,58 @@ public final class AEMonitorController {
     // ==================== 静态 key 工具（Render/Gui 经 TE 静态门面消费，签名不变）====================
 
     /**
-     * 生成本方块在 AEMonitorDataStore 中使用的坐标主键。
-     * <p>
-     * 格式：{@code dimensionId:xCoord:yCoord:zCoord}。
-     * 该 key 随方块位置唯一确定，避免使用 panelUUID 带来的存档迁移与数据残留问题。
+     * Source-qualified history locator. Coordinates locate a panel but never prove AE network identity.
+     * Legacy coordinate-only entries remain readable archives and are not silently merged.
      *
-     * @return 坐标字符串；world 不可用时返回 null
+     * @return current/last proven source locator; unknown sources return null
      */
     public static String dataKey(TileEntity te) {
-        if (te.getWorldObj() == null) {
-            return null;
+        if (!(te instanceof TileEntityNetworkInfoPanel)) return null;
+        return ((TileEntityNetworkInfoPanel) te).getAEMonitorDataKey();
+    }
+
+    /** The old coordinate entry remains an untouched legacy archive; only proven live sources are writable. */
+    public String getSourceDataKey() {
+        return getSourceKey() == null ? null : sourceDataKey;
+    }
+
+    public SourceKey getSourceKey() {
+        World world = core.getWorldObj();
+        if (world == null || world.isRemote) return null;
+        if (identityWorld != world) {
+            identityWorld = world;
+            sourceKey = null;
+            sourceDataKey = null;
         }
-        return te.getWorldObj().provider.dimensionId + ":" + te.xCoord + ":" + te.yCoord + ":" + te.zCoord;
+        Object nativeGrid = query.gridIdentity();
+        // Historical state is retained internally, but unavailable topology is never current consent.
+        if (!(nativeGrid instanceof IGrid)) return null;
+        IMonitorIdentityCache identity = ((IGrid) nativeGrid).getCache(IMonitorIdentityCache.class);
+        java.util.UUID nativeId = identity == null ? null : identity.monitoringIdentity();
+        if (nativeId == null) return null;
+        SourceKey resolved = new SourceKey(
+            SourceKey.Kind.AE,
+            MonitoringProfiles.get(world)
+                .epoch(),
+            nativeId.toString(),
+            1);
+        if (!resolved.equals(sourceKey)) {
+            sourceKey = resolved;
+            sourceDataKey = sourceDataKey(
+                world.provider.dimensionId,
+                core.xCoord,
+                core.yCoord,
+                core.zCoord,
+                core.getPortableMonitorId(),
+                sourceKey);
+            dataSetRevision++;
+        }
+        return sourceKey;
+    }
+
+    static String sourceDataKey(int dimension, int x, int y, int z, java.util.UUID panel, SourceKey source) {
+        if (panel == null || source == null) return null;
+        return dimension + ":" + x + ":" + y + ":" + z + "#" + panel + "#" + source;
     }
 
     /**

@@ -57,6 +57,18 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         broadcastPort = port;
     }
 
+    public void broadcastEULiveData() {
+        if (broadcastPort != null) broadcastPort.broadcastEULiveData(this);
+        else if (worldObj != null) worldObj.markBlockForUpdate(xCoord, yCoord, zCoord);
+    }
+
+    public void receiveCompactMonitorData(NBTTagCompound eu, NBTTagCompound config, boolean aePresent,
+        List<AEMonitorSample> samples, Map<String, AEMonitorSample> latest, Map<String, Double> averages) {
+        bridge.readSync(eu);
+        // Static block configuration has its own S35 change channel. Never let a queued older sample undo it.
+        if (aePresent) controller.receiveAEMonitorData(samples, latest, averages);
+    }
+
     private UUID ownerUUID;
     private UUID portableMonitorId;
 
@@ -128,12 +140,17 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
         @Override
         public long itemAmount(ItemStack stack) {
-            return getAEItemAmount(stack);
+            return readAEItemAmount(stack);
         }
 
         @Override
         public long fluidAmount(FluidStack fluid) {
-            return getAEFluidAmount(fluid);
+            return readAEFluidAmount(fluid);
+        }
+
+        @Override
+        public Object gridIdentity() {
+            return getAEMonitorSourceIdentity();
         }
 
         @Override
@@ -330,6 +347,37 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
     }
 
+    /** Live native identity only; never persists a grid reference or proves restart continuity. */
+    public Object getAEMonitorSourceIdentity() {
+        if (!isAEConnected()) return null;
+        try {
+            IGridNode node = gridProxy.getNode();
+            return node == null ? null : node.getGrid();
+        } catch (RuntimeException unavailable) {
+            return null;
+        }
+    }
+
+    /** Loaded-source owner check for server monitoring jobs; profile ACL must be checked separately. */
+    public boolean isMonitoringOwner(UUID owner) {
+        return owner != null && owner.equals(ownerUUID) && getAEMonitorSourceIdentity() != null;
+    }
+
+    /** Server-side shared observation lease for EU/AE; physical screens do not require an open GUI. */
+    public boolean hasMonitoringInterest() {
+        return controller.hasSamplingInterest();
+    }
+
+    /** The caller must validate possession, binding and ACL before renewing portable observation. */
+    public void renewPortableInterest() {
+        controller.renewPortableInterest();
+    }
+
+    /** Loaded-only, bounded job renewal after the service validates owner, source generation and quota. */
+    public void renewMonitoringJobInterest(long ticks) {
+        controller.renewMonitoringJobInterest(ticks);
+    }
+
     /**
      * 查询 AE2 网络中指定物品的存储数量。
      *
@@ -337,7 +385,15 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @return 存储数量，未连接或未找到时返回 0
      */
     public long getAEItemAmount(net.minecraft.item.ItemStack itemStack) {
-        if (worldObj == null || worldObj.isRemote || gridProxy == null || itemStack == null) return 0;
+        try {
+            return readAEItemAmount(itemStack);
+        } catch (IllegalStateException unavailable) {
+            return 0;
+        }
+    }
+
+    private long readAEItemAmount(ItemStack itemStack) {
+        if (!isAEConnected() || itemStack == null) throw new IllegalStateException("AE source unavailable");
         try {
             IMEMonitor<IAEItemStack> itemInv = gridProxy.getStorage()
                 .getItemInventory();
@@ -346,7 +402,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 .findPrecise(request);
             return stored != null ? stored.getStackSize() : 0;
         } catch (GridAccessException e) {
-            return 0;
+            throw new IllegalStateException("AE source unavailable", e);
         }
     }
 
@@ -357,7 +413,15 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * @return 存储数量，未连接或未找到时返回 0
      */
     public long getAEFluidAmount(FluidStack fluidStack) {
-        if (worldObj == null || worldObj.isRemote || gridProxy == null || fluidStack == null) return 0;
+        try {
+            return readAEFluidAmount(fluidStack);
+        } catch (IllegalStateException unavailable) {
+            return 0;
+        }
+    }
+
+    private long readAEFluidAmount(FluidStack fluidStack) {
+        if (!isAEConnected() || fluidStack == null) throw new IllegalStateException("AE source unavailable");
         try {
             IMEMonitor<IAEFluidStack> fluidInv = gridProxy.getStorage()
                 .getFluidInventory();
@@ -366,15 +430,15 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 .findPrecise(request);
             return stored != null ? stored.getStackSize() : 0;
         } catch (GridAccessException e) {
-            return 0;
+            throw new IllegalStateException("AE source unavailable", e);
         }
     }
 
     /**
      * 批量收集：每通道只获取一次 storage list，再对绑定使用 AE 原生 findPrecise，
      * 保留完整 NBT 精确查询语义。未命中 key 以 0 计，与逐 key findPrecise
-     * 未命中返回 0 的现状语义一致；grid 不可达（断电/拆线/网络重组）时保持全 0 返回，
-     * 同样由对账判定一致性。
+     * 未命中返回 0 的现状语义一致；grid 不可达（断电/拆线/网络重组）时抛异常，
+     * 由采样器记录缺口，不伪造零库存样本。
      *
      * @param items  被监视物品（chartItem + 监控列表）
      * @param fluids 被监视流体（chartFluid + 监控列表）
@@ -394,9 +458,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 result.putIfAbsent(key, Long.valueOf(0L));
             }
         }
-        if (worldObj == null || worldObj.isRemote || gridProxy == null) {
-            return result;
-        }
+        if (!isAEConnected()) throw new IllegalStateException("AE source unavailable");
         try {
             IItemList<IAEItemStack> itemList = gridProxy.getStorage()
                 .getItemInventory()
@@ -417,15 +479,19 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 result.put(key, stored == null ? 0L : stored.getStackSize());
             }
         } catch (GridAccessException e) {
-            // A disconnected grid has no current observable inventory.
-            result.replaceAll((key, value) -> 0L);
+            throw new IllegalStateException("AE source unavailable", e);
         }
         return result;
     }
 
-    /** E5 门面：AE 坐标主键（方法体迁入 {@link AEMonitorController#dataKey}；BlockNetworkInfoPanel 调用面） */
+    /** Source-qualified live history; legacy coordinate histories are retained without guessed migration. */
     public String getAEMonitorDataKey() {
-        return AEMonitorController.dataKey(this);
+        return controller.getSourceDataKey();
+    }
+
+    /** Server-authored native generation for history transport and persistent profile validation. */
+    public com.miaokatze.gtswn.common.monitoring.SourceKey getAEMonitorSourceKey() {
+        return controller.getSourceKey();
     }
 
     /** E5 门面：AE 物品 key（方法体迁入 {@link AEMonitorController#aeKey}；Render/Gui 调用面） */
@@ -960,7 +1026,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public Packet getDescriptionPacket() {
         NBTTagCompound tag = new NBTTagCompound();
-        writeSyncData(tag);
+        writeSyncData(tag, true);
         return new S35PacketUpdateTileEntity(xCoord, yCoord, zCoord, 1, tag);
     }
 
@@ -969,9 +1035,17 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         readSyncData(pkt.func_148857_g());
     }
 
-    private void writeSyncData(NBTTagCompound tag) {
+    /** Legacy live pushes retain their existing one-sample/eight-push backstop, unlike initial descriptions. */
+    public Packet getLiveDescriptionPacket() {
+        NBTTagCompound tag = new NBTTagCompound();
+        writeSyncData(tag, false);
+        return new S35PacketUpdateTileEntity(xCoord, yCoord, zCoord, 1, tag);
+    }
+
+    private void writeSyncData(NBTTagCompound tag, boolean initial) {
         tag.setString("OwnerName", ownerName == null ? "" : ownerName);
-        bridge.writeSync(tag);
+        if (getPortableMonitorId() != null) tag.setString("portableMonitorId", getPortableMonitorId().toString());
+        bridge.writeSync(tag, initial);
         store.writeSync(tag);
         if (structure.getScreen() != null) {
             tag.setTag(
@@ -984,6 +1058,9 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     }
 
     private void readSyncData(NBTTagCompound tag) {
+        if (tag.hasKey("portableMonitorId")) try {
+            portableMonitorId = UUID.fromString(tag.getString("portableMonitorId"));
+        } catch (IllegalArgumentException ignored) {}
         if (tag.hasKey("OwnerName")) {
             ownerName = tag.getString("OwnerName");
         }

@@ -43,14 +43,19 @@ public final class HudController {
     private boolean engineeringMode;
     private boolean factoryReading;
     private long lastResponseMillis;
+    private long responseRevision, factoryBaseline;
     private WirelessReading wirelessReading;
     private String wirelessValue;
     private ItemStack wirelessSource;
+    private final com.miaokatze.gtswn.client.engineering.DisplayContinuity<WirelessReading> wirelessDisplay = new com.miaokatze.gtswn.client.engineering.DisplayContinuity<>();
+    private boolean pausedFrame;
+    private EngineeringTerminalSources.Source wirelessReceiptSource = EngineeringTerminalSources.Source.EMPTY;
 
     /** A transient read demand on this sampler; never writes the monitor's HUD mode or owner. */
     public void setFactoryReading(boolean reading) {
         if (factoryReading == reading) return;
         factoryReading = reading;
+        factoryBaseline = responseRevision;
         session.invalidateRequest();
         state.lastInventoryCheckTick = Long.MIN_VALUE / 2;
         state.lastUpdateTick = Long.MIN_VALUE / 2;
@@ -66,6 +71,10 @@ public final class HudController {
         if (!session.change(world, player, connection)) return false;
         state.resetForSession(preserveHistory);
         lastResponseMillis = 0;
+        responseRevision = factoryBaseline = 0;
+        wirelessDisplay.clear();
+        wirelessReceiptSource = EngineeringTerminalSources.Source.EMPTY;
+        pausedFrame = false;
         wirelessReading = null;
         wirelessValue = null;
         wirelessSource = null;
@@ -94,6 +103,15 @@ public final class HudController {
                 .getNetworkManager();
         synchronizeSession(mc.theWorld, player, connection);
         if (mc.theWorld == null || player == null || player.worldObj != mc.theWorld || connection == null) return false;
+        if (mc.isGamePaused()) {
+            pausedFrame = true;
+            return state.hudEnabled;
+        }
+        if (pausedFrame) {
+            // This is a request deadline only, never a sample or receipt timestamp.
+            state.lastUpdateRealTimeMs = System.currentTimeMillis();
+            pausedFrame = false;
+        }
         if (state.samplingInterval != Config.hudUpdateInterval) {
             state.samplingInterval = Config.hudUpdateInterval;
             state.dataSet = new com.miaokatze.gtswn.common.util.EUDataSet(
@@ -148,8 +166,7 @@ public final class HudController {
         // 短时卡顿（<10s）豁免，保留数据集
         long currentRealTimeMs = System.currentTimeMillis();
         if (state.lastUpdateRealTimeMs > 0 && currentRealTimeMs - state.lastUpdateRealTimeMs > 10000L) {
-            // 长时重载/退出重进（>10秒真实时间）：清空数据集，强制首次检测
-            state.dataSet.clear();
+            // Real-time absence requests a refresh; only source/session/tick boundaries discard received history.
             state.lastUpdateTick = Long.MIN_VALUE / 2;
         }
         state.lastUpdateRealTimeMs = currentRealTimeMs;
@@ -219,14 +236,45 @@ public final class HudController {
             && System.currentTimeMillis() - lastResponseMillis < Math.max(3500L, Config.hudUpdateInterval * 150L);
     }
 
+    /** A reopened factory requires a new receipt, even when the previous display is only milliseconds old. */
+    public boolean factoryFresh() {
+        return factoryReading && responseRevision > factoryBaseline && fresh();
+    }
+
     /** Numeric view of the same accepted receipts and bounded history used by the portable HUD. */
     public WirelessReading wirelessReading() {
-        if (!state.hudEnabled || !fresh() || state.parsedOwnerUuid == null) return null;
+        return !state.hudEnabled || !fresh() ? null : currentWirelessReading();
+    }
+
+    /** Historical display only, scoped to the exact local factory provider and runtime session. */
+    public WirelessReading wirelessDisplayReading() {
+        Minecraft mc = Minecraft.getMinecraft();
+        EngineeringTerminalSources.Source selected = EngineeringTerminalSources.resolve(mc.thePlayer, 0);
+        if (mc.theWorld == null || mc.thePlayer == null
+            || mc.getNetHandler() == null
+            || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0
+            || !selected.present()) {
+            wirelessDisplay.clear();
+            return null;
+        }
+        WirelessDisplayScope scope = new WirelessDisplayScope(mc.theWorld, mc.thePlayer, mc.getNetHandler(), selected);
+        WirelessReading current = currentWirelessReading();
+        if (current != null && wirelessReceiptSource.sameIdentity(selected)
+            && current.owner.toString()
+                .equals(PortableWirelessNetworkMonitor.getOwnerUUID(selected.stack)))
+            wirelessDisplay.receive(scope, current, current.receivedAtMillis);
+        return wirelessDisplay.display(scope);
+    }
+
+    private WirelessReading currentWirelessReading() {
+        if (state.syncedEuStr == null || lastResponseMillis == 0 || state.parsedOwnerUuid == null) return null;
         List<NetworkInfoSample> history = state.dataSet.snapshot();
         if (wirelessReading != null && wirelessReading.history == history
             && wirelessSource == state.monitorStack
             && java.util.Objects.equals(wirelessValue, state.syncedEuStr)
             && wirelessReading.owner.equals(state.parsedOwnerUuid)
+            && java.util.Objects.equals(wirelessReading.sourceToken, state.historySourceToken)
             && wirelessReading.receivedAtMillis == lastResponseMillis) return wirelessReading;
         try {
             wirelessValue = state.syncedEuStr;
@@ -236,12 +284,40 @@ public final class HudController {
                 new BigInteger(state.syncedEuStr),
                 history,
                 lastResponseMillis,
-                state.monitorStack == null ? "" : state.monitorStack.getDisplayName());
+                state.monitorStack == null ? "" : state.monitorStack.getDisplayName(),
+                state.historySourceToken);
             return wirelessReading;
         } catch (NumberFormatException invalid) {
             wirelessReading = null;
             wirelessValue = null;
             return null;
+        }
+    }
+
+    private static final class WirelessDisplayScope {
+
+        final Object world, player, connection;
+        final EngineeringTerminalSources.Source source;
+
+        WirelessDisplayScope(Object world, Object player, Object connection, EngineeringTerminalSources.Source source) {
+            this.world = world;
+            this.player = player;
+            this.connection = connection;
+            this.source = source;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof WirelessDisplayScope)) return false;
+            WirelessDisplayScope s = (WirelessDisplayScope) other;
+            return world == s.world && player == s.player
+                && connection == s.connection
+                && source.sameIdentity(s.source);
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(world);
         }
     }
 
@@ -251,15 +327,16 @@ public final class HudController {
         public final BigInteger stored;
         public final List<NetworkInfoSample> history;
         public final long receivedAtMillis;
-        public final String sourceLabel;
+        public final String sourceLabel, sourceToken;
 
         private WirelessReading(UUID owner, BigInteger stored, List<NetworkInfoSample> history, long receivedAtMillis,
-            String sourceLabel) {
+            String sourceLabel, String sourceToken) {
             this.owner = owner;
             this.stored = stored;
             this.history = history;
             this.receivedAtMillis = receivedAtMillis;
             this.sourceLabel = sourceLabel;
+            this.sourceToken = sourceToken;
         }
     }
 
@@ -403,6 +480,19 @@ public final class HudController {
             return;
         }
         if (!session.consume(snapshot, world, player, connection, requestToken) || !state.hudEnabled) return;
+        if ("$gtswn:denied".equals(euStr)) {
+            wirelessDisplay.clear();
+            wirelessReceiptSource = EngineeringTerminalSources.Source.EMPTY;
+            wirelessReading = null;
+            state.syncedEuStr = null;
+            state.dataSet.clear();
+            state.historySourceToken = null;
+            state.historySourceTick = -1L;
+            state.cachedEUText = "§c" + StatCollector.translateToLocal("gtswn.monitor.access_denied");
+            state.cachedEUTText = state.cachedRealtimeEUTText = "";
+            lastResponseMillis = 0;
+            return;
+        }
         MonitorScanResult scan = scanMonitorInInventory(player);
         if (scan.hudMode <= 0 || !java.util.Objects.equals(scan.ownerUUID, state.cachedOwnerUUID)) {
             session.invalidateRequest();
@@ -412,21 +502,24 @@ public final class HudController {
         }
         state.monitorStack = scan.stack;
 
-        // 解析服务端传来的 EU 字符串（异常时设为 ZERO，避免渲染崩溃）
-        BigInteger wirelessEU;
-        try {
-            wirelessEU = new BigInteger(euStr);
-        } catch (NumberFormatException e) {
-            wirelessEU = BigInteger.ZERO;
-        }
-
-        // 更新同步缓存
-        state.syncedEuStr = euStr;
-        lastResponseMillis = System.currentTimeMillis();
-
-        // 获取当前世界 tick（receiveSyncedEU 无 currentTick 入参，自行从客户端世界读取）
+        com.miaokatze.gtswn.common.monitoring.WirelessEUPayload sample = com.miaokatze.gtswn.common.monitoring.WirelessEUPayload
+            .parse(euStr);
+        if (sample != null && sample.sourceToken != null
+            && !com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                .clientSupports(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.EU_SOURCE))
+            return;
         Minecraft mc = Minecraft.getMinecraft();
         long currentTick = (mc.theWorld != null) ? mc.theWorld.getTotalWorldTime() : 0L;
+        String previousNativeSource = state.historySourceToken;
+        if (!state.acceptMeasurement(sample, currentTick)) return;
+        if (!java.util.Objects.equals(previousNativeSource, state.historySourceToken)) wirelessDisplay.clear();
+        BigInteger wirelessEU = sample.amount;
+        state.syncedEuStr = wirelessEU.toString();
+        EngineeringTerminalSources.Source displaySource = EngineeringTerminalSources.resolve(player, 0);
+        wirelessReceiptSource = displaySource.stack == scan.stack ? displaySource
+            : EngineeringTerminalSources.Source.EMPTY;
+        lastResponseMillis = System.currentTimeMillis();
+        responseRevision++;
 
         // 根据显示模式格式化能量值
         String euFormatted;
@@ -445,7 +538,7 @@ public final class HudController {
             + StatCollector.translateToLocal("gtswn.hud.eu.unit");
 
         // 记录到数据集（替代 FormatUtil.recordMeasurement，EUDataSet 内部自动 FIFO 老化）
-        state.dataSet.add(wirelessEU, currentTick);
+        // History was accepted atomically with its native source identity above.
         // 格式化 HUD 电网状态文本
         state.cachedEUTText = formatHUDStatus();
         state.cachedRealtimeEUTText = formatHUDRealtimeStatus();

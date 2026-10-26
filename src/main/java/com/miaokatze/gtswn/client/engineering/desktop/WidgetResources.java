@@ -77,6 +77,18 @@ public final class WidgetResources {
             PortableSuperDashboard::available);
     }
 
+    /** Historical presentation only. Selection/default/binding APIs still require available(). */
+    public static ScreenReading displayScreen(ScreenBinding binding) {
+        ScreenReading reading = readScreenCached(
+            binding == null ? defaultScreen() : binding,
+            source,
+            panels,
+            screenIds,
+            PortableSuperDashboard::displayable);
+        return reading.panel == null ? reading
+            : new ScreenReading(reading.panel, PortableSuperDashboard.displayStatus(reading.panel));
+    }
+
     static ScreenReading readScreenCached(ScreenBinding binding, UUID currentSource, List<Panel> values,
         List<String> identities, Predicate<Panel> available) {
         if (binding == null) return new ScreenReading(null, "select");
@@ -168,6 +180,7 @@ public final class WidgetResources {
         if (source == null || panel == null
             || panel.binding == null
             || row == null
+            || !PortableSuperDashboard.available(panel)
             || !screenIds.contains(panel.binding.panelId.toString())) return null;
         try {
             return new ResourceBinding(source, panel.binding.panelId, row.kind, row.key, row.name);
@@ -180,6 +193,14 @@ public final class WidgetResources {
         if (binding != null && !screenIds.contains(binding.screen.toString()))
             return new Reading(null, null, "unavailable");
         return readCached(binding, source, panels, PortableSuperDashboard::available);
+    }
+
+    public static Reading display(ResourceBinding binding) {
+        if (binding != null && !screenIds.contains(binding.screen.toString()))
+            return new Reading(null, null, "unavailable");
+        Reading reading = readCached(binding, source, panels, PortableSuperDashboard::displayable);
+        return reading.row == null ? reading
+            : new Reading(reading.panel, reading.row, PortableSuperDashboard.displayStatus(reading.panel));
     }
 
     static Reading readCached(ResourceBinding binding, UUID source, List<Panel> panels, Predicate<Panel> available) {
