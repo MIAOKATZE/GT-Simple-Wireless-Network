@@ -41,6 +41,9 @@ public final class DeviceTerminalRecognitionMode {
         int[] pos = KeyFormat.parse(key);
         if (pos == null) return -1;
         UUID existingId = ItemDeviceInfoTerminal.readTerminalId(terminal);
+        com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+            .get(player.worldObj);
+        if (existingId != null && !profiles.canModify(player.getUniqueID(), existingId)) return -1;
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(player.worldObj);
         DeviceTerminalDataStore.TerminalData data = existingId == null ? null : store.getTerminal(existingId);
         boolean bound = data != null && data.boundKeys.contains(key);
@@ -73,11 +76,11 @@ public final class DeviceTerminalRecognitionMode {
             DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
             boolean watchedElsewhere = false;
             for (java.util.Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : store.getActiveTerminals()) {
-                if (entry.getValue().boundKeys.contains(key)
+                if (profiles.maySample(entry.getKey()) && entry.getValue().boundKeys.contains(key)
                     && store.recognitionMode(entry.getKey(), key, metaTileId, machine) != IGNORE)
                     watchedElsewhere = true;
             }
-            if (!watchedElsewhere) DeviceFlowMonitor.forget(machine);
+            if (!watchedElsewhere && !profiles.hasOfflineObservation(key)) DeviceFlowMonitor.forget(machine);
             DeviceTerminalRequestQueue.invalidate(player);
             String modeKey = result == IGNORE ? "ignored" : "track";
             player.addChatMessage(

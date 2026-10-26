@@ -22,6 +22,7 @@ import com.cleanroommc.modularui.screen.viewport.GuiContext;
 import com.cleanroommc.modularui.utils.Platform;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache;
 import com.miaokatze.gtswn.client.PortableMonitorClientCache.PinnedLine;
+import com.miaokatze.gtswn.client.engineering.DisplayContinuity;
 import com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot;
 import com.miaokatze.gtswn.client.gui.PortableMonitorCharts;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
@@ -65,6 +66,8 @@ public final class PortableSuperDashboard extends Gui {
     private static boolean draggingScroll;
     private static EngineeringTerminalSources.Source sourceIdentity = EngineeringTerminalSources.Source.EMPTY;
     private static long initialReceipt;
+    private static final DisplayContinuity<Map<String, Card>> DISPLAY = new DisplayContinuity<>();
+    private static DisplayScope displayScope;
 
     private PortableSuperDashboard() {}
 
@@ -97,6 +100,13 @@ public final class PortableSuperDashboard extends Gui {
         open = true;
         saveFailed = false;
         refreshBindings();
+        displayScope = new DisplayScope(world, connection, player, sourceIdentity);
+        DISPLAY.open(displayScope);
+        Map<String, Card> retained = DISPLAY.display(displayScope);
+        if (retained != null && !revoked()) cards.putAll(retained);
+        else if (revoked()) DISPLAY.clear();
+        // Rebuild formatting, but preserve the original server data and receipt times.
+        for (Card card : cards.values()) card.builtOptions = -1;
     }
 
     public static boolean isOpen() {
@@ -130,12 +140,12 @@ public final class PortableSuperDashboard extends Gui {
     /** Read-only projection of the existing authorized, fairly polled screen cards. */
     public static List<Panel> panels() {
         List<Panel> result = new ArrayList<>();
-        if (!open || layout == null) return result;
+        if (!displayValid() || layout == null) return result;
         for (String id : layout.order) {
             if (layout.hidden.contains(id)) continue;
             Card card = cards.get(id);
             if (card == null || card.summary == null) continue;
-            if (card.summary.state != 0 || card.detail == null || expired(card)) result.add(card.summary);
+            if (card.summary.state != 0 || card.detail == null) result.add(card.summary);
             else result.add(card.detail);
         }
         return java.util.Collections.unmodifiableList(result);
@@ -155,11 +165,10 @@ public final class PortableSuperDashboard extends Gui {
     /** Existing receipts only; this projection never requests a screen or reads a world tile. */
     public static List<Panel> mountedPanels() {
         List<Panel> result = new ArrayList<>();
-        if (open) for (MonitorBindings.Binding binding : bindings) {
+        if (displayValid()) for (MonitorBindings.Binding binding : bindings) {
             Card card = cards.get(binding.panelId.toString());
             if (card != null && card.summary != null) {
-                result
-                    .add(card.summary.state == 0 && card.detail != null && !expired(card) ? card.detail : card.summary);
+                result.add(card.summary.state == 0 && card.detail != null ? card.detail : card.summary);
             } else {
                 Panel waiting = new Panel();
                 waiting.binding = binding;
@@ -177,9 +186,62 @@ public final class PortableSuperDashboard extends Gui {
     }
 
     public static boolean available(Panel panel) {
-        if (panel == null || panel.state != 0 || panel.binding == null) return false;
+        if (!displayValid() || Minecraft.getMinecraft()
+            .isGamePaused() || panel == null || panel.state != 0 || panel.binding == null) return false;
         Card card = cards.get(panel.binding.panelId.toString());
-        return card != null && card.detail == panel && !expired(card);
+        return card != null && card.detail == panel
+            && card.receipt > initialReceipt
+            && !expired(card)
+            && PortableMonitorClientCache.snapshot(stack) != null;
+    }
+
+    /** Data-only projection. Historical rows never satisfy available() or create new subscriptions. */
+    public static boolean displayable(Panel panel) {
+        if (!displayValid() || panel == null || panel.state != 0 || panel.binding == null) return false;
+        Card card = cards.get(panel.binding.panelId.toString());
+        return card != null && card.detail == panel;
+    }
+
+    public static String displayStatus(Panel panel) {
+        if (!displayable(panel)) return "waiting";
+        if (Minecraft.getMinecraft()
+            .isGamePaused()) return "paused";
+        return available(panel) ? "live" : "stale";
+    }
+
+    static boolean sameDisplaySource(Panel old, Panel next) {
+        long config = next.historyPatch == null ? next.configVersion : next.historyPatch.configVersion;
+        return old.binding.panelId.equals(next.binding.panelId) && old.binding.dimension == next.binding.dimension
+            && old.binding.x == next.binding.x
+            && old.binding.y == next.binding.y
+            && old.binding.z == next.binding.z
+            && (config <= 0 || old.configVersion <= 0 || old.configVersion == config)
+            // Summary and detail deliberately use different dictionaries; changing projection is not revocation.
+            && (old.detail != next.detail || old.metadataVersion == next.metadataVersion)
+            && (next.metadataUnchanged || old.ownerName.equals(next.ownerName) && old.window.equals(next.window)
+                && (old.detail != next.detail || old.aeWindow.equals(next.aeWindow)));
+    }
+
+    private static boolean revoked() {
+        return PortableMonitorClientCache.mutationStatus(stack) == 2
+            && PortableMonitorClientCache.snapshot(stack) == null;
+    }
+
+    private static boolean displayValid() {
+        if (!open) return false;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.thePlayer != player || mc.theWorld != world
+            || mc.getNetHandler() != connection
+            || mc.thePlayer == null
+            || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0
+            || !sourceIdentity.sameIdentity(EngineeringTerminalSources.resolve(mc.thePlayer, 0))
+            || revoked()) {
+            DISPLAY.clear();
+            cards.clear();
+            return false;
+        }
+        return true;
     }
 
     private static boolean expired(Card card) {
@@ -187,8 +249,49 @@ public final class PortableSuperDashboard extends Gui {
             > Math.max(10000L, Math.max(1, bindings.size()) * Math.max(1100L, Config.hudUpdateInterval * 50L) * 2);
     }
 
+    /** Called only after owner/session/sequence validation, including incomplete raw-history replies. */
+    public static void invalidateMetadata(PacketSyncPortableMonitor response) {
+        if (response == null || displayScope == null
+            || !displayScope.source.binding.startsWith(response.terminalId.toString() + ":")) return;
+        Map<String, Card> retained = DISPLAY.display(displayScope);
+        if (retained == null) return;
+        java.util.Set<String> present = new java.util.HashSet<>();
+        for (Panel panel : response.panels) {
+            String id = panel.binding.panelId.toString();
+            present.add(id);
+            Card card = retained.get(id);
+            if (card != null && card.detail != null
+                && (panel.state != 0 || !sameDisplaySource(card.detail, panel)
+                    || card.summary != null && !sameDisplaySource(card.summary, panel))) {
+                card.detail = null;
+                card.received = card.receipt = 0;
+                card.builtOptions = -1;
+            }
+        }
+        retained.keySet()
+            .retainAll(present);
+        if (response.terminalId.equals(terminal)) cards.keySet()
+            .retainAll(present);
+    }
+
+    public static void revoke(UUID id) {
+        if (id == null) return;
+        if (displayScope != null && displayScope.source.binding.startsWith(id.toString() + ":")) {
+            DISPLAY.clear();
+            // The open board keeps its captured source identity for any later reauthorized receipt.
+        }
+        if (id.equals(terminal)) cards.clear();
+    }
+
+    public static void resetSession() {
+        DISPLAY.clear();
+        displayScope = null;
+        close();
+    }
+
     public static void close() {
         if (stack != null) PortableMonitorClientCache.dashboardViewing(stack, -1);
+        DISPLAY.close();
         open = settings = false;
         factoryScreens = false;
         draggingScroll = false;
@@ -213,6 +316,7 @@ public final class PortableSuperDashboard extends Gui {
     private static void refreshBindings() {
         long nextRevision = MonitorBindings.revision(stack);
         if (revision == nextRevision) return;
+        if (revision != Long.MIN_VALUE) DISPLAY.clear();
         revision = nextRevision;
         bindings.clear();
         bindings.addAll(MonitorBindings.read(stack));
@@ -239,14 +343,18 @@ public final class PortableSuperDashboard extends Gui {
         Minecraft mc = Minecraft.getMinecraft();
         if (!open) return false;
         if (mc.thePlayer != player || mc.theWorld != world || mc.getNetHandler() != connection) {
+            DISPLAY.clear();
             close();
             return false;
         }
+        if (!displayValid()) return false;
+        if (mc.isGamePaused()) return true;
         if (lastTick == mc.thePlayer.ticksExisted) return true;
         lastTick = mc.thePlayer.ticksExisted;
         EngineeringTerminalSources.Source currentSource = EngineeringTerminalSources.resolve(mc.thePlayer, 0);
         ItemStack current = currentSource.stack;
         if (!sourceIdentity.sameIdentity(currentSource) || !terminal.equals(MonitorBindings.id(current))) {
+            DISPLAY.clear();
             close();
             return false;
         }
@@ -256,27 +364,37 @@ public final class PortableSuperDashboard extends Gui {
         basic = terminal.equals(source.terminalId) && PortableMonitorClientCache.receiptRevision(stack) > initialReceipt
             ? source.basicLines
             : java.util.Collections.emptyList();
-        PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.receiptRevision(stack) > initialReceipt
-            ? PortableMonitorClientCache.snapshot(stack)
-            : null;
+        PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.snapshot(stack);
         if (snapshot != null && snapshot != lastSnapshot) {
             lastSnapshot = snapshot;
             long now = System.currentTimeMillis();
             if (requestedId != null) cards.computeIfAbsent(requestedId, ignored -> new Card()).attempted = now;
+            java.util.Set<String> currentPanels = new java.util.HashSet<>();
+            for (Panel panel : snapshot.panels) currentPanels.add(panel.binding.panelId.toString());
+            cards.keySet()
+                .retainAll(currentPanels);
             for (Panel panel : snapshot.panels) {
                 String id = panel.binding.panelId.toString();
                 if (!layout.order.contains(id)) continue;
                 Card card = cards.computeIfAbsent(id, ignored -> new Card());
+                if (card.detail != null && !sameDisplaySource(card.detail, panel)) {
+                    card.detail = null;
+                    card.received = card.receipt = 0;
+                    card.builtOptions = -1;
+                }
                 card.summary = panel;
                 if (panel.state != 0) {
                     card.detail = null;
                     card.received = 0;
                 } else if (panel.detail) {
                     card.detail = panel;
-                    card.received = now;
+                    card.received = PortableMonitorClientCache.receivedAtMillis(stack);
+                    card.receipt = PortableMonitorClientCache.receiptRevision(stack);
                     card.builtOptions = -1;
                 }
             }
+            DISPLAY
+                .receive(displayScope, new LinkedHashMap<>(cards), PortableMonitorClientCache.receivedAtMillis(stack));
             requestedIndex = -1;
         }
         // Hold one target until an ACK. Frontmost cards get a bounded age bonus, while every other
@@ -322,7 +440,7 @@ public final class PortableSuperDashboard extends Gui {
     }
 
     public static void render(int screenWidth, int screenHeight, int mouseX, int mouseY) {
-        if (!open || layout == null) return;
+        if (!displayValid() || layout == null) return;
         width = screenWidth;
         height = screenHeight;
         FontRenderer font = Minecraft.getMinecraft().fontRenderer;
@@ -495,9 +613,10 @@ public final class PortableSuperDashboard extends Gui {
             > Math.max(10000L, Math.max(1, bindings.size()) * Math.max(1100L, Config.hudUpdateInterval * 50L) * 2);
         String status = summary == null ? tr("waiting")
             : summary.state != 0 ? PortableMonitorClientCache.stateText(summary.state)
-                : expired ? tr("stale") : tr("updated") + " " + age + "s";
+                : StatCollector.translateToLocal("gtswn.telemetry.display." + displayStatus(card.detail))
+                    + (age < 0 ? "" : " · " + age + "s");
         text(font, status, x + 8, y + 65, expired || summary != null && summary.state != 0 ? WARN : ACCENT, w - 16);
-        if (expired || summary == null || summary.state != 0) return;
+        if (summary == null || summary.state != 0 || card.detail == null) return;
         int at = y + 82;
         for (String line : card.lines) {
             text(font, line, x + 8, at, TEXT, w - 16);
@@ -743,10 +862,37 @@ public final class PortableSuperDashboard extends Gui {
         Stencil.apply(left, top, Math.max(0, right - left), Math.max(0, bottom - top), GuiContext.getDefault());
     }
 
+    private static final class DisplayScope {
+
+        final Object world, connection, player;
+        final EngineeringTerminalSources.Source source;
+
+        DisplayScope(Object world, Object connection, Object player, EngineeringTerminalSources.Source source) {
+            this.world = world;
+            this.connection = connection;
+            this.player = player;
+            this.source = source;
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            if (!(other instanceof DisplayScope)) return false;
+            DisplayScope s = (DisplayScope) other;
+            return world == s.world && connection == s.connection
+                && player == s.player
+                && source.sameIdentity(s.source);
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(world);
+        }
+    }
+
     private static final class Card {
 
         Panel summary, detail;
-        long received, attempted;
+        long received, attempted, receipt;
         int builtOptions = -1, pages = 1, page;
         final List<String> lines = new ArrayList<>();
         final List<PinnedLine> graphs = new ArrayList<>();

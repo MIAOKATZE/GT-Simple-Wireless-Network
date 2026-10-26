@@ -19,14 +19,20 @@ import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.common.engineering.power.EngineeringRegionPowerCollector;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.EngineeringTypedSnapshot;
+import com.miaokatze.gtswn.network.PacketEngineeringCompact;
 import com.miaokatze.gtswn.network.PacketEngineeringSnapshot;
 import com.miaokatze.gtswn.network.PacketEngineeringSubscribe;
+import com.miaokatze.gtswn.network.telemetry.ByteDelta;
+import com.miaokatze.gtswn.network.telemetry.MonitorCapabilities;
+import com.miaokatze.gtswn.network.telemetry.TelemetryTransport;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.common.GTWorldgenerator;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 
 /** One bounded, short-lived subscription per connected player. All world reads execute on ServerTick END. */
 public final class EngineeringDashboardSessions {
@@ -39,6 +45,11 @@ public final class EngineeringDashboardSessions {
 
     public static void enqueue(EntityPlayerMP player, PacketEngineeringSubscribe request) {
         if (player != null && request.valid) PENDING.put(player.getUniqueID(), new Pending(player, request));
+    }
+
+    public static void enqueueCompact(EntityPlayerMP player, PacketEngineeringSubscribe request, long ack, int fields) {
+        if (player != null && request.valid)
+            PENDING.put(player.getUniqueID(), new Pending(player, request, ack, fields));
     }
 
     private static boolean connected(EntityPlayerMP player) {
@@ -86,7 +97,7 @@ public final class EngineeringDashboardSessions {
                     SESSIONS.remove(session.player.getUniqueID());
                     continue;
                 }
-                send(session.snapshot(TerminalBaubles.terminals(session.player)), session.player);
+                session.sendSnapshot(session.snapshot(TerminalBaubles.terminals(session.player)));
             } catch (RuntimeException failure) {
                 GTSimpleWirelessNetwork.LOG.error("[Engineering dashboard] Subscription failed", failure);
                 send(session.empty("error"), session.player);
@@ -130,18 +141,24 @@ public final class EngineeringDashboardSessions {
             return;
         }
         if (!connected(player)) return;
+        if (pending.compact && !MonitorCapabilities.serverSupports(player, MonitorCapabilities.ENGINEERING)) return;
         Source source = EngineeringTerminalSources.resolve(player, request.slot);
         ItemStack terminal = source.stack;
         if (old != null && old.same(player, terminal, request)
             && old.source.sameIdentity(source)
             && request.matches(source)) {
             old.touched = tick;
+            old.compact = pending.compact;
+            old.fields = pending.fields;
+            old.acknowledge(pending.ack);
             // Repeated keepalives cannot force an unbounded refresh. A new baseline resets only the comparison.
             if (request.baseline) old.review.reset();
             return;
         }
         if (old != null) old.close();
         Session session = new Session(player, source, request);
+        session.compact = pending.compact;
+        session.fields = pending.fields;
         if (!request.matches(source)) {
             SESSIONS.remove(player.getUniqueID());
             send(session.empty(source.present() ? "expired" : "empty"), player);
@@ -164,7 +181,10 @@ public final class EngineeringDashboardSessions {
     }
 
     private static void send(EngineeringSnapshot snapshot, EntityPlayerMP player) {
-        if (connected(player)) GTSWNPacketHandler.NETWORK.sendTo(new PacketEngineeringSnapshot(snapshot), player);
+        if (connected(player)) {
+            TelemetryTransport.cancel(player, "engineering");
+            TelemetryTransport.control(player, new PacketEngineeringSnapshot(snapshot));
+        }
     }
 
     private static boolean axisPattern() {
@@ -175,10 +195,20 @@ public final class EngineeringDashboardSessions {
 
         final EntityPlayerMP player;
         final PacketEngineeringSubscribe request;
+        final boolean compact;
+        final long ack;
+        final int fields;
 
         Pending(EntityPlayerMP player, PacketEngineeringSubscribe request) {
+            this(player, request, -1, 3);
+        }
+
+        Pending(EntityPlayerMP player, PacketEngineeringSubscribe request, long ack, int fields) {
             this.player = player;
             this.request = request;
+            this.ack = ack;
+            this.fields = fields;
+            compact = ack >= 0;
         }
     }
 
@@ -194,6 +224,76 @@ public final class EngineeringDashboardSessions {
         final EngineeringBoundPowerCollector bound = new EngineeringBoundPowerCollector();
         EngineeringRegionPowerCollector region;
         long touched = tick, sent = tick - UPDATE_TICKS;
+        boolean compact;
+        int fields = 3;
+        long acknowledged, sentRevision, serial;
+        byte[] baseline, sentBytes;
+
+        void acknowledge(long revision) {
+            if (revision == 0) {
+                acknowledged = 0;
+                baseline = null;
+            } else if (revision == sentRevision && sentBytes != null) {
+                if (revision != acknowledged) TelemetryTransport.cancel(player, "engineering");
+                acknowledged = revision;
+                baseline = sentBytes;
+            }
+        }
+
+        void sendSnapshot(EngineeringSnapshot snapshot) {
+            if (!"ok".equals(snapshot.status)) {
+                baseline = sentBytes = null;
+                acknowledged = 0;
+                send(snapshot, player);
+                return;
+            }
+            if (!compact || !MonitorCapabilities.serverSupports(player, MonitorCapabilities.ENGINEERING)) {
+                TelemetryTransport
+                    .offer(player, "engineering", new PacketEngineeringSnapshot(snapshot), this::authorized, null);
+                return;
+            }
+            EngineeringSnapshot projected = new EngineeringSnapshot(
+                snapshot.sessionId,
+                snapshot.slot,
+                0,
+                snapshot.occupiedMask,
+                snapshot.status,
+                (fields & 1) != 0 ? snapshot.nodes : Collections.emptyList(),
+                (fields & 2) != 0 ? snapshot.cells : Collections.emptyList(),
+                snapshot.before,
+                snapshot.current,
+                snapshot.monitored,
+                snapshot.unknown,
+                snapshot.totalBound,
+                snapshot.truncated,
+                snapshot.coverageChanged,
+                snapshot.coverageBoundOnly,
+                snapshot.quantum,
+                snapshot.axisSymmetrical,
+                snapshot.patternResolved,
+                snapshot.review);
+            ByteBuf out = Unpooled.buffer();
+            final byte[] bytes;
+            try {
+                new EngineeringTypedSnapshot(projected).toBytes(out);
+                bytes = new byte[out.readableBytes()];
+                out.readBytes(bytes);
+            } finally {
+                out.release();
+            }
+            final long target = baseline != null && java.util.Arrays.equals(bytes, baseline) ? acknowledged : ++serial;
+            PacketEngineeringCompact packet = new PacketEngineeringCompact(
+                view.sessionId,
+                view.slot,
+                acknowledged,
+                target,
+                snapshot.serverTick,
+                ByteDelta.between(baseline, bytes));
+            TelemetryTransport.offer(player, "engineering", packet, this::authorized, () -> {
+                sentRevision = target;
+                sentBytes = bytes;
+            });
+        }
 
         Session(EntityPlayerMP player, ItemStack terminal, PacketEngineeringSubscribe view) {
             this(player, new Source(terminal, SourceOrigin.BAUBLE), view);
@@ -225,7 +325,29 @@ public final class EngineeringDashboardSessions {
                 && view.maxCellZ == request.maxCellZ;
         }
 
+        boolean authorized() {
+            if (!connected(player) || player.dimension != playerDimension) return false;
+            Source actual = EngineeringTerminalSources.resolve(player, view.slot);
+            if (actual.stack != terminal || !source.sameIdentity(actual)) return false;
+            com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+                .get(player.worldObj);
+            if (view.slot == 2 && !profiles.canRead(
+                player.getUniqueID(),
+                com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(terminal))) return false;
+            if (com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.hasProfileReference(terminal)) {
+                UUID profileId = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+                    .readProfileReference(terminal);
+                if (!profiles.canRead(player.getUniqueID(), profileId)) return false;
+                if (view.slot >= 3 && !com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter
+                    .matches(terminal, profiles.profileForTerminal(profileId))) return false;
+            }
+            if (view.slot >= 3 && !com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess.validate(player, terminal)
+                && !com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess.canManage(player, terminal)) return false;
+            return true;
+        }
+
         EngineeringSnapshot snapshot(ItemStack[] terminals) {
+            if (!authorized()) return empty("denied");
             int mask = mask(terminals);
             if (view.slot == 2) {
                 if (view.dim != player.dimension) return empty("denied");
@@ -301,6 +423,8 @@ public final class EngineeringDashboardSessions {
         }
 
         void close() {
+            TelemetryTransport.cancel(player, "engineering");
+            baseline = sentBytes = null;
             if (region != null) region.close();
         }
 

@@ -13,6 +13,7 @@ import cpw.mods.fml.common.network.FMLNetworkEvent;
 public final class HudSessionLifecycle {
 
     private final HudController controller;
+    private final com.miaokatze.gtswn.client.engineering.DisplayContinuity.Session displaySession = new com.miaokatze.gtswn.client.engineering.DisplayContinuity.Session();
 
     public HudSessionLifecycle(HudController controller) {
         this.controller = controller;
@@ -25,6 +26,7 @@ public final class HudSessionLifecycle {
         Object connection = mc.getNetHandler() == null ? null
             : mc.getNetHandler()
                 .getNetworkManager();
+        if (displaySession.update(mc.theWorld, mc.thePlayer, connection)) clearDisplays();
         if (controller.synchronizeSession(mc.theWorld, mc.thePlayer, connection))
             PortableMonitorClientCache.resetForHudSession();
     }
@@ -32,6 +34,10 @@ public final class HudSessionLifecycle {
     @SubscribeEvent
     public void unload(WorldEvent.Unload event) {
         // Integrated-server unloads and late unloads from an earlier world do not own this client session.
+        if (event.world.isRemote && displaySession.ownsWorld(event.world)) {
+            clearDisplays();
+            displaySession.clear();
+        }
         if (event.world.isRemote && controller.unloadWorld(event.world))
             PortableMonitorClientCache.resetForHudSession();
     }
@@ -40,7 +46,21 @@ public final class HudSessionLifecycle {
     public void disconnected(FMLNetworkEvent.ClientDisconnectionFromServerEvent event) {
         Object connection = event.manager;
         Minecraft.getMinecraft()
-            .func_152344_a(
-                () -> { if (controller.disconnect(connection)) PortableMonitorClientCache.resetForHudSession(); });
+            .func_152344_a(() -> {
+                if (displaySession.ownsConnection(connection)) {
+                    clearDisplays();
+                    displaySession.clear();
+                }
+                if (controller.disconnect(connection)) PortableMonitorClientCache.resetForHudSession();
+            });
+    }
+
+    private void clearDisplays() {
+        com.miaokatze.gtswn.client.engineering.board.PortableSuperDashboard.resetSession();
+        com.miaokatze.gtswn.client.engineering.terminal.EngineeringTerminalHudSnapshot.resetSession();
+        com.miaokatze.gtswn.client.engineering.EngineeringDashboardCache.resetSession();
+        com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources.resetSession();
+        PortableMonitorClientCache.resetForHudSession();
+        DeviceTerminalClientCache.clear();
     }
 }

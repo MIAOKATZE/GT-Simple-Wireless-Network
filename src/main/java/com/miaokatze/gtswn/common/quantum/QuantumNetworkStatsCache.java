@@ -110,6 +110,7 @@ public final class QuantumNetworkStatsCache {
                 .incorporationStats(key.getDimension(), structure, grid, quantumConnections);
             usedChannels += incorporation[2];
             Snapshot snapshot = new Snapshot(
+                anchorWorld.getTotalWorldTime(),
                 totalChannels,
                 usedChannels,
                 quantumNodeCount,
@@ -121,6 +122,14 @@ public final class QuantumNetworkStatsCache {
         } finally {
             PerformanceAudit.endSlice(PerformanceAudit.SLICE_GTSWN_STATS_RAW, sliceT0);
         }
+    }
+
+    /** Read-only projection for publication: never computes, renews interest, or extends cache lifetime. */
+    public static Snapshot getCached(AnchorKey key, World world, IGrid grid) {
+        if (key == null || world == null || grid == null) return null;
+        QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
+        CacheEntry entry = CACHE.get(registry.canonicalKey(key));
+        return entry != null && entry.grid == grid && entry.revision == registry.getRevision() ? entry.snapshot : null;
     }
 
     /** 清理服务器切换或测试之间的运行时缓存。 */
@@ -148,6 +157,8 @@ public final class QuantumNetworkStatsCache {
     /** 不可变服务端统计快照。 */
     public static final class Snapshot {
 
+        /** Actual calculation time, retained unchanged on cache hits. */
+        public final long sampleTick;
         public final int totalChannels;
         public final int usedChannels;
         public final int quantumNodeCount;
@@ -155,8 +166,9 @@ public final class QuantumNetworkStatsCache {
         public final int incorporationChannels;
         private final Set<Long> structure;
 
-        private Snapshot(int totalChannels, int usedChannels, int quantumNodeCount, int incorporationCount,
-            int incorporationChannels, Set<Long> structure) {
+        private Snapshot(long sampleTick, int totalChannels, int usedChannels, int quantumNodeCount,
+            int incorporationCount, int incorporationChannels, Set<Long> structure) {
+            this.sampleTick = sampleTick;
             this.totalChannels = totalChannels;
             this.usedChannels = usedChannels;
             this.quantumNodeCount = quantumNodeCount;

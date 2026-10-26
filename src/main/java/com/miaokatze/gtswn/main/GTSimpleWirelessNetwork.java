@@ -95,6 +95,7 @@ public class GTSimpleWirelessNetwork {
     public void serverStopped(FMLServerStoppedEvent event) {
         if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
             com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
+        com.miaokatze.gtswn.common.monitoring.MonitoringRuntime.stop();
         AnimationQualityHints.clear();
         com.miaokatze.gtswn.network.PanelActionQueue.clear();
         com.miaokatze.gtswn.network.PacketQuantumTerminalSwapBus.clear();

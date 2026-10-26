@@ -13,11 +13,15 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.common.monitoring.MonitoringProfiles;
 import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.config.Config;
-import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketRequestDeviceTerminalDelta;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
+import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta;
+import com.miaokatze.gtswn.network.telemetry.MonitorCapabilities;
+import com.miaokatze.gtswn.network.telemetry.TelemetryTransport;
 
 /**
  * 设备信息终端数据请求的待处理队列（实施计划 C3 / D1-D5，仿
@@ -66,14 +70,19 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
 
         final Map<UUID, SentState> terminals = new LinkedHashMap<>(4, .75f, true);
         long lastProcessed = Long.MIN_VALUE;
+        EntityPlayerMP player;
+        Object connection;
 
         SentState terminal(UUID id) {
             SentState state = terminals.get(id);
             if (state == null) {
-                if (terminals.size() >= 4) terminals.remove(
-                    terminals.keySet()
+                if (terminals.size() >= 4) {
+                    UUID oldest = terminals.keySet()
                         .iterator()
-                        .next());
+                        .next();
+                    SentState removed = terminals.remove(oldest);
+                    revoke(player, removed, removed.clientSession);
+                }
                 state = new SentState();
                 state.terminalId = id;
                 terminals.put(id, state);
@@ -93,6 +102,10 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
     static final class SentState {
 
         UUID terminalId;
+        DeviceTerminalDeltaDelivery delta;
+        UUID clientSession;
+        String sourceRevision;
+        Object pendingPage;
         long lastSent = Long.MIN_VALUE;
         int entryTotal;
         int pageTotal;
@@ -146,6 +159,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
         final UUID terminalId;
         final long knownVersion;
         final boolean complete, hasClientState;
+        PacketRequestDeviceTerminalDelta delta;
 
         Request(EntityPlayerMP player, UUID id, long version, boolean complete, boolean hasClientState) {
             this.player = player;
@@ -161,6 +175,53 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
         INSTANCE.offer(player, new Request(player, terminalId, version, complete, hasClientState));
     }
 
+    public static void enqueueDelta(EntityPlayerMP player, PacketRequestDeviceTerminalDelta packet) {
+        if (player == null) return;
+        Request request = new Request(
+            player,
+            packet.getTerminalId(),
+            packet.getKnownVersion(),
+            packet.isComplete(),
+            true);
+        request.delta = packet;
+        INSTANCE.offer(player, request);
+    }
+
+    /** ACL changes revoke client material immediately, including viewers who have stopped polling. */
+    public static void authorizationChanged(UUID terminalId) {
+        for (PlayerState player : SENT.values()) {
+            SentState state = player.terminals.remove(terminalId);
+            if (state != null) revoke(player.player, state, state.clientSession);
+        }
+    }
+
+    private static void revoke(EntityPlayerMP player, SentState state, UUID session) {
+        if (player == null || player.playerNetServerHandler == null) return;
+        state.pendingPage = null;
+        TelemetryTransport.cancel(player, "dit-page:" + state.terminalId);
+        if (state.delta != null && session != null
+            && MonitorCapabilities.serverSupports(player, MonitorCapabilities.DIT)) {
+            TelemetryTransport.control(player, state.delta.revoked(session));
+        } else if (state.snapshot != null) {
+            World world = net.minecraftforge.common.DimensionManager.getWorld(0);
+            if (world == null) return;
+            DeviceTerminalDataStore store = DeviceTerminalDataStore.get(world);
+            long clearedVersion = store.bumpVersion(state.terminalId);
+            if (clearedVersion < 0) return;
+            TelemetryTransport.control(
+                player,
+                new PacketSyncDeviceTerminalData(
+                    state.terminalId,
+                    clearedVersion,
+                    0,
+                    1,
+                    0,
+                    java.util.Collections.emptyList()));
+            // A subsequent grant must differ from the legitimate empty legacy cache, without a synthetic MAX tombstone.
+            store.bumpVersion(state.terminalId);
+        }
+    }
+
     /** 主线程逐条处理（由 DeviceSampleScheduler 每 tick 调用） */
     public static void drain() {
         World overworld = net.minecraftforge.common.DimensionManager.getWorld(0);
@@ -168,10 +229,27 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             long now = overworld.getTotalWorldTime();
             if (lastPurgeTick == Long.MIN_VALUE || now < lastPurgeTick || now - lastPurgeTick >= 20) {
                 lastPurgeTick = now;
-                SENT.values()
-                    .removeIf(
-                        state -> state.lastProcessed != Long.MIN_VALUE
-                            && (now < state.lastProcessed || now - state.lastProcessed >= SNAPSHOT_IDLE_TTL_TICKS));
+                MonitoringProfiles profiles = MonitoringProfiles.get(overworld);
+                // canRead may synchronously announce a native-source revocation and remove delivery state.
+                for (PlayerState player : new ArrayList<>(SENT.values())) {
+                    boolean expired = player.lastProcessed != Long.MIN_VALUE
+                        && (now < player.lastProcessed || now - player.lastProcessed >= SNAPSHOT_IDLE_TTL_TICKS);
+                    for (SentState state : new ArrayList<>(player.terminals.values())) {
+                        boolean denied = player.player == null
+                            || findTerminalStack(player.player, state.terminalId) == null
+                            || !profiles.canRead(player.player.getUniqueID(), state.terminalId);
+                        if (!player.terminals.containsKey(state.terminalId)) continue;
+                        String currentSource = profiles.sourceRevision(state.terminalId) + ":"
+                            + profiles.authorizationRevision(state.terminalId);
+                        if (expired || denied
+                            || state.sourceRevision != null && !state.sourceRevision.equals(currentSource)) {
+                            player.terminals.remove(state.terminalId);
+                            revoke(player.player, state, state.clientSession);
+                        }
+                    }
+                    if ((expired || player.terminals.isEmpty()) && player.player != null)
+                        SENT.remove(player.player.getUniqueID(), player);
+                }
             }
         }
         INSTANCE.drainAtMost(64);
@@ -207,10 +285,17 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             MinecraftServer server = MinecraftServer.getServer();
             if (server == null || server.getConfigurationManager()
                 .func_152612_a(player.getCommandSenderName()) != player) return;
+            if (request.delta != null && !MonitorCapabilities.serverSupports(player, MonitorCapabilities.DIT)) return;
             ItemStack stack = findTerminalStack(player, request.terminalId);
             if (stack == null) {
                 PlayerState denied = SENT.get(player.getUniqueID());
-                if (denied != null) denied.terminals.remove(request.terminalId);
+                if (denied != null) {
+                    SentState removed = denied.terminals.remove(request.terminalId);
+                    if (removed != null) revoke(
+                        player,
+                        removed,
+                        request.delta == null ? removed.clientSession : request.delta.getSession());
+                }
                 // 发送者已不持有终端（GUI 关闭后残留轮询）：静默丢弃
                 return;
             }
@@ -221,8 +306,28 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             }
             long now = overworld.getTotalWorldTime();
             PlayerState playerState = SENT.computeIfAbsent(player.getUniqueID(), ignored -> new PlayerState());
+            if (playerState.player != player || playerState.connection != player.playerNetServerHandler) {
+                playerState.terminals.clear();
+                playerState.lastProcessed = Long.MIN_VALUE;
+                playerState.player = player;
+                playerState.connection = player.playerNetServerHandler;
+            }
             if (!playerState.admit(now)) return;
             SentState state = playerState.terminal(terminalId);
+            prepareSession(player, state, request.delta == null ? null : request.delta.getSession());
+            if (request.delta != null) {
+                state.clientSession = request.delta.getSession();
+                if (state.delta == null) state.delta = new DeviceTerminalDeltaDelivery(terminalId);
+            }
+            MonitoringProfiles profiles = MonitoringProfiles.get(overworld);
+            if (!profiles.canRead(player.getUniqueID(), terminalId)) {
+                if (playerState.terminals.remove(terminalId) == null) return;
+                if (request.delta != null) {
+                    if (state.delta == null) state.delta = new DeviceTerminalDeltaDelivery(terminalId);
+                    revoke(player, state, request.delta.getSession());
+                } else revoke(player, state, state.clientSession);
+                return;
+            }
             DeviceTerminalSettings.get(overworld)
                 .sync(player);
             com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.refresh(player, terminalId);
@@ -232,21 +337,66 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
             // 版本跳过（D5 防轮询压力）：该版本整批已发完 → 零发包返回
             store.refreshRecognitionDefaults(terminalId);
+            String sourceRevision = profiles.sourceRevision(terminalId) + ":"
+                + profiles.authorizationRevision(terminalId);
+            // The transport owns one frozen page until actual send; do not prepare a different ACK baseline meanwhile.
+            if (state.pendingPage != null) return;
+            java.util.function.BooleanSupplier authorizedPage = () -> {
+                boolean valid = SENT.get(player.getUniqueID()) == playerState
+                    && playerState.terminals.get(terminalId) == state
+                    && playerState.connection == player.playerNetServerHandler
+                    && findTerminalStack(player, terminalId) != null
+                    && profiles.canRead(player.getUniqueID(), terminalId)
+                    && sourceRevision
+                        .equals(profiles.sourceRevision(terminalId) + ":" + profiles.authorizationRevision(terminalId));
+                if (!valid) state.pendingPage = null;
+                return valid;
+            };
+            if (request.delta != null) {
+                state.snapshot = null;
+                if (state.delta == null) state.delta = new DeviceTerminalDeltaDelivery(terminalId);
+                state.clientSession = request.delta.getSession();
+                state.sourceRevision = sourceRevision;
+                state.delta.prepare(
+                    request.delta,
+                    sourceRevision,
+                    data.version,
+                    () -> collectEntries(
+                        data,
+                        0,
+                        Math.min(countLiveEntries(data), PacketSyncDeviceTerminalData.MAX_ENTRIES)));
+                for (int burst = 0; burst < PAGES_PER_BURST && state.delta.hasPage(); burst++) {
+                    PacketSyncDeviceTerminalDelta packet = state.delta.next();
+                    DeviceTerminalDeltaDelivery delivery = state.delta;
+                    if (!queueFrozenPage(
+                        player,
+                        state,
+                        packet,
+                        authorizedPage,
+                        () -> delivery.sent(packet, overworld.getTotalWorldTime()))) break;
+                }
+                long keepAliveTicks = Math.max(20, Math.min(600, Config.deviceSampleIntervalSeconds * 20));
+                PacketSyncDeviceTerminalDelta keepAlive = state.delta.keepAlive(now, keepAliveTicks);
+                if (keepAlive != null && TelemetryTransport.trySend(player, keepAlive)) state.delta.keepAliveSent(now);
+                return;
+            }
+            state.delta = null;
+            state.clientSession = null;
+            if (state.sourceRevision != null && !state.sourceRevision.equals(sourceRevision)) state.snapshot = null;
+            state.sourceRevision = sourceRevision;
             state.prepareSnapshot(data, request.knownVersion, request.complete, request.hasClientState);
             if (state.complete) {
                 long keepAliveTicks = Math.max(20, Math.min(600, Config.deviceSampleIntervalSeconds * 20));
                 if (state.lastSent == Long.MIN_VALUE || now < state.lastSent
                     || now - state.lastSent >= keepAliveTicks) {
-                    GTSWNPacketHandler.NETWORK.sendTo(
-                        new PacketSyncDeviceTerminalData(
-                            terminalId,
-                            state.version,
-                            -1,
-                            state.pageTotal,
-                            state.entryTotal,
-                            java.util.Collections.emptyList()),
-                        player);
-                    state.lastSent = now;
+                    PacketSyncDeviceTerminalData keepAlive = new PacketSyncDeviceTerminalData(
+                        terminalId,
+                        state.version,
+                        -1,
+                        state.pageTotal,
+                        state.entryTotal,
+                        java.util.Collections.emptyList());
+                    if (TelemetryTransport.trySend(player, keepAlive)) state.lastSent = now;
                 }
                 return;
             }
@@ -258,29 +408,25 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                 state.complete = true;
                 return;
             }
-            int from = state.pagesSent * PAGE_SIZE;
-            int to = Math.min(from + PAGES_PER_BURST * PAGE_SIZE, entryTotal);
-            List<Entry> batch = state.snapshot.subList(from, to);
-            // 至少发一页（空终端发页 0 空页，客户端凭整批到齐消除「...」占位改示无绑定）
-            int sentPages = Math.max(1, (to + PAGE_SIZE - 1) / PAGE_SIZE);
-            for (int page = from / PAGE_SIZE; page < sentPages; page++) {
-                int pageFrom = Math.max(page * PAGE_SIZE, from);
-                int pageTo = Math.min(page * PAGE_SIZE + PAGE_SIZE, entryTotal);
-                GTSWNPacketHandler.NETWORK.sendTo(
-                    new PacketSyncDeviceTerminalData(
-                        terminalId,
-                        state.version,
-                        page,
-                        pageTotal,
-                        entryTotal,
-                        batch.subList(pageFrom - from, pageTo - from)),
-                    player);
+            int stop = Math.min(pageTotal, state.pagesSent + PAGES_PER_BURST);
+            while (state.pagesSent < stop) {
+                int page = state.pagesSent;
+                int pageFrom = page * PAGE_SIZE;
+                int pageTo = Math.min(pageFrom + PAGE_SIZE, entryTotal);
+                PacketSyncDeviceTerminalData packet = new PacketSyncDeviceTerminalData(
+                    terminalId,
+                    state.version,
+                    page,
+                    pageTotal,
+                    entryTotal,
+                    state.snapshot.subList(pageFrom, pageTo));
+                if (!queueFrozenPage(player, state, packet, authorizedPage, () -> {
+                    state.pagesSent++;
+                    state.lastSent = overworld.getTotalWorldTime();
+                    state.complete = state.pagesSent >= state.pageTotal;
+                })) break;
             }
-            state.pageTotal = pageTotal;
-            state.entryTotal = entryTotal;
-            state.lastSent = now;
-            state.pagesSent = sentPages;
-            state.complete = to >= entryTotal;
+            state.complete = state.pagesSent >= pageTotal;
         } catch (Throwable t) {
             // 装配异常：本条丢弃（客户端 GUI 等下个轮询周期重试），不中断本 tick 后续请求
             long now = System.nanoTime();
@@ -289,6 +435,40 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                 com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG.error("[设备终端] 请求装配异常（本条丢弃）", t);
             }
         }
+    }
+
+    static void prepareSession(EntityPlayerMP player, SentState state, UUID session) {
+        if (!java.util.Objects.equals(state.clientSession, session)) {
+            state.pendingPage = null;
+            TelemetryTransport.cancel(player, "dit-page:" + state.terminalId);
+        }
+        state.clientSession = session;
+    }
+
+    /** Large frozen pages participate in the existing queued-bulk reservation, not an invisible retry lane. */
+    static boolean queueFrozenPage(EntityPlayerMP player, SentState state,
+        cpw.mods.fml.common.network.simpleimpl.IMessage packet, java.util.function.BooleanSupplier authorized,
+        Runnable sent) {
+        if (state.pendingPage != null) return false;
+        Object marker = new Object();
+        state.pendingPage = marker;
+        TelemetryTransport.Admission admission = TelemetryTransport
+            .offerStatus(player, "dit-page:" + state.terminalId, packet, () -> {
+                boolean valid = false;
+                try {
+                    valid = state.pendingPage == marker && authorized.getAsBoolean();
+                } catch (RuntimeException unavailable) { /*
+                                                          * Drop unavailable authorization without stranding producer.
+                                                          */ }
+                if (!valid && state.pendingPage == marker) state.pendingPage = null;
+                return valid;
+            }, () -> {
+                if (state.pendingPage != marker) return;
+                state.pendingPage = null;
+                sent.run();
+            });
+        if (admission == TelemetryTransport.Admission.REJECTED && state.pendingPage == marker) state.pendingPage = null;
+        return admission == TelemetryTransport.Admission.SENT;
     }
 
     /** 有记录的有效条目数（绑定键遍历，零分配；boundKeys 与 records 理论对称，缺记录防御跳过） */

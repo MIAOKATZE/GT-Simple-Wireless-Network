@@ -164,6 +164,30 @@ public class HudLifecycleTest {
         assertNull(controller.wirelessReading());
     }
 
+    @Test
+    public void reopeningFactoryRequiresNewReceiptEvenIfOldTransportAgeIsFresh() throws Exception {
+        HudController controller = new HudController();
+        HudState state = state(controller);
+        seed(state);
+        Field time = HudController.class.getDeclaredField("lastResponseMillis");
+        time.setAccessible(true);
+        time.setLong(controller, System.currentTimeMillis());
+        Field revision = HudController.class.getDeclaredField("responseRevision");
+        revision.setAccessible(true);
+        revision.setLong(controller, 7);
+        controller.setFactoryReading(true);
+        assertTrue(controller.fresh());
+        assertFalse(controller.factoryFresh());
+        revision.setLong(controller, 8);
+        assertTrue(controller.factoryFresh());
+        controller.setFactoryReading(false);
+        assertFalse(controller.factoryFresh());
+        controller.setFactoryReading(true);
+        assertFalse(controller.factoryFresh());
+        revision.setLong(controller, 9);
+        assertTrue(controller.factoryFresh());
+    }
+
     private static void assertCleared(HudState state) {
         assertFalse(state.hudEnabled);
         assertEquals(0, state.displayMode);

@@ -32,6 +32,24 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
  */
 public class DeviceSampleScheduler {
 
+    private static final java.util.Set<DeviceSampleScheduler> INSTANCES = java.util.Collections
+        .newSetFromMap(new java.util.WeakHashMap<DeviceSampleScheduler, Boolean>());
+
+    public DeviceSampleScheduler() {
+        INSTANCES.add(this);
+    }
+
+    /** Drop the old world's strong reference even when no new integrated world is opened. */
+    public static void clearSession() {
+        for (DeviceSampleScheduler scheduler : new ArrayList<>(INSTANCES)) {
+            scheduler.samplingWorld = null;
+            scheduler.workQueue.clear();
+            scheduler.samplingTerminals.clear();
+            scheduler.fifoStates.clear();
+            scheduler.intervalCounter = 0;
+        }
+    }
+
     /** 每 tick 采样排水预算（台） */
     private static final int PER_TICK_BUDGET = 100;
 
@@ -49,6 +67,8 @@ public class DeviceSampleScheduler {
 
     /** 采样间隔计数器（仅主线程） */
     private int intervalCounter = 0;
+    private World samplingWorld;
+    private final List<Map.Entry<UUID, DeviceTerminalDataStore.TerminalData>> samplingTerminals = new ArrayList<>();
 
     /**
      * FIFO 增量均值会话缓存：机器键 →（终端 UUID → 上次推进后的 runningSum 状态）。
@@ -99,6 +119,15 @@ public class DeviceSampleScheduler {
         if (overworld == null) {
             return;
         }
+        if (samplingWorld != overworld) {
+            samplingWorld = overworld;
+            samplingTerminals.clear();
+            workQueue.clear();
+            fifoStates.clear();
+            intervalCounter = 0;
+        }
+        com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
+            .tickNonDeviceJobs(overworld.getTotalWorldTime());
         // 采样间隔（读时钳 ≥20t，防 Config 调 0 引发每 tick 全量采样）
         int intervalTicks = Math.max(20, Config.deviceSampleIntervalSeconds * 20);
         this.intervalCounter++;
@@ -128,12 +157,12 @@ public class DeviceSampleScheduler {
      */
     private void refillWorkQueue(World overworld) {
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(overworld);
-        for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : store.getActiveTerminals()) {
-            if (!DeviceTerminalDataStore.isTerminalActive(entry.getKey())) {
-                continue;
-            }
-            this.workQueue.addAll(entry.getValue().boundKeys);
-        }
+        com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+            .get(overworld);
+        samplingTerminals.clear();
+        samplingTerminals.addAll(profiles.samplingTerminals(store, overworld.getTotalWorldTime()));
+        for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : samplingTerminals)
+            if (profiles.maySample(entry.getKey())) this.workQueue.addAll(entry.getValue().boundKeys);
         this.fifoStates.keySet()
             .retainAll(this.workQueue);
     }
@@ -193,8 +222,9 @@ public class DeviceSampleScheduler {
             if (activeTerminals == null) {
                 store = DeviceTerminalDataStore.get(overworld);
                 activeTerminals = new ArrayList<>();
-                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : store.getActiveTerminals())
-                    if (DeviceTerminalDataStore.isTerminalActive(entry.getKey())) activeTerminals.add(entry);
+                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : samplingTerminals)
+                    if (com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
+                        .maySample(entry.getKey())) activeTerminals.add(entry);
             }
             boolean observable = false;
             for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
@@ -340,6 +370,8 @@ public class DeviceSampleScheduler {
                     recipeIn,
                     recipeOut,
                     nextCapabilities)) data.version++;
+                com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
+                    .sampled(entry.getKey(), overworld.getTotalWorldTime());
                 anyRecordWritten = true;
             }
         }

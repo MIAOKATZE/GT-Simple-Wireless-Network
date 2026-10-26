@@ -221,6 +221,61 @@ public class GTSWNPacketHandler {
         cpw.mods.fml.common.FMLCommonHandler.instance()
             .bus()
             .register(new com.miaokatze.gtswn.common.engineering.EngineeringDashboardSessions());
+        // Negotiated monitoring extensions. Existing discriminator assignments remain unchanged.
+        NETWORK
+            .registerMessage(PacketMonitorCapabilities.Handler.class, PacketMonitorCapabilities.class, 36, Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketRequestPortableHistory.Handler.class,
+            PacketRequestPortableHistory.class,
+            37,
+            Side.SERVER);
+        NETWORK
+            .registerMessage(PacketSyncPortableHistory.Handler.class, PacketSyncPortableHistory.class, 38, Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketRequestDeviceTerminalDelta.Handler.class,
+            PacketRequestDeviceTerminalDelta.class,
+            39,
+            Side.SERVER);
+        NETWORK.registerMessage(
+            PacketSyncDeviceTerminalDelta.Handler.class,
+            PacketSyncDeviceTerminalDelta.class,
+            40,
+            Side.CLIENT);
+        NETWORK
+            .registerMessage(PacketEngineeringControl.Handler.class, PacketEngineeringControl.class, 41, Side.SERVER);
+        NETWORK
+            .registerMessage(PacketEngineeringCompact.Handler.class, PacketEngineeringCompact.class, 42, Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketQuantumIncorporationDelta.Handler.class,
+            PacketQuantumIncorporationDelta.class,
+            43,
+            Side.CLIENT);
+        NETWORK.registerMessage(PacketAckPanelHistory.Handler.class, PacketAckPanelHistory.class, 44, Side.SERVER);
+        NETWORK.registerMessage(PacketSyncPanelHistory.Handler.class, PacketSyncPanelHistory.class, 45, Side.CLIENT);
+        NETWORK.registerMessage(
+            C2SPacketMonitorProfileAction.Handler.class,
+            C2SPacketMonitorProfileAction.class,
+            46,
+            Side.SERVER);
+        NETWORK
+            .registerMessage(S2CPacketMonitorProfiles.Handler.class, S2CPacketMonitorProfiles.class, 47, Side.CLIENT);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new C2SPacketMonitorProfileAction.ServerQueue());
+        com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+            .configureFeatures(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.ALL);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new com.miaokatze.gtswn.network.telemetry.MonitorCapabilities());
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new com.miaokatze.gtswn.network.telemetry.TelemetryTransport());
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new com.miaokatze.gtswn.common.monitoring.MonitoringRuntime());
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new NetworkPanelBroadcastPort());
         PacketSetQuantumNetworkColor.register();
         com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync visualSync = new com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync();
         MinecraftForge.EVENT_BUS.register(visualSync);

@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.common.panel;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -59,6 +60,8 @@ public final class EUCacheBridge {
     private NetworkInfoDataStore cachedOwnerDataStore = null;
     private NetworkInfoDataSet cachedOwnerDataSet = null;
     private int cachedOwnerDataSetRevision = -1;
+    private UUID cachedNativeAccount;
+    private World cachedOwnerWorld;
 
     // ==================== S35 增量协议状态（G3，v1.7.14）====================
 
@@ -107,6 +110,8 @@ public final class EUCacheBridge {
         cachedOwnerDataStore = null;
         cachedOwnerDataSet = null;
         cachedOwnerDataSetRevision = -1;
+        cachedNativeAccount = null;
+        cachedOwnerWorld = null;
         // G3：owner 变更后 S35 协议状态整体复位（双端各复位各自侧字段）；
         // 服务端随后由冷启动段置全量档，客户端因 lastSyncSeq=-1 对增量包一律锁定等待全量
         syncSeq = 0L;
@@ -132,12 +137,11 @@ public final class EUCacheBridge {
      */
     public void tickServer(long overworldTick) {
         // ===== 更新请求 tick（调度器据此判断是否活跃采样） =====
-        // 信息屏每次 updateEntity 都更新 lastRequestTick，调度器仅对 5 分钟内有请求的 dataSet 采样
-        if (core.getOwnerUUID() != null && overworldTick >= 0L) {
+        // A loaded tile is not permanent observation. Preserve the existing polling cadence and
+        // cover its 101-tick interval with a short lease only while a real observer/job is interested.
+        if (core.getOwnerUUID() != null && overworldTick >= 0L && core.hasMonitoringInterest()) {
             NetworkInfoDataSet dataSet = getOwnerDataSet();
-            if (dataSet != null) {
-                dataSet.updateRequestTick(overworldTick);
-            }
+            if (dataSet != null) dataSet.renewObservation(overworldTick, 120L);
         }
 
         // ===== 冷启动数据刷新（重进存档/放置方块后执行一次） =====
@@ -162,8 +166,7 @@ public final class EUCacheBridge {
             syncSeq++;
             fullSyncPending = true;
             core.markDirty();
-            core.getWorldObj()
-                .markBlockForUpdate(core.xCoord, core.yCoord, core.zCoord);
+            core.broadcastEULiveData();
         }
 
         // ===== 轮询全局数据集，检测新采样数据 =====
@@ -185,8 +188,7 @@ public final class EUCacheBridge {
                     incrementalPushUntilTick = core.getWorldObj()
                         .getTotalWorldTime() + INCREMENTAL_PUSH_WINDOW_TICKS;
                     core.markDirty();
-                    core.getWorldObj()
-                        .markBlockForUpdate(core.xCoord, core.yCoord, core.zCoord);
+                    core.broadcastEULiveData();
                     if (DebugTestGate.probesActive())
                         TestWorldProbes.at(core, Type.PANEL_EU_SAMPLE, "source=global_sample_poll;tick=" + newest.tick);
                 }
@@ -230,10 +232,12 @@ public final class EUCacheBridge {
     }
 
     public BigInteger getCachedEu() {
+        ensureNativeCacheIdentity();
         return cachedEu;
     }
 
     public double getCachedEut() {
+        ensureNativeCacheIdentity();
         return cachedEut;
     }
 
@@ -243,11 +247,17 @@ public final class EUCacheBridge {
     }
 
     public String getCachedStatus() {
+        ensureNativeCacheIdentity();
         return cachedStatus;
     }
 
     public List<NetworkInfoSample> getCachedSamples() {
+        ensureNativeCacheIdentity();
         return cachedSamples;
+    }
+
+    private void ensureNativeCacheIdentity() {
+        if (core != null && core.getWorldObj() != null && !core.getWorldObj().isRemote) getOwnerDataSet();
     }
 
     /**
@@ -261,20 +271,51 @@ public final class EUCacheBridge {
      * @return NetworkInfoDataSet 或 null
      */
     private NetworkInfoDataSet getOwnerDataSet() {
-        if (core.getWorldObj() == null || core.getWorldObj().isRemote || core.getOwnerUUID() == null) return null;
-        if (cachedOwnerDataSet != null && cachedOwnerDataStore != null
-            && cachedOwnerDataSetRevision == cachedOwnerDataStore.getRevision()) {
-            return cachedOwnerDataSet;
-        }
+        if (core == null || core.getWorldObj() == null || core.getWorldObj().isRemote || core.getOwnerUUID() == null)
+            return null;
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) return null;
         World overworld = server.worldServerForDimension(0);
         if (overworld == null) return null;
+        UUID account = NetworkInfoDataStore.resolveAccount(core.getOwnerUUID());
+        boolean sourceChanged = cachedOwnerWorld != overworld
+            || !java.util.Objects.equals(cachedNativeAccount, account);
+        if (sourceChanged) {
+            cachedOwnerWorld = overworld;
+            cachedNativeAccount = account;
+            cachedOwnerDataSet = null;
+            cachedOwnerDataStore = null;
+            cachedOwnerDataSetRevision = -1;
+            // Never display or append the prior team's values as this account's history.
+            cachedSamples.clear();
+            cachedEu = BigInteger.ZERO;
+            cachedEut = 0;
+            cachedStatus = "No data";
+            lastKnownSampleTick = -1L;
+            needsDataRefresh = true;
+            fullSyncPending = true;
+            incrementalPushUntilTick = -1L;
+            incrementalSinceFull = 0;
+        }
+        if (account == null) return null;
+        if (cachedOwnerDataSet != null && cachedOwnerDataStore != null
+            && cachedOwnerDataSetRevision == cachedOwnerDataStore.getRevision()) return cachedOwnerDataSet;
         cachedOwnerDataStore = NetworkInfoDataStore.get(overworld);
-        cachedOwnerDataSet = cachedOwnerDataStore.getOrCreate(
-            core.getOwnerUUID()
-                .toString());
+        cachedOwnerDataSet = cachedOwnerDataStore.getOrCreateNative(account);
         cachedOwnerDataSetRevision = cachedOwnerDataStore.getRevision();
+        if (sourceChanged) {
+            refreshFrom(cachedOwnerDataSet);
+            NetworkInfoSample newest = cachedOwnerDataSet.newest();
+            if (newest != null) {
+                cachedEu = newest.eu;
+                cachedEut = newest.eut;
+                lastKnownSampleTick = newest.tick;
+            }
+            cachedStatus = formatStatus(
+                cachedEut,
+                cachedOwnerDataSet.isColdStarting(),
+                cachedOwnerDataSet.isLongTermSilent());
+        }
         return cachedOwnerDataSet;
     }
 
@@ -335,13 +376,19 @@ public final class EUCacheBridge {
      * 四键 cachedEu/cachedEut/cachedStatus/samples 键名逐字不动，任何档位均随包发送。
      */
     public void writeSync(NBTTagCompound tag) {
+        writeSync(tag, false);
+    }
+
+    /** A newly tracking chunk has no baseline, even during another receiver's incremental push window. */
+    public void writeSync(NBTTagCompound tag, boolean forceFull) {
         tag.setString("cachedEu", cachedEu == null ? "0" : cachedEu.toString());
         tag.setDouble("cachedEut", cachedEut);
         tag.setString("cachedStatus", cachedStatus == null ? "" : cachedStatus);
         long worldTick = core.getWorldObj() == null ? -1L
             : core.getWorldObj()
                 .getTotalWorldTime();
-        boolean incremental = !fullSyncPending && syncSeq > 0L
+        boolean incremental = !forceFull && !fullSyncPending
+            && syncSeq > 0L
             && !cachedSamples.isEmpty()
             && worldTick >= 0L
             && worldTick <= incrementalPushUntilTick;

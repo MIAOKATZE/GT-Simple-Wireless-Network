@@ -1,6 +1,5 @@
 package com.miaokatze.gtswn.network;
 
-import java.math.BigInteger;
 import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayerMP;
@@ -11,7 +10,6 @@ import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 
 import baubles.api.BaublesApi;
-import gregtech.common.misc.WirelessNetworkManager;
 
 /**
  * 无线 EU 查询请求的待处理队列（v1.6.19）。
@@ -72,11 +70,32 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
             // 封死「仅凭枚举他人 UUID 即可读取其无线电网余额」的信息泄露面；
             // 不持有（含终端已转移/丢弃）时静默丢弃，客户端下轮轮询重试
             if (!holdsMonitorFor(request.player, request.ownerUUID)) {
+                com.miaokatze.gtswn.network.telemetry.TelemetryTransport
+                    .cancel(request.player, "wireless-eu:" + request.ownerUUID);
+                if (com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                    .serverSupports(request.player, com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PORTABLE))
+                    GTSWNPacketHandler.NETWORK
+                        .sendTo(new PacketResponseWirelessEU("$gtswn:denied", request.requestToken), request.player);
                 return;
             }
-            BigInteger eu = WirelessNetworkManager.getUserEU(UUID.fromString(request.ownerUUID));
-            GTSWNPacketHandler.NETWORK
-                .sendTo(new PacketResponseWirelessEU(eu.toString(), request.requestToken), request.player);
+            com.miaokatze.gtswn.common.monitoring.NativeWirelessEUSnapshot sample = com.miaokatze.gtswn.common.monitoring.NativeWirelessEUSnapshot
+                .read(request.player.worldObj, UUID.fromString(request.ownerUUID));
+            if (sample == null) return;
+            boolean qualified = com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                .serverSupports(request.player, com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.EU_SOURCE);
+            String payload = qualified ? com.miaokatze.gtswn.common.monitoring.WirelessEUPayload.encode(sample)
+                : sample.amount.toString();
+            if (payload == null) return;
+            PacketResponseWirelessEU response = new PacketResponseWirelessEU(payload, request.requestToken);
+            if (qualified) com.miaokatze.gtswn.network.telemetry.TelemetryTransport.offer(
+                request.player,
+                "wireless-eu:" + request.ownerUUID,
+                response,
+                () -> holdsMonitorFor(request.player, request.ownerUUID) && sample.account.equals(
+                    com.miaokatze.gtswn.common.panel.NetworkInfoDataStore
+                        .resolveAccount(UUID.fromString(request.ownerUUID))),
+                null);
+            else GTSWNPacketHandler.NETWORK.sendTo(response, request.player);
         } catch (Throwable t) {
             // 玩家掉线/格式异常：静默丢弃，客户端下轮轮询
         }
@@ -97,7 +116,7 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
         if (ownerUUID == null || ownerUUID.isEmpty()) {
             return false;
         }
-        if (matchesMonitor(player.getHeldItem(), ownerUUID)) {
+        if (matchesMonitor(player, player.getHeldItem(), ownerUUID)) {
             return true;
         }
         // --- 饰品栏扫描（Baubles 不存在时安全降级，与客户端 scanMonitorInInventory 同款 try/NoClassDefFoundError） ---
@@ -105,7 +124,7 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
             IInventory baubles = BaublesApi.getBaubles(player);
             if (baubles != null) {
                 for (int i = 0; i < baubles.getSizeInventory(); i++) {
-                    if (matchesMonitor(baubles.getStackInSlot(i), ownerUUID)) {
+                    if (matchesMonitor(player, baubles.getStackInSlot(i), ownerUUID)) {
                         return true;
                     }
                 }
@@ -115,7 +134,7 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
         }
         // --- 主背包扫描（0-35） ---
         for (int i = 0; i < player.inventory.mainInventory.length; i++) {
-            if (matchesMonitor(player.inventory.mainInventory[i], ownerUUID)) {
+            if (matchesMonitor(player, player.inventory.mainInventory[i], ownerUUID)) {
                 return true;
             }
         }
@@ -125,7 +144,7 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
     /**
      * 检查单个槽位：是绑定到指定 UUID 的便携监测终端则命中（NBT 键名引用物品侧 public 常量）。
      */
-    private static boolean matchesMonitor(ItemStack stack, String ownerUUID) {
+    private static boolean matchesMonitor(EntityPlayerMP player, ItemStack stack, String ownerUUID) {
         if (stack == null || stack.stackTagCompound == null) {
             return false;
         }
@@ -133,7 +152,12 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
             return false;
         }
         return stack.stackTagCompound.hasKey(PortableWirelessNetworkMonitor.NBT_OWNER_UUID)
-            && ownerUUID.equals(stack.stackTagCompound.getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID));
+            && ownerUUID.equals(stack.stackTagCompound.getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID))
+            && com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .canReadPortableEU(
+                    player.getUniqueID(),
+                    stack,
+                    com.miaokatze.gtswn.common.panel.NetworkInfoDataStore.resolveAccount(UUID.fromString(ownerUUID)));
     }
 
     static final class Request {

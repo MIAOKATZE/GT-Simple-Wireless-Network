@@ -213,7 +213,9 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) {
             return false;
         }
-        if (!QuantumTerminalAccess.validate(player, held)) return true;
+        if (!QuantumTerminalAccess.validate(player, held)
+            || !com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, held, true))
+            return true;
         if (QuantumIncorporationRegistry.isIncorporated(world, x, y, z)) return false;
         TileEntity clickedTile = world.getTileEntity(x, y, z);
         if (removeCore) {

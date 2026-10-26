@@ -172,6 +172,12 @@ public class CommonProxy {
      */
     @SuppressWarnings({ "unused" })
     public void init(FMLInitializationEvent event) {
+        appeng.api.AEApi.instance()
+            .registries()
+            .gridCache()
+            .registerGridCache(
+                com.miaokatze.gtswn.common.monitoring.ae.IMonitorIdentityCache.class,
+                com.miaokatze.gtswn.common.monitoring.ae.MonitorIdentityGridCache.class);
         if (DebugTestGate.isEnabled()) TestWorldManager.init();
         // 1. 确保机器注册任务已执行（通过 GregTech 队列在 preInit 结束时触发）
         // 2. 初始化创造模式物品栏（此时 GTSWNItemList 应已被 set() 填充）
@@ -308,6 +314,9 @@ public class CommonProxy {
         com.miaokatze.gtswn.common.quantum.QuantumTerminalSyncEpoch.beginSession();
         if (DebugTestGate.isEnabled()) TestWorldManager.serverStarting();
         event.registerServerCommand(new CommandGTSWN());
+        event.registerServerCommand(new com.miaokatze.gtswn.common.command.CommandMonitorProfile());
+        event.registerServerCommand(new com.miaokatze.gtswn.common.monitoring.web.CommandWebDashboard());
+        com.miaokatze.gtswn.common.monitoring.MonitoringRuntime.start();
     }
 
     /**
@@ -504,6 +513,10 @@ public class CommonProxy {
     public void openPortableMonitorGui(net.minecraft.item.ItemStack stack) {}
 
     public void handleSyncPortableMonitor(com.miaokatze.gtswn.network.PacketSyncPortableMonitor message) {}
+
+    public void handleSyncDeviceTerminalDelta(com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta message) {}
+
+    public void handleSyncPanelHistory(com.miaokatze.gtswn.network.PacketSyncPanelHistory message) {}
 
     /**
      * HUD 模式切换意图（O2-B10：items→hud 拆环，物品类不再字节码引用客户端类

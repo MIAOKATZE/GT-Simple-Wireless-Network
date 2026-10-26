@@ -35,6 +35,73 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
  */
 public class Config {
 
+    /** Monitoring payload budgets are independent of gameplay EU transfer losses. */
+    public static int monitorPlayerBytesPerSecond = 65536;
+    public static int monitorGlobalBytesPerSecond = 262144;
+    public static int monitorPendingPerPlayer = 16;
+    public static boolean monitorWebEnabled = false;
+    public static String monitorWebBindAddress = "127.0.0.1";
+    public static int monitorWebPort = 8765;
+    public static int monitorWebMaxDashboards = 1;
+    public static String monitorWebTokenHashEnvironment = "GTSWN_WEB_TOKEN_SHA256";
+    public static int monitorWebBytesPerSecond = 131072;
+
+    public static void synchronizeMonitoringConfiguration(Configuration c) {
+        String category = "monitoring";
+        monitorPlayerBytesPerSecond = c.getInt(
+            "PlayerBytesPerSecond",
+            category,
+            65536,
+            1024,
+            16777216,
+            "Per-player GTSWN telemetry application-byte rate; not a limit on vanilla traffic.");
+        monitorGlobalBytesPerSecond = c.getInt(
+            "GlobalBytesPerSecond",
+            category,
+            262144,
+            1024,
+            67108864,
+            "Server-wide GTSWN telemetry application-byte rate; burst and control traffic are separate.");
+        monitorPendingPerPlayer = c.getInt(
+            "PendingPerPlayer",
+            category,
+            16,
+            1,
+            64,
+            "Bounded replaceable telemetry states per player; does not drop ordered gameplay actions.");
+        monitorWebEnabled = c.getBoolean(
+            "WebEnabled",
+            category,
+            false,
+            "Enable the optional read-only loopback web listener; default off.");
+        monitorWebBindAddress = c.getString(
+            "WebBindAddress",
+            category,
+            "127.0.0.1",
+            "Loopback only; use an explicitly configured HTTPS reverse proxy for remote access.");
+        monitorWebPort = c
+            .getInt("WebPort", category, 8765, 1024, 65535, "Independent read-only HTTP port, not the Minecraft port.");
+        monitorWebMaxDashboards = c.getInt(
+            "WebMaxDashboards",
+            category,
+            1,
+            1,
+            16,
+            "Maximum globally published dashboards, not the viewer count.");
+        monitorWebTokenHashEnvironment = c.getString(
+            "WebTokenHashEnvironment",
+            category,
+            "GTSWN_WEB_TOKEN_SHA256",
+            "Name of operator-provisioned environment variable containing the viewer token SHA-256; never put the token here.");
+        monitorWebBytesPerSecond = c.getInt(
+            "WebBytesPerSecond",
+            category,
+            131072,
+            1024,
+            16777216,
+            "Shared HTTP response-byte budget; web and Minecraft still share physical uplink.");
+    }
+
     /** gtswn_network.cfg 中 HUD 参数的独立类目名（与 general 平级） */
     private static final String CATEGORY_HUD = "hud";
 
@@ -505,6 +572,7 @@ public class Config {
     public static void synchronizeNetworkConfiguration(File configFile) {
         networkConfigFile = configFile;
         Configuration configuration = new Configuration(configFile);
+        synchronizeMonitoringConfiguration(configuration);
         readParticleConfiguration(configuration);
         linkNodeOpacity = configuration
             .getFloat("LinkNodeOpacity", CATEGORY_CLIENT, .48F, .05F, 1F, "Transparent link node shell opacity");

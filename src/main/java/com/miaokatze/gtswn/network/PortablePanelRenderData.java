@@ -28,6 +28,8 @@ public final class PortablePanelRenderData {
 
     public NBTTagCompound config = new NBTTagCompound();
     public String chartKey = "";
+    /** Negotiated transport provenance, not serialized in the legacy payload. */
+    public String euSource = "", aeSource = "";
     public String currentEnergy = "";
     public final List<NetworkInfoSample> eu = new ArrayList<>();
     public final List<AEMonitorSample> ae = new ArrayList<>();
@@ -37,6 +39,8 @@ public final class PortablePanelRenderData {
         PortablePanelRenderData copy = new PortablePanelRenderData();
         copy.config = (NBTTagCompound) config.copy();
         copy.chartKey = chartKey;
+        copy.euSource = euSource;
+        copy.aeSource = aeSource;
         copy.currentEnergy = currentEnergy;
         copy.eu.addAll(eu);
         copy.ae.addAll(ae);
@@ -66,12 +70,20 @@ public final class PortablePanelRenderData {
     }
 
     public void write(ByteBuf buf) {
+        writeConfig(buf, config);
+        PacketSyncPortableMonitor.writeString(buf, chartKey, 256);
+        PacketSyncPortableMonitor.writeString(buf, currentEnergy, 4096);
+        writeLegacySamples(buf);
+    }
+
+    static void writeConfig(ByteBuf buf, NBTTagCompound config) {
         for (String key : INTS) buf.writeInt(config.getInteger(key));
         for (String key : BOOLS)
             buf.writeBoolean("trendDirectionColors".equals(key) && !config.hasKey(key) || config.getBoolean(key));
         for (String key : STRINGS) PacketSyncPortableMonitor.writeString(buf, config.getString(key), 64);
-        PacketSyncPortableMonitor.writeString(buf, chartKey, 256);
-        PacketSyncPortableMonitor.writeString(buf, currentEnergy, 4096);
+    }
+
+    private void writeLegacySamples(ByteBuf buf) {
         int count = Math.min(61, eu.size());
         buf.writeByte(count);
         for (int i = eu.size() - count; i < eu.size(); i++) {
@@ -94,11 +106,17 @@ public final class PortablePanelRenderData {
         }
     }
 
+    static NBTTagCompound readConfig(ByteBuf buf) {
+        NBTTagCompound config = new NBTTagCompound();
+        for (String key : INTS) config.setInteger(key, buf.readInt());
+        for (String key : BOOLS) config.setBoolean(key, buf.readBoolean());
+        for (String key : STRINGS) config.setString(key, PacketSyncPortableMonitor.readString(buf, 64));
+        return config;
+    }
+
     public static PortablePanelRenderData read(ByteBuf buf) {
         PortablePanelRenderData data = new PortablePanelRenderData();
-        for (String key : INTS) data.config.setInteger(key, buf.readInt());
-        for (String key : BOOLS) data.config.setBoolean(key, buf.readBoolean());
-        for (String key : STRINGS) data.config.setString(key, PacketSyncPortableMonitor.readString(buf, 64));
+        data.config = readConfig(buf);
         data.chartKey = PacketSyncPortableMonitor.readString(buf, 256);
         data.currentEnergy = PacketSyncPortableMonitor.readString(buf, 4096);
         int count = PacketSyncPortableMonitor.count(buf.readUnsignedByte(), 61);

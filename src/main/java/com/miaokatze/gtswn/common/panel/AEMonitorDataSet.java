@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 
 import net.minecraft.nbt.NBTTagCompound;
@@ -71,6 +72,50 @@ public class AEMonitorDataSet {
     /** 每 key 一条独立采样链（O2-14：原 15 张并行 Map 的单维化） */
     private final Map<String, Chain> chains = new HashMap<>();
 
+    // Projection indexes are maintained at writes/load, not rebuilt on every Web publication.
+    // Keep all archived chains; the index bounds reads without deleting legacy history.
+    private final TreeSet<String> sampledKeys = new TreeSet<>();
+    private final TreeMap<Long, Integer> sampleTicks = new TreeMap<>();
+
+    private void unindex(String key, Chain chain) {
+        AEMonitorSample sample = chain == null ? null : chain.newest();
+        if (sample == null || !sampledKeys.remove(key)) return;
+        int count = sampleTicks.get(sample.tick);
+        if (count == 1) sampleTicks.remove(sample.tick);
+        else sampleTicks.put(sample.tick, count - 1);
+    }
+
+    private void index(String key, Chain chain) {
+        AEMonitorSample sample = chain.newest();
+        if (sample == null) return;
+        sampledKeys.add(key);
+        sampleTicks.put(sample.tick, sampleTicks.getOrDefault(sample.tick, 0) + 1);
+    }
+
+    /** Constant-time count of nonempty raw series; does not construct snapshots or histories. */
+    public int sampledKeyCount() {
+        return sampledKeys.size();
+    }
+
+    /** Sorted prefix only: O(log N + limit), never copies/sorts the entire historical key set. */
+    public List<String> sampledKeys(int limit) {
+        List<String> result = new ArrayList<>();
+        if (limit <= 0) return result;
+        for (String key : sampledKeys) {
+            result.add(key);
+            if (result.size() >= limit) break;
+        }
+        return result;
+    }
+
+    /** Every exposed series must be fresh; unknown/future samples cannot borrow another key's time. */
+    public long projectionSampleTick(long now) {
+        if (clockContinuityPaused || sampleTicks.isEmpty()
+            || sampleTicks.firstKey() <= 0
+            || sampleTicks.lastKey() > now) return 0;
+        return sampleTicks.firstKey();
+    }
+
     /** Full identity descriptors are stored with new series; legacy history has none. */
     private final Map<String, NBTTagCompound> identities = new HashMap<>();
 
@@ -92,6 +137,36 @@ public class AEMonitorDataSet {
     // 每个 key 独立的采样锁（world tick），距离上次采样 ≥ 100 ticks 才允许新采样
     private final Map<String, Long> lastSampleTick = new HashMap<>();
 
+    static final int MAX_CLOCK_ARCHIVES = 64;
+    private NBTTagList clockArchives = new NBTTagList();
+    private long observedTick = Long.MIN_VALUE;
+    private boolean clockContinuityPaused;
+
+    /** Preserve the old timeline explicitly; current windows and rollups never span a clock rollback. */
+    boolean resetSampleClock(long tick) {
+        if (clockContinuityPaused) return false;
+        if (!chains.isEmpty()) {
+            if (clockArchives.tagCount() >= MAX_CLOCK_ARCHIVES) {
+                clockContinuityPaused = true;
+                return false;
+            }
+            NBTTagCompound archive = activeNBT();
+            archive.setString("boundary", "clock-rollback");
+            archive.setLong("previousTick", observedTick);
+            archive.setLong("resumeTick", tick);
+            clockArchives.appendTag(archive);
+        }
+        clearActive();
+        observedTick = tick;
+        return true;
+    }
+
+    boolean observeClock(long tick) {
+        if (tick < observedTick && !resetSampleClock(tick)) return false;
+        observedTick = tick;
+        return !clockContinuityPaused;
+    }
+
     private Chain getOrCreateChain(String key) {
         Chain chain = chains.get(key);
         if (chain == null) {
@@ -110,6 +185,7 @@ public class AEMonitorDataSet {
      * @param timeMs 真实时间戳（毫秒）
      */
     public void addSample(String key, long amount, long tick, long timeMs) {
+        if (!observeClock(tick)) return;
         Chain chain = getOrCreateChain(key);
         AEMonitorSample newest = chain.newest();
         double rate = 0.0D;
@@ -118,8 +194,10 @@ public class AEMonitorDataSet {
         }
 
         AEMonitorSample sample = new AEMonitorSample(timeMs, tick, amount, rate);
+        unindex(key, chain);
         chain.addToWindow(WINDOW_5_MIN, sample);
         chain.flow(sample);
+        index(key, chain);
 
         lastSampleTick.put(key, tick);
     }
@@ -133,6 +211,7 @@ public class AEMonitorDataSet {
      * @return true=获得锁并已更新 lastSampleTick；false=尚未到下一次采样时间
      */
     public boolean tryAcquireSampleLock(String key, long tick, int intervalTicks) {
+        if (!observeClock(tick)) return false;
         long interval = intervalTicks > 0 ? intervalTicks : 100L;
         Long last = lastSampleTick.get(key);
         if (last == null || tick - last.longValue() >= interval) {
@@ -213,7 +292,7 @@ public class AEMonitorDataSet {
      * 清空指定 key 的所有窗口、计数器与采样锁，释放内存。
      */
     public void clear(String key) {
-        chains.remove(key);
+        unindex(key, chains.remove(key));
         identities.remove(key);
         lastSampleTick.remove(key);
     }
@@ -222,7 +301,16 @@ public class AEMonitorDataSet {
      * 清空全部 key。
      */
     public void clear() {
+        clearActive();
+        clockArchives = new NBTTagList();
+        observedTick = Long.MIN_VALUE;
+        clockContinuityPaused = false;
+    }
+
+    private void clearActive() {
         chains.clear();
+        sampledKeys.clear();
+        sampleTicks.clear();
         identities.clear();
         lastSampleTick.clear();
     }
@@ -247,6 +335,14 @@ public class AEMonitorDataSet {
      * （键名与写入顺序与 O2-14 前逐字段版逐字一致）。
      */
     public NBTTagCompound toNBT() {
+        NBTTagCompound tag = activeNBT();
+        tag.setTag("clockArchives", clockArchives.copy());
+        tag.setLong("observedTick", observedTick);
+        tag.setBoolean("clockContinuityPaused", clockContinuityPaused);
+        return tag;
+    }
+
+    private NBTTagCompound activeNBT() {
         NBTTagCompound tag = new NBTTagCompound();
         NBTTagList list = new NBTTagList();
         for (String key : getKeys()) {
@@ -281,6 +377,10 @@ public class AEMonitorDataSet {
         if (tag == null) {
             return;
         }
+        clockArchives = (NBTTagList) tag.getTagList("clockArchives", Constants.NBT.TAG_COMPOUND)
+            .copy();
+        clockContinuityPaused = tag.getBoolean("clockContinuityPaused");
+        observedTick = tag.hasKey("observedTick") ? tag.getLong("observedTick") : Long.MIN_VALUE;
         NBTTagList list = tag.getTagList("keys", Constants.NBT.TAG_COMPOUND);
         for (int i = 0; i < list.tagCount(); i++) {
             NBTTagCompound entry = list.getCompoundTagAt(i);
@@ -292,8 +392,15 @@ public class AEMonitorDataSet {
                 registerIdentity(key, entry.getCompoundTag("identity"));
             }
             NBTTagCompound data = entry.getCompoundTag("data");
-            getOrCreateChain(key).readWindowsFromNBT(data);
-            lastSampleTick.put(key, data.getLong("lastSampleTick"));
+            Chain chain = getOrCreateChain(key);
+            unindex(key, chain);
+            chain.readWindowsFromNBT(data);
+            index(key, chain);
+            long last = data.getLong("lastSampleTick");
+            lastSampleTick.put(key, last);
+            observedTick = Math.max(observedTick, last);
+            AEMonitorSample newest = chain.newest();
+            if (newest != null) observedTick = Math.max(observedTick, newest.tick);
         }
     }
 }

@@ -284,6 +284,11 @@ public final class DeviceTerminalVisualActionQueue {
             return;
         }
         if (actual == null) return;
+        if (!com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+            .canRead(player.getUniqueID(), actual)) {
+            acknowledge(player, actual, false);
+            return;
+        }
         if (!rateAllowed(player.getUniqueID(), message.action, now)) {
             if (message.action == PacketDeviceTerminalVisualAction.ACTION_VISUAL_TELEPORT) report(
                 player,
@@ -326,6 +331,8 @@ public final class DeviceTerminalVisualActionQueue {
                 message.key,
                 DeviceTerminalTeleport.attemptDetailed(player, actual, message.key, true));
         } else {
+            if (!com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .canModify(player.getUniqueID(), actual)) return;
             DeviceTerminalDataStore store = DeviceTerminalDataStore.get(player.worldObj);
             DeviceTerminalDataStore.TerminalData data = store.getTerminal(actual);
             long before = data == null ? -1 : data.version;
@@ -377,6 +384,8 @@ public final class DeviceTerminalVisualActionQueue {
     }
 
     private static boolean validInventory(EntityPlayerMP player, Session session) {
+        if (!com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+            .canRead(player.getUniqueID(), session.terminalId)) return false;
         if (player.isDead || player.getHealth() <= 0) return false;
         ItemStack[] inventory = player.inventory.mainInventory;
         IInventory baubles = TerminalBaubles.inventory(player);
@@ -421,6 +430,8 @@ public final class DeviceTerminalVisualActionQueue {
             }
         }
         if (id == null) return;
+        if (!com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+            .canRead(player.getUniqueID(), id)) return;
         if (current != null && current.terminalId.equals(id)) return;
         if (current == null && SESSIONS.size() >= MAX_SESSIONS) return;
         if (current != null) acknowledge(player, current.terminalId, false);

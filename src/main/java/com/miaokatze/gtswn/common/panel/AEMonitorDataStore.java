@@ -11,7 +11,8 @@ import com.miaokatze.gtswn.common.util.SavedDataUtil;
  * 数据集映射与 NBT 读写（{@code "sets"} 列表 + {@code "id"/"data"} entry）由
  * {@link AbstractDataSetStore} 骨架承载（O2-15）；本类保留 AE 侧自有部分：key 语义说明与仅查询入口。
  * <p>
- * key 为 {@code dimensionId:x:y:z} 格式的坐标字符串，每个网络信息屏方块独立维护一份 AE 监视数据。
+ * New keys qualify the coordinate with persistent panel identity and server-authored native SourceKey.
+ * Coordinate-only legacy entries are preserved, never assumed to describe the currently attached grid.
  */
 public class AEMonitorDataStore extends AbstractDataSetStore<AEMonitorDataSet> {
 

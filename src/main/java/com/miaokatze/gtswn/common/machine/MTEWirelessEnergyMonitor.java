@@ -26,6 +26,8 @@ import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.machine.base.MTEMonitor;
 import com.miaokatze.gtswn.common.machine.widgets.ScientificTextFieldWidget;
+import com.miaokatze.gtswn.common.monitoring.NativeEUHistory;
+import com.miaokatze.gtswn.common.monitoring.NativeWirelessEUSnapshot;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -38,7 +40,6 @@ import gregtech.api.interfaces.metatileentity.IMetricsExporter;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.modularui2.GTGuiTextures;
 import gregtech.api.modularui2.GTGuis;
-import gregtech.common.misc.WirelessNetworkManager;
 
 /**
  * 无线能量监视器 (LV)
@@ -70,6 +71,9 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     // 智能 EU/t 计算相关（与 HUD 保持一致）
     // 测量历史管理（容量 61、FIFO 老化、NBT 序列化）已迁移至 EUDataSet（T4 公共工具类提取）
     private final EUDataSet dataSet = new EUDataSet();
+    private final NativeEUHistory nativeHistory = new NativeEUHistory();
+    private boolean nativeHistoryAvailable;
+    private long lastObservedNativeClock = Long.MIN_VALUE;
 
     // UI 同步字段
     // 初始值使用本地化文本（带 § 颜色代码），避免机器刚放置、onPostTick 未执行时打开 GUI 显示无颜色文本
@@ -158,6 +162,13 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             // getTotalWorldTime() 持久化于 WorldInfo，重启后继续累计，时间轴一致。
             long worldTick = aBaseMetaTileEntity.getWorld()
                 .getTotalWorldTime();
+            observeNativeClock(worldTick);
+            // Only read when an existing 2t control or 100t UI path is due; no new per-tick balance poll.
+            boolean sourceReady = true;
+            if (dataSet.isEmpty() || worldTick < lastCheckTick
+                || worldTick - lastCheckTick >= 100L
+                || redstoneReloadDelay <= 0 && worldTick - lastRedstoneCheckTick >= REDSTONE_CHECK_INTERVAL)
+                sourceReady = bindNativeHistory(nativeSnapshot());
 
             // v1.2.4：gap 检测前置（必须在 dataSet.isEmpty() 短路之前执行）
             // 检测长时卸载重载：lastCheckTick > 0 排除首次放置，gap > 200L = 10秒
@@ -165,7 +176,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
             // - 短时卸载（≤10秒）：保留旧样本，直接续传（斜率误差 ≤3.3%，可接受）
             if (lastCheckTick > 0) {
                 long gap = worldTick - lastCheckTick;
-                if (gap > 200L) {
+                if (gap > 200L && sourceReady) {
                     dataSet.clear();
                     redstoneReloadDelay = 600; // 30秒 = 600 ticks
                 }
@@ -202,7 +213,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
                         .translateToLocal("gtswn.ui.network.realtime_status.reload");
                 } else {
                     cachedStatusText = calculatedStatus;
-                    cachedRealtimeStatusText = formatRealtimeEUTStatus();
+                    cachedRealtimeStatusText = nativeHistoryAvailable ? formatRealtimeEUTStatus() : "...";
                 }
 
                 // 更新缓存文本（仅服务端），由 StringSyncValue 自动 S2C 同步给客户端
@@ -275,6 +286,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 根据当前锚定值和参数判断是否输出信号（anchorMode 决定数据源；
         // getAnchorValue 三个分支均返回非 null，原 null 守卫为死码已删）
         BigInteger currentEU = getAnchorValue();
+        if (currentEU == null) return redstoneOutput ? (byte) 15 : (byte) 0;
 
         boolean shouldOutput = computeRedstoneOutput(redstoneMode, currentEU, param1Value, param2Value, redstoneOutput);
 
@@ -286,6 +298,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     private void updateRedstoneOutput() {
         // 锚定值：anchorMode=0 时为电网电量，anchorMode=1 时为 EU/t（long 截断）
         BigInteger currentEU = getAnchorValue();
+        if (currentEU == null) return; // Unavailable data must not invent a threshold crossing.
         boolean newOutput = computeRedstoneOutput(redstoneMode, currentEU, param1Value, param2Value, redstoneOutput);
 
         // 如果红石状态发生变化，更新输出
@@ -317,7 +330,13 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     // 返回值：电网状态显示文本（由 formatEUTStatus 格式化，含 size<2/eut==0/|eut|<1 分支）
     // 副作用：更新 euPerTick（用于红石）、dataSet、lastCheckTick
     private String calculateSmartEUT(long currentTick) {
-        BigInteger currentEU = getWirelessEU();
+        NativeWirelessEUSnapshot observation = nativeSnapshot();
+        if (observation == null) {
+            nativeHistoryAvailable = false;
+            return "...";
+        }
+        if (!bindNativeHistory(observation)) return "History archive limit";
+        BigInteger currentEU = observation.amount;
 
         // 记录到数据集（替代 FormatUtil.recordMeasurement，EUDataSet 内部自动 FIFO 老化）
         dataSet.add(currentEU, currentTick);
@@ -435,9 +454,47 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
     }
 
     // 获取无线电网能量
+    private NativeWirelessEUSnapshot nativeSnapshot() {
+        IGregTechTileEntity base = getBaseMetaTileEntity();
+        return base == null ? null : NativeWirelessEUSnapshot.read(base.getWorld(), ownerUUID);
+    }
+
+    private void observeNativeClock(long tick) {
+        // A normal restart preserves the persisted realm/account; only a proven clock rollback resets rates.
+        if (tick < lastObservedNativeClock || tick < lastCheckTick || tick < lastRedstoneCheckTick) {
+            nativeHistoryAvailable = nativeHistory.breakClockContinuity(dataSet);
+            euPerTick = realtimeEuPerTick = 0;
+            lastCheckTick = lastRedstoneCheckTick = tick;
+            IGregTechTileEntity base = getBaseMetaTileEntity();
+            if (base != null) base.markDirty();
+        }
+        lastObservedNativeClock = tick;
+    }
+
+    private boolean bindNativeHistory(NativeWirelessEUSnapshot observation) {
+        nativeHistoryAvailable = false;
+        if (observation == null) return false;
+        String before = nativeHistory.source();
+        IGregTechTileEntity base = getBaseMetaTileEntity();
+        if (base == null || base.getWorld() == null || base.getWorld().isRemote) return false;
+        observeNativeClock(
+            base.getWorld()
+                .getTotalWorldTime());
+        UUID realm = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(base.getWorld())
+            .epoch();
+        if (!nativeHistory.bindDurable(realm, observation.account, dataSet)) return false;
+        nativeHistoryAvailable = true;
+        if (!before.equals(nativeHistory.source())) {
+            // This is unavailable slope, not a change to redstone settings/output or its cadence.
+            euPerTick = realtimeEuPerTick = 0;
+            base.markDirty();
+        }
+        return true;
+    }
+
     private BigInteger getWirelessEU() {
-        if (ownerUUID == null) return BigInteger.ZERO;
-        return WirelessNetworkManager.getUserEU(ownerUUID);
+        NativeWirelessEUSnapshot observation = nativeSnapshot();
+        return observation == null ? null : observation.amount;
     }
 
     /**
@@ -450,6 +507,14 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * 配合负参数可实现"下降速率超过阈值时输出"
      */
     private BigInteger getAnchorValue() {
+        IGregTechTileEntity base = getBaseMetaTileEntity();
+        // Balance-anchored redstone is control, not telemetry: see native writes later in this same tick.
+        NativeWirelessEUSnapshot observation = anchorMode == 0
+            ? base == null ? null : NativeWirelessEUSnapshot.readForControl(base.getWorld(), ownerUUID)
+            : nativeSnapshot();
+        if (observation == null) return null;
+        boolean bound = bindNativeHistory(observation);
+        if (anchorMode != 0 && (!bound || dataSet.size() < 2)) return null;
         if (anchorMode == 1) {
             // v1.2.1 修复：使用 Math.round 替代 (long) 强转，避免小数截断丢失
             return BigInteger.valueOf(Math.round(euPerTick));
@@ -457,12 +522,13 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         if (anchorMode == 2) {
             return BigInteger.valueOf(Math.round(realtimeEuPerTick));
         }
-        return getWirelessEU();
+        return observation.amount;
     }
 
     // 格式化能量文本
     private String getWirelessEUText() {
         BigInteger eu = getWirelessEU();
+        if (eu == null) return "...";
         switch (displayMode) {
             case 1:
                 return translate("gtswn.ui.wireless.energy.scientific", FormatUtil.formatScientific(eu));
@@ -1322,6 +1388,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 短时卸载（≤10秒）保留旧样本立即恢复变化率；长时卸载（>10秒）由 onPostTick 的 gap 检测清空
         // 由 EUDataSet 统一序列化（兼容旧 measurementHistory 格式）
         dataSet.saveToNBT(aNBT, "measurementHistory");
+        nativeHistory.write(aNBT);
 
         // v1.2.1 修复：移除 lastWirelessEU 死代码
         // 原因：loadNBTData 从不读取 lastWirelessEU，写入只是浪费 NBT 空间和性能
@@ -1359,6 +1426,7 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
         // 兼容性：v1.2.3 存档无此键时 loadFromNBT 内部 hasKey 检查跳过；
         // v1.2.2 之前存档有此键，正常恢复；EUDataSet 已处理 count>CAPACITY 情况
         dataSet.loadFromNBT(aNBT, "measurementHistory");
+        nativeHistory.read(aNBT);
         // 注意：lastWirelessEU 不需要保存，因为退出重进后会重新从 WirelessNetworkManager 获取
 
         // 加载红石控制状态

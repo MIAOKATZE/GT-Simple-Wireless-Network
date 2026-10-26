@@ -20,6 +20,8 @@ public final class QuantumIncorporationClientState {
 
     private static final Map<Long, Map<Integer, State>> CHUNKS = new HashMap<>();
     private static World currentWorld;
+    private static final Map<Long, PacketSyncQuantumIncorporationState> BASELINES = new HashMap<>();
+    private static final Map<Long, Long> REVISIONS = new HashMap<>();
 
     private static long chunkKey(int x, int z) {
         return ((long) x << 32) | (z & 0xFFFFFFFFL);
@@ -28,6 +30,8 @@ public final class QuantumIncorporationClientState {
     private static void useWorld(World world) {
         if (currentWorld != world) {
             CHUNKS.clear();
+            BASELINES.clear();
+            REVISIONS.clear();
             currentWorld = world;
         }
     }
@@ -38,6 +42,8 @@ public final class QuantumIncorporationClientState {
             || world.provider.dimensionId != packet.getDimension()) return;
         useWorld(world);
         long key = chunkKey(packet.getChunkX(), packet.getChunkZ());
+        BASELINES.remove(key);
+        REVISIONS.remove(key);
         Map<Integer, State> previous = CHUNKS.get(key);
         if (packet.getPositions()
             .isEmpty()) {
@@ -60,6 +66,38 @@ public final class QuantumIncorporationClientState {
             replacement.put(local, state);
         }
         CHUNKS.put(key, replacement);
+    }
+
+    public static void acceptDelta(World world, com.miaokatze.gtswn.network.PacketQuantumIncorporationDelta packet) {
+        if (world == null || !world.isRemote
+            || !packet.valid
+            || world.provider.dimensionId != packet.dimension
+            || !com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                .clientSupports(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.QUANTUM))
+            return;
+        useWorld(world);
+        long key = chunkKey(packet.chunkX, packet.chunkZ);
+        long revision = REVISIONS.getOrDefault(key, 0L);
+        if (packet.target < revision) return;
+        if (!packet.full && packet.base != revision) {
+            acknowledge(packet, 0);
+            return;
+        }
+        PacketSyncQuantumIncorporationState result = packet.apply(BASELINES.get(key));
+        if (result == null) {
+            acknowledge(packet, 0);
+            return;
+        }
+        accept(world, result);
+        BASELINES.put(key, result);
+        REVISIONS.put(key, packet.target);
+        acknowledge(packet, packet.target);
+    }
+
+    private static void acknowledge(com.miaokatze.gtswn.network.PacketQuantumIncorporationDelta packet, long revision) {
+        com.miaokatze.gtswn.network.GTSWNPacketHandler.NETWORK.sendToServer(
+            com.miaokatze.gtswn.network.PacketEngineeringControl
+                .quantumAck(packet.dimension, packet.chunkX, packet.chunkZ, revision));
     }
 
     /** Only synchronized entries are inspected; the world/loaded tile list is never scanned. */
@@ -96,8 +134,12 @@ public final class QuantumIncorporationClientState {
 
     @SubscribeEvent
     public void unloadChunk(ChunkEvent.Unload event) {
-        if (event.world == currentWorld)
-            CHUNKS.remove(chunkKey(event.getChunk().xPosition, event.getChunk().zPosition));
+        if (event.world == currentWorld) {
+            long key = chunkKey(event.getChunk().xPosition, event.getChunk().zPosition);
+            CHUNKS.remove(key);
+            BASELINES.remove(key);
+            REVISIONS.remove(key);
+        }
     }
 
     @SubscribeEvent
