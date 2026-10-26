@@ -19,6 +19,36 @@ public class PortableSnapshotCacheTest {
     private static final UUID TERMINAL = new UUID(0, 1), PANEL = new UUID(0, 2);
 
     @Test
+    public void directDashboardKeepsForegroundSelectionAcrossRequestsWithoutAnOrdinaryViewer() {
+        for (int sequence = 1; sequence <= 2; sequence++) {
+            PacketRequestPortableMonitor request = PortableMonitorClientCache
+                .foregroundRequest(TERMINAL, sequence, 0, 0, true, true, -1, 2);
+            assertEquals(TERMINAL, request.terminalId);
+            assertEquals(sequence, request.sequence);
+            assertEquals("F10 host must request its selected screen", 2, request.selected);
+            assertTrue(PortableMonitorClientCache.usesDashboardSelection(true, true, 2));
+        }
+    }
+
+    @Test
+    public void ordinaryViewerAndForeignGuiKeepTheirOwnSelectionInsteadOfBorrowingDashboardDemand() {
+        PacketRequestPortableMonitor viewer = PortableMonitorClientCache
+            .foregroundRequest(TERMINAL, 3, 0, 0, true, false, 1, 2);
+        assertEquals(1, viewer.selected);
+        PacketRequestPortableMonitor foreign = PortableMonitorClientCache
+            .foregroundRequest(TERMINAL, 4, 0, 0, true, false, -1, 2);
+        assertEquals(-1, foreign.selected);
+        assertFalse(PortableMonitorClientCache.usesDashboardSelection(true, false, 2));
+    }
+
+    @Test
+    public void worldDashboardAndClosedForegroundDemandRetainTheirExistingRequestSelection() {
+        assertEquals(0, PortableMonitorClientCache.foregroundRequest(TERMINAL, 5, 0, 0, false, false, -1, 0).selected);
+        assertEquals(1, PortableMonitorClientCache.foregroundRequest(TERMINAL, 6, 0, 0, true, true, 1, -1).selected);
+        assertFalse(PortableMonitorClientCache.usesDashboardSelection(true, true, -1));
+    }
+
+    @Test
     public void completeBaseRestoresChartsWhileKeepingFreshLiveValuesAndRealHistory() {
         PacketSyncPortableMonitor previous = full();
         PacketSyncPortableMonitor response = unchanged();

@@ -21,6 +21,7 @@ import net.minecraft.util.StatCollector;
 import org.lwjgl.input.Keyboard;
 
 import com.cleanroommc.modularui.factory.ClientGUI;
+import com.miaokatze.gtswn.client.engineering.EngineeringModeController;
 import com.miaokatze.gtswn.client.gui.GuiPortableMonitor;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.hud.PortableMonitorPins;
@@ -107,7 +108,9 @@ public final class PortableMonitorClientCache {
             cache.dirty = true;
         }
         cache.owner = owner;
-        boolean dashboard = Minecraft.getMinecraft().currentScreen == null && cache.dashboardSelected >= 0;
+        boolean screenOpen = Minecraft.getMinecraft().currentScreen != null;
+        boolean dashboardHostVisible = EngineeringModeController.dashboardHostVisible();
+        boolean dashboard = usesDashboardSelection(screenOpen, dashboardHostVisible, cache.dashboardSelected);
         int selected = dashboard ? cache.dashboardSelected : cache.selected;
         long revision = MonitorBindings.revision(stack);
         if (revision != cache.bindingRevision) {
@@ -131,13 +134,16 @@ public final class PortableMonitorClientCache {
                 && now - cache.sentAt < Math.max(1000, Config.hudUpdateInterval * 50L))
             return;
         if (!cache.inFlight) {
-            PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(
+            PacketRequestPortableMonitor request = foregroundRequest(
                 id,
                 ++nextSequence,
                 cache.action,
-                cache.value);
+                cache.value,
+                screenOpen,
+                dashboardHostVisible,
+                cache.selected,
+                cache.dashboardSelected);
             request.targetPanel = cache.targetPanel;
-            request.selected = selected;
             selectRequest(request, stack, cache.snapshot);
             configureChartReuse(request, cache.snapshot);
             request.rawHistory = com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
@@ -177,6 +183,19 @@ public final class PortableMonitorClientCache {
         GTSWNPacketHandler.NETWORK.sendToServer(
             cache.request.rawHistory ? new com.miaokatze.gtswn.network.PacketRequestPortableHistory(cache.request)
                 : cache.request);
+    }
+
+    static boolean usesDashboardSelection(boolean screenOpen, boolean dashboardHostVisible, int dashboardSelected) {
+        return (!screenOpen || dashboardHostVisible) && dashboardSelected >= 0;
+    }
+
+    static PacketRequestPortableMonitor foregroundRequest(UUID id, int sequence, int action, int value,
+        boolean screenOpen, boolean dashboardHostVisible, int viewerSelected, int dashboardSelected) {
+        PacketRequestPortableMonitor request = new PacketRequestPortableMonitor(id, sequence, action, value);
+        request.selected = usesDashboardSelection(screenOpen, dashboardHostVisible, dashboardSelected)
+            ? dashboardSelected
+            : viewerSelected;
+        return request;
     }
 
     public static boolean action(ItemStack stack, int action, int value) {
