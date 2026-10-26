@@ -8,17 +8,22 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.device.KeyFormat;
 import com.miaokatze.gtswn.common.panel.AEMonitorDataSet;
 import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
+import com.miaokatze.gtswn.common.panel.AEMonitorIdentity;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataSet;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 
@@ -31,16 +36,26 @@ import cpw.mods.fml.common.FMLCommonHandler;
  */
 class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
+    private final Supplier<World> overworld;
+
+    GtswnMonitorApiImpl() {
+        this(GtswnMonitorApiImpl::serverOverworld);
+    }
+
+    GtswnMonitorApiImpl(Supplier<World> overworld) {
+        this.overworld = overworld;
+    }
+
     /** 窗口编号合法上限（0-7 共 8 级窗口，常量单源在 WindowChain） */
     private static final int WINDOW_ID_MAX = 7;
 
     @Override
     public Optional<NetworkSnapshot> getNetworkSnapshot(UUID owner) {
-        World overworld = serverOverworld();
+        World overworld = this.overworld.get();
         if (overworld == null || owner == null) return Optional.empty();
 
         NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(overworld)
-            .getNativeIfPresent(NetworkInfoDataStore.resolveAccount(owner));
+            .getNativeIfPresent(NetworkInfoDataStore.resolveAccountReadOnly(owner));
         if (dataSet == null) return Optional.empty();
 
         NetworkInfoSample newest = dataSet.newest();
@@ -52,11 +67,10 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
     @Override
     public Optional<HistoryWindow> getNetworkHistory(UUID owner, int windowId) {
-        World overworld = serverOverworld();
+        World overworld = this.overworld.get();
         if (overworld == null || owner == null || !isValidWindow(windowId)) return Optional.empty();
 
-        NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(overworld)
-            .getNativeIfPresent(NetworkInfoDataStore.resolveAccount(owner));
+        NetworkInfoDataSet dataSet = networkHistoryDataSet(overworld, owner);
         if (dataSet == null) return Optional.empty();
 
         List<NetworkInfoSample> raw = dataSet.query(windowId);
@@ -70,11 +84,10 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
     @Override
     public Optional<Double> getNetworkAverageEut(UUID owner, int windowId) {
-        World overworld = serverOverworld();
+        World overworld = this.overworld.get();
         if (overworld == null || owner == null || !isValidWindow(windowId)) return Optional.empty();
 
-        NetworkInfoDataSet dataSet = NetworkInfoDataStore.get(overworld)
-            .getNativeIfPresent(NetworkInfoDataStore.resolveAccount(owner));
+        NetworkInfoDataSet dataSet = networkHistoryDataSet(overworld, owner);
         if (dataSet == null) return Optional.empty();
 
         List<NetworkInfoSample> samples = dataSet.query(windowId);
@@ -87,6 +100,15 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
             sum += sample.eut;
         }
         return Optional.of(sum / samples.size());
+    }
+
+    /** Legacy owner history is an archive, never proof of the current account's snapshot or continuity. */
+    private static NetworkInfoDataSet networkHistoryDataSet(World world, UUID owner) {
+        NetworkInfoDataStore store = NetworkInfoDataStore.get(world);
+        NetworkInfoDataSet current = store.getNativeIfPresent(NetworkInfoDataStore.resolveAccountReadOnly(owner));
+        if (current != null && current.newest() != null) return current;
+        NetworkInfoDataSet legacy = store.getIfPresent(owner.toString());
+        return legacy == null ? current : legacy;
     }
 
     @Override
@@ -116,6 +138,13 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
     public Optional<HistoryWindow> getAEMonitorHistory(World panelWorld, String panelKey, String subKey, int windowId) {
         if (subKey == null || subKey.isEmpty() || !isValidWindow(windowId)) return Optional.empty();
         AEMonitorDataSet dataSet = aeDataSet(panelWorld, panelKey);
+        if (panelWorld != null && KeyFormat.parse(panelKey) != null && AEMonitorIdentity.isLegacy(subKey)) {
+            AEMonitorDataSet legacy = AEMonitorDataStore.get(panelWorld)
+                .getIfPresent(panelKey);
+            // An explicitly requested pre-versioned item/fluid key keeps its original archive meaning.
+            if (legacy != null && legacy.getKeys()
+                .contains(subKey)) dataSet = legacy;
+        }
         if (dataSet == null) return Optional.empty();
 
         List<AEMonitorSample> raw = dataSet.query(subKey, windowId);
@@ -129,7 +158,7 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
     @Override
     public boolean activateNetworkDataset(UUID owner) {
-        World overworld = serverOverworld();
+        World overworld = this.overworld.get();
         if (overworld == null || owner == null) return false;
 
         UUID account = NetworkInfoDataStore.resolveAccount(owner);
@@ -142,7 +171,7 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
     @Override
     public boolean requestNetworkSample(UUID owner) {
-        World overworld = serverOverworld();
+        World overworld = this.overworld.get();
         if (overworld == null || owner == null) return false;
 
         UUID account = NetworkInfoDataStore.resolveAccount(owner);
@@ -162,8 +191,23 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
     /** 取 AE 监视数据集（只读查询，panelWorld/panelKey 非法或数据集不存在返回 null） */
     private static AEMonitorDataSet aeDataSet(World panelWorld, String panelKey) {
         if (panelWorld == null || panelKey == null || panelKey.isEmpty()) return null;
-        return AEMonitorDataStore.get(panelWorld)
-            .getIfPresent(panelKey);
+        AEMonitorDataStore store = AEMonitorDataStore.get(panelWorld);
+        if (panelKey.startsWith("legacy:") && KeyFormat.parse(panelKey.substring(7)) != null)
+            return store.getIfPresent(panelKey.substring(7));
+        int[] position = KeyFormat.parse(panelKey);
+        if (position != null && panelWorld.provider != null
+            && position[0] == panelWorld.provider.dimensionId
+            && panelWorld.blockExists(position[1], position[2], position[3])) {
+            TileEntity tile = panelWorld.getTileEntity(position[1], position[2], position[3]);
+            if (tile instanceof TileEntityNetworkInfoPanel) {
+                String current = ((TileEntityNetworkInfoPanel) tile).getAEMonitorDataKeyReadOnly();
+                // A proven current source without samples is empty, never the previous coordinate archive.
+                if (current != null) return store.getIfPresent(current);
+            }
+        }
+        // Unloaded/unproven coordinates retain their original legacy archive semantics. Explicit
+        // source-qualified keys also remain exact historical lookups; no archive is guessed or merged.
+        return store.getIfPresent(panelKey);
     }
 
     /** 窗口编号合法性（0-7） */

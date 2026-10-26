@@ -15,6 +15,7 @@ import org.junit.Test;
 
 import com.miaokatze.gtswn.api.monitor.HistorySample;
 import com.miaokatze.gtswn.api.monitor.HistoryWindow;
+import com.miaokatze.gtswn.api.monitor.NetworkSnapshot;
 
 import appeng.api.config.SecurityPermissions;
 import appeng.api.networking.security.ISecurityProvider;
@@ -126,5 +127,25 @@ public class PortableProfileAdapterTest {
             0,
             Arrays.asList(new HistorySample(1, 1, BigInteger.TEN, 0), new HistorySample(2, 2, BigInteger.ZERO, 0)));
         assertArrayEquals(new double[] { 10, 0 }, PortableProfileAdapter.history(Optional.of(window)), 0);
+    }
+
+    @Test
+    public void fixedNativeEuExportCannotBorrowPublicApisLegacyOwnerArchive() {
+        assertEquals(
+            0,
+            PortableProfileAdapter.nativeEUHistory(
+                Optional.empty(),
+                () -> {
+                    throw new AssertionError(
+                        "Without a native sample, do not even query the legacy-compatible history API");
+                }).length);
+        NetworkSnapshot latest = new NetworkSnapshot(UUID.randomUUID(), 100, 1000, BigInteger.TEN, 0, false);
+        HistoryWindow current = new HistoryWindow(
+            0,
+            Collections.singletonList(new HistorySample(100, 1000, BigInteger.TEN, 0)));
+        assertArrayEquals(
+            new double[] { 10 },
+            PortableProfileAdapter.nativeEUHistory(Optional.of(latest), () -> Optional.of(current)),
+            0);
     }
 }

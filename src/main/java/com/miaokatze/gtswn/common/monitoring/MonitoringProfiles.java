@@ -60,7 +60,6 @@ public final class MonitoringProfiles extends WorldSavedData {
 
     public MonitoringProfiles(String name) {
         super(name);
-        markDirty();
     }
 
     public static MonitoringProfiles get(World requested) {
@@ -68,10 +67,22 @@ public final class MonitoringProfiles extends WorldSavedData {
         World root = server == null ? requested : server.worldServerForDimension(0);
         if (root == null) root = requested;
         if (root == null || root.isRemote) throw new IllegalStateException("Server world required");
-        MonitoringProfiles data = SavedDataUtil
-            .loadOrCreate(root, DATA_NAME, MonitoringProfiles.class, MonitoringProfiles::new);
+        MonitoringProfiles data = SavedDataUtil.loadOrCreate(root, DATA_NAME, MonitoringProfiles.class, name -> {
+            MonitoringProfiles created = new MonitoringProfiles(name);
+            created.markDirty(); // A new epoch must persist; loading existing provenance is read-only.
+            return created;
+        });
         data.world = root;
         return data;
+    }
+
+    /** Load existing provenance only; a public read must not initialize monitoring metadata. */
+    public static MonitoringProfiles getIfPresent(World requested) {
+        MinecraftServer server = MinecraftServer.getServer();
+        World root = server == null ? requested : server.worldServerForDimension(0);
+        if (root == null) root = requested;
+        if (root == null || root.isRemote) return null;
+        return (MonitoringProfiles) root.perWorldStorage.loadData(MonitoringProfiles.class, DATA_NAME);
     }
 
     public UUID epoch() {

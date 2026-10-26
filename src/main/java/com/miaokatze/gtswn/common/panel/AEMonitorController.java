@@ -683,6 +683,22 @@ public final class AEMonitorController {
         return getSourceKey() == null ? null : sourceDataKey;
     }
 
+    /** Resolve already-established native provenance without creating profile or panel metadata. */
+    public String getSourceDataKeyReadOnly() {
+        World world = core.getWorldObj();
+        if (world == null || world.isRemote) return null;
+        Object nativeGrid = query.gridIdentity();
+        if (!(nativeGrid instanceof IGrid)) return null;
+        IMonitorIdentityCache identity = ((IGrid) nativeGrid).getCache(IMonitorIdentityCache.class);
+        java.util.UUID nativeId = identity == null ? null : identity.monitoringIdentity();
+        java.util.UUID panelId = core.getExistingPortableMonitorId();
+        if (nativeId == null || panelId == null) return null;
+        MonitoringProfiles profiles = MonitoringProfiles.getIfPresent(world);
+        if (profiles == null) return null;
+        SourceKey current = new SourceKey(SourceKey.Kind.AE, profiles.epoch(), nativeId.toString(), 1);
+        return sourceDataKey(world.provider.dimensionId, core.xCoord, core.yCoord, core.zCoord, panelId, current);
+    }
+
     public SourceKey getSourceKey() {
         World world = core.getWorldObj();
         if (world == null || world.isRemote) return null;

@@ -81,6 +81,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return portableMonitorId;
     }
 
+    /** Existing block identity only, without allocating or dirtying an unsampled legacy panel. */
+    public UUID getExistingPortableMonitorId() {
+        return portableMonitorId;
+    }
+
     /** Only the scalar display configuration; remote views never serialize proxy or inventory NBT. */
     public NBTTagCompound getPortableRenderConfig() {
         NBTTagCompound tag = new NBTTagCompound();
@@ -487,6 +492,11 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     /** Source-qualified live history; legacy coordinate histories are retained without guessed migration. */
     public String getAEMonitorDataKey() {
         return controller.getSourceDataKey();
+    }
+
+    /** Current proven history locator without initializing panel/profile identity or changing sampling state. */
+    public String getAEMonitorDataKeyReadOnly() {
+        return controller.getSourceDataKeyReadOnly();
     }
 
     /** Server-authored native generation for history transport and persistent profile validation. */

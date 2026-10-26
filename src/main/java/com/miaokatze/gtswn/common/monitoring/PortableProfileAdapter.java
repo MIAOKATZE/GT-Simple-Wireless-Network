@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
@@ -262,8 +263,9 @@ public final class PortableProfileAdapter {
                     "Wireless energy",
                     latest.isPresent() ? latest.get().euStored.toString() : "unknown",
                     "EU",
-                    history(
-                        GtswnApi.getMonitorApi()
+                    nativeEUHistory(
+                        latest,
+                        () -> GtswnApi.getMonitorApi()
                             .getNetworkHistory(account, 0))));
         } else if (source.kind == SourceKey.Kind.AE) {
             cards.addAll(exportAE(aeDataSet(panel(locator)), limit));
@@ -318,6 +320,11 @@ public final class PortableProfileAdapter {
         for (int i = 0; i < values.length; i++)
             values[i] = samples.get(samples.size() - values.length + i).value.doubleValue();
         return values;
+    }
+
+    /** The public history API can expose an old owner archive; a fixed native source cannot inherit it. */
+    static double[] nativeEUHistory(Optional<NetworkSnapshot> latest, Supplier<Optional<HistoryWindow>> readHistory) {
+        return latest.isPresent() ? history(readHistory.get()) : new double[0];
     }
 
     private static int[] position(String locator) {
