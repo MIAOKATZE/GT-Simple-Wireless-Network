@@ -46,6 +46,7 @@ public final class PortableMonitorClientCache {
     private static EntityPlayer sessionPlayer;
     private static Object sessionWorld, sessionConnection;
     private static int nextSequence;
+    private static boolean legacyChartServer;
     private static long nextGlobalRequest;
     private static KeyBinding monitorKey;
 
@@ -78,6 +79,7 @@ public final class PortableMonitorClientCache {
     public static void resetForHudSession() {
         CACHE.clear();
         nextGlobalRequest = 0;
+        legacyChartServer = false;
         sessionPlayer = null;
         sessionWorld = null;
         sessionConnection = null;
@@ -136,6 +138,7 @@ public final class PortableMonitorClientCache {
             request.targetPanel = cache.targetPanel;
             request.selected = selected;
             selectRequest(request, stack, cache.snapshot);
+            configureChartReuse(request, cache.snapshot);
             request.charts = Config.hudRenderMode == 2;
             subscribeRequest(request, Config.hudPinnedEntries);
             if (request.selected < 0 && request.pins.isEmpty() && request.action == 0) return;
@@ -174,7 +177,9 @@ public final class PortableMonitorClientCache {
     /** Inventory S2F and snapshot replies can arrive on different ticks. Select from the newest credentials. */
     public static void selectRequest(PacketRequestPortableMonitor request, ItemStack stack,
         PacketSyncPortableMonitor snapshot) {
+        request.knownRenderVersion = 0;
         if (request.selected < 0) return;
+        if (snapshot != null && !request.terminalId.equals(snapshot.terminalId)) snapshot = null;
         List<MonitorBindings.Binding> bindings = MonitorBindings.read(stack);
         if (snapshot != null && snapshot.bindingRevision >= MonitorBindings.revision(stack)) {
             bindings = new ArrayList<>();
@@ -184,11 +189,101 @@ public final class PortableMonitorClientCache {
         request.selected = Math.min(request.selected, bindings.size() - 1);
         request.selectedPanel = bindings.get(request.selected).panelId;
         if (snapshot != null) for (PacketSyncPortableMonitor.Panel panel : snapshot.panels) {
-            if (panel.binding.panelId.equals(request.selectedPanel) && panel.render != null) {
+            if (sameSource(panel.binding, bindings.get(request.selected)) && panel.state == 0
+                && panel.renderVersion > 0
+                && panel.render != null) {
                 request.knownRenderVersion = panel.renderVersion;
                 break;
             }
         }
+    }
+
+    /** A reset or partial snapshot never acknowledges a chart base. Mutations always request full data. */
+    static void configureChartReuse(PacketRequestPortableMonitor request, PacketSyncPortableMonitor snapshot) {
+        request.reuseCharts = request.action == 0 && !legacyChartServer;
+        if (request.action != 0) {
+            request.knownRenderVersion = 0;
+            return;
+        }
+        if (snapshot != null && request.terminalId.equals(snapshot.terminalId) && request.selected >= 0)
+            for (PacketSyncPortableMonitor.Panel panel : snapshot.panels) {
+                if (panel.binding.panelId.equals(request.selectedPanel) && completeBase(panel)
+                    && panel.renderVersion == request.knownRenderVersion) return;
+            }
+        request.knownRenderVersion = 0;
+    }
+
+    /** Learn old-server fallback only from an acknowledged identical base, never from a changed generation. */
+    static void observeChartReuse(PacketSyncPortableMonitor response, PacketSyncPortableMonitor previous,
+        PacketRequestPortableMonitor request) {
+        if (!request.reuseCharts || request.action != 0
+            || request.knownRenderVersion <= 0
+            || previous == null
+            || request.sequence != response.sequence
+            || !request.terminalId.equals(response.terminalId)
+            || !response.terminalId.equals(previous.terminalId)) return;
+        for (PacketSyncPortableMonitor.Panel panel : response.panels) {
+            if (!completeBase(panel) || panel.renderVersion != request.knownRenderVersion
+                || !request.selectedPanel.equals(panel.binding.panelId)) continue;
+            for (PacketSyncPortableMonitor.Panel old : previous.panels) {
+                if (completeBase(old) && old.renderVersion == panel.renderVersion
+                    && sameSource(old.binding, panel.binding)
+                    && old.chartKey.equals(panel.chartKey)) {
+                    legacyChartServer = true;
+                    return;
+                }
+            }
+        }
+    }
+
+    private static boolean completeBase(PacketSyncPortableMonitor.Panel panel) {
+        return panel.state == 0 && panel.detail
+            && panel.render != null
+            && panel.renderVersion > 0
+            && !panel.chartsUnchanged;
+    }
+
+    private static boolean sameSource(MonitorBindings.Binding first, MonitorBindings.Binding second) {
+        return first != null && second != null
+            && first.panelId.equals(second.panelId)
+            && first.dimension == second.dimension
+            && first.x == second.x
+            && first.y == second.y
+            && first.z == second.z;
+    }
+
+    /** Called only after the live owner/session/sequence checks; incomplete replies never become fresh snapshots. */
+    static boolean restoreSnapshot(PacketSyncPortableMonitor response, PacketSyncPortableMonitor previous,
+        PacketRequestPortableMonitor request) {
+        for (PacketSyncPortableMonitor.Panel panel : response.panels) {
+            if (!panel.detail || panel.state != 0 || panel.render != null) continue;
+            if (request.action != 0 || request.knownRenderVersion != panel.renderVersion
+                || !request.terminalId.equals(response.terminalId)
+                || request.sequence != response.sequence
+                || !request.selectedPanel.equals(panel.binding.panelId)
+                || panel.chartsUnchanged && !request.reuseCharts
+                || previous == null
+                || !response.terminalId.equals(previous.terminalId)) return false;
+            PacketSyncPortableMonitor.Panel base = null;
+            for (PacketSyncPortableMonitor.Panel old : previous.panels) {
+                if (completeBase(old) && sameSource(old.binding, panel.binding)
+                    && old.chartKey.equals(panel.chartKey)
+                    && old.renderVersion == panel.renderVersion) {
+                    base = old;
+                    break;
+                }
+            }
+            if (base == null) return false;
+            panel.render = base.render.copy();
+            if (panel.chartsUnchanged) {
+                panel.euChart = base.euChart.clone();
+                panel.aeChart = base.aeChart.clone();
+                panel.euRateChart = base.euRateChart.clone();
+                panel.aeRateChart = base.aeRateChart.clone();
+                panel.chartsUnchanged = false;
+            }
+        }
+        return true;
     }
 
     /** Collapse local AE field choices to one bounded native subscription per target. */
@@ -287,15 +382,8 @@ public final class PortableMonitorClientCache {
             cache.snapshot = null;
             return;
         }
-        if (cache.snapshot != null) for (PacketSyncPortableMonitor.Panel panel : response.panels) {
-            if (panel.detail && panel.render == null)
-                for (PacketSyncPortableMonitor.Panel old : cache.snapshot.panels) {
-                    if (old.binding.panelId.equals(panel.binding.panelId) && old.renderVersion == panel.renderVersion) {
-                        panel.render = old.render;
-                        break;
-                    }
-                }
-        }
+        observeChartReuse(response, cache.snapshot, cache.request);
+        boolean complete = restoreSnapshot(response, cache.snapshot, cache.request);
         if (cache.request.action != 0) {
             cache.result = response.result;
             cache.mutationResponse = response;
@@ -314,6 +402,14 @@ public final class PortableMonitorClientCache {
             }
         }
         cache.inFlight = false;
+        if (!complete) {
+            cache.snapshot = cache.renderSnapshot = null;
+            cache.views.clear();
+            cache.viewVersions.clear();
+            cache.viewSources.clear();
+            cache.dirty = true;
+            return;
+        }
         if (response.bindingRevision < MonitorBindings.revision(cache.stack)) {
             cache.dirty = true;
             return;

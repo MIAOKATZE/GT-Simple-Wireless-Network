@@ -103,11 +103,16 @@ public final class PacketSyncPortableMonitor implements IMessage {
                 panel.euRateChart = readChart(buf);
                 panel.aeRateChart = readChart(buf);
                 panel.renderVersion = buf.readLong();
+                panel.chartsUnchanged = panel.renderVersion < 0;
+                if (panel.chartsUnchanged) panel.renderVersion = ~panel.renderVersion;
                 if (buf.readBoolean()) {
                     if (!panel.detail || ++fullPanels > 1)
                         throw new IllegalArgumentException("Portable full panel bound");
                     panel.render = PortablePanelRenderData.read(buf);
                 }
+                validateChartReuse(panel);
+                if (panel.chartsUnchanged && ++fullPanels > 1)
+                    throw new IllegalArgumentException("Portable full panel bound");
                 panels.add(panel);
             }
             valid = !buf.isReadable();
@@ -122,7 +127,9 @@ public final class PacketSyncPortableMonitor implements IMessage {
         int totalRows = 0;
         int fullPanels = 0;
         for (Panel panel : panels) totalRows += Math.min(MAX_ROWS, panel.rows.size());
-        for (Panel panel : panels) if (panel.render != null) {
+        for (Panel panel : panels) {
+            validateChartReuse(panel);
+            if (panel.render == null && !panel.chartsUnchanged) continue;
             if (!panel.detail || ++fullPanels > 1) throw new IllegalArgumentException("Portable full panel bound");
         }
         if (panels.size() > MonitorBindings.MAX_PANELS || totalRows > MAX_TOTAL_ROWS) {
@@ -180,10 +187,20 @@ public final class PacketSyncPortableMonitor implements IMessage {
             writeChart(buf, panel.aeChart);
             writeChart(buf, panel.euRateChart);
             writeChart(buf, panel.aeRateChart);
-            buf.writeLong(panel.renderVersion);
+            buf.writeLong(panel.chartsUnchanged ? ~panel.renderVersion : panel.renderVersion);
             buf.writeBoolean(panel.render != null);
             if (panel.render != null) panel.render.write(buf);
         }
+    }
+
+    private static void validateChartReuse(Panel panel) {
+        if (panel.renderVersion < 0 || panel.chartsUnchanged && (panel.renderVersion == 0 || !panel.detail
+            || panel.state != 0
+            || panel.render != null
+            || panel.euChart.length != 0
+            || panel.aeChart.length != 0
+            || panel.euRateChart.length != 0
+            || panel.aeRateChart.length != 0)) throw new IllegalArgumentException("Invalid portable unchanged charts");
     }
 
     static int count(int value, int max) {
@@ -248,6 +265,8 @@ public final class PacketSyncPortableMonitor implements IMessage {
         public double[] euChart = new double[0], aeChart = new double[0];
         public double[] euRateChart = new double[0], aeRateChart = new double[0];
         public long renderVersion;
+        /** Explicit negotiated omission, never an empty-history replacement. Cleared after client reconstruction. */
+        public boolean chartsUnchanged;
         public PortablePanelRenderData render;
     }
 

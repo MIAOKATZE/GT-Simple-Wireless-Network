@@ -92,6 +92,12 @@ public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSe
         return result;
     }
 
+    /** A clock epoch applies even to currently inactive history; this never activates a data set. */
+    void resetSampleClocks(long tick) {
+        for (NetworkInfoDataSet dataSet : dataSets.values()) dataSet.resetSampleClock(tick);
+        if (!dataSets.isEmpty()) markDirty();
+    }
+
     /**
      * 移除指定 ownerUUID 的数据集，释放内存。
      * 调用前应确认该玩家已无任何网络信息屏方块。

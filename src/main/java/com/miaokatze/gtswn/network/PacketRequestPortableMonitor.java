@@ -28,6 +28,8 @@ public final class PacketRequestPortableMonitor implements IMessage {
     public UUID selectedPanel = new UUID(0, 0);
     public boolean charts;
     public long knownRenderVersion;
+    /** Protocol-60 opt-in: a complemented revision on the wire; legacy servers safely send a full body. */
+    public boolean reuseCharts;
     public final Map<UUID, Set<String>> pins = new HashMap<>();
     public static final int MAX_PINS = 128;
     public static final int MAX_BYTES = 40 * 1024;
@@ -46,6 +48,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
     public void fromBytes(ByteBuf buf) {
         valid = false;
         pins.clear();
+        reuseCharts = false;
         if (buf.readableBytes() < 80 || buf.readableBytes() > MAX_BYTES) return;
         try {
             if (buf.readInt() != PROTOCOL_MAGIC) return;
@@ -59,6 +62,8 @@ public final class PacketRequestPortableMonitor implements IMessage {
             selectedPanel = new UUID(buf.readLong(), buf.readLong());
             charts = buf.readBoolean();
             knownRenderVersion = buf.readLong();
+            reuseCharts = knownRenderVersion < 0;
+            if (reuseCharts) knownRenderVersion = ~knownRenderVersion;
             int count = buf.readUnsignedShort();
             if (count > MAX_PINS) return;
             for (int i = 0; i < count; i++) {
@@ -84,6 +89,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
 
     @Override
     public void toBytes(ByteBuf buf) {
+        if (knownRenderVersion < 0) throw new IllegalArgumentException("Negative portable render revision");
         buf.writeInt(PROTOCOL_MAGIC);
         buf.writeByte(PROTOCOL);
         buf.writeLong(terminalId.getMostSignificantBits());
@@ -97,7 +103,7 @@ public final class PacketRequestPortableMonitor implements IMessage {
         buf.writeLong(selectedPanel.getMostSignificantBits());
         buf.writeLong(selectedPanel.getLeastSignificantBits());
         buf.writeBoolean(charts);
-        buf.writeLong(knownRenderVersion);
+        buf.writeLong(reuseCharts ? ~knownRenderVersion : knownRenderVersion);
         int count = 0;
         for (Set<String> keys : pins.values()) count += keys.size();
         if (count > MAX_PINS) throw new IllegalArgumentException("Too many monitor pins");
