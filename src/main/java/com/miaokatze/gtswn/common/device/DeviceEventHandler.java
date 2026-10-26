@@ -5,6 +5,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentText;
@@ -13,6 +14,7 @@ import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.event.world.BlockEvent;
 import net.minecraftforge.event.world.ChunkEvent;
 
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.config.Config;
 
@@ -37,7 +39,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  */
 public class DeviceEventHandler {
 
-    /** Fixed 36-slot reconciliation once per second; no world or historical-terminal scan. */
+    /** Main inventory + optional Baubles reconciliation once per second; no world/history scan. */
     @SubscribeEvent
     public void onHeldTerminalInventoryTick(TickEvent.PlayerTickEvent event) {
         if (event.phase != TickEvent.Phase.END || event.player.worldObj.isRemote
@@ -46,14 +48,9 @@ public class DeviceEventHandler {
         net.minecraft.server.MinecraftServer server = net.minecraft.server.MinecraftServer.getServer();
         if (server == null || server.getConfigurationManager()
             .func_152612_a(event.player.getCommandSenderName()) != event.player) return;
-        Set<UUID> ids = new java.util.HashSet<>();
-        for (ItemStack stack : event.player.inventory.mainInventory) {
-            if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal) {
-                UUID id = ItemDeviceInfoTerminal.readTerminalId(stack);
-                if (id != null) ids.add(id);
-            }
-        }
-        DeviceTerminalDataStore.synchronizeHeldTerminals(event.player.getUniqueID(), ids);
+        DeviceTerminalDataStore.synchronizeHeldTerminals(
+            event.player.getUniqueID(),
+            collectHeldTerminalIds(event.player.inventory.mainInventory, TerminalBaubles.inventory(event.player)));
     }
 
     /** Guard server vanilla interaction before block activation; custom travel remains packet24-only. */
@@ -164,14 +161,17 @@ public class DeviceEventHandler {
     }
 
     /**
-     * 玩家登录：扫描背包（含热栏）收集终端 UUID，登记活跃索引（阶段 C 采样调度只采活跃终端）。
+     * 玩家登录：扫描背包（含热栏）和已初始化的饰品终端，登记活跃索引。
      */
     @SubscribeEvent
     public void onPlayerLoggedIn(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.player.worldObj.isRemote) {
             return;
         }
-        DeviceTerminalDataStore.onPlayerLoggedIn(event.player.getUniqueID(), collectTerminalIds(event.player));
+        Set<UUID> ids = collectTerminalIds(event.player);
+        ids.addAll(
+            collectHeldTerminalIds(event.player.inventory.mainInventory, TerminalBaubles.inventory(event.player)));
+        DeviceTerminalDataStore.onPlayerLoggedIn(event.player.getUniqueID(), ids);
     }
 
     /**
@@ -186,6 +186,23 @@ public class DeviceEventHandler {
     }
 
     // ==================== 工具 ====================
+
+    /** Read-only holder union. Wearing/using a terminal, not this reconciliation, initializes its identity. */
+    static Set<UUID> collectHeldTerminalIds(ItemStack[] mainInventory, IInventory baubles) {
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (ItemStack stack : mainInventory) collectHeldTerminalId(ids, stack);
+        if (baubles != null) for (int slot = 0; slot < baubles.getSizeInventory(); slot++) {
+            collectHeldTerminalId(ids, baubles.getStackInSlot(slot));
+        }
+        return ids;
+    }
+
+    private static void collectHeldTerminalId(Set<UUID> ids, ItemStack stack) {
+        if (stack != null && stack.getItem() instanceof ItemDeviceInfoTerminal) {
+            UUID id = ItemDeviceInfoTerminal.readTerminalId(stack);
+            if (id != null) ids.add(id);
+        }
+    }
 
     /**
      * 收集玩家背包（含热栏 0-8，1.7.10 无副手）内全部终端实例 UUID。

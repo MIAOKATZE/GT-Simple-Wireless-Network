@@ -32,6 +32,39 @@ public final class PortablePanelRenderData {
     public final List<NetworkInfoSample> eu = new ArrayList<>();
     public final List<AEMonitorSample> ae = new ArrayList<>();
 
+    /** Published responses never expose the server cache's mutable configuration or list containers. */
+    public PortablePanelRenderData copy() {
+        PortablePanelRenderData copy = new PortablePanelRenderData();
+        copy.config = (NBTTagCompound) config.copy();
+        copy.chartKey = chartKey;
+        copy.currentEnergy = currentEnergy;
+        copy.eu.addAll(eu);
+        copy.ae.addAll(ae);
+        return copy;
+    }
+
+    static boolean sameEU(List<NetworkInfoSample> first, List<NetworkInfoSample> second) {
+        if (first.size() != second.size()) return false;
+        for (int i = 0; i < first.size(); i++) {
+            NetworkInfoSample a = first.get(i), b = second.get(i);
+            if (a.timeMs != b.timeMs || a.tick != b.tick
+                || !a.eu.equals(b.eu)
+                || Double.doubleToLongBits(a.eut) != Double.doubleToLongBits(b.eut)) return false;
+        }
+        return true;
+    }
+
+    static boolean sameAE(List<AEMonitorSample> first, List<AEMonitorSample> second) {
+        if (first.size() != second.size()) return false;
+        for (int i = 0; i < first.size(); i++) {
+            AEMonitorSample a = first.get(i), b = second.get(i);
+            if (a.timeMs != b.timeMs || a.tick != b.tick
+                || a.amount != b.amount
+                || Double.doubleToLongBits(a.rate) != Double.doubleToLongBits(b.rate)) return false;
+        }
+        return true;
+    }
+
     public void write(ByteBuf buf) {
         for (String key : INTS) buf.writeInt(config.getInteger(key));
         for (String key : BOOLS)

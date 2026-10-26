@@ -135,8 +135,14 @@ public final class PortableMonitorRequestQueue {
                     else {
                         Set<String> pins = request.pins.getOrDefault(binding.panelId, java.util.Collections.emptySet());
                         boolean detail = selected == panelIndex;
-                        if (detail || !pins.isEmpty())
-                            fill(data, panel, detail, pins, request.charts, request.knownRenderVersion);
+                        if (detail || !pins.isEmpty()) fill(
+                            data,
+                            panel,
+                            detail,
+                            pins,
+                            request.charts,
+                            request.action == 0 ? request.knownRenderVersion : 0,
+                            request.action == 0 && request.reuseCharts);
                         else fillSummary(data, panel);
                     }
                 }
@@ -186,7 +192,7 @@ public final class PortableMonitorRequestQueue {
     }
 
     private static void fill(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel, boolean detail,
-        Set<String> requestedPins, boolean charts, long knownRenderVersion) {
+        Set<String> requestedPins, boolean charts, long knownRenderVersion, boolean reuseCharts) {
         data.detail = detail;
         fillSummary(data, panel);
         boolean needsEU = detail || requestedPins.contains("eu");
@@ -238,16 +244,7 @@ public final class PortableMonitorRequestQueue {
         boolean aeGraph = needsAEChart(detail, requestedPins);
         if (euGraph || aeGraph) {
             RenderCache cache = renderCache(panel, set, chartKey);
-            if (euGraph) {
-                data.euChart = cache.euChart;
-                data.euRateChart = cache.euRateChart;
-            }
-            if (aeGraph) {
-                data.aeChart = cache.aeChart;
-                data.aeRateChart = cache.aeRateChart;
-            }
-            data.renderVersion = cache.version;
-            if (detail && knownRenderVersion != cache.version) data.render = cache.render;
+            publishRender(data, cache, euGraph, aeGraph, knownRenderVersion, reuseCharts);
         }
     }
 
@@ -274,34 +271,26 @@ public final class PortableMonitorRequestQueue {
         return detail || pins.contains(AE_GRAPH) || pins.contains(PortableMonitorPins.AE_PLOT);
     }
 
-    private static RenderCache renderCache(TileEntityNetworkInfoPanel panel, AEMonitorDataSet set, String chartKey) {
+    static RenderCache renderCache(TileEntityNetworkInfoPanel panel, AEMonitorDataSet set, String chartKey) {
         net.minecraft.nbt.NBTTagCompound config = panel.getPortableRenderConfig();
-        List<NetworkInfoSample> eu = panel.getCachedSamples();
-        AEMonitorSample latest = set == null || chartKey == null ? null : set.newest(chartKey);
-        long fingerprint = config.hashCode();
-        fingerprint = fingerprint * 31 + eu.size();
-        if (!eu.isEmpty()) {
-            NetworkInfoSample first = eu.get(0), last = eu.get(eu.size() - 1);
-            fingerprint = fingerprint * 31 + first.timeMs;
-            fingerprint = fingerprint * 31 + first.tick;
-            fingerprint = fingerprint * 31 + last.timeMs;
-            fingerprint = fingerprint * 31 + last.tick;
-            fingerprint = fingerprint * 31 + last.eu.hashCode();
-            fingerprint = fingerprint * 31 + Double.doubleToLongBits(last.eut);
-        }
-        fingerprint = fingerprint * 31 + (chartKey == null ? 0 : chartKey.hashCode());
-        fingerprint = fingerprint * 31 + (latest == null ? 0 : latest.timeMs);
-        fingerprint = fingerprint * 31 + (latest == null ? 0 : latest.tick);
-        fingerprint = fingerprint * 31 + (latest == null ? 0 : latest.amount);
-        fingerprint = fingerprint * 31 + (latest == null ? 0 : Double.doubleToLongBits(latest.rate));
-        fingerprint = fingerprint * 31 + (panel.isAEConnected() ? 1 : 0);
+        List<NetworkInfoSample> eu = tail(panel.getCachedSamples());
+        List<AEMonitorSample> ae = set == null || chartKey == null ? java.util.Collections.emptyList()
+            : tail(set.query(chartKey, panel.getAETrackingWindow()));
+        String key = chartKey == null ? "" : chartKey;
         RenderCache old = RENDER_CACHE.get(panel);
-        if (old != null && old.fingerprint == fingerprint) return old;
+        // Compare the actual selected window, not a hash or the newest sample of a different window.
+        // Time and interior samples matter even when the normalized chart shape is unchanged.
+        if (old != null && old.render.config.equals(config)
+            && old.render.chartKey.equals(key)
+            && PortablePanelRenderData.sameEU(old.eu, eu)
+            && PortablePanelRenderData.sameAE(old.ae, ae)) return old;
         RenderCache cache = new RenderCache();
-        cache.fingerprint = fingerprint;
-        cache.version = ++nextRenderVersion;
-        cache.render.config = config;
-        cache.render.chartKey = chartKey == null ? "" : chartKey;
+        cache.version = nextVersion(nextRenderVersion);
+        nextRenderVersion = cache.version;
+        cache.eu = new ArrayList<>(eu);
+        cache.ae = new ArrayList<>(ae);
+        cache.render.config = (net.minecraft.nbt.NBTTagCompound) config.copy();
+        cache.render.chartKey = key;
         String currentEnergy = panel.getCachedEu()
             .toString();
         cache.render.currentEnergy = currentEnergy.length() <= 4096 ? currentEnergy : "";
@@ -313,12 +302,11 @@ public final class PortableMonitorRequestQueue {
             energy.add(new BigDecimal(sample.eu));
             power.add(BigDecimal.valueOf(Double.isFinite(sample.eut) ? sample.eut : 0));
         }
-        if (set != null && chartKey != null)
-            for (AEMonitorSample sample : set.query(chartKey, panel.getAETrackingWindow())) {
-                cache.render.ae.add(sample);
-                amounts.add(BigDecimal.valueOf(sample.amount));
-                rates.add(BigDecimal.valueOf(Double.isFinite(sample.rate) ? sample.rate : 0));
-            }
+        for (AEMonitorSample sample : ae) {
+            cache.render.ae.add(sample);
+            amounts.add(BigDecimal.valueOf(sample.amount));
+            rates.add(BigDecimal.valueOf(Double.isFinite(sample.rate) ? sample.rate : 0));
+        }
         cache.euChart = normalize(energy);
         cache.euRateChart = normalize(power);
         cache.aeChart = normalize(amounts);
@@ -327,9 +315,39 @@ public final class PortableMonitorRequestQueue {
         return cache;
     }
 
-    private static final class RenderCache {
+    private static <T> List<T> tail(List<T> values) {
+        return values.subList(Math.max(0, values.size() - PacketSyncPortableMonitor.MAX_SAMPLES), values.size());
+    }
 
-        long fingerprint, version;
+    static long nextVersion(long previous) {
+        if (previous < 0 || previous == Long.MAX_VALUE)
+            throw new IllegalStateException("Portable render revision exhausted");
+        return previous + 1;
+    }
+
+    static void publishRender(PacketSyncPortableMonitor.Panel data, RenderCache cache, boolean euGraph, boolean aeGraph,
+        long knownRenderVersion, boolean reuseCharts) {
+        data.renderVersion = cache.version;
+        data.chartsUnchanged = reuseCharts && data.detail
+            && knownRenderVersion > 0
+            && knownRenderVersion == cache.version;
+        if (data.chartsUnchanged) return;
+        if (euGraph) {
+            data.euChart = cache.euChart.clone();
+            data.euRateChart = cache.euRateChart.clone();
+        }
+        if (aeGraph) {
+            data.aeChart = cache.aeChart.clone();
+            data.aeRateChart = cache.aeRateChart.clone();
+        }
+        if (data.detail && knownRenderVersion != cache.version) data.render = cache.render.copy();
+    }
+
+    static final class RenderCache {
+
+        long version;
+        List<NetworkInfoSample> eu;
+        List<AEMonitorSample> ae;
         final PortablePanelRenderData render = new PortablePanelRenderData();
         double[] euChart, euRateChart, aeChart, aeRateChart;
     }

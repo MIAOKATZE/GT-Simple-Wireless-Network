@@ -26,11 +26,14 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
     // 全局采样锁（用 world tick）：多屏共享时去重，距离上次采样 ≥ 100 ticks (5s) 才允许新采样
     private long lastSampleTick = -1L;
 
+    // Pending clock-epoch boundary: retain history, but never derive a rate across a rollback.
+    private boolean sampleClockReset;
+
     // 信息屏最近一次请求 tick（overworld tick），用于调度器判断是否活跃。
-    // 不持久化：重启后为 0，overworld tick 很大，isRequestActive 返回 false，
+    // 不持久化：重启后为 -1，未实际请求的数据集不会自动活跃，
     // 但 panel updateEntity 在 ServerTickEvent END phase 之前执行，
     // chunk 加载后首 tick 即写入 lastRequestTick，无采样空窗。
-    private long lastRequestTick = 0L;
+    private long lastRequestTick = -1L;
 
     /**
      * 局部 EU/t 计算数据集（per-player 共享，从 TileEntity 迁移至此）。
@@ -87,8 +90,9 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
         this.lastSampleTimeMs = System.currentTimeMillis();
         // v1.5.16：先记录到 EU/t 数据集（per-player 共享，从 TileEntity 迁移至此）
         eutDataSet.add(eu, tick);
-        // 计算瞬时 EU/t（基于最近两个采样点的斜率）
-        double eut = eutDataSet.calculateRecentEUT();
+        // A discontinuity uses the existing unavailable-rate value (0), not a measured zero energy flow.
+        double eut = sampleClockReset ? 0.0D : eutDataSet.calculateRecentEUT();
+        sampleClockReset = false;
         // 5m 集始终以瞬时值录入（行为不变），再沿流入计数链分发
         NetworkInfoSample sample = new NetworkInfoSample(timeMs, tick, eu, eut);
         addToWindow(WINDOW_5_MIN, sample);
@@ -104,6 +108,7 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
      * @return true=获得锁并已更新 lastSampleTick；false=尚未到下一次采样时间
      */
     public boolean tryAcquireSampleLock(long currentTick) {
+        if (lastSampleTick >= 0L && currentTick < lastSampleTick) resetSampleClock(currentTick);
         if (lastSampleTick < 0L || currentTick - lastSampleTick >= 100L) {
             lastSampleTick = currentTick;
             return true;
@@ -111,11 +116,20 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
         return false;
     }
 
+    /** Reset only cadence/rate continuity; saved windows and measurement history remain intact. */
+    void resetSampleClock(long currentTick) {
+        sampleClockReset = true;
+        // The public monitor API may already have sampled this tick before the scheduler END event.
+        // Equality is ambiguous across epochs: keep dedup, conservatively break the next rate interval.
+        if (lastSampleTick == currentTick) return;
+        lastSampleTick = -1L;
+    }
+
     /**
      * 信息屏 updateEntity 时调用，更新最近请求 tick（逻辑请求，非网络包）。
      * <p>
      * 调度器通过 {@link #isRequestActive} 判断该 dataSet 是否在 5 分钟内有请求，
-     * 仅对活跃 dataSet 采样。lastRequestTick 不持久化，重启后从 0 开始。
+     * 仅对活跃 dataSet 采样。lastRequestTick 不持久化，重启后等待真实请求。
      *
      * @param tick 当前 overworld tick
      */
@@ -132,7 +146,11 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
      * @return true 表示 6000t 内有请求，需要继续采样
      */
     public boolean isRequestActive(long currentTick) {
-        return currentTick - lastRequestTick < 6000L;
+        // Expired/future requests cannot revive on a later clock adjustment without a real observation.
+        if (lastRequestTick >= 0L && (currentTick < lastRequestTick || currentTick - lastRequestTick >= 6000L)) {
+            lastRequestTick = -1L;
+        }
+        return lastRequestTick >= 0L;
     }
 
     /**
@@ -174,6 +192,7 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
     public void clear() {
         clearWindows();
         lastSampleTick = -1L;
+        sampleClockReset = false;
         // v1.5.16：清空 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）
         eutDataSet.clear();
     }
@@ -186,6 +205,8 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
         NBTTagCompound tag = new NBTTagCompound();
         writeWindowsToNBT(tag);
         tag.setLong("lastSampleTick", lastSampleTick);
+        // Optional additive field: retain an unsampled boundary across saves; old NBT defaults to false.
+        tag.setBoolean("sampleClockReset", sampleClockReset);
         // v1.5.15：持久化真实时间戳，跨会话判断玩家活跃度
         tag.setLong("lastSampleTimeMs", lastSampleTimeMs);
         // v1.5.16：持久化 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）
@@ -205,11 +226,13 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
      */
     public void readFromNBT(NBTTagCompound tag) {
         clear();
+        lastRequestTick = -1L;
         if (tag == null) {
             return;
         }
         readWindowsFromNBT(tag);
         lastSampleTick = tag.getLong("lastSampleTick");
+        sampleClockReset = tag.getBoolean("sampleClockReset");
         // v1.5.15：读取真实时间戳；旧存档无此 key 时返回 0（视为远古数据，将被 cleanupStale 清理）
         lastSampleTimeMs = tag.getLong("lastSampleTimeMs");
         // v1.5.16：读取 EU/t 测量历史（per-player 共享，从 TileEntity 迁移至此）

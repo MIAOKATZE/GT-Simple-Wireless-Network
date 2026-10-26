@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.panel;
 
 import java.math.BigInteger;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -43,8 +44,32 @@ public class NetworkInfoMonitorScheduler {
     /** 采样间隔（100t = 5s） */
     private static final long SAMPLE_INTERVAL_TICKS = 100L;
 
-    /** 上次采样的世界 tick（用于 100t 间隔判定） */
-    private long lastSampleTick = -1L;
+    /** The event handler can outlive an integrated server or its overworld. */
+    private final SampleCadence cadence = new SampleCadence();
+
+    /** Main-thread cadence; identity tokens deliberately use reference equality. */
+    static final class SampleCadence {
+
+        private Object server;
+        private Object world;
+        private long lastObservedTick = -1L;
+        private long lastSampleTick = -1L;
+        private boolean clockRewound;
+
+        boolean shouldSample(Object currentServer, Object currentWorld, long tick) {
+            boolean changed = server != currentServer || world != currentWorld;
+            clockRewound = !changed && tick < lastObservedTick;
+            if (changed || clockRewound) lastSampleTick = -1L;
+            server = currentServer;
+            world = currentWorld;
+            lastObservedTick = tick;
+            if (lastSampleTick < 0L || tick - lastSampleTick >= SAMPLE_INTERVAL_TICKS) {
+                lastSampleTick = tick;
+                return true;
+            }
+            return false;
+        }
+    }
 
     /** 采样异常日志的冷却窗口（JVM 单调纳秒，30 秒）：与 world/tick 解耦，保留「仍在复发」信号。 */
     private static final long LOG_COOLDOWN_NANOS = 30_000_000_000L;
@@ -80,9 +105,8 @@ public class NetworkInfoMonitorScheduler {
         long tick = overworld.getTotalWorldTime();
 
         // 每 100t 采样一次
-        if (lastSampleTick < 0L || tick - lastSampleTick >= SAMPLE_INTERVAL_TICKS) {
-            lastSampleTick = tick;
-            sampleAllActive(overworld, tick);
+        if (cadence.shouldSample(server, overworld, tick)) {
+            sampleAllActive(overworld, tick, cadence.clockRewound);
         }
     }
 
@@ -97,13 +121,13 @@ public class NetworkInfoMonitorScheduler {
      * @param overworld overworld 世界实例（dimension 0），保证跨维度一致
      * @param tick      当前世界 tick
      */
-    private void sampleAllActive(World overworld, long tick) {
+    private void sampleAllActive(World overworld, long tick, boolean clockRewound) {
         NetworkInfoDataStore store = NetworkInfoDataStore.get(overworld);
         long timeMs = System.currentTimeMillis();
 
         // 遍历活跃 dataSet（5 分钟内有请求的）
         // getActiveEntries 返回快照 List，避免 ConcurrentModificationException
-        for (Map.Entry<String, NetworkInfoDataSet> entry : store.getActiveEntries(tick)) {
+        for (Map.Entry<String, NetworkInfoDataSet> entry : activeEntriesForSampling(store, tick, clockRewound)) {
             try {
                 String uid = entry.getKey();
                 UUID uuid = UUID.fromString(uid);
@@ -126,5 +150,12 @@ public class NetworkInfoMonitorScheduler {
                 }
             }
         }
+    }
+
+    static List<Map.Entry<String, NetworkInfoDataSet>> activeEntriesForSampling(NetworkInfoDataStore store, long tick,
+        boolean clockRewound) {
+        // Inactive/future-request entries can be re-observed later, so reset continuity before filtering.
+        if (clockRewound) store.resetSampleClocks(tick);
+        return store.getActiveEntries(tick);
     }
 }
