@@ -18,6 +18,10 @@ public final class DisplayContinuity<T> {
     }
 
     public void receive(Object currentScope, T authorizedValue, long now) {
+        if (currentScope == null) {
+            clear();
+            return;
+        }
         validate(currentScope);
         scope = currentScope;
         value = authorizedValue;

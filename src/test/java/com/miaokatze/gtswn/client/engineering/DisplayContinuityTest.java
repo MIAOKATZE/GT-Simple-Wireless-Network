@@ -66,6 +66,21 @@ public class DisplayContinuityTest {
     }
 
     @Test
+    public void missingScopeAfterRevocationCannotSeedAnotherSourcesDisplay() {
+        DisplayContinuity<String> cache = new DisplayContinuity<>();
+        Object original = new Object(), replacement = new Object();
+        cache.receive(original, "old authorized value", 100);
+        cache.clear();
+        // A resumed producer has lost its captured identity: even a newly authorized value needs a scope.
+        cache.receive(null, "reauthorized EU value", 200);
+        cache.close();
+        cache.open(replacement);
+        assertNull(cache.display(replacement));
+        assertEquals(0, cache.receivedAt());
+        assertEquals("waiting", cache.status(replacement, 201, 3500, false));
+    }
+
+    @Test
     public void clockRegressionNeverTurnsHistoryIntoFreshAuthority() {
         DisplayContinuity<String> cache = new DisplayContinuity<>();
         Object scope = new Object();

@@ -278,7 +278,7 @@ public final class PortableSuperDashboard extends Gui {
         if (id == null) return;
         if (displayScope != null && displayScope.source.binding.startsWith(id.toString() + ":")) {
             DISPLAY.clear();
-            displayScope = null;
+            // The open board keeps its captured source identity for any later reauthorized receipt.
         }
         if (id.equals(terminal)) cards.clear();
     }
