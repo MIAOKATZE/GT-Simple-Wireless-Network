@@ -113,6 +113,8 @@ final class PanelAeSamplingScenario implements TestScenario {
 
     @Override
     public void tick(TestContext ctx) {
+        // This owner-authorized test is an explicit sampling job, not an online player observer.
+        panel.renewMonitoringJobInterest(2);
         AENetworkProxy proxy = ((IGridProxyable) controller).getProxy();
         try {
             if (proxy.isReady()) proxy.getEnergy()
@@ -129,6 +131,9 @@ final class PanelAeSamplingScenario implements TestScenario {
                     "Production AE storage accepted exactly seven iron ingots into a real 1k cell");
             }
         } catch (GridAccessException ignored) { /* Wait for actual grid boot-up. */ }
+        // The native AE source becomes provable after grid boot; retain its archive after disconnect.
+        String currentDataKey = panel.getAEMonitorDataKey();
+        if (stage < 2 && currentDataKey != null) dataKey = currentDataKey;
         AEMonitorDataSet data = AEMonitorDataStore.get(ctx.world())
             .getIfPresent(dataKey);
         AEMonitorSample latest = data == null ? null : data.newest(itemKey);

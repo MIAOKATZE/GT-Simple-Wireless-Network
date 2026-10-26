@@ -65,6 +65,11 @@ public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSe
         return resolveAccount(owner, SpaceProjectManager::getLeader);
     }
 
+    /** Read-only counterpart: GT's getLeader initializes missing teams and marks its world data dirty. */
+    public static UUID resolveAccountReadOnly(UUID owner) {
+        return resolveAccount(owner, id -> SpaceProjectManager.spaceTeams.getOrDefault(id, id));
+    }
+
     static UUID resolveAccount(UUID owner, Function<UUID, UUID> resolver) {
         if (owner == null) return null;
         try {
