@@ -219,7 +219,7 @@ public final class PortableSuperDashboard extends Gui {
             // Summary and detail deliberately use different dictionaries; changing projection is not revocation.
             && (old.detail != next.detail || old.metadataVersion == next.metadataVersion)
             && (next.metadataUnchanged || old.ownerName.equals(next.ownerName) && old.window.equals(next.window)
-                && old.aeWindow.equals(next.aeWindow));
+                && (old.detail != next.detail || old.aeWindow.equals(next.aeWindow)));
     }
 
     private static boolean revoked() {

@@ -18,6 +18,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.function.LongSupplier;
 import java.util.zip.GZIPOutputStream;
 
 import com.sun.net.httpserver.Headers;
@@ -28,10 +29,13 @@ import com.sun.net.httpserver.HttpHandler;
 public final class ReadonlyWebAdapter implements HttpHandler {
 
     static final int MAX_RESPONSE = 262144;
+    static final long PUBLICATION_LEASE_NANOS = TimeUnit.SECONDS.toNanos(10);
     private final byte[] tokenHash;
     private final int maxDashboards;
     private final String allowedProxy;
     private final ScheduledExecutorService deadlines;
+    private final LongSupplier clock;
+    private volatile long lastPublicationNanos;
     private final Semaphore concurrent = new Semaphore(8);
     private final Set<HttpExchange> active = Collections.newSetFromMap(new ConcurrentHashMap<HttpExchange, Boolean>());
     private final Budget egress;
@@ -43,11 +47,18 @@ public final class ReadonlyWebAdapter implements HttpHandler {
 
     ReadonlyWebAdapter(byte[] tokenHash, int maxDashboards, int bytesPerSecond, String allowedProxy,
         ScheduledExecutorService deadlines) throws IOException {
+        this(tokenHash, maxDashboards, bytesPerSecond, allowedProxy, deadlines, System::nanoTime);
+    }
+
+    ReadonlyWebAdapter(byte[] tokenHash, int maxDashboards, int bytesPerSecond, String allowedProxy,
+        ScheduledExecutorService deadlines, LongSupplier clock) throws IOException {
         if (tokenHash == null || tokenHash.length != 32) throw new IllegalArgumentException("Authentication required");
         this.tokenHash = tokenHash.clone();
         this.maxDashboards = Math.max(1, Math.min(16, maxDashboards));
         this.allowedProxy = allowedProxy;
         this.deadlines = deadlines;
+        this.clock = java.util.Objects.requireNonNull(clock);
+        this.lastPublicationNanos = clock.getAsLong() - PUBLICATION_LEASE_NANOS;
         this.egress = new Budget(bytesPerSecond, Math.max(MAX_RESPONSE + 1024, bytesPerSecond));
         assets.put("/", asset("index.html", "text/html; charset=utf-8"));
         assets.put("/dashboard.js", asset("dashboard.js", "application/javascript; charset=utf-8"));
@@ -73,6 +84,13 @@ public final class ReadonlyWebAdapter implements HttpHandler {
             published = candidate;
             if (removed) for (HttpExchange exchange : active) exchange.close();
         }
+        // A successful main-thread publication renews liveness even when the encoded content is unchanged.
+        lastPublicationNanos = clock.getAsLong();
+    }
+
+    private boolean currentPublication(Published current) {
+        long age = clock.getAsLong() - lastPublicationNanos;
+        return enabled && current == published && age >= 0 && age < PUBLICATION_LEASE_NANOS;
     }
 
     /** Revocation clears sensitive cache immediately and interrupts in-flight responses. */
@@ -166,7 +184,7 @@ public final class ReadonlyWebAdapter implements HttpHandler {
                 error(exchange, 401);
                 return;
             }
-            if (api && (!enabled || current != published)) {
+            if (api && !currentPublication(current)) {
                 error(exchange, 503);
                 return;
             }
@@ -180,6 +198,10 @@ public final class ReadonlyWebAdapter implements HttpHandler {
                 exchange.getRequestHeaders()
                     .getFirst("If-None-Match"))) {
                 if (!egress.take(1024)) {
+                    exchange.close();
+                    return;
+                }
+                if (api && !currentPublication(current)) {
                     exchange.close();
                     return;
                 }
@@ -197,7 +219,7 @@ public final class ReadonlyWebAdapter implements HttpHandler {
             }
             if (gzip) out.set("Content-Encoding", "gzip");
             out.set("Content-Length", Integer.toString(body.length));
-            if (api && (!enabled || current != published)) {
+            if (api && !currentPublication(current)) {
                 exchange.close();
                 return;
             }

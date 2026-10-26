@@ -166,6 +166,23 @@ public final class MonitoringProfiles extends WorldSavedData {
         return profile != null && isPortable(profile) && profile.mayModify(actor) && canRead(actor, id);
     }
 
+    /**
+     * Panel authorization alone is not authority for the owner's current wireless account. In particular,
+     * detaching the root EU source must not let a retained AE panel follow a later wireless-team change.
+     * Callers supply the actual native account being projected, never a client-supplied owner identity.
+     */
+    public boolean canReadPortableEU(UUID actor, ItemStack actualStack, UUID account) {
+        if (account == null) return false;
+        if (!hasProfileReference(actualStack)) return canUsePortable(actor, actualStack);
+        MonitorProfile profile = profiles.get(readProfileReference(actualStack));
+        if (profile == null) return false;
+        SourceKey expected = new SourceKey(SourceKey.Kind.EU, epoch, account.toString(), 1);
+        return expected.equals(
+            profile.sources()
+                .get("eu|" + account))
+            && canUsePortable(actor, actualStack);
+    }
+
     public boolean detachPortablePanel(UUID actor, ItemStack stack, UUID panelId) {
         if (!hasProfileReference(stack)) return true;
         MonitorProfile profile = profiles.get(readProfileReference(stack));
@@ -437,6 +454,10 @@ public final class MonitoringProfiles extends WorldSavedData {
         MonitorProfile profile = requireProfile(id);
         requireOwner(profile, actor);
         if (recipient == null) throw new IllegalArgumentException("Missing new owner");
+        // With no native source there is no recipient authority to verify. Allowing this would let one
+        // player dump empty profiles onto arbitrary UUIDs and bypass the per-owner creation quota.
+        if (profile.sources()
+            .isEmpty()) throw new IllegalArgumentException("Empty profiles cannot be transferred");
         for (Map.Entry<String, SourceKey> source : profile.sources()
             .entrySet())
             if (sourceAccess.check(recipient, source.getKey(), source.getValue(), true) != MonitorProfile.Status.LIVE)

@@ -40,6 +40,9 @@ public final class PortableMonitorRequestQueue {
 
     public static final String EU_GRAPH = "$chart:eu", AE_GRAPH = "$chart:ae";
     private static final Map<TileEntityNetworkInfoPanel, RenderCache> RENDER_CACHE = new WeakHashMap<>();
+    private static final Map<TileEntityNetworkInfoPanel, RenderCache> AE_RENDER_CACHE = new WeakHashMap<>();
+    private static final Map<TileEntityNetworkInfoPanel, java.util.LinkedHashMap<Long, RenderCache>> AE_HISTORY_BASES = new WeakHashMap<>();
+    private static final Map<PacketSyncPortableMonitor, List<PanelAuthorization>> AUTHORIZATIONS = new WeakHashMap<>();
     private static long nextRenderVersion, nextMetadataVersion;
     private static final Map<TileEntityNetworkInfoPanel, java.util.LinkedHashMap<Long, RenderCache>> HISTORY_BASES = new WeakHashMap<>();
 
@@ -58,6 +61,9 @@ public final class PortableMonitorRequestQueue {
         PENDING.clear();
         RENDER_CACHE.clear();
         HISTORY_BASES.clear();
+        AE_RENDER_CACHE.clear();
+        AE_HISTORY_BASES.clear();
+        AUTHORIZATIONS.clear();
         INSTANCE.nextAllowed.clear();
         INSTANCE.actionReplay.clear();
         INSTANCE.actionPending.clear();
@@ -245,6 +251,7 @@ public final class PortableMonitorRequestQueue {
         response.bindingRevision = MonitorBindings.revision(stack);
         List<MonitorBindings.Binding> bindings = MonitorBindings.read(stack);
         int selected = selectedIndex(request, bindings, owner, result);
+        List<PanelAuthorization> authorizations = new ArrayList<>();
         int panelIndex = 0;
         for (MonitorBindings.Binding binding : bindings) {
             PacketSyncPortableMonitor.Panel data = new PacketSyncPortableMonitor.Panel();
@@ -263,6 +270,11 @@ public final class PortableMonitorRequestQueue {
                     else {
                         Set<String> pins = request.pins.getOrDefault(binding.panelId, java.util.Collections.emptySet());
                         boolean detail = selected == panelIndex;
+                        UUID account = panel.getOwnerUUID() == null ? null
+                            : com.miaokatze.gtswn.common.panel.NetworkInfoDataStore
+                                .resolveAccount(panel.getOwnerUUID());
+                        boolean euAllowed = profiles.canReadPortableEU(player.getUniqueID(), stack, account);
+                        authorizations.add(new PanelAuthorization(binding, account, euAllowed));
                         PacketRequestPortableMonitor.HistoryCursor cursor = request.action == 0
                             ? request.historyCursors.get(binding.panelId)
                             : null;
@@ -280,7 +292,8 @@ public final class PortableMonitorRequestQueue {
                                 request.rawHistory,
                                 request.rawHistory ? cursor == null ? 0 : cursor.configVersion
                                     : request.knownConfigVersion,
-                                cursor == null ? 0 : cursor.fields);
+                                cursor == null ? 0 : cursor.fields,
+                                euAllowed);
                         } else fillSummary(data, panel);
                     }
                 }
@@ -303,6 +316,7 @@ public final class PortableMonitorRequestQueue {
             if (authorizationChecks.size() >= 1024) authorizationChecks.removeFirst();
             authorizationChecks.addLast(new AuthorizationCheck(player, request.terminalId, delivery, serverTick + 20));
         }
+        AUTHORIZATIONS.put(response, authorizations);
         if (request.action != 0) actionReplay.put(player, response);
         send(player, response);
     }
@@ -322,9 +336,7 @@ public final class PortableMonitorRequestQueue {
         } else com.miaokatze.gtswn.network.telemetry.TelemetryTransport
             .offer(player, "portable:" + response.terminalId, packet, () -> {
                 ItemStack actual = find(player, response.terminalId);
-                return actual != null && player.worldObj != null
-                    && com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
-                        .canUsePortable(player.getUniqueID(), actual);
+                return authorizedResponse(player, actual, response);
             }, () -> {});
     }
 
@@ -363,9 +375,7 @@ public final class PortableMonitorRequestQueue {
 
     private void flushAction(EntityPlayerMP player, ActionDelivery delivery) {
         ItemStack actual = find(player, delivery.response.terminalId);
-        boolean authorized = actual != null && player.worldObj != null
-            && com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
-                .canUsePortable(player.getUniqueID(), actual);
+        boolean authorized = authorizedResponse(player, actual, delivery.response);
         // Authorization may invalidate this exact delivery reentrantly.
         if (actionPending.get(player) != delivery) return;
         if (!authorized) {
@@ -389,13 +399,56 @@ public final class PortableMonitorRequestQueue {
                 delivery.response.rawHistory ? new PacketSyncPortableHistory(delivery.response) : delivery.response,
                 () -> {
                     ItemStack held = find(player, delivery.response.terminalId);
-                    return actionPending.get(player) == delivery && held != null
-                        && player.worldObj != null
-                        && com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
-                            .canUsePortable(player.getUniqueID(), held);
+                    return actionPending.get(player) == delivery && authorizedResponse(player, held, delivery.response);
                 },
                 () -> { if (actionPending.get(player) == delivery) actionPending.remove(player); });
         delivery.recordAdmission(admission);
+    }
+
+    /** A queued/replayed snapshot retains its original source authorization, never a newer terminal's authority. */
+    private static boolean authorizedResponse(EntityPlayerMP player, ItemStack actual,
+        PacketSyncPortableMonitor response) {
+        if (actual == null || player.worldObj == null || MonitorBindings.revision(actual) != response.bindingRevision)
+            return false;
+        com.miaokatze.gtswn.common.monitoring.MonitoringProfiles profiles = com.miaokatze.gtswn.common.monitoring.MonitoringProfiles
+            .get(player.worldObj);
+        if (!profiles.canUsePortable(player.getUniqueID(), actual)) return false;
+        List<PanelAuthorization> authorizations = AUTHORIZATIONS.get(response);
+        if (authorizations == null) return false;
+        for (PanelAuthorization authorization : authorizations) {
+            MonitorBindings.Binding binding = authorization.binding;
+            World world = DimensionManager.getWorld(binding.dimension);
+            if (world == null || !world.blockExists(binding.x, binding.y, binding.z)) return false;
+            TileEntity tile = world.getTileEntity(binding.x, binding.y, binding.z);
+            if (!(tile instanceof TileEntityNetworkInfoPanel)) return false;
+            TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) tile;
+            if (!binding.panelId.equals(panel.getPortableMonitorId())) return false;
+            UUID account = panel.getOwnerUUID() == null ? null
+                : com.miaokatze.gtswn.common.panel.NetworkInfoDataStore.resolveAccount(panel.getOwnerUUID());
+            if (!sameEUAuthorization(
+                authorization.account,
+                authorization.euAllowed,
+                account,
+                profiles.canReadPortableEU(player.getUniqueID(), actual, account))) return false;
+        }
+        return true;
+    }
+
+    static boolean sameEUAuthorization(UUID expected, boolean allowed, UUID current, boolean currentlyAllowed) {
+        return java.util.Objects.equals(expected, current) && allowed == currentlyAllowed;
+    }
+
+    private static final class PanelAuthorization {
+
+        final MonitorBindings.Binding binding;
+        final UUID account;
+        final boolean euAllowed;
+
+        PanelAuthorization(MonitorBindings.Binding binding, UUID account, boolean euAllowed) {
+            this.binding = binding;
+            this.account = account;
+            this.euAllowed = euAllowed;
+        }
     }
 
     static int selectedIndex(PacketRequestPortableMonitor request, List<MonitorBindings.Binding> bindings) {
@@ -437,39 +490,10 @@ public final class PortableMonitorRequestQueue {
 
     private static void fill(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel, boolean detail,
         Set<String> requestedPins, boolean charts, long knownRenderVersion, boolean reuseCharts, boolean rawHistory,
-        long knownConfigVersion, int knownFields) {
+        long knownConfigVersion, int knownFields, boolean euAllowed) {
         data.detail = detail;
         fillSummary(data, panel);
-        boolean needsEU = detail || requestedPins.contains("eu");
-        if (needsEU) {
-            String exactEnergy = panel.getCachedEu()
-                .toString();
-            data.currentEnergy = exactEnergy.length() <= 4096 ? exactEnergy : "";
-            PacketSyncPortableMonitor.Row eu = new PacketSyncPortableMonitor.Row();
-            eu.key = "eu";
-            eu.name = "EU";
-            eu.amount = panel.getCachedEu()
-                .toString();
-            if (eu.amount.length() > 512)
-                eu.amount = com.miaokatze.gtswn.common.util.FormatUtil.formatScientific(panel.getCachedEu());
-            List<NetworkInfoSample> samples = panel.getCachedSamples();
-            if (!samples.isEmpty()) {
-                NetworkInfoSample newest = samples.get(samples.size() - 1);
-                data.sampleTime = newest.timeMs;
-                eu.sampleTime = newest.timeMs;
-                eu.sampleTick = newest.tick;
-                eu.rate = newest.eut;
-                if (samples.size() > 1) {
-                    NetworkInfoSample first = samples.get(0);
-                    long ticks = newest.tick - first.tick;
-                    if (ticks > 0) eu.average = new BigDecimal(newest.eu.subtract(first.eu))
-                        .divide(BigDecimal.valueOf(ticks), MathContext.DECIMAL64)
-                        .doubleValue();
-                }
-            }
-            eu.rate = panel.getCachedEut();
-            if (needsEU) data.rows.add(eu);
-        }
+        fillEU(data, panel, euAllowed && (detail || requestedPins.contains("eu")));
         AEMonitorDataSet set = AEMonitorDataStore.get(panel.getWorldObj())
             .getIfPresent(panel.getAEMonitorDataKey());
         Map<String, PacketSyncPortableMonitor.Row> keys = new HashMap<>();
@@ -487,13 +511,13 @@ public final class PortableMonitorRequestQueue {
             addItem(data, keys, set, panel.getChartItem(), true, requestedPins, false);
             addFluid(data, keys, set, panel.getChartFluid(), true, requestedPins, false);
         }
-        boolean euGraph = needsEUChart(detail, requestedPins, charts);
+        boolean euGraph = euAllowed && needsEUChart(detail, requestedPins, charts);
         boolean aeGraph = needsAEChart(detail, requestedPins);
         if (euGraph || aeGraph) {
-            RenderCache cache = renderCache(panel, set, chartKey);
+            RenderCache cache = renderCache(panel, set, chartKey, euAllowed);
             if (rawHistory) {
                 data.historyFields = (euGraph ? 1 : 0) | (aeGraph ? 2 : 0);
-                RenderCache base = knownFields == data.historyFields ? HISTORY_BASES.get(panel)
+                RenderCache base = knownFields == data.historyFields ? historyBases(euAllowed).get(panel)
                     .get(knownRenderVersion) : null;
                 if (base != null && base.configVersion != knownConfigVersion) base = null;
                 data.renderVersion = cache.version;
@@ -501,6 +525,38 @@ public final class PortableMonitorRequestQueue {
                 data.historyPatch = PortableHistoryPatch.between(base, cache, euGraph, aeGraph);
             } else publishRender(data, cache, euGraph, aeGraph, knownRenderVersion, reuseCharts);
         }
+    }
+
+    /** EU scalar projection has the same source permission as raw and normalized histories. */
+    static void fillEU(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel, boolean allowed) {
+        if (!allowed) return;
+        String exactEnergy = panel.getCachedEu()
+            .toString();
+        data.currentEnergy = exactEnergy.length() <= 4096 ? exactEnergy : "";
+        PacketSyncPortableMonitor.Row eu = new PacketSyncPortableMonitor.Row();
+        eu.key = "eu";
+        eu.name = "EU";
+        eu.amount = panel.getCachedEu()
+            .toString();
+        if (eu.amount.length() > 512)
+            eu.amount = com.miaokatze.gtswn.common.util.FormatUtil.formatScientific(panel.getCachedEu());
+        List<NetworkInfoSample> samples = panel.getCachedSamples();
+        if (!samples.isEmpty()) {
+            NetworkInfoSample newest = samples.get(samples.size() - 1);
+            data.sampleTime = newest.timeMs;
+            eu.sampleTime = newest.timeMs;
+            eu.sampleTick = newest.tick;
+            eu.rate = newest.eut;
+            if (samples.size() > 1) {
+                NetworkInfoSample first = samples.get(0);
+                long ticks = newest.tick - first.tick;
+                if (ticks > 0) eu.average = new BigDecimal(newest.eu.subtract(first.eu))
+                    .divide(BigDecimal.valueOf(ticks), MathContext.DECIMAL64)
+                    .doubleValue();
+            }
+        }
+        eu.rate = panel.getCachedEut();
+        data.rows.add(eu);
     }
 
     /** Real loaded-screen state without reading rows, histories, stores or render caches. */
@@ -527,12 +583,24 @@ public final class PortableMonitorRequestQueue {
     }
 
     static RenderCache renderCache(TileEntityNetworkInfoPanel panel, AEMonitorDataSet set, String chartKey) {
+        return renderCache(panel, set, chartKey, true);
+    }
+
+    /** Distinct revisions/baselines prevent an AE-only projection from reusing previously authorized EU data. */
+    static RenderCache renderCache(TileEntityNetworkInfoPanel panel, AEMonitorDataSet set, String chartKey,
+        boolean euAllowed) {
+        Map<TileEntityNetworkInfoPanel, RenderCache> caches = euAllowed ? RENDER_CACHE : AE_RENDER_CACHE;
         net.minecraft.nbt.NBTTagCompound config = panel.getPortableRenderConfig();
-        List<NetworkInfoSample> eu = tail(panel.getCachedSamples());
+        if (!euAllowed) {
+            config = (net.minecraft.nbt.NBTTagCompound) config.copy();
+            for (String key : new String[] { "showBriefEnergy", "showBriefStatus", "showChartEnergy", "showChartStatus",
+                "portableCold", "portableLongSilent" }) config.setBoolean(key, false);
+        }
+        List<NetworkInfoSample> eu = euAllowed ? tail(panel.getCachedSamples()) : java.util.Collections.emptyList();
         List<AEMonitorSample> ae = set == null || chartKey == null ? java.util.Collections.emptyList()
             : tail(set.query(chartKey, panel.getAETrackingWindow()));
         String key = chartKey == null ? "" : chartKey;
-        UUID account = panel.getOwnerUUID() == null ? null
+        UUID account = !euAllowed || panel.getOwnerUUID() == null ? null
             : com.miaokatze.gtswn.common.panel.NetworkInfoDataStore.resolveAccount(panel.getOwnerUUID());
         String euSource = account == null ? "" : account.toString();
         if (panel.getWorldObj() != null && account != null)
@@ -544,7 +612,7 @@ public final class PortableMonitorRequestQueue {
                 1).toString();
         com.miaokatze.gtswn.common.monitoring.SourceKey aeIdentity = panel.getAEMonitorSourceKey();
         String aeSource = aeIdentity == null ? "" : aeIdentity.toString();
-        RenderCache old = RENDER_CACHE.get(panel);
+        RenderCache old = caches.get(panel);
         // Compare the actual selected window, not a hash or the newest sample of a different window.
         // Time and interior samples matter even when the normalized chart shape is unchanged.
         if (old != null && old.render.config.equals(config)
@@ -563,8 +631,8 @@ public final class PortableMonitorRequestQueue {
         cache.render.chartKey = key;
         cache.render.euSource = euSource;
         cache.render.aeSource = aeSource;
-        String currentEnergy = panel.getCachedEu()
-            .toString();
+        String currentEnergy = euAllowed ? panel.getCachedEu()
+            .toString() : "";
         cache.render.currentEnergy = currentEnergy.length() <= 4096 ? currentEnergy : "";
         List<BigDecimal> energy = new ArrayList<>(), power = new ArrayList<>(), amounts = new ArrayList<>(),
             rates = new ArrayList<>();
@@ -583,8 +651,8 @@ public final class PortableMonitorRequestQueue {
         cache.euRateChart = normalize(power);
         cache.aeChart = normalize(amounts);
         cache.aeRateChart = normalize(rates);
-        RENDER_CACHE.put(panel, cache);
-        java.util.LinkedHashMap<Long, RenderCache> bases = HISTORY_BASES
+        caches.put(panel, cache);
+        java.util.LinkedHashMap<Long, RenderCache> bases = historyBases(euAllowed)
             .computeIfAbsent(panel, ignored -> new java.util.LinkedHashMap<>());
         bases.put(cache.version, cache);
         while (bases.size() > 9) bases.remove(
@@ -592,6 +660,11 @@ public final class PortableMonitorRequestQueue {
                 .iterator()
                 .next());
         return cache;
+    }
+
+    private static Map<TileEntityNetworkInfoPanel, java.util.LinkedHashMap<Long, RenderCache>> historyBases(
+        boolean euAllowed) {
+        return euAllowed ? HISTORY_BASES : AE_HISTORY_BASES;
     }
 
     private static <T> List<T> tail(List<T> values) {

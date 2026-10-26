@@ -154,7 +154,10 @@ public final class WirelessEURequestQueue extends PlayerRequestQueue<WirelessEUR
         return stack.stackTagCompound.hasKey(PortableWirelessNetworkMonitor.NBT_OWNER_UUID)
             && ownerUUID.equals(stack.stackTagCompound.getString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID))
             && com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
-                .canUsePortable(player.getUniqueID(), stack);
+                .canReadPortableEU(
+                    player.getUniqueID(),
+                    stack,
+                    com.miaokatze.gtswn.common.panel.NetworkInfoDataStore.resolveAccount(UUID.fromString(ownerUUID)));
     }
 
     static final class Request {

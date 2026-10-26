@@ -178,6 +178,15 @@ public final class AEMonitorController {
      */
     public void tickSampling(long worldTick) {
         if (core.getWorldObj() == null || core.getWorldObj().isRemote) return;
+        if (samplingWorld == core.getWorldObj() && worldTick < lastObservedTick && sourceDataKey != null) {
+            AEMonitorDataStore histories = AEMonitorDataStore.get(core.getWorldObj());
+            AEMonitorDataSet previous = histories.getIfPresent(sourceDataKey);
+            if (previous != null) {
+                previous.resetSampleClock(worldTick);
+                histories.markDirty();
+                dataSetRevision++;
+            }
+        }
         if (samplingWorld != core.getWorldObj() || worldTick < lastObservedTick) {
             samplingWorld = core.getWorldObj();
             lastAESampleTick = -1L;
@@ -413,6 +422,14 @@ public final class AEMonitorController {
 
         AEMonitorDataStore store = AEMonitorDataStore.get(core.getWorldObj());
         AEMonitorDataSet dataSet = store.getOrCreate(dataKey);
+        // Restore/rollback boundaries must precede descriptor registration and native reads.
+        int previousKeys = dataSet.sampledKeyCount();
+        boolean clockAvailable = dataSet.observeClock(tick);
+        if (!clockAvailable || previousKeys != dataSet.sampledKeyCount()) store.markDirty();
+        if (!clockAvailable) {
+            pushAEMonitorOffline();
+            return;
+        }
         long timeMs = System.currentTimeMillis();
 
         // G4：合并走势图与监控列表（chart 绑定在前，与原逐段写入顺序一致），按现行策略收集

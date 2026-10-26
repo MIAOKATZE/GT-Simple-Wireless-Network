@@ -105,6 +105,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
         DeviceTerminalDeltaDelivery delta;
         UUID clientSession;
         String sourceRevision;
+        Object pendingPage;
         long lastSent = Long.MIN_VALUE;
         int entryTotal;
         int pageTotal;
@@ -196,6 +197,8 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
 
     private static void revoke(EntityPlayerMP player, SentState state, UUID session) {
         if (player == null || player.playerNetServerHandler == null) return;
+        state.pendingPage = null;
+        TelemetryTransport.cancel(player, "dit-page:" + state.terminalId);
         if (state.delta != null && session != null
             && MonitorCapabilities.serverSupports(player, MonitorCapabilities.DIT)) {
             TelemetryTransport.control(player, state.delta.revoked(session));
@@ -311,6 +314,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             }
             if (!playerState.admit(now)) return;
             SentState state = playerState.terminal(terminalId);
+            prepareSession(player, state, request.delta == null ? null : request.delta.getSession());
             if (request.delta != null) {
                 state.clientSession = request.delta.getSession();
                 if (state.delta == null) state.delta = new DeviceTerminalDeltaDelivery(terminalId);
@@ -335,6 +339,19 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             store.refreshRecognitionDefaults(terminalId);
             String sourceRevision = profiles.sourceRevision(terminalId) + ":"
                 + profiles.authorizationRevision(terminalId);
+            // The transport owns one frozen page until actual send; do not prepare a different ACK baseline meanwhile.
+            if (state.pendingPage != null) return;
+            java.util.function.BooleanSupplier authorizedPage = () -> {
+                boolean valid = SENT.get(player.getUniqueID()) == playerState
+                    && playerState.terminals.get(terminalId) == state
+                    && playerState.connection == player.playerNetServerHandler
+                    && findTerminalStack(player, terminalId) != null
+                    && profiles.canRead(player.getUniqueID(), terminalId)
+                    && sourceRevision
+                        .equals(profiles.sourceRevision(terminalId) + ":" + profiles.authorizationRevision(terminalId));
+                if (!valid) state.pendingPage = null;
+                return valid;
+            };
             if (request.delta != null) {
                 state.snapshot = null;
                 if (state.delta == null) state.delta = new DeviceTerminalDeltaDelivery(terminalId);
@@ -350,8 +367,13 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                         Math.min(countLiveEntries(data), PacketSyncDeviceTerminalData.MAX_ENTRIES)));
                 for (int burst = 0; burst < PAGES_PER_BURST && state.delta.hasPage(); burst++) {
                     PacketSyncDeviceTerminalDelta packet = state.delta.next();
-                    if (!TelemetryTransport.trySend(player, packet)) break;
-                    state.delta.sent(packet, now);
+                    DeviceTerminalDeltaDelivery delivery = state.delta;
+                    if (!queueFrozenPage(
+                        player,
+                        state,
+                        packet,
+                        authorizedPage,
+                        () -> delivery.sent(packet, overworld.getTotalWorldTime()))) break;
                 }
                 long keepAliveTicks = Math.max(20, Math.min(600, Config.deviceSampleIntervalSeconds * 20));
                 PacketSyncDeviceTerminalDelta keepAlive = state.delta.keepAlive(now, keepAliveTicks);
@@ -398,9 +420,11 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                     pageTotal,
                     entryTotal,
                     state.snapshot.subList(pageFrom, pageTo));
-                if (!TelemetryTransport.trySend(player, packet)) break;
-                state.pagesSent++;
-                state.lastSent = now;
+                if (!queueFrozenPage(player, state, packet, authorizedPage, () -> {
+                    state.pagesSent++;
+                    state.lastSent = overworld.getTotalWorldTime();
+                    state.complete = state.pagesSent >= state.pageTotal;
+                })) break;
             }
             state.complete = state.pagesSent >= pageTotal;
         } catch (Throwable t) {
@@ -411,6 +435,40 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                 com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG.error("[设备终端] 请求装配异常（本条丢弃）", t);
             }
         }
+    }
+
+    static void prepareSession(EntityPlayerMP player, SentState state, UUID session) {
+        if (!java.util.Objects.equals(state.clientSession, session)) {
+            state.pendingPage = null;
+            TelemetryTransport.cancel(player, "dit-page:" + state.terminalId);
+        }
+        state.clientSession = session;
+    }
+
+    /** Large frozen pages participate in the existing queued-bulk reservation, not an invisible retry lane. */
+    static boolean queueFrozenPage(EntityPlayerMP player, SentState state,
+        cpw.mods.fml.common.network.simpleimpl.IMessage packet, java.util.function.BooleanSupplier authorized,
+        Runnable sent) {
+        if (state.pendingPage != null) return false;
+        Object marker = new Object();
+        state.pendingPage = marker;
+        TelemetryTransport.Admission admission = TelemetryTransport
+            .offerStatus(player, "dit-page:" + state.terminalId, packet, () -> {
+                boolean valid = false;
+                try {
+                    valid = state.pendingPage == marker && authorized.getAsBoolean();
+                } catch (RuntimeException unavailable) { /*
+                                                          * Drop unavailable authorization without stranding producer.
+                                                          */ }
+                if (!valid && state.pendingPage == marker) state.pendingPage = null;
+                return valid;
+            }, () -> {
+                if (state.pendingPage != marker) return;
+                state.pendingPage = null;
+                sent.run();
+            });
+        if (admission == TelemetryTransport.Admission.REJECTED && state.pendingPage == marker) state.pendingPage = null;
+        return admission == TelemetryTransport.Admission.SENT;
     }
 
     /** 有记录的有效条目数（绑定键遍历，零分配；boundKeys 与 records 理论对称，缺记录防御跳过） */

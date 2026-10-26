@@ -58,4 +58,41 @@ public class AESourceHistoryTest {
             restored.getIfPresent(legacy)
                 .newest("item").timeMs);
     }
+
+    @Test
+    public void boundedProjectionIndexesTrackUpdatesClearsAndRestoredHistories() {
+        AEMonitorDataSet data = new AEMonitorDataSet();
+        data.addSample("b", 20, 100, 1000);
+        data.addSample("a", 10, 100, 1000);
+        data.addSample("z", 30, 100, 1000);
+        assertEquals(3, data.sampledKeyCount());
+        assertEquals(java.util.Arrays.asList("a", "b"), data.sampledKeys(2));
+        assertTrue(
+            data.sampledKeys(0)
+                .isEmpty());
+        assertEquals(100, data.projectionSampleTick(200));
+        data.addSample("a", 11, 150, 1500);
+        data.addSample("z", 31, 200, 2000);
+        assertEquals(100, data.projectionSampleTick(200));
+        data.clear("b");
+        assertEquals(150, data.projectionSampleTick(200));
+        assertEquals(0, data.projectionSampleTick(199)); // Future z cannot borrow a's valid timestamp.
+
+        AEMonitorDataSet restored = new AEMonitorDataSet();
+        restored.readFromNBT(data.toNBT());
+        assertEquals(2, restored.sampledKeyCount());
+        assertEquals(java.util.Arrays.asList("a", "z"), restored.sampledKeys(10));
+        assertEquals(150, restored.projectionSampleTick(200));
+        assertEquals(
+            2,
+            restored.query("a", 0)
+                .size());
+        restored.clear("a");
+        assertEquals(200, restored.projectionSampleTick(200));
+        restored.clear("missing");
+        restored.clear();
+        assertEquals(0, restored.sampledKeyCount());
+        assertEquals(0, restored.projectionSampleTick(200));
+    }
+
 }

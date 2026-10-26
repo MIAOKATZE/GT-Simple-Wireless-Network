@@ -76,6 +76,57 @@ public class MonitoringProfilesTest {
     }
 
     @Test
+    public void emptyProfilesCannotBeDumpedOnArbitraryRecipientsToBypassQuota() {
+        MonitoringProfiles store = store();
+        UUID owner = UUID.randomUUID(), victim = UUID.randomUUID(), reader = UUID.randomUUID();
+        MonitorProfile profile = store.create(owner, null, Collections.emptyMap());
+        store.share(owner, profile.id, reader);
+        long revision = profile.revision();
+        for (UUID recipient : new UUID[] { victim, UUID.randomUUID(), owner }) {
+            try {
+                store.transfer(owner, profile.id, recipient);
+                fail("An empty source set proves no recipient authority");
+            } catch (IllegalArgumentException expected) {
+                assertEquals("Empty profiles cannot be transferred", expected.getMessage());
+            }
+            assertEquals(owner, profile.owner());
+            assertEquals(revision, profile.revision());
+            assertTrue(
+                profile.readers()
+                    .contains(reader));
+        }
+        assertTrue(
+            store.visibleProfiles(victim)
+                .isEmpty());
+        for (int i = 1; i < MonitoringProfiles.MAX_OWNER_PROFILES; i++)
+            store.create(owner, null, Collections.emptyMap());
+        try {
+            store.create(owner, null, Collections.emptyMap());
+            fail("Rejected transfers must not free the attacker's creation quota");
+        } catch (IllegalArgumentException expected) {
+            assertEquals("Profile quota reached", expected.getMessage());
+        }
+        assertNotNull(store.create(victim, null, Collections.emptyMap()));
+    }
+
+    @Test
+    public void removingLastSourceCannotEnableUnverifiedTransfer() {
+        MonitoringProfiles store = store();
+        UUID owner = UUID.randomUUID(), recipient = UUID.randomUUID();
+        MonitorProfile profile = store.create(owner, null, sources(store));
+        store.detachSource(owner, profile.id, "0:1:64:2");
+        try {
+            store.transfer(owner, profile.id, recipient);
+            fail("Detached profiles still require a source proving recipient authority");
+        } catch (IllegalArgumentException expected) {
+            assertEquals(owner, profile.owner());
+        }
+        MonitorProfile nonempty = store.create(owner, null, sources(store));
+        store.transfer(owner, nonempty.id, recipient);
+        assertEquals(recipient, nonempty.owner());
+    }
+
+    @Test
     public void offlineIntentAndAclSurviveRestartButNoLivePlayerOrSampleClaimDoes() {
         MonitoringProfiles original = store();
         UUID owner = UUID.randomUUID(), reader = UUID.randomUUID(), legacy = UUID.randomUUID();

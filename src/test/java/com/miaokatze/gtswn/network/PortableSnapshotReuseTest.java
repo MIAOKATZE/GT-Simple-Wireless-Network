@@ -166,6 +166,80 @@ public class PortableSnapshotReuseTest {
     }
 
     @Test
+    public void aeOnlyProjectionHasIndependentBaselinesAndNeverReadsOrSerializesEU() {
+        Fixture source = new Fixture();
+        source.config.setBoolean("showBriefEnergy", true);
+        source.config.setBoolean("showChartStatus", true);
+        source.config.setBoolean("portableLongSilent", true);
+        AEMonitorDataSet set = new AEMonitorDataSet();
+        String key = "fluid:water";
+        set.addSample(key, 100, 100, 5000);
+        set.addSample(key, 200, 200, 10000);
+        PortableMonitorRequestQueue.RenderCache full = PortableMonitorRequestQueue.renderCache(source, set, key);
+        source.denyEUReads = true;
+        PacketSyncPortableMonitor.Panel deniedScalars = panel();
+        PortableMonitorRequestQueue.fillEU(deniedScalars, source, false);
+        assertTrue(deniedScalars.rows.isEmpty());
+        assertEquals("", deniedScalars.currentEnergy);
+        assertEquals(0, deniedScalars.sampleTime);
+        PortableMonitorRequestQueue.RenderCache aeOnly = PortableMonitorRequestQueue
+            .renderCache(source, set, key, false);
+        assertNotEquals(full.version, aeOnly.version);
+        assertTrue(aeOnly.eu.isEmpty());
+        assertTrue(aeOnly.render.eu.isEmpty());
+        assertEquals("", aeOnly.render.currentEnergy);
+        assertEquals("", aeOnly.render.euSource);
+        assertFalse(aeOnly.render.config.getBoolean("showBriefEnergy"));
+        assertFalse(aeOnly.render.config.getBoolean("showChartStatus"));
+        assertFalse(aeOnly.render.config.getBoolean("portableLongSilent"));
+        assertEquals(2, aeOnly.render.ae.size());
+        assertTrue(source.config.getBoolean("showBriefEnergy"));
+        assertFalse(full.render.eu.isEmpty());
+        assertSame(aeOnly, PortableMonitorRequestQueue.renderCache(source, set, key, false));
+
+        // A prior full revision cannot cause a legacy omitted body to resurrect its EU history.
+        PacketSyncPortableMonitor.Panel legacy = panel();
+        PortableMonitorRequestQueue.publishRender(legacy, aeOnly, false, true, full.version, true);
+        assertFalse(legacy.chartsUnchanged);
+        assertNotNull(legacy.render);
+        assertTrue(legacy.render.eu.isEmpty());
+        assertEquals("", legacy.render.currentEnergy);
+        assertEquals(0, legacy.euChart.length);
+        assertEquals(2, legacy.aeChart.length);
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            packet(legacy).toBytes(bytes);
+            PacketSyncPortableMonitor decoded = new PacketSyncPortableMonitor();
+            decoded.fromBytes(bytes);
+            assertTrue(decoded.valid);
+            assertTrue(decoded.panels.get(0).render.eu.isEmpty());
+            assertEquals(2, decoded.panels.get(0).render.ae.size());
+        } finally {
+            bytes.release();
+        }
+
+        PacketSyncPortableMonitor.Panel raw = panel();
+        raw.renderVersion = aeOnly.version;
+        PortableHistoryPatch reset = PortableHistoryPatch.between(null, aeOnly, false, true);
+        assertTrue(reset.apply(raw, legacy));
+        assertEquals("", raw.render.euSource);
+        assertTrue(raw.render.eu.isEmpty());
+        assertEquals(2, raw.render.ae.size());
+        assertEquals(0, raw.euChart.length);
+    }
+
+    @Test
+    public void queuedEUAuthorizationRejectsAccountAndPermissionChanges() {
+        UUID account = UUID.randomUUID(), changed = UUID.randomUUID();
+        assertTrue(PortableMonitorRequestQueue.sameEUAuthorization(account, true, account, true));
+        assertTrue(PortableMonitorRequestQueue.sameEUAuthorization(account, false, account, false));
+        assertFalse(PortableMonitorRequestQueue.sameEUAuthorization(account, true, account, false));
+        assertFalse(PortableMonitorRequestQueue.sameEUAuthorization(account, false, account, true));
+        assertFalse(PortableMonitorRequestQueue.sameEUAuthorization(account, true, changed, true));
+        assertFalse(PortableMonitorRequestQueue.sameEUAuthorization(account, false, changed, false));
+    }
+
+    @Test
     public void revisionsNeverAliasZeroOrOverflowAndMalformedOmissionsAreRejected() {
         assertEquals(1, PortableMonitorRequestQueue.nextVersion(0));
         assertEquals(Long.MAX_VALUE, PortableMonitorRequestQueue.nextVersion(Long.MAX_VALUE - 1));
@@ -227,6 +301,7 @@ public class PortableSnapshotReuseTest {
         final List<NetworkInfoSample> samples = new ArrayList<>();
         BigInteger energy = BigInteger.ONE;
         int aeWindow;
+        boolean denyEUReads;
 
         Fixture() {
             for (int i = 0; i < 61; i++) samples.add(new NetworkInfoSample(i * 50, i, BigInteger.valueOf(i), i));
@@ -239,6 +314,7 @@ public class PortableSnapshotReuseTest {
 
         @Override
         public List<NetworkInfoSample> getCachedSamples() {
+            if (denyEUReads) throw new AssertionError("AE-only projection read EU history");
             return samples;
         }
 
@@ -249,6 +325,7 @@ public class PortableSnapshotReuseTest {
 
         @Override
         public BigInteger getCachedEu() {
+            if (denyEUReads) throw new AssertionError("AE-only projection read EU balance");
             return energy;
         }
     }

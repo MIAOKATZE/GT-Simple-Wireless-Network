@@ -92,6 +92,51 @@ public class ReadonlyWebAdapterTest {
     }
 
     @Test
+    public void stalledPublicationExpiresBeforeConditionalResponseAndIdenticalPublishRenewsLease() throws Exception {
+        java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong(123);
+        ReadonlyWebAdapter adapter = new ReadonlyWebAdapter(
+            ReadonlyWebAdapter.digest(TEST_TOKEN.getBytes(StandardCharsets.UTF_8)),
+            1,
+            1024 * 1024,
+            null,
+            null,
+            clock::get);
+        adapter.publish(Collections.singletonList(snapshot(ID)));
+        FakeExchange first = request("GET", "/api/snapshots", true);
+        adapter.handle(first);
+        assertEquals(200, first.code);
+        String etag = first.response.getFirst("ETag");
+
+        clock.addAndGet(java.util.concurrent.TimeUnit.SECONDS.toNanos(9));
+        adapter.publish(Collections.singletonList(snapshot(ID))); // Identical content still proves a live publisher.
+        clock.addAndGet(java.util.concurrent.TimeUnit.SECONDS.toNanos(9));
+        FakeExchange renewed = request("GET", "/api/snapshots", true);
+        renewed.request.set("If-None-Match", etag);
+        adapter.handle(renewed);
+        assertEquals(304, renewed.code);
+
+        clock.addAndGet(java.util.concurrent.TimeUnit.SECONDS.toNanos(1));
+        for (String method : Arrays.asList("GET", "HEAD")) {
+            FakeExchange expired = request(method, "/api/snapshots", true);
+            expired.request.set("If-None-Match", etag);
+            adapter.handle(expired);
+            assertEquals(503, expired.code);
+            assertEquals("", expired.body());
+            assertNull(expired.response.getFirst("ETag"));
+        }
+        FakeExchange unauthenticated = request("GET", "/api/snapshots", false);
+        unauthenticated.request.set("If-None-Match", etag);
+        adapter.handle(unauthenticated);
+        assertEquals(401, unauthenticated.code); // Expiry does not move auth behind conditionals.
+
+        adapter.publish(Collections.singletonList(snapshot(ID)));
+        FakeExchange recovered = request("GET", "/api/snapshots", true);
+        adapter.handle(recovered);
+        assertEquals(200, recovered.code);
+        assertEquals(etag, recovered.response.getFirst("ETag"));
+    }
+
+    @Test
     public void revokeAndStopRemoveSensitiveSnapshots() throws Exception {
         ReadonlyWebAdapter adapter = adapter();
         adapter.publish(Collections.singletonList(snapshot(ID)));

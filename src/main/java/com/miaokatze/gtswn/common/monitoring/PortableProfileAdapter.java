@@ -18,7 +18,6 @@ import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
-import com.miaokatze.gtswn.api.monitor.AEMonitorSnapshot;
 import com.miaokatze.gtswn.api.monitor.GtswnApi;
 import com.miaokatze.gtswn.api.monitor.HistorySample;
 import com.miaokatze.gtswn.api.monitor.HistoryWindow;
@@ -242,12 +241,8 @@ public final class PortableProfileAdapter {
     public static int cardCount(String locator, SourceKey source) {
         if (source.kind == SourceKey.Kind.EU) return locator.startsWith("eu|") ? 1 : 0;
         if (source.kind != SourceKey.Kind.AE) return 0;
-        TileEntityNetworkInfoPanel panel = panel(locator);
-        if (panel == null) return 0;
-        return GtswnApi.getMonitorApi()
-            .getAEMonitorSnapshot(panel.getWorldObj(), panel.getAEMonitorDataKey())
-            .map(snapshot -> snapshot.monitoredKeys.size())
-            .orElse(0);
+        AEMonitorDataSet dataSet = aeDataSet(panel(locator));
+        return dataSet == null ? 0 : dataSet.sampledKeyCount();
     }
 
     public static List<WebDashboardSnapshot.Card> export(String locator, SourceKey source) {
@@ -271,24 +266,7 @@ public final class PortableProfileAdapter {
                         GtswnApi.getMonitorApi()
                             .getNetworkHistory(account, 0))));
         } else if (source.kind == SourceKey.Kind.AE) {
-            TileEntityNetworkInfoPanel panel = panel(locator);
-            if (panel == null) return cards;
-            String historyKey = panel.getAEMonitorDataKey();
-            Optional<AEMonitorSnapshot> snapshot = GtswnApi.getMonitorApi()
-                .getAEMonitorSnapshot(panel.getWorldObj(), historyKey);
-            if (!snapshot.isPresent()) return cards;
-            for (String item : snapshot.get().monitoredKeys) {
-                cards.add(
-                    new WebDashboardSnapshot.Card(
-                        item,
-                        snapshot.get().currentAmounts.get(item)
-                            .toString(),
-                        "amount",
-                        history(
-                            GtswnApi.getMonitorApi()
-                                .getAEMonitorHistory(panel.getWorldObj(), historyKey, item, 0))));
-                if (cards.size() >= limit) break;
-            }
+            cards.addAll(exportAE(aeDataSet(panel(locator)), limit));
         }
         return cards;
     }
@@ -303,19 +281,34 @@ public final class PortableProfileAdapter {
 
     /** Server histories, not the client-only panel mirror, establish actual collector freshness. */
     static long aeSampleTick(TileEntityNetworkInfoPanel panel) {
-        if (panel == null || panel.getWorldObj() == null || panel.getWorldObj().isRemote) return 0;
+        AEMonitorDataSet dataSet = aeDataSet(panel);
+        return dataSet == null ? 0
+            : dataSet.projectionSampleTick(
+                panel.getWorldObj()
+                    .getTotalWorldTime());
+    }
+
+    private static AEMonitorDataSet aeDataSet(TileEntityNetworkInfoPanel panel) {
+        if (panel == null || panel.getWorldObj() == null || panel.getWorldObj().isRemote) return null;
         String historyKey = panel.getAEMonitorDataKey();
-        if (historyKey == null) return 0;
-        AEMonitorDataSet dataSet = AEMonitorDataStore.get(panel.getWorldObj())
-            .getIfPresent(historyKey);
-        if (dataSet == null) return 0;
-        long tick = 0;
-        // Includes chart-only series, which are not members of the real-time monitor list.
-        for (String key : dataSet.getKeys()) {
+        return historyKey == null ? null
+            : AEMonitorDataStore.get(panel.getWorldObj())
+                .getIfPresent(historyKey);
+    }
+
+    /** Select the bounded prefix before copying raw history; the legacy full-snapshot API is unchanged. */
+    static List<WebDashboardSnapshot.Card> exportAE(AEMonitorDataSet dataSet, int maxCards) {
+        List<WebDashboardSnapshot.Card> cards = new ArrayList<>();
+        int limit = Math.max(0, Math.min(WebDashboardSnapshot.MAX_CARDS, maxCards));
+        if (dataSet == null || limit == 0) return cards;
+        for (String key : dataSet.sampledKeys(limit)) {
             AEMonitorSample sample = dataSet.newest(key);
-            if (sample != null) tick = Math.max(tick, sample.tick);
+            List<AEMonitorSample> history = dataSet.query(key, AEMonitorDataSet.WINDOW_5_MIN);
+            double[] values = new double[Math.min(WebDashboardSnapshot.MAX_HISTORY, history.size())];
+            for (int i = 0; i < values.length; i++) values[i] = history.get(history.size() - values.length + i).amount;
+            cards.add(new WebDashboardSnapshot.Card(key, Long.toString(sample.amount), "amount", values));
         }
-        return tick;
+        return cards;
     }
 
     static double[] history(Optional<HistoryWindow> window) {

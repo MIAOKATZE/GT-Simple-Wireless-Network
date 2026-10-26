@@ -18,10 +18,15 @@ public class PortableDisplayContinuityTest {
         detail.detail = true;
         detail.metadataVersion = 10;
         detail.configVersion = 3;
+        detail.aeWindow = "5m";
         Panel summary = panel();
         summary.binding = detail.binding;
         summary.metadataVersion = 11;
+        // fillSummary does not query AE history and reports a zero span.
+        summary.aeWindow = "0s";
         assertTrue(PortableSuperDashboard.sameDisplaySource(detail, summary));
+        summary.ownerName = "different owner";
+        assertFalse(PortableSuperDashboard.sameDisplaySource(detail, summary));
     }
 
     @Test
