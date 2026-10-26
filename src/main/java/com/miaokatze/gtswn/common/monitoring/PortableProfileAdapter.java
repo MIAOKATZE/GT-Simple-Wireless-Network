@@ -27,6 +27,9 @@ import com.miaokatze.gtswn.common.device.KeyFormat;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.monitoring.web.WebDashboardSnapshot;
+import com.miaokatze.gtswn.common.panel.AEMonitorDataSet;
+import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
+import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.mojang.authlib.GameProfile;
 
@@ -295,11 +298,23 @@ public final class PortableProfileAdapter {
             .getNetworkSnapshot(UUID.fromString(source.nativeId))
             .map(snapshot -> snapshot.sampleTick)
             .orElse(0L);
-        TileEntityNetworkInfoPanel panel = panel(locator);
-        if (panel == null) return 0;
+        return source.kind == SourceKey.Kind.AE ? aeSampleTick(panel(locator)) : 0;
+    }
+
+    /** Server histories, not the client-only panel mirror, establish actual collector freshness. */
+    static long aeSampleTick(TileEntityNetworkInfoPanel panel) {
+        if (panel == null || panel.getWorldObj() == null || panel.getWorldObj().isRemote) return 0;
+        String historyKey = panel.getAEMonitorDataKey();
+        if (historyKey == null) return 0;
+        AEMonitorDataSet dataSet = AEMonitorDataStore.get(panel.getWorldObj())
+            .getIfPresent(historyKey);
+        if (dataSet == null) return 0;
         long tick = 0;
-        for (com.miaokatze.gtswn.common.panel.AEMonitorSample sample : panel.getAEMonitorLatest()
-            .values()) tick = Math.max(tick, sample.tick);
+        // Includes chart-only series, which are not members of the real-time monitor list.
+        for (String key : dataSet.getKeys()) {
+            AEMonitorSample sample = dataSet.newest(key);
+            if (sample != null) tick = Math.max(tick, sample.tick);
+        }
         return tick;
     }
 

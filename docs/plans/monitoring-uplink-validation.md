@@ -6,9 +6,9 @@
 
 ## 1. 当前验证状态
 
-- 2026-10-26 最终源码完成 `spotlessApply`、`compileJava`、`compileTestJava`、`test`、`assemble`、`spotlessCheck`，退出码 0。289 suites / 1,544 tests；0 failures / 0 errors，3 项显式 opt-in 压力测试跳过。
-- 982 个 main class 全部为 Java 8 major 52。运行 JAR 2,692,456 bytes，SHA-256 `617814826582ea1e280de117d233f4ca8f94f327a2053f3b7467683978843e97`。已格式化源码 manifest SHA-256 `bb9ff2fa1d89612bc3952c3b4e7dca38ac98bc1a8e21f18c772024491440d6a3`，最终测试前后未变。
-- 隔离 RC2 + Core 0.1.22 服务端使用该精确 JAR 到达 Done 并正常 stop，退出码 0；92.07 秒，未强停或触发资源守卫，未进行客户端进世界。结果为 PASS_WITH_WARNINGS：整合包存在非致命 HTTP／证书／contributor 及 BlockOres/AIOOBE 警告，未重新跑无候选基线，不能断言归因或警告全无。提交 SHA 以包含本记录的 PR head 为准。
+- 2026-10-26 最终源码完成 `spotlessApply`、`compileJava`、`compileTestJava`、`test`、`assemble`、`spotlessCheck`，退出码 0。290 suites / 1,546 tests；0 failures / 0 errors，3 项显式 opt-in 压力测试跳过。
+- 982 个 main class 全部为 Java 8 major 52。运行 JAR 2,692,677 bytes，SHA-256 `044779001b381eda62ed7be8f0848ec81647f9e7c6bdd0ead4ed3829e00cb172`。已格式化源码 manifest SHA-256 `654e00adbe3d3ed6bef71f327dbd8608b9dcf97c67ae590eb4fffea3a0c90d1f`，最终测试前后未变。
+- 隔离 RC2 + Core 0.1.22 服务端使用该精确 JAR 到达 Done 并正常 stop，退出码 0；66.05 秒，未强停或触发资源守卫，未进行客户端进世界。结果为 PASS_WITH_WARNINGS：整合包存在非致命 HTTP／证书／contributor 及 BlockOres/AIOOBE 警告，未重新跑无候选基线，不能断言归因或警告全无。提交 SHA 以包含本记录的 PR head 为准。
 - 已有历史测试产物不自动证明后续改动后的源码通过；任何修复后都需重跑受影响检查，并在最终提交前完成全量检查。
 - 服务端隔离启动／正常停止须单独记录；启动通过不等于旧存档迁移、游戏内 GUI 或真实上行优化通过。
 - 客户端存档／进世界、真实多人负载、慢客户端与 Web 反向代理部署不属于本记录已验证的结果。
@@ -96,3 +96,13 @@
 - Web 默认 loopback，只读快照；公网 TLS、反向代理及入口连接限制需要运维配置，不在本 PR 自动实施。
 - Web 档案聚合新鲜度采用各来源中最旧的有效采样时间；未知／未来时间按缓存状态处理，DIT 使用记录自身采样时间，不能让一个新来源把另一个旧来源一起标成 LIVE。该修复已纳入上述最终测试。
 - 游戏内真实 UI、旧存档端到端迁移、拓扑复杂事件、实际带宽／MSPT 收益尚须稳定平台验证。不能预先承诺百分比或“绝无迁移问题”。
+
+## 7. PR 提交后的 AE 与量子复核
+
+两路独立复核分别检查 AE 原生持久身份／历史，以及量子控制器／权限／迁移。对照实际 AE 字节码确认，`GridNode.setGrid` 的旧网移除与新网加入是同步链路，仅靠 storage 的 split/join 回调不足以覆盖 live 节点迁移；本实现的移除／加入来源配对有必要。没有发现需要以玩家 ID 重建量子网络或替换现有控制器注册表的依据。
+
+提交后确认并修复：专用服务端的 AE 新鲜度曾读取仅供客户端使用的面板镜像，导致始终返回 tick 0。现在读取当前来源限定的服务端 `AEMonitorDataStore`，包括仅图表绑定的历史；来源替换／不可用不借用归档时间。新增真实 per-world MapStorage fixture 回归；其执行结果以本文件最终验证数字为准。
+
+已保留的低优先级限制：移除非 DIT 档案的最后一个来源后，当前类型推断会把空档案报为 `NO_PERMISSION`，不能当作可重新填充的空模板。该情况没有证明网络数据丢失或权限泄露；本 PR 不为此扩张成类型系统重构。量子终端可明确 release 后重新绑定／导入；便携用户应以新终端重新准备原生绑定并明确导入新档案，旧档案仍保留。
+
+仍需稳定平台验证旧存档加载、离线复制终端连续迁移日志回放、区块卸载／重载、复杂拆分／合并及重启撤权。单元 fixture、字节码审查和启动检查不能替代上述世界内场景。
