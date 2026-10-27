@@ -384,6 +384,8 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     @Override
     public void onCoverRemoval() {
         unregisterFromNodeRegistry();
+        ICoverable host = coveredTile.get();
+        if (host != null && host.getWorld() != null && !host.getWorld().isRemote) host.markDirty();
         if (this.storedEU > 0) {
             ICoverable tileEntity = coveredTile.get();
             UUID owner = getOwner(tileEntity);
@@ -465,7 +467,10 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     public void onPlayerAttach(EntityPlayer player, ItemStack coverItem) {
         registerIntoNodeIndex();
         ICoverable host = coveredTile.get();
-        if (!installationBroadcast && host != null && host.getWorld() != null && !host.getWorld().isRemote) {
+        if (host == null || host.getWorld() == null || host.getWorld().isRemote) return;
+        // GT's attach/detach updates the cover slots, but does not dirty the host chunk for saving.
+        host.markDirty();
+        if (!installationBroadcast) {
             installationBroadcast = true;
             PacketLinkNodeInstalled.broadcast(host, getSide(), this instanceof GTswn_Cover_EnergyWireless);
         }
