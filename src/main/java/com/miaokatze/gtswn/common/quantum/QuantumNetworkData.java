@@ -233,35 +233,27 @@ public class QuantumNetworkData {
      * blockExists 不触发锚点区块加载（与 TileEntityNetworkQuantumNode 重连循环同一手法）。
      */
     public static QuantumNetworkData assemble(int anchorDim, int anchorX, int anchorY, int anchorZ) {
-        QuantumNetworkData data = new QuantumNetworkData();
-        data.anchorDim = anchorDim;
-        data.anchorX = anchorX;
-        data.anchorY = anchorY;
-        data.anchorZ = anchorZ;
-        data.channelsInfinite = QuantumControllerRegistry.isChannelsInfinite();
+        boolean channelsInfinite = QuantumControllerRegistry.isChannelsInfinite();
 
         // 1. 维度解析：维度不存在或未加载 → 离线
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null) {
-            return data;
+            return offlineAt(anchorDim, anchorX, anchorY, anchorZ, channelsInfinite);
         }
         World world = server.worldServerForDimension(anchorDim);
         if (world == null) {
-            return data;
+            return offlineAt(anchorDim, anchorX, anchorY, anchorZ, channelsInfinite);
         }
         QuantumControllerRegistry registry = QuantumControllerRegistry.get(world);
         AnchorKey canonical = registry.canonicalKey(new AnchorKey(anchorDim, anchorX, anchorY, anchorZ));
         anchorX = canonical.getX();
         anchorY = canonical.getY();
         anchorZ = canonical.getZ();
-        data.anchorX = anchorX;
-        data.anchorY = anchorY;
-        data.anchorZ = anchorZ;
         // 2-3. 锚点可达性判定（区块已加载 + 位置是 ME 控制器，O2-B08 抽至 AnchorReachability
         // 与节点建连同源单源；requireQuantized=false——装配原实现不查量子化状态，口径保持）
         AnchorReachability.Result reach = AnchorReachability.resolve(world, anchorX, anchorY, anchorZ, false, false);
         if (reach.status != AnchorReachability.Status.OK) {
-            return data;
+            return offlineAt(anchorDim, anchorX, anchorY, anchorZ, channelsInfinite);
         }
         // 4. 获取锚点所属网格；GridAccessException（节点/网格未就绪）→ 离线
         // 编译坑规避：必须经 IGridProxyable 接口调 getProxy()，且源表达式静态类型为 TileEntity——
@@ -272,12 +264,12 @@ public class QuantumNetworkData {
         try {
             grid = proxy.getGrid();
         } catch (GridAccessException e) {
-            return data;
+            return offlineAt(anchorDim, anchorX, anchorY, anchorZ, channelsInfinite);
         }
 
         long bucket = world.getTotalWorldTime() / FULL_CACHE_INTERVAL_TICKS;
         pruneFullCache(bucket);
-        AnchorKey cacheKey = new AnchorKey(anchorDim, anchorX, anchorY, anchorZ);
+        AnchorKey cacheKey = canonical;
         FullCacheEntry cached = FULL_CACHE.get(cacheKey);
         if (cached != null && cached.bucket == bucket
             && cached.revision == registry.getRevision()
@@ -287,6 +279,7 @@ public class QuantumNetworkData {
             // SWN-OPT-13：entries 已在入缓存前冻结为 unmodifiableList，命中返回的即冻结实例
             return cached.data;
         }
+        QuantumNetworkData data = offlineAt(anchorDim, anchorX, anchorY, anchorZ, channelsInfinite);
         data.online = true;
         data.networkSafetyEnabled = QuantumTerminalAccess.isNetworkSafetyEnabled(world, anchorX, anchorY, anchorZ);
         data.networkSafetyIdentity = QuantumTerminalAccess.networkSafetyIdentity(world, anchorX, anchorY, anchorZ);
@@ -382,6 +375,16 @@ public class QuantumNetworkData {
         // SWN-OPT-13：入缓存前冻结 entries，把「无修改点」约定升级为运行期强制
         data.entries = Collections.unmodifiableList(data.entries);
         FULL_CACHE.put(cacheKey, new FullCacheEntry(grid, bucket, registry.getRevision(), data));
+        return data;
+    }
+
+    private static QuantumNetworkData offlineAt(int dimension, int x, int y, int z, boolean channelsInfinite) {
+        QuantumNetworkData data = new QuantumNetworkData();
+        data.anchorDim = dimension;
+        data.anchorX = x;
+        data.anchorY = y;
+        data.anchorZ = z;
+        data.channelsInfinite = channelsInfinite;
         return data;
     }
 
