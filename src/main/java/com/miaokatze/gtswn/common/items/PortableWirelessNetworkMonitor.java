@@ -187,9 +187,7 @@ public class PortableWirelessNetworkMonitor extends Item
         // Item callbacks run on both sides; credentials and modes are authored once by the server.
         if (aWorld.isRemote) {
             if (aPlayer.isSneaking() && isMonitorBound(aStack)
-                && aPlayer.getUniqueID()
-                    .toString()
-                    .equals(getOwnerUUID(aStack))
+                && com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.clientOwns(getOwnerUUID(aStack))
                 || aPlayer.isSneaking()
                     && com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.hasProfileReference(aStack))
                 GTSimpleWirelessNetwork.proxy.openPortableMonitorGui(aStack);
