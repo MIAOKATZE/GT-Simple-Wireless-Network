@@ -54,6 +54,7 @@ import com.miaokatze.gtswn.network.PanelActionQueue;
 import com.miaokatze.gtswn.recipe.CraftingRecipes;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 import com.miaokatze.gtswn.register.TextureManager;
+import com.miaokatze.miaokatzecore.api.recipe.RecipeRegistration;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.Loader;
@@ -274,13 +275,11 @@ public class CommonProxy {
         FMLCommonHandler.instance()
             .bus()
             .register(new MonitorChargingHandler());
-        GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册合成配方...");
-        try {
+        RecipeRegistration.register("gtswn", () -> {
+            GTSimpleWirelessNetwork.LOG.info("[3/3] 开始注册合成配方...");
             CraftingRecipes.init();
             GTSimpleWirelessNetwork.LOG.info("[3/3] 合成配方注册完成。");
-        } catch (Throwable t) {
-            GTSimpleWirelessNetwork.LOG.error("[3/3] 合成配方注册过程中发生错误", t);
-        }
+        });
 
         // 注册GTswn覆盖板
         GTSimpleWirelessNetwork.LOG.info("[PostInit] 开始注册GTswn覆盖板...");
