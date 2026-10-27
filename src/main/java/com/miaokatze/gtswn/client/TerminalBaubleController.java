@@ -237,9 +237,8 @@ public final class TerminalBaubleController {
     private static void monitorHints(HudContext context, List<String> controls) {
         if (!context.air && !context.block) return;
         boolean bound = PortableWirelessNetworkMonitor.isMonitorBound(context.held);
-        boolean own = bound && context.mc.thePlayer.getUniqueID()
-            .toString()
-            .equals(PortableWirelessNetworkMonitor.getOwnerUUID(context.held));
+        boolean own = bound && com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+            .clientOwns(PortableWirelessNetworkMonitor.getOwnerUUID(context.held));
         // An arbitrary block can consume ordinary use. A monitor-owned panel has its own explicit binding path.
         if (context.air) hint(controls, !context.sneaking, context.use, bound ? "toggle_hud" : "monitor_bind");
         else if (context.target instanceof TileEntityNetworkInfoPanel && own)

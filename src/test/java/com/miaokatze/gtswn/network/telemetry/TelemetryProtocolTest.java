@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.network.telemetry;
 import static org.junit.Assert.*;
 
 import java.util.Random;
+import java.util.UUID;
 
 import org.junit.Test;
 
@@ -109,5 +110,39 @@ public class TelemetryProtocolTest {
                     buffer.release();
                 }
             }
+    }
+
+    @Test
+    public void capabilityIdentityIsOptInAndLegacyReplyKeepsItsExactLayout() {
+        UUID actor = UUID.randomUUID();
+        for (UUID identity : new UUID[] { null, actor }) {
+            ByteBuf buffer = Unpooled.buffer();
+            try {
+                new PacketMonitorCapabilities(42, MonitorCapabilities.ALL, identity).toBytes(buffer);
+                assertEquals(identity == null ? 12 : 28, buffer.readableBytes());
+                assertEquals(42, buffer.getLong(0));
+                assertEquals(MonitorCapabilities.ALL, buffer.getInt(8));
+                PacketMonitorCapabilities decoded = new PacketMonitorCapabilities();
+                decoded.fromBytes(buffer);
+                assertEquals(42, decoded.nonce);
+                assertEquals(MonitorCapabilities.ALL, decoded.bits);
+                assertEquals(identity, decoded.playerId);
+                assertFalse(buffer.isReadable());
+            } finally {
+                buffer.release();
+            }
+        }
+        for (int size : new int[] { 0, 11, 13, 27, 29 }) {
+            ByteBuf buffer = Unpooled.buffer(size);
+            try {
+                buffer.writeZero(size);
+                PacketMonitorCapabilities decoded = new PacketMonitorCapabilities(42, MonitorCapabilities.ALL, actor);
+                decoded.fromBytes(buffer);
+                assertEquals(0, decoded.nonce);
+                assertNull(decoded.playerId);
+            } finally {
+                buffer.release();
+            }
+        }
     }
 }

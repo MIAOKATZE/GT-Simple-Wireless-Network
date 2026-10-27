@@ -383,9 +383,8 @@ public final class PortableMonitorClientCache {
         stack = currentStack(stack);
         EntityPlayer player = Minecraft.getMinecraft().thePlayer;
         return player != null && PortableWirelessNetworkMonitor.isMonitorBound(stack)
-            && player.getUniqueID()
-                .toString()
-                .equals(PortableWirelessNetworkMonitor.getOwnerUUID(stack));
+            && com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                .clientOwns(PortableWirelessNetworkMonitor.getOwnerUUID(stack));
     }
 
     public static int mutationStatus(ItemStack stack) {

@@ -81,9 +81,10 @@ public class PacketRequestWirelessEU implements IMessage {
                 return null;
             }
 
-            if (com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PROBE.equals(uuidStr)) {
+            boolean identity = com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.IDENTITY_PROBE.equals(uuidStr);
+            if (identity || com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PROBE.equals(uuidStr)) {
                 com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
-                    .enqueue(ctx.getServerHandler().playerEntity, message.requestToken);
+                    .enqueue(ctx.getServerHandler().playerEntity, message.requestToken, identity);
                 return null;
             }
 
