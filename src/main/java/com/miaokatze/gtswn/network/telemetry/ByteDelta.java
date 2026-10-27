@@ -10,6 +10,7 @@ import io.netty.buffer.ByteBuf;
 public final class ByteDelta {
 
     public static final int MAX_BYTES = 340_000, MAX_RANGES = 4096;
+    private static final int HEADER_BYTES = 7, RANGE_HEADER_BYTES = 8;
     public final boolean full;
     public final int length;
     public final int[] offsets;
@@ -27,7 +28,7 @@ public final class ByteDelta {
         if (base == null || base.length != target.length) return full(target);
         List<Integer> starts = new ArrayList<>();
         List<byte[]> pieces = new ArrayList<>();
-        int cost = 7;
+        int cost = HEADER_BYTES;
         for (int i = 0; i < target.length;) {
             if (base[i] == target[i]) {
                 i++;
@@ -41,8 +42,9 @@ public final class ByteDelta {
             byte[] piece = Arrays.copyOfRange(target, start, end);
             starts.add(start);
             pieces.add(piece);
-            cost += 8 + piece.length;
-            if (starts.size() >= MAX_RANGES || cost >= target.length + 7) return full(target);
+            cost += RANGE_HEADER_BYTES + piece.length;
+            if (starts.size() > MAX_RANGES || cost >= target.length + HEADER_BYTES + RANGE_HEADER_BYTES)
+                return full(target);
         }
         int[] offsets = new int[starts.size()];
         for (int i = 0; i < offsets.length; i++) offsets[i] = starts.get(i);
