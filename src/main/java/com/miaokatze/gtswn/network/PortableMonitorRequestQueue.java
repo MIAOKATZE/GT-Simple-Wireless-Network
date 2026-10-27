@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.network;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.MathContext;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -530,16 +531,14 @@ public final class PortableMonitorRequestQueue {
     /** EU scalar projection has the same source permission as raw and normalized histories. */
     static void fillEU(PacketSyncPortableMonitor.Panel data, TileEntityNetworkInfoPanel panel, boolean allowed) {
         if (!allowed) return;
-        String exactEnergy = panel.getCachedEu()
-            .toString();
+        BigInteger energy = panel.getCachedEu();
+        String exactEnergy = energy.toString();
         data.currentEnergy = exactEnergy.length() <= 4096 ? exactEnergy : "";
         PacketSyncPortableMonitor.Row eu = new PacketSyncPortableMonitor.Row();
         eu.key = "eu";
         eu.name = "EU";
-        eu.amount = panel.getCachedEu()
-            .toString();
-        if (eu.amount.length() > 512)
-            eu.amount = com.miaokatze.gtswn.common.util.FormatUtil.formatScientific(panel.getCachedEu());
+        eu.amount = exactEnergy;
+        if (eu.amount.length() > 512) eu.amount = com.miaokatze.gtswn.common.util.FormatUtil.formatScientific(energy);
         List<NetworkInfoSample> samples = panel.getCachedSamples();
         if (!samples.isEmpty()) {
             NetworkInfoSample newest = samples.get(samples.size() - 1);
