@@ -53,6 +53,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
 
     /** 节点索引（打包坐标 → 类型） */
     private final Map<Long, Byte> nodes = new TreeMap<>();
+    private Map<Long, Byte> cachedSnapshot;
 
     public WirelessNodeRegistry(String name) {
         super(name);
@@ -84,6 +85,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
             return;
         }
         this.nodes.put(packed, type);
+        cachedSnapshot = null;
         markDirty();
         if (DebugTestGate.probesActive())
             TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_ADD, "nodeType=" + type);
@@ -94,6 +96,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
      */
     public void unregister(World world, int x, int y, int z) {
         if (this.nodes.remove(Long.valueOf(WirelessNodeIndexCodec.pack(x, y, z))) != null) {
+            cachedSnapshot = null;
             markDirty();
             if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_REMOVE, "");
         }
@@ -114,6 +117,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
         }
         if (this.nodes.keySet()
             .removeAll(packedPositions)) {
+            cachedSnapshot = null;
             markDirty();
             if (removed != null) for (long packed : removed) TestWorldProbes.at(
                 world,
@@ -126,10 +130,11 @@ public class WirelessNodeRegistry extends WorldSavedData {
     }
 
     /**
-     * 当前索引的不可变副本（调用方可安全遍历/持有，写操作不回灌注册表）。
+     * 当前内容版本的共享不可变副本；有效变更后创建新副本，已返回的旧副本保持不变。
      */
     public Map<Long, Byte> snapshot(World world) {
-        return Collections.unmodifiableMap(new HashMap<>(this.nodes));
+        if (cachedSnapshot == null) cachedSnapshot = Collections.unmodifiableMap(new HashMap<>(this.nodes));
+        return cachedSnapshot;
     }
 
     /** Main-thread, short-lived read view for bounded dashboard queries; never retain across ticks. */
@@ -141,6 +146,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
+        cachedSnapshot = null;
         this.nodes.clear();
         if (!tag.hasKey(NBT_POSITIONS) || !tag.hasKey(NBT_TYPES)) {
             return;
