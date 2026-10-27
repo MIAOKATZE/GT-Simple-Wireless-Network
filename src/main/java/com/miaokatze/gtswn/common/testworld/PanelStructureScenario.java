@@ -4,6 +4,7 @@ import java.util.UUID;
 
 import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
+import net.minecraft.network.EnumConnectionState;
 import net.minecraft.network.NetHandlerPlayServer;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.server.MinecraftServer;
@@ -12,7 +13,10 @@ import net.minecraftforge.common.util.FakePlayer;
 import com.miaokatze.gtswn.common.panel.NetworkScreen;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.network.PanelActionQueue;
+
+import io.netty.channel.embedded.EmbeddedChannel;
 
 final class PanelStructureScenario implements TestScenario {
 
@@ -21,6 +25,8 @@ final class PanelStructureScenario implements TestScenario {
     private PanelOwnerScope scope;
     private FakePlayer queuePlayer;
     private NetHandlerPlayServer originalQueueHandler;
+    private EmbeddedChannel queueChannel;
+    private boolean queueActorRegistered;
     private double originalQueueX, originalQueueY, originalQueueZ;
     private boolean queueActorCaptured;
     private boolean briefEnergyBeforeQueue;
@@ -62,24 +68,30 @@ final class PanelStructureScenario implements TestScenario {
             originalQueueY = queuePlayer.posY;
             originalQueueZ = queuePlayer.posZ;
             queueActorCaptured = true;
-            // Actual native handler, with no socket, channel, login or online-player registration.
-            // Construction only sets the manager listener and the actor's handler reference.
+            // Enroll this synthetic actor in the same connection/identity checks as production requests.
+            // EmbeddedChannel is in-memory only; it opens no socket and performs no client login.
             NetworkManager connection = new NetworkManager(false);
             queuePlayer.playerNetServerHandler = new NetHandlerPlayServer(
                 MinecraftServer.getServer(),
                 connection,
                 queuePlayer);
+            queueChannel = new EmbeddedChannel(connection);
+            connection.setConnectionState(EnumConnectionState.PLAY);
+            queueActorRegistered = !MinecraftServer.getServer()
+                .getConfigurationManager().playerEntityList.contains(queuePlayer);
+            if (queueActorRegistered) MinecraftServer.getServer()
+                .getConfigurationManager().playerEntityList.add(queuePlayer);
             queuePlayer.setPosition(panel.xCoord + .5, panel.yCoord, panel.zCoord + 2.5);
             TestWorldFixtures.require(
                 ctx,
                 queuePlayer.playerNetServerHandler != null
                     && queuePlayer.playerNetServerHandler.playerEntity == queuePlayer
                     && connection.getNetHandler() == queuePlayer.playerNetServerHandler
-                    && !connection.isChannelOpen(),
-                "Synthetic actor has an actual isolated server handler without a socket for production queue validation");
+                    && PlayerRequestQueue.isOnline(queuePlayer),
+                "Synthetic actor has a current in-memory channel and enrolled identity for production queue validation");
             ctx.event(
                 "fixture",
-                "Queue actor uses native NetHandlerPlayServer/NetworkManager only; no client, C2S or login is simulated");
+                "Queue actor uses native handler and enrolled identity with EmbeddedChannel; no socket, client or login");
             briefEnergyBeforeQueue = panel.isShowBriefEnergy();
             enqueueBefore = TestWorldProbes.count(TestWorldProbes.Type.QUEUE_ENQUEUE);
             executeBefore = TestWorldProbes.count(TestWorldProbes.Type.QUEUE_EXECUTE);
@@ -187,6 +199,9 @@ final class PanelStructureScenario implements TestScenario {
         // Pending work from an early stop must fail the production distance check, even after panel replacement.
         if (queuePlayer != null) {
             queuePlayer.setPosition(.5, TestWorldFixtures.Y, .5);
+            if (queueActorRegistered) MinecraftServer.getServer()
+                .getConfigurationManager().playerEntityList.remove(queuePlayer);
+            if (queueChannel != null) queueChannel.close();
             if (queueActorCaptured) {
                 queuePlayer.playerNetServerHandler = originalQueueHandler;
                 // TestActors.player resets the captured position to the platform entrance, outside panel range.
@@ -203,6 +218,8 @@ final class PanelStructureScenario implements TestScenario {
                 queuePlayer = null;
                 originalQueueHandler = null;
                 queueActorCaptured = false;
+                queueActorRegistered = false;
+                queueChannel = null;
             }
         }
     }
