@@ -72,7 +72,7 @@ public final class TelemetryTransport {
         }
     }
 
-    private static IMessage freeze(IMessage message) {
+    private static FrozenMessage freeze(IMessage message) {
         ByteBuf buffer = Unpooled.buffer();
         try {
             message.toBytes(buffer);
@@ -83,17 +83,30 @@ public final class TelemetryTransport {
             copy.fromBytes(buffer);
             // A queued packet must be independently serializable; rejected/truncated decodes never enter the queue.
             ByteBuf check = Unpooled.buffer();
+            int bytes;
             try {
                 copy.toBytes(check);
-                if (check.readableBytes() > MAX_MESSAGE_BYTES) return null;
+                bytes = check.readableBytes();
+                if (bytes > MAX_MESSAGE_BYTES) return null;
             } finally {
                 check.release();
             }
-            return copy;
+            return new FrozenMessage(copy, bytes);
         } catch (ReflectiveOperationException | RuntimeException invalid) {
             return null;
         } finally {
             buffer.release();
+        }
+    }
+
+    private static final class FrozenMessage {
+
+        final IMessage packet;
+        final int bytes;
+
+        FrozenMessage(IMessage packet, int bytes) {
+            this.packet = packet;
+            this.bytes = bytes;
         }
     }
 
@@ -131,12 +144,12 @@ public final class TelemetryTransport {
         java.util.function.BooleanSupplier authorized, Runnable accepted) {
         if (!MonitorCapabilities.connected(player) || key == null || authorized == null || !authorized.getAsBoolean())
             return Admission.REJECTED;
-        IMessage frozen = freeze(packet);
+        FrozenMessage frozen = freeze(packet);
         if (frozen == null) {
             rejected++;
             return Admission.REJECTED;
         }
-        int bytes = encodedBytes(frozen);
+        int bytes = frozen.bytes;
         if (bytes <= 0 || bytes > MAX_MESSAGE_BYTES) {
             rejected++;
             return Admission.REJECTED;
@@ -149,7 +162,7 @@ public final class TelemetryTransport {
         boolean bulk = bytes > CURRENT_MAX_BYTES;
         boolean firstInLane = !queue.pending.containsKey(key) && first(queue, bulk) == null;
         if (firstInLane && (!bulk || reservedPlayer == null && bulkQueued == 0) && admit(queue, bytes, bulk)) {
-            send(player, frozen, bytes, accepted);
+            send(player, frozen.packet, bytes, accepted);
             return Admission.SENT;
         }
         if (!queue.pending.containsKey(key)
@@ -163,7 +176,7 @@ public final class TelemetryTransport {
             rejected++;
             return Admission.REJECTED;
         }
-        queue.pending.put(key, new Pending(frozen, bytes, authorized, accepted));
+        queue.pending.put(key, new Pending(frozen.packet, bytes, authorized, accepted));
         int bulkGrowth = (bulk ? 1 : 0) - (previous != null && previous.bulk ? 1 : 0);
         queue.bulkCount += bulkGrowth;
         bulkQueued += bulkGrowth;
@@ -229,12 +242,12 @@ public final class TelemetryTransport {
     /** Frozen paginated streams retain their own progress if this returns false. */
     public static boolean trySend(EntityPlayerMP player, IMessage packet) {
         if (!MonitorCapabilities.connected(player)) return false;
-        IMessage frozen = freeze(packet);
+        FrozenMessage frozen = freeze(packet);
         if (frozen == null) {
             rejected++;
             return false;
         }
-        int bytes = encodedBytes(frozen);
+        int bytes = frozen.bytes;
         if (bytes <= 0 || bytes > MAX_MESSAGE_BYTES) {
             rejected++;
             return false;
@@ -245,7 +258,7 @@ public final class TelemetryTransport {
         if (queue == null || bulk && reservedPlayer != null
             || !bulk && first(queue, false) != null
             || !admit(queue, bytes, bulk)) return false;
-        send(player, frozen, bytes, null);
+        send(player, frozen.packet, bytes, null);
         return true;
     }
 
