@@ -57,6 +57,38 @@
         {
           "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/QuantumIncorpora-R1RXTgAAAAAAAAAAAAAADg==.json",
           "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/QuantumIncorpora-R1RXTgAAAAAAAAAAAAAADg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ATerminalatYourF-R1RXTgAAAAAAAAAAAAAAEA==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ATerminalatYourF-R1RXTgAAAAAAAAAAAAAAEA==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheFactoryinView-R1RXTgAAAAAAAAAAAAAAEQ==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/TheFactoryinView-R1RXTgAAAAAAAAAAAAAAEQ==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ReadthePowerinaR-R1RXTgAAAAAAAAAAAAAAEg==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ReadthePowerinaR-R1RXTgAAAAAAAAAAAAAAEg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/BuildaFactoryDas-R1RXTgAAAAAAAAAAAAAAEw==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/BuildaFactoryDas-R1RXTgAAAAAAAAAAAAAAEw==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ArrangeInformati-R1RXTgAAAAAAAAAAAAAAFA==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ArrangeInformati-R1RXTgAAAAAAAAAAAAAAFA==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ShareaLayoutwith-R1RXTgAAAAAAAAAAAAAAFQ==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ShareaLayoutwith-R1RXTgAAAAAAAAAAAAAAFQ==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/LosetheTerminalK-R1RXTgAAAAAAAAAAAAAAFg==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/LosetheTerminalK-R1RXTgAAAAAAAAAAAAAAFg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/OneSourceSeveral-R1RXTgAAAAAAAAAAAAAAFw==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/OneSourceSeveral-R1RXTgAAAAAAAAAAAAAAFw==.json"
         }
       ],
       "idHigh": 5139829067255644160,

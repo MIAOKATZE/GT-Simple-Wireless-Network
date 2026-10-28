@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 1
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lMeet the four terminal types§r\nThe Portable Monitor views the wireless grid and bound panels. The Device Info Terminal manages machines. The Link Terminal installs wireless EU covers, and the Quantum Terminal manages ME quantum networks. Learn how to access them here, then prepare the items you need through their crafting branches.\n\n§3§lEquip and open§r\nWith Baubles-Expanded installed, dedicated slots provide §11§r monitor, §11§r link, §11§r device and §15§r quantum positions. Press default §1C§r while holding a terminal to equip its matching slot. With no terminal held, C opens the wheel; grey positions are empty. The wheel lists equipped terminals.\n\n§3§lSelect and use§r\nThe opening tap only opens the wheel. Later short C presses cycle on release. Hold C for §10.5 seconds§r to confirm, or click a sector or press Enter/Space; Esc or the inventory key closes it. Normal monitor/device selection opens its page while leaving the item equipped. A link/quantum terminal is borrowed into the selected hotbar slot. A new Shift+C press inside the wheel takes the selected item into your hand.\n\n§3§lReturn and continue§r\nAfter using a borrowed terminal, keep its original item and hotbar slot and press C to attempt return to its original equipped slot. If you moved it, use quick equip to place it in a matching slot. Taking an item is refused if the currently held item cannot be accommodated. Tick after understanding, then choose Factory Mode or the dashboard branch.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "gtswn:PortableWirelessNetworkMonitor_GTswn"
+      },
+      "isMain:1": 1,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§3§lA Terminal at Your Fingertips",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 16,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

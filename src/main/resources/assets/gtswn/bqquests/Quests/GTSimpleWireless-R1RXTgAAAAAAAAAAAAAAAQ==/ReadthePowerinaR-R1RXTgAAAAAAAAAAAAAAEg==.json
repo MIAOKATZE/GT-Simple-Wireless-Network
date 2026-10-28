@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 17
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lPrepare device data§r\nPrepare a Device Info Terminal and machine bindings through the machine-ledger quest, then enter Factory Mode and open region selection and power auditing. Choose current DIT bindings or loaded recognizable GT machines, then select the area of interest. Terminal permissions and loaded chunks determine available results.\n\n§3§lCheck coverage before flow§r\nCheck discovered, monitored and unknown counts before reading device-side input/output EU/t. Internal transfers may appear on several devices, and some devices use supported authoritative models. Interpret totals together with coverage and sampling evidence. Wireless-pool net change and AE stock retain their network scope.\n\n§3§lRecord and compare a baseline§r\nRecord an audit baseline with stable coverage, then compare after adjusting machines. Examine added and lost members separately. Stopped/disabled, ignored, unknown power and stale data have distinct meanings: ignore affects monitoring, stale entries await fresh samples, and unloaded portions remain unknown.\n\n§3§lComplete and continue§r\nTick after understanding scope, coverage and baselines; try a region when devices are available. For a persistent arrangement of frequently used information, follow the dashboard branch.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "minecraft:comparator"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§3§lRead the Power in a Region",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 18,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

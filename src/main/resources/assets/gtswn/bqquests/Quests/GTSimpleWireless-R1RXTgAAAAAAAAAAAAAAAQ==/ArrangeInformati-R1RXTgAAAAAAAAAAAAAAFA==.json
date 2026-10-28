@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 19
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lPlace first, then select a source§r\nEnable dashboard editing and choose a card from the library. Its ghost follows the pointer on the grid. Left-click confirms; right-click or Esc cancels. Cards must remain in bounds without overlap. After placing a machine or resource card, use its source selector to complete the binding.\n\n§3§lArrange and read§r\nSelect a card to move it or resize with its eight handles. Ctrl box selection enables group movement. Browse card content with the wheel or scrollbar; pan the canvas with middle-drag and zoom with Ctrl+wheel. Give frequently used information a suitable size before refining details.\n\n§3§lAdjust properties§r\nUse properties for titles, visible fields, normal/scientific/metric formats, chart presentation, colors and animation. Source capabilities determine the available metrics; enter user targets to suit your needs. Wireless net change supports instantaneous or average mode with its window. Set the desktop theme in the top toolbar.\n\n§3§lSave before leaving§r\nSave the layout with Save or Ctrl+S, and choose save/discard when prompted on exit. Outside text focus or an active gesture, Ctrl+Z undoes and Ctrl+Y redoes up to §164§r edits. A desktop holds up to §1512§r cards. Viewport pan/zoom can persist separately, while layout edits still require saving. Tick after understanding, then learn preset reuse and sharing.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "minecraft:painting"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§3§lArrange Information Your Way",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 20,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

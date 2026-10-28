@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 1
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lUnderstand server profiles§r\nA terminal opens monitoring views; a server profile keeps fixed sources, permissions and relevant history. Learn import and recovery here, then prepare a portable, device or quantum terminal through its item branch. Return after its initial bindings are ready to import a profile, allowing a lost item to be replaced with a reference to an authorized profile.\n\n§3§lImport after configuring sources§r\nBind the desired panels to a traditional Portable Monitor or machines to a Device Info Terminal. A quantum terminal first needs legitimate pairing and a controller binding. Hold it, open §1/gtswnprofile ui§r (alias /monitorprofile ui), and import the held source; /monitorprofile import also works. Name the profile and check its sources. Import fixes that source set.\n\n§3§lRecover onto a replacement§r\nOpen the manager without the old terminal, select a profile you own or can read, hold a valid replacement of the same kind, and bind the held terminal. The command is /monitorprofile recover <profileUUID>. A replacement quantum terminal must first regain legitimate native pairing and binding to the same source before profile recovery.\n\n§3§lWhen to register a new source§r\nRecovery relies on prior import and valid sources. Check source state after device replacement, account changes or network splits, merges or migration. If continuity cannot be proven, keep the old history and explicitly register the new source. Tick after understanding the sequence; import when a terminal is ready, then continue to sharing and continuous monitoring.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "minecraft:book"
+      },
+      "isMain:1": 1,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§3§lLose the Terminal, Keep the Profile",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 22,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}
