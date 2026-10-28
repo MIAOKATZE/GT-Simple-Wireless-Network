@@ -289,11 +289,15 @@ Bind supported GT working machines for status (Running/Idle/Stopped), actual EU 
 
 ## BQ 任务包 / BetterQuesting Quests
 
-<p align="center"><img src="images/BetterQuest.png" alt="简易无线网络14任务 / GT Simple Wireless Network: 14 quests" width="560"></p>
+<p align="center"><img src="images/BetterQuest.png" alt="简易无线网络22题任务线 / GT Simple Wireless Network: 22 quests" width="560"></p>
 
-内置中英双语 **简易无线网络 / GT Simple Wireless Network** 任务线，**14 题、全 LV 科技**：监视器/HUD → 链路/覆盖板 → 信息屏 → ME 量子化/锚点/调色及设备终端。描述含屏幕绑定、完整随身查看、AE 即时/平均挂载、设备扫描/可视化、忽略和安全传送/经验设置。自动加载；换 jar 同步旧世界定义、保留进度，任务身份/条件/奖励/前置不变。
+内置中英双语 **简易无线网络 / GT Simple Wireless Network** 任务线，共 **22 题**。涵盖无线供电、监测终端、信息屏与 ME 量子网络，并补充 C 键轮盘、工厂模式、区域电力审查、仪表盘编辑/预设分享，以及监测档案恢复和多人持续监测。按图谱分支学习，制作与绑定任务可按需穿插。
 
-Built-in bilingual **14-quest, all-LV** line covers monitors/HUD, links/covers, panels, ME quantization/anchors/colors and device terminals. Guidance includes panel binding, full portable views, AE instant/average pins, device scans/visualization, ignore and safe XP travel. Auto-loads; jar updates refresh existing-world definitions while preserving progress, quest identities/conditions/rewards/prerequisites.
+任务线自动加载；更换 JAR 后沿用现有机制更新旧世界定义并保留进度。原 14 题的 UUID、检测条件和奖励保持，布局与连线按新版任务图谱更新。
+
+The built-in bilingual **GT Simple Wireless Network** line contains **22 quests**. It covers wireless power, monitoring terminals, info panels and ME quantum networks, with guidance for the C wheel, Factory Mode, regional power audits, dashboard editing/preset sharing, recoverable monitoring profiles and continuous multiplayer monitoring. Follow the branches and prepare items and bindings as needed.
+
+The line loads automatically. JAR updates refresh existing-world definitions through the current progress-preserving mechanism. The original 14 quest UUIDs, checks and rewards remain unchanged; positions and prerequisites follow the updated graph.
 
 ## 命令 / Commands
 
