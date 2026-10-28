@@ -5,6 +5,7 @@ import java.math.BigInteger;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.ForgeDirection;
 
@@ -59,7 +60,7 @@ final class WirelessTapScenario implements TestScenario {
             player.getUniqueID());
         tap = GTSWNItemList.Wireless_Energy_Tap.get(1);
         player.inventory.setInventorySlotContents(0, tap);
-        click(ctx);
+        clickAndRequireDirty(ctx, "installation");
         TestWorldFixtures.require(
             ctx,
             host.getCoverAtSide(TestWorldFixtures.COVER_SIDE) instanceof GTswn_Cover_EnergyWireless,
@@ -78,7 +79,7 @@ final class WirelessTapScenario implements TestScenario {
                 ctx,
                 host.getStoredEUuncapped() > 0,
                 "Naturally ticked cover configured by terminal supplies actual hatch EU");
-            click(ctx);
+            clickAndRequireDirty(ctx, "removal");
             TestWorldFixtures.require(
                 ctx,
                 !host.hasCoverAtSide(TestWorldFixtures.COVER_SIDE),
@@ -227,6 +228,20 @@ final class WirelessTapScenario implements TestScenario {
     private void click(TestContext ctx) {
         ((WirelessEnergyTap) tap.getItem())
             .onItemUseFirst(tap, player, ctx.world(), host.xCoord, host.yCoord, host.zCoord, 1, .5f, 1f, .5f);
+    }
+
+    private void clickAndRequireDirty(TestContext ctx, String mutation) {
+        Chunk chunk = ctx.world()
+            .getChunkFromBlockCoords(host.xCoord, host.zCoord);
+        boolean wasDirty = chunk.isModified;
+        chunk.isModified = false;
+        try {
+            click(ctx);
+            TestWorldFixtures
+                .require(ctx, chunk.isModified, "Real cover " + mutation + " dirties its host chunk for saving");
+        } finally {
+            if (wasDirty) chunk.setChunkModified();
+        }
     }
 
     @Override

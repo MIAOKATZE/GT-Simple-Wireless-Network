@@ -75,7 +75,8 @@ public final class NodeRevealRequestQueue {
     private static final int MAX_REGISTRATION_ATTEMPTS = 100;
 
     /** 显形半径平方（64 格，闭边界），与 {@link WirelessNodeIndexCodec#selectWithinRadius} 的 radiusSq 参数对应 */
-    public static final long REVEAL_RADIUS_SQ = 4096L;
+    private static final int REVEAL_RADIUS = 64;
+    public static final long REVEAL_RADIUS_SQ = (long) REVEAL_RADIUS * REVEAL_RADIUS;
 
     /** 单次显形入选上限（防异常大索引下包体暴涨） */
     public static final int REVEAL_LIMIT = 256;
@@ -200,9 +201,10 @@ public final class NodeRevealRequestQueue {
         LinkNodeRevealSession previous = REVEAL_SESSIONS.get(player);
         boolean revealAll = previous != null && previous.isActive(world, now);
         WirelessNodeRegistry registry = WirelessNodeRegistry.get(world);
-        Map<Long, Byte> snapshot = registry.snapshot(world);
+        int centerX = (int) Math.floor(player.posX);
+        Map<Long, Byte> snapshot = registry.snapshotInXRange(centerX - REVEAL_RADIUS, centerX + REVEAL_RADIUS);
         long centerPacked = WirelessNodeIndexCodec
-            .pack((int) Math.floor(player.posX), (int) Math.floor(player.posY), (int) Math.floor(player.posZ));
+            .pack(centerX, (int) Math.floor(player.posY), (int) Math.floor(player.posZ));
 
         // 六面实际类型掩码：索引每台机器只存一种类型，显形不能因此遗漏另一类覆盖板。
         Map<Long, Byte> actualTypeMasks = new HashMap<>();

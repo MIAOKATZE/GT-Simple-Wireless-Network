@@ -5,6 +5,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.NavigableMap;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -52,7 +53,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
     private static final String NBT_TYPES = "types";
 
     /** 节点索引（打包坐标 → 类型） */
-    private final Map<Long, Byte> nodes = new TreeMap<>();
+    private final NavigableMap<Long, Byte> nodes = new TreeMap<>();
     private Map<Long, Byte> cachedSnapshot;
 
     public WirelessNodeRegistry(String name) {
@@ -135,6 +136,22 @@ public class WirelessNodeRegistry extends WorldSavedData {
     public Map<Long, Byte> snapshot(World world) {
         if (cachedSnapshot == null) cachedSnapshot = Collections.unmodifiableMap(new HashMap<>(this.nodes));
         return cachedSnapshot;
+    }
+
+    /**
+     * Detached candidate snapshot for a closed X interval. Packed coordinates sort by signed X first;
+     * callers still apply the exact radius and native probe. Copy before probing: a probe may repair the index.
+     */
+    public Map<Long, Byte> snapshotInXRange(int minX, int maxX) {
+        long lowerX = Math.max(-33_554_432L, (long) minX);
+        long upperX = Math.min(33_554_431L, (long) maxX);
+        if (lowerX > upperX) return Collections.emptyMap();
+        long lower = lowerX << 38;
+        long upper = (upperX << 38) | ((1L << 38) - 1);
+        if (nodes.isEmpty()) return Collections.emptyMap();
+        // A dimension concentrated on one X slab should retain the existing shared full snapshot.
+        if (lower <= nodes.firstKey() && upper >= nodes.lastKey()) return snapshot(null);
+        return Collections.unmodifiableMap(new HashMap<>(nodes.subMap(lower, true, upper, true)));
     }
 
     /** Main-thread, short-lived read view for bounded dashboard queries; never retain across ticks. */
