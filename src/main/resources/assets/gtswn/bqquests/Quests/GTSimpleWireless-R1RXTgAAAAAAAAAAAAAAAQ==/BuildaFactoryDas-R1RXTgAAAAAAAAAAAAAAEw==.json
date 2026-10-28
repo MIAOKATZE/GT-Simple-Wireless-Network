@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 16
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lOpen the dashboard§r\nDefault §1F10§r opens the dashboard from normal view. Factory Mode can open the same desktop and returns to its workbench when it closes. Explore the layout first, then prepare the data sources you need.\n\n§3§lPrepare terminals for the content§r\nFor wireless stored EU, net change and history, bring a bound Portable Monitor. For AE items/fluids, configure a physical info panel and bind it to the Portable Monitor. For machine states and device-side flow, use a Device Info Terminal with bound machines. Follow the portable-monitor, panel and machine-ledger quests for crafting and binding.\n\n§3§lChoose cards and sources§r\nCards cover grids, history, resources, machines, regions and alerts, plus clocks, session, team, player and world information. After placing a machine card, choose its terminal and machine. Resource cards use entries from bound panels. A unique available panel may be selected automatically; choose by content when several are available. Once readings are ready, arrange the layout to suit you.\n\n§3§lInterpret the display§r\nStored EU, EU/t flow and stock quantities use their own units. Wireless net change describes storage changes; rings without a real capacity indicate direction. Local clocks use computer time, game clocks use the world day cycle, session time resets on reconnect, and team cards show information synchronized for you. Tick after understanding sources, then continue to editing.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "gtswn:NetworkInfoPanel_GTswn"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§3§lBuild a Factory Dashboard",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 19,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

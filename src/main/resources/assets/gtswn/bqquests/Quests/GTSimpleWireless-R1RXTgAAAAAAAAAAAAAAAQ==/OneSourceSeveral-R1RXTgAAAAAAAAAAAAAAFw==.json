@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 22
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lConfirm the profile first§r\nImport a profile and check its fixed sources, then select it in the manager and enter the recipient's full player UUID. Authorized players can view the confirmed sources using existing sampling. Share a dashboard layout code separately if a friend wants the same presentation.\n\n§3§lGrant read access§r\nAs owner, share through the manager or /monitorprofile share <profileUUID> <playerUUID>. The recipient selects it in their list and follows recovery to bind a terminal of the same kind; quantum sources still require legitimate matching native pairing. Readers have read-only access, while the owner manages sources and readers. Use revoke to remove access.\n\n§3§lRecord without active viewers§r\nThe owner explicitly enables offline sampling through the manager or /monitorprofile offline <profileUUID> on/off. Keep source chunks loaded. Unverifiable permissions or identity and unloaded chunks pause sampling or leave gaps. The server reuses source sampling; interpret display refresh according to source capabilities. Offline sampling requires explicit owner opt-in.\n\n§3§lSource changes and handover§r\nFor additional sources, prepare bindings on another non-profile terminal and explicitly import a new profile. Existing profiles do not expand through later scans. Transfer requires native authority for the new owner, clears old readers and disables offline sampling. If quantum migration invalidates a fixed source, the owner can release the corresponding held item reference, pair again and import the new source while keeping the old profile and history. Tick after understanding sharing, continuous sampling and source changes.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "minecraft:map"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§3§lOne Source, Several Readers",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 23,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

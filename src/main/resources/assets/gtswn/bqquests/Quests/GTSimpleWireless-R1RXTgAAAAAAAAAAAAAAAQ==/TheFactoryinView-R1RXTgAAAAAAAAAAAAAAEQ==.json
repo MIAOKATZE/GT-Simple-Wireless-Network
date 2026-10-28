@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 16
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lEnter the world workbench§r\nDefault §1F12§r toggles Factory Mode. Enter to learn its controls, then bring a bound Device Info Terminal for machines or a Portable Monitor for grid and panel data. The terminal rail shows actual equipped items. Device and monitoring sources prefer equipped terminals, then available inventory terminals.\n\n§3§lAdjust the view first§r\nUse camera tools to choose free or follow mode, pan, rotate and zoom. Defaults include Home to return to the player, M to toggle following and P to pin the selected target. X toggles slicing; adjust height and input sensitivity in the appropriate settings. Observation uses the loaded world, while the player remains in place.\n\n§3§lInspect devices and tools§r\nUse the sidebar for terminal functions, filter devices by name or state, and select a target for details. Bound machine data comes from the Device Info Terminal; if you have not prepared one, read the machine-ledger quest first. Continue to Read the Power in a Region for regional comparisons.\n\n§3§lSettings and exit§r\nRight-click common functions to bind factory-only shortcuts; the shortcut page shows all actions. F1 hides/restores the UI while retaining camera control. F12 exits and restores the normal view. Factory appearance and dashboard theme are configured separately. Tick after learning to enter, inspect and exit.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 0,
+        "OreDict:8": "",
+        "id:8": "gtswn:gtswn.deviceInfoTerminal"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§3§lThe Factory in View",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 17,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}
