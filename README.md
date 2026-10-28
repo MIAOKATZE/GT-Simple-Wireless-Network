@@ -13,7 +13,7 @@
 
 此版本客户端与服务端均必须安装前置库 [MIAOKATZE Core 0.1.21](https://github.com/MIAOKATZE/MIAOKATZE-Core)（最低版本：0.1.21）。FalsePatternLib 可在缺失时补下载；已有旧版请手动更新。
 
-仅支持 GTNH 2.9.0 RC 版本。自 v2.0.0 起，建议 GTIT、GTSWN、GTSR 三者一起更新。
+当前 2.x 系列仅支持 GTNH 2.9.0 RC-1 / RC-2；beta 和 2.8.4 玩家请按下表选择历史 Release。自 v2.0.0 起，建议 GTIT、GTSWN、GTSR 三者一起更新。
 
 为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；设备均可在 LV 阶段制作。
 
@@ -26,13 +26,25 @@
 
 ## 下载与依赖 / Downloads & Requirements
 
-| GTNH | GTSWN | 维护 / Maintained |
-|---|---|:---:|
-| 2.9.0 RC | **2.0.1+**（当前 / current） | ✔️ |
+下表按已发布 Release 的兼容声明列出各 GTNH 版本可下载的最新版本；历史版本不代表仍在维护。
 
-[GitHub Releases 下载 / Download](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)：生产 jar 放入客户端和服务端 `mods/`，替换旧版且只留一个；勿安装 `-dev.jar` / `-sources.jar`。仅支持 GTNH 2.9.0 RC 版本。
+The table lists the latest published release for each GTNH version, according to its release notes. Historical versions are no longer maintained.
 
-Install one release jar in both client and server `mods/`, replacing older versions; exclude `-dev.jar` / `-sources.jar`. Only GTNH 2.9.0 RC versions are supported.
+| GTNH | GTSWN Release / 下载 | 维护 / Maintenance |
+| --- | --- | --- |
+| 2.9.0 RC-1 / RC-2 | **[v2.0.25](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.0.25)** | 2.x 当前维护 / Active series |
+| 2.9.0 beta-3 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) | 历史版本 / Legacy |
+| 2.9.0 beta-2 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) | 历史版本 / Legacy |
+| 2.9.0 beta-1 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) | 历史版本 / Legacy |
+| 2.8.4 | [v0.2.0](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v0.2.0) | 历史版本 / Legacy |
+
+当前源码为 v2.0.35，对应 GTNH 2.9.0 RC-1 / RC-2；该版本目前为待发布草稿。表内下载版本以公开 Release 为准。v1.8.82 的 Release 同时声明支持 RC-1 / RC-2，保留在 1.x 系列的玩家也可使用。
+
+Current source: v2.0.35 for GTNH 2.9.0 RC-1 / RC-2, currently an unpublished draft. The download table uses published releases. The v1.8.82 release also supports RC-1 / RC-2 for players staying on 1.x.
+
+[GitHub Releases 下载 / Download](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases)：生产 jar 放入客户端和服务端 `mods/`，替换旧版且只留一个；勿安装 `-dev.jar` / `-sources.jar`。按所选 Release 的说明安装前置，历史版本不要套用本文顶部的当前前置要求。
+
+Install one release jar in both client and server `mods/`, replacing older versions; exclude `-dev.jar` / `-sources.jar`. Follow the dependency requirements of the selected release; the current requirements above do not apply to historical versions.
 
 - **依赖 / Required**：GT5U、GTNHLib、StructureLib、ModularUI、ModularUI2、AE2。
 - **额外集成 / Extra integrations**：NEI、Baubles、WAILA、BetterQuesting、MatterManipulator（MM）。
