@@ -765,7 +765,10 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             e.identity = n.getString("identity");
             e.owner = n.getString("owner");
             e.ownerName = n.getString("ownerName");
-            e.nativeOwnerID = n.hasKey("nativeOwnerID", 3) ? n.getInteger("nativeOwnerID") : -1;
+            // Native player numbers belong to AE's separately persisted UUID registry. A partial
+            // restore may map a saved number to someone else; the saved owner UUID remains authority.
+            // Resolve once in this new session before caching the native actor again.
+            e.nativeOwnerID = -1;
             e.dim = n.getInteger("dim");
             e.ax = n.getInteger("x");
             e.ay = n.getInteger("y");
@@ -870,13 +873,15 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
 
         int resolveNativeActor(IPlayerRegistry players) {
             if (nativeOwnerID >= 0) return nativeOwnerID;
+            if (players == null) return -1;
             try {
                 UUID uuid = UUID.fromString(owner);
                 nativeOwnerID = players.getID(new GameProfile(uuid, ownerName.isEmpty() ? owner : ownerName));
                 if (nativeOwnerID >= 0 && loadedTile != null && loadedTile.getWorldObj() != null)
                     get(loadedTile.getWorldObj()).markDirty();
                 return nativeOwnerID;
-            } catch (IllegalArgumentException invalidIdentity) {
+            } catch (RuntimeException unavailableIdentity) {
+                // Invalid UUIDs and a native registry that is not ready grant no actor; retry later.
                 return -1;
             }
         }
