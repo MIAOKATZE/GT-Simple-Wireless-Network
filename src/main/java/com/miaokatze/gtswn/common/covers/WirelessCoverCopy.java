@@ -26,12 +26,20 @@ public final class WirelessCoverCopy {
     }
 
     /** A declined transaction does not withdraw anything and leaves the destination empty. */
+    public static long fundedBuffer(long capacity, float loss, Predicate<BigInteger> debit) {
+        return fundedBuffer(capacity, Double.parseDouble(Float.toString(loss)), debit);
+    }
+
     public static long fundedBuffer(long capacity, double loss, Predicate<BigInteger> debit) {
         if (capacity <= 0 || debit == null) return 0;
         return debit.test(CoverMaths.downlinkDeduction(capacity, loss)) ? capacity : 0;
     }
 
     /** Preserve energy already owned by the destination and atomically fund only its missing capacity. */
+    public static long refillBuffer(long existing, long capacity, float loss, Predicate<BigInteger> debit) {
+        return refillBuffer(existing, capacity, Double.parseDouble(Float.toString(loss)), debit);
+    }
+
     public static long refillBuffer(long existing, long capacity, double loss, Predicate<BigInteger> debit) {
         existing = Math.max(0, existing);
         if (capacity <= existing) return existing;
