@@ -28,6 +28,7 @@
     "mm.GTAnalysisResultMixin",
     "mm.AEAnalysisResultMixin",
     "mm.MMUtilsMixin",
+    "mm.MMInventoryMixin",
     "mm.PendingBlockMixin",
     "mm.PendingBuildMixin"
   ],
