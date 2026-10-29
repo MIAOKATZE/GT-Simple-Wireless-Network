@@ -213,7 +213,11 @@ public final class NodeRevealRequestQueue {
             centerPacked,
             REVEAL_RADIUS_SQ,
             REVEAL_LIMIT,
-            new RevealProbe(world, registry, actualTypeMasks));
+            LinkNodeRevealSession.visibleProbe(
+                new RevealProbe(world, registry, actualTypeMasks),
+                actualTypeMasks,
+                wantedType,
+                revealAll));
 
         // 修剪集回传注册表（INVALID 节点整批出册，最多一次 markDirty）
         registry.prune(world, selection.pruned);
