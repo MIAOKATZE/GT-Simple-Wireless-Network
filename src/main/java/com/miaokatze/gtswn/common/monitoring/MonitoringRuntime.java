@@ -46,6 +46,7 @@ public final class MonitoringRuntime {
         MonitorCapabilities.clear();
         com.miaokatze.gtswn.common.monitoring.ae.MonitorIdentityGridCache.clearSession();
         com.miaokatze.gtswn.common.device.DeviceSampleScheduler.clearSession();
+        com.miaokatze.gtswn.common.panel.NetworkInfoMonitorScheduler.clearSession();
         com.miaokatze.gtswn.network.C2SPacketMonitorProfileAction.ServerQueue.clear();
         com.miaokatze.gtswn.common.quantum.QuantumIncorporationVisualSync.clear();
         com.miaokatze.gtswn.network.NetworkPanelBroadcastPort.clear();

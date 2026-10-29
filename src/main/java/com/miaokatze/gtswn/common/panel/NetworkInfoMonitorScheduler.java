@@ -44,8 +44,13 @@ public class NetworkInfoMonitorScheduler {
     /** 采样间隔（100t = 5s） */
     private static final long SAMPLE_INTERVAL_TICKS = 100L;
 
-    /** The event handler can outlive an integrated server or its overworld. */
-    private final SampleCadence cadence = new SampleCadence();
+    /** One main-thread server sampler, also shared by accidentally duplicated event handlers. */
+    private static final SampleCadence cadence = new SampleCadence();
+
+    /** The event bus outlives an integrated server: release its identity tokens even without another tick. */
+    public static void clearSession() {
+        cadence.clear();
+    }
 
     /** Main-thread cadence; identity tokens deliberately use reference equality. */
     static final class SampleCadence {
@@ -55,6 +60,14 @@ public class NetworkInfoMonitorScheduler {
         private long lastObservedTick = -1L;
         private long lastSampleTick = -1L;
         private boolean clockRewound;
+
+        void clear() {
+            server = null;
+            world = null;
+            lastObservedTick = -1L;
+            lastSampleTick = -1L;
+            clockRewound = false;
+        }
 
         boolean shouldSample(Object currentServer, Object currentWorld, long tick) {
             boolean changed = server != currentServer || world != currentWorld;
