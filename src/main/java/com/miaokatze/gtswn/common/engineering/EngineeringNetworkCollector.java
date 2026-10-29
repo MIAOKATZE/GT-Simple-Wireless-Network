@@ -63,7 +63,9 @@ final class EngineeringNetworkCollector {
         }
         World world = player.worldObj;
         for (Map.Entry<Long, Byte> entry : WirelessNodeRegistry.get(world)
-            .readView()
+            .readViewInXRange(
+                EngineeringGrid.minBlock(view.minCellX, view.gtGrid, axis),
+                EngineeringGrid.maxBlockExclusive(view.maxCellX, view.gtGrid, axis) - 1)
             .entrySet()) {
             if (!budget()) break;
             int x = WirelessNodeIndexCodec.unpackX(entry.getKey()), y = WirelessNodeIndexCodec.unpackY(entry.getKey());

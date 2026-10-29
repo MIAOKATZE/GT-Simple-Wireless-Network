@@ -159,6 +159,19 @@ public class WirelessNodeRegistry extends WorldSavedData {
         return Collections.unmodifiableMap(nodes);
     }
 
+    /**
+     * Main-thread read-only X slab, without allocating a copy of every candidate. Like {@link #readView()},
+     * this view must not be retained across ticks or used while a caller repairs/mutates the index.
+     */
+    public Map<Long, Byte> readViewInXRange(int minX, int maxX) {
+        long lowerX = Math.max(-33_554_432L, (long) minX);
+        long upperX = Math.min(33_554_431L, (long) maxX);
+        if (lowerX > upperX) return Collections.emptyMap();
+        long lower = lowerX << 38;
+        long upper = (upperX << 38) | ((1L << 38) - 1);
+        return Collections.unmodifiableMap(nodes.subMap(lower, true, upper, true));
+    }
+
     // ==================== NBT 持久化（int[2N] positions + byte[N] types，经 Codec 编解码） ====================
 
     @Override
