@@ -13,7 +13,8 @@ import java.util.Map;
  * 缓存键 =（panelKey, trackingWindow, 绑定集版本, dataSet revision）——任一变化即失配重建；
  * 条目另持 dataSet 弱引用并以<b>引用相等</b>校验：数据集被 store remove / 方块破坏重放 /
  * 世界重载后引用即断（AE dataSet 与坐标一一对应、全部变更经控制器本地 revision 推进，
- * 同键新数据集不会读到旧装配）；同数据集多屏（同 owner/dataset）命中共享装配结果。
+ * 同键新数据集不会读到旧装配）。控制器生命周期也必须引用相等：区块重载会重置本地
+ * revision/绑定版本，但世界数据集实例可继续存活，不能据此复用旧控制器的装配。
  * <p>
  * 条目有界（{@link #MAX_ENTRIES} 插入序淘汰，新条目优先保留），仅服务端访问面；
  * 访问加锁只为防御网络线程误入，常态单线程无争用。装配产物以不可变视图封存，
@@ -45,9 +46,11 @@ final class AEAssemblyCache {
     private static final class CachedEntry {
 
         final WeakReference<AEMonitorDataSet> dataSetRef;
+        final WeakReference<Object> ownerRef;
         final Assembly assembly;
 
-        CachedEntry(AEMonitorDataSet dataSet, Assembly assembly) {
+        CachedEntry(Object owner, AEMonitorDataSet dataSet, Assembly assembly) {
+            this.ownerRef = new WeakReference<>(owner);
             this.dataSetRef = new WeakReference<AEMonitorDataSet>(dataSet);
             this.assembly = assembly;
         }
@@ -68,16 +71,17 @@ final class AEAssemblyCache {
     /**
      * 查缓存（命中路径）。
      *
+     * @param owner    当前控制器（生命周期引用相等校验）
      * @param dataSet  当前数据集（引用相等校验——弱引用失配 = 数据集已被移除或重载）
      * @param cacheKey 调用方拼装的复合键（panelKey + 窗口 + 绑定集版本 + revision）
      * @return 命中返回装配产物；未命中或引用失配返回 null（失配条目就地淘汰）
      */
-    static Assembly lookup(AEMonitorDataSet dataSet, String cacheKey) {
+    static Assembly lookup(Object owner, AEMonitorDataSet dataSet, String cacheKey) {
         CachedEntry entry = CACHE.get(cacheKey);
         if (entry == null) {
             return null;
         }
-        if (entry.dataSetRef.get() != dataSet) {
+        if (entry.ownerRef.get() != owner || entry.dataSetRef.get() != dataSet) {
             CACHE.remove(cacheKey);
             return null;
         }
@@ -87,11 +91,12 @@ final class AEAssemblyCache {
     /**
      * 存缓存（失效路径的重建落点）。
      *
+     * @param owner    当前控制器（弱引用持有，不阻止区块卸载后回收）
      * @param dataSet  当前数据集（弱引用持有，不阻止其回收）
      * @param cacheKey 复合键
      * @param assembly 不可变装配产物
      */
-    static void store(AEMonitorDataSet dataSet, String cacheKey, Assembly assembly) {
-        CACHE.put(cacheKey, new CachedEntry(dataSet, assembly));
+    static void store(Object owner, AEMonitorDataSet dataSet, String cacheKey, Assembly assembly) {
+        CACHE.put(cacheKey, new CachedEntry(owner, dataSet, assembly));
     }
 }

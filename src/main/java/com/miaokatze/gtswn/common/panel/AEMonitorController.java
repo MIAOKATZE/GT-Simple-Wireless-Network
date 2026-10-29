@@ -277,14 +277,14 @@ public final class AEMonitorController {
                 + bindingVersion
                 + "#"
                 + dataSetRevision;
-            AEAssemblyCache.Assembly cached = AEAssemblyCache.lookup(dataSet, cacheKey);
+            AEAssemblyCache.Assembly cached = AEAssemblyCache.lookup(this, dataSet, cacheKey);
             if (cached != null) {
                 // G4 命中路径：结果不变跳过重建，产物直接复用
                 assembly = cached;
             } else {
                 // G4 失效路径：任一维度变化，重建并落缓存
                 assembly = assemble(dataSet);
-                AEAssemblyCache.store(dataSet, cacheKey, assembly);
+                AEAssemblyCache.store(this, dataSet, cacheKey, assembly);
             }
         } catch (Exception e) {
             // G4 保守回退：缓存路径任何异常退回独立装配（不落缓存、不共享），推送语义不变

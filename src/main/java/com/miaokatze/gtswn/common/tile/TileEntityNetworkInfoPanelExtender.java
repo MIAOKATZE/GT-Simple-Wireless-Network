@@ -38,7 +38,7 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
     }
 
     public TileEntityNetworkInfoPanel getCore() {
-        if (!partOfScreen || worldObj == null) {
+        if (!partOfScreen || worldObj == null || !worldObj.blockExists(coreX, coreY, coreZ)) {
             return null;
         }
         TileEntity tile = worldObj.getTileEntity(coreX, coreY, coreZ);

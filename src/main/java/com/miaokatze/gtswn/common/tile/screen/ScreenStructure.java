@@ -336,6 +336,8 @@ public final class ScreenStructure {
         for (int dx = -range; dx <= range; dx++) {
             for (int dy = -range; dy <= range; dy++) {
                 for (int dz = -range; dz <= range; dz++) {
+                    // Discovery must not generate/load neighboring chunks merely to look for a core.
+                    if (!world.blockExists(x + dx, y + dy, z + dz)) continue;
                     TileEntity tile = world.getTileEntity(x + dx, y + dy, z + dz);
                     if (tile instanceof TileEntityNetworkInfoPanel) {
                         ((TileEntityNetworkInfoPanel) tile).rebuildScreen();
