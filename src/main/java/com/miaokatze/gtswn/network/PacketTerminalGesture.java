@@ -16,8 +16,10 @@ import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.TerminalAirInteraction;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -62,7 +64,21 @@ public final class PacketTerminalGesture implements IMessage {
         }
     }
 
+    /** Pending actions belong to the old server, not the next integrated save. */
+    public static void clearServerState() {
+        PENDING.clear();
+        CHARGES.clear();
+    }
+
     public static class Drain {
+
+        @SubscribeEvent
+        public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
+            PENDING.forEach((id, request) -> {
+                if (request.player == event.player) PENDING.remove(id, request);
+            });
+            CHARGES.values().removeIf(charge -> charge.player == event.player);
+        }
 
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
@@ -81,11 +97,11 @@ public final class PacketTerminalGesture implements IMessage {
 
     private static void handle(Request request) {
         EntityPlayerMP player = request.player;
+        if (!PlayerRequestQueue.isOnline(player)) return;
         if (request.action == CANCEL_REVEAL) {
             CHARGES.remove(player.getUniqueID());
             return;
         }
-        if (player.isDead || player.playerNetServerHandler == null) return;
         ItemStack held = player.getHeldItem();
         if (held == null) return;
         if (held.getItem() instanceof ItemNetworkQuantumTerminal && !QuantumTerminalAccess.validate(player, held))
@@ -150,7 +166,7 @@ public final class PacketTerminalGesture implements IMessage {
         }
 
         private boolean valid() {
-            return !player.isDead && player.playerNetServerHandler != null
+            return PlayerRequestQueue.isOnline(player)
                 && (stack.getItem() instanceof ItemDeviceInfoTerminal ? !player.isSneaking() : player.isSneaking())
                 && player.dimension == dimension
                 && player.inventory.currentItem == slot

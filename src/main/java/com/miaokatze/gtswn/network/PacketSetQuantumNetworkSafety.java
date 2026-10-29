@@ -112,7 +112,8 @@ public final class PacketSetQuantumNetworkSafety implements IMessage {
 
         @SubscribeEvent
         public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
-            CONTEXTS.remove(event.player.getUniqueID());
+            CONTEXTS.values().removeIf(context -> context.player == event.player);
+            if (event.player instanceof EntityPlayerMP) QUEUE.discardPlayer((EntityPlayerMP) event.player);
         }
 
         @SubscribeEvent
@@ -123,12 +124,17 @@ public final class PacketSetQuantumNetworkSafety implements IMessage {
 
     public static void clearContexts() {
         CONTEXTS.clear();
+        QUEUE.clear();
     }
 
     private static final class Queue extends PlayerRequestQueue<Job> {
 
         void drain() {
             drainAtMost(8);
+        }
+
+        void clear() {
+            clearPending();
         }
 
         void enqueue(EntityPlayerMP player, PacketSetQuantumNetworkSafety message) {
@@ -143,7 +149,7 @@ public final class PacketSetQuantumNetworkSafety implements IMessage {
         @Override
         protected void process(Job job) {
             EntityPlayerMP player = job.player;
-            if (player.isDead || player.playerNetServerHandler == null) return;
+            if (!isOnline(player)) return;
             try {
                 PacketSetQuantumNetworkSafety message = job.message;
                 ItemStack held = player.getHeldItem();

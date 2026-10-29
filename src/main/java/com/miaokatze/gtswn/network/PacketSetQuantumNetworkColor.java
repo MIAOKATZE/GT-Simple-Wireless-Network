@@ -19,11 +19,14 @@ import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorSync;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 
 import appeng.tile.networking.TileController;
+
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -79,7 +82,21 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
         }
     }
 
+    /** Pending actions belong to the old server, not the next integrated save. */
+    public static void clearServerState() {
+        synchronized (PENDING) {
+            PENDING.clear();
+        }
+    }
+
     public static final class Drain {
+
+        @SubscribeEvent
+        public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
+            synchronized (PENDING) {
+                PENDING.values().removeIf(job -> job.player == event.player);
+            }
+        }
 
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
@@ -99,7 +116,7 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
 
     private static void apply(Job job) {
         EntityPlayerMP player = job.player;
-        if (player.isDead || player.playerNetServerHandler == null || player.inventory.currentItem != job.slot) return;
+        if (!PlayerRequestQueue.isOnline(player) || player.inventory.currentItem != job.slot) return;
         ItemStack stack = player.getHeldItem();
         if (stack == null || !(stack.getItem() instanceof ItemNetworkQuantumTerminal)) return;
         if (!QuantumTerminalAccess.canManage(player, stack)) {

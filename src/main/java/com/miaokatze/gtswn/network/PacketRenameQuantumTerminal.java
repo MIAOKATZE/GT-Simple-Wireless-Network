@@ -7,6 +7,7 @@ import com.miaokatze.gtswn.common.gui.TerminalNameRules;
 import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -100,6 +101,11 @@ public final class PacketRenameQuantumTerminal implements IMessage {
     public static final class Drain {
 
         @SubscribeEvent
+        public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
+            if (event.player instanceof EntityPlayerMP) queue.discardPlayer((EntityPlayerMP) event.player);
+        }
+
+        @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
             if (event.phase == TickEvent.Phase.END) queue.drain();
         }
@@ -128,8 +134,7 @@ public final class PacketRenameQuantumTerminal implements IMessage {
         @Override
         protected void process(Job job) {
             EntityPlayerMP player = job.player;
-            if (player.isDead || player.playerNetServerHandler == null
-                || !(player.openContainer instanceof ContainerTerminal container)) return;
+            if (!isOnline(player) || !(player.openContainer instanceof ContainerTerminal container)) return;
             PacketRenameQuantumTerminal message = job.message;
             container.renameTerminal(
                 player,

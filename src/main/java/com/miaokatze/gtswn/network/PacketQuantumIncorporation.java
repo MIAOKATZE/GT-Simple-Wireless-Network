@@ -21,6 +21,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.util.AnimationQualityHints;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.common.util.QualityHintCounter;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 
@@ -31,7 +32,9 @@ import appeng.api.networking.security.ISecurityGrid;
 import appeng.tile.networking.TileController;
 import appeng.util.LookDirection;
 import appeng.util.Platform;
+
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -81,7 +84,19 @@ public class PacketQuantumIncorporation implements IMessage {
         }
     }
 
+    /** Pending actions belong to the old server, not the next integrated save. */
+    public static void clearServerState() {
+        PENDING.clear();
+    }
+
     public static class Drain {
+
+        @SubscribeEvent
+        public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
+            PENDING.forEach((id, job) -> {
+                if (job.player == event.player) PENDING.remove(id, job);
+            });
+        }
 
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
@@ -101,7 +116,7 @@ public class PacketQuantumIncorporation implements IMessage {
     private static void handle(Job job) {
         EntityPlayerMP player = job.player;
         PacketQuantumIncorporation message = job.message;
-        if (player.isDead || player.playerNetServerHandler == null) return;
+        if (!PlayerRequestQueue.isOnline(player)) return;
         World world = player.worldObj;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;

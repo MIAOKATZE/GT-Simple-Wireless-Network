@@ -25,9 +25,12 @@ import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 
 import appeng.tile.networking.TileController;
+
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -55,7 +58,19 @@ public class PacketRequestQuantumReveal implements IMessage {
         }
     }
 
+    /** Pending actions belong to the old server, not the next integrated save. */
+    public static void clearServerState() {
+        PENDING.clear();
+    }
+
     public static class Drain {
+
+        @SubscribeEvent
+        public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
+            PENDING.forEach((id, player) -> {
+                if (player == event.player) PENDING.remove(id, player);
+            });
+        }
 
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
@@ -73,7 +88,7 @@ public class PacketRequestQuantumReveal implements IMessage {
     }
 
     private static void handle(EntityPlayerMP player) {
-        if (player.isDead || player.playerNetServerHandler == null) return;
+        if (!PlayerRequestQueue.isOnline(player)) return;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
         if (!QuantumTerminalAccess.validate(player, held)) return;

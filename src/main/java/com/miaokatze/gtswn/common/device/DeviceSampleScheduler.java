@@ -144,7 +144,8 @@ public class DeviceSampleScheduler {
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         if (!event.player.worldObj.isRemote) {
-            DeviceTerminalRequestQueue.onPlayerLoggedOut(event.player.getUniqueID());
+            if (event.player instanceof net.minecraft.entity.player.EntityPlayerMP)
+                DeviceTerminalRequestQueue.onPlayerLoggedOut((net.minecraft.entity.player.EntityPlayerMP) event.player);
             DeviceTerminalSettings.onLogout(event.player.getUniqueID());
             com.miaokatze.gtswn.network.DeviceTerminalActionQueue.onLogout(event.player.getUniqueID());
         }
