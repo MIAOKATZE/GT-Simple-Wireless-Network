@@ -187,6 +187,24 @@ public final class C2SPacketMonitorProfileAction implements IMessage {
         }
     }
 
+    /** Import/recovery target the real item present at receipt, not a later item selected during backpressure. */
+    static final class Operation {
+
+        final C2SPacketMonitorProfileAction packet;
+        private final HeldTerminalReceipt receipt;
+
+        Operation(EntityPlayerMP player, C2SPacketMonitorProfileAction packet) {
+            this.packet = packet;
+            receipt = packet.action == IMPORT_HELD || packet.action == RECOVER ? new HeldTerminalReceipt(player)
+                : null;
+        }
+
+        void requireCurrentHeld(EntityPlayerMP player) {
+            if (receipt != null && !receipt.matches(player))
+                throw new IllegalArgumentException("Held terminal changed; retry with the intended terminal.");
+        }
+    }
+
     public static final class ServerQueue {
 
         private static final int MAX_PLAYERS = 128, MAX_PENDING = 16;
@@ -196,7 +214,7 @@ public final class C2SPacketMonitorProfileAction implements IMessage {
         private static final class Pending {
 
             final Object connection;
-            final ArrayDeque<C2SPacketMonitorProfileAction> queue = new ArrayDeque<>();
+            final ArrayDeque<Operation> queue = new ArrayDeque<>();
             final Results results = new Results();
             final Delivery delivery = new Delivery();
             boolean openRequested;
@@ -215,7 +233,7 @@ public final class C2SPacketMonitorProfileAction implements IMessage {
                 pending = new Pending(connection);
                 PLAYERS.put(player, pending);
             }
-            if (pending.queue.size() < MAX_PENDING) pending.queue.addLast(packet);
+            if (pending.queue.size() < MAX_PENDING) pending.queue.addLast(new Operation(player, packet));
         }
 
         public static synchronized void open(EntityPlayerMP player) {
@@ -282,8 +300,11 @@ public final class C2SPacketMonitorProfileAction implements IMessage {
                     }
                     if (pending.queue.isEmpty()) continue;
                     processed++;
-                    C2SPacketMonitorProfileAction packet = pending.queue.removeFirst();
-                    pending.delivery.response = pending.results.apply(packet, () -> execute(player, packet));
+                    Operation operation = pending.queue.removeFirst();
+                    pending.delivery.response = pending.results.apply(operation.packet, () -> {
+                        operation.requireCurrentHeld(player);
+                        execute(player, operation.packet);
+                    });
                     flush(player, pending);
                 }
             }

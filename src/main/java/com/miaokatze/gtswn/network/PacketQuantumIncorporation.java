@@ -116,7 +116,7 @@ public class PacketQuantumIncorporation implements IMessage {
     private static void handle(Job job) {
         EntityPlayerMP player = job.player;
         PacketQuantumIncorporation message = job.message;
-        if (!PlayerRequestQueue.isOnline(player)) return;
+        if (!PlayerRequestQueue.isOnline(player) || !job.receipt.matches(player)) return;
         World world = player.worldObj;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
@@ -226,10 +226,12 @@ public class PacketQuantumIncorporation implements IMessage {
 
         private final EntityPlayerMP player;
         private final PacketQuantumIncorporation message;
+        private final HeldTerminalReceipt receipt;
 
         private Job(EntityPlayerMP player, PacketQuantumIncorporation message) {
             this.player = player;
             this.message = message;
+            receipt = new HeldTerminalReceipt(player);
         }
     }
 }
