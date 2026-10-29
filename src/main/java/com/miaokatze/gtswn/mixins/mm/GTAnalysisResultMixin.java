@@ -21,6 +21,7 @@ import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.covers.WirelessCoverCopy;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
+import com.miaokatze.gtswn.crossmod.mm.CopyMaterialReservation;
 import com.miaokatze.gtswn.crossmod.mm.CopyMaterialTransaction;
 import com.miaokatze.gtswn.crossmod.mm.CopySummary;
 import com.miaokatze.gtswn.crossmod.mm.WirelessCoverMaterials;
@@ -83,7 +84,7 @@ public abstract class GTAnalysisResultMixin {
         boolean installed;
         try {
             installed = CopyMaterialTransaction
-                .execute(() -> reserved[0] = context.tryConsumeItems(pipe.copy()), () -> {
+                .execute(() -> reserved[0] = CopyMaterialReservation.reserve(context, pipe), () -> {
                     installCover(context, tile, side, data);
                     return tile.getCoverAtSide(side) instanceof GTswnCoverWirelessBase
                         && ItemStack.areItemStacksEqual(tile.getCoverItemAtSide(side), data.getCoverStack());
