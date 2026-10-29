@@ -301,22 +301,31 @@ public final class EUCacheBridge {
         if (cachedOwnerDataSet != null && cachedOwnerDataStore != null
             && cachedOwnerDataSetRevision == cachedOwnerDataStore.getRevision()) return cachedOwnerDataSet;
         cachedOwnerDataStore = NetworkInfoDataStore.get(overworld);
-        cachedOwnerDataSet = cachedOwnerDataStore.getOrCreateNative(account);
+        replaceOwnerDataSet(cachedOwnerDataStore.getOrCreateNative(account));
         cachedOwnerDataSetRevision = cachedOwnerDataStore.getRevision();
-        if (sourceChanged) {
-            refreshFrom(cachedOwnerDataSet);
-            NetworkInfoSample newest = cachedOwnerDataSet.newest();
-            if (newest != null) {
-                cachedEu = newest.eu;
-                cachedEut = newest.eut;
-                lastKnownSampleTick = newest.tick;
-            }
-            cachedStatus = formatStatus(
-                cachedEut,
-                cachedOwnerDataSet.isColdStarting(),
-                cachedOwnerDataSet.isLongTermSilent());
-        }
         return cachedOwnerDataSet;
+    }
+
+    /** Store cleanup/replacement is a display boundary even when the account and newest tick are unchanged. */
+    private void replaceOwnerDataSet(NetworkInfoDataSet next) {
+        if (cachedOwnerDataSet == next) return;
+        cachedOwnerDataSet = next;
+        cachedEu = BigInteger.ZERO;
+        cachedEut = 0;
+        lastKnownSampleTick = -1L;
+        refreshFrom(next);
+        NetworkInfoSample newest = next.newest();
+        if (newest != null) {
+            cachedEu = newest.eu;
+            cachedEut = newest.eut;
+            lastKnownSampleTick = newest.tick;
+        }
+        cachedStatus = formatStatus(cachedEut, next.isColdStarting(), next.isLongTermSilent());
+        needsDataRefresh = true;
+        fullSyncPending = true;
+        incrementalPushUntilTick = -1L;
+        incrementalSinceFull = 0;
+        syncSeq++;
     }
 
     /** 从指定数据集刷新本屏走势图缓存（原 refreshCachedSamples(dataSet)） */

@@ -647,7 +647,11 @@ public final class AEMonitorController {
      * 仅服务端执行；坐标 key 未初始化或 world 不可用时安全跳过。
      */
     private void clearAEData(String key) {
-        if (key == null || core.getWorldObj() == null || core.getWorldObj().isRemote) {
+        // Chart and list roles share one series. Only the final removed role may delete its history.
+        if (key == null || key.equals(aeKey(chartItem)) || key.equals(aeKey(chartFluid))) return;
+        for (ItemStack stack : monitoredItems) if (key.equals(aeKey(stack))) return;
+        for (FluidStack fluid : monitoredFluids) if (key.equals(aeKey(fluid))) return;
+        if (core.getWorldObj() == null || core.getWorldObj().isRemote) {
             return;
         }
         String dataKey = dataKey(core);
@@ -778,46 +782,28 @@ public final class AEMonitorController {
      * @return true=新绑定, false=清除绑定
      */
     public boolean setChartItem(ItemStack stack) {
-        if (stack != null && chartItem != null && aeKey(chartItem).equals(aeKey(stack))) {
-            clearAEData(aeKey(chartItem));
-            chartItem = null;
-            bindingVersion++; // G4：绑定集变化，装配缓存失效
-            dirty.markChanged();
-            return false;
-        }
-        if (chartItem != null) {
-            clearAEData(aeKey(chartItem));
-        }
-        if (chartFluid != null) {
-            clearAEData(aeKey(chartFluid));
-        }
-        chartItem = stack != null ? stack.copy() : null;
+        String oldItem = aeKey(chartItem), oldFluid = aeKey(chartFluid);
+        boolean same = stack != null && chartItem != null && oldItem.equals(aeKey(stack));
+        chartItem = same || stack == null ? null : stack.copy();
         chartFluid = null; // 物品与流体互斥
-        bindingVersion++; // G4：绑定集变化，装配缓存失效
+        clearAEData(oldItem);
+        clearAEData(oldFluid);
+        bindingVersion++;
         dirty.markChanged();
-        return true;
+        return !same;
     }
 
     /** 绑定走势图流体 */
     public boolean setChartFluid(FluidStack fluid) {
-        if (fluid != null && chartFluid != null && aeKey(fluid).equals(aeKey(chartFluid))) {
-            clearAEData(aeKey(chartFluid));
-            chartFluid = null;
-            bindingVersion++; // G4：绑定集变化，装配缓存失效
-            dirty.markChanged();
-            return false;
-        }
-        if (chartFluid != null) {
-            clearAEData(aeKey(chartFluid));
-        }
-        if (chartItem != null) {
-            clearAEData(aeKey(chartItem));
-        }
-        chartFluid = fluid != null ? fluid.copy() : null;
+        String oldItem = aeKey(chartItem), oldFluid = aeKey(chartFluid);
+        boolean same = fluid != null && chartFluid != null && oldFluid.equals(aeKey(fluid));
+        chartFluid = same || fluid == null ? null : fluid.copy();
         chartItem = null;
-        bindingVersion++; // G4：绑定集变化，装配缓存失效
+        clearAEData(oldItem);
+        clearAEData(oldFluid);
+        bindingVersion++;
         dirty.markChanged();
-        return true;
+        return !same;
     }
 
     public ItemStack getChartItem() {
@@ -830,14 +816,11 @@ public final class AEMonitorController {
 
     /** 清除走势图所有绑定 */
     public void clearAEBinding() {
-        if (chartItem != null) {
-            clearAEData(aeKey(chartItem));
-        }
-        if (chartFluid != null) {
-            clearAEData(aeKey(chartFluid));
-        }
+        String oldItem = aeKey(chartItem), oldFluid = aeKey(chartFluid);
         chartItem = null;
         chartFluid = null;
+        clearAEData(oldItem);
+        clearAEData(oldFluid);
         bindingVersion++; // G4：绑定集变化，装配缓存失效
         dirty.markChanged();
         // O2-20：解绑后立即推送空走势段清客户端显示（周期推送已被空屏门控跳过）
@@ -846,14 +829,12 @@ public final class AEMonitorController {
 
     /** 一键清除 AE 实时监控列表中的所有物品与流体监控 */
     public void clearAllAEMonitors() {
-        for (ItemStack stack : new ArrayList<>(monitoredItems)) {
-            clearAEData(aeKey(stack));
-        }
-        for (FluidStack fluid : new ArrayList<>(monitoredFluids)) {
-            clearAEData(aeKey(fluid));
-        }
+        Set<String> removed = new HashSet<>();
+        for (ItemStack stack : monitoredItems) removed.add(aeKey(stack));
+        for (FluidStack fluid : monitoredFluids) removed.add(aeKey(fluid));
         monitoredItems.clear();
         monitoredFluids.clear();
+        for (String key : removed) clearAEData(key);
         bindingVersion++; // G4：绑定集变化，装配缓存失效
         dirty.markChanged();
         // O2-20：清空后立即推送空监控段清客户端显示（周期推送已被空屏门控跳过）
@@ -869,8 +850,8 @@ public final class AEMonitorController {
         if (stack == null) return false;
         for (int i = 0; i < monitoredItems.size(); i++) {
             if (aeKey(monitoredItems.get(i)).equals(aeKey(stack))) {
-                clearAEData(aeKey(monitoredItems.get(i)));
-                monitoredItems.remove(i);
+                String removed = aeKey(monitoredItems.remove(i));
+                clearAEData(removed);
                 bindingVersion++; // G4：绑定集变化，装配缓存失效
                 dirty.markChanged();
                 // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
@@ -892,8 +873,8 @@ public final class AEMonitorController {
         if (fluid == null) return false;
         for (int i = 0; i < monitoredFluids.size(); i++) {
             if (aeKey(monitoredFluids.get(i)).equals(aeKey(fluid))) {
-                clearAEData(aeKey(monitoredFluids.get(i)));
-                monitoredFluids.remove(i);
+                String removed = aeKey(monitoredFluids.remove(i));
+                clearAEData(removed);
                 bindingVersion++; // G4：绑定集变化，装配缓存失效
                 dirty.markChanged();
                 // O2-20：移除后立即推送缩减 key 集清客户端对应显示（周期推送已被空屏门控跳过）
