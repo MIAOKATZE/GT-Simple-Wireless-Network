@@ -382,6 +382,13 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         }
     }
 
+    @Override
+    public void onFrameUpdate() {
+        // Receipts can revoke an open draft between client ticks; do not draw it for another frame.
+        if (nameEditor != null) nameEditor.validateSelection();
+        super.onFrameUpdate();
+    }
+
     // ==================== 锚点与数据刷新 ====================
 
     /**
@@ -809,7 +816,20 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     }
 
     boolean isCurrentEntry(Entry entry) {
-        return entryCurrent(anchor, entry, displayedAuthorizationEpoch);
+        // Native callbacks and tooltips may outlive removeAll(), including after an epoch has been
+        // refreshed. Only the actual currently published row may act; a matching old identity is not enough.
+        return entryCurrent(anchor, entry, displayedAuthorizationEpoch) && currentEntry(entry) == entry
+            && sortedEntries.contains(entry);
+    }
+
+    Snapshot displayedSnapshot() {
+        return displayedSnapshot;
+    }
+
+    boolean displayCurrent(Snapshot snapshot) {
+        return snapshot != null && snapshot == displayedSnapshot
+            && snapshot == DeviceTerminalClientCache.getSnapshot(anchor)
+            && displayedAuthorizationEpoch == DeviceTerminalClientCache.authorizationEpoch(anchor);
     }
 
     boolean entryCurrent(UUID terminal, Entry entry, long epoch) {
@@ -844,6 +864,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      * 替代旧 48 字符硬切）。
      */
     List<String> entryTooltip(Entry hovered) {
+        if (!isCurrentEntry(hovered)) return Collections.emptyList();
         String recipeIn = hovered.state == 3 || hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
         String recipeOut = hovered.state == 3 || hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();

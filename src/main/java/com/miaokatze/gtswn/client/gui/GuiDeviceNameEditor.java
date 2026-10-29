@@ -59,10 +59,15 @@ final class GuiDeviceNameEditor {
     }
 
     void close() {
+        clearSelection();
+        handler.closePanel();
+    }
+
+    private void clearSelection() {
         entry = null;
         terminal = null;
         defaultPlainName = "";
-        handler.closePanel();
+        if (name != null) name.setText("");
     }
 
     void validateSelection() {
@@ -73,10 +78,13 @@ final class GuiDeviceNameEditor {
         ModularPanel panel = new Dialog<>("device_name_editor").size(WIDTH, HEIGHT)
             .background(GtswnMuiTheme.PANEL)
             .themeOverride(GtswnMuiTheme.THEME_ID);
+        // Escape/outside-click/native parent closure need not call this editor's close() method.
+        panel.onCloseAction(this::clearSelection);
         GtswnMuiTheme.fit(panel);
         panel.child(
             GtswnMuiWidgets
                 .canvas("device.rename.preview", 0, 0, WIDTH, HEIGHT, (context, mouseX, mouseY, partialTicks) -> {
+                    if (!host.entryCurrent(terminal, entry, authorizationEpoch)) return;
                     host.font()
                         .drawString(tr("title"), 12, 10, GtswnGuiPalette.TEXT_TITLE);
                     for (int i = 0; i < COLORS.length; i++) {
@@ -160,7 +168,7 @@ final class GuiDeviceNameEditor {
 
     private void save(boolean reset) {
         // Network receipts can replace authority between the last GUI tick and this input callback.
-        if (!host.entryCurrent(terminal, entry, authorizationEpoch)) {
+        if (!handler.isPanelOpen() || !host.entryCurrent(terminal, entry, authorizationEpoch)) {
             close();
             return;
         }

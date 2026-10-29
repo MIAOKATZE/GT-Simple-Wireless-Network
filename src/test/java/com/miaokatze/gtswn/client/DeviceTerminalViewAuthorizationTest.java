@@ -156,6 +156,66 @@ public class DeviceTerminalViewAuthorizationTest {
     }
 
     @Test
+    public void removedNativeRowCallbackCannotAcquireTheRefreshedAuthorization() throws Exception {
+        publish(1, "old");
+        GuiDeviceInfoTerminal gui = gui();
+        Entry old = DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0);
+        publish(2, "replacement");
+        refresh(gui);
+        Method current = GuiDeviceInfoTerminal.class.getDeclaredMethod("isCurrentEntry", Entry.class);
+        current.setAccessible(true);
+        assertFalse((Boolean) current.invoke(gui, old));
+        assertTrue((Boolean) current.invoke(gui, DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0)));
+    }
+
+    @Test
+    public void ordinaryReplacementCannotRenderOrActThroughTheOldNativeRowBeforeTick() throws Exception {
+        Entry old = new Entry("0:0:0:0", "old", (byte) 1, (byte) 0, 0L, 0L, 0D, 0D, 0, 0, 0, 0, "", "");
+        DeviceTerminalClientCache.receivePage(terminal, 1, 0, 1, Collections.singletonList(old));
+        GuiDeviceInfoTerminal gui = gui();
+        DeviceTerminalClientCache.Snapshot rendered = DeviceTerminalClientCache.getSnapshot(terminal);
+        Entry newest = new Entry("0:0:0:0", "new", (byte) 1, (byte) 0, 0L, 0L, 0D, 0D, 0, 0, 0, 0, "", "");
+        DeviceTerminalClientCache.receivePage(terminal, 2, 0, 1, Collections.singletonList(newest));
+        Method current = GuiDeviceInfoTerminal.class.getDeclaredMethod("isCurrentEntry", Entry.class);
+        current.setAccessible(true);
+        assertFalse((Boolean) current.invoke(gui, old));
+        Method drawable = GuiDeviceInfoTerminal.class.getDeclaredMethod("displayCurrent", DeviceTerminalClientCache.Snapshot.class);
+        drawable.setAccessible(true);
+        assertFalse((Boolean) drawable.invoke(gui, rendered));
+        refresh(gui);
+        assertFalse((Boolean) drawable.invoke(gui, rendered));
+        assertTrue((Boolean) drawable.invoke(gui, DeviceTerminalClientCache.getSnapshot(terminal)));
+    }
+
+    @Test
+    public void nativePanelClosureDeniesAnOtherwiseCurrentEditorSave() throws Exception {
+        publish(1, "old");
+        GuiDeviceInfoTerminal gui = gui();
+        Object editor = editor(gui, DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0), 1);
+        Class<?> handler = field(editor, "handler").getType();
+        field(editor, "handler").set(editor, java.lang.reflect.Proxy.newProxyInstance(
+            handler.getClassLoader(), new Class<?>[] { handler }, (proxy, method, args) ->
+                method.getName().equals("isPanelOpen") ? false : null));
+        Method save = editor.getClass().getDeclaredMethod("save", boolean.class);
+        save.setAccessible(true);
+        // No text field/network fixture is available: either access would fail this test.
+        save.invoke(editor, false);
+        assertNull(field(editor, "entry").get(editor));
+        assertNull(field(editor, "terminal").get(editor));
+    }
+
+    @Test
+    public void filteredOutRowCannotActEvenWhenItsTransportSnapshotIsUnchanged() throws Exception {
+        publish(1, "old");
+        GuiDeviceInfoTerminal gui = gui();
+        Entry entry = DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0);
+        field(gui, "sortedEntries").set(gui, Collections.emptyList());
+        Method current = GuiDeviceInfoTerminal.class.getDeclaredMethod("isCurrentEntry", Entry.class);
+        current.setAccessible(true);
+        assertFalse((Boolean) current.invoke(gui, entry));
+    }
+
+    @Test
     public void ordinarySnapshotRefreshesSelectedEntryAndRemovalClearsIt() throws Exception {
         Entry first = new Entry("0:0:0:0", "first", (byte) 1, (byte) 0, 0L, 0L, 0D, 0D, 0, 0, 0, 0, "", "");
         DeviceTerminalClientCache.receivePage(terminal, 1, 0, 1, Collections.singletonList(first));
@@ -193,7 +253,8 @@ public class DeviceTerminalViewAuthorizationTest {
         field(editor, "authorizationEpoch").setLong(editor, epoch);
         Class<?> handler = field(editor, "handler").getType();
         field(editor, "handler").set(editor, java.lang.reflect.Proxy.newProxyInstance(
-            handler.getClassLoader(), new Class<?>[] { handler }, (proxy, method, args) -> null));
+            handler.getClassLoader(), new Class<?>[] { handler }, (proxy, method, args) ->
+                method.getName().equals("isPanelOpen") ? true : null));
         field(gui, "nameEditor").set(gui, editor);
         return editor;
     }
