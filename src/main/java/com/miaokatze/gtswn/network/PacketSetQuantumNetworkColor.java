@@ -14,6 +14,7 @@ import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
+import com.miaokatze.gtswn.common.gui.ContainerTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
@@ -69,11 +70,11 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
         public IMessage onMessage(PacketSetQuantumNetworkColor message, MessageContext context) {
             if (context.side.isServer() && QuantumNetworkColor.isValid(message.color)) {
                 EntityPlayerMP player = context.getServerHandler().playerEntity;
-                if (player != null) {
+                if (player != null && player.openContainer instanceof ContainerTerminal terminal) {
                     UUID id = player.getUniqueID();
                     synchronized (PENDING) {
                         if (PENDING.containsKey(id) || PENDING.size() < MAX_PENDING_PLAYERS) {
-                            PENDING.put(id, new Job(player, message.color, player.inventory.currentItem));
+                            PENDING.put(id, new Job(player, message.color, terminal));
                         }
                     }
                 }
@@ -116,7 +117,7 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
 
     private static void apply(Job job) {
         EntityPlayerMP player = job.player;
-        if (!PlayerRequestQueue.isOnline(player) || player.inventory.currentItem != job.slot) return;
+        if (!PlayerRequestQueue.isOnline(player) || !job.context.matchesColorContext(player)) return;
         ItemStack stack = player.getHeldItem();
         if (stack == null || !(stack.getItem() instanceof ItemNetworkQuantumTerminal)) return;
         if (!QuantumTerminalAccess.canManage(player, stack)) {
@@ -151,12 +152,13 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
     private static final class Job {
 
         final EntityPlayerMP player;
-        final int color, slot;
+        final int color;
+        final ContainerTerminal context;
 
-        Job(EntityPlayerMP player, int color, int slot) {
+        Job(EntityPlayerMP player, int color, ContainerTerminal context) {
             this.player = player;
             this.color = color;
-            this.slot = slot;
+            this.context = context;
         }
     }
 }

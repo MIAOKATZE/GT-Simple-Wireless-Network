@@ -36,6 +36,7 @@ public class ContainerTerminal extends ModularContainer {
     public final TerminalSupplyStore.Kind kind;
     private final EntityPlayer owner;
     private final ItemStack terminal;
+    private final String colorBinding;
     private final ItemStack supplyReference;
     private final int heldIndex;
     private final List<ModularSlot> terminalSlots = new ArrayList<>();
@@ -71,6 +72,7 @@ public class ContainerTerminal extends ModularContainer {
         kind = quantum ? TerminalSupplyStore.Kind.ANCHOR : TerminalSupplyStore.Kind.TUBE;
         supplyReference = reference == null ? null : reference.copy();
         terminal = player.getHeldItem();
+        colorBinding = colorBinding(terminal);
         heldIndex = player.inventory.currentItem;
         if (quantum && !player.worldObj.isRemote) renewRenameToken();
         Arrays.fill(sent, -1);
@@ -172,6 +174,29 @@ public class ContainerTerminal extends ModularContainer {
             && token == renameToken
             && System.nanoTime() - renameIssuedNanos <= RENAME_TTL_NANOS
             && customName(terminal).equals(expectedName);
+    }
+
+    /** Palette intents refer to this exact open terminal and binding, not whatever later occupies its slot. */
+    public boolean matchesColorContext(EntityPlayer player) {
+        return quantum && !closed
+            && player == owner
+            && !owner.worldObj.isRemote
+            && player.openContainer == this
+            && player.isEntityAlive()
+            && player.inventory.currentItem == heldIndex
+            && terminal != null
+            && terminal.getItem() instanceof ItemNetworkQuantumTerminal
+            && player.getHeldItem() == terminal
+            && colorBinding.equals(colorBinding(terminal));
+    }
+
+    private static String colorBinding(ItemStack stack) {
+        if (stack == null || !(stack.getItem() instanceof ItemNetworkQuantumTerminal)) return "";
+        return Arrays.toString(ItemNetworkQuantumTerminal.getAnchor(stack)) + ":"
+            + (stack.hasTagCompound() ? stack.getTagCompound()
+                .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION) + ":"
+                + stack.getTagCompound().getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY) + ":"
+                + stack.getTagCompound().getLong(QuantumTerminalAccess.NBT_BINDING_EPOCH) : "");
     }
 
     public static String customName(ItemStack stack) {
