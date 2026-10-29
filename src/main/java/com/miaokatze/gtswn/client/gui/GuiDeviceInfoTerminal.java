@@ -152,11 +152,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 当前终端锚点 UUID（构造传入 + 指纹/复核触发重解析；null=客户端 NBT 尚未同步到 UUID） */
     private UUID anchor;
 
-    /** 当前快照数据版本（Long.MIN_VALUE=尚无任何快照；版本变化触发重排） */
-    private long displayedVersion = Long.MIN_VALUE;
-
-    /** 当前已排条目数（-1=无快照；增量前缀同版本增长时与版本共同触发重排，G5-2/G5-3） */
-    private int displayedEntryCount = -1;
+    /** Identity includes authorization resets even when version and row count are unchanged. */
+    private Snapshot displayedSnapshot;
 
     /** 排序后条目（绘制与列表命中共用；无数据为空列表） */
     private List<Entry> sortedEntries = Collections.emptyList();
@@ -369,7 +366,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /**
      * 每 tick：锚点重解析（G5-1 缓存：槽位指纹变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
      * 复核才重扫主背包与饰品栏的指定 UUID）→ 版本/条目数变化或偏好变化时重排
-     * （G5-2 入口短路）→ 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
+     * （不可变快照身份短路）→ 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
      */
     @Override
     public void onUpdate() {
@@ -418,8 +415,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             closeNameEditor();
             this.anchor = resolved;
             this.selectedDesktopEntry = null;
-            this.displayedVersion = Long.MIN_VALUE;
-            this.displayedEntryCount = -1;
+            this.displayedSnapshot = null;
         }
     }
 
@@ -491,49 +487,38 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     }
 
     /**
-     * 快照版本 / 条目数（增量前缀增长）或排序偏好变化时按当前列/方向重排（稳定排序，同键保持绑定序）。
-     * <p>
-     * G5-2 版本不变零重排：短路置于入口最早期——版本相等、条目数相等且无偏好/筛选脏标时
-     * 仅一次缓存查询 + 两个标量比较即返回，不建副本不排序不触发 clampScroll。
+     * Each immutable snapshot is a complete display revision, including same-version authorization resets.
+     * Keepalive and duplicate-page replies retain its identity and therefore do not trigger redundant sorting.
      */
     private void refreshEntries() {
         Snapshot snapshot = this.anchor == null ? null : DeviceTerminalClientCache.getSnapshot(this.anchor);
         if (entryList != null) entryList.setEnabled(snapshot != null && !snapshot.entries.isEmpty());
-        if (!this.sortDirty && snapshot != null
-            && snapshot.version == this.displayedVersion
-            && snapshot.entries.size() == this.displayedEntryCount) {
-            return;
-        }
+        if (!this.sortDirty && snapshot == this.displayedSnapshot
+            && (snapshot != null || this.sortedEntries.isEmpty())) return;
+        this.displayedSnapshot = snapshot;
         if (snapshot == null) {
-            if (this.displayedVersion != Long.MIN_VALUE || !this.sortedEntries.isEmpty()) {
-                this.displayedVersion = Long.MIN_VALUE;
-                this.displayedEntryCount = -1;
-                this.sortedEntries = Collections.emptyList();
-                if (this.entryList != null) this.entryList.clampScroll();
-            }
+            this.sortedEntries = Collections.emptyList();
+            this.selectedDesktopEntry = null;
+            closeNameEditor();
+            if (this.entryList != null) this.entryList.clampScroll();
             return;
         }
-        if (snapshot.version != this.displayedVersion || snapshot.entries.size() != this.displayedEntryCount
-            || this.sortDirty) {
-            this.displayedVersion = snapshot.version;
-            this.displayedEntryCount = snapshot.entries.size();
-            this.sortDirty = false;
-            List<Entry> copy = new ArrayList<>(snapshot.entries);
-            // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
-            if (this.powerFilter != 0) {
-                copy.removeIf(entry -> !DevicePowerFilter.matches(entry, this.powerFilter));
-            }
-            if (this.stateFilter != 0) {
-                copy.removeIf(entry -> !matchesStateFilter(entry, this.stateFilter));
-            }
-            Comparator<Entry> cmp = (a, b) -> compareEntries(a, b, this.sortColumn);
-            if (this.sortDesc) {
-                cmp = cmp.reversed();
-            }
-            copy.sort(cmp);
-            this.sortedEntries = copy;
-            if (this.entryList != null) this.entryList.clampScroll();
+        this.sortDirty = false;
+        List<Entry> copy = new ArrayList<>(snapshot.entries);
+        // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
+        if (this.powerFilter != 0) {
+            copy.removeIf(entry -> !DevicePowerFilter.matches(entry, this.powerFilter));
         }
+        if (this.stateFilter != 0) {
+            copy.removeIf(entry -> !matchesStateFilter(entry, this.stateFilter));
+        }
+        Comparator<Entry> cmp = (a, b) -> compareEntries(a, b, this.sortColumn);
+        if (this.sortDesc) {
+            cmp = cmp.reversed();
+        }
+        copy.sort(cmp);
+        this.sortedEntries = copy;
+        if (this.entryList != null) this.entryList.clampScroll();
     }
 
     static long instantValue(Entry entry) {
