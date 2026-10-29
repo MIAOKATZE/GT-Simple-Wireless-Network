@@ -412,9 +412,9 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
         return changed;
     }
 
-    private static String entryKey(Object entry) {
+    static String entryKey(Object entry) {
         return entry instanceof ItemStack ? TileEntityNetworkInfoPanel.getAEKey((ItemStack) entry)
-            : TileEntityNetworkInfoPanel.getAEKey((FluidStack) entry);
+            : entry instanceof FluidStack ? TileEntityNetworkInfoPanel.getAEKey((FluidStack) entry) : null;
     }
 
     private void action(int id) {
@@ -500,12 +500,10 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
         }
     }
 
-    /** 发送指定索引监控条目的移除包（action 3=物品，4=流体） */
-    private void sendMonitorToggle(int idx) {
-        if (idx < 0 || idx >= monitoredEntries.length) {
-            return;
-        }
-        Object entry = monitoredEntries[idx];
+    /** Resolve the displayed identity, never the row's old position, against the live panel state. */
+    private void sendMonitorToggle(String key) {
+        if (!isActive()) return;
+        Object entry = currentMonitorEntry(key, panel.getMonitoredItems(), panel.getMonitoredFluids());
         NBTTagCompound data = new NBTTagCompound();
         byte action;
         if (entry instanceof ItemStack) {
@@ -519,6 +517,13 @@ public class GuiNetworkInfoPanel extends GtswnMuiScreen {
         }
         GTSWNPacketHandler.NETWORK
             .sendToServer(new PacketUpdateAETabState(panel.xCoord, panel.yCoord, panel.zCoord, action, 0, data));
+    }
+
+    static Object currentMonitorEntry(String key, List<ItemStack> items, List<FluidStack> fluids) {
+        if (key == null) return null;
+        for (ItemStack item : items) if (key.equals(entryKey(item))) return item;
+        for (FluidStack fluid : fluids) if (key.equals(entryKey(fluid))) return fluid;
+        return null;
     }
 
     @Override
