@@ -184,6 +184,8 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
         if (owner == null) return;
         if (addEUToGlobalEnergyMap(owner, totalDeducted.negate())) {
             this.storedEU = this.capacity;
+            // An idle host need not change its own EU this tick. Persist the matching buffer credit.
+            bmte.markDirty();
             // v1.6.19：性能审计——下行补满成功计数
             PerformanceAudit.recordWirelessDraw();
             if (DebugTestGate.probesActive()) TestWorldProbes
