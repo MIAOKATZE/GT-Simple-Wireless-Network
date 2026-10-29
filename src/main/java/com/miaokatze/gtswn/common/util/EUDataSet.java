@@ -390,8 +390,8 @@ public class EUDataSet {
             data.add(new Measurement(tick, value));
         }
 
-        // 读取长期静默标志（v1.3.0 新增）
-        // 旧存档无此键时 getBoolean 返回 false，兼容性 OK
-        longTermSilent = historyTag.getBoolean("longTermSilent");
+        // Skipped malformed/missing rows can invalidate the two-point compression invariant.
+        // Never enter the fast path unless both equal endpoints actually survived deserialization.
+        longTermSilent = historyTag.getBoolean("longTermSilent") && data.size() == 2 && isAllSameValue();
     }
 }
