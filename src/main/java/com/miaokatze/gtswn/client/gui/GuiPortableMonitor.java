@@ -48,7 +48,8 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     private String notice = "";
     private final List<TextFieldWidget> fields = new ArrayList<>();
     private final List<PacketSyncPortableMonitor.Row> shownRows = new ArrayList<>();
-    private PacketSyncPortableMonitor lastSnapshot;
+    private PacketSyncPortableMonitor lastSnapshot, selectionSnapshot, presentedSnapshot;
+    private UUID presentedPanel;
     private boolean lastStale;
     private final RenderNetworkInfoPanel fullRenderer = new RenderNetworkInfoPanel();
     private float chartZoom = 1;
@@ -117,6 +118,9 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     }
 
     private void buildPanel() {
+        presentedSnapshot = PortableMonitorClientCache.snapshot(stack);
+        PacketSyncPortableMonitor.Panel presented = panel();
+        presentedPanel = presented == null ? null : presented.binding.panelId;
         content.removeAll();
         content.child(
             GtswnMuiWidgets.canvas(
@@ -224,7 +228,11 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     private PacketSyncPortableMonitor.Panel panel() {
         PacketSyncPortableMonitor data = PortableMonitorClientCache.snapshot(stack);
         if (data == null || data.panels.isEmpty()) return null;
-        selected = Math.min(selected, data.panels.size() - 1);
+        if (data != selectionSnapshot) {
+            selected = PortableMonitorSelection.retainIndex(data.panels, selected, viewedPanel);
+            selectionSnapshot = data;
+        }
+        selected = Math.max(0, Math.min(selected, data.panels.size() - 1));
         return data.panels.get(selected);
     }
 
@@ -328,6 +336,7 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
             mc.displayGuiScreen(null);
             return;
         }
+        panel(); // Reconcile source identity before selecting the next requested detail page.
         PortableMonitorClientCache.viewing(stack, selected);
         PortableMonitorClientCache.poll(stack);
         PacketSyncPortableMonitor data = PortableMonitorClientCache.snapshot(stack);
@@ -370,6 +379,11 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
         }
         PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.snapshot(stack);
         PacketSyncPortableMonitor.Panel panel = panel();
+        if ((id == 4 || id >= 100) && !PortableMonitorSelection.currentView(
+            presentedSnapshot, presentedPanel, snapshot, panel)) {
+            rebuild();
+            return;
+        }
         if (id == 0 || id == 1) {
             if (snapshot != null && !snapshot.panels.isEmpty())
                 selected = Math.floorMod(selected + (id == 0 ? -1 : 1), snapshot.panels.size());
