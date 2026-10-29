@@ -38,6 +38,11 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
         }
     }
 
+    /** Membership belongs to one core even when two proposed display rectangles overlap. */
+    public boolean isAttachedTo(TileEntityNetworkInfoPanel core) {
+        return partOfScreen && coreX == core.xCoord && coreY == core.yCoord && coreZ == core.zCoord;
+    }
+
     public TileEntityNetworkInfoPanel getCore() {
         if (!partOfScreen || worldObj == null || !worldObj.blockExists(coreX, coreY, coreZ)) {
             return null;

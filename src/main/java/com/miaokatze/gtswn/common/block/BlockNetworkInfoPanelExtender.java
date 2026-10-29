@@ -12,6 +12,7 @@ import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanelExtender;
+import com.miaokatze.gtswn.common.tile.screen.ScreenStructure;
 import com.miaokatze.gtswn.common.tile.screen.ScreenStructureUtil;
 import com.miaokatze.gtswn.register.CreativeTabManager;
 
@@ -77,41 +78,20 @@ public class BlockNetworkInfoPanelExtender extends BlockContainer {
         int facing = findNeighborFacing(world, x, y, z, ScreenStructureUtil.getHorizontalFacingFromEntity(placer));
         world.setBlockMetadataWithNotify(x, y, z, facing, 2);
         if (!world.isRemote) {
-            // v1.5.15：放置时仅需小范围扫描（±2 足以覆盖邻居 Panel）
-            TileEntityNetworkInfoPanel.rebuildNearbyScreens(world, x, y, z, 2);
+            ScreenStructure.rebuildConnected(world, x, y, z, facing);
         }
     }
 
     @Override
     public void breakBlock(World world, int x, int y, int z, net.minecraft.block.Block block, int meta) {
-        // v1.5.15：捕获 core 坐标（detachFromCore 不清 coreX/Y/Z，但 super.breakBlock 后 TE 移除）
-        boolean wasPartOfScreen = false;
-        int coreX = 0, coreY = 0, coreZ = 0;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile instanceof TileEntityNetworkInfoPanelExtender) {
             TileEntityNetworkInfoPanelExtender extender = (TileEntityNetworkInfoPanelExtender) tile;
-            wasPartOfScreen = extender.isPartOfScreen();
-            if (wasPartOfScreen) {
-                coreX = extender.getCoreX();
-                coreY = extender.getCoreY();
-                coreZ = extender.getCoreZ();
-            }
             extender.detachFromCore();
         }
         super.breakBlock(world, x, y, z, block, meta);
         if (!world.isRemote) {
-            if (wasPartOfScreen) {
-                // v1.5.15：定向重建——直接查找 core Panel
-                TileEntity coreTile = world.blockExists(coreX, coreY, coreZ)
-                    ? world.getTileEntity(coreX, coreY, coreZ) : null;
-                if (coreTile instanceof TileEntityNetworkInfoPanel) {
-                    ((TileEntityNetworkInfoPanel) coreTile).rebuildScreen();
-                } else {
-                    // core 已不存在，回退到 ±2 范围扫描（5³=125 块，远小于 33³）
-                    TileEntityNetworkInfoPanel.rebuildNearbyScreens(world, x, y, z, 2);
-                }
-            }
-            // wasPartOfScreen==false 时无需重建（孤立 Extender）
+            ScreenStructure.rebuildConnected(world, x, y, z, meta);
         }
     }
 

@@ -131,7 +131,83 @@ public class ScreenLoadedLookupTest {
         assertFalse(part.isPartOfScreen());
     }
 
-    private static NetworkScreen screen(int left, int right, int y) {
+    @Test
+    public void detachNeverReleasesAnExtenderNowOwnedByAnotherCore() throws Exception {
+        FixtureWorld world = world();
+        CountingPanel oldCore = panel(world, 8, 64);
+        CountingPanel currentCore = panel(world, 10, 64);
+        TileEntityNetworkInfoPanelExtender part = extender(world, 9, 64);
+        ScreenStructure oldStructure = new ScreenStructure(oldCore);
+        oldStructure.setScreen(screen(8, 9, 64));
+        NetworkScreen current = screen(9, 10, 64);
+        part.attachToCore(currentCore, current);
+        oldStructure.detach();
+        oldStructure.detach();
+        assertTrue(part.isPartOfScreen());
+        assertSame(currentCore, part.getCore());
+        assertSame(current, part.getScreen());
+    }
+
+    @Test
+    public void rebuildingAnExcludedBranchDoesNotDetachAnotherCoresMember() throws Exception {
+        FixtureWorld world = world();
+        CountingPanel core = panel(world, 8, 64);
+        CountingPanel other = panel(world, 8, 66);
+        extender(world, 9, 64);
+        TileEntityNetworkInfoPanelExtender branch = extender(world, 8, 65);
+        NetworkScreen otherScreen = screen(8, 8, 65);
+        otherScreen.maxY = 66;
+        branch.attachToCore(other, otherScreen);
+        new ScreenStructure(core).rebuild();
+        assertTrue(branch.isPartOfScreen());
+        assertSame(other, branch.getCore());
+        assertSame(otherScreen, branch.getScreen());
+    }
+
+    @Test
+    public void clientRebuildAndDetachCannotRewriteAuthoritativeSyncedMembership() throws Exception {
+        FixtureWorld world = world();
+        world.isRemote = true;
+        CountingPanel core = panel(world, 8, 64);
+        TileEntityNetworkInfoPanelExtender part = extender(world, 9, 64);
+        ScreenStructure structure = new ScreenStructure(core);
+        NetworkScreen synced = screen(8, 9, 64);
+        structure.setScreen(synced);
+        part.attachToCore(core, synced);
+        structure.rebuild();
+        structure.detach();
+        assertSame(synced, structure.getScreen());
+        assertSame(synced, part.getScreen());
+        assertTrue(part.isPartOfScreen());
+        assertEquals(0, world.reads);
+    }
+
+    @Test
+    public void successfulDeferredRebuildStopsRetryingAndSurvivesAnotherInterruption() throws Exception {
+        FixtureWorld world = world();
+        CountingPanel core = panel(world, 15, 64);
+        extender(world, 16, 64);
+        ScreenStructure structure = new ScreenStructure(core);
+        structure.tick();
+        assertFalse(structure.isInitialized());
+        world.loadedMaxX = 31;
+        for (int tick = 0; tick < 20; tick++) structure.tick();
+        NetworkScreen first = structure.getScreen();
+        int reads = world.reads;
+        for (int tick = 0; tick < 100; tick++) structure.tick();
+        assertEquals(reads, world.reads);
+        world.loadedMaxX = 15;
+        structure.rebuild();
+        assertSame(first, structure.getScreen());
+        assertFalse(structure.isInitialized());
+        world.loadedMaxX = 31;
+        world.tiles.remove("16:64:0");
+        for (int tick = 0; tick < 20; tick++) structure.tick();
+        assertTrue(structure.isInitialized());
+        assertEquals(15, structure.getScreen().maxX);
+    }
+
+    static NetworkScreen screen(int left, int right, int y) {
         NetworkScreen screen = new NetworkScreen();
         screen.minX = left;
         screen.maxX = right;
@@ -140,7 +216,7 @@ public class ScreenLoadedLookupTest {
         return screen;
     }
 
-    private static CountingPanel panel(FixtureWorld world, int x, int y) {
+    static CountingPanel panel(FixtureWorld world, int x, int y) {
         CountingPanel core = new CountingPanel();
         core.xCoord = x;
         core.yCoord = y;
@@ -149,7 +225,7 @@ public class ScreenLoadedLookupTest {
         return core;
     }
 
-    private static TileEntityNetworkInfoPanelExtender extender(FixtureWorld world, int x, int y) {
+    static TileEntityNetworkInfoPanelExtender extender(FixtureWorld world, int x, int y) {
         TileEntityNetworkInfoPanelExtender part = new TileEntityNetworkInfoPanelExtender() {
             @Override
             public int getBlockMetadata() { return 3; }
@@ -163,38 +239,45 @@ public class ScreenLoadedLookupTest {
         return part;
     }
 
-    private static final class CountingPanel extends TileEntityNetworkInfoPanel {
+    static final class CountingPanel extends TileEntityNetworkInfoPanel {
 
         int rebuilds;
         NetworkScreen screen;
+        ScreenStructure structure;
 
         @Override
-        public NetworkScreen getScreen() { return screen; }
+        public NetworkScreen getScreen() { return structure == null ? screen : structure.getScreen(); }
         @Override
         public int getBlockMetadata() { return 3; }
         @Override
         public void markDirty() {}
 
         @Override
+        public void detachScreen() { if (structure != null) structure.detach(); }
+
+        @Override
         public void rebuildScreen() {
             rebuilds++;
+            if (structure != null) structure.rebuild();
         }
     }
 
-    private static FixtureWorld world() throws Exception {
+    static FixtureWorld world() throws Exception {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
         Field singleton = unsafe.getDeclaredField("theUnsafe");
         singleton.setAccessible(true);
         FixtureWorld world = (FixtureWorld) unsafe.getMethod("allocateInstance", Class.class)
             .invoke(singleton.get(null), FixtureWorld.class);
         world.tiles = new HashMap<>();
+        world.unloadedX = new java.util.HashSet<>();
         world.loadedMaxX = 15;
         return world;
     }
 
-    private static final class FixtureWorld extends World {
+    static final class FixtureWorld extends World {
 
         Map<String, TileEntity> tiles;
+        java.util.Set<Integer> unloadedX;
         int loadedMaxX, reads;
 
         private FixtureWorld() {
@@ -203,7 +286,7 @@ public class ScreenLoadedLookupTest {
 
         @Override
         public boolean blockExists(int x, int y, int z) {
-            return x >= 0 && x <= loadedMaxX && y >= 0 && y < 256;
+            return x >= 0 && x <= loadedMaxX && !unloadedX.contains(x) && y >= 0 && y < 256;
         }
 
         @Override
@@ -212,6 +295,12 @@ public class ScreenLoadedLookupTest {
             reads++;
             return tiles.get(x + ":" + y + ":" + z);
         }
+
+        @Override
+        public void removeTileEntity(int x, int y, int z) { tiles.remove(x + ":" + y + ":" + z); }
+
+        @Override
+        public boolean setBlockMetadataWithNotify(int x, int y, int z, int meta, int flags) { return true; }
 
         @Override
         public int getHeight() { return 256; }
