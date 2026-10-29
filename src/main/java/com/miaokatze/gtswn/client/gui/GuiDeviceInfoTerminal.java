@@ -154,6 +154,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** Identity includes authorization resets even when version and row count are unchanged. */
     private Snapshot displayedSnapshot;
+    private long displayedAuthorizationEpoch = Long.MIN_VALUE;
 
     /** 排序后条目（绘制与列表命中共用；无数据为空列表） */
     private List<Entry> sortedEntries = Collections.emptyList();
@@ -492,6 +493,12 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      */
     private void refreshEntries() {
         Snapshot snapshot = this.anchor == null ? null : DeviceTerminalClientCache.getSnapshot(this.anchor);
+        long epoch = DeviceTerminalClientCache.authorizationEpoch(this.anchor);
+        if (epoch != displayedAuthorizationEpoch) {
+            displayedAuthorizationEpoch = epoch;
+            selectedDesktopEntry = null;
+            closeNameEditor();
+        }
         if (entryList != null) entryList.setEnabled(snapshot != null && !snapshot.entries.isEmpty());
         if (!this.sortDirty && snapshot == this.displayedSnapshot
             && (snapshot != null || this.sortedEntries.isEmpty())) return;
@@ -504,6 +511,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             return;
         }
         this.sortDirty = false;
+        selectedDesktopEntry = currentEntry(selectedDesktopEntry);
+        if (nameEditor != null) nameEditor.validateSelection();
         List<Entry> copy = new ArrayList<>(snapshot.entries);
         // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
         if (this.powerFilter != 0) {
@@ -796,16 +805,37 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     }
 
     void selectDesktopEntry(Entry entry) {
-        selectedDesktopEntry = entry;
+        if (isCurrentEntry(entry)) selectedDesktopEntry = currentEntry(entry);
+    }
+
+    boolean isCurrentEntry(Entry entry) {
+        return entryCurrent(anchor, entry, displayedAuthorizationEpoch);
+    }
+
+    boolean entryCurrent(UUID terminal, Entry entry, long epoch) {
+        return terminal != null && terminal.equals(anchor)
+            && epoch == DeviceTerminalClientCache.authorizationEpoch(terminal)
+            && currentEntry(entry) != null;
+    }
+
+    private Entry currentEntry(Entry entry) {
+        Snapshot snapshot = anchor == null ? null : DeviceTerminalClientCache.getSnapshot(anchor);
+        if (entry != null && snapshot != null) for (Entry current : snapshot.entries)
+            if (sameEntry(entry, current)) return current;
+        return null;
+    }
+
+    private static boolean sameEntry(Entry first, Entry second) {
+        return first != null && second != null && first.key.equals(second.key)
+            && first.dim == second.dim
+            && first.x == second.x
+            && first.y == second.y
+            && first.z == second.z
+            && first.metaTileId == second.metaTileId;
     }
 
     boolean desktopEntrySelected(Entry entry) {
-        return selectedDesktopEntry != null && entry.key.equals(selectedDesktopEntry.key)
-            && entry.dim == selectedDesktopEntry.dim
-            && entry.x == selectedDesktopEntry.x
-            && entry.y == selectedDesktopEntry.y
-            && entry.z == selectedDesktopEntry.z
-            && entry.metaTileId == selectedDesktopEntry.metaTileId;
+        return sameEntry(entry, selectedDesktopEntry);
     }
 
     /**
@@ -1002,7 +1032,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     }
 
     void openNameEditor(Entry entry, int mouseX, int mouseY) {
-        if (anchor == null) return;
+        if (!isCurrentEntry(entry)) return;
         powerMenu.closePanel();
         nameEditor.open(anchor, entry);
     }

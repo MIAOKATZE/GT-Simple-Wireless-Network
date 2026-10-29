@@ -142,6 +142,7 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
     }
 
     private boolean rowAction(Entry entry, int button, boolean name, boolean teleport) {
+        if (!host.isCurrentEntry(entry)) return true;
         if (name && button == 1) {
             host.openNameEditor(entry, 0, 0);
             return true;

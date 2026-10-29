@@ -129,6 +129,75 @@ public class DeviceTerminalViewAuthorizationTest {
         assertTrue(((List<?>) field(gui, "sortedEntries").get(gui)).isEmpty());
     }
 
+    @Test
+    public void authorizationReplacementClearsSelectionAndOpenEditorWithoutNullSnapshot() throws Exception {
+        publish(1, "old");
+        GuiDeviceInfoTerminal gui = gui();
+        Entry before = DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0);
+        field(gui, "selectedDesktopEntry").set(gui, before);
+        Object editor = editor(gui, before, 1);
+        publish(2, "replacement");
+        refresh(gui);
+        assertNull(field(gui, "selectedDesktopEntry").get(gui));
+        assertNull(field(editor, "entry").get(editor));
+    }
+
+    @Test
+    public void editorInputRejectsChangedAuthorityBeforeNextGuiTick() throws Exception {
+        publish(1, "old");
+        GuiDeviceInfoTerminal gui = gui();
+        Object editor = editor(gui, DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0), 1);
+        publish(2, "replacement");
+        Method save = editor.getClass().getDeclaredMethod("save", boolean.class);
+        save.setAccessible(true);
+        // The stale editor closes before touching its text field or sending a network request.
+        save.invoke(editor, false);
+        assertNull(field(editor, "entry").get(editor));
+    }
+
+    @Test
+    public void ordinarySnapshotRefreshesSelectedEntryAndRemovalClearsIt() throws Exception {
+        Entry first = new Entry("0:0:0:0", "first", (byte) 1, (byte) 0, 0L, 0L, 0D, 0D, 0, 0, 0, 0, "", "");
+        DeviceTerminalClientCache.receivePage(terminal, 1, 0, 1, Collections.singletonList(first));
+        GuiDeviceInfoTerminal gui = gui();
+        field(gui, "selectedDesktopEntry").set(gui, first);
+        Entry newest = new Entry("0:0:0:0", "newest", (byte) 1, (byte) 0, 0L, 0L, 0D, 0D, 0, 0, 0, 0, "", "");
+        DeviceTerminalClientCache.receivePage(terminal, 2, 0, 1, Collections.singletonList(newest));
+        refresh(gui);
+        assertSame(newest, field(gui, "selectedDesktopEntry").get(gui));
+        DeviceTerminalClientCache.receivePage(terminal, 3, 0, 1, Collections.emptyList());
+        refresh(gui);
+        assertNull(field(gui, "selectedDesktopEntry").get(gui));
+    }
+
+    private GuiDeviceInfoTerminal gui() throws Exception {
+        GuiDeviceInfoTerminal gui = allocate(GuiDeviceInfoTerminal.class);
+        field(gui, "anchor").set(gui, terminal);
+        field(gui, "sortedEntries").set(gui, Collections.emptyList());
+        refresh(gui);
+        return gui;
+    }
+
+    private static void refresh(GuiDeviceInfoTerminal gui) throws Exception {
+        Method refresh = GuiDeviceInfoTerminal.class.getDeclaredMethod("refreshEntries");
+        refresh.setAccessible(true);
+        refresh.invoke(gui);
+    }
+
+    private Object editor(GuiDeviceInfoTerminal gui, Entry entry, long epoch) throws Exception {
+        Class<?> type = Class.forName("com.miaokatze.gtswn.client.gui.GuiDeviceNameEditor");
+        Object editor = allocate(type);
+        field(editor, "host").set(editor, gui);
+        field(editor, "entry").set(editor, entry);
+        field(editor, "terminal").set(editor, terminal);
+        field(editor, "authorizationEpoch").setLong(editor, epoch);
+        Class<?> handler = field(editor, "handler").getType();
+        field(editor, "handler").set(editor, java.lang.reflect.Proxy.newProxyInstance(
+            handler.getClassLoader(), new Class<?>[] { handler }, (proxy, method, args) -> null));
+        field(gui, "nameEditor").set(gui, editor);
+        return editor;
+    }
+
     private DeviceTerminalAnchorRenderer.Anchor anchor() {
         return new DeviceTerminalAnchorRenderer.Anchor(
             DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0),

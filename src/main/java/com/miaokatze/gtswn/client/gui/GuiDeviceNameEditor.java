@@ -14,6 +14,7 @@ import com.cleanroommc.modularui.value.StringValue;
 import com.cleanroommc.modularui.widgets.Dialog;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
+import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
@@ -31,6 +32,7 @@ final class GuiDeviceNameEditor {
     private final IPanelHandler handler;
     private UUID terminal;
     private Entry entry;
+    private long authorizationEpoch;
     private String defaultPlainName = "";
     private TextFieldWidget name;
     private int color;
@@ -44,6 +46,7 @@ final class GuiDeviceNameEditor {
     void open(UUID terminal, Entry entry) {
         this.terminal = terminal;
         this.entry = entry;
+        this.authorizationEpoch = DeviceTerminalClientCache.authorizationEpoch(terminal);
         color = entry.nameColor;
         bold = entry.nameBold;
         defaultPlainName = EnumChatFormatting.getTextWithoutFormattingCodes(DeviceTerminalNames.defaultName(entry));
@@ -56,7 +59,14 @@ final class GuiDeviceNameEditor {
     }
 
     void close() {
+        entry = null;
+        terminal = null;
+        defaultPlainName = "";
         handler.closePanel();
+    }
+
+    void validateSelection() {
+        if (entry != null && !host.entryCurrent(terminal, entry, authorizationEpoch)) close();
     }
 
     private ModularPanel buildPanel() {
@@ -149,6 +159,11 @@ final class GuiDeviceNameEditor {
     }
 
     private void save(boolean reset) {
+        // Network receipts can replace authority between the last GUI tick and this input callback.
+        if (!host.entryCurrent(terminal, entry, authorizationEpoch)) {
+            close();
+            return;
+        }
         String plain = reset ? "" : DeviceTerminalNameRules.normalize(name.getText());
         if (plain == null) return;
         GTSWNPacketHandler.NETWORK.sendToServer(
