@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.util;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.Locale;
 
@@ -16,6 +17,17 @@ import java.util.Locale;
  * 以及 {@code PortableWirelessNetworkMonitor#formatBigInteger}。
  */
 public class FormatUtil {
+
+    /** Editable scientific text must retain every digit: losing focus parses it back into the control value. */
+    public static String formatEditableScientific(long value) {
+        if (value > -10000L && value < 10000L) return Long.toString(value);
+        String digits = Long.toString(value);
+        int exponent = digits.length() - (value < 0 ? 2 : 1);
+        return BigDecimal.valueOf(value)
+            .movePointLeft(exponent)
+            .stripTrailingZeros()
+            .toPlainString() + "E" + exponent;
+    }
 
     /**
      * 测量记录类（MTE 与 HUD 共用）

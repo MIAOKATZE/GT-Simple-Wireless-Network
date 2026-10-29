@@ -4,6 +4,7 @@ import java.util.function.IntSupplier;
 
 import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
+import com.miaokatze.gtswn.common.util.FormatUtil;
 
 /**
  * 支持科学计数法显示的文本输入框
@@ -79,45 +80,12 @@ public class ScientificTextFieldWidget extends TextFieldWidget {
         if (plainText == null || plainText.isEmpty()) return;
         try {
             long value = Long.parseLong(plainText);
-            String scientific = formatScientificLong(value);
+            String scientific = FormatUtil.formatEditableScientific(value);
             if (!plainText.equals(scientific)) {
                 setText(scientific);
             }
         } catch (NumberFormatException ignored) {
             // 解析失败时保持原文本（可能正在过渡或为空）
         }
-    }
-
-    /**
-     * 将 long 值格式化为科学计数法字符串
-     * <p>
-     * 规则：
-     * <ul>
-     * <li>0 → "0"</li>
-     * <li>|value| &lt; 10000 → 原值（避免小数值过度格式化，如 100 → 1E2）</li>
-     * <li>其他 → "mantissaEexp"（如 1500000 → "1.5E6"，-1500000 → "-1.5E6"）</li>
-     * </ul>
-     * 使用大写 E，与 Java/EvalEx 科学计数法字面量一致，便于用户编辑后再次解析。
-     *
-     * @param value 待格式化的 long 值
-     * @return 科学计数法字符串
-     */
-    private static String formatScientificLong(long value) {
-        if (value == 0) return "0";
-        long abs = Math.abs(value);
-        // 小数值（绝对值 < 10000）保持原样，避免 100 → 1E2 之类的过度格式化
-        if (abs < 10000L) return Long.toString(value);
-
-        double d = (double) value;
-        int exp = (int) Math.floor(Math.log10(Math.abs(d)));
-        double mantissa = d / Math.pow(10, exp);
-        // 保留 3 位小数
-        String mantissaStr = String.format("%.3f", mantissa);
-        // 去除尾随 0 和多余小数点：1.500 → 1.5, 1.000 → 1
-        if (mantissaStr.contains(".")) {
-            mantissaStr = mantissaStr.replaceAll("0+$", "")
-                .replaceAll("\\.$", "");
-        }
-        return mantissaStr + "E" + exp;
     }
 }
