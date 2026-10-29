@@ -188,6 +188,53 @@ public class MonitorChargeAccountingTest {
     }
 
     @Test
+    public void smallestDoubleTransfersSurviveRepeatedWidestCapacityExportAndReload() throws Exception {
+        ItemStack battery = new ItemStack(WIDE_BATTERY);
+        FakeRechargeableBattery.setCharge(battery, Double.MAX_VALUE);
+        ItemStack monitor = MonitorBattery.install(new ItemStack(MONITOR), battery);
+        BigDecimal expected = new BigDecimal(Double.MAX_VALUE);
+        for (int i = 0; i < 64; i++) {
+            assertTrue(MONITOR.getManager(monitor).use(monitor, Double.MIN_VALUE, null));
+            expected = expected.subtract(new BigDecimal(Double.MIN_VALUE));
+            monitor = reload(MonitorBattery.install(new ItemStack(MONITOR), reload(MonitorBattery.remove(monitor))));
+            assertDecimal(expected, BatteryCharge.get(MonitorBattery.data(monitor)));
+            assertTrue(MonitorBattery.data(monitor).getString("ChargeExact").length() <= 1400);
+        }
+    }
+
+    @Test
+    public void exactFieldsRejectExponentAndOversizedInputWithoutGrowingThePersistedLedger() {
+        ItemStack monitor = installed();
+        NBTTagCompound data = MonitorBattery.data(monitor);
+        for (String invalid : new String[] { "1E2147483647", "-1", "NaN", String.join("", Collections.nCopies(1401, "9")) }) {
+            data.setString("ChargeExact", invalid);
+            data.setDouble("Charge", 64);
+            ItemStack before = monitor.copy();
+            assertEquals(64, MONITOR.getManager(monitor).getCharge(monitor), 0);
+            assertTrue(ItemStack.areItemStacksEqual(before, monitor));
+            assertTrue(MONITOR.getManager(monitor).use(monitor, 32, null));
+            assertDecimal(new BigDecimal("32"), BatteryCharge.get(data));
+            assertEquals("32", data.getString("ChargeExact"));
+        }
+    }
+
+    @Test
+    public void invalidLegacyBalancesAndSimulationCannotCreateOrMutateEnergy() throws Exception {
+        ItemStack monitor = installed();
+        NBTTagCompound data = MonitorBattery.data(monitor);
+        data.removeTag("ChargeExact");
+        for (double invalid : new double[] { Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -1 }) {
+            data.setDouble("Charge", invalid);
+            ItemStack before = monitor.copy();
+            assertEquals(0, MONITOR.getManager(monitor).getCharge(monitor), 0);
+            assertFalse(MONITOR.getManager(monitor).use(monitor, 1, null));
+            assertEquals(32, MONITOR.getManager(monitor).charge(monitor, 32, 1, true, true), 0);
+            // NBTTagDouble.equals treats NaN as unequal even to an identical copy.
+            assertArrayEquals(savedBytes(before), savedBytes(monitor));
+        }
+    }
+
+    @Test
     public void oldGtCapacityMigratesToItsNativeLongAndExactBalanceIsAuthoritative() {
         ItemStack monitor = installed();
         NBTTagCompound data = MonitorBattery.data(monitor);
@@ -235,9 +282,13 @@ public class MonitorChargeAccountingTest {
     }
 
     private static ItemStack reload(ItemStack stack) throws Exception {
+        return ItemStack.loadItemStackFromNBT(CompressedStreamTools.readCompressed(new ByteArrayInputStream(savedBytes(stack))));
+    }
+
+    private static byte[] savedBytes(ItemStack stack) throws Exception {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         CompressedStreamTools.writeCompressed(stack.writeToNBT(new NBTTagCompound()), bytes);
-        return ItemStack.loadItemStackFromNBT(CompressedStreamTools.readCompressed(new ByteArrayInputStream(bytes.toByteArray())));
+        return bytes.toByteArray();
     }
 
     private static void assertDecimal(BigDecimal expected, BigDecimal actual) {
