@@ -58,6 +58,7 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     private boolean manualTab, pinManager;
     private UUID viewedPanel;
     private boolean rebuildPending;
+    private long controlsRevision;
     private String pendingRemoval;
 
     public GuiPortableMonitor(ItemStack stack) {
@@ -72,8 +73,10 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     }
 
     private void add(int id, int x, int y, int w, String label) {
+        final long revision = controlsRevision;
         ButtonWidget<?> button = GtswnMuiWidgets
-            .button(buttonName(id), () -> label, x, y, w, 18, () -> buttonAvailable(id), () -> action(id));
+            .button(buttonName(id), () -> label, x, y, w, 18,
+                () -> revision == controlsRevision && buttonAvailable(id), controlAction(id));
         if (id >= 6 && id <= 8 && buttonAvailable(id)) {
             button.background(tab == id - 6 ? GtswnMuiTheme.TAB_ACTIVE : GtswnMuiTheme.TAB_INACTIVE);
         }
@@ -114,10 +117,12 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     }
 
     private void rebuild() {
+        controlsRevision++;
         rebuildPending = true;
     }
 
     private void buildPanel() {
+        controlsRevision++;
         presentedSnapshot = PortableMonitorClientCache.snapshot(stack);
         PacketSyncPortableMonitor.Panel presented = panel();
         presentedPanel = presented == null ? null : presented.binding.panelId;
@@ -290,7 +295,7 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
                     0,
                     fieldWidth,
                     18,
-                    () -> action(id));
+                    controlAction(id));
                 button.tooltipBuilder(t -> { for (String line : rowTooltip(entry)) t.addLine(line); });
                 row.child(button);
             }
@@ -316,8 +321,11 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
 
     private final class PinList extends ListWidget<IWidget, PinList> {
 
+        private final long revision = controlsRevision;
+
         @Override
         public boolean onMouseScroll(UpOrDown direction, int amount) {
+            if (revision != controlsRevision) return true;
             page = Math.max(0, page + (direction.isDown() ? 1 : -1));
             rebuild();
             return true;
@@ -358,6 +366,14 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
             if (!manualTab && !pinManager && current != null) tab = current.tab;
             if (!settings) rebuild();
         }
+    }
+
+    /** Removed native widgets must not resolve their numeric ids against a replacement panel/row array. */
+    private Runnable controlAction(int id) {
+        final long revision = controlsRevision;
+        return () -> {
+            if (revision == controlsRevision && isActive()) action(id);
+        };
     }
 
     private void action(int id) {
@@ -445,6 +461,7 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
 
     @Override
     public void onClose() {
+        controlsRevision++;
         rememberEdits();
         PortableMonitorClientCache.viewing(stack, -1);
         super.onClose();
