@@ -33,6 +33,7 @@ public final class ScreenStructure {
     private NetworkScreen screen;
 
     private boolean screenInitialized = false;
+    private int retryTicks;
 
     public ScreenStructure(TileEntityNetworkInfoPanel core) {
         this.core = core;
@@ -53,11 +54,16 @@ public final class ScreenStructure {
         return screenInitialized;
     }
 
-    public void markInitialized() {
-        this.screenInitialized = true;
+    /** Retry an incomplete discovery at most once per second, including after adjacent chunks return. */
+    public void tick() {
+        if (!screenInitialized && --retryTicks <= 0) rebuild();
     }
 
     public void rebuild() {
+        World world = core.getWorldObj();
+        screenInitialized = false;
+        retryTicks = 20;
+        if (world == null) return;
         int facing = core.getBlockMetadata();
         if (facing < 2 || facing > 5) {
             facing = 3;
@@ -83,8 +89,10 @@ public final class ScreenStructure {
             if (!visited.add(key)) {
                 continue;
             }
-            TileEntity tile = core.getWorldObj()
-                .getTileEntity(pos[0], pos[1], pos[2]);
+            // Outside build height is known air; an unloaded chunk is unknown, not a missing member.
+            if (pos[1] < 0 || pos[1] >= world.getHeight()) continue;
+            if (!world.blockExists(pos[0], pos[1], pos[2])) return;
+            TileEntity tile = world.getTileEntity(pos[0], pos[1], pos[2]);
             if (!isCompatibleScreenPart(tile, facing)) {
                 continue;
             }
@@ -116,6 +124,7 @@ public final class ScreenStructure {
         next.coreZ = core.zCoord;
         next.facing = facing;
         screen = next;
+        screenInitialized = true;
 
         // 遍历所有兼容的屏幕方块：子矩形内的 Extender 附着到 core，子矩形外的 Extender 解除附着
         // v1.4.6：用 screenParts 替代 visited，避免遍历到空气等不兼容方块
@@ -287,8 +296,9 @@ public final class ScreenStructure {
         for (int x = screen.minX; x <= screen.maxX; x++) {
             for (int y = screen.minY; y <= screen.maxY; y++) {
                 for (int z = screen.minZ; z <= screen.maxZ; z++) {
-                    TileEntity tile = core.getWorldObj()
-                        .getTileEntity(x, y, z);
+                    // Unloaded members reconcile against their loaded core on their next server ticks.
+                    if (!core.getWorldObj().blockExists(x, y, z)) continue;
+                    TileEntity tile = core.getWorldObj().getTileEntity(x, y, z);
                     if (tile instanceof TileEntityNetworkInfoPanelExtender) {
                         ((TileEntityNetworkInfoPanelExtender) tile).detachFromCore();
                     }

@@ -247,10 +247,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 getProxy().onReady();
                 aeProxyReady = true;
             }
-            if (!structure.isInitialized()) {
-                structure.rebuild();
-                structure.markInitialized();
-            }
+            structure.tick();
 
             // ===== EU 缓存域（E4 迁入 EUCacheBridge）：请求 tick 更新 → 冷启动刷新 → 新数据轮询，三段顺序不变 =====
             // G2：整段 100t 门控 + overworld 引用缓存——tickServer 内三段均无每 tick 必要逻辑

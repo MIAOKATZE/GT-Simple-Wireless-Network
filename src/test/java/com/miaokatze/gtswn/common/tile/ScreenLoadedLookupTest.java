@@ -53,9 +53,127 @@ public class ScreenLoadedLookupTest {
         assertEquals(1, world.reads);
     }
 
+    @Test
+    public void partialRebuildKeepsSavedMembershipThenRetriesWhenChunkReturns() throws Exception {
+        FixtureWorld world = world();
+        CountingPanel core = panel(world, 15, 64);
+        TileEntityNetworkInfoPanelExtender part = extender(world, 16, 64);
+        ScreenStructure structure = new ScreenStructure(core);
+        NetworkScreen saved = screen(15, 16, 64);
+        structure.setScreen(saved);
+        part.attachToCore(core, saved);
+        structure.rebuild();
+        assertSame(saved, structure.getScreen());
+        assertTrue(part.isPartOfScreen());
+        assertFalse(structure.isInitialized());
+        int reads = world.reads;
+        for (int tick = 0; tick < 19; tick++) structure.tick();
+        assertEquals("No repeated BFS every tick", reads, world.reads);
+        world.loadedMaxX = 31;
+        structure.tick();
+        assertTrue(structure.isInitialized());
+        assertEquals(16, structure.getScreen().maxX);
+        assertSame(structure.getScreen(), part.getScreen());
+    }
+
+    @Test
+    public void buildHeightBoundaryIsKnownAirNotAnUnloadedChunk() throws Exception {
+        FixtureWorld world = world();
+        CountingPanel core = panel(world, 8, 0);
+        ScreenStructure structure = new ScreenStructure(core);
+        structure.tick();
+        assertTrue(structure.isInitialized());
+        assertEquals(0, structure.getScreen().minY);
+    }
+
+    @Test
+    public void detachSkipsUnloadedMembersWhichRetireAfterLoadedCoreRemoval() throws Exception {
+        FixtureWorld world = world();
+        CountingPanel core = panel(world, 15, 64);
+        TileEntityNetworkInfoPanelExtender part = extender(world, 16, 64);
+        ScreenStructure structure = new ScreenStructure(core);
+        NetworkScreen saved = screen(15, 16, 64);
+        structure.setScreen(saved);
+        core.screen = saved;
+        part.attachToCore(core, saved);
+        structure.detach();
+        assertTrue(part.isPartOfScreen());
+        world.tiles.remove("15:64:0");
+        world.loadedMaxX = 31;
+        part.updateEntity();
+        assertFalse(part.isPartOfScreen());
+        assertNull(part.getScreen());
+    }
+
+    @Test
+    public void unavailableCoreDoesNotRetireMembershipDuringPeriodicReconciliation() throws Exception {
+        FixtureWorld world = world();
+        CountingPanel core = panel(world, 16, 64);
+        TileEntityNetworkInfoPanelExtender part = extender(world, 15, 64);
+        NetworkScreen saved = screen(15, 16, 64);
+        core.screen = saved;
+        part.attachToCore(core, saved);
+        part.updateEntity();
+        assertTrue(part.isPartOfScreen());
+        assertEquals(0, world.reads);
+        world.loadedMaxX = 31;
+        core.screen = screen(16, 16, 64);
+        for (int tick = 0; tick < 20; tick++) part.updateEntity();
+        assertFalse(part.isPartOfScreen());
+    }
+
+    @Test
+    public void missingScreenTagClearsPreviouslySyncedExtenderBounds() {
+        TileEntityNetworkInfoPanelExtender part = new TileEntityNetworkInfoPanelExtender();
+        part.attachToCore(new CountingPanel(), screen(1, 2, 64));
+        part.readFromNBT(new net.minecraft.nbt.NBTTagCompound());
+        assertNull(part.getScreen());
+        assertFalse(part.isPartOfScreen());
+    }
+
+    private static NetworkScreen screen(int left, int right, int y) {
+        NetworkScreen screen = new NetworkScreen();
+        screen.minX = left;
+        screen.maxX = right;
+        screen.minY = screen.maxY = y;
+        screen.facing = 3;
+        return screen;
+    }
+
+    private static CountingPanel panel(FixtureWorld world, int x, int y) {
+        CountingPanel core = new CountingPanel();
+        core.xCoord = x;
+        core.yCoord = y;
+        core.setWorldObj(world);
+        world.tiles.put(x + ":" + y + ":0", core);
+        return core;
+    }
+
+    private static TileEntityNetworkInfoPanelExtender extender(FixtureWorld world, int x, int y) {
+        TileEntityNetworkInfoPanelExtender part = new TileEntityNetworkInfoPanelExtender() {
+            @Override
+            public int getBlockMetadata() { return 3; }
+            @Override
+            public void markDirty() {}
+        };
+        part.xCoord = x;
+        part.yCoord = y;
+        part.setWorldObj(world);
+        world.tiles.put(x + ":" + y + ":0", part);
+        return part;
+    }
+
     private static final class CountingPanel extends TileEntityNetworkInfoPanel {
 
         int rebuilds;
+        NetworkScreen screen;
+
+        @Override
+        public NetworkScreen getScreen() { return screen; }
+        @Override
+        public int getBlockMetadata() { return 3; }
+        @Override
+        public void markDirty() {}
 
         @Override
         public void rebuildScreen() {
@@ -94,6 +212,12 @@ public class ScreenLoadedLookupTest {
             reads++;
             return tiles.get(x + ":" + y + ":" + z);
         }
+
+        @Override
+        public int getHeight() { return 256; }
+
+        @Override
+        public void markBlockForUpdate(int x, int y, int z) {}
 
         @Override
         protected IChunkProvider createChunkProvider() {

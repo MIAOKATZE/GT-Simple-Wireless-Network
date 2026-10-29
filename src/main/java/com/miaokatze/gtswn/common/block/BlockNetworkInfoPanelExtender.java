@@ -102,7 +102,8 @@ public class BlockNetworkInfoPanelExtender extends BlockContainer {
         if (!world.isRemote) {
             if (wasPartOfScreen) {
                 // v1.5.15：定向重建——直接查找 core Panel
-                TileEntity coreTile = world.getTileEntity(coreX, coreY, coreZ);
+                TileEntity coreTile = world.blockExists(coreX, coreY, coreZ)
+                    ? world.getTileEntity(coreX, coreY, coreZ) : null;
                 if (coreTile instanceof TileEntityNetworkInfoPanel) {
                     ((TileEntityNetworkInfoPanel) coreTile).rebuildScreen();
                 } else {
@@ -122,6 +123,7 @@ public class BlockNetworkInfoPanelExtender extends BlockContainer {
         int[][] offsets = new int[][] { { 1, 0, 0 }, { -1, 0, 0 }, { 0, 1, 0 }, { 0, -1, 0 }, { 0, 0, 1 },
             { 0, 0, -1 } };
         for (int[] offset : offsets) {
+            if (!world.blockExists(x + offset[0], y + offset[1], z + offset[2])) continue;
             TileEntity tile = world.getTileEntity(x + offset[0], y + offset[1], z + offset[2]);
             if (tile instanceof TileEntityNetworkInfoPanel || tile instanceof TileEntityNetworkInfoPanelExtender) {
                 int facing = ScreenStructureUtil.normalizeFacing(tile.getBlockMetadata());
