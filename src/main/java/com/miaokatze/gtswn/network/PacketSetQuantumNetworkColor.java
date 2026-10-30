@@ -14,16 +14,19 @@ import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 
+import com.miaokatze.gtswn.common.gui.ContainerTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkColorSync;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 
 import appeng.tile.networking.TileController;
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.simpleimpl.IMessage;
 import cpw.mods.fml.common.network.simpleimpl.IMessageHandler;
@@ -66,11 +69,11 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
         public IMessage onMessage(PacketSetQuantumNetworkColor message, MessageContext context) {
             if (context.side.isServer() && QuantumNetworkColor.isValid(message.color)) {
                 EntityPlayerMP player = context.getServerHandler().playerEntity;
-                if (player != null) {
+                if (player != null && player.openContainer instanceof ContainerTerminal terminal) {
                     UUID id = player.getUniqueID();
                     synchronized (PENDING) {
                         if (PENDING.containsKey(id) || PENDING.size() < MAX_PENDING_PLAYERS) {
-                            PENDING.put(id, new Job(player, message.color, player.inventory.currentItem));
+                            PENDING.put(id, new Job(player, message.color, terminal));
                         }
                     }
                 }
@@ -79,7 +82,22 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
         }
     }
 
+    /** Pending actions belong to the old server, not the next integrated save. */
+    public static void clearServerState() {
+        synchronized (PENDING) {
+            PENDING.clear();
+        }
+    }
+
     public static final class Drain {
+
+        @SubscribeEvent
+        public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
+            synchronized (PENDING) {
+                PENDING.values()
+                    .removeIf(job -> job.player == event.player);
+            }
+        }
 
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
@@ -99,7 +117,7 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
 
     private static void apply(Job job) {
         EntityPlayerMP player = job.player;
-        if (player.isDead || player.playerNetServerHandler == null || player.inventory.currentItem != job.slot) return;
+        if (!PlayerRequestQueue.isOnline(player) || !job.context.matchesColorContext(player)) return;
         ItemStack stack = player.getHeldItem();
         if (stack == null || !(stack.getItem() instanceof ItemNetworkQuantumTerminal)) return;
         if (!QuantumTerminalAccess.canManage(player, stack)) {
@@ -134,12 +152,13 @@ public final class PacketSetQuantumNetworkColor implements IMessage {
     private static final class Job {
 
         final EntityPlayerMP player;
-        final int color, slot;
+        final int color;
+        final ContainerTerminal context;
 
-        Job(EntityPlayerMP player, int color, int slot) {
+        Job(EntityPlayerMP player, int color, ContainerTerminal context) {
             this.player = player;
             this.color = color;
-            this.slot = slot;
+            this.context = context;
         }
     }
 }

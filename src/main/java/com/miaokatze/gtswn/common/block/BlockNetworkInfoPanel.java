@@ -227,6 +227,7 @@ public class BlockNetworkInfoPanel extends BlockContainer {
                         if (bx == x && by == y && bz == z) {
                             continue; // 跳过自身
                         }
+                        if (!world.blockExists(bx, by, bz)) continue;
                         TileEntity t = world.getTileEntity(bx, by, bz);
                         if (t instanceof TileEntityNetworkInfoPanel) {
                             ((TileEntityNetworkInfoPanel) t).rebuildScreen();

@@ -79,7 +79,7 @@ public final class QuantumCopy {
         IncorporationCopyCost.Result result = IncorporationCopyCost.apply(
             existing,
             creative,
-            () -> context.tryConsumeItems(material.copy()),
+            () -> CopyMaterialReservation.reserve(context, material),
             () -> registry.restoreCopiedBinding(
                 tile.getWorldObj(),
                 tile.xCoord,

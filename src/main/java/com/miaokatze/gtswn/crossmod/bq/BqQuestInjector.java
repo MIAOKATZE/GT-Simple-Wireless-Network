@@ -3,11 +3,8 @@ package com.miaokatze.gtswn.crossmod.bq;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
-import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.List;
@@ -17,9 +14,9 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 import net.minecraftforge.common.util.Constants;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -28,9 +25,11 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import betterquesting.api.questing.IQuest;
 import betterquesting.api.questing.IQuestLine;
+import betterquesting.api.questing.tasks.ITask;
 import betterquesting.api.storage.BQ_Settings;
-import betterquesting.api.utils.JsonHelper;
 import betterquesting.api.utils.NBTConverter;
+import betterquesting.api.utils.UuidConverter;
+import betterquesting.api2.storage.DBEntry;
 import betterquesting.handlers.SaveLoadHandler;
 import betterquesting.network.handlers.NetChapterSync;
 import betterquesting.network.handlers.NetQuestSync;
@@ -40,6 +39,9 @@ import betterquesting.questing.QuestInstance;
 import betterquesting.questing.QuestLine;
 import betterquesting.questing.QuestLineDatabase;
 import betterquesting.questing.QuestLineEntry;
+import bq_standard.tasks.TaskCheckbox;
+import bq_standard.tasks.TaskCrafting;
+import bq_standard.tasks.TaskRetrieval;
 import cpw.mods.fml.common.Loader;
 
 /**
@@ -71,8 +73,8 @@ import cpw.mods.fml.common.Loader;
  *      由此实现「新任务覆盖老任务」：发新版只需替换 jar，玩家免手动迁移</li>
  *      <li>剪枝（无条件执行）：线上存在但 index.json 清单中已删除的任务，摘线并移出
  *      任务数据库——删除操作同样自动传播到所有世界</li>
- *      <li>进度回填：QuestProgress 目录逐玩家 merge=true 重放（对抗 default load
- *      对"库内不存在任务"进度的静默丢弃，见设计文档第 2 节）</li>
+ *      <li>进度回填：仅恢复本次重建的本包任务，先旧版 QuestProgress.json，后逐玩家
+ *      QuestProgress 目录；已有任务的内存进度保持权威，不用磁盘旧值覆盖</li>
  *      <li>前排有序收尾（条款10）：MIAO 常量表 gtsr→gtswn→gtit 对库内存在线依序
  *      setOrderIndex(i) 覆盖为最终序，必须先于同步四连执行</li>
  *      <li>同步四连（NetSettingSync / NetQuestSync.quickSync / NetChapterSync / markDirty）</li>
@@ -85,6 +87,9 @@ public final class BqQuestInjector {
 
     /** 世界侧版本戳文件名（位于 BQ_Settings.curWorldDir 下），记录最近一次注入所用定义版本 */
     private static final String STAMP_FILE_NAME = "gtswn-injected.json";
+
+    /** 本包任务 UUID 高 32 位（ASCII "GTWN"）；不回放其他包的进度。 */
+    private static final long OWNED_QUEST_HIGH_PREFIX = 0x4754574EL;
 
     /**
      * MIAO 任务包前排有序表（BQ任务整合规范 §6 条款10，2026-09-07 拍板）：
@@ -135,17 +140,19 @@ public final class BqQuestInjector {
             int prunedCount = 0;
             // 版本戳对账：版本变化（含老世界无戳）→ 刷新全部已存在任务的定义与挂线坐标
             boolean refresh = isDefinitionRefreshNeeded();
+            Set<UUID> recreatedOwnedQuests = new HashSet<>();
             for (int i = 0; i < lines.size(); i++) {
                 int[] r = loadQuestLine(
                     lines.get(i)
                         .getAsJsonObject(),
-                    refresh);
+                    refresh,
+                    recreatedOwnedQuests);
                 questCount += r[0];
                 skippedCount += r[1];
                 refreshedCount += r[2];
                 prunedCount += r[3];
             }
-            restoreProgress();
+            restoreProgress(recreatedOwnedQuests);
             // 前排有序收尾（规范 §6 条款10）：覆盖装载阶段的初排序为 MIAO 前排最终序；
             // 必须在同步四连之前执行，客户端顺序经 NetChapterSync order 列表自动镜像
             int frontRowCount = applyFrontRowOrder();
@@ -189,11 +196,12 @@ public final class BqQuestInjector {
      * 已删除——摘线并从任务数据库移除（进度文件残留无害），使删除操作同样
      * 自动传播到老世界。
      *
-     * @param lineSpec index.json 中该线的声明对象
-     * @param refresh  是否对已存在任务执行定义刷新
+     * @param lineSpec             index.json 中该线的声明对象
+     * @param refresh              是否对已存在任务执行定义刷新
+     * @param recreatedOwnedQuests 本次实际新建的本包任务，供进度回填使用
      * @return int[]{本次新建任务数, 本次跳过任务数, 本次刷新定义任务数, 本次剪枝删除任务数}
      */
-    private static int[] loadQuestLine(JsonObject lineSpec, boolean refresh) {
+    private static int[] loadQuestLine(JsonObject lineSpec, boolean refresh, Set<UUID> recreatedOwnedQuests) {
         UUID lineId = new UUID(
             lineSpec.get("idHigh")
                 .getAsLong(),
@@ -242,6 +250,9 @@ public final class BqQuestInjector {
                 IQuest quest = new QuestInstance();
                 quest.readFromNBT(questTag);
                 QuestDatabase.INSTANCE.put(questId, quest);
+                if ((questId.getMostSignificantBits() >>> 32) == OWNED_QUEST_HIGH_PREFIX) {
+                    recreatedOwnedQuests.add(questId);
+                }
                 created++;
             } else if (refresh) {
                 // 版本升级：重读定义（名称/描述/前置/奖励/任务），玩家进度保留
@@ -343,43 +354,104 @@ public final class BqQuestInjector {
      */
     private static void writeStamp(String version) {
         File f = new File(BQ_Settings.curWorldDir, STAMP_FILE_NAME);
-        JsonObject o = new JsonObject();
-        o.addProperty("version", version);
-        try (Writer w = new OutputStreamWriter(new FileOutputStream(f), StandardCharsets.UTF_8)) {
-            new Gson().toJson(o, w);
+        try {
+            BqStampFile.write(f, version);
         } catch (Exception e) {
             GTSimpleWirelessNetwork.LOG.warn("[BQ] 版本戳写入失败（下次启动可能重复刷新一次定义）", e);
         }
     }
 
     /**
-     * 进度回填（设计文档第 2 节缓解措施）。
+     * 只恢复本次重建的本包任务在 default load 缺失定义窗口内丢弃的进度。
      * <p>
-     * default load 的进度快照恢复只对"库内存在"的任务生效，本 mod 任务
-     * 在其 clear→重载窗口内不在库中，进度被静默丢弃；此处注册完成后
-     * （早于任何玩家登录）从 QuestProgress 目录逐玩家 merge=true 重放。
-     * merge 幂等：config 任务内存进度与磁盘同源同值，注入任务刚注册无内存进度。
-     * 不调用 savePlayerProgress/markDirtyPlayers，也不再 quickSync（无在线玩家）。
+     * 已有任务（包括定义刷新过的任务）持有 BQ 恢复后的权威内存进度；merge=true
+     * 仍会替换完成/领取记录，不能用磁盘旧值覆盖。旧版汇总文件先读，逐玩家文件后读，
+     * 与 BQ SaveLoadHandler.loadProgress 的格式及优先级一致。只通过原生 dirty-player
+     * API 安排恢复后的用户在正常存盘时持久化；本读取过程不修改进度文件。
      */
-    private static void restoreProgress() {
+    private static void restoreProgress(Set<UUID> recreatedOwnedQuests) {
+        if (recreatedOwnedQuests.isEmpty()) {
+            return;
+        }
+        File legacy = new File(BQ_Settings.curWorldDir, "QuestProgress.json");
+        if (legacy.isFile()) {
+            restoreProgressFile(legacy, recreatedOwnedQuests, false);
+        }
         File dir = new File(BQ_Settings.curWorldDir, "QuestProgress");
         File[] files = dir.listFiles();
         if (files == null) {
             return;
         }
         for (File f : files) {
-            if (!f.getName()
+            if (f.isFile() && f.getName()
                 .endsWith(".json")) {
+                restoreProgressFile(f, recreatedOwnedQuests, true);
+            }
+        }
+    }
+
+    /** 仅识别本包使用的三个原生任务类的已知用户字段，不遍历自定义任务或任务数据。 */
+    private static void collectRestoredUsers(QuestInstance quest, Set<UUID> users) {
+        quest.getUsersWithCompletionData(users);
+        for (DBEntry<ITask> entry : quest.getTasks()
+            .getEntries()) {
+            ITask task = entry.getValue();
+            Class<?> type = task.getClass();
+            if (type != TaskCheckbox.class && type != TaskRetrieval.class && type != TaskCrafting.class) {
                 continue;
             }
-            try {
-                NBTTagCompound nbt = NBTConverter
-                    .JSONtoNBT_Object(JsonHelper.ReadFromFile(f), new NBTTagCompound(), true);
-                QuestDatabase.INSTANCE
-                    .readProgressFromNBT(nbt.getTagList("questProgress", Constants.NBT.TAG_COMPOUND), true);
-            } catch (Throwable t) {
-                GTSimpleWirelessNetwork.LOG.warn("[BQ] 进度回填跳过无法解析的文件: {}", f.getName(), t);
+            // 原生 TaskBase / TaskProgressableBase 输出的顶层用户列表；不读取 data 载荷。
+            NBTTagCompound progress = task.writeProgressToNBT(new NBTTagCompound(), null);
+            NBTTagList completed = progress.getTagList("completeUsers", Constants.NBT.TAG_STRING);
+            for (int i = 0; i < completed.tagCount(); i++) {
+                users.add(UUID.fromString(completed.getStringTagAt(i)));
             }
+            NBTTagList partial = progress.getTagList("userProgress", Constants.NBT.TAG_COMPOUND);
+            for (int i = 0; i < partial.tagCount(); i++) {
+                users.add(
+                    UUID.fromString(
+                        partial.getCompoundTagAt(i)
+                            .getString("uuid")));
+            }
+        }
+    }
+
+    private static void restoreProgressFile(File file, Set<UUID> recreatedOwnedQuests, boolean merge) {
+        // JsonHelper.ReadFromFile 会备份损坏文件；这里只读，不改写任何进度文件。
+        try (BufferedReader reader = new BufferedReader(
+            new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8),
+            32768)) {
+            JsonObject json = new JsonParser().parse(reader)
+                .getAsJsonObject();
+            NBTTagCompound nbt = NBTConverter.JSONtoNBT_Object(json, new NBTTagCompound(), true);
+            NBTTagList progress = nbt.getTagList("questProgress", Constants.NBT.TAG_COMPOUND);
+            NBTTagList selected = new NBTTagList();
+            Set<UUID> selectedIds = new HashSet<>();
+            for (int i = 0; i < progress.tagCount(); i++) {
+                NBTTagCompound entry = progress.getCompoundTagAt(i);
+                // 与原生 QuestDatabase.readProgressFromNBT 一样支持 UUID 和旧整数 ID。
+                UUID questId = NBTConverter.UuidValueType.QUEST.tryReadId(entry)
+                    .orElse(null);
+                if (questId == null && entry.hasKey("questID", Constants.NBT.TAG_ANY_NUMERIC)) {
+                    questId = UuidConverter.convertLegacyId(entry.getInteger("questID"));
+                }
+                if (recreatedOwnedQuests.contains(questId)) {
+                    selected.appendTag(entry);
+                    selectedIds.add(questId);
+                }
+            }
+            QuestDatabase.INSTANCE.readProgressFromNBT(selected, merge);
+            // 与 BQ 旧版进度迁移相同，通过原生 API 合并 dirty 用户，不清空已有集合。
+            Set<UUID> restoredUsers = new HashSet<>();
+            for (UUID id : selectedIds) {
+                IQuest quest = QuestDatabase.INSTANCE.get(id);
+                if (quest instanceof QuestInstance) {
+                    collectRestoredUsers((QuestInstance) quest, restoredUsers);
+                }
+            }
+            SaveLoadHandler.INSTANCE.addDirtyPlayers(restoredUsers);
+        } catch (Throwable t) {
+            GTSimpleWirelessNetwork.LOG.warn("[BQ] 进度回填跳过无法解析的文件: {}", file.getName(), t);
         }
     }
 

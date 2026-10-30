@@ -383,9 +383,12 @@ public abstract class GTswnCoverWirelessBase extends Cover {
      */
     @Override
     public void onCoverRemoval() {
-        unregisterFromNodeRegistry();
         ICoverable host = coveredTile.get();
-        if (host != null && host.getWorld() != null && !host.getWorld().isRemote) host.markDirty();
+        // GT also calls this hook when applying a removal packet on the client. WAILA can have
+        // synchronized a funded buffer there; the integrated server shares GT's static energy map.
+        if (host == null || host.getWorld() == null || host.getWorld().isRemote) return;
+        unregisterFromNodeRegistry();
+        host.markDirty();
         if (this.storedEU > 0) {
             ICoverable tileEntity = coveredTile.get();
             UUID owner = getOwner(tileEntity);
@@ -492,7 +495,7 @@ public abstract class GTswnCoverWirelessBase extends Cover {
      */
     private void unregisterFromNodeRegistry() {
         ICoverable tileEntity = coveredTile.get();
-        if (tileEntity == null || tileEntity.getWorld().isRemote) {
+        if (tileEntity == null || tileEntity.getWorld() == null || tileEntity.getWorld().isRemote) {
             return;
         }
         World world = tileEntity.getWorld();

@@ -256,6 +256,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
     }
 
     public static void clear() {
+        INSTANCE.clearPending();
         SENT.clear();
         lastPurgeTick = Long.MIN_VALUE;
     }
@@ -268,6 +269,11 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
     /** 玩家登出：清理发送进度缓存（DeviceSampleScheduler 登出监听调用） */
     public static void onPlayerLoggedOut(UUID playerId) {
         SENT.remove(playerId);
+    }
+
+    public static void onPlayerLoggedOut(EntityPlayerMP player) {
+        INSTANCE.discardPlayer(player);
+        onPlayerLoggedOut(player.getUniqueID());
     }
 
     @Override

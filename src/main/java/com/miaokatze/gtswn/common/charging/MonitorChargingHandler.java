@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.charging;
 
+import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
@@ -94,8 +95,8 @@ public final class MonitorChargingHandler {
             && monitors.stream()
                 .filter(MonitorBattery::hasBattery)
                 .anyMatch(
-                    monitor -> MonitorBattery.data(monitor)
-                        .getDouble("Charge") > 0)) {
+                    monitor -> BatteryCharge.get(MonitorBattery.data(monitor))
+                        .signum() > 0)) {
             int boxStart = ToolboxCharging.firstBox(player.ticksExisted, toolboxes.size());
             for (int b = 0; b < ToolboxCharging.selectedBoxes(toolboxes.size()); b++) {
                 ToolboxCharging box = new ToolboxCharging(toolboxes.get((boxStart + b) % toolboxes.size()));
@@ -122,20 +123,21 @@ public final class MonitorChargingHandler {
     }
 
     private static boolean chargeTargets(NBTTagCompound data, List<ChargingTarget> targets, int tick) {
-        double cache = data.getDouble("Charge");
+        BigDecimal cache = BatteryCharge.get(data);
         int tier = data.getInteger("Tier");
-        if (cache <= 0 || !Double.isFinite(cache) || tier < 0 || tier >= GTValues.V.length) return false;
+        if (cache.signum() <= 0 || tier < 0 || tier >= GTValues.V.length) return false;
         boolean charging = false;
         int start = targets.isEmpty() ? 0 : Math.floorMod(tick, targets.size());
-        for (int j = 0; j < targets.size() && cache > 0; j++) {
+        for (int j = 0; j < targets.size() && cache.signum() > 0; j++) {
             double received = targets.get((start + j) % targets.size())
-                .charge(cache, tier);
+                .charge(BatteryCharge.available(cache), tier);
             if (received > 0) {
-                cache = Math.max(0, cache - received);
+                cache = cache.subtract(BatteryCharge.value(received))
+                    .max(BigDecimal.ZERO);
                 charging = true;
             }
         }
-        if (charging) data.setDouble("Charge", cache);
+        if (charging) BatteryCharge.set(data, cache);
         return charging;
     }
 
@@ -159,21 +161,21 @@ public final class MonitorChargingHandler {
     }
 
     private static void refill(ItemStack monitor, NBTTagCompound data) {
-        double missing = data.getDouble("Capacity") - data.getDouble("Charge");
-        if (missing <= 0 || !Double.isFinite(missing) || !PortableWirelessNetworkMonitor.isMonitorBound(monitor))
-            return;
+        BigDecimal missing = BatteryCharge.missing(data);
+        if (missing.signum() <= 0 || !PortableWirelessNetworkMonitor.isMonitorBound(monitor)) return;
         try {
             UUID owner = UUID.fromString(PortableWirelessNetworkMonitor.getOwnerUUID(monitor));
             BigInteger deduction = ChargeMath.deduction(missing, Config.downlinkLossEU);
             if (WirelessNetworkManager.addEUToGlobalEnergyMap(owner, deduction.negate()))
-                data.setDouble("Charge", data.getDouble("Capacity"));
+                BatteryCharge.set(data, BatteryCharge.capacity(data));
         } catch (IllegalArgumentException ignored) {
             // Invalid saved owner UUID cannot withdraw energy.
         }
     }
 
     private static void updateStatus(NBTTagCompound data, boolean charging) {
-        if (data.getDouble("Charge") <= 0) {
+        if (BatteryCharge.get(data)
+            .signum() <= 0) {
             // Interrupted work stays pending: lack of energy must never count as a quiet completion.
             data.setInteger("Status", charging || data.getInteger("Status") == 2 ? 2 : 0);
             data.setInteger("Quiet", 0);

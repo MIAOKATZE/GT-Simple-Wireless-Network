@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.charging;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import net.minecraft.item.ItemArmor;
@@ -87,14 +88,20 @@ public final class MonitorBattery {
         NBTTagCompound data = new NBTTagCompound();
         ItemStack installed = battery.copy();
         installed.stackSize = 1;
-        data.setTag("Item", installed.writeToNBT(new NBTTagCompound()));
         IElectricItem electric = (IElectricItem) installed.getItem();
-        data.setDouble("Capacity", electric.getMaxCharge(installed));
+        BigDecimal charge = BatteryCharge.nativeCharge(installed)
+            .add(BatteryCharge.remainder(installed));
+        BigDecimal capacity = BatteryCharge.nativeCapacity(installed);
+        // A native charger may have filled the battery while its fractional escrow was attached.
+        // Keep any excess on the nested physical item; do not silently discard it at the capacity clamp.
+        BatteryCharge.remainder(installed, charge.subtract(capacity));
+        data.setTag("Item", installed.writeToNBT(new NBTTagCompound()));
         data.setInteger("Tier", electric.getTier(installed));
-        data.setDouble(
-            "Charge",
-            Math.max(0, Math.min(electric.getMaxCharge(installed), manager(installed).getCharge(installed))));
-        data.setInteger("Status", data.getDouble("Charge") > 0 ? 1 : 0);
+        BatteryCharge.initialize(data, capacity, charge);
+        data.setInteger(
+            "Status",
+            BatteryCharge.get(data)
+                .signum() > 0 ? 1 : 0);
         result.getTagCompound()
             .setTag(NBT_BATTERY, data);
         return result;
@@ -107,9 +114,21 @@ public final class MonitorBattery {
         if (battery == null || manager(battery) == null) return null;
         // loadItemStackFromNBT retains the nested tag reference; detach before writing charge.
         battery = battery.copy();
-        IElectricItemManager manager = manager(battery);
-        manager.discharge(battery, Double.MAX_VALUE, Integer.MAX_VALUE, true, false, false);
-        manager.charge(battery, data.getDouble("Charge"), Integer.MAX_VALUE, true, false);
+        BigDecimal charge = BatteryCharge.get(data);
+        if (battery.getItem() instanceof MetaBaseItem) {
+            // GT stores long EU. Its double facade can round up even after an exact cache debit.
+            ((MetaBaseItem) battery.getItem()).setCharge(battery, charge.longValue());
+        } else {
+            IElectricItemManager manager = manager(battery);
+            manager.discharge(battery, Double.MAX_VALUE, Integer.MAX_VALUE, true, false, false);
+            manager.charge(battery, BatteryCharge.available(charge), Integer.MAX_VALUE, true, false);
+        }
+        // Native GT cannot hold fractional EU; foreign double storage may also round down. Keep it
+        // on the physical battery for reinstalling, not in the monitor that is about to lose its battery.
+        BatteryCharge.remainder(
+            battery,
+            charge.subtract(BatteryCharge.nativeCharge(battery))
+                .add(BatteryCharge.remainder(battery)));
         return battery;
     }
 
@@ -122,7 +141,8 @@ public final class MonitorBattery {
     }
 
     public static int getStatus(ItemStack stack) {
-        if (!hasBattery(stack) || data(stack).getDouble("Charge") <= 0) return 0;
+        if (!hasBattery(stack) || BatteryCharge.get(data(stack))
+            .signum() <= 0) return 0;
         return data(stack).getInteger("Status");
     }
 

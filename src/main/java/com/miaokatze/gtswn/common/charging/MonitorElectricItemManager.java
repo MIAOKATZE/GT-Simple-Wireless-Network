@@ -22,12 +22,14 @@ public final class MonitorElectricItemManager implements IElectricItemManager {
     @Override
     public double charge(ItemStack stack, double amount, int tier, boolean ignoreLimit, boolean simulate) {
         if (!MonitorBattery.hasBattery(stack) || !(amount > 0) || tier < electric(stack).getTier(stack)) return 0;
-        double accepted = Math.min(amount, Math.max(0, electric(stack).getMaxCharge(stack) - getCharge(stack)));
+        double accepted = Math.min(amount, BatteryCharge.available(BatteryCharge.missing(MonitorBattery.data(stack))));
         if (!ignoreLimit) accepted = Math.min(accepted, electric(stack).getTransferLimit(stack));
         if (!Double.isFinite(accepted) || accepted <= 0) return 0;
         if (!simulate) {
-            MonitorBattery.data(stack)
-                .setDouble("Charge", getCharge(stack) + accepted);
+            BatteryCharge.set(
+                MonitorBattery.data(stack),
+                BatteryCharge.get(MonitorBattery.data(stack))
+                    .add(BatteryCharge.value(accepted)));
             if (MonitorBattery.data(stack)
                 .getInteger("Status") == 0)
                 MonitorBattery.data(stack)
@@ -41,25 +43,28 @@ public final class MonitorElectricItemManager implements IElectricItemManager {
         boolean simulate) {
         if (external || !MonitorBattery.hasBattery(stack) || !(amount > 0) || tier < electric(stack).getTier(stack))
             return 0;
-        double used = Math.min(amount, getCharge(stack));
+        double used = Math.min(amount, BatteryCharge.available(BatteryCharge.get(MonitorBattery.data(stack))));
         if (!ignoreLimit) used = Math.min(used, electric(stack).getTransferLimit(stack));
         if (!Double.isFinite(used) || used <= 0) return 0;
-        if (!simulate) MonitorBattery.data(stack)
-            .setDouble("Charge", getCharge(stack) - used);
+        if (!simulate) BatteryCharge.set(
+            MonitorBattery.data(stack),
+            BatteryCharge.get(MonitorBattery.data(stack))
+                .subtract(BatteryCharge.value(used)));
         return used;
     }
 
     @Override
     public double getCharge(ItemStack stack) {
         if (!MonitorBattery.hasBattery(stack)) return 0;
-        double charge = MonitorBattery.data(stack)
-            .getDouble("Charge");
-        return Double.isFinite(charge) ? Math.max(0, Math.min(electric(stack).getMaxCharge(stack), charge)) : 0;
+        return BatteryCharge.available(BatteryCharge.get(MonitorBattery.data(stack)));
     }
 
     @Override
     public boolean canUse(ItemStack stack, double amount) {
-        return MonitorBattery.hasBattery(stack) && Double.isFinite(amount) && amount >= 0 && getCharge(stack) >= amount;
+        return MonitorBattery.hasBattery(stack) && Double.isFinite(amount)
+            && amount >= 0
+            && BatteryCharge.get(MonitorBattery.data(stack))
+                .compareTo(BatteryCharge.value(amount)) >= 0;
     }
 
     @Override

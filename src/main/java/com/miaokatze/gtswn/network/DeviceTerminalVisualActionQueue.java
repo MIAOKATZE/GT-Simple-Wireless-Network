@@ -22,6 +22,7 @@ import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.Source;
 import com.miaokatze.gtswn.common.engineering.EngineeringTerminalSources.SourceOrigin;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
@@ -43,12 +44,14 @@ public final class DeviceTerminalVisualActionQueue {
 
     private static final class Pending {
 
+        final EntityPlayerMP origin;
         final UUID playerId;
         final String playerName;
         final PacketDeviceTerminalVisualAction message;
         final PacketEngineeringDeviceAction factory;
 
         Pending(EntityPlayerMP player, PacketDeviceTerminalVisualAction message) {
+            origin = player;
             playerId = player.getUniqueID();
             playerName = player.getCommandSenderName();
             this.message = message;
@@ -56,10 +59,15 @@ public final class DeviceTerminalVisualActionQueue {
         }
 
         Pending(EntityPlayerMP player, PacketEngineeringDeviceAction factory) {
+            origin = player;
             playerId = player.getUniqueID();
             playerName = player.getCommandSenderName();
             message = PacketDeviceTerminalVisualAction.toggle(factory.terminalId);
             this.factory = factory;
+        }
+
+        boolean belongsTo(EntityPlayerMP player) {
+            return origin == player;
         }
     }
 
@@ -178,8 +186,7 @@ public final class DeviceTerminalVisualActionQueue {
             }
             EntityPlayerMP player = server.getConfigurationManager()
                 .func_152612_a(pending.playerName);
-            if (player == null || !pending.playerId.equals(player.getUniqueID())
-                || player.playerNetServerHandler == null) continue;
+            if (!pending.belongsTo(player) || !PlayerRequestQueue.isOnline(player)) continue;
             try {
                 if (pending.factory == null) apply(player, pending.message, now);
                 else applyEngineering(player, pending.factory, now);

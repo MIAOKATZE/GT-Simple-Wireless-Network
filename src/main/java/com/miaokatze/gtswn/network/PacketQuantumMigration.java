@@ -22,6 +22,7 @@ import com.miaokatze.gtswn.common.quantum.QuantumControllerIdentity;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkMigration;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -170,6 +171,7 @@ public final class PacketQuantumMigration implements IMessage {
 
     private static void handle(Request request) {
         EntityPlayerMP player = request.player;
+        if (!PlayerRequestQueue.isOnline(player)) return;
         PacketQuantumMigration message = request.message;
         UUID id = player.getUniqueID();
         Charge charge = CHARGES.get(id);
@@ -244,8 +246,7 @@ public final class PacketQuantumMigration implements IMessage {
     }
 
     private static boolean basicValid(EntityPlayerMP player, ItemStack stack) {
-        return player.isEntityAlive() && player.playerNetServerHandler != null
-            && player.playerNetServerHandler.netManager.isChannelOpen()
+        return player.isEntityAlive() && PlayerRequestQueue.isOnline(player)
             && !player.isSneaking()
             && player.openContainer == player.inventoryContainer
             && stack != null

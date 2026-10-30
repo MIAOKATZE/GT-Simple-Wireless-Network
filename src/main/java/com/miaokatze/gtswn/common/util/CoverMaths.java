@@ -49,6 +49,11 @@ public final class CoverMaths {
         return Math.max(0L, amount.longValue());
     }
 
+    /** Configuration stores decimal loss as float; do not widen its binary approximation first. */
+    public static java.math.BigInteger downlinkDeduction(long needed, float loss) {
+        return downlinkDeduction(needed, Double.parseDouble(Float.toString(loss)));
+    }
+
     public static java.math.BigInteger downlinkDeduction(long needed, double loss) {
         if (needed <= 0) return java.math.BigInteger.ZERO;
         if (!Double.isFinite(loss) || loss < 0) throw new IllegalArgumentException("Invalid downlink loss");
@@ -56,6 +61,10 @@ public final class CoverMaths {
         return amount.add(amount.multiply(java.math.BigDecimal.valueOf(loss)))
             .setScale(0, java.math.RoundingMode.CEILING)
             .toBigIntegerExact();
+    }
+
+    public static long afterUplinkLoss(long stored, float loss) {
+        return afterUplinkLoss(stored, Double.parseDouble(Float.toString(loss)));
     }
 
     public static long afterUplinkLoss(long stored, double loss) {

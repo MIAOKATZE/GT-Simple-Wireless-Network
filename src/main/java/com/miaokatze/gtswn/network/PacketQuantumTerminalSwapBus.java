@@ -108,7 +108,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
     private static final class SwapJob {
 
         final EntityPlayerMP player;
-        final int dimension;
+        final HeldTerminalReceipt receipt;
         final int x;
         final int y;
         final int z;
@@ -118,7 +118,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
         SwapJob(EntityPlayerMP player, int x, int y, int z, int side, boolean removeCore) {
             this.removeCore = removeCore;
             this.player = player;
-            this.dimension = player.dimension;
+            receipt = new HeldTerminalReceipt(player);
             this.x = x;
             this.y = y;
             this.z = z;
@@ -187,7 +187,7 @@ public class PacketQuantumTerminalSwapBus implements IMessage {
      */
     private static void handleSwap(SwapJob job) {
         EntityPlayerMP player = job.player;
-        if (!PlayerRequestQueue.isOnline(player) || player.dimension != job.dimension) return;
+        if (!PlayerRequestQueue.isOnline(player) || !job.receipt.matches(player)) return;
         handleInteraction(player, job.x, job.y, job.z, job.side, job.removeCore);
     }
 

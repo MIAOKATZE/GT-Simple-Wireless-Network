@@ -1,6 +1,6 @@
 package com.miaokatze.gtswn.mixins.mm;
 
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import net.minecraft.item.ItemStack;
@@ -21,6 +21,7 @@ import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.covers.WirelessCoverCopy;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
+import com.miaokatze.gtswn.crossmod.mm.CopyMaterialReservation;
 import com.miaokatze.gtswn.crossmod.mm.CopyMaterialTransaction;
 import com.miaokatze.gtswn.crossmod.mm.CopySummary;
 import com.miaokatze.gtswn.crossmod.mm.WirelessCoverMaterials;
@@ -83,7 +84,7 @@ public abstract class GTAnalysisResultMixin {
         boolean installed;
         try {
             installed = CopyMaterialTransaction
-                .execute(() -> reserved[0] = context.tryConsumeItems(pipe.copy()), () -> {
+                .execute(() -> reserved[0] = CopyMaterialReservation.reserve(context, pipe), () -> {
                     installCover(context, tile, side, data);
                     return tile.getCoverAtSide(side) instanceof GTswnCoverWirelessBase
                         && ItemStack.areItemStacksEqual(tile.getCoverItemAtSide(side), data.getCoverStack());
@@ -118,11 +119,22 @@ public abstract class GTAnalysisResultMixin {
             value = "INVOKE",
             target = "Lcom/recursive_pineapple/matter_manipulator/common/building/BlockAnalyzer$IBlockApplyContext;tryConsumeItems([Lnet/minecraft/item/ItemStack;)Z"))
     private boolean gtswn$coverCost(IBlockApplyContext context, ItemStack[] stacks) {
-        List<ItemStack> ordinary = new ArrayList<>();
-        for (ItemStack stack : stacks) {
-            if (!WirelessCoverMaterials.isWireless(stack)) ordinary.add(stack);
-        }
+        List<ItemStack> ordinary = WirelessCoverMaterials
+            .withoutVirtualCovers(Arrays.asList(stacks), ItemStack::getItem);
         return ordinary.isEmpty() || context.tryConsumeItems(ordinary.toArray(new ItemStack[0]));
+    }
+
+    @Redirect(
+        method = "getRequiredItemsForExistingBlock",
+        at = @At(
+            value = "INVOKE",
+            target = "Lcom/recursive_pineapple/matter_manipulator/common/building/BlockAnalyzer$IBlockApplyContext;givePlayerItems([Lnet/minecraft/item/ItemStack;)V"),
+        require = 1)
+    private void gtswn$estimatedCoverRefund(IBlockApplyContext context, ItemStack[] stacks) {
+        // The estimator does not use MMInventory, so apply the same virtual-item policy here.
+        List<ItemStack> ordinary = WirelessCoverMaterials
+            .withoutVirtualCovers(Arrays.asList(stacks), ItemStack::getItem);
+        if (!ordinary.isEmpty()) context.givePlayerItems(ordinary.toArray(new ItemStack[0]));
     }
 
     @Redirect(

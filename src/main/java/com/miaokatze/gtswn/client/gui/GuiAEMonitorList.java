@@ -1,7 +1,7 @@
 package com.miaokatze.gtswn.client.gui;
 
 import java.math.BigInteger;
-import java.util.function.IntConsumer;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import net.minecraft.item.ItemStack;
@@ -23,10 +23,10 @@ class GuiAEMonitorList extends ListWidget<IWidget, GuiAEMonitorList> {
     private final GuiNetworkInfoPanel host;
     private final TileEntityNetworkInfoPanel panel;
     private final Supplier<Object[]> entries;
-    private final IntConsumer removeCallback;
+    private final Consumer<String> removeCallback;
 
     GuiAEMonitorList(GuiNetworkInfoPanel host, TileEntityNetworkInfoPanel panel, int left, int top, int width,
-        Supplier<Object[]> entries, IntConsumer removeCallback) {
+        Supplier<Object[]> entries, Consumer<String> removeCallback) {
         this.host = host;
         this.panel = panel;
         this.entries = entries;
@@ -54,8 +54,8 @@ class GuiAEMonitorList extends ListWidget<IWidget, GuiAEMonitorList> {
         removeAll();
         Object[] current = entries.get();
         for (int index = 0; index < current.length; index++) {
-            final int rowIndex = index;
             final Object entry = current[index];
+            final String entryKey = GuiNetworkInfoPanel.entryKey(entry);
             ParentWidget<?> row = new ParentWidget<>().name("panel.monitor.row." + index)
                 .widthRel(1f)
                 .height(20)
@@ -78,7 +78,7 @@ class GuiAEMonitorList extends ListWidget<IWidget, GuiAEMonitorList> {
                         3,
                         48,
                         14,
-                        () -> removeCallback.accept(rowIndex))
+                        () -> removeCallback.accept(entryKey))
                     .right(0));
             child(row);
         }

@@ -260,4 +260,33 @@ public class QuantumTerminalRenameTest {
         assertEquals(server.renameToken(), client.renameToken());
         assertFalse(rename(server, player, new String(new char[41]).replace('\0', 'a')));
     }
+
+    @Test
+    public void paletteContextRequiresTheExactOpenStackAndOriginalBinding() throws Exception {
+        Player player = player();
+        ContainerTerminal original = open(player, true);
+        assertTrue(original.matchesColorContext(player));
+        ItemStack terminal = player.getHeldItem();
+        player.inventory.setInventorySlotContents(3, terminal.copy());
+        assertFalse(original.matchesColorContext(player));
+        player.inventory.setInventorySlotContents(3, terminal);
+        assertTrue(original.matchesColorContext(player));
+        terminal.getTagCompound()
+            .setInteger("QT_AnchorX", 18);
+        assertFalse(original.matchesColorContext(player));
+        terminal.getTagCompound()
+            .setInteger("QT_AnchorX", 17);
+        assertTrue(original.matchesColorContext(player));
+        terminal.getTagCompound()
+            .setString("QT_EncryptionKey", "new-key");
+        assertFalse(original.matchesColorContext(player));
+        terminal.getTagCompound()
+            .setString("QT_EncryptionKey", "");
+        assertTrue(original.matchesColorContext(player));
+        ContainerTerminal reopened = open(player, true);
+        assertFalse(original.matchesColorContext(player));
+        assertTrue(reopened.matchesColorContext(player));
+        reopened.onModularContainerClosed();
+        assertFalse(reopened.matchesColorContext(player));
+    }
 }

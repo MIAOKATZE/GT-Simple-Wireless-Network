@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.tile.screen;
 
 import java.util.ArrayDeque;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Queue;
 import java.util.Set;
 
@@ -33,6 +34,7 @@ public final class ScreenStructure {
     private NetworkScreen screen;
 
     private boolean screenInitialized = false;
+    private int retryTicks;
 
     public ScreenStructure(TileEntityNetworkInfoPanel core) {
         this.core = core;
@@ -53,11 +55,23 @@ public final class ScreenStructure {
         return screenInitialized;
     }
 
-    public void markInitialized() {
-        this.screenInitialized = true;
+    /** A dormant chunk may reuse this tile after neighbors changed; keep bounds until rediscovery completes. */
+    public void invalidate() {
+        screenInitialized = false;
+        retryTicks = 0;
+    }
+
+    /** Retry an incomplete discovery at most once per second, including after adjacent chunks return. */
+    public void tick() {
+        if (!screenInitialized && --retryTicks <= 0) rebuild();
     }
 
     public void rebuild() {
+        World world = core.getWorldObj();
+        // Placement callbacks also run on the client: its authoritative bounds arrive via S35.
+        if (world == null || world.isRemote) return;
+        screenInitialized = false;
+        retryTicks = 20;
         int facing = core.getBlockMetadata();
         if (facing < 2 || facing > 5) {
             facing = 3;
@@ -83,8 +97,10 @@ public final class ScreenStructure {
             if (!visited.add(key)) {
                 continue;
             }
-            TileEntity tile = core.getWorldObj()
-                .getTileEntity(pos[0], pos[1], pos[2]);
+            // Outside build height is known air; an unloaded chunk is unknown, not a missing member.
+            if (pos[1] < 0 || pos[1] >= world.getHeight()) continue;
+            if (!world.blockExists(pos[0], pos[1], pos[2])) return;
+            TileEntity tile = world.getTileEntity(pos[0], pos[1], pos[2]);
             if (!isCompatibleScreenPart(tile, facing)) {
                 continue;
             }
@@ -116,6 +132,7 @@ public final class ScreenStructure {
         next.coreZ = core.zCoord;
         next.facing = facing;
         screen = next;
+        screenInitialized = true;
 
         // 遍历所有兼容的屏幕方块：子矩形内的 Extender 附着到 core，子矩形外的 Extender 解除附着
         // v1.4.6：用 screenParts 替代 visited，避免遍历到空气等不兼容方块
@@ -133,7 +150,7 @@ public final class ScreenStructure {
                     && pos[2] <= next.maxZ;
                 if (inRect) {
                     extender.attachToCore(core, next);
-                } else {
+                } else if (extender.isAttachedTo(core)) {
                     // 连通但在子矩形外的 Extender，解除附着避免残留 partOfScreen 状态
                     extender.detachFromCore();
                 }
@@ -281,16 +298,20 @@ public final class ScreenStructure {
      * 破坏/卸载时遍历屏幕范围解除全部 Extender 附着（原 detachScreen）。
      */
     public void detach() {
-        if (screen == null || core.getWorldObj() == null) {
+        if (screen == null || core.getWorldObj() == null || core.getWorldObj().isRemote) {
             return;
         }
         for (int x = screen.minX; x <= screen.maxX; x++) {
             for (int y = screen.minY; y <= screen.maxY; y++) {
                 for (int z = screen.minZ; z <= screen.maxZ; z++) {
+                    // Unloaded members reconcile against their loaded core on their next server ticks.
+                    if (!core.getWorldObj()
+                        .blockExists(x, y, z)) continue;
                     TileEntity tile = core.getWorldObj()
                         .getTileEntity(x, y, z);
                     if (tile instanceof TileEntityNetworkInfoPanelExtender) {
-                        ((TileEntityNetworkInfoPanelExtender) tile).detachFromCore();
+                        TileEntityNetworkInfoPanelExtender extender = (TileEntityNetworkInfoPanelExtender) tile;
+                        if (extender.isAttachedTo(core)) extender.detachFromCore();
                     }
                 }
             }
@@ -333,9 +354,12 @@ public final class ScreenStructure {
      * @param range 扫描半径（方块数）
      */
     public static void rebuildNearby(World world, int x, int y, int z, int range) {
+        if (world == null || world.isRemote) return;
         for (int dx = -range; dx <= range; dx++) {
             for (int dy = -range; dy <= range; dy++) {
                 for (int dz = -range; dz <= range; dz++) {
+                    // Discovery must not generate/load neighboring chunks merely to look for a core.
+                    if (!world.blockExists(x + dx, y + dy, z + dz)) continue;
                     TileEntity tile = world.getTileEntity(x + dx, y + dy, z + dz);
                     if (tile instanceof TileEntityNetworkInfoPanel) {
                         ((TileEntityNetworkInfoPanel) tile).rebuildScreen();
@@ -343,6 +367,39 @@ public final class ScreenStructure {
                 }
             }
         }
+    }
+
+    /**
+     * A changed far-edge extender can be arbitrarily far from its core. Follow loaded, same-facing
+     * screen parts instead of imposing a search radius. Seeding the four neighbors also handles a
+     * removed block that splits the component; each affected core is rebuilt once after discovery.
+     * A core's own rebuild still defers publication if any frontier is unloaded.
+     */
+    public static void rebuildConnected(World world, int x, int y, int z, int facing) {
+        if (world == null || world.isRemote) return;
+        facing = ScreenStructureUtil.normalizeFacing(facing);
+        Set<String> visited = new HashSet<>();
+        Set<TileEntityNetworkInfoPanel> cores = new LinkedHashSet<>();
+        Queue<int[]> queue = new ArrayDeque<>();
+        queue.add(new int[] { x, y, z });
+        addPlaneNeighbors(queue, x, y, z, facing);
+        while (!queue.isEmpty()) {
+            int[] pos = queue.remove();
+            if (!visited.add(key(pos[0], pos[1], pos[2])) || !world.blockExists(pos[0], pos[1], pos[2])) continue;
+            TileEntity tile = world.getTileEntity(pos[0], pos[1], pos[2]);
+            if (!(tile instanceof TileEntityNetworkInfoPanel || tile instanceof TileEntityNetworkInfoPanelExtender)
+                || ScreenStructureUtil.normalizeFacing(tile.getBlockMetadata()) != facing) continue;
+            if (tile instanceof TileEntityNetworkInfoPanel) {
+                cores.add((TileEntityNetworkInfoPanel) tile);
+            } else {
+                // A loaded far end can be separated from its loaded core by an unloaded middle
+                // chunk. Its saved owner still needs a deferred rebuild when that chunk returns.
+                TileEntityNetworkInfoPanel owner = ((TileEntityNetworkInfoPanelExtender) tile).getCore();
+                if (owner != null) cores.add(owner);
+            }
+            addPlaneNeighbors(queue, pos[0], pos[1], pos[2], facing);
+        }
+        for (TileEntityNetworkInfoPanel panel : cores) panel.rebuildScreen();
     }
 
     private static String key(int x, int y, int z) {

@@ -10,11 +10,15 @@ public final class ChargeMath {
     private ChargeMath() {}
 
     public static BigInteger deduction(double amount, float loss) {
-        if (!Double.isFinite(amount) || amount <= 0 || !Float.isFinite(loss) || loss < 0) {
+        if (!Double.isFinite(amount) || amount <= 0) throw new IllegalArgumentException("Invalid energy");
+        return deduction(BigDecimal.valueOf(amount), loss);
+    }
+
+    public static BigInteger deduction(BigDecimal amount, float loss) {
+        if (amount.signum() <= 0 || !Float.isFinite(loss) || loss < 0) {
             throw new IllegalArgumentException("Invalid energy or loss");
         }
-        return BigDecimal.valueOf(amount)
-            .multiply(BigDecimal.ONE.add(new BigDecimal(Float.toString(loss))))
+        return amount.multiply(BigDecimal.ONE.add(new BigDecimal(Float.toString(loss))))
             .setScale(0, RoundingMode.CEILING)
             .toBigIntegerExact();
     }

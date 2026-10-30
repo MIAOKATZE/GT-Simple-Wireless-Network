@@ -13,6 +13,7 @@ import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.value.StringValue;
 import com.cleanroommc.modularui.widgets.Dialog;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
+import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
 import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
@@ -31,6 +32,7 @@ final class GuiDeviceNameEditor {
     private final IPanelHandler handler;
     private UUID terminal;
     private Entry entry;
+    private long authorizationEpoch;
     private String defaultPlainName = "";
     private TextFieldWidget name;
     private int color;
@@ -44,6 +46,7 @@ final class GuiDeviceNameEditor {
     void open(UUID terminal, Entry entry) {
         this.terminal = terminal;
         this.entry = entry;
+        this.authorizationEpoch = DeviceTerminalClientCache.authorizationEpoch(terminal);
         color = entry.nameColor;
         bold = entry.nameBold;
         defaultPlainName = EnumChatFormatting.getTextWithoutFormattingCodes(DeviceTerminalNames.defaultName(entry));
@@ -56,17 +59,32 @@ final class GuiDeviceNameEditor {
     }
 
     void close() {
+        clearSelection();
         handler.closePanel();
+    }
+
+    private void clearSelection() {
+        entry = null;
+        terminal = null;
+        defaultPlainName = "";
+        if (name != null) name.setText("");
+    }
+
+    void validateSelection() {
+        if (entry != null && !host.entryCurrent(terminal, entry, authorizationEpoch)) close();
     }
 
     private ModularPanel buildPanel() {
         ModularPanel panel = new Dialog<>("device_name_editor").size(WIDTH, HEIGHT)
             .background(GtswnMuiTheme.PANEL)
             .themeOverride(GtswnMuiTheme.THEME_ID);
+        // Escape/outside-click/native parent closure need not call this editor's close() method.
+        panel.onCloseAction(this::clearSelection);
         GtswnMuiTheme.fit(panel);
         panel.child(
             GtswnMuiWidgets
                 .canvas("device.rename.preview", 0, 0, WIDTH, HEIGHT, (context, mouseX, mouseY, partialTicks) -> {
+                    if (!host.entryCurrent(terminal, entry, authorizationEpoch)) return;
                     host.font()
                         .drawString(tr("title"), 12, 10, GtswnGuiPalette.TEXT_TITLE);
                     for (int i = 0; i < COLORS.length; i++) {
@@ -149,6 +167,11 @@ final class GuiDeviceNameEditor {
     }
 
     private void save(boolean reset) {
+        // Network receipts can replace authority between the last GUI tick and this input callback.
+        if (!handler.isPanelOpen() || !host.entryCurrent(terminal, entry, authorizationEpoch)) {
+            close();
+            return;
+        }
         String plain = reset ? "" : DeviceTerminalNameRules.normalize(name.getText());
         if (plain == null) return;
         GTSWNPacketHandler.NETWORK.sendToServer(

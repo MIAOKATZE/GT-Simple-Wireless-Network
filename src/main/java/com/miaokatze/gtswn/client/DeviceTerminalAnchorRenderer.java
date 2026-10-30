@@ -81,6 +81,7 @@ public final class DeviceTerminalAnchorRenderer {
     private DeviceTerminalClientCache.Snapshot scanning;
     private DeviceTerminalClientCache.Snapshot displayed;
     private UUID terminal;
+    private long authorizationEpoch = -1;
     private Anchor target;
     private int cursor;
     private int refreshCursor;
@@ -122,8 +123,7 @@ public final class DeviceTerminalAnchorRenderer {
             reset();
             return;
         }
-        if (terminal != null && !terminal.equals(held)) reset();
-        terminal = held;
+        synchronizeAuthorization(held);
         DeviceTerminalVisualConfig.load();
         // Screens poll their own terminal UUID; persistent inventory mode needs no GUI-time network lease.
         if (!DeviceTerminalVisualizationState.factoryPresentation() && mc.currentScreen == null
@@ -154,6 +154,19 @@ public final class DeviceTerminalAnchorRenderer {
             }
         }
         target = select(mc);
+    }
+
+    /** A revoked/replaced source cannot finish a sliced scan or retain previously rendered labels. */
+    void synchronizeAuthorization(UUID id) {
+        long epoch = DeviceTerminalClientCache.authorizationEpoch(id);
+        if (!Objects.equals(terminal, id) || authorizationEpoch != epoch) reset();
+        terminal = id;
+        authorizationEpoch = epoch;
+    }
+
+    boolean authorizationCurrent(UUID id) {
+        return terminal != null && terminal.equals(id)
+            && authorizationEpoch == DeviceTerminalClientCache.authorizationEpoch(terminal);
     }
 
     private boolean moved(Minecraft mc) {
@@ -840,7 +853,7 @@ public final class DeviceTerminalAnchorRenderer {
         return mc.theWorld != null && mc.thePlayer != null
             && !mc.gameSettings.hideGUI
             && mc.currentScreen == null
-            && terminal != null
+            && authorizationCurrent(terminal)
             && DeviceTerminalVisualizationState.presentationActive(terminal)
             && terminal.equals(DeviceTerminalVisualizationState.presentationTerminalId());
     }
@@ -885,6 +898,7 @@ public final class DeviceTerminalAnchorRenderer {
         scanning = null;
         displayed = null;
         terminal = null;
+        authorizationEpoch = -1;
         target = null;
         cursor = 0;
         ticks = 0;

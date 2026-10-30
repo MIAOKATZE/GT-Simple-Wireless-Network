@@ -186,7 +186,23 @@ final class PanelStructureScenario implements TestScenario {
         TestWorldFixtures.require(
             ctx,
             screen != null && screen.getWidth() == width && screen.getHeight() == height,
-            "Real screen rectangle is " + width + "x" + height);
+            "Real screen rectangle is " + width
+                + "x"
+                + height
+                + "; observed="
+                + (screen == null ? "null" : screen.getWidth() + "x" + screen.getHeight())
+                + (screen == null ? ""
+                    : "; bounds=" + screen.minX
+                        + ":"
+                        + screen.minY
+                        + ":"
+                        + screen.minZ
+                        + ".."
+                        + screen.maxX
+                        + ":"
+                        + screen.maxY
+                        + ":"
+                        + screen.maxZ));
     }
 
     private TileEntityNetworkInfoPanelExtender extender(TestContext ctx, int x, int y) {

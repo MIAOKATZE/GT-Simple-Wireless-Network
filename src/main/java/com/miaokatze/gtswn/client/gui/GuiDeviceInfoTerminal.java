@@ -152,11 +152,9 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 当前终端锚点 UUID（构造传入 + 指纹/复核触发重解析；null=客户端 NBT 尚未同步到 UUID） */
     private UUID anchor;
 
-    /** 当前快照数据版本（Long.MIN_VALUE=尚无任何快照；版本变化触发重排） */
-    private long displayedVersion = Long.MIN_VALUE;
-
-    /** 当前已排条目数（-1=无快照；增量前缀同版本增长时与版本共同触发重排，G5-2/G5-3） */
-    private int displayedEntryCount = -1;
+    /** Identity includes authorization resets even when version and row count are unchanged. */
+    private Snapshot displayedSnapshot;
+    private long displayedAuthorizationEpoch = Long.MIN_VALUE;
 
     /** 排序后条目（绘制与列表命中共用；无数据为空列表） */
     private List<Entry> sortedEntries = Collections.emptyList();
@@ -369,7 +367,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /**
      * 每 tick：锚点重解析（G5-1 缓存：槽位指纹变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
      * 复核才重扫主背包与饰品栏的指定 UUID）→ 版本/条目数变化或偏好变化时重排
-     * （G5-2 入口短路）→ 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
+     * （不可变快照身份短路）→ 每 {@value #POLL_INTERVAL_TICKS} tick 发包 8 轮询（首帧即发）。
      */
     @Override
     public void onUpdate() {
@@ -382,6 +380,13 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         if (this.pollTimer++ % POLL_INTERVAL_TICKS == 0 && this.anchor != null) {
             GTSWNPacketHandler.NETWORK.sendToServer(DeviceTerminalClientCache.requestMetadata(this.anchor));
         }
+    }
+
+    @Override
+    public void onFrameUpdate() {
+        // Receipts can revoke an open draft between client ticks; do not draw it for another frame.
+        if (nameEditor != null) nameEditor.validateSelection();
+        super.onFrameUpdate();
     }
 
     // ==================== 锚点与数据刷新 ====================
@@ -418,8 +423,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             closeNameEditor();
             this.anchor = resolved;
             this.selectedDesktopEntry = null;
-            this.displayedVersion = Long.MIN_VALUE;
-            this.displayedEntryCount = -1;
+            this.displayedSnapshot = null;
         }
     }
 
@@ -491,49 +495,46 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     }
 
     /**
-     * 快照版本 / 条目数（增量前缀增长）或排序偏好变化时按当前列/方向重排（稳定排序，同键保持绑定序）。
-     * <p>
-     * G5-2 版本不变零重排：短路置于入口最早期——版本相等、条目数相等且无偏好/筛选脏标时
-     * 仅一次缓存查询 + 两个标量比较即返回，不建副本不排序不触发 clampScroll。
+     * Each immutable snapshot is a complete display revision, including same-version authorization resets.
+     * Keepalive and duplicate-page replies retain its identity and therefore do not trigger redundant sorting.
      */
     private void refreshEntries() {
         Snapshot snapshot = this.anchor == null ? null : DeviceTerminalClientCache.getSnapshot(this.anchor);
+        long epoch = DeviceTerminalClientCache.authorizationEpoch(this.anchor);
+        if (epoch != displayedAuthorizationEpoch) {
+            displayedAuthorizationEpoch = epoch;
+            selectedDesktopEntry = null;
+            closeNameEditor();
+        }
         if (entryList != null) entryList.setEnabled(snapshot != null && !snapshot.entries.isEmpty());
-        if (!this.sortDirty && snapshot != null
-            && snapshot.version == this.displayedVersion
-            && snapshot.entries.size() == this.displayedEntryCount) {
+        if (!this.sortDirty && snapshot == this.displayedSnapshot && (snapshot != null || this.sortedEntries.isEmpty()))
             return;
-        }
+        this.displayedSnapshot = snapshot;
         if (snapshot == null) {
-            if (this.displayedVersion != Long.MIN_VALUE || !this.sortedEntries.isEmpty()) {
-                this.displayedVersion = Long.MIN_VALUE;
-                this.displayedEntryCount = -1;
-                this.sortedEntries = Collections.emptyList();
-                if (this.entryList != null) this.entryList.clampScroll();
-            }
+            this.sortedEntries = Collections.emptyList();
+            this.selectedDesktopEntry = null;
+            closeNameEditor();
+            if (this.entryList != null) this.entryList.clampScroll();
             return;
         }
-        if (snapshot.version != this.displayedVersion || snapshot.entries.size() != this.displayedEntryCount
-            || this.sortDirty) {
-            this.displayedVersion = snapshot.version;
-            this.displayedEntryCount = snapshot.entries.size();
-            this.sortDirty = false;
-            List<Entry> copy = new ArrayList<>(snapshot.entries);
-            // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
-            if (this.powerFilter != 0) {
-                copy.removeIf(entry -> !DevicePowerFilter.matches(entry, this.powerFilter));
-            }
-            if (this.stateFilter != 0) {
-                copy.removeIf(entry -> !matchesStateFilter(entry, this.stateFilter));
-            }
-            Comparator<Entry> cmp = (a, b) -> compareEntries(a, b, this.sortColumn);
-            if (this.sortDesc) {
-                cmp = cmp.reversed();
-            }
-            copy.sort(cmp);
-            this.sortedEntries = copy;
-            if (this.entryList != null) this.entryList.clampScroll();
+        this.sortDirty = false;
+        selectedDesktopEntry = currentEntry(selectedDesktopEntry);
+        if (nameEditor != null) nameEditor.validateSelection();
+        List<Entry> copy = new ArrayList<>(snapshot.entries);
+        // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
+        if (this.powerFilter != 0) {
+            copy.removeIf(entry -> !DevicePowerFilter.matches(entry, this.powerFilter));
         }
+        if (this.stateFilter != 0) {
+            copy.removeIf(entry -> !matchesStateFilter(entry, this.stateFilter));
+        }
+        Comparator<Entry> cmp = (a, b) -> compareEntries(a, b, this.sortColumn);
+        if (this.sortDesc) {
+            cmp = cmp.reversed();
+        }
+        copy.sort(cmp);
+        this.sortedEntries = copy;
+        if (this.entryList != null) this.entryList.clampScroll();
     }
 
     static long instantValue(Entry entry) {
@@ -811,16 +812,51 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     }
 
     void selectDesktopEntry(Entry entry) {
-        selectedDesktopEntry = entry;
+        if (isCurrentEntry(entry)) selectedDesktopEntry = currentEntry(entry);
+    }
+
+    boolean isCurrentEntry(Entry entry) {
+        // Native callbacks and tooltips may outlive removeAll(), including after an epoch has been
+        // refreshed. Only the actual currently published row may act; a matching old identity is not enough.
+        return entryCurrent(anchor, entry, displayedAuthorizationEpoch) && currentEntry(entry) == entry
+            && sortedEntries.contains(entry);
+    }
+
+    Snapshot displayedSnapshot() {
+        return displayedSnapshot;
+    }
+
+    boolean displayCurrent(Snapshot snapshot) {
+        return snapshot != null && snapshot == displayedSnapshot
+            && snapshot == DeviceTerminalClientCache.getSnapshot(anchor)
+            && displayedAuthorizationEpoch == DeviceTerminalClientCache.authorizationEpoch(anchor);
+    }
+
+    boolean entryCurrent(UUID terminal, Entry entry, long epoch) {
+        return terminal != null && terminal.equals(anchor)
+            && epoch == DeviceTerminalClientCache.authorizationEpoch(terminal)
+            && currentEntry(entry) != null;
+    }
+
+    private Entry currentEntry(Entry entry) {
+        Snapshot snapshot = anchor == null ? null : DeviceTerminalClientCache.getSnapshot(anchor);
+        if (entry != null && snapshot != null)
+            for (Entry current : snapshot.entries) if (sameEntry(entry, current)) return current;
+        return null;
+    }
+
+    private static boolean sameEntry(Entry first, Entry second) {
+        return first != null && second != null
+            && first.key.equals(second.key)
+            && first.dim == second.dim
+            && first.x == second.x
+            && first.y == second.y
+            && first.z == second.z
+            && first.metaTileId == second.metaTileId;
     }
 
     boolean desktopEntrySelected(Entry entry) {
-        return selectedDesktopEntry != null && entry.key.equals(selectedDesktopEntry.key)
-            && entry.dim == selectedDesktopEntry.dim
-            && entry.x == selectedDesktopEntry.x
-            && entry.y == selectedDesktopEntry.y
-            && entry.z == selectedDesktopEntry.z
-            && entry.metaTileId == selectedDesktopEntry.metaTileId;
+        return sameEntry(entry, selectedDesktopEntry);
     }
 
     /**
@@ -829,6 +865,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      * 替代旧 48 字符硬切）。
      */
     List<String> entryTooltip(Entry hovered) {
+        if (!isCurrentEntry(hovered)) return Collections.emptyList();
         String recipeIn = hovered.state == 3 || hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
         String recipeOut = hovered.state == 3 || hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();
@@ -1017,7 +1054,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     }
 
     void openNameEditor(Entry entry, int mouseX, int mouseY) {
-        if (anchor == null) return;
+        if (!isCurrentEntry(entry)) return;
         powerMenu.closePanel();
         nameEditor.open(anchor, entry);
     }

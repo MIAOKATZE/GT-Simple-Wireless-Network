@@ -15,6 +15,7 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
     private int coreZ;
     private boolean partOfScreen;
     private NetworkScreen screen;
+    private int membershipCheckTicks;
 
     public void attachToCore(TileEntityNetworkInfoPanel core, NetworkScreen nextScreen) {
         coreX = core.xCoord;
@@ -37,8 +38,13 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
         }
     }
 
+    /** Membership belongs to one core even when two proposed display rectangles overlap. */
+    public boolean isAttachedTo(TileEntityNetworkInfoPanel core) {
+        return partOfScreen && coreX == core.xCoord && coreY == core.yCoord && coreZ == core.zCoord;
+    }
+
     public TileEntityNetworkInfoPanel getCore() {
-        if (!partOfScreen || worldObj == null) {
+        if (!partOfScreen || worldObj == null || !worldObj.blockExists(coreX, coreY, coreZ)) {
             return null;
         }
         TileEntity tile = worldObj.getTileEntity(coreX, coreY, coreZ);
@@ -46,6 +52,26 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
             return (TileEntityNetworkInfoPanel) tile;
         }
         return null;
+    }
+
+    @Override
+    public void updateEntity() {
+        if (!partOfScreen || worldObj == null || worldObj.isRemote || --membershipCheckTicks > 0) return;
+        membershipCheckTicks = 20;
+        // Unload alone is not deletion. Once the core is loaded, stale saved attachments can be retired.
+        if (!worldObj.blockExists(coreX, coreY, coreZ)) return;
+        TileEntityNetworkInfoPanel core = getCore();
+        if (core == null) {
+            detachFromCore();
+            return;
+        }
+        NetworkScreen current = core.getScreen();
+        if (current != null && (xCoord < current.minX || xCoord > current.maxX
+            || yCoord < current.minY
+            || yCoord > current.maxY
+            || zCoord < current.minZ
+            || zCoord > current.maxZ
+            || getBlockMetadata() != current.facing)) detachFromCore();
     }
 
     public NetworkScreen getScreen() {
@@ -76,9 +102,7 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
         coreY = tag.getInteger("coreY");
         coreZ = tag.getInteger("coreZ");
         partOfScreen = tag.getBoolean("partOfScreen");
-        if (tag.hasKey("screen")) {
-            screen = NetworkScreen.fromNBT(tag.getCompoundTag("screen"));
-        }
+        screen = tag.hasKey("screen") ? NetworkScreen.fromNBT(tag.getCompoundTag("screen")) : null;
     }
 
     @Override

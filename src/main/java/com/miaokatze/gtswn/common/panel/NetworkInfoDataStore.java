@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.panel;
 
+import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -135,7 +136,9 @@ public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSe
         for (Map.Entry<String, NetworkInfoDataSet> entry : dataSets.entrySet()) {
             if (entry.getValue()
                 .isRequestActive(currentTick)) {
-                result.add(entry);
+                // HashMap entries are live mutable views: setValue would replace the stored dataset
+                // without dirty/revision invalidation. Freeze the key/value pair, not the dataset.
+                result.add(new AbstractMap.SimpleImmutableEntry<>(entry));
             }
         }
         return result;
@@ -165,6 +168,13 @@ public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSe
     /** 获取数据集结构修订号（O2-28：remove/cleanupStale 移除条目时推进，供 TE 缓存校验）。 */
     public int getRevision() {
         return revision;
+    }
+
+    /** Reload replaces every dataset object, so already-resolved panel references must expire too. */
+    @Override
+    public void readFromNBT(NBTTagCompound tag) {
+        super.readFromNBT(tag);
+        revision++;
     }
 
     /**

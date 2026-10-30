@@ -39,6 +39,7 @@ public final class DeviceEnergyWorldRenderer {
     private final Map<String, Visual> electricPrevious = new HashMap<>();
     private List<DeviceTerminalAnchorRenderer.Anchor> source;
     private UUID terminal;
+    private long authorizationEpoch = -1;
     private long sourceGeneration = Long.MIN_VALUE;
     private long buildGeneration;
     private long buildEpoch;
@@ -74,11 +75,10 @@ public final class DeviceEnergyWorldRenderer {
             clear();
             return;
         }
-        if (!held.equals(terminal)) {
-            clear();
-            terminal = held;
-        }
+        synchronizeAuthorization(held);
         DeviceTerminalAnchorRenderer worldView = DeviceTerminalAnchorRenderer.INSTANCE;
+        // The heat renderer ticks before the anchor renderer; wait for its new authorized source.
+        if (!worldView.authorizationCurrent(held)) return;
         ticks++;
         // Networking and World/TileEntity checks belong exclusively to the shared anchor world view.
         long settings = DeviceTerminalVisualConfig.appearanceKey();
@@ -107,6 +107,17 @@ public final class DeviceEnergyWorldRenderer {
             }
         }
         if (!java.util.Objects.equals(legendLanguage, mc.gameSettings.language)) updateLegend(mc);
+    }
+
+    void synchronizeAuthorization(UUID id) {
+        long epoch = DeviceTerminalClientCache.authorizationEpoch(id);
+        if (!java.util.Objects.equals(terminal, id) || authorizationEpoch != epoch) clear();
+        terminal = id;
+        authorizationEpoch = epoch;
+    }
+
+    boolean authorizationCurrent() {
+        return terminal != null && authorizationEpoch == DeviceTerminalClientCache.authorizationEpoch(terminal);
     }
 
     private void advance() {
@@ -280,7 +291,8 @@ public final class DeviceEnergyWorldRenderer {
         if (mc.theWorld == null || mc.thePlayer == null) return 1;
         if (!DeviceTerminalVisualConfig.enabled || terminal == null
             || !terminal.equals(DeviceTerminalVisualizationState.presentationTerminalId())) return 2;
-        return DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis()) ? 0 : 3;
+        return authorizationCurrent() && DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis()) ? 0
+            : 3;
     }
 
     private static void fill(Tessellator t, AxisAlignedBB box, double cx, double cy, double cz) {
@@ -365,6 +377,7 @@ public final class DeviceEnergyWorldRenderer {
         electricPrevious.clear();
         source = null;
         terminal = null;
+        authorizationEpoch = -1;
         sourceGeneration = Long.MIN_VALUE;
         ticks = 0;
         lastRenderedLayers = lastFilledBatches = lastLineBatches = 0;

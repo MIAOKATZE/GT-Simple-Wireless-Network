@@ -4,14 +4,16 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentLinkedQueue;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
+
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
 /**
@@ -37,10 +39,10 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 public final class LinkNodeDismantleMarkerQueue {
 
     /** 待处理请求队列（仅缓存玩家引用，主线程 drain 时再复验在线） */
-    private static final ConcurrentLinkedQueue<EntityPlayerMP> PENDING = new ConcurrentLinkedQueue<>();
+    private static final MarkerQueue PENDING = new MarkerQueue();
 
-    /** 已标记玩家 UUID → 过期时刻（overworld 总 tick 基准 + 20）；仅服务端主线程读写 */
-    private static final Map<UUID, Long> MARKED = new HashMap<>();
+    /** 已标记玩家 UUID → 原连接及过期时刻（overworld 总 tick + 20）；仅服务端主线程读写 */
+    private static final Map<UUID, Mark> MARKED = new HashMap<>();
 
     /** 标记 TTL（tick）：覆盖一次左键挖掘周期，超出自动失效 */
     private static final long MARK_TTL_TICKS = 20L;
@@ -59,9 +61,7 @@ public final class LinkNodeDismantleMarkerQueue {
 
     /** Netty 线程入队：包 14 Alt 拆机标记（只带玩家引用，Map 写入留给主线程） */
     public static void enqueue(EntityPlayerMP player) {
-        if (player != null) {
-            PENDING.add(player);
-        }
+        PENDING.enqueue(player);
     }
 
     /**
@@ -72,11 +72,11 @@ public final class LinkNodeDismantleMarkerQueue {
         if (playerId == null) {
             return false;
         }
-        Long deadline = MARKED.get(playerId);
-        if (deadline == null) {
+        Mark mark = MARKED.get(playerId);
+        if (mark == null) {
             return false;
         }
-        if (nowTicks() >= deadline) {
+        if (nowTicks() >= mark.deadline || !PlayerRequestQueue.isOnline(mark.player)) {
             pruneExpired();
             return false;
         }
@@ -90,16 +90,57 @@ public final class LinkNodeDismantleMarkerQueue {
         drain();
     }
 
-    /** 主线程排空：过期条目清理 → 逐条复验在线后写入 TTL 标记 */
+    public static void clearServerState() {
+        PENDING.clear();
+        MARKED.clear();
+    }
+
+    @SubscribeEvent
+    public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.player instanceof EntityPlayerMP) PENDING.discardPlayer((EntityPlayerMP) event.player);
+        Mark mark = MARKED.get(event.player.getUniqueID());
+        if (mark != null && mark.player == event.player) MARKED.remove(event.player.getUniqueID());
+    }
+
+    /** One no-payload Alt-held refresh per connection; keep later players ahead of a sender's next refresh. */
     private static void drain() {
         pruneExpired();
-        EntityPlayerMP player;
-        while ((player = PENDING.poll()) != null) {
-            if (player.playerNetServerHandler == null) {
-                // 已断线条目：丢弃（标记无消费方，写入也无意义）
-                continue;
-            }
-            MARKED.put(player.getUniqueID(), nowTicks() + MARK_TTL_TICKS);
+        PENDING.drain();
+    }
+
+    private static final class Mark {
+
+        final EntityPlayerMP player;
+        final long deadline;
+
+        Mark(EntityPlayerMP player, long deadline) {
+            this.player = player;
+            this.deadline = deadline;
+        }
+    }
+
+    private static final class MarkerQueue extends PlayerRequestQueue<EntityPlayerMP> {
+
+        void enqueue(EntityPlayerMP player) {
+            offer(player, player);
+        }
+
+        void clear() {
+            clearPending();
+        }
+
+        @Override
+        protected EntityPlayerMP playerOf(EntityPlayerMP player) {
+            return player;
+        }
+
+        void drain() {
+            drainAtMost(64);
+        }
+
+        @Override
+        protected void process(EntityPlayerMP player) {
+            if (isOnline(player)) MARKED.put(player.getUniqueID(), new Mark(player, nowTicks() + MARK_TTL_TICKS));
         }
     }
 
@@ -116,11 +157,12 @@ public final class LinkNodeDismantleMarkerQueue {
             return;
         }
         long now = nowTicks();
-        Iterator<Map.Entry<UUID, Long>> it = MARKED.entrySet()
+        Iterator<Map.Entry<UUID, Mark>> it = MARKED.entrySet()
             .iterator();
         while (it.hasNext()) {
-            if (now >= it.next()
-                .getValue()) {
+            Mark mark = it.next()
+                .getValue();
+            if (now >= mark.deadline || !PlayerRequestQueue.isOnline(mark.player)) {
                 it.remove();
             }
         }

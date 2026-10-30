@@ -116,6 +116,22 @@ public class ChargeStackSyncTest {
     }
 
     @Test
+    public void exactChargeCanChangeWhileItsDoubleProjectionIsUnchanged() {
+        ItemStack current = monitor();
+        MonitorBattery.data(current)
+            .setDouble("Charge", (double) Long.MAX_VALUE);
+        MonitorBattery.data(current)
+            .setString("ChargeExact", "9223372036854775807");
+        ItemStack incoming = current.copy();
+        MonitorBattery.data(incoming)
+            .setString("ChargeExact", "9223372036854775775");
+        assertTrue(ChargeStackSync.isChargeOnlyUpdate(current, incoming));
+        MonitorBattery.data(incoming)
+            .setString("CapacityExact", "9223372036854775807");
+        assertFalse(ChargeStackSync.isChargeOnlyUpdate(current, incoming));
+    }
+
+    @Test
     public void eachMonitorRuntimeFieldCanSyncIndependently() {
         ItemStack current = monitor();
         for (String key : new String[] { "Charge", "Status", "Quiet" }) {

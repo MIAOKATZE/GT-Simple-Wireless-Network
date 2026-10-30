@@ -18,10 +18,12 @@ import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.WirelessNodeIndexCodec;
 import com.miaokatze.gtswn.common.covers.WirelessNodeRegistry;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
+import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.common.covers.Cover;
@@ -55,7 +57,8 @@ import gregtech.common.covers.Cover;
 public final class NodeRevealRequestQueue {
 
     /** 待处理请求队列（仅缓存玩家引用，主线程 drain 时再复验在线/存活/手持） */
-    private static final ConcurrentLinkedQueue<EntityPlayerMP> PENDING = new ConcurrentLinkedQueue<>();
+    private static final RevealQueue PENDING = new RevealQueue();
+    private static final int REGISTRATIONS_PER_TICK = 1024;
 
     /**
      * 待注册覆盖板挂起清单（v1.7.21 节点显形修复：旧世界 NBT 恢复自愈）。
@@ -71,7 +74,7 @@ public final class NodeRevealRequestQueue {
      */
     private static final ConcurrentLinkedQueue<PendingNodeRegistration> PENDING_NODE_REGISTRATIONS = new ConcurrentLinkedQueue<>();
 
-    /** 世界未就绪条目的重试上限（每个 ServerTick(END) drain 计 1 次；100 次 ≈ 5s 后告警丢弃） */
+    /** 世界未就绪条目的尝试上限；每条每 tick 至多一次，大批区块加载时随预算顺延。 */
     private static final int MAX_REGISTRATION_ATTEMPTS = 100;
 
     /** 显形半径平方（64 格，闭边界），与 {@link WirelessNodeIndexCodec#selectWithinRadius} 的 radiusSq 参数对应 */
@@ -99,9 +102,7 @@ public final class NodeRevealRequestQueue {
 
     /** Netty 线程入队：包 11 显形请求（只带玩家引用，世界访问留给主线程） */
     public static void enqueue(EntityPlayerMP player) {
-        if (player != null) {
-            PENDING.add(player);
-        }
+        PENDING.enqueue(player);
     }
 
     /**
@@ -121,9 +122,8 @@ public final class NodeRevealRequestQueue {
         long now = System.currentTimeMillis();
         REVEAL_SESSIONS.entrySet()
             .removeIf(
-                entry -> entry.getKey().playerNetServerHandler == null || entry.getKey().isDead
-                    || !entry.getValue()
-                        .isActive(entry.getKey().worldObj, now));
+                entry -> !PlayerRequestQueue.isOnline(entry.getKey()) || !entry.getValue()
+                    .isActive(entry.getKey().worldObj, now));
         drainNodeRegistrations();
         drain();
     }
@@ -140,8 +140,9 @@ public final class NodeRevealRequestQueue {
         }
         // 本轮 world 未就绪条目先收集、循环结束后统一回队：避免同轮 poll→add→poll 自旋
         List<PendingNodeRegistration> deferred = null;
-        PendingNodeRegistration pending;
-        while ((pending = PENDING_NODE_REGISTRATIONS.poll()) != null) {
+        for (int processed = 0; processed < REGISTRATIONS_PER_TICK; processed++) {
+            PendingNodeRegistration pending = PENDING_NODE_REGISTRATIONS.poll();
+            if (pending == null) break;
             try {
                 if (pending.cover.registerIntoNodeIndex()) {
                     continue;
@@ -163,13 +164,47 @@ public final class NodeRevealRequestQueue {
         }
     }
 
-    /** 主线程逐条处理：复验在线 + 存活 + 手持后执行；单条异常仅记日志丢弃 */
+    public static void clearServerState() {
+        PENDING.clear();
+        PENDING_NODE_REGISTRATIONS.clear();
+        REVEAL_SESSIONS.clear();
+    }
+
+    @SubscribeEvent
+    public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.player instanceof EntityPlayerMP) {
+            PENDING.discardPlayer((EntityPlayerMP) event.player);
+            REVEAL_SESSIONS.remove(event.player);
+        }
+    }
+
+    /** Repeated no-payload reveal requests are equivalent until the next server drain. */
     private static void drain() {
-        EntityPlayerMP player;
-        while ((player = PENDING.poll()) != null) {
-            if (player.playerNetServerHandler == null || player.isDead || !player.isEntityAlive()) {
-                continue;
-            }
+        PENDING.drain();
+    }
+
+    private static final class RevealQueue extends PlayerRequestQueue<EntityPlayerMP> {
+
+        void enqueue(EntityPlayerMP player) {
+            offer(player, player);
+        }
+
+        void clear() {
+            clearPending();
+        }
+
+        @Override
+        protected EntityPlayerMP playerOf(EntityPlayerMP player) {
+            return player;
+        }
+
+        void drain() {
+            drainAtMost(8);
+        }
+
+        @Override
+        protected void process(EntityPlayerMP player) {
+            if (!isOnline(player) || !player.isEntityAlive()) return;
             try {
                 handle(player);
             } catch (Throwable t) {
@@ -213,7 +248,11 @@ public final class NodeRevealRequestQueue {
             centerPacked,
             REVEAL_RADIUS_SQ,
             REVEAL_LIMIT,
-            new RevealProbe(world, registry, actualTypeMasks));
+            LinkNodeRevealSession.visibleProbe(
+                new RevealProbe(world, registry, actualTypeMasks),
+                actualTypeMasks,
+                wantedType,
+                revealAll));
 
         // 修剪集回传注册表（INVALID 节点整批出册，最多一次 markDirty）
         registry.prune(world, selection.pruned);

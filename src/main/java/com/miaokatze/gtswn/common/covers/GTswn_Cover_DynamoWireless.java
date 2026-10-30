@@ -165,6 +165,9 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
                             Type.EU_UPLINK,
                             "bufferEU=" + storedEU + ";networkEU=" + actualAdded + ";committed=true");
                         this.storedEU = 0;
+                        // The generator may have stopped since the previous save; persist the debit
+                        // even when no machine-energy mutation dirtied the chunk this tick.
+                        bmte.markDirty();
                         // v1.6.19：性能审计——上行上传成功计数
                         PerformanceAudit.recordWirelessUpload();
                     } else {

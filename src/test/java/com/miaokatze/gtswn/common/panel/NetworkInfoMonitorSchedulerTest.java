@@ -2,9 +2,37 @@ package com.miaokatze.gtswn.common.panel;
 
 import static org.junit.Assert.*;
 
+import java.lang.reflect.Field;
+
 import org.junit.Test;
 
+import com.miaokatze.gtswn.common.monitoring.MonitoringRuntime;
+
 public class NetworkInfoMonitorSchedulerTest {
+
+    @Test
+    public void serverStopReleasesIdentityTokensWithoutOpeningAnotherWorld() throws Exception {
+        NetworkInfoMonitorScheduler scheduler = new NetworkInfoMonitorScheduler();
+        Field cadenceField = NetworkInfoMonitorScheduler.class.getDeclaredField("cadence");
+        cadenceField.setAccessible(true);
+        NetworkInfoMonitorScheduler.SampleCadence cadence = (NetworkInfoMonitorScheduler.SampleCadence) cadenceField
+            .get(scheduler);
+        Object server = new Object(), world = new Object();
+        try {
+            assertTrue(cadence.shouldSample(server, world, 1000));
+            MonitoringRuntime.stop();
+            for (String name : new String[] { "server", "world" }) {
+                Field identity = NetworkInfoMonitorScheduler.SampleCadence.class.getDeclaredField(name);
+                identity.setAccessible(true);
+                assertNull("Stopped scheduler must release " + name, identity.get(cadence));
+            }
+            assertTrue(cadence.shouldSample(server, world, 1000));
+            assertFalse(cadence.shouldSample(server, world, 1000));
+            assertSame(cadence, cadenceField.get(new NetworkInfoMonitorScheduler()));
+        } finally {
+            MonitoringRuntime.stop();
+        }
+    }
 
     @Test
     public void ordinaryCadenceDeduplicatesAndUsesExactHundredTickBoundary() {

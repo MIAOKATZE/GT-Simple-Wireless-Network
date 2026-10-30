@@ -1,6 +1,5 @@
 package com.miaokatze.gtswn.common.tile;
 
-import java.lang.ref.WeakReference;
 import java.math.BigInteger;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -17,6 +16,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.AxisAlignedBB;
 import net.minecraft.world.World;
+import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.FluidStack;
 
@@ -187,30 +187,17 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         }
     }
 
-    // ==================== G2（v1.7.14）：EU 轮询门控 + overworld 引用缓存 ====================
+    // ==================== G2（v1.7.14）：EU 轮询门控 ====================
 
     /** G2：EU 轮询门控间隔（tick）——overworld 取数与 bridge.tickServer 至多每 100t 执行一次 */
     private static final int EU_POLL_INTERVAL_TICKS = 100;
-
-    /** G2：overworld 引用复核周期（门控调用次数）——6 次 ≈ 600t 回源一次，纠正世界重载滞留引用 */
-    private static final int OVERWORLD_REFETCH_CALLS = 6;
-
-    /**
-     * G2：overworld 引用缓存（静态弱引用）。dim 0 世界被服务器强持有，正常存续期内直接复用；
-     * 集成服世界重载/卸载后旧实例无强引用即被 GC 清除，弱引用见 null 回源；仍有第三方
-     * 强引用滞留时由 {@link #OVERWORLD_REFETCH_CALLS} 周期复核兜底纠正。
-     */
-    private static WeakReference<World> overworldRef = null;
-
-    /** G2：复核倒计数（所有屏共享递减，仅服务端主线程访问） */
-    private static int overworldRefetchCountdown = 0;
 
     /** G2：EU 轮询段倒计数（实例字段；0 起步使冷启动/重载后首 tick 即执行不延迟） */
     private int euPollCountdown = 0;
 
     /**
-     * G2：带引用缓存的 overworld tick 取数（仅 EU 轮询段每 100t 调用一次，替代原每 tick
-     * {@code MinecraftServer.getServer() + worldServerForDimension(0)} 直查）。
+     * Current loaded overworld clock, queried only inside the existing 100-tick polling gate.
+     * Never reuse a former server's world or initialize an unloaded dimension.
      * <p>
      * 调度器使用 overworld tick 作为采样基准，panel 必须用同一基准更新 lastRequestTick。
      *
@@ -221,13 +208,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         if (server == null) {
             return -1L;
         }
-        World overworld = overworldRef == null ? null : overworldRef.get();
-        if (overworld == null || --overworldRefetchCountdown <= 0) {
-            // 引用断失（GC 清除）或复核周期到：回源一次并重置倒计数
-            overworld = server.worldServerForDimension(0);
-            overworldRef = new WeakReference<World>(overworld);
-            overworldRefetchCountdown = OVERWORLD_REFETCH_CALLS;
-        }
+        World overworld = DimensionManager.getWorld(0);
         return overworld == null ? -1L : overworld.getTotalWorldTime();
     }
 
@@ -247,13 +228,10 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
                 getProxy().onReady();
                 aeProxyReady = true;
             }
-            if (!structure.isInitialized()) {
-                structure.rebuild();
-                structure.markInitialized();
-            }
+            structure.tick();
 
             // ===== EU 缓存域（E4 迁入 EUCacheBridge）：请求 tick 更新 → 冷启动刷新 → 新数据轮询，三段顺序不变 =====
-            // G2：整段 100t 门控 + overworld 引用缓存——tickServer 内三段均无每 tick 必要逻辑
+            // G2：整段 100t 门控——tickServer 内三段均无每 tick 必要逻辑
             // （调度器活跃判定窗口 6000t，lastRequestTick 每 100t 推进远在其内；冷启动刷新一次性；
             // newest() 轮询仅影响显示时效），markBlockForUpdate 链路完整保留、至多延迟 100t；
             // 冷启动/重载后首 tick 即触发（倒计数 0 起步），无冷启动空窗
@@ -283,6 +261,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void invalidate() {
         super.invalidate();
+        aeProxyReady = false;
+        structure.invalidate();
         if (gridProxy != null) {
             gridProxy.invalidate();
         }
@@ -291,6 +271,8 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
     @Override
     public void onChunkUnload() {
         super.onChunkUnload();
+        aeProxyReady = false;
+        structure.invalidate();
         if (gridProxy != null) {
             gridProxy.onChunkUnload();
         }

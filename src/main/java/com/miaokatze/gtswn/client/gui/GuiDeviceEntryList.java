@@ -16,6 +16,7 @@ import com.cleanroommc.modularui.utils.Alignment;
 import com.cleanroommc.modularui.widget.ParentWidget;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.ListWidget;
+import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
@@ -130,18 +131,24 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
     private final class DeviceRow extends ButtonWidget<DeviceRow> {
 
         private final Entry entry;
+        private final Snapshot snapshot;
+        private final List<Entry> rows;
 
         DeviceRow(Entry entry) {
             this.entry = entry;
+            this.snapshot = host.displayedSnapshot();
+            this.rows = host.sortedEntries();
         }
 
         @Override
         public void draw(ModularGuiContext context, WidgetThemeEntry<?> theme) {
+            if (rows != host.sortedEntries() || !host.displayCurrent(snapshot)) return;
             GtswnMuiWidgets.drawLegacy(() -> drawSlot(entry, 0, 0, isHovering()));
         }
     }
 
     private boolean rowAction(Entry entry, int button, boolean name, boolean teleport) {
+        if (!host.isActive() || !host.isCurrentEntry(entry)) return true;
         if (name && button == 1) {
             host.openNameEditor(entry, 0, 0);
             return true;

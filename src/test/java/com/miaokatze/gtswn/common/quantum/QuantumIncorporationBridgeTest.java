@@ -72,10 +72,81 @@ public class QuantumIncorporationBridgeTest {
         entry = ((Map<Long, QuantumIncorporationRegistry.Entry>) registered.get(registry)).values()
             .iterator()
             .next();
-        assertEquals(37, entry.resolveNativeActor(null));
+        assertEquals(-1, entry.resolveNativeActor(null)); // A saved number is not current UUID authority.
+        assertEquals(37, entry.resolveNativeActor(players));
+        assertEquals(37, entry.resolveNativeActor(null)); // Only this session's resolved number is cached.
         set(entry, "nativeOwnerID", -1);
         set(entry, "owner", "invalid-or-missing-legacy-uuid");
         assertEquals(-1, entry.resolveNativeActor(players));
+    }
+
+    @Test
+    public void restoredIncorporationRevalidatesNativeActorAgainstCurrentUuidMapping() throws Exception {
+        UUID owner = UUID.randomUUID();
+        NBTTagCompound binding = new NBTTagCompound();
+        binding.setString("identity", "saved-generation");
+        binding.setString("owner", owner.toString());
+        binding.setInteger("nativeOwnerID", 37); // This number now belongs to another UUID in AE's restored file.
+        NBTTagList entries = new NBTTagList();
+        entries.appendTag(binding);
+        NBTTagCompound saved = new NBTTagCompound();
+        saved.setTag("entries", entries);
+        QuantumIncorporationRegistry registry = new QuantumIncorporationRegistry("restored");
+        registry.readFromNBT(saved);
+        QuantumIncorporationRegistry.Entry entry = registry.snapshot()
+            .iterator()
+            .next();
+        AtomicInteger calls = new AtomicInteger();
+        IPlayerRegistry players = (IPlayerRegistry) Proxy.newProxyInstance(
+            IPlayerRegistry.class.getClassLoader(),
+            new Class<?>[] { IPlayerRegistry.class },
+            (proxy, method, args) -> {
+                calls.incrementAndGet();
+                assertEquals(owner, ((GameProfile) args[0]).getId());
+                return 91;
+            });
+        assertEquals(-1, entry.resolveNativeActor(null));
+        assertEquals(91, entry.resolveNativeActor(players));
+        assertEquals(91, entry.resolveNativeActor(players));
+        assertEquals(1, calls.get()); // Revalidation is once per restored entry, not every bridge tick.
+        NBTTagCompound current = new NBTTagCompound();
+        registry.writeToNBT(current);
+        assertEquals(
+            91,
+            current.getTagList("entries", 10)
+                .getCompoundTagAt(0)
+                .getInteger("nativeOwnerID"));
+
+        binding.setString("owner", "invalid-owner");
+        registry.readFromNBT(saved);
+        entry = registry.snapshot()
+            .iterator()
+            .next();
+        assertEquals(-1, entry.resolveNativeActor(players));
+        assertEquals(1, calls.get()); // Even a saved privileged number cannot replace a missing UUID.
+    }
+
+    @Test
+    public void unavailableNativeActorIsRetriedWithoutChangingSavedOwner() throws Exception {
+        UUID owner = UUID.randomUUID();
+        QuantumIncorporationRegistry.Entry entry = new QuantumIncorporationRegistry.Entry();
+        set(entry, "owner", owner.toString());
+        AtomicInteger calls = new AtomicInteger();
+        IPlayerRegistry players = (IPlayerRegistry) Proxy.newProxyInstance(
+            IPlayerRegistry.class.getClassLoader(),
+            new Class<?>[] { IPlayerRegistry.class },
+            (proxy, method, args) -> {
+                assertEquals(owner, ((GameProfile) args[0]).getId());
+                int attempt = calls.incrementAndGet();
+                if (attempt == 1) throw new IllegalStateException("Native registry is not ready");
+                return attempt == 2 ? -1 : 91;
+            });
+        assertEquals(-1, entry.resolveNativeActor(players));
+        assertEquals(-1, entry.resolveNativeActor(players));
+        assertEquals(91, entry.resolveNativeActor(players));
+        assertEquals(91, entry.resolveNativeActor(players));
+        assertEquals(3, calls.get());
+        assertEquals(owner.toString(), entry.owner());
     }
 
     @Test

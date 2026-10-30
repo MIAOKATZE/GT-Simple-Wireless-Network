@@ -4,8 +4,10 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.NavigableMap;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.TreeMap;
 
@@ -54,6 +56,8 @@ public class WirelessNodeRegistry extends WorldSavedData {
 
     /** 节点索引（打包坐标 → 类型） */
     private final NavigableMap<Long, Byte> nodes = new TreeMap<>();
+    /** Runtime-only spatial index; the persisted schema remains the canonical positions/types arrays. */
+    private final Map<Long, NavigableMap<Long, Byte>> chunkNodes = new HashMap<>();
     private Map<Long, Byte> cachedSnapshot;
 
     public WirelessNodeRegistry(String name) {
@@ -86,6 +90,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
             return;
         }
         this.nodes.put(packed, type);
+        index(packed, type);
         cachedSnapshot = null;
         markDirty();
         if (DebugTestGate.probesActive())
@@ -96,7 +101,9 @@ public class WirelessNodeRegistry extends WorldSavedData {
      * 出册单个节点（幂等：坐标未册时无效果）。仅在实际移除时 {@code markDirty()}。
      */
     public void unregister(World world, int x, int y, int z) {
-        if (this.nodes.remove(Long.valueOf(WirelessNodeIndexCodec.pack(x, y, z))) != null) {
+        long packed = WirelessNodeIndexCodec.pack(x, y, z);
+        if (this.nodes.remove(packed) != null) {
+            unindex(packed);
             cachedSnapshot = null;
             markDirty();
             if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_REMOVE, "");
@@ -116,8 +123,14 @@ public class WirelessNodeRegistry extends WorldSavedData {
             removed = new HashSet<>(packedPositions);
             removed.retainAll(this.nodes.keySet());
         }
-        if (this.nodes.keySet()
-            .removeAll(packedPositions)) {
+        boolean changed = false;
+        for (Long packed : packedPositions) {
+            if (packed != null && this.nodes.remove(packed) != null) {
+                unindex(packed);
+                changed = true;
+            }
+        }
+        if (changed) {
             cachedSnapshot = null;
             markDirty();
             if (removed != null) for (long packed : removed) TestWorldProbes.at(
@@ -159,12 +172,95 @@ public class WirelessNodeRegistry extends WorldSavedData {
         return Collections.unmodifiableMap(nodes);
     }
 
+    /**
+     * Main-thread read-only X slab, without allocating a copy of every candidate. Like {@link #readView()},
+     * this view must not be retained across ticks or used while a caller repairs/mutates the index.
+     */
+    public Map<Long, Byte> readViewInXRange(int minX, int maxX) {
+        long lowerX = Math.max(-33_554_432L, (long) minX);
+        long upperX = Math.min(33_554_431L, (long) maxX);
+        if (lowerX > upperX) return Collections.emptyMap();
+        long lower = lowerX << 38;
+        long upper = (upperX << 38) | ((1L << 38) - 1);
+        return Collections.unmodifiableMap(nodes.subMap(lower, true, upper, true));
+    }
+
+    private static long chunkKey(int x, int z) {
+        return ((long) x << 32) | (z & 0xffffffffL);
+    }
+
+    private static long positionChunk(long packed) {
+        return chunkKey(WirelessNodeIndexCodec.unpackX(packed) >> 4, WirelessNodeIndexCodec.unpackZ(packed) >> 4);
+    }
+
+    private void index(long packed, byte type) {
+        chunkNodes.computeIfAbsent(positionChunk(packed), ignored -> new TreeMap<>())
+            .put(packed, type);
+    }
+
+    private void unindex(long packed) {
+        long chunk = positionChunk(packed);
+        NavigableMap<Long, Byte> bucket = chunkNodes.get(chunk);
+        if (bucket == null) return;
+        bucket.remove(packed);
+        if (bucket.isEmpty()) chunkNodes.remove(chunk);
+    }
+
+    /**
+     * Lazy main-thread view of a closed chunk rectangle. At most 64 GT cells (9 chunks each), with no
+     * dimension-wide scan/copy and no off-view Z prefix consuming the caller's node budget. Both iteration
+     * and entries are read-only; do not retain the view across ticks or mutate the registry while reading.
+     */
+    public Iterable<Map.Entry<Long, Byte>> readViewInChunkRectangle(int minX, int minZ, int maxX, int maxZ) {
+        long width = (long) maxX - minX + 1, height = (long) maxZ - minZ + 1;
+        if (width <= 0 || height <= 0
+            || width > 576
+            || height > 576
+            || width * height > 576
+            || minX < -2_097_152
+            || minZ < -2_097_152
+            || maxX > 2_097_151
+            || maxZ > 2_097_151) return Collections.emptyList();
+        return () -> new Iterator<Map.Entry<Long, Byte>>() {
+
+            private int x = minX, z = minZ;
+            private boolean exhausted;
+            private Iterator<Map.Entry<Long, Byte>> bucket = Collections.<Map.Entry<Long, Byte>>emptyList()
+                .iterator();
+
+            @Override
+            public boolean hasNext() {
+                while (!bucket.hasNext() && !exhausted) {
+                    NavigableMap<Long, Byte> next = chunkNodes.get(chunkKey(x, z));
+                    if (z < maxZ) z++;
+                    else if (x < maxX) {
+                        x++;
+                        z = minZ;
+                    } else exhausted = true;
+                    bucket = next == null ? Collections.<Map.Entry<Long, Byte>>emptyList()
+                        .iterator()
+                        : Collections.unmodifiableMap(next)
+                            .entrySet()
+                            .iterator();
+                }
+                return bucket.hasNext();
+            }
+
+            @Override
+            public Map.Entry<Long, Byte> next() {
+                if (!hasNext()) throw new NoSuchElementException();
+                return bucket.next();
+            }
+        };
+    }
+
     // ==================== NBT 持久化（int[2N] positions + byte[N] types，经 Codec 编解码） ====================
 
     @Override
     public void readFromNBT(NBTTagCompound tag) {
         cachedSnapshot = null;
         this.nodes.clear();
+        this.chunkNodes.clear();
         if (!tag.hasKey(NBT_POSITIONS) || !tag.hasKey(NBT_TYPES)) {
             return;
         }
@@ -175,6 +271,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
             positions[i] = ((long) flat[2 * i] << 32) | (flat[2 * i + 1] & 0xFFFFFFFFL);
         }
         this.nodes.putAll(WirelessNodeIndexCodec.decode(positions, tag.getByteArray(NBT_TYPES)));
+        for (Map.Entry<Long, Byte> entry : nodes.entrySet()) index(entry.getKey(), entry.getValue());
     }
 
     @Override
