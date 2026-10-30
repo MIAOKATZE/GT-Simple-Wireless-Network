@@ -79,6 +79,7 @@ public class ItemChargingTest {
         ChargingTarget target = new ChargingTarget(stack, 1);
         NBTTagCompound cache = new NBTTagCompound();
         cache.setDouble("Charge", 100);
+        cache.setDouble("Capacity", 100);
         cache.setInteger("Tier", 1);
         Method charge = MonitorChargingHandler.class
             .getDeclaredMethod("chargeTargets", NBTTagCompound.class, List.class, int.class);

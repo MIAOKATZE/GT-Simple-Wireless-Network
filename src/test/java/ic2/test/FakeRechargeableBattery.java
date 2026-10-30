@@ -55,7 +55,7 @@ public class FakeRechargeableBattery extends Item implements IElectricItem, ISpe
         @Override
         public double charge(ItemStack stack, double amount, int tier, boolean ignoreLimit, boolean simulate) {
             if (!rechargeable || tier < getTier(stack)) return 0;
-            double received = Math.min(1000 - getCharge(stack), ignoreLimit ? amount : Math.min(amount, 32));
+            double received = Math.min(getMaxCharge(stack) - getCharge(stack), ignoreLimit ? amount : Math.min(amount, 32));
             if (!simulate) setCharge(stack, getCharge(stack) + received);
             return received;
         }

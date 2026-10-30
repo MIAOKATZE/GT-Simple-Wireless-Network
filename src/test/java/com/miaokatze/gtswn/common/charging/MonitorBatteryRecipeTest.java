@@ -66,8 +66,7 @@ public class MonitorBatteryRecipeTest {
     @Test
     public void nativeTooltipReadsLiveCacheWithoutChangingNestedBatteryOrTerminal() {
         ItemStack installed = MonitorBattery.install(monitor(), battery(700));
-        MonitorBattery.data(installed)
-            .setDouble("Charge", 321);
+        BatteryCharge.set(MonitorBattery.data(installed), BatteryCharge.value(321));
         ItemStack before = installed.copy();
         assertEquals("321.0/1000 EU", MonitorElectricItemManager.getChargeTooltip(installed));
         assertNull(
@@ -85,8 +84,7 @@ public class MonitorBatteryRecipeTest {
         assertNull(MonitorBattery.withoutBattery(monitor()));
         for (double charge : new double[] { 0, 321, 1000 }) {
             ItemStack installed = MonitorBattery.install(monitor(), battery(700));
-            MonitorBattery.data(installed)
-                .setDouble("Charge", charge);
+            BatteryCharge.set(MonitorBattery.data(installed), BatteryCharge.value(charge));
             ItemStack before = installed.copy();
             ItemStack empty = MonitorBattery.withoutBattery(installed);
             assertFalse(MonitorBattery.hasBattery(empty));
@@ -200,8 +198,7 @@ public class MonitorBatteryRecipeTest {
     public void replacingReturnsExactlyTheOldRemainingCacheAtZeroPartialAndFull() {
         for (double remaining : new double[] { 0, 321, 1000 }) {
             ItemStack installed = MonitorBattery.install(monitor(), battery(700));
-            MonitorBattery.data(installed)
-                .setDouble("Charge", remaining);
+            BatteryCharge.set(MonitorBattery.data(installed), BatteryCharge.value(remaining));
             ItemStack before = installed.copy();
             ItemStack replacement = new MonitorBatteryRecipe().getCraftingResult(matrix(installed, battery(123)));
             ItemStack returned = ((Item) MONITOR).getContainerItem(installed);

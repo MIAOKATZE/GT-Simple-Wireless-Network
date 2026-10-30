@@ -76,6 +76,7 @@ public final class ChargeStackSync {
             // Only live charging state is safe to merge; battery identity, capacity and tier remain significant.
             NBTTagCompound battery = tag.getCompoundTag(MonitorBattery.NBT_BATTERY);
             battery.removeTag("Charge");
+            battery.removeTag("ChargeExact");
             battery.removeTag("Status");
             battery.removeTag("Quiet");
         }
