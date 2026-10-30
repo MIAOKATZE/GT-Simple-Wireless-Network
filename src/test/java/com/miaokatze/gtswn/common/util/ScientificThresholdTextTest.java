@@ -40,8 +40,8 @@ public class ScientificThresholdTextTest {
 
     @Test
     public void formattingRetainsTheFullLongDomainWithoutDoubleRounding() {
-        long[] boundaries = { Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MAX_VALUE, Long.MAX_VALUE - 1,
-            9007199254740993L, -9007199254740993L, 999999999999999999L };
+        long[] boundaries = { Long.MIN_VALUE, Long.MIN_VALUE + 1, Long.MAX_VALUE, Long.MAX_VALUE - 1, 9007199254740993L,
+            -9007199254740993L, 999999999999999999L };
         for (long value : boundaries) assertExact(value);
         Random random = new Random(98231);
         for (int i = 0; i < 10000; i++) assertExact(random.nextLong());

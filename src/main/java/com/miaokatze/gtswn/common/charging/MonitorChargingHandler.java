@@ -94,7 +94,9 @@ public final class MonitorChargingHandler {
         if (player.ticksExisted % ToolboxCharging.INTERVAL == 0 && !toolboxes.isEmpty()
             && monitors.stream()
                 .filter(MonitorBattery::hasBattery)
-                .anyMatch(monitor -> BatteryCharge.get(MonitorBattery.data(monitor)).signum() > 0)) {
+                .anyMatch(
+                    monitor -> BatteryCharge.get(MonitorBattery.data(monitor))
+                        .signum() > 0)) {
             int boxStart = ToolboxCharging.firstBox(player.ticksExisted, toolboxes.size());
             for (int b = 0; b < ToolboxCharging.selectedBoxes(toolboxes.size()); b++) {
                 ToolboxCharging box = new ToolboxCharging(toolboxes.get((boxStart + b) % toolboxes.size()));
@@ -130,7 +132,8 @@ public final class MonitorChargingHandler {
             double received = targets.get((start + j) % targets.size())
                 .charge(BatteryCharge.available(cache), tier);
             if (received > 0) {
-                cache = cache.subtract(BatteryCharge.value(received)).max(BigDecimal.ZERO);
+                cache = cache.subtract(BatteryCharge.value(received))
+                    .max(BigDecimal.ZERO);
                 charging = true;
             }
         }
@@ -159,8 +162,7 @@ public final class MonitorChargingHandler {
 
     private static void refill(ItemStack monitor, NBTTagCompound data) {
         BigDecimal missing = BatteryCharge.missing(data);
-        if (missing.signum() <= 0 || !PortableWirelessNetworkMonitor.isMonitorBound(monitor))
-            return;
+        if (missing.signum() <= 0 || !PortableWirelessNetworkMonitor.isMonitorBound(monitor)) return;
         try {
             UUID owner = UUID.fromString(PortableWirelessNetworkMonitor.getOwnerUUID(monitor));
             BigInteger deduction = ChargeMath.deduction(missing, Config.downlinkLossEU);
@@ -172,7 +174,8 @@ public final class MonitorChargingHandler {
     }
 
     private static void updateStatus(NBTTagCompound data, boolean charging) {
-        if (BatteryCharge.get(data).signum() <= 0) {
+        if (BatteryCharge.get(data)
+            .signum() <= 0) {
             // Interrupted work stays pending: lack of energy must never count as a quiet completion.
             data.setInteger("Status", charging || data.getInteger("Status") == 2 ? 2 : 0);
             data.setInteger("Quiet", 0);

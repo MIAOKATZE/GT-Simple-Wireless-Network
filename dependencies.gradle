@@ -37,7 +37,8 @@ dependencies {
     // Optional MM integration; never bundled or required when running GTSWN.
     compileOnly("com.github.GTNewHorizons:MatterManipulator:0.1.59-GTNH:dev") { transitive = false }
     compileOnly("it.unimi.dsi:fastutil:8.5.18") { transitive = false }
-    testRuntimeOnly("com.github.GTNewHorizons:MatterManipulator:0.1.59-GTNH:dev") { transitive = false }
+    // Integration tests compile against MM directly; this does not publish a production dependency.
+    testImplementation("com.github.GTNewHorizons:MatterManipulator:0.1.59-GTNH:dev") { transitive = false }
     // Minimal dependency set for current source usage.
     // Sources reference only GregTech API types (gregtech.api.*), so keep GT5-Unofficial.
     // User has an external hard backup of the original file, so this file is intentionally simplified.
@@ -83,7 +84,7 @@ dependencies {
     testRuntimeOnly("com.github.GTNewHorizons:lwjgl3ify:3.0.34:api") { transitive = false }
     // GuiScreen initializes RenderItem; use the same LWJGL API as Minecraft's compile classpath.
     testRuntimeOnly("org.lwjgl.lwjgl:lwjgl:2.9.4-nightly-20150209") { transitive = false }
-    testRuntimeOnly("it.unimi.dsi:fastutil:8.5.18") { transitive = false }
+    testImplementation("it.unimi.dsi:fastutil:8.5.18") { transitive = false }
     testRuntimeOnly("net.industrial-craft:industrialcraft-2:2.2.828-experimental:api") { transitive = false }
     testImplementation("com.github.GTNewHorizons:Baubles-Expanded:2.2.24-GTNH:dev") { transitive = false }
 

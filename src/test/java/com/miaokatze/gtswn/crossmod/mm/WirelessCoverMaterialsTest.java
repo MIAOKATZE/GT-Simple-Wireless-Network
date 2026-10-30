@@ -61,7 +61,8 @@ public class WirelessCoverMaterialsTest {
     public void virtualCoverSalvageCannotBecomeRealInventoryOrEstimatorCredit() {
         ItemStack physical = new ItemStack(ordinary, 23, 7);
         physical.setTagCompound(new NBTTagCompound());
-        physical.getTagCompound().setString("owner", "preserved");
+        physical.getTagCompound()
+            .setString("owner", "preserved");
         List<ItemStack> original = Arrays.asList(new ItemStack(energy), physical, new ItemStack(dynamo), null);
 
         List<ItemStack> filtered = WirelessCoverMaterials.withoutVirtualCovers(original, ItemStack::getItem);
@@ -71,7 +72,10 @@ public class WirelessCoverMaterialsTest {
         assertNull(filtered.get(1));
         assertEquals(23, physical.stackSize);
         assertEquals(7, physical.getItemDamage());
-        assertEquals("preserved", physical.getTagCompound().getString("owner"));
+        assertEquals(
+            "preserved",
+            physical.getTagCompound()
+                .getString("owner"));
         assertEquals(4, original.size());
         assertEquals(1, original.get(0).stackSize);
         assertEquals(1, original.get(2).stackSize);
@@ -80,7 +84,9 @@ public class WirelessCoverMaterialsTest {
     @Test
     public void salvageFilteringIsIdempotentAndDoesNotMutateSharedInputLists() {
         List<ItemStack> virtual = Arrays.asList(new ItemStack(energy), new ItemStack(dynamo));
-        assertTrue(WirelessCoverMaterials.withoutVirtualCovers(virtual, ItemStack::getItem).isEmpty());
+        assertTrue(
+            WirelessCoverMaterials.withoutVirtualCovers(virtual, ItemStack::getItem)
+                .isEmpty());
         assertEquals(2, virtual.size());
         List<ItemStack> physical = Arrays.asList(new ItemStack(ordinary));
         List<ItemStack> filtered = WirelessCoverMaterials.withoutVirtualCovers(physical, ItemStack::getItem);

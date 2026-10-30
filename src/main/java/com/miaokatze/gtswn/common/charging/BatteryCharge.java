@@ -40,21 +40,30 @@ final class BatteryCharge {
     static void set(NBTTagCompound data, BigDecimal charge) {
         BigDecimal capacity = capacity(data);
         write(data, "Capacity", capacity);
-        write(data, "Charge", charge.max(BigDecimal.ZERO).min(capacity));
+        write(
+            data,
+            "Charge",
+            charge.max(BigDecimal.ZERO)
+                .min(capacity));
     }
 
     static BigDecimal nativeCapacity(ItemStack battery) {
         if (battery.getItem() instanceof MetaBaseItem) {
             Long[] stats = ((MetaBaseItem) battery.getItem()).getElectricStats(battery);
-            return stats == null ? BigDecimal.ZERO : BigDecimal.valueOf(stats[0]).abs();
+            return stats == null ? BigDecimal.ZERO
+                : BigDecimal.valueOf(stats[0])
+                    .abs();
         }
         return value(((ic2.api.item.IElectricItem) battery.getItem()).getMaxCharge(battery));
     }
 
     static BigDecimal nativeCharge(ItemStack battery) {
         return battery.getItem() instanceof MetaBaseItem
-            ? BigDecimal.valueOf(((MetaBaseItem) battery.getItem()).getRealCharge(battery)).max(BigDecimal.ZERO)
-            : value(MonitorBattery.manager(battery).getCharge(battery));
+            ? BigDecimal.valueOf(((MetaBaseItem) battery.getItem()).getRealCharge(battery))
+                .max(BigDecimal.ZERO)
+            : value(
+                MonitorBattery.manager(battery)
+                    .getCharge(battery));
     }
 
     static BigDecimal remainder(ItemStack battery) {
@@ -65,8 +74,10 @@ final class BatteryCharge {
     static void remainder(ItemStack battery, BigDecimal remainder) {
         if (remainder.signum() > 0) {
             if (!battery.hasTagCompound()) battery.setTagCompound(new NBTTagCompound());
-            battery.getTagCompound().setString(REMAINDER, remainder.toPlainString());
-        } else if (battery.hasTagCompound()) battery.getTagCompound().removeTag(REMAINDER);
+            battery.getTagCompound()
+                .setString(REMAINDER, remainder.toPlainString());
+        } else if (battery.hasTagCompound()) battery.getTagCompound()
+            .removeTag(REMAINDER);
     }
 
     /** Preserve the exact value of an API double, rather than its rounded decimal rendering. */

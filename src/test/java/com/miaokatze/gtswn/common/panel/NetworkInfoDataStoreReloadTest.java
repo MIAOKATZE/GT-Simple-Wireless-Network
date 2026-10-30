@@ -19,7 +19,8 @@ public class NetworkInfoDataStoreReloadTest {
         first.addSample(BigInteger.ONE, 100, 1000);
         first.updateRequestTick(100);
         NetworkInfoDataStore replacement = new NetworkInfoDataStore("snapshot");
-        replacement.getOrCreate("account").addSample(BigInteger.TEN, 100, 1000);
+        replacement.getOrCreate("account")
+            .addSample(BigInteger.TEN, 100, 1000);
         NBTTagCompound saved = new NBTTagCompound();
         replacement.writeToNBT(saved);
         int revision = store.getRevision();
@@ -33,7 +34,10 @@ public class NetworkInfoDataStoreReloadTest {
         store.readFromNBT(saved);
         assertNotEquals(revision, store.getRevision());
         assertNotSame(restored, store.getIfPresent("account"));
-        assertEquals(BigInteger.TEN, store.getIfPresent("account").newest().eu);
+        assertEquals(
+            BigInteger.TEN,
+            store.getIfPresent("account")
+                .newest().eu);
         revision = store.getRevision();
         store.readFromNBT(new NBTTagCompound());
         assertNotEquals(revision, store.getRevision());
@@ -48,7 +52,8 @@ public class NetworkInfoDataStoreReloadTest {
         List<Map.Entry<String, NetworkInfoDataSet>> entries = store.getActiveEntries(100);
         assertEquals(1, entries.size());
         try {
-            entries.get(0).setValue(new NetworkInfoDataSet());
+            entries.get(0)
+                .setValue(new NetworkInfoDataSet());
             fail("The snapshot's map entries must not be live mutable aliases");
         } catch (UnsupportedOperationException expected) {}
         assertSame(original, store.getIfPresent("account"));

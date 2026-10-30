@@ -20,7 +20,8 @@ public class PanelProxyLifecycleTest {
             panel.onChunkUnload();
             panel.onChunkUnload();
             panel.validate();
-            assertFalse("Native proxy unload clears readiness; next server tick must call onReady again",
+            assertFalse(
+                "Native proxy unload clears readiness; next server tick must call onReady again",
                 ready.getBoolean(panel));
         }
     }

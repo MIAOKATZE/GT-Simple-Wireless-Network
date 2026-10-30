@@ -43,7 +43,8 @@ public class PacketSessionLifecycleTest {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
         Field field = unsafe.getDeclaredField("theUnsafe");
         field.setAccessible(true);
-        return unsafe.getMethod("allocateInstance", Class.class).invoke(field.get(null), type);
+        return unsafe.getMethod("allocateInstance", Class.class)
+            .invoke(field.get(null), type);
     }
 
     private static Player player(UUID id) throws Exception {
@@ -61,7 +62,8 @@ public class PacketSessionLifecycleTest {
     private static Object job(Class<?> owner, EntityPlayerMP player) throws Exception {
         String nested = owner == PacketTerminalGesture.class ? "Request" : "Job";
         Object job = allocate(Class.forName(owner.getName() + "$" + nested));
-        Field field = job.getClass().getDeclaredField("player");
+        Field field = job.getClass()
+            .getDeclaredField("player");
         field.setAccessible(true);
         field.set(job, player);
         return job;
@@ -80,8 +82,11 @@ public class PacketSessionLifecycleTest {
             try {
                 Object oldJob = owner == PacketRequestQuantumReveal.class ? departing : job(owner, departing);
                 Object newJob = owner == PacketRequestQuantumReveal.class ? replacement : job(owner, replacement);
-                Object listener = Class.forName(owner.getName() + "$Drain").getDeclaredConstructor().newInstance();
-                Method logout = listener.getClass().getMethod("logout", PlayerEvent.PlayerLoggedOutEvent.class);
+                Object listener = Class.forName(owner.getName() + "$Drain")
+                    .getDeclaredConstructor()
+                    .newInstance();
+                Method logout = listener.getClass()
+                    .getMethod("logout", PlayerEvent.PlayerLoggedOutEvent.class);
                 pending.put(shared, newJob);
                 logout.invoke(listener, new PlayerEvent.PlayerLoggedOutEvent(departing));
                 assertSame(newJob, pending.get(shared));
@@ -103,7 +108,8 @@ public class PacketSessionLifecycleTest {
         UUID id = UUID.randomUUID();
         Player departing = player(id);
         Object cancellation = job(PacketTerminalGesture.class, departing);
-        Field action = cancellation.getClass().getDeclaredField("action");
+        Field action = cancellation.getClass()
+            .getDeclaredField("action");
         action.setAccessible(true);
         action.setInt(cancellation, PacketTerminalGesture.CANCEL_REVEAL);
         Object replacementCharge = allocate(Class.forName(PacketTerminalGesture.class.getName() + "$Charge"));
@@ -124,7 +130,8 @@ public class PacketSessionLifecycleTest {
     public void aDepartedPlayersMigrationCancelCannotAdvanceTheNextConnectionsSessionBarrier() throws Exception {
         Player departing = player(UUID.randomUUID());
         PacketQuantumMigration.Request cancellation = new PacketQuantumMigration.Request(
-            departing, new PacketQuantumMigration(PacketQuantumMigration.CANCEL, Long.MAX_VALUE, 0, 0, 0));
+            departing,
+            new PacketQuantumMigration(PacketQuantumMigration.CANCEL, Long.MAX_VALUE, 0, 0, 0));
         Method handle = PacketQuantumMigration.class.getDeclaredMethod("handle", PacketQuantumMigration.Request.class);
         handle.setAccessible(true);
         PacketQuantumMigration.clearServerState();
@@ -182,8 +189,8 @@ public class PacketSessionLifecycleTest {
     @Test
     public void safetyResetAlsoDropsPendingIntentsAndReopensAdmission() throws Exception {
         Object queue = field(PacketSetQuantumNetworkSafety.class, null, "QUEUE");
-        Method enqueue = queue.getClass().getDeclaredMethod("enqueue", EntityPlayerMP.class,
-            PacketSetQuantumNetworkSafety.class);
+        Method enqueue = queue.getClass()
+            .getDeclaredMethod("enqueue", EntityPlayerMP.class, PacketSetQuantumNetworkSafety.class);
         enqueue.setAccessible(true);
         Player player = player(UUID.randomUUID());
         PacketSetQuantumNetworkSafety.clearContexts();

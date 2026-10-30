@@ -23,7 +23,9 @@ public class PanelSamplingClockTest {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
         Field field = unsafe.getDeclaredField("theUnsafe");
         field.setAccessible(true);
-        return type.cast(unsafe.getMethod("allocateInstance", Class.class).invoke(field.get(null), type));
+        return type.cast(
+            unsafe.getMethod("allocateInstance", Class.class)
+                .invoke(field.get(null), type));
     }
 
     private static WorldServer world(long tick) throws Exception {
@@ -66,10 +68,14 @@ public class PanelSamplingClockTest {
             singleton.set(null, second);
             loaded.put(0, current);
             assertEquals(20L, ((Long) clock.invoke(null)).longValue());
-            assertEquals("Keep the former world strongly reachable during the entire assertion", 100_000L,
+            assertEquals(
+                "Keep the former world strongly reachable during the entire assertion",
+                100_000L,
                 old.getTotalWorldTime());
             loaded.remove(0);
-            assertEquals("Missing loaded overworld must not trigger dimension initialization", -1L,
+            assertEquals(
+                "Missing loaded overworld must not trigger dimension initialization",
+                -1L,
                 ((Long) clock.invoke(null)).longValue());
             singleton.set(null, null);
             assertEquals(-1L, ((Long) clock.invoke(null)).longValue());

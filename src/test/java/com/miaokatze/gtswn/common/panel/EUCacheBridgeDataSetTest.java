@@ -22,7 +22,9 @@ public class EUCacheBridgeDataSetTest {
         replace(bridge, new NetworkInfoDataSet());
         assertEquals(BigInteger.ZERO, bridge.getCachedEu());
         assertEquals(0D, bridge.getCachedEut(), 0D);
-        assertTrue(bridge.getCachedSamples().isEmpty());
+        assertTrue(
+            bridge.getCachedSamples()
+                .isEmpty());
         assertEquals(-1L, field(bridge, "lastKnownSampleTick").getLong(bridge));
         assertTrue(field(bridge, "needsDataRefresh").getBoolean(bridge));
         assertTrue(field(bridge, "fullSyncPending").getBoolean(bridge));
@@ -36,7 +38,10 @@ public class EUCacheBridgeDataSetTest {
         NetworkInfoDataSet next = data(7);
         replace(bridge, next);
         assertEquals(BigInteger.valueOf(7), bridge.getCachedEu());
-        assertEquals(BigInteger.valueOf(7), bridge.getCachedSamples().get(0).eu);
+        assertEquals(
+            BigInteger.valueOf(7),
+            bridge.getCachedSamples()
+                .get(0).eu);
         long seq = field(bridge, "syncSeq").getLong(bridge);
         field(bridge, "needsDataRefresh").setBoolean(bridge, false);
         field(bridge, "fullSyncPending").setBoolean(bridge, false);

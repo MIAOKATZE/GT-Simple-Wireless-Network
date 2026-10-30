@@ -271,13 +271,17 @@ public class QuantumTerminalRenameTest {
         assertFalse(original.matchesColorContext(player));
         player.inventory.setInventorySlotContents(3, terminal);
         assertTrue(original.matchesColorContext(player));
-        terminal.getTagCompound().setInteger("QT_AnchorX", 18);
+        terminal.getTagCompound()
+            .setInteger("QT_AnchorX", 18);
         assertFalse(original.matchesColorContext(player));
-        terminal.getTagCompound().setInteger("QT_AnchorX", 17);
+        terminal.getTagCompound()
+            .setInteger("QT_AnchorX", 17);
         assertTrue(original.matchesColorContext(player));
-        terminal.getTagCompound().setString("QT_EncryptionKey", "new-key");
+        terminal.getTagCompound()
+            .setString("QT_EncryptionKey", "new-key");
         assertFalse(original.matchesColorContext(player));
-        terminal.getTagCompound().setString("QT_EncryptionKey", "");
+        terminal.getTagCompound()
+            .setString("QT_EncryptionKey", "");
         assertTrue(original.matchesColorContext(player));
         ContainerTerminal reopened = open(player, true);
         assertFalse(original.matchesColorContext(player));

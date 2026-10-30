@@ -61,8 +61,14 @@ public class WirelessNodeRectangleViewTest {
         registry.register(null, 7, 64, 7, (byte) 1);
         registry.readFromNBT(saved);
         assertEquals(expected, rectangle(registry, -1, -1, 0, 0));
-        registry.prune(null, new ArrayList<>(registry.readView().keySet()));
-        assertTrue(registry.readView().isEmpty());
+        registry.prune(
+            null,
+            new ArrayList<>(
+                registry.readView()
+                    .keySet()));
+        assertTrue(
+            registry.readView()
+                .isEmpty());
         Field index = WirelessNodeRegistry.class.getDeclaredField("chunkNodes");
         index.setAccessible(true);
         assertTrue(((Map<?, ?>) index.get(registry)).isEmpty());
@@ -124,14 +130,18 @@ public class WirelessNodeRectangleViewTest {
     public void entriesCannotWriteThroughToEitherIndex() {
         WirelessNodeRegistry registry = new WirelessNodeRegistry("immutable-entry");
         registry.register(null, 0, 0, 0, (byte) 0);
-        registry.readViewInChunkRectangle(0, 0, 0, 0).iterator().next().setValue((byte) 1);
+        registry.readViewInChunkRectangle(0, 0, 0, 0)
+            .iterator()
+            .next()
+            .setValue((byte) 1);
     }
 
     @Test(expected = UnsupportedOperationException.class)
     public void iteratorsCannotRemoveFromEitherIndex() {
         WirelessNodeRegistry registry = new WirelessNodeRegistry("immutable-iterator");
         registry.register(null, 0, 0, 0, (byte) 0);
-        Iterator<Map.Entry<Long, Byte>> iterator = registry.readViewInChunkRectangle(0, 0, 0, 0).iterator();
+        Iterator<Map.Entry<Long, Byte>> iterator = registry.readViewInChunkRectangle(0, 0, 0, 0)
+            .iterator();
         iterator.next();
         iterator.remove();
     }

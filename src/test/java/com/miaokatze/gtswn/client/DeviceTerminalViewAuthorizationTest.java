@@ -35,7 +35,8 @@ public class DeviceTerminalViewAuthorizationTest {
         publish(1, "old");
         anchors.synchronizeAuthorization(terminal);
         DeviceTerminalAnchorRenderer.Anchor anchor = anchor();
-        anchors.observedDevices().add(anchor);
+        anchors.observedDevices()
+            .add(anchor);
         field(anchors, "scanning").set(anchors, DeviceTerminalClientCache.getSnapshot(terminal));
         field(anchors, "target").set(anchors, anchor);
         assertFalse(anchors.viewReady());
@@ -45,7 +46,9 @@ public class DeviceTerminalViewAuthorizationTest {
         // A render callback between network receipt and the next client tick is already denied.
         assertFalse(anchors.authorizationCurrent(terminal));
         anchors.synchronizeAuthorization(terminal);
-        assertTrue(anchors.observedDevices().isEmpty());
+        assertTrue(
+            anchors.observedDevices()
+                .isEmpty());
         assertTrue(anchors.viewReady());
         assertFalse(anchors.hasCurrentTarget());
         assertTrue(anchors.dataEpoch() > generation);
@@ -82,13 +85,19 @@ public class DeviceTerminalViewAuthorizationTest {
         publish(1, "old");
         anchors.synchronizeAuthorization(terminal);
         DeviceTerminalAnchorRenderer.Anchor anchor = anchor();
-        anchors.observedDevices().add(anchor);
+        anchors.observedDevices()
+            .add(anchor);
         field(anchors, "scanning").set(anchors, DeviceTerminalClientCache.getSnapshot(terminal));
         anchors.synchronizeAuthorization(terminal);
-        assertSame(anchor, anchors.observedDevices().get(0));
+        assertSame(
+            anchor,
+            anchors.observedDevices()
+                .get(0));
         assertFalse(anchors.viewReady());
         anchors.synchronizeAuthorization(UUID.randomUUID());
-        assertTrue(anchors.observedDevices().isEmpty());
+        assertTrue(
+            anchors.observedDevices()
+                .isEmpty());
         assertTrue(anchors.viewReady());
     }
 
@@ -96,11 +105,14 @@ public class DeviceTerminalViewAuthorizationTest {
     public void clientSessionCacheResetInvalidatesOldMarkers() {
         publish(1, "old");
         anchors.synchronizeAuthorization(terminal);
-        anchors.observedDevices().add(anchor());
+        anchors.observedDevices()
+            .add(anchor());
         DeviceTerminalClientCache.clear();
         assertFalse(anchors.authorizationCurrent(terminal));
         anchors.synchronizeAuthorization(terminal);
-        assertTrue(anchors.observedDevices().isEmpty());
+        assertTrue(
+            anchors.observedDevices()
+                .isEmpty());
     }
 
     @Test
@@ -148,7 +160,8 @@ public class DeviceTerminalViewAuthorizationTest {
         GuiDeviceInfoTerminal gui = gui();
         Object editor = editor(gui, DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0), 1);
         publish(2, "replacement");
-        Method save = editor.getClass().getDeclaredMethod("save", boolean.class);
+        Method save = editor.getClass()
+            .getDeclaredMethod("save", boolean.class);
         save.setAccessible(true);
         // The stale editor closes before touching its text field or sending a network request.
         save.invoke(editor, false);
@@ -179,7 +192,8 @@ public class DeviceTerminalViewAuthorizationTest {
         Method current = GuiDeviceInfoTerminal.class.getDeclaredMethod("isCurrentEntry", Entry.class);
         current.setAccessible(true);
         assertFalse((Boolean) current.invoke(gui, old));
-        Method drawable = GuiDeviceInfoTerminal.class.getDeclaredMethod("displayCurrent", DeviceTerminalClientCache.Snapshot.class);
+        Method drawable = GuiDeviceInfoTerminal.class
+            .getDeclaredMethod("displayCurrent", DeviceTerminalClientCache.Snapshot.class);
         drawable.setAccessible(true);
         assertFalse((Boolean) drawable.invoke(gui, rendered));
         refresh(gui);
@@ -193,10 +207,15 @@ public class DeviceTerminalViewAuthorizationTest {
         GuiDeviceInfoTerminal gui = gui();
         Object editor = editor(gui, DeviceTerminalClientCache.getSnapshot(terminal).entries.get(0), 1);
         Class<?> handler = field(editor, "handler").getType();
-        field(editor, "handler").set(editor, java.lang.reflect.Proxy.newProxyInstance(
-            handler.getClassLoader(), new Class<?>[] { handler }, (proxy, method, args) ->
-                method.getName().equals("isPanelOpen") ? false : null));
-        Method save = editor.getClass().getDeclaredMethod("save", boolean.class);
+        field(editor, "handler").set(
+            editor,
+            java.lang.reflect.Proxy.newProxyInstance(
+                handler.getClassLoader(),
+                new Class<?>[] { handler },
+                (proxy, method, args) -> method.getName()
+                    .equals("isPanelOpen") ? false : null));
+        Method save = editor.getClass()
+            .getDeclaredMethod("save", boolean.class);
         save.setAccessible(true);
         // No text field/network fixture is available: either access would fail this test.
         save.invoke(editor, false);
@@ -252,9 +271,13 @@ public class DeviceTerminalViewAuthorizationTest {
         field(editor, "terminal").set(editor, terminal);
         field(editor, "authorizationEpoch").setLong(editor, epoch);
         Class<?> handler = field(editor, "handler").getType();
-        field(editor, "handler").set(editor, java.lang.reflect.Proxy.newProxyInstance(
-            handler.getClassLoader(), new Class<?>[] { handler }, (proxy, method, args) ->
-                method.getName().equals("isPanelOpen") ? true : null));
+        field(editor, "handler").set(
+            editor,
+            java.lang.reflect.Proxy.newProxyInstance(
+                handler.getClassLoader(),
+                new Class<?>[] { handler },
+                (proxy, method, args) -> method.getName()
+                    .equals("isPanelOpen") ? true : null));
         field(gui, "nameEditor").set(gui, editor);
         return editor;
     }
@@ -270,7 +293,8 @@ public class DeviceTerminalViewAuthorizationTest {
         DeviceTerminalClientCache.receiveDelta(
             new PacketSyncDeviceTerminalDelta(
                 terminal,
-                DeviceTerminalClientCache.compactRequestMetadata(terminal).getSession(),
+                DeviceTerminalClientCache.compactRequestMetadata(terminal)
+                    .getSession(),
                 epoch,
                 -1,
                 7,
@@ -285,7 +309,8 @@ public class DeviceTerminalViewAuthorizationTest {
         DeviceTerminalClientCache.receiveDelta(
             new PacketSyncDeviceTerminalDelta(
                 terminal,
-                DeviceTerminalClientCache.compactRequestMetadata(terminal).getSession(),
+                DeviceTerminalClientCache.compactRequestMetadata(terminal)
+                    .getSession(),
                 epoch,
                 -1,
                 0,

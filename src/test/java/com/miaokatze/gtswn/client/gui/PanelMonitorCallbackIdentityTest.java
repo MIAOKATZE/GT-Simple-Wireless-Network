@@ -33,38 +33,44 @@ public class PanelMonitorCallbackIdentityTest {
     public void reorderKeepsTheDisplayedResourceRatherThanItsOldIndex() {
         ItemStack first = new ItemStack(item, 1, 0), second = new ItemStack(item, 1, 1);
         String captured = GuiNetworkInfoPanel.entryKey(first);
-        assertSame(first, GuiNetworkInfoPanel.currentMonitorEntry(captured,
-            Arrays.asList(second, first), Collections.emptyList()));
+        assertSame(
+            first,
+            GuiNetworkInfoPanel.currentMonitorEntry(captured, Arrays.asList(second, first), Collections.emptyList()));
     }
 
     @Test
     public void sameLengthReplacementRejectsRemovedResourceInsteadOfTogglingReplacement() {
         ItemStack first = new ItemStack(item, 1, 0), replacement = new ItemStack(item, 1, 1);
         String captured = GuiNetworkInfoPanel.entryKey(first);
-        assertNull(GuiNetworkInfoPanel.currentMonitorEntry(captured,
-            Collections.singletonList(replacement), Collections.emptyList()));
+        assertNull(
+            GuiNetworkInfoPanel
+                .currentMonitorEntry(captured, Collections.singletonList(replacement), Collections.emptyList()));
     }
 
     @Test
     public void refreshedQuantityUsesLiveDescriptorButDifferentNbtDoesNotMatch() {
         ItemStack old = new ItemStack(item, 1, 0), live = new ItemStack(item, 64, 0);
         String captured = GuiNetworkInfoPanel.entryKey(old);
-        assertSame(live, GuiNetworkInfoPanel.currentMonitorEntry(captured,
-            Collections.singletonList(live), Collections.emptyList()));
+        assertSame(
+            live,
+            GuiNetworkInfoPanel
+                .currentMonitorEntry(captured, Collections.singletonList(live), Collections.emptyList()));
         NBTTagCompound tag = new NBTTagCompound();
         tag.setString("source", "different");
         live.setTagCompound(tag);
-        assertNull(GuiNetworkInfoPanel.currentMonitorEntry(captured,
-            Collections.singletonList(live), Collections.emptyList()));
+        assertNull(
+            GuiNetworkInfoPanel
+                .currentMonitorEntry(captured, Collections.singletonList(live), Collections.emptyList()));
     }
 
     @Test
     public void fluidRemovalDoesNotShiftWhenAnItemBeforeItDisappears() {
         FluidStack fluid = FluidRegistryTestBootstrap.water(1000);
         String captured = GuiNetworkInfoPanel.entryKey(fluid);
-        assertSame(fluid, GuiNetworkInfoPanel.currentMonitorEntry(captured,
-            Collections.emptyList(), Collections.singletonList(fluid)));
-        assertNull(GuiNetworkInfoPanel.currentMonitorEntry(captured,
-            Collections.emptyList(), Collections.emptyList()));
+        assertSame(
+            fluid,
+            GuiNetworkInfoPanel
+                .currentMonitorEntry(captured, Collections.emptyList(), Collections.singletonList(fluid)));
+        assertNull(GuiNetworkInfoPanel.currentMonitorEntry(captured, Collections.emptyList(), Collections.emptyList()));
     }
 }

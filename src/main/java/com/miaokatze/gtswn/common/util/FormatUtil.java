@@ -26,7 +26,8 @@ public class FormatUtil {
         return BigDecimal.valueOf(value)
             .movePointLeft(exponent)
             .stripTrailingZeros()
-            .toPlainString() + "E" + exponent;
+            .toPlainString() + "E"
+            + exponent;
     }
 
     /**

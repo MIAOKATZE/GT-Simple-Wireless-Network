@@ -16,10 +16,12 @@ public class PortableMonitorViewIdentityTest {
     @Test
     public void reorderedSnapshotsRetainTheSelectedPhysicalPanelNotItsOldIndex() {
         PacketSyncPortableMonitor.Panel first = panel(), selected = panel(), third = panel();
-        assertEquals(0, PortableMonitorSelection.retainIndex(
-            Arrays.asList(selected, third, first), 1, selected.binding.panelId));
-        assertEquals(1, PortableMonitorSelection.retainIndex(
-            Arrays.asList(first, selected), 2, selected.binding.panelId));
+        assertEquals(
+            0,
+            PortableMonitorSelection.retainIndex(Arrays.asList(selected, third, first), 1, selected.binding.panelId));
+        assertEquals(
+            1,
+            PortableMonitorSelection.retainIndex(Arrays.asList(first, selected), 2, selected.binding.panelId));
     }
 
     @Test

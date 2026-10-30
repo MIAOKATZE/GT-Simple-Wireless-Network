@@ -66,8 +66,12 @@ public final class PacketTerminalGesture implements IMessage {
     }
 
     static void enqueue(EntityPlayerMP player, int action) {
-        PENDING.compute(player.getUniqueID(), (id, previous) -> new Request(player, action,
-            action == CANCEL_REVEAL || previous != null && previous.player == player && previous.cancelPrevious));
+        PENDING.compute(
+            player.getUniqueID(),
+            (id, previous) -> new Request(
+                player,
+                action,
+                action == CANCEL_REVEAL || previous != null && previous.player == player && previous.cancelPrevious));
     }
 
     static boolean cancellationPending(EntityPlayerMP player) {
@@ -85,10 +89,9 @@ public final class PacketTerminalGesture implements IMessage {
 
         @SubscribeEvent
         public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
-            PENDING.forEach((id, request) -> {
-                if (request.player == event.player) PENDING.remove(id, request);
-            });
-            CHARGES.values().removeIf(charge -> charge.player == event.player);
+            PENDING.forEach((id, request) -> { if (request.player == event.player) PENDING.remove(id, request); });
+            CHARGES.values()
+                .removeIf(charge -> charge.player == event.player);
         }
 
         @SubscribeEvent
@@ -149,8 +152,7 @@ public final class PacketTerminalGesture implements IMessage {
         }
         Charge charge = CHARGES.remove(player.getUniqueID());
         // 客户端20 tick蓄力，服务器END排水相位允许一tick边界差。
-        return charge != null && charge.player == player && charge.valid()
-            && validRevealAge(tickNow(), charge.started);
+        return charge != null && charge.player == player && charge.valid() && validRevealAge(tickNow(), charge.started);
     }
 
     static boolean validRevealAge(long now, long started) {

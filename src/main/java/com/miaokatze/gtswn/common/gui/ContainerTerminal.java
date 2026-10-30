@@ -195,8 +195,12 @@ public class ContainerTerminal extends ModularContainer {
         return Arrays.toString(ItemNetworkQuantumTerminal.getAnchor(stack)) + ":"
             + (stack.hasTagCompound() ? stack.getTagCompound()
                 .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION) + ":"
-                + stack.getTagCompound().getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY) + ":"
-                + stack.getTagCompound().getLong(QuantumTerminalAccess.NBT_BINDING_EPOCH) : "");
+                + stack.getTagCompound()
+                    .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY)
+                + ":"
+                + stack.getTagCompound()
+                    .getLong(QuantumTerminalAccess.NBT_BINDING_EPOCH)
+                : "");
     }
 
     public static String customName(ItemStack stack) {

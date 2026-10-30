@@ -89,7 +89,7 @@ final class WirelessEuScenario implements TestScenario {
             ((GTswn_Cover_EnergyWireless) cover).configure(32, 1);
             long buffer = data(cover).getLong("storedEU");
             debit = BigDecimal.valueOf(buffer)
-                .multiply(BigDecimal.ONE.add(BigDecimal.valueOf(Config.downlinkLossEU)))
+                .multiply(BigDecimal.ONE.add(new BigDecimal(Float.toString(Config.downlinkLossEU))))
                 .setScale(0, RoundingMode.CEILING)
                 .toBigIntegerExact();
             TestWorldFixtures.require(ctx, buffer > 0, "Real cover funded its buffer");
@@ -115,20 +115,21 @@ final class WirelessEuScenario implements TestScenario {
         long drained = initialMachineEU - remaining;
         BigInteger actual = WirelessNetworkManager.getUserEU(owner);
         TestWorldFixtures.require(ctx, drained > 0, "Natural cover ticks drain the real dynamo hatch");
+        BigInteger expected = BigDecimal.valueOf(drained)
+            .multiply(BigDecimal.ONE.subtract(new BigDecimal(Float.toString(Config.uplinkLossEU))))
+            .setScale(0, RoundingMode.FLOOR)
+            .toBigIntegerExact();
+        boolean uncreditable = expected.signum() == 0;
         TestWorldFixtures.require(
             ctx,
-            actual.signum() > 0 || Config.uplinkLossEU == 1,
-            "Natural upload interval credited the network (or configured 100% loss)");
+            uncreditable ? actual.signum() == 0 : actual.signum() > 0,
+            "Natural upload interval credited the network, or configured loss rounded credit to zero");
         // The small finite fixture drains fully before the first default upload; any later residual is explicit.
         TestWorldFixtures.require(ctx, remaining == minimumMachineEU, "Dynamo preserves the host's minimum EU reserve");
         TestWorldFixtures.require(
             ctx,
-            inBuffer == (Config.uplinkLossEU == 1 ? drained : 0),
-            "Upload consumed cover buffer, or retained uncreditable buffer under configured 100% loss");
-        BigInteger expected = BigDecimal.valueOf(drained)
-            .multiply(BigDecimal.ONE.subtract(BigDecimal.valueOf(Config.uplinkLossEU)))
-            .setScale(0, RoundingMode.FLOOR)
-            .toBigIntegerExact();
+            inBuffer == (uncreditable ? drained : 0),
+            "Upload consumed cover buffer, or retained buffer whose configured credit rounds to zero");
         if (Config.interactionRateTicks >= 16) TestWorldFixtures
             .require(ctx, actual.equals(expected), "Network credit equals actual drained EU minus uplink loss");
         else ctx.event(
@@ -173,7 +174,7 @@ final class WirelessEuScenario implements TestScenario {
         long refundBuffer = data(cover).getLong("storedEU");
         BigInteger before = WirelessNetworkManager.getUserEU(owner);
         BigInteger refund = BigDecimal.valueOf(refundBuffer)
-            .multiply(BigDecimal.ONE.subtract(BigDecimal.valueOf(Config.uplinkLossEU)))
+            .multiply(BigDecimal.ONE.subtract(new BigDecimal(Float.toString(Config.uplinkLossEU))))
             .setScale(0, RoundingMode.FLOOR)
             .toBigIntegerExact();
         host.detachCover(TestWorldFixtures.COVER_SIDE);

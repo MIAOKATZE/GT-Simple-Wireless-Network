@@ -112,7 +112,8 @@ public final class PacketSetQuantumNetworkSafety implements IMessage {
 
         @SubscribeEvent
         public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
-            CONTEXTS.values().removeIf(context -> context.player == event.player);
+            CONTEXTS.values()
+                .removeIf(context -> context.player == event.player);
             if (event.player instanceof EntityPlayerMP) QUEUE.discardPlayer((EntityPlayerMP) event.player);
         }
 

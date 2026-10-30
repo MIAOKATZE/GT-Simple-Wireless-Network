@@ -74,9 +74,15 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
 
     private void add(int id, int x, int y, int w, String label) {
         final long revision = controlsRevision;
-        ButtonWidget<?> button = GtswnMuiWidgets
-            .button(buttonName(id), () -> label, x, y, w, 18,
-                () -> revision == controlsRevision && buttonAvailable(id), controlAction(id));
+        ButtonWidget<?> button = GtswnMuiWidgets.button(
+            buttonName(id),
+            () -> label,
+            x,
+            y,
+            w,
+            18,
+            () -> revision == controlsRevision && buttonAvailable(id),
+            controlAction(id));
         if (id >= 6 && id <= 8 && buttonAvailable(id)) {
             button.background(tab == id - 6 ? GtswnMuiTheme.TAB_ACTIVE : GtswnMuiTheme.TAB_INACTIVE);
         }
@@ -371,9 +377,7 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     /** Removed native widgets must not resolve their numeric ids against a replacement panel/row array. */
     private Runnable controlAction(int id) {
         final long revision = controlsRevision;
-        return () -> {
-            if (revision == controlsRevision && isActive()) action(id);
-        };
+        return () -> { if (revision == controlsRevision && isActive()) action(id); };
     }
 
     private void action(int id) {
@@ -395,8 +399,8 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
         }
         PacketSyncPortableMonitor snapshot = PortableMonitorClientCache.snapshot(stack);
         PacketSyncPortableMonitor.Panel panel = panel();
-        if ((id == 4 || id >= 100) && !PortableMonitorSelection.currentView(
-            presentedSnapshot, presentedPanel, snapshot, panel)) {
+        if ((id == 4 || id >= 100)
+            && !PortableMonitorSelection.currentView(presentedSnapshot, presentedPanel, snapshot, panel)) {
             rebuild();
             return;
         }

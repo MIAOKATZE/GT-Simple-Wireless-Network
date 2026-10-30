@@ -31,7 +31,8 @@ public class TerminalRevealCancellationTest {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
         Field field = unsafe.getDeclaredField("theUnsafe");
         field.setAccessible(true);
-        Player player = (Player) unsafe.getMethod("allocateInstance", Class.class).invoke(field.get(null), Player.class);
+        Player player = (Player) unsafe.getMethod("allocateInstance", Class.class)
+            .invoke(field.get(null), Player.class);
         player.id = id;
         return player;
     }

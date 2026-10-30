@@ -23,12 +23,15 @@ final class HeldTerminalReceipt {
         dimension = player == null ? 0 : player.dimension;
         inventory = player == null ? null : player.inventory;
         slot = inventory == null ? -1 : inventory.currentItem;
-        stack = inventory != null && inventory.mainInventory != null && slot >= 0 && slot < 9
+        stack = inventory != null && inventory.mainInventory != null
+            && slot >= 0
+            && slot < 9
             && slot < inventory.mainInventory.length ? inventory.mainInventory[slot] : null;
     }
 
     boolean matches(EntityPlayerMP current) {
-        return current != null && current == player && world != null
+        return current != null && current == player
+            && world != null
             && current.worldObj == world
             && current.dimension == dimension
             && inventory != null

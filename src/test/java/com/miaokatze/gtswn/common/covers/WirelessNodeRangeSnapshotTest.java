@@ -137,13 +137,17 @@ public class WirelessNodeRangeSnapshotTest {
         assertEquals(2, result.selected.size());
         assertTrue(result.pruned.isEmpty());
     }
+
     @Test
     public void dashboardSlabSkipsAnUnrelatedPrefixLargerThanTheWholeRefreshBudget() {
         WirelessNodeRegistry registry = new WirelessNodeRegistry("dashboard-range");
         for (int x = -20_000; x < -10_000; x++) registry.register(null, x, 64, 0, (byte) 0);
         long visible = WirelessNodeIndexCodec.pack(17, 64, 1);
         registry.register(null, 17, 64, 1, (byte) 0);
-        assertEquals(Collections.singleton(visible), registry.readViewInXRange(16, 31).keySet());
+        assertEquals(
+            Collections.singleton(visible),
+            registry.readViewInXRange(16, 31)
+                .keySet());
     }
 
     @Test
@@ -151,23 +155,32 @@ public class WirelessNodeRangeSnapshotTest {
         WirelessNodeRegistry registry = new WirelessNodeRegistry("dashboard-boundaries");
         Set<Long> expected = new HashSet<>();
         for (int x : new int[] { -33_554_432, -17, -16, 0, 15, 16, 33_554_431 })
-            for (int y : new int[] { -2048, 0, 255, 2047 })
-                for (int z : new int[] { -33_554_432, -1, 0, 33_554_431 }) {
-                    registry.register(null, x, y, z, (byte) 0);
-                    if (x >= -16 && x <= 15) expected.add(WirelessNodeIndexCodec.pack(x, y, z));
-                }
-        assertEquals(expected, registry.readViewInXRange(-16, 15).keySet());
+            for (int y : new int[] { -2048, 0, 255, 2047 }) for (int z : new int[] { -33_554_432, -1, 0, 33_554_431 }) {
+                registry.register(null, x, y, z, (byte) 0);
+                if (x >= -16 && x <= 15) expected.add(WirelessNodeIndexCodec.pack(x, y, z));
+            }
+        assertEquals(
+            expected,
+            registry.readViewInXRange(-16, 15)
+                .keySet());
         assertEquals(registry.readView(), registry.readViewInXRange(Integer.MIN_VALUE, Integer.MAX_VALUE));
-        assertTrue(registry.readViewInXRange(16, 15).isEmpty());
-        assertTrue(registry.readViewInXRange(Integer.MIN_VALUE, -33_554_433).isEmpty());
-        assertTrue(registry.readViewInXRange(33_554_432, Integer.MAX_VALUE).isEmpty());
+        assertTrue(
+            registry.readViewInXRange(16, 15)
+                .isEmpty());
+        assertTrue(
+            registry.readViewInXRange(Integer.MIN_VALUE, -33_554_433)
+                .isEmpty());
+        assertTrue(
+            registry.readViewInXRange(33_554_432, Integer.MAX_VALUE)
+                .isEmpty());
     }
 
     @Test(expected = UnsupportedOperationException.class)
     public void dashboardSlabCannotMutateTheRegistry() {
         WirelessNodeRegistry registry = new WirelessNodeRegistry("dashboard-read-only");
         registry.register(null, 0, 64, 0, (byte) 0);
-        registry.readViewInXRange(0, 15).clear();
+        registry.readViewInXRange(0, 15)
+            .clear();
     }
 
     @Test
@@ -182,7 +195,10 @@ public class WirelessNodeRangeSnapshotTest {
                 registry.register(null, min, 0, 0, (byte) 0);
                 registry.register(null, max, 0, 0, (byte) 0);
                 registry.register(null, max + 1, 0, 0, (byte) 0);
-                assertEquals(2, registry.readViewInXRange(min, max).size());
+                assertEquals(
+                    2,
+                    registry.readViewInXRange(min, max)
+                        .size());
                 assertTrue(min <= block && block <= max);
             }
         }

@@ -15,6 +15,7 @@ public final class ScenarioRegistry {
         TestWorldManager.register(new TerminalBaublesScenario());
         TestWorldManager.register(new DeviceWorldScenario());
         TestWorldManager.register(new PortableMonitorScenario());
+        TestWorldManager.register(new MonitorChargingScenario());
         TestWorldManager.register(new WirelessTapScenario());
         TestWorldManager.register(new QuantumWorldScenario(QuantumWorldScenario.Mode.BRIDGE));
         TestWorldManager.register(new QuantumWorldScenario(QuantumWorldScenario.Mode.MIGRATION));

@@ -47,15 +47,21 @@ public class AEMonitorSharedHistoryTest {
         singleton.setAccessible(true);
         FixtureWorld world = (FixtureWorld) unsafe.getMethod("allocateInstance", Class.class)
             .invoke(singleton.get(null), FixtureWorld.class);
-        world.perWorldStorage = new MapStorage(null);
+        Field storage = World.class.getDeclaredField("perWorldStorage");
+        storage.setAccessible(true);
+        storage.set(world, new MapStorage(null));
         world.playerEntities = Collections.emptyList();
         TileEntityNetworkInfoPanel core = new TileEntityNetworkInfoPanel() {
+
             @Override
-            public String getAEMonitorDataKey() { return "shared-history-fixture"; }
+            public String getAEMonitorDataKey() {
+                return "shared-history-fixture";
+            }
         };
         core.setWorldObj(world);
         controller = new AEMonitorController(core, null, null, () -> {});
-        data = AEMonitorDataStore.get(world).getOrCreate("shared-history-fixture");
+        data = AEMonitorDataStore.get(world)
+            .getOrCreate("shared-history-fixture");
     }
 
     @Test
@@ -121,17 +127,29 @@ public class AEMonitorSharedHistoryTest {
         assertNull(data.newest(AEMonitorController.aeKey(fluid)));
     }
 
-    private void sample(String key) { data.addSample(key, 100, 100, 1000); }
+    private void sample(String key) {
+        data.addSample(key, 100, 100, 1000);
+    }
 
     private static final class FixtureWorld extends World {
+
         private FixtureWorld() {
             super((ISaveHandler) null, "fixture", (WorldProvider) null, (WorldSettings) null, (Profiler) null);
         }
+
         @Override
-        protected IChunkProvider createChunkProvider() { return null; }
+        protected IChunkProvider createChunkProvider() {
+            return null;
+        }
+
         @Override
-        protected int func_152379_p() { return 0; }
+        protected int func_152379_p() {
+            return 0;
+        }
+
         @Override
-        public Entity getEntityByID(int id) { return null; }
+        public Entity getEntityByID(int id) {
+            return null;
+        }
     }
 }

@@ -13,22 +13,26 @@ public final class PortableMonitorSelection {
     /** Preserve physical source identity across reordered/reduced binding snapshots. */
     public static int retainIndex(List<PacketSyncPortableMonitor.Panel> panels, int selected, UUID panelId) {
         if (panels.isEmpty()) return -1;
-        if (panelId != null) for (int i = 0; i < panels.size(); i++)
-            if (panelId.equals(panels.get(i).binding.panelId)) return i;
+        if (panelId != null)
+            for (int i = 0; i < panels.size(); i++) if (panelId.equals(panels.get(i).binding.panelId)) return i;
         return Math.max(0, Math.min(selected, panels.size() - 1));
     }
 
     /** Bind controls to the displayed physical source, while permitting harmless same-source data refreshes. */
     public static boolean currentView(PacketSyncPortableMonitor displayed, UUID panelId,
         PacketSyncPortableMonitor current, PacketSyncPortableMonitor.Panel panel) {
-        if (displayed == null || current == null || displayed.terminalId == null
-            || !displayed.terminalId.equals(current.terminalId) || panelId == null
-            || panel == null || !panelId.equals(panel.binding.panelId)) return false;
+        if (displayed == null || current == null
+            || displayed.terminalId == null
+            || !displayed.terminalId.equals(current.terminalId)
+            || panelId == null
+            || panel == null
+            || !panelId.equals(panel.binding.panelId)) return false;
         if (!current.panels.contains(panel)) return false;
         for (PacketSyncPortableMonitor.Panel old : displayed.panels) {
-            if (panelId.equals(old.binding.panelId)) return old.binding.dimension == panel.binding.dimension
-                && old.binding.x == panel.binding.x && old.binding.y == panel.binding.y
-                && old.binding.z == panel.binding.z;
+            if (panelId.equals(old.binding.panelId))
+                return old.binding.dimension == panel.binding.dimension && old.binding.x == panel.binding.x
+                    && old.binding.y == panel.binding.y
+                    && old.binding.z == panel.binding.z;
         }
         return false;
     }

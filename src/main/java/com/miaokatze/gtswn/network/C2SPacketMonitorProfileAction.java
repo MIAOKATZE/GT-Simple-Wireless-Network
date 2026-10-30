@@ -195,8 +195,7 @@ public final class C2SPacketMonitorProfileAction implements IMessage {
 
         Operation(EntityPlayerMP player, C2SPacketMonitorProfileAction packet) {
             this.packet = packet;
-            receipt = packet.action == IMPORT_HELD || packet.action == RECOVER ? new HeldTerminalReceipt(player)
-                : null;
+            receipt = packet.action == IMPORT_HELD || packet.action == RECOVER ? new HeldTerminalReceipt(player) : null;
         }
 
         void requireCurrentHeld(EntityPlayerMP player) {

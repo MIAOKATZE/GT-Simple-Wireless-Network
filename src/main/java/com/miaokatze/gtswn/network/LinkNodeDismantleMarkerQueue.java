@@ -160,7 +160,8 @@ public final class LinkNodeDismantleMarkerQueue {
         Iterator<Map.Entry<UUID, Mark>> it = MARKED.entrySet()
             .iterator();
         while (it.hasNext()) {
-            Mark mark = it.next().getValue();
+            Mark mark = it.next()
+                .getValue();
             if (now >= mark.deadline || !PlayerRequestQueue.isOnline(mark.player)) {
                 it.remove();
             }

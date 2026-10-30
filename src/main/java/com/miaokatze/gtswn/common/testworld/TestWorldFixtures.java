@@ -165,12 +165,40 @@ public final class TestWorldFixtures {
 
     public static TileEntityNetworkInfoPanel panel(WorldServer world, UUID owner) {
         place(world, PANEL_X, Y, PANEL_Z, BlockRegistrar.networkInfoPanel, 3);
-        place(world, PANEL_X + 1, Y, PANEL_Z, BlockRegistrar.networkInfoPanelExtender, 3);
-        place(world, PANEL_X, Y + 1, PANEL_Z, BlockRegistrar.networkInfoPanelExtender, 3);
-        place(world, PANEL_X + 1, Y + 1, PANEL_Z, BlockRegistrar.networkInfoPanelExtender, 3);
+        // The core is deliberately unbound until the caller's nullable owner is applied below.
+        // Extenders need the real item placement callback: replacing an existing part first rebuilds
+        // the intermediate rectangle in breakBlock; raw setBlock alone cannot announce its return.
+        FakePlayer placer = player(world, owner("panel-placement"));
+        panelExtender(world, PANEL_X + 1, Y, placer);
+        panelExtender(world, PANEL_X, Y + 1, placer);
+        panelExtender(world, PANEL_X + 1, Y + 1, placer);
         TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) world.getTileEntity(PANEL_X, Y, PANEL_Z);
         panel.bindOwner(owner, "GTSWN isolated test");
         return panel;
+    }
+
+    /** Native ItemBlock placement dispatches the extender's orientation and connected-core rebuild. */
+    private static void panelExtender(WorldServer world, int x, int y, EntityPlayer placer) {
+        requireTestWorld(world);
+        if (!TestWorldFootprint.containsFixture(TestWorldManager.fixtureRadius(world), x, y, PANEL_Z))
+            throw new IllegalArgumentException("Panel extender fixture outside test platform");
+        TestWorldProbes.addPosition(x, y, PANEL_Z);
+        world.setBlockToAir(x, y, PANEL_Z);
+        ItemStack stack = new ItemStack(BlockRegistrar.networkInfoPanelExtender);
+        ItemBlock item = (ItemBlock) stack.getItem();
+        if (!item.placeBlockAt(
+            stack,
+            placer,
+            world,
+            x,
+            y,
+            PANEL_Z,
+            1,
+            .5f,
+            .5f,
+            .5f,
+            item.getMetadata(stack.getItemDamage())))
+            throw new IllegalStateException("Native panel extender item placement failed");
     }
 
     public static TileEntity aeBlock(WorldServer world, int x, int y, int z, Block block) {

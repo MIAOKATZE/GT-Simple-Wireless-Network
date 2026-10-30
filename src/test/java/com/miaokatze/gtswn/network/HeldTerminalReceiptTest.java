@@ -27,7 +27,8 @@ public class HeldTerminalReceiptTest {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
         Field field = unsafe.getDeclaredField("theUnsafe");
         field.setAccessible(true);
-        return unsafe.getMethod("allocateInstance", Class.class).invoke(field.get(null), type);
+        return unsafe.getMethod("allocateInstance", Class.class)
+            .invoke(field.get(null), type);
     }
 
     private static Player player() throws Exception {
@@ -91,7 +92,8 @@ public class HeldTerminalReceiptTest {
 
     @Test
     public void queuedWorldMutationsCaptureTheirReceiptBeforeTheSelectedStackChanges() throws Exception {
-        for (String nested : new String[] { "PacketQuantumIncorporation$Job", "PacketQuantumTerminalSwapBus$SwapJob" }) {
+        for (String nested : new String[] { "PacketQuantumIncorporation$Job",
+            "PacketQuantumTerminalSwapBus$SwapJob" }) {
             Player actor = player();
             Class<?> type = Class.forName("com.miaokatze.gtswn.network." + nested);
             Constructor<?> constructor = type.getDeclaredConstructors()[0];
@@ -103,19 +105,29 @@ public class HeldTerminalReceiptTest {
             field.setAccessible(true);
             HeldTerminalReceipt receipt = (HeldTerminalReceipt) field.get(job);
             assertTrue(receipt.matches(actor));
-            actor.inventory.mainInventory[3] = actor.getHeldItem().copy();
+            actor.inventory.mainInventory[3] = actor.getHeldItem()
+                .copy();
             assertFalse(receipt.matches(actor));
         }
     }
 
     @Test
     public void delayedProfileImportAndRecoveryFailOnceRatherThanMutateTheReplacementTerminal() throws Exception {
-        for (int action : new int[] { C2SPacketMonitorProfileAction.IMPORT_HELD, C2SPacketMonitorProfileAction.RECOVER }) {
+        for (int action : new int[] { C2SPacketMonitorProfileAction.IMPORT_HELD,
+            C2SPacketMonitorProfileAction.RECOVER }) {
             Player actor = player();
             ItemStack original = actor.getHeldItem();
             C2SPacketMonitorProfileAction packet = new C2SPacketMonitorProfileAction(
-                7, action, 0, UUID.randomUUID(), null, false, 20);
-            C2SPacketMonitorProfileAction.Operation operation = new C2SPacketMonitorProfileAction.Operation(actor, packet);
+                7,
+                action,
+                0,
+                UUID.randomUUID(),
+                null,
+                false,
+                20);
+            C2SPacketMonitorProfileAction.Operation operation = new C2SPacketMonitorProfileAction.Operation(
+                actor,
+                packet);
             operation.requireCurrentHeld(actor);
             actor.inventory.mainInventory[3] = original.copy();
             final int[] mutations = { 0 };
@@ -138,7 +150,8 @@ public class HeldTerminalReceiptTest {
         for (int action : new int[] { C2SPacketMonitorProfileAction.LIST, C2SPacketMonitorProfileAction.SHARE,
             C2SPacketMonitorProfileAction.REVOKE, C2SPacketMonitorProfileAction.OFFLINE,
             C2SPacketMonitorProfileAction.WEB, C2SPacketMonitorProfileAction.RENAME }) {
-            new C2SPacketMonitorProfileAction.Operation(null,
+            new C2SPacketMonitorProfileAction.Operation(
+                null,
                 new C2SPacketMonitorProfileAction(1, action, 0, null, null, false, 20)).requireCurrentHeld(null);
         }
     }

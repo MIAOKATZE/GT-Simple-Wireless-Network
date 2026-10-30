@@ -25,7 +25,9 @@ public class EngineeringNetworkCollectorRangeTest {
     @Test
     public void everyRefreshReachesTheSelectedChunkBehindTenThousandSameXPositions() throws Exception {
         FixtureWorld world = allocate(FixtureWorld.class);
-        world.perWorldStorage = new MapStorage(null);
+        Field storage = World.class.getDeclaredField("perWorldStorage");
+        storage.setAccessible(true);
+        storage.set(world, new MapStorage(null));
         WirelessNodeRegistry registry = WirelessNodeRegistry.get(world);
         for (int z = 1; z <= 10_000; z++) registry.register(null, 0, 64, z, (byte) 0);
         registry.register(null, 0, 64, 20_000, (byte) 0);
@@ -53,7 +55,9 @@ public class EngineeringNetworkCollectorRangeTest {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
         Field singleton = unsafe.getDeclaredField("theUnsafe");
         singleton.setAccessible(true);
-        return type.cast(unsafe.getMethod("allocateInstance", Class.class).invoke(singleton.get(null), type));
+        return type.cast(
+            unsafe.getMethod("allocateInstance", Class.class)
+                .invoke(singleton.get(null), type));
     }
 
     private static final class FixtureWorld extends World {

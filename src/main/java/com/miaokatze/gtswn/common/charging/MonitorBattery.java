@@ -89,7 +89,8 @@ public final class MonitorBattery {
         ItemStack installed = battery.copy();
         installed.stackSize = 1;
         IElectricItem electric = (IElectricItem) installed.getItem();
-        BigDecimal charge = BatteryCharge.nativeCharge(installed).add(BatteryCharge.remainder(installed));
+        BigDecimal charge = BatteryCharge.nativeCharge(installed)
+            .add(BatteryCharge.remainder(installed));
         BigDecimal capacity = BatteryCharge.nativeCapacity(installed);
         // A native charger may have filled the battery while its fractional escrow was attached.
         // Keep any excess on the nested physical item; do not silently discard it at the capacity clamp.
@@ -97,7 +98,10 @@ public final class MonitorBattery {
         data.setTag("Item", installed.writeToNBT(new NBTTagCompound()));
         data.setInteger("Tier", electric.getTier(installed));
         BatteryCharge.initialize(data, capacity, charge);
-        data.setInteger("Status", BatteryCharge.get(data).signum() > 0 ? 1 : 0);
+        data.setInteger(
+            "Status",
+            BatteryCharge.get(data)
+                .signum() > 0 ? 1 : 0);
         result.getTagCompound()
             .setTag(NBT_BATTERY, data);
         return result;
@@ -123,7 +127,8 @@ public final class MonitorBattery {
         // on the physical battery for reinstalling, not in the monitor that is about to lose its battery.
         BatteryCharge.remainder(
             battery,
-            charge.subtract(BatteryCharge.nativeCharge(battery)).add(BatteryCharge.remainder(battery)));
+            charge.subtract(BatteryCharge.nativeCharge(battery))
+                .add(BatteryCharge.remainder(battery)));
         return battery;
     }
 
@@ -136,7 +141,8 @@ public final class MonitorBattery {
     }
 
     public static int getStatus(ItemStack stack) {
-        if (!hasBattery(stack) || BatteryCharge.get(data(stack)).signum() <= 0) return 0;
+        if (!hasBattery(stack) || BatteryCharge.get(data(stack))
+            .signum() <= 0) return 0;
         return data(stack).getInteger("Status");
     }
 

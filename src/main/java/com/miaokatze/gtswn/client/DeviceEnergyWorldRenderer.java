@@ -291,8 +291,8 @@ public final class DeviceEnergyWorldRenderer {
         if (mc.theWorld == null || mc.thePlayer == null) return 1;
         if (!DeviceTerminalVisualConfig.enabled || terminal == null
             || !terminal.equals(DeviceTerminalVisualizationState.presentationTerminalId())) return 2;
-        return authorizationCurrent() && DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis())
-            ? 0 : 3;
+        return authorizationCurrent() && DeviceTerminalClientCache.isFresh(terminal, System.currentTimeMillis()) ? 0
+            : 3;
     }
 
     private static void fill(Tessellator t, AxisAlignedBB box, double cx, double cy, double cz) {

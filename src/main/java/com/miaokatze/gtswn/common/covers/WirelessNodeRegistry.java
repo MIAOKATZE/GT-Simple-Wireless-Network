@@ -194,7 +194,8 @@ public class WirelessNodeRegistry extends WorldSavedData {
     }
 
     private void index(long packed, byte type) {
-        chunkNodes.computeIfAbsent(positionChunk(packed), ignored -> new TreeMap<>()).put(packed, type);
+        chunkNodes.computeIfAbsent(positionChunk(packed), ignored -> new TreeMap<>())
+            .put(packed, type);
     }
 
     private void unindex(long packed) {
@@ -212,14 +213,20 @@ public class WirelessNodeRegistry extends WorldSavedData {
      */
     public Iterable<Map.Entry<Long, Byte>> readViewInChunkRectangle(int minX, int minZ, int maxX, int maxZ) {
         long width = (long) maxX - minX + 1, height = (long) maxZ - minZ + 1;
-        if (width <= 0 || height <= 0 || width > 576 || height > 576 || width * height > 576
-            || minX < -2_097_152 || minZ < -2_097_152 || maxX > 2_097_151 || maxZ > 2_097_151)
-            return Collections.emptyList();
+        if (width <= 0 || height <= 0
+            || width > 576
+            || height > 576
+            || width * height > 576
+            || minX < -2_097_152
+            || minZ < -2_097_152
+            || maxX > 2_097_151
+            || maxZ > 2_097_151) return Collections.emptyList();
         return () -> new Iterator<Map.Entry<Long, Byte>>() {
 
             private int x = minX, z = minZ;
             private boolean exhausted;
-            private Iterator<Map.Entry<Long, Byte>> bucket = Collections.<Map.Entry<Long, Byte>>emptyList().iterator();
+            private Iterator<Map.Entry<Long, Byte>> bucket = Collections.<Map.Entry<Long, Byte>>emptyList()
+                .iterator();
 
             @Override
             public boolean hasNext() {
@@ -230,8 +237,11 @@ public class WirelessNodeRegistry extends WorldSavedData {
                         x++;
                         z = minZ;
                     } else exhausted = true;
-                    bucket = next == null ? Collections.<Map.Entry<Long, Byte>>emptyList().iterator()
-                        : Collections.unmodifiableMap(next).entrySet().iterator();
+                    bucket = next == null ? Collections.<Map.Entry<Long, Byte>>emptyList()
+                        .iterator()
+                        : Collections.unmodifiableMap(next)
+                            .entrySet()
+                            .iterator();
                 }
                 return bucket.hasNext();
             }

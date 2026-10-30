@@ -32,7 +32,6 @@ import appeng.api.networking.security.ISecurityGrid;
 import appeng.tile.networking.TileController;
 import appeng.util.LookDirection;
 import appeng.util.Platform;
-
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -93,9 +92,7 @@ public class PacketQuantumIncorporation implements IMessage {
 
         @SubscribeEvent
         public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
-            PENDING.forEach((id, job) -> {
-                if (job.player == event.player) PENDING.remove(id, job);
-            });
+            PENDING.forEach((id, job) -> { if (job.player == event.player) PENDING.remove(id, job); });
         }
 
         @SubscribeEvent

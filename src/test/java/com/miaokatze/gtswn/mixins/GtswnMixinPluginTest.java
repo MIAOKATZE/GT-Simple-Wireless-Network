@@ -31,8 +31,10 @@ public class GtswnMixinPluginTest {
     @Test
     public void presenceProbeDoesNotInitializeAnOptionalModClass() {
         assertFalse(TARGET_INITIALIZED.get());
-        assertTrue(plugin.shouldApplyMixin(
-            "com.miaokatze.gtswn.mixins.GtswnMixinPluginTest$InitializationTrap", PREFIX + "mm.Test"));
+        assertTrue(
+            plugin.shouldApplyMixin(
+                "com.miaokatze.gtswn.mixins.GtswnMixinPluginTest$InitializationTrap",
+                PREFIX + "mm.Test"));
         assertFalse("Optional APIs must not initialize during the early presence probe", TARGET_INITIALIZED.get());
     }
 

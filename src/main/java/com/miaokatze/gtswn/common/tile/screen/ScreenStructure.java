@@ -305,8 +305,10 @@ public final class ScreenStructure {
             for (int y = screen.minY; y <= screen.maxY; y++) {
                 for (int z = screen.minZ; z <= screen.maxZ; z++) {
                     // Unloaded members reconcile against their loaded core on their next server ticks.
-                    if (!core.getWorldObj().blockExists(x, y, z)) continue;
-                    TileEntity tile = core.getWorldObj().getTileEntity(x, y, z);
+                    if (!core.getWorldObj()
+                        .blockExists(x, y, z)) continue;
+                    TileEntity tile = core.getWorldObj()
+                        .getTileEntity(x, y, z);
                     if (tile instanceof TileEntityNetworkInfoPanelExtender) {
                         TileEntityNetworkInfoPanelExtender extender = (TileEntityNetworkInfoPanelExtender) tile;
                         if (extender.isAttachedTo(core)) extender.detachFromCore();

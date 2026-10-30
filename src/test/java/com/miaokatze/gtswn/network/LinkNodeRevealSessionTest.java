@@ -7,9 +7,9 @@ import static org.junit.Assert.assertTrue;
 import java.util.HashMap;
 import java.util.Map;
 
-import com.miaokatze.gtswn.common.covers.WirelessNodeIndexCodec;
-
 import org.junit.Test;
+
+import com.miaokatze.gtswn.common.covers.WirelessNodeIndexCodec;
 
 public class LinkNodeRevealSessionTest {
 
@@ -32,6 +32,7 @@ public class LinkNodeRevealSessionTest {
         assertEquals(0, LinkNodeRevealSession.visibleTypes((byte) 2, (byte) 0, false));
         assertEquals(2, LinkNodeRevealSession.visibleTypes((byte) 2, (byte) 0, true));
     }
+
     @Test
     public void modeFilteringPrecedesLimitAndPreservesPruning() {
         Map<Long, Byte> index = new HashMap<>();
@@ -55,7 +56,10 @@ public class LinkNodeRevealSessionTest {
         };
         long center = WirelessNodeIndexCodec.pack(0, 64, 0);
         WirelessNodeIndexCodec.RadiusSelection first = WirelessNodeIndexCodec.selectWithinRadius(
-            index, center, 4096, 256,
+            index,
+            center,
+            4096,
+            256,
             LinkNodeRevealSession.visibleProbe(probe, actualTypes, (byte) 0, false));
         assertEquals(1, first.selected.size());
         assertEquals(energy, first.selected.get(0).packed);
@@ -65,7 +69,10 @@ public class LinkNodeRevealSessionTest {
         assertEquals(259, index.size());
 
         WirelessNodeIndexCodec.RadiusSelection repeated = WirelessNodeIndexCodec.selectWithinRadius(
-            index, center, 4096, 256,
+            index,
+            center,
+            4096,
+            256,
             LinkNodeRevealSession.visibleProbe(probe, actualTypes, (byte) 0, true));
         assertEquals(256, repeated.selected.size());
         assertTrue(repeated.pruned.contains(stale));

@@ -67,8 +67,10 @@ public class TileEntityNetworkInfoPanelExtender extends TileEntity {
         }
         NetworkScreen current = core.getScreen();
         if (current != null && (xCoord < current.minX || xCoord > current.maxX
-            || yCoord < current.minY || yCoord > current.maxY
-            || zCoord < current.minZ || zCoord > current.maxZ
+            || yCoord < current.minY
+            || yCoord > current.maxY
+            || zCoord < current.minZ
+            || zCoord > current.maxZ
             || getBlockMetadata() != current.facing)) detachFromCore();
     }
 

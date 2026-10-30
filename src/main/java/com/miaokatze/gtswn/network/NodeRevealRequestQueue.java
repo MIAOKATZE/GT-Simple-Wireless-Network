@@ -122,9 +122,8 @@ public final class NodeRevealRequestQueue {
         long now = System.currentTimeMillis();
         REVEAL_SESSIONS.entrySet()
             .removeIf(
-                entry -> !PlayerRequestQueue.isOnline(entry.getKey())
-                    || !entry.getValue()
-                        .isActive(entry.getKey().worldObj, now));
+                entry -> !PlayerRequestQueue.isOnline(entry.getKey()) || !entry.getValue()
+                    .isActive(entry.getKey().worldObj, now));
         drainNodeRegistrations();
         drain();
     }

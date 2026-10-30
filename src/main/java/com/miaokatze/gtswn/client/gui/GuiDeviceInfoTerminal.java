@@ -507,8 +507,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             closeNameEditor();
         }
         if (entryList != null) entryList.setEnabled(snapshot != null && !snapshot.entries.isEmpty());
-        if (!this.sortDirty && snapshot == this.displayedSnapshot
-            && (snapshot != null || this.sortedEntries.isEmpty())) return;
+        if (!this.sortDirty && snapshot == this.displayedSnapshot && (snapshot != null || this.sortedEntries.isEmpty()))
+            return;
         this.displayedSnapshot = snapshot;
         if (snapshot == null) {
             this.sortedEntries = Collections.emptyList();
@@ -840,13 +840,14 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     private Entry currentEntry(Entry entry) {
         Snapshot snapshot = anchor == null ? null : DeviceTerminalClientCache.getSnapshot(anchor);
-        if (entry != null && snapshot != null) for (Entry current : snapshot.entries)
-            if (sameEntry(entry, current)) return current;
+        if (entry != null && snapshot != null)
+            for (Entry current : snapshot.entries) if (sameEntry(entry, current)) return current;
         return null;
     }
 
     private static boolean sameEntry(Entry first, Entry second) {
-        return first != null && second != null && first.key.equals(second.key)
+        return first != null && second != null
+            && first.key.equals(second.key)
             && first.dim == second.dim
             && first.x == second.x
             && first.y == second.y

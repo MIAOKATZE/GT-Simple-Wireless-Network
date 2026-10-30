@@ -25,7 +25,8 @@ public class LegacyRequestQueueBudgetTest {
         Class<?> unsafe = Class.forName("sun.misc.Unsafe");
         Field field = unsafe.getDeclaredField("theUnsafe");
         field.setAccessible(true);
-        return unsafe.getMethod("allocateInstance", Class.class).invoke(field.get(null), type);
+        return unsafe.getMethod("allocateInstance", Class.class)
+            .invoke(field.get(null), type);
     }
 
     private static Object field(Class<?> owner, Object object, String name) throws Exception {
@@ -47,7 +48,8 @@ public class LegacyRequestQueueBudgetTest {
     }
 
     private static void enqueue(Class<?> queue, EntityPlayerMP player) throws Exception {
-        queue.getMethod("enqueue", EntityPlayerMP.class).invoke(null, player);
+        queue.getMethod("enqueue", EntityPlayerMP.class)
+            .invoke(null, player);
     }
 
     @After
@@ -81,7 +83,10 @@ public class LegacyRequestQueueBudgetTest {
             while (processed < players.size()) {
                 call(queue, "drain");
                 processed = Math.min(300, processed + budget);
-                if (processed < 300) assertSame(players.get(processed), pending(queue).iterator().next());
+                if (processed < 300) assertSame(
+                    players.get(processed),
+                    pending(queue).iterator()
+                        .next());
                 // A sender starts its next burst as soon as its previous request is consumed.
                 for (int repeat = 0; repeat < 1000; repeat++) enqueue(queue, players.get(0));
             }
@@ -102,7 +107,10 @@ public class LegacyRequestQueueBudgetTest {
             queue.getMethod("onLogout", PlayerEvent.PlayerLoggedOutEvent.class)
                 .invoke(ctor.newInstance(), new PlayerEvent.PlayerLoggedOutEvent(old));
             assertEquals(1, pending(queue).size());
-            assertSame(replacement, pending(queue).iterator().next());
+            assertSame(
+                replacement,
+                pending(queue).iterator()
+                    .next());
             call(queue, "clearServerState");
             assertTrue(pending(queue).isEmpty());
             enqueue(queue, replacement);
@@ -141,7 +149,12 @@ public class LegacyRequestQueueBudgetTest {
         for (int tick = 0; tick < 10; tick++) {
             for (int arrival = 0; arrival < 1500; arrival++) later.add(registration(true));
             call(NodeRevealRequestQueue.class, "drainNodeRegistrations");
-            long calls = startup.stream().mapToLong(c -> c.calls).sum() + later.stream().mapToLong(c -> c.calls).sum();
+            long calls = startup.stream()
+                .mapToLong(c -> c.calls)
+                .sum()
+                + later.stream()
+                    .mapToLong(c -> c.calls)
+                    .sum();
             assertEquals((tick + 1) * 1024L, calls);
         }
         for (RegisteredCover cover : startup) assertEquals(1, cover.calls);

@@ -227,8 +227,12 @@ public class ScreenLoadedLookupTest {
 
     static TileEntityNetworkInfoPanelExtender extender(FixtureWorld world, int x, int y) {
         TileEntityNetworkInfoPanelExtender part = new TileEntityNetworkInfoPanelExtender() {
+
             @Override
-            public int getBlockMetadata() { return 3; }
+            public int getBlockMetadata() {
+                return 3;
+            }
+
             @Override
             public void markDirty() {}
         };
@@ -246,14 +250,22 @@ public class ScreenLoadedLookupTest {
         ScreenStructure structure;
 
         @Override
-        public NetworkScreen getScreen() { return structure == null ? screen : structure.getScreen(); }
+        public NetworkScreen getScreen() {
+            return structure == null ? screen : structure.getScreen();
+        }
+
         @Override
-        public int getBlockMetadata() { return 3; }
+        public int getBlockMetadata() {
+            return 3;
+        }
+
         @Override
         public void markDirty() {}
 
         @Override
-        public void detachScreen() { if (structure != null) structure.detach(); }
+        public void detachScreen() {
+            if (structure != null) structure.detach();
+        }
 
         @Override
         public void rebuildScreen() {
@@ -297,13 +309,19 @@ public class ScreenLoadedLookupTest {
         }
 
         @Override
-        public void removeTileEntity(int x, int y, int z) { tiles.remove(x + ":" + y + ":" + z); }
+        public void removeTileEntity(int x, int y, int z) {
+            tiles.remove(x + ":" + y + ":" + z);
+        }
 
         @Override
-        public boolean setBlockMetadataWithNotify(int x, int y, int z, int meta, int flags) { return true; }
+        public boolean setBlockMetadataWithNotify(int x, int y, int z, int meta, int flags) {
+            return true;
+        }
 
         @Override
-        public int getHeight() { return 256; }
+        public int getHeight() {
+            return 256;
+        }
 
         @Override
         public void markBlockForUpdate(int x, int y, int z) {}

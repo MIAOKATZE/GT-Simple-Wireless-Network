@@ -20,8 +20,8 @@ final class LinkNodeRevealSession {
     }
 
     /** Filter valid nodes before nearest-node truncation, without suppressing stale-index pruning. */
-    static WirelessNodeIndexCodec.Probe visibleProbe(WirelessNodeIndexCodec.Probe probe,
-        Map<Long, Byte> actualTypes, byte wantedType, boolean revealAll) {
+    static WirelessNodeIndexCodec.Probe visibleProbe(WirelessNodeIndexCodec.Probe probe, Map<Long, Byte> actualTypes,
+        byte wantedType, boolean revealAll) {
         return (packed, x, y, z, type) -> {
             WirelessNodeIndexCodec.ProbeResult result = probe.probe(packed, x, y, z, type);
             if (result == WirelessNodeIndexCodec.ProbeResult.VALID

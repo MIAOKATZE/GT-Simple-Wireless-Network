@@ -28,7 +28,8 @@ public final class MonitorElectricItemManager implements IElectricItemManager {
         if (!simulate) {
             BatteryCharge.set(
                 MonitorBattery.data(stack),
-                BatteryCharge.get(MonitorBattery.data(stack)).add(BatteryCharge.value(accepted)));
+                BatteryCharge.get(MonitorBattery.data(stack))
+                    .add(BatteryCharge.value(accepted)));
             if (MonitorBattery.data(stack)
                 .getInteger("Status") == 0)
                 MonitorBattery.data(stack)
@@ -47,7 +48,8 @@ public final class MonitorElectricItemManager implements IElectricItemManager {
         if (!Double.isFinite(used) || used <= 0) return 0;
         if (!simulate) BatteryCharge.set(
             MonitorBattery.data(stack),
-            BatteryCharge.get(MonitorBattery.data(stack)).subtract(BatteryCharge.value(used)));
+            BatteryCharge.get(MonitorBattery.data(stack))
+                .subtract(BatteryCharge.value(used)));
         return used;
     }
 
@@ -59,8 +61,10 @@ public final class MonitorElectricItemManager implements IElectricItemManager {
 
     @Override
     public boolean canUse(ItemStack stack, double amount) {
-        return MonitorBattery.hasBattery(stack) && Double.isFinite(amount) && amount >= 0
-            && BatteryCharge.get(MonitorBattery.data(stack)).compareTo(BatteryCharge.value(amount)) >= 0;
+        return MonitorBattery.hasBattery(stack) && Double.isFinite(amount)
+            && amount >= 0
+            && BatteryCharge.get(MonitorBattery.data(stack))
+                .compareTo(BatteryCharge.value(amount)) >= 0;
     }
 
     @Override
