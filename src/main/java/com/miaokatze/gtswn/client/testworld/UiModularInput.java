@@ -69,8 +69,8 @@ final class UiModularInput {
             String version = mod == null ? "UNKNOWN" : mod.getVersion();
             result.put("muiVersion", version);
             require(
-                "2.3.92".equals(version) || "2.3.92-1.7.10".equals(version),
-                "MUI2 input is gated to version 2.3.92");
+                "2.3.94".equals(version) || "2.3.94-1.7.10".equals(version),
+                "MUI2 input is gated to version 2.3.94");
             screen = UiModularSnapshot.wrappedScreen(wrapper);
             api = new Api(); // Resolve every reflective method/field before coordinates or inputs change.
             require(screen.isActive() && !screen.isOverlay(), "Inactive or overlay screen");

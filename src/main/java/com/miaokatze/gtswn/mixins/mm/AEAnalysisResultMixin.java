@@ -23,7 +23,7 @@ public abstract class AEAnalysisResultMixin {
         at = @At(
             value = "INVOKE",
             target = "Lappeng/api/parts/IPartHost;getPart(Lnet/minecraftforge/common/util/ForgeDirection;)Lappeng/api/parts/IPart;"))
-    private IPart gtswn$transferablePart(IPartHost host, ForgeDirection side) {
+    private static IPart gtswn$transferablePart(IPartHost host, ForgeDirection side) {
         return AEPartCopy.transferablePart(host, side);
     }
 }

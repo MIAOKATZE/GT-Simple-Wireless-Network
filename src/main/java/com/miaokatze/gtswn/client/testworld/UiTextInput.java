@@ -12,7 +12,7 @@ import net.minecraft.client.gui.GuiTextField;
 import cpw.mods.fml.common.Loader;
 import cpw.mods.fml.common.ModContainer;
 
-/** Optional bridge to the inspected lwjgl3ify 3.0.37 public text-event API. Never writes its input buffer. */
+/** Optional bridge to the inspected lwjgl3ify 3.0.42 public text-event API. Never writes its input buffer. */
 final class UiTextInput {
 
     private UiTextInput() {}
@@ -32,8 +32,8 @@ final class UiTextInput {
                 .get("lwjgl3ify");
             String version = mod == null ? events.getPackage()
                 .getImplementationVersion() : mod.getVersion();
-            if (!"3.0.37".equals(version)) throw new Refused(
-                "Unsupported lwjgl3ify text-input version: " + version + "; inspected version is 3.0.37");
+            if (!"3.0.42".equals(version)) throw new Refused(
+                "Unsupported lwjgl3ify text-input version: " + version + "; inspected version is 3.0.42");
             Class<?> event = Class.forName("me.eigenraven.lwjgl3ify.api.InputEvents$TextEvent");
             Class<?> handler = Class.forName("me.eigenraven.lwjgl3ify.client.TextFieldHandler");
             Plan plan = new Plan();
