@@ -101,6 +101,6 @@ dependencies {
 
 // Shared library API; immutable candidate versions may be supplied for isolated integration builds.
 dependencies {
-    def coreVersion = project.findProperty("miaokatzeCoreVersion") ?: "0.1.27"
+    def coreVersion = project.findProperty("miaokatzeCoreVersion") ?: "0.1.28"
     api("com.miaokatze.miaokatzecore:miaokatzecore:${coreVersion}:dev") { transitive = false }
 }
