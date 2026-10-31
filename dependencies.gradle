@@ -43,7 +43,7 @@ dependencies {
     // Sources reference only GregTech API types (gregtech.api.*), so keep GT5-Unofficial.
     // User has an external hard backup of the original file, so this file is intentionally simplified.
     // GTNH 2.9.0 final manifest: exact direct mod dependencies.
-    api("com.github.GTNewHorizons:GT5-Unofficial:5.09.54.264") { transitive = false }
+    api("com.github.GTNewHorizons:GT5-Unofficial:5.09.54.265") { transitive = false }
 
     // Some GregTech base classes reference interfaces/types from other mods (AE2, ModularUI, GTNHLib)
     // that are only needed at compile-time to satisfy types. Add them as compileOnlyApi so they
