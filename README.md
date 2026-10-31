@@ -33,7 +33,7 @@ The table lists declared version ranges or known compatible versions. Download l
 | GTNH | GTSWN 版本范围 / Version range | 已发布下载 / Status |
 | --- | --- | --- |
 | 2.9.0 正式版 / final | 2.1.0 ~ + | 当前 2.1.0 待发布草稿 / Draft |
-| 2.9.0 RC-1 / RC-2 | 2.0.0 ~ 2.0.37 | [v2.0.35](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.0.35)；范围上限 2.0.37 为未发布候选 |
+| 2.9.0 RC-1 / RC-2 | 2.0.0 ~ 2.0.37 | [v2.0.37](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.0.37)；RC 最终版已发布，随附 Core 0.1.28 |
 | 2.9.0 beta-1 / beta-2 / beta-3 | 1.8.82 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) |
 | 2.8.4 | 0.2.0 | [v0.2.0](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v0.2.0) |
 
