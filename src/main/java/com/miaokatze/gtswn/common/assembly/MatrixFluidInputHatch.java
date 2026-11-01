@@ -248,6 +248,11 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
     }
 
     @Override
+    protected boolean forceUseMui2() {
+        return true;
+    }
+
+    @Override
     public ModularPanel buildUI(PosGuiData data, PanelSyncManager sync, UISettings settings) {
         return new MatrixAssemblyUi(this).build(data, sync, settings);
     }

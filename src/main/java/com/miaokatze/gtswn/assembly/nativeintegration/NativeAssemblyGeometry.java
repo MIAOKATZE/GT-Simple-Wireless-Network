@@ -40,8 +40,12 @@ public final class NativeAssemblyGeometry {
      * item positions must use contiguous=true. This never sorts or repairs an ambiguous native input list.
      */
     public static boolean isOrderedColumn(int[][] positions, ExtendedFacing facing, int minimum, boolean contiguous) {
+        return isOrderedColumn(positions, lengthAxis(facing), minimum, contiguous);
+    }
+
+    public static boolean isOrderedColumn(int[][] positions, ForgeDirection axis, int minimum, boolean contiguous) {
         if (positions.length < minimum) return false;
-        ForgeDirection axis = lengthAxis(facing);
+        if (axis == ForgeDirection.UNKNOWN) return false;
         int sign = 0;
         for (int i = 1; i < positions.length; i++) {
             int dx = positions[i][0] - positions[i - 1][0];

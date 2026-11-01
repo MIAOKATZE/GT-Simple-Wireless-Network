@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -71,6 +72,7 @@ public class MatrixDiagnosticsTest {
         NBTTagCompound saved = before.saveLedger();
         OrderedAssemblyGroup restored = group();
         field("session").set(restored, field("session").get(before));
+        field("master").set(restored, field("master").get(before));
         field("memberIds").set(restored, field("memberIds").get(before));
         Method restore = OrderedAssemblyGroup.class.getDeclaredMethod("restore", NBTTagCompound.class);
         restore.setAccessible(true);
@@ -97,6 +99,18 @@ public class MatrixDiagnosticsTest {
         field("items").set(group, Arrays.asList(null, null));
         field("fluids").set(group, Collections.emptyList());
         field("memberIds").set(group, new ArrayList<>(Arrays.asList(UUID.randomUUID(), UUID.randomUUID())));
+        UUID masterId = ((java.util.List<UUID>) field("memberIds").get(group)).get(0);
+        field("master").set(
+            group,
+            Proxy.newProxyInstance(
+                MatrixAssemblyMember.class.getClassLoader(),
+                new Class<?>[] { MatrixAssemblyMember.class },
+                (proxy, method, args) -> {
+                    if (method.getName()
+                        .equals("orderedMemberId")) return masterId;
+                    throw new AssertionError(method);
+                }));
+        field("controllerId").set(group, ((NativeAssemblySession) field("session").get(group)).controllerId());
         field("memberPositions").set(group, new int[][] { { 0, 0, 0 }, { 1, 0, 0 } });
         field("recipeKey").set(group, "v1:" + String.join("", Collections.nCopies(64, "0")));
         field("patternSlot").setInt(group, 0);

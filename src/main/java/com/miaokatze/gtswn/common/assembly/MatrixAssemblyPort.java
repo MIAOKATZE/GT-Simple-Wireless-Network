@@ -70,12 +70,20 @@ public final class MatrixAssemblyPort {
         boolean wasMaster = group != null && group.master() == member;
         boolean nextMaster = next != null && next.master() == member;
         group = next;
+        if (next != null) restoredLedger = null;
         patternChange = true;
         // AE classifies channel requirements when a node joins its path cache.
         // A newly elected master may already be connected, so recreate only on a real role change.
-        if (wasMaster != nextMaster && proxy != null) proxy.invalidate();
+        boolean rebuild = wasMaster != nextMaster && proxy != null && proxy.isReady();
+        if (rebuild) {
+            // invalidate clears ready and destroys the node, including its native security identity.
+            NBTTagCompound nodeData = new NBTTagCompound();
+            proxy.writeToNBT(nodeData);
+            proxy.invalidate();
+            proxy.readFromNBT(nodeData);
+        }
         getProxy().setFlags(nextMaster ? new GridFlags[] { GridFlags.REQUIRE_CHANNEL } : new GridFlags[0]);
-        if (getProxy().isReady()) getProxy().getNode();
+        if (rebuild) getProxy().onReady();
     }
 
     public AENetworkProxy getProxy() {
@@ -105,6 +113,7 @@ public final class MatrixAssemblyPort {
 
     public void ready() {
         getProxy().onReady();
+        OrderedAssemblyGroup.refreshTopology(member);
     }
 
     public void removed() {
@@ -123,6 +132,7 @@ public final class MatrixAssemblyPort {
     }
 
     public void tick(long tick) {
+        OrderedAssemblyGroup.topologyTick(member, tick);
         if (group != null && group.master() == member) group.tick();
         if (patternChange && tick % 10 == 0 && getProxy().isReady()) {
             try {
@@ -179,6 +189,7 @@ public final class MatrixAssemblyPort {
 
     public void facingChanged() {
         if (group != null) group.invalidate("member_facing");
+        OrderedAssemblyGroup.refreshTopology(member);
         refreshConnectionSides();
     }
 
@@ -194,8 +205,8 @@ public final class MatrixAssemblyPort {
     public void open(EntityPlayer player) {
         if (member.getBaseMetaTileEntity()
             .isClientSide()) return;
-        MatrixAssemblyMember target = group == null ? member : group.master();
-        ((gregtech.api.metatileentity.CommonMetaTileEntity) target).openGui(player);
+        OrderedAssemblyGroup.refreshTopology(member);
+        ((gregtech.api.metatileentity.CommonMetaTileEntity) member).openGui(player);
     }
 
     public boolean canDismantle() {

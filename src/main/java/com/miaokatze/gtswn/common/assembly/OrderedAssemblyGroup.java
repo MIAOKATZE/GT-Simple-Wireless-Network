@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.assembly;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -17,6 +18,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyBinding;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyGeometry;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
@@ -53,14 +55,18 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         QUARANTINED
     }
 
-    private final NativeAssemblySession session;
+    private NativeAssemblySession session;
+    private boolean nativeBound;
+    private MatrixAssemblyMember master;
     private final List<MatrixAssemblyMember> items;
     private final List<MatrixAssemblyMember> fluids;
     private final List<MatrixAssemblyMember> members;
     private final List<UUID> memberIds = new ArrayList<>();
-    private final int[][] memberPositions;
-    private final int controllerDimension, controllerX, controllerY, controllerZ;
-    private final com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing alignment;
+    private int[][] memberPositions;
+    private final int memberDimension;
+    private UUID controllerId;
+    private int controllerDimension, controllerX, controllerY, controllerZ;
+    private com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing alignment;
     private Stage stage = Stage.IDLE;
     private boolean verified;
     private long epoch = 1;
@@ -77,120 +83,216 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private long[] diagnosticFluidConsumed = new long[0];
     private boolean diagnosticConsumptionObserved;
 
-    private OrderedAssemblyGroup(NativeAssemblySession session, List<MatrixAssemblyMember> items,
-        List<MatrixAssemblyMember> fluids) {
-        this(session, items, fluids, null);
+    private OrderedAssemblyGroup(List<MatrixAssemblyMember> items, List<MatrixAssemblyMember> fluids,
+        MatrixAssemblyMember master, NBTTagCompound ledger) {
+        this.master = master;
+        this.items = ledgerOrder(items, ledger);
+        this.fluids = ledgerOrder(fluids, ledger);
+        members = new ArrayList<>();
+        memberDimension = master.getBaseMetaTileEntity()
+            .getWorld().provider.dimensionId;
+        rememberMembers();
+        restore(ledger);
     }
 
-    private OrderedAssemblyGroup(NativeAssemblySession session, List<MatrixAssemblyMember> items,
-        List<MatrixAssemblyMember> fluids, NBTTagCompound previousLedger) {
-        this.session = session;
-        this.items = items;
-        this.fluids = fluids;
-        members = new ArrayList<>(items);
-        members.addAll(fluids);
-        for (MatrixAssemblyMember member : members) memberIds.add(member.orderedMemberId());
-        memberPositions = positions(members);
-        IGregTechTileEntity controllerTile = session.controller()
-            .getBaseMetaTileEntity();
-        controllerDimension = controllerTile.getWorld().provider.dimensionId;
-        controllerX = controllerTile.getXCoord();
-        controllerY = controllerTile.getYCoord();
-        controllerZ = controllerTile.getZCoord();
-        alignment = session.controller()
-            .getExtendedFacing();
-        restore(
-            previousLedger == null ? master().matrixPort()
-                .restoredLedger() : previousLedger);
-    }
-
-    public static void structureChecked(MatrixAssemblyMember caller, NativeAssemblySession session, boolean formed) {
-        OrderedAssemblyGroup previous = caller.matrixPort()
+    /** Only a bounded local component is inspected, once per second by its master. Never loads chunks. */
+    public static void topologyTick(MatrixAssemblyMember caller, long tick) {
+        OrderedAssemblyGroup group = caller.matrixPort()
             .group();
-        if (!formed) {
-            if (previous != null) previous.invalidate("structure_incomplete");
-            return;
+        if (tick % 20 == 0 && (group == null || !group.verified || group.master() == caller)) refreshTopology(caller);
+    }
+
+    public static void refreshTopology(MatrixAssemblyMember caller) {
+        IGregTechTileEntity origin = caller.getBaseMetaTileEntity();
+        if (origin == null || origin.getWorld() == null || origin.isClientSide() || !isPresent(caller)) return;
+        List<MatrixAssemblyMember> found = new ArrayList<>();
+        found.add(caller);
+        for (int i = 0; i < found.size() && found.size() <= 20; i++) {
+            IGregTechTileEntity tile = found.get(i)
+                .getBaseMetaTileEntity();
+            for (ForgeDirection face : ForgeDirection.VALID_DIRECTIONS) {
+                MatrixAssemblyMember neighbour = neighbour(tile, face);
+                if (neighbour != null && !found.contains(neighbour)) found.add(neighbour);
+            }
         }
-        MTEAssemblyLine controller = session.controller();
+        Set<OrderedAssemblyGroup> previous = new HashSet<>();
+        for (MatrixAssemblyMember member : found) {
+            OrderedAssemblyGroup group = member.matrixPort()
+                .group();
+            if (group != null) previous.add(group);
+        }
         List<MatrixAssemblyMember> items = new ArrayList<>();
         List<MatrixAssemblyMember> fluids = new ArrayList<>();
-        for (Object input : controller.mInputBusses) {
-            if (!(input instanceof MatrixAssemblyMember member) || member.matrixFluid()) {
-                if (previous != null) previous.invalidate("mixed_inputs");
-                return;
-            }
-            items.add(member);
-        }
-        for (Object input : controller.mInputHatches) {
-            if (!(input instanceof MatrixAssemblyMember member) || !member.matrixFluid()) {
-                if (previous != null) previous.invalidate("mixed_inputs");
-                return;
-            }
-            fluids.add(member);
-        }
-        if (items.size() < 5) {
-            if (previous != null) previous.invalidate("minimum_five");
+        for (MatrixAssemblyMember member : found) (member.matrixFluid() ? fluids : items).add(member);
+        Comparator<MatrixAssemblyMember> order = Comparator
+            .comparingInt(
+                (MatrixAssemblyMember member) -> member.getBaseMetaTileEntity()
+                    .getXCoord())
+            .thenComparingInt(
+                member -> member.getBaseMetaTileEntity()
+                    .getYCoord())
+            .thenComparingInt(
+                member -> member.getBaseMetaTileEntity()
+                    .getZCoord());
+        items.sort(order);
+        fluids.sort(order);
+        String topologyFault = topologyFault(items, fluids);
+        if (found.size() > 20 || !topologyFault.isEmpty()) {
+            for (OrderedAssemblyGroup group : previous)
+                group.invalidate(topologyFault.isEmpty() ? "topology_changed" : topologyFault);
             return;
         }
-        OrderedAssemblyGroup group = items.get(0)
-            .matrixPort()
-            .group();
-        if (group == null) {
-            for (MatrixAssemblyMember member : items) if (member.matrixPort()
-                .group() != null) {
-                    group = member.matrixPort()
-                        .group();
-                    break;
-                }
-        }
-        if (group == null) {
-            for (MatrixAssemblyMember member : fluids) if (member.matrixPort()
-                .group() != null) {
-                    group = member.matrixPort()
-                        .group();
-                    break;
-                }
-        }
-        OrderedAssemblyGroup replaced = null;
-        if (group != null && group.session != session) {
-            if (com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter.isLive(group.session.controller())
-                || !group.session.controllerId()
-                    .equals(session.controllerId())
-                || !group.sameControllerPosition(controller.getBaseMetaTileEntity())
-                || !group.samePersistentMembers(items, fluids)) {
-                group.invalidate("controller_conflict");
-                if (previous != null) previous.invalidate("controller_conflict");
+        if (previous.size() == 1) {
+            OrderedAssemblyGroup group = previous.iterator()
+                .next();
+            if (group.samePersistentMembers(items, fluids)) {
+                if (!group.members.containsAll(found)) group.replaceReloadedMembers(found);
+                group.verified = group.checkTopology();
+                if (group.verified && group.stage == Stage.IDLE) group.reason = "";
+                group.updateConnections();
                 return;
             }
-            replaced = group;
-            group = new OrderedAssemblyGroup(session, items, fluids, replaced.saveLedger());
         }
-        if (group == null) group = new OrderedAssemblyGroup(session, items, fluids);
-        if (!group.items.equals(items) || !group.fluids.equals(fluids)) {
-            if (!group.samePersistentMembers(items, fluids)) {
-                group.epoch++;
+        // An in-flight group cannot change membership, master, or the physical order of its resources.
+        for (OrderedAssemblyGroup group : previous) {
+            if (group.stage != Stage.IDLE || !group.allEmpty() || group.hasUnloadedMember(origin.getWorld())) {
                 group.invalidate("topology_changed");
                 return;
             }
-            replaced = group;
-            group = new OrderedAssemblyGroup(session, items, fluids, replaced.saveLedger());
         }
-        for (MatrixAssemblyMember member : group.members) {
-            OrderedAssemblyGroup existing = member.matrixPort()
-                .group();
-            if (existing != null && existing != group && existing != replaced) {
-                existing.invalidate("controller_conflict");
-                group.invalidate("controller_conflict");
-                return;
+        MatrixAssemblyMember master = null;
+        for (MatrixAssemblyMember member : items) {
+            NBTTagCompound saved = member.matrixPort()
+                .group() == null ? member.matrixPort()
+                    .restoredLedger() : null;
+            if (hasPatterns(member) || saved != null && !"IDLE".equals(saved.getString("stage"))) {
+                if (master != null && master != member) {
+                    for (OrderedAssemblyGroup group : previous) group.invalidate("controller_conflict");
+                    return;
+                }
+                master = member;
             }
         }
+        if (master == null && previous.size() == 1) {
+            MatrixAssemblyMember incumbent = previous.iterator()
+                .next()
+                .master();
+            if (items.contains(incumbent)) master = incumbent;
+        }
+        if (master == null) for (MatrixAssemblyMember member : items) if (member.matrixPort()
+            .restoredLedger() != null) {
+                master = member;
+                break;
+            }
+        if (master == null) master = items.get(0);
+        NBTTagCompound ledger = master.matrixPort()
+            .group() == null ? master.matrixPort()
+                .restoredLedger() : null;
+        for (OrderedAssemblyGroup old : previous) {
+            if (old.master() == master && old.members.size() == found.size()) ledger = old.saveLedger();
+            old.invalidate("topology_changed");
+        }
+        OrderedAssemblyGroup group = new OrderedAssemblyGroup(items, fluids, master, ledger);
+        for (OrderedAssemblyGroup old : previous) group.epoch = Math.max(group.epoch, old.epoch + 1);
         for (MatrixAssemblyMember member : group.members) member.matrixPort()
             .bind(group);
         group.verified = group.checkTopology();
-        if (group.verified
-            && (group.stage == Stage.IDLE || group.stage == Stage.STAGED || group.stage == Stage.RUNNING))
-            group.reason = "";
+        if (group.verified && group.stage == Stage.IDLE) group.reason = "";
         group.updateConnections();
+    }
+
+    public static void structureChecked(MatrixAssemblyMember caller, NativeAssemblySession session, boolean formed) {
+        refreshTopology(caller);
+        OrderedAssemblyGroup group = caller.matrixPort()
+            .group();
+        if (group == null) return;
+        if (!formed) {
+            if (group.session == session) group.revokeNativeBinding();
+            return;
+        }
+        group.bindNative(session);
+    }
+
+    private void bindNative(NativeAssemblySession next) {
+        List<MatrixAssemblyMember> nextItems = new ArrayList<>();
+        List<MatrixAssemblyMember> nextFluids = new ArrayList<>();
+        for (Object input : next.controller().mInputBusses) {
+            if (!(input instanceof MatrixAssemblyMember member) || member.matrixFluid()) {
+                revokeNativeBinding();
+                reject("mixed_inputs");
+                return;
+            }
+            nextItems.add(member);
+        }
+        for (Object input : next.controller().mInputHatches) {
+            if (!(input instanceof MatrixAssemblyMember member) || !member.matrixFluid()) {
+                revokeNativeBinding();
+                reject("mixed_inputs");
+                return;
+            }
+            nextFluids.add(member);
+        }
+        if (!verified || nextItems.size() != items.size()
+            || nextFluids.size() != fluids.size()
+            || !items.containsAll(nextItems)
+            || !fluids.containsAll(nextFluids)) {
+            if (session == next) revokeNativeBinding();
+            reject("mixed_inputs");
+            return;
+        }
+        if (session != null && session != next && nativeBound && NativeAssemblyAdapter.isLive(session.controller())) {
+            reject("controller_conflict");
+            return;
+        }
+        boolean pending = stage != Stage.IDLE || !allEmpty();
+        if (controllerId != null
+            && (!controllerId.equals(next.controllerId()) || !sameControllerPosition(
+                next.controller()
+                    .getBaseMetaTileEntity()))
+            || pending && (controllerId == null || !items.equals(nextItems) || !fluids.equals(nextFluids))) {
+            revokeNativeBinding();
+            reject("controller_conflict");
+            return;
+        }
+        session = next;
+        controllerId = next.controllerId();
+        IGregTechTileEntity tile = next.controller()
+            .getBaseMetaTileEntity();
+        controllerDimension = tile.getWorld().provider.dimensionId;
+        controllerX = tile.getXCoord();
+        controllerY = tile.getYCoord();
+        controllerZ = tile.getZCoord();
+        alignment = next.controller()
+            .getExtendedFacing();
+        if (!items.equals(nextItems) || !fluids.equals(nextFluids)) {
+            // Native recipe positions follow the actual scan, including its reversed direction. The UI master stays
+            // put.
+            items.clear();
+            items.addAll(nextItems);
+            fluids.clear();
+            fluids.addAll(nextFluids);
+            rememberMembers();
+            diagnosticItemTable = diagnosticFluidTable = new int[0];
+            diagnosticItemConsumed = diagnosticFluidConsumed = new long[0];
+            diagnosticConsumptionObserved = false;
+        }
+        if (checkNativeBinding()) nativeBound = true;
+        else revokeNativeBinding();
+        if (nativeBound && stage == Stage.RUNNING
+            && (next.controller().mMaxProgresstime == 0 || nativeSequence != next.runSequence()
+                || !"RUNNING".equals(next.lastNativeEvent()))) {
+            stage = Stage.NATIVE_ABORTED;
+            reason = "restart_native_state_missing";
+        }
+        if (nativeBound && (stage == Stage.IDLE || stage == Stage.STAGED || stage == Stage.RUNNING)) reason = "";
+        dirty();
+    }
+
+    private void revokeNativeBinding() {
+        if (!nativeBound) return;
+        nativeBound = false;
+        if (isPresent(master)) master.matrixPort()
+            .changed();
     }
 
     private boolean sameControllerPosition(IGregTechTileEntity next) {
@@ -199,26 +301,56 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             && controllerZ == next.getZCoord();
     }
 
+    private void rememberMembers() {
+        members.clear();
+        members.addAll(items);
+        members.addAll(fluids);
+        memberIds.clear();
+        for (MatrixAssemblyMember member : members) memberIds.add(member.orderedMemberId());
+        memberPositions = positions(members);
+    }
+
+    /** Reloaded instances may resume only the same UUIDs at the same positions; live duplicates never take over. */
     private boolean samePersistentMembers(List<MatrixAssemblyMember> nextItems, List<MatrixAssemblyMember> nextFluids) {
-        List<MatrixAssemblyMember> next = new ArrayList<>(nextItems);
-        next.addAll(nextFluids);
         if (nextItems.size() != items.size() || nextFluids.size() != fluids.size()) return false;
         for (int i = 0; i < members.size(); i++) {
-            MatrixAssemblyMember before = members.get(i), after = next.get(i);
+            MatrixAssemblyMember before = members.get(i);
+            MatrixAssemblyMember after = null;
+            for (MatrixAssemblyMember candidate : before.matrixFluid() ? nextFluids : nextItems) if (memberIds.get(i)
+                .equals(candidate.orderedMemberId())) {
+                    after = candidate;
+                    break;
+                }
+            if (after == null || before != after && isPresent(before)) return false;
             IGregTechTileEntity tile = after.getBaseMetaTileEntity();
-            if (!memberIds.get(i)
-                .equals(after.orderedMemberId()) || tile.getWorld().provider.dimensionId != controllerDimension
-                || memberPositions[i][0] != tile.getXCoord()
+            if (tile.getWorld().provider.dimensionId != memberDimension || memberPositions[i][0] != tile.getXCoord()
                 || memberPositions[i][1] != tile.getYCoord()
                 || memberPositions[i][2] != tile.getZCoord()) return false;
-            if (before != after && com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter
-                .isLive((gregtech.api.interfaces.metatileentity.IMetaTileEntity) before)) return false;
         }
         return true;
     }
 
+    private void replaceReloadedMembers(List<MatrixAssemblyMember> found) {
+        String previousReason = reason;
+        invalidate("member_unloaded");
+        for (int i = 0; i < members.size(); i++) {
+            MatrixAssemblyMember before = members.get(i);
+            for (MatrixAssemblyMember after : found) if (memberIds.get(i)
+                .equals(after.orderedMemberId())) {
+                    if (master == before) master = after;
+                    if (i < items.size()) items.set(i, after);
+                    else fluids.set(i - items.size(), after);
+                    break;
+                }
+        }
+        rememberMembers();
+        for (MatrixAssemblyMember member : members) member.matrixPort()
+            .bind(this);
+        reason = previousReason;
+    }
+
     public MatrixAssemblyMember master() {
-        return items.get(0);
+        return master;
     }
 
     public List<MatrixAssemblyMember> itemMembers() {
@@ -235,6 +367,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public String reason() {
         if (!verified) return reason;
+        if (stage == Stage.IDLE && (!nativeBound || session == null)) return "structure_incomplete";
         if (stage == Stage.IDLE && !session.controller()
             .protectsExcessItem()) return "output_protection_required";
         if (stage == Stage.IDLE && !session.controller()
@@ -295,11 +428,12 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public int[] diagnosticControllerPosition() {
-        return new int[] { controllerDimension, controllerX, controllerY, controllerZ };
+        return controllerId == null ? null : new int[] { controllerDimension, controllerX, controllerY, controllerZ };
     }
 
     /** Preview uses the current native authorization set without changing the group's rejection or lifecycle state. */
     public String previewReason(OrderedPatternLayout layout) {
+        if (session == null || !nativeBound) return "structure_incomplete";
         try {
             AssemblyRecipeMatch.bind(layout, authorizedRecipes());
             if (layout.items()
@@ -332,11 +466,14 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public boolean accepting() {
-        return session.readyForNewWork() && verified
+        return session != null && nativeBound
+            && session.readyForNewWork()
+            && verified
             && stage == Stage.IDLE
             && !refunding
             && allEmpty()
             && checkTopology()
+            && checkNativeBinding()
             && session.controller().mMaxProgresstime == 0
             && session.controller()
                 .protectsExcessItem()
@@ -362,63 +499,120 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private boolean checkTopology() {
-        if (session.controller()
-            .getExtendedFacing() != alignment) return reject("topology_changed");
-        if (items.size() < 5 || items.size() > 16 || fluids.size() > 4) return reject("minimum_five");
+        String topologyFault = topologyFault(items, fluids);
+        if (!topologyFault.isEmpty()) return reject(topologyFault);
         Set<UUID> ids = new HashSet<>();
-        for (MatrixAssemblyMember member : members) {
+        for (int i = 0; i < members.size(); i++) {
+            MatrixAssemblyMember member = members.get(i);
             IGregTechTileEntity tile = member.getBaseMetaTileEntity();
-            if (tile == null || !tile.getWorld()
-                .blockExists(tile.getXCoord(), tile.getYCoord(), tile.getZCoord())
-                || tile.getWorld()
-                    .getTileEntity(tile.getXCoord(), tile.getYCoord(), tile.getZCoord()) != tile
-                || tile.getMetaTileEntity() != member) return reject("member_unloaded");
+            if (!isPresent(member)) return reject("member_unloaded");
+            if (tile.getWorld().provider.dimensionId != memberDimension || !Arrays
+                .equals(memberPositions[i], new int[] { tile.getXCoord(), tile.getYCoord(), tile.getZCoord() }))
+                return reject("member_replaced");
             if (!ids.add(member.orderedMemberId())) return reject("duplicate_identity");
-            if (!memberIds.get(members.indexOf(member))
+            if (!memberIds.get(i)
                 .equals(member.orderedMemberId())) return reject("member_replaced");
             if (member.matrixPort()
                 .quarantined())
                 return reject(
                     member.matrixPort()
                         .fault());
-            if (tile.getFrontFacing() != session.controller()
-                .getExtendedFacing()
-                .getRelativeDownInWorld()) return reject("member_facing");
             for (ForgeDirection face : ForgeDirection.VALID_DIRECTIONS) {
-                int x = tile.getXCoord() + face.offsetX;
-                int y = tile.getYCoord() + face.offsetY;
-                int z = tile.getZCoord() + face.offsetZ;
-                if (!tile.getWorld()
-                    .blockExists(x, y, z)) return reject("member_unloaded");
-                TileEntity neighbour = tile.getWorld()
-                    .getTileEntity(x, y, z);
-                if (neighbour instanceof IGregTechTileEntity gt
-                    && gt.getMetaTileEntity() instanceof MatrixAssemblyMember other
-                    && other.matrixFluid() == member.matrixFluid()
-                    && !members.contains(other)) {
-                    OrderedAssemblyGroup otherGroup = other.matrixPort()
-                        .group();
-                    if (otherGroup == null || otherGroup.session == session
-                        || !com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter
-                            .isLive(otherGroup.session.controller()))
-                        return reject("same_kind_branch");
-                }
+                MatrixAssemblyMember other = neighbour(tile, face);
+                if (other != null && !members.contains(other)) return reject("topology_changed");
             }
         }
-        if (!NativeAssemblyGeometry.isOrderedColumn(
-            positions(items),
-            session.controller()
-                .getExtendedFacing(),
-            5,
-            true)) return reject("item_column");
-        if (!fluids.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(
-            positions(fluids),
-            session.controller()
-                .getExtendedFacing(),
-            1,
-            false)) return reject("fluid_column");
-        if (!NativeAssemblyGeometry.isFaceConnected(positions(members))) return reject("disconnected_members");
         return true;
+    }
+
+    /** Native order and facing remain a separate permit; a configurable topology alone grants no native access. */
+    private boolean checkNativeBinding() {
+        if (session == null || !NativeAssemblyAdapter.isLive(session.controller())) return false;
+        if (session.controller()
+            .getExtendedFacing() != alignment) return reject("topology_changed");
+        ForgeDirection axis = NativeAssemblyGeometry.lengthAxis(alignment);
+        if (axis.offsetY != 0) return reject("item_column");
+        if (!session.controller().mInputBusses.equals(items) || !session.controller().mInputHatches.equals(fluids))
+            return reject("mixed_inputs");
+        for (MatrixAssemblyMember member : members) {
+            if (member.matrixPort()
+                .group() != this) return reject("controller_conflict");
+            if (member.getBaseMetaTileEntity()
+                .getFrontFacing() != alignment.getRelativeDownInWorld()) return reject("member_facing");
+        }
+        if (!NativeAssemblyGeometry.isOrderedColumn(positions(items), alignment, 5, true)) return reject("item_column");
+        if (!fluids.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(positions(fluids), alignment, 1, false))
+            return reject("fluid_column");
+        return true;
+    }
+
+    static String topologyFault(List<MatrixAssemblyMember> items, List<MatrixAssemblyMember> fluids) {
+        if (items.size() < 5) return "minimum_five";
+        if (items.size() > 16) return "item_column";
+        if (fluids.size() > 4) return "fluid_column";
+        int[][] itemPositions = positions(items), fluidPositions = positions(fluids);
+        Comparator<int[]> order = Comparator.comparingInt((int[] position) -> position[0])
+            .thenComparingInt(position -> position[1])
+            .thenComparingInt(position -> position[2]);
+        Arrays.sort(itemPositions, order);
+        Arrays.sort(fluidPositions, order);
+        ForgeDirection axis = itemPositions[0][0] != itemPositions[1][0] ? ForgeDirection.EAST : ForgeDirection.SOUTH;
+        if (!NativeAssemblyGeometry.isOrderedColumn(itemPositions, axis, 5, true)) return "item_column";
+        if (fluidPositions.length != 0 && !NativeAssemblyGeometry.isOrderedColumn(fluidPositions, axis, 1, false))
+            return "fluid_column";
+        List<MatrixAssemblyMember> all = new ArrayList<>(items);
+        all.addAll(fluids);
+        return NativeAssemblyGeometry.isFaceConnected(positions(all)) ? "" : "disconnected_members";
+    }
+
+    private static MatrixAssemblyMember neighbour(IGregTechTileEntity tile, ForgeDirection face) {
+        int x = tile.getXCoord() + face.offsetX, y = tile.getYCoord() + face.offsetY,
+            z = tile.getZCoord() + face.offsetZ;
+        if (!tile.getWorld()
+            .blockExists(x, y, z)) return null;
+        TileEntity neighbour = tile.getWorld()
+            .getTileEntity(x, y, z);
+        return neighbour instanceof IGregTechTileEntity gt
+            && gt.getMetaTileEntity() instanceof MatrixAssemblyMember member
+            && member.getBaseMetaTileEntity() == gt ? member : null;
+    }
+
+    private static boolean isPresent(MatrixAssemblyMember member) {
+        IGregTechTileEntity tile = member.getBaseMetaTileEntity();
+        return tile != null && tile.getWorld() != null
+            && tile.getWorld()
+                .blockExists(tile.getXCoord(), tile.getYCoord(), tile.getZCoord())
+            && tile.getWorld()
+                .getTileEntity(tile.getXCoord(), tile.getYCoord(), tile.getZCoord()) == tile
+            && tile.getMetaTileEntity() == member;
+    }
+
+    private boolean hasUnloadedMember(net.minecraft.world.World world) {
+        for (int[] position : memberPositions)
+            if (!world.blockExists(position[0], position[1], position[2])) return true;
+        return false;
+    }
+
+    private static boolean hasPatterns(MatrixAssemblyMember member) {
+        for (int i = 0; i < MatrixPatternInventory.SIZE; i++) if (member.matrixPort()
+            .patterns()
+            .getStackInSlot(i) != null) return true;
+        return false;
+    }
+
+    private static List<MatrixAssemblyMember> ledgerOrder(List<MatrixAssemblyMember> members, NBTTagCompound ledger) {
+        List<MatrixAssemblyMember> ordered = new ArrayList<>();
+        if (ledger != null) {
+            NBTTagList saved = ledger.getTagList("members", 10);
+            for (int i = 0; i < saved.tagCount(); i++) {
+                String id = saved.getCompoundTagAt(i)
+                    .getString("id");
+                for (MatrixAssemblyMember member : members) if (member.orderedMemberId()
+                    .toString()
+                    .equals(id) && !ordered.contains(member)) ordered.add(member);
+            }
+        }
+        return ordered.size() == members.size() ? ordered : new ArrayList<>(members);
     }
 
     private static int[][] positions(List<MatrixAssemblyMember> members) {
@@ -438,6 +632,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     private List<RecipeAssemblyLine> authorizedRecipes() {
         List<RecipeAssemblyLine> result = new ArrayList<>();
+        if (session == null || !nativeBound) return result;
         MTEAssemblyLine controller = session.controller();
         ItemStack stick = controller.getStackInSlot(1);
         if (AssemblyLineUtils.isItemDataStick(stick)) result.addAll(AssemblyLineUtils.findALRecipeFromDataStick(stick));
@@ -449,7 +644,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public void provideCrafting(ICraftingProviderHelper helper) {
-        if (!session.readyForPatternAdvertisement() || !verified || !checkTopology()) return;
+        if (session == null || !nativeBound
+            || !session.readyForPatternAdvertisement()
+            || !verified
+            || !checkTopology()
+            || !checkNativeBinding()) return;
         for (int i = 0; i < MatrixPatternInventory.SIZE; i++) {
             ItemStack pattern = master().matrixPort()
                 .patterns()
@@ -557,10 +756,12 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     @Override
     public boolean validateNativeState(NativeAssemblySession nativeSession) {
-        return nativeSession == session && verified
+        return nativeSession == session && nativeBound
+            && verified
             && stage == Stage.STAGED
             && !refunding
             && checkTopology()
+            && checkNativeBinding()
             && session.controller()
                 .protectsExcessItem();
     }
@@ -612,7 +813,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public void tick() {
         if (!verified) return;
-        if (stage == Stage.LOCAL_FINISHED && session.controller().mMaxProgresstime == 0 && allEmpty()) {
+        if (stage == Stage.LOCAL_FINISHED && session != null
+            && session.controller().mMaxProgresstime == 0
+            && allEmpty()) {
             stage = Stage.IDLE;
             batch = null;
             recipeKey = "";
@@ -672,10 +875,15 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     public NBTTagCompound saveLedger() {
         if (quarantinedLedger != null) return (NBTTagCompound) quarantinedLedger.copy();
         NBTTagCompound tag = new NBTTagCompound();
-        tag.setIntArray("controllerPosition", new int[] { controllerDimension, controllerX, controllerY, controllerZ });
+        if (controllerId != null) {
+            tag.setIntArray(
+                "controllerPosition",
+                new int[] { controllerDimension, controllerX, controllerY, controllerZ });
+            tag.setString("controller", controllerId.toString());
+        }
         tag.setString(
-            "controller",
-            session.controllerId()
+            "master",
+            master.orderedMemberId()
                 .toString());
         tag.setString("stage", stage.name());
         tag.setLong("epoch", epoch);
@@ -706,12 +914,19 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private void restore(NBTTagCompound tag) {
         if (tag == null) return;
         try {
-            if (!java.util.Arrays.equals(
-                tag.getIntArray("controllerPosition"),
-                new int[] { controllerDimension, controllerX, controllerY, controllerZ }))
-                throw new IllegalArgumentException("controller_replaced");
-            if (!UUID.fromString(tag.getString("controller"))
-                .equals(session.controllerId())) throw new IllegalArgumentException("controller_replaced");
+            if (tag.hasKey("controller") || tag.hasKey("controllerPosition")) {
+                int[] position = tag.getIntArray("controllerPosition");
+                if (position.length != 4 || position[0] != memberDimension)
+                    throw new IllegalArgumentException("controller_replaced");
+                controllerId = UUID.fromString(tag.getString("controller"));
+                controllerDimension = position[0];
+                controllerX = position[1];
+                controllerY = position[2];
+                controllerZ = position[3];
+            }
+            if (tag.hasKey("master") && !master.orderedMemberId()
+                .toString()
+                .equals(tag.getString("master"))) throw new IllegalArgumentException("member_replaced");
             NBTTagList ids = tag.getTagList("members", 10);
             if (ids.tagCount() != memberIds.size()) throw new IllegalArgumentException("topology_changed");
             for (int i = 0; i < ids.tagCount(); i++) {
@@ -743,7 +958,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     || patternSlot >= MatrixPatternInventory.SIZE
                     || !recipeKey.matches("v1:[0-9a-f]{64}")))
                 throw new IllegalArgumentException("invalid_saved_data");
-            if (stage == Stage.RUNNING
+            if (stage == Stage.RUNNING && session != null
                 && (session.controller().mMaxProgresstime == 0 || nativeSequence != session.runSequence()
                     || !"RUNNING".equals(session.lastNativeEvent()))) {
                 stage = Stage.NATIVE_ABORTED;
@@ -758,7 +973,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private void dirty() {
-        for (MatrixAssemblyMember member : members) member.matrixPort()
+        for (MatrixAssemblyMember member : members) if (isPresent(member)) member.matrixPort()
             .changed();
     }
 
@@ -791,15 +1006,13 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private void updateConnections() {
         for (MatrixAssemblyMember member : members) {
             int mask = 0;
-            if (verified) {
+            if (verified && member.matrixPort()
+                .group() == this && isPresent(member)) {
                 IGregTechTileEntity tile = member.getBaseMetaTileEntity();
-                for (MatrixAssemblyMember other : members) {
-                    if (other == member) continue;
-                    IGregTechTileEntity target = other.getBaseMetaTileEntity();
-                    for (ForgeDirection face : ForgeDirection.VALID_DIRECTIONS)
-                        if (tile.getXCoord() + face.offsetX == target.getXCoord()
-                            && tile.getYCoord() + face.offsetY == target.getYCoord()
-                            && tile.getZCoord() + face.offsetZ == target.getZCoord()) mask |= 1 << face.ordinal();
+                for (ForgeDirection face : ForgeDirection.VALID_DIRECTIONS) {
+                    MatrixAssemblyMember other = neighbour(tile, face);
+                    if (other != null && other.matrixPort()
+                        .group() == this && members.contains(other)) mask |= face.flag;
                 }
             }
             member.matrixPort()

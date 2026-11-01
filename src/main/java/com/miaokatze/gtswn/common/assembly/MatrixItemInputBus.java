@@ -167,6 +167,11 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
     }
 
     @Override
+    public boolean allowSelectCircuit() {
+        return false;
+    }
+
+    @Override
     public int getInventoryStackLimit() {
         return Integer.MAX_VALUE;
     }
@@ -201,6 +206,11 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
 
     @Override
     protected boolean useMui2() {
+        return true;
+    }
+
+    @Override
+    protected boolean forceUseMui2() {
         return true;
     }
 

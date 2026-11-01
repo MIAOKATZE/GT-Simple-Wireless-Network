@@ -1,5 +1,6 @@
 package com.miaokatze.gtswn.common.assembly;
 
+import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StatCollector;
@@ -29,9 +30,10 @@ import gregtech.api.modularui2.GTGuis;
 import gregtech.common.gui.modularui.hatch.base.MTEHatchBaseGui;
 import gregtech.common.gui.modularui.util.PatternSlot;
 
-/** Uses the native pattern hatch frame, 4x9 bank and corner controls. Every member opens the master tile. */
+/** Uses the clicked tile as the native GUI anchor and the group's master as the pattern bank owner. */
 public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
+    private final MatrixAssemblyMember anchor;
     private final MatrixAssemblyMember member;
     private BooleanSyncValue editable;
     private StringSyncValue status;
@@ -39,7 +41,18 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
     public MatrixAssemblyUi(MatrixAssemblyMember member) {
         super((MTEHatch) member);
-        this.member = member;
+        anchor = member;
+        OrderedAssemblyGroup group = member.matrixPort()
+            .group();
+        this.member = group == null ? member : group.master();
+    }
+
+    private OrderedAssemblyGroup currentGroup() {
+        OrderedAssemblyGroup group = member.matrixPort()
+            .group();
+        return group != null && group.master() == member
+            && anchor.matrixPort()
+                .group() == group ? group : null;
     }
 
     static String[] description(boolean fluid) {
@@ -50,7 +63,8 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 GTValues.TIER_COLORS[5] + GTValues.VN[5] + EnumChatFormatting.RESET),
             tr("gtswn.matrix.description.storage." + type), tr("gtswn.matrix.description.pattern"),
             tr("gtswn.matrix.description.blocking"), "", tr("gtswn.matrix.description.column"),
-            tr("gtswn.matrix.description.connections"), tr("gtswn.matrix.description.native"),
+            tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.connections"),
+            tr("gtswn.matrix.description.setup"), tr("gtswn.matrix.description.native"),
             tr("gtswn.matrix.description.protection"), "", tr("gtswn.matrix.description.gui"),
             tr("gtswn.matrix.description.me"), "", DeviceTooltip.addedByLine() };
     }
@@ -61,20 +75,25 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
     @Override
     protected int getBasePanelHeight() {
-        return super.getBasePanelHeight() + SLOT_SIZE + 14;
+        return super.getBasePanelHeight() + SLOT_SIZE + 28;
     }
 
     @Override
     protected void registerSyncValues(PanelSyncManager sync) {
         super.registerSyncValues(sync);
-        editable = new BooleanSyncValue(
-            () -> member.matrixPort()
-                .group() != null && member.matrixPort()
-                    .group()
-                    .editable());
+        editable = new BooleanSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            return !anchor.matrixPort()
+                .quarantined()
+                && !member.matrixPort()
+                    .quarantined()
+                && group != null
+                && group.editable();
+        });
         status = new StringSyncValue(() -> {
-            OrderedAssemblyGroup group = member.matrixPort()
-                .group();
+            OrderedAssemblyGroup group = currentGroup();
+            if (group == null && anchor.matrixPort()
+                .group() != null) return "group_changed";
             if (member.matrixPort()
                 .quarantined())
                 return member.matrixPort()
@@ -92,17 +111,9 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
     @Override
     protected ParentWidget<?> createContentSection(ModularPanel panel, PanelSyncManager sync) {
-        sync.registerSlotGroup("matrix_patterns", 4);
+        sync.registerSlotGroup("matrix_patterns", 9);
         Grid slots = new Grid().coverChildren()
-            .gridOfWidthHeight(
-                9,
-                4,
-                (x, y, index) -> new PatternSlot().slot(
-                    new ModularSlot(
-                        member.matrixPort()
-                            .patterns(),
-                        index).slotGroup("matrix_patterns"))
-                    .setEnabledIf(widget -> editable.getBoolValue()));
+            .gridOfWidthHeight(9, 4, (x, y, index) -> createPatternSlot(index));
         return super.createContentSection(panel, sync).child(
             Flow.column()
                 .coverChildren()
@@ -111,19 +122,41 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                     IKey.dynamic(() -> tr("gtswn.matrix.reason." + status.getStringValue()))
                         .asWidget()
                         .width(160)
-                        .height(14)
+                        .height(28)
                         .scale(.7f)));
+    }
+
+    private PatternSlot createPatternSlot(int index) {
+        PatternSlot widget = new PatternSlot();
+        widget.slot(
+            new ModularSlot(
+                member.matrixPort()
+                    .patterns(),
+                index) {
+
+                @Override
+                public boolean isItemValid(ItemStack stack) {
+                    return editable.getBoolValue() && super.isItemValid(stack);
+                }
+
+                @Override
+                public boolean canTakeStack(EntityPlayer player) {
+                    return editable.getBoolValue() && super.canTakeStack(player);
+                }
+
+                @Override
+                public boolean canDragIntoSlot() {
+                    return editable.getBoolValue() && super.canDragIntoSlot();
+                }
+            }.slotGroup("matrix_patterns"));
+        return widget;
     }
 
     @Override
     protected Flow createBottomLeftCornerFlow(ModularPanel panel, PanelSyncManager sync) {
         InteractionSyncHandler refund = new InteractionSyncHandler().setOnMousePressed(data -> {
-            if (!data.isClient() && data.mouseButton == 0
-                && member.matrixPort()
-                    .group() != null)
-                member.matrixPort()
-                    .group()
-                    .refund();
+            OrderedAssemblyGroup group = currentGroup();
+            if (!data.isClient() && data.mouseButton == 0 && group != null) group.refund();
         });
         IPanelHandler overview = sync.syncedPanel("matrix_overview", true, (manager, handler) -> overview(manager));
         return super.createBottomLeftCornerFlow(panel, sync).child(
@@ -149,8 +182,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
     private ModularPanel overview(PanelSyncManager sync) {
         StringSyncValue text = new StringSyncValue(this::overviewText);
         StringSyncValue selected = new StringSyncValue(() -> {
-            OrderedAssemblyGroup group = member.matrixPort()
-                .group();
+            OrderedAssemblyGroup group = currentGroup();
             return label("preview_slot") + " "
                 + (selectedSlot(group) + 1)
                 + "/"
@@ -159,8 +191,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 + label(activePattern(group) ? "active_pattern" : "pattern_preview");
         });
         BooleanSyncValue browsing = new BooleanSyncValue(() -> {
-            OrderedAssemblyGroup group = member.matrixPort()
-                .group();
+            OrderedAssemblyGroup group = currentGroup();
             return group == null || group.stage() == OrderedAssemblyGroup.Stage.IDLE;
         });
         sync.syncValue("matrix_overview_text", text);
@@ -195,8 +226,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
     private ButtonWidget<?> previewButton(int direction, int x, BooleanSyncValue browsing) {
         InteractionSyncHandler action = new InteractionSyncHandler().setOnMousePressed(mouse -> {
             if (mouse.isClient() || mouse.mouseButton != 0) return;
-            OrderedAssemblyGroup group = member.matrixPort()
-                .group();
+            OrderedAssemblyGroup group = currentGroup();
             if (group == null || group.stage() == OrderedAssemblyGroup.Stage.IDLE)
                 previewSlot = Math.floorMod(previewSlot + direction, MatrixPatternInventory.SIZE);
         });
@@ -217,16 +247,18 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
     }
 
     private String overviewText() {
-        OrderedAssemblyGroup group = member.matrixPort()
-            .group();
+        OrderedAssemblyGroup group = currentGroup();
+        if (group == null && anchor.matrixPort()
+            .group() != null) return reason("group_changed");
         MatrixAssemblyMember owner = group == null ? member : group.master();
         boolean active = activePattern(group);
         StringBuilder text = new StringBuilder();
         if (group != null) {
             int[] position = group.diagnosticControllerPosition();
             text.append(label("controller"))
-                .append(' ')
-                .append(label("dimension"))
+                .append(' ');
+            if (position == null) text.append(label("unbound"));
+            else text.append(label("dimension"))
                 .append(' ')
                 .append(position[0])
                 .append(" @ ")
@@ -234,8 +266,8 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 .append(", ")
                 .append(position[2])
                 .append(", ")
-                .append(position[3])
-                .append('\n')
+                .append(position[3]);
+            text.append('\n')
                 .append(
                     reason(
                         group.stage()
@@ -305,15 +337,16 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
             for (int i = 0; i < group.fluidMembers()
                 .size(); i++) appendMember(text, group, layout, true, i, active);
             text.append(label("native_progress"))
-                .append(' ')
-                .append(
-                    group.session()
-                        .controller().mProgresstime)
+                .append(' ');
+            if (group.session() == null) text.append(label("unbound"));
+            else text.append(
+                group.session()
+                    .controller().mProgresstime)
                 .append('/')
                 .append(
                     group.session()
-                        .controller().mMaxProgresstime)
-                .append('\n');
+                        .controller().mMaxProgresstime);
+            text.append('\n');
             text.append(
                 reason(
                     group.reason()

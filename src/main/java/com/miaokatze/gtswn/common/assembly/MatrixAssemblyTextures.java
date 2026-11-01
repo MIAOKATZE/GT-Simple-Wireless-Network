@@ -55,6 +55,11 @@ public final class MatrixAssemblyTextures {
                 right = ForgeDirection.NORTH;
                 down = ForgeDirection.DOWN;
                 break;
+            case DOWN:
+                // GregTech's bottom-face U coordinates run westward, unlike the top face.
+                right = ForgeDirection.WEST;
+                down = ForgeDirection.SOUTH;
+                break;
             default:
                 right = ForgeDirection.EAST;
                 down = ForgeDirection.SOUTH;
