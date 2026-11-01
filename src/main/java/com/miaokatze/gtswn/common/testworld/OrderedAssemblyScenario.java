@@ -283,7 +283,19 @@ final class OrderedAssemblyScenario implements TestScenario {
         fillOutput();
         buildAe(ctx);
         // Remove a real casing without changing the physical input column or its pattern identity.
-        block(ctx, 2, 0, 1, Blocks.air, 0);
+        int[] casing = position(2, 0, 1);
+        require(
+            ctx,
+            !ctx.world()
+                .isAirBlock(casing[0], casing[1], casing[2]),
+            "The selected AL casing really exists");
+        ctx.world()
+            .setBlockToAir(casing[0], casing[1], casing[2]);
+        require(
+            ctx,
+            ctx.world()
+                .isAirBlock(casing[0], casing[1], casing[2]),
+            "The real AL casing was removed");
         checkStructure(ctx);
         require(
             ctx,
