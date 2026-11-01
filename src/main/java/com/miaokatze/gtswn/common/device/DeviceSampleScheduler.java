@@ -200,6 +200,12 @@ public class DeviceSampleScheduler {
             if (world == null || world.getChunkProvider() == null
                 || !world.getChunkProvider()
                     .chunkExists(pos[1] >> 4, pos[3] >> 4)) {
+                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> terminal : samplingTerminals) {
+                    DeviceTerminalDataStore.MachineRecord record = terminal.getValue().records.get(key);
+                    if (record != null && record.applyLinkSummary(DeviceLinkSummary.UNVERIFIED)) {
+                        terminal.getValue().version++;
+                    }
+                }
                 // 维度未注册 / 区块未加载：跳过保留旧值（不强加载区块）
                 continue;
             }
@@ -228,7 +234,15 @@ public class DeviceSampleScheduler {
                         .maySample(entry.getKey())) activeTerminals.add(entry);
             }
             boolean observable = false;
+            DeviceLinkTargets.Discovery linkTargets = DeviceLinkTargets.discover(mte);
+            DeviceLinkSummary linkSummary = linkTargets.summary;
+            byte machineKind = DeviceMachineIdentity.kind(mte),
+                machineTier = DeviceMachineIdentity.tier(mte, linkTargets);
             for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
+                DeviceTerminalDataStore.MachineRecord record = entry.getValue().records.get(key);
+                if (record != null && (record.applyLinkSummary(linkSummary)
+                    | record.applyMachineIdentity(gtTE.getOwnerUuid(), machineKind, machineTier)))
+                    entry.getValue().version++;
                 if (entry.getValue().boundKeys.contains(key)
                     && store.recognitionMode(entry.getKey(), key, liveMetaTileId, mte)
                         != DeviceTerminalRecognitionMode.IGNORE)
@@ -293,6 +307,8 @@ public class DeviceSampleScheduler {
                     data.records.put(key, record);
                 }
                 // 增量均值：输入/输出双通道共用 (idx, count) 滚动；净值由下游派生。
+                if (record.applyLinkSummary(linkSummary)
+                    | record.applyMachineIdentity(gtTE.getOwnerUuid(), machineKind, machineTier)) data.version++;
                 byte recognitionMode = store.recognitionMode(entry.getKey(), key, metaTileId, mte);
                 if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE) {
                     if (record.recognitionMode != recognitionMode

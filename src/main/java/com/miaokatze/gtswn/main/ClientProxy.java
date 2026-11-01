@@ -409,7 +409,20 @@ public class ClientProxy extends CommonProxy {
 
     @Override
     public void openDeviceInfoTerminalSettingsGui() {
-        ClientGUI.open(new com.miaokatze.gtswn.client.gui.GuiDeviceTerminalSettings());
+        Minecraft minecraft = Minecraft.getMinecraft();
+        if (minecraft.thePlayer != null) com.miaokatze.gtswn.common.gui.DeviceTerminalSettingsGuiFactory
+            .requestOpen(minecraft.thePlayer, minecraft.thePlayer.getHeldItem());
+    }
+
+    @Override
+    public void handleDeviceTeleportQuote(com.miaokatze.gtswn.network.PacketSyncDeviceTeleportQuote message) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World receivedWorld = minecraft.theWorld;
+        net.minecraft.entity.player.EntityPlayer receivedPlayer = minecraft.thePlayer;
+        minecraft.func_152344_a(() -> {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld && receivedPlayer == minecraft.thePlayer)
+                com.miaokatze.gtswn.client.gui.GuiDeviceTeleportConfirmation.open(message);
+        });
     }
 
     @Override

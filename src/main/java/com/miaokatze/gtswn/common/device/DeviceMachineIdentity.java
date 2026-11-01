@@ -14,6 +14,25 @@ public final class DeviceMachineIdentity {
 
     private DeviceMachineIdentity() {}
 
+    public static byte kind(IMetaTileEntity machine) {
+        return machine instanceof MTEMultiBlockBase ? (byte) 3
+            : machine instanceof gregtech.api.metatileentity.implementations.MTEBasicGenerator ? (byte) 2
+                : machine instanceof gregtech.api.metatileentity.implementations.MTEBasicMachine ? (byte) 1 : 0;
+    }
+
+    /** Static tier metadata from the same validated candidates, without an additional world/structure read. */
+    public static byte tier(IMetaTileEntity machine, DeviceLinkTargets.Discovery discovery) {
+        if (machine instanceof gregtech.api.metatileentity.implementations.MTETieredMachineBlock)
+            return ((gregtech.api.metatileentity.implementations.MTETieredMachineBlock) machine).mTier;
+        byte tier = -1;
+        for (DeviceLinkTargets.Target target : discovery.targets)
+            if (target.machine instanceof gregtech.api.metatileentity.implementations.MTETieredMachineBlock)
+                tier = (byte) Math.max(
+                    tier,
+                    ((gregtech.api.metatileentity.implementations.MTETieredMachineBlock) target.machine).mTier);
+        return tier;
+    }
+
     public static byte linkNodeType(IMetaTileEntity controller) {
         if (controller == null) return 0;
         int flags = flags(controller.getBaseMetaTileEntity());

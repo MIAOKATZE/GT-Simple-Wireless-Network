@@ -9,11 +9,15 @@ import net.minecraft.util.StatCollector;
 import org.lwjgl.input.Keyboard;
 
 import com.cleanroommc.modularui.factory.ClientGUI;
+import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.value.StringValue;
 import com.cleanroommc.modularui.widget.ParentWidget;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalVisualConfig;
+import com.miaokatze.gtswn.common.device.TerminalLinkSettings;
+import com.miaokatze.gtswn.common.gui.ContainerTerminal;
+import com.miaokatze.gtswn.common.gui.DeviceTerminalSettingsGuiFactory;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
@@ -43,6 +47,9 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
     private boolean labelSizeInvalid;
     private boolean buttonsDirty;
     private final ItemStack stack;
+    private final ContainerTerminal container;
+    private final ParentWidget<?> supplies;
+    private boolean shownAuto;
     private final ParentWidget<?> buttons = new ParentWidget<>().size(WIDTH, HEIGHT);
 
     public GuiDeviceTerminalSettings() {
@@ -50,13 +57,23 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
     }
 
     public GuiDeviceTerminalSettings(ItemStack stack) {
-        super("device_terminal_settings", WIDTH, HEIGHT);
+        this(stack, GtswnMuiTheme.panel("device_terminal_settings", WIDTH, HEIGHT), null, null);
+    }
+
+    public GuiDeviceTerminalSettings(ItemStack stack, ModularPanel panel, ContainerTerminal container,
+        ParentWidget<?> supplies) {
+        super(panel);
         this.stack = stack;
+        this.container = container;
+        this.supplies = supplies;
         buildPanel();
     }
 
     private void buildPanel() {
         DeviceTerminalVisualConfig.load();
+        TerminalLinkSettings.requestSettings();
+        shownAuto = TerminalLinkSettings.clientAutoEnabled();
+        if (supplies != null) supplies.setEnabledIf(widget -> tab == 5);
         panelWidth = WIDTH;
         panelHeight = HEIGHT;
         columnWidth = (panelWidth - 36) / 2;
@@ -159,10 +176,11 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
     private void rebuild() {
         buttonsDirty = false;
         buttons.removeAll();
-        int tabWidth = (panelWidth - 32) / 3;
+        int tabWidth = (panelWidth - 36) / 4;
         button(0, 12, 25, tabWidth, tr("tab.visual"));
         button(4, 16 + tabWidth, 25, tabWidth, tr("tab.labels"));
         button(1, 20 + tabWidth * 2, 25, tabWidth, tr("tab.server"));
+        button(5, 24 + tabWidth * 3, 25, tabWidth, tr("tab.supplies"));
         button(2, 12, panelHeight - 27, columnWidth, tr("list"));
         button(3, rightColumn, panelHeight - 27, columnWidth, tr("done"));
         if (tab == 0) {
@@ -252,20 +270,40 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
                 panelWidth - 24,
                 label("labels.budget", Integer.toString(DeviceTerminalVisualConfig.labelBudget)));
             button(49, rightColumn + 72, 48 + rowGap * 6, columnWidth - 72, tr("apply"));
-        } else if (DeviceTerminalClientCache.canConfigure()) {
-            button(30, panelWidth - 96, 84, 84, tr("apply"));
-
+        } else if (tab == 1) {
+            if (DeviceTerminalClientCache.canConfigure()) button(30, panelWidth - 96, 84, 84, tr("apply"));
+            buttons.child(
+                GtswnMuiWidgets
+                    .button(
+                        "device.settings.31",
+                        StatCollector.translateToLocal("gtswn.device.link.auto") + ": "
+                            + StatCollector.translateToLocal(
+                                "gtswn.device.gui." + (TerminalLinkSettings.clientAutoEnabled() ? "on" : "off")),
+                        12,
+                        212,
+                        panelWidth - 24,
+                        18,
+                        () -> actionPerformed(31))
+                    .tooltip(t -> t.addLine(StatCollector.translateToLocal("gtswn.device.link.auto.hint"))));
         }
     }
 
     @Override
     public void onUpdate() {
         super.onUpdate();
+        if (container != null && !container.canInteractWith(mc.thePlayer)) {
+            mc.thePlayer.closeScreen();
+            return;
+        }
+        if (shownAuto != TerminalLinkSettings.clientAutoEnabled()) {
+            shownAuto = TerminalLinkSettings.clientAutoEnabled();
+            buttonsDirty = true;
+        }
         if (buttonsDirty) rebuild();
         if (pollTicks++ % 20 == 0) {
             GTSWNPacketHandler.NETWORK.sendToServer(
                 DeviceTerminalClientCache
-                    .requestMetadata(com.miaokatze.gtswn.client.DeviceTerminalVisualizationState.heldTerminalId()));
+                    .requestMetadata(com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(stack)));
         }
         int value = DeviceTerminalClientCache.teleportCost();
         boolean permission = DeviceTerminalClientCache.canConfigure();
@@ -285,11 +323,17 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
             case 0:
             case 1:
             case 4:
+            case 5:
+                if (id == 5 && supplies == null) {
+                    DeviceTerminalSettingsGuiFactory.requestOpen(mc.thePlayer, stack);
+                    return;
+                }
                 tab = id;
                 getContext().removeFocus();
                 break;
             case 2:
                 if (!applyAllSizes()) return;
+                if (container != null) mc.thePlayer.closeScreen();
                 ClientGUI.open(
                     new GuiDeviceInfoTerminal(
                         com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal.readTerminalId(stack),
@@ -386,6 +430,9 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
                             (byte) 0,
                             Integer.toString(value)));
                 } catch (NumberFormatException ignored) {}
+                break;
+            case 31:
+                TerminalLinkSettings.requestAuto(!TerminalLinkSettings.clientAutoEnabled());
                 break;
             default:
                 return;
@@ -494,7 +541,7 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
             drawSize(true);
             fontRendererObj
                 .drawSplitString(tr("labels.hint"), left + 12, top + 238, panelWidth - 24, GtswnGuiPalette.TEXT_MUTED);
-        } else {
+        } else if (tab == 1) {
             fontRendererObj.drawString(tr("cost"), left + 12, top + 62, GtswnGuiPalette.TEXT_BODY);
             if (!DeviceTerminalClientCache.canConfigure()) {
                 GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.LIST_PANEL, 4, 12, 84, panelWidth - 120, 18, 0);

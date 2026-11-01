@@ -36,14 +36,23 @@ import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
 import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout;
 import com.miaokatze.gtswn.test.FluidRegistryTestBootstrap;
 
+import appeng.api.networking.IGridConnection;
+import appeng.api.networking.IGridNode;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.crafting.ICraftingProviderHelper;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IAEStack;
 import appeng.me.helpers.AENetworkProxy;
+import appeng.util.ReadOnlyCollection;
+import gregtech.api.interfaces.ITexture;
+import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.CommonMetaTileEntity;
 import gregtech.api.metatileentity.MetaTileEntity;
+import gregtech.api.metatileentity.implementations.MTEHatchInput;
+import gregtech.api.metatileentity.implementations.MTEHatchInputBus;
+import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
 public class MatrixTopologyTest {
 
@@ -156,7 +165,7 @@ public class MatrixTopologyTest {
         assertEquals("", capacity.invoke(group, layout(5, new int[0])));
         assertEquals("not_enough_members", capacity.invoke(group, layout(6, new int[0])));
         assertEquals("", capacity.invoke(group, layout(1, new int[] { fluid.getCapacity() })));
-        assertEquals("fluid_capacity", capacity.invoke(group, layout(1, new int[] { fluid.getCapacity() + 1 })));
+        assertEquals(Integer.MAX_VALUE, fluid.getCapacity());
         assertEquals("not_enough_members", capacity.invoke(group, layout(1, new int[] { 1, 1 })));
         for (MatrixAssemblyMember member : fixture.members) {
             assertNull(member.matrixItem());
@@ -348,7 +357,7 @@ public class MatrixTopologyTest {
         assertTrue(restored.editable());
         assertFalse(restored.accepting());
         assertFalse(restored.validateNativeState(new NativeAssemblySession(null)));
-        assertEquals("structure_incomplete", restored.reason());
+        assertEquals("no_external_connection", restored.reason());
     }
 
     @Test
@@ -481,6 +490,280 @@ public class MatrixTopologyTest {
         assertFalse(group.accepting());
     }
 
+    @Test
+    public void repeatedPositionsAccumulateWholePackagesAndOverflowRetainsEveryOtherPosition() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        fixture.add(true, 0, 64, 1);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        graph.external(items.get(4));
+        fixture.controller(group, 20);
+        OrderedPatternLayout layout = bufferLayout(new int[] { 0, 1, 1, 2 });
+        group.master()
+            .matrixPort()
+            .patterns()
+            .setStackInSlot(0, layout.pattern());
+        assertTrue(deliver(group, layout, 10));
+        assertTrue(deliver(group, layout, 6));
+        assertSame(
+            items.get(4),
+            group.itemMembers()
+                .get(0));
+        for (int i = 0; i < 4; i++) {
+            ItemStack stored = group.itemMembers()
+                .get(i)
+                .matrixItem();
+            assertEquals(16, stored.stackSize);
+            assertEquals(new int[] { 0, 1, 1, 2 }[i], stored.getItemDamage());
+        }
+        assertNull(
+            group.itemMembers()
+                .get(4)
+                .matrixItem());
+        assertEquals(
+            1600,
+            group.fluidMembers()
+                .get(0)
+                .matrixFluidStack().amount);
+        MatrixItemInputBus ordinary = (MatrixItemInputBus) group.itemMembers()
+            .get(0);
+        assertEquals(1, ordinary.getSizeInventory());
+        assertEquals(16, ordinary.getStackInSlot(0).stackSize);
+        ItemStack full = group.itemMembers()
+            .get(3)
+            .matrixItem();
+        full.stackSize = Integer.MAX_VALUE;
+        group.itemMembers()
+            .get(3)
+            .matrixSetItem(full);
+        assertFalse(deliver(group, layout, 1));
+        assertEquals("amount_overflow", group.reason());
+        assertEquals(
+            16,
+            group.itemMembers()
+                .get(0)
+                .matrixItem().stackSize);
+        assertEquals(
+            Integer.MAX_VALUE,
+            group.itemMembers()
+                .get(3)
+                .matrixItem().stackSize);
+        assertEquals(
+            1600,
+            group.fluidMembers()
+                .get(0)
+                .matrixFluidStack().amount);
+        assertFalse(deliver(group, bufferLayout(new int[] { 1, 1, 1, 2 }), 1));
+        assertEquals("different_pattern", group.reason());
+    }
+
+    @Test
+    public void invisibleExternalEdgesCountButInternalEdgesDoNotAndAnInflightOriginCannotMove() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        assertEquals(0, group.externalConnectionCount());
+        IGridConnection original = graph.external(items.get(4));
+        fixture.controller(group, 20);
+        assertEquals(1, group.externalConnectionCount());
+        int reads = graph.reads();
+        assertEquals(1, group.externalConnectionCount());
+        assertTrue(group.permitsMachineWork());
+        assertEquals(reads, graph.reads());
+        field(OrderedAssemblyGroup.class, "stage").set(group, OrderedAssemblyGroup.Stage.STAGED);
+        field(OrderedAssemblyGroup.class, "genericInput").setBoolean(group, true);
+        items.get(0)
+            .matrixSetItem(new ItemStack(new Item(), 10));
+        IGridConnection extra = graph.external(items.get(0));
+        assertEquals(2, group.externalConnectionCount());
+        assertEquals("multiple_external_connections", group.reason());
+        assertFalse(group.permitsMachineWork());
+        assertNull(((MatrixItemInputBus) items.get(0)).getStackInSlot(0));
+        graph.remove(original);
+        assertEquals(1, group.externalConnectionCount());
+        assertEquals("entry_changed", group.reason());
+        assertEquals(
+            10,
+            items.get(0)
+                .matrixItem().stackSize);
+        graph.remove(extra);
+        graph.external(items.get(4));
+        assertTrue(group.permitsMachineWork());
+        assertEquals(10, ((MatrixItemInputBus) items.get(0)).getStackInSlot(0).stackSize);
+    }
+
+    @Test
+    public void genericWorkKeepsItsPatternLockUntilNativeCompletionAndSharedControllersStopTheGroup() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        graph.external(items.get(0));
+        MTEMultiBlockBase first = fixture.controller(group, 20);
+        field(OrderedAssemblyGroup.class, "stage").set(group, OrderedAssemblyGroup.Stage.STAGED);
+        field(OrderedAssemblyGroup.class, "genericInput").setBoolean(group, true);
+        first.mMaxProgresstime = 40;
+        group.tick();
+        assertEquals(OrderedAssemblyGroup.Stage.STAGED, group.stage());
+        assertFalse(group.editable());
+        MTEMultiBlockBase second = fixture.controller(group, 24);
+        assertFalse(group.permitsMachineWork());
+        assertEquals("controller_conflict", group.reason());
+        OrderedAssemblyGroup.controllerChecked(items.get(0), second, false);
+        assertTrue(group.permitsMachineWork());
+        first.mMaxProgresstime = 0;
+        group.tick();
+        assertEquals(OrderedAssemblyGroup.Stage.IDLE, group.stage());
+        assertTrue(group.editable());
+    }
+
+    private static OrderedPatternLayout bufferLayout(int[] variants) throws Exception {
+        Class<?> fixtures = Class.forName("com.miaokatze.gtswn.common.assembly.pattern.AssemblyPatternFixtures");
+        invoke(fixtures, "initialize", new Class<?>[0]);
+        IAEStack<?>[] inputs = new IAEStack<?>[variants.length + 1];
+        for (int i = 0; i < variants.length; i++) {
+            ItemStack item = (ItemStack) invoke(fixtures, "input", new Class<?>[] { int.class }, 1);
+            item.setItemDamage(variants[i]);
+            inputs[i] = (IAEStack<?>) invoke(fixtures, "item", new Class<?>[] { ItemStack.class }, item);
+        }
+        inputs[variants.length] = (IAEStack<?>) invoke(
+            fixtures,
+            "fluid",
+            new Class<?>[] { net.minecraftforge.fluids.FluidStack.class },
+            FluidRegistryTestBootstrap.water(100));
+        IAEItemStack output = (IAEItemStack) invoke(
+            fixtures,
+            "item",
+            new Class<?>[] { ItemStack.class },
+            invoke(fixtures, "output", new Class<?>[] { int.class }, 1));
+        return OrderedPatternLayout.decode(
+            (ICraftingPatternDetails) invoke(
+                fixtures,
+                "ultimate",
+                new Class<?>[] { IAEStack[].class, IAEItemStack.class },
+                inputs,
+                output));
+    }
+
+    private static boolean deliver(OrderedAssemblyGroup group, OrderedPatternLayout layout, int copies)
+        throws Exception {
+        IAEStack<?>[] inputs = layout.details()
+            .getAEInputs()
+            .clone();
+        for (int i = 0; i < inputs.length; i++) inputs[i] = inputs[i].copy()
+            .setStackSize(inputs[i].getStackSize() * copies);
+        Class<?> fixtures = Class.forName("com.miaokatze.gtswn.common.assembly.pattern.AssemblyPatternFixtures");
+        net.minecraft.inventory.InventoryCrafting table = (net.minecraft.inventory.InventoryCrafting) invoke(
+            fixtures,
+            "table",
+            new Class<?>[] { IAEStack[].class },
+            (Object) inputs);
+        Method accept = OrderedAssemblyGroup.class.getDeclaredMethod(
+            "acceptInstalled",
+            OrderedPatternLayout.class,
+            net.minecraft.inventory.InventoryCrafting.class,
+            int.class);
+        accept.setAccessible(true);
+        return (Boolean) accept.invoke(group, layout, table, 0);
+    }
+
+    private static final class Graph {
+
+        final Fixture fixture;
+        final Map<MatrixAssemblyMember, Endpoint> nodes = new HashMap<>();
+
+        Graph(Fixture fixture) throws Exception {
+            this.fixture = fixture;
+            for (MatrixAssemblyMember member : fixture.members) {
+                Endpoint endpoint = new Endpoint();
+                nodes.put(member, endpoint);
+                field(MatrixAssemblyPort.class, "proxy")
+                    .set(member.matrixPort(), new AENetworkProxy(null, "test", null, true) {
+
+                        @Override
+                        public IGridNode getNode() {
+                            return endpoint.node;
+                        }
+
+                        @Override
+                        public boolean isActive() {
+                            return true;
+                        }
+                    });
+            }
+            for (int i = 1; i < fixture.members.size(); i++)
+                connect(nodes.get(fixture.members.get(i - 1)), nodes.get(fixture.members.get(i)));
+            fixture.members.get(0)
+                .matrixPort()
+                .networkChanged();
+        }
+
+        IGridConnection external(MatrixAssemblyMember member) {
+            IGridConnection edge = connect(nodes.get(member), new Endpoint());
+            member.matrixPort()
+                .networkChanged();
+            return edge;
+        }
+
+        void remove(IGridConnection edge) {
+            for (Endpoint endpoint : nodes.values()) endpoint.edges.remove(edge);
+            fixture.members.get(0)
+                .matrixPort()
+                .networkChanged();
+        }
+
+        int reads() {
+            return nodes.values()
+                .stream()
+                .mapToInt(node -> node.reads)
+                .sum();
+        }
+
+        private static IGridConnection connect(Endpoint left, Endpoint right) {
+            IGridConnection edge = (IGridConnection) Proxy.newProxyInstance(
+                IGridConnection.class.getClassLoader(),
+                new Class<?>[] { IGridConnection.class },
+                (proxy, method, args) -> {
+                    if (method.getName()
+                        .equals("getOtherSide")) return args[0] == left.node ? right.node : left.node;
+                    if (method.getName()
+                        .equals("equals")) return proxy == args[0];
+                    throw new AssertionError(method);
+                });
+            left.edges.add(edge);
+            right.edges.add(edge);
+            return edge;
+        }
+    }
+
+    private static final class Endpoint {
+
+        final List<IGridConnection> edges = new ArrayList<>();
+        int reads;
+        final IGridNode node = (IGridNode) Proxy.newProxyInstance(
+            IGridNode.class.getClassLoader(),
+            new Class<?>[] { IGridNode.class },
+            (proxy, method, args) -> {
+                if (method.getName()
+                    .equals("getConnections")) {
+                    reads++;
+                    return new ReadOnlyCollection<>(edges);
+                }
+                throw new AssertionError(method);
+            });
+    }
+
     private static final class Fixture {
 
         final sun.misc.Unsafe unsafe;
@@ -509,7 +792,13 @@ public class MatrixTopologyTest {
             MatrixAssemblyPort port = new MatrixAssemblyPort(member);
             field(type, "matrix").set(meta, port);
             field(CommonMetaTileEntity.class, "mInventory").set(meta, new ItemStack[fluid ? 0 : 1]);
-            field(MatrixAssemblyPort.class, "proxy").set(port, new AENetworkProxy(null, "matrixProxy", null, true));
+            field(MatrixAssemblyPort.class, "proxy").set(port, new AENetworkProxy(null, "matrixProxy", null, true) {
+
+                @Override
+                public IGridNode getNode() {
+                    return null;
+                }
+            });
             attach(meta, x, y, z);
             members.add(member);
             return member;
@@ -525,6 +814,18 @@ public class MatrixTopologyTest {
             world.tiles.put(key(x, y, z), tile);
         }
 
+        MTEMultiBlockBase controller(OrderedAssemblyGroup group, int x) throws Exception {
+            MTEMultiBlockBase controller = new FixtureController();
+            for (MatrixAssemblyMember member : group.itemMembers())
+                controller.mInputBusses.add((MTEHatchInputBus) member);
+            for (MatrixAssemblyMember member : group.fluidMembers())
+                controller.mInputHatches.add((MTEHatchInput) member);
+            attach(controller, x, 64, 20);
+            controller.mMachine = true;
+            OrderedAssemblyGroup.controllerChecked(group.master(), controller, true);
+            return controller;
+        }
+
         int expectedMask(MatrixAssemblyMember member) {
             BaseMetaTileEntity tile = (BaseMetaTileEntity) member.getBaseMetaTileEntity();
             int mask = 0;
@@ -535,6 +836,30 @@ public class MatrixTopologyTest {
                     mask |= face.flag;
             }
             return mask;
+        }
+    }
+
+    /** Ordinary native controller state without the client-only tooltip class initializer. */
+    private static final class FixtureController extends MTEMultiBlockBase {
+
+        FixtureController() {
+            super("matrix_topology_test");
+        }
+
+        @Override
+        public String[] getDescription() {
+            return new String[0];
+        }
+
+        @Override
+        public IMetaTileEntity newMetaEntity(IGregTechTileEntity tile) {
+            return new FixtureController();
+        }
+
+        @Override
+        public ITexture[] getTexture(IGregTechTileEntity tile, ForgeDirection side, ForgeDirection facing, int color,
+            boolean active, boolean redstone) {
+            return new ITexture[0];
         }
     }
 
@@ -556,6 +881,11 @@ public class MatrixTopologyTest {
         @Override
         public boolean blockExists(int x, int y, int z) {
             return !unloaded.contains(key(x, y, z));
+        }
+
+        @Override
+        public long getTotalWorldTime() {
+            return 0;
         }
 
         @Override

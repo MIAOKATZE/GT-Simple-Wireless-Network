@@ -12,14 +12,16 @@ import com.miaokatze.gtswn.assembly.nativeintegration.OrderedAssemblyMember;
 
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
+import gregtech.common.tileentities.machines.multi.MTEAssemblyLine;
 
-/** Denies the new inputs at all three ordinary GT registration entrances for every other controller. */
+/** Native machines retain their own input adders; the guarded AL additionally requires its safety hooks. */
 @Mixin(value = MTEMultiBlockBase.class, remap = false)
 public abstract class OrderedAssemblyRegistrationMixin {
 
     @Unique
     private boolean gtswn$rejectOrderedMember(IGregTechTileEntity tile) {
         return tile != null && tile.getMetaTileEntity() instanceof OrderedAssemblyMember
+            && (Object) this instanceof MTEAssemblyLine
             && (!NativeAssemblyAdapter.isSupportedController(this) || !NativeAssemblyHooks.ready());
     }
 

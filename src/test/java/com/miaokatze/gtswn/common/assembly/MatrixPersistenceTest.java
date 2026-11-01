@@ -208,6 +208,9 @@ public class MatrixPersistenceTest {
         singleton.setAccessible(true);
         sun.misc.Unsafe unsafe = (sun.misc.Unsafe) singleton.get(null);
         MatrixFluidInputHatch hatch = (MatrixFluidInputHatch) unsafe.allocateInstance(MatrixFluidInputHatch.class);
+        Field matrix = MatrixFluidInputHatch.class.getDeclaredField("matrix");
+        matrix.setAccessible(true);
+        matrix.set(hatch, new MatrixAssemblyPort(hatch));
         Field inventory = CommonMetaTileEntity.class.getDeclaredField("mInventory");
         inventory.setAccessible(true);
         inventory.set(hatch, new ItemStack[0]);

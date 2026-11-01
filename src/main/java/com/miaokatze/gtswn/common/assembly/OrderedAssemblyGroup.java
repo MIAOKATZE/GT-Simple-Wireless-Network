@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -29,6 +30,8 @@ import com.miaokatze.gtswn.common.assembly.pattern.PatternValidationException;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.api.config.Actionable;
+import appeng.api.networking.IGridConnection;
+import appeng.api.networking.IGridNode;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.crafting.ICraftingProvider;
 import appeng.api.networking.crafting.ICraftingProviderHelper;
@@ -38,11 +41,12 @@ import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatchDataAccess;
+import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 import gregtech.api.util.AssemblyLineUtils;
 import gregtech.api.util.GTRecipe.RecipeAssemblyLine;
 import gregtech.common.tileentities.machines.multi.MTEAssemblyLine;
 
-/** One input-blocked batch. Physical members own all consumable resources; this object owns only facts. */
+/** One active processing pattern. Physical members own all consumable resources; this object owns only facts. */
 public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public enum Stage {
@@ -77,6 +81,18 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private String reason = "unverified";
     private boolean refunding;
     private long nativeSequence;
+    private boolean genericInput;
+    private final Set<MTEMultiBlockBase> controllerClaims = java.util.Collections
+        .newSetFromMap(new IdentityHashMap<>());
+    private MTEMultiBlockBase inputController;
+    private boolean controllerConflict;
+    private int[] machinePosition;
+    private UUID networkOrigin;
+    private int externalConnections;
+    private MatrixAssemblyMember networkEntry;
+    private String networkReason = "no_external_connection";
+    private long networkCheckedTick = Long.MIN_VALUE;
+    private boolean networkDirty = true;
     private NBTTagCompound quarantinedLedger;
     private int[] diagnosticItemTable = new int[0];
     private int[] diagnosticFluidTable = new int[0];
@@ -163,6 +179,8 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 group.verified = group.checkTopology();
                 if (group.verified && group.stage == Stage.IDLE) group.reason = "";
                 group.updateConnections();
+                group.networkChanged();
+                group.refreshNetwork();
                 if (wasVerified != group.verified) group.dirty();
                 return;
             }
@@ -175,7 +193,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             }
         }
         MatrixAssemblyMember master = null;
-        for (MatrixAssemblyMember member : items) {
+        for (MatrixAssemblyMember member : found) {
             NBTTagCompound saved = member.matrixPort()
                 .group() == null ? member.matrixPort()
                     .restoredLedger() : null;
@@ -191,14 +209,14 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             MatrixAssemblyMember incumbent = previous.iterator()
                 .next()
                 .master();
-            if (items.contains(incumbent)) master = incumbent;
+            if (found.contains(incumbent)) master = incumbent;
         }
-        if (master == null) for (MatrixAssemblyMember member : items) if (member.matrixPort()
+        if (master == null) for (MatrixAssemblyMember member : found) if (member.matrixPort()
             .restoredLedger() != null) {
                 master = member;
                 break;
             }
-        if (master == null) master = items.get(0);
+        if (master == null) master = items.isEmpty() ? fluids.get(0) : items.get(0);
         NBTTagCompound ledger = master.matrixPort()
             .group() == null ? master.matrixPort()
                 .restoredLedger() : null;
@@ -213,6 +231,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         group.verified = group.checkTopology();
         if (group.verified && group.stage == Stage.IDLE) group.reason = "";
         group.updateConnections();
+        group.refreshNetwork();
     }
 
     public static void structureChecked(MatrixAssemblyMember caller, NativeAssemblySession session, boolean formed) {
@@ -221,10 +240,77 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             .group();
         if (group == null) return;
         if (!formed) {
+            if (group.session == null && group.inputController == session.controller()) group.session = session;
             if (group.session == session) group.revokeNativeBinding();
             return;
         }
         group.bindNative(session);
+    }
+
+    /** The existing native structure callback supplies controller ownership, including unformed assembly lines. */
+    public static void controllerChecked(MatrixAssemblyMember caller, MTEMultiBlockBase controller, boolean attached) {
+        OrderedAssemblyGroup group = caller.matrixPort()
+            .group();
+        if (group == null) {
+            refreshTopology(caller);
+            group = caller.matrixPort()
+                .group();
+        }
+        if (group == null) return;
+        boolean changed = attached ? group.controllerClaims.add(controller) : group.controllerClaims.remove(controller);
+        group.refreshController();
+        if (changed) group.dirty();
+    }
+
+    private void refreshController() {
+        controllerClaims.removeIf(controller -> !NativeAssemblyAdapter.isLive(controller));
+        MTEMultiBlockBase formed = null;
+        for (MTEMultiBlockBase claim : controllerClaims) if (claim.mMachine) {
+            if (formed != null && formed != claim) {
+                controllerConflict = true;
+                reject("controller_conflict");
+                return;
+            }
+            formed = claim;
+        }
+        controllerConflict = false;
+        MTEMultiBlockBase next = formed;
+        if (next == null && inputController != null && controllerClaims.contains(inputController))
+            next = inputController;
+        if (next == null && controllerClaims.size() == 1) next = controllerClaims.iterator()
+            .next();
+        if (next == null) {
+            inputController = null;
+            return;
+        }
+        boolean pending = stage != Stage.IDLE || !allEmpty();
+        IGregTechTileEntity tile = next.getBaseMetaTileEntity();
+        if (pending && (inputController != null && inputController != next
+            || machinePosition != null && !sameMachinePosition(tile))) {
+            controllerConflict = true;
+            reject("controller_conflict");
+            return;
+        }
+        if (!pending && (controllerId != null || session != null)
+            && (!(next instanceof MTEAssemblyLine) || controllerId != null && !sameControllerPosition(tile)
+                || session != null && session.controller() != next)) {
+            controllerId = null;
+            session = null;
+            nativeBound = false;
+            alignment = null;
+        }
+        inputController = next;
+        if ("controller_conflict".equals(reason)) reason = "";
+        if (machinePosition == null || !sameMachinePosition(tile))
+            machinePosition = new int[] { tile.getWorld().provider.dimensionId, tile.getXCoord(), tile.getYCoord(),
+                tile.getZCoord(), tile.getMetaTileID() };
+    }
+
+    private boolean sameMachinePosition(IGregTechTileEntity tile) {
+        return machinePosition[0] == tile.getWorld().provider.dimensionId && machinePosition[1] == tile.getXCoord()
+            && machinePosition[2] == tile.getYCoord()
+            && machinePosition[3] == tile.getZCoord()
+            && machinePosition[4] == tile.getMetaTileID();
     }
 
     private void bindNative(NativeAssemblySession next) {
@@ -262,11 +348,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             return;
         }
         boolean pending = stage != Stage.IDLE || !allEmpty();
-        if (controllerId != null
-            && (!controllerId.equals(next.controllerId()) || !sameControllerPosition(
-                next.controller()
-                    .getBaseMetaTileEntity()))
-            || pending && (controllerId == null || !items.equals(nextItems) || !fluids.equals(nextFluids))) {
+        if (controllerId != null && (!controllerId.equals(next.controllerId()) || !sameControllerPosition(
+            next.controller()
+                .getBaseMetaTileEntity()))
+            || pending && controllerId == null) {
             revokeNativeBinding();
             reject("controller_conflict");
             return;
@@ -281,18 +366,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         controllerZ = tile.getZCoord();
         alignment = next.controller()
             .getExtendedFacing();
-        if (!items.equals(nextItems) || !fluids.equals(nextFluids)) {
-            // Native recipe positions follow the actual scan, including its reversed direction. The UI master stays
-            // put.
-            items.clear();
-            items.addAll(nextItems);
-            fluids.clear();
-            fluids.addAll(nextFluids);
-            rememberMembers();
-            diagnosticItemTable = diagnosticFluidTable = new int[0];
-            diagnosticItemConsumed = diagnosticFluidConsumed = new long[0];
-            diagnosticConsumptionObserved = false;
-        }
+        // Only references from this exact, fully registered group are reordered. Native recipe matching and
+        // consumption then use the same ME-origin positions as the physical intake and diagnostics.
+        orderNativeInputs();
         if (checkNativeBinding()) nativeBound = true;
         else revokeNativeBinding();
         if (nativeBound && stage == Stage.RUNNING
@@ -370,6 +446,151 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return master;
     }
 
+    public int externalConnectionCount() {
+        refreshNetwork();
+        return externalConnections;
+    }
+
+    public int[] networkEntryPosition() {
+        refreshNetwork();
+        if (networkEntry == null) return null;
+        IGregTechTileEntity tile = networkEntry.getBaseMetaTileEntity();
+        return new int[] { tile.getWorld().provider.dimensionId, tile.getXCoord(), tile.getYCoord(), tile.getZCoord() };
+    }
+
+    private void refreshNetwork() {
+        if (!isPresent(master)) {
+            externalConnections = 0;
+            networkEntry = null;
+            networkReason = "member_unloaded";
+            return;
+        }
+        long tick = master.getBaseMetaTileEntity()
+            .getWorld()
+            .getTotalWorldTime();
+        if (!networkDirty && networkCheckedTick == tick) return;
+        networkCheckedTick = tick;
+        networkDirty = false;
+        Set<IGridNode> nodes = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        for (MatrixAssemblyMember member : members) {
+            if (!isPresent(member)) continue;
+            IGridNode node = member.matrixPort()
+                .node();
+            if (node != null) nodes.add(node);
+        }
+        int count = 0;
+        MatrixAssemblyMember entry = null;
+        for (MatrixAssemblyMember member : members) {
+            if (!isPresent(member)) continue;
+            IGridNode node = member.matrixPort()
+                .node();
+            if (node == null) continue;
+            for (IGridConnection connection : node.getConnections()) {
+                if (!nodes.contains(connection.getOtherSide(node))) {
+                    count++;
+                    entry = member;
+                }
+            }
+        }
+        externalConnections = count;
+        networkEntry = count == 1 ? entry : null;
+        String fault = count == 0 ? "no_external_connection" : count > 1 ? "multiple_external_connections" : "";
+        if (fault.isEmpty()) {
+            UUID nextOrigin = entry.orderedMemberId();
+            boolean pending = stage != Stage.IDLE || !allEmpty();
+            if (pending && (networkOrigin == null || !networkOrigin.equals(nextOrigin))) {
+                // Legacy in-flight ledgers have no origin. Adopt only when their saved physical allocation is
+                // already identical; otherwise refund can recover them without guessing a new recipe order.
+                if (networkOrigin == null && orderedFrom(entry, items).equals(items)
+                    && orderedFrom(entry, fluids).equals(fluids)) networkOrigin = nextOrigin;
+                else fault = "entry_changed";
+            } else if (!pending && !nextOrigin.equals(networkOrigin)) {
+                List<MatrixAssemblyMember> nextItems = orderedFrom(entry, items);
+                List<MatrixAssemblyMember> nextFluids = orderedFrom(entry, fluids);
+                boolean orderChanged = !items.equals(nextItems) || !fluids.equals(nextFluids);
+                items.clear();
+                items.addAll(nextItems);
+                fluids.clear();
+                fluids.addAll(nextFluids);
+                networkOrigin = nextOrigin;
+                rememberMembers();
+                if (orderChanged) epoch++;
+                if (nativeBound) orderNativeInputs();
+                dirty();
+            }
+            if (fault.isEmpty() && !master.matrixPort()
+                .getProxy()
+                .isActive()) fault = "network_offline";
+        }
+        if (!fault.equals(networkReason)) {
+            networkReason = fault;
+            dirty();
+        }
+    }
+
+    private static List<MatrixAssemblyMember> orderedFrom(MatrixAssemblyMember origin,
+        List<MatrixAssemblyMember> input) {
+        IGregTechTileEntity start = origin.getBaseMetaTileEntity();
+        List<MatrixAssemblyMember> result = new ArrayList<>(input);
+        result.sort(Comparator.comparingLong((MatrixAssemblyMember member) -> {
+            IGregTechTileEntity tile = member.getBaseMetaTileEntity();
+            return Math.abs((long) tile.getXCoord() - start.getXCoord())
+                + Math.abs((long) tile.getYCoord() - start.getYCoord())
+                + Math.abs((long) tile.getZCoord() - start.getZCoord());
+        })
+            .thenComparingInt(
+                member -> member.getBaseMetaTileEntity()
+                    .getXCoord())
+            .thenComparingInt(
+                member -> member.getBaseMetaTileEntity()
+                    .getYCoord())
+            .thenComparingInt(
+                member -> member.getBaseMetaTileEntity()
+                    .getZCoord()));
+        return result;
+    }
+
+    private void orderNativeInputs() {
+        if (session == null) return;
+        MTEAssemblyLine controller = session.controller();
+        if (controller.mInputBusses.size() != items.size() || !controller.mInputBusses.containsAll(items)
+            || controller.mInputHatches.size() != fluids.size()
+            || !controller.mInputHatches.containsAll(fluids)) return;
+        controller.mInputBusses.clear();
+        for (MatrixAssemblyMember member : items)
+            controller.mInputBusses.add((gregtech.api.metatileentity.implementations.MTEHatchInputBus) member);
+        controller.mInputHatches.clear();
+        for (MatrixAssemblyMember member : fluids)
+            controller.mInputHatches.add((gregtech.api.metatileentity.implementations.MTEHatchInput) member);
+    }
+
+    private boolean assemblyLineMode() {
+        return inputController instanceof MTEAssemblyLine || session != null || controllerId != null;
+    }
+
+    void networkChanged() {
+        networkDirty = true;
+    }
+
+    /** A missing/ambiguous connection pauses existing native progress as well as future intake and consumption. */
+    public boolean permitsMachineWork() {
+        if (!verified || refunding
+            || stage == Stage.QUARANTINED
+            || stage == Stage.REFUNDING
+            || stage == Stage.NATIVE_ABORTED) return false;
+        refreshController();
+        if (controllerConflict || inputController == null
+            || !inputController.mMachine
+            || !inputController.mInputBusses.containsAll(items)
+            || !inputController.mInputHatches.containsAll(fluids)) return false;
+        refreshNetwork();
+        return networkReason.isEmpty();
+    }
+
+    boolean permitsOrdinaryInput() {
+        return genericInput && !assemblyLineMode() && stage == Stage.STAGED && permitsMachineWork();
+    }
+
     public List<MatrixAssemblyMember> itemMembers() {
         return java.util.Collections.unmodifiableList(items);
     }
@@ -384,10 +605,17 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public String reason() {
         if (!verified) return reason;
-        if (stage == Stage.IDLE && (!nativeBound || session == null)) return "structure_incomplete";
-        if (stage == Stage.IDLE && !session.controller()
+        refreshNetwork();
+        if (!networkReason.isEmpty()) return networkReason;
+        refreshController();
+        if (controllerConflict) return "controller_conflict";
+        if (inputController == null || !inputController.mMachine) return "structure_incomplete";
+        if (!inputController.mInputBusses.containsAll(items) || !inputController.mInputHatches.containsAll(fluids))
+            return "mixed_inputs";
+        if (assemblyLineMode() && (!nativeBound || session == null)) return "structure_incomplete";
+        if (assemblyLineMode() && !session.controller()
             .protectsExcessItem()) return "output_protection_required";
-        if (stage == Stage.IDLE && !session.controller()
+        if (assemblyLineMode() && !session.controller()
             .getBaseMetaTileEntity()
             .isAllowedToWork()) return "native_disabled";
         return reason;
@@ -445,11 +673,20 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public int[] diagnosticControllerPosition() {
+        if (machinePosition != null) return Arrays.copyOf(machinePosition, 4);
         return controllerId == null ? null : new int[] { controllerDimension, controllerX, controllerY, controllerZ };
+    }
+
+    public int[] diagnosticProgress() {
+        MTEMultiBlockBase machine = inputController != null ? inputController
+            : session == null ? null : session.controller();
+        return machine == null || !NativeAssemblyAdapter.isLive(machine) ? null
+            : new int[] { machine.mProgresstime, machine.mMaxProgresstime };
     }
 
     /** Preview uses the current native authorization set without changing the group's rejection or lifecycle state. */
     public String previewReason(OrderedPatternLayout layout) {
+        if (!assemblyLineMode()) return capacityReason(layout);
         if (session == null || !nativeBound) return "structure_incomplete";
         try {
             AssemblyRecipeMatch.bind(layout, authorizedRecipes());
@@ -472,17 +709,14 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public boolean accepting() {
+        if (stage != Stage.IDLE && stage != Stage.STAGED && stage != Stage.RUNNING && stage != Stage.LOCAL_FINISHED)
+            return false;
+        if (!permitsMachineWork()) return false;
+        if (stage == Stage.IDLE && !allEmpty()) return reject("untracked_materials");
+        if (!assemblyLineMode()) return true;
         return session != null && nativeBound
-            && session.readyForNewWork()
-            && verified
-            && stage == Stage.IDLE
-            && !refunding
-            && allEmpty()
-            && checkTopology()
+            && session.readyForPatternAdvertisement()
             && checkNativeBinding()
-            && session.controller().mMaxProgresstime == 0
-            && session.controller()
-                .protectsExcessItem()
             && session.controller()
                 .getBaseMetaTileEntity()
                 .isAllowedToWork();
@@ -492,6 +726,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         boolean wasVerified = verified;
         verified = false;
         reason = message;
+        networkChanged();
         for (MatrixAssemblyMember member : members) member.matrixPort()
             .connectionMask(0);
         if (wasVerified) dirty();
@@ -548,24 +783,23 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             if (member.getBaseMetaTileEntity()
                 .getFrontFacing() != alignment.getRelativeDownInWorld()) return reject("member_facing");
         }
-        if (!NativeAssemblyGeometry.isOrderedColumn(positions(items), alignment, 5, true)) return reject("item_column");
-        if (!fluids.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(positions(fluids), alignment, 1, false))
+        int[][] physicalItems = sortedPositions(items), physicalFluids = sortedPositions(fluids);
+        if (!items.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(physicalItems, alignment, 1, true))
+            return reject("item_column");
+        if (!fluids.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(physicalFluids, alignment, 1, false))
             return reject("fluid_column");
         return true;
     }
 
     static String topologyFault(List<MatrixAssemblyMember> items, List<MatrixAssemblyMember> fluids) {
-        if (items.size() < 5) return "minimum_five";
+        if (items.size() < 2 && fluids.size() < 2) return "minimum_two";
         if (items.size() > 16) return "item_column";
         if (fluids.size() > 4) return "fluid_column";
-        int[][] itemPositions = positions(items), fluidPositions = positions(fluids);
-        Comparator<int[]> order = Comparator.comparingInt((int[] position) -> position[0])
-            .thenComparingInt(position -> position[1])
-            .thenComparingInt(position -> position[2]);
-        Arrays.sort(itemPositions, order);
-        Arrays.sort(fluidPositions, order);
-        ForgeDirection axis = itemPositions[0][0] != itemPositions[1][0] ? ForgeDirection.EAST : ForgeDirection.SOUTH;
-        if (!NativeAssemblyGeometry.isOrderedColumn(itemPositions, axis, 5, true)) return "item_column";
+        int[][] itemPositions = sortedPositions(items), fluidPositions = sortedPositions(fluids);
+        int[][] longest = itemPositions.length >= 2 ? itemPositions : fluidPositions;
+        ForgeDirection axis = longest[0][0] != longest[1][0] ? ForgeDirection.EAST : ForgeDirection.SOUTH;
+        if (itemPositions.length != 0 && !NativeAssemblyGeometry.isOrderedColumn(itemPositions, axis, 1, true))
+            return "item_column";
         if (fluidPositions.length != 0 && !NativeAssemblyGeometry.isOrderedColumn(fluidPositions, axis, 1, false))
             return "fluid_column";
         List<MatrixAssemblyMember> all = new ArrayList<>(items);
@@ -633,6 +867,16 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return result;
     }
 
+    private static int[][] sortedPositions(List<MatrixAssemblyMember> members) {
+        int[][] positions = positions(members);
+        Arrays.sort(
+            positions,
+            Comparator.comparingInt((int[] position) -> position[0])
+                .thenComparingInt(position -> position[1])
+                .thenComparingInt(position -> position[2]));
+        return positions;
+    }
+
     private boolean reject(String message) {
         reason = message;
         return false;
@@ -653,11 +897,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     /** Only formed, currently authorized recipes are advertised; busy media retain their catalogue entries. */
     public void provideCrafting(ICraftingProviderHelper helper) {
-        if (session == null || !nativeBound
-            || !session.readyForPatternAdvertisement()
-            || !verified
-            || !checkTopology()
-            || !checkNativeBinding()) return;
+        if (!permitsMachineWork()) return;
+        if (assemblyLineMode()
+            && (session == null || !nativeBound || !session.readyForPatternAdvertisement() || !checkNativeBinding()))
+            return;
         for (int i = 0; i < MatrixPatternInventory.SIZE; i++) {
             ItemStack pattern = master().matrixPort()
                 .patterns()
@@ -668,7 +911,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     pattern,
                     master().getBaseMetaTileEntity()
                         .getWorld());
-                AssemblyRecipeMatch.bind(layout, authorizedRecipes());
+                if (assemblyLineMode()) AssemblyRecipeMatch.bind(layout, authorizedRecipes());
                 if (capacityReason(layout).isEmpty())
                     helper.addCraftingOption((ICraftingProvider) master(), layout.details());
             } catch (PatternValidationException ignored) {
@@ -694,10 +937,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public boolean accept(ICraftingPatternDetails details, InventoryCrafting table) {
         if (!accepting()) return false;
-        OrderedPatternLayout layout = null;
-        OrderedPatternLayout.Payload payload;
-        AssemblyRecipeMatch match;
-        int slot = -1;
         try {
             OrderedPatternLayout.decode(details);
             for (int i = 0; i < MatrixPatternInventory.SIZE; i++) {
@@ -705,17 +944,35 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     .patterns()
                     .getStackInSlot(i);
                 if (pattern != null && ItemStack.areItemStacksEqual(pattern, details.getPattern())) {
-                    layout = OrderedPatternLayout.decode(
+                    OrderedPatternLayout layout = OrderedPatternLayout.decode(
                         pattern,
                         master().getBaseMetaTileEntity()
                             .getWorld());
-                    slot = i;
-                    break;
+                    return acceptInstalled(layout, table, i);
                 }
             }
-            if (layout == null) return reject("pattern_not_installed");
+            return reject("pattern_not_installed");
+        } catch (PatternValidationException ex) {
+            return reject(
+                ex.reason()
+                    .name()
+                    .toLowerCase(java.util.Locale.ROOT));
+        }
+    }
+
+    private boolean acceptInstalled(OrderedPatternLayout layout, InventoryCrafting table, int slot) {
+        if (!accepting()) return false;
+        long intakeEpoch = epoch;
+        OrderedPatternLayout.Payload payload;
+        AssemblyRecipeMatch match = null;
+        try {
+            if (stage != Stage.IDLE && (patternSlot < 0 || !ItemStack.areItemStacksEqual(
+                master.matrixPort()
+                    .patterns()
+                    .getStackInSlot(patternSlot),
+                layout.pattern()))) return reject("different_pattern");
             payload = layout.validateTable(table);
-            match = AssemblyRecipeMatch.bind(layout, payload, authorizedRecipes());
+            if (assemblyLineMode()) match = AssemblyRecipeMatch.bind(layout, payload, authorizedRecipes());
             String capacityReason = capacityReason(layout);
             if (!capacityReason.isEmpty()) return reject(capacityReason);
         } catch (PatternValidationException ex) {
@@ -724,14 +981,36 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     .name()
                     .toLowerCase(java.util.Locale.ROOT));
         }
-        // Allocate every detached stack before the first physical write. The setters below only assign fields.
+        // Check every physical position in long space and allocate detached results before the first write.
+        // Equal ingredients in distinct pattern positions deliberately remain in distinct members.
         List<ItemStack> itemCopies = new ArrayList<>();
         List<FluidStack> fluidCopies = new ArrayList<>();
-        for (OrderedPatternLayout.Input input : payload.items()) itemCopies.add(input.itemStack());
-        for (OrderedPatternLayout.Input input : payload.fluids()) fluidCopies.add(input.fluidStack());
-        if (!accepting()) return false;
+        for (OrderedPatternLayout.Input input : payload.items()) {
+            ItemStack next = input.itemStack(), stored = items.get(input.kindOrdinal())
+                .matrixItem();
+            if (stored != null && stored.stackSize > 0) {
+                if (stored.getItem() != next.getItem() || stored.getItemDamage() != next.getItemDamage()
+                    || !ItemStack.areItemStackTagsEqual(stored, next)) return reject("member_resource_conflict");
+                long amount = (long) stored.stackSize + next.stackSize;
+                if (amount > Integer.MAX_VALUE) return reject("amount_overflow");
+                next.stackSize = (int) amount;
+            }
+            itemCopies.add(next);
+        }
+        for (OrderedPatternLayout.Input input : payload.fluids()) {
+            FluidStack next = input.fluidStack(), stored = fluids.get(input.kindOrdinal())
+                .matrixFluidStack();
+            if (stored != null && stored.amount > 0) {
+                if (!stored.isFluidEqual(next)) return reject("member_resource_conflict");
+                long amount = (long) stored.amount + next.amount;
+                if (amount > Integer.MAX_VALUE) return reject("amount_overflow");
+                next.amount = (int) amount;
+            }
+            fluidCopies.add(next);
+        }
+        if (!accepting() || intakeEpoch != epoch) return false;
         try {
-            if (!match.key()
+            if (match != null && !match.key()
                 .equals(
                     AssemblyRecipeMatch.bind(layout, payload, authorizedRecipes())
                         .key()))
@@ -742,21 +1021,23 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     .name()
                     .toLowerCase(java.util.Locale.ROOT));
         }
-        UUID nextBatch = UUID.randomUUID();
-        recordAcceptedDiagnostics(payload);
+        UUID nextBatch = batch == null ? UUID.randomUUID() : batch;
+        if (stage == Stage.IDLE) recordAcceptedDiagnostics(payload);
         for (int i = 0; i < itemCopies.size(); i++) items.get(i)
             .matrixSetItem(itemCopies.get(i));
         for (int i = 0; i < fluidCopies.size(); i++) fluids.get(i)
             .matrixSetFluid(fluidCopies.get(i));
         batch = nextBatch;
-        recipeKey = match.key()
-            .value();
+        genericInput = !assemblyLineMode();
+        recipeKey = match == null ? ""
+            : match.key()
+                .value();
         patternSlot = slot;
-        stage = Stage.STAGED;
+        if (stage != Stage.RUNNING) stage = Stage.STAGED;
         reason = "";
         try {
             dirty();
-            session.requestRecipeCheck();
+            if (session != null) session.requestRecipeCheck();
         } catch (RuntimeException ex) {
             stage = Stage.QUARANTINED;
             reason = "notification_failed";
@@ -771,8 +1052,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return nativeSession == session && nativeBound
             && verified
             && stage == Stage.STAGED
-            && !refunding
-            && checkTopology()
+            && permitsMachineWork()
             && checkNativeBinding()
             && session.controller()
                 .protectsExcessItem();
@@ -793,8 +1073,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (!complete || parallel != 1
             || !recipeKey.equals(
                 AssemblyRecipeKey.of(recipe)
-                    .value())
-            || !allEmpty()) {
+                    .value())) {
             stage = Stage.QUARANTINED;
             reason = "partial_consumption";
         } else {
@@ -808,8 +1087,8 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     @Override
     public void onNativeFinished(NativeAssemblySession nativeSession) {
         if (nativeSession == session && stage == Stage.RUNNING) {
-            stage = Stage.LOCAL_FINISHED;
-            reason = "local_output_only";
+            stage = allEmpty() ? Stage.LOCAL_FINISHED : Stage.STAGED;
+            reason = stage == Stage.LOCAL_FINISHED ? "local_output_only" : "";
             dirty();
         }
     }
@@ -825,13 +1104,17 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public void tick() {
         if (!verified) return;
-        if (stage == Stage.LOCAL_FINISHED && session != null
-            && session.controller().mMaxProgresstime == 0
-            && allEmpty()) {
+        refreshNetwork();
+        if (allEmpty() && (genericInput && stage == Stage.STAGED
+            && inputController != null
+            && inputController.mMaxProgresstime == 0
+            || stage == Stage.LOCAL_FINISHED && session != null && session.controller().mMaxProgresstime == 0)) {
             stage = Stage.IDLE;
             batch = null;
             recipeKey = "";
             patternSlot = -1;
+            genericInput = false;
+            reason = "";
             dirty();
         }
     }
@@ -840,6 +1123,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     public void refund() {
         if (!verified || stage == Stage.RUNNING || stage == Stage.LOCAL_FINISHED || !checkTopology()) return;
         if (stage == Stage.IDLE && allEmpty()) return;
+        refreshNetwork();
+        if (externalConnections != 1 || !master.matrixPort()
+            .getProxy()
+            .isActive()) return;
         stage = Stage.REFUNDING;
         refunding = true;
         try {
@@ -875,6 +1162,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 batch = null;
                 recipeKey = "";
                 patternSlot = -1;
+                genericInput = false;
             }
         } catch (GridAccessException ex) {
             reason = "refund_network_offline";
@@ -900,6 +1188,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         tag.setString("stage", stage.name());
         tag.setLong("epoch", epoch);
         tag.setLong("nativeSequence", nativeSequence);
+        tag.setBoolean("genericInput", genericInput);
+        if (machinePosition != null) tag.setIntArray("machinePosition", machinePosition.clone());
+        if (networkOrigin != null) tag.setString("networkOrigin", networkOrigin.toString());
         tag.setIntArray("diagnosticItemTable", diagnosticItemTable.clone());
         tag.setIntArray("diagnosticFluidTable", diagnosticFluidTable.clone());
         tag.setTag("diagnosticItemConsumed", saveDiagnosticAmounts(diagnosticItemConsumed));
@@ -952,6 +1243,13 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             stage = Stage.valueOf(tag.getString("stage"));
             epoch = tag.getLong("epoch");
             nativeSequence = tag.getLong("nativeSequence");
+            genericInput = tag.getBoolean("genericInput");
+            if (tag.hasKey("machinePosition")) {
+                machinePosition = tag.getIntArray("machinePosition");
+                if (machinePosition.length != 5 || machinePosition[0] != memberDimension)
+                    throw new IllegalArgumentException("controller_replaced");
+            }
+            if (tag.hasKey("networkOrigin")) networkOrigin = UUID.fromString(tag.getString("networkOrigin"));
             diagnosticItemTable = loadDiagnosticIndices(tag, "diagnosticItemTable", 16);
             diagnosticFluidTable = loadDiagnosticIndices(tag, "diagnosticFluidTable", 4);
             diagnosticItemConsumed = loadDiagnosticAmounts(tag, "diagnosticItemConsumed", 16);
@@ -968,8 +1266,12 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 || stage == Stage.NATIVE_ABORTED)
                 && (batch == null || patternSlot < 0
                     || patternSlot >= MatrixPatternInventory.SIZE
-                    || !recipeKey.matches("v1:[0-9a-f]{64}")))
+                    || !genericInput && !recipeKey.matches("v1:[0-9a-f]{64}")))
                 throw new IllegalArgumentException("invalid_saved_data");
+            if (genericInput && (machinePosition == null || controllerId != null
+                || stage == Stage.RUNNING
+                || stage == Stage.LOCAL_FINISHED
+                || stage == Stage.NATIVE_ABORTED)) throw new IllegalArgumentException("invalid_saved_data");
             if (stage == Stage.RUNNING && session != null
                 && (session.controller().mMaxProgresstime == 0 || nativeSequence != session.runSequence()
                     || !"RUNNING".equals(session.lastNativeEvent()))) {

@@ -28,7 +28,7 @@ public final class DesktopDeviceSources {
 
     private static final Map<UUID, Demand> DEMANDS = new LinkedHashMap<>();
     private static final Set<UUID> VISIBLE = new LinkedHashSet<>();
-    private static UUID factorySource, selectionSource, cursor;
+    private static UUID factorySource, selectionSource, nativeSource, cursor;
     private static EntityPlayer player;
     private static Object world, connection;
     private static int lastRequest = Integer.MIN_VALUE;
@@ -45,6 +45,16 @@ public final class DesktopDeviceSources {
     /** One open selector shares the same bounded polling budget as all visible cards. */
     public static void setSelectionSource(UUID source) {
         selectionSource = source;
+    }
+
+    /** The native device window participates in this same facade, while keeping its existing poll owner. */
+    public static void nativeViewer(UUID source) {
+        UUID previous = nativeSource;
+        nativeSource = source;
+        if (source != null) tick();
+        else if (previous != null && !previous.equals(factorySource)
+            && !previous.equals(selectionSource)
+            && !VISIBLE.contains(previous)) DEMANDS.remove(previous);
     }
 
     /** Only terminals currently carried by this local player; baubles appear first. */
@@ -96,7 +106,7 @@ public final class DesktopDeviceSources {
 
     public static void clearFactory() {
         factorySource = null;
-        if (VISIBLE.isEmpty()) releaseDemands();
+        if (VISIBLE.isEmpty() && nativeSource == null) releaseDemands();
     }
 
     /** Hiding the canvas releases only its extra sources. */
@@ -104,8 +114,11 @@ public final class DesktopDeviceSources {
         VISIBLE.clear();
         selectionSource = null;
         for (Map.Entry<UUID, Demand> entry : DEMANDS.entrySet()) if (!entry.getKey()
-            .equals(factorySource)) entry.getValue().active = false;
-        if (factorySource == null) releaseDemands();
+            .equals(factorySource)
+            && !entry.getKey()
+                .equals(nativeSource))
+            entry.getValue().active = false;
+        if (factorySource == null && nativeSource == null) releaseDemands();
     }
 
     public static void tick() {
@@ -127,6 +140,7 @@ public final class DesktopDeviceSources {
         }
         Set<UUID> selected = DesktopDevicePolling
             .sources(factorySource, selectionSource, VISIBLE, id -> find(player, id) != null);
+        if (nativeSource != null && find(player, nativeSource) != null) selected.add(nativeSource);
         DEMANDS.keySet()
             .retainAll(selected);
         for (UUID id : selected) {
@@ -142,7 +156,7 @@ public final class DesktopDeviceSources {
         int now = player.ticksExisted;
         if (lastRequest != Integer.MIN_VALUE && now >= lastRequest && now - lastRequest < 5) return;
         // Resolve MUI's current facade through its real GuiScreen wrapper. No sticky open flag survives closure.
-        boolean nativeViewer = ModularScreen.isActive("gtswn", "device_info_terminal");
+        boolean nativeViewer = nativeSource != null || ModularScreen.isActive("gtswn", "device_info_terminal");
         UUID next = DesktopDevicePolling.next(selected, cursor, nativeViewer, id -> {
             Demand demand = DEMANDS.get(id);
             int interval = DeviceTerminalClientCache.hasMorePending(id) ? 5 : 20;
@@ -297,7 +311,7 @@ public final class DesktopDeviceSources {
     }
 
     public static void resetSession() {
-        factorySource = selectionSource = null;
+        factorySource = selectionSource = nativeSource = null;
         VISIBLE.clear();
         reset();
     }

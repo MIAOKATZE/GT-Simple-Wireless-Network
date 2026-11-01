@@ -15,6 +15,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.FluidStack;
 
+import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
 
 import appeng.api.networking.GridFlags;
@@ -71,6 +72,7 @@ public final class MatrixAssemblyPort {
         boolean wasMaster = group != null && group.master() == member;
         boolean nextMaster = next != null && next.master() == member;
         group = next;
+        if (next != null) next.networkChanged();
         if (next != null) restoredLedger = null;
         patternChange = true;
         // AE classifies channel requirements when a node joins its path cache.
@@ -132,6 +134,11 @@ public final class MatrixAssemblyPort {
         patternChange = true;
     }
 
+    public void networkChanged() {
+        if (group != null) group.networkChanged();
+        changed();
+    }
+
     public void tick(long tick) {
         OrderedAssemblyGroup.topologyTick(member, tick);
         if (group != null && group.master() == member) group.tick();
@@ -163,6 +170,11 @@ public final class MatrixAssemblyPort {
         return !busy() && group.accept(details, table);
     }
 
+    boolean permitsInputAccess() {
+        return group != null && (NativeAssemblyAdapter.permitsNativeAccess(member) ? group.permitsMachineWork()
+            : group.permitsOrdinaryInput());
+    }
+
     public int connectionMask() {
         return connectionMask;
     }
@@ -170,6 +182,7 @@ public final class MatrixAssemblyPort {
     public void connectionMask(int mask) {
         if (connectionMask == mask) return;
         connectionMask = mask;
+        if (group != null) group.networkChanged();
         refreshConnectionSides();
         member.getBaseMetaTileEntity()
             .issueTileUpdate();

@@ -201,7 +201,7 @@ public final class NativeAssemblySession {
         NativeAssemblySession previous = NativeAssemblyAdapter.enter(this);
         try {
             int[] requirements = RecipeAssemblyLine.getItemConsumptionAmountArray(buses, recipe);
-            if (requirements == null || !exactlyOneCopy(recipe, requirements)) return null;
+            if (requirements == null || !enoughForOneCopy(recipe, requirements)) return null;
             candidate = recipe;
             candidateItemAmounts = requirements.clone();
             return requirements;
@@ -226,13 +226,13 @@ public final class NativeAssemblySession {
         return reject("recipe_no_longer_authorized");
     }
 
-    private boolean exactlyOneCopy(RecipeAssemblyLine recipe, int[] requirements) {
+    private boolean enoughForOneCopy(RecipeAssemblyLine recipe, int[] requirements) {
         for (int i = 0; i < controller.mInputBusses.size(); i++) {
             ItemStack actual = controller.mInputBusses.get(i)
                 .getFirstStack();
             if (i < requirements.length) {
-                if (requirements[i] <= 0 || actual == null || actual.stackSize != requirements[i])
-                    return reject("item_quantity_must_be_one_copy");
+                if (requirements[i] <= 0 || actual == null || actual.stackSize < requirements[i])
+                    return reject("item_quantity_below_one_copy");
             } else if (actual != null) return reject("extra_item_input_not_empty");
         }
         for (int i = 0; i < controller.mInputHatches.size(); i++) {
@@ -243,7 +243,7 @@ public final class NativeAssemblySession {
                 if (required == null || required.amount <= 0
                     || actual == null
                     || !GTUtility.areFluidsEqual(actual, required)
-                    || actual.amount != required.amount) return reject("fluid_quantity_must_be_one_copy");
+                    || actual.amount < required.amount) return reject("fluid_quantity_below_one_copy");
             } else if (actual != null) return reject("extra_fluid_input_not_empty");
         }
         return true;
@@ -253,7 +253,11 @@ public final class NativeAssemblySession {
         Map<GTUtility.ItemId, ItemStack> meInputs) {
         NativeAssemblySession previous = NativeAssemblyAdapter.enter(this);
         try {
-            return RecipeAssemblyLine.maxParallelCalculatedByInputItems(buses, maximum, requirements, meInputs);
+            return RecipeAssemblyLine.maxParallelCalculatedByInputItems(
+                buses,
+                usesOrderedMembers() ? Math.min(maximum, 1) : maximum,
+                requirements,
+                meInputs);
         } finally {
             NativeAssemblyAdapter.leave(previous);
         }
@@ -263,7 +267,11 @@ public final class NativeAssemblySession {
         Map<Fluid, FluidStack> meInputs) {
         NativeAssemblySession previous = NativeAssemblyAdapter.enter(this);
         try {
-            return RecipeAssemblyLine.maxParallelCalculatedByInputFluids(hatches, maximum, requirements, meInputs);
+            return RecipeAssemblyLine.maxParallelCalculatedByInputFluids(
+                hatches,
+                usesOrderedMembers() ? Math.min(maximum, 1) : maximum,
+                requirements,
+                meInputs);
         } finally {
             NativeAssemblyAdapter.leave(previous);
         }

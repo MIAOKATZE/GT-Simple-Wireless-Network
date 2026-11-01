@@ -10,7 +10,8 @@ import gregtech.api.render.TextureFactory;
 public final class MatrixAssemblyTextures {
 
     private static final ITexture[] BRIDGES = new ITexture[16];
-    private static final ITexture CENTER = TextureFactory.of(Textures.BlockIcons.OVERLAY_ME_CRAFTING_INPUT_BUFFER);
+    private static final ITexture CENTER = TextureFactory
+        .of(Textures.BlockIcons.custom("gtswn", "matrix_input_center"));
     private static final ITexture[] COLORS = new ITexture[17];
 
     static {

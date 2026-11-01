@@ -19,6 +19,7 @@ import org.lwjgl.input.Keyboard;
 import com.cleanroommc.modularui.api.IPanelHandler;
 import com.cleanroommc.modularui.api.UpOrDown;
 import com.cleanroommc.modularui.api.drawable.IDrawable;
+import com.cleanroommc.modularui.api.drawable.IKey;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.Dialog;
@@ -39,39 +40,8 @@ import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
- * 设备信息终端客户端 GUI（ModularUI 2 原生控件与状态绘制，450×252 六列布局，
- * v1.7.2 面板加宽 +20px）。
- * <p>
- * 数据流（UI 只发 action，不直改服务端权威数据）：
- * <ol>
- * <li>{@link #onUpdate()} 每 {@value #POLL_INTERVAL_TICKS} tick 经包 8 向服务端轮询
- * （pollTimer=0 首帧即发）；MUI2 非暂停画面 防单人暂停导致轮询僵死；
- * 列表区滚轮翻页且增量批次未到齐时经 {@link #requestPendingPages()} 限频追加请求（G5-3）；</li>
- * <li>服务端包 9 <b>增量分页</b>回发（每次排水最多 2 页：当前页 + 预取，v1.7.14 G5；不再
- * 版本一变即 8 页全量连发）→ ClientProxy 切主线程 → {@link DeviceTerminalClientCache}
- * （锚点=终端 UUID，GUI 关闭不清缓存，重开即显上次快照；增量页按版本累积，未到齐提交
- * 连续前缀快照）；</li>
- * <li>绘制读 {@link #sortedEntries}：快照版本<b>或条目数</b>（增量前缀增长）变化时按当前
- * 排序列/方向重排（稳定排序，同键保持绑定序），版本未变且前缀未增长且无偏好脏标则入口
- * 短路零重排（G5-2）；排序/计数法点击后本地立即生效并发包 10（action 0/1）持久化到物品 NBT。</li>
- * </ol>
- * <p>
- * 布局（自上而下）：标题 / 顶行四按钮（计数模式四态轮换 + 显示配方纯本地开关 +
- * 功率筛选七项下拉 + 状态筛选五态轮换，后三者为纯 GUI 会话态）/ 列头行
- * （点击排序，▲▼ 高亮当前列，平均列默认降序、其余默认升序）/ 滚动列表
- * （{@link GuiDeviceEntryList}，行高 20）/ 底行操作提示。
- * <p>
- * 筛选：功率按电力/蒸汽通道及各自生产/消耗能力筛选，与状态（全部→待机→运行→停机→忽略）两组可叠加
- * （AND），插在条目副本生成后、排序前；会话态实例字段仿显示配方——不发包不持久化，
- * 重开 GUI 复位为全部/全部。
- * <p>
- * 锚点解析（G5-1 缓存）：GUI 持有打开时传入的终端 UUID；不再每 tick 全物品栏重扫——
- * 槽位指纹（主背包槽物品引用 + 手持槽下标）变化或每 {@value #ANCHOR_RECHECK_TICKS} tick
- * 复核时才验证主背包与饰品栏中的指定 UUID；不切换到其他终端。初次 UUID 尚未同步时，
- * 从手持或主背包解析一次并固定身份。GUI 打开时强制一次全扫。
- * <p>
- * 初始 UI 偏好（排序列/方向/计数法）从打开时物品 stack NBT 读；action 后以本地状态为准
- * （服务端 NBT 写回由动作队列权威执行，下轮打开校正）。
+ * Native compact device list. Existing cache polling and stable five-column sort remain authoritative.
+ * Row expansion presents only the shared recipe strings; whole-device link actions carry explicit desired state.
  */
 public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
@@ -87,11 +57,11 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 悬浮配方文本换行宽度（像素，≈200px；v1.7.2 起用 listFormattedStringToWidth 按像素分行） */
     private static final int TOOLTIP_WRAP_WIDTH = 200;
 
-    /** GUI 宽度（六列布局，v1.7.2 加宽 +20px） */
-    private final int xSize = 450;
+    /** GUI 宽度（紧凑列与链路操作） */
+    private final int xSize = 620;
 
     /** GUI 高度（标题/按钮/列头/列表/底行合计） */
-    private final int ySize = 252;
+    private final int ySize = 274;
 
     /** 顶行按钮：计数法四态轮换（本地立即轮换 + 发包 10 action 1 持久化） */
     private static final int BTN_COUNT_MODE = 0;
@@ -111,10 +81,10 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     private static final int BTN_STATE_FILTER = 3;
 
     /** 列头行文本 Y 偏移（按钮行下方） */
-    private static final int HEADER_Y = 40;
+    private static final int HEADER_Y = 62;
 
     /** 底行提示 Y 偏移（列表底界 top+232 下方） */
-    private static final int FOOTER_Y = 238;
+    private static final int FOOTER_Y = 260;
 
     /** 列头 lang 键（下标 = 排序列 0-4 NAME/STATE/INST/AVG/POS，与包 10 COLUMN_* 一致） */
     private static final String[] COLUMN_KEYS = { "gtswn.device.gui.col.name", "gtswn.device.gui.col.state",
@@ -148,6 +118,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** A directly opened terminal keeps its identity even if another terminal is held. */
     private UUID requestedTerminalId;
     private ItemStack[] anchorBaubleRefs;
+    private boolean hasLinkTerminal;
 
     /** 当前终端锚点 UUID（构造传入 + 指纹/复核触发重解析；null=客户端 NBT 尚未同步到 UUID） */
     private UUID anchor;
@@ -170,6 +141,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 显示配方开关（纯 GUI 实例字段：开启时瞬时/平均两列区临时替换为单条配方行） */
     private boolean showRecipe = false;
+    private final java.util.Set<String> expandedRecipes = new java.util.LinkedHashSet<>();
 
     /** 功率筛选会话态：全部、电力、蒸汽、产能、耗电、产汽、耗气（重开 GUI 复位为全部） */
     private int powerFilter = 0;
@@ -180,6 +152,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 状态筛选会话态：0 全部 / 1 待机 / 2 运行 / 3 停机 / 4 忽略（重开 GUI 复位为全部） */
     private int stateFilter = 0;
+    private final com.miaokatze.gtswn.client.DeviceListFilters filters = new com.miaokatze.gtswn.client.DeviceListFilters();
+    private com.cleanroommc.modularui.widgets.textfield.TextFieldWidget searchField;
 
     /** 排序偏好被点击后置位，强制下次 refreshEntries 重排（同版本快照也重排） */
     private boolean sortDirty = false;
@@ -197,7 +171,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      * @param prefStack  偏好来源物品（可为 null，取默认值 AVG/DESC/NORMAL）
      */
     public GuiDeviceInfoTerminal(UUID terminalId, ItemStack prefStack) {
-        super("device_info_terminal", 450, 252);
+        super("device_info_terminal", 620, 274);
         this.anchor = terminalId;
         this.requestedTerminalId = terminalId;
         this.sortColumn = prefStack == null ? PacketDeviceTerminalAction.COLUMN_AVG
@@ -249,13 +223,44 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 80,
                 16,
                 () -> actionPerformed(BTN_STATE_FILTER)));
-        int[] columns = { 4, 112, 162, 228, 304, 400 };
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.refresh",
+                () -> tr("gtswn.device.gui.refresh"),
+                448,
+                16,
+                78,
+                16,
+                () -> anchor != null && extraPollCooldown == 0,
+                () -> {
+                    pollTimer = 0;
+                    extraPollCooldown = POLL_INTERVAL_TICKS;
+                })
+                .tooltip(t -> t.addLine(IKey.lang("gtswn.device.gui.refresh_hint"))));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.settings",
+                () -> tr("gtswn.device.gui.settings"),
+                532,
+                16,
+                80,
+                16,
+                () -> anchor != null,
+                () -> {
+                    int slot = com.miaokatze.gtswn.common.device.DeviceTerminalSource.find(mc.thePlayer, anchor, false);
+                    com.miaokatze.gtswn.common.gui.DeviceTerminalSettingsGuiFactory.requestOpen(
+                        mc.thePlayer,
+                        com.miaokatze.gtswn.common.device.DeviceTerminalSource.stack(mc.thePlayer, slot));
+                }));
+        addCacheFilters();
+        int[] columns = { 4, 148, 254, 316, 378 };
+        int[] columnWidths = { 100, 42, 62, 62, 74 };
         for (int i = 0; i < 5; i++) {
             final int column = i;
             getMainPanel().child(
                 new ButtonWidget<>().name("device.sort." + i)
-                    .pos(8 + columns[i], 38)
-                    .size(columns[i + 1] - columns[i], 14)
+                    .pos(8 + columns[i], 60)
+                    .size(columnWidths[i], 14)
                     .background(IDrawable.EMPTY)
                     .hoverBackground(IDrawable.EMPTY)
                     .onMousePressed(button -> {
@@ -274,7 +279,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                     "device.desktop.mount",
                     () -> tr("gtswn.device.gui.mount"),
                     8,
-                    235,
+                    257,
                     150,
                     14,
                     () -> DesktopDeviceSources.binding(anchor, selectedDesktopEntry) != null,
@@ -286,8 +291,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 .button(
                     "device.engineering",
                     () -> tr("gtswn.device.gui.engineering"),
-                    344,
-                    235,
+                    514,
+                    257,
                     98,
                     14,
                     () -> EngineeringTerminalActions.canOpen(anchor),
@@ -295,6 +300,121 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 .tooltip(
                     t -> t.addLine(
                         com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.gui.engineering.hint"))));
+    }
+
+    private void addCacheFilters() {
+        searchField = new com.cleanroommc.modularui.widgets.textfield.TextFieldWidget() {
+
+            @Override
+            protected void onTextChanged() {
+                super.onTextChanged();
+                filters.query = getText();
+                if (entryList != null) filterChanged();
+            }
+        }.value(new com.cleanroommc.modularui.value.StringValue(""))
+            .autoUpdateOnChange(true)
+            .setMaxLength(64)
+            .background(GtswnMuiTheme.LIST_PANEL)
+            .hintText(tr("gtswn.device.filter.search_hint"))
+            .pos(8, 38)
+            .size(112, 16)
+            .name("device.filter.search");
+        searchField
+            .tooltip(t -> t.addLine(com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.filter.search")));
+        getMainPanel().child(searchField);
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.filter.kind",
+                () -> tr("gtswn.device.filter.type") + ": "
+                    + (filters.kind == 0 ? tr("gtswn.device.filter.all") : kindText((byte) filters.kind)),
+                126,
+                38,
+                80,
+                16,
+                () -> {
+                    filters.kind = (filters.kind + 1) % 5;
+                    filterChanged();
+                }));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.filter.dimension",
+                () -> tr("gtswn.device.filter.dimension") + ": "
+                    + (filters.dimension == null ? "*" : filters.dimension),
+                212,
+                38,
+                52,
+                16,
+                () -> {
+                    filters.dimension = nextCachedValue(filters.dimension, false);
+                    filterChanged();
+                }));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.filter.tier",
+                () -> tr("gtswn.device.filter.tier") + ": "
+                    + (filters.tier == null ? "*" : tierText(filters.tier.byteValue())),
+                270,
+                38,
+                52,
+                16,
+                () -> {
+                    filters.tier = nextCachedValue(filters.tier, true);
+                    filterChanged();
+                }));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.filter.link",
+                () -> tr("gtswn.device.link.column") + ": " + tr("gtswn.device.filter.link." + filters.link),
+                328,
+                38,
+                92,
+                16,
+                () -> {
+                    filters.link = (filters.link + 1) % 6;
+                    filterChanged();
+                }));
+        getMainPanel().child(
+            GtswnMuiWidgets.button(
+                "device.filter.owner",
+                () -> tr("gtswn.device.filter.owner") + ": " + tr("gtswn.device.filter.owner." + filters.owner),
+                426,
+                38,
+                90,
+                16,
+                () -> {
+                    filters.owner = (filters.owner + 1) % 4;
+                    filterChanged();
+                }));
+        getMainPanel().child(
+            GtswnMuiWidgets
+                .button("device.filter.reset", () -> tr("gtswn.device.filter.reset"), 522, 38, 90, 16, () -> {
+                    filters.kind = filters.link = filters.owner = powerFilter = stateFilter = 0;
+                    filters.dimension = filters.tier = null;
+                    filters.query = "";
+                    searchField.setText("");
+                    filterChanged();
+                }));
+    }
+
+    private void filterChanged() {
+        sortDirty = true;
+        refreshEntries();
+    }
+
+    private Integer nextCachedValue(Integer current, boolean tier) {
+        java.util.SortedSet<Integer> values = new java.util.TreeSet<>();
+        if (displayedSnapshot != null)
+            for (Entry entry : displayedSnapshot.entries) values.add(tier ? (int) entry.machineTier : entry.dim);
+        for (Integer value : values) if (current == null || value > current) return value;
+        return null;
+    }
+
+    String kindText(byte kind) {
+        return tr("gtswn.device.filter.kind." + kind);
+    }
+
+    String tierText(byte tier) {
+        return tier < 0 || tier >= gregtech.api.enums.GTValues.VN.length ? "?" : gregtech.api.enums.GTValues.VN[tier];
     }
 
     private ModularPanel buildPowerMenu() {
@@ -361,6 +481,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     public void onOpen() {
         super.onOpen();
         refreshAnchor();
+        DesktopDeviceSources.nativeViewer(anchor);
         refreshEntries();
     }
 
@@ -373,6 +494,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     public void onUpdate() {
         super.onUpdate();
         refreshAnchor();
+        DesktopDeviceSources.nativeViewer(anchor);
         refreshEntries();
         if (this.extraPollCooldown > 0) {
             this.extraPollCooldown--;
@@ -418,6 +540,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         if (baubles != null) for (int i = 0; i < anchorBaubleRefs.length; i++) {
             anchorBaubleRefs[i] = baubles.getStackInSlot(i);
         }
+        hasLinkTerminal = com.miaokatze.gtswn.common.device.TerminalLinkSettings.linkTerminal(player) != null;
         UUID resolved = resolveTerminalId();
         if (!java.util.Objects.equals(resolved, this.anchor)) {
             closeNameEditor();
@@ -499,7 +622,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      * Keepalive and duplicate-page replies retain its identity and therefore do not trigger redundant sorting.
      */
     private void refreshEntries() {
-        Snapshot snapshot = this.anchor == null ? null : DeviceTerminalClientCache.getSnapshot(this.anchor);
+        Snapshot snapshot = this.anchor == null ? null : DesktopDeviceSources.displaySnapshot(this.anchor);
         long epoch = DeviceTerminalClientCache.authorizationEpoch(this.anchor);
         if (epoch != displayedAuthorizationEpoch) {
             displayedAuthorizationEpoch = epoch;
@@ -521,6 +644,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         selectedDesktopEntry = currentEntry(selectedDesktopEntry);
         if (nameEditor != null) nameEditor.validateSelection();
         List<Entry> copy = new ArrayList<>(snapshot.entries);
+        copy.removeIf(entry -> !filters.matches(entry, mc.thePlayer == null ? null : mc.thePlayer.getUniqueID()));
         // 双组筛选（AND 叠加）：插在 copy 后、sort 前（v1.8.0 计划步骤 4）
         if (this.powerFilter != 0) {
             copy.removeIf(entry -> !DevicePowerFilter.matches(entry, this.powerFilter));
@@ -604,6 +728,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         } else if (id == BTN_SHOW_RECIPE) {
             // 纯 GUI 实例字段：不发包不持久化
             this.showRecipe = !this.showRecipe;
+            expandedRecipes.clear();
+            entryList.invalidateRows();
         } else if (id == BTN_POWER_FILTER) {
             powerFilterCursor = powerFilter;
             powerMenu.togglePanel();
@@ -718,16 +844,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      * 几何与尺寸零变化；标题/列头两条分隔线仍代码绘制，色值琥珀化（GtswnGuiPalette.DIVIDER）。
      */
     private void drawPanelBackground() {
-        GtswnGuiDrawing.bind(GtswnGuiTextures.PANEL_DEVICE_INFO);
-        GtswnGuiDrawing.drawRegion(
-            GtswnGuiTextures.PANEL_DEVICE_INFO,
-            this.guiLeft,
-            this.guiTop,
-            0,
-            0,
-            GtswnGuiTextures.PANEL_DEVICE_INFO_W,
-            GtswnGuiTextures.PANEL_DEVICE_INFO_H,
-            0);
+        GtswnGuiDrawing
+            .drawNineSlice(GtswnGuiTextures.PANEL_DEVICE_INFO, 8, this.guiLeft, this.guiTop, xSize, ySize, 0);
         // 标题分隔线
         net.minecraft.client.gui.Gui.drawRect(
             this.guiLeft + 8,
@@ -738,9 +856,9 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         // 列头分隔线
         net.minecraft.client.gui.Gui.drawRect(
             this.guiLeft + 8,
-            this.guiTop + 50,
+            this.guiTop + 72,
             this.guiLeft + this.xSize - 8,
-            this.guiTop + 51,
+            this.guiTop + 73,
             GtswnGuiPalette.DIVIDER);
     }
 
@@ -770,6 +888,26 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 this.guiTop + HEADER_Y,
                 i == this.sortColumn ? GtswnGuiPalette.TEXT_ACCENT : GtswnGuiPalette.TEXT_BODY);
         }
+        this.fontRendererObj.drawString(
+            tr("gtswn.device.filter.type"),
+            this.guiLeft + 116,
+            this.guiTop + HEADER_Y,
+            GtswnGuiPalette.TEXT_BODY);
+        this.fontRendererObj.drawString(
+            tr("gtswn.device.filter.dimension"),
+            this.guiLeft + 202,
+            this.guiTop + HEADER_Y,
+            GtswnGuiPalette.TEXT_BODY);
+        this.fontRendererObj.drawString(
+            tr("gtswn.device.filter.tier"),
+            this.guiLeft + 232,
+            this.guiTop + HEADER_Y,
+            GtswnGuiPalette.TEXT_BODY);
+        this.fontRendererObj.drawString(
+            "§l" + tr("gtswn.device.link.column"),
+            this.guiLeft + 8 + GuiDeviceEntryList.LINK_X,
+            this.guiTop + HEADER_Y,
+            GtswnGuiPalette.TEXT_ACCENT);
         // 第六列：传送列头（行内 ✦ 按钮列；不可排序，仅标签）
         String teleport = "§l" + tr("gtswn.device.gui.teleport");
         this.fontRendererObj.drawString(
@@ -781,7 +919,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 列表主体：无快照「...」占位 / 无绑定提示 / 正常列表。 */
     private void drawBody(int mouseX, int mouseY) {
-        Snapshot snapshot = this.anchor == null ? null : DeviceTerminalClientCache.getSnapshot(this.anchor);
+        Snapshot snapshot = this.anchor == null ? null : DesktopDeviceSources.displaySnapshot(this.anchor);
         if (snapshot == null) {
             // 首个回包未到达（或锚点未同步）：中央灰字等待占位
             drawCenteredListText("...");
@@ -797,22 +935,77 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 列表区中央灰字提示（占位 / 无绑定共用）。 */
     private void drawCenteredListText(String text) {
-        int x = this.guiLeft + 8 + (434 - this.fontRendererObj.getStringWidth(text)) / 2;
-        int y = this.guiTop + 52 + 180 / 2 - 4;
+        int x = this.guiLeft + 8 + (604 - this.fontRendererObj.getStringWidth(text)) / 2;
+        int y = this.guiTop + 74 + 180 / 2 - 4;
         this.fontRendererObj.drawString(text, x, y, GtswnGuiPalette.TEXT_MUTED);
     }
 
     /** 底行固定操作提示。 */
     private void drawFooter() {
         this.fontRendererObj.drawString(
-            this.fontRendererObj.trimStringToWidth(tr("gtswn.device.gui.footer"), 178),
+            this.fontRendererObj.trimStringToWidth(tr("gtswn.device.gui.footer"), 346),
             this.guiLeft + 162,
             this.guiTop + FOOTER_Y,
             GtswnGuiPalette.TEXT_MUTED);
     }
 
     void selectDesktopEntry(Entry entry) {
-        if (isCurrentEntry(entry)) selectedDesktopEntry = currentEntry(entry);
+        if (!isCurrentEntry(entry)) return;
+        selectedDesktopEntry = currentEntry(entry);
+        if (showRecipe) {
+            showRecipe = false;
+            for (Entry current : sortedEntries) expandedRecipes.add(current.key);
+        }
+        if (!expandedRecipes.remove(entry.key)) expandedRecipes.add(entry.key);
+        entryList.invalidateRows();
+    }
+
+    boolean recipeExpanded(Entry entry) {
+        return showRecipe || expandedRecipes.contains(entry.key);
+    }
+
+    String recipeText(Entry entry) {
+        com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding binding = new com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding(
+            anchor,
+            entry.key,
+            entry.dim,
+            entry.x,
+            entry.y,
+            entry.z,
+            entry.metaTileId);
+        DesktopDeviceSources.Reading reading = DesktopDeviceSources.read(binding);
+        return tr("gtswn.device.link.recipe") + " "
+            + com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceFields.recipeLine(reading.entry);
+    }
+
+    boolean linkAvailable(Entry entry) {
+        return isCurrentEntry(entry)
+            && entry.linkSummary.state == com.miaokatze.gtswn.common.device.DeviceLinkSummary.KNOWN
+            && DeviceTerminalClientCache.isFresh(anchor, System.currentTimeMillis())
+            && !DeviceTerminalClientCache.hasMorePending(anchor)
+            && hasLinkTerminal
+            && !com.miaokatze.gtswn.client.TerminalLinkClientState.pending();
+    }
+
+    void requestLink(Entry entry, boolean desired) {
+        if (linkAvailable(entry)) com.miaokatze.gtswn.client.TerminalLinkClientState.request(anchor, entry, desired);
+    }
+
+    String linkText(Entry entry) {
+        com.miaokatze.gtswn.common.device.DeviceLinkSummary summary = entry.linkSummary;
+        if (summary.state == com.miaokatze.gtswn.common.device.DeviceLinkSummary.NOT_APPLICABLE) return "—";
+        if (summary.state == com.miaokatze.gtswn.common.device.DeviceLinkSummary.UNKNOWN
+            || !DeviceTerminalClientCache.isFresh(anchor, System.currentTimeMillis())) return "?";
+        return summary.connected() + "/" + summary.total();
+    }
+
+    String linkTooltip(Entry entry) {
+        com.miaokatze.gtswn.network.PacketSyncDeviceLinkResult result = com.miaokatze.gtswn.client.TerminalLinkClientState
+            .result(anchor, entry);
+        if (result != null) return result.pending ? tr("gtswn.device.link.pending")
+            : StatCollector
+                .translateToLocalFormatted("gtswn.device.link.result", result.success, result.skipped, result.failed);
+        return tr(!hasLinkTerminal ? "gtswn.device.link.missing_terminal" : "gtswn.device.link.count_hint");
     }
 
     boolean isCurrentEntry(Entry entry) {
@@ -947,7 +1140,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         return this.sortedEntries;
     }
 
-    /** @return 显示配方开关（列表据此用单条配方行覆盖瞬时/平均两列区文本） */
+    /** @return 全部配方行展开开关 */
     boolean showRecipeEnabled() {
         return this.showRecipe;
     }
@@ -1066,6 +1259,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     @Override
     public void onClose() {
         closeNameEditor();
+        DesktopDeviceSources.nativeViewer(null);
         super.onClose();
     }
 }

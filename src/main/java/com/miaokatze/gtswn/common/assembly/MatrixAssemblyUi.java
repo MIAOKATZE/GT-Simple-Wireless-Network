@@ -37,6 +37,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
     private final MatrixAssemblyMember member;
     private BooleanSyncValue editable;
     private StringSyncValue status;
+    private StringSyncValue network;
     private int previewSlot;
 
     public MatrixAssemblyUi(MatrixAssemblyMember member) {
@@ -60,7 +61,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
         return new String[] { tr("gtswn.matrix.description." + type),
             StatCollector.translateToLocalFormatted(
                 "gtswn.matrix.description.tier",
-                GTValues.TIER_COLORS[5] + GTValues.VN[5] + EnumChatFormatting.RESET),
+                GTValues.TIER_COLORS[6] + GTValues.VN[6] + EnumChatFormatting.RESET),
             tr("gtswn.matrix.description.storage." + type), tr("gtswn.matrix.description.pattern"),
             tr("gtswn.matrix.description.interface_terminal"), tr("gtswn.matrix.description.requests"),
             tr("gtswn.matrix.description.blocking"), "", tr("gtswn.matrix.description.column"),
@@ -76,7 +77,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
     @Override
     protected int getBasePanelHeight() {
-        return super.getBasePanelHeight() + SLOT_SIZE + 28;
+        return super.getBasePanelHeight() + SLOT_SIZE + 44;
     }
 
     @Override
@@ -99,7 +100,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 .quarantined())
                 return member.matrixPort()
                     .fault();
-            if (group == null) return "minimum_five";
+            if (group == null) return "minimum_two";
             if (!group.reason()
                 .isEmpty()) return group.reason();
             return group.stage()
@@ -108,6 +109,11 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
         });
         sync.syncValue("matrix_editable", editable);
         sync.syncValue("matrix_status", status);
+        network = new StringSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            return label("network_connections") + " " + (group == null ? 0 : group.externalConnectionCount()) + " / 1";
+        });
+        sync.syncValue("matrix_network", network);
     }
 
     @Override
@@ -124,7 +130,14 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                         .asWidget()
                         .width(160)
                         .height(28)
-                        .scale(.7f)));
+                        .scale(.7f))
+                .child(
+                    IKey.dynamic(() -> translateTokens(network.getStringValue()))
+                        .asWidget()
+                        .width(160)
+                        .height(16)
+                        .scale(.7f)
+                        .addTooltipLine(tr("gtswn.matrix.network_rule"))));
     }
 
     private PatternSlot createPatternSlot(int index) {
@@ -255,6 +268,28 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
         boolean active = activePattern(group);
         StringBuilder text = new StringBuilder();
         if (group != null) {
+            text.append(label("network_connections"))
+                .append(' ')
+                .append(group.externalConnectionCount())
+                .append(" / 1\n")
+                .append(label("network_entry"))
+                .append(' ');
+            int[] entry = group.networkEntryPosition();
+            if (entry == null) text.append(label("unbound"));
+            else text.append(label("dimension"))
+                .append(' ')
+                .append(entry[0])
+                .append(" @ ")
+                .append(entry[1])
+                .append(", ")
+                .append(entry[2])
+                .append(", ")
+                .append(entry[3]);
+            text.append('\n')
+                .append(label("buffer_rule"))
+                .append('\n')
+                .append(label("order_rule"))
+                .append('\n');
             int[] position = group.diagnosticControllerPosition();
             text.append(label("controller"))
                 .append(' ');
@@ -308,7 +343,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                         pattern,
                         owner.getBaseMetaTileEntity()
                             .getWorld());
-                    String previewReason = group == null ? "minimum_five" : group.previewReason(layout);
+                    String previewReason = group == null ? "minimum_two" : group.previewReason(layout);
                     text.append(previewReason.isEmpty() ? label("preview_valid") : reason(previewReason))
                         .append('\n');
                 }
@@ -339,21 +374,18 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 .size(); i++) appendMember(text, group, layout, true, i, active);
             text.append(label("native_progress"))
                 .append(' ');
-            if (group.session() == null) text.append(label("unbound"));
-            else text.append(
-                group.session()
-                    .controller().mProgresstime)
+            int[] progress = group.diagnosticProgress();
+            if (progress == null) text.append(label("unbound"));
+            else text.append(progress[0])
                 .append('/')
-                .append(
-                    group.session()
-                        .controller().mMaxProgresstime);
+                .append(progress[1]);
             text.append('\n');
             text.append(
                 reason(
                     group.reason()
                         .isEmpty() ? "idle" : group.reason()));
         } else {
-            text.append(reason("minimum_five"));
+            text.append(reason("minimum_two"));
         }
         return text.toString();
     }

@@ -57,14 +57,14 @@ public class MatrixAssemblyTexturesTest {
         iconName.setAccessible(true);
         Map<String, IIconContainer> bridges = new LinkedHashMap<>();
         for (Runnable task : GregTechAPI.sGTBlockIconload) {
-            if (task instanceof GTCustomBlockIconContainer
-                && ((String) iconName.get(task)).startsWith("gtswn:matrix/")) {
+            if (task instanceof GTCustomBlockIconContainer && (((String) iconName.get(task)).startsWith("gtswn:matrix/")
+                || "gtswn:matrix_input_center".equals(iconName.get(task)))) {
                 assertNull(
                     "duplicate bridge registration",
                     bridges.put((String) iconName.get(task), (IIconContainer) task));
             }
         }
-        assertEquals("MTE hooks must queue every bridge before any front texture is requested", 16, bridges.size());
+        assertEquals("MTE hooks must queue the center and every bridge before rendering", 17, bridges.size());
         int queueSize = GregTechAPI.sGTBlockIconload.size();
 
         Field singleton = Minecraft.class.getDeclaredField("theMinecraft");
@@ -144,7 +144,7 @@ public class MatrixAssemblyTexturesTest {
             ((Runnable) bridge).run();
             assertSame(register.icons.get(entry.getKey()), bridge.getIcon());
         }
-        assertEquals(16, register.icons.size());
+        assertEquals(17, register.icons.size());
     }
 
     private static <T extends MTEHatch & MatrixAssemblyMember> T member(Class<T> type) throws Exception {
@@ -177,7 +177,7 @@ public class MatrixAssemblyTexturesTest {
                 assertNotNull("block atlas resource must exist: " + path, input);
                 BufferedImage image = ImageIO.read(input);
                 assertEquals(16, image.getWidth());
-                assertEquals(16, image.getHeight());
+                assertEquals(16 * 16, image.getHeight());
             } catch (IOException e) {
                 throw new AssertionError(e);
             }

@@ -163,14 +163,18 @@ final class AssemblyPatternFixtures {
     }
 
     static ICraftingPatternDetails ultimate(IAEStack<?>[] inputs, IAEItemStack output) throws Exception {
+        return ultimate(inputs, new IAEStack<?>[] { output });
+    }
+
+    static ICraftingPatternDetails ultimate(IAEStack<?>[] inputs, IAEStack<?>... outputs) throws Exception {
         UltimatePatternHelper helper = (UltimatePatternHelper) unsafe.allocateInstance(UltimatePatternHelper.class);
-        set(UltimatePatternHelper.class, helper, "patternItem", pattern(ultimatePattern, inputs, output));
+        set(UltimatePatternHelper.class, helper, "patternItem", pattern(ultimatePattern, inputs, outputs));
         set(UltimatePatternHelper.class, helper, "aeInputs", inputs);
-        set(UltimatePatternHelper.class, helper, "aeOutputs", new IAEStack<?>[] { output });
+        set(UltimatePatternHelper.class, helper, "aeOutputs", outputs);
         return helper;
     }
 
-    private static ItemStack pattern(Item item, IAEStack<?>[] inputs, IAEItemStack output) {
+    private static ItemStack pattern(Item item, IAEStack<?>[] inputs, IAEStack<?>... outputs) {
         ItemStack stack = new ItemStack(item);
         NBTTagCompound tag = new NBTTagCompound();
         NBTTagList in = new NBTTagList(), out = new NBTTagList();
@@ -179,9 +183,11 @@ final class AssemblyPatternFixtures {
             if (input != null) encodeDeclaration(input, entry);
             in.appendTag(entry);
         }
-        NBTTagCompound entry = new NBTTagCompound();
-        encodeDeclaration(output, entry);
-        out.appendTag(entry);
+        for (IAEStack<?> output : outputs) {
+            NBTTagCompound entry = new NBTTagCompound();
+            if (output != null) encodeDeclaration(output, entry);
+            out.appendTag(entry);
+        }
         tag.setTag("in", in);
         tag.setTag("out", out);
         stack.setTagCompound(tag);

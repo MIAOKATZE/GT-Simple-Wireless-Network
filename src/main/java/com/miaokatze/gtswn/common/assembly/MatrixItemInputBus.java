@@ -21,7 +21,6 @@ import com.cleanroommc.modularui.factory.PosGuiData;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.UISettings;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
-import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyBinding;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
 
@@ -44,7 +43,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatchInputBus;
 import io.netty.buffer.ByteBuf;
 
-/** One physical position in a native assembly line; no manual or pipe insertion. */
+/** One physical ordered item position; machines consume the normal input inventory. */
 @IMetaTileEntity.SkipGenerateDescription
 public final class MatrixItemInputBus extends MTEHatchInputBus
     implements MatrixAssemblyMember, IGridProxyable, ICraftingProvider, IPowerChannelState, IInterfaceViewable {
@@ -53,13 +52,13 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
     private final IInventory interfacePatterns = new MatrixPatternInventoryAdapter(matrix);
 
     public MatrixItemInputBus(int id, String name, String localName) {
-        super(id, name, localName, 5, 1);
+        super(id, name, localName, 6, 1);
         inventoryHandler.setSize(0);
         disableSort = true;
     }
 
     private MatrixItemInputBus(String name, String[] description, ITexture[][][] textures) {
-        super(name, 5, 1, description, textures);
+        super(name, 6, 1, description, textures);
         inventoryHandler.setSize(0);
         disableSort = true;
     }
@@ -126,27 +125,31 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
 
     @Override
     public ItemStack getFirstStack() {
-        return NativeAssemblyAdapter.permitsNativeAccess(this) ? mInventory[0] : null;
+        return matrix.permitsInputAccess() ? mInventory[0] : null;
     }
 
     @Override
     public ItemStack getStackInSlot(int slot) {
-        return slot == 0 && NativeAssemblyAdapter.permitsNativeAccess(this) ? mInventory[0] : null;
+        return slot == 0 && matrix.permitsInputAccess() ? mInventory[0] : null;
     }
 
     @Override
     public ItemStack[] getRealInventory() {
-        return NativeAssemblyAdapter.permitsNativeAccess(this) ? mInventory : new ItemStack[0];
+        return matrix.permitsInputAccess() ? mInventory : new ItemStack[0];
     }
 
     @Override
     public void setInventorySlotContents(int slot, ItemStack stack) {
-        if (slot == 0 && NativeAssemblyAdapter.permitsNativeAccess(this)) mInventory[0] = stack;
+        if (slot == 0 && matrix.permitsInputAccess()) mInventory[0] = stack;
     }
 
     @Override
     public ItemStack decrStackSize(int slot, int amount) {
-        return null;
+        if (slot != 0 || amount <= 0 || !matrix.permitsInputAccess() || mInventory[0] == null) return null;
+        ItemStack removed = mInventory[0].splitStack(Math.min(amount, mInventory[0].stackSize));
+        updateSlots();
+        matrix.changed();
+        return removed;
     }
 
     @Override
@@ -364,7 +367,7 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
 
     @Override
     public void gridChanged() {
-        matrix.changed();
+        matrix.networkChanged();
     }
 
     @Override

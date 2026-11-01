@@ -82,6 +82,7 @@ import io.netty.channel.embedded.EmbeddedChannel;
 final class OrderedAssemblyScenario implements TestScenario {
 
     private static final int X = -4, Y = 69, Z = 12;
+    private static final int INPUTS = 16, COPIES = 16;
     private BaseMetaTileEntity controllerTile, energyTile, outputTile;
     private MTEAssemblyLine controller;
     private MTEHatchOutputBus output;
@@ -111,6 +112,9 @@ final class OrderedAssemblyScenario implements TestScenario {
     private long stageTick, firstRun;
     private String stagedStock;
     private boolean progressObserved, powerObserved;
+    private int pausedProgress;
+    private long pausedSequence;
+    private String pausedStock;
 
     @Override
     public String id() {
@@ -119,7 +123,7 @@ final class OrderedAssemblyScenario implements TestScenario {
 
     @Override
     public String description() {
-        return "Real interface terminal pattern management, formation/research publication gates, and two native AL batches";
+        return "Sixteen real AE CPU requests cached by ordered position, reversed ME entry, and native pause/recovery";
     }
 
     @Override
@@ -159,47 +163,21 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + "; identity="
                 + session.controllerId());
         buildLine(ctx);
+        pureFluidColumn(ctx);
         checkStructure(ctx);
         require(
             ctx,
-            controller.mInputBusses.size() == 4,
-            "Real native scan registers exactly four item inputs for the minimum-count counterexample");
-        require(
-            ctx,
-            master().matrixPort()
-                .group() == null
-                || !master().matrixPort()
-                    .group()
-                    .accepting(),
-            "A real four-member input row cannot accept a batch");
-        ctx.event(
-            "minimum_count",
-            "nativeFormed=" + controller.mMachine
-                + "; inputs="
-                + controller.mInputBusses.size()
-                + "; nativeBegin="
-                + session.beginCheck()
-                + "; blocked="
-                + session.blockedReason());
-        // The fifth slice retains its real item input; the output goes in the native side position.
-        machine(ctx, 4, 2, 1, GTSWNItemList.Matrix_Grouped_Item_Input_ME.get(1), ForgeDirection.DOWN);
-        outputTile = machine(ctx, 4, 2, 0, ItemList.Hatch_Output_Bus_LV.get(1), ForgeDirection.DOWN);
-        outputTile.disableWorking();
-        output = (MTEHatchOutputBus) outputTile.getMetaTileEntity();
-        checkStructure(ctx);
-        require(
-            ctx,
-            controller.mMachine && controller.mInputBusses.size() == 5,
-            "The actual native five-slice structure is formed with five ordered item inputs");
+            controller.mMachine && controller.mInputBusses.size() == INPUTS,
+            "The actual sixteen-slice native structure is formed with sixteen item inputs");
         group = master().matrixPort()
             .group();
         require(
             ctx,
             group != null && group.itemMembers()
-                .size() == 5
+                .size() == INPUTS
                 && group.fluidMembers()
-                    .size() == 1,
-            "Successful native registration binds five item owners and one fluid owner");
+                    .size() == 3,
+            "Successful native registration binds sixteen item owners and three fluid owners");
         otherControllerCounterexample(ctx);
         controllerTile.enableWorking();
         BaseMetaTileEntity branch = machine(
@@ -313,7 +291,7 @@ final class OrderedAssemblyScenario implements TestScenario {
             powerObserved |= controller.lEUt < 0;
         }
         if (ctx.tick() % 20 == 0 && stage >= 4) ctx.event("native_sample", nativeState());
-        if ((stage == 7 || stage == 12) && !published(ctx))
+        if (stage == 7 && !published(ctx))
             throw new IllegalStateException("The processing output disappeared from native craftable lists while busy");
         switch (stage) {
             case 1:
@@ -373,7 +351,6 @@ final class OrderedAssemblyScenario implements TestScenario {
                 transition(ctx, 14, "Verify the formed AL still withholds patterns without research authorization");
                 break;
             case 2:
-            case 10:
                 if (!planning.isDone()) return;
                 ICraftingJob job = planning.get();
                 require(ctx, !job.isSimulation(), "Actual cell stock satisfies the AE crafting calculation");
@@ -387,10 +364,8 @@ final class OrderedAssemblyScenario implements TestScenario {
                 ctx.event(
                     "cpu_job",
                     "batch=" + batch + "; id=" + link.getCraftingID() + "; byteTotal=" + job.getByteTotal());
-                if (stage == 2) {
-                    firstLink = link.getCraftingID();
-                    transition(ctx, 3, "Wait for the authorized first CPU batch to enter the formed AL");
-                } else transition(ctx, 11, "Wait for real CPU medium delivery");
+                firstLink = link.getCraftingID();
+                transition(ctx, 3, "Wait for all sixteen real CPU deliveries to accumulate behind output protection");
                 break;
             case 14:
                 observeBlockedCatalogue(ctx);
@@ -420,31 +395,35 @@ final class OrderedAssemblyScenario implements TestScenario {
                         && cpu.getUsedStorage() == 0,
                     "Formation and current research publish the pattern before the first CPU job is submitted");
                 logPublication(ctx, "formed-researched-before-job");
-                beginJob(ctx);
-                transition(ctx, 2, "Calculate first real AE CPU request after formation and research authorization");
+                extraConnection(ctx, true);
+                transition(ctx, 18, "Verify multiple real external ME connections stop the empty group");
                 break;
             case 3:
-                if (group.stage() != OrderedAssemblyGroup.Stage.STAGED) return;
+                if (group.stage() != OrderedAssemblyGroup.Stage.STAGED || !allCopiesStaged()) return;
                 stagedStock = stock();
                 assertStaged(ctx);
                 assertLockedInterface(ctx);
                 require(ctx, published(ctx), "Staged native work retains its native ME craftable output flag");
                 MEInventoryCrafting retry = table(layout);
+                retry.getAEStackInSlot(0)
+                    .setStackSize(
+                        retry.getAEStackInSlot(0)
+                            .getStackSize() + 1);
                 String before = tableSnapshot(retry);
                 require(
                     ctx,
-                    master().matrixPort()
+                    !master().matrixPort()
                         .busy(),
-                    "The medium is busy while one real CPU batch is staged");
+                    "The medium remains available for the active pattern while sixteen real copies are cached");
                 require(
                     ctx,
                     !master().matrixPort()
                         .pushPattern(layout.details(), retry),
-                    "A second delivery is rejected during the first in-flight batch");
+                    "An inconsistent whole delivery is rejected without injecting synthetic probe materials");
                 require(
                     ctx,
                     before.equals(tableSnapshot(retry)) && stagedStock.equals(stock()),
-                    "Busy refusal preserves every caller table and physical owner quantity");
+                    "Whole-package rejection preserves the caller table and all sixteen physical owner quantities");
                 ctx.event("cpu_delivery", "batch=1; stock=" + stagedStock + "; ledger=" + group.saveLedger());
                 session.requestRecipeCheck();
                 transition(ctx, 4, "Observe native output protection without consuming staged materials");
@@ -485,11 +464,12 @@ final class OrderedAssemblyScenario implements TestScenario {
             case 17:
                 if (session.runSequence() == firstRun) return;
                 assertRunning(ctx, firstRun + 1);
-                transition(ctx, 7, "Observe first native powered production");
+                extraConnection(ctx, true);
+                transition(ctx, 20, "Wait for a second actual ME attachment during powered production");
                 break;
             case 7:
-            case 12:
-                if (controller.mMaxProgresstime != 0 || outputAmount() != recipe.mOutput.stackSize) return;
+                assertRemainingPositions();
+                if (controller.mMaxProgresstime != 0 || outputAmount() != recipe.mOutput.stackSize * COPIES) return;
                 require(
                     ctx,
                     "LOCAL_FINISHED".equals(session.lastNativeEvent()),
@@ -512,17 +492,16 @@ final class OrderedAssemblyScenario implements TestScenario {
                         + "; "
                         + nativeState());
                 outputTile.enableWorking();
-                transition(ctx, stage == 7 ? 8 : 13, "Let native bus and physical ME Interface deliver output to AE");
+                transition(ctx, 8, "Let the native bus and physical ME Interface return all sixteen outputs to AE");
                 break;
             case 8:
-            case 13:
-                long expected = (long) batch * recipe.mOutput.stackSize;
+                long expected = (long) COPIES * recipe.mOutput.stackSize;
                 if (cpu.isBusy() || cpu.getUsedStorage() != 0 || itemAmount(recipe.mOutput) != expected) return;
                 require(
                     ctx,
                     !link.isCanceled() && outputAmount() == 0,
                     "Actual CPU completion coincides with exact crafted output in AE storage and an empty native bus");
-                if (batch == 1) require(
+                require(
                     ctx,
                     firstLink.equals(link.getCraftingID()),
                     "The first authorized CPU job completes without resubmission after staged research recovery");
@@ -541,35 +520,67 @@ final class OrderedAssemblyScenario implements TestScenario {
                         + cpu.getUsedStorage()
                         + "; actualStored="
                         + itemAmount(recipe.mOutput));
-                if (stage == 8) {
-                    if (!group.accepting()) return;
-                    outputDeclarationCounterexample(ctx);
-                    outputTile.disableWorking();
-                    beginJob(ctx);
-                    transition(ctx, 10, "Submit the identical pattern as a distinct second CPU request");
-                } else {
-                    for (ItemStack input : recipe.mInputs) require(
-                        ctx,
-                        itemAmount(input) == 0,
-                        "Two real batches consumed the exact seeded item stock: " + stack(input));
-                    require(
-                        ctx,
-                        fluidAmount(recipe.mFluidInputs[0]) == 0,
-                        "Two real batches consumed the exact seeded fluid stock");
-                    require(
-                        ctx,
-                        session.runSequence() == firstRun + 2,
-                        "Identical successive requests caused exactly two native consumption sequences");
-                    ctx.pass(
-                        "Native interface-terminal pattern management and formation/research publication gates passed; "
-                            + "jobs were submitted only after authorization, then two jobs completed native processing "
-                            + "and exact AE return with the original processing gates retained");
-                }
+                if (!group.accepting()) return;
+                outputDeclarationCounterexample(ctx);
+                for (ItemStack input : recipe.mInputs) require(
+                    ctx,
+                    itemAmount(input) == 0,
+                    "Sixteen native runs consumed the exact seeded material stock: " + stack(input));
+                for (FluidStack input : recipe.mFluidInputs)
+                    require(ctx, fluidAmount(input) == 0, "Sixteen native runs consumed the exact seeded fluid stock");
+                require(
+                    ctx,
+                    session.runSequence() == firstRun + COPIES,
+                    "Exactly sixteen native single-copy consumption sequences completed from the one real CPU job");
+                assertRemainingPositions();
+                ctx.pass(
+                    "Sixteen-position physical caching, reverse-end ordering, empty/in-flight multi-entry pause "
+                        + "and recovery, pure-fluid grouping, native safety gates and exact real CPU return passed");
                 break;
-            case 11:
-                if (session.runSequence() == firstRun + 1) return;
-                assertRunning(ctx, firstRun + 2);
-                transition(ctx, 12, "Observe the second independently consumed native batch");
+            case 18:
+                if (group.externalConnectionCount() != 2 || ctx.tick() - stageTick < 40) return;
+                require(
+                    ctx,
+                    !group.accepting() && !group.permitsMachineWork()
+                        && !published(ctx)
+                        && "multiple_external_connections".equals(group.reason())
+                        && !cpu.isBusy()
+                        && Arrays.equals(seededTotals, materialTotals()),
+                    "Two external connections withdraw the empty group's catalogue and prohibit native work");
+                ctx.event("empty_multiple_connections", nativeState());
+                extraConnection(ctx, false);
+                transition(ctx, 19, "Restore the same unique reverse-end ME entry before submitting real work");
+                break;
+            case 19:
+                if (group.externalConnectionCount() != 1 || !published(ctx)) return;
+                beginJob(ctx);
+                transition(ctx, 2, "Calculate one real AE CPU request for sixteen newly registered matrix buses");
+                break;
+            case 20:
+                if (group.externalConnectionCount() != 2) return;
+                pausedProgress = controller.mProgresstime;
+                pausedSequence = session.runSequence();
+                pausedStock = stock();
+                transition(ctx, 21, "Observe forty natural ticks with in-flight processing paused by multiple entries");
+                break;
+            case 21:
+                if (ctx.tick() - stageTick < 40) return;
+                require(
+                    ctx,
+                    group.externalConnectionCount() == 2 && !group.permitsMachineWork()
+                        && controller.mProgresstime == pausedProgress
+                        && session.runSequence() == pausedSequence
+                        && pausedStock.equals(stock())
+                        && controller.mMaxProgresstime > 0,
+                    "Multiple external ME attachments pause actual native progress and retain all cached materials");
+                ctx.event("inflight_multiple_connections", nativeState() + "; stock=" + stock());
+                extraConnection(ctx, false);
+                transition(ctx, 22, "Restore the original unique ME entry and resume the same native run");
+                break;
+            case 22:
+                if (group.externalConnectionCount() != 1 || !published(ctx)) return;
+                require(ctx, group.permitsMachineWork(), "The original unique ME entry restores the same group");
+                transition(ctx, 7, "Observe all sixteen original native runs and exact per-position consumption");
                 break;
             default:
                 throw new IllegalStateException("Unknown ordered assembly probe stage " + stage);
@@ -590,7 +601,7 @@ final class OrderedAssemblyScenario implements TestScenario {
     }
 
     private void buildLine(TestContext ctx) {
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < INPUTS; i++) {
             block(ctx, i, -1, 1, GregTechAPI.sBlockCasings2, 0);
             if (i != 0) block(ctx, i, 0, 0, GregTechAPI.sBlockCasings3, 10);
             block(ctx, i, 0, 1, GregTechAPI.sBlockCasings2, 9);
@@ -600,22 +611,20 @@ final class OrderedAssemblyScenario implements TestScenario {
             block(ctx, i, 1, 2, Blocks.glass, 0);
             block(ctx, i, 2, 0, GregTechAPI.sBlockCasings2, 0);
             block(ctx, i, 2, 2, GregTechAPI.sBlockCasings2, 0);
-            machine(
-                ctx,
-                i,
-                2,
-                1,
-                i == 4 ? ItemList.Hatch_Output_Bus_LV.get(1) : GTSWNItemList.Matrix_Grouped_Item_Input_ME.get(1),
-                ForgeDirection.DOWN);
+            machine(ctx, i, 2, 1, GTSWNItemList.Matrix_Grouped_Item_Input_ME.get(1), ForgeDirection.DOWN);
         }
-        machine(ctx, 0, 2, 0, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME.get(1), ForgeDirection.DOWN);
+        for (int i = 0; i < 3; i++)
+            machine(ctx, i, 2, 0, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME.get(1), ForgeDirection.DOWN);
+        outputTile = machine(ctx, INPUTS - 1, 2, 0, ItemList.Hatch_Output_Bus_LV.get(1), ForgeDirection.DOWN);
+        outputTile.disableWorking();
+        output = (MTEHatchOutputBus) outputTile.getMetaTileEntity();
         machine(ctx, 0, 2, 2, ItemList.Hatch_Maintenance.get(1), ForgeDirection.DOWN);
-        energyTile = machine(ctx, 0, -1, 1, ItemList.Hatch_Energy_ZPM.get(1), ForgeDirection.UP);
+        energyTile = machine(ctx, 0, -1, 1, ItemList.Hatch_Energy_UHV.get(1), ForgeDirection.UP);
         energyTile.attachCover(
             CoverRegistry.buildCover(ItemList.Cover_Wireless_Energy_Debug.get(1), ForgeDirection.UP, energyTile));
         ctx.event(
             "power_fixture",
-            "Native GT wireless energy debug cover on a real ZPM energy hatch; "
+            "Native GT wireless energy debug cover on a real UHV energy hatch; "
                 + "no per-tick material insertion, manual progress advance or manual native completion");
     }
 
@@ -645,27 +654,55 @@ final class OrderedAssemblyScenario implements TestScenario {
             .getBaseMetaTileEntity();
         require(
             ctx,
-            !machine.addToMachineList(item, 16) && !machine.addInputBusToMachineList(item, 16)
-                && !machine.addInputHatchToMachineList(fluid, 16)
-                && machine.mInputBusses.isEmpty()
-                && machine.mInputHatches.isEmpty(),
-            "A real unsupported blast-furnace controller rejects the ordered members at all native registration entrances");
+            machine.addInputBusToMachineList(item, 16) && machine.addInputHatchToMachineList(fluid, 16)
+                && machine.mInputBusses.contains(item.getMetaTileEntity())
+                && machine.mInputHatches.contains(fluid.getMetaTileEntity()),
+            "A normal native GT controller accepts ordinary item/fluid input registration without bypassing formation");
+        machine.mInputBusses.clear();
+        machine.mInputHatches.clear();
+    }
+
+    private void pureFluidColumn(TestContext ctx) {
+        BaseMetaTileEntity first = TestWorldFixtures
+            .machine(ctx.world(), 12, Y, 24, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME.get(1), owner.getUniqueID());
+        BaseMetaTileEntity second = TestWorldFixtures
+            .machine(ctx.world(), 13, Y, 24, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME.get(1), owner.getUniqueID());
+        MatrixAssemblyMember member = (MatrixAssemblyMember) first.getMetaTileEntity();
+        OrderedAssemblyGroup.refreshTopology(member);
+        OrderedAssemblyGroup fluidGroup = member.matrixPort()
+            .group();
+        require(
+            ctx,
+            fluidGroup != null && fluidGroup.itemMembers()
+                .isEmpty()
+                && fluidGroup.fluidMembers()
+                    .size() == 2
+                && fluidGroup.editable()
+                && fluidGroup.master()
+                    .matrixFluid()
+                && !fluidGroup.accepting(),
+            "Two real horizontal fluid members form an independently configurable pure-fluid group");
+        ctx.world()
+            .setBlockToAir(first.xCoord, first.yCoord, first.zCoord);
+        ctx.world()
+            .setBlockToAir(second.xCoord, second.yCoord, second.zCoord);
     }
 
     private void selectRecipe(TestContext ctx) {
         List<RecipeAssemblyLine> candidates = new ArrayList<>();
         for (RecipeAssemblyLine candidate : RecipeAssemblyLine.sAssemblylineRecipes) {
-            if (candidate.mInputs.length != 4 || candidate.mFluidInputs.length != 1
+            if (candidate.mInputs.length != INPUTS || candidate.mFluidInputs.length != 3
                 || candidate.mEUt <= 0
                 || candidate.mEUt > 131072
                 || candidate.mDuration < 40
                 || candidate.mDuration > 2400
                 || candidate.mOutput == null
+                || !candidate.mOutput.isItemEqual(GTSWNItemList.Matrix_Grouped_Item_Input_ME.get(1))
                 || candidate.mOutput.stackSize <= 0
                 || candidate.mOutput.stackSize > 64) continue;
-            boolean valid = candidate.mFluidInputs[0] != null && candidate.mFluidInputs[0].amount > 0
-                && candidate.mFluidInputs[0].amount <= 64000
-                && candidate.mFluidInputs[0].tag == null;
+            boolean valid = true;
+            for (FluidStack fluid : candidate.mFluidInputs)
+                valid &= fluid != null && fluid.amount == 576 && fluid.tag == null;
             for (ItemStack input : candidate.mInputs)
                 valid &= input != null && input.stackSize > 0 && input.stackSize <= 64;
             if (valid) candidates.add(candidate);
@@ -701,7 +738,7 @@ final class OrderedAssemblyScenario implements TestScenario {
         require(
             ctx,
             recipe != null,
-            "An existing unambiguous four-item/one-fluid native registry recipe fits the bounded probe");
+            "The actual newly registered sixteen-position, three-fluid matrix item-bus recipe is selected");
         ctx.event(
             "registry_recipe",
             "registrySize=" + RecipeAssemblyLine.sAssemblylineRecipes.size()
@@ -799,8 +836,8 @@ final class OrderedAssemblyScenario implements TestScenario {
         }
         require(
             ctx,
-            count == 6 && visible == 1 && masterTracker != null && correct,
-            "Native tracked maps expose one default-visible master and five hidden 4x9 matrix entries");
+            count == INPUTS + 3 && visible == 1 && masterTracker != null && correct,
+            "Native tracked maps expose one default-visible master and eighteen hidden 4x9 matrix entries");
         ctx.event(
             "interface_update_packet",
             "origin=constructor.updateList; class=" + packet.getClass()
@@ -953,15 +990,17 @@ final class OrderedAssemblyScenario implements TestScenario {
     }
 
     private long[] materialTotals() throws Exception {
-        long[] totals = new long[recipe.mInputs.length + 1];
+        long[] totals = new long[recipe.mInputs.length + recipe.mFluidInputs.length];
         var reserved = ((CraftingCPUCluster) cpu).getInventory();
         for (int i = 0; i < recipe.mInputs.length; i++) {
             IAEItemStack pending = reserved.findPrecise(AEItemStack.create(recipe.mInputs[i]));
             totals[i] = itemAmount(recipe.mInputs[i]) + (pending == null ? 0 : pending.getStackSize());
         }
-        IAEFluidStack pending = reserved.findPrecise(AEFluidStack.create(recipe.mFluidInputs[0]));
-        totals[totals.length - 1] = fluidAmount(recipe.mFluidInputs[0])
-            + (pending == null ? 0 : pending.getStackSize());
+        for (int i = 0; i < recipe.mFluidInputs.length; i++) {
+            IAEFluidStack pending = reserved.findPrecise(AEFluidStack.create(recipe.mFluidInputs[i]));
+            totals[recipe.mInputs.length + i] = fluidAmount(recipe.mFluidInputs[i])
+                + (pending == null ? 0 : pending.getStackSize());
+        }
         return totals;
     }
 
@@ -1131,9 +1170,9 @@ final class OrderedAssemblyScenario implements TestScenario {
     }
 
     private void buildAe(TestContext ctx) throws Exception {
-        int[] bus = position(0, 2, 1);
+        int[] bus = position(INPUTS - 1, 2, 1);
         int ax = bus[0], ay = bus[1] - 1, az = bus[2];
-        int stepX = position(1, 2, 1)[0] - ax;
+        int stepX = position(INPUTS - 2, 2, 1)[0] - ax;
         // Native adjacent blocks carry the network; no fake grid, direct medium call or inventory mirror is used.
         aeController = ae(
             ctx,
@@ -1166,17 +1205,6 @@ final class OrderedAssemblyScenario implements TestScenario {
                 .definitions()
                 .blocks()
                 .drive()
-                .maybeStack(1)
-                .get());
-        for (int i = 1; i <= 4; i++) ae(
-            ctx,
-            ax + stepX * i,
-            ay,
-            az,
-            AEApi.instance()
-                .definitions()
-                .blocks()
-                .iface()
                 .maybeStack(1)
                 .get());
         ae(
@@ -1219,8 +1247,9 @@ final class OrderedAssemblyScenario implements TestScenario {
         Item fluidCell = (Item) Class.forName("com.glodblock.github.loader.ItemAndBlockHolder")
             .getField("CELL1K")
             .get(null);
-        drive.getInternalInventory()
-            .setInventorySlotContents(1, new ItemStack(fluidCell));
+        // AE2FC basic cells each hold one fluid type; this recipe has three distinct fluid positions.
+        for (int i = 0; i < recipe.mFluidInputs.length; i++) drive.getInternalInventory()
+            .setInventorySlotContents(i + 1, new ItemStack(fluidCell));
         TestWorldFixtures.place(
             ctx.world(),
             ax,
@@ -1273,23 +1302,25 @@ final class OrderedAssemblyScenario implements TestScenario {
 
     private void seedCells(TestContext ctx) throws Exception {
         for (ItemStack input : recipe.mInputs) {
-            ItemStack twice = input.copy();
-            twice.stackSize *= 2;
+            ItemStack seeded = input.copy();
+            seeded.stackSize *= COPIES;
             require(
                 ctx,
                 proxy.getStorage()
                     .getItemInventory()
-                    .injectItems(AEItemStack.create(twice), Actionable.MODULATE, source) == null,
-                "Real item storage accepts two copies of a recipe ingredient");
+                    .injectItems(AEItemStack.create(seeded), Actionable.MODULATE, source) == null,
+                "Real item storage accepts sixteen copies of the declared position's ingredient");
         }
-        FluidStack fluid = recipe.mFluidInputs[0].copy();
-        fluid.amount *= 2;
-        require(
-            ctx,
-            proxy.getStorage()
-                .getFluidInventory()
-                .injectItems(AEFluidStack.create(fluid), Actionable.MODULATE, source) == null,
-            "Real fluid storage accepts exactly two native fluid requirements");
+        for (FluidStack required : recipe.mFluidInputs) {
+            FluidStack fluid = required.copy();
+            fluid.amount *= COPIES;
+            require(
+                ctx,
+                proxy.getStorage()
+                    .getFluidInventory()
+                    .injectItems(AEFluidStack.create(fluid), Actionable.MODULATE, source) == null,
+                "Real fluid storage accepts exactly 9216 mB for each of the three fluid positions");
+        }
         require(ctx, itemAmount(recipe.mOutput) == 0, "The output type is absent before real CPU production");
         ctx.event(
             "seeded_cells",
@@ -1305,8 +1336,13 @@ final class OrderedAssemblyScenario implements TestScenario {
     private void beginJob(TestContext ctx) throws Exception {
         batch++;
         ICraftingGrid crafting = proxy.getCrafting();
-        planning = crafting
-            .beginCraftingJob(ctx.world(), proxy.getGrid(), source, AEItemStack.create(recipe.mOutput), null);
+        planning = crafting.beginCraftingJob(
+            ctx.world(),
+            proxy.getGrid(),
+            source,
+            AEItemStack.create(recipe.mOutput)
+                .setStackSize((long) recipe.mOutput.stackSize * COPIES),
+            null);
     }
 
     private void assertStaged(TestContext ctx) throws Exception {
@@ -1327,7 +1363,9 @@ final class OrderedAssemblyScenario implements TestScenario {
                 ItemStack actual = member.mInventory[0];
                 require(
                     ctx,
-                    ItemStack.areItemStacksEqual(actual, recipe.mInputs[i])
+                    actual != null && actual.isItemEqual(recipe.mInputs[i])
+                        && ItemStack.areItemStackTagsEqual(actual, recipe.mInputs[i])
+                        && actual.stackSize == recipe.mInputs[i].stackSize * COPIES
                         && member.getRealInventory() == member.mInventory
                         && member.getFirstStack() == actual,
                     "Native item position " + i
@@ -1336,20 +1374,22 @@ final class OrderedAssemblyScenario implements TestScenario {
         } finally {
             leave.invoke(null, previous);
         }
+        for (int i = 0; i < recipe.mFluidInputs.length; i++) {
+            FluidStack actual = group.fluidMembers()
+                .get(i)
+                .matrixFluidStack();
+            require(
+                ctx,
+                actual != null && actual.isFluidEqual(recipe.mFluidInputs[i]) && actual.amount == 9216,
+                "Physical fluid position " + i + " stores exactly 9216 mB");
+        }
         require(
             ctx,
-            group.itemMembers()
-                .get(4)
-                .matrixItem() == null,
-            "The controlled fifth input remains empty");
-        FluidStack actual = group.fluidMembers()
-            .get(0)
-            .matrixFluidStack();
-        require(
-            ctx,
-            actual != null && actual.isFluidEqual(recipe.mFluidInputs[0])
-                && actual.amount == recipe.mFluidInputs[0].amount,
-            "The physical fluid owner holds the exact native mB amount");
+            Arrays.equals(group.diagnosticMemberPosition(false, 0), position(INPUTS - 1, 2, 1))
+                && Arrays.equals(group.diagnosticMemberPosition(false, INPUTS - 1), position(0, 2, 1))
+                && controller.mInputBusses.equals(group.itemMembers())
+                && controller.mInputHatches.equals(group.fluidMembers()),
+            "Reverse-end ME entry determines physical intake, diagnostics and actual native input ordering");
     }
 
     private void assertRunning(TestContext ctx, long sequence) {
@@ -1357,14 +1397,7 @@ final class OrderedAssemblyScenario implements TestScenario {
             ctx,
             session.runSequence() == sequence && group.stage() == OrderedAssemblyGroup.Stage.RUNNING,
             "A unique native consumption sequence changes the batch to RUNNING");
-        for (MatrixAssemblyMember item : group.itemMembers()) require(
-            ctx,
-            item.matrixItem() == null || item.matrixItem().stackSize == 0,
-            "Native consumption emptied the actual physical item owner");
-        for (MatrixAssemblyMember fluid : group.fluidMembers()) require(
-            ctx,
-            fluid.matrixFluidStack() == null || fluid.matrixFluidStack().amount == 0,
-            "Native consumption emptied the actual physical fluid owner");
+        assertRemainingPositions();
         require(
             ctx,
             controller.mMaxProgresstime > 0 && controller.lEUt < 0,
@@ -1372,6 +1405,64 @@ final class OrderedAssemblyScenario implements TestScenario {
         ctx.event(
             "native_started",
             "batch=" + batch + "; tick=" + ctx.tick() + "; " + nativeState() + "; ledger=" + group.saveLedger());
+    }
+
+    private boolean allCopiesStaged() {
+        for (int i = 0; i < recipe.mInputs.length; i++) {
+            ItemStack stack = group.itemMembers()
+                .get(i)
+                .matrixItem();
+            if (stack == null || stack.stackSize != recipe.mInputs[i].stackSize * COPIES) return false;
+        }
+        for (int i = 0; i < recipe.mFluidInputs.length; i++) {
+            FluidStack fluid = group.fluidMembers()
+                .get(i)
+                .matrixFluidStack();
+            if (fluid == null || fluid.amount != recipe.mFluidInputs[i].amount * COPIES) return false;
+        }
+        return true;
+    }
+
+    private void assertRemainingPositions() {
+        long remaining = COPIES - (session.runSequence() - firstRun);
+        if (remaining < 0 || remaining > COPIES)
+            throw new IllegalStateException("Unexpected native consumption sequence");
+        for (int i = 0; i < recipe.mInputs.length; i++) {
+            ItemStack stored = group.itemMembers()
+                .get(i)
+                .matrixItem();
+            long amount = stored == null ? 0 : stored.stackSize;
+            if (amount != remaining * recipe.mInputs[i].stackSize
+                || stored != null && (!stored.isItemEqual(recipe.mInputs[i])
+                    || !ItemStack.areItemStackTagsEqual(stored, recipe.mInputs[i])))
+                throw new IllegalStateException("Native per-copy item consumption differs at physical position " + i);
+        }
+        for (int i = 0; i < recipe.mFluidInputs.length; i++) {
+            FluidStack stored = group.fluidMembers()
+                .get(i)
+                .matrixFluidStack();
+            long amount = stored == null ? 0 : stored.amount;
+            if (amount != remaining * recipe.mFluidInputs[i].amount
+                || stored != null && !stored.isFluidEqual(recipe.mFluidInputs[i]))
+                throw new IllegalStateException("Native per-copy fluid consumption differs at physical position " + i);
+        }
+    }
+
+    private void extraConnection(TestContext ctx, boolean connect) {
+        int[] input = position(0, 2, 1);
+        if (connect) ae(
+            ctx,
+            input[0],
+            input[1] - 1,
+            input[2],
+            AEApi.instance()
+                .definitions()
+                .blocks()
+                .iface()
+                .maybeStack(1)
+                .get());
+        else ctx.world()
+            .setBlockToAir(input[0], input[1] - 1, input[2]);
     }
 
     private MatrixAssemblyMember master() {

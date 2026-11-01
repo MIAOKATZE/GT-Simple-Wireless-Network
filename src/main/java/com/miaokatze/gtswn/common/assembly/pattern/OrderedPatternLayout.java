@@ -103,12 +103,14 @@ public final class OrderedPatternLayout {
         private final List<Input> inputs;
         private final List<Input> items;
         private final List<Input> fluids;
+        private final long copies;
 
-        private Payload(OrderedPatternLayout layout, List<Input> inputs) {
+        private Payload(OrderedPatternLayout layout, List<Input> inputs, long copies) {
             this.layout = layout;
             this.inputs = Collections.unmodifiableList(new ArrayList<>(inputs));
             items = select(inputs, Kind.ITEM);
             fluids = select(inputs, Kind.FLUID);
+            this.copies = copies;
         }
 
         public List<Input> inputs() {
@@ -122,6 +124,10 @@ public final class OrderedPatternLayout {
         public List<Input> fluids() {
             return fluids;
         }
+
+        public long copies() {
+            return copies;
+        }
     }
 
     private final ICraftingPatternDetails details;
@@ -129,16 +135,16 @@ public final class OrderedPatternLayout {
     private final List<Input> rawInputs;
     private final List<Input> items;
     private final List<Input> fluids;
-    private final ItemStack output;
+    private final List<Input> outputs;
 
-    private OrderedPatternLayout(ICraftingPatternDetails details, List<Input> rawInputs, ItemStack output) {
+    private OrderedPatternLayout(ICraftingPatternDetails details, List<Input> rawInputs, List<Input> outputs) {
         this.details = details;
         pattern = details.getPattern()
             .copy();
         this.rawInputs = Collections.unmodifiableList(rawInputs);
         items = select(rawInputs, Kind.ITEM);
         fluids = select(rawInputs, Kind.FLUID);
-        this.output = output.copy();
+        this.outputs = Collections.unmodifiableList(outputs);
     }
 
     /** Official decoders may mark an invalid stack: they receive a copy, never the stored pattern. */
@@ -176,24 +182,30 @@ public final class OrderedPatternLayout {
                 inputs.add(input.at(i, transport++, -1, input.kind() == Kind.ITEM ? item++ : fluid++));
             }
         }
-        if (item == 0 || item > 16 || fluid > 4) throw rejected(INVALID_ENCODING, -1);
+        if (item + fluid == 0 || item > 16 || fluid > 4) throw rejected(INVALID_ENCODING, -1);
 
         IAEStack<?>[] declaredOutputs = details.getAEOutputs();
-        ItemStack output = null;
+        if (declaredOutputs == null) throw rejected(INVALID_ENCODING, -1);
+        List<Input> outputs = new ArrayList<>();
         for (IAEStack<?> declared : declaredOutputs) {
             if (declared == null) continue;
-            Input result = resource(declared, -1);
-            if (result.kind() != Kind.ITEM || output != null) throw rejected(UNSUPPORTED_OUTPUT, -1);
-            output = result.itemStack();
+            outputs.add(resource(declared, -1));
         }
-        // Inspect pre-decoder amounts too: the legacy decoder casts long Cnt to int.
+        // Standard helpers compact empty output slots; ultimate helpers preserve them. Compare nonempty entries,
+        // including pre-decoder amounts because legacy helpers cast long Cnt to int.
         NBTTagList encodedOutputs = encoded.getTagList("out", 10);
+        int decoded = 0;
         for (int i = 0; i < encodedOutputs.tagCount(); i++) {
             NBTTagCompound source = encodedOutputs.getCompoundTagAt(i);
-            if (!source.hasNoTags()) encodedAmount(source, -1);
+            if (source.hasNoTags()) continue;
+            while (decoded < declaredOutputs.length && declaredOutputs[decoded] == null) decoded++;
+            if (decoded == declaredOutputs.length) throw rejected(INVALID_ENCODING, -1);
+            validateEncoded(source, declaredOutputs[decoded++], -1);
         }
-        if (output == null) throw rejected(UNSUPPORTED_OUTPUT, -1);
-        return new OrderedPatternLayout(details, inputs, output);
+        while (decoded < declaredOutputs.length)
+            if (declaredOutputs[decoded++] != null) throw rejected(INVALID_ENCODING, -1);
+        if (outputs.isEmpty()) throw rejected(UNSUPPORTED_OUTPUT, -1);
+        return new OrderedPatternLayout(details, inputs, outputs);
     }
 
     public ICraftingPatternDetails details() {
@@ -216,14 +228,20 @@ public final class OrderedPatternLayout {
         return fluids;
     }
 
+    public List<Input> outputs() {
+        return outputs;
+    }
+
+    /** Legacy single-item view; other legal generic output sets have no single item result. */
     public ItemStack output() {
-        return output.copy();
+        return outputs.size() == 1 ? outputs.get(0)
+            .itemStack() : null;
     }
 
     public Payload declaredPayload() {
         List<Input> compact = new ArrayList<>();
         for (Input input : rawInputs) if (input.kind() != Kind.EMPTY) compact.add(input);
-        return new Payload(this, compact);
+        return new Payload(this, compact, 1);
     }
 
     /** Fixed CPU paths submit either raw positions (no cache) or non-null positions (normal cache). */
@@ -234,6 +252,7 @@ public final class OrderedPatternLayout {
         boolean compact = table.getSizeInventory() == nonEmpty;
         if (!compact && table.getSizeInventory() != rawInputs.size()) throw rejected(TABLE_SHAPE, -1);
         List<Input> delivered = new ArrayList<>(nonEmpty);
+        long copies = 0;
         for (Input declared : rawInputs) {
             if (compact && declared.kind() == Kind.EMPTY) continue;
             int index = compact ? declared.transportIndex : declared.rawIndex;
@@ -242,11 +261,15 @@ public final class OrderedPatternLayout {
                 throw rejected(TABLE_RESOURCE, declared.rawIndex);
             Input actual = resource(stack, declared.rawIndex);
             if (!sameResource(declared, actual)) throw rejected(TABLE_RESOURCE, declared.rawIndex);
-            if (declared.amount() != actual.amount()) throw rejected(TABLE_AMOUNT, declared.rawIndex);
-            if (declared.kind() != Kind.EMPTY)
+            if (declared.kind() != Kind.EMPTY) {
+                if (actual.amount() % declared.amount() != 0) throw rejected(TABLE_AMOUNT, declared.rawIndex);
+                long ratio = actual.amount() / declared.amount();
+                if (copies != 0 && ratio != copies) throw rejected(TABLE_AMOUNT, declared.rawIndex);
+                copies = ratio;
                 delivered.add(actual.at(declared.rawIndex, declared.transportIndex, index, declared.kindOrdinal));
+            }
         }
-        return new Payload(this, delivered);
+        return new Payload(this, delivered, copies);
     }
 
     boolean owns(Payload payload) {

@@ -43,4 +43,11 @@ public final class DeviceTerminalNames {
         }
         return entry.name == null ? "" : entry.name;
     }
+
+    public static String registryName(Entry entry) {
+        int id = entry.metaTileId;
+        if (id < 0 || id >= GregTechAPI.METATILEENTITIES.length) return "";
+        IMetaTileEntity machine = GregTechAPI.METATILEENTITIES[id];
+        return machine == null ? "" : machine.getMetaName();
+    }
 }

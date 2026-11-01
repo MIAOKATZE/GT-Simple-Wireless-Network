@@ -21,7 +21,6 @@ import com.cleanroommc.modularui.factory.PosGuiData;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.UISettings;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
-import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyBinding;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
 
@@ -57,11 +56,11 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
         0);
 
     public MatrixFluidInputHatch(int id, String name, String localName) {
-        super(id, 0, name, localName, 5);
+        super(id, 0, name, localName, 6);
     }
 
     private MatrixFluidInputHatch(String name, String[] description, ITexture[][][] textures) {
-        super(name, 0, 5, description, textures);
+        super(name, 0, 6, description, textures);
     }
 
     @Override
@@ -126,7 +125,7 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public FluidStack getFillableStack() {
-        return NativeAssemblyAdapter.permitsNativeAccess(this) ? mFluid : null;
+        return matrix.permitsInputAccess() ? mFluid : null;
     }
 
     @Override
@@ -146,7 +145,7 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public FluidStack setFillableStack(FluidStack fluid) {
-        if (NativeAssemblyAdapter.permitsNativeAccess(this)) mFluid = fluid;
+        if (matrix.permitsInputAccess()) mFluid = fluid;
         return getFillableStack();
     }
 
@@ -162,7 +161,32 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public FluidStack drain(int amount, boolean doDrain) {
-        return null;
+        if (amount <= 0 || !matrix.permitsInputAccess() || mFluid == null) return null;
+        FluidStack removed = mFluid.copy();
+        removed.amount = Math.min(amount, mFluid.amount);
+        if (doDrain) {
+            mFluid.amount -= removed.amount;
+            updateSlots();
+            matrix.changed();
+        }
+        return removed;
+    }
+
+    @Override
+    public FluidStack drain(ForgeDirection side, int amount, boolean doDrain) {
+        return side == ForgeDirection.UNKNOWN ? drain(amount, doDrain) : null;
+    }
+
+    @Override
+    public FluidStack drain(ForgeDirection side, FluidStack fluid, boolean doDrain) {
+        if (side != ForgeDirection.UNKNOWN || fluid == null || mFluid == null || !mFluid.isFluidEqual(fluid))
+            return null;
+        return drain(fluid.amount, doDrain);
+    }
+
+    @Override
+    public int getCapacity() {
+        return Integer.MAX_VALUE;
     }
 
     @Override
@@ -406,7 +430,7 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public void gridChanged() {
-        matrix.changed();
+        matrix.networkChanged();
     }
 
     @Override

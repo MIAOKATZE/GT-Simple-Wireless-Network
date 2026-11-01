@@ -16,7 +16,10 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import com.miaokatze.gtswn.test.FluidRegistryTestBootstrap;
+
 import appeng.api.storage.data.IAEItemStack;
+import appeng.api.storage.data.IAEStack;
 import gregtech.api.util.GTRecipe.RecipeAssemblyLine;
 
 public class AssemblyRecipeMatchTest {
@@ -109,17 +112,52 @@ public class AssemblyRecipeMatchTest {
     }
 
     @Test
-    public void aConsistentMultiCopyPatternIsRejectedBeforeAcceptingAnyMaterial() throws Exception {
+    public void aConsistentMultiCopyPatternBindsTheSameNativeSingleCopyRecipe() throws Exception {
         OrderedPatternLayout layout = layout(4, 2);
         RecipeAssemblyLine candidate = recipe(2, 1);
-        assertRejected(
-            PatternValidationException.Reason.MULTIPLE_COPIES,
-            () -> AssemblyRecipeMatch.bind(layout, Collections.singletonList(candidate)));
+        assertSame(
+            candidate,
+            AssemblyRecipeMatch.bind(layout, Collections.singletonList(candidate))
+                .recipe());
         assertEquals(
             4L,
             layout.items()
                 .get(0)
                 .amount());
+    }
+
+    @Test
+    public void mixedMultipleOutputsDecodeForGenericMachinesButCannotBindANativeAssemblyRecipe() throws Exception {
+        IAEStack<?> input = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(2));
+        IAEStack<?> product = AssemblyPatternFixtures.item(AssemblyPatternFixtures.output(1));
+        IAEStack<?> fluid = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(50));
+        IAEStack<?> byproduct = AssemblyPatternFixtures.item(new ItemStack(AssemblyPatternFixtures.anotherProduct, 3));
+        OrderedPatternLayout layout = OrderedPatternLayout
+            .decode(AssemblyPatternFixtures.ultimate(new IAEStack<?>[] { input }, product, fluid, byproduct));
+        assertEquals(
+            3,
+            layout.outputs()
+                .size());
+        assertEquals(
+            OrderedPatternLayout.Kind.ITEM,
+            layout.outputs()
+                .get(0)
+                .kind());
+        assertEquals(
+            OrderedPatternLayout.Kind.FLUID,
+            layout.outputs()
+                .get(1)
+                .kind());
+        assertEquals(
+            3,
+            layout.outputs()
+                .get(2)
+                .amount());
+        assertNull(layout.output());
+        RecipeAssemblyLine candidate = recipe(2, 1);
+        assertRejected(
+            PatternValidationException.Reason.UNSUPPORTED_OUTPUT,
+            () -> AssemblyRecipeMatch.bind(layout, Collections.singletonList(candidate)));
     }
 
     @Test

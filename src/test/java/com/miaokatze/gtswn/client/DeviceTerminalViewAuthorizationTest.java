@@ -8,12 +8,24 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.entity.EntityClientPlayerMP;
+import net.minecraft.client.multiplayer.WorldClient;
+import net.minecraft.client.network.NetHandlerPlayClient;
+import net.minecraft.entity.DataWatcher;
+import net.minecraft.entity.player.InventoryPlayer;
+import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
+
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceSources;
+import com.miaokatze.gtswn.client.gui.GtswnMuiScreen;
 import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDeltaCodec;
+import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalDelta;
 
@@ -22,12 +34,49 @@ public class DeviceTerminalViewAuthorizationTest {
 
     private final UUID terminal = UUID.randomUUID();
     private final DeviceTerminalAnchorRenderer anchors = DeviceTerminalAnchorRenderer.INSTANCE;
+    private Object previousMinecraft;
+    private Minecraft minecraft;
 
     @Before
-    @After
-    public void reset() {
+    public void setUp() throws Exception {
+        Field singleton = Minecraft.class.getDeclaredField("theMinecraft");
+        singleton.setAccessible(true);
+        previousMinecraft = singleton.get(null);
+        minecraft = allocate(Minecraft.class);
+        singleton.set(null, minecraft);
+        Player player = allocate(Player.class);
+        player.id = UUID.randomUUID();
+        player.initializeHealth();
+        player.inventory = new InventoryPlayer(player);
+        minecraft.thePlayer = player;
+        minecraft.theWorld = allocate(WorldClient.class);
+        minecraft.theWorld.isRemote = true;
+        player.worldObj = minecraft.theWorld;
+        Field sendQueue = EntityClientPlayerMP.class.getDeclaredField("sendQueue");
+        sendQueue.setAccessible(true);
+        sendQueue.set(player, allocate(NetHandlerPlayClient.class));
+        ItemStack stack = new ItemStack(new ItemDeviceInfoTerminal());
+        stack.stackTagCompound = new NBTTagCompound();
+        stack.stackTagCompound.setString(ItemDeviceInfoTerminal.NBT_UUID, terminal.toString());
+        player.inventory.mainInventory[0] = stack;
+
+        DesktopDeviceSources.resetSession();
         DeviceTerminalClientCache.clear();
         anchors.synchronizeAuthorization(null);
+        // The real native demand precedes the receipt. DesktopDevicePolling's native-viewer branch
+        // suppresses the factory dispatch, so this fixture never needs an outbound network channel.
+        DesktopDeviceSources.nativeViewer(terminal);
+        assertNull(DesktopDeviceSources.displaySnapshot(terminal));
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        DesktopDeviceSources.resetSession();
+        DeviceTerminalClientCache.clear();
+        anchors.synchronizeAuthorization(null);
+        Field singleton = Minecraft.class.getDeclaredField("theMinecraft");
+        singleton.setAccessible(true);
+        singleton.set(null, previousMinecraft);
     }
 
     @Test
@@ -119,12 +168,9 @@ public class DeviceTerminalViewAuthorizationTest {
     @SuppressWarnings("unchecked")
     public void nativeListReplacesRowsWithTheSameVersionAndCountAfterEpochChange() throws Exception {
         publish(1, "old");
-        GuiDeviceInfoTerminal gui = allocate(GuiDeviceInfoTerminal.class);
-        field(gui, "anchor").set(gui, terminal);
-        field(gui, "sortedEntries").set(gui, Collections.emptyList());
+        GuiDeviceInfoTerminal gui = gui();
         Method refresh = GuiDeviceInfoTerminal.class.getDeclaredMethod("refreshEntries");
         refresh.setAccessible(true);
-        refresh.invoke(gui);
         List<Entry> oldRows = (List<Entry>) field(gui, "sortedEntries").get(gui);
         assertEquals("old", oldRows.get(0).name);
         refresh.invoke(gui);
@@ -251,10 +297,34 @@ public class DeviceTerminalViewAuthorizationTest {
 
     private GuiDeviceInfoTerminal gui() throws Exception {
         GuiDeviceInfoTerminal gui = allocate(GuiDeviceInfoTerminal.class);
+        Field client = GtswnMuiScreen.class.getDeclaredField("mc");
+        client.setAccessible(true);
+        client.set(gui, minecraft);
+        field(gui, "filters").set(gui, new DeviceListFilters());
+        field(gui, "expandedRecipes").set(gui, new java.util.LinkedHashSet<String>());
         field(gui, "anchor").set(gui, terminal);
         field(gui, "sortedEntries").set(gui, Collections.emptyList());
         refresh(gui);
         return gui;
+    }
+
+    private static final class Player extends EntityClientPlayerMP {
+
+        UUID id;
+
+        private Player() {
+            super(null, null, null, null, null);
+        }
+
+        @Override
+        public UUID getUniqueID() {
+            return id;
+        }
+
+        private void initializeHealth() {
+            dataWatcher = new DataWatcher(this);
+            dataWatcher.addObject(6, 20F);
+        }
     }
 
     private static void refresh(GuiDeviceInfoTerminal gui) throws Exception {

@@ -42,7 +42,8 @@ public enum GTSWNItemList implements IItemContainer {
     // 测试硬币（测试环境道具：右键 +100万 EU，Shift+右键 -100万 EU）
     TestCoin,
     Matrix_Grouped_Item_Input_ME,
-    Matrix_Grouped_Fluid_Input_ME;
+    Matrix_Grouped_Fluid_Input_ME,
+    Network_Teleport_Anchor;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;

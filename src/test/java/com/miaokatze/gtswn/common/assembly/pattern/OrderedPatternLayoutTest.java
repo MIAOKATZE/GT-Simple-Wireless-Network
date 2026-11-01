@@ -132,6 +132,113 @@ public class OrderedPatternLayoutTest {
     }
 
     @Test
+    public void aBatchedCpuDeliveryKeepsDuplicatePositionsAndRequiresOneConsistentMultiplier() throws Exception {
+        IAEItemStack first = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(2));
+        IAEItemStack second = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(3));
+        IAEStack<?> fluid = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(100));
+        OrderedPatternLayout layout = OrderedPatternLayout.decode(
+            AssemblyPatternFixtures.ultimate(
+                new IAEStack<?>[] { first, second, second.copy(), fluid },
+                AssemblyPatternFixtures.item(AssemblyPatternFixtures.output(1))));
+        IAEStack<?>[] actual = new IAEStack<?>[] { first.copy()
+            .setStackSize(32),
+            second.copy()
+                .setStackSize(48),
+            second.copy()
+                .setStackSize(48),
+            fluid.copy()
+                .setStackSize(1600) };
+        OrderedPatternLayout.Payload payload = layout.validateTable(AssemblyPatternFixtures.table(actual));
+        assertEquals(16, payload.copies());
+        assertEquals(
+            3,
+            payload.items()
+                .size());
+        assertEquals(
+            48,
+            payload.items()
+                .get(1)
+                .amount());
+        assertEquals(
+            48,
+            payload.items()
+                .get(2)
+                .amount());
+        actual[2].setStackSize(45);
+        MEInventoryCrafting inconsistent = AssemblyPatternFixtures.table(actual);
+        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> layout.validateTable(inconsistent));
+        assertEquals(32, actual[0].getStackSize());
+        assertEquals(1600, actual[3].getStackSize());
+    }
+
+    @Test
+    public void aPureFluidProcessingPatternNeedsNoArtificialItemInput() throws Exception {
+        IAEStack<?> fluid = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(100));
+        OrderedPatternLayout layout = OrderedPatternLayout.decode(
+            AssemblyPatternFixtures.ultimate(
+                new IAEStack<?>[] { fluid },
+                AssemblyPatternFixtures.item(AssemblyPatternFixtures.output(1))));
+        assertTrue(
+            layout.items()
+                .isEmpty());
+        assertEquals(
+            1,
+            layout.fluids()
+                .size());
+        assertEquals(
+            16,
+            layout.validateTable(
+                AssemblyPatternFixtures.table(
+                    fluid.copy()
+                        .setStackSize(1600)))
+                .copies());
+    }
+
+    @Test
+    public void pureFluidProcessingCanDeclareAFluidResultWithoutAnArtificialItemProduct() throws Exception {
+        IAEStack<?> input = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(100));
+        IAEStack<?> output = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(50));
+        OrderedPatternLayout layout = OrderedPatternLayout
+            .decode(AssemblyPatternFixtures.ultimate(new IAEStack<?>[] { input }, output));
+        assertTrue(
+            layout.items()
+                .isEmpty());
+        assertEquals(
+            1,
+            layout.fluids()
+                .size());
+        assertEquals(
+            1,
+            layout.outputs()
+                .size());
+        assertEquals(
+            OrderedPatternLayout.Kind.FLUID,
+            layout.outputs()
+                .get(0)
+                .kind());
+        assertEquals(
+            50,
+            layout.outputs()
+                .get(0)
+                .amount());
+        assertNull(layout.output());
+        layout.outputs()
+            .get(0)
+            .fluidStack().amount = 999;
+        assertEquals(
+            50,
+            layout.outputs()
+                .get(0)
+                .amount());
+        assertEquals(
+            100,
+            layout.validateTable(AssemblyPatternFixtures.table(input))
+                .fluids()
+                .get(0)
+                .amount());
+    }
+
+    @Test
     public void acceptanceAndRejectionNeverChangeTheSourcePatternOrTheDeliveryObjects() throws Exception {
         ItemStack tagged = AssemblyPatternFixtures.input(2);
         tagged.setTagCompound(new NBTTagCompound());

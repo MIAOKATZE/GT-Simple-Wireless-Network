@@ -503,6 +503,8 @@ public class CommonProxy {
 
     public void openDeviceInfoTerminalSettingsGui() {}
 
+    public void handleDeviceTeleportQuote(com.miaokatze.gtswn.network.PacketSyncDeviceTeleportQuote message) {}
+
     public boolean isDeviceTerminalVisualizationActive() {
         return false;
     }

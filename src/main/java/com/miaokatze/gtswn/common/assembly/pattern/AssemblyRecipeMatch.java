@@ -13,13 +13,12 @@ import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout.Payload;
 
 import gregtech.api.util.GTRecipe.RecipeAssemblyLine;
 
-/** Binds a single-copy processing declaration to a unique recipe in the current native authorization set. */
+/** Binds a proportional processing declaration to a unique recipe in the current native authorization set. */
 public final class AssemblyRecipeMatch {
 
     private enum Comparison {
         NO_MATCH,
         EXACT,
-        MULTIPLE_COPIES,
         ZERO_CONSUMPTION,
         SPECIAL_FLUID_TAG
     }
@@ -39,6 +38,12 @@ public final class AssemblyRecipeMatch {
     public static AssemblyRecipeMatch bind(OrderedPatternLayout layout, Payload payload,
         Collection<RecipeAssemblyLine> authorized) {
         if (!layout.owns(payload)) throw OrderedPatternLayout.rejected(TABLE_RESOURCE, -1);
+        if (layout.outputs()
+            .size() != 1
+            || layout.outputs()
+                .get(0)
+                .kind() != OrderedPatternLayout.Kind.ITEM)
+            throw OrderedPatternLayout.rejected(UNSUPPORTED_OUTPUT, -1);
         AssemblyRecipeMatch selected = null;
         PatternValidationException.Reason rejection = NO_AUTHORIZED_RECIPE;
         for (RecipeAssemblyLine candidate : authorized) {
@@ -52,8 +57,6 @@ public final class AssemblyRecipeMatch {
                 rejection = ZERO_CONSUMPTION;
             } else if (comparison == Comparison.SPECIAL_FLUID_TAG && rejection != ZERO_CONSUMPTION) {
                 rejection = SPECIAL_FLUID_TAG;
-            } else if (comparison == Comparison.MULTIPLE_COPIES && rejection == NO_AUTHORIZED_RECIPE) {
-                rejection = MULTIPLE_COPIES;
             }
         }
         if (selected == null) throw OrderedPatternLayout.rejected(rejection, -1);
@@ -85,6 +88,7 @@ public final class AssemblyRecipeMatch {
         if (!OrderedPatternLayout.sameItem(output, recipe.mOutput)) return Comparison.NO_MATCH;
         long copies = ratio(output.stackSize, recipe.mOutput.stackSize);
         if (copies < 1) return Comparison.NO_MATCH;
+        copies *= payload.copies();
         boolean zeroConsumption = false;
         for (int i = 0; i < items.size(); i++) {
             ItemStack actual = items.get(i)
@@ -111,7 +115,7 @@ public final class AssemblyRecipeMatch {
         }
         if (zeroConsumption) return Comparison.ZERO_CONSUMPTION;
         if (specialFluid) return Comparison.SPECIAL_FLUID_TAG;
-        return copies == 1 ? Comparison.EXACT : Comparison.MULTIPLE_COPIES;
+        return Comparison.EXACT;
     }
 
     /** Division in long space avoids multiplication overflow and rejects every fractional ratio. */
