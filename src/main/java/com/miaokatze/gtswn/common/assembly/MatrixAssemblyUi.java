@@ -1,6 +1,7 @@
 package com.miaokatze.gtswn.common.assembly;
 
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.fluids.FluidStack;
 
@@ -19,7 +20,9 @@ import com.cleanroommc.modularui.widgets.layout.Grid;
 import com.cleanroommc.modularui.widgets.slot.ModularSlot;
 import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout;
 import com.miaokatze.gtswn.common.assembly.pattern.PatternValidationException;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
 
+import gregtech.api.enums.GTValues;
 import gregtech.api.metatileentity.implementations.MTEHatch;
 import gregtech.api.modularui2.GTGuiTextures;
 import gregtech.api.modularui2.GTGuis;
@@ -40,9 +43,16 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
     }
 
     static String[] description(boolean fluid) {
-        return new String[] { tr("gtswn.matrix.description." + (fluid ? "fluid" : "item")),
-            tr("gtswn.matrix.description.column"), tr("gtswn.matrix.description.blocking"),
-            tr("gtswn.matrix.description.pattern"), tr("gtswn.matrix.description.native") };
+        String type = fluid ? "fluid" : "item";
+        return new String[] { tr("gtswn.matrix.description." + type),
+            StatCollector.translateToLocalFormatted(
+                "gtswn.matrix.description.tier",
+                GTValues.TIER_COLORS[5] + GTValues.VN[5] + EnumChatFormatting.RESET),
+            tr("gtswn.matrix.description.storage." + type), tr("gtswn.matrix.description.pattern"),
+            tr("gtswn.matrix.description.blocking"), "", tr("gtswn.matrix.description.column"),
+            tr("gtswn.matrix.description.connections"), tr("gtswn.matrix.description.native"),
+            tr("gtswn.matrix.description.protection"), "", tr("gtswn.matrix.description.gui"),
+            tr("gtswn.matrix.description.me"), "", DeviceTooltip.addedByLine() };
     }
 
     private static String tr(String key) {

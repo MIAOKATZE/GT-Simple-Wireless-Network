@@ -2,6 +2,7 @@ package com.miaokatze.gtswn.common.assembly;
 
 import java.util.UUID;
 
+import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.InventoryCrafting;
 import net.minecraft.item.ItemStack;
@@ -28,6 +29,8 @@ import appeng.api.util.AECableType;
 import appeng.api.util.DimensionalCoord;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
+import cpw.mods.fml.relauncher.Side;
+import cpw.mods.fml.relauncher.SideOnly;
 import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
@@ -261,6 +264,13 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
     public void readFromStream(ByteBuf buffer) {
         super.readFromStream(buffer);
         matrix.readConnectionMask(buffer.readUnsignedByte());
+    }
+
+    @Override
+    @SideOnly(Side.CLIENT)
+    public void registerIcons(IIconRegister register) {
+        super.registerIcons(register);
+        MatrixAssemblyTextures.init();
     }
 
     @Override

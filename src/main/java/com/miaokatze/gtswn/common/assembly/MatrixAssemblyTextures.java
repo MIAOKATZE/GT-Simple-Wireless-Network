@@ -22,6 +22,9 @@ public final class MatrixAssemblyTextures {
 
     private MatrixAssemblyTextures() {}
 
+    /** Initialize from the MTE icon hook, before GregTech runs its block-icon load queue. */
+    static void init() {}
+
     public static ITexture[] front(MatrixAssemblyMember member, ITexture base) {
         int mask = faceMask(
             member.matrixPort()
