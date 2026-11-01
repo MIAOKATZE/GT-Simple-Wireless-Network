@@ -85,12 +85,19 @@ public class MatrixTopologyTest {
                     member.matrixPort()
                         .connectionMask());
             }
+            group.master()
+                .matrixPort()
+                .patterns()
+                .setStackInSlot(
+                    0,
+                    layout(1, new int[0]).details()
+                        .getPattern());
             group.provideCrafting(
                 (ICraftingProviderHelper) Proxy.newProxyInstance(
                     ICraftingProviderHelper.class.getClassLoader(),
                     new Class<?>[] { ICraftingProviderHelper.class },
                     (proxy, method, args) -> {
-                        throw new AssertionError("An empty pattern bank has no crafting options");
+                        throw new AssertionError("An unformed group must not advertise its stored pattern");
                     }));
             NBTTagCompound ledger = group.saveLedger();
             assertFalse(ledger.hasKey("controller"));
@@ -134,7 +141,7 @@ public class MatrixTopologyTest {
     }
 
     @Test
-    public void catalogueCapacityUsesPhysicalPositionsAndTanksBeforeAnyNativeBinding() throws Exception {
+    public void capacityCheckUsesPhysicalPositionsAndTanksBeforeAnyNativeBinding() throws Exception {
         Fixture fixture = new Fixture();
         List<MatrixAssemblyMember> items = fixture.items(false);
         MatrixFluidInputHatch fluid = (MatrixFluidInputHatch) fixture.add(true, 0, 64, 1);

@@ -62,6 +62,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private final List<MatrixAssemblyMember> fluids;
     private final List<MatrixAssemblyMember> members;
     private final List<UUID> memberIds = new ArrayList<>();
+    private final Set<RecipeAssemblyLine> observedAuthorizedRecipes = new HashSet<>();
     private int[][] memberPositions;
     private final int memberDimension;
     private UUID controllerId;
@@ -99,7 +100,18 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     public static void topologyTick(MatrixAssemblyMember caller, long tick) {
         OrderedAssemblyGroup group = caller.matrixPort()
             .group();
-        if (tick % 20 == 0 && (group == null || !group.verified || group.master() == caller)) refreshTopology(caller);
+        if (tick % 20 != 0 || group != null && group.verified && group.master() != caller) return;
+        refreshTopology(caller);
+        group = caller.matrixPort()
+            .group();
+        if (group == null || group.master() != caller) return;
+        Set<RecipeAssemblyLine> authorized = new HashSet<>(group.authorizedRecipes());
+        if (!group.observedAuthorizedRecipes.equals(authorized)) {
+            group.observedAuthorizedRecipes.clear();
+            group.observedAuthorizedRecipes.addAll(authorized);
+            caller.matrixPort()
+                .changed();
+        }
     }
 
     public static void refreshTopology(MatrixAssemblyMember caller) {
@@ -639,9 +651,13 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return result;
     }
 
-    /** AE plans against declarations; native formation and research gate delivery, not the recipe catalogue. */
+    /** Only formed, currently authorized recipes are advertised; busy media retain their catalogue entries. */
     public void provideCrafting(ICraftingProviderHelper helper) {
-        if (!verified || !checkTopology()) return;
+        if (session == null || !nativeBound
+            || !session.readyForPatternAdvertisement()
+            || !verified
+            || !checkTopology()
+            || !checkNativeBinding()) return;
         for (int i = 0; i < MatrixPatternInventory.SIZE; i++) {
             ItemStack pattern = master().matrixPort()
                 .patterns()
@@ -652,10 +668,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     pattern,
                     master().getBaseMetaTileEntity()
                         .getWorld());
+                AssemblyRecipeMatch.bind(layout, authorizedRecipes());
                 if (capacityReason(layout).isEmpty())
                     helper.addCraftingOption((ICraftingProvider) master(), layout.details());
             } catch (PatternValidationException ignored) {
-                // Unsupported declarations remain visible in their physical management slots.
+                // Invalid/unauthorized patterns remain visible in their physical management slots.
             }
         }
     }

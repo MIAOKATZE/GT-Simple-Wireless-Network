@@ -105,8 +105,8 @@ final class OrderedAssemblyScenario implements TestScenario {
     private long masterTrackerId;
     private EmbeddedChannel actorChannel;
     private long[] seededTotals;
-    private int waitingSamples;
-    private String waitingLink;
+    private int blockedSamples;
+    private String firstLink;
     private int stage, batch, maxProgress;
     private long stageTick, firstRun;
     private String stagedStock;
@@ -119,7 +119,7 @@ final class OrderedAssemblyScenario implements TestScenario {
 
     @Override
     public String description() {
-        return "Real interface terminal pattern management, unformed/research waiting CPU, and two native AL batches";
+        return "Real interface terminal pattern management, formation/research publication gates, and two native AL batches";
     }
 
     @Override
@@ -347,25 +347,30 @@ final class OrderedAssemblyScenario implements TestScenario {
                 source = new MachineSource((IActionHost) aeController);
                 inspectInterfaceTerminal(ctx);
                 installPattern(ctx);
-                transition(ctx, 16, "Observe natural pattern publication while AL is unformed and has no research");
-                break;
-            case 16:
-                if (ctx.tick() - stageTick < 20) return;
-                if (!published(ctx)) {
-                    if (ctx.tick() - stageTick > 200) throw new IllegalStateException(
-                        "Native crafting cache/ME craftable flag did not publish the interface-installed pattern");
-                    return;
-                }
-                require(
-                    ctx,
-                    !controller.mMachine && controller.getStackInSlot(1) == null && published(ctx),
-                    "Unformed AL without research exposes its output in native crafting cache and ME craftable list");
-                logPublication(ctx, "unformed-before-job");
                 seedCells(ctx);
                 seededTotals = materialTotals();
                 firstRun = session.runSequence();
-                beginJob(ctx);
-                transition(ctx, 2, "Calculate first real AE CPU request");
+                blockedSamples = 0;
+                transition(ctx, 16, "Verify no pattern publication while AL is unformed and has no research");
+                break;
+            case 16:
+                observeBlockedCatalogue(ctx);
+                if (ctx.tick() - stageTick < 40) return;
+                require(
+                    ctx,
+                    !controller.mMachine && !group.accepting() && !session.beginCheck(),
+                    "An unformed native AL neither advertises nor accepts its configured processing pattern");
+                logBlockedCatalogue(ctx, "unformed");
+                block(ctx, 2, 0, 1, GregTechAPI.sBlockCasings2, 9);
+                checkStructure(ctx);
+                clearOutput();
+                require(
+                    ctx,
+                    controller.mMachine && controller.getStackInSlot(1) == null,
+                    "Restoring the actual casing forms the AL while its research slot stays empty");
+                session.requestRecipeCheck();
+                blockedSamples = 0;
+                transition(ctx, 14, "Verify the formed AL still withholds patterns without research authorization");
                 break;
             case 2:
             case 10:
@@ -383,42 +388,40 @@ final class OrderedAssemblyScenario implements TestScenario {
                     "cpu_job",
                     "batch=" + batch + "; id=" + link.getCraftingID() + "; byteTotal=" + job.getByteTotal());
                 if (stage == 2) {
-                    waitingLink = link.getCraftingID();
-                    waitingSamples = 0;
-                    transition(ctx, 14, "Keep the real CPU job waiting while the AL is unformed");
+                    firstLink = link.getCraftingID();
+                    transition(ctx, 3, "Wait for the authorized first CPU batch to enter the formed AL");
                 } else transition(ctx, 11, "Wait for real CPU medium delivery");
                 break;
             case 14:
-                observeWaitingJob(ctx);
+                observeBlockedCatalogue(ctx);
                 if (ctx.tick() - stageTick < 40) return;
                 require(
                     ctx,
-                    !controller.mMachine && !group.accepting() && !session.beginCheck(),
-                    "The submitted real CPU job cannot enter an unformed native AL");
-                logWaitingJob(ctx, "unformed");
-                block(ctx, 2, 0, 1, GregTechAPI.sBlockCasings2, 9);
-                checkStructure(ctx);
-                clearOutput();
-                require(
-                    ctx,
-                    controller.mMachine && controller.getStackInSlot(1) == null,
-                    "Restoring the actual casing forms the AL while its research slot stays empty");
-                session.requestRecipeCheck();
-                waitingSamples = 0;
-                transition(ctx, 15, "Keep the same real CPU job waiting for actual research authorization");
-                break;
-            case 15:
-                observeWaitingJob(ctx);
-                if (ctx.tick() - stageTick < 40) return;
-                require(
-                    ctx,
-                    controller.getStackInSlot(1) == null && "no_authorized_recipe".equals(group.reason()),
-                    "The real CPU reaches intake but absent current research rejects its processing pattern");
-                logWaitingJob(ctx, "formed-no-research");
+                    controller.mMachine && controller.getStackInSlot(1) == null
+                        && "no_authorized_recipe".equals(group.previewReason(layout)),
+                    "Absent current research keeps the formed AL's processing pattern out of the recipe catalogue");
+                logBlockedCatalogue(ctx, "formed-no-research");
                 fillOutput();
                 controller.setInventorySlotContents(1, stick.copy());
                 session.requestRecipeCheck();
-                transition(ctx, 3, "Restore actual research and let the same submitted CPU job deliver");
+                transition(ctx, 15, "Wait for actual research authorization to publish the processing pattern");
+                break;
+            case 15:
+                if (ctx.tick() - stageTick < 20) return;
+                if (!published(ctx)) {
+                    if (ctx.tick() - stageTick > 200) throw new IllegalStateException(
+                        "Native crafting cache/ME craftable flag did not publish after research authorization");
+                    return;
+                }
+                require(
+                    ctx,
+                    controller.mMachine && controller.getStackInSlot(1) != null
+                        && !cpu.isBusy()
+                        && cpu.getUsedStorage() == 0,
+                    "Formation and current research publish the pattern before the first CPU job is submitted");
+                logPublication(ctx, "formed-researched-before-job");
+                beginJob(ctx);
+                transition(ctx, 2, "Calculate first real AE CPU request after formation and research authorization");
                 break;
             case 3:
                 if (group.stage() != OrderedAssemblyGroup.Stage.STAGED) return;
@@ -464,14 +467,22 @@ final class OrderedAssemblyScenario implements TestScenario {
                     ctx,
                     group.stage() == OrderedAssemblyGroup.Stage.STAGED && controller.mMaxProgresstime == 0
                         && stagedStock.equals(stock())
-                        && session.runSequence() == firstRun,
-                    "Removing current native research authorization prevents start and preserves real materials");
+                        && session.runSequence() == firstRun
+                        && !published(ctx),
+                    "Removing current research withdraws the pattern, prevents start and preserves real materials");
                 ctx.event("research_removed", nativeState() + "; stock=" + stock());
+                fillOutput();
                 controller.setInventorySlotContents(1, stick.copy());
                 session.requestRecipeCheck();
-                transition(ctx, 6, "Restore the same actual research stick and allow native production");
+                transition(ctx, 6, "Restore the same actual research stick and wait for pattern republication");
                 break;
             case 6:
+                if (!published(ctx)) return;
+                clearOutput();
+                session.requestRecipeCheck();
+                transition(ctx, 17, "Allow native production after research republishes the pattern");
+                break;
+            case 17:
                 if (session.runSequence() == firstRun) return;
                 assertRunning(ctx, firstRun + 1);
                 transition(ctx, 7, "Observe first native powered production");
@@ -513,8 +524,8 @@ final class OrderedAssemblyScenario implements TestScenario {
                     "Actual CPU completion coincides with exact crafted output in AE storage and an empty native bus");
                 if (batch == 1) require(
                     ctx,
-                    waitingLink.equals(link.getCraftingID()),
-                    "The CPU link submitted before machine and research recovery completes without resubmission");
+                    firstLink.equals(link.getCraftingID()),
+                    "The first authorized CPU job completes without resubmission after staged research recovery");
                 ctx.event(
                     "ae_delivered",
                     "batch=" + batch
@@ -550,8 +561,8 @@ final class OrderedAssemblyScenario implements TestScenario {
                         session.runSequence() == firstRun + 2,
                         "Identical successive requests caused exactly two native consumption sequences");
                     ctx.pass(
-                        "Native interface-terminal pattern management and ME craftable flags passed; the original CPU job "
-                            + "waited for actual structure/research recovery, then two jobs completed native processing "
+                        "Native interface-terminal pattern management and formation/research publication gates passed; "
+                            + "jobs were submitted only after authorization, then two jobs completed native processing "
                             + "and exact AE return with the original processing gates retained");
                 }
                 break;
@@ -954,41 +965,38 @@ final class OrderedAssemblyScenario implements TestScenario {
         return totals;
     }
 
-    private void observeWaitingJob(TestContext ctx) throws Exception {
+    private void observeBlockedCatalogue(TestContext ctx) throws Exception {
         boolean empty = true;
         for (MatrixAssemblyMember member : group.itemMembers()) empty &= member.matrixItem() == null;
         for (MatrixAssemblyMember member : group.fluidMembers()) empty &= member.matrixFluidStack() == null;
-        if (link.isCanceled() || !waitingLink.equals(link.getCraftingID())
-            || !cpu.isBusy()
-            || cpu.getUsedStorage() == 0
+        if (cpu.isBusy() || cpu.getUsedStorage() != 0
             || group.stage() != OrderedAssemblyGroup.Stage.IDLE
             || !empty
             || controller.mMaxProgresstime != 0
             || session.runSequence() != firstRun
             || !Arrays.equals(seededTotals, materialTotals())
-            || !published(ctx))
+            || published(ctx))
             throw new IllegalStateException(
-                "Waiting CPU changed publication, physical stock, material totals or native sequence: " + nativeState()
+                "Blocked catalogue changed CPU, publication, physical stock, material totals or native sequence: "
+                    + nativeState()
                     + "; stock="
                     + stock()
                     + "; totals="
                     + Arrays.toString(materialTotals()));
-        waitingSamples++;
+        blockedSamples++;
     }
 
-    private void logWaitingJob(TestContext ctx, String phase) throws Exception {
+    private void logBlockedCatalogue(TestContext ctx, String phase) throws Exception {
         require(
             ctx,
-            waitingSamples >= 40,
-            "The same submitted CPU job waits through at least forty natural ticks without physical intake or consumption");
+            blockedSamples >= 40,
+            "At least forty natural ticks withhold the recipe and leave the CPU idle without physical intake or consumption");
         logPublication(ctx, phase);
         ctx.event(
-            "cpu_waiting",
+            "catalogue_blocked",
             "phase=" + phase
                 + "; samples="
-                + waitingSamples
-                + "; link="
-                + link.getCraftingID()
+                + blockedSamples
                 + "; busy="
                 + cpu.isBusy()
                 + "; cpuUsedStorage="
