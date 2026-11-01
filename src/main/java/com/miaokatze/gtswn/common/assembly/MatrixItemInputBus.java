@@ -298,7 +298,13 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
 
     @Override
     public AECableType getCableConnectionType(ForgeDirection side) {
-        return AECableType.SMART;
+        return matrix.cableType(side);
+    }
+
+    @Override
+    public void onFacingChange() {
+        super.onFacingChange();
+        matrix.facingChanged();
     }
 
     @Override

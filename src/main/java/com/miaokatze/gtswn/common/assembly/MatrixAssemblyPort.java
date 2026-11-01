@@ -23,6 +23,7 @@ import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.crafting.ICraftingProvider;
 import appeng.api.networking.crafting.ICraftingProviderHelper;
 import appeng.api.networking.events.MENetworkCraftingPatternChange;
+import appeng.api.util.AECableType;
 import appeng.api.util.DimensionalCoord;
 import appeng.me.GridAccessException;
 import appeng.me.helpers.AENetworkProxy;
@@ -84,7 +85,11 @@ public final class MatrixAssemblyPort {
                 "matrixProxy",
                 ((IMetaTileEntity) member).getStackForm(1),
                 true);
-            proxy.setValidSides(EnumSet.complementOf(EnumSet.of(ForgeDirection.UNKNOWN)));
+            proxy.setValidSides(
+                connectionSides(
+                    member.getBaseMetaTileEntity()
+                        .getFrontFacing(),
+                    connectionMask));
             proxy.setIdlePowerUsage(1.0);
         }
         return proxy;
@@ -149,12 +154,41 @@ public final class MatrixAssemblyPort {
     public void connectionMask(int mask) {
         if (connectionMask == mask) return;
         connectionMask = mask;
+        refreshConnectionSides();
         member.getBaseMetaTileEntity()
             .issueTileUpdate();
     }
 
     public void readConnectionMask(int mask) {
         connectionMask = mask;
+    }
+
+    static EnumSet<ForgeDirection> connectionSides(ForgeDirection front, int verifiedMask) {
+        EnumSet<ForgeDirection> sides = EnumSet.of(front);
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS)
+            if ((verifiedMask & side.flag) != 0) sides.add(side);
+        return sides;
+    }
+
+    public AECableType cableType(ForgeDirection side) {
+        return connectionSides(
+            member.getBaseMetaTileEntity()
+                .getFrontFacing(),
+            connectionMask).contains(side) ? AECableType.SMART : AECableType.NONE;
+    }
+
+    public void facingChanged() {
+        if (group != null) group.invalidate("member_facing");
+        refreshConnectionSides();
+    }
+
+    private void refreshConnectionSides() {
+        if (proxy == null) return;
+        proxy.setValidSides(
+            connectionSides(
+                member.getBaseMetaTileEntity()
+                    .getFrontFacing(),
+                connectionMask));
     }
 
     public void open(EntityPlayer player) {

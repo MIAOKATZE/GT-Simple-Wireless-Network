@@ -345,7 +345,13 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public AECableType getCableConnectionType(ForgeDirection side) {
-        return AECableType.SMART;
+        return matrix.cableType(side);
+    }
+
+    @Override
+    public void onFacingChange() {
+        super.onFacingChange();
+        matrix.facingChanged();
     }
 
     @Override
