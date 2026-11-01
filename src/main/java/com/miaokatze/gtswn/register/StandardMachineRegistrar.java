@@ -5,6 +5,10 @@ import static com.miaokatze.gtswn.common.api.enums.MetaTileEntityID.WIRELESS_ENE
 
 import net.minecraft.util.StatCollector;
 
+import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
+import com.miaokatze.gtswn.common.api.enums.MetaTileEntityID;
+import com.miaokatze.gtswn.common.assembly.MatrixFluidInputHatch;
+import com.miaokatze.gtswn.common.assembly.MatrixItemInputBus;
 import com.miaokatze.gtswn.common.machine.MTEWirelessEnergyMonitor;
 
 /**
@@ -26,5 +30,17 @@ public class StandardMachineRegistrar extends MachineRegistrar {
                 "gtswn.wireless_energy_monitor",
                 StatCollector.translateToLocal("gtswn.machine.wireless_monitor")),
             Wireless_Energy_Monitor);
+        registerMachine(
+            () -> new MatrixItemInputBus(
+                MetaTileEntityID.MATRIX_GROUPED_ITEM_INPUT_ME.ID,
+                "gtswn.matrix_grouped_item_input_me",
+                StatCollector.translateToLocal("gtswn.matrix.item.name")),
+            GTSWNItemList.Matrix_Grouped_Item_Input_ME);
+        registerMachine(
+            () -> new MatrixFluidInputHatch(
+                MetaTileEntityID.MATRIX_GROUPED_FLUID_INPUT_ME.ID,
+                "gtswn.matrix_grouped_fluid_input_me",
+                StatCollector.translateToLocal("gtswn.matrix.fluid.name")),
+            GTSWNItemList.Matrix_Grouped_Fluid_Input_ME);
     }
 }

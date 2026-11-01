@@ -44,6 +44,26 @@ public class CraftingRecipes {
     public static void init() {
         registerAllRecipes();
         registerQuantumIncorporationAnchorRecipe();
+        registerMatrixInputRecipes();
+    }
+
+    private static void registerMatrixInputRecipes() {
+        for (boolean fluid : new boolean[] { false, true }) {
+            GTValues.RA.stdBuilder()
+                .itemInputs(
+                    (fluid ? ItemList.Hatch_Input_ME : ItemList.Hatch_Input_Bus_ME).get(1),
+                    GTOreDictUnificator.get(OrePrefixes.circuit, Materials.IV, 2),
+                    ItemList.Robot_Arm_IV.get(2),
+                    Quantum_Incorporation_Anchor.get(8),
+                    gregtech.api.util.GTUtility.getIntegratedCircuit(24))
+                .fluidInputs(Materials.SolderingAlloy.getMolten(576))
+                .itemOutputs(
+                    (fluid ? com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Matrix_Grouped_Fluid_Input_ME
+                        : com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Matrix_Grouped_Item_Input_ME).get(1))
+                .duration(200)
+                .eut(TierEU.RECIPE_IV)
+                .addTo(RecipeMaps.assemblerRecipes);
+        }
     }
 
     /** LV assembler recipe: one batch supplies sixteen successful incorporations. */

@@ -15,6 +15,8 @@ public enum MetaTileEntityID {
     // --- 无线电网监控机器 ---
     /** LV 等级无线能量监视器 (Tier 1) */
     WIRELESS_ENERGY_MONITOR(0),
+    MATRIX_GROUPED_ITEM_INPUT_ME(1),
+    MATRIX_GROUPED_FLUID_INPUT_ME(2),
 
     ;
 

@@ -28,7 +28,9 @@ public class CreativeTabManagerTest {
         GTSWNItemList.ME_Network_Quantum_Terminal, GTSWNItemList.Wireless_Energy_Monitor,
         GTSWNItemList.GTswn_Cover_Energy_Wireless, GTSWNItemList.GTswn_Cover_Dynamo_Wireless,
         GTSWNItemList.Network_Info_Panel, GTSWNItemList.Network_Info_Panel_Extender,
-        GTSWNItemList.ME_Network_Quantum_Node, GTSWNItemList.Quantum_Incorporation_Anchor, GTSWNItemList.TestCoin };
+        GTSWNItemList.ME_Network_Quantum_Node, GTSWNItemList.Quantum_Incorporation_Anchor,
+        GTSWNItemList.Matrix_Grouped_Item_Input_ME, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME,
+        GTSWNItemList.TestCoin };
 
     private final List<ItemStack> savedItems = new ArrayList<>();
     private final ItemStack[] savedStacks = new ItemStack[GTSWNItemList.values().length];
