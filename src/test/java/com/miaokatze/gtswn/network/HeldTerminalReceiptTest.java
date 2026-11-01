@@ -96,7 +96,15 @@ public class HeldTerminalReceiptTest {
             "PacketQuantumTerminalSwapBus$SwapJob" }) {
             Player actor = player();
             Class<?> type = Class.forName("com.miaokatze.gtswn.network." + nested);
-            Constructor<?> constructor = type.getDeclaredConstructors()[0];
+            Constructor<?> constructor = nested.endsWith("$Job")
+                ? type.getDeclaredConstructor(EntityPlayerMP.class, PacketQuantumIncorporation.class)
+                : type.getDeclaredConstructor(
+                    EntityPlayerMP.class,
+                    int.class,
+                    int.class,
+                    int.class,
+                    int.class,
+                    boolean.class);
             constructor.setAccessible(true);
             Object job = nested.endsWith("$Job")
                 ? constructor.newInstance(actor, new PacketQuantumIncorporation(1, 2, 3, false))

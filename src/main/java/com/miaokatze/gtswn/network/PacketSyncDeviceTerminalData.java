@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import com.miaokatze.gtswn.common.device.DeviceLinkSummary;
 import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
 import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
@@ -43,7 +44,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
     public static final int MAX_ENTRIES = 1024;
     /** v1.8.60 carries electric data only; reject older layouts before reading their entries. */
     private static final int WIRE_MAGIC = 0x47545358;
-    private static final int WIRE_SCHEMA = 2;
+    private static final int WIRE_SCHEMA = 3;
 
     /** name 字段长度上限（字符） */
     public static final int MAX_NAME_LEN = 64;
@@ -115,6 +116,18 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             buf.writeByte(entry.recognitionMode);
             buf.writeByte(entry.evidenceKind);
             buf.writeByte(entry.linkNodeType);
+            buf.writeByte(entry.linkSummary.state);
+            buf.writeInt(entry.linkSummary.energyConnected);
+            buf.writeInt(entry.linkSummary.energyTotal);
+            buf.writeInt(entry.linkSummary.dynamoConnected);
+            buf.writeInt(entry.linkSummary.dynamoTotal);
+            buf.writeByte(entry.machineKind);
+            buf.writeByte(entry.machineTier);
+            buf.writeBoolean(entry.machineOwner != null);
+            if (entry.machineOwner != null) {
+                buf.writeLong(entry.machineOwner.getMostSignificantBits());
+                buf.writeLong(entry.machineOwner.getLeastSignificantBits());
+            }
             ByteBufUtils.writeUTF8String(buf, entry.displayName);
             buf.writeByte(entry.nameColor);
             buf.writeBoolean(entry.nameBold);
@@ -167,6 +180,17 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     byte recognitionMode = buf.readByte();
                     byte evidenceKind = buf.readByte();
                     byte linkNodeType = buf.readByte();
+                    DeviceLinkSummary linkSummary = new DeviceLinkSummary(
+                        buf.readByte(),
+                        buf.readInt(),
+                        buf.readInt(),
+                        buf.readInt(),
+                        buf.readInt());
+                    byte machineKind = buf.readByte(), machineTier = buf.readByte();
+                    int hasOwner = buf.readUnsignedByte();
+                    if (hasOwner > 1 || machineKind < 0 || machineKind > 3 || machineTier < -1 || machineTier > 15)
+                        throw new IllegalArgumentException("Invalid machine identity");
+                    UUID machineOwner = hasOwner == 1 ? new UUID(buf.readLong(), buf.readLong()) : null;
                     String displayName = ByteBufUtils.readUTF8String(buf);
                     byte nameColor = buf.readByte();
                     boolean nameBold = buf.readBoolean();
@@ -198,7 +222,11 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                             nameColor,
                             nameBold,
                             capabilityMask,
-                            recognitionMode));
+                            recognitionMode,
+                            linkSummary,
+                            machineOwner,
+                            machineKind,
+                            machineTier));
                 } catch (Exception e) {
                     throw new IllegalArgumentException("Malformed device page", e);
                 }
@@ -314,6 +342,9 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         public final byte recognitionMode;
         public final byte evidenceKind;
         public final byte linkNodeType;
+        public final DeviceLinkSummary linkSummary;
+        public final UUID machineOwner;
+        public final byte machineKind, machineTier;
 
         public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut) {
@@ -423,6 +454,76 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
             byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
             byte capabilityMask, byte recognitionMode) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                metaTileId,
+                evidenceKind,
+                linkNodeType,
+                displayName,
+                nameColor,
+                nameBold,
+                capabilityMask,
+                recognitionMode,
+                DeviceLinkSummary.UNVERIFIED);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
+            byte capabilityMask, byte recognitionMode, DeviceLinkSummary linkSummary) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                metaTileId,
+                evidenceKind,
+                linkNodeType,
+                displayName,
+                nameColor,
+                nameBold,
+                capabilityMask,
+                recognitionMode,
+                linkSummary,
+                null,
+                (byte) 0,
+                (byte) -1);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
+            byte capabilityMask, byte recognitionMode, DeviceLinkSummary linkSummary, UUID machineOwner,
+            byte machineKind, byte machineTier) {
+            if (machineKind < 0 || machineKind > 3 || machineTier < -1 || machineTier > 15)
+                throw new IllegalArgumentException("Invalid machine metadata");
+            this.machineOwner = machineOwner;
+            this.machineKind = machineKind;
+            this.machineTier = machineTier;
+            this.linkSummary = java.util.Objects.requireNonNull(linkSummary);
             this.recognitionMode = DeviceTerminalRecognitionMode.migrate(recognitionMode);
             boolean ignored = this.recognitionMode == 2 || state == 3;
             this.capabilityMask = ignored ? 0 : (byte) (capabilityMask & 3);

@@ -19,11 +19,23 @@ public final class TerminalSupplyStore {
     public enum Kind {
 
         ANCHOR,
-        TUBE;
+        TUBE,
+        TELEPORT_ANCHOR;
 
         public ItemStack reference() {
-            return this == ANCHOR ? GTSWNItemList.Quantum_Incorporation_Anchor.get(1)
-                : LaserHatchUtil.getLaserPipeItemStack();
+            return switch (this) {
+                case ANCHOR -> GTSWNItemList.Quantum_Incorporation_Anchor.get(1);
+                case TUBE -> LaserHatchUtil.getLaserPipeItemStack();
+                case TELEPORT_ANCHOR -> GTSWNItemList.Network_Teleport_Anchor.get(1);
+            };
+        }
+
+        public String labelKey() {
+            return switch (this) {
+                case ANCHOR -> "gtswn.gui.terminal.anchor";
+                case TUBE -> "gtswn.gui.terminal.tube";
+                case TELEPORT_ANCHOR -> "gtswn.gui.terminal.teleport_anchor";
+            };
         }
 
         public boolean matches(ItemStack stack) {
@@ -61,14 +73,25 @@ public final class TerminalSupplyStore {
 
     public static boolean available(EntityPlayer player, Kind kind) {
         if (count(player, kind) > 0) return true;
-        for (ItemStack stack : player.inventory.mainInventory) {
-            ItemStack reference = kind.reference();
-            if (stack != null && stack.stackSize > 0
+        return inventorySlot(player, kind) >= 0;
+    }
+
+    /** Keep old consumables' item/meta fallback; the new anchor always uses exact item/meta/NBT. */
+    public static int inventorySlot(EntityPlayer player, Kind kind) {
+        ItemStack reference = kind.reference();
+        for (int slot = 0; slot < Math.min(36, player.inventory.mainInventory.length); slot++) {
+            ItemStack stack = player.inventory.mainInventory[slot];
+            if (inventoryMatches(kind, stack, reference)) return slot;
+        }
+        return -1;
+    }
+
+    static boolean inventoryMatches(Kind kind, ItemStack stack, ItemStack reference) {
+        return kind == Kind.TELEPORT_ANCHOR ? SupplyInventoryTransfer.matches(stack, reference)
+            : stack != null && stack.stackSize > 0
                 && reference != null
                 && stack.getItem() == reference.getItem()
-                && stack.getItemDamage() == reference.getItemDamage()) return true;
-        }
-        return false;
+                && stack.getItemDamage() == reference.getItemDamage();
     }
 
     /** Call only after success; preserve the last consumed supply's zero and capture delayed chat counts. */
@@ -80,8 +103,7 @@ public final class TerminalSupplyStore {
         if (before > 0) message.appendSibling(
             new ChatComponentTranslation(
                 "gtswn.chat.terminal.preloaded_remaining",
-                new ChatComponentTranslation(
-                    kind == Kind.ANCHOR ? "gtswn.gui.terminal.anchor" : "gtswn.gui.terminal.tube"),
+                new ChatComponentTranslation(kind.labelKey()),
                 remaining));
         return message;
     }
@@ -94,20 +116,81 @@ public final class TerminalSupplyStore {
             set(player, kind, count - 1);
             return true;
         }
-        ItemStack reference = kind.reference();
-        if (reference == null) return false;
-        for (int i = 0; i < player.inventory.mainInventory.length; i++) {
-            ItemStack stack = player.inventory.mainInventory[i];
-            if (stack == null || stack.stackSize <= 0
-                || stack.getItem() != reference.getItem()
-                || stack.getItemDamage() != reference.getItemDamage()) continue;
-            player.inventory.decrStackSize(i, 1);
-            player.inventory.markDirty();
-            if (player instanceof EntityPlayerMP mp) mp.playerNetServerHandler
-                .sendPacket(new S2FPacketSetSlot(0, i < 9 ? 36 + i : i, player.inventory.mainInventory[i]));
-            player.openContainer.detectAndSendChanges();
-            return true;
+        int slot = inventorySlot(player, kind);
+        if (slot < 0) return false;
+        player.inventory.decrStackSize(slot, 1);
+        syncInventory(player, slot);
+        return true;
+    }
+
+    /** Server-thread escrow: remove one before movement, then commit or release exactly once. */
+    public static Reservation reserveTeleportAnchor(EntityPlayer player, boolean reserve) {
+        if (player.worldObj.isRemote) return null;
+        Kind kind = Kind.TELEPORT_ANCHOR;
+        if (reserve) {
+            int count = count(player, kind);
+            if (count <= 0) return null;
+            Reservation receipt = new Reservation(player, -1, kind.reference());
+            set(player, kind, count - 1);
+            return receipt;
         }
-        return false;
+        int slot = inventorySlot(player, kind);
+        if (slot < 0) return null;
+        ItemStack removed = player.inventory.decrStackSize(slot, 1);
+        return new Reservation(player, slot, removed);
+    }
+
+    public static final class Reservation {
+
+        private final EntityPlayer player;
+        private final int slot;
+        private final ItemStack item;
+        private boolean settled;
+
+        private Reservation(EntityPlayer player, int slot, ItemStack item) {
+            this.player = player;
+            this.slot = slot;
+            this.item = item.copy();
+            this.item.stackSize = 1;
+        }
+
+        public void commit() {
+            if (settled) return;
+            settled = true;
+            syncInventory(player, slot);
+        }
+
+        public void release() {
+            if (settled) return;
+            settled = true;
+            // A dimension hook can change inventory contents. Prefer the exact source, then the
+            // player's death-persistent reserve; never overwrite an unrelated slot or discard a refund.
+            if (slot >= 0) {
+                ItemStack current = player.inventory.getStackInSlot(slot);
+                if (current == null) {
+                    player.inventory.setInventorySlotContents(slot, item.copy());
+                    syncInventory(player, slot);
+                    return;
+                }
+                if (SupplyInventoryTransfer.matches(current, item) && current.stackSize < current.getMaxStackSize()) {
+                    current.stackSize++;
+                    syncInventory(player, slot);
+                    return;
+                }
+            }
+            int count = count(player, Kind.TELEPORT_ANCHOR);
+            if (count < CAPACITY) set(player, Kind.TELEPORT_ANCHOR, count + 1);
+            else if (SupplyInventoryTransfer.withdraw(player.inventory, item, 1, -1) > 0)
+                player.entityDropItem(item.copy(), 0);
+            syncInventory(player, slot);
+        }
+    }
+
+    private static void syncInventory(EntityPlayer player, int slot) {
+        player.inventory.markDirty();
+        if (player instanceof EntityPlayerMP mp && mp.playerNetServerHandler != null && slot >= 0)
+            mp.playerNetServerHandler
+                .sendPacket(new S2FPacketSetSlot(0, slot < 9 ? 36 + slot : slot, player.inventory.mainInventory[slot]));
+        if (player.openContainer != null) player.openContainer.detectAndSendChanges();
     }
 }

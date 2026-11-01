@@ -1,0 +1,480 @@
+package com.miaokatze.gtswn.common.assembly;
+
+import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.item.ItemStack;
+import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.StatCollector;
+import net.minecraftforge.fluids.FluidStack;
+
+import com.cleanroommc.modularui.api.IPanelHandler;
+import com.cleanroommc.modularui.api.drawable.IKey;
+import com.cleanroommc.modularui.screen.ModularPanel;
+import com.cleanroommc.modularui.value.sync.BooleanSyncValue;
+import com.cleanroommc.modularui.value.sync.InteractionSyncHandler;
+import com.cleanroommc.modularui.value.sync.PanelSyncManager;
+import com.cleanroommc.modularui.value.sync.StringSyncValue;
+import com.cleanroommc.modularui.widget.ParentWidget;
+import com.cleanroommc.modularui.widgets.ButtonWidget;
+import com.cleanroommc.modularui.widgets.ListWidget;
+import com.cleanroommc.modularui.widgets.layout.Flow;
+import com.cleanroommc.modularui.widgets.layout.Grid;
+import com.cleanroommc.modularui.widgets.slot.ModularSlot;
+import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout;
+import com.miaokatze.gtswn.common.assembly.pattern.PatternValidationException;
+import com.miaokatze.gtswn.common.util.DeviceTooltip;
+
+import gregtech.api.enums.GTValues;
+import gregtech.api.metatileentity.implementations.MTEHatch;
+import gregtech.api.modularui2.GTGuiTextures;
+import gregtech.api.modularui2.GTGuis;
+import gregtech.common.gui.modularui.hatch.base.MTEHatchBaseGui;
+import gregtech.common.gui.modularui.util.PatternSlot;
+
+/** Uses the clicked tile as the native GUI anchor and the group's master as the pattern bank owner. */
+public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
+
+    private final MatrixAssemblyMember anchor;
+    private final MatrixAssemblyMember member;
+    private BooleanSyncValue editable;
+    private StringSyncValue status;
+    private StringSyncValue network;
+    private int previewSlot;
+
+    public MatrixAssemblyUi(MatrixAssemblyMember member) {
+        super((MTEHatch) member);
+        anchor = member;
+        OrderedAssemblyGroup group = member.matrixPort()
+            .group();
+        this.member = group == null ? member : group.master();
+    }
+
+    private OrderedAssemblyGroup currentGroup() {
+        OrderedAssemblyGroup group = member.matrixPort()
+            .group();
+        return group != null && group.master() == member
+            && anchor.matrixPort()
+                .group() == group ? group : null;
+    }
+
+    static String[] description(boolean fluid) {
+        String type = fluid ? "fluid" : "item";
+        return new String[] { tr("gtswn.matrix.description." + type),
+            StatCollector.translateToLocalFormatted(
+                "gtswn.matrix.description.tier",
+                GTValues.TIER_COLORS[6] + GTValues.VN[6] + EnumChatFormatting.RESET),
+            tr("gtswn.matrix.description.storage." + type), tr("gtswn.matrix.description.pattern"),
+            tr("gtswn.matrix.description.interface_terminal"), tr("gtswn.matrix.description.requests"),
+            tr("gtswn.matrix.description.blocking"), "", tr("gtswn.matrix.description.column"),
+            tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.connections"),
+            tr("gtswn.matrix.description.setup"), tr("gtswn.matrix.description.native"),
+            tr("gtswn.matrix.description.protection"), "", tr("gtswn.matrix.description.gui"),
+            tr("gtswn.matrix.description.me"), "", DeviceTooltip.addedByLine() };
+    }
+
+    private static String tr(String key) {
+        return StatCollector.translateToLocal(key);
+    }
+
+    @Override
+    protected int getBasePanelHeight() {
+        return super.getBasePanelHeight() + SLOT_SIZE + 44;
+    }
+
+    @Override
+    protected void registerSyncValues(PanelSyncManager sync) {
+        super.registerSyncValues(sync);
+        editable = new BooleanSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            return !anchor.matrixPort()
+                .quarantined()
+                && !member.matrixPort()
+                    .quarantined()
+                && group != null
+                && group.editable();
+        });
+        status = new StringSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            if (group == null && anchor.matrixPort()
+                .group() != null) return "group_changed";
+            if (member.matrixPort()
+                .quarantined())
+                return member.matrixPort()
+                    .fault();
+            if (group == null) return "minimum_two";
+            if (!group.reason()
+                .isEmpty()) return group.reason();
+            return group.stage()
+                .name()
+                .toLowerCase(java.util.Locale.ROOT);
+        });
+        sync.syncValue("matrix_editable", editable);
+        sync.syncValue("matrix_status", status);
+        network = new StringSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            return label("network_connections") + " " + (group == null ? 0 : group.externalConnectionCount()) + " / 1";
+        });
+        sync.syncValue("matrix_network", network);
+    }
+
+    @Override
+    protected ParentWidget<?> createContentSection(ModularPanel panel, PanelSyncManager sync) {
+        sync.registerSlotGroup("matrix_patterns", 9);
+        Grid slots = new Grid().coverChildren()
+            .gridOfWidthHeight(9, 4, (x, y, index) -> createPatternSlot(index));
+        return super.createContentSection(panel, sync).child(
+            Flow.column()
+                .coverChildren()
+                .child(slots)
+                .child(
+                    IKey.dynamic(() -> tr("gtswn.matrix.reason." + status.getStringValue()))
+                        .asWidget()
+                        .width(160)
+                        .height(28)
+                        .scale(.7f))
+                .child(
+                    IKey.dynamic(() -> translateTokens(network.getStringValue()))
+                        .asWidget()
+                        .width(160)
+                        .height(16)
+                        .scale(.7f)
+                        .addTooltipLine(tr("gtswn.matrix.network_rule"))));
+    }
+
+    private PatternSlot createPatternSlot(int index) {
+        PatternSlot widget = new PatternSlot();
+        widget.slot(
+            new ModularSlot(
+                member.matrixPort()
+                    .patterns(),
+                index) {
+
+                @Override
+                public boolean isItemValid(ItemStack stack) {
+                    return editable.getBoolValue() && super.isItemValid(stack);
+                }
+
+                @Override
+                public boolean canTakeStack(EntityPlayer player) {
+                    return editable.getBoolValue() && super.canTakeStack(player);
+                }
+
+                @Override
+                public boolean canDragIntoSlot() {
+                    return editable.getBoolValue() && super.canDragIntoSlot();
+                }
+            }.slotGroup("matrix_patterns"));
+        return widget;
+    }
+
+    @Override
+    protected Flow createBottomLeftCornerFlow(ModularPanel panel, PanelSyncManager sync) {
+        InteractionSyncHandler refund = new InteractionSyncHandler().setOnMousePressed(data -> {
+            OrderedAssemblyGroup group = currentGroup();
+            if (!data.isClient() && data.mouseButton == 0 && group != null) group.refund();
+        });
+        IPanelHandler overview = sync.syncedPanel("matrix_overview", true, (manager, handler) -> overview(manager));
+        return super.createBottomLeftCornerFlow(panel, sync).child(
+            new ButtonWidget<>().size(18)
+                .overlay(GTGuiTextures.OVERLAY_BUTTON_EXPORT)
+                .syncHandler(refund)
+                .addTooltipLine(tr("gtswn.matrix.refund")))
+            .child(
+                new ButtonWidget<>().size(18)
+                    .overlay(GTGuiTextures.OVERLAY_BUTTON_PLUS_LARGE)
+                    .onMousePressed(button -> {
+                        overview.openPanel();
+                        return true;
+                    })
+                    .addTooltipLine(tr("gtswn.matrix.overview")))
+            .child(
+                new ButtonWidget<>().size(18)
+                    .overlay(GTGuiTextures.OVERLAY_BUTTON_X2)
+                    .setEnabledIf(widget -> false)
+                    .addTooltipLine(tr("gtswn.matrix.fixed_blocking")));
+    }
+
+    private ModularPanel overview(PanelSyncManager sync) {
+        StringSyncValue text = new StringSyncValue(this::overviewText);
+        StringSyncValue selected = new StringSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            return label("preview_slot") + " "
+                + (selectedSlot(group) + 1)
+                + "/"
+                + MatrixPatternInventory.SIZE
+                + " - "
+                + label(activePattern(group) ? "active_pattern" : "pattern_preview");
+        });
+        BooleanSyncValue browsing = new BooleanSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            return group == null || group.stage() == OrderedAssemblyGroup.Stage.IDLE;
+        });
+        sync.syncValue("matrix_overview_text", text);
+        sync.syncValue("matrix_preview_slot", selected);
+        sync.syncValue("matrix_preview_browsing", browsing);
+        return GTGuis.createPopUpPanel("matrix_overview")
+            .size(360, 300)
+            .child(
+                IKey.lang("gtswn.matrix.overview")
+                    .asWidget()
+                    .pos(8, 8)
+                    .width(336))
+            .child(previewButton(-1, 8, browsing))
+            .child(
+                IKey.dynamic(() -> translateTokens(selected.getStringValue()))
+                    .asWidget()
+                    .pos(30, 29)
+                    .width(300)
+                    .height(16)
+                    .scale(.75f))
+            .child(previewButton(1, 334, browsing))
+            .child(
+                new ListWidget<>().pos(8, 52)
+                    .size(344, 240)
+                    .child(
+                        IKey.dynamic(() -> translateTokens(text.getStringValue()))
+                            .asWidget()
+                            .width(330)
+                            .scale(.75f)));
+    }
+
+    private ButtonWidget<?> previewButton(int direction, int x, BooleanSyncValue browsing) {
+        InteractionSyncHandler action = new InteractionSyncHandler().setOnMousePressed(mouse -> {
+            if (mouse.isClient() || mouse.mouseButton != 0) return;
+            OrderedAssemblyGroup group = currentGroup();
+            if (group == null || group.stage() == OrderedAssemblyGroup.Stage.IDLE)
+                previewSlot = Math.floorMod(previewSlot + direction, MatrixPatternInventory.SIZE);
+        });
+        return new ButtonWidget<>().size(18)
+            .pos(x, 27)
+            .overlay(IKey.str(direction < 0 ? "<" : ">"))
+            .syncHandler(action)
+            .setEnabledIf(widget -> browsing.getBoolValue())
+            .addTooltipLine(tr("gtswn.matrix." + (direction < 0 ? "previous_pattern" : "next_pattern")));
+    }
+
+    private static boolean activePattern(OrderedAssemblyGroup group) {
+        return group != null && group.stage() != OrderedAssemblyGroup.Stage.IDLE && group.patternSlot() >= 0;
+    }
+
+    private int selectedSlot(OrderedAssemblyGroup group) {
+        return activePattern(group) ? group.patternSlot() : previewSlot;
+    }
+
+    private String overviewText() {
+        OrderedAssemblyGroup group = currentGroup();
+        if (group == null && anchor.matrixPort()
+            .group() != null) return reason("group_changed");
+        MatrixAssemblyMember owner = group == null ? member : group.master();
+        boolean active = activePattern(group);
+        StringBuilder text = new StringBuilder();
+        if (group != null) {
+            text.append(label("network_connections"))
+                .append(' ')
+                .append(group.externalConnectionCount())
+                .append(" / 1\n")
+                .append(label("network_entry"))
+                .append(' ');
+            int[] entry = group.networkEntryPosition();
+            if (entry == null) text.append(label("unbound"));
+            else text.append(label("dimension"))
+                .append(' ')
+                .append(entry[0])
+                .append(" @ ")
+                .append(entry[1])
+                .append(", ")
+                .append(entry[2])
+                .append(", ")
+                .append(entry[3]);
+            text.append('\n')
+                .append(label("buffer_rule"))
+                .append('\n')
+                .append(label("order_rule"))
+                .append('\n');
+            int[] position = group.diagnosticControllerPosition();
+            text.append(label("controller"))
+                .append(' ');
+            if (position == null) text.append(label("unbound"));
+            else text.append(label("dimension"))
+                .append(' ')
+                .append(position[0])
+                .append(" @ ")
+                .append(position[1])
+                .append(", ")
+                .append(position[2])
+                .append(", ")
+                .append(position[3]);
+            text.append('\n')
+                .append(
+                    reason(
+                        group.stage()
+                            .name()
+                            .toLowerCase(java.util.Locale.ROOT)))
+                .append(" / ")
+                .append(label("epoch"))
+                .append(' ')
+                .append(group.epoch())
+                .append('\n');
+            if (active) {
+                String key = group.recipeKey();
+                text.append(label("recipe_key"))
+                    .append(' ')
+                    .append(key.length() > 19 ? key.substring(0, 19) : key)
+                    .append('\n');
+            }
+        }
+        text.append(label("positions_one_based"))
+            .append('\n');
+        text.append(label(active ? "table_actual" : "table_projected"))
+            .append('\n');
+        OrderedPatternLayout layout = null;
+        int selected = selectedSlot(group);
+        if (selected < 0 || selected >= MatrixPatternInventory.SIZE) {
+            text.append(reason("invalid_saved_data"))
+                .append('\n');
+        } else {
+            ItemStack pattern = owner.matrixPort()
+                .patterns()
+                .getStackInSlot(selected);
+            try {
+                if (pattern == null) text.append(label("empty_pattern_slot"))
+                    .append('\n');
+                else {
+                    layout = OrderedPatternLayout.decode(
+                        pattern,
+                        owner.getBaseMetaTileEntity()
+                            .getWorld());
+                    String previewReason = group == null ? "minimum_two" : group.previewReason(layout);
+                    text.append(previewReason.isEmpty() ? label("preview_valid") : reason(previewReason))
+                        .append('\n');
+                }
+            } catch (PatternValidationException ex) {
+                text.append(
+                    reason(
+                        ex.reason()
+                            .name()
+                            .toLowerCase(java.util.Locale.ROOT)));
+                if (ex.rawIndex() >= 0) text.append(" raw ")
+                    .append(ex.rawIndex() + 1);
+                text.append('\n');
+            }
+        }
+        if (layout != null) {
+            for (OrderedPatternLayout.Input input : layout.rawInputs()) {
+                if (input.kind() == OrderedPatternLayout.Kind.EMPTY) text.append("raw ")
+                    .append(input.rawIndex() + 1)
+                    .append(" - ")
+                    .append(label("empty_raw_slot"))
+                    .append('\n');
+            }
+        }
+        if (group != null) {
+            for (int i = 0; i < group.itemMembers()
+                .size(); i++) appendMember(text, group, layout, false, i, active);
+            for (int i = 0; i < group.fluidMembers()
+                .size(); i++) appendMember(text, group, layout, true, i, active);
+            text.append(label("native_progress"))
+                .append(' ');
+            int[] progress = group.diagnosticProgress();
+            if (progress == null) text.append(label("unbound"));
+            else text.append(progress[0])
+                .append('/')
+                .append(progress[1]);
+            text.append('\n');
+            text.append(
+                reason(
+                    group.reason()
+                        .isEmpty() ? "idle" : group.reason()));
+        } else {
+            text.append(reason("minimum_two"));
+        }
+        return text.toString();
+    }
+
+    private static void appendMember(StringBuilder text, OrderedAssemblyGroup group, OrderedPatternLayout layout,
+        boolean fluid, int ordinal, boolean active) {
+        MatrixAssemblyMember physical = (fluid ? group.fluidMembers() : group.itemMembers()).get(ordinal);
+        java.util.List<OrderedPatternLayout.Input> inputs = layout == null ? java.util.Collections.emptyList()
+            : fluid ? layout.fluids() : layout.items();
+        OrderedPatternLayout.Input input = ordinal < inputs.size() ? inputs.get(ordinal) : null;
+        ItemStack item = physical.matrixItem();
+        FluidStack liquid = physical.matrixFluidStack();
+        int[] position = group.diagnosticMemberPosition(fluid, ordinal);
+        String kind = fluid ? "F" : "I";
+        text.append('\n')
+            .append(label(fluid ? "fluid_member" : "item_member"))
+            .append(' ')
+            .append(ordinal + 1)
+            .append(" @ ")
+            .append(position[0])
+            .append(", ")
+            .append(position[1])
+            .append(", ")
+            .append(position[2])
+            .append('\n');
+        int table = input == null ? -1 : active ? group.diagnosticTableIndex(fluid, ordinal) : input.transportIndex();
+        text.append("raw ")
+            .append(input == null ? "-" : input.rawIndex() + 1)
+            .append(" | table ")
+            .append(table < 0 ? "-" : table + 1)
+            .append(" | ")
+            .append(label("native_position"))
+            .append(' ')
+            .append(kind)
+            .append(ordinal + 1)
+            .append('\n');
+        text.append(label("required"))
+            .append(' ')
+            .append(input == null ? "-" : input.amount())
+            .append(" | ")
+            .append(label("cached"))
+            .append(' ')
+            .append(fluid ? liquid == null ? 0 : liquid.amount : item == null ? 0 : item.stackSize)
+            .append(" | ")
+            .append(label("consumed"))
+            .append(' ');
+        if (active && group.diagnosticConsumptionObserved()) text.append(group.diagnosticConsumed(fluid, ordinal));
+        else text.append('-');
+        if (fluid) text.append(" mB");
+        text.append('\n');
+        if (input != null) {
+            if (fluid) text.append(
+                token(
+                    input.fluidStack()
+                        .getUnlocalizedName()));
+            else {
+                ItemStack material = input.itemStack();
+                text.append(
+                    material.hasDisplayName() ? material.getDisplayName()
+                        : token(material.getUnlocalizedName() + ".name"));
+            }
+            text.append('\n');
+        }
+    }
+
+    private static String label(String name) {
+        return token("gtswn.matrix." + name);
+    }
+
+    private static String reason(String name) {
+        return token("gtswn.matrix.reason." + name);
+    }
+
+    private static String token(String key) {
+        return "[[" + key + "]]";
+    }
+
+    /** Only keys and facts are synchronized; rendering translates in the viewer's language. */
+    private static String translateTokens(String encoded) {
+        StringBuilder translated = new StringBuilder();
+        int cursor = 0;
+        for (int start; (start = encoded.indexOf("[[", cursor)) >= 0;) {
+            int end = encoded.indexOf("]]", start + 2);
+            if (end < 0) break;
+            translated.append(encoded, cursor, start)
+                .append(tr(encoded.substring(start + 2, end)));
+            cursor = end + 2;
+        }
+        return translated.append(encoded, cursor, encoded.length())
+            .toString();
+    }
+}

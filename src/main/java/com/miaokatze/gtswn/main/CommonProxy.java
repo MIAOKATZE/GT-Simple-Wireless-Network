@@ -12,6 +12,8 @@ import net.minecraftforge.common.ForgeChunkManager;
 import net.minecraftforge.common.MinecraftForge;
 
 import com.miaokatze.gtswn.Tags;
+import com.miaokatze.gtswn.common.assembly.MatrixFluidInputHatch;
+import com.miaokatze.gtswn.common.assembly.MatrixItemInputBus;
 import com.miaokatze.gtswn.common.charging.MonitorChargingHandler;
 import com.miaokatze.gtswn.common.command.CommandGTSWN;
 import com.miaokatze.gtswn.common.covers.CoverDropSuppressionHandler;
@@ -173,6 +175,14 @@ public class CommonProxy {
      */
     @SuppressWarnings({ "unused" })
     public void init(FMLInitializationEvent event) {
+        appeng.api.AEApi.instance()
+            .registries()
+            .interfaceTerminal()
+            .register(MatrixItemInputBus.class);
+        appeng.api.AEApi.instance()
+            .registries()
+            .interfaceTerminal()
+            .register(MatrixFluidInputHatch.class);
         appeng.api.AEApi.instance()
             .registries()
             .gridCache()
@@ -492,6 +502,8 @@ public class CommonProxy {
     public void openDeviceInfoTerminalGui() {}
 
     public void openDeviceInfoTerminalSettingsGui() {}
+
+    public void handleDeviceTeleportQuote(com.miaokatze.gtswn.network.PacketSyncDeviceTeleportQuote message) {}
 
     public boolean isDeviceTerminalVisualizationActive() {
         return false;

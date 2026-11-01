@@ -40,7 +40,10 @@ public enum GTSWNItemList implements IItemContainer {
     // 设备信息终端（阶段 A：物品+绑定手势；采样/扫描/GUI 阶段 C-E 实现）
     Device_Info_Terminal,
     // 测试硬币（测试环境道具：右键 +100万 EU，Shift+右键 -100万 EU）
-    TestCoin;
+    TestCoin,
+    Matrix_Grouped_Item_Input_ME,
+    Matrix_Grouped_Fluid_Input_ME,
+    Network_Teleport_Anchor;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;

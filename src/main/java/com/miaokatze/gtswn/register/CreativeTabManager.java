@@ -28,7 +28,9 @@ public class CreativeTabManager {
         WIRELESS_ENERGY(GTSWNItemList.Wireless_Energy_Monitor, GTSWNItemList.GTswn_Cover_Energy_Wireless,
             GTSWNItemList.GTswn_Cover_Dynamo_Wireless),
         DISPLAYS(GTSWNItemList.Network_Info_Panel, GTSWNItemList.Network_Info_Panel_Extender),
-        ME_QUANTUM(GTSWNItemList.ME_Network_Quantum_Node, GTSWNItemList.Quantum_Incorporation_Anchor),
+        ME_QUANTUM(GTSWNItemList.ME_Network_Quantum_Node, GTSWNItemList.Quantum_Incorporation_Anchor,
+            GTSWNItemList.Network_Teleport_Anchor),
+        ORDERED_INPUTS(GTSWNItemList.Matrix_Grouped_Item_Input_ME, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME),
         TESTING(GTSWNItemList.TestCoin);
 
         private final GTSWNItemList[] items;
