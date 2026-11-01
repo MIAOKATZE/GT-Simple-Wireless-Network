@@ -214,6 +214,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private void bindNative(NativeAssemblySession next) {
+        if (!verified) {
+            if (session == next) revokeNativeBinding();
+            return;
+        }
         List<MatrixAssemblyMember> nextItems = new ArrayList<>();
         List<MatrixAssemblyMember> nextFluids = new ArrayList<>();
         for (Object input : next.controller().mInputBusses) {
@@ -232,8 +236,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             }
             nextFluids.add(member);
         }
-        if (!verified || nextItems.size() != items.size()
-            || nextFluids.size() != fluids.size()
+        if (nextItems.size() != items.size() || nextFluids.size() != fluids.size()
             || !items.containsAll(nextItems)
             || !fluids.containsAll(nextFluids)) {
             if (session == next) revokeNativeBinding();

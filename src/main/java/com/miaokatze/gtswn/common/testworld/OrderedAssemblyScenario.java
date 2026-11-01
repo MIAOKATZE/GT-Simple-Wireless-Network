@@ -181,16 +181,72 @@ final class OrderedAssemblyScenario implements TestScenario {
             GTSWNItemList.Matrix_Grouped_Item_Input_ME.get(1),
             ForgeDirection.DOWN);
         checkStructure(ctx);
+        OrderedAssemblyGroup cachedGroup = group;
+        group = master().matrixPort()
+            .group();
+        require(ctx, group != null, "The branch refusal is checked on the current physical members' group");
+        boolean nativeBegin = session.beginCheck();
+        boolean ownersBound = true, connectionsCleared = true;
+        for (MTEHatchInputBus input : controller.mInputBusses) {
+            MatrixAssemblyMember member = (MatrixAssemblyMember) input;
+            ownersBound &= member.matrixPort()
+                .group() == group;
+            connectionsCleared &= member.matrixPort()
+                .connectionMask() == 0;
+        }
+        for (var input : controller.mInputHatches) {
+            MatrixAssemblyMember member = (MatrixAssemblyMember) input;
+            ownersBound &= member.matrixPort()
+                .group() == group;
+            connectionsCleared &= member.matrixPort()
+                .connectionMask() == 0;
+        }
+        ctx.event(
+            "branch_rejection",
+            "cachedIsCurrent=" + (cachedGroup == group)
+                + "; reason="
+                + group.reason()
+                + "; editable="
+                + group.editable()
+                + "; accepting="
+                + group.accepting()
+                + "; ownersBound="
+                + ownersBound
+                + "; connectionsCleared="
+                + connectionsCleared
+                + "; branchBound="
+                + (((MatrixAssemblyMember) branch.getMetaTileEntity()).matrixPort()
+                    .group() != null)
+                + "; nativeBegin="
+                + nativeBegin
+                + "; blocked="
+                + session.blockedReason());
         require(
             ctx,
-            !group.accepting() && "same_kind_branch".equals(group.reason()),
+            !group.accepting() && !group.editable()
+                && "item_column".equals(group.reason())
+                && ownersBound
+                && connectionsCleared
+                && ((MatrixAssemblyMember) branch.getMetaTileEntity()).matrixPort()
+                    .group() == null
+                && !nativeBegin,
             "A physically adjacent same-kind branch cannot form a second row");
         ctx.world()
             .setBlockToAir(branch.xCoord, branch.yCoord, branch.zCoord);
         checkStructure(ctx);
+        group = master().matrixPort()
+            .group();
+        require(
+            ctx,
+            group != null && group.editable() && group.session() == session,
+            "Removing the real branch restores the current members' configurable native binding");
         long epoch = group.epoch();
         checkStructure(ctx);
-        require(ctx, group.epoch() == epoch, "Identical native structure rechecks retain the topology epoch");
+        require(
+            ctx,
+            master().matrixPort()
+                .group() == group && group.epoch() == epoch,
+            "Identical native structure rechecks retain the current group and topology epoch");
         selectRecipe(ctx);
         installPattern(ctx);
         duplicateRawPositions(ctx);
@@ -893,7 +949,10 @@ final class OrderedAssemblyScenario implements TestScenario {
     }
 
     private MatrixAssemblyMember master() {
-        return (MatrixAssemblyMember) controller.mInputBusses.get(0);
+        MatrixAssemblyMember firstNativeInput = (MatrixAssemblyMember) controller.mInputBusses.get(0);
+        OrderedAssemblyGroup current = firstNativeInput.matrixPort()
+            .group();
+        return current == null ? firstNativeInput : current.master();
     }
 
     private int[] position(int a, int b, int c) {

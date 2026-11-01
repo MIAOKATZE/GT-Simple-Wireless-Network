@@ -128,6 +128,46 @@ public class MatrixTopologyTest {
     }
 
     @Test
+    public void aNativeRecheckPreservesTheCurrentGroupsRealBranchRefusal() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        NativeAssemblySession session = new NativeAssemblySession(null);
+        field(OrderedAssemblyGroup.class, "session").set(group, session);
+        field(OrderedAssemblyGroup.class, "nativeBound").setBoolean(group, true);
+        MatrixAssemblyMember branch = fixture.add(false, 2, 65, 0);
+        OrderedAssemblyGroup.structureChecked(items.get(0), session, true);
+        assertSame(
+            group,
+            items.get(0)
+                .matrixPort()
+                .group());
+        assertEquals("item_column", group.reason());
+        assertFalse(group.editable());
+        assertFalse(group.accepting());
+        assertFalse(field(OrderedAssemblyGroup.class, "nativeBound").getBoolean(group));
+        assertNull(
+            branch.matrixPort()
+                .group());
+        for (MatrixAssemblyMember member : items) assertEquals(
+            0,
+            member.matrixPort()
+                .connectionMask());
+        fixture.world.tiles.remove(key(2, 65, 0));
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        assertSame(
+            group,
+            items.get(0)
+                .matrixPort()
+                .group());
+        assertTrue(group.editable());
+        assertFalse(group.accepting());
+    }
+
+    @Test
     public void fluidGapsUseOnlyRealFaceBridgesAndAnAddedItemKeepsTheExistingMaster() throws Exception {
         Fixture fixture = new Fixture();
         List<MatrixAssemblyMember> items = fixture.items(false);
