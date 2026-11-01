@@ -89,6 +89,25 @@ public class MatrixProxyLifecycleTest {
         assertNull(fixture.port.restoredLedger());
     }
 
+    @Test
+    public void powerAndChannelTransitionsRefreshThePatternCatalogueOncePerChange() throws Exception {
+        Fixture fixture = new Fixture();
+        Field pending = field(MatrixAssemblyPort.class, "patternChange");
+        pending.setBoolean(fixture.port, false);
+        fixture.proxy.active = true;
+        fixture.port.tick(1);
+        assertTrue(pending.getBoolean(fixture.port));
+        pending.setBoolean(fixture.port, false);
+        fixture.port.tick(2);
+        assertFalse(pending.getBoolean(fixture.port));
+        fixture.proxy.active = false;
+        fixture.port.tick(3);
+        assertTrue(pending.getBoolean(fixture.port));
+        pending.setBoolean(fixture.port, false);
+        fixture.port.tick(4);
+        assertFalse(pending.getBoolean(fixture.port));
+    }
+
     private static MatrixAssemblyMember member() {
         return (MatrixAssemblyMember) Proxy.newProxyInstance(
             MatrixAssemblyMember.class.getClassLoader(),
@@ -114,11 +133,22 @@ public class MatrixProxyLifecycleTest {
 
     private static final class Fixture {
 
-        final MatrixAssemblyMember member = member();
-        final MatrixAssemblyPort port = new MatrixAssemblyPort(member);
+        final MatrixAssemblyMember member;
+        final MatrixAssemblyPort port;
         final RecordingProxy proxy = new RecordingProxy();
 
         Fixture() throws Exception {
+            MatrixAssemblyPort[] holder = new MatrixAssemblyPort[1];
+            member = (MatrixAssemblyMember) Proxy.newProxyInstance(
+                MatrixAssemblyMember.class.getClassLoader(),
+                new Class<?>[] { MatrixAssemblyMember.class },
+                (proxy, method, args) -> {
+                    if (method.getName()
+                        .equals("matrixPort")) return holder[0];
+                    throw new AssertionError(method);
+                });
+            port = new MatrixAssemblyPort(member);
+            holder[0] = port;
             field(MatrixAssemblyPort.class, "proxy").set(port, proxy);
         }
     }
@@ -128,9 +158,15 @@ public class MatrixProxyLifecycleTest {
 
         Endpoint endpoint;
         EnumSet<GridFlags> flagsAtCreation;
+        boolean active;
 
         RecordingProxy() {
             super(null, "matrixProxy", null, true);
+        }
+
+        @Override
+        public boolean isActive() {
+            return active;
         }
 
         @Override

@@ -39,6 +39,7 @@ public final class MatrixAssemblyPort {
     private AENetworkProxy proxy;
     private OrderedAssemblyGroup group;
     private boolean patternChange = true;
+    private boolean wasActive;
     private NBTTagCompound preservedRoot;
     private String fault = "";
     private int connectionMask;
@@ -134,6 +135,11 @@ public final class MatrixAssemblyPort {
     public void tick(long tick) {
         OrderedAssemblyGroup.topologyTick(member, tick);
         if (group != null && group.master() == member) group.tick();
+        boolean active = getProxy().isActive();
+        if (active != wasActive) {
+            wasActive = active;
+            patternChange = true;
+        }
         if (patternChange && tick % 10 == 0 && getProxy().isReady()) {
             try {
                 getProxy().getGrid()

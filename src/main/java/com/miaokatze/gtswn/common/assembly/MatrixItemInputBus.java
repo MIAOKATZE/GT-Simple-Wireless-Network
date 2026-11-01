@@ -1,12 +1,17 @@
 package com.miaokatze.gtswn.common.assembly;
 
+import static appeng.util.item.AEFluidStackType.FLUID_STACK_TYPE;
+import static appeng.util.item.AEItemStackType.ITEM_STACK_TYPE;
+
 import java.util.UUID;
 
 import net.minecraft.client.renderer.texture.IIconRegister;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.inventory.IInventory;
 import net.minecraft.inventory.InventoryCrafting;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.common.util.ForgeDirection;
@@ -25,8 +30,10 @@ import appeng.api.networking.IGridNode;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.crafting.ICraftingProvider;
 import appeng.api.networking.crafting.ICraftingProviderHelper;
+import appeng.api.storage.data.IAEStackType;
 import appeng.api.util.AECableType;
 import appeng.api.util.DimensionalCoord;
+import appeng.api.util.IInterfaceViewable;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import cpw.mods.fml.relauncher.Side;
@@ -40,9 +47,10 @@ import io.netty.buffer.ByteBuf;
 /** One physical position in a native assembly line; no manual or pipe insertion. */
 @IMetaTileEntity.SkipGenerateDescription
 public final class MatrixItemInputBus extends MTEHatchInputBus
-    implements MatrixAssemblyMember, IGridProxyable, ICraftingProvider, IPowerChannelState {
+    implements MatrixAssemblyMember, IGridProxyable, ICraftingProvider, IPowerChannelState, IInterfaceViewable {
 
     private final MatrixAssemblyPort matrix = new MatrixAssemblyPort(this);
+    private final IInventory interfacePatterns = new MatrixPatternInventoryAdapter(matrix);
 
     public MatrixItemInputBus(int id, String name, String localName) {
         super(id, name, localName, 5, 1);
@@ -306,6 +314,52 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
     @Override
     public DimensionalCoord getLocation() {
         return matrix.location();
+    }
+
+    @Override
+    public int rows() {
+        return 4;
+    }
+
+    @Override
+    public int rowSize() {
+        return 9;
+    }
+
+    @Override
+    public IInventory getPatterns() {
+        return interfacePatterns;
+    }
+
+    @Override
+    public String getName() {
+        return getLocalName();
+    }
+
+    @Override
+    public TileEntity getTileEntity() {
+        return (TileEntity) getBaseMetaTileEntity();
+    }
+
+    @Override
+    public boolean shouldDisplay() {
+        return matrix.group() != null && matrix.group()
+            .master() == this;
+    }
+
+    @Override
+    public boolean allowsPatternOptimization() {
+        return false;
+    }
+
+    @Override
+    public IAEStackType<?>[] getSupportedStackTypes() {
+        return new IAEStackType<?>[] { ITEM_STACK_TYPE, FLUID_STACK_TYPE };
+    }
+
+    @Override
+    public ItemStack getSelfRep() {
+        return getStackForm(1);
     }
 
     @Override

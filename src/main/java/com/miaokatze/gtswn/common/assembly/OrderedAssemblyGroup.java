@@ -147,9 +147,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 .next();
             if (group.samePersistentMembers(items, fluids)) {
                 if (!group.members.containsAll(found)) group.replaceReloadedMembers(found);
+                boolean wasVerified = group.verified;
                 group.verified = group.checkTopology();
                 if (group.verified && group.stage == Stage.IDLE) group.reason = "";
                 group.updateConnections();
+                if (wasVerified != group.verified) group.dirty();
                 return;
             }
         }
@@ -439,18 +441,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (session == null || !nativeBound) return "structure_incomplete";
         try {
             AssemblyRecipeMatch.bind(layout, authorizedRecipes());
-            if (layout.items()
-                .size() > items.size()
-                || layout.fluids()
-                    .size() > fluids.size())
-                return "not_enough_members";
-            for (OrderedPatternLayout.Input fluid : layout.fluids()) {
-                if (fluid.amount()
-                    > ((gregtech.api.metatileentity.implementations.MTEHatchInput) fluids.get(fluid.kindOrdinal()))
-                        .getCapacity())
-                    return "fluid_capacity";
-            }
-            return "";
+            return capacityReason(layout);
         } catch (PatternValidationException rejected) {
             return rejected.reason()
                 .name()
@@ -486,10 +477,12 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public void invalidate(String message) {
+        boolean wasVerified = verified;
         verified = false;
         reason = message;
         for (MatrixAssemblyMember member : members) member.matrixPort()
             .connectionMask(0);
+        if (wasVerified) dirty();
     }
 
     private boolean allEmpty() {
@@ -646,12 +639,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return result;
     }
 
+    /** AE plans against declarations; native formation and research gate delivery, not the recipe catalogue. */
     public void provideCrafting(ICraftingProviderHelper helper) {
-        if (session == null || !nativeBound
-            || !session.readyForPatternAdvertisement()
-            || !verified
-            || !checkTopology()
-            || !checkNativeBinding()) return;
+        if (!verified || !checkTopology()) return;
         for (int i = 0; i < MatrixPatternInventory.SIZE; i++) {
             ItemStack pattern = master().matrixPort()
                 .patterns()
@@ -662,16 +652,27 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     pattern,
                     master().getBaseMetaTileEntity()
                         .getWorld());
-                AssemblyRecipeMatch.bind(layout, authorizedRecipes());
-                if (layout.items()
-                    .size() <= items.size()
-                    && layout.fluids()
-                        .size() <= fluids.size())
+                if (capacityReason(layout).isEmpty())
                     helper.addCraftingOption((ICraftingProvider) master(), layout.details());
             } catch (PatternValidationException ignored) {
-                // Invalid/unauthorized patterns remain visible in their physical management slots.
+                // Unsupported declarations remain visible in their physical management slots.
             }
         }
+    }
+
+    private String capacityReason(OrderedPatternLayout layout) {
+        if (layout.items()
+            .size() > items.size()
+            || layout.fluids()
+                .size() > fluids.size())
+            return "not_enough_members";
+        for (OrderedPatternLayout.Input fluid : layout.fluids()) {
+            if (fluid.amount()
+                > ((gregtech.api.metatileentity.implementations.MTEHatchInput) fluids.get(fluid.kindOrdinal()))
+                    .getCapacity())
+                return "fluid_capacity";
+        }
+        return "";
     }
 
     public boolean accept(ICraftingPatternDetails details, InventoryCrafting table) {
@@ -698,17 +699,8 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             if (layout == null) return reject("pattern_not_installed");
             payload = layout.validateTable(table);
             match = AssemblyRecipeMatch.bind(layout, payload, authorizedRecipes());
-            if (payload.items()
-                .size() > items.size()
-                || payload.fluids()
-                    .size() > fluids.size())
-                return reject("not_enough_members");
-            for (OrderedPatternLayout.Input fluid : payload.fluids()) {
-                if (fluid.amount()
-                    > ((gregtech.api.metatileentity.implementations.MTEHatchInput) fluids.get(fluid.kindOrdinal()))
-                        .getCapacity())
-                    return reject("fluid_capacity");
-            }
+            String capacityReason = capacityReason(layout);
+            if (!capacityReason.isEmpty()) return reject(capacityReason);
         } catch (PatternValidationException ex) {
             return reject(
                 ex.reason()

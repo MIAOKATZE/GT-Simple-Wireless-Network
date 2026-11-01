@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.common.assembly;
 import static org.junit.Assert.*;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -32,8 +33,13 @@ import org.junit.Test;
 
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
+import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout;
+import com.miaokatze.gtswn.test.FluidRegistryTestBootstrap;
 
+import appeng.api.networking.crafting.ICraftingPatternDetails;
 import appeng.api.networking.crafting.ICraftingProviderHelper;
+import appeng.api.storage.data.IAEItemStack;
+import appeng.api.storage.data.IAEStack;
 import appeng.me.helpers.AENetworkProxy;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.CommonMetaTileEntity;
@@ -84,7 +90,7 @@ public class MatrixTopologyTest {
                     ICraftingProviderHelper.class.getClassLoader(),
                     new Class<?>[] { ICraftingProviderHelper.class },
                     (proxy, method, args) -> {
-                        throw new AssertionError("An unbound column cannot advertise crafting");
+                        throw new AssertionError("An empty pattern bank has no crafting options");
                     }));
             NBTTagCompound ledger = group.saveLedger();
             assertFalse(ledger.hasKey("controller"));
@@ -94,6 +100,61 @@ public class MatrixTopologyTest {
                     .orderedMemberId()
                     .toString(),
                 ledger.getString("master"));
+        }
+    }
+
+    @Test
+    public void topologyInvalidationAndRecoveryNotifyThePatternCatalogueOnlyOnTransitions() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        MatrixAssemblyPort port = group.master()
+            .matrixPort();
+        Field patternChange = field(MatrixAssemblyPort.class, "patternChange");
+        patternChange.setBoolean(port, false);
+        group.invalidate("topology_changed");
+        assertTrue(patternChange.getBoolean(port));
+        patternChange.setBoolean(port, false);
+        group.invalidate("topology_changed");
+        assertFalse(patternChange.getBoolean(port));
+        OrderedAssemblyGroup.refreshTopology(items.get(1));
+        assertSame(
+            group,
+            items.get(1)
+                .matrixPort()
+                .group());
+        assertTrue(group.editable());
+        assertTrue(patternChange.getBoolean(port));
+        patternChange.setBoolean(port, false);
+        OrderedAssemblyGroup.refreshTopology(items.get(2));
+        assertFalse(patternChange.getBoolean(port));
+    }
+
+    @Test
+    public void catalogueCapacityUsesPhysicalPositionsAndTanksBeforeAnyNativeBinding() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        MatrixFluidInputHatch fluid = (MatrixFluidInputHatch) fixture.add(true, 0, 64, 1);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        assertNull(group.session());
+        assertFalse(group.accepting());
+        Method capacity = OrderedAssemblyGroup.class.getDeclaredMethod("capacityReason", OrderedPatternLayout.class);
+        capacity.setAccessible(true);
+        assertEquals("", capacity.invoke(group, layout(5, new int[0])));
+        assertEquals("not_enough_members", capacity.invoke(group, layout(6, new int[0])));
+        assertEquals("", capacity.invoke(group, layout(1, new int[] { fluid.getCapacity() })));
+        assertEquals("fluid_capacity", capacity.invoke(group, layout(1, new int[] { fluid.getCapacity() + 1 })));
+        assertEquals("not_enough_members", capacity.invoke(group, layout(1, new int[] { 1, 1 })));
+        for (MatrixAssemblyMember member : fixture.members) {
+            assertNull(member.matrixItem());
+            assertNull(member.matrixFluidStack());
+            assertFalse(NativeAssemblyAdapter.permitsNativeAccess(member));
         }
     }
 
@@ -514,6 +575,37 @@ public class MatrixTopologyTest {
 
     private static String key(int x, int y, int z) {
         return x + ":" + y + ":" + z;
+    }
+
+    private static OrderedPatternLayout layout(int itemCount, int[] fluidAmounts) throws Exception {
+        Class<?> fixtures = Class.forName("com.miaokatze.gtswn.common.assembly.pattern.AssemblyPatternFixtures");
+        invoke(fixtures, "initialize", new Class<?>[0]);
+        IAEStack<?>[] inputs = new IAEStack<?>[itemCount + fluidAmounts.length];
+        for (int i = 0; i < itemCount; i++) {
+            ItemStack stack = (ItemStack) invoke(fixtures, "input", new Class<?>[] { int.class }, Integer.MAX_VALUE);
+            inputs[i] = (IAEStack<?>) invoke(fixtures, "item", new Class<?>[] { ItemStack.class }, stack);
+        }
+        for (int i = 0; i < fluidAmounts.length; i++) inputs[itemCount + i] = (IAEStack<?>) invoke(
+            fixtures,
+            "fluid",
+            new Class<?>[] { net.minecraftforge.fluids.FluidStack.class },
+            FluidRegistryTestBootstrap.water(fluidAmounts[i]));
+        ItemStack output = (ItemStack) invoke(fixtures, "output", new Class<?>[] { int.class }, 1);
+        IAEItemStack result = (IAEItemStack) invoke(fixtures, "item", new Class<?>[] { ItemStack.class }, output);
+        ICraftingPatternDetails details = (ICraftingPatternDetails) invoke(
+            fixtures,
+            "ultimate",
+            new Class<?>[] { IAEStack[].class, IAEItemStack.class },
+            inputs,
+            result);
+        return OrderedPatternLayout.decode(details);
+    }
+
+    private static Object invoke(Class<?> type, String name, Class<?>[] signature, Object... arguments)
+        throws Exception {
+        Method method = type.getDeclaredMethod(name, signature);
+        method.setAccessible(true);
+        return method.invoke(null, arguments);
     }
 
     private static Field field(Class<?> type, String name) throws Exception {

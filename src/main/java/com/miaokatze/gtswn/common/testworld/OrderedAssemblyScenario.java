@@ -1,9 +1,15 @@
 package com.miaokatze.gtswn.common.testworld;
 
+import static appeng.util.item.AEFluidStackType.FLUID_STACK_TYPE;
+import static appeng.util.item.AEItemStackType.ITEM_STACK_TYPE;
+
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Future;
 
 import net.minecraft.block.Block;
@@ -24,6 +30,8 @@ import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyHooks;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.assembly.MatrixAssemblyMember;
+import com.miaokatze.gtswn.common.assembly.MatrixFluidInputHatch;
+import com.miaokatze.gtswn.common.assembly.MatrixItemInputBus;
 import com.miaokatze.gtswn.common.assembly.OrderedAssemblyGroup;
 import com.miaokatze.gtswn.common.assembly.pattern.AssemblyRecipeKey;
 import com.miaokatze.gtswn.common.assembly.pattern.AssemblyRecipeMatch;
@@ -38,16 +46,25 @@ import appeng.api.networking.crafting.ICraftingJob;
 import appeng.api.networking.crafting.ICraftingLink;
 import appeng.api.networking.security.IActionHost;
 import appeng.api.networking.security.MachineSource;
+import appeng.api.parts.IPartHost;
 import appeng.api.storage.data.IAEFluidStack;
 import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IAEStack;
+import appeng.api.util.AEColor;
+import appeng.api.util.IInterfaceViewable;
+import appeng.container.implementations.ContainerInterfaceTerminal;
+import appeng.core.sync.packets.PacketInterfaceTerminalUpdate;
+import appeng.helpers.InventoryAction;
+import appeng.me.cluster.implementations.CraftingCPUCluster;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
+import appeng.parts.reporting.PartInterfaceTerminal;
 import appeng.tile.storage.TileDrive;
 import appeng.util.Platform;
 import appeng.util.inv.MEInventoryCrafting;
 import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
+import cpw.mods.fml.common.network.handshake.NetworkDispatcher;
 import gregtech.api.GregTechAPI;
 import gregtech.api.covers.CoverRegistry;
 import gregtech.api.enums.ItemList;
@@ -59,6 +76,7 @@ import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 import gregtech.api.util.AssemblyLineUtils;
 import gregtech.api.util.GTRecipe.RecipeAssemblyLine;
 import gregtech.common.tileentities.machines.multi.MTEAssemblyLine;
+import io.netty.channel.embedded.EmbeddedChannel;
 
 /** One explicit real-world probe. It creates no recipes and never advances a machine or CPU clock by hand. */
 final class OrderedAssemblyScenario implements TestScenario {
@@ -69,6 +87,7 @@ final class OrderedAssemblyScenario implements TestScenario {
     private MTEHatchOutputBus output;
     private NativeAssemblySession session;
     private OrderedAssemblyGroup group;
+    private MatrixAssemblyMember patternAnchor;
     private FakePlayer owner;
     private TileEntity aeController;
     private TileDrive drive;
@@ -80,6 +99,14 @@ final class OrderedAssemblyScenario implements TestScenario {
     private Future<ICraftingJob> planning;
     private ICraftingLink link;
     private ICraftingCPU cpu;
+    private PartInterfaceTerminal interfacePart;
+    private ContainerInterfaceTerminal interfaceContainer;
+    private Object masterTracker;
+    private long masterTrackerId;
+    private EmbeddedChannel actorChannel;
+    private long[] seededTotals;
+    private int waitingSamples;
+    private String waitingLink;
     private int stage, batch, maxProgress;
     private long stageTick, firstRun;
     private String stagedStock;
@@ -92,7 +119,7 @@ final class OrderedAssemblyScenario implements TestScenario {
 
     @Override
     public String description() {
-        return "Explicit real five-slice AL, registry recipe, research stick, AE CPU and two native production batches";
+        return "Real interface terminal pattern management, unformed/research waiting CPU, and two native AL batches";
     }
 
     @Override
@@ -109,6 +136,8 @@ final class OrderedAssemblyScenario implements TestScenario {
     public void start(TestContext ctx) throws Exception {
         stage = batch = maxProgress = 0;
         firstRun = 0;
+        patternAnchor = null;
+        actorChannel = null;
         progressObserved = powerObserved = false;
         owner = TestActors.player(ctx.world(), "owner");
         controllerTile = TestWorldFixtures
@@ -248,11 +277,18 @@ final class OrderedAssemblyScenario implements TestScenario {
                 .group() == group && group.epoch() == epoch,
             "Identical native structure rechecks retain the current group and topology epoch");
         selectRecipe(ctx);
-        installPattern(ctx);
         duplicateRawPositions(ctx);
-        controller.setInventorySlotContents(1, stick.copy());
+        patternAnchor = group.master();
+        controller.setInventorySlotContents(1, null);
         fillOutput();
         buildAe(ctx);
+        // Remove a real casing without changing the physical input column or its pattern identity.
+        block(ctx, 2, 0, 1, Blocks.air, 0);
+        checkStructure(ctx);
+        require(
+            ctx,
+            !controller.mMachine && group.editable() && !group.accepting(),
+            "A legal bare input column remains configurable while the actual AL is unformed");
         controllerTile.enableWorking();
         transition(ctx, 1, "Wait for physical AE grid, real cells and 2x2x2 CPU to become active");
     }
@@ -265,6 +301,8 @@ final class OrderedAssemblyScenario implements TestScenario {
             powerObserved |= controller.lEUt < 0;
         }
         if (ctx.tick() % 20 == 0 && stage >= 4) ctx.event("native_sample", nativeState());
+        if ((stage == 7 || stage == 12) && !published(ctx))
+            throw new IllegalStateException("The processing output disappeared from native craftable lists while busy");
         switch (stage) {
             case 1:
                 if (ctx.tick() - stageTick < 40) return;
@@ -274,7 +312,10 @@ final class OrderedAssemblyScenario implements TestScenario {
                     .isActive()
                     || proxy.getCrafting()
                         .getCpus()
-                        .isEmpty()) {
+                        .isEmpty()
+                    || interfacePart.getGridNode() == null
+                    || !interfacePart.getGridNode()
+                        .isActive()) {
                     if (ctx.tick() - stageTick > 600) throw new IllegalStateException(
                         "Physical AE grid/CPU did not activate; master=" + master().matrixPort()
                             .getProxy()
@@ -292,14 +333,24 @@ final class OrderedAssemblyScenario implements TestScenario {
                     .iterator()
                     .next();
                 source = new MachineSource((IActionHost) aeController);
+                inspectInterfaceTerminal(ctx);
+                installPattern(ctx);
+                transition(ctx, 16, "Observe natural pattern publication while AL is unformed and has no research");
+                break;
+            case 16:
+                if (ctx.tick() - stageTick < 20) return;
+                if (!published(ctx)) {
+                    if (ctx.tick() - stageTick > 200) throw new IllegalStateException(
+                        "Native crafting cache/ME craftable flag did not publish the interface-installed pattern");
+                    return;
+                }
                 require(
                     ctx,
-                    proxy.getCrafting()
-                        .getCraftingFor(AEItemStack.create(recipe.mOutput), null, -1, ctx.world())
-                        .size() > 0,
-                    "The physical master advertises its installed processing pattern to AE");
-                outputDeclarationCounterexample(ctx);
+                    !controller.mMachine && controller.getStackInSlot(1) == null && published(ctx),
+                    "Unformed AL without research exposes its output in native crafting cache and ME craftable list");
+                logPublication(ctx, "unformed-before-job");
                 seedCells(ctx);
+                seededTotals = materialTotals();
                 firstRun = session.runSequence();
                 beginJob(ctx);
                 transition(ctx, 2, "Calculate first real AE CPU request");
@@ -319,12 +370,50 @@ final class OrderedAssemblyScenario implements TestScenario {
                 ctx.event(
                     "cpu_job",
                     "batch=" + batch + "; id=" + link.getCraftingID() + "; byteTotal=" + job.getByteTotal());
-                transition(ctx, stage == 2 ? 3 : 11, "Wait for real CPU medium delivery");
+                if (stage == 2) {
+                    waitingLink = link.getCraftingID();
+                    waitingSamples = 0;
+                    transition(ctx, 14, "Keep the real CPU job waiting while the AL is unformed");
+                } else transition(ctx, 11, "Wait for real CPU medium delivery");
+                break;
+            case 14:
+                observeWaitingJob(ctx);
+                if (ctx.tick() - stageTick < 40) return;
+                require(
+                    ctx,
+                    !controller.mMachine && !group.accepting() && !session.beginCheck(),
+                    "The submitted real CPU job cannot enter an unformed native AL");
+                logWaitingJob(ctx, "unformed");
+                block(ctx, 2, 0, 1, GregTechAPI.sBlockCasings2, 9);
+                checkStructure(ctx);
+                clearOutput();
+                require(
+                    ctx,
+                    controller.mMachine && controller.getStackInSlot(1) == null,
+                    "Restoring the actual casing forms the AL while its research slot stays empty");
+                session.requestRecipeCheck();
+                waitingSamples = 0;
+                transition(ctx, 15, "Keep the same real CPU job waiting for actual research authorization");
+                break;
+            case 15:
+                observeWaitingJob(ctx);
+                if (ctx.tick() - stageTick < 40) return;
+                require(
+                    ctx,
+                    controller.getStackInSlot(1) == null && "no_authorized_recipe".equals(group.reason()),
+                    "The real CPU reaches intake but absent current research rejects its processing pattern");
+                logWaitingJob(ctx, "formed-no-research");
+                fillOutput();
+                controller.setInventorySlotContents(1, stick.copy());
+                session.requestRecipeCheck();
+                transition(ctx, 3, "Restore actual research and let the same submitted CPU job deliver");
                 break;
             case 3:
                 if (group.stage() != OrderedAssemblyGroup.Stage.STAGED) return;
                 stagedStock = stock();
                 assertStaged(ctx);
+                assertLockedInterface(ctx);
+                require(ctx, published(ctx), "Staged native work retains its native ME craftable output flag");
                 MEInventoryCrafting retry = table(layout);
                 String before = tableSnapshot(retry);
                 require(
@@ -410,6 +499,10 @@ final class OrderedAssemblyScenario implements TestScenario {
                     ctx,
                     !link.isCanceled() && outputAmount() == 0,
                     "Actual CPU completion coincides with exact crafted output in AE storage and an empty native bus");
+                if (batch == 1) require(
+                    ctx,
+                    waitingLink.equals(link.getCraftingID()),
+                    "The CPU link submitted before machine and research recovery completes without resubmission");
                 ctx.event(
                     "ae_delivered",
                     "batch=" + batch
@@ -427,6 +520,7 @@ final class OrderedAssemblyScenario implements TestScenario {
                         + itemAmount(recipe.mOutput));
                 if (stage == 8) {
                     if (!group.accepting()) return;
+                    outputDeclarationCounterexample(ctx);
                     outputTile.disableWorking();
                     beginJob(ctx);
                     transition(ctx, 10, "Submit the identical pattern as a distinct second CPU request");
@@ -444,8 +538,9 @@ final class OrderedAssemblyScenario implements TestScenario {
                         session.runSequence() == firstRun + 2,
                         "Identical successive requests caused exactly two native consumption sequences");
                     ctx.pass(
-                        "Two actual AE CPU jobs crossed the ordered physical inputs, native research/output gates, "
-                            + "powered native processing and real Interface return; bounded negative probes also passed");
+                        "Native interface-terminal pattern management and ME craftable flags passed; the original CPU job "
+                            + "waited for actual structure/research recovery, then two jobs completed native processing "
+                            + "and exact AE return with the original processing gates retained");
                 }
                 break;
             case 11:
@@ -465,6 +560,10 @@ final class OrderedAssemblyScenario implements TestScenario {
         if (controllerTile != null) controllerTile.disableWorking();
         if (outputTile != null) outputTile.disableWorking();
         if (controller != null) ctx.event("final_native_state", nativeState() + "; stock=" + stock());
+        if (actorChannel != null) {
+            actorChannel.close();
+            ctx.event("interface_actor_transport_closed", "open=" + actorChannel.isOpen());
+        }
     }
 
     private void buildLine(TestContext ctx) {
@@ -604,11 +703,109 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + "candidate-pair coverage is not asserted by this bounded run; no synthetic recipe is registered.");
     }
 
-    private void installPattern(TestContext ctx) {
+    private void inspectInterfaceTerminal(TestContext ctx) throws Exception {
+        var supported = AEApi.instance()
+            .registries()
+            .interfaceTerminal()
+            .getSupportedClasses();
+        require(
+            ctx,
+            supported.contains(MatrixItemInputBus.class) && supported.contains(MatrixFluidInputHatch.class),
+            "The official interface-terminal registry contains both real matrix MTE classes");
+        if (owner.playerNetServerHandler.netManager.channel() == null)
+            actorChannel = new EmbeddedChannel(owner.playerNetServerHandler.netManager);
+        require(
+            ctx,
+            owner.playerNetServerHandler.netManager.channel()
+                .attr(NetworkDispatcher.FML_DISPATCHER)
+                .get() == null,
+            "The synthetic terminal actor has only an in-memory transport with no logged-in FML dispatcher");
+        ctx.event(
+            "interface_actor_transport",
+            "nativeNetworkManager=true; socket=false; loggedInDispatcher=false; outboundAck=emptyTargets");
+        interfaceContainer = new ContainerInterfaceTerminal(owner.inventory, interfacePart);
+        Object packet = terminalField(interfaceContainer, "dirty");
+        require(
+            ctx,
+            packet instanceof PacketInterfaceTerminalUpdate,
+            "The real interface-terminal constructor obtains a native updateList packet");
+        Map<?, ?> tracked = (Map<?, ?>) terminalField(interfaceContainer, "tracked");
+        Map<?, ?> byId = (Map<?, ?>) terminalField(interfaceContainer, "trackedById");
+        int count = 0, visible = 0;
+        boolean correct = true;
+        for (var entry : tracked.entrySet()) {
+            if (!(entry.getKey() instanceof MatrixAssemblyMember member)) continue;
+            IInterfaceViewable view = (IInterfaceViewable) member;
+            Object tracker = entry.getValue();
+            long id = (Long) terminalField(tracker, "id");
+            boolean displayed = (Boolean) terminalField(tracker, "shouldDisplay");
+            NBTTagList inventory = (NBTTagList) terminalField(tracker, "invNbt");
+            count++;
+            if (displayed) visible++;
+            correct &= byId.get(id) == tracker && displayed == (member == group.master())
+                && (Integer) terminalField(tracker, "rows") == 4
+                && (Integer) terminalField(tracker, "rowSize") == 9
+                && (Integer) terminalField(tracker, "numSlots") == 36
+                && inventory.tagCount() == 36
+                && !view.allowsPatternOptimization()
+                && Arrays.asList(view.getSupportedStackTypes())
+                    .contains(ITEM_STACK_TYPE)
+                && Arrays.asList(view.getSupportedStackTypes())
+                    .contains(FLUID_STACK_TYPE);
+            if (member == group.master()) {
+                masterTracker = tracker;
+                masterTrackerId = id;
+                correct &= terminalField(tracker, "patterns") == view.getPatterns();
+            }
+            ctx.event(
+                "interface_tracker",
+                "id=" + id
+                    + "; type="
+                    + member.getClass()
+                        .getSimpleName()
+                    + "; master="
+                    + (member == group.master())
+                    + "; defaultVisible="
+                    + displayed
+                    + "; online="
+                    + terminalField(tracker, "online")
+                    + "; rows=4; rowSize=9; slots="
+                    + terminalField(tracker, "numSlots")
+                    + "; invNbt="
+                    + inventory);
+        }
+        require(
+            ctx,
+            count == 6 && visible == 1 && masterTracker != null && correct,
+            "Native tracked maps expose one default-visible master and five hidden 4x9 matrix entries");
+        ctx.event(
+            "interface_update_packet",
+            "origin=constructor.updateList; class=" + packet.getClass()
+                .getName()
+                + "; commands="
+                + terminalCommands()
+                + "; matrixEntries="
+                + count
+                + "; defaultVisible="
+                + visible);
+        Method update = ContainerInterfaceTerminal.class.getDeclaredMethod("updateList");
+        update.setAccessible(true);
+        Object unchanged = update.invoke(interfaceContainer);
+        require(
+            ctx,
+            unchanged == null || unchanged instanceof PacketInterfaceTerminalUpdate,
+            "The native incremental updateList is observed without replacing its real tracking maps");
+    }
+
+    private void installPattern(TestContext ctx) throws Exception {
         ctx.event("installed_pattern_nbt", stack(pattern));
-        master().matrixPort()
-            .patterns()
-            .setStackInSlot(0, pattern.copy());
+        require(
+            ctx,
+            owner.inventory.getItemStack() == null,
+            "The synthetic actor starts the native terminal action with an empty cursor");
+        int commands = terminalCommands();
+        owner.inventory.setItemStack(pattern.copy());
+        interfaceContainer.doAction(owner, InventoryAction.PICKUP_OR_SET_DOWN, 0, masterTrackerId);
         require(
             ctx,
             ItemStack.areItemStacksEqual(
@@ -616,7 +813,30 @@ final class OrderedAssemblyScenario implements TestScenario {
                 master().matrixPort()
                     .patterns()
                     .getStackInSlot(0)),
-            "The real standalone 36-slot pattern handler retains the unchanged encoded item");
+            "Native interface-terminal doAction installs the unchanged processing pattern in the actual master bank");
+        NBTTagList inventory = (NBTTagList) terminalField(masterTracker, "invNbt");
+        require(
+            ctx,
+            owner.inventory.getItemStack() == null && inventory.tagCount() == 36
+                && ItemStack.areItemStacksEqual(pattern, ItemStack.loadItemStackFromNBT(inventory.getCompoundTagAt(0)))
+                && terminalCommands() > commands
+                && (Boolean) terminalField(interfaceContainer, "isDirty"),
+            "Native doAction consumes one cursor pattern and updates the actual tracker NBT and packet");
+        ((PacketInterfaceTerminalUpdate) terminalField(interfaceContainer, "dirty")).encode();
+        ctx.event(
+            "interface_pattern_action",
+            "action=PICKUP_OR_SET_DOWN; tracker=" + masterTrackerId
+                + "; cursor=empty; commandsBefore="
+                + commands
+                + "; commandsAfter="
+                + terminalCommands()
+                + "; invNbt="
+                + inventory
+                + "; actualBank="
+                + stack(
+                    master().matrixPort()
+                        .patterns()
+                        .getStackInSlot(0)));
         require(
             ctx,
             ((MTEHatchInputBus) master()).getSizeInventory() == 1
@@ -634,6 +854,140 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + input.kindOrdinal()
                 + "; amount="
                 + input.amount());
+    }
+
+    private static Object terminalField(Object instance, String name) throws Exception {
+        Field field = instance.getClass()
+            .getDeclaredField(name);
+        field.setAccessible(true);
+        return field.get(instance);
+    }
+
+    private int terminalCommands() throws Exception {
+        return ((List<?>) terminalField(terminalField(interfaceContainer, "dirty"), "commands")).size();
+    }
+
+    private void assertLockedInterface(TestContext ctx) throws Exception {
+        NBTTagList playerBefore = owner.inventory.writeToNBT(new NBTTagList());
+        ItemStack installed = master().matrixPort()
+            .patterns()
+            .getStackInSlot(0)
+            .copy();
+        require(
+            ctx,
+            ((IInterfaceViewable) master()).getPatterns()
+                .getSizeInventory() == 0,
+            "The actual interface inventory closes player transfers while a batch is staged");
+        interfaceContainer.doAction(owner, InventoryAction.PICKUP_OR_SET_DOWN, 0, masterTrackerId);
+        interfaceContainer.doAction(owner, InventoryAction.SHIFT_CLICK, 0, masterTrackerId);
+        require(
+            ctx,
+            owner.inventory.getItemStack() == null && playerBefore.equals(owner.inventory.writeToNBT(new NBTTagList()))
+                && ItemStack.areItemStacksEqual(
+                    installed,
+                    master().matrixPort()
+                        .patterns()
+                        .getStackInSlot(0)),
+            "Native terminal pickup and shift-click cannot copy or extract a locked processing pattern");
+        ctx.event(
+            "interface_locked_actions",
+            "pickupAndShift=refused; cursor=empty; playerInventoryUnchanged=true; bank=" + stack(installed));
+    }
+
+    private boolean published(TestContext ctx) throws Exception {
+        IAEItemStack listed = proxy.getStorage()
+            .getItemInventory()
+            .getStorageList()
+            .findPrecise(AEItemStack.create(recipe.mOutput));
+        return listed != null && listed.isCraftable()
+            && !proxy.getCrafting()
+                .getCraftingFor(AEItemStack.create(recipe.mOutput), null, -1, ctx.world())
+                .isEmpty();
+    }
+
+    private void logPublication(TestContext ctx, String phase) throws Exception {
+        IAEItemStack listed = proxy.getStorage()
+            .getItemInventory()
+            .getStorageList()
+            .findPrecise(AEItemStack.create(recipe.mOutput));
+        ctx.event(
+            "native_pattern_publication",
+            "phase=" + phase
+                + "; formed="
+                + controller.mMachine
+                + "; research="
+                + stack(controller.getStackInSlot(1))
+                + "; output="
+                + stack(recipe.mOutput)
+                + "; craftingFor="
+                + proxy.getCrafting()
+                    .getCraftingFor(AEItemStack.create(recipe.mOutput), null, -1, ctx.world())
+                    .size()
+                + "; monitorIsCraftable="
+                + (listed != null && listed.isCraftable())
+                + "; monitorEntry="
+                + (listed == null ? "absent" : Platform.writeStackNBT(listed, new NBTTagCompound())));
+    }
+
+    private long[] materialTotals() throws Exception {
+        long[] totals = new long[recipe.mInputs.length + 1];
+        var reserved = ((CraftingCPUCluster) cpu).getInventory();
+        for (int i = 0; i < recipe.mInputs.length; i++) {
+            IAEItemStack pending = reserved.findPrecise(AEItemStack.create(recipe.mInputs[i]));
+            totals[i] = itemAmount(recipe.mInputs[i]) + (pending == null ? 0 : pending.getStackSize());
+        }
+        IAEFluidStack pending = reserved.findPrecise(AEFluidStack.create(recipe.mFluidInputs[0]));
+        totals[totals.length - 1] = fluidAmount(recipe.mFluidInputs[0])
+            + (pending == null ? 0 : pending.getStackSize());
+        return totals;
+    }
+
+    private void observeWaitingJob(TestContext ctx) throws Exception {
+        boolean empty = true;
+        for (MatrixAssemblyMember member : group.itemMembers()) empty &= member.matrixItem() == null;
+        for (MatrixAssemblyMember member : group.fluidMembers()) empty &= member.matrixFluidStack() == null;
+        if (link.isCanceled() || !waitingLink.equals(link.getCraftingID())
+            || !cpu.isBusy()
+            || cpu.getUsedStorage() == 0
+            || group.stage() != OrderedAssemblyGroup.Stage.IDLE
+            || !empty
+            || controller.mMaxProgresstime != 0
+            || session.runSequence() != firstRun
+            || !Arrays.equals(seededTotals, materialTotals())
+            || !published(ctx))
+            throw new IllegalStateException(
+                "Waiting CPU changed publication, physical stock, material totals or native sequence: " + nativeState()
+                    + "; stock="
+                    + stock()
+                    + "; totals="
+                    + Arrays.toString(materialTotals()));
+        waitingSamples++;
+    }
+
+    private void logWaitingJob(TestContext ctx, String phase) throws Exception {
+        require(
+            ctx,
+            waitingSamples >= 40,
+            "The same submitted CPU job waits through at least forty natural ticks without physical intake or consumption");
+        logPublication(ctx, phase);
+        ctx.event(
+            "cpu_waiting",
+            "phase=" + phase
+                + "; samples="
+                + waitingSamples
+                + "; link="
+                + link.getCraftingID()
+                + "; busy="
+                + cpu.isBusy()
+                + "; cpuUsedStorage="
+                + cpu.getUsedStorage()
+                + "; nativeConsumed=0; physicalSlotsAndTank=empty; totalMEPlusCPU="
+                + Arrays.toString(materialTotals())
+                + "; cpuInventory="
+                + ((CraftingCPUCluster) cpu).getInventory()
+                    .writeInventory()
+                + "; state="
+                + nativeState());
     }
 
     private void duplicateRawPositions(TestContext ctx) {
@@ -683,9 +1037,17 @@ final class OrderedAssemblyScenario implements TestScenario {
             "The output-binding refusal is tested against an otherwise available real medium");
         ItemStack wrong = encode(recipe.mInputs, recipe.mFluidInputs, otherOutput, true);
         OrderedPatternLayout wrongLayout = OrderedPatternLayout.decode(wrong, ctx.world());
-        master().matrixPort()
-            .patterns()
-            .setStackInSlot(1, wrong);
+        require(ctx, owner.inventory.getItemStack() == null, "The terminal counterexample starts with an empty cursor");
+        owner.inventory.setItemStack(wrong.copy());
+        interfaceContainer.doAction(owner, InventoryAction.PICKUP_OR_SET_DOWN, 1, masterTrackerId);
+        require(
+            ctx,
+            owner.inventory.getItemStack() == null && ItemStack.areItemStacksEqual(
+                wrong,
+                master().matrixPort()
+                    .patterns()
+                    .getStackInSlot(1)),
+            "The declared-output counterexample uses native interface-terminal insertion");
         MEInventoryCrafting delivery = table(wrongLayout);
         String tableBefore = tableSnapshot(delivery);
         String stockBefore = stock();
@@ -711,9 +1073,15 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + "; stock="
                 + stockBefore
                 + "; scope=declared-output binding, not two actual same-input native recipe candidates");
-        master().matrixPort()
-            .patterns()
-            .setStackInSlot(1, null);
+        interfaceContainer.doAction(owner, InventoryAction.PICKUP_OR_SET_DOWN, 1, masterTrackerId);
+        require(
+            ctx,
+            master().matrixPort()
+                .patterns()
+                .getStackInSlot(1) == null && ItemStack.areItemStacksEqual(wrong, owner.inventory.getItemStack()),
+            "Native terminal extraction returns the owned counterexample pattern exactly once");
+        owner.inventory.setInventorySlotContents(2, owner.inventory.getItemStack());
+        owner.inventory.setItemStack(null);
     }
 
     private static ItemStack encode(ItemStack[] items, FluidStack[] fluids, ItemStack out, boolean gap) {
@@ -833,6 +1201,44 @@ final class OrderedAssemblyScenario implements TestScenario {
             .get(null);
         drive.getInternalInventory()
             .setInventorySlotContents(1, new ItemStack(fluidCell));
+        TestWorldFixtures.place(
+            ctx.world(),
+            ax,
+            ay - 1,
+            az,
+            AEApi.instance()
+                .definitions()
+                .blocks()
+                .multiPart()
+                .maybeBlock()
+                .get(),
+            0);
+        IPartHost terminalHost = (IPartHost) ctx.world()
+            .getTileEntity(ax, ay - 1, az);
+        require(
+            ctx,
+            terminalHost.addPart(
+                AEApi.instance()
+                    .definitions()
+                    .parts()
+                    .cableGlass()
+                    .stack(AEColor.Transparent, 1),
+                ForgeDirection.UNKNOWN,
+                owner) == ForgeDirection.UNKNOWN,
+            "A real cable-bus center joins the terminal to the physical AE fixture");
+        require(
+            ctx,
+            terminalHost.addPart(
+                AEApi.instance()
+                    .definitions()
+                    .parts()
+                    .interfaceTerminal()
+                    .maybeStack(1)
+                    .get(),
+                ForgeDirection.SOUTH,
+                owner) == ForgeDirection.SOUTH,
+            "A real PartInterfaceTerminal is installed in the native cable-bus host");
+        interfacePart = (PartInterfaceTerminal) terminalHost.getPart(ForgeDirection.SOUTH);
         for (MatrixAssemblyMember member : group.itemMembers()) member.matrixPort()
             .getProxy()
             .setOwner(owner);
@@ -949,7 +1355,9 @@ final class OrderedAssemblyScenario implements TestScenario {
     }
 
     private MatrixAssemblyMember master() {
-        MatrixAssemblyMember firstNativeInput = (MatrixAssemblyMember) controller.mInputBusses.get(0);
+        MatrixAssemblyMember firstNativeInput = patternAnchor == null
+            ? (MatrixAssemblyMember) controller.mInputBusses.get(0)
+            : patternAnchor;
         OrderedAssemblyGroup current = firstNativeInput.matrixPort()
             .group();
         return current == null ? firstNativeInput : current.master();

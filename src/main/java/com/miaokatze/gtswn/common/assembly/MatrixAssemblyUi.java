@@ -62,6 +62,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 "gtswn.matrix.description.tier",
                 GTValues.TIER_COLORS[5] + GTValues.VN[5] + EnumChatFormatting.RESET),
             tr("gtswn.matrix.description.storage." + type), tr("gtswn.matrix.description.pattern"),
+            tr("gtswn.matrix.description.interface_terminal"), tr("gtswn.matrix.description.requests"),
             tr("gtswn.matrix.description.blocking"), "", tr("gtswn.matrix.description.column"),
             tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.connections"),
             tr("gtswn.matrix.description.setup"), tr("gtswn.matrix.description.native"),
