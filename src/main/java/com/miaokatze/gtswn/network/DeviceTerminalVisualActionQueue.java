@@ -486,6 +486,7 @@ public final class DeviceTerminalVisualActionQueue {
 
     private static void report(EntityPlayerMP player, UUID terminal, String key,
         DeviceTerminalTeleport.Outcome result) {
+        if (result.status == DeviceTerminalTeleport.Status.CONFIRMATION_REQUIRED) return;
         DeviceTerminalTeleport.feedback(player, result);
         GTSWNPacketHandler.NETWORK.sendTo(
             new PacketSyncDeviceTerminalVisualState(

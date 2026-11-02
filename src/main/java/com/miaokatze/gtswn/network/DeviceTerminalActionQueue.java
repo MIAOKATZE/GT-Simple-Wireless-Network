@@ -133,6 +133,7 @@ public final class DeviceTerminalActionQueue {
     }
 
     public static void clear() {
+        DeviceLinkActionQueue.clear();
         com.miaokatze.gtswn.common.device.DeviceTerminalTeleport.clear();
         DeviceTerminalVisualActionQueue.clear();
         synchronized (PENDING) {
@@ -283,7 +284,7 @@ public final class DeviceTerminalActionQueue {
     }
 
     /** Resolve only the opened UUID across held, inventory and accessory locations; never choose a substitute. */
-    private static ItemStack findTerminalStack(EntityPlayerMP player, UUID requested) {
+    public static ItemStack findTerminalStack(EntityPlayerMP player, UUID requested) {
         if (requested == null) return null;
         ItemStack held = player.getHeldItem();
         if (held != null && held.getItem() instanceof ItemDeviceInfoTerminal

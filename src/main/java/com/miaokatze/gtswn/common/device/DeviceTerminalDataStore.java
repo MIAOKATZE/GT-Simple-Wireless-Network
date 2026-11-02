@@ -276,6 +276,10 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             record.resetRecognition(mode, originalCapabilities);
             if (metaTileId >= 0) record.metaTileId = metaTileId;
             if (machine != null && changedRecordIdentity) {
+                record.linkSummary = DeviceLinkSummary.UNVERIFIED;
+                record.machineOwner = null;
+                record.machineKind = 0;
+                record.machineTier = -1;
                 record.name = machine.getLocalName();
                 record.linkNodeType = DeviceMachineIdentity.linkNodeType(machine);
                 gregtech.api.interfaces.tileentity.IGregTechTileEntity liveTile = machine.getBaseMetaTileEntity();
@@ -577,6 +581,26 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         /** 0 observed, 1 provider model, 2 warming up, 3 unavailable. */
         public byte evidenceKind = 2;
         public byte linkNodeType;
+        /** Session-only aggregate; old saves and unloaded targets begin unverified. */
+        public transient DeviceLinkSummary linkSummary = DeviceLinkSummary.UNVERIFIED;
+        public transient java.util.UUID machineOwner;
+        public transient byte machineKind, machineTier = -1;
+
+        public boolean applyMachineIdentity(java.util.UUID owner, byte kind, byte tier) {
+            boolean changed = !java.util.Objects.equals(machineOwner, owner) || machineKind != kind
+                || machineTier != tier;
+            machineOwner = owner;
+            machineKind = kind;
+            machineTier = tier;
+            return changed;
+        }
+
+        public boolean applyLinkSummary(DeviceLinkSummary summary) {
+            if (linkSummary.equals(summary)) return false;
+            linkSummary = summary;
+            return true;
+        }
+
         public long instIn;
         public long instOut;
 

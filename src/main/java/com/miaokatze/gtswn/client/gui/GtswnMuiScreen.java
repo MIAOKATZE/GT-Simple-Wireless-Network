@@ -3,6 +3,7 @@ package com.miaokatze.gtswn.client.gui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 
+import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.ModularScreen;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 
@@ -17,7 +18,11 @@ public abstract class GtswnMuiScreen extends ModularScreen {
     protected final FontRenderer fontRendererObj = mc.fontRenderer;
 
     protected GtswnMuiScreen(String name, int width, int height) {
-        super("gtswn", GtswnMuiTheme.panel(name, width, height));
+        this(GtswnMuiTheme.panel(name, width, height));
+    }
+
+    protected GtswnMuiScreen(ModularPanel panel) {
+        super("gtswn", panel);
         pausesGame(false);
         useTheme(GtswnMuiTheme.THEME_ID);
     }

@@ -49,5 +49,7 @@ public class GtswnMixinPlugin implements IMixinConfigPlugin {
     public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
 
     @Override
-    public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {}
+    public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+        com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyHooks.applied(mixinClassName);
+    }
 }

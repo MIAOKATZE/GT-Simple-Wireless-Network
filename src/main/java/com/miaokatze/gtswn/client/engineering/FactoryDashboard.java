@@ -595,9 +595,9 @@ public final class FactoryDashboard extends Gui {
             if ("averageOutput".equals(field))
                 return known ? FormatUtil.formatMetricDouble(entry.avgOut) + " EU/t" : "?";
             if ("recipeInput".equals(field))
-                return entry.recipeIn.isEmpty() ? FactoryDesktop.tr("unavailable") : entry.recipeIn;
+                return com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceFields.recipeSide(entry, true);
             if ("recipeOutput".equals(field))
-                return entry.recipeOut.isEmpty() ? FactoryDesktop.tr("unavailable") : entry.recipeOut;
+                return com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceFields.recipeSide(entry, false);
             if ("recognition".equals(field)) return StatCollector
                 .translateToLocal("gtswn.device.gui.recognition." + (entry.recognitionMode == 2 ? "ignored" : "track"));
             if ("evidence".equals(field)) return StatCollector.translateToLocal(

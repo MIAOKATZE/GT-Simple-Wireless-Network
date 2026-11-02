@@ -36,7 +36,7 @@ public final class DeviceTerminalDeltaCodec {
     private static final int MAX_ROWS = PacketSyncDeviceTerminalData.MAX_ENTRIES;
     private static final int MAX_STRINGS = MAX_ROWS * 5;
     private static final int MAX_STRING_BYTES = PacketSyncDeviceTerminalData.MAX_RECIPE_LEN * 4;
-    private static final int SCHEMA = 1;
+    private static final int SCHEMA = 2;
     private static final int NAME = 1;
     private static final int STATE = 1 << 1;
     private static final int POWER = 1 << 2;
@@ -55,7 +55,9 @@ public final class DeviceTerminalDeltaCodec {
     private static final int COLOR = 1 << 15;
     private static final int BOLD = 1 << 16;
     private static final int COORDINATES = 1 << 17;
-    private static final int ALL = (1 << 18) - 1;
+    private static final int LINK_COUNTS = 1 << 18;
+    private static final int MACHINE_IDENTITY = 1 << 19;
+    private static final int ALL = (1 << 20) - 1;
 
     private DeviceTerminalDeltaCodec() {}
 
@@ -209,6 +211,22 @@ public final class DeviceTerminalDeltaCodec {
         if ((mask & RECOGNITION) != 0) out.writeByte(e.recognitionMode);
         if ((mask & EVIDENCE) != 0) out.writeByte(e.evidenceKind);
         if ((mask & LINK) != 0) out.writeByte(e.linkNodeType);
+        if ((mask & LINK_COUNTS) != 0) {
+            out.writeByte(e.linkSummary.state);
+            out.writeInt(e.linkSummary.energyConnected);
+            out.writeInt(e.linkSummary.energyTotal);
+            out.writeInt(e.linkSummary.dynamoConnected);
+            out.writeInt(e.linkSummary.dynamoTotal);
+        }
+        if ((mask & MACHINE_IDENTITY) != 0) {
+            out.writeByte(e.machineKind);
+            out.writeByte(e.machineTier);
+            out.writeBoolean(e.machineOwner != null);
+            if (e.machineOwner != null) {
+                out.writeLong(e.machineOwner.getMostSignificantBits());
+                out.writeLong(e.machineOwner.getLeastSignificantBits());
+            }
+        }
         if ((mask & DISPLAY) != 0) out.writeShort(dictionary.get(e.displayName));
         if ((mask & COLOR) != 0) out.writeByte(e.nameColor);
         if ((mask & BOLD) != 0) out.writeBoolean(e.nameBold);
@@ -238,6 +256,17 @@ public final class DeviceTerminalDeltaCodec {
         byte recognition = (m & RECOGNITION) != 0 ? in.readByte() : b.recognitionMode;
         byte evidence = (m & EVIDENCE) != 0 ? in.readByte() : b.evidenceKind;
         byte link = (m & LINK) != 0 ? in.readByte() : b.linkNodeType;
+        DeviceLinkSummary summary = (m & LINK_COUNTS) != 0
+            ? new DeviceLinkSummary(in.readByte(), in.readInt(), in.readInt(), in.readInt(), in.readInt())
+            : b.linkSummary;
+        byte machineKind = (m & MACHINE_IDENTITY) != 0 ? in.readByte() : b.machineKind;
+        byte machineTier = (m & MACHINE_IDENTITY) != 0 ? in.readByte() : b.machineTier;
+        int ownerPresent = (m & MACHINE_IDENTITY) != 0 ? in.readUnsignedByte() : b.machineOwner != null ? 1 : 0;
+        if (ownerPresent > 1 || machineKind < 0 || machineKind > 3 || machineTier < -1 || machineTier > 15)
+            throw invalid("Invalid machine identity");
+        java.util.UUID owner = (m & MACHINE_IDENTITY) != 0
+            ? ownerPresent == 1 ? new java.util.UUID(in.readLong(), in.readLong()) : null
+            : b.machineOwner;
         String display = (m & DISPLAY) != 0 ? string(in, dictionary, DeviceTerminalNameRules.MAX_NAME_LENGTH)
             : b.displayName;
         byte color = (m & COLOR) != 0 ? in.readByte() : b.nameColor;
@@ -294,7 +323,11 @@ public final class DeviceTerminalDeltaCodec {
             color,
             bold == 1,
             cap,
-            recognition);
+            recognition,
+            summary,
+            owner,
+            machineKind,
+            machineTier);
     }
 
     private static int changed(Entry a, Entry b) {
@@ -313,6 +346,9 @@ public final class DeviceTerminalDeltaCodec {
         if (a.recognitionMode != b.recognitionMode) mask |= RECOGNITION;
         if (a.evidenceKind != b.evidenceKind) mask |= EVIDENCE;
         if (a.linkNodeType != b.linkNodeType) mask |= LINK;
+        if (!a.linkSummary.equals(b.linkSummary)) mask |= LINK_COUNTS;
+        if (!java.util.Objects.equals(a.machineOwner, b.machineOwner) || a.machineKind != b.machineKind
+            || a.machineTier != b.machineTier) mask |= MACHINE_IDENTITY;
         if (!a.displayName.equals(b.displayName)) mask |= DISPLAY;
         if (a.nameColor != b.nameColor) mask |= COLOR;
         if (a.nameBold != b.nameBold) mask |= BOLD;

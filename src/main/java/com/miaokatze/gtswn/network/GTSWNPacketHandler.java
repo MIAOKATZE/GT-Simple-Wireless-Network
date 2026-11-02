@@ -259,6 +259,35 @@ public class GTSWNPacketHandler {
             Side.SERVER);
         NETWORK
             .registerMessage(S2CPacketMonitorProfiles.Handler.class, S2CPacketMonitorProfiles.class, 47, Side.CLIENT);
+        NETWORK.registerMessage(PacketDeviceLinkAction.Handler.class, PacketDeviceLinkAction.class, 48, Side.SERVER);
+        NETWORK.registerMessage(
+            PacketSyncDeviceLinkResult.Handler.class,
+            PacketSyncDeviceLinkResult.class,
+            49,
+            Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketTerminalLinkSettings.Handler.class,
+            PacketTerminalLinkSettings.class,
+            50,
+            Side.SERVER);
+        NETWORK.registerMessage(
+            PacketSyncTerminalLinkSettings.Handler.class,
+            PacketSyncTerminalLinkSettings.class,
+            51,
+            Side.CLIENT);
+        NETWORK.registerMessage(
+            PacketDeviceTeleportRequest.Handler.class,
+            PacketDeviceTeleportRequest.class,
+            52,
+            Side.SERVER);
+        NETWORK.registerMessage(
+            PacketSyncDeviceTeleportQuote.Handler.class,
+            PacketSyncDeviceTeleportQuote.class,
+            53,
+            Side.CLIENT);
+        cpw.mods.fml.common.FMLCommonHandler.instance()
+            .bus()
+            .register(new PacketDeviceTeleportRequest.Drain());
         cpw.mods.fml.common.FMLCommonHandler.instance()
             .bus()
             .register(new C2SPacketMonitorProfileAction.ServerQueue());

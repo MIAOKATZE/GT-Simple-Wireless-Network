@@ -273,8 +273,6 @@ public final class DeviceTerminalAnchorRenderer {
             && a.metaTileId == b.metaTileId
             && a.powerType == b.powerType
             && Objects.equals(a.displayName, b.displayName)
-            && Objects.equals(a.recipeIn, b.recipeIn)
-            && Objects.equals(a.recipeOut, b.recipeOut)
             && Objects.equals(a.name, b.name);
     }
 
@@ -325,10 +323,6 @@ public final class DeviceTerminalAnchorRenderer {
                             metric(ignored ? 0 : entry.instIn),
                             metric(ignored ? 0 : entry.instOut)));
                 }
-            }
-            if (!ignored && DeviceTerminalVisualConfig.showLabelRecipe) {
-                String recipe = entry.recipeOut.isEmpty() ? entry.recipeIn : entry.recipeOut;
-                if (!recipe.isEmpty()) addLine(anchor, mc, recipe);
             }
         }
         anchor.width = 0;

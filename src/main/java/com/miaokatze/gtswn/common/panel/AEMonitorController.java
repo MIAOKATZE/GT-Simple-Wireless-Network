@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,6 +21,7 @@ import net.minecraftforge.fluids.FluidStack;
 import com.miaokatze.gtswn.common.monitoring.MonitoringProfiles;
 import com.miaokatze.gtswn.common.monitoring.SourceKey;
 import com.miaokatze.gtswn.common.monitoring.ae.IMonitorIdentityCache;
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
@@ -76,11 +78,13 @@ public final class AEMonitorController {
     }
 
     private static final AESharedSampling SHARED_SAMPLING = new AESharedSampling();
+    private static final long INTEREST_SCAN_INTERVAL_TICKS = 20L;
     private final AEMonitorInterest interest = new AEMonitorInterest();
     private final AEMonitorInterest jobInterest = new AEMonitorInterest();
     private Object samplingWorld;
     private Object interestScanWorld;
     private long interestScanTick = Long.MIN_VALUE;
+    private long interestObservedTick = Long.MIN_VALUE;
     private long lastObservedTick = Long.MIN_VALUE;
     private Object identityWorld;
     private SourceKey sourceKey;
@@ -195,8 +199,13 @@ public final class AEMonitorController {
         lastObservedTick = worldTick;
         if (Config.aeChartEnabled && hasSamplingInterest()
             && sampleDue(lastAESampleTick, worldTick, Config.aeSampleInterval)) {
-            sampleAENetwork(worldTick);
-            lastAESampleTick = worldTick;
+            long sampleStart = PerformanceAudit.startSlice();
+            try {
+                sampleAENetwork(worldTick);
+                lastAESampleTick = worldTick;
+            } finally {
+                PerformanceAudit.endSlice("gtswn.monitor.aeSample", sampleStart);
+            }
         }
     }
 
@@ -205,13 +214,24 @@ public final class AEMonitorController {
         if (core.getWorldObj() == null || core.getWorldObj().isRemote) return false;
         World world = core.getWorldObj();
         long tick = world.getTotalWorldTime();
-        // EU and AE ask on the same tick; do not scan the dimension's players twice.
-        if (interestScanWorld != world || interestScanTick != tick) {
+        boolean reset = interestScanWorld != world || tick < interestObservedTick;
+        interestObservedTick = tick;
+        // Independent, aligned periods also recheck on the default 100-tick sample boundary.
+        // EU and AE share this check; an unobserved panel's initial -1 sample tick never drives it.
+        if (reset || tick / INTEREST_SCAN_INTERVAL_TICKS > interestScanTick / INTEREST_SCAN_INTERVAL_TICKS) {
             interestScanWorld = world;
             interestScanTick = tick;
-            if (hasNearbyReceiver()) interest.renew(world, tick);
+            long interestStart = PerformanceAudit.startSlice();
+            try {
+                if (hasNearbyReceiver()) interest.renew(world, tick);
+            } finally {
+                PerformanceAudit.endSlice("gtswn.monitor.aeInterest", interestStart);
+            }
         }
-        return interest.active(world, tick) || jobInterest.active(world, tick);
+        // Both leases must observe world/clock changes even while the other one remains active.
+        boolean observerActive = interest.active(world, tick);
+        boolean jobActive = jobInterest.active(world, tick);
+        return observerActive || jobActive;
     }
 
     /** Align active panels to the same native period; a newly observed panel still gets an immediate sample. */
@@ -270,6 +290,7 @@ public final class AEMonitorController {
         }
 
         AEAssemblyCache.Assembly assembly;
+        long projectionStart = PerformanceAudit.startSlice();
         try {
             String cacheKey = dataKey + "#"
                 + store.getAETrackingWindow()
@@ -289,6 +310,8 @@ public final class AEMonitorController {
         } catch (Exception e) {
             // G4 保守回退：缓存路径任何异常退回独立装配（不落缓存、不共享），推送语义不变
             assembly = assemble(dataSet);
+        } finally {
+            PerformanceAudit.endSlice("gtswn.monitor.aeProjection", projectionStart);
         }
 
         // B07：经广播端口推送（包体构造与 TargetPoint 由 network 侧端口实现承载，逐字搬迁；
@@ -433,16 +456,28 @@ public final class AEMonitorController {
         long timeMs = System.currentTimeMillis();
 
         // G4：合并走势图与监控列表（chart 绑定在前，与原逐段写入顺序一致），按现行策略收集
-        List<ItemStack> items = mergeMonitoredItems();
-        List<FluidStack> fluids = mergeMonitoredFluids();
-        Set<String> requested = new HashSet<>();
-        for (ItemStack item : items) if (aeKey(item) != null) requested.add(aeKey(item));
-        for (FluidStack fluid : fluids) if (aeKey(fluid) != null) requested.add(aeKey(fluid));
+        // Keep exact identities only for this sampling round; mutable NBT is read again next round.
+        Map<String, ItemStack> items = new LinkedHashMap<>();
+        for (ItemStack item : mergeMonitoredItems()) {
+            String key = aeKey(item);
+            if (key != null) items.putIfAbsent(key, item);
+        }
+        Map<String, FluidStack> fluids = new LinkedHashMap<>();
+        for (FluidStack fluid : mergeMonitoredFluids()) {
+            String key = aeKey(fluid);
+            if (key != null) fluids.putIfAbsent(key, fluid);
+        }
+        Set<String> requested = new HashSet<>(items.keySet());
+        requested.addAll(fluids.keySet());
         Map<String, Long> amounts = SHARED_SAMPLING.collect(core.getWorldObj(), grid, tick, requested, missing -> {
             List<ItemStack> missingItems = new ArrayList<>();
             List<FluidStack> missingFluids = new ArrayList<>();
-            for (ItemStack item : items) if (missing.contains(aeKey(item))) missingItems.add(item);
-            for (FluidStack fluid : fluids) if (missing.contains(aeKey(fluid))) missingFluids.add(fluid);
+            for (Map.Entry<String, ItemStack> item : items.entrySet()) {
+                if (missing.contains(item.getKey())) missingItems.add(item.getValue());
+            }
+            for (Map.Entry<String, FluidStack> fluid : fluids.entrySet()) {
+                if (missing.contains(fluid.getKey())) missingFluids.add(fluid.getValue());
+            }
             Map<String, Long> collected = collectWithReconciliation(tick, missingItems, missingFluids);
             return query.isConnected() && grid == query.gridIdentity() ? collected : Collections.emptyMap();
         });
@@ -454,13 +489,11 @@ public final class AEMonitorController {
             pushAEMonitorOffline();
             return;
         }
-        for (ItemStack item : items) {
-            String key = aeKey(item);
-            if (key != null) dataSet.registerIdentity(key, AEMonitorIdentity.descriptor(item));
+        for (Map.Entry<String, ItemStack> item : items.entrySet()) {
+            dataSet.registerIdentity(item.getKey(), AEMonitorIdentity.descriptor(item.getValue()));
         }
-        for (FluidStack fluid : fluids) {
-            String key = aeKey(fluid);
-            if (key != null) dataSet.registerIdentity(key, AEMonitorIdentity.descriptor(fluid));
+        for (Map.Entry<String, FluidStack> fluid : fluids.entrySet()) {
+            dataSet.registerIdentity(fluid.getKey(), AEMonitorIdentity.descriptor(fluid.getValue()));
         }
 
         boolean wroteAny = false;

@@ -20,7 +20,7 @@ public class FactoryTextSearchTest {
     }
 
     @Test
-    public void machineSearchIncludesCustomNameRecipeStateAndOrigin() {
+    public void machineSearchKeepsIdentityAndStateButIgnoresRetiredRecipeText() {
         Entry entry = new Entry(
             "0:12:64:-7",
             "Large Turbine",
@@ -44,10 +44,14 @@ public class FactoryTextSearchTest {
             false,
             (byte) 2);
         FactoryTextSearch search = new FactoryTextSearch();
-        search.value = "north steam running chest";
+        search.value = "north running chest";
         assertTrue(search.matchesDevice(entry, "Chest terminal", true));
         assertFalse(search.matchesDevice(entry, "Chest terminal", false));
         search.value = "water 12/64/-7";
+        assertFalse(search.matchesDevice(entry, "Inventory", true));
+        search.value = "steam";
+        assertFalse(search.matchesDevice(entry, "Inventory", true));
+        search.value = "north 12/64/-7";
         assertTrue(search.matchesDevice(entry, "Inventory", true));
     }
 }

@@ -39,6 +39,11 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
  */
 public class DeviceEventHandler {
 
+    @SubscribeEvent
+    public void onLinkQueueTick(TickEvent.ServerTickEvent event) {
+        if (event.phase == TickEvent.Phase.END) com.miaokatze.gtswn.network.DeviceLinkActionQueue.tick();
+    }
+
     /** Main inventory + optional Baubles reconciliation once per second; no world/history scan. */
     @SubscribeEvent
     public void onHeldTerminalInventoryTick(TickEvent.PlayerTickEvent event) {
@@ -51,6 +56,7 @@ public class DeviceEventHandler {
         DeviceTerminalDataStore.synchronizeHeldTerminals(
             event.player.getUniqueID(),
             collectHeldTerminalIds(event.player.inventory.mainInventory, TerminalBaubles.inventory(event.player)));
+        TerminalLinkSettings.observeCombinedHint((net.minecraft.entity.player.EntityPlayerMP) event.player);
     }
 
     /** Guard server vanilla interaction before block activation; custom travel remains packet24-only. */
@@ -75,13 +81,16 @@ public class DeviceEventHandler {
      * 方块放置事件：可工作 GT 机器 → 登记（owner=放置者，localName=机器本地名）；
      * 放置者背包（含热栏）内的设备信息终端逐台自动绑定该机器。
      */
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onBlockPlace(BlockEvent.PlaceEvent event) {
         if (event.world.isRemote) {
             return;
         }
         // GT5U ItemMachines.placeBlockAt 在 PlaceEvent 前已同步挂载 MTE，此处可直接判别（D1）
         TileEntity te = event.world.getTileEntity(event.x, event.y, event.z);
+        if (event.player instanceof net.minecraft.entity.player.EntityPlayerMP)
+            com.miaokatze.gtswn.network.DeviceLinkActionQueue
+                .placed((net.minecraft.entity.player.EntityPlayerMP) event.player, event.world, te);
         IMetaTileEntity mte = te instanceof IGregTechTileEntity ? ((IGregTechTileEntity) te).getMetaTileEntity() : null;
         if (!DeviceMachineTypes.isWorkingMachine(mte)) {
             return;
@@ -177,6 +186,11 @@ public class DeviceEventHandler {
         ids.addAll(
             collectHeldTerminalIds(event.player.inventory.mainInventory, TerminalBaubles.inventory(event.player)));
         DeviceTerminalDataStore.onPlayerLoggedIn(event.player.getUniqueID(), ids);
+        if (event.player instanceof net.minecraft.entity.player.EntityPlayerMP) {
+            com.miaokatze.gtswn.network.DeviceLinkActionQueue
+                .syncSettings((net.minecraft.entity.player.EntityPlayerMP) event.player);
+            TerminalLinkSettings.observeCombinedHint((net.minecraft.entity.player.EntityPlayerMP) event.player);
+        }
     }
 
     /**
@@ -188,6 +202,7 @@ public class DeviceEventHandler {
             return;
         }
         DeviceTerminalDataStore.onPlayerLoggedOut(event.player.getUniqueID());
+        com.miaokatze.gtswn.network.DeviceLinkActionQueue.onLogout(event.player.getUniqueID());
     }
 
     // ==================== 工具 ====================

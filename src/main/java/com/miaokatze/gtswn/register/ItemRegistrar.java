@@ -25,6 +25,8 @@ public class ItemRegistrar {
         registerMENetworkQuantumTerminal();
         Quantum_Incorporation_Anchor
             .setAndRegister(com.miaokatze.gtswn.common.items.ItemQuantumIncorporationAnchor::new);
+        com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Teleport_Anchor
+            .setAndRegister(com.miaokatze.gtswn.common.items.ItemNetworkTeleportAnchor::new);
         registerDeviceInfoTerminal();
         registerWirelessEnergyTap();
         registerGTswnCoverEnergyWireless();

@@ -4,10 +4,14 @@ import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Device_Info_Ter
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quantum_Terminal;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Info_Panel_Extender;
+import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Network_Teleport_Anchor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Portable_Wireless_Network_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Quantum_Incorporation_Anchor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Monitor;
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Wireless_Energy_Tap;
+import static gregtech.api.util.GTRecipeConstants.AssemblyLine;
+import static gregtech.api.util.GTRecipeConstants.RESEARCH_ITEM;
+import static gregtech.api.util.GTRecipeConstants.SCANNING;
 
 import net.minecraft.init.Blocks;
 import net.minecraft.init.Items;
@@ -15,8 +19,10 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
 
+import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
+import appeng.api.AEApi;
 import cpw.mods.fml.common.registry.GameRegistry;
 import gregtech.api.enums.GTValues;
 import gregtech.api.enums.ItemList;
@@ -25,6 +31,8 @@ import gregtech.api.enums.OrePrefixes;
 import gregtech.api.enums.TierEU;
 import gregtech.api.recipe.RecipeMaps;
 import gregtech.api.util.GTOreDictUnificator;
+import gregtech.api.util.recipe.Scanning;
+import gtPlusPlus.core.material.MaterialsAlloy;
 
 /**
  * GTSWN 模组工作台合成配方注册器
@@ -44,6 +52,80 @@ public class CraftingRecipes {
     public static void init() {
         registerAllRecipes();
         registerQuantumIncorporationAnchorRecipe();
+        registerNetworkTeleportAnchorRecipe();
+        registerMatrixInputRecipes();
+    }
+
+    private static void registerMatrixInputRecipes() {
+        for (boolean fluid : new boolean[] { false, true }) {
+            GTValues.RA.stdBuilder()
+                .metadata(RESEARCH_ITEM, (fluid ? Network_Teleport_Anchor : Quantum_Incorporation_Anchor).get(1))
+                .metadata(SCANNING, new Scanning(60 * 20, TierEU.RECIPE_LuV))
+                .itemInputs(
+                    (fluid ? ItemList.Hatch_Input_LuV : ItemList.Hatch_Input_Bus_LuV).get(1),
+                    GTOreDictUnificator.get(OrePrefixes.circuit, Materials.LuV, 8),
+                    AEApi.instance()
+                        .definitions()
+                        .blocks()
+                        .iface()
+                        .maybeStack(1)
+                        .get(),
+                    AEApi.instance()
+                        .definitions()
+                        .materials()
+                        .cardSpeed()
+                        .maybeStack(4)
+                        .get(),
+                    Quantum_Incorporation_Anchor.get(16),
+                    Quantum_Incorporation_Anchor.get(16),
+                    Network_Teleport_Anchor.get(16),
+                    Network_Teleport_Anchor.get(16))
+                .fluidInputs(MaterialsAlloy.INDALLOY_140.getFluidStack(576), Materials.Lubricant.getFluid(1152))
+                .itemOutputs(
+                    (fluid ? com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Matrix_Grouped_Fluid_Input_ME
+                        : com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Matrix_Grouped_Item_Input_ME).get(1))
+                .duration(30 * 20)
+                .eut(TierEU.RECIPE_LuV)
+                .addTo(AssemblyLine);
+            ItemStack source = (fluid ? GTSWNItemList.Matrix_Grouped_Fluid_Input_ME
+                : GTSWNItemList.Matrix_Grouped_Item_Input_ME).get(1);
+            GTValues.RA.stdBuilder()
+                .metadata(RESEARCH_ITEM, source)
+                .metadata(SCANNING, new Scanning(120 * 20, TierEU.RECIPE_ZPM))
+                .itemInputs(
+                    source,
+                    GTOreDictUnificator.get(OrePrefixes.circuit, Materials.ZPM, 4),
+                    ItemList.Emitter_ZPM.get(2),
+                    ItemList.Sensor_ZPM.get(2),
+                    GTOreDictUnificator.get(OrePrefixes.plate, Materials.NaquadahAlloy, 8),
+                    GTOreDictUnificator.get(OrePrefixes.cableGt04, Materials.VanadiumGallium, 4),
+                    Quantum_Incorporation_Anchor.get(16),
+                    Quantum_Incorporation_Anchor.get(16),
+                    Network_Teleport_Anchor.get(16),
+                    Network_Teleport_Anchor.get(16))
+                .fluidInputs(MaterialsAlloy.INDALLOY_140.getFluidStack(1152), Materials.Lubricant.getFluid(1152))
+                .itemOutputs(
+                    (fluid ? GTSWNItemList.Matrix_Grouped_Fluid_Input_Mirror_ME
+                        : GTSWNItemList.Matrix_Grouped_Item_Input_Mirror_ME).get(1))
+                .duration(60 * 20)
+                .eut(TierEU.RECIPE_ZPM)
+                .addTo(AssemblyLine);
+        }
+    }
+
+    private static void registerNetworkTeleportAnchorRecipe() {
+        GTValues.RA.stdBuilder()
+            .itemInputs(
+                ItemList.Circuit_Board_Coated_Basic.get(1),
+                ItemList.Emitter_LV.get(1),
+                ItemList.Sensor_LV.get(1),
+                GTOreDictUnificator.get(OrePrefixes.plate, Materials.PulsatingIron, 2),
+                new ItemStack(Items.ender_pearl, 1),
+                GTOreDictUnificator.get(OrePrefixes.wireFine, Materials.Copper, 4))
+            .itemOutputs(Network_Teleport_Anchor.get(16))
+            .duration(200)
+            .eut(TierEU.RECIPE_LV)
+            .addTo(RecipeMaps.assemblerRecipes);
     }
 
     /** LV assembler recipe: one batch supplies sixteen successful incorporations. */

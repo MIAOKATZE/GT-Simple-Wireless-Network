@@ -5,10 +5,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.init.Blocks;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.AxisAlignedBB;
@@ -19,13 +21,24 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.gui.TerminalSupplyStore;
+import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
+import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.PacketSyncDeviceTeleportQuote;
+import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalVisualState;
+
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.util.GTUtility;
 
-/** Shared teleport transaction. Validation and a loaded, safe destination precede any experience charge. */
+/** Shared server quote, confirmation and payment transaction for every existing device-travel entry point. */
 public final class DeviceTerminalTeleport {
 
     private static final Map<UUID, Long> LAST = new HashMap<>();
+    private static final Map<UUID, Quote> QUOTES = new HashMap<>();
+    private static final AtomicLong NEXT_QUOTE = new AtomicLong(System.nanoTime());
+    private static final int QUOTE_TTL_TICKS = 1200;
     public static final int COOLDOWN_TICKS = 10;
     private static final int MAX_LANDING_BODY_BLOCKS = 256;
 
@@ -45,7 +58,8 @@ public final class DeviceTerminalTeleport {
         UNAVAILABLE_PLAYER(9),
         ERROR(10),
         NO_TARGET(11),
-        STALE_TARGET(12);
+        STALE_TARGET(12),
+        CONFIRMATION_REQUIRED(13);
 
         public final byte code;
 
@@ -73,6 +87,140 @@ public final class DeviceTerminalTeleport {
         return new Outcome(status, 0);
     }
 
+    public enum PaymentSource {
+        RESERVE,
+        INVENTORY,
+        EXPERIENCE,
+        FREE
+    }
+
+    public static final class Payment {
+
+        public final PaymentSource source;
+        public final int amount;
+
+        Payment(PaymentSource source, int amount) {
+            this.source = source;
+            this.amount = amount;
+        }
+
+        public boolean same(Payment other) {
+            return other != null && source == other.source && amount == other.amount;
+        }
+    }
+
+    /** Anchors retain priority even when the configured experience fee is zero. */
+    static Payment selectPayment(int reserve, boolean inventory, int experienceCost) {
+        if (reserve > 0) return new Payment(PaymentSource.RESERVE, 1);
+        if (inventory) return new Payment(PaymentSource.INVENTORY, 1);
+        return new Payment(experienceCost > 0 ? PaymentSource.EXPERIENCE : PaymentSource.FREE, experienceCost);
+    }
+
+    private static Payment payment(EntityPlayerMP player) {
+        return selectPayment(
+            TerminalSupplyStore.count(player, TerminalSupplyStore.Kind.TELEPORT_ANCHOR),
+            TerminalSupplyStore.inventorySlot(player, TerminalSupplyStore.Kind.TELEPORT_ANCHOR) >= 0,
+            DeviceTerminalSettings.get(player.worldObj)
+                .teleportCost());
+    }
+
+    private static final class Quote {
+
+        final EntityPlayerMP player;
+        final World world;
+        final int dimension, slot;
+        final ItemStack terminal;
+        final UUID terminalId;
+        final String key;
+        final boolean visual;
+        final TileEntity target;
+        final Object machine;
+        final long token, tick;
+        final Payment payment;
+
+        Quote(EntityPlayerMP player, UUID terminalId, String key, boolean visual, int slot, TileEntity target,
+            long tick, Payment payment) {
+            this.player = player;
+            world = player.worldObj;
+            dimension = player.dimension;
+            this.slot = slot;
+            terminal = DeviceTerminalSource.stack(player, slot);
+            this.terminalId = terminalId;
+            this.key = key;
+            this.visual = visual;
+            this.target = target;
+            machine = ((IGregTechTileEntity) target).getMetaTileEntity();
+            long next = NEXT_QUOTE.incrementAndGet();
+            token = next == 0 ? NEXT_QUOTE.incrementAndGet() : next;
+            this.tick = tick;
+            this.payment = payment;
+        }
+
+        boolean matches(EntityPlayerMP current, long now) {
+            return current == player && current.worldObj == world
+                && current.dimension == dimension
+                && now >= tick
+                && now - tick <= QUOTE_TTL_TICKS
+                && DeviceTerminalSource.stack(current, slot) == terminal
+                && DeviceTerminalSource.matches(terminal, terminalId)
+                && (!visual || current.inventory.currentItem == slot);
+        }
+    }
+
+    private static Outcome quote(EntityPlayerMP player, UUID terminalId, String key, boolean visual, int slot,
+        TileEntity target, long now, Payment payment, boolean changed) {
+        Quote existing = QUOTES.get(player.getUniqueID());
+        if (existing != null && existing.terminalId.equals(terminalId)
+            && existing.key.equals(key)
+            && existing.visual == visual
+            && existing.slot == slot
+            && existing.target == target
+            && existing.machine == ((IGregTechTileEntity) target).getMetaTileEntity()
+            && existing.payment.same(payment)
+            && existing.matches(player, now)) {
+            GTSWNPacketHandler.NETWORK.sendTo(
+                new PacketSyncDeviceTeleportQuote(
+                    existing.token,
+                    terminalId,
+                    key,
+                    payment.source,
+                    payment.amount,
+                    changed),
+                player);
+            return outcome(Status.CONFIRMATION_REQUIRED);
+        }
+        Quote quote = new Quote(player, terminalId, key, visual, slot, target, now, payment);
+        QUOTES.put(player.getUniqueID(), quote);
+        GTSWNPacketHandler.NETWORK.sendTo(
+            new PacketSyncDeviceTeleportQuote(quote.token, terminalId, key, payment.source, payment.amount, changed),
+            player);
+        return outcome(Status.CONFIRMATION_REQUIRED);
+    }
+
+    /** The token is consumed before revalidation, so replayed confirmations can never settle twice. */
+    public static void confirm(EntityPlayerMP player, long token, boolean accepted) {
+        Quote quote = QUOTES.get(player.getUniqueID());
+        if (quote == null || quote.player != player || quote.token != token) return;
+        QUOTES.remove(player.getUniqueID());
+        if (!accepted) return;
+        Outcome result = attemptDetailed(player, quote.terminalId, quote.key, quote.visual, quote);
+        feedback(player, result);
+        if (result.status != Status.CONFIRMATION_REQUIRED) GTSWNPacketHandler.NETWORK.sendTo(
+            PacketSyncDeviceTeleportQuote
+                .finished(quote.token, quote.terminalId, quote.key, quote.payment.source, quote.payment.amount),
+            player);
+        if (quote.visual && result.status != Status.CONFIRMATION_REQUIRED) GTSWNPacketHandler.NETWORK.sendTo(
+            new PacketSyncDeviceTerminalVisualState(
+                quote.terminalId,
+                result.status.code,
+                quote.key,
+                result.cooldownTicks,
+                result.succeeded() ? player.posX : 0,
+                result.succeeded() ? player.posY : 0,
+                result.succeeded() ? player.posZ : 0),
+            player);
+    }
+
     public static boolean attempt(EntityPlayerMP player, UUID terminalId, String key, boolean visual) {
         Outcome result = attemptDetailed(player, terminalId, key, visual);
         if (!result.succeeded()) feedback(player, result);
@@ -80,6 +228,11 @@ public final class DeviceTerminalTeleport {
     }
 
     public static Outcome attemptDetailed(EntityPlayerMP player, UUID terminalId, String key, boolean visual) {
+        return attemptDetailed(player, terminalId, key, visual, null);
+    }
+
+    private static Outcome attemptDetailed(EntityPlayerMP player, UUID terminalId, String key, boolean visual,
+        Quote confirmed) {
         MinecraftServer server = MinecraftServer.getServer();
         if (server == null || player == null
             || player.isDead
@@ -94,7 +247,11 @@ public final class DeviceTerminalTeleport {
             .get(player.worldObj);
         if (!profiles.canRead(player.getUniqueID(), terminalId)
             || !profiles.canModify(player.getUniqueID(), terminalId)) return outcome(Status.INVALID_TARGET);
-        if (!holdsTerminal(player, terminalId, visual)) return outcome(Status.INVALID_TARGET);
+        int sourceSlot = confirmed == null ? DeviceTerminalSource.find(player, terminalId, visual) : confirmed.slot;
+        ItemStack source = DeviceTerminalSource.stack(player, sourceSlot);
+        if (!DeviceTerminalSource.matches(source, terminalId)
+            || visual && (player.getHeldItem() != source || !ItemDeviceInfoTerminal.isVisualizationEnabled(source)))
+            return outcome(Status.INVALID_TARGET);
         if (visual && !com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue.isEnabled(player, terminalId))
             return outcome(Status.INACTIVE);
         if (key == null || key.isEmpty()) return outcome(Status.NO_TARGET);
@@ -119,6 +276,9 @@ public final class DeviceTerminalTeleport {
             || !DeviceMachineTypes.isWorkingMachine(((IGregTechTileEntity) tile).getMetaTileEntity())
             || (record.metaTileId >= 0 && record.metaTileId != ((IGregTechTileEntity) tile).getMetaTileID()))
             return outcome(Status.STALE_TARGET);
+        if (confirmed != null
+            && (tile != confirmed.target || ((IGregTechTileEntity) tile).getMetaTileEntity() != confirmed.machine))
+            return outcome(Status.STALE_TARGET);
         if (visual) {
             Vec3 look = player.getLookVec();
             double eyeY = DeviceTerminalVisualRules
@@ -142,29 +302,74 @@ public final class DeviceTerminalTeleport {
         }
         long now = server.worldServerForDimension(0)
             .getTotalWorldTime();
+        if (confirmed != null && !confirmed.matches(player, now)) return outcome(Status.INVALID_TARGET);
         Long last = LAST.get(player.getUniqueID());
         if (last != null && now >= last && now - last < COOLDOWN_TICKS)
             return new Outcome(Status.COOLDOWN, (int) (COOLDOWN_TICKS - (now - last)));
         double[] landing = safeLanding(target, ((IGregTechTileEntity) tile).getFrontFacing(), record, player);
         if (landing == null) return outcome(Status.UNSAFE);
-        int cost = DeviceTerminalSettings.get(player.worldObj)
-            .teleportCost();
-        if (player.experienceLevel < cost) return outcome(Status.NO_XP);
-        boolean moved;
-        if (player.dimension == record.dim) {
-            player.mountEntity(null);
-            player.playerNetServerHandler
-                .setPlayerLocation(landing[0], landing[1], landing[2], player.rotationYaw, player.rotationPitch);
-            moved = true;
-        } else moved = GTUtility.moveEntityToDimensionAtCoords(player, record.dim, landing[0], landing[1], landing[2]);
+        Payment payment = payment(player);
+        if (confirmed == null || !payment.same(confirmed.payment))
+            return quote(player, terminalId, key, visual, sourceSlot, tile, now, payment, confirmed != null);
+        if (payment.source == PaymentSource.EXPERIENCE && player.experienceLevel < payment.amount)
+            return outcome(Status.NO_XP);
+
+        TerminalSupplyStore.Reservation anchor = null;
+        boolean experienceReserved = false;
+        if (payment.source == PaymentSource.RESERVE || payment.source == PaymentSource.INVENTORY) {
+            anchor = TerminalSupplyStore.reserveTeleportAnchor(player, payment.source == PaymentSource.RESERVE);
+            if (anchor == null)
+                return quote(player, terminalId, key, visual, sourceSlot, tile, now, payment(player), true);
+        } else if (payment.source == PaymentSource.EXPERIENCE) {
+            player.addExperienceLevel(-payment.amount);
+            experienceReserved = true;
+        }
+        boolean moved = false;
+        try {
+            if (player.dimension == record.dim) {
+                player.mountEntity(null);
+                player.playerNetServerHandler
+                    .setPlayerLocation(landing[0], landing[1], landing[2], player.rotationYaw, player.rotationPitch);
+                moved = true;
+            } else
+                moved = GTUtility.moveEntityToDimensionAtCoords(player, record.dim, landing[0], landing[1], landing[2]);
+            moved &= arrived(player, target, landing) && PlayerRequestQueue.isOnline(player);
+        } catch (RuntimeException failure) {
+            // A dimension hook may throw after completing movement. Settle the observed result,
+            // otherwise release the reserved payment on this same server thread.
+            moved = arrived(player, target, landing) && PlayerRequestQueue.isOnline(player);
+            GTSimpleWirelessNetwork.LOG
+                .error("[DeviceTeleport] travel hook failed for " + player.getUniqueID(), failure);
+        } finally {
+            if (anchor != null) {
+                if (moved) anchor.commit();
+                else anchor.release();
+            }
+            if (!moved && experienceReserved) player.addExperienceLevel(payment.amount);
+            // Disconnect handlers can save the player during a dimension callback, before this refund.
+            // Persist the restored account after that save rather than leaving it only in a departing object.
+            if (!moved && (anchor != null || experienceReserved) && !PlayerRequestQueue.isOnline(player))
+                server.worldServerForDimension(0)
+                    .getSaveHandler()
+                    .getSaveHandler()
+                    .writePlayerData(player);
+        }
         if (!moved) return outcome(Status.ERROR);
-        player.addExperienceLevel(-cost);
         LAST.put(player.getUniqueID(), now);
         return new Outcome(Status.SUCCESS, (int) COOLDOWN_TICKS);
     }
 
+    private static boolean arrived(EntityPlayerMP player, WorldServer target, double[] landing) {
+        return player.worldObj == target && player.dimension == target.provider.dimensionId
+            && Math.abs(player.posX - landing[0]) < 0.01
+            && Math.abs(player.posY - landing[1]) < 0.01
+            && Math.abs(player.posZ - landing[2]) < 0.01;
+    }
+
     public static void feedback(EntityPlayerMP player, Outcome result) {
-        if (player == null || player.playerNetServerHandler == null || result.succeeded()) return;
+        if (player == null || player.playerNetServerHandler == null
+            || result.succeeded()
+            || result.status == Status.CONFIRMATION_REQUIRED) return;
         String key = "gtswn.device.visual.teleport." + result.status.name()
             .toLowerCase(java.util.Locale.ROOT);
         if (result.status == Status.NO_XP) player.addChatMessage(
@@ -332,9 +537,11 @@ public final class DeviceTerminalTeleport {
 
     public static void onLogout(UUID player) {
         LAST.remove(player);
+        QUOTES.remove(player);
     }
 
     public static void clear() {
         LAST.clear();
+        QUOTES.clear();
     }
 }

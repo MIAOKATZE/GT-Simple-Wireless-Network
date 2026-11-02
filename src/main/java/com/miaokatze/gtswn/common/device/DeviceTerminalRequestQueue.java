@@ -524,7 +524,11 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                         record.nameColor,
                         record.nameBold,
                         record.capabilityMask,
-                        record.recognitionMode));
+                        record.recognitionMode,
+                        record.linkSummary,
+                        record.machineOwner,
+                        record.machineKind,
+                        record.machineTier));
             }
             index++;
         }

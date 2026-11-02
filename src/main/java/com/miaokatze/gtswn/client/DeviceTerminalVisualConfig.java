@@ -18,7 +18,6 @@ public final class DeviceTerminalVisualConfig {
     public static boolean showLabelName = true;
     public static boolean showLabelState;
     public static boolean showLabelPower = true;
-    public static boolean showLabelRecipe;
     public static boolean labelDepthTest;
     public static int range = 64;
     public static int maxDevices = 256;
@@ -76,8 +75,8 @@ public final class DeviceTerminalVisualConfig {
         showLabelState = configuration.getBoolean("showLabelState", category, false, "Machine states on anchors.");
         showLabelPower = configuration
             .getBoolean("showLabelPower", category, true, "Instant energy input/output on anchors.");
-        showLabelRecipe = configuration
-            .getBoolean("showLabelRecipe", category, false, "Cached recipe preview on anchors.");
+        configuration.getCategory(category)
+            .remove("showLabelRecipe");
         labelDepthTest = configuration
             .getBoolean("labelDepthTest", category, false, "Depth occlusion for travel markers.");
         range = configuration.getInt("range", category, 64, 8, 128, "Maximum view distance in blocks.");
@@ -126,8 +125,6 @@ public final class DeviceTerminalVisualConfig {
             .set(showLabelState);
         configuration.get(category, "showLabelPower", true)
             .set(showLabelPower);
-        configuration.get(category, "showLabelRecipe", false)
-            .set(showLabelRecipe);
         configuration.get(category, "labelDepthTest", false)
             .set(labelDepthTest);
         configuration.get(category, "range", 64)
@@ -174,8 +171,7 @@ public final class DeviceTerminalVisualConfig {
             | (showLabels ? 16 : 0)
             | (showLabelName ? 32 : 0)
             | (showLabelPower ? 64 : 0)
-            | (showLabelState ? 128 : 0)
-            | (showLabelRecipe ? 256 : 0);
+            | (showLabelState ? 128 : 0);
         int average = (int) Math.round(Math.max(0D, Math.min(1D, averageWeight)) * 100D);
         // Separate bit ranges keep all 1..1000 sizes distinct from filters and average weights.
         int labels = Math.max(LABEL_SIZE_MIN, Math.min(LABEL_SIZE_MAX, labelSize));

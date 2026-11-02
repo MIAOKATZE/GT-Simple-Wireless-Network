@@ -111,6 +111,8 @@ public class GTSimpleWirelessNetwork {
         com.miaokatze.gtswn.network.PacketSetQuantumNetworkColor.clearServerState();
         com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety.clearContexts();
         com.miaokatze.gtswn.network.PacketRenameQuantumTerminal.clearPending();
+        com.miaokatze.gtswn.network.PacketDeviceTeleportRequest.clearPending();
+        com.miaokatze.gtswn.network.DeviceLinkActionQueue.clear();
         com.miaokatze.gtswn.common.quantum.QuantumConnectionSecurity.clearConnections();
         com.miaokatze.gtswn.common.device.DeviceFlowMonitor.clear();
         com.miaokatze.gtswn.common.baubles.TerminalBaubles.clear();

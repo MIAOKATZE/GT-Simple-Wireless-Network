@@ -433,18 +433,6 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      */
     private Map<String, Long> singleIterationAmounts(List<ItemStack> items, List<FluidStack> fluids) {
         Map<String, Long> result = new HashMap<>();
-        for (ItemStack stack : items) {
-            String key = AEMonitorController.aeKey(stack);
-            if (key != null) {
-                result.putIfAbsent(key, Long.valueOf(0L));
-            }
-        }
-        for (FluidStack fluid : fluids) {
-            String key = AEMonitorController.aeKey(fluid);
-            if (key != null) {
-                result.putIfAbsent(key, Long.valueOf(0L));
-            }
-        }
         if (!isAEConnected()) throw new IllegalStateException("AE source unavailable");
         try {
             IItemList<IAEItemStack> itemList = gridProxy.getStorage()

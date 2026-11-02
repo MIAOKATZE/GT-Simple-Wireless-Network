@@ -20,6 +20,8 @@ import com.cleanroommc.modularui.utils.item.InvWrapper;
 import com.cleanroommc.modularui.utils.item.PlayerInvWrapper;
 import com.cleanroommc.modularui.widgets.slot.ModularSlot;
 import com.cleanroommc.modularui.widgets.slot.PlayerSlotGroup;
+import com.miaokatze.gtswn.common.device.DeviceTerminalSource;
+import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
@@ -36,6 +38,7 @@ public class ContainerTerminal extends ModularContainer {
     public final TerminalSupplyStore.Kind kind;
     private final EntityPlayer owner;
     private final ItemStack terminal;
+    private final java.util.UUID deviceTerminalId;
     private final String colorBinding;
     private final ItemStack supplyReference;
     private final int heldIndex;
@@ -65,15 +68,36 @@ public class ContainerTerminal extends ModularContainer {
             true);
     }
 
+    static ContainerTerminal forDeviceSettings(EntityPlayer player, int sourceSlot) {
+        return new ContainerTerminal(
+            player,
+            TerminalSupplyStore.Kind.TELEPORT_ANCHOR,
+            TerminalSupplyStore.Kind.TELEPORT_ANCHOR.reference(),
+            sourceSlot,
+            true);
+    }
+
     ContainerTerminal(EntityPlayer player, boolean quantum, ItemStack reference, boolean deferSlotRegistration) {
+        this(
+            player,
+            quantum ? TerminalSupplyStore.Kind.ANCHOR : TerminalSupplyStore.Kind.TUBE,
+            reference,
+            player.inventory.currentItem,
+            deferSlotRegistration);
+    }
+
+    ContainerTerminal(EntityPlayer player, TerminalSupplyStore.Kind kind, ItemStack reference, int sourceSlot,
+        boolean deferSlotRegistration) {
         this.deferSlotRegistration = deferSlotRegistration;
         this.owner = player;
-        this.quantum = quantum;
-        kind = quantum ? TerminalSupplyStore.Kind.ANCHOR : TerminalSupplyStore.Kind.TUBE;
+        this.quantum = kind == TerminalSupplyStore.Kind.ANCHOR;
+        this.kind = kind;
         supplyReference = reference == null ? null : reference.copy();
-        terminal = player.getHeldItem();
+        terminal = kind == TerminalSupplyStore.Kind.TELEPORT_ANCHOR ? DeviceTerminalSource.stack(player, sourceSlot)
+            : player.getHeldItem();
+        deviceTerminalId = ItemDeviceInfoTerminal.readTerminalId(terminal);
         colorBinding = colorBinding(terminal);
-        heldIndex = player.inventory.currentItem;
+        heldIndex = sourceSlot;
         if (quantum && !player.worldObj.isRemote) renewRenameToken();
         Arrays.fill(sent, -1);
         addTerminalSlot(new ModularSlot(new InvWrapper(new InventoryBasic("supply", false, 1)), 0) {
@@ -125,6 +149,13 @@ public class ContainerTerminal extends ModularContainer {
 
     @Override
     public boolean canInteractWith(EntityPlayer player) {
+        if (kind == TerminalSupplyStore.Kind.TELEPORT_ANCHOR) {
+            ItemStack source = DeviceTerminalSource.stack(player, heldIndex);
+            return !closed && player == owner
+                && player.isEntityAlive()
+                && DeviceTerminalSource.matches(source, deviceTerminalId)
+                && (player.worldObj.isRemote || source == terminal);
+        }
         ItemStack held = player.getHeldItem();
         return player == owner && player.isEntityAlive()
             && held != null
@@ -368,7 +399,8 @@ public class ContainerTerminal extends ModularContainer {
         if (owner.worldObj.isRemote) return;
         values[0] = TerminalSupplyStore.count(owner, kind);
         long tick = owner.worldObj.getTotalWorldTime();
-        if (!quantum && (snapshotTick == Long.MIN_VALUE || tick - snapshotTick >= 20 || tick < snapshotTick)) {
+        if (kind == TerminalSupplyStore.Kind.TUBE
+            && (snapshotTick == Long.MIN_VALUE || tick - snapshotTick >= 20 || tick < snapshotTick)) {
             snapshotTick = tick;
             String leader = SpaceProjectManager.getLeader(owner.getUniqueID())
                 .toString();

@@ -64,6 +64,11 @@ public class ContainerTerminalTest {
     }
 
     private ContainerTerminal fixture(boolean remote, int count) throws Exception {
+        return fixture(remote, count, TerminalSupplyStore.Kind.ANCHOR, 8);
+    }
+
+    private ContainerTerminal fixture(boolean remote, int count, TerminalSupplyStore.Kind kind, int sourceSlot)
+        throws Exception {
         // Skip constructors that require Forge's running world, network handler and mod registry.
         EntityPlayer player = (EntityPlayer) allocate(FixturePlayer.class);
         World world = (World) allocate(WorldServer.class);
@@ -72,8 +77,8 @@ public class ContainerTerminalTest {
         player.inventory = new InventoryPlayer(player);
         player.inventory.currentItem = 8;
         player.inventory.setInventorySlotContents(8, new ItemStack(other));
-        TerminalSupplyStore.set(player, TerminalSupplyStore.Kind.ANCHOR, count);
-        ContainerTerminal container = new ContainerTerminal(player, true, new ItemStack(supply)) {
+        TerminalSupplyStore.set(player, kind, count);
+        ContainerTerminal container = new ContainerTerminal(player, kind, new ItemStack(supply), sourceSlot, false) {
 
             @Override
             public boolean canInteractWith(EntityPlayer candidate) {
@@ -84,6 +89,36 @@ public class ContainerTerminalTest {
         player.openContainer = container;
         container.updateProgressBar(0, count);
         return container;
+    }
+
+    @Test
+    public void teleportSupplyLocksItsActualCarriedSlotAndKeepsOrdinaryHotbarAvailable() throws Exception {
+        ContainerTerminal main = fixture(false, 640, TerminalSupplyStore.Kind.TELEPORT_ANCHOR, 12);
+        assertEquals(TerminalSupplyStore.Kind.TELEPORT_ANCHOR, main.kind);
+        assertFalse(main.quantum);
+        assertFalse(
+            main.getSlot(4)
+                .canTakeStack(owner(main))); // real main-inventory slot 12
+        assertFalse(main.canDragIntoSlot(main.getSlot(4)));
+        assertTrue(
+            main.getSlot(36)
+                .canTakeStack(owner(main))); // selected hotbar slot 8 is unrelated
+        assertTrue(main.canDragIntoSlot(main.getSlot(36)));
+        assertNull(main.slotClick(4, 0, 0, owner(main)));
+        assertEquals(640, main.supplyCount);
+        main.slotClick(0, 1, 0, owner(main));
+        assertEquals(1, owner(main).inventory.getItemStack().stackSize);
+        assertEquals(639, main.supplyCount);
+
+        ContainerTerminal accessory = fixture(false, 640, TerminalSupplyStore.Kind.TELEPORT_ANCHOR, -2);
+        for (int slot = 1; slot < 37; slot++) {
+            assertTrue(
+                accessory.getSlot(slot)
+                    .canTakeStack(owner(accessory)));
+            assertTrue(accessory.canDragIntoSlot(accessory.getSlot(slot)));
+        }
+        assertFalse(accessory.canDragIntoSlot(accessory.getSlot(0)));
+        assertFalse(accessory.func_94530_a(new ItemStack(supply), accessory.getSlot(0)));
     }
 
     private EntityPlayer owner(ContainerTerminal container) {

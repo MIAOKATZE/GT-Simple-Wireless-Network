@@ -106,6 +106,10 @@ public final class TerminalGuiFactory implements UIFactory<GuiData> {
         pages.addPage(quantum ? quantumDetails(player) : linkDetails(player, container));
         pages.addPage(effects(player));
         if (quantum) pages.addPage(rename(player, container, tabs, pages));
+        else {
+            pages.addPage(linkSettings());
+            if (player.worldObj.isRemote) com.miaokatze.gtswn.common.device.TerminalLinkSettings.requestSettings();
+        }
         panel.child(pages);
         panel.child(
             IKey.lang(quantum ? "gtswn.gui.quantum.network_details" : "gtswn.gui.terminal.link_details")
@@ -117,6 +121,7 @@ public final class TerminalGuiFactory implements UIFactory<GuiData> {
         panel.child(tab(prefix + ".tab.details", "gtswn.gui.terminal.details", 0, tabs, 218));
         panel.child(tab(prefix + ".tab.effects", "gtswn.gui.terminal.effects", 1, tabs, 292));
         if (quantum) panel.child(tab("quantum.rename", "gtswn.gui.quantum.rename", 2, tabs, 366));
+        else panel.child(tab("link.settings", "gtswn.device.link.settings", 2, tabs, 366));
         panel.child(
             IKey.lang("container.inventory")
                 .color(GtswnMuiTheme.TEXT_LABEL)
@@ -300,6 +305,39 @@ public final class TerminalGuiFactory implements UIFactory<GuiData> {
         body.child(label(() -> tr("gtswn.gui.terminal.level") + ": " + player.experienceLevel, 10, 56, 404));
         body.child(label(() -> tr("gtswn.gui.terminal.team") + ": " + container.team(), 10, 78, 404));
         body.child(label(() -> "EU: " + container.balance(), 10, 104, 404));
+        return body;
+    }
+
+    private ParentWidget<?> linkSettings() {
+        ParentWidget<?> body = new ParentWidget<>().size(426, 140)
+            .background(GtswnMuiTheme.LIST_PANEL)
+            .name("link.settings.page");
+        body.child(
+            new ButtonWidget<>().name("link.auto")
+                .pos(10, 16)
+                .size(404, 24)
+                .background(GtswnMuiTheme.BUTTON)
+                .hoverBackground(GtswnMuiTheme.BUTTON_HOVER)
+                .overlay(
+                    IKey.dynamic(
+                        () -> tr("gtswn.device.link.auto") + ": "
+                            + tr(
+                                com.miaokatze.gtswn.common.device.TerminalLinkSettings.clientAutoEnabled()
+                                    ? "gtswn.device.gui.on"
+                                    : "gtswn.device.gui.off")))
+                .tooltip(t -> t.addLine(IKey.lang("gtswn.device.link.auto.hint")))
+                .onMousePressed(mouse -> {
+                    if (mouse != 0) return false;
+                    com.miaokatze.gtswn.common.device.TerminalLinkSettings
+                        .requestAuto(!com.miaokatze.gtswn.common.device.TerminalLinkSettings.clientAutoEnabled());
+                    return true;
+                }));
+        body.child(
+            IKey.lang("gtswn.device.link.auto.hint")
+                .color(GtswnMuiTheme.TEXT_MUTED)
+                .asWidget()
+                .pos(12, 52)
+                .size(400, 72));
         return body;
     }
 

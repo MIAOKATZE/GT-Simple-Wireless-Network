@@ -291,164 +291,267 @@ public class WirelessEnergyTap extends Item
             // === 目标面已有外来覆盖板时终止附着，防止挤掉原有覆盖板 ===
             // 本 mod 覆盖板已在上方分支被移除，能走到这里说明 targetSide 上的覆盖板必为外来覆盖板
             // 必须检测 targetSide（九宫格换算的预计附加面）而非原始 side，与下方 placeCover 严格同面
-            if (coverable.hasCoverAtSide(targetSide)) {
-                player.addChatMessage(
-                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cover_exists")));
-                return;
-            }
-
-            // 1. 检查是否有电容
-            long capacity = container.getEUCapacity();
-            if (capacity <= 0) {
-                player.addChatMessage(
-                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_capacity")));
-                return;
-            }
-
-            // 获取当前输出模式
-            boolean outputMode = getOutputMode(stack);
-
-            if (outputMode) {
-                // === 动力模式:虚拟导线,读取机器输出 V/A 取电 ===
-                // Dynamo cover reads machine output V/A per tick, drains into capacity buffer
-                attachDynamoCoverForFullTake(stack, player, world, x, y, z, coverable, targetSide);
-                return;
-            }
-
-            // === 能源模式:读取电压/安培,输出检测信息 ===
-            // 2. 获取电压
-            long voltage = container.getInputVoltage();
-            if (voltage <= 0) {
-                // 尝试获取输出电压作为备份
-                voltage = container.getOutputVoltage();
-            }
-
-            // 激光仓专属电压（源仓=maxEUOutput()、靶仓=maxEUInput()，均 V[mTier] 恒非零）
-            if (laserHatch) {
-                voltage = LaserHatchUtil.getLaserVoltage(laserMte);
-            }
-
-            if (voltage <= 0) {
-                player
-                    .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_voltage")));
-                return;
-            }
-
-            // 3. 获取安培；电池箱按槽位容量；其余机器实测 ≤ 1（等级不匹配等）兜底 3A，不抬升实测值
-            long amperage = container.getInputAmperage();
-
-            // 电池箱安培按槽位容量 = 槽数×1，最小 2A，与已放入电池数无关 / Battery buffer amperage = slots × 1, minimum 2A, regardless of
-            // inserted cells
-            if (laserMte instanceof MTEBasicBatteryBuffer batteryBuffer) {
-                amperage = Math.max(batteryBuffer.getSizeInventory(), 2);
-            }
-
-            if (amperage <= 1) {
-                amperage = 3;
-            }
-
-            // 激光仓专属安培（源仓=maxAmperesOut()、靶仓=maxAmperesIn()，恒>1，3A 兜底不生效）
-            if (laserHatch) {
-                amperage = LaserHatchUtil.getLaserAmperage(laserMte);
-            }
-
-            // 4. 计算电容量 = 电压 × 安培 × 800 tick
-            // Calculate cover capacity = voltage × amperage × 800 ticks
-            // SWN-BUG-06+SWN-OPT-17：公式收敛至 CoverMaths.bufferCapacity 单源（与能源覆盖板实配共享）
-            long coverCapacity = CoverMaths.bufferCapacity(voltage, amperage);
-
-            // 5. 输出检测信息到聊天
-            player.addChatMessage(
-                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.machine_detected")));
-            player.addChatMessage(
-                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.capacity") + capacity + " EU"));
-            player.addChatMessage(
-                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.voltage") + voltage + " EU/t"));
-            player.addChatMessage(
-                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.amperage") + amperage + " A"));
-            player.addChatMessage(
-                new ChatComponentText(
-                    StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
-
-            // === 准备附着我们的覆盖板（能源模式） ===
-            ItemStack coverStack = GTSWNItemList.GTswn_Cover_Energy_Wireless.get(1);
-
-            if (coverStack != null) {
-                // 1. 获取CoverPlacer
-                CoverPlacer placer = CoverRegistry.getCoverPlacer(coverStack);
-
-                // 2. 检查是否可以放置
-                if (!placer.isCoverPlaceable(targetSide, coverStack, coverable)) {
-                    player.addChatMessage(
-                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
-                    return;
-                }
-
-                int suppliesBefore = TerminalSupplyStore.count(player, TerminalSupplyStore.Kind.TUBE);
-                // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
-                if (laserHatch && !player.capabilities.isCreativeMode
-                    && !TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.TUBE)) {
-                    player.addChatMessage(
-                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
-                    return;
-                }
-                if (laserHatch && !player.capabilities.isCreativeMode) {
-                    player.addChatMessage(
-                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
-                }
-
-                // 3. 使用CoverPlacer放置
-                String modeText = StatCollector.translateToLocal("gtswn.chat.tap.mode_energy");
-                player.addChatMessage(
-                    new ChatComponentText(
-                        StatCollector.translateToLocal("gtswn.chat.tap.attaching") + modeText
-                            + StatCollector.translateToLocal("gtswn.chat.tap.attaching_suffix")));
-                placer.placeCover(player, coverStack, coverable, targetSide);
-
-                // 4. 找到刚附着的覆盖板并配置它
-                Cover placedCover = coverable.getCoverAtSide(targetSide);
-                if (!(placedCover instanceof GTswn_Cover_EnergyWireless energyCover)) {
-                    player.addChatMessage(
-                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
-                    return;
-                }
-                // v1.2.1 改进：使用 Math.toIntExact 替代 (int) 强转，溢出时抛出异常暴露问题而非静默截断
-                // GT 电压/安培实际不会超出 int 范围（MAX 级约 2^30），此处 toIntExact 安全
-                energyCover.configure(Math.toIntExact(voltage), Math.toIntExact(amperage));
-                // D3 兜底自愈：placeCover+configure 成功即入册（能源节点，幂等）
-                WirelessNodeRegistry.get(world)
-                    .register(world, x, y, z, WirelessNodeRegistry.TYPE_ENERGY);
-
-                // 5. 提示成功
-                List<IChatComponent> messages = new ArrayList<>();
-                messages.add(
-                    TerminalSupplyStore.appendRemaining(
-                        new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")),
-                        player,
-                        TerminalSupplyStore.Kind.TUBE,
-                        suppliesBefore));
-                messages
-                    .add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
-                messages.add(
-                    new ChatComponentText(
-                        StatCollector.translateToLocal("gtswn.chat.tap.voltage_tier") + voltage + " EU/t"));
-                messages.add(
-                    new ChatComponentText(
-                        StatCollector.translateToLocal("gtswn.chat.tap.amperage_tier") + amperage + " A"));
-                messages.add(
-                    new ChatComponentText(
-                        StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
-                // 6. 绑定提示(前 MAX_BIND_NOTIFY 次)
-                notifyBindOwner(stack, messages);
-                AnimationQualityHints.linkSuccess(player, messages);
-            } else {
-                player.addChatMessage(
-                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
-            }
+            installCover(
+                stack,
+                player,
+                world,
+                x,
+                y,
+                z,
+                coverable,
+                container,
+                laserMte,
+                targetSide,
+                getOutputMode(stack),
+                true);
         } else {
             player.addChatMessage(
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_cover_support")));
         }
+    }
+
+    private void installCover(ItemStack stack, EntityPlayer player, World world, int x, int y, int z,
+        ICoverable coverable, IBasicEnergyContainer container, IMetaTileEntity laserMte, ForgeDirection targetSide,
+        boolean outputMode, boolean notify) {
+        boolean laserHatch = laserMte != null && LaserHatchUtil.isLaserHatch(laserMte);
+        if (coverable.hasCoverAtSide(targetSide)) {
+            message(
+                player,
+                notify,
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cover_exists")));
+            return;
+        }
+
+        // 1. 检查是否有电容
+        long capacity = container.getEUCapacity();
+        if (capacity <= 0) {
+            message(
+                player,
+                notify,
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_capacity")));
+            return;
+        }
+
+        // 获取当前输出模式
+
+        if (outputMode) {
+            // === 动力模式:虚拟导线,读取机器输出 V/A 取电 ===
+            // Dynamo cover reads machine output V/A per tick, drains into capacity buffer
+            attachDynamoCoverForFullTake(stack, player, world, x, y, z, coverable, targetSide, notify);
+            return;
+        }
+
+        // === 能源模式:读取电压/安培,输出检测信息 ===
+        // 2. 获取电压
+        long voltage = container.getInputVoltage();
+        if (voltage <= 0) {
+            // 尝试获取输出电压作为备份
+            voltage = container.getOutputVoltage();
+        }
+
+        // 激光仓专属电压（源仓=maxEUOutput()、靶仓=maxEUInput()，均 V[mTier] 恒非零）
+        if (laserHatch) {
+            voltage = LaserHatchUtil.getLaserVoltage(laserMte);
+        }
+
+        if (voltage <= 0) {
+            message(player, notify, new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.no_voltage")));
+            return;
+        }
+
+        // 3. 获取安培；电池箱按槽位容量；其余机器实测 ≤ 1（等级不匹配等）兜底 3A，不抬升实测值
+        long amperage = container.getInputAmperage();
+
+        // 电池箱安培按槽位容量 = 槽数×1，最小 2A，与已放入电池数无关 / Battery buffer amperage = slots × 1, minimum 2A, regardless of
+        // inserted cells
+        if (laserMte instanceof MTEBasicBatteryBuffer batteryBuffer) {
+            amperage = Math.max(batteryBuffer.getSizeInventory(), 2);
+        }
+
+        if (amperage <= 1) {
+            amperage = 3;
+        }
+
+        // 激光仓专属安培（源仓=maxAmperesOut()、靶仓=maxAmperesIn()，恒>1，3A 兜底不生效）
+        if (laserHatch) {
+            amperage = LaserHatchUtil.getLaserAmperage(laserMte);
+        }
+
+        // 4. 计算电容量 = 电压 × 安培 × 800 tick
+        // Calculate cover capacity = voltage × amperage × 800 ticks
+        // SWN-BUG-06+SWN-OPT-17：公式收敛至 CoverMaths.bufferCapacity 单源（与能源覆盖板实配共享）
+        long coverCapacity = CoverMaths.bufferCapacity(voltage, amperage);
+
+        // 5. 输出检测信息到聊天
+        message(
+            player,
+            notify,
+            new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.machine_detected")));
+        message(
+            player,
+            notify,
+            new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.capacity") + capacity + " EU"));
+        message(
+            player,
+            notify,
+            new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.voltage") + voltage + " EU/t"));
+        message(
+            player,
+            notify,
+            new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.amperage") + amperage + " A"));
+        message(
+            player,
+            notify,
+            new ChatComponentText(
+                StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
+
+        // === 准备附着我们的覆盖板（能源模式） ===
+        ItemStack coverStack = GTSWNItemList.GTswn_Cover_Energy_Wireless.get(1);
+
+        if (coverStack != null) {
+            // 1. 获取CoverPlacer
+            CoverPlacer placer = CoverRegistry.getCoverPlacer(coverStack);
+
+            // 2. 检查是否可以放置
+            if (!placer.isCoverPlaceable(targetSide, coverStack, coverable)) {
+                message(
+                    player,
+                    notify,
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
+                return;
+            }
+
+            int suppliesBefore = TerminalSupplyStore.count(player, TerminalSupplyStore.Kind.TUBE);
+            // 生存模式激光仓绑定消耗 1 根真空管；创造模式无需持有或消耗。
+            if (laserHatch && !player.capabilities.isCreativeMode
+                && !TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.TUBE)) {
+                message(
+                    player,
+                    notify,
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
+                return;
+            }
+            if (laserHatch && !player.capabilities.isCreativeMode) {
+                message(
+                    player,
+                    notify,
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
+            }
+
+            // 3. 使用CoverPlacer放置
+            String modeText = StatCollector.translateToLocal("gtswn.chat.tap.mode_energy");
+            message(
+                player,
+                notify,
+                new ChatComponentText(
+                    StatCollector.translateToLocal("gtswn.chat.tap.attaching") + modeText
+                        + StatCollector.translateToLocal("gtswn.chat.tap.attaching_suffix")));
+            placer.placeCover(player, coverStack, coverable, targetSide);
+
+            // 4. 找到刚附着的覆盖板并配置它
+            Cover placedCover = coverable.getCoverAtSide(targetSide);
+            if (!(placedCover instanceof GTswn_Cover_EnergyWireless energyCover)) {
+                message(
+                    player,
+                    notify,
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
+                return;
+            }
+            // v1.2.1 改进：使用 Math.toIntExact 替代 (int) 强转，溢出时抛出异常暴露问题而非静默截断
+            // GT 电压/安培实际不会超出 int 范围（MAX 级约 2^30），此处 toIntExact 安全
+            energyCover.configure(Math.toIntExact(voltage), Math.toIntExact(amperage));
+            // D3 兜底自愈：placeCover+configure 成功即入册（能源节点，幂等）
+            WirelessNodeRegistry.get(world)
+                .register(world, x, y, z, WirelessNodeRegistry.TYPE_ENERGY);
+
+            // 5. 提示成功
+            List<IChatComponent> messages = new ArrayList<>();
+            messages.add(
+                TerminalSupplyStore.appendRemaining(
+                    new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.link_success")),
+                    player,
+                    TerminalSupplyStore.Kind.TUBE,
+                    suppliesBefore));
+            messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
+            messages.add(
+                new ChatComponentText(
+                    StatCollector.translateToLocal("gtswn.chat.tap.voltage_tier") + voltage + " EU/t"));
+            messages.add(
+                new ChatComponentText(
+                    StatCollector.translateToLocal("gtswn.chat.tap.amperage_tier") + amperage + " A"));
+            messages.add(
+                new ChatComponentText(
+                    StatCollector.translateToLocal("gtswn.chat.tap.cover_capacity") + coverCapacity + " EU"));
+            // 6. 绑定提示(前 MAX_BIND_NOTIFY 次)
+            if (notify) notifyBindOwner(stack, messages);
+            if (notify) AnimationQualityHints.linkSuccess(player, messages);
+        } else {
+            message(
+                player,
+                notify,
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
+        }
+    }
+
+    private static void message(EntityPlayer player, boolean notify, IChatComponent message) {
+        if (notify) player.addChatMessage(message);
+    }
+
+    public enum LinkResult {
+        APPLIED,
+        SKIPPED,
+        FAILED,
+        COOLDOWN
+    }
+
+    /** Explicit desired state shares the hand tool's install/configure and detach callbacks. */
+    public LinkResult setLinkState(ItemStack stack, EntityPlayer player, World world, IGregTechTileEntity tile,
+        ForgeDirection side, boolean dynamo, boolean desiredState) {
+        if (world.isRemote || stack == null
+            || stack.getItem() != this
+            || tile.getWorld() != world
+            || tile.isDead()
+            || side == ForgeDirection.UNKNOWN) return LinkResult.FAILED;
+        int nodes = 0;
+        ForgeDirection nodeSide = null;
+        com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase node = null;
+        for (ForgeDirection face : ForgeDirection.VALID_DIRECTIONS) {
+            if (tile.getCoverAtSide(face) instanceof com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase found) {
+                nodes++;
+                nodeSide = face;
+                node = found;
+            }
+        }
+        if (nodes > 1 || nodes == 1 && (nodeSide != side || node.nodeTypeId() != (dynamo ? 1 : 0)))
+            return LinkResult.FAILED;
+        if (desiredState == (nodes == 1)) return LinkResult.SKIPPED;
+        if (desiredState && (tile.hasCoverAtSide(side) || tile.getEUCapacity() <= 0)) return LinkResult.FAILED;
+        if (!canTrigger(stack, world)) return LinkResult.COOLDOWN;
+        if (!desiredState) {
+            tile.detachCover(side);
+            if (tile.hasCoverAtSide(side)) return LinkResult.FAILED;
+            WirelessNodeRegistry.get(world)
+                .unregister(world, tile.getXCoord(), tile.getYCoord(), tile.getZCoord());
+            return LinkResult.APPLIED;
+        }
+        installCover(
+            stack,
+            player,
+            world,
+            tile.getXCoord(),
+            tile.getYCoord(),
+            tile.getZCoord(),
+            tile,
+            tile,
+            tile.getMetaTileEntity(),
+            side,
+            dynamo,
+            false);
+        Object placed = tile.getCoverAtSide(side);
+        return placed instanceof com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase
+            && ((com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase) placed).nodeTypeId() == (dynamo ? 1 : 0)
+                ? LinkResult.APPLIED
+                : LinkResult.FAILED;
     }
 
     /**
@@ -468,17 +571,21 @@ public class WirelessEnergyTap extends Item
      * @param targetSide 附着面
      */
     private void attachDynamoCoverForFullTake(ItemStack stack, EntityPlayer player, World world, int x, int y, int z,
-        ICoverable coverable, ForgeDirection targetSide) {
+        ICoverable coverable, ForgeDirection targetSide, boolean notify) {
         ItemStack coverStack = GTSWNItemList.GTswn_Cover_Dynamo_Wireless.get(1);
         if (coverStack == null) {
-            player.addChatMessage(
+            message(
+                player,
+                notify,
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_get_cover")));
             return;
         }
 
         CoverPlacer placer = CoverRegistry.getCoverPlacer(coverStack);
         if (!placer.isCoverPlaceable(targetSide, coverStack, coverable)) {
-            player.addChatMessage(
+            message(
+                player,
+                notify,
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
             return;
         }
@@ -489,20 +596,26 @@ public class WirelessEnergyTap extends Item
         boolean laserHatch = mte != null && LaserHatchUtil.isLaserHatch(mte);
         if (laserHatch && !player.capabilities.isCreativeMode
             && !TerminalSupplyStore.consume(player, TerminalSupplyStore.Kind.TUBE)) {
-            player.addChatMessage(
+            message(
+                player,
+                notify,
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_missing_pipe")));
             return;
         }
         if (laserHatch && !player.capabilities.isCreativeMode) {
-            player
-                .addChatMessage(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
+            message(
+                player,
+                notify,
+                new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.laser_consumed")));
         }
 
         // 放置覆盖板
         // 动力模式:虚拟导线,每 tick 读取机器输出 V/A 取电,每 600 tick 上送电网
         // Dynamo mode: virtual cable, drains V×A per tick, uploads to network every 600 ticks
         String modeText = StatCollector.translateToLocal("gtswn.chat.tap.mode_power");
-        player.addChatMessage(
+        message(
+            player,
+            notify,
             new ChatComponentText(
                 StatCollector.translateToLocal("gtswn.chat.tap.attaching") + modeText
                     + StatCollector.translateToLocal("gtswn.chat.tap.attaching_suffix")));
@@ -511,7 +624,9 @@ public class WirelessEnergyTap extends Item
         // 配置覆盖板:无需参数
         Cover placedCover = coverable.getCoverAtSide(targetSide);
         if (!(placedCover instanceof GTswn_Cover_DynamoWireless dynamoCover)) {
-            player.addChatMessage(
+            message(
+                player,
+                notify,
                 new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.cannot_place_cover")));
             return;
         }
@@ -530,8 +645,8 @@ public class WirelessEnergyTap extends Item
                 suppliesBefore));
         messages.add(new ChatComponentText(StatCollector.translateToLocal("gtswn.chat.tap.mode_text") + modeText));
         // 绑定提示(前 MAX_BIND_NOTIFY 次)
-        notifyBindOwner(stack, messages);
-        AnimationQualityHints.linkSuccess(player, messages);
+        if (notify) notifyBindOwner(stack, messages);
+        if (notify) AnimationQualityHints.linkSuccess(player, messages);
     }
 
     /**

@@ -44,9 +44,7 @@ public class TerminalSupplyStoreTest {
                 // Raw templates bypass StringTranslate's numeric-placeholder rewriting and exercise the chat parser.
                 StringTranslate.replaceWith(translations);
                 for (TerminalSupplyStore.Kind kind : TerminalSupplyStore.Kind.values()) {
-                    String name = messages.getProperty(
-                        kind == TerminalSupplyStore.Kind.ANCHOR ? "gtswn.gui.terminal.anchor"
-                            : "gtswn.gui.terminal.tube");
+                    String name = messages.getProperty(kind.labelKey());
                     for (int remaining : new int[] { 0, 1, 640 }) {
                         IChatComponent success = TerminalSupplyStore.appendRemaining(
                             new ChatComponentText("success"),
@@ -82,9 +80,7 @@ public class TerminalSupplyStoreTest {
                     .get(0);
                 assertEquals("gtswn.chat.terminal.preloaded_remaining", hint.getKey());
                 assertEquals(remaining, hint.getFormatArgs()[1]);
-                assertEquals(
-                    kind == TerminalSupplyStore.Kind.ANCHOR ? "gtswn.gui.terminal.anchor" : "gtswn.gui.terminal.tube",
-                    ((ChatComponentTranslation) hint.getFormatArgs()[0]).getKey());
+                assertEquals(kind.labelKey(), ((ChatComponentTranslation) hint.getFormatArgs()[0]).getKey());
                 IChatComponent delayedCopy = success.createCopy();
                 assertEquals(
                     remaining,
@@ -110,15 +106,21 @@ public class TerminalSupplyStoreTest {
         persisted.setString("otherMod", "retain");
         TerminalSupplyStore.set(persisted, TerminalSupplyStore.Kind.ANCHOR, 640);
         TerminalSupplyStore.set(persisted, TerminalSupplyStore.Kind.TUBE, 129);
+        TerminalSupplyStore.set(persisted, TerminalSupplyStore.Kind.TELEPORT_ANCHOR, 317);
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         CompressedStreamTools.writeCompressed(persisted, bytes);
         NBTTagCompound restored = CompressedStreamTools.readCompressed(new ByteArrayInputStream(bytes.toByteArray()));
         NBTTagCompound clone = (NBTTagCompound) restored.copy();
         assertEquals(640, TerminalSupplyStore.count(clone, TerminalSupplyStore.Kind.ANCHOR));
         assertEquals(129, TerminalSupplyStore.count(clone, TerminalSupplyStore.Kind.TUBE));
+        assertEquals(317, TerminalSupplyStore.count(clone, TerminalSupplyStore.Kind.TELEPORT_ANCHOR));
         assertEquals("retain", clone.getString("otherMod"));
         TerminalSupplyStore.set(clone, TerminalSupplyStore.Kind.ANCHOR, 639);
         assertEquals(640, TerminalSupplyStore.count(restored, TerminalSupplyStore.Kind.ANCHOR));
+        assertEquals(129, TerminalSupplyStore.count(clone, TerminalSupplyStore.Kind.TUBE));
+        TerminalSupplyStore.set(clone, TerminalSupplyStore.Kind.TELEPORT_ANCHOR, 316);
+        assertEquals(317, TerminalSupplyStore.count(restored, TerminalSupplyStore.Kind.TELEPORT_ANCHOR));
+        assertEquals(639, TerminalSupplyStore.count(clone, TerminalSupplyStore.Kind.ANCHOR));
         assertEquals(129, TerminalSupplyStore.count(clone, TerminalSupplyStore.Kind.TUBE));
     }
 

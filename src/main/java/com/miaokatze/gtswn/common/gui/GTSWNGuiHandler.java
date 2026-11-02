@@ -13,6 +13,7 @@ public class GTSWNGuiHandler implements IGuiHandler {
 
     public GTSWNGuiHandler() {
         TerminalGuiFactory.init();
+        DeviceTerminalSettingsGuiFactory.init();
         CoverUiRedirectQueue.init();
     }
 
