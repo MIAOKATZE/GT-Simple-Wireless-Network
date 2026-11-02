@@ -75,6 +75,10 @@ final class NativeAssemblyIdentityIndex {
                 it.remove();
                 continue;
             }
+            if (oldMember == meta && owner != null && !owner.containsMember(member)) {
+                it.remove();
+                continue;
+            }
             if (owner == session && oldMember == meta) {
                 present = true;
                 if (!claim.position.matches(meta) || !claim.controllerPosition.matches(session.controller()))

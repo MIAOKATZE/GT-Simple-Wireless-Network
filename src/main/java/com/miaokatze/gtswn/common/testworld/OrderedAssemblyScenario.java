@@ -5,6 +5,7 @@ import static appeng.util.item.AEItemStackType.ITEM_STACK_TYPE;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -44,6 +45,8 @@ import appeng.api.networking.crafting.ICraftingCPU;
 import appeng.api.networking.crafting.ICraftingGrid;
 import appeng.api.networking.crafting.ICraftingJob;
 import appeng.api.networking.crafting.ICraftingLink;
+import appeng.api.networking.crafting.ICraftingProvider;
+import appeng.api.networking.crafting.ICraftingProviderHelper;
 import appeng.api.networking.security.IActionHost;
 import appeng.api.networking.security.MachineSource;
 import appeng.api.parts.IPartHost;
@@ -65,6 +68,7 @@ import appeng.util.inv.MEInventoryCrafting;
 import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
 import cpw.mods.fml.common.network.handshake.NetworkDispatcher;
+import cpw.mods.fml.common.registry.GameRegistry;
 import gregtech.api.GregTechAPI;
 import gregtech.api.covers.CoverRegistry;
 import gregtech.api.enums.ItemList;
@@ -257,6 +261,7 @@ final class OrderedAssemblyScenario implements TestScenario {
                 .group() == group && group.epoch() == epoch,
             "Identical native structure rechecks retain the current group and topology epoch");
         selectRecipe(ctx);
+        verifyHeavyDutyPattern(ctx);
         duplicateRawPositions(ctx);
         installRemoteSource(ctx);
         patternAnchor = group.master();
@@ -386,6 +391,8 @@ final class OrderedAssemblyScenario implements TestScenario {
                 break;
             case 15:
                 if (ctx.tick() - stageTick < 20) return;
+                if ((ctx.tick() - stageTick) % 20 == 0)
+                    ctx.event("pattern_publication_diagnostics", publicationDiagnostics());
                 if (!published(ctx)) {
                     if (ctx.tick() - stageTick > 200) throw new IllegalStateException(
                         "Native crafting cache/ME craftable flag did not publish after research authorization");
@@ -862,6 +869,95 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + "candidate-pair coverage is not asserted by this bounded run; no synthetic recipe is registered.");
     }
 
+    private OrderedPatternLayout verifyPatternEncodings(TestContext ctx, OrderedPatternLayout ultimate,
+        ItemStack research) throws Exception {
+        List<RecipeAssemblyLine> authorized = new ArrayList<>(AssemblyLineUtils.findALRecipeFromDataStick(research));
+        AssemblyRecipeKey expected = AssemblyRecipeMatch.bind(ultimate, authorized)
+            .key();
+        ItemStack standard = AEApi.instance()
+            .definitions()
+            .items()
+            .encodedPattern()
+            .maybeStack(1)
+            .get();
+        NBTTagCompound standardTag = new NBTTagCompound();
+        NBTTagList standardInputs = new NBTTagList(), standardOutputs = new NBTTagList();
+        for (IAEItemStack input : ultimate.details()
+            .getInputs()) standardInputs.appendTag(Platform.writeStackNBT(input, new NBTTagCompound()));
+        for (IAEItemStack output : ultimate.details()
+            .getOutputs()) standardOutputs.appendTag(Platform.writeStackNBT(output, new NBTTagCompound()));
+        standardTag.setTag("in", standardInputs);
+        standardTag.setTag("out", standardOutputs);
+        standard.setTagCompound(standardTag);
+        OrderedPatternLayout standardLayout = OrderedPatternLayout.decode(standard, ctx.world());
+        require(
+            ctx,
+            AssemblyRecipeMatch.bind(standardLayout, authorized)
+                .key()
+                .equals(expected)
+                && standardLayout.rawInputs()
+                    .size()
+                    == ultimate.rawInputs()
+                        .size(),
+            "Official standard and ultimate patterns decode to the same native recipe and raw positions");
+
+        return standardLayout;
+    }
+
+    private void verifyHeavyDutyPattern(TestContext ctx) throws Exception {
+        ItemStack output = GameRegistry.findItemStack("dreamcraft", "HeavyDutyAlloyIngotT4", 1);
+        RecipeAssemblyLine selected = null;
+        for (RecipeAssemblyLine candidate : RecipeAssemblyLine.sAssemblylineRecipes) {
+            if (output != null && ItemStack.areItemStacksEqual(candidate.mOutput, output)
+                && candidate.mInputs.length == 4
+                && candidate.mFluidInputs.length == 1) {
+                selected = candidate;
+                break;
+            }
+        }
+        require(
+            ctx,
+            selected != null && selected.mInputs[1].stackSize == 3
+                && ItemStack.areItemStacksEqual(selected.mInputs[1], selected.mInputs[2]),
+            "The installed T4 heavy-duty alloy recipe has four item positions with two independent identical ice plates");
+        ItemStack research = ItemList.Tool_DataStick.get(1);
+        require(
+            ctx,
+            AssemblyLineUtils.setAssemblyLineRecipeOnDataStick(research, selected),
+            "A real GT research stick identifies the installed T4 heavy-duty alloy recipe");
+        OrderedPatternLayout ultimate = OrderedPatternLayout
+            .decode(encode(selected.mInputs, selected.mFluidInputs, selected.mOutput, true), ctx.world());
+        OrderedPatternLayout standard = verifyPatternEncodings(ctx, ultimate, research);
+        require(
+            ctx,
+            standard.items()
+                .size() == 4
+                && standard.fluids()
+                    .size() == 1
+                && standard.items()
+                    .get(1)
+                    .rawIndex()
+                    != standard.items()
+                        .get(2)
+                        .rawIndex()
+                && ItemStack.areItemStacksEqual(
+                    standard.items()
+                        .get(1)
+                        .itemStack(),
+                    standard.items()
+                        .get(2)
+                        .itemStack()),
+            "Standard and ultimate encodings match T4 research without condensing its duplicate material positions");
+        ctx.event(
+            "user_recipe_compatibility",
+            "output=" + stack(output)
+                + "; key="
+                + AssemblyRecipeKey.of(selected)
+                    .value()
+                + "; recipe="
+                + selected);
+    }
+
     private void inspectInterfaceTerminal(TestContext ctx) throws Exception {
         var supported = AEApi.instance()
             .registries()
@@ -1086,6 +1182,48 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + (listed != null && listed.isCraftable())
                 + "; monitorEntry="
                 + (listed == null ? "absent" : Platform.writeStackNBT(listed, new NBTTagCompound())));
+        ctx.event("pattern_publication_diagnostics", "phase=" + phase + "; " + publicationDiagnostics());
+    }
+
+    private String publicationDiagnostics() throws Exception {
+        int[] options = { 0 };
+        ICraftingProviderHelper helper = (ICraftingProviderHelper) Proxy.newProxyInstance(
+            ICraftingProviderHelper.class.getClassLoader(),
+            new Class<?>[] { ICraftingProviderHelper.class },
+            (instance, method, args) -> {
+                if (!method.getName()
+                    .equals("addCraftingOption")) throw new AssertionError(method);
+                options[0]++;
+                return null;
+            });
+        group.provideCrafting(helper);
+        int groupOptions = options[0];
+        options[0] = 0;
+        ((ICraftingProvider) master()).provideCrafting(helper);
+        Method authorized = OrderedAssemblyGroup.class.getDeclaredMethod("authorizedRecipes");
+        authorized.setAccessible(true);
+        Method consumers = OrderedAssemblyGroup.class.getDeclaredMethod("readyConsumers");
+        consumers.setAccessible(true);
+        return nativeState() + "; preview="
+            + group.previewReason(layout)
+            + "; readyForAdvertisement="
+            + session.readyForPatternAdvertisement()
+            + "; nativeBound="
+            + terminalField(consumerGroup, "nativeBound")
+            + "; authorizedRecipes="
+            + ((List<?>) authorized.invoke(consumerGroup)).size()
+            + "; readyConsumers="
+            + ((List<?>) consumers.invoke(group)).size()
+            + "; groupOptions="
+            + groupOptions
+            + "; portOptions="
+            + options[0]
+            + "; pendingPatternChange="
+            + terminalField(master().matrixPort(), "patternChange")
+            + "; masterActive="
+            + master().matrixPort()
+                .getProxy()
+                .isActive();
     }
 
     private long[] materialTotals() throws Exception {

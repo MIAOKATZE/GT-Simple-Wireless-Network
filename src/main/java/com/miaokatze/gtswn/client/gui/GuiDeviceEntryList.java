@@ -129,7 +129,9 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
         }.name(row.getName() + ".teleport")
             .pos(width - 86, teleportY)
             .size(78, 20)
-            .overlay(IKey.dynamic(() -> tr("gtswn.device.gui.teleport")))
+            .overlay(
+                IKey.dynamic(() -> tr("gtswn.device.gui.teleport"))
+                    .color(GtswnGuiPalette.TEXT_TITLE))
             .tooltipBuilder(t -> t.addLine(host.teleportHint()))
             .tooltipAutoUpdate(true);
         row.controls.child(travel);
@@ -140,7 +142,9 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
                 .name(row.getName() + ".attach")
                 .pos(attachX, buttonY)
                 .size(48, 20)
-                .overlay(IKey.lang("gtswn.device.link.attach"))
+                .overlay(
+                    IKey.lang("gtswn.device.link.attach")
+                        .color(GtswnGuiPalette.TEXT_BODY))
                 .tooltipBuilder(t -> t.addLine(host.linkTooltip(entry)))
                 .tooltipAutoUpdate(true));
         row.controls.child(
@@ -148,7 +152,9 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
                 .name(row.getName() + ".remove")
                 .pos(removeX, buttonY)
                 .size(48, 20)
-                .overlay(IKey.lang("gtswn.device.link.remove"))
+                .overlay(
+                    IKey.lang("gtswn.device.link.remove")
+                        .color(GtswnGuiPalette.TEXT_BODY))
                 .tooltipBuilder(t -> t.addLine(host.linkTooltip(entry)))
                 .tooltipAutoUpdate(true));
     }

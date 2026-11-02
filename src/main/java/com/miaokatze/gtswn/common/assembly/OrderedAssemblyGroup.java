@@ -766,13 +766,18 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     private boolean consumerReady() {
         if (!permitsMachineWork()) return false;
-        if (!assemblyLineMode()) return true;
-        return session != null && nativeBound
-            && session.readyForPatternAdvertisement()
-            && checkNativeBinding()
-            && session.controller()
-                .getBaseMetaTileEntity()
-                .isAllowedToWork();
+        return !assemblyLineMode() || nativeConsumerReason().isEmpty();
+    }
+
+    private String nativeConsumerReason() {
+        if (session == null) return "structure_incomplete";
+        String permit = session.patternAdvertisementReason();
+        if (!permit.isEmpty()) return permit;
+        if (!nativeBound) return "structure_incomplete";
+        if (!checkNativeBinding()) return reason;
+        return session.controller()
+            .getBaseMetaTileEntity()
+            .isAllowedToWork() ? "" : "native_disabled";
     }
 
     private List<OrderedAssemblyGroup> readyConsumers() {
@@ -819,8 +824,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (!verified) return reason;
         if (isMirror()) {
             if (!refreshMirror()) return mirrorReason;
-            String sourceReason = mirrorSource.reason();
-            if (!sourceReason.isEmpty()) return sourceReason;
         } else {
             refreshNetwork();
             if (!networkReason.isEmpty()) return networkReason;
@@ -829,15 +832,28 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (controllerConflict) return "controller_conflict";
         if (!isMirror() && (inputController == null || !inputController.mMachine) && !readyConsumers().isEmpty())
             return reason;
-        if (inputController == null || !inputController.mMachine) return "structure_incomplete";
+        if (session != null) {
+            String nativeReason = nativeConsumerReason();
+            if (!nativeReason.isEmpty()) return nativeReason;
+        }
+        if (isMirror()) {
+            String sourceReason = mirrorSource.reason();
+            if (!sourceReason.isEmpty()) return sourceReason;
+        }
+        if (inputController == null || !inputController.mMachine) {
+            if (!isMirror()) {
+                for (OrderedAssemblyGroup consumer : mirrorConsumers) {
+                    if (consumer.refreshMirror() && consumer.mirrorSource == this && consumer.session != null) {
+                        String nativeReason = consumer.nativeConsumerReason();
+                        if (!nativeReason.isEmpty()) return nativeReason;
+                    }
+                }
+            }
+            return "structure_incomplete";
+        }
         if (!inputController.mInputBusses.containsAll(items) || !inputController.mInputHatches.containsAll(fluids))
             return "mixed_inputs";
-        if (assemblyLineMode() && (!nativeBound || session == null)) return "structure_incomplete";
-        if (assemblyLineMode() && !session.controller()
-            .protectsExcessItem()) return "output_protection_required";
-        if (assemblyLineMode() && !session.controller()
-            .getBaseMetaTileEntity()
-            .isAllowedToWork()) return "native_disabled";
+        if (assemblyLineMode() && session == null) return "structure_incomplete";
         return reason;
     }
 
@@ -909,7 +925,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (isMirror()) return refreshMirror() ? mirrorSource.previewReason(layout) : mirrorReason;
         // Bare ordinary groups retain a configuration preview before any real consumer is attached.
         if (!assemblyLineMode() && mirrorConsumers.isEmpty()) return capacityReason(layout);
-        if (readyConsumers().isEmpty()) return "structure_incomplete";
+        if (readyConsumers().isEmpty()) {
+            String unavailable = reason();
+            return unavailable.isEmpty() ? "structure_incomplete" : unavailable;
+        }
         try {
             intakeMatch(layout, layout.declaredPayload());
             return capacityReason(layout);

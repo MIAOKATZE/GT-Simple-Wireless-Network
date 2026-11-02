@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+import net.minecraft.block.Block;
+import net.minecraft.block.material.Material;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.entity.player.InventoryPlayer;
@@ -49,6 +51,8 @@ import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IAEStack;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.util.ReadOnlyCollection;
+import cpw.mods.fml.common.Loader;
+import gregtech.api.GregTechAPI;
 import gregtech.api.enums.ItemList;
 import gregtech.api.interfaces.IDataCopyable;
 import gregtech.api.interfaces.ITexture;
@@ -60,8 +64,129 @@ import gregtech.api.metatileentity.MetaTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatchInput;
 import gregtech.api.metatileentity.implementations.MTEHatchInputBus;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
+import gregtech.common.tileentities.machines.multi.MTEAssemblyLine;
 
 public class MatrixTopologyTest {
+
+    @Test
+    public void detachedLiveControllerClaimsDoNotBlockANewOwnerButRealSharedInputsRemainRejected() throws Exception {
+        Fixture fixture = new Fixture();
+        MTEHatchInputBus member = (MTEHatchInputBus) fixture.add(false, 0, 64, 0);
+        initializeNativeAssemblyLine(fixture.unsafe);
+        MTEAssemblyLine first = new MTEAssemblyLine("matrix_identity_first");
+        MTEAssemblyLine second = new MTEAssemblyLine("matrix_identity_second");
+        fixture.attach(first, 20, 64, 20);
+        fixture.attach(second, 24, 64, 20);
+        first.mInputBusses.add(member);
+        second.mInputBusses.add(member);
+        NativeAssemblySession before = new NativeAssemblySession(first);
+        NativeAssemblySession after = new NativeAssemblySession(second);
+        Class<?> index = Class.forName("com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyIdentityIndex");
+        Method verify = index.getDeclaredMethod("verify", NativeAssemblySession.class);
+        Method removed = index.getDeclaredMethod("removed", NativeAssemblySession.class);
+        verify.setAccessible(true);
+        removed.setAccessible(true);
+        try {
+            assertTrue((Boolean) verify.invoke(null, before));
+            assertFalse(
+                "Two live controllers still using the same member must conflict",
+                (Boolean) verify.invoke(null, after));
+            assertFalse((Boolean) verify.invoke(null, before));
+            first.mInputBusses.clear();
+            assertTrue(NativeAssemblyAdapter.isLive(first));
+            assertTrue(
+                "A live controller that no longer contains this member must release its obsolete ownership claim",
+                (Boolean) verify.invoke(null, after));
+            assertTrue((Boolean) verify.invoke(null, before));
+            MatrixAssemblyMember duplicate = fixture.add(false, 1, 64, 0);
+            field(MatrixAssemblyPort.class, "memberId")
+                .set(duplicate.matrixPort(), ((MatrixAssemblyMember) member).orderedMemberId());
+            second.mInputBusses.clear();
+            first.mInputBusses.add((MTEHatchInputBus) duplicate);
+            assertFalse(
+                "A different live member reusing the UUID must remain blocked even after the old owner detached",
+                (Boolean) verify.invoke(null, before));
+        } finally {
+            removed.invoke(null, before);
+            removed.invoke(null, after);
+        }
+    }
+
+    private static void initializeNativeAssemblyLine(sun.misc.Unsafe unsafe) throws Exception {
+        // Reuse the headless Loader precondition from FluidRegistryTestBootstrap. The real AL's static
+        // structure also requires two nonnull casing blocks, even though this test never scans a structure.
+        Field instance = field(Loader.class, "instance");
+        Object previousLoader = instance.get(null);
+        Block previousSecond = GregTechAPI.sBlockCasings2, previousThird = GregTechAPI.sBlockCasings3;
+        Thread thread = Thread.currentThread();
+        String previousName = thread.getName();
+        try {
+            if (previousLoader == null) {
+                Object headless = unsafe.allocateInstance(Loader.class);
+                field(Loader.class, "namedMods").set(headless, Collections.emptyMap());
+                instance.set(null, headless);
+            }
+            if (previousSecond == null) GregTechAPI.sBlockCasings2 = new Block(Material.iron) {};
+            if (previousThird == null) GregTechAPI.sBlockCasings3 = new Block(Material.iron) {};
+            Field hint = field(com.gtnewhorizon.structurelib.StructureLib.class, "blockHint");
+            Object previousHint = hint.get(null);
+            try {
+                if (previousHint == null) hint.set(null, new Block(Material.iron) {});
+                thread.setName("Server thread");
+                Class.forName(MTEAssemblyLine.class.getName(), true, MatrixTopologyTest.class.getClassLoader());
+            } finally {
+                hint.set(null, previousHint);
+            }
+        } finally {
+            thread.setName(previousName);
+            GregTechAPI.sBlockCasings2 = previousSecond;
+            GregTechAPI.sBlockCasings3 = previousThird;
+            instance.set(null, previousLoader);
+        }
+    }
+
+    @Test
+    public void aFormedNativeControllersCurrentIdentityFailureIsReportedByBothStatusAndPatternPreview()
+        throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        initializeNativeAssemblyLine(fixture.unsafe);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        graph.external(items.get(0));
+        MTEAssemblyLine controller = new MTEAssemblyLine("matrix_identity_diagnostic");
+        fixture.attach(controller, 20, 64, 20);
+        for (MatrixAssemblyMember member : items) controller.mInputBusses.add((MTEHatchInputBus) member);
+        controller.mMachine = true;
+        OrderedAssemblyGroup.controllerChecked(items.get(0), controller, true);
+        NativeAssemblySession session = new NativeAssemblySession(controller);
+        NBTTagCompound saved = new NBTTagCompound(), unknown = new NBTTagCompound();
+        unknown.setInteger("schema", 42);
+        saved.setTag("gtswnOrderedAssemblyController", unknown);
+        session.load(saved);
+        field(NativeAssemblySession.class, "blockedReason").set(session, "old_recipe_check_failure");
+        field(OrderedAssemblyGroup.class, "session").set(group, session);
+        field(OrderedAssemblyGroup.class, "nativeBound").setBoolean(group, true);
+        OrderedPatternLayout pattern = layout(1, new int[0]);
+        group.master()
+            .matrixPort()
+            .patterns()
+            .setStackInSlot(0, pattern.pattern());
+        assertEquals("unknown_controller_identity", session.patternAdvertisementReason());
+        assertFalse(session.readyForPatternAdvertisement());
+        assertEquals("unknown_controller_identity", group.reason());
+        assertEquals("unknown_controller_identity", group.previewReason(pattern));
+        group.provideCrafting(
+            (ICraftingProviderHelper) Proxy.newProxyInstance(
+                ICraftingProviderHelper.class.getClassLoader(),
+                new Class<?>[] { ICraftingProviderHelper.class },
+                (proxy, method, args) -> {
+                    throw new AssertionError("An invalid native identity advertised a pattern");
+                }));
+    }
 
     @Test
     public void horizontalBareColumnsConfigureWithZeroThroughFourFluidsWithoutGrantingNativeAccess() throws Exception {
@@ -781,6 +906,18 @@ public class MatrixTopologyTest {
         assertTrue(destination.permitsMachineWork());
         assertTrue(source.accepting());
         assertNull(source.session());
+        initializeNativeAssemblyLine(fixture.unsafe);
+        MTEAssemblyLine unformed = new MTEAssemblyLine("matrix_unformed_local_source");
+        fixture.attach(unformed, 60, 64, 20);
+        for (MatrixAssemblyMember member : source.itemMembers()) unformed.mInputBusses.add((MTEHatchInputBus) member);
+        for (MatrixAssemblyMember member : source.fluidMembers()) unformed.mInputHatches.add((MTEHatchInput) member);
+        OrderedAssemblyGroup.controllerChecked(source.master(), unformed, true);
+        field(OrderedAssemblyGroup.class, "session").set(source, new NativeAssemblySession(unformed));
+        assertFalse(unformed.mMachine);
+        assertTrue(source.accepting());
+        assertEquals("", source.reason());
+        assertEquals("", destination.reason());
+        assertEquals("", source.previewReason(layout));
         assertFalse(destination.accepting());
         assertFalse(((MatrixItemInputBus) anchor).shouldDisplay());
         assertNull(((MatrixItemInputBus) anchor).getGridNode(ForgeDirection.DOWN));

@@ -92,12 +92,18 @@ public final class NativeAssemblySession {
 
     /** Busy media remain in AE's recipe catalogue so new jobs can wait for their turn. */
     public boolean readyForPatternAdvertisement() {
-        return identityValid && NativeAssemblyHooks.ready()
-            && NativeAssemblyAdapter.isSupportedController(controller)
-            && NativeAssemblyAdapter.isLive(controller)
-            && controller.mMachine
-            && controller.protectsExcessItem()
-            && NativeAssemblyIdentityIndex.verify(this);
+        return patternAdvertisementReason().isEmpty();
+    }
+
+    /** Recompute the current native permit; a previous recipe check's blocked reason may already be stale. */
+    public String patternAdvertisementReason() {
+        if (!identityValid) return "unknown_controller_identity";
+        if (!NativeAssemblyHooks.ready()) return "missing_hooks";
+        if (!NativeAssemblyAdapter.isSupportedController(controller) || !NativeAssemblyAdapter.isLive(controller))
+            return "unsupported_or_unloaded_controller";
+        if (!controller.mMachine) return "structure_incomplete";
+        if (!controller.protectsExcessItem()) return "native_item_output_protection_required";
+        return NativeAssemblyIdentityIndex.verify(this) ? "" : identityConflict;
     }
 
     String identityConflict() {
@@ -150,13 +156,9 @@ public final class NativeAssemblySession {
     }
 
     private boolean validateInputTable() {
-        if (!NativeAssemblyHooks.ready()) return reject("missing_hooks: " + NativeAssemblyHooks.missing());
-        if (!identityValid) return reject("unknown_controller_identity");
-        if (!NativeAssemblyAdapter.isSupportedController(controller) || !NativeAssemblyAdapter.isLive(controller))
-            return reject("unsupported_or_unloaded_controller");
-        if (!controller.mMachine) return reject("structure_incomplete");
-        if (!controller.protectsExcessItem()) return reject("native_item_output_protection_required");
-        if (!NativeAssemblyIdentityIndex.verify(this)) return reject(identityConflict);
+        String permit = patternAdvertisementReason();
+        if (!permit.isEmpty())
+            return reject("missing_hooks".equals(permit) ? permit + ": " + NativeAssemblyHooks.missing() : permit);
         if (!controller.mDualInputHatches.isEmpty()) return reject("dual_inputs_not_supported");
         if (controller.mInputBusses.size() < 5 || controller.mInputBusses.size() > 16
             || controller.mInputHatches.size() > 4) return reject("native_input_count");
