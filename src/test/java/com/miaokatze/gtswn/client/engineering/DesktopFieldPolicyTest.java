@@ -14,10 +14,19 @@ import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
 public class DesktopFieldPolicyTest {
 
     @Test
-    public void deviceRecipeDescriptionsAreVisibleByDefaultAndCanBeExplicitlyHidden() {
+    public void retiredRecipesAreNotOfferedButOldLayoutsRemainReadable() {
         WidgetSpec device = new WidgetSpec("device", WidgetKind.DEVICE, 0, 0, 3, 3);
-        assertTrue(DesktopFieldPolicy.show(device, "recipeInput"));
-        assertTrue(DesktopFieldPolicy.show(device, "recipeOutput"));
+        assertFalse(DesktopFieldPolicy.show(device, "recipeInput"));
+        assertFalse(DesktopFieldPolicy.show(device, "recipeOutput"));
+        assertFalse(
+            WidgetSpec.availableFields(WidgetKind.DEVICE)
+                .contains("recipeInput"));
+        assertFalse(WidgetSpec.AVAILABLE_FIELDS.contains("recipeOutput"));
+        DesktopLayout saved = new DesktopLayout();
+        assertTrue(saved.add(device.configured("", java.util.Arrays.asList("recipeInput", "recipeOutput"), 1)));
+        WidgetSpec restored = DesktopStore.decode(DesktopStore.encode(saved))
+            .find("device");
+        assertEquals(java.util.Arrays.asList("recipeInput", "recipeOutput"), restored.fields);
         assertFalse(
             DesktopFieldPolicy.show(device.configured("", Collections.singletonList("status"), 1), "recipeInput"));
     }

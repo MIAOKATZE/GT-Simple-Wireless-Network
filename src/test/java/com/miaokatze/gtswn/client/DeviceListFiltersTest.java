@@ -38,10 +38,10 @@ public class DeviceListFiltersTest {
     }
 
     @Test
-    public void recipePresentationHasOneLineAndExplicitMissingSides() {
-        assertEquals("ore → dust", DesktopDeviceFields.recipeLine(row(null, "ore", "dust", DeviceLinkSummary.KNOWN)));
-        assertEquals("— → dust", DesktopDeviceFields.recipeLine(row(null, "", "dust", DeviceLinkSummary.KNOWN)));
-        assertEquals("ore → —", DesktopDeviceFields.recipeLine(row(null, "ore", "", DeviceLinkSummary.KNOWN)));
+    public void retiredRecipeFieldsNeverExposeOldCachedDescriptions() {
+        assertEquals("—", DesktopDeviceFields.recipeLine(row(null, "ore", "dust", DeviceLinkSummary.KNOWN)));
+        assertEquals("—", DesktopDeviceFields.recipeSide(row(null, "ore", "dust", DeviceLinkSummary.KNOWN), true));
+        assertEquals("—", DesktopDeviceFields.recipeSide(row(null, "ore", "dust", DeviceLinkSummary.KNOWN), false));
         assertEquals("—", DesktopDeviceFields.recipeLine(row(null, "", "", DeviceLinkSummary.KNOWN)));
     }
 

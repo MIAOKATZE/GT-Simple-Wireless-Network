@@ -997,8 +997,6 @@ final class WorkbenchHud extends Gui {
             if (!source.fresh) lines.add("\u00a76" + tr("stale.hint"));
             else if (e.evidenceKind >= 2 && !FactoryMachineFilter.ignored(e))
                 lines.add("\u00a77" + tr(e.evidenceKind == 2 ? "evidence.warming" : "evidence.unknown"));
-            if (!e.recipeIn.isEmpty()) lines.add(e.recipeIn);
-            if (!e.recipeOut.isEmpty()) lines.add(e.recipeOut);
             return lines;
         }
         return selectedRecord == null ? EngineeringHud.targetLines()

@@ -58,6 +58,7 @@ public class PortableSnapshotReuseTest {
     public void unchangedChartsSave1952BytesAndNeverChangeRealTimestamps() {
         Fixture source = new Fixture();
         PortableMonitorRequestQueue.RenderCache cache = PortableMonitorRequestQueue.renderCache(source, null, null);
+        PortableMonitorRequestQueue.publishRender(panel(), cache, true, false, 0, false);
         cache.aeChart = cache.euChart.clone();
         cache.aeRateChart = cache.euRateChart.clone();
         PacketSyncPortableMonitor.Panel legacy = panel();
@@ -132,6 +133,65 @@ public class PortableSnapshotReuseTest {
         assertEquals(0, second.render.config.getInteger("trackingWindow"));
         assertEquals(0, second.euChart[0], 0);
         assertEquals(0, cache.euChart[0], 0);
+    }
+
+    @Test
+    public void rawHistoryAndOmittedLegacyBodiesLeaveUnrequestedNormalizedChannelsUnbuilt() {
+        Fixture source = new Fixture();
+        AEMonitorDataSet set = new AEMonitorDataSet();
+        String key = "fluid:water";
+        set.addSample(key, 100, 100, 5000);
+        set.addSample(key, 200, 200, 10000);
+        PortableMonitorRequestQueue.RenderCache cache = PortableMonitorRequestQueue.renderCache(source, set, key);
+        PortableHistoryPatch patch = PortableHistoryPatch.between(null, cache, true, true);
+        assertEquals(61, patch.eu.size());
+        assertEquals(2, patch.ae.size());
+        assertNull(cache.euChart);
+        assertNull(cache.euRateChart);
+        assertNull(cache.aeChart);
+        assertNull(cache.aeRateChart);
+
+        PacketSyncPortableMonitor.Panel unchanged = panel();
+        PortableMonitorRequestQueue.publishRender(unchanged, cache, true, true, cache.version, true);
+        assertTrue(unchanged.chartsUnchanged);
+        assertNull(cache.euChart);
+        assertNull(cache.aeChart);
+
+        PacketSyncPortableMonitor.Panel euOnly = panel();
+        PortableMonitorRequestQueue.publishRender(euOnly, cache, true, false, 0, false);
+        assertEquals(61, euOnly.euChart.length);
+        assertNull(cache.aeChart);
+        assertNull(cache.aeRateChart);
+        double[] energy = cache.euChart, power = cache.euRateChart;
+        PacketSyncPortableMonitor.Panel all = panel();
+        PortableMonitorRequestQueue.publishRender(all, cache, true, true, 0, false);
+        assertSame(energy, cache.euChart);
+        assertSame(power, cache.euRateChart);
+        assertNotSame(energy, all.euChart);
+        assertArrayEquals(euOnly.euChart, all.euChart, 0);
+        assertArrayEquals(new double[] { 0, 1 }, all.aeChart, 0);
+        double[] amounts = cache.aeChart, rates = cache.aeRateChart;
+        PortableMonitorRequestQueue.publishRender(panel(), cache, false, true, 0, false);
+        assertSame(amounts, cache.aeChart);
+        assertSame(rates, cache.aeRateChart);
+    }
+
+    @Test
+    public void lazyLegacyConversionKeepsOversizedEnergyAndNonFinitePowerFallback() {
+        Fixture source = new Fixture();
+        BigInteger energy = BigInteger.TEN.pow(600);
+        source.samples.clear();
+        source.samples.add(new NetworkInfoSample(100, 1, energy, -4));
+        source.samples.add(new NetworkInfoSample(200, 2, energy.add(BigInteger.ONE), Double.NaN));
+        source.samples.add(new NetworkInfoSample(300, 3, energy.add(BigInteger.valueOf(2)), 4));
+        PortableMonitorRequestQueue.RenderCache cache = PortableMonitorRequestQueue.renderCache(source, null, null);
+        assertTrue(cache.render.eu.isEmpty());
+        PacketSyncPortableMonitor.Panel legacy = panel();
+        PortableMonitorRequestQueue.publishRender(legacy, cache, true, false, 0, false);
+        assertArrayEquals(new double[] { 0, .5, 1 }, legacy.euChart, 0);
+        assertArrayEquals(new double[] { 0, .5, 1 }, legacy.euRateChart, 0);
+        assertEquals(3, cache.eu.size());
+        assertEquals(200, cache.eu.get(1).timeMs);
     }
 
     @Test

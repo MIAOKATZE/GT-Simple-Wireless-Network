@@ -6,13 +6,16 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.LongSupplier;
 
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
 
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.config.Config;
+import com.miaokatze.miaokatzecore.testkit.Deadline;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.PlayerEvent;
@@ -31,7 +34,14 @@ public class DeviceSampleScheduler {
     private static final java.util.Set<DeviceSampleScheduler> INSTANCES = java.util.Collections
         .newSetFromMap(new java.util.WeakHashMap<DeviceSampleScheduler, Boolean>());
 
+    private final LongSupplier nanoClock;
+
     public DeviceSampleScheduler() {
+        this(System::nanoTime);
+    }
+
+    DeviceSampleScheduler(LongSupplier nanoClock) {
+        this.nanoClock = nanoClock;
         INSTANCES.add(this);
     }
 
@@ -48,6 +58,9 @@ public class DeviceSampleScheduler {
 
     /** 每 tick 采样排水预算（台） */
     private static final int PER_TICK_BUDGET = 100;
+
+    /** 协作时间预算：只能在工作项之间让出，不能中断单台机器的原生回调。 */
+    private static final long PER_TICK_BUDGET_NANOS = 2_000_000L;
 
     /** 采样工作队列（去重；仅服务端主线程访问） */
     private final LinkedHashSet<String> workQueue = new LinkedHashSet<>();
@@ -156,231 +169,252 @@ public class DeviceSampleScheduler {
     }
 
     /**
-     * 每 tick 采样排水（≤{@value #PER_TICK_BUDGET} 台）：逐键解析-判别-采样/自愈。
+     * 每 tick 采样排水（≤{@value #PER_TICK_BUDGET} 台，协作时间预算 2ms）：逐键解析-判别-采样/自愈。
      */
     private void drainSamples(MinecraftServer server, World overworld) {
-        int processed = 0;
-        boolean anyRecordWritten = false;
-        DeviceTerminalDataStore store = null;
-        DeviceRegistryData registry = null;
-        // 活跃终端快照（本 tick 内复用：同键分发到含它的所有活跃终端）
-        List<Map.Entry<UUID, DeviceTerminalDataStore.TerminalData>> activeTerminals = null;
-        java.util.Iterator<String> it = this.workQueue.iterator();
-        while (it.hasNext() && processed < PER_TICK_BUDGET) {
-            String key = it.next();
-            it.remove();
-            processed++;
-            int[] pos = KeyFormat.parse(key);
-            if (pos == null) {
-                // 键格式损坏（正常路径不可达，仅存档手改/损坏时）：自愈出册级联解绑
-                if (registry == null) {
-                    registry = DeviceRegistryData.get(overworld);
-                    store = DeviceTerminalDataStore.get(overworld);
-                }
-                registry.unregister(key);
-                store.removeKeyFromAll(key);
-                // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
-                this.fifoStates.remove(key);
-                continue;
-            }
-            World world = DimensionManager.getWorld(pos[0]);
-            if (world == null || world.getChunkProvider() == null
-                || !world.getChunkProvider()
-                    .chunkExists(pos[1] >> 4, pos[3] >> 4)) {
-                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> terminal : samplingTerminals) {
-                    DeviceTerminalDataStore.MachineRecord record = terminal.getValue().records.get(key);
-                    if (record != null && record.applyLinkSummary(DeviceLinkSummary.UNVERIFIED)) {
-                        terminal.getValue().version++;
+        long drainStarted = PerformanceAudit.startSlice();
+        try {
+            Deadline deadline = Deadline.startingAt(nanoClock.getAsLong(), PER_TICK_BUDGET_NANOS);
+            int processed = 0;
+            boolean anyRecordWritten = false;
+            DeviceTerminalDataStore store = null;
+            DeviceRegistryData registry = null;
+            // 活跃终端快照（本 tick 内复用：同键分发到含它的所有活跃终端）
+            List<Map.Entry<UUID, DeviceTerminalDataStore.TerminalData>> activeTerminals = null;
+            java.util.Iterator<String> it = this.workQueue.iterator();
+            // 即使权限初始化已耗尽预算，也推进首项；未出队的后续项保留原顺序，下一 tick 继续。
+            while (it.hasNext() && processed < PER_TICK_BUDGET
+                && (processed == 0 || deadline.hasTimeRemaining(nanoClock.getAsLong()))) {
+                String key = it.next();
+                it.remove();
+                processed++;
+                int[] pos = KeyFormat.parse(key);
+                if (pos == null) {
+                    // 键格式损坏（正常路径不可达，仅存档手改/损坏时）：自愈出册级联解绑
+                    if (registry == null) {
+                        registry = DeviceRegistryData.get(overworld);
+                        store = DeviceTerminalDataStore.get(overworld);
                     }
-                }
-                // 维度未注册 / 区块未加载：跳过保留旧值（不强加载区块）
-                continue;
-            }
-            TileEntity te = world.getTileEntity(pos[1], pos[2], pos[3]);
-            IGregTechTileEntity gtTE = te instanceof IGregTechTileEntity ? (IGregTechTileEntity) te : null;
-            IMetaTileEntity mte = gtTE != null ? gtTE.getMetaTileEntity() : null;
-            if (!DeviceMachineTypes.isWorkingMachine(mte)) {
-                // 区块已加载但 TE 不再是可监控机器 → 自愈：出册 + 级联解绑（version++），下一台继续
-                if (registry == null) {
-                    registry = DeviceRegistryData.get(overworld);
-                    store = DeviceTerminalDataStore.get(overworld);
-                }
-                registry.unregister(key);
-                store.removeKeyFromAll(key);
-                // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
-                this.fifoStates.remove(key);
-                continue;
-            }
-            // 三态经基座委托（BaseMetaTileEntity 实现 IMachineProgress），cast 基座而非 mte
-            int liveMetaTileId = gtTE.getMetaTileID();
-            if (activeTerminals == null) {
-                store = DeviceTerminalDataStore.get(overworld);
-                activeTerminals = new ArrayList<>();
-                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : samplingTerminals)
-                    if (com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
-                        .maySample(entry.getKey())) activeTerminals.add(entry);
-            }
-            boolean observable = false;
-            DeviceLinkTargets.Discovery linkTargets = DeviceLinkTargets.discover(mte);
-            DeviceLinkSummary linkSummary = linkTargets.summary;
-            byte machineKind = DeviceMachineIdentity.kind(mte),
-                machineTier = DeviceMachineIdentity.tier(mte, linkTargets);
-            for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
-                DeviceTerminalDataStore.MachineRecord record = entry.getValue().records.get(key);
-                if (record != null && (record.applyLinkSummary(linkSummary)
-                    | record.applyMachineIdentity(gtTE.getOwnerUuid(), machineKind, machineTier)))
-                    entry.getValue().version++;
-                if (entry.getValue().boundKeys.contains(key)
-                    && store.recognitionMode(entry.getKey(), key, liveMetaTileId, mte)
-                        != DeviceTerminalRecognitionMode.IGNORE)
-                    observable = true;
-            }
-            if (!observable) {
-                DeviceFlowMonitor.forget(mte);
-                this.fifoStates.remove(key);
-                continue;
-            }
-            IMachineProgress progress = (IMachineProgress) gtTE;
-            // 三态统一口径：!isAllowedToWork→停机 / isActive→运行 / 其余待机
-            int state = !progress.isAllowedToWork() ? DeviceTerminalDataStore.STATE_STOPPED
-                : progress.isActive() ? DeviceTerminalDataStore.STATE_RUNNING : DeviceTerminalDataStore.STATE_IDLE;
-            // 静态家族只提供待机时的设备角色；实际流量方向来自控制器交互。
-            boolean isGenerator = DeviceMachineTypes.isGeneratorMachine(mte);
-            // 瞬时值取实际交互的 20 tick 窗口，平均值取采样间隔内累计量。
-            // 实测不依赖采样这一刻的 active 状态，避免丢失间歇运行的产出。
-            DeviceFlowMonitor.Reading observed = DeviceFlowMonitor
-                .watch(mte, Math.max(200L, (long) Config.deviceSampleIntervalSeconds * 60L));
-            byte evidenceKind = observed == null ? (byte) 3 : observed.warmedUp() ? (byte) 0 : (byte) 2;
-            double[] interval = observed == null ? new double[2] : observed.consumeInterval();
-            long euIn = observed == null ? 0L : observed.average(0);
-            long euOut = observed == null ? 0L : observed.average(1);
-            byte originalCapabilities = DevicePowerCapabilities.capabilityMask(mte);
-            // Provider values are explicitly modeled; no recipe-demand or hatch-network fallback is used.
-            if (state == DeviceTerminalDataStore.STATE_RUNNING && euIn == 0
-                && euOut == 0
-                && interval[0] == 0
-                && interval[1] == 0) {
-                long modeled = DeviceSpecialPowerProvider.readAuthoritativeEut(mte);
-                if (modeled != 0) {
-                    evidenceKind = 1;
-                    if (modeled > 0) {
-                        euOut = modeled;
-                        interval[1] = modeled;
-                    } else {
-                        euIn = absEut(modeled);
-                        interval[0] = euIn;
-                    }
-                }
-            }
-            byte capabilities = DevicePowerCapabilities
-                .observedCapabilities(originalCapabilities, euIn, euOut, interval);
-            byte powerType = isGenerator ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
-                : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
-            int metaTileId = gtTE.getMetaTileID();
-            byte linkNodeType = DeviceMachineIdentity.linkNodeType(mte, linkTargets);
-            String localName = mte.getLocalName();
-            // 分发到含该键的所有活跃终端
-            for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
-                DeviceTerminalDataStore.TerminalData data = entry.getValue();
-                if (!data.boundKeys.contains(key)) {
+                    registry.unregister(key);
+                    store.removeKeyFromAll(key);
+                    // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
+                    this.fifoStates.remove(key);
                     continue;
                 }
-                DeviceTerminalDataStore.MachineRecord record = data.records.get(key);
-                if (record == null) {
-                    // 绑定在而记录缺（旧存档）：补建记录
-                    record = new DeviceTerminalDataStore.MachineRecord();
-                    data.records.put(key, record);
-                }
-                // 增量均值：输入/输出双通道共用 (idx, count) 滚动；净值由下游派生。
-                if (record.applyLinkSummary(linkSummary)
-                    | record.applyMachineIdentity(gtTE.getOwnerUuid(), machineKind, machineTier)) data.version++;
-                byte recognitionMode = store.recognitionMode(entry.getKey(), key, metaTileId, mte);
-                if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE) {
-                    if (record.recognitionMode != recognitionMode
-                        || record.state != DeviceTerminalDataStore.STATE_IGNORED) {
-                        record.resetRecognition(recognitionMode, DevicePowerCapabilities.capabilityMask(mte));
-                        data.version++;
+                World world = DimensionManager.getWorld(pos[0]);
+                if (world == null || world.getChunkProvider() == null
+                    || !world.getChunkProvider()
+                        .chunkExists(pos[1] >> 4, pos[3] >> 4)) {
+                    for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> terminal : samplingTerminals) {
+                        DeviceTerminalDataStore.MachineRecord record = terminal.getValue().records.get(key);
+                        if (record != null && record.applyLinkSummary(DeviceLinkSummary.UNVERIFIED)) {
+                            terminal.getValue().version++;
+                        }
                     }
-                    Map<UUID, FifoState> ignoredStates = this.fifoStates.get(key);
-                    if (ignoredStates != null) ignoredStates.remove(entry.getKey());
+                    // 维度未注册 / 区块未加载：跳过保留旧值（不强加载区块）
                     continue;
                 }
-                byte effectiveCapabilities = capabilities;
-                long sampleEuIn = euIn, sampleEuOut = euOut;
-                double[] sampleInterval = interval.clone();
-                byte sampleEvidence = evidenceKind;
-                if (record.recognitionWarmup) {
-                    record.recognitionWarmup = false;
-                    Map<UUID, FifoState> warmStates = this.fifoStates.get(key);
-                    if (warmStates != null) warmStates.remove(entry.getKey());
-                    sampleEuIn = sampleEuOut = 0;
-                    java.util.Arrays.fill(sampleInterval, 0);
-                    sampleEvidence = 2;
-                }
-                record.recognitionMode = recognitionMode;
-                record.recordSampleSource(te, world.getTotalWorldTime());
-                double nextInAvg = record.inAvg, nextOutAvg = record.outAvg;
-                if (sampleEvidence <= 1) {
-                    FifoState window = fifoState(key, entry.getKey(), record);
-                    double runningSumIn = FifoMath.pushScaled(
-                        record.fifoIn,
-                        record.idx,
-                        record.count,
-                        window.sumIn,
-                        sampleInterval[0],
-                        window.nonzero,
-                        0);
-                    double runningSumOut = FifoMath.pushScaled(
-                        record.fifoOut,
-                        record.idx,
-                        record.count,
-                        window.sumOut,
-                        sampleInterval[1],
-                        window.nonzero,
-                        1);
-                    record.fifoIn[record.idx] = sampleInterval[0];
-                    record.fifoOut[record.idx] = sampleInterval[1];
-                    record.idx = (record.idx + 1) % DeviceTerminalDataStore.FIFO_SIZE;
-                    if (record.count < DeviceTerminalDataStore.FIFO_SIZE) {
-                        record.count++;
+                TileEntity te = world.getTileEntity(pos[1], pos[2], pos[3]);
+                IGregTechTileEntity gtTE = te instanceof IGregTechTileEntity ? (IGregTechTileEntity) te : null;
+                IMetaTileEntity mte = gtTE != null ? gtTE.getMetaTileEntity() : null;
+                if (!DeviceMachineTypes.isWorkingMachine(mte)) {
+                    // 区块已加载但 TE 不再是可监控机器 → 自愈：出册 + 级联解绑（version++），下一台继续
+                    if (registry == null) {
+                        registry = DeviceRegistryData.get(overworld);
+                        store = DeviceTerminalDataStore.get(overworld);
                     }
-                    window.sumIn = runningSumIn;
-                    window.sumOut = runningSumOut;
-                    window.idx = record.idx;
-                    window.count = record.count;
-                    nextInAvg = FifoMath.scaledAvg(runningSumIn, record.count, DeviceTerminalDataStore.FIFO_SIZE);
-                    nextOutAvg = FifoMath.scaledAvg(runningSumOut, record.count, DeviceTerminalDataStore.FIFO_SIZE);
+                    registry.unregister(key);
+                    store.removeKeyFromAll(key);
+                    // 各终端该键记录已级联销毁：增量均值会话缓存整键清除
+                    this.fifoStates.remove(key);
+                    continue;
                 }
-                byte nextCapabilities = record.metaTileId == metaTileId
-                    ? (byte) (effectiveCapabilities | (record.capabilityMask & 3))
-                    : effectiveCapabilities;
-                if (record.applySample(
-                    state,
-                    powerType,
-                    metaTileId,
-                    sampleEvidence,
-                    linkNodeType,
-                    sampleEuIn,
-                    sampleEuOut,
-                    nextInAvg,
-                    nextOutAvg,
-                    pos[0],
-                    pos[1],
-                    pos[2],
-                    pos[3],
-                    localName,
-                    // Retain the saved/wire fields, clearing old summaries without visiting recipe outputs or names.
-                    "",
-                    "",
-                    nextCapabilities)) data.version++;
-                com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
-                    .sampled(entry.getKey(), overworld.getTotalWorldTime());
-                anyRecordWritten = true;
+                // 三态经基座委托（BaseMetaTileEntity 实现 IMachineProgress），cast 基座而非 mte
+                int liveMetaTileId = gtTE.getMetaTileID();
+                if (activeTerminals == null) {
+                    store = DeviceTerminalDataStore.get(overworld);
+                    activeTerminals = new ArrayList<>();
+                    for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : samplingTerminals)
+                        if (com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
+                            .maySample(entry.getKey())) activeTerminals.add(entry);
+                }
+                boolean observable = false;
+                DeviceLinkTargets.Discovery linkTargets;
+                long discoveryStarted = PerformanceAudit.startSlice();
+                try {
+                    linkTargets = DeviceLinkTargets.discover(mte);
+                } finally {
+                    PerformanceAudit.endSlice("gtswn.monitor.ditDiscovery", discoveryStarted);
+                }
+                DeviceLinkSummary linkSummary = linkTargets.summary;
+                byte machineKind = DeviceMachineIdentity.kind(mte),
+                    machineTier = DeviceMachineIdentity.tier(mte, linkTargets);
+                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
+                    DeviceTerminalDataStore.MachineRecord record = entry.getValue().records.get(key);
+                    if (record != null && (record.applyLinkSummary(linkSummary)
+                        | record.applyMachineIdentity(gtTE.getOwnerUuid(), machineKind, machineTier)))
+                        entry.getValue().version++;
+                    if (entry.getValue().boundKeys.contains(key)
+                        && store.recognitionMode(entry.getKey(), key, liveMetaTileId, mte)
+                            != DeviceTerminalRecognitionMode.IGNORE)
+                        observable = true;
+                }
+                if (!observable) {
+                    DeviceFlowMonitor.forget(mte);
+                    this.fifoStates.remove(key);
+                    continue;
+                }
+                IMachineProgress progress = (IMachineProgress) gtTE;
+                // 三态统一口径：!isAllowedToWork→停机 / isActive→运行 / 其余待机
+                int state = !progress.isAllowedToWork() ? DeviceTerminalDataStore.STATE_STOPPED
+                    : progress.isActive() ? DeviceTerminalDataStore.STATE_RUNNING : DeviceTerminalDataStore.STATE_IDLE;
+                // 静态家族只提供待机时的设备角色；实际流量方向来自控制器交互。
+                boolean isGenerator = DeviceMachineTypes.isGeneratorMachine(mte);
+                // 瞬时值取实际交互的 20 tick 窗口，平均值取采样间隔内累计量。
+                // 实测不依赖采样这一刻的 active 状态，避免丢失间歇运行的产出。
+                DeviceFlowMonitor.Reading observed = DeviceFlowMonitor
+                    .watch(mte, Math.max(200L, (long) Config.deviceSampleIntervalSeconds * 60L));
+                byte evidenceKind = observed == null ? (byte) 3 : observed.warmedUp() ? (byte) 0 : (byte) 2;
+                double[] interval = observed == null ? new double[2] : observed.consumeInterval();
+                long euIn = observed == null ? 0L : observed.average(0);
+                long euOut = observed == null ? 0L : observed.average(1);
+                byte originalCapabilities = DevicePowerCapabilities.capabilityMask(mte);
+                // Provider values are explicitly modeled; no recipe-demand or hatch-network fallback is used.
+                if (state == DeviceTerminalDataStore.STATE_RUNNING && euIn == 0
+                    && euOut == 0
+                    && interval[0] == 0
+                    && interval[1] == 0) {
+                    long modeled;
+                    long providerStarted = PerformanceAudit.startSlice();
+                    try {
+                        modeled = DeviceSpecialPowerProvider.readAuthoritativeEut(mte);
+                    } finally {
+                        PerformanceAudit.endSlice("gtswn.monitor.ditProvider", providerStarted);
+                    }
+                    if (modeled != 0) {
+                        evidenceKind = 1;
+                        if (modeled > 0) {
+                            euOut = modeled;
+                            interval[1] = modeled;
+                        } else {
+                            euIn = absEut(modeled);
+                            interval[0] = euIn;
+                        }
+                    }
+                }
+                byte capabilities = DevicePowerCapabilities
+                    .observedCapabilities(originalCapabilities, euIn, euOut, interval);
+                byte powerType = isGenerator ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
+                    : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
+                int metaTileId = gtTE.getMetaTileID();
+                byte linkNodeType = DeviceMachineIdentity.linkNodeType(mte, linkTargets);
+                String localName = mte.getLocalName();
+                // 分发到含该键的所有活跃终端
+                for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
+                    DeviceTerminalDataStore.TerminalData data = entry.getValue();
+                    if (!data.boundKeys.contains(key)) {
+                        continue;
+                    }
+                    DeviceTerminalDataStore.MachineRecord record = data.records.get(key);
+                    if (record == null) {
+                        // 绑定在而记录缺（旧存档）：补建记录
+                        record = new DeviceTerminalDataStore.MachineRecord();
+                        data.records.put(key, record);
+                    }
+                    // 增量均值：输入/输出双通道共用 (idx, count) 滚动；净值由下游派生。
+                    if (record.applyLinkSummary(linkSummary)
+                        | record.applyMachineIdentity(gtTE.getOwnerUuid(), machineKind, machineTier)) data.version++;
+                    byte recognitionMode = store.recognitionMode(entry.getKey(), key, metaTileId, mte);
+                    if (recognitionMode == DeviceTerminalRecognitionMode.IGNORE) {
+                        if (record.recognitionMode != recognitionMode
+                            || record.state != DeviceTerminalDataStore.STATE_IGNORED) {
+                            record.resetRecognition(recognitionMode, DevicePowerCapabilities.capabilityMask(mte));
+                            data.version++;
+                        }
+                        Map<UUID, FifoState> ignoredStates = this.fifoStates.get(key);
+                        if (ignoredStates != null) ignoredStates.remove(entry.getKey());
+                        continue;
+                    }
+                    byte effectiveCapabilities = capabilities;
+                    long sampleEuIn = euIn, sampleEuOut = euOut;
+                    double[] sampleInterval = interval.clone();
+                    byte sampleEvidence = evidenceKind;
+                    if (record.recognitionWarmup) {
+                        record.recognitionWarmup = false;
+                        Map<UUID, FifoState> warmStates = this.fifoStates.get(key);
+                        if (warmStates != null) warmStates.remove(entry.getKey());
+                        sampleEuIn = sampleEuOut = 0;
+                        java.util.Arrays.fill(sampleInterval, 0);
+                        sampleEvidence = 2;
+                    }
+                    record.recognitionMode = recognitionMode;
+                    record.recordSampleSource(te, world.getTotalWorldTime());
+                    double nextInAvg = record.inAvg, nextOutAvg = record.outAvg;
+                    if (sampleEvidence <= 1) {
+                        FifoState window = fifoState(key, entry.getKey(), record);
+                        double runningSumIn = FifoMath.pushScaled(
+                            record.fifoIn,
+                            record.idx,
+                            record.count,
+                            window.sumIn,
+                            sampleInterval[0],
+                            window.nonzero,
+                            0);
+                        double runningSumOut = FifoMath.pushScaled(
+                            record.fifoOut,
+                            record.idx,
+                            record.count,
+                            window.sumOut,
+                            sampleInterval[1],
+                            window.nonzero,
+                            1);
+                        record.fifoIn[record.idx] = sampleInterval[0];
+                        record.fifoOut[record.idx] = sampleInterval[1];
+                        record.idx = (record.idx + 1) % DeviceTerminalDataStore.FIFO_SIZE;
+                        if (record.count < DeviceTerminalDataStore.FIFO_SIZE) {
+                            record.count++;
+                        }
+                        window.sumIn = runningSumIn;
+                        window.sumOut = runningSumOut;
+                        window.idx = record.idx;
+                        window.count = record.count;
+                        nextInAvg = FifoMath.scaledAvg(runningSumIn, record.count, DeviceTerminalDataStore.FIFO_SIZE);
+                        nextOutAvg = FifoMath.scaledAvg(runningSumOut, record.count, DeviceTerminalDataStore.FIFO_SIZE);
+                    }
+                    byte nextCapabilities = record.metaTileId == metaTileId
+                        ? (byte) (effectiveCapabilities | (record.capabilityMask & 3))
+                        : effectiveCapabilities;
+                    if (record.applySample(
+                        state,
+                        powerType,
+                        metaTileId,
+                        sampleEvidence,
+                        linkNodeType,
+                        sampleEuIn,
+                        sampleEuOut,
+                        nextInAvg,
+                        nextOutAvg,
+                        pos[0],
+                        pos[1],
+                        pos[2],
+                        pos[3],
+                        localName,
+                        // Retain the saved/wire fields, clearing old summaries without visiting recipe outputs or
+                        // names.
+                        "",
+                        "",
+                        nextCapabilities)) data.version++;
+                    com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
+                        .sampled(entry.getKey(), overworld.getTotalWorldTime());
+                    anyRecordWritten = true;
+                }
             }
-        }
-        if (anyRecordWritten && store != null) {
-            // 轮末统一标脏：本轮有任何终端记录成功写入才标（每轮至多一次；version++ 在上方逐终端完成）
-            store.markDirty();
+            if (anyRecordWritten && store != null) {
+                // 轮末统一标脏：本轮有任何终端记录成功写入才标（每轮至多一次；version++ 在上方逐终端完成）
+                store.markDirty();
+            }
+        } finally {
+            PerformanceAudit.endSlice("gtswn.monitor.ditDrain", drainStarted);
         }
     }
 

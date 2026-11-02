@@ -32,10 +32,6 @@ final class FactoryTextSearch {
                 + "/"
                 + entry.z
                 + " "
-                + entry.recipeIn
-                + " "
-                + entry.recipeOut
-                + " "
                 + source
                 + " "
                 + FactoryMachineFilter.status(entry, fresh));

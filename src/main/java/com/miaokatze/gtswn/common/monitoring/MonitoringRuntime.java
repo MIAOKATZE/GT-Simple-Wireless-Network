@@ -67,7 +67,15 @@ public final class MonitoringRuntime {
         // Only OP-selected dashboard definitions can create publication work or invalidate published pages.
         com.miaokatze.gtswn.common.monitoring.web.WebDashboardRegistry dashboards = com.miaokatze.gtswn.common.monitoring.web.WebDashboardRegistry
             .get(world);
-        dashboards.revalidate(profiles);
-        if (++ticks % 40 == 0) ReadonlyWebService.publish(dashboards.exportSnapshots(profiles));
+        boolean publishing = ++ticks % 40 == 0;
+        long started = com.miaokatze.gtswn.common.performance.PerformanceAudit.startSlice();
+        try {
+            // exportSnapshots revalidates before projecting; do not repeat the same check on publication ticks.
+            if (publishing) ReadonlyWebService.publish(dashboards.exportSnapshots(profiles));
+            else dashboards.revalidate(profiles);
+        } finally {
+            com.miaokatze.gtswn.common.performance.PerformanceAudit
+                .endSlice(publishing ? "gtswn.monitor.webPublish" : "gtswn.monitor.webValidate", started);
+        }
     }
 }

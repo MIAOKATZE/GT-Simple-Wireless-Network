@@ -31,6 +31,7 @@ public final class ScenarioRegistry {
         TestWorldManager.register(new AeMachineStressScenario());
         TestWorldManager.register(new AeMachineStressScenario(AeMachineStressLayout.Profile.TWENTY_FIVE_HUNDRED));
         TestWorldManager.register(new OrderedAssemblyScenario());
+        TestWorldManager.register(new MonitoringPerformanceScenario());
         TestWorldManager.register(new TestScenario() {
 
             @Override

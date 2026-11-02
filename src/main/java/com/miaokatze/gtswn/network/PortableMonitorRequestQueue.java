@@ -28,6 +28,7 @@ import com.miaokatze.gtswn.common.panel.AEMonitorDataStore;
 import com.miaokatze.gtswn.common.panel.AEMonitorSample;
 import com.miaokatze.gtswn.common.panel.NetworkInfoSample;
 import com.miaokatze.gtswn.common.panel.WindowLabel;
+import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
@@ -497,34 +498,46 @@ public final class PortableMonitorRequestQueue {
         fillEU(data, panel, euAllowed && (detail || requestedPins.contains("eu")));
         AEMonitorDataSet set = AEMonitorDataStore.get(panel.getWorldObj())
             .getIfPresent(panel.getAEMonitorDataKey());
-        Map<String, PacketSyncPortableMonitor.Row> keys = new HashMap<>();
-        addItem(data, keys, set, panel.getChartItem(), detail, requestedPins, false);
-        addFluid(data, keys, set, panel.getChartFluid(), detail, requestedPins, false);
-        for (ItemStack item : panel.getMonitoredItems()) addItem(data, keys, set, item, detail, requestedPins, true);
-        for (FluidStack fluid : panel.getMonitoredFluids())
-            addFluid(data, keys, set, fluid, detail, requestedPins, true);
-        String chartKey = panel.getChartItem() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartItem())
-            : panel.getChartFluid() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartFluid()) : null;
-        data.chartKey = chartKey == null ? "" : chartKey;
-        data.aeWindow = aeWindow(set, chartKey, panel.getAETrackingWindow());
-        if (requestedPins.contains(AE_GRAPH) || requestedPins.contains(PortableMonitorPins.AE_TITLE)
-            || requestedPins.contains(PortableMonitorPins.AE_PLOT)) {
-            addItem(data, keys, set, panel.getChartItem(), true, requestedPins, false);
-            addFluid(data, keys, set, panel.getChartFluid(), true, requestedPins, false);
+        String chartKey;
+        long rowsStarted = PerformanceAudit.startSlice();
+        try {
+            Map<String, PacketSyncPortableMonitor.Row> keys = new HashMap<>();
+            addItem(data, keys, set, panel.getChartItem(), detail, requestedPins, false);
+            addFluid(data, keys, set, panel.getChartFluid(), detail, requestedPins, false);
+            for (ItemStack item : panel.getMonitoredItems())
+                addItem(data, keys, set, item, detail, requestedPins, true);
+            for (FluidStack fluid : panel.getMonitoredFluids())
+                addFluid(data, keys, set, fluid, detail, requestedPins, true);
+            chartKey = panel.getChartItem() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartItem())
+                : panel.getChartFluid() != null ? TileEntityNetworkInfoPanel.getAEKey(panel.getChartFluid()) : null;
+            data.chartKey = chartKey == null ? "" : chartKey;
+            data.aeWindow = aeWindow(set, chartKey, panel.getAETrackingWindow());
+            if (requestedPins.contains(AE_GRAPH) || requestedPins.contains(PortableMonitorPins.AE_TITLE)
+                || requestedPins.contains(PortableMonitorPins.AE_PLOT)) {
+                addItem(data, keys, set, panel.getChartItem(), true, requestedPins, false);
+                addFluid(data, keys, set, panel.getChartFluid(), true, requestedPins, false);
+            }
+        } finally {
+            PerformanceAudit.endSlice("gtswn.monitor.portableRows", rowsStarted);
         }
         boolean euGraph = euAllowed && needsEUChart(detail, requestedPins, charts);
         boolean aeGraph = needsAEChart(detail, requestedPins);
         if (euGraph || aeGraph) {
-            RenderCache cache = renderCache(panel, set, chartKey, euAllowed);
-            if (rawHistory) {
-                data.historyFields = (euGraph ? 1 : 0) | (aeGraph ? 2 : 0);
-                RenderCache base = knownFields == data.historyFields ? historyBases(euAllowed).get(panel)
-                    .get(knownRenderVersion) : null;
-                if (base != null && base.configVersion != knownConfigVersion) base = null;
-                data.renderVersion = cache.version;
-                data.configVersion = cache.configVersion;
-                data.historyPatch = PortableHistoryPatch.between(base, cache, euGraph, aeGraph);
-            } else publishRender(data, cache, euGraph, aeGraph, knownRenderVersion, reuseCharts);
+            long historyStarted = PerformanceAudit.startSlice();
+            try {
+                RenderCache cache = renderCache(panel, set, chartKey, euAllowed);
+                if (rawHistory) {
+                    data.historyFields = (euGraph ? 1 : 0) | (aeGraph ? 2 : 0);
+                    RenderCache base = knownFields == data.historyFields ? historyBases(euAllowed).get(panel)
+                        .get(knownRenderVersion) : null;
+                    if (base != null && base.configVersion != knownConfigVersion) base = null;
+                    data.renderVersion = cache.version;
+                    data.configVersion = cache.configVersion;
+                    data.historyPatch = PortableHistoryPatch.between(base, cache, euGraph, aeGraph);
+                } else publishRender(data, cache, euGraph, aeGraph, knownRenderVersion, reuseCharts);
+            } finally {
+                PerformanceAudit.endSlice("gtswn.monitor.portableHistory", historyStarted);
+            }
         }
     }
 
@@ -633,23 +646,11 @@ public final class PortableMonitorRequestQueue {
         String currentEnergy = euAllowed ? panel.getCachedEu()
             .toString() : "";
         cache.render.currentEnergy = currentEnergy.length() <= 4096 ? currentEnergy : "";
-        List<BigDecimal> energy = new ArrayList<>(), power = new ArrayList<>(), amounts = new ArrayList<>(),
-            rates = new ArrayList<>();
         for (NetworkInfoSample sample : eu) {
             if (sample.eu.toString()
                 .length() <= 512) cache.render.eu.add(sample);
-            energy.add(new BigDecimal(sample.eu));
-            power.add(BigDecimal.valueOf(Double.isFinite(sample.eut) ? sample.eut : 0));
         }
-        for (AEMonitorSample sample : ae) {
-            cache.render.ae.add(sample);
-            amounts.add(BigDecimal.valueOf(sample.amount));
-            rates.add(BigDecimal.valueOf(Double.isFinite(sample.rate) ? sample.rate : 0));
-        }
-        cache.euChart = normalize(energy);
-        cache.euRateChart = normalize(power);
-        cache.aeChart = normalize(amounts);
-        cache.aeRateChart = normalize(rates);
+        for (AEMonitorSample sample : ae) cache.render.ae.add(sample);
         caches.put(panel, cache);
         java.util.LinkedHashMap<Long, RenderCache> bases = historyBases(euAllowed)
             .computeIfAbsent(panel, ignored -> new java.util.LinkedHashMap<>());
@@ -684,10 +685,28 @@ public final class PortableMonitorRequestQueue {
             && knownRenderVersion == cache.version;
         if (data.chartsUnchanged) return;
         if (euGraph) {
+            if (cache.euChart == null) {
+                List<BigDecimal> energy = new ArrayList<>(), power = new ArrayList<>();
+                for (NetworkInfoSample sample : cache.eu) {
+                    energy.add(new BigDecimal(sample.eu));
+                    power.add(BigDecimal.valueOf(Double.isFinite(sample.eut) ? sample.eut : 0));
+                }
+                cache.euChart = normalize(energy);
+                cache.euRateChart = normalize(power);
+            }
             data.euChart = cache.euChart.clone();
             data.euRateChart = cache.euRateChart.clone();
         }
         if (aeGraph) {
+            if (cache.aeChart == null) {
+                List<BigDecimal> amounts = new ArrayList<>(), rates = new ArrayList<>();
+                for (AEMonitorSample sample : cache.ae) {
+                    amounts.add(BigDecimal.valueOf(sample.amount));
+                    rates.add(BigDecimal.valueOf(Double.isFinite(sample.rate) ? sample.rate : 0));
+                }
+                cache.aeChart = normalize(amounts);
+                cache.aeRateChart = normalize(rates);
+            }
             data.aeChart = cache.aeChart.clone();
             data.aeRateChart = cache.aeRateChart.clone();
         }
@@ -705,33 +724,41 @@ public final class PortableMonitorRequestQueue {
 
     private static void addItem(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
         AEMonitorDataSet set, ItemStack item, boolean detail, Set<String> pins, boolean monitored) {
-        if (item != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(item)))) {
-            addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(item), item.getDisplayName(), 1, monitored);
-            PacketSyncPortableMonitor.Row row = keys.get(TileEntityNetworkInfoPanel.getAEKey(item));
-            if (row != null && row.icon == null) row.icon = PortableMonitorIcon.cached(item);
+        if (item == null) return;
+        String key = TileEntityNetworkInfoPanel.getAEKey(item);
+        if (detail || pins.contains(key)) {
+            PacketSyncPortableMonitor.Row row = addRow(data, keys, set, key, 1, monitored);
+            if (row != null) {
+                row.name = item.getDisplayName();
+                row.icon = PortableMonitorIcon.cached(item);
+            }
         }
     }
 
     private static void addFluid(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
         AEMonitorDataSet set, FluidStack fluid, boolean detail, Set<String> pins, boolean monitored) {
-        if (fluid != null && (detail || pins.contains(TileEntityNetworkInfoPanel.getAEKey(fluid)))) {
-            addRow(data, keys, set, TileEntityNetworkInfoPanel.getAEKey(fluid), fluid.getLocalizedName(), 2, monitored);
-            PacketSyncPortableMonitor.Row row = keys.get(TileEntityNetworkInfoPanel.getAEKey(fluid));
-            if (row != null && row.icon == null) row.icon = PortableMonitorIcon.cached(fluid);
+        if (fluid == null) return;
+        String key = TileEntityNetworkInfoPanel.getAEKey(fluid);
+        if (detail || pins.contains(key)) {
+            PacketSyncPortableMonitor.Row row = addRow(data, keys, set, key, 2, monitored);
+            if (row != null) {
+                row.name = fluid.getLocalizedName();
+                row.icon = PortableMonitorIcon.cached(fluid);
+            }
         }
     }
 
-    private static void addRow(PacketSyncPortableMonitor.Panel data, Map<String, PacketSyncPortableMonitor.Row> keys,
-        AEMonitorDataSet set, String key, String name, int kind, boolean monitored) {
+    private static PacketSyncPortableMonitor.Row addRow(PacketSyncPortableMonitor.Panel data,
+        Map<String, PacketSyncPortableMonitor.Row> keys, AEMonitorDataSet set, String key, int kind,
+        boolean monitored) {
         PacketSyncPortableMonitor.Row existing = keys.get(key);
         if (existing != null) {
             existing.monitored |= monitored;
-            return;
+            return null;
         }
-        if (data.rows.size() >= PacketSyncPortableMonitor.MAX_ROWS) return;
+        if (data.rows.size() >= PacketSyncPortableMonitor.MAX_ROWS) return null;
         PacketSyncPortableMonitor.Row row = new PacketSyncPortableMonitor.Row();
         row.key = key;
-        row.name = name;
         row.kind = kind;
         row.monitored = monitored;
         AEMonitorSample latest = set == null ? null : set.newest(key);
@@ -742,6 +769,7 @@ public final class PortableMonitorRequestQueue {
         row.average = set == null ? 0 : set.averageRate(key);
         data.rows.add(row);
         keys.put(key, row);
+        return row;
     }
 
     /** Normalize before conversion to double so arbitrary-size EU does not overflow charts. */

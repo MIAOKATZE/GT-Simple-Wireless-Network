@@ -565,8 +565,6 @@ public final class EngineeringHud extends Gui {
                     tr("state." + Math.max(0, Math.min(3, e.state))) + " · "
                         + tr(source.fresh ? "dash.server.live" : "stale"));
                 lines.add(metric(e.instIn) + " → " + metric(e.instOut) + " EU/t");
-                if (!e.recipeIn.isEmpty()) lines.add(e.recipeIn);
-                if (!e.recipeOut.isEmpty()) lines.add(e.recipeOut);
                 break;
             }
             if (!found) lines.add(tr("dash.target.unknown"));

@@ -38,7 +38,7 @@ final class DesktopFieldPolicy {
             case REGION:
                 return Arrays.asList("status", "source", "updated");
             case DEVICE:
-                return Arrays.asList("status", "instantInput", "instantOutput", "recipeInput", "recipeOutput");
+                return Arrays.asList("status", "instantInput", "instantOutput");
             default:
                 return Collections.emptyList();
         }

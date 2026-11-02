@@ -53,6 +53,7 @@ public class TestWorldPerformanceTest {
         assertEquals(100, result.naturalServerWindowWallNanos.sampleCount);
         assertEquals(Long.valueOf(5000), result.naturalServerWindowWallNanos.p50Nanos);
         assertEquals(Long.valueOf(9500), result.naturalServerWindowWallNanos.p95Nanos);
+        assertEquals(Long.valueOf(9900), result.naturalServerWindowWallNanos.p99Nanos);
         assertEquals(10000, result.naturalServerWindowWallNanos.maxNanos);
         assertEquals(50500, result.managerHandlerWallNanos.totalNanos);
         assertEquals(8000, result.naturalServerThreadCpuNanos.maxNanos);

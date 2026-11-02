@@ -27,8 +27,6 @@ public final class WidgetSpec {
             "instantOutput",
             "averageInput",
             "averageOutput",
-            "recipeInput",
-            "recipeOutput",
             "evidence",
             "recognition",
             "capabilities",
@@ -97,8 +95,6 @@ public final class WidgetSpec {
                 "instantOutput",
                 "averageInput",
                 "averageOutput",
-                "recipeInput",
-                "recipeOutput",
                 "coordinates",
                 "source",
                 "updated",
@@ -305,7 +301,10 @@ public final class WidgetSpec {
                 if ("input".equals(field)) field = "instantInput";
                 if ("output".equals(field)) field = "instantOutput";
             }
-            if (availableFields(kind).contains(field) && !selected.contains(field)) selected.add(field);
+            // Keep old saved layouts readable, but never offer retired recipe fields in the editor.
+            boolean retired = kind == WidgetKind.DEVICE
+                && ("recipeInput".equals(field) || "recipeOutput".equals(field));
+            if ((availableFields(kind).contains(field) || retired) && !selected.contains(field)) selected.add(field);
         }
         this.fields = Collections.unmodifiableList(selected);
     }

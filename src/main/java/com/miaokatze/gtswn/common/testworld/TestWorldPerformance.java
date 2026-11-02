@@ -146,7 +146,7 @@ public final class TestWorldPerformance {
         public final String percentileMethod = "nearest-rank over most recent at most 2048 samples; count/total/max cover the entire window";
         public final long sampleCount, totalNanos, maxNanos;
         public final int percentileSampleCount;
-        public final Long p50Nanos, p95Nanos;
+        public final Long p50Nanos, p95Nanos, p99Nanos;
 
         private Distribution(long count, long total, long max, long[] ordered) {
             sampleCount = count;
@@ -155,6 +155,7 @@ public final class TestWorldPerformance {
             percentileSampleCount = ordered.length;
             p50Nanos = quantile(ordered, 0.50);
             p95Nanos = quantile(ordered, 0.95);
+            p99Nanos = quantile(ordered, 0.99);
         }
 
         private static Long quantile(long[] ordered, double percentile) {
