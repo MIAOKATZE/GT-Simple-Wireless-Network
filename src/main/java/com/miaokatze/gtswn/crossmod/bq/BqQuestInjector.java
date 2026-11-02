@@ -31,9 +31,6 @@ import betterquesting.api.utils.NBTConverter;
 import betterquesting.api.utils.UuidConverter;
 import betterquesting.api2.storage.DBEntry;
 import betterquesting.handlers.SaveLoadHandler;
-import betterquesting.network.handlers.NetChapterSync;
-import betterquesting.network.handlers.NetQuestSync;
-import betterquesting.network.handlers.NetSettingSync;
 import betterquesting.questing.QuestDatabase;
 import betterquesting.questing.QuestInstance;
 import betterquesting.questing.QuestLine;
@@ -77,7 +74,7 @@ import cpw.mods.fml.common.Loader;
  *      QuestProgress 目录；已有任务的内存进度保持权威，不用磁盘旧值覆盖</li>
  *      <li>前排有序收尾（条款10）：MIAO 常量表 gtsr→gtswn→gtit 对库内存在线依序
  *      setOrderIndex(i) 覆盖为最终序，必须先于同步四连执行</li>
- *      <li>同步四连（NetSettingSync / NetQuestSync.quickSync / NetChapterSync / markDirty）</li>
+ *      <li>标记定义需要保存；远程玩家由 BQ 原生登录同步接收定义与进度</li>
  *      </ol>
  */
 public final class BqQuestInjector {
@@ -154,15 +151,14 @@ public final class BqQuestInjector {
             }
             restoreProgress(recreatedOwnedQuests);
             // 前排有序收尾（规范 §6 条款10）：覆盖装载阶段的初排序为 MIAO 前排最终序；
-            // 必须在同步四连之前执行，客户端顺序经 NetChapterSync order 列表自动镜像
+            // 登录前确定顺序，远程玩家通过 BQ 原生登录同步接收 order 列表。
             int frontRowCount = applyFrontRowOrder();
             if (refresh) {
                 writeStamp(Tags.VERSION);
             }
             // 同步四连（与 QuestCommandDefaults.load 尾部同款）
-            NetSettingSync.sendSync(null);
-            NetQuestSync.quickSync(null, true, true);
-            NetChapterSync.sendSync(null, null);
+            // 启动时不排队广播：迟到的全书定义包会清空单机共享任务库的进度。
+            // 本机直接共享数据库，远程玩家由 BQ 原生登录同步接收定义与进度。
             SaveLoadHandler.INSTANCE.markDirty();
             // 注入计数日志（条款9）：正常热重启应全为跳过；新建>0 即疑似被第三方
             // 整库重载覆盖后由本注入器自愈重建（专用服 dreamcraft 重载场景的判定锚点）

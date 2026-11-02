@@ -30,12 +30,12 @@ def main():
         'BetterQuesting.java': 'package betterquesting.core;public class BetterQuesting{public static final org.apache.logging.log4j.Logger logger=org.apache.logging.log4j.LogManager.getLogger("BQ-native-progress");}',
         'GTSimpleWirelessNetwork.java': 'package com.miaokatze.gtswn.main;public class GTSimpleWirelessNetwork{public static final org.apache.logging.log4j.Logger LOG=org.apache.logging.log4j.LogManager.getLogger("GTSWN-BQ-progress-regression");}',
         'Tags.java': 'package com.miaokatze.gtswn;public class Tags{public static final String VERSION="test-same";}',
-        'Loader.java': 'package cpw.mods.fml.common;public class Loader{public static boolean isModLoaded(String name){return true;}}',
+        'Loader.java': 'package cpw.mods.fml.common;public class Loader{public static boolean isModLoaded(String name){return true;}public static Loader instance(){return new Loader();}public ModContainer activeModContainer(){return null;}}',
         'BQ_Settings.java': 'package betterquesting.api.storage;public class BQ_Settings{public static java.io.File curWorldDir;}',
         'OreDictionary.java': 'package net.minecraftforge.oredict;public class OreDictionary{public static java.util.ArrayList<net.minecraft.item.ItemStack> getOres(String name){return new java.util.ArrayList<>();}}',
     }
     for name, method in [('NetSettingSync', 'sendSync(Object x)'), ('NetQuestSync', 'quickSync(Object x,boolean a,boolean b)'), ('NetChapterSync', 'sendSync(Object x,Object y)')]:
-        seams[name + '.java'] = 'package betterquesting.network.handlers;public class ' + name + '{public static void ' + method + '{}}'
+        seams[name + '.java'] = 'package betterquesting.network.handlers;public class ' + name + '{public static int sends;public static void ' + method + '{sends++;throw new AssertionError("Server-start injection must not broadcast");}}'
     for name, contents in seams.items():
         (fixtures / name).write_text(contents)
     source_dir = root / 'src/main/java/com/miaokatze/gtswn/crossmod/bq'
@@ -44,7 +44,7 @@ def main():
     (work / 'source-sha256.txt').write_text('\n'.join(hashlib.sha256(p.read_bytes()).hexdigest() + ' ' + str(p) for p in sources) + '\n')
     (work / 'classpath-sha256.txt').write_text('\n'.join(hashlib.sha256(Path(p).read_bytes()).hexdigest() + ' ' + p for p in cp.split(os.pathsep) if Path(p).is_file()) + '\n')
     java = args.java_home / 'bin'
-    compile_command = [str(java / 'javac'), '-encoding', 'UTF-8', '-cp', cp, '-d', str(classes)] + list(map(str, sources))
+    compile_command = [str(java / 'javac'), '-encoding', 'UTF-8', '-proc:none', '-cp', cp, '-d', str(classes)] + list(map(str, sources))
     result = subprocess.run(compile_command, capture_output=True, text=True, timeout=60)
     (work / 'compile.log').write_text(result.stdout + result.stderr)
     if result.returncode:

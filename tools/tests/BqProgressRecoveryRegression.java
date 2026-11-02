@@ -45,7 +45,7 @@ public final class BqProgressRecoveryRegression {
     public static void main(String[] args) throws Exception {
         work = Paths.get(args[0]);
         try {
-            net.minecraft.init.Bootstrap.register();
+            net.minecraft.init.Bootstrap.func_151354_b();
             TaskRegistry.INSTANCE.register(FactoryTaskCheckbox.INSTANCE);
             TaskRegistry.INSTANCE.register(bq_standard.tasks.factory.FactoryTaskRetrieval.INSTANCE);
             TaskRegistry.INSTANCE.register(bq_standard.tasks.factory.FactoryTaskCrafting.INSTANCE);
@@ -69,6 +69,10 @@ public final class BqProgressRecoveryRegression {
             partialOnly("checkbox");
             partialOnly("retrieval");
             partialOnly("crafting");
+            check("server-start injection never broadcasts, including skip and recovery passes",
+                betterquesting.network.handlers.NetSettingSync.sends == 0
+                    && betterquesting.network.handlers.NetQuestSync.sends == 0
+                    && betterquesting.network.handlers.NetChapterSync.sends == 0);
             System.out.println("RESULT checks=" + checks + " failures=" + failures);
             if (failures != 0) throw new AssertionError(failures + " recovery contract failures");
         } finally {
