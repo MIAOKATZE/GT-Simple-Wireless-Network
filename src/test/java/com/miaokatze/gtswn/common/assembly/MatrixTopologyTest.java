@@ -628,6 +628,211 @@ public class MatrixTopologyTest {
         assertTrue(group.editable());
     }
 
+    @Test
+    public void standaloneSourceFeedsARotatedMirrorWithoutCreatingLocalStockOrASecondProvider() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> original = fixture.items(false);
+        fixture.add(true, 0, 64, 1);
+        OrderedAssemblyGroup.refreshTopology(original.get(0));
+        OrderedAssemblyGroup source = original.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        graph.external(original.get(4));
+        OrderedPatternLayout layout = bufferLayout(new int[] { 0, 1, 1, 2 });
+        source.master()
+            .matrixPort()
+            .patterns()
+            .setStackInSlot(0, layout.pattern());
+        NBTTagCompound address = original.get(0)
+            .matrixPort()
+            .copySource();
+        assertNotNull(address);
+        assertFalse(source.accepting());
+        MatrixAssemblyMember anchor = fixture.add(false, 20, 64, 20, true);
+        for (int i = 1; i < 5; i++) fixture.add(false, 20, 64, 20 + i);
+        fixture.add(true, 19, 64, 20);
+        OrderedAssemblyGroup.refreshTopology(anchor);
+        OrderedAssemblyGroup destination = anchor.matrixPort()
+            .group();
+        assertTrue(
+            anchor.matrixPort()
+                .bindMirror(address));
+        fixture.controller(destination, 40);
+        assertTrue(destination.permitsMachineWork());
+        assertTrue(source.accepting());
+        assertNull(source.session());
+        assertFalse(destination.accepting());
+        assertFalse(((MatrixItemInputBus) anchor).shouldDisplay());
+        assertNull(((MatrixItemInputBus) anchor).getGridNode(ForgeDirection.DOWN));
+        assertTrue(deliver(source, layout, 2));
+        for (int i = 0; i < 4; i++) {
+            MatrixItemInputBus target = (MatrixItemInputBus) destination.itemMembers()
+                .get(i);
+            MatrixItemInputBus owner = (MatrixItemInputBus) source.itemMembers()
+                .get(i);
+            assertNull(target.matrixItem());
+            assertSame(owner.matrixNativeItems(), target.getRealInventory());
+            assertSame(owner.matrixNativeItems()[0], target.getFirstStack());
+        }
+        MatrixFluidInputHatch targetFluid = (MatrixFluidInputHatch) destination.fluidMembers()
+            .get(0);
+        assertNull(targetFluid.matrixFluidStack());
+        assertSame(
+            source.fluidMembers()
+                .get(0)
+                .matrixNativeFluid(),
+            targetFluid.getFillableStack());
+        assertEquals(50, targetFluid.drain(50, true).amount);
+        assertEquals(
+            150,
+            source.fluidMembers()
+                .get(0)
+                .matrixFluidStack().amount);
+        assertFalse(
+            anchor.matrixPort()
+                .clearMirror());
+        IGridConnection extra = graph.external(original.get(0));
+        assertFalse(destination.permitsMachineWork());
+        assertNull(targetFluid.getFillableStack());
+        assertEquals(
+            150,
+            source.fluidMembers()
+                .get(0)
+                .matrixFluidStack().amount);
+        graph.remove(extra);
+        assertTrue(destination.permitsMachineWork());
+        original.get(0)
+            .matrixPort()
+            .removed();
+        fixture.world.unloaded.add(key(0, 64, 0));
+        assertFalse(destination.permitsMachineWork());
+        assertNull(
+            ((MatrixItemInputBus) destination.itemMembers()
+                .get(0)).getFirstStack());
+        assertEquals(
+            2,
+            source.itemMembers()
+                .get(0)
+                .matrixItem().stackSize);
+    }
+
+    @Test
+    public void mirrorBindingRequiresMatchingTypedLayoutExactIdentityAndEmptyDestination() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> sourceItems = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(sourceItems.get(0));
+        NBTTagCompound address = sourceItems.get(0)
+            .matrixPort()
+            .copySource();
+        MatrixAssemblyMember anchor = fixture.add(false, 20, 64, 20, true);
+        for (int i = 1; i < 5; i++) fixture.add(false, 20 + i, 64, 20);
+        OrderedAssemblyGroup.refreshTopology(anchor);
+        anchor.matrixSetItem(new ItemStack(new Item(), 1));
+        assertFalse(
+            anchor.matrixPort()
+                .bindMirror(address));
+        assertNotNull(anchor.matrixItem());
+        anchor.matrixSetItem(null);
+        assertTrue(
+            anchor.matrixPort()
+                .bindMirror(address));
+        assertTrue(
+            anchor.matrixPort()
+                .clearMirror());
+        field(MatrixAssemblyPort.class, "memberId").set(
+            sourceItems.get(0)
+                .matrixPort(),
+            UUID.randomUUID());
+        assertFalse(
+            anchor.matrixPort()
+                .bindMirror(address));
+        NBTTagCompound invalid = (NBTTagCompound) address.copy();
+        invalid.setInteger("dimension", 99);
+        assertFalse(
+            anchor.matrixPort()
+                .bindMirror(invalid));
+        fixture.add(true, 20, 64, 21);
+        OrderedAssemblyGroup.refreshTopology(anchor);
+        assertFalse(
+            anchor.matrixPort()
+                .bindMirror(address));
+    }
+
+    @Test
+    public void twoMirrorConsumersKeepTheSourceBatchLockedUntilBothActuallyFinish() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> original = fixture.items(false);
+        fixture.add(true, 0, 64, 1);
+        OrderedAssemblyGroup.refreshTopology(original.get(0));
+        OrderedAssemblyGroup source = original.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        graph.external(original.get(0));
+        OrderedPatternLayout layout = bufferLayout(new int[] { 0, 1, 1, 2 });
+        source.master()
+            .matrixPort()
+            .patterns()
+            .setStackInSlot(0, layout.pattern());
+        NBTTagCompound address = original.get(0)
+            .matrixPort()
+            .copySource();
+        List<OrderedAssemblyGroup> groups = new ArrayList<>();
+        List<MTEMultiBlockBase> controllers = new ArrayList<>();
+        for (int offset : new int[] { 20, 40 }) {
+            MatrixAssemblyMember anchor = fixture.add(false, offset, 64, 0, true);
+            for (int i = 1; i < 5; i++) fixture.add(false, offset + i, 64, 0);
+            fixture.add(true, offset, 64, 1);
+            OrderedAssemblyGroup.refreshTopology(anchor);
+            OrderedAssemblyGroup destination = anchor.matrixPort()
+                .group();
+            assertTrue(
+                anchor.matrixPort()
+                    .bindMirror(address));
+            controllers.add(fixture.controller(destination, offset));
+            assertTrue(destination.permitsMachineWork());
+            groups.add(destination);
+        }
+        assertTrue(deliver(source, layout, 2));
+        for (int i = 0; i < 2; i++) {
+            controllers.get(i).mMaxProgresstime = 40;
+            groups.get(i)
+                .ordinaryStarted(controllers.get(i));
+        }
+        for (MatrixAssemblyMember member : source.itemMembers()) member.matrixSetItem(null);
+        source.fluidMembers()
+            .get(0)
+            .matrixSetFluid(null);
+        assertEquals(
+            2,
+            source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .tagCount());
+        groups.get(0)
+            .ordinaryFinished(controllers.get(0), "");
+        controllers.get(0).mMaxProgresstime = 0;
+        source.tick();
+        assertEquals(OrderedAssemblyGroup.Stage.RUNNING, source.stage());
+        assertFalse(source.editable());
+        assertFalse(
+            groups.get(0)
+                .master()
+                .matrixPort()
+                .clearMirror());
+        groups.get(1)
+            .ordinaryFinished(controllers.get(1), "");
+        controllers.get(1).mMaxProgresstime = 0;
+        source.tick();
+        assertEquals(OrderedAssemblyGroup.Stage.IDLE, source.stage());
+        assertTrue(source.editable());
+        assertTrue(
+            groups.get(0)
+                .master()
+                .matrixPort()
+                .clearMirror());
+    }
+
     private static OrderedPatternLayout bufferLayout(int[] variants) throws Exception {
         Class<?> fixtures = Class.forName("com.miaokatze.gtswn.common.assembly.pattern.AssemblyPatternFixtures");
         invoke(fixtures, "initialize", new Class<?>[0]);
@@ -786,9 +991,14 @@ public class MatrixTopologyTest {
         }
 
         MatrixAssemblyMember add(boolean fluid, int x, int y, int z) throws Exception {
+            return add(fluid, x, y, z, false);
+        }
+
+        MatrixAssemblyMember add(boolean fluid, int x, int y, int z, boolean mirror) throws Exception {
             Class<? extends MetaTileEntity> type = fluid ? MatrixFluidInputHatch.class : MatrixItemInputBus.class;
             MetaTileEntity meta = (MetaTileEntity) unsafe.allocateInstance(type);
             MatrixAssemblyMember member = (MatrixAssemblyMember) meta;
+            field(type, "mirror").setBoolean(meta, mirror);
             MatrixAssemblyPort port = new MatrixAssemblyPort(member);
             field(type, "matrix").set(meta, port);
             field(CommonMetaTileEntity.class, "mInventory").set(meta, new ItemStack[fluid ? 0 : 1]);

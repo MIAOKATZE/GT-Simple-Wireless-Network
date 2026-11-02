@@ -49,7 +49,9 @@ public class MatrixAssemblyTexturesTest {
 
     @Test
     public void bridgesAreRegisteredBeforeTheFirstFrontLookupAndReusedOnAtlasReload() throws Exception {
-        MTEHatch[] members = { member(MatrixItemInputBus.class), member(MatrixFluidInputHatch.class) };
+        MTEHatch[] members = { member(MatrixItemInputBus.class, false), member(MatrixFluidInputHatch.class, false),
+            member(MatrixItemInputBus.class, true), member(MatrixFluidInputHatch.class, true) };
+        String[] styles = { "", "fluid/", "item_mirror/", "fluid_mirror/" };
         RecordingRegister firstAtlas = new RecordingRegister();
         // Follow BlockMachines.registerBlockIcons: all MTE hooks run before the GT icon queue.
         for (MTEHatch member : members) member.registerIcons(firstAtlas);
@@ -64,7 +66,10 @@ public class MatrixAssemblyTexturesTest {
                     bridges.put((String) iconName.get(task), (IIconContainer) task));
             }
         }
-        assertEquals("MTE hooks must queue the center and every bridge before rendering", 17, bridges.size());
+        assertEquals(
+            "MTE hooks must queue all four centers and all bridge variants before rendering",
+            68,
+            bridges.size());
         int queueSize = GregTechAPI.sGTBlockIconload.size();
 
         Field singleton = Minecraft.class.getDeclaredField("theMinecraft");
@@ -97,14 +102,16 @@ public class MatrixAssemblyTexturesTest {
             load(bridges, firstAtlas);
             ITexture[] first = members[0].getTexturesActive(null);
             assertSame(firstAtlas.icons.get("gtswn:matrix/bridge_0"), frontIcon(first));
-            for (MTEHatch member : members) {
+            for (int index = 0; index < members.length; index++) {
+                MTEHatch member = members[index];
                 ((MatrixAssemblyMember) member).matrixPort()
                     .readConnectionMask(63);
                 ITexture[] active = member.getTexturesActive(null);
                 ITexture[] inactive = member.getTexturesInactive(null);
-                assertSame(firstAtlas.icons.get("gtswn:matrix/bridge_15"), frontIcon(active));
+                assertSame(firstAtlas.icons.get("gtswn:matrix/" + styles[index] + "bridge_15"), frontIcon(active));
                 assertSame(active[1], inactive[1]);
-                assertSame(first[2], active[2]);
+                assertSame(active[2], inactive[2]);
+                if (index != 0) assertNotSame(first[2], active[2]);
                 assertSame(first[3], active[3]);
                 member.registerIcons(firstAtlas);
             }
@@ -144,11 +151,15 @@ public class MatrixAssemblyTexturesTest {
             ((Runnable) bridge).run();
             assertSame(register.icons.get(entry.getKey()), bridge.getIcon());
         }
-        assertEquals(17, register.icons.size());
+        assertEquals(68, register.icons.size());
     }
 
-    private static <T extends MTEHatch & MatrixAssemblyMember> T member(Class<T> type) throws Exception {
+    private static <T extends MTEHatch & MatrixAssemblyMember> T member(Class<T> type, boolean mirror)
+        throws Exception {
         T member = allocate(type);
+        Field role = type.getDeclaredField("mirror");
+        role.setAccessible(true);
+        role.setBoolean(member, mirror);
         Field port = type.getDeclaredField("matrix");
         port.setAccessible(true);
         port.set(member, new MatrixAssemblyPort(member));

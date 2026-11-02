@@ -41,7 +41,7 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
  * Native compact device list. Existing cache polling and stable five-column sort remain authoritative.
- * Row expansion presents only the shared recipe strings; whole-device link actions carry explicit desired state.
+ * Whole-device link actions carry explicit desired state.
  */
 public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
@@ -54,9 +54,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 滚轮触发追加轮询的最小间隔（tick）：限频防滚轮连击形成请求洪峰（G5-3） */
     private static final int EXTRA_POLL_INTERVAL_TICKS = 10;
 
-    /** 悬浮配方文本换行宽度（像素，≈200px；v1.7.2 起用 listFormattedStringToWidth 按像素分行） */
-    private static final int TOOLTIP_WRAP_WIDTH = 200;
-
     /** GUI 宽度（紧凑列与链路操作） */
     private final int xSize = 620;
 
@@ -65,9 +62,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 顶行按钮：计数法四态轮换（本地立即轮换 + 发包 10 action 1 持久化） */
     private static final int BTN_COUNT_MODE = 0;
-
-    /** 顶行按钮：显示配方开关（纯 GUI 实例字段，不发包不持久化） */
-    private static final int BTN_SHOW_RECIPE = 1;
 
     /** 顶行按钮：功率筛选七项下拉（纯 GUI 会话态，不发包不持久化） */
     private static final int BTN_POWER_FILTER = 2;
@@ -139,10 +133,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** 计数法（0 常规 / 1 科学 / 2 千位 / 3 电压等级；初始从 stack NBT 读） */
     private int countMode;
 
-    /** 显示配方开关（纯 GUI 实例字段：开启时瞬时/平均两列区临时替换为单条配方行） */
-    private boolean showRecipe = false;
-    private final java.util.Set<String> expandedRecipes = new java.util.LinkedHashSet<>();
-
     /** 功率筛选会话态：全部、电力、蒸汽、产能、耗电、产汽、耗气（重开 GUI 复位为全部） */
     private int powerFilter = 0;
 
@@ -198,29 +188,20 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 .button("device.count", this::countModeText, 8, 16, 130, 16, () -> actionPerformed(BTN_COUNT_MODE)));
         getMainPanel().child(
             GtswnMuiWidgets.button(
-                "device.recipe",
-                this::showRecipeText,
-                146,
-                16,
-                110,
-                16,
-                () -> actionPerformed(BTN_SHOW_RECIPE)));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
                 "device.power",
                 this::powerFilterText,
-                264,
+                146,
                 16,
-                94,
+                156,
                 16,
                 () -> actionPerformed(BTN_POWER_FILTER)));
         getMainPanel().child(
             GtswnMuiWidgets.button(
                 "device.state",
                 this::stateFilterText,
-                362,
+                310,
                 16,
-                80,
+                130,
                 16,
                 () -> actionPerformed(BTN_STATE_FILTER)));
         getMainPanel().child(
@@ -429,7 +410,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                 float menuScale = GtswnMuiTheme.fitScale(screenWidth, screenHeight, POWER_MENU_WIDTH, menuHeight);
                 float visibleWidth = POWER_MENU_WIDTH * menuScale;
                 float visibleHeight = menuHeight * menuScale;
-                float anchorX = (screenWidth - xSize * mainScale) / 2f + 264 * mainScale;
+                float anchorX = (screenWidth - xSize * mainScale) / 2f + 146 * mainScale;
                 float anchorY = (screenHeight - ySize * mainScale) / 2f + 33 * mainScale;
                 float visibleX = Math.max(4, Math.min(screenWidth - visibleWidth - 4, anchorX));
                 float visibleY = Math.max(4, Math.min(screenHeight - visibleHeight - 4, anchorY));
@@ -725,11 +706,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                     (byte) 0,
                     (byte) this.countMode,
                     ""));
-        } else if (id == BTN_SHOW_RECIPE) {
-            // 纯 GUI 实例字段：不发包不持久化
-            this.showRecipe = !this.showRecipe;
-            expandedRecipes.clear();
-            entryList.invalidateRows();
         } else if (id == BTN_POWER_FILTER) {
             powerFilterCursor = powerFilter;
             powerMenu.togglePanel();
@@ -753,18 +729,11 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         return StatCollector.translateToLocalFormatted("gtswn.device.gui.count_mode", mode);
     }
 
-    /** 显示配方按钮文案（显示配方: 开/关） */
-    private String showRecipeText() {
-        return StatCollector.translateToLocalFormatted(
-            "gtswn.device.gui.show_recipe",
-            tr(this.showRecipe ? "gtswn.device.gui.on" : "gtswn.device.gui.off"));
-    }
-
     /** 功率筛选按钮文案；完整选项在下拉中显示，按钮末尾留出箭头。 */
     private String powerFilterText() {
         String text = StatCollector
             .translateToLocalFormatted("gtswn.device.gui.filter.power", tr(POWER_FILTER_KEYS[this.powerFilter]));
-        if (fontRendererObj.getStringWidth(text) > 76) text = fontRendererObj.trimStringToWidth(text, 70) + "...";
+        if (fontRendererObj.getStringWidth(text) > 138) text = fontRendererObj.trimStringToWidth(text, 132) + "...";
         return text + " \u25BC";
     }
 
@@ -952,30 +921,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     void selectDesktopEntry(Entry entry) {
         if (!isCurrentEntry(entry)) return;
         selectedDesktopEntry = currentEntry(entry);
-        if (showRecipe) {
-            showRecipe = false;
-            for (Entry current : sortedEntries) expandedRecipes.add(current.key);
-        }
-        if (!expandedRecipes.remove(entry.key)) expandedRecipes.add(entry.key);
-        entryList.invalidateRows();
-    }
-
-    boolean recipeExpanded(Entry entry) {
-        return showRecipe || expandedRecipes.contains(entry.key);
-    }
-
-    String recipeText(Entry entry) {
-        com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding binding = new com.miaokatze.gtswn.client.engineering.desktop.DeviceBinding(
-            anchor,
-            entry.key,
-            entry.dim,
-            entry.x,
-            entry.y,
-            entry.z,
-            entry.metaTileId);
-        DesktopDeviceSources.Reading reading = DesktopDeviceSources.read(binding);
-        return tr("gtswn.device.link.recipe") + " "
-            + com.miaokatze.gtswn.client.engineering.desktop.DesktopDeviceFields.recipeLine(reading.entry);
     }
 
     boolean linkAvailable(Entry entry) {
@@ -1052,15 +997,9 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         return sameEntry(entry, selectedDesktopEntry);
     }
 
-    /**
-     * 行机器名列悬浮立即显示当前执行配方（v1.7.2 双侧：标题 +「输入:」行 +「输出:」行，
-     * 单侧最多 4 项超限补「 等...」，{@code listFormattedStringToWidth} 按 ≈200px 像素分行，
-     * 替代旧 48 字符硬切）。
-     */
+    /** 行机器名列悬浮显示命名、识别模式与功率信息。 */
     List<String> entryTooltip(Entry hovered) {
         if (!isCurrentEntry(hovered)) return Collections.emptyList();
-        String recipeIn = hovered.state == 3 || hovered.recipeIn == null ? "" : hovered.recipeIn.trim();
-        String recipeOut = hovered.state == 3 || hovered.recipeOut == null ? "" : hovered.recipeOut.trim();
         List<String> lines = new ArrayList<>();
         lines.add(DeviceTerminalNames.localName(hovered));
         lines.add(tr("gtswn.device.rename.hover"));
@@ -1092,28 +1031,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             StatCollector.translateToLocalFormatted(
                 "gtswn.device.gui.tooltip.net",
                 hovered.state == 3 ? 0L : hovered.instNet()));
-        lines.add(tr("gtswn.device.gui.tooltip.recipe_title"));
-        if (recipeIn.isEmpty() && recipeOut.isEmpty()) {
-            lines.add(tr("gtswn.device.gui.tooltip.recipe_none"));
-        } else {
-            // 某侧为空不画该行（输入侧因 GT5U 无公开 lastRecipe 入路暂为空串）
-            if (!recipeIn.isEmpty()) {
-                lines.addAll(
-                    this.fontRendererObj.listFormattedStringToWidth(
-                        StatCollector.translateToLocalFormatted(
-                            "gtswn.device.gui.tooltip.recipe_in",
-                            GuiDeviceEntryList.sidePreview(recipeIn, 4)),
-                        TOOLTIP_WRAP_WIDTH));
-            }
-            if (!recipeOut.isEmpty()) {
-                lines.addAll(
-                    this.fontRendererObj.listFormattedStringToWidth(
-                        StatCollector.translateToLocalFormatted(
-                            "gtswn.device.gui.tooltip.recipe_out",
-                            GuiDeviceEntryList.sidePreview(recipeOut, 4)),
-                        TOOLTIP_WRAP_WIDTH));
-            }
-        }
         return lines;
     }
 
@@ -1138,11 +1055,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     /** @return 排序后条目（列表绘制与命中共用，宿主 refreshEntries 后活读即时可见） */
     List<Entry> sortedEntries() {
         return this.sortedEntries;
-    }
-
-    /** @return 全部配方行展开开关 */
-    boolean showRecipeEnabled() {
-        return this.showRecipe;
     }
 
     /** @param state 状态 0/1/2/3（越界回退待机文案；lang 值自带 § 颜色码） */
@@ -1238,11 +1150,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 本地化工具 */
     private static String tr(String key) {
-        return StatCollector.translateToLocal(key);
-    }
-
-    /** 本地化工具（{@link GuiDeviceEntryList} 同包静态共用） */
-    static String trStatic(String key) {
         return StatCollector.translateToLocal(key);
     }
 

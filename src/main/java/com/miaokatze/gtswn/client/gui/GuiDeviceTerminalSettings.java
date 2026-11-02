@@ -234,16 +234,10 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
                 columnWidth,
                 toggle("labels.power", DeviceTerminalVisualConfig.showLabelPower));
             button(
-                43,
+                44,
                 12,
                 48 + rowGap * 2,
-                columnWidth,
-                toggle("labels.recipe", DeviceTerminalVisualConfig.showLabelRecipe));
-            button(
-                44,
-                rightColumn,
-                48 + rowGap * 2,
-                columnWidth,
+                panelWidth - 24,
                 toggle("labels.state", DeviceTerminalVisualConfig.showLabelState));
             button(
                 45,
@@ -389,9 +383,6 @@ public final class GuiDeviceTerminalSettings extends GtswnMuiScreen {
                 break;
             case 42:
                 DeviceTerminalVisualConfig.showLabelPower = !DeviceTerminalVisualConfig.showLabelPower;
-                break;
-            case 43:
-                DeviceTerminalVisualConfig.showLabelRecipe = !DeviceTerminalVisualConfig.showLabelRecipe;
                 break;
             case 44:
                 DeviceTerminalVisualConfig.showLabelState = !DeviceTerminalVisualConfig.showLabelState;

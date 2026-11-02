@@ -69,6 +69,7 @@ import gregtech.api.GregTechAPI;
 import gregtech.api.covers.CoverRegistry;
 import gregtech.api.enums.ItemList;
 import gregtech.api.enums.VoidingMode;
+import gregtech.api.interfaces.IDataCopyable;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatchInputBus;
 import gregtech.api.metatileentity.implementations.MTEHatchOutputBus;
@@ -82,12 +83,13 @@ import io.netty.channel.embedded.EmbeddedChannel;
 final class OrderedAssemblyScenario implements TestScenario {
 
     private static final int X = -4, Y = 69, Z = 12;
-    private static final int INPUTS = 16, COPIES = 16;
+    private static final int INPUTS = 8, FLUIDS = 2, COPIES = 16;
     private BaseMetaTileEntity controllerTile, energyTile, outputTile;
     private MTEAssemblyLine controller;
     private MTEHatchOutputBus output;
     private NativeAssemblySession session;
     private OrderedAssemblyGroup group;
+    private OrderedAssemblyGroup consumerGroup;
     private MatrixAssemblyMember patternAnchor;
     private FakePlayer owner;
     private TileEntity aeController;
@@ -168,7 +170,7 @@ final class OrderedAssemblyScenario implements TestScenario {
         require(
             ctx,
             controller.mMachine && controller.mInputBusses.size() == INPUTS,
-            "The actual sixteen-slice native structure is formed with sixteen item inputs");
+            "The actual " + INPUTS + "-slice native structure is formed with matching item inputs");
         group = master().matrixPort()
             .group();
         require(
@@ -176,8 +178,8 @@ final class OrderedAssemblyScenario implements TestScenario {
             group != null && group.itemMembers()
                 .size() == INPUTS
                 && group.fluidMembers()
-                    .size() == 3,
-            "Successful native registration binds sixteen item owners and three fluid owners");
+                    .size() == FLUIDS,
+            "Successful native registration binds " + INPUTS + " item owners and " + FLUIDS + " fluid owners");
         otherControllerCounterexample(ctx);
         controllerTile.enableWorking();
         BaseMetaTileEntity branch = machine(
@@ -256,6 +258,7 @@ final class OrderedAssemblyScenario implements TestScenario {
             "Identical native structure rechecks retain the current group and topology epoch");
         selectRecipe(ctx);
         duplicateRawPositions(ctx);
+        installRemoteSource(ctx);
         patternAnchor = group.master();
         controller.setInventorySlotContents(1, null);
         fillOutput();
@@ -534,14 +537,14 @@ final class OrderedAssemblyScenario implements TestScenario {
                     "Exactly sixteen native single-copy consumption sequences completed from the one real CPU job");
                 assertRemainingPositions();
                 ctx.pass(
-                    "Sixteen-position physical caching, reverse-end ordering, empty/in-flight multi-entry pause "
-                        + "and recovery, pure-fluid grouping, native safety gates and exact real CPU return passed");
+                    "Eight-position standalone supply through a middle-position mirror, exact binding, multi-entry pause "
+                        + "and recovery, sixteen native runs with research gates, shared batch lock and exact real CPU return passed");
                 break;
             case 18:
                 if (group.externalConnectionCount() != 2 || ctx.tick() - stageTick < 40) return;
                 require(
                     ctx,
-                    !group.accepting() && !group.permitsMachineWork()
+                    !group.accepting() && !consumerGroup.permitsMachineWork()
                         && !published(ctx)
                         && "multiple_external_connections".equals(group.reason())
                         && !cpu.isBusy()
@@ -567,7 +570,7 @@ final class OrderedAssemblyScenario implements TestScenario {
                 if (ctx.tick() - stageTick < 40) return;
                 require(
                     ctx,
-                    group.externalConnectionCount() == 2 && !group.permitsMachineWork()
+                    group.externalConnectionCount() == 2 && !consumerGroup.permitsMachineWork()
                         && controller.mProgresstime == pausedProgress
                         && session.runSequence() == pausedSequence
                         && pausedStock.equals(stock())
@@ -579,7 +582,10 @@ final class OrderedAssemblyScenario implements TestScenario {
                 break;
             case 22:
                 if (group.externalConnectionCount() != 1 || !published(ctx)) return;
-                require(ctx, group.permitsMachineWork(), "The original unique ME entry restores the same group");
+                require(
+                    ctx,
+                    consumerGroup.permitsMachineWork(),
+                    "The original unique ME entry restores the same remote consumer");
                 transition(ctx, 7, "Observe all sixteen original native runs and exact per-position consumption");
                 break;
             default:
@@ -613,7 +619,7 @@ final class OrderedAssemblyScenario implements TestScenario {
             block(ctx, i, 2, 2, GregTechAPI.sBlockCasings2, 0);
             machine(ctx, i, 2, 1, GTSWNItemList.Matrix_Grouped_Item_Input_ME.get(1), ForgeDirection.DOWN);
         }
-        for (int i = 0; i < 3; i++)
+        for (int i = 0; i < FLUIDS; i++)
             machine(ctx, i, 2, 0, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME.get(1), ForgeDirection.DOWN);
         outputTile = machine(ctx, INPUTS - 1, 2, 0, ItemList.Hatch_Output_Bus_LV.get(1), ForgeDirection.DOWN);
         outputTile.disableWorking();
@@ -626,6 +632,97 @@ final class OrderedAssemblyScenario implements TestScenario {
             "power_fixture",
             "Native GT wireless energy debug cover on a real UHV energy hatch; "
                 + "no per-tick material insertion, manual progress advance or manual native completion");
+    }
+
+    private void installRemoteSource(TestContext ctx) {
+        int middle = INPUTS / 2 - 1;
+        BaseMetaTileEntity mirrorTile = machine(
+            ctx,
+            middle,
+            2,
+            1,
+            GTSWNItemList.Matrix_Grouped_Item_Input_Mirror_ME.get(1),
+            ForgeDirection.DOWN);
+        MatrixAssemblyMember mirror = (MatrixAssemblyMember) mirrorTile.getMetaTileEntity();
+        checkStructure(ctx);
+        consumerGroup = mirror.matrixPort()
+            .group();
+        require(
+            ctx,
+            controller.mMachine && consumerGroup != null && consumerGroup.isMirror(),
+            "Replacing one middle item position preserves the actual native AL structure and creates a mirror group");
+        MatrixAssemblyMember sourceAnchor = null;
+        for (int i = 0; i < INPUTS; i++) {
+            int[] pos = sourcePosition(i, 2, 1);
+            BaseMetaTileEntity tile = TestWorldFixtures.machine(
+                ctx.world(),
+                pos[0],
+                pos[1],
+                pos[2],
+                GTSWNItemList.Matrix_Grouped_Item_Input_ME.get(1),
+                owner.getUniqueID());
+            tile.setFrontFacing(ForgeDirection.DOWN);
+            if (i == middle) sourceAnchor = (MatrixAssemblyMember) tile.getMetaTileEntity();
+        }
+        for (int i = 0; i < FLUIDS - 1; i++) sourceFluid(ctx, i);
+        OrderedAssemblyGroup.refreshTopology(sourceAnchor);
+        IDataCopyable copyableSource = (IDataCopyable) sourceAnchor;
+        require(
+            ctx,
+            !((IDataCopyable) mirror).pasteCopiedData(owner, copyableSource.getCopiedData(owner)),
+            "The native data-stick copy contract rejects a source with a missing typed fluid position");
+        sourceFluid(ctx, FLUIDS - 1);
+        OrderedAssemblyGroup.refreshTopology(sourceAnchor);
+        NBTTagCompound copied = copyableSource.getCopiedData(owner);
+        require(
+            ctx,
+            copied != null && ((IDataCopyable) mirror).pasteCopiedData(owner, copied),
+            "The native data-stick copy contract binds the full matching source to the middle mirror position");
+        group = sourceAnchor.matrixPort()
+            .group();
+        require(
+            ctx,
+            group.session() == null && group.diagnosticControllerPosition() == null
+                && group.itemMembers()
+                    .size() == INPUTS
+                && group.fluidMembers()
+                    .size() == FLUIDS,
+            "The only material owner is a standalone source with no native controller");
+        for (MatrixAssemblyMember member : consumerGroup.itemMembers()) require(
+            ctx,
+            ((IGridProxyable) member).getGridNode(ForgeDirection.DOWN) == null && member.matrixItem() == null,
+            "Every destination member has no ME node and no local consumable inventory");
+        for (MatrixAssemblyMember member : consumerGroup.fluidMembers()) require(
+            ctx,
+            ((IGridProxyable) member).getGridNode(ForgeDirection.DOWN) == null && member.matrixFluidStack() == null,
+            "Every destination fluid member has no ME node and no locally copied fluid");
+        ctx.event(
+            "matrix_mirror_binding",
+            "source=" + Arrays.toString(group.diagnosticMemberPosition(false, 0))
+                + "; destinationAnchor="
+                + middle
+                + "; copied="
+                + copied
+                + "; controller="
+                + session.controllerId());
+    }
+
+    private void sourceFluid(TestContext ctx, int index) {
+        int[] pos = sourcePosition(index, 2, 0);
+        BaseMetaTileEntity tile = TestWorldFixtures.machine(
+            ctx.world(),
+            pos[0],
+            pos[1],
+            pos[2],
+            GTSWNItemList.Matrix_Grouped_Fluid_Input_ME.get(1),
+            owner.getUniqueID());
+        tile.setFrontFacing(ForgeDirection.DOWN);
+    }
+
+    private int[] sourcePosition(int a, int b, int c) {
+        int[] pos = position(a, b, c);
+        pos[1] += 6;
+        return pos;
     }
 
     private void checkStructure(TestContext ctx) {
@@ -691,7 +788,7 @@ final class OrderedAssemblyScenario implements TestScenario {
     private void selectRecipe(TestContext ctx) {
         List<RecipeAssemblyLine> candidates = new ArrayList<>();
         for (RecipeAssemblyLine candidate : RecipeAssemblyLine.sAssemblylineRecipes) {
-            if (candidate.mInputs.length != INPUTS || candidate.mFluidInputs.length != 3
+            if (candidate.mInputs.length != INPUTS || candidate.mFluidInputs.length != FLUIDS
                 || candidate.mEUt <= 0
                 || candidate.mEUt > 131072
                 || candidate.mDuration < 40
@@ -701,8 +798,10 @@ final class OrderedAssemblyScenario implements TestScenario {
                 || candidate.mOutput.stackSize <= 0
                 || candidate.mOutput.stackSize > 64) continue;
             boolean valid = true;
-            for (FluidStack fluid : candidate.mFluidInputs)
-                valid &= fluid != null && fluid.amount == 576 && fluid.tag == null;
+            for (int i = 0; i < candidate.mFluidInputs.length; i++) {
+                FluidStack fluid = candidate.mFluidInputs[i];
+                valid &= fluid != null && fluid.amount == (i == 0 ? 576 : 1152) && fluid.tag == null;
+            }
             for (ItemStack input : candidate.mInputs)
                 valid &= input != null && input.stackSize > 0 && input.stackSize <= 64;
             if (valid) candidates.add(candidate);
@@ -738,7 +837,7 @@ final class OrderedAssemblyScenario implements TestScenario {
         require(
             ctx,
             recipe != null,
-            "The actual newly registered sixteen-position, three-fluid matrix item-bus recipe is selected");
+            "The actual registered " + INPUTS + "-position, " + FLUIDS + "-fluid matrix item-bus recipe is selected");
         ctx.event(
             "registry_recipe",
             "registrySize=" + RecipeAssemblyLine.sAssemblylineRecipes.size()
@@ -836,8 +935,8 @@ final class OrderedAssemblyScenario implements TestScenario {
         }
         require(
             ctx,
-            count == INPUTS + 3 && visible == 1 && masterTracker != null && correct,
-            "Native tracked maps expose one default-visible master and eighteen hidden 4x9 matrix entries");
+            count == INPUTS + FLUIDS && visible == 1 && masterTracker != null && correct,
+            "Native tracked maps expose only the standalone source, one default-visible master and its hidden 4x9 members");
         ctx.event(
             "interface_update_packet",
             "origin=constructor.updateList; class=" + packet.getClass()
@@ -1170,9 +1269,9 @@ final class OrderedAssemblyScenario implements TestScenario {
     }
 
     private void buildAe(TestContext ctx) throws Exception {
-        int[] bus = position(INPUTS - 1, 2, 1);
+        int[] bus = sourcePosition(INPUTS - 1, 2, 1);
         int ax = bus[0], ay = bus[1] - 1, az = bus[2];
-        int stepX = position(INPUTS - 2, 2, 1)[0] - ax;
+        int stepX = sourcePosition(INPUTS - 2, 2, 1)[0] - ax;
         // Native adjacent blocks carry the network; no fake grid, direct medium call or inventory mirror is used.
         aeController = ae(
             ctx,
@@ -1218,6 +1317,30 @@ final class OrderedAssemblyScenario implements TestScenario {
                 .iface()
                 .maybeStack(1)
                 .get());
+        // The output interface rejoins the supply network outside the destination column; no input member connects.
+        int outputY = outputTile.yCoord - 1;
+        for (int y = outputY; y < ay - 1; y++) ae(
+            ctx,
+            ax - stepX,
+            y,
+            az,
+            AEApi.instance()
+                .definitions()
+                .blocks()
+                .iface()
+                .maybeStack(1)
+                .get());
+        ae(
+            ctx,
+            ax,
+            outputY,
+            az,
+            AEApi.instance()
+                .definitions()
+                .blocks()
+                .iface()
+                .maybeStack(1)
+                .get());
         for (int dx = -3; dx <= -2; dx++) for (int dy = -1; dy <= 0; dy++) for (int dz = 0; dz < 2; dz++) ae(
             ctx,
             ax + stepX * dx,
@@ -1247,7 +1370,7 @@ final class OrderedAssemblyScenario implements TestScenario {
         Item fluidCell = (Item) Class.forName("com.glodblock.github.loader.ItemAndBlockHolder")
             .getField("CELL1K")
             .get(null);
-        // AE2FC basic cells each hold one fluid type; this recipe has three distinct fluid positions.
+        // AE2FC basic cells each hold one fluid type; allocate one cell per real recipe fluid.
         for (int i = 0; i < recipe.mFluidInputs.length; i++) drive.getInternalInventory()
             .setInventorySlotContents(i + 1, new ItemStack(fluidCell));
         TestWorldFixtures.place(
@@ -1319,7 +1442,7 @@ final class OrderedAssemblyScenario implements TestScenario {
                 proxy.getStorage()
                     .getFluidInventory()
                     .injectItems(AEFluidStack.create(fluid), Actionable.MODULATE, source) == null,
-                "Real fluid storage accepts exactly 9216 mB for each of the three fluid positions");
+                "Real fluid storage accepts exactly " + fluid.amount + " mB for this recipe position");
         }
         require(ctx, itemAmount(recipe.mOutput) == 0, "The output type is absent before real CPU production");
         ctx.event(
@@ -1358,18 +1481,21 @@ final class OrderedAssemblyScenario implements TestScenario {
         Object previous = enter.invoke(null, session);
         try {
             for (int i = 0; i < recipe.mInputs.length; i++) {
-                MTEHatchInputBus member = (MTEHatchInputBus) group.itemMembers()
+                MTEHatchInputBus owner = (MTEHatchInputBus) group.itemMembers()
                     .get(i);
-                ItemStack actual = member.mInventory[0];
+                MTEHatchInputBus member = (MTEHatchInputBus) consumerGroup.itemMembers()
+                    .get(i);
+                ItemStack actual = owner.mInventory[0];
                 require(
                     ctx,
                     actual != null && actual.isItemEqual(recipe.mInputs[i])
                         && ItemStack.areItemStackTagsEqual(actual, recipe.mInputs[i])
                         && actual.stackSize == recipe.mInputs[i].stackSize * COPIES
-                        && member.getRealInventory() == member.mInventory
+                        && member.mInventory[0] == null
+                        && member.getRealInventory() == owner.mInventory
                         && member.getFirstStack() == actual,
                     "Native item position " + i
-                        + " exposes the actual physical inventory reference with the exact payload");
+                        + " exposes its mapped source inventory reference while retaining an empty local slot");
             }
         } finally {
             leave.invoke(null, previous);
@@ -1380,15 +1506,16 @@ final class OrderedAssemblyScenario implements TestScenario {
                 .matrixFluidStack();
             require(
                 ctx,
-                actual != null && actual.isFluidEqual(recipe.mFluidInputs[i]) && actual.amount == 9216,
-                "Physical fluid position " + i + " stores exactly 9216 mB");
+                actual != null && actual.isFluidEqual(recipe.mFluidInputs[i])
+                    && actual.amount == recipe.mFluidInputs[i].amount * COPIES,
+                "Physical fluid position " + i + " stores exactly " + recipe.mFluidInputs[i].amount * COPIES + " mB");
         }
         require(
             ctx,
-            Arrays.equals(group.diagnosticMemberPosition(false, 0), position(INPUTS - 1, 2, 1))
-                && Arrays.equals(group.diagnosticMemberPosition(false, INPUTS - 1), position(0, 2, 1))
-                && controller.mInputBusses.equals(group.itemMembers())
-                && controller.mInputHatches.equals(group.fluidMembers()),
+            Arrays.equals(group.diagnosticMemberPosition(false, 0), sourcePosition(INPUTS - 1, 2, 1))
+                && Arrays.equals(group.diagnosticMemberPosition(false, INPUTS - 1), sourcePosition(0, 2, 1))
+                && controller.mInputBusses.equals(consumerGroup.itemMembers())
+                && controller.mInputHatches.equals(consumerGroup.fluidMembers()),
             "Reverse-end ME entry determines physical intake, diagnostics and actual native input ordering");
     }
 
@@ -1449,7 +1576,7 @@ final class OrderedAssemblyScenario implements TestScenario {
     }
 
     private void extraConnection(TestContext ctx, boolean connect) {
-        int[] input = position(0, 2, 1);
+        int[] input = sourcePosition(0, 2, 1);
         if (connect) ae(
             ctx,
             input[0],

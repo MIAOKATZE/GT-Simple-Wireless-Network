@@ -43,7 +43,9 @@ public enum GTSWNItemList implements IItemContainer {
     TestCoin,
     Matrix_Grouped_Item_Input_ME,
     Matrix_Grouped_Fluid_Input_ME,
-    Network_Teleport_Anchor;
+    Network_Teleport_Anchor,
+    Matrix_Grouped_Item_Input_Mirror_ME,
+    Matrix_Grouped_Fluid_Input_Mirror_ME;
 
     // 存储对应的物品堆栈实例
     private ItemStack mStack;

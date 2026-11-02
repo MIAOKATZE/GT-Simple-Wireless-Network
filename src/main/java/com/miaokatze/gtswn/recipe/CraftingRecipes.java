@@ -19,6 +19,7 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.crafting.CraftingManager;
 
+import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import appeng.api.AEApi;
@@ -61,15 +62,8 @@ public class CraftingRecipes {
                 .metadata(RESEARCH_ITEM, (fluid ? Network_Teleport_Anchor : Quantum_Incorporation_Anchor).get(1))
                 .metadata(SCANNING, new Scanning(60 * 20, TierEU.RECIPE_LuV))
                 .itemInputs(
-                    Quantum_Incorporation_Anchor.get(16),
-                    Quantum_Incorporation_Anchor.get(16),
-                    Quantum_Incorporation_Anchor.get(16),
-                    Quantum_Incorporation_Anchor.get(16),
-                    Quantum_Incorporation_Anchor.get(16),
                     (fluid ? ItemList.Hatch_Input_LuV : ItemList.Hatch_Input_Bus_LuV).get(1),
                     GTOreDictUnificator.get(OrePrefixes.circuit, Materials.LuV, 8),
-                    Quantum_Incorporation_Anchor.get(16),
-                    Network_Teleport_Anchor.get(16),
                     AEApi.instance()
                         .definitions()
                         .blocks()
@@ -82,20 +76,39 @@ public class CraftingRecipes {
                         .cardSpeed()
                         .maybeStack(4)
                         .get(),
-                    Network_Teleport_Anchor.get(16),
-                    Network_Teleport_Anchor.get(16),
-                    Network_Teleport_Anchor.get(16),
+                    Quantum_Incorporation_Anchor.get(16),
+                    Quantum_Incorporation_Anchor.get(16),
                     Network_Teleport_Anchor.get(16),
                     Network_Teleport_Anchor.get(16))
-                .fluidInputs(
-                    MaterialsAlloy.INDALLOY_140.getFluidStack(576),
-                    Materials.Lubricant.getFluid(576),
-                    Materials.VibrantAlloy.getMolten(576))
+                .fluidInputs(MaterialsAlloy.INDALLOY_140.getFluidStack(576), Materials.Lubricant.getFluid(1152))
                 .itemOutputs(
                     (fluid ? com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Matrix_Grouped_Fluid_Input_ME
                         : com.miaokatze.gtswn.common.api.enums.GTSWNItemList.Matrix_Grouped_Item_Input_ME).get(1))
                 .duration(30 * 20)
                 .eut(TierEU.RECIPE_LuV)
+                .addTo(AssemblyLine);
+            ItemStack source = (fluid ? GTSWNItemList.Matrix_Grouped_Fluid_Input_ME
+                : GTSWNItemList.Matrix_Grouped_Item_Input_ME).get(1);
+            GTValues.RA.stdBuilder()
+                .metadata(RESEARCH_ITEM, source)
+                .metadata(SCANNING, new Scanning(120 * 20, TierEU.RECIPE_ZPM))
+                .itemInputs(
+                    source,
+                    GTOreDictUnificator.get(OrePrefixes.circuit, Materials.ZPM, 4),
+                    ItemList.Emitter_ZPM.get(2),
+                    ItemList.Sensor_ZPM.get(2),
+                    GTOreDictUnificator.get(OrePrefixes.plate, Materials.NaquadahAlloy, 8),
+                    GTOreDictUnificator.get(OrePrefixes.cableGt04, Materials.VanadiumGallium, 4),
+                    Quantum_Incorporation_Anchor.get(16),
+                    Quantum_Incorporation_Anchor.get(16),
+                    Network_Teleport_Anchor.get(16),
+                    Network_Teleport_Anchor.get(16))
+                .fluidInputs(MaterialsAlloy.INDALLOY_140.getFluidStack(1152), Materials.Lubricant.getFluid(1152))
+                .itemOutputs(
+                    (fluid ? GTSWNItemList.Matrix_Grouped_Fluid_Input_Mirror_ME
+                        : GTSWNItemList.Matrix_Grouped_Item_Input_Mirror_ME).get(1))
+                .duration(60 * 20)
+                .eut(TierEU.RECIPE_ZPM)
                 .addTo(AssemblyLine);
         }
     }

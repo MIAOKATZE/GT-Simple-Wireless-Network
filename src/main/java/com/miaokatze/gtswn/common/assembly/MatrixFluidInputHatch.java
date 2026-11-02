@@ -37,6 +37,7 @@ import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
+import gregtech.api.interfaces.IDataCopyable;
 import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
@@ -45,37 +46,44 @@ import io.netty.buffer.ByteBuf;
 
 /** One physical native fluid input, with container and pipe IO sealed. */
 @IMetaTileEntity.SkipGenerateDescription
-public final class MatrixFluidInputHatch extends MTEHatchInput
-    implements MatrixAssemblyMember, IGridProxyable, ICraftingProvider, IPowerChannelState, IInterfaceViewable {
+public final class MatrixFluidInputHatch extends MTEHatchInput implements MatrixAssemblyMember, IGridProxyable,
+    ICraftingProvider, IPowerChannelState, IInterfaceViewable, IDataCopyable {
 
     private final MatrixAssemblyPort matrix = new MatrixAssemblyPort(this);
     private final IInventory interfacePatterns = new MatrixPatternInventoryAdapter(matrix);
+    private final boolean mirror;
     private final com.gtnewhorizons.modularui.common.fluid.FluidStackTank sealedTank = new com.gtnewhorizons.modularui.common.fluid.FluidStackTank(
         () -> null,
         fluid -> {},
         0);
 
     public MatrixFluidInputHatch(int id, String name, String localName) {
-        super(id, 0, name, localName, 6);
+        this(id, name, localName, false);
     }
 
-    private MatrixFluidInputHatch(String name, String[] description, ITexture[][][] textures) {
+    public MatrixFluidInputHatch(int id, String name, String localName, boolean mirror) {
+        super(id, 0, name, localName, 6);
+        this.mirror = mirror;
+    }
+
+    private MatrixFluidInputHatch(String name, String[] description, ITexture[][][] textures, boolean mirror) {
         super(name, 0, 6, description, textures);
+        this.mirror = mirror;
     }
 
     @Override
     public MatrixFluidInputHatch newMetaEntity(IGregTechTileEntity tile) {
-        return new MatrixFluidInputHatch(mName, mDescriptionArray, mTextures);
+        return new MatrixFluidInputHatch(mName, mDescriptionArray, mTextures, mirror);
     }
 
     @Override
     public String getLocalName() {
-        return StatCollector.translateToLocal("gtswn.matrix.fluid.name");
+        return StatCollector.translateToLocal(mirror ? "gtswn.matrix.fluid.mirror.name" : "gtswn.matrix.fluid.name");
     }
 
     @Override
     public String[] getDescription() {
-        return MatrixAssemblyUi.description(true);
+        return MatrixAssemblyUi.description(true, mirror);
     }
 
     @Override
@@ -104,6 +112,21 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
     }
 
     @Override
+    public boolean matrixMirror() {
+        return mirror;
+    }
+
+    @Override
+    public ItemStack[] matrixNativeItems() {
+        return new ItemStack[0];
+    }
+
+    @Override
+    public FluidStack matrixNativeFluid() {
+        return mFluid;
+    }
+
+    @Override
     public ItemStack matrixItem() {
         return null;
     }
@@ -125,7 +148,8 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public FluidStack getFillableStack() {
-        return matrix.permitsInputAccess() ? mFluid : null;
+        return matrix.permitsInputAccess() ? matrix.inputMember()
+            .matrixNativeFluid() : null;
     }
 
     @Override
@@ -140,12 +164,14 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public int getFluidAmount() {
-        return getFillableStack() == null ? 0 : mFluid.amount;
+        FluidStack stored = getFillableStack();
+        return stored == null ? 0 : stored.amount;
     }
 
     @Override
     public FluidStack setFillableStack(FluidStack fluid) {
-        if (matrix.permitsInputAccess()) mFluid = fluid;
+        if (matrix.permitsInputAccess()) matrix.inputMember()
+            .matrixSetFluid(fluid);
         return getFillableStack();
     }
 
@@ -161,12 +187,18 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public FluidStack drain(int amount, boolean doDrain) {
-        if (amount <= 0 || !matrix.permitsInputAccess() || mFluid == null) return null;
-        FluidStack removed = mFluid.copy();
-        removed.amount = Math.min(amount, mFluid.amount);
+        if (amount <= 0) return null;
+        FluidStack stored = getFillableStack();
+        if (stored == null) return null;
+        FluidStack removed = stored.copy();
+        removed.amount = Math.min(amount, stored.amount);
         if (doDrain) {
-            mFluid.amount -= removed.amount;
-            updateSlots();
+            stored.amount -= removed.amount;
+            if (stored.amount <= 0) matrix.inputMember()
+                .matrixSetFluid(null);
+            matrix.inputMember()
+                .matrixPort()
+                .changed();
             matrix.changed();
         }
         return removed;
@@ -179,7 +211,8 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public FluidStack drain(ForgeDirection side, FluidStack fluid, boolean doDrain) {
-        if (side != ForgeDirection.UNKNOWN || fluid == null || mFluid == null || !mFluid.isFluidEqual(fluid))
+        FluidStack stored = getFillableStack();
+        if (side != ForgeDirection.UNKNOWN || fluid == null || stored == null || !stored.isFluidEqual(fluid))
             return null;
         return drain(fluid.amount, doDrain);
     }
@@ -374,7 +407,8 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public IGridNode getGridNode(ForgeDirection side) {
-        return matrix.node();
+        return matrix.group() != null && matrix.group()
+            .isMirror() ? null : matrix.node();
     }
 
     @Override
@@ -409,8 +443,11 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
 
     @Override
     public boolean shouldDisplay() {
-        return matrix.group() != null && matrix.group()
-            .master() == this;
+        return !mirror && matrix.group() != null
+            && !matrix.group()
+                .isMirror()
+            && matrix.group()
+                .master() == this;
     }
 
     @Override
@@ -470,5 +507,20 @@ public final class MatrixFluidInputHatch extends MTEHatchInput
     @Override
     public boolean isBusy() {
         return matrix.busy();
+    }
+
+    @Override
+    public String getCopiedDataIdentifier(EntityPlayer player) {
+        return MatrixMirrorLink.DATA_TYPE;
+    }
+
+    @Override
+    public NBTTagCompound getCopiedData(EntityPlayer player) {
+        return matrix.copySource();
+    }
+
+    @Override
+    public boolean pasteCopiedData(EntityPlayer player, NBTTagCompound nbt) {
+        return matrix.bindMirror(nbt);
     }
 }

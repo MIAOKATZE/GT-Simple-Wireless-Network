@@ -7,12 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
-import net.minecraftforge.fluids.FluidStack;
 
 import com.miaokatze.gtswn.config.Config;
 
@@ -22,8 +20,6 @@ import cpw.mods.fml.common.gameevent.TickEvent;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.interfaces.tileentity.IMachineProgress;
-import gregtech.api.metatileentity.implementations.MTEBasicMachine;
-import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
 
 /**
  * Bounded server sampling of active terminal bindings. Actual energy is attributed to controller calls,
@@ -52,15 +48,6 @@ public class DeviceSampleScheduler {
 
     /** 每 tick 采样排水预算（台） */
     private static final int PER_TICK_BUDGET = 100;
-
-    /** 单侧配方快照字符串总长封顶（字符，输入/输出各自封顶） */
-    private static final int RECIPE_STR_CAP = 120;
-
-    /** 单侧配方快照条目数上限（超过 8 项服务端截断，GUI 侧另有 ellipsis 兜底） */
-    private static final int RECIPE_SIDE_MAX_ITEMS = 8;
-
-    /** 单项显示名长度封顶（字符，截断后再拼 xN/nL 后缀） */
-    private static final int RECIPE_PART_NAME_CAP = 24;
 
     /** 采样工作队列（去重；仅服务端主线程访问） */
     private final LinkedHashSet<String> workQueue = new LinkedHashSet<>();
@@ -290,10 +277,8 @@ public class DeviceSampleScheduler {
             byte powerType = isGenerator ? DeviceTerminalDataStore.POWER_TYPE_GENERATE
                 : DeviceTerminalDataStore.POWER_TYPE_CONSUME;
             int metaTileId = gtTE.getMetaTileID();
-            byte linkNodeType = DeviceMachineIdentity.linkNodeType(mte);
+            byte linkNodeType = DeviceMachineIdentity.linkNodeType(mte, linkTargets);
             String localName = mte.getLocalName();
-            String recipeIn = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeInputSnapshot(mte) : "";
-            String recipeOut = state == DeviceTerminalDataStore.STATE_RUNNING ? buildRecipeOutputSnapshot(mte) : "";
             // 分发到含该键的所有活跃终端
             for (Map.Entry<UUID, DeviceTerminalDataStore.TerminalData> entry : activeTerminals) {
                 DeviceTerminalDataStore.TerminalData data = entry.getValue();
@@ -384,8 +369,9 @@ public class DeviceSampleScheduler {
                     pos[2],
                     pos[3],
                     localName,
-                    recipeIn,
-                    recipeOut,
+                    // Retain the saved/wire fields, clearing old summaries without visiting recipe outputs or names.
+                    "",
+                    "",
                     nextCapabilities)) data.version++;
                 com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(overworld)
                     .sampled(entry.getKey(), overworld.getTotalWorldTime());
@@ -427,72 +413,5 @@ public class DeviceSampleScheduler {
 
     private static long absEut(long signed) {
         return signed == Long.MIN_VALUE ? Long.MAX_VALUE : Math.abs(signed);
-    }
-
-    private static String buildRecipeInputSnapshot(IMetaTileEntity mte) {
-        return "";
-    }
-
-    /**
-     * 输出侧快照（近似）：mOutputItems / mOutputFluids 拼「显示名 xN|显示名 nL|...」式描述，
-     * display name 取值，单项名封 {@value #RECIPE_PART_NAME_CAP} 字符、单侧条目数封
-     * {@value #RECIPE_SIDE_MAX_ITEMS} 项、总长封顶 {@value #RECIPE_STR_CAP} 字符（超限截断）；
-     * 空输出返回空串。
-     */
-    private static String buildRecipeOutputSnapshot(IMetaTileEntity mte) {
-        StringBuilder sb = new StringBuilder();
-        ItemStack[] outputItems = null;
-        FluidStack[] outputFluids = null;
-        if (mte instanceof MTEBasicMachine) {
-            outputItems = ((MTEBasicMachine) mte).mOutputItems;
-        } else if (mte instanceof MTEMultiBlockBase) {
-            outputItems = ((MTEMultiBlockBase) mte).mOutputItems;
-            outputFluids = ((MTEMultiBlockBase) mte).mOutputFluids;
-        }
-        int count = 0;
-        if (outputItems != null) {
-            for (ItemStack stack : outputItems) {
-                if (stack == null || stack.getItem() == null || stack.stackSize <= 0) {
-                    continue;
-                }
-                appendPart(sb, capName(stack.getDisplayName()) + " x" + stack.stackSize);
-                if (++count >= RECIPE_SIDE_MAX_ITEMS) {
-                    return capTotal(sb);
-                }
-            }
-        }
-        if (outputFluids != null) {
-            for (FluidStack fluid : outputFluids) {
-                if (fluid == null || fluid.getFluid() == null || fluid.amount <= 0) {
-                    continue;
-                }
-                appendPart(sb, capName(fluid.getLocalizedName()) + " " + fluid.amount + "L");
-                if (++count >= RECIPE_SIDE_MAX_ITEMS) {
-                    return capTotal(sb);
-                }
-            }
-        }
-        return capTotal(sb);
-    }
-
-    /** 追加片段（"|" 分隔，v1.7.2 双侧序列化格式），超条目数上限后由调用方截断停止 */
-    private static void appendPart(StringBuilder sb, String part) {
-        if (sb.length() > 0) {
-            sb.append('|');
-        }
-        sb.append(part);
-    }
-
-    /** 单项显示名截断（null 安全） */
-    private static String capName(String name) {
-        if (name == null) {
-            return "";
-        }
-        return name.length() > RECIPE_PART_NAME_CAP ? name.substring(0, RECIPE_PART_NAME_CAP) : name;
-    }
-
-    /** 单侧总长封顶截断 */
-    private static String capTotal(StringBuilder sb) {
-        return sb.length() > RECIPE_STR_CAP ? sb.substring(0, RECIPE_STR_CAP) : sb.toString();
     }
 }

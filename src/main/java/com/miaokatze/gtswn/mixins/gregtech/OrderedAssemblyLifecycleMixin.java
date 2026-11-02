@@ -88,6 +88,28 @@ public abstract class OrderedAssemblyLifecycleMixin {
         }
     }
 
+    @Unique
+    private void gtswn$notifyOrdinary(boolean started, String failure) {
+        if (gtswn$previousMatrixInputs.isEmpty()) return;
+        MTEMultiBlockBase controller = (MTEMultiBlockBase) (Object) this;
+        if (gtswn$nativeSession() != null) return;
+        java.util.Set<OrderedAssemblyGroup> groups = java.util.Collections
+            .newSetFromMap(new java.util.IdentityHashMap<>());
+        for (MatrixAssemblyMember member : gtswn$previousMatrixInputs) {
+            OrderedAssemblyGroup group = member.matrixPort()
+                .group();
+            if (group != null && groups.add(group)) {
+                if (started) group.ordinaryStarted(controller);
+                else group.ordinaryFinished(controller, failure);
+            }
+        }
+    }
+
+    @Inject(method = "checkRecipe()Z", at = @At("RETURN"), require = 1, expect = 1, allow = 1)
+    private void gtswn$observeOrdinaryStart(CallbackInfoReturnable<Boolean> cir) {
+        if (cir.getReturnValueZ()) gtswn$notifyOrdinary(true, "");
+    }
+
     @Inject(
         method = "runMachine(Lgregtech/api/interfaces/tileentity/IGregTechTileEntity;J)V",
         at = @At("HEAD"),
@@ -140,6 +162,7 @@ public abstract class OrderedAssemblyLifecycleMixin {
     private void gtswn$observeCompletion(IGregTechTileEntity tile, long tick, CallbackInfo ci) {
         NativeAssemblySession session = gtswn$nativeSession();
         if (session != null) session.nativeFinished();
+        else gtswn$notifyOrdinary(false, "");
     }
 
     @Inject(
@@ -151,6 +174,7 @@ public abstract class OrderedAssemblyLifecycleMixin {
     private void gtswn$observeStop(ShutDownReason reason, CallbackInfo ci) {
         NativeAssemblySession session = gtswn$nativeSession();
         if (session != null) session.nativeStopped(reason.getID());
+        else gtswn$notifyOrdinary(false, reason.getID());
     }
 
     @Inject(

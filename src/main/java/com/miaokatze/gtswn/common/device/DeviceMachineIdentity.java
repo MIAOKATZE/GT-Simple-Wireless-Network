@@ -53,6 +53,17 @@ public final class DeviceMachineIdentity {
         return (byte) flags;
     }
 
+    /** Reuse this observation's validated hatch list; native exotic-list getters allocate and filter. */
+    static byte linkNodeType(IMetaTileEntity controller, DeviceLinkTargets.Discovery discovery) {
+        if (discovery.summary.state == DeviceLinkSummary.UNKNOWN) return linkNodeType(controller);
+        int result = flags(controller.getBaseMetaTileEntity());
+        for (DeviceLinkTargets.Target target : discovery.targets) {
+            if (target.machine != controller) result |= flags(target.tile);
+            if (result == 3) break;
+        }
+        return (byte) result;
+    }
+
     private static int hatchFlags(Object hatches) {
         int result = 0;
         if (hatches instanceof Iterable<?>) {

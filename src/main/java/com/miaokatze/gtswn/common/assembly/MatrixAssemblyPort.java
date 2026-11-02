@@ -46,6 +46,7 @@ public final class MatrixAssemblyPort {
     private int connectionMask;
     private NBTTagCompound restoredLedger;
     private boolean dropped;
+    private MatrixMirrorLink mirrorLink;
 
     public MatrixAssemblyPort(MatrixAssemblyMember member) {
         this.member = member;
@@ -86,7 +87,8 @@ public final class MatrixAssemblyPort {
             proxy.readFromNBT(nodeData);
         }
         getProxy().setFlags(nextMaster ? new GridFlags[] { GridFlags.REQUIRE_CHANNEL } : new GridFlags[0]);
-        if (rebuild) getProxy().onReady();
+        refreshConnectionSides();
+        if (rebuild && !member.matrixMirror()) getProxy().onReady();
     }
 
     public AENetworkProxy getProxy() {
@@ -96,18 +98,14 @@ public final class MatrixAssemblyPort {
                 "matrixProxy",
                 ((IMetaTileEntity) member).getStackForm(1),
                 true);
-            proxy.setValidSides(
-                connectionSides(
-                    member.getBaseMetaTileEntity()
-                        .getFrontFacing(),
-                    connectionMask));
+            proxy.setValidSides(validSides());
             proxy.setIdlePowerUsage(1.0);
         }
         return proxy;
     }
 
     public IGridNode node() {
-        return getProxy().getNode();
+        return member.matrixMirror() ? null : getProxy().getNode();
     }
 
     public DimensionalCoord location() {
@@ -115,7 +113,7 @@ public final class MatrixAssemblyPort {
     }
 
     public void ready() {
-        getProxy().onReady();
+        if (!member.matrixMirror()) getProxy().onReady();
         OrderedAssemblyGroup.refreshTopology(member);
     }
 
@@ -129,6 +127,7 @@ public final class MatrixAssemblyPort {
     }
 
     public void changed() {
+        if (group != null) group.memberChanged();
         member.getBaseMetaTileEntity()
             .markDirty();
         patternChange = true;
@@ -142,12 +141,12 @@ public final class MatrixAssemblyPort {
     public void tick(long tick) {
         OrderedAssemblyGroup.topologyTick(member, tick);
         if (group != null && group.master() == member) group.tick();
-        boolean active = getProxy().isActive();
+        boolean active = !member.matrixMirror() && getProxy().isActive();
         if (active != wasActive) {
             wasActive = active;
             patternChange = true;
         }
-        if (patternChange && tick % 10 == 0 && getProxy().isReady()) {
+        if (patternChange && !member.matrixMirror() && tick % 10 == 0 && getProxy().isReady()) {
             try {
                 getProxy().getGrid()
                     .postEvent(new MENetworkCraftingPatternChange((ICraftingProvider) member, node()));
@@ -159,11 +158,15 @@ public final class MatrixAssemblyPort {
     }
 
     public boolean busy() {
-        return group == null || group.master() != member || !getProxy().isActive() || !group.accepting();
+        return group == null || group.isMirror()
+            || group.master() != member
+            || !getProxy().isActive()
+            || !group.accepting();
     }
 
     public void provideCrafting(ICraftingProviderHelper helper) {
-        if (group != null && group.master() == member && getProxy().isActive()) group.provideCrafting(helper);
+        if (group != null && !group.isMirror() && group.master() == member && getProxy().isActive())
+            group.provideCrafting(helper);
     }
 
     public boolean pushPattern(ICraftingPatternDetails details, InventoryCrafting table) {
@@ -173,6 +176,48 @@ public final class MatrixAssemblyPort {
     boolean permitsInputAccess() {
         return group != null && (NativeAssemblyAdapter.permitsNativeAccess(member) ? group.permitsMachineWork()
             : group.permitsOrdinaryInput());
+    }
+
+    MatrixAssemblyMember inputMember() {
+        return group == null ? member : group.materialMember(member);
+    }
+
+    public NBTTagCompound copySource() {
+        OrderedAssemblyGroup.refreshTopology(member);
+        if (member.matrixMirror()) return mirrorLink == null ? null : mirrorLink.save();
+        return group != null && !group.isMirror() && group.editable() ? MatrixMirrorLink.copy(member, group) : null;
+    }
+
+    public boolean bindMirror(NBTTagCompound data) {
+        if (!member.matrixMirror() || data == null) return false;
+        OrderedAssemblyGroup.refreshTopology(member);
+        if (group == null || !group.canChangeMirror()) return false;
+        try {
+            MatrixMirrorLink next = new MatrixMirrorLink(data);
+            OrderedAssemblyGroup source = next.source(
+                member.getBaseMetaTileEntity()
+                    .getWorld());
+            if (source == null || source == group || !source.editable() || next.mapping(source, group, member) == null)
+                return false;
+            mirrorLink = next;
+            group.mirrorChanged();
+            changed();
+            return true;
+        } catch (IllegalArgumentException rejected) {
+            return false;
+        }
+    }
+
+    MatrixMirrorLink mirrorLink() {
+        return mirrorLink;
+    }
+
+    public boolean clearMirror() {
+        if (!member.matrixMirror() || group == null || !group.canChangeMirror()) return false;
+        mirrorLink = null;
+        group.mirrorChanged();
+        changed();
+        return true;
     }
 
     public int connectionMask() {
@@ -200,6 +245,7 @@ public final class MatrixAssemblyPort {
     }
 
     public AECableType cableType(ForgeDirection side) {
+        if (member.matrixMirror() || group != null && group.isMirror()) return AECableType.NONE;
         return connectionSides(
             member.getBaseMetaTileEntity()
                 .getFrontFacing(),
@@ -212,13 +258,17 @@ public final class MatrixAssemblyPort {
         refreshConnectionSides();
     }
 
-    private void refreshConnectionSides() {
+    void refreshConnectionSides() {
         if (proxy == null) return;
-        proxy.setValidSides(
-            connectionSides(
+        proxy.setValidSides(validSides());
+    }
+
+    private EnumSet<ForgeDirection> validSides() {
+        return member.matrixMirror() || group != null && group.isMirror() ? EnumSet.noneOf(ForgeDirection.class)
+            : connectionSides(
                 member.getBaseMetaTileEntity()
                     .getFrontFacing(),
-                connectionMask));
+                connectionMask);
     }
 
     public void open(EntityPlayer player) {
@@ -229,7 +279,8 @@ public final class MatrixAssemblyPort {
     }
 
     public boolean canDismantle() {
-        if (quarantined() || group != null && !group.editable()) return false;
+        if (quarantined() || group != null && !(group.isMirror() ? group.canChangeMirror() : group.editable()))
+            return false;
         if (member.matrixItem() != null || member.matrixFluidStack() != null) return false;
         for (int i = 0; i < MatrixPatternInventory.SIZE; i++) if (patterns.getStackInSlot(i) != null) return false;
         return true;
@@ -282,6 +333,7 @@ public final class MatrixAssemblyPort {
     public void load(NBTTagCompound root) {
         preservedRoot = (NBTTagCompound) root.copy();
         restoredLedger = null;
+        mirrorLink = null;
         fault = "";
         if (root.hasKey("gtswnMatrix") && !root.hasKey("gtswnMatrix", 10)) {
             fault = "unknown_schema";
@@ -312,6 +364,10 @@ public final class MatrixAssemblyPort {
                 }
                 if (data.hasKey("fault") && !data.hasKey("fault", 8)) throw new IllegalArgumentException("fault_type");
                 fault = data.getString("fault");
+                if (data.hasKey("mirror")) {
+                    if (!member.matrixMirror()) throw new IllegalArgumentException("wrong_member_role");
+                    mirrorLink = new MatrixMirrorLink(requireCompound(data, "mirror"));
+                }
             }
             if (member.matrixFluid()) member.matrixSetFluid(fluid);
             else member.matrixSetItem(item);
@@ -339,6 +395,7 @@ public final class MatrixAssemblyPort {
         data.setString("member", memberId.toString());
         data.setString("fault", fault);
         data.setTag("patterns", patterns.save());
+        if (mirrorLink != null) data.setTag("mirror", mirrorLink.save());
         ItemStack item = member.matrixItem();
         if (item != null) data.setTag("item", saveItem(item));
         // Retire the legacy view rather than leaving a second stale source on a reused NBT root.

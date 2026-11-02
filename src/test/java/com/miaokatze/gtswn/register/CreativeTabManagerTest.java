@@ -30,7 +30,8 @@ public class CreativeTabManagerTest {
         GTSWNItemList.Network_Info_Panel, GTSWNItemList.Network_Info_Panel_Extender,
         GTSWNItemList.ME_Network_Quantum_Node, GTSWNItemList.Quantum_Incorporation_Anchor,
         GTSWNItemList.Network_Teleport_Anchor, GTSWNItemList.Matrix_Grouped_Item_Input_ME,
-        GTSWNItemList.Matrix_Grouped_Fluid_Input_ME, GTSWNItemList.TestCoin };
+        GTSWNItemList.Matrix_Grouped_Fluid_Input_ME, GTSWNItemList.Matrix_Grouped_Item_Input_Mirror_ME,
+        GTSWNItemList.Matrix_Grouped_Fluid_Input_Mirror_ME, GTSWNItemList.TestCoin };
 
     private final List<ItemStack> savedItems = new ArrayList<>();
     private final ItemStack[] savedStacks = new ItemStack[GTSWNItemList.values().length];

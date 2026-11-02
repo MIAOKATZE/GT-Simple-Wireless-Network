@@ -37,6 +37,7 @@ import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
+import gregtech.api.interfaces.IDataCopyable;
 import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
@@ -45,37 +46,44 @@ import io.netty.buffer.ByteBuf;
 
 /** One physical ordered item position; machines consume the normal input inventory. */
 @IMetaTileEntity.SkipGenerateDescription
-public final class MatrixItemInputBus extends MTEHatchInputBus
-    implements MatrixAssemblyMember, IGridProxyable, ICraftingProvider, IPowerChannelState, IInterfaceViewable {
+public final class MatrixItemInputBus extends MTEHatchInputBus implements MatrixAssemblyMember, IGridProxyable,
+    ICraftingProvider, IPowerChannelState, IInterfaceViewable, IDataCopyable {
 
     private final MatrixAssemblyPort matrix = new MatrixAssemblyPort(this);
     private final IInventory interfacePatterns = new MatrixPatternInventoryAdapter(matrix);
+    private final boolean mirror;
 
     public MatrixItemInputBus(int id, String name, String localName) {
+        this(id, name, localName, false);
+    }
+
+    public MatrixItemInputBus(int id, String name, String localName, boolean mirror) {
         super(id, name, localName, 6, 1);
+        this.mirror = mirror;
         inventoryHandler.setSize(0);
         disableSort = true;
     }
 
-    private MatrixItemInputBus(String name, String[] description, ITexture[][][] textures) {
+    private MatrixItemInputBus(String name, String[] description, ITexture[][][] textures, boolean mirror) {
         super(name, 6, 1, description, textures);
+        this.mirror = mirror;
         inventoryHandler.setSize(0);
         disableSort = true;
     }
 
     @Override
     public MatrixItemInputBus newMetaEntity(IGregTechTileEntity tile) {
-        return new MatrixItemInputBus(mName, mDescriptionArray, mTextures);
+        return new MatrixItemInputBus(mName, mDescriptionArray, mTextures, mirror);
     }
 
     @Override
     public String getLocalName() {
-        return StatCollector.translateToLocal("gtswn.matrix.item.name");
+        return StatCollector.translateToLocal(mirror ? "gtswn.matrix.item.mirror.name" : "gtswn.matrix.item.name");
     }
 
     @Override
     public String[] getDescription() {
-        return MatrixAssemblyUi.description(false);
+        return MatrixAssemblyUi.description(false, mirror);
     }
 
     @Override
@@ -104,6 +112,21 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
     }
 
     @Override
+    public boolean matrixMirror() {
+        return mirror;
+    }
+
+    @Override
+    public ItemStack[] matrixNativeItems() {
+        return mInventory;
+    }
+
+    @Override
+    public FluidStack matrixNativeFluid() {
+        return null;
+    }
+
+    @Override
     public ItemStack matrixItem() {
         return mInventory[0] == null ? null : mInventory[0].copy();
     }
@@ -125,29 +148,38 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
 
     @Override
     public ItemStack getFirstStack() {
-        return matrix.permitsInputAccess() ? mInventory[0] : null;
+        return matrix.permitsInputAccess() ? matrix.inputMember()
+            .matrixNativeItems()[0] : null;
     }
 
     @Override
     public ItemStack getStackInSlot(int slot) {
-        return slot == 0 && matrix.permitsInputAccess() ? mInventory[0] : null;
+        return slot == 0 ? getFirstStack() : null;
     }
 
     @Override
     public ItemStack[] getRealInventory() {
-        return matrix.permitsInputAccess() ? mInventory : new ItemStack[0];
+        return matrix.permitsInputAccess() ? matrix.inputMember()
+            .matrixNativeItems() : new ItemStack[0];
     }
 
     @Override
     public void setInventorySlotContents(int slot, ItemStack stack) {
-        if (slot == 0 && matrix.permitsInputAccess()) mInventory[0] = stack;
+        if (slot == 0 && matrix.permitsInputAccess()) matrix.inputMember()
+            .matrixSetItem(stack);
     }
 
     @Override
     public ItemStack decrStackSize(int slot, int amount) {
-        if (slot != 0 || amount <= 0 || !matrix.permitsInputAccess() || mInventory[0] == null) return null;
-        ItemStack removed = mInventory[0].splitStack(Math.min(amount, mInventory[0].stackSize));
-        updateSlots();
+        if (slot != 0 || amount <= 0) return null;
+        ItemStack stored = getFirstStack();
+        if (stored == null) return null;
+        ItemStack removed = stored.splitStack(Math.min(amount, stored.stackSize));
+        if (stored.stackSize <= 0) matrix.inputMember()
+            .matrixSetItem(null);
+        matrix.inputMember()
+            .matrixPort()
+            .changed();
         matrix.changed();
         return removed;
     }
@@ -311,7 +343,8 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
 
     @Override
     public IGridNode getGridNode(ForgeDirection side) {
-        return matrix.node();
+        return matrix.group() != null && matrix.group()
+            .isMirror() ? null : matrix.node();
     }
 
     @Override
@@ -346,8 +379,11 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
 
     @Override
     public boolean shouldDisplay() {
-        return matrix.group() != null && matrix.group()
-            .master() == this;
+        return !mirror && matrix.group() != null
+            && !matrix.group()
+                .isMirror()
+            && matrix.group()
+                .master() == this;
     }
 
     @Override
@@ -407,5 +443,20 @@ public final class MatrixItemInputBus extends MTEHatchInputBus
     @Override
     public boolean isBusy() {
         return matrix.busy();
+    }
+
+    @Override
+    public String getCopiedDataIdentifier(EntityPlayer player) {
+        return MatrixMirrorLink.DATA_TYPE;
+    }
+
+    @Override
+    public NBTTagCompound getCopiedData(EntityPlayer player) {
+        return matrix.copySource();
+    }
+
+    @Override
+    public boolean pasteCopiedData(EntityPlayer player, NBTTagCompound nbt) {
+        return matrix.bindMirror(nbt);
     }
 }

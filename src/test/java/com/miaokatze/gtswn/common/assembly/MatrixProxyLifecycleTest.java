@@ -6,14 +6,17 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.util.Collections;
 import java.util.EnumSet;
+import java.util.HashMap;
 
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraftforge.common.util.ForgeDirection;
 
 import org.junit.Test;
 
 import appeng.api.networking.GridFlags;
 import appeng.api.networking.IGridNode;
 import appeng.me.helpers.AENetworkProxy;
+import gregtech.api.metatileentity.BaseMetaTileEntity;
 
 public class MatrixProxyLifecycleTest {
 
@@ -112,7 +115,11 @@ public class MatrixProxyLifecycleTest {
         return (MatrixAssemblyMember) Proxy.newProxyInstance(
             MatrixAssemblyMember.class.getClassLoader(),
             new Class<?>[] { MatrixAssemblyMember.class },
-            (proxy, method, args) -> { throw new AssertionError(method); });
+            (proxy, method, args) -> {
+                if (method.getName()
+                    .equals("matrixMirror")) return false;
+                throw new AssertionError(method);
+            });
     }
 
     private static OrderedAssemblyGroup group(MatrixAssemblyMember master) throws Exception {
@@ -121,6 +128,9 @@ public class MatrixProxyLifecycleTest {
         OrderedAssemblyGroup group = (OrderedAssemblyGroup) ((sun.misc.Unsafe) singleton.get(null))
             .allocateInstance(OrderedAssemblyGroup.class);
         field(OrderedAssemblyGroup.class, "items").set(group, Collections.singletonList(master));
+        field(OrderedAssemblyGroup.class, "members").set(group, Collections.singletonList(master));
+        field(OrderedAssemblyGroup.class, "sharedRuns").set(group, new HashMap<>());
+        field(OrderedAssemblyGroup.class, "sharedFailure").set(group, "");
         field(OrderedAssemblyGroup.class, "master").set(group, master);
         return group;
     }
@@ -139,12 +149,20 @@ public class MatrixProxyLifecycleTest {
 
         Fixture() throws Exception {
             MatrixAssemblyPort[] holder = new MatrixAssemblyPort[1];
+            Field singleton = field(sun.misc.Unsafe.class, "theUnsafe");
+            BaseMetaTileEntity tile = (BaseMetaTileEntity) ((sun.misc.Unsafe) singleton.get(null))
+                .allocateInstance(BaseMetaTileEntity.class);
+            field(BaseMetaTileEntity.class, "mFacing").set(tile, ForgeDirection.NORTH);
             member = (MatrixAssemblyMember) Proxy.newProxyInstance(
                 MatrixAssemblyMember.class.getClassLoader(),
                 new Class<?>[] { MatrixAssemblyMember.class },
                 (proxy, method, args) -> {
                     if (method.getName()
                         .equals("matrixPort")) return holder[0];
+                    if (method.getName()
+                        .equals("matrixMirror")) return false;
+                    if (method.getName()
+                        .equals("getBaseMetaTileEntity")) return tile;
                     throw new AssertionError(method);
                 });
             port = new MatrixAssemblyPort(member);
@@ -205,6 +223,8 @@ public class MatrixProxyLifecycleTest {
                         return null;
                     case "destroy":
                         destroyed++;
+                        return null;
+                    case "updateState":
                         return null;
                     default:
                         throw new AssertionError(method);

@@ -30,7 +30,8 @@ public class CreativeTabManager {
         DISPLAYS(GTSWNItemList.Network_Info_Panel, GTSWNItemList.Network_Info_Panel_Extender),
         ME_QUANTUM(GTSWNItemList.ME_Network_Quantum_Node, GTSWNItemList.Quantum_Incorporation_Anchor,
             GTSWNItemList.Network_Teleport_Anchor),
-        ORDERED_INPUTS(GTSWNItemList.Matrix_Grouped_Item_Input_ME, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME),
+        ORDERED_INPUTS(GTSWNItemList.Matrix_Grouped_Item_Input_ME, GTSWNItemList.Matrix_Grouped_Fluid_Input_ME,
+            GTSWNItemList.Matrix_Grouped_Item_Input_Mirror_ME, GTSWNItemList.Matrix_Grouped_Fluid_Input_Mirror_ME),
         TESTING(GTSWNItemList.TestCoin);
 
         private final GTSWNItemList[] items;

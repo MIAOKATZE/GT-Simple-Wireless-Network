@@ -285,6 +285,16 @@ public class MatrixPersistenceTest {
         }
 
         @Override
+        public ItemStack[] matrixNativeItems() {
+            return new ItemStack[] { item };
+        }
+
+        @Override
+        public FluidStack matrixNativeFluid() {
+            return fluid;
+        }
+
+        @Override
         public ItemStack matrixItem() {
             return item == null ? null : item.copy();
         }

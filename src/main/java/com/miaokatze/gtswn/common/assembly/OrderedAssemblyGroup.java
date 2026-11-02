@@ -3,9 +3,11 @@ package com.miaokatze.gtswn.common.assembly;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -99,6 +101,16 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private long[] diagnosticItemConsumed = new long[0];
     private long[] diagnosticFluidConsumed = new long[0];
     private boolean diagnosticConsumptionObserved;
+    private OrderedAssemblyGroup mirrorSource;
+    private Map<MatrixAssemblyMember, MatrixAssemblyMember> mirrorMembers;
+    private String mirrorReason = "mirror_unbound";
+    private final Map<String, NBTTagCompound> sharedRuns = new HashMap<>();
+    private String sharedFailure = "";
+    private OrderedAssemblyGroup nativeOwner;
+    private final Set<OrderedAssemblyGroup> mirrorConsumers = java.util.Collections
+        .newSetFromMap(new IdentityHashMap<>());
+    private long mirrorCheckedTick = Long.MIN_VALUE;
+    private long mirrorSourceEpoch;
 
     private OrderedAssemblyGroup(List<MatrixAssemblyMember> items, List<MatrixAssemblyMember> fluids,
         MatrixAssemblyMember master, NBTTagCompound ledger) {
@@ -121,7 +133,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         group = caller.matrixPort()
             .group();
         if (group == null || group.master() != caller) return;
-        Set<RecipeAssemblyLine> authorized = new HashSet<>(group.authorizedRecipes());
+        Set<RecipeAssemblyLine> authorized = new HashSet<>(group.intakeAuthorizedRecipes());
         if (!group.observedAuthorizedRecipes.equals(authorized)) {
             group.observedAuthorizedRecipes.clear();
             group.observedAuthorizedRecipes.addAll(authorized);
@@ -193,6 +205,13 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             }
         }
         MatrixAssemblyMember master = null;
+        for (MatrixAssemblyMember member : found) if (member.matrixMirror()) {
+            if (master != null) {
+                for (OrderedAssemblyGroup old : previous) old.invalidate("mirror_multiple_anchors");
+                return;
+            }
+            master = member;
+        }
         for (MatrixAssemblyMember member : found) {
             NBTTagCompound saved = member.matrixPort()
                 .group() == null ? member.matrixPort()
@@ -371,12 +390,17 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         orderNativeInputs();
         if (checkNativeBinding()) nativeBound = true;
         else revokeNativeBinding();
+        boolean ownsRunningSession = isMirror() || sharedRuns.containsKey(nativeRunKey(next))
+            || stage == Stage.RUNNING && sharedRuns.isEmpty() && !genericInput;
         if (nativeBound && stage == Stage.RUNNING
+            && ownsRunningSession
             && (next.controller().mMaxProgresstime == 0 || nativeSequence != next.runSequence()
                 || !"RUNNING".equals(next.lastNativeEvent()))) {
             stage = Stage.NATIVE_ABORTED;
             reason = "restart_native_state_missing";
         }
+        if (nativeBound && stage == Stage.RUNNING && !isMirror() && sharedRuns.isEmpty() && !genericInput)
+            sharedRuns.put(nativeRunKey(next), nativeRun(next));
         if (nativeBound && (stage == Stage.IDLE || stage == Stage.STAGED || stage == Stage.RUNNING)) reason = "";
         dirty();
     }
@@ -444,6 +468,141 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public MatrixAssemblyMember master() {
         return master;
+    }
+
+    public boolean isMirror() {
+        for (MatrixAssemblyMember member : members) if (member.matrixMirror()) return true;
+        return false;
+    }
+
+    List<MatrixAssemblyMember> physicalMembers() {
+        return members;
+    }
+
+    boolean topologyValid() {
+        return verified && checkTopology();
+    }
+
+    boolean canChangeMirror() {
+        if (!verified || stage != Stage.IDLE || !allEmpty() || !sharedRuns.isEmpty()) return false;
+        for (MatrixAssemblyMember member : members) if (hasPatterns(member)) return false;
+        MatrixMirrorLink link = master.matrixPort()
+            .mirrorLink();
+        OrderedAssemblyGroup source = link == null ? null
+            : link.source(
+                master.getBaseMetaTileEntity()
+                    .getWorld());
+        // An unavailable old source may still own in-flight material. Keep its binding until it can be checked.
+        return link == null || source != null && source.editable();
+    }
+
+    void mirrorChanged() {
+        mirrorSource = null;
+        mirrorMembers = null;
+        epoch++;
+        for (MatrixAssemblyMember member : members) member.matrixPort()
+            .refreshConnectionSides();
+        dirty();
+    }
+
+    void memberChanged() {
+        mirrorCheckedTick = Long.MIN_VALUE;
+    }
+
+    public int[] mirrorSourcePosition() {
+        MatrixMirrorLink link = master.matrixPort()
+            .mirrorLink();
+        return link == null ? null : link.address();
+    }
+
+    private boolean refreshMirror() {
+        if (!isMirror()) return true;
+        long tick = master.getBaseMetaTileEntity()
+            .getWorld()
+            .getTotalWorldTime();
+        if (mirrorCheckedTick == tick && verified
+            && !networkDirty
+            && mirrorSource != null
+            && mirrorSource.verified
+            && !mirrorSource.networkDirty
+            && mirrorSource.epoch == mirrorSourceEpoch
+            && isPresent(mirrorSource.master)) return true;
+        mirrorMembers = null;
+        mirrorSource = null;
+        if (!verified || !checkTopology()) return false;
+        refreshNetwork();
+        if (externalConnections != 0) {
+            mirrorReason = "mirror_external_connection";
+            return false;
+        }
+        if (!allEmpty()) {
+            mirrorReason = "mirror_local_materials";
+            return false;
+        }
+        for (MatrixAssemblyMember member : members) if (hasPatterns(member)) {
+            mirrorReason = "mirror_local_patterns";
+            return false;
+        }
+        MatrixMirrorLink link = master.matrixPort()
+            .mirrorLink();
+        if (link == null) {
+            mirrorReason = "mirror_unbound";
+            return false;
+        }
+        OrderedAssemblyGroup source = link.source(
+            master.getBaseMetaTileEntity()
+                .getWorld());
+        if (source == null || source == this) {
+            mirrorReason = "mirror_source_unavailable";
+            return false;
+        }
+        Map<MatrixAssemblyMember, MatrixAssemblyMember> mapping = link.mapping(source, this, master);
+        if (mapping == null) {
+            mirrorReason = "mirror_layout_mismatch";
+            return false;
+        }
+        mirrorSource = source;
+        mirrorMembers = mapping;
+        if (source.mirrorConsumers.add(this)) source.dirty();
+        source.refreshNetwork();
+        // The intake's ME-origin ordering is the one recipe ordering at every destination.
+        List<MatrixAssemblyMember> nextItems = mappedOrder(source.items, mapping);
+        List<MatrixAssemblyMember> nextFluids = mappedOrder(source.fluids, mapping);
+        if (!items.equals(nextItems) || !fluids.equals(nextFluids)) {
+            items.clear();
+            items.addAll(nextItems);
+            fluids.clear();
+            fluids.addAll(nextFluids);
+            rememberMembers();
+            if (nativeBound) orderNativeInputs();
+            dirty();
+        }
+        mirrorReason = "";
+        mirrorSourceEpoch = source.epoch;
+        mirrorCheckedTick = tick;
+        return true;
+    }
+
+    private static List<MatrixAssemblyMember> mappedOrder(List<MatrixAssemblyMember> source,
+        Map<MatrixAssemblyMember, MatrixAssemblyMember> mapping) {
+        List<MatrixAssemblyMember> result = new ArrayList<>();
+        for (MatrixAssemblyMember original : source)
+            for (Map.Entry<MatrixAssemblyMember, MatrixAssemblyMember> entry : mapping.entrySet())
+                if (entry.getValue() == original) result.add(entry.getKey());
+        return result;
+    }
+
+    MatrixAssemblyMember materialMember(MatrixAssemblyMember member) {
+        return isMirror() ? mirrorMembers == null ? null : mirrorMembers.get(member) : member;
+    }
+
+    public MatrixAssemblyMember diagnosticMaterialMember(MatrixAssemblyMember member) {
+        if (isMirror() && !refreshMirror()) return member;
+        return materialMember(member);
+    }
+
+    MatrixAssemblyMember patternOwner() {
+        return isMirror() && refreshMirror() ? mirrorSource.master : master;
     }
 
     public int externalConnectionCount() {
@@ -570,6 +729,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     void networkChanged() {
         networkDirty = true;
+        mirrorCheckedTick = Long.MIN_VALUE;
     }
 
     /** A missing/ambiguous connection pauses existing native progress as well as future intake and consumption. */
@@ -583,12 +743,64 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             || !inputController.mMachine
             || !inputController.mInputBusses.containsAll(items)
             || !inputController.mInputHatches.containsAll(fluids)) return false;
+        if (isMirror()) return refreshMirror() && mirrorSource.supplyReady();
         refreshNetwork();
         return networkReason.isEmpty();
     }
 
     boolean permitsOrdinaryInput() {
-        return genericInput && !assemblyLineMode() && stage == Stage.STAGED && permitsMachineWork();
+        if (!permitsMachineWork() || assemblyLineMode()) return false;
+        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
+        return (owner.stage == Stage.STAGED || owner.stage == Stage.RUNNING) && owner.sharedFailure.isEmpty();
+    }
+
+    private boolean supplyReady() {
+        if (!verified || !checkTopology()
+            || refunding
+            || stage == Stage.QUARANTINED
+            || stage == Stage.REFUNDING
+            || stage == Stage.NATIVE_ABORTED) return false;
+        refreshNetwork();
+        return networkReason.isEmpty();
+    }
+
+    private boolean consumerReady() {
+        if (!permitsMachineWork()) return false;
+        if (!assemblyLineMode()) return true;
+        return session != null && nativeBound
+            && session.readyForPatternAdvertisement()
+            && checkNativeBinding()
+            && session.controller()
+                .getBaseMetaTileEntity()
+                .isAllowedToWork();
+    }
+
+    private List<OrderedAssemblyGroup> readyConsumers() {
+        List<OrderedAssemblyGroup> result = new ArrayList<>();
+        if (consumerReady()) result.add(this);
+        mirrorConsumers.removeIf(
+            consumer -> !isPresent(consumer.master) || consumer.master.matrixPort()
+                .group() != consumer);
+        for (OrderedAssemblyGroup consumer : mirrorConsumers)
+            if (consumer.refreshMirror() && consumer.mirrorSource == this && consumer.consumerReady())
+                result.add(consumer);
+        return result;
+    }
+
+    private List<RecipeAssemblyLine> intakeAuthorizedRecipes() {
+        List<RecipeAssemblyLine> result = new ArrayList<>();
+        if (isMirror()) return authorizedRecipes();
+        for (OrderedAssemblyGroup consumer : readyConsumers()) result.addAll(consumer.authorizedRecipes());
+        return result;
+    }
+
+    private AssemblyRecipeMatch intakeMatch(OrderedPatternLayout layout, OrderedPatternLayout.Payload payload) {
+        List<RecipeAssemblyLine> recipes = new ArrayList<>();
+        for (OrderedAssemblyGroup consumer : readyConsumers()) {
+            if (!consumer.assemblyLineMode()) return null;
+            recipes.addAll(consumer.authorizedRecipes());
+        }
+        return AssemblyRecipeMatch.bind(layout, payload, recipes);
     }
 
     public List<MatrixAssemblyMember> itemMembers() {
@@ -600,15 +812,23 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public Stage stage() {
-        return stage;
+        return isMirror() && refreshMirror() ? mirrorSource.stage : stage;
     }
 
     public String reason() {
         if (!verified) return reason;
-        refreshNetwork();
-        if (!networkReason.isEmpty()) return networkReason;
+        if (isMirror()) {
+            if (!refreshMirror()) return mirrorReason;
+            String sourceReason = mirrorSource.reason();
+            if (!sourceReason.isEmpty()) return sourceReason;
+        } else {
+            refreshNetwork();
+            if (!networkReason.isEmpty()) return networkReason;
+        }
         refreshController();
         if (controllerConflict) return "controller_conflict";
+        if (!isMirror() && (inputController == null || !inputController.mMachine) && !readyConsumers().isEmpty())
+            return reason;
         if (inputController == null || !inputController.mMachine) return "structure_incomplete";
         if (!inputController.mInputBusses.containsAll(items) || !inputController.mInputHatches.containsAll(fluids))
             return "mixed_inputs";
@@ -622,7 +842,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public String recipeKey() {
-        return recipeKey;
+        return isMirror() && refreshMirror() ? mirrorSource.recipeKey : recipeKey;
     }
 
     public long epoch() {
@@ -634,7 +854,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public int patternSlot() {
-        return patternSlot;
+        return isMirror() && refreshMirror() ? mirrorSource.patternSlot : patternSlot;
     }
 
     /** Intake diagnostics only. The validated payload bounds these arrays to 16 item and 4 fluid positions. */
@@ -686,10 +906,12 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     /** Preview uses the current native authorization set without changing the group's rejection or lifecycle state. */
     public String previewReason(OrderedPatternLayout layout) {
-        if (!assemblyLineMode()) return capacityReason(layout);
-        if (session == null || !nativeBound) return "structure_incomplete";
+        if (isMirror()) return refreshMirror() ? mirrorSource.previewReason(layout) : mirrorReason;
+        // Bare ordinary groups retain a configuration preview before any real consumer is attached.
+        if (!assemblyLineMode() && mirrorConsumers.isEmpty()) return capacityReason(layout);
+        if (readyConsumers().isEmpty()) return "structure_incomplete";
         try {
-            AssemblyRecipeMatch.bind(layout, authorizedRecipes());
+            intakeMatch(layout, layout.declaredPayload());
             return capacityReason(layout);
         } catch (PatternValidationException rejected) {
             return rejected.reason()
@@ -705,21 +927,17 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public boolean editable() {
-        return verified && stage == Stage.IDLE && !refunding && allEmpty();
+        return !isMirror() && verified && stage == Stage.IDLE && !refunding && allEmpty() && sharedRuns.isEmpty();
     }
 
     public boolean accepting() {
+        if (isMirror()) return false;
+        if (!sharedFailure.isEmpty()) return false;
         if (stage != Stage.IDLE && stage != Stage.STAGED && stage != Stage.RUNNING && stage != Stage.LOCAL_FINISHED)
             return false;
-        if (!permitsMachineWork()) return false;
+        if (!supplyReady() || readyConsumers().isEmpty()) return false;
         if (stage == Stage.IDLE && !allEmpty()) return reject("untracked_materials");
-        if (!assemblyLineMode()) return true;
-        return session != null && nativeBound
-            && session.readyForPatternAdvertisement()
-            && checkNativeBinding()
-            && session.controller()
-                .getBaseMetaTileEntity()
-                .isAllowedToWork();
+        return true;
     }
 
     public void invalidate(String message) {
@@ -792,6 +1010,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     static String topologyFault(List<MatrixAssemblyMember> items, List<MatrixAssemblyMember> fluids) {
+        int mirrors = 0;
+        for (MatrixAssemblyMember member : items) if (member.matrixMirror()) mirrors++;
+        for (MatrixAssemblyMember member : fluids) if (member.matrixMirror()) mirrors++;
+        if (mirrors > 1) return "mirror_multiple_anchors";
         if (items.size() < 2 && fluids.size() < 2) return "minimum_two";
         if (items.size() > 16) return "item_column";
         if (fluids.size() > 4) return "fluid_column";
@@ -897,10 +1119,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     /** Only formed, currently authorized recipes are advertised; busy media retain their catalogue entries. */
     public void provideCrafting(ICraftingProviderHelper helper) {
-        if (!permitsMachineWork()) return;
-        if (assemblyLineMode()
-            && (session == null || !nativeBound || !session.readyForPatternAdvertisement() || !checkNativeBinding()))
-            return;
+        if (isMirror() || !supplyReady() || readyConsumers().isEmpty()) return;
         for (int i = 0; i < MatrixPatternInventory.SIZE; i++) {
             ItemStack pattern = master().matrixPort()
                 .patterns()
@@ -911,7 +1130,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     pattern,
                     master().getBaseMetaTileEntity()
                         .getWorld());
-                if (assemblyLineMode()) AssemblyRecipeMatch.bind(layout, authorizedRecipes());
+                intakeMatch(layout, layout.declaredPayload());
                 if (capacityReason(layout).isEmpty())
                     helper.addCraftingOption((ICraftingProvider) master(), layout.details());
             } catch (PatternValidationException ignored) {
@@ -972,7 +1191,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     .getStackInSlot(patternSlot),
                 layout.pattern()))) return reject("different_pattern");
             payload = layout.validateTable(table);
-            if (assemblyLineMode()) match = AssemblyRecipeMatch.bind(layout, payload, authorizedRecipes());
+            match = intakeMatch(layout, payload);
             String capacityReason = capacityReason(layout);
             if (!capacityReason.isEmpty()) return reject(capacityReason);
         } catch (PatternValidationException ex) {
@@ -1010,11 +1229,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         }
         if (!accepting() || intakeEpoch != epoch) return false;
         try {
-            if (match != null && !match.key()
-                .equals(
-                    AssemblyRecipeMatch.bind(layout, payload, authorizedRecipes())
-                        .key()))
-                return reject("no_authorized_recipe");
+            if (match != null) {
+                AssemblyRecipeMatch current = intakeMatch(layout, payload);
+                if (current == null || !match.key()
+                    .equals(current.key())) return reject("no_authorized_recipe");
+            }
         } catch (PatternValidationException ex) {
             return reject(
                 ex.reason()
@@ -1028,7 +1247,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         for (int i = 0; i < fluidCopies.size(); i++) fluids.get(i)
             .matrixSetFluid(fluidCopies.get(i));
         batch = nextBatch;
-        genericInput = !assemblyLineMode();
+        genericInput = match == null;
         recipeKey = match == null ? ""
             : match.key()
                 .value();
@@ -1037,7 +1256,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         reason = "";
         try {
             dirty();
-            if (session != null) session.requestRecipeCheck();
+            for (OrderedAssemblyGroup consumer : readyConsumers()) {
+                if (consumer.session != null) consumer.session.requestRecipeCheck();
+                else consumer.inputController.scheduleRecipeCheckImmediate();
+            }
         } catch (RuntimeException ex) {
             stage = Stage.QUARANTINED;
             reason = "notification_failed";
@@ -1049,66 +1271,236 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     @Override
     public boolean validateNativeState(NativeAssemblySession nativeSession) {
-        return nativeSession == session && nativeBound
+        if (!(nativeSession == session && nativeBound
             && verified
-            && stage == Stage.STAGED
             && permitsMachineWork()
             && checkNativeBinding()
             && session.controller()
-                .protectsExcessItem();
+                .protectsExcessItem()))
+            return false;
+        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
+        return (owner.stage == Stage.STAGED || owner.stage == Stage.RUNNING) && owner.sharedFailure.isEmpty()
+            && !owner.sharedRuns.containsKey(nativeRunKey(nativeSession));
     }
 
     @Override
     public boolean acceptsNativeCandidate(NativeAssemblySession nativeSession, RecipeAssemblyLine recipe) {
-        return validateNativeState(nativeSession) && recipeKey.equals(
+        if (!validateNativeState(nativeSession)) return false;
+        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
+        if (!owner.recipeKey.isEmpty()) return owner.recipeKey.equals(
             AssemblyRecipeKey.of(recipe)
                 .value());
+        try {
+            OrderedPatternLayout layout = OrderedPatternLayout.decode(
+                owner.master.matrixPort()
+                    .patterns()
+                    .getStackInSlot(owner.patternSlot),
+                owner.master.getBaseMetaTileEntity()
+                    .getWorld());
+            return AssemblyRecipeMatch.bind(layout, authorizedRecipes())
+                .key()
+                .equals(AssemblyRecipeKey.of(recipe));
+        } catch (PatternValidationException rejected) {
+            return false;
+        }
     }
 
     @Override
     public void onNativeConsumption(NativeAssemblySession nativeSession, RecipeAssemblyLine recipe, int parallel,
         long[] itemConsumed, long[] fluidConsumed, boolean complete) {
         if (nativeSession != session) return;
-        recordConsumptionDiagnostics(itemConsumed, fluidConsumed);
+        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
+        if (owner == null) throw new IllegalStateException("Matrix source vanished during native consumption");
+        nativeOwner = owner;
+        owner.recordConsumptionDiagnostics(itemConsumed, fluidConsumed);
         if (!complete || parallel != 1
-            || !recipeKey.equals(
+            || !owner.recipeKey.isEmpty() && !owner.recipeKey.equals(
                 AssemblyRecipeKey.of(recipe)
                     .value())) {
+            owner.sharedFailure = "partial_consumption";
+            owner.stage = Stage.QUARANTINED;
+            owner.reason = "partial_consumption";
             stage = Stage.QUARANTINED;
             reason = "partial_consumption";
         } else {
+            owner.sharedRuns.put(nativeRunKey(nativeSession), nativeRun(nativeSession));
+            owner.recipeKey = AssemblyRecipeKey.of(recipe)
+                .value();
+            owner.stage = Stage.RUNNING;
+            owner.reason = "";
             stage = Stage.RUNNING;
             nativeSequence = nativeSession.runSequence();
             reason = "";
+            if (owner != this) {
+                batch = owner.batch;
+                patternSlot = owner.patternSlot;
+                recipeKey = owner.recipeKey;
+            }
         }
+        owner.dirty();
         dirty();
     }
 
     @Override
     public void onNativeFinished(NativeAssemblySession nativeSession) {
-        if (nativeSession == session && stage == Stage.RUNNING) {
-            stage = allEmpty() ? Stage.LOCAL_FINISHED : Stage.STAGED;
-            reason = stage == Stage.LOCAL_FINISHED ? "local_output_only" : "";
+        if (nativeSession != session) return;
+        OrderedAssemblyGroup owner = runningOwner();
+        if (owner == null) return;
+        owner.finishRun(nativeRunKey(nativeSession), nativeSession.runSequence(), "");
+        if (owner != this) {
+            stage = Stage.IDLE;
+            reason = "";
             dirty();
         }
+        nativeOwner = null;
     }
 
     @Override
     public void onNativeStopped(NativeAssemblySession nativeSession, String message) {
-        if (nativeSession == session && stage == Stage.RUNNING) {
+        if (nativeSession != session) return;
+        OrderedAssemblyGroup owner = runningOwner();
+        if (owner == null) return;
+        if (owner == this && stage == Stage.RUNNING && sharedRuns.isEmpty()) {
             stage = Stage.NATIVE_ABORTED;
             reason = message;
+            dirty();
+            return;
+        }
+        owner.finishRun(nativeRunKey(nativeSession), nativeSession.runSequence(), message);
+        if (owner != this) {
+            stage = Stage.IDLE;
+            reason = "";
+            dirty();
+        }
+        nativeOwner = null;
+    }
+
+    private OrderedAssemblyGroup runningOwner() {
+        if (!isMirror()) return this;
+        if (refreshMirror()) return mirrorSource;
+        return nativeOwner;
+    }
+
+    private static String nativeRunKey(NativeAssemblySession session) {
+        return "native:" + session.controllerId();
+    }
+
+    private static String machineRunKey(MTEMultiBlockBase controller) {
+        IGregTechTileEntity tile = controller.getBaseMetaTileEntity();
+        return "machine:" + tile.getWorld().provider.dimensionId
+            + ":"
+            + tile.getXCoord()
+            + ":"
+            + tile.getYCoord()
+            + ":"
+            + tile.getZCoord();
+    }
+
+    private static NBTTagCompound machineRun(MTEMultiBlockBase controller) {
+        IGregTechTileEntity tile = controller.getBaseMetaTileEntity();
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setIntArray(
+            "position",
+            new int[] { tile.getWorld().provider.dimensionId, tile.getXCoord(), tile.getYCoord(), tile.getZCoord(),
+                tile.getMetaTileID() });
+        return tag;
+    }
+
+    private static NBTTagCompound nativeRun(NativeAssemblySession session) {
+        NBTTagCompound tag = machineRun(session.controller());
+        tag.setString(
+            "controller",
+            session.controllerId()
+                .toString());
+        tag.setLong("sequence", session.runSequence());
+        return tag;
+    }
+
+    private void finishRun(String key, long sequence, String failure) {
+        NBTTagCompound run = sharedRuns.get(key);
+        if (run == null || run.getLong("sequence") != sequence) return;
+        sharedRuns.remove(key);
+        if (!failure.isEmpty()) sharedFailure = failure;
+        settleRuns();
+        dirty();
+    }
+
+    private void settleRuns() {
+        if (!sharedRuns.isEmpty()) {
+            stage = Stage.RUNNING;
+            return;
+        }
+        if (stage == Stage.QUARANTINED) return;
+        stage = !sharedFailure.isEmpty() ? Stage.NATIVE_ABORTED : allEmpty() ? Stage.LOCAL_FINISHED : Stage.STAGED;
+        reason = !sharedFailure.isEmpty() ? sharedFailure : stage == Stage.LOCAL_FINISHED ? "local_output_only" : "";
+    }
+
+    /** Generic GT machines retain their actual recipe/parallel behavior; only the shared batch lifetime is observed. */
+    public void ordinaryStarted(MTEMultiBlockBase controller) {
+        if (assemblyLineMode() || !permitsMachineWork()) return;
+        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
+        if (controller.mMaxProgresstime <= 0) return;
+        nativeOwner = owner;
+        owner.sharedRuns.put(machineRunKey(controller), machineRun(controller));
+        owner.stage = Stage.RUNNING;
+        owner.dirty();
+    }
+
+    public void ordinaryFinished(MTEMultiBlockBase controller, String failure) {
+        if (controller instanceof MTEAssemblyLine) return;
+        OrderedAssemblyGroup owner = isMirror() ? refreshMirror() ? mirrorSource : nativeOwner : this;
+        if (owner != null) owner.finishRun(machineRunKey(controller), 0, failure);
+    }
+
+    private void reconcileRuns() {
+        net.minecraft.world.World world = master.getBaseMetaTileEntity()
+            .getWorld();
+        boolean changed = false;
+        for (Map.Entry<String, NBTTagCompound> entry : new ArrayList<>(sharedRuns.entrySet())) {
+            NBTTagCompound run = entry.getValue();
+            int[] pos = run.getIntArray("position");
+            if (!world.blockExists(pos[1], pos[2], pos[3])) continue;
+            TileEntity tile = world.getTileEntity(pos[1], pos[2], pos[3]);
+            MTEMultiBlockBase controller = tile instanceof IGregTechTileEntity gt && gt.getMetaTileID() == pos[4]
+                && gt.getMetaTileEntity() instanceof MTEMultiBlockBase machine ? machine : null;
+            String failure = "";
+            if (controller == null) failure = "controller_removed";
+            else if (run.hasKey("controller")) {
+                NativeAssemblySession nativeSession = controller instanceof MTEAssemblyLine line
+                    ? NativeAssemblyAdapter.session(line)
+                    : null;
+                if (nativeSession == null || !nativeSession.controllerId()
+                    .toString()
+                    .equals(run.getString("controller")) || nativeSession.runSequence() != run.getLong("sequence"))
+                    failure = "restart_native_state_missing";
+                else if (nativeSession.nativeRunning() && "RUNNING".equals(nativeSession.lastNativeEvent())) continue;
+                else if (!"LOCAL_FINISHED".equals(nativeSession.lastNativeEvent()))
+                    failure = "restart_native_state_missing";
+            } else if (controller.mMaxProgresstime > 0) continue;
+            else failure = "restart_native_state_missing";
+            sharedRuns.remove(entry.getKey());
+            if (!failure.isEmpty()) sharedFailure = failure;
+            changed = true;
+        }
+        if (changed) {
+            settleRuns();
             dirty();
         }
     }
 
     public void tick() {
         if (!verified) return;
+        if (isMirror()) {
+            refreshMirror();
+            return;
+        }
         refreshNetwork();
+        if (!sharedRuns.isEmpty()) reconcileRuns();
+        if (!sharedRuns.isEmpty()) return;
         if (allEmpty() && (genericInput && stage == Stage.STAGED
             && inputController != null
             && inputController.mMaxProgresstime == 0
-            || stage == Stage.LOCAL_FINISHED && session != null && session.controller().mMaxProgresstime == 0)) {
+            || stage == Stage.LOCAL_FINISHED && (session == null || session.controller().mMaxProgresstime == 0))) {
             stage = Stage.IDLE;
             batch = null;
             recipeKey = "";
@@ -1121,6 +1513,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     /** Transfer only actual unconsumed contents. AE CPU jobs are not cancelled by this action. */
     public void refund() {
+        if (isMirror()) {
+            if (refreshMirror()) mirrorSource.refund();
+            return;
+        }
+        if (!sharedRuns.isEmpty()) return;
         if (!verified || stage == Stage.RUNNING || stage == Stage.LOCAL_FINISHED || !checkTopology()) return;
         if (stage == Stage.IDLE && allEmpty()) return;
         refreshNetwork();
@@ -1163,6 +1560,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 recipeKey = "";
                 patternSlot = -1;
                 genericInput = false;
+                sharedFailure = "";
             }
         } catch (GridAccessException ex) {
             reason = "refund_network_offline";
@@ -1189,6 +1587,15 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         tag.setLong("epoch", epoch);
         tag.setLong("nativeSequence", nativeSequence);
         tag.setBoolean("genericInput", genericInput);
+        tag.setString("sharedFailure", sharedFailure);
+        NBTTagList runs = new NBTTagList();
+        for (Map.Entry<String, NBTTagCompound> entry : sharedRuns.entrySet()) {
+            NBTTagCompound run = (NBTTagCompound) entry.getValue()
+                .copy();
+            run.setString("key", entry.getKey());
+            runs.appendTag(run);
+        }
+        tag.setTag("sharedRuns", runs);
         if (machinePosition != null) tag.setIntArray("machinePosition", machinePosition.clone());
         if (networkOrigin != null) tag.setString("networkOrigin", networkOrigin.toString());
         tag.setIntArray("diagnosticItemTable", diagnosticItemTable.clone());
@@ -1244,6 +1651,15 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             epoch = tag.getLong("epoch");
             nativeSequence = tag.getLong("nativeSequence");
             genericInput = tag.getBoolean("genericInput");
+            sharedFailure = tag.getString("sharedFailure");
+            NBTTagList runs = tag.getTagList("sharedRuns", 10);
+            for (int i = 0; i < runs.tagCount(); i++) {
+                NBTTagCompound run = runs.getCompoundTagAt(i);
+                if (run.getIntArray("position").length != 5 || run.getIntArray("position")[0] != memberDimension
+                    || !run.hasKey("key", 8)
+                    || sharedRuns.put(run.getString("key"), (NBTTagCompound) run.copy()) != null)
+                    throw new IllegalArgumentException("invalid_saved_data");
+            }
             if (tag.hasKey("machinePosition")) {
                 machinePosition = tag.getIntArray("machinePosition");
                 if (machinePosition.length != 5 || machinePosition[0] != memberDimension)
@@ -1266,12 +1682,14 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 || stage == Stage.NATIVE_ABORTED)
                 && (batch == null || patternSlot < 0
                     || patternSlot >= MatrixPatternInventory.SIZE
-                    || !genericInput && !recipeKey.matches("v1:[0-9a-f]{64}")))
+                    || !genericInput && !isMirror() && !recipeKey.matches("v1:[0-9a-f]{64}")))
                 throw new IllegalArgumentException("invalid_saved_data");
-            if (genericInput && (machinePosition == null || controllerId != null
-                || stage == Stage.RUNNING
-                || stage == Stage.LOCAL_FINISHED
-                || stage == Stage.NATIVE_ABORTED)) throw new IllegalArgumentException("invalid_saved_data");
+            if (genericInput && !tag.hasKey("sharedRuns")
+                && (machinePosition == null || controllerId != null
+                    || stage == Stage.RUNNING && sharedRuns.isEmpty()
+                    || stage == Stage.LOCAL_FINISHED && !tag.hasKey("sharedRuns")
+                    || stage == Stage.NATIVE_ABORTED))
+                throw new IllegalArgumentException("invalid_saved_data");
             if (stage == Stage.RUNNING && session != null
                 && (session.controller().mMaxProgresstime == 0 || nativeSequence != session.runSequence()
                     || !"RUNNING".equals(session.lastNativeEvent()))) {
@@ -1288,6 +1706,8 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     private void dirty() {
         for (MatrixAssemblyMember member : members) if (isPresent(member)) member.matrixPort()
+            .changed();
+        if (isMirror() && mirrorSource != null && isPresent(mirrorSource.master)) mirrorSource.master.matrixPort()
             .changed();
     }
 

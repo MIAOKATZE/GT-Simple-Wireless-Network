@@ -36,6 +36,7 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
     private final MatrixAssemblyMember anchor;
     private final MatrixAssemblyMember member;
     private BooleanSyncValue editable;
+    private BooleanSyncValue mirrorRole;
     private StringSyncValue status;
     private StringSyncValue network;
     private int previewSlot;
@@ -57,7 +58,18 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
     }
 
     static String[] description(boolean fluid) {
+        return description(fluid, false);
+    }
+
+    static String[] description(boolean fluid, boolean mirror) {
         String type = fluid ? "fluid" : "item";
+        if (mirror) return new String[] { tr("gtswn.matrix.description.mirror"),
+            StatCollector.translateToLocalFormatted(
+                "gtswn.matrix.description.tier",
+                GTValues.TIER_COLORS[6] + GTValues.VN[6] + EnumChatFormatting.RESET),
+            tr("gtswn.matrix.description.mirror_binding"), tr("gtswn.matrix.description.mirror_storage"),
+            tr("gtswn.matrix.description.column"), tr("gtswn.matrix.description.fluids"), "",
+            tr("gtswn.matrix.description.gui"), "", DeviceTooltip.addedByLine() };
         return new String[] { tr("gtswn.matrix.description." + type),
             StatCollector.translateToLocalFormatted(
                 "gtswn.matrix.description.tier",
@@ -66,9 +78,8 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
             tr("gtswn.matrix.description.interface_terminal"), tr("gtswn.matrix.description.requests"),
             tr("gtswn.matrix.description.blocking"), "", tr("gtswn.matrix.description.column"),
             tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.connections"),
-            tr("gtswn.matrix.description.setup"), tr("gtswn.matrix.description.native"),
-            tr("gtswn.matrix.description.protection"), "", tr("gtswn.matrix.description.gui"),
-            tr("gtswn.matrix.description.me"), "", DeviceTooltip.addedByLine() };
+            tr("gtswn.matrix.description.setup"), tr("gtswn.matrix.description.general"), "",
+            tr("gtswn.matrix.description.gui"), tr("gtswn.matrix.description.me"), "", DeviceTooltip.addedByLine() };
     }
 
     private static String tr(String key) {
@@ -109,8 +120,19 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
         });
         sync.syncValue("matrix_editable", editable);
         sync.syncValue("matrix_status", status);
+        mirrorRole = new BooleanSyncValue(() -> {
+            OrderedAssemblyGroup group = currentGroup();
+            return group != null && group.isMirror();
+        });
+        sync.syncValue("matrix_mirror_role", mirrorRole);
         network = new StringSyncValue(() -> {
             OrderedAssemblyGroup group = currentGroup();
+            if (group != null && group.isMirror()) {
+                int[] position = group.mirrorSourcePosition();
+                return label("mirror_source") + " "
+                    + (position == null ? label("unbound")
+                        : position[0] + " @ " + position[1] + ", " + position[2] + ", " + position[3]);
+            }
             return label("network_connections") + " " + (group == null ? 0 : group.externalConnectionCount()) + " / 1";
         });
         sync.syncValue("matrix_network", network);
@@ -142,9 +164,11 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
     private PatternSlot createPatternSlot(int index) {
         PatternSlot widget = new PatternSlot();
+        OrderedAssemblyGroup group = currentGroup();
+        MatrixAssemblyMember owner = group == null ? member : group.patternOwner();
         widget.slot(
             new ModularSlot(
-                member.matrixPort()
+                owner.matrixPort()
                     .patterns(),
                 index) {
 
@@ -172,6 +196,11 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
             OrderedAssemblyGroup group = currentGroup();
             if (!data.isClient() && data.mouseButton == 0 && group != null) group.refund();
         });
+        InteractionSyncHandler unbind = new InteractionSyncHandler().setOnMousePressed(
+            data -> {
+                if (!data.isClient() && data.mouseButton == 0 && currentGroup() != null) member.matrixPort()
+                    .clearMirror();
+            });
         IPanelHandler overview = sync.syncedPanel("matrix_overview", true, (manager, handler) -> overview(manager));
         return super.createBottomLeftCornerFlow(panel, sync).child(
             new ButtonWidget<>().size(18)
@@ -189,8 +218,13 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
             .child(
                 new ButtonWidget<>().size(18)
                     .overlay(GTGuiTextures.OVERLAY_BUTTON_X2)
-                    .setEnabledIf(widget -> false)
-                    .addTooltipLine(tr("gtswn.matrix.fixed_blocking")));
+                    .setEnabledIf(widget -> mirrorRole.getBoolValue())
+                    .syncHandler(unbind)
+                    .addTooltipLine(
+                        IKey.dynamic(
+                            () -> tr(
+                                mirrorRole.getBoolValue() ? "gtswn.matrix.mirror_unbind"
+                                    : "gtswn.matrix.fixed_blocking"))));
     }
 
     private ModularPanel overview(PanelSyncManager sync) {
@@ -264,10 +298,26 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
         OrderedAssemblyGroup group = currentGroup();
         if (group == null && anchor.matrixPort()
             .group() != null) return reason("group_changed");
-        MatrixAssemblyMember owner = group == null ? member : group.master();
+        MatrixAssemblyMember owner = group == null ? member : group.patternOwner();
         boolean active = activePattern(group);
         StringBuilder text = new StringBuilder();
         if (group != null) {
+            if (group.isMirror()) {
+                int[] source = group.mirrorSourcePosition();
+                text.append(label("mirror_source"))
+                    .append(' ');
+                if (source == null) text.append(label("unbound"));
+                else text.append(source[0])
+                    .append(" @ ")
+                    .append(source[1])
+                    .append(", ")
+                    .append(source[2])
+                    .append(", ")
+                    .append(source[3]);
+                text.append('\n')
+                    .append(label("mirror_binding_hint"))
+                    .append('\n');
+            }
             text.append(label("network_connections"))
                 .append(' ')
                 .append(group.externalConnectionCount())
@@ -396,8 +446,9 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
         java.util.List<OrderedPatternLayout.Input> inputs = layout == null ? java.util.Collections.emptyList()
             : fluid ? layout.fluids() : layout.items();
         OrderedPatternLayout.Input input = ordinal < inputs.size() ? inputs.get(ordinal) : null;
-        ItemStack item = physical.matrixItem();
-        FluidStack liquid = physical.matrixFluidStack();
+        MatrixAssemblyMember storage = group.diagnosticMaterialMember(physical);
+        ItemStack item = storage.matrixItem();
+        FluidStack liquid = storage.matrixFluidStack();
         int[] position = group.diagnosticMemberPosition(fluid, ordinal);
         String kind = fluid ? "F" : "I";
         text.append('\n')

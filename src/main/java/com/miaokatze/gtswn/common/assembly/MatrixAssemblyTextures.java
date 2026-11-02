@@ -9,14 +9,20 @@ import gregtech.api.render.TextureFactory;
 /** Six world connection bits project onto the actual rendered face; sixteen finite edge sprites. */
 public final class MatrixAssemblyTextures {
 
-    private static final ITexture[] BRIDGES = new ITexture[16];
-    private static final ITexture CENTER = TextureFactory
-        .of(Textures.BlockIcons.custom("gtswn", "matrix_input_center"));
+    private static final ITexture[][] BRIDGES = new ITexture[4][16];
+    private static final ITexture[] CENTERS = new ITexture[4];
     private static final ITexture[] COLORS = new ITexture[17];
 
     static {
-        for (int i = 0; i < BRIDGES.length; i++)
-            BRIDGES[i] = TextureFactory.of(Textures.BlockIcons.custom("gtswn", "matrix/bridge_" + i));
+        String[] styles = { "item", "fluid", "item_mirror", "fluid_mirror" };
+        for (int style = 0; style < styles.length; style++) {
+            CENTERS[style] = TextureFactory.of(
+                Textures.BlockIcons
+                    .custom("gtswn", style == 0 ? "matrix_input_center" : "matrix/" + styles[style] + "/center"));
+            for (int mask = 0; mask < 16; mask++) BRIDGES[style][mask] = TextureFactory.of(
+                Textures.BlockIcons
+                    .custom("gtswn", "matrix/" + (style == 0 ? "" : styles[style] + "/") + "bridge_" + mask));
+        }
         for (int i = 0; i < COLORS.length; i++)
             COLORS[i] = TextureFactory.of(Textures.BlockIcons.OVERLAY_ME_CRAFTING_INPUT_COLORS[i]);
     }
@@ -32,7 +38,8 @@ public final class MatrixAssemblyTextures {
                 .connectionMask(),
             member.getBaseMetaTileEntity()
                 .getFrontFacing());
-        return new ITexture[] { base, BRIDGES[mask], CENTER, COLORS[member.getBaseMetaTileEntity()
+        int style = (member.matrixMirror() ? 2 : 0) + (member.matrixFluid() ? 1 : 0);
+        return new ITexture[] { base, BRIDGES[style][mask], CENTERS[style], COLORS[member.getBaseMetaTileEntity()
             .getColorization() + 1] };
     }
 

@@ -58,9 +58,6 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
     /** 列头命中区右边界（相对 listLeft；传送列头不可排序；v1.7.2 加宽 +20px） */
     static final int HEADER_MAX_X = 454;
 
-    /** 配方单条覆盖可用宽（COL_INST_X→COL_POS_X，v1.7.2 显示配方单条行） */
-    static final int RECIPE_LINE_WIDTH = COL_POS_X - COL_INST_X;
-
     private final GuiDeviceInfoTerminal host;
     private static final int slotHeight = 20;
     private List<Entry> displayed = Collections.emptyList();
@@ -75,11 +72,6 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
                 .drawNineSlice(GtswnGuiTextures.LIST_PANEL, 4, (int) x, (int) y, (int) width, (int) height, 0));
     }
 
-    void invalidateRows() {
-        displayed = null;
-        clampScroll();
-    }
-
     /** Refresh only when the host publishes a new sorted snapshot; preserve the native scroll position. */
     void clampScroll() {
         List<Entry> entries = host.sortedEntries();
@@ -89,13 +81,12 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
         int index = 0;
         for (Entry entry : entries) {
             final String rowName = "device.row." + index++;
-            int rowHeight = slotHeight + (host.recipeExpanded(entry) ? 14 : 0);
             DeviceRow row = new DeviceRow(entry).name(rowName)
-                .size(596, rowHeight)
+                .size(596, slotHeight)
                 .background(IDrawable.EMPTY)
                 .hoverBackground(IDrawable.EMPTY)
                 .onMousePressed(button -> rowAction(entry, button, false, false));
-            ParentWidget<?> controls = new ParentWidget<>().size(596, rowHeight)
+            ParentWidget<?> controls = new ParentWidget<>().size(596, slotHeight)
                 .background(IDrawable.EMPTY);
             controls.child(
                 new ButtonWidget<>().name(rowName + ".name")
@@ -167,15 +158,6 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
                     .tooltipBuilder(tooltip -> tooltip.addLine(host.linkTooltip(entry)))
                     .tooltipAutoUpdate(true)
                     .onMousePressed(button -> true));
-            if (host.recipeExpanded(entry)) controls.child(
-                new ButtonWidget<>().name(rowName + ".recipe")
-                    .pos(COL_NAME_X, slotHeight)
-                    .size(588, 14)
-                    .background(IDrawable.EMPTY)
-                    .hoverBackground(IDrawable.EMPTY)
-                    .tooltipBuilder(tooltip -> tooltip.addLine(host.recipeText(entry)))
-                    .tooltipAutoUpdate(true)
-                    .onMousePressed(button -> true));
             row.child(controls);
             child(row);
         }
@@ -236,14 +218,7 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
         // 行 hover 高亮（贴图化新增视觉项，契约 §3 #13 / §6 ④）：鼠标在行矩形内先画 row_hover 底再画内容；
         // 仅视觉，不改上方 inRow/inNameCol 命中与 tooltip 悬浮判定
         if (inRow || host.desktopEntrySelected(entry)) {
-            GtswnGuiDrawing.drawNineSlice(
-                GtswnGuiTextures.ROW_HOVER,
-                4,
-                0,
-                y,
-                596,
-                slotHeight + (host.recipeExpanded(entry) ? 14 : 0),
-                host.guiZLevel());
+            GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.ROW_HOVER, 4, 0, y, 596, slotHeight, host.guiZLevel());
         }
 
         // 机器名列：超宽截断+省略号；v1.7.2 全行文字加粗 §l（applyBold 与颜色码共存）
@@ -275,7 +250,7 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
             textY,
             GtswnGuiPalette.TEXT_BODY);
 
-        // 既有间隔统计始终保留；配方另占一条可收起的行。
+        // 既有间隔统计。
         font.drawString(
             ellipsis(font, applyBold(host.formatInstant(entry)), COL_AVG_X - COL_INST_X - 3),
             x + COL_INST_X,
@@ -287,13 +262,6 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
             textY,
             amountColor(entry, GuiDeviceInfoTerminal.averageValue(entry)));
         font.drawString(ellipsis(font, host.linkText(entry), 36), x + LINK_X, textY, GtswnGuiPalette.TEXT_ACCENT);
-        if (host.recipeExpanded(entry)) {
-            font.drawString(
-                ellipsis(font, host.recipeText(entry), 580),
-                x + COL_NAME_X,
-                y + slotHeight + 3,
-                GtswnGuiPalette.TEXT_MUTED);
-        }
 
         // 位置列：dim(x,y,z)
         String posText = entry.x + "/" + entry.y + "/" + entry.z;
@@ -383,43 +351,6 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
                         .append('l');
                 }
             }
-        }
-        return sb.toString();
-    }
-
-    /**
-     * 配方行内预览（v1.7.2 输入+输出）：输入侧前 N 项 + " → " + 输出侧前 N 项；
-     * 某侧为空时只显示另一侧（输入侧因 GT5U 无公开 lastRecipe 入口暂为空串）。
-     */
-    static String recipeLine(String recipeIn, String recipeOut, int maxPerSide) {
-        String inPart = sidePreview(recipeIn, maxPerSide);
-        String outPart = sidePreview(recipeOut, maxPerSide);
-        if (inPart.isEmpty()) {
-            return outPart;
-        }
-        if (outPart.isEmpty()) {
-            return inPart;
-        }
-        return inPart + " → " + outPart;
-    }
-
-    /** 单侧预览："A|B|C" 取前 max 项（"|" 连接保持序列化格式），超 max 项补 " 等..."（lang 键）。 */
-    static String sidePreview(String side, int max) {
-        if (side == null || side.isEmpty()) {
-            return "";
-        }
-        String[] parts = side.split("\\|");
-        int n = Math.min(parts.length, max);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < n; i++) {
-            if (i > 0) {
-                sb.append('|');
-            }
-            sb.append(parts[i].trim());
-        }
-        if (parts.length > max) {
-            sb.append(' ')
-                .append(GuiDeviceInfoTerminal.trStatic("gtswn.device.gui.more_suffix"));
         }
         return sb.toString();
     }

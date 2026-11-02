@@ -8,6 +8,8 @@ import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.inventory.InventoryCrafting;
@@ -96,20 +98,25 @@ public class MatrixDiagnosticsTest {
             .allocateInstance(OrderedAssemblyGroup.class);
         field("session").set(group, new NativeAssemblySession(null));
         field("stage").set(group, OrderedAssemblyGroup.Stage.STAGED);
-        field("items").set(group, Arrays.asList(null, null));
         field("fluids").set(group, Collections.emptyList());
         field("memberIds").set(group, new ArrayList<>(Arrays.asList(UUID.randomUUID(), UUID.randomUUID())));
-        UUID masterId = ((java.util.List<UUID>) field("memberIds").get(group)).get(0);
-        field("master").set(
-            group,
-            Proxy.newProxyInstance(
+        List<MatrixAssemblyMember> members = new ArrayList<>();
+        for (UUID id : (List<UUID>) field("memberIds").get(group)) members.add(
+            (MatrixAssemblyMember) Proxy.newProxyInstance(
                 MatrixAssemblyMember.class.getClassLoader(),
                 new Class<?>[] { MatrixAssemblyMember.class },
                 (proxy, method, args) -> {
                     if (method.getName()
-                        .equals("orderedMemberId")) return masterId;
+                        .equals("orderedMemberId")) return id;
+                    if (method.getName()
+                        .equals("matrixMirror")) return false;
                     throw new AssertionError(method);
                 }));
+        field("items").set(group, members);
+        field("members").set(group, members);
+        field("master").set(group, members.get(0));
+        field("sharedRuns").set(group, new HashMap<>());
+        field("sharedFailure").set(group, "");
         field("controllerId").set(group, ((NativeAssemblySession) field("session").get(group)).controllerId());
         field("memberPositions").set(group, new int[][] { { 0, 0, 0 }, { 1, 0, 0 } });
         field("recipeKey").set(group, "v1:" + String.join("", Collections.nCopies(64, "0")));

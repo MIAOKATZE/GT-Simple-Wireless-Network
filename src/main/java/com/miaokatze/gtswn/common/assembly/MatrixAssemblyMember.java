@@ -16,6 +16,14 @@ public interface MatrixAssemblyMember extends OrderedAssemblyMember {
 
     boolean matrixFluid();
 
+    default boolean matrixMirror() {
+        return false;
+    }
+
+    ItemStack[] matrixNativeItems();
+
+    FluidStack matrixNativeFluid();
+
     ItemStack matrixItem();
 
     FluidStack matrixFluidStack();

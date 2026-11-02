@@ -69,6 +69,44 @@ public class DeviceFlowMonitorTest {
         assertEquals(20, reading.average(1));
     }
 
+    @Test
+    public void repeatedWirelessTransactionsRetainBothDirectionsAtEveryScale() {
+        java.math.BigInteger withdrawal = java.math.BigInteger.valueOf(-2000);
+        java.math.BigInteger deposit = java.math.BigInteger.valueOf(4000);
+        for (int count : new int[] { 1, 1024, 65536 }) {
+            Object machine = new Object();
+            DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 1000);
+            DeviceFlowMonitor.Reading outer = DeviceFlowMonitor.enter(machine);
+            assertTrue(DeviceFlowMonitor.active());
+            for (int i = 0; i < count; i++) {
+                DeviceFlowMonitor.wirelessTransaction(withdrawal, true);
+                DeviceFlowMonitor.wirelessTransaction(deposit, true);
+            }
+            DeviceFlowMonitor.leave(outer);
+            assertEquals(100L * count, reading.average(0));
+            assertEquals(200L * count, reading.average(1));
+        }
+    }
+
+    @Test
+    public void negativeLongBoundaryUsesOversizedStorageOnlyBeyondLongMaxMagnitude() throws Exception {
+        java.math.BigInteger limit = java.math.BigInteger.valueOf(Long.MAX_VALUE);
+        java.lang.reflect.Field oversized = DeviceFlowMonitor.Reading.class.getDeclaredField("oversizedValues");
+        oversized.setAccessible(true);
+        for (java.math.BigInteger amount : new java.math.BigInteger[] { limit.negate(),
+            java.math.BigInteger.valueOf(Long.MIN_VALUE), java.math.BigInteger.TEN.pow(100)
+                .negate() }) {
+            Object machine = new Object();
+            DeviceFlowMonitor.Reading reading = DeviceFlowMonitor.watch(machine, 1000);
+            DeviceFlowMonitor.Reading outer = DeviceFlowMonitor.enter(machine);
+            DeviceFlowMonitor.wirelessTransaction(amount, true);
+            DeviceFlowMonitor.leave(outer);
+            assertEquals(amount.compareTo(limit.negate()) < 0, oversized.get(reading) != null);
+            assertEquals(Math.abs(amount.doubleValue()) / 20, reading.snapshotWindow()[0], 0);
+            assertEquals(0, reading.average(1));
+        }
+    }
+
     private static class MTEFusionComputer {
     }
 

@@ -4,6 +4,7 @@ import static org.junit.Assert.*;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import net.minecraft.entity.Entity;
@@ -18,21 +19,69 @@ import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import org.junit.After;
 import org.junit.Test;
 
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_DynamoWireless;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
 
 import gregtech.api.covers.CoverContext;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
+import gregtech.api.metatileentity.implementations.MTEHatch;
 import gregtech.api.metatileentity.implementations.MTEHatchDynamo;
 import gregtech.api.metatileentity.implementations.MTEHatchEnergy;
 import gregtech.api.metatileentity.implementations.MTEHatchInput;
 
 /** Real GT hatch lists and cover types in a point-only fixture world; no game startup. */
 public class DeviceLinkTargetsTest {
+
+    @After
+    public void clearFixtureCoverRegistrations() {
+        NodeRevealRequestQueue.clearServerState();
+    }
+
+    private static final class CountingMulti extends DeviceMachineIdentityTest.IdentityMulti {
+
+        int nativeListReads;
+
+        @Override
+        public List<MTEHatch> getExoticAndNormalEnergyHatchList() {
+            nativeListReads++;
+            return super.getExoticAndNormalEnergyHatchList();
+        }
+    }
+
+    @Test
+    public void sampledNodeIdentityReusesValidatedDiscoveryAtEveryHatchScale() throws Exception {
+        for (int count : new int[] { 1, 64, 1024 }) {
+            FixtureWorld world = world();
+            CountingMulti multi = new CountingMulti();
+            tile(world, multi, 0);
+            multi.mMachine = true;
+            for (int i = 1; i <= count; i++) {
+                MTEHatchEnergy energy = energy();
+                tile(world, energy, i).coversAt(ForgeDirection.NORTH, false);
+                multi.mEnergyHatches.add(energy);
+            }
+            MTEHatchDynamo dynamo = dynamo();
+            tile(world, dynamo, count + 1).coversAt(ForgeDirection.NORTH, true);
+            multi.mDynamoHatches.add(dynamo);
+            DeviceLinkTargets.Discovery discovery = DeviceLinkTargets.discover(multi);
+            assertEquals(count + 1, discovery.summary.total());
+            assertEquals(3, DeviceMachineIdentity.linkNodeType(multi, discovery));
+            assertEquals(1, multi.nativeListReads);
+            assertEquals(
+                DeviceMachineIdentity.linkNodeType(multi),
+                DeviceMachineIdentity.linkNodeType(multi, discovery));
+            multi.mMachine = false;
+            assertEquals(
+                DeviceMachineIdentity.linkNodeType(multi),
+                DeviceMachineIdentity.linkNodeType(multi, DeviceLinkTargets.discover(multi)));
+        }
+    }
 
     @Test
     public void twelveHatchesDeduplicateNormalAndExoticListsWithoutCountingController() throws Exception {

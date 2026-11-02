@@ -18,6 +18,7 @@ public final class DeviceFlowMonitor {
     public static final int MAX_TRACKED = 8192;
     private static final int WINDOW = 20;
     private static final BigInteger LONG_MAX = BigInteger.valueOf(Long.MAX_VALUE);
+    private static final BigInteger NEGATIVE_LONG_MAX = LONG_MAX.negate();
     private static final Map<Object, Reading> TRACKED = new IdentityHashMap<>();
     private static long now;
     private static Object serverIdentity;
@@ -229,12 +230,13 @@ public final class DeviceFlowMonitor {
 
     /** Canonical committed transaction only: negative = actual controller withdrawal, positive = deposit. */
     public static void wirelessTransaction(BigInteger signedAmount, boolean committed) {
-        if (!committed || !active() || signedAmount == null || signedAmount.signum() == 0) return;
-        BigInteger magnitude = signedAmount.abs();
-        current.add(
-            signedAmount.signum() < 0 ? 0 : 1,
-            finiteAmount(magnitude.doubleValue()),
-            magnitude.compareTo(LONG_MAX) > 0);
+        if (!committed || !active() || signedAmount == null) return;
+        int sign = signedAmount.signum();
+        if (sign == 0) return;
+        // Compare the signed boundaries directly: abs() creates a BigInteger for each large withdrawal.
+        boolean oversized = sign < 0 ? signedAmount.compareTo(NEGATIVE_LONG_MAX) < 0
+            : signedAmount.compareTo(LONG_MAX) > 0;
+        current.add(sign < 0 ? 0 : 1, finiteAmount(Math.abs(signedAmount.doubleValue())), oversized);
     }
 
     /** EU buffer mutations during a monitored controller call: decrease = consumption, increase = production. */

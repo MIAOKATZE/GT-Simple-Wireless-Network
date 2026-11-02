@@ -50,6 +50,7 @@ public class MatrixPatternInventoryAdapterTest {
             assertSame(member.getPatterns(), member.getPatterns());
             assertFalse(member.shouldDisplay());
             OrderedAssemblyGroup group = (OrderedAssemblyGroup) allocate(OrderedAssemblyGroup.class);
+            set(OrderedAssemblyGroup.class, group, "members", java.util.Collections.singletonList(member));
             set(OrderedAssemblyGroup.class, group, "master", member);
             set(MatrixAssemblyPort.class, port, "group", group);
             assertTrue(member.shouldDisplay());
@@ -228,6 +229,8 @@ public class MatrixPatternInventoryAdapterTest {
             group = (OrderedAssemblyGroup) allocate(OrderedAssemblyGroup.class);
             set(OrderedAssemblyGroup.class, group, "master", members.get(0).meta);
             set(OrderedAssemblyGroup.class, group, "members", liveMembers);
+            set(OrderedAssemblyGroup.class, group, "sharedRuns", new HashMap<>());
+            set(OrderedAssemblyGroup.class, group, "sharedFailure", "");
             set(OrderedAssemblyGroup.class, group, "stage", OrderedAssemblyGroup.Stage.IDLE);
             set(OrderedAssemblyGroup.class, group, "verified", true);
             for (Member member : members) set(MatrixAssemblyPort.class, member.port, "group", group);

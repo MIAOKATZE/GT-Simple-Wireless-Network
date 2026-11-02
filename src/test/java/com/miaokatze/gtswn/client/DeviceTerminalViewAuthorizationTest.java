@@ -301,7 +301,6 @@ public class DeviceTerminalViewAuthorizationTest {
         client.setAccessible(true);
         client.set(gui, minecraft);
         field(gui, "filters").set(gui, new DeviceListFilters());
-        field(gui, "expandedRecipes").set(gui, new java.util.LinkedHashSet<String>());
         field(gui, "anchor").set(gui, terminal);
         field(gui, "sortedEntries").set(gui, Collections.emptyList());
         refresh(gui);
