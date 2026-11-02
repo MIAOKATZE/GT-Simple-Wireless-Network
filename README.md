@@ -22,7 +22,7 @@
 > [!NOTE]
 > 非官方模组，讨论时请注意场合。/ Unofficial mod; please avoid discussing it in official GTNH forums.
 >
-> 📖 [完整文档 / Full Wiki](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/wiki)
+> 📖 [完整文档 / Full Wiki](https://miaokatze.com/guide/gtswn)
 
 ## 下载与依赖 / Downloads & Requirements
 
