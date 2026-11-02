@@ -26,15 +26,41 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import org.junit.Test;
 
+import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
+import gregtech.api.metatileentity.BaseMetaTileEntity;
+import gregtech.api.metatileentity.implementations.MTEBasicMachineWithRecipe;
+
 public class DeviceTerminalLandingTest {
 
     @Test
-    public void nearestSafeFrontOrTopWinsWithFrontBreakingExactDistanceTie() throws Exception {
+    public void initializedMainFaceAndUnknownMainFallbackBothLandOutsideTheNorthFront() throws Exception {
+        MTEBasicMachineWithRecipe machine = (MTEBasicMachineWithRecipe) allocate(MTEBasicMachineWithRecipe.class);
+        FixtureWorld world = world();
+        world.floor.add("8:63:7");
+        EntityPlayerMP player = player(8.5, 64, 7.5);
+        for (ForgeDirection main : new ForgeDirection[] { ForgeDirection.NORTH, ForgeDirection.UNKNOWN }) {
+            machine.mMainFacing = main;
+            ForgeDirection output = main == ForgeDirection.NORTH ? ForgeDirection.DOWN : ForgeDirection.NORTH;
+            ForgeDirection front = DeviceTerminalTeleport.landingFacing(controller(machine, output));
+            assertEquals("main=" + main + ", base=" + output, ForgeDirection.NORTH, front);
+            assertArrayEquals(
+                new double[] { 8.5, 64, 7.5 },
+                DeviceTerminalTeleport.safeLanding(world, front, record(), player),
+                0);
+        }
+        assertEquals(
+            ForgeDirection.UNKNOWN,
+            DeviceTerminalTeleport.landingFacing(controller(machine, ForgeDirection.UNKNOWN)));
+    }
+
+    @Test
+    public void safeFrontWinsOverCloserTopOrInterior() throws Exception {
         FixtureWorld world = world();
         world.floor.add("9:63:8");
         world.floor.add("8:64:8");
         EntityPlayerMP player = player(8.5, 65, 8.5);
-        assertArrayEquals(new double[] { 8.5, 65, 8.5 }, landing(world, player), 0);
+        assertArrayEquals(new double[] { 9.5, 64, 8.5 }, landing(world, player), 0);
         player.posX = 9.5;
         player.posY = 64;
         assertArrayEquals(new double[] { 9.5, 64, 8.5 }, landing(world, player), 0);
@@ -98,8 +124,10 @@ public class DeviceTerminalLandingTest {
         player.posY = 65;
         DeviceTerminalDataStore.MachineRecord record = record();
         record.x = 15;
+        assertNull(DeviceTerminalTeleport.safeLanding(world, ForgeDirection.EAST, record, player));
+        world.loadedChunks.add("1:0");
         assertArrayEquals(
-            new double[] { 14.5, 65, 8.5 },
+            new double[] { 17.5, 65, 8.5 },
             DeviceTerminalTeleport.safeLanding(world, ForgeDirection.EAST, record, player),
             0);
     }
@@ -112,6 +140,16 @@ public class DeviceTerminalLandingTest {
         assertNull(landing(world, player));
         player.capabilities.isFlying = true;
         world.actualHeight = 62;
+        assertNull(landing(world, player));
+    }
+
+    @Test
+    public void blockedExteriorNeverFallsBackInsideAHollowMultiblock() throws Exception {
+        FixtureWorld world = world();
+        world.obstacles.add(AxisAlignedBB.getBoundingBox(9, 60, 5, 13, 80, 12));
+        world.floor.add("8:64:8");
+        EntityPlayerMP player = player(8.5, 65, 8.5);
+        player.capabilities.isFlying = true;
         assertNull(landing(world, player));
     }
 
@@ -141,13 +179,14 @@ public class DeviceTerminalLandingTest {
         FixtureWorld world = world();
         world.loadedChunks.clear();
         world.loadedChunks.add("-1:0");
-        EntityPlayerMP player = player(-15.5, 65, 8.5);
+        EntityPlayerMP player = player(-15.5, 65, 7.5);
         player.capabilities.isFlying = true;
         DeviceTerminalDataStore.MachineRecord record = record();
         record.x = -16;
+        // A north-facing exterior cell remains at x=-16: a negative-coordinate liquid margin would read chunk -2.
         assertArrayEquals(
-            new double[] { -15.5, 65, 8.5 },
-            DeviceTerminalTeleport.safeLanding(world, ForgeDirection.EAST, record, player),
+            new double[] { -15.5, 65, 7.5 },
+            DeviceTerminalTeleport.safeLanding(world, ForgeDirection.NORTH, record, player),
             0);
     }
 
@@ -165,6 +204,26 @@ public class DeviceTerminalLandingTest {
 
     private static double[] landing(FixtureWorld world, EntityPlayerMP player) {
         return DeviceTerminalTeleport.safeLanding(world, ForgeDirection.EAST, record(), player);
+    }
+
+    private static IGregTechTileEntity controller(IMetaTileEntity machine, ForgeDirection front) {
+        FacingTile tile = new FacingTile(front);
+        machine.setBaseMetaTileEntity(tile);
+        return tile;
+    }
+
+    private static final class FacingTile extends BaseMetaTileEntity {
+
+        private final ForgeDirection front;
+
+        FacingTile(ForgeDirection front) {
+            this.front = front;
+        }
+
+        @Override
+        public ForgeDirection getFrontFacing() {
+            return front;
+        }
     }
 
     private static DeviceTerminalDataStore.MachineRecord record() {

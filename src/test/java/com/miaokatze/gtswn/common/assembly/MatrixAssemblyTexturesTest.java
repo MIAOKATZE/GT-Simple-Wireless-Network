@@ -67,8 +67,8 @@ public class MatrixAssemblyTexturesTest {
             }
         }
         assertEquals(
-            "MTE hooks must queue all four centers and all bridge variants before rendering",
-            68,
+            "MTE hooks must queue every center, bridge and mixed-role transition before rendering",
+            84,
             bridges.size());
         int queueSize = GregTechAPI.sGTBlockIconload.size();
 
@@ -151,7 +151,7 @@ public class MatrixAssemblyTexturesTest {
             ((Runnable) bridge).run();
             assertSame(register.icons.get(entry.getKey()), bridge.getIcon());
         }
-        assertEquals(68, register.icons.size());
+        assertEquals(84, register.icons.size());
     }
 
     private static <T extends MTEHatch & MatrixAssemblyMember> T member(Class<T> type, boolean mirror)

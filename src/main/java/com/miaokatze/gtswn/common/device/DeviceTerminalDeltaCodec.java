@@ -35,8 +35,9 @@ public final class DeviceTerminalDeltaCodec {
     public static final int MAX_BYTES = 2 * 1024 * 1024;
     private static final int MAX_ROWS = PacketSyncDeviceTerminalData.MAX_ENTRIES;
     private static final int MAX_STRINGS = MAX_ROWS * 5;
-    private static final int MAX_STRING_BYTES = PacketSyncDeviceTerminalData.MAX_RECIPE_LEN * 4;
-    private static final int SCHEMA = 2;
+    private static final int MAX_STRING_LENGTH = DeviceTerminalTagRules.MAX_INPUT_LENGTH;
+    private static final int MAX_STRING_BYTES = MAX_STRING_LENGTH * 4;
+    private static final int SCHEMA = 3;
     private static final int NAME = 1;
     private static final int STATE = 1 << 1;
     private static final int POWER = 1 << 2;
@@ -57,7 +58,9 @@ public final class DeviceTerminalDeltaCodec {
     private static final int COORDINATES = 1 << 17;
     private static final int LINK_COUNTS = 1 << 18;
     private static final int MACHINE_IDENTITY = 1 << 19;
-    private static final int ALL = (1 << 20) - 1;
+    private static final int TAGS = 1 << 20;
+    private static final int FAVORITE = 1 << 21;
+    private static final int ALL = (1 << 22) - 1;
 
     private DeviceTerminalDeltaCodec() {}
 
@@ -91,7 +94,9 @@ public final class DeviceTerminalDeltaCodec {
         if (delta) validateRows(base);
         try {
             DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes));
-            if (in.readUnsignedByte() != SCHEMA) throw invalid("Unknown codec schema");
+            int schema = in.readUnsignedByte();
+            if (schema != 2 && schema != SCHEMA) throw invalid("Unknown codec schema");
+            int allFields = schema == 2 ? (1 << 20) - 1 : ALL;
             int count = in.readUnsignedShort();
             if (count > MAX_ROWS) throw invalid("Row count");
             int dictionaryCount = in.readUnsignedShort();
@@ -104,7 +109,7 @@ public final class DeviceTerminalDeltaCodec {
                 byte[] utf8 = new byte[length];
                 in.readFully(utf8);
                 String value = utf8(utf8);
-                if (value.length() > PacketSyncDeviceTerminalData.MAX_RECIPE_LEN || !distinct.add(value)) {
+                if (value.length() > MAX_STRING_LENGTH || !distinct.add(value)) {
                     throw invalid("Invalid string dictionary");
                 }
                 dictionary.add(value);
@@ -114,7 +119,7 @@ public final class DeviceTerminalDeltaCodec {
             Set<String> keys = new HashSet<>();
             for (int row = 0; row < count; row++) {
                 Entry prior = null;
-                int mask = ALL;
+                int mask = allFields;
                 if (delta) {
                     int reference = in.readUnsignedShort();
                     int index = reference == 0xffff ? -1 : reference & 0x3ff;
@@ -122,9 +127,9 @@ public final class DeviceTerminalDeltaCodec {
                         throw invalid("Base row index");
                     boolean changed = reference == 0xffff || (reference & 0x4000) != 0;
                     mask = changed ? in.readInt() : 0;
-                    if ((mask & ~ALL) != 0 || changed && mask == 0) throw invalid("Unknown field mask");
+                    if ((mask & ~allFields) != 0 || changed && mask == 0) throw invalid("Unknown field mask");
                     if (index == -1) {
-                        if (mask != ALL) throw invalid("Incomplete added row");
+                        if (mask != allFields) throw invalid("Incomplete added row");
                     } else {
                         if (!referenced.add(index) || (mask & COORDINATES) != 0)
                             throw invalid("Invalid base reference");
@@ -189,6 +194,7 @@ public final class DeviceTerminalDeltaCodec {
         if ((mask & RECIPE_INPUT) != 0) add(dictionary, entry.recipeIn);
         if ((mask & RECIPE_OUTPUT) != 0) add(dictionary, entry.recipeOut);
         if ((mask & DISPLAY) != 0) add(dictionary, entry.displayName);
+        if ((mask & TAGS) != 0) add(dictionary, entry.tags);
     }
 
     private static void add(Map<String, Integer> dictionary, String value) {
@@ -230,6 +236,8 @@ public final class DeviceTerminalDeltaCodec {
         if ((mask & DISPLAY) != 0) out.writeShort(dictionary.get(e.displayName));
         if ((mask & COLOR) != 0) out.writeByte(e.nameColor);
         if ((mask & BOLD) != 0) out.writeBoolean(e.nameBold);
+        if ((mask & TAGS) != 0) out.writeShort(dictionary.get(e.tags));
+        if ((mask & FAVORITE) != 0) out.writeLong(e.favoriteOrder);
         if ((mask & COORDINATES) != 0) {
             out.writeInt(e.dim);
             out.writeInt(e.x);
@@ -271,6 +279,9 @@ public final class DeviceTerminalDeltaCodec {
             : b.displayName;
         byte color = (m & COLOR) != 0 ? in.readByte() : b.nameColor;
         int bold = (m & BOLD) != 0 ? in.readUnsignedByte() : b.nameBold ? 1 : 0;
+        String tags = (m & TAGS) != 0 ? string(in, dictionary, DeviceTerminalTagRules.MAX_INPUT_LENGTH)
+            : b == null ? "" : b.tags;
+        long favorite = (m & FAVORITE) != 0 ? in.readLong() : b == null ? 0 : b.favoriteOrder;
         int dim = (m & COORDINATES) != 0 ? in.readInt() : b.dim;
         int x = (m & COORDINATES) != 0 ? in.readInt() : b.x;
         int y = (m & COORDINATES) != 0 ? in.readInt() : b.y;
@@ -289,6 +300,8 @@ public final class DeviceTerminalDeltaCodec {
             || color < 0
             || color > 15
             || bold > 1
+            || favorite < 0
+            || !tags.equals(DeviceTerminalTagRules.normalize(tags))
             || !display.equals(DeviceTerminalNameRules.normalize(display))) throw invalid("Invalid row value");
         if (display.isEmpty() && (color != DeviceTerminalNameRules.DEFAULT_COLOR || bold != 0)) {
             throw invalid("Invalid empty alias style");
@@ -327,7 +340,9 @@ public final class DeviceTerminalDeltaCodec {
             summary,
             owner,
             machineKind,
-            machineTier);
+            machineTier,
+            tags,
+            favorite);
     }
 
     private static int changed(Entry a, Entry b) {
@@ -352,6 +367,8 @@ public final class DeviceTerminalDeltaCodec {
         if (!a.displayName.equals(b.displayName)) mask |= DISPLAY;
         if (a.nameColor != b.nameColor) mask |= COLOR;
         if (a.nameBold != b.nameBold) mask |= BOLD;
+        if (!a.tags.equals(b.tags)) mask |= TAGS;
+        if (a.favoriteOrder != b.favoriteOrder) mask |= FAVORITE;
         return mask;
     }
 
@@ -368,6 +385,7 @@ public final class DeviceTerminalDeltaCodec {
             validText(e.recipeIn);
             validText(e.recipeOut);
             validText(e.displayName);
+            validText(e.tags);
         }
     }
 

@@ -14,15 +14,18 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
-import org.lwjgl.input.Keyboard;
-
 import com.cleanroommc.modularui.api.IPanelHandler;
-import com.cleanroommc.modularui.api.UpOrDown;
 import com.cleanroommc.modularui.api.drawable.IDrawable;
 import com.cleanroommc.modularui.api.drawable.IKey;
 import com.cleanroommc.modularui.screen.ModularPanel;
+import com.cleanroommc.modularui.value.ObjectValue;
+import com.cleanroommc.modularui.widget.ParentWidget;
+import com.cleanroommc.modularui.widget.Widget;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.Dialog;
+import com.cleanroommc.modularui.widgets.ListWidget;
+import com.cleanroommc.modularui.widgets.menu.DropdownWidget;
+import com.cleanroommc.modularui.widgets.menu.Menu;
 import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
@@ -40,7 +43,7 @@ import com.miaokatze.gtswn.network.PacketDeviceTerminalAction;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /**
- * Native compact device list. Existing cache polling and stable five-column sort remain authoritative.
+ * Full-screen device catalogue with native filters and a shared list/card presentation.
  * Whole-device link actions carry explicit desired state.
  */
 public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
@@ -55,30 +58,19 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     private static final int EXTRA_POLL_INTERVAL_TICKS = 10;
 
     /** GUI 宽度（紧凑列与链路操作） */
-    private final int xSize = 620;
+    private int xSize = 800;
 
     /** GUI 高度（标题/按钮/列头/列表/底行合计） */
-    private final int ySize = 274;
+    private int ySize = 450;
 
-    /** 顶行按钮：计数法四态轮换（本地立即轮换 + 发包 10 action 1 持久化） */
-    private static final int BTN_COUNT_MODE = 0;
-
-    /** 顶行按钮：功率筛选七项下拉（纯 GUI 会话态，不发包不持久化） */
-    private static final int BTN_POWER_FILTER = 2;
-
-    private static final int POWER_MENU_WIDTH = 136;
-    private static final int POWER_MENU_ROW_HEIGHT = 18;
     private static final String[] POWER_FILTER_KEYS = { "gtswn.device.gui.filter.power.all",
         "gtswn.device.gui.filter.power.generate_eu", "gtswn.device.gui.filter.power.consume_eu" };
 
-    /** 顶行按钮：状态筛选五态轮换（纯 GUI 会话态，不发包不持久化） */
-    private static final int BTN_STATE_FILTER = 3;
-
     /** 列头行文本 Y 偏移（按钮行下方） */
-    private static final int HEADER_Y = 62;
+    private int headerY = 116;
 
     /** 底行提示 Y 偏移（列表底界 top+232 下方） */
-    private static final int FOOTER_Y = 260;
+    private int listTop = 140;
 
     /** 列头 lang 键（下标 = 排序列 0-4 NAME/STATE/INST/AVG/POS，与包 10 COLUMN_* 一致） */
     private static final String[] COLUMN_KEYS = { "gtswn.device.gui.col.name", "gtswn.device.gui.col.state",
@@ -89,10 +81,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         "gtswn.device.gui.state.stopped", "gtswn.device.gui.state.ignored" };
 
     // ==================== 状态 ====================
-
-    /** GUI 左上角屏幕坐标（initGui 计算） */
-    private final int guiLeft = 0;
-    private final int guiTop = 0;
 
     /** 轮询计时器（初值 0 → 打开后首个 updateScreen 立即发首包） */
     private int pollTimer = 0;
@@ -113,6 +101,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     private UUID requestedTerminalId;
     private ItemStack[] anchorBaubleRefs;
     private boolean hasLinkTerminal;
+    private boolean inventoryTeleportAnchor;
 
     /** 当前终端锚点 UUID（构造传入 + 指纹/复核触发重解析；null=客户端 NBT 尚未同步到 UUID） */
     private UUID anchor;
@@ -137,8 +126,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     private int powerFilter = 0;
 
     /** Native secondary panel controls the filter menu lifecycle. */
-    private IPanelHandler powerMenu;
-    private int powerFilterCursor;
+    private IPanelHandler tagPanel;
 
     /** 状态筛选会话态：0 全部 / 1 待机 / 2 运行 / 3 停机 / 4 忽略（重开 GUI 复位为全部） */
     private int stateFilter = 0;
@@ -152,6 +140,18 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     private GuiDeviceEntryList entryList;
     private GuiDeviceNameEditor nameEditor;
     private Entry selectedDesktopEntry;
+    private ParentWidget<?> content;
+    private ParentWidget<?> tagStrip;
+    private final List<Widget<?>> filterControls = new ArrayList<>();
+    private final List<Widget<?>> headerControls = new ArrayList<>();
+    private ButtonWidget<?> resetFilter, listView, iconView, sortDirection, filterVisibility, mountButton,
+        engineeringButton;
+    private List<String> availableTags = Collections.emptyList();
+    private String tagSignature = "";
+    private boolean iconMode;
+    private boolean tagStripDirty;
+    private boolean filtersExpanded = true;
+    private boolean filterVisibilityChosen;
 
     /**
      * 构造：锚点 UUID + 初始 UI 偏好来源 stack（排序列/方向/计数法，只读）。
@@ -161,7 +161,10 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      * @param prefStack  偏好来源物品（可为 null，取默认值 AVG/DESC/NORMAL）
      */
     public GuiDeviceInfoTerminal(UUID terminalId, ItemStack prefStack) {
-        super("device_info_terminal", 620, 274);
+        super(
+            new ModularPanel("device_info_terminal").sizeRel(1f)
+                .pos(0, 0)
+                .background(IDrawable.EMPTY));
         this.anchor = terminalId;
         this.requestedTerminalId = terminalId;
         this.sortColumn = prefStack == null ? PacketDeviceTerminalAction.COLUMN_AVG
@@ -173,59 +176,54 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         buildPanel();
     }
 
+    private final class FullscreenContent extends ParentWidget<FullscreenContent> {
+
+        @Override
+        public boolean canHover() {
+            return false;
+        }
+
+        @Override
+        public void beforeResize(boolean onOpen) {
+            layoutControls(getParentArea().w(), getParentArea().h());
+            super.beforeResize(onOpen);
+        }
+    }
+
     private void buildPanel() {
-        getMainPanel().background(IDrawable.EMPTY);
-        getMainPanel().child(
-            GtswnMuiWidgets.canvas("device.chrome", 0, 0, xSize, ySize, (context, mouseX, mouseY, partialTicks) -> {
-                drawPanelBackground();
-                drawTitle();
-                drawColumnHeaders();
-                drawBody(mouseX, mouseY);
-                drawFooter();
-            }));
-        getMainPanel().child(
-            GtswnMuiWidgets
-                .button("device.count", this::countModeText, 8, 16, 130, 16, () -> actionPerformed(BTN_COUNT_MODE)));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
-                "device.power",
-                this::powerFilterText,
-                146,
-                16,
-                156,
-                16,
-                () -> actionPerformed(BTN_POWER_FILTER)));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
-                "device.state",
-                this::stateFilterText,
-                310,
-                16,
-                130,
-                16,
-                () -> actionPerformed(BTN_STATE_FILTER)));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
+        // MUI draws sibling backgrounds before their content; the full-screen fill belongs to the parent.
+        content = new FullscreenContent().name("device.fullscreen")
+            .sizeRel(1f)
+            .background((context, x, y, width, height, theme) -> GtswnMuiWidgets.drawLegacy(this::drawPanelBackground));
+        getMainPanel().child(content);
+        content.child(GtswnMuiWidgets.canvas("device.chrome", 0, 0, 1, 1, (context, mouseX, mouseY, partialTicks) -> {
+            drawTitle();
+            drawBody(mouseX, mouseY);
+            drawFooter();
+        })
+            .sizeRel(1f));
+        headerControls.add(
+            DeviceTerminalUi.button(
                 "device.refresh",
                 () -> tr("gtswn.device.gui.refresh"),
-                448,
-                16,
-                78,
-                16,
+                0,
+                0,
+                68,
+                20,
                 () -> anchor != null && extraPollCooldown == 0,
                 () -> {
                     pollTimer = 0;
                     extraPollCooldown = POLL_INTERVAL_TICKS;
                 })
                 .tooltip(t -> t.addLine(IKey.lang("gtswn.device.gui.refresh_hint"))));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
+        headerControls.add(
+            DeviceTerminalUi.button(
                 "device.settings",
                 () -> tr("gtswn.device.gui.settings"),
-                532,
-                16,
-                80,
-                16,
+                0,
+                0,
+                68,
+                20,
                 () -> anchor != null,
                 () -> {
                     int slot = com.miaokatze.gtswn.common.device.DeviceTerminalSource.find(mc.thePlayer, anchor, false);
@@ -233,57 +231,9 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                         mc.thePlayer,
                         com.miaokatze.gtswn.common.device.DeviceTerminalSource.stack(mc.thePlayer, slot));
                 }));
-        addCacheFilters();
-        int[] columns = { 4, 148, 254, 316, 378 };
-        int[] columnWidths = { 100, 42, 62, 62, 74 };
-        for (int i = 0; i < 5; i++) {
-            final int column = i;
-            getMainPanel().child(
-                new ButtonWidget<>().name("device.sort." + i)
-                    .pos(8 + columns[i], 60)
-                    .size(columnWidths[i], 14)
-                    .background(IDrawable.EMPTY)
-                    .hoverBackground(IDrawable.EMPTY)
-                    .onMousePressed(button -> {
-                        if (button != 0) return false;
-                        onColumnHeaderClicked(column);
-                        return true;
-                    }));
-        }
-        entryList = new GuiDeviceEntryList(this);
-        getMainPanel().child(entryList);
-        nameEditor = new GuiDeviceNameEditor(this);
-        powerMenu = IPanelHandler.simple(getMainPanel(), (parent, player) -> buildPowerMenu(), true);
-        getMainPanel().child(
-            GtswnMuiWidgets
-                .button(
-                    "device.desktop.mount",
-                    () -> tr("gtswn.device.gui.mount"),
-                    8,
-                    257,
-                    150,
-                    14,
-                    () -> DesktopDeviceSources.binding(anchor, selectedDesktopEntry) != null,
-                    () -> FactoryDashboard.mount(anchor, selectedDesktopEntry))
-                .tooltip(
-                    t -> t.addLine(com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.gui.mount.hint"))));
-        getMainPanel().child(
-            GtswnMuiWidgets
-                .button(
-                    "device.engineering",
-                    () -> tr("gtswn.device.gui.engineering"),
-                    514,
-                    257,
-                    98,
-                    14,
-                    () -> EngineeringTerminalActions.canOpen(anchor),
-                    () -> EngineeringTerminalActions.openGrid(anchor))
-                .tooltip(
-                    t -> t.addLine(
-                        com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.gui.engineering.hint"))));
-    }
-
-    private void addCacheFilters() {
+        headerControls
+            .add(DeviceTerminalUi.button("device.close", "X", 0, 0, 22, 20, () -> getMainPanel().closeIfOpen()));
+        for (Widget<?> control : headerControls) content.child(control);
         searchField = new com.cleanroommc.modularui.widgets.textfield.TextFieldWidget() {
 
             @Override
@@ -295,99 +245,319 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         }.value(new com.cleanroommc.modularui.value.StringValue(""))
             .autoUpdateOnChange(true)
             .setMaxLength(64)
-            .background(GtswnMuiTheme.LIST_PANEL)
+            .background(DeviceTerminalUi.INPUT)
+            .hoverBackground(DeviceTerminalUi.INPUT_HOVER)
             .hintText(tr("gtswn.device.filter.search_hint"))
-            .pos(8, 38)
-            .size(112, 16)
+            .size(100, 20)
             .name("device.filter.search");
-        searchField
-            .tooltip(t -> t.addLine(com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.filter.search")));
-        getMainPanel().child(searchField);
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
-                "device.filter.kind",
-                () -> tr("gtswn.device.filter.type") + ": "
-                    + (filters.kind == 0 ? tr("gtswn.device.filter.all") : kindText((byte) filters.kind)),
-                126,
-                38,
-                80,
-                16,
-                () -> {
-                    filters.kind = (filters.kind + 1) % 5;
-                    filterChanged();
-                }));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
-                "device.filter.dimension",
-                () -> tr("gtswn.device.filter.dimension") + ": "
-                    + (filters.dimension == null ? "*" : filters.dimension),
-                212,
-                38,
-                52,
-                16,
-                () -> {
-                    filters.dimension = nextCachedValue(filters.dimension, false);
-                    filterChanged();
-                }));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
-                "device.filter.tier",
-                () -> tr("gtswn.device.filter.tier") + ": "
-                    + (filters.tier == null ? "*" : tierText(filters.tier.byteValue())),
-                270,
-                38,
-                52,
-                16,
-                () -> {
-                    filters.tier = nextCachedValue(filters.tier, true);
-                    filterChanged();
-                }));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
-                "device.filter.link",
-                () -> tr("gtswn.device.link.column") + ": " + tr("gtswn.device.filter.link." + filters.link),
-                328,
-                38,
-                92,
-                16,
-                () -> {
-                    filters.link = (filters.link + 1) % 6;
-                    filterChanged();
-                }));
-        getMainPanel().child(
-            GtswnMuiWidgets.button(
-                "device.filter.owner",
-                () -> tr("gtswn.device.filter.owner") + ": " + tr("gtswn.device.filter.owner." + filters.owner),
-                426,
-                38,
-                90,
-                16,
-                () -> {
-                    filters.owner = (filters.owner + 1) % 4;
-                    filterChanged();
-                }));
-        getMainPanel().child(
-            GtswnMuiWidgets
-                .button("device.filter.reset", () -> tr("gtswn.device.filter.reset"), 522, 38, 90, 16, () -> {
-                    filters.kind = filters.link = filters.owner = powerFilter = stateFilter = 0;
-                    filters.dimension = filters.tier = null;
-                    filters.query = "";
-                    searchField.setText("");
-                    filterChanged();
-                }));
+        searchField.tooltip(t -> t.addLine(IKey.lang("gtswn.device.filter.search")));
+        content.child(searchField);
+        listView = DeviceTerminalUi
+            .button("device.view.list", () -> tr("gtswn.device.view.list"), 0, 0, 52, 20, () -> setIconMode(false));
+        iconView = DeviceTerminalUi
+            .button("device.view.icons", () -> tr("gtswn.device.view.icons"), 0, 0, 52, 20, () -> setIconMode(true));
+        listView.background(
+            (context, x, y, w, h, theme) -> (iconMode ? DeviceTerminalUi.NORMAL : DeviceTerminalUi.SELECTED)
+                .draw(context, x, y, w, h, theme));
+        listView.hoverBackground(
+            (context, x, y, w, h, theme) -> (iconMode ? DeviceTerminalUi.HOVER : DeviceTerminalUi.SELECTED_HOVER)
+                .draw(context, x, y, w, h, theme));
+        iconView.background(
+            (context, x, y, w, h, theme) -> (iconMode ? DeviceTerminalUi.SELECTED : DeviceTerminalUi.NORMAL)
+                .draw(context, x, y, w, h, theme));
+        iconView.hoverBackground(
+            (context, x, y, w, h, theme) -> (iconMode ? DeviceTerminalUi.SELECTED_HOVER : DeviceTerminalUi.HOVER)
+                .draw(context, x, y, w, h, theme));
+        resetFilter = DeviceTerminalUi
+            .button("device.filter.reset", () -> tr("gtswn.device.filter.reset"), 0, 0, 62, 20, () -> {
+                filters.kind = filters.link = filters.owner = powerFilter = stateFilter = 0;
+                filters.dimension = filters.tier = null;
+                filters.tags.clear();
+                filters.query = "";
+                searchField.setText("");
+                filterChanged();
+            });
+        content.child(listView)
+            .child(iconView)
+            .child(resetFilter);
+        addDropdown(
+            "count",
+            () -> countMode,
+            this::selectCountMode,
+            () -> numbers(0, 4),
+            value -> tr(
+                "gtswn.device.gui.count_mode."
+                    + new String[] { "normal", "scientific", "thousands", "voltage" }[value]));
+        addDropdown("power", () -> powerFilter, value -> {
+            powerFilter = value;
+            filterChanged();
+        }, () -> numbers(0, POWER_FILTER_KEYS.length), value -> tr(POWER_FILTER_KEYS[value]));
+        addDropdown("state", () -> stateFilter, value -> {
+            stateFilter = value;
+            filterChanged();
+        },
+            () -> numbers(0, 5),
+            value -> value == 0 ? tr("gtswn.device.gui.filter.state.all") : stateText((byte) (value - 1)));
+        addDropdown("kind", () -> filters.kind, value -> {
+            filters.kind = value;
+            filterChanged();
+        }, () -> numbers(0, 5), value -> value == 0 ? tr("gtswn.device.filter.all") : kindText(value.byteValue()));
+        addDropdown("dimension", () -> filters.dimension == null ? Integer.MIN_VALUE : filters.dimension, value -> {
+            filters.dimension = value == Integer.MIN_VALUE ? null : value;
+            filterChanged();
+        },
+            () -> cachedOptions(false),
+            value -> value == Integer.MIN_VALUE ? tr("gtswn.device.filter.all") : value.toString());
+        addDropdown("tier", () -> filters.tier == null ? Integer.MIN_VALUE : filters.tier, value -> {
+            filters.tier = value == Integer.MIN_VALUE ? null : value;
+            filterChanged();
+        },
+            () -> cachedOptions(true),
+            value -> value == Integer.MIN_VALUE ? tr("gtswn.device.filter.all") : tierText(value.byteValue()));
+        addDropdown("link", () -> filters.link, value -> {
+            filters.link = value;
+            filterChanged();
+        }, () -> numbers(0, 6), value -> tr("gtswn.device.filter.link." + value));
+        addDropdown("owner", () -> filters.owner, value -> {
+            filters.owner = value;
+            filterChanged();
+        }, () -> numbers(0, 4), value -> tr("gtswn.device.filter.owner." + value));
+        addDropdown(
+            "sort",
+            () -> sortColumn,
+            this::selectSortColumn,
+            () -> numbers(0, 5),
+            value -> tr(COLUMN_KEYS[value]));
+        sortDirection = DeviceTerminalUi.button(
+            "device.sort.direction",
+            () -> tr(sortDesc ? "gtswn.device.sort.desc" : "gtswn.device.sort.asc"),
+            0,
+            0,
+            80,
+            20,
+            () -> onColumnHeaderClicked(sortColumn));
+        content.child(sortDirection);
+        filterVisibility = DeviceTerminalUi.button(
+            "device.filters.expand",
+            () -> tr(filtersExpanded ? "gtswn.device.filters.collapse" : "gtswn.device.filters.expand"),
+            0,
+            0,
+            82,
+            20,
+            () -> {
+                filterVisibilityChosen = true;
+                filtersExpanded = !filtersExpanded;
+                layoutControls(xSize, ySize);
+                content.scheduleResize();
+            })
+            .background(
+                (context, x, y, w, h, theme) -> (filtersExpanded ? DeviceTerminalUi.SELECTED : DeviceTerminalUi.NORMAL)
+                    .draw(context, x, y, w, h, theme))
+            .hoverBackground(
+                (context, x, y, w, h,
+                    theme) -> (filtersExpanded ? DeviceTerminalUi.SELECTED_HOVER : DeviceTerminalUi.HOVER)
+                        .draw(context, x, y, w, h, theme));
+        content.child(filterVisibility);
+        tagStrip = new ParentWidget<>().name("device.tags")
+            .height(20)
+            .background(IDrawable.EMPTY);
+        content.child(tagStrip);
+        entryList = new GuiDeviceEntryList(this);
+        content.child(entryList);
+        nameEditor = new GuiDeviceNameEditor(this);
+        tagPanel = IPanelHandler.simple(getMainPanel(), (parent, player) -> buildTagPanel(), true);
+        mountButton = DeviceTerminalUi
+            .button(
+                "device.desktop.mount",
+                () -> tr("gtswn.device.gui.mount"),
+                0,
+                0,
+                146,
+                20,
+                () -> DesktopDeviceSources.binding(anchor, selectedDesktopEntry) != null,
+                () -> FactoryDashboard.mount(anchor, selectedDesktopEntry))
+            .tooltip(t -> t.addLine(IKey.lang("gtswn.device.gui.mount.hint")));
+        engineeringButton = DeviceTerminalUi
+            .button(
+                "device.engineering",
+                () -> tr("gtswn.device.gui.engineering"),
+                0,
+                0,
+                110,
+                20,
+                () -> EngineeringTerminalActions.canOpen(anchor),
+                () -> EngineeringTerminalActions.openGrid(anchor))
+            .tooltip(t -> t.addLine(IKey.lang("gtswn.device.gui.engineering.hint")));
+        content.child(mountButton)
+            .child(engineeringButton);
+    }
+
+    private void layoutControls(int width, int height) {
+        boolean changed = xSize != width || ySize != height;
+        xSize = width;
+        ySize = height;
+        for (int i = 0; i < headerControls.size(); i++) headerControls.get(i)
+            .pos(width - 180 + i * 74, 8);
+        searchField.pos(10, 36)
+            .width(Math.max(50, width - 202));
+        listView.pos(width - 186, 36);
+        iconView.pos(width - 128, 36);
+        resetFilter.pos(width - 70, 36);
+        if (!filterVisibilityChosen) filtersExpanded = height >= 360;
+        int columns = Math.max(3, Math.min(9, (width - 14) / 104));
+        int cellWidth = Math.max(1, (width - 20 - (columns - 1) * 6) / columns);
+        for (int i = 0; i < filterControls.size(); i++) {
+            filterControls.get(i)
+                .setEnabled(filtersExpanded);
+            filterControls.get(i)
+                .pos(10 + i % columns * (cellWidth + 6), 62 + i / columns * 24)
+                .size(cellWidth, 20);
+        }
+        int tagY = 62 + (filtersExpanded ? ((filterControls.size() + columns - 1) / columns) * 24 : 0);
+        tagStrip.pos(10, tagY)
+            .width(width - 20);
+        headerY = tagY + 24;
+        listTop = headerY + 24;
+        sortDirection.pos(width - 90, headerY);
+        filterVisibility.pos(width - 178, headerY);
+        entryList.pos(10, listTop)
+            .size(Math.max(1, width - 20), Math.max(12, height - listTop - 46));
+        mountButton.pos(10, height - 28);
+        engineeringButton.pos(width - 120, height - 28);
+        if (changed) {
+            rebuildTagStrip();
+            entryList.invalidateLayout();
+        }
+    }
+
+    private void addDropdown(String id, java.util.function.Supplier<Integer> getter,
+        java.util.function.Consumer<Integer> setter, java.util.function.Supplier<List<Integer>> options,
+        java.util.function.Function<Integer, String> text) {
+        String label = tr("gtswn.device.filter.label." + id);
+        DeviceDropdown dropdown = new DeviceDropdown("device.filter." + id, options);
+        dropdown.value(new ObjectValue.Dynamic<>(Integer.class, getter, setter))
+            .optionToWidget(
+                (value, selected) -> IKey
+                    .dynamic(
+                        () -> GuiDeviceEntryList.ellipsis(
+                            fontRendererObj,
+                            selected ? label + ": " + text.apply(getter.get()) + " \u25BE" : text.apply(value),
+                            Math.max(
+                                1,
+                                dropdown.getArea()
+                                    .w() - 14)))
+                    .asWidget()
+                    .height(20)
+                    .widthRel(1f)
+                    .padding(6, 3))
+            .background(DeviceTerminalUi.NORMAL)
+            .hoverBackground(DeviceTerminalUi.HOVER)
+            .maxVerticalMenuSize(180)
+            .size(110, 20)
+            .tooltipBuilder(t -> t.addLine(label + ": " + text.apply(getter.get())))
+            .tooltipAutoUpdate(true);
+        filterControls.add(dropdown);
+        content.child(dropdown);
+    }
+
+    private static final class DeviceDropdown extends DropdownWidget<Integer, DeviceDropdown> {
+
+        private final java.util.function.Supplier<List<Integer>> options;
+
+        DeviceDropdown(String name, java.util.function.Supplier<List<Integer>> options) {
+            super(name, Integer.class);
+            this.options = options;
+        }
+
+        @Override
+        protected Menu<?> createMenu() {
+            List<Integer> values = options.get();
+            clearOptions();
+            options(values);
+            Menu<?> menu = super.createMenu().background(DeviceTerminalUi.INPUT);
+            int index = 0;
+            for (com.cleanroommc.modularui.api.widget.IWidget list : menu.getChildren())
+                for (com.cleanroommc.modularui.api.widget.IWidget option : list.getChildren())
+                    if (option instanceof ButtonWidget<?>) {
+                        Integer value = values.get(index++);
+                        ((ButtonWidget<?>) option)
+                            .background(
+                                (context, x, y, w, h,
+                                    theme) -> (value.equals(getValue().getValue()) ? DeviceTerminalUi.SELECTED
+                                        : DeviceTerminalUi.NORMAL).draw(context, x, y, w, h, theme))
+                            .hoverBackground(
+                                (context, x, y, w, h,
+                                    theme) -> (value.equals(getValue().getValue()) ? DeviceTerminalUi.SELECTED_HOVER
+                                        : DeviceTerminalUi.HOVER).draw(context, x, y, w, h, theme));
+                    }
+            return menu;
+        }
+
+        @Override
+        public IDrawable getBackground() {
+            return isOpen() ? DeviceTerminalUi.SELECTED : super.getBackground();
+        }
+
+        @Override
+        public IDrawable getHoverBackground() {
+            return isOpen() ? DeviceTerminalUi.SELECTED_HOVER : super.getHoverBackground();
+        }
+
+        @Override
+        public Result onMousePressed(int mouseButton) {
+            if (mouseButton != 0) return Result.STOP;
+            if (!isOpen()) {
+                int below = getScreen().getScreenArea()
+                    .h() - getArea().ey() - 6;
+                int above = getArea().y() - 6;
+                if (below < 180 && above > below) directionUp();
+                else directionDown();
+                maxVerticalMenuSize(Math.max(20, Math.min(180, Math.max(below, above))));
+                deleteMenu();
+            }
+            return super.onMousePressed(mouseButton);
+        }
+    }
+
+    private static List<Integer> numbers(int first, int end) {
+        List<Integer> result = new ArrayList<>();
+        for (int i = first; i < end; i++) result.add(i);
+        return result;
+    }
+
+    private List<Integer> cachedOptions(boolean tier) {
+        java.util.SortedSet<Integer> values = new java.util.TreeSet<>();
+        values.add(Integer.MIN_VALUE);
+        if (displayedSnapshot != null)
+            for (Entry entry : displayedSnapshot.entries) values.add(tier ? (int) entry.machineTier : entry.dim);
+        return new ArrayList<>(values);
+    }
+
+    private void selectCountMode(int mode) {
+        countMode = mode;
+        GTSWNPacketHandler.NETWORK.sendToServer(
+            new PacketDeviceTerminalAction(
+                anchor,
+                PacketDeviceTerminalAction.ACTION_COUNT_MODE,
+                (byte) 0,
+                (byte) 0,
+                (byte) mode,
+                ""));
+    }
+
+    private void selectSortColumn(int column) {
+        if (column != sortColumn) onColumnHeaderClicked(column);
+    }
+
+    private void setIconMode(boolean icons) {
+        if (iconMode == icons) return;
+        iconMode = icons;
+        entryList.invalidateLayout();
     }
 
     private void filterChanged() {
         sortDirty = true;
-        refreshEntries();
-    }
-
-    private Integer nextCachedValue(Integer current, boolean tier) {
-        java.util.SortedSet<Integer> values = new java.util.TreeSet<>();
-        if (displayedSnapshot != null)
-            for (Entry entry : displayedSnapshot.entries) values.add(tier ? (int) entry.machineTier : entry.dim);
-        for (Integer value : values) if (current == null || value > current) return value;
-        return null;
+        tagStripDirty = true;
     }
 
     String kindText(byte kind) {
@@ -398,63 +568,120 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         return tier < 0 || tier >= gregtech.api.enums.GTValues.VN.length ? "?" : gregtech.api.enums.GTValues.VN[tier];
     }
 
-    private ModularPanel buildPowerMenu() {
-        ModularPanel panel = new Dialog<Void>("device.power.menu") {
-
-            @Override
-            public void beforeResize(boolean onOpen) {
-                int screenWidth = getParentArea().w();
-                int screenHeight = getParentArea().h();
-                int menuHeight = POWER_MENU_ROW_HEIGHT * POWER_FILTER_KEYS.length + 6;
-                float mainScale = GtswnMuiTheme.fitScale(screenWidth, screenHeight, xSize, ySize);
-                float menuScale = GtswnMuiTheme.fitScale(screenWidth, screenHeight, POWER_MENU_WIDTH, menuHeight);
-                float visibleWidth = POWER_MENU_WIDTH * menuScale;
-                float visibleHeight = menuHeight * menuScale;
-                float anchorX = (screenWidth - xSize * mainScale) / 2f + 146 * mainScale;
-                float anchorY = (screenHeight - ySize * mainScale) / 2f + 33 * mainScale;
-                float visibleX = Math.max(4, Math.min(screenWidth - visibleWidth - 4, anchorX));
-                float visibleY = Math.max(4, Math.min(screenHeight - visibleHeight - 4, anchorY));
-                pos(
-                    Math.round(visibleX - (POWER_MENU_WIDTH - visibleWidth) / 2f),
-                    Math.round(visibleY - (menuHeight - visibleHeight) / 2f));
-                super.beforeResize(onOpen);
-            }
-
-            @Override
-            public boolean onKeyPressed(char character, int keyCode) {
-                if (keyCode == Keyboard.KEY_UP || keyCode == Keyboard.KEY_DOWN) {
-                    powerFilterCursor = Math
-                        .floorMod(powerFilterCursor + (keyCode == Keyboard.KEY_UP ? -1 : 1), POWER_FILTER_KEYS.length);
-                    return true;
-                }
-                if (keyCode == Keyboard.KEY_RETURN || keyCode == Keyboard.KEY_NUMPADENTER) {
-                    selectPowerFilter(powerFilterCursor);
-                    return true;
-                }
-                return super.onKeyPressed(character, keyCode);
-            }
-
-            @Override
-            public boolean onMouseScroll(UpOrDown direction, int amount) {
-                powerFilterCursor = Math.floorMod(powerFilterCursor - direction.modifier, POWER_FILTER_KEYS.length);
-                return true;
-            }
-        }.setCloseOnOutOfBoundsClick(true)
-            .size(POWER_MENU_WIDTH, POWER_MENU_ROW_HEIGHT * POWER_FILTER_KEYS.length + 6)
-            .background(GtswnMuiTheme.LIST_PANEL);
-        GtswnMuiTheme.fit(panel);
-        for (int mode = 0; mode < POWER_FILTER_KEYS.length; mode++) {
-            final int selected = mode;
-            panel.child(
-                GtswnMuiWidgets.button(
-                    "device.power.option." + mode,
-                    () -> (powerFilterCursor == selected ? "\u25B6 " : "") + tr(POWER_FILTER_KEYS[selected]),
-                    3,
-                    3 + mode * POWER_MENU_ROW_HEIGHT,
-                    POWER_MENU_WIDTH - 6,
-                    POWER_MENU_ROW_HEIGHT - 2,
-                    () -> selectPowerFilter(selected)));
+    private void refreshTags(Snapshot snapshot) {
+        java.util.SortedSet<String> tags = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (Entry entry : snapshot.entries)
+            tags.addAll(com.miaokatze.gtswn.common.device.DeviceTerminalTagRules.labels(entry.tags));
+        String signature = String.join("\n", tags);
+        if (signature.equals(tagSignature)) return;
+        tagSignature = signature;
+        availableTags = new ArrayList<>(tags);
+        rebuildTagStrip();
+        if (tagPanel != null) {
+            tagPanel.closePanel();
+            tagPanel.deleteCachedPanel();
         }
+    }
+
+    private void toggleTag(String tag) {
+        if (!filters.tags.removeIf(value -> value.equalsIgnoreCase(tag))) filters.tags.add(tag);
+        filterChanged();
+    }
+
+    private boolean tagSelected(String tag) {
+        for (String value : filters.tags) if (value.equalsIgnoreCase(tag)) return true;
+        return false;
+    }
+
+    private ButtonWidget<?> tagButton(String tag, int x, int y, int width) {
+        return DeviceTerminalUi.button("device.tag." + tag, () -> tag, x, y, width, 20, () -> toggleTag(tag))
+            .background(
+                (context, px, py, w, h,
+                    theme) -> (tagSelected(tag) ? DeviceTerminalUi.SELECTED : DeviceTerminalUi.NORMAL)
+                        .draw(context, px, py, w, h, theme))
+            .hoverBackground(
+                (context, px, py, w, h,
+                    theme) -> (tagSelected(tag) ? DeviceTerminalUi.SELECTED_HOVER : DeviceTerminalUi.HOVER)
+                        .draw(context, px, py, w, h, theme))
+            .tooltip(t -> t.addLine(IKey.lang("gtswn.device.tags.filter_hint")));
+    }
+
+    private void rebuildTagStrip() {
+        if (tagStrip == null) return;
+        tagStrip.removeAll();
+        tagStrip
+            .child(DeviceTerminalUi.button("device.tags.all", () -> tr("gtswn.device.tags.all"), 0, 0, 62, 20, () -> {
+                filters.tags.clear();
+                filterChanged();
+            })
+                .background(
+                    (context, px, py, w, h,
+                        theme) -> (filters.tags.isEmpty() ? DeviceTerminalUi.SELECTED : DeviceTerminalUi.NORMAL)
+                            .draw(context, px, py, w, h, theme))
+                .hoverBackground(
+                    (context, px, py, w, h,
+                        theme) -> (filters.tags.isEmpty() ? DeviceTerminalUi.SELECTED_HOVER : DeviceTerminalUi.HOVER)
+                            .draw(context, px, py, w, h, theme)));
+        int x = 68;
+        for (String tag : availableTags) {
+            int width = Math.min(160, fontRendererObj.getStringWidth(tag) + 16);
+            if (x + width > xSize - 126) break;
+            tagStrip.child(tagButton(tag, x, 0, width));
+            x += width + 6;
+        }
+        tagStrip.child(
+            DeviceTerminalUi.button(
+                "device.tags.expand",
+                () -> tr("gtswn.device.tags.expand") + (filters.tags.isEmpty() ? "" : " (" + filters.tags.size() + ")"),
+                Math.max(68, xSize - 126),
+                0,
+                106,
+                20,
+                () -> tagPanel.togglePanel()));
+    }
+
+    private ModularPanel buildTagPanel() {
+        int width = Math.min(520, Math.max(280, xSize - 36));
+        int height = Math.min(330, Math.max(120, ySize - 36));
+        ModularPanel panel = new Dialog<>("device.tags.expanded").size(width, height)
+            .background(GtswnMuiTheme.PANEL)
+            .themeOverride(GtswnMuiTheme.THEME_ID);
+        GtswnMuiTheme.fit(panel);
+        panel.child(
+            IKey.lang("gtswn.device.tags.title")
+                .asWidget()
+                .pos(12, 10)
+                .size(width - 48, 16));
+        panel.child(
+            ButtonWidget.panelCloseButton()
+                .size(18)
+                .background(DeviceTerminalUi.NORMAL)
+                .hoverBackground(DeviceTerminalUi.HOVER));
+        panel.child(
+            IKey.lang("gtswn.device.tags.filter_hint")
+                .asWidget()
+                .pos(12, 29)
+                .size(width - 24, 24));
+        ListWidget<com.cleanroommc.modularui.api.widget.IWidget, ?> list = new ListWidget<>().pos(12, 56)
+            .size(width - 24, height - 68)
+            .background(GtswnMuiTheme.LIST_PANEL);
+        ParentWidget<?> row = null;
+        int x = 0;
+        List<String> labels = new ArrayList<>(availableTags);
+        for (String selected : filters.tags) if (labels.stream()
+            .noneMatch(value -> value.equalsIgnoreCase(selected))) labels.add(selected);
+        for (String tag : labels) {
+            int chipWidth = Math.min(width - 44, fontRendererObj.getStringWidth(tag) + 20);
+            if (row == null || x + chipWidth > width - 44) {
+                row = new ParentWidget<>().size(width - 36, 26)
+                    .background(IDrawable.EMPTY);
+                list.child(row);
+                x = 4;
+            }
+            row.child(tagButton(tag, x, 3, chipWidth));
+            x += chipWidth + 6;
+        }
+        panel.child(list);
         return panel;
     }
 
@@ -477,6 +704,10 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         refreshAnchor();
         DesktopDeviceSources.nativeViewer(anchor);
         refreshEntries();
+        if (tagStripDirty) {
+            tagStripDirty = false;
+            rebuildTagStrip();
+        }
         if (this.extraPollCooldown > 0) {
             this.extraPollCooldown--;
         }
@@ -489,6 +720,9 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     public void onFrameUpdate() {
         // Receipts can revoke an open draft between client ticks; do not draw it for another frame.
         if (nameEditor != null) nameEditor.validateSelection();
+        boolean authorized = displayedAuthorizationEpoch == DeviceTerminalClientCache.authorizationEpoch(anchor);
+        if (tagStrip != null) tagStrip.setEnabled(authorized);
+        if (!authorized && tagPanel != null) tagPanel.closePanel();
         super.onFrameUpdate();
     }
 
@@ -522,6 +756,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             anchorBaubleRefs[i] = baubles.getStackInSlot(i);
         }
         hasLinkTerminal = com.miaokatze.gtswn.common.device.TerminalLinkSettings.linkTerminal(player) != null;
+        inventoryTeleportAnchor = com.miaokatze.gtswn.common.gui.TerminalSupplyStore
+            .inventorySlot(player, com.miaokatze.gtswn.common.gui.TerminalSupplyStore.Kind.TELEPORT_ANCHOR) >= 0;
         UUID resolved = resolveTerminalId();
         if (!java.util.Objects.equals(resolved, this.anchor)) {
             closeNameEditor();
@@ -609,12 +845,17 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             displayedAuthorizationEpoch = epoch;
             selectedDesktopEntry = null;
             closeNameEditor();
+            filters.tags.clear();
+            tagStripDirty = true;
+            clearTags();
         }
         if (entryList != null) entryList.setEnabled(snapshot != null && !snapshot.entries.isEmpty());
         if (!this.sortDirty && snapshot == this.displayedSnapshot && (snapshot != null || this.sortedEntries.isEmpty()))
             return;
         this.displayedSnapshot = snapshot;
+        if (snapshot != null && tagStrip != null) refreshTags(snapshot);
         if (snapshot == null) {
+            clearTags();
             this.sortedEntries = Collections.emptyList();
             this.selectedDesktopEntry = null;
             closeNameEditor();
@@ -637,7 +878,10 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         if (this.sortDesc) {
             cmp = cmp.reversed();
         }
-        copy.sort(cmp);
+        copy.sort(
+            Comparator.<Entry>comparingLong(entry -> entry.favoriteOrder)
+                .reversed()
+                .thenComparing(cmp));
         this.sortedEntries = copy;
         if (this.entryList != null) this.entryList.clampScroll();
     }
@@ -694,70 +938,6 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     // ==================== 顶行按钮 ====================
 
-    private void actionPerformed(int id) {
-        if (id == BTN_COUNT_MODE) {
-            // 本地立即轮换显示（下轮打开由服务端 NBT 校正）+ 发包 action 1 持久化（四态轮换）
-            this.countMode = (this.countMode + 1) % 4;
-            GTSWNPacketHandler.NETWORK.sendToServer(
-                new PacketDeviceTerminalAction(
-                    anchor,
-                    PacketDeviceTerminalAction.ACTION_COUNT_MODE,
-                    (byte) 0,
-                    (byte) 0,
-                    (byte) this.countMode,
-                    ""));
-        } else if (id == BTN_POWER_FILTER) {
-            powerFilterCursor = powerFilter;
-            powerMenu.togglePanel();
-        } else if (id == BTN_STATE_FILTER) {
-            // 状态筛选五态轮换：全部→待机→运行→停机→忽略→全部。
-            this.stateFilter = (this.stateFilter + 1) % 5;
-            this.sortDirty = true;
-            refreshEntries();
-        }
-    }
-
-    /** 计数法按钮文案（计数模式: 常规计数/科学计数/千位计数/电压等级） */
-    private String countModeText() {
-        String mode = tr(
-            this.countMode == PacketDeviceTerminalAction.MODE_NORMAL ? "gtswn.device.gui.count_mode.normal"
-                : this.countMode == PacketDeviceTerminalAction.MODE_SCIENTIFIC
-                    ? "gtswn.device.gui.count_mode.scientific"
-                    : this.countMode == PacketDeviceTerminalAction.MODE_THOUSANDS
-                        ? "gtswn.device.gui.count_mode.thousands"
-                        : "gtswn.device.gui.count_mode.voltage");
-        return StatCollector.translateToLocalFormatted("gtswn.device.gui.count_mode", mode);
-    }
-
-    /** 功率筛选按钮文案；完整选项在下拉中显示，按钮末尾留出箭头。 */
-    private String powerFilterText() {
-        String text = StatCollector
-            .translateToLocalFormatted("gtswn.device.gui.filter.power", tr(POWER_FILTER_KEYS[this.powerFilter]));
-        if (fontRendererObj.getStringWidth(text) > 138) text = fontRendererObj.trimStringToWidth(text, 132) + "...";
-        return text + " \u25BC";
-    }
-
-    private void selectPowerFilter(int mode) {
-        powerMenu.closePanel();
-        powerFilter = mode;
-        sortDirty = true;
-        refreshEntries();
-    }
-
-    /** 状态筛选按钮文案：全部/待机/运行/停机/忽略。 */
-    private String stateFilterText() {
-        String value = tr(
-            this.stateFilter == 1 ? "gtswn.device.gui.state.idle"
-                : this.stateFilter == 2 ? "gtswn.device.gui.state.running"
-                    : this.stateFilter == 3 ? "gtswn.device.gui.state.stopped"
-                        : this.stateFilter == 4 ? "gtswn.device.gui.state.ignored"
-                            : "gtswn.device.gui.filter.state.all");
-        return StatCollector.translateToLocalFormatted("gtswn.device.gui.filter.state", value);
-    }
-
-    // ==================== 列头排序 ====================
-
-    /** 点击列头：同列再点反向；异列切默认方向（平均列降序、其余升序）→ 本地立即重排 + 发包 action 0。 */
     private void onColumnHeaderClicked(int column) {
         if (column == this.sortColumn) {
             this.sortDesc = !this.sortDesc;
@@ -781,7 +961,9 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     /** 列表传送按钮回调：发包 10 action 3（服务端 3s 冷却 + 经验复查扣减权威执行）。 */
     void sendTeleport(String key) {
+        if (!teleportAffordable()) return;
         sendTargetAction(PacketDeviceTerminalAction.ACTION_TELEPORT, key);
+        pollTimer = 0;
     }
 
     /** 列表 Ctrl+点击回调：发包 10 action 2 远程解绑（无确认，服务端 removeBinding 权威执行）。 */
@@ -813,109 +995,44 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
      * 几何与尺寸零变化；标题/列头两条分隔线仍代码绘制，色值琥珀化（GtswnGuiPalette.DIVIDER）。
      */
     private void drawPanelBackground() {
-        GtswnGuiDrawing
-            .drawNineSlice(GtswnGuiTextures.PANEL_DEVICE_INFO, 8, this.guiLeft, this.guiTop, xSize, ySize, 0);
-        // 标题分隔线
-        net.minecraft.client.gui.Gui.drawRect(
-            this.guiLeft + 8,
-            this.guiTop + 14,
-            this.guiLeft + this.xSize - 8,
-            this.guiTop + 15,
-            GtswnGuiPalette.DIVIDER);
-        // 列头分隔线
-        net.minecraft.client.gui.Gui.drawRect(
-            this.guiLeft + 8,
-            this.guiTop + 72,
-            this.guiLeft + this.xSize - 8,
-            this.guiTop + 73,
-            GtswnGuiPalette.DIVIDER);
+        fillRect(0, 0, xSize, ySize, 0xFF111820);
+        fillRect(0, 0, xSize, 31, 0xFF263442);
+        fillRect(0, 30, xSize, 31, 0xFF638292);
+        fillRect(10, headerY + 22, xSize - 10, headerY + 23, 0xFF465563);
+        String count = StatCollector.translateToLocalFormatted(
+            "gtswn.device.gui.visible_count",
+            sortedEntries.size(),
+            displayedSnapshot == null ? 0 : displayedSnapshot.entries.size());
+        fontRendererObj.drawString(
+            GuiDeviceEntryList.ellipsis(fontRendererObj, count, xSize - 202),
+            12,
+            headerY + 6,
+            GtswnGuiPalette.TEXT_BODY);
     }
 
-    /** 标题（居中） */
     private void drawTitle() {
-        String title = tr("gtswn.device.gui.title");
-        this.fontRendererObj.drawString(
-            title,
-            this.guiLeft + (this.xSize - this.fontRendererObj.getStringWidth(title)) / 2,
-            this.guiTop + 4,
+        fontRendererObj.drawString(
+            GuiDeviceEntryList.ellipsis(fontRendererObj, tr("gtswn.device.gui.title"), Math.max(1, xSize - 202)),
+            12,
+            13,
             GtswnGuiPalette.TEXT_TITLE);
     }
 
-    /**
-     * 列头行：五列可排序标签 + 当前排序列 ▲/▼ 高亮（点击排序，见 原生列头按钮）+ 传送列标签（不可排序）。
-     * <p>
-     * v1.7.2 列头全加粗 §l（与列表行加粗一致）。
-     */
-    private void drawColumnHeaders() {
-        int[] colX = { GuiDeviceEntryList.COL_NAME_X, GuiDeviceEntryList.COL_STATE_X, GuiDeviceEntryList.COL_INST_X,
-            GuiDeviceEntryList.COL_AVG_X, GuiDeviceEntryList.COL_POS_X };
-        for (int i = 0; i < COLUMN_KEYS.length; i++) {
-            String label = tr(COLUMN_KEYS[i]) + (i == this.sortColumn ? (this.sortDesc ? " \u25BC" : " \u25B2") : "");
-            this.fontRendererObj.drawString(
-                "§l" + label,
-                this.guiLeft + 8 + colX[i],
-                this.guiTop + HEADER_Y,
-                i == this.sortColumn ? GtswnGuiPalette.TEXT_ACCENT : GtswnGuiPalette.TEXT_BODY);
-        }
-        this.fontRendererObj.drawString(
-            tr("gtswn.device.filter.type"),
-            this.guiLeft + 116,
-            this.guiTop + HEADER_Y,
-            GtswnGuiPalette.TEXT_BODY);
-        this.fontRendererObj.drawString(
-            tr("gtswn.device.filter.dimension"),
-            this.guiLeft + 202,
-            this.guiTop + HEADER_Y,
-            GtswnGuiPalette.TEXT_BODY);
-        this.fontRendererObj.drawString(
-            tr("gtswn.device.filter.tier"),
-            this.guiLeft + 232,
-            this.guiTop + HEADER_Y,
-            GtswnGuiPalette.TEXT_BODY);
-        this.fontRendererObj.drawString(
-            "§l" + tr("gtswn.device.link.column"),
-            this.guiLeft + 8 + GuiDeviceEntryList.LINK_X,
-            this.guiTop + HEADER_Y,
-            GtswnGuiPalette.TEXT_ACCENT);
-        // 第六列：传送列头（行内 ✦ 按钮列；不可排序，仅标签）
-        String teleport = "§l" + tr("gtswn.device.gui.teleport");
-        this.fontRendererObj.drawString(
-            teleport,
-            this.guiLeft + this.xSize - 8 - this.fontRendererObj.getStringWidth(teleport),
-            this.guiTop + HEADER_Y,
-            GtswnGuiPalette.TEXT_BODY);
-    }
-
-    /** 列表主体：无快照「...」占位 / 无绑定提示 / 正常列表。 */
     private void drawBody(int mouseX, int mouseY) {
-        Snapshot snapshot = this.anchor == null ? null : DesktopDeviceSources.displaySnapshot(this.anchor);
-        if (snapshot == null) {
-            // 首个回包未到达（或锚点未同步）：中央灰字等待占位
-            drawCenteredListText("...");
-            return;
-        }
-        if (snapshot.entries.isEmpty()) {
-            // 快照已到齐但无绑定条目
-            drawCenteredListText(tr("gtswn.device.gui.no_bindings"));
-            return;
-        }
-
+        if (displayedSnapshot == null) drawCenteredListText("...");
+        else if (displayedSnapshot.entries.isEmpty()) drawCenteredListText(tr("gtswn.device.gui.no_bindings"));
+        else if (sortedEntries.isEmpty()) drawCenteredListText(tr("gtswn.device.gui.no_matches"));
     }
 
-    /** 列表区中央灰字提示（占位 / 无绑定共用）。 */
     private void drawCenteredListText(String text) {
-        int x = this.guiLeft + 8 + (604 - this.fontRendererObj.getStringWidth(text)) / 2;
-        int y = this.guiTop + 74 + 180 / 2 - 4;
-        this.fontRendererObj.drawString(text, x, y, GtswnGuiPalette.TEXT_MUTED);
+        int x = (xSize - fontRendererObj.getStringWidth(text)) / 2;
+        int y = listTop + Math.max(12, ySize - listTop - 46) / 2 - 4;
+        fontRendererObj.drawString(text, x, y, GtswnGuiPalette.TEXT_MUTED);
     }
 
-    /** 底行固定操作提示。 */
     private void drawFooter() {
-        this.fontRendererObj.drawString(
-            this.fontRendererObj.trimStringToWidth(tr("gtswn.device.gui.footer"), 346),
-            this.guiLeft + 162,
-            this.guiTop + FOOTER_Y,
-            GtswnGuiPalette.TEXT_MUTED);
+        String text = GuiDeviceEntryList.ellipsis(fontRendererObj, tr("gtswn.device.gui.footer"), xSize - 24);
+        fontRendererObj.drawString(text, 12, ySize - 42, GtswnGuiPalette.TEXT_MUTED);
     }
 
     void selectDesktopEntry(Entry entry) {
@@ -1003,6 +1120,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         List<String> lines = new ArrayList<>();
         lines.add(DeviceTerminalNames.localName(hovered));
         lines.add(tr("gtswn.device.rename.hover"));
+        lines.add(tr("gtswn.device.favorite.hint"));
+        if (!hovered.tags.isEmpty()) lines.add(tr("gtswn.device.tags.title") + ": " + hovered.tags);
         lines.add(tr("gtswn.device.gui.tooltip.recognition.cycle"));
         lines.add(
             StatCollector.translateToLocalFormatted(
@@ -1110,6 +1229,56 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
     // ==================== 列表与命名子面板的宿主访问器 ====================
 
     /** 字体渲染器访问（列表绘制用） */
+    boolean iconMode() {
+        return iconMode;
+    }
+
+    int entryWidth() {
+        return Math.max(1, xSize - 30);
+    }
+
+    boolean teleportHasAnchor() {
+        return inventoryTeleportAnchor || DeviceTerminalClientCache.teleportAnchors() > 0;
+    }
+
+    boolean teleportAffordable() {
+        return teleportHasAnchor() || clientPlayerLevel() >= teleportCost();
+    }
+
+    int teleportColor() {
+        return teleportHasAnchor() ? 0xFF53C58B : teleportAffordable() ? 0xFFF0A24B : 0xFFE06060;
+    }
+
+    String teleportHint() {
+        return teleportHasAnchor() ? tr("gtswn.device.teleport.anchor_now")
+            : StatCollector.translateToLocalFormatted(
+                teleportAffordable() ? "gtswn.device.teleport.xp_now" : "gtswn.device.teleport.insufficient",
+                teleportCost());
+    }
+
+    void toggleFavorite(Entry entry) {
+        if (!isCurrentEntry(entry)) return;
+        GTSWNPacketHandler.NETWORK.sendToServer(
+            com.miaokatze.gtswn.network.PacketDeviceTerminalVisualAction
+                .favorite(anchor, entry.key, entry.metaTileId, entry.favoriteOrder == 0));
+        pollTimer = 0;
+    }
+
+    void refreshAfterEdit() {
+        pollTimer = 0;
+    }
+
+    private void clearTags() {
+        if (tagStrip == null || availableTags.isEmpty() && tagSignature.isEmpty()) return;
+        availableTags = Collections.emptyList();
+        tagSignature = "";
+        tagStripDirty = true;
+        if (tagPanel != null) {
+            tagPanel.closePanel();
+            tagPanel.deleteCachedPanel();
+        }
+    }
+
     FontRenderer font() {
         return this.fontRendererObj;
     }
@@ -1155,7 +1324,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
 
     void openNameEditor(Entry entry, int mouseX, int mouseY) {
         if (!isCurrentEntry(entry)) return;
-        powerMenu.closePanel();
+        for (Widget<?> control : filterControls) ((DeviceDropdown) control).closeMenu(false);
         nameEditor.open(anchor, entry);
     }
 

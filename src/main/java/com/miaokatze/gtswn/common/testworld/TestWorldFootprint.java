@@ -48,7 +48,7 @@ final class TestWorldFootprint {
     }
 
     static boolean containsFixture(int radius, int x, int y, int z) {
-        return x >= -radius && x < radius && z >= -radius && z < radius && y >= 64 && y <= 127;
+        return x >= -radius && x < radius && z >= -radius && z < radius && y >= 64 && y <= 255;
     }
 
     String describe() {

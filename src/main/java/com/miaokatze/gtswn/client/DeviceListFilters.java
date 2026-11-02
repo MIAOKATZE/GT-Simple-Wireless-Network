@@ -12,6 +12,7 @@ public final class DeviceListFilters {
     public String query = "";
     public int kind, link, owner;
     public Integer dimension, tier;
+    public final java.util.Set<String> tags = new java.util.LinkedHashSet<>();
 
     public boolean matches(Entry entry, UUID player) {
         String needle = query.trim()
@@ -19,6 +20,8 @@ public final class DeviceListFilters {
         if (!needle.isEmpty()) {
             String searchable = DeviceTerminalNames.plainName(entry) + "\n"
                 + entry.name
+                + "\n"
+                + entry.tags
                 + "\n"
                 + DeviceTerminalNames.registryName(entry)
                 + "\n"
@@ -39,6 +42,15 @@ public final class DeviceListFilters {
                 + (entry.machineOwner == null ? "" : entry.machineOwner.toString());
             if (!searchable.toLowerCase(Locale.ROOT)
                 .contains(needle)) return false;
+        }
+        if (!tags.isEmpty()) {
+            boolean selected = false;
+            for (String tag : tags)
+                if (com.miaokatze.gtswn.common.device.DeviceTerminalTagRules.contains(entry.tags, tag)) {
+                    selected = true;
+                    break;
+                }
+            if (!selected) return false;
         }
         if (kind != 0 && (kind == 4 ? entry.machineKind != 0 : entry.machineKind != kind)) return false;
         if (dimension != null && entry.dim != dimension || tier != null && entry.machineTier != tier) return false;

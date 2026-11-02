@@ -42,6 +42,7 @@ public final class DeviceTerminalClientCache {
     private static UUID transportSession = UUID.randomUUID();
 
     private static int teleportCost = 1;
+    private static int teleportAnchors;
     private static boolean canConfigure;
     private static long freshMillis = 40000L;
 
@@ -51,6 +52,15 @@ public final class DeviceTerminalClientCache {
         freshMillis = Math.max(30000L, (Math.max(1, Math.min(3600, samplingSeconds)) * 3L + 10L) * 1000L);
         teleportCost = Math.max(0, Math.min(1000000, cost));
         canConfigure = allowed;
+    }
+
+    public static void handleSettings(int cost, boolean allowed, int samplingSeconds, int anchors) {
+        handleSettings(cost, allowed, samplingSeconds);
+        teleportAnchors = anchors;
+    }
+
+    public static int teleportAnchors() {
+        return teleportAnchors;
     }
 
     public static int teleportCost() {
@@ -65,6 +75,7 @@ public final class DeviceTerminalClientCache {
         CACHE.clear();
         transportSession = UUID.randomUUID();
         teleportCost = 1;
+        teleportAnchors = 0;
         canConfigure = false;
         freshMillis = 40000L;
     }

@@ -193,7 +193,7 @@ public class CraftingRecipes {
      * <p>
      * 合成表：
      * LV接收器 | 钢外壳 | LV接收器
-     * LV接收器 | 电脑屏幕覆盖板 | LV接收器
+     * LV接收器 | 玻璃板 | LV接收器
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
     private static boolean addPortableMonitorRecipe() {
@@ -201,7 +201,7 @@ public class CraftingRecipes {
         ItemStack lvReceiver = ItemList.Sensor_LV.get(1); // LV接收器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
         ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1); // 钢螺丝
-        ItemStack screen = ItemList.Cover_Screen.get(1); // 电脑屏幕覆盖板（gregtech:gt.metaitem.01:32740）
+        ItemStack glassPane = new ItemStack(Blocks.glass_pane, 1, 0); // 原版玻璃板
 
         // 使用 Forge 的 ShapedOreRecipe 添加合成配方
         net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
@@ -216,7 +216,7 @@ public class CraftingRecipes {
             'C',
             lvReceiver,
             'D',
-            screen,
+            glassPane,
             'E',
             steelScrew);
 
@@ -232,7 +232,7 @@ public class CraftingRecipes {
      * <p>
      * 合成表：
      * LV发射器 | 钢外壳 | LV发射器
-     * LV发射器 | 电脑屏幕覆盖板 | LV发射器
+     * LV发射器 | 玻璃板 | LV发射器
      * 钢螺丝 | 钢外壳 | 钢螺丝
      */
     private static boolean addWirelessEnergyTapRecipe() {
@@ -240,7 +240,7 @@ public class CraftingRecipes {
         ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢外壳
         ItemStack steelScrew = GTOreDictUnificator.get(OrePrefixes.screw, Materials.Steel, 1); // 钢螺丝
-        ItemStack screen = ItemList.Cover_Screen.get(1); // 电脑屏幕覆盖板
+        ItemStack glassPane = new ItemStack(Blocks.glass_pane, 1, 0); // 原版玻璃板
 
         // 使用 Forge 的 ShapedOreRecipe 添加合成配方
         net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
@@ -255,7 +255,7 @@ public class CraftingRecipes {
             'C',
             lvEmitter,
             'D',
-            screen,
+            glassPane,
             'E',
             steelScrew);
 
@@ -379,14 +379,14 @@ public class CraftingRecipes {
      * <p>
      * 合成表：
      * LV传感器 | 钢板 | LV传感器
-     * LV发射器 | 电脑屏幕覆盖板 | LV发射器
+     * LV发射器 | 玻璃板 | LV发射器
      * 钢板 | 末影珍珠 | 钢板
      */
     private static boolean addDeviceInfoTerminalRecipe() {
         ItemStack lvSensor = ItemList.Sensor_LV.get(1); // LV传感器
         ItemStack lvEmitter = ItemList.Emitter_LV.get(1); // LV发射器
         ItemStack steelPlate = GTOreDictUnificator.get(OrePrefixes.plate, Materials.Steel, 1); // 钢板
-        ItemStack screen = ItemList.Cover_Screen.get(1); // 电脑屏幕覆盖板
+        ItemStack glassPane = new ItemStack(Blocks.glass_pane, 1, 0); // 原版玻璃板
         ItemStack enderPearl = new ItemStack(Items.ender_pearl, 1, 0); // 末影珍珠
 
         net.minecraftforge.oredict.ShapedOreRecipe recipe = new net.minecraftforge.oredict.ShapedOreRecipe(
@@ -401,7 +401,7 @@ public class CraftingRecipes {
             'C',
             lvEmitter,
             'D',
-            screen,
+            glassPane,
             'E',
             enderPearl);
 

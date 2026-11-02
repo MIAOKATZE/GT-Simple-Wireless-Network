@@ -21,6 +21,33 @@ import io.netty.buffer.Unpooled;
 public class PacketSyncDeviceTerminalDataTest {
 
     @Test
+    public void previousMarkedSchemaDefaultsNewPresentationFields() {
+        Entry row = new Entry("0:1:64:2", "Native", (byte) 0, (byte) 0, 0, 0, 0, 0, 0, 1, 64, 2, "", "");
+        ByteBuf bytes = Unpooled.buffer();
+        try {
+            new PacketSyncDeviceTerminalData(UUID.randomUUID(), 1, 0, 1, 1, Arrays.asList(row)).toBytes(bytes);
+            bytes.setByte(4, 3);
+            bytes.writerIndex(bytes.writerIndex() - 9); // previous schema has neither empty tag text nor favorite long
+            PacketSyncDeviceTerminalData decoded = new PacketSyncDeviceTerminalData();
+            decoded.fromBytes(bytes);
+            assertEquals(
+                1,
+                decoded.getEntries()
+                    .size());
+            assertEquals(
+                "",
+                decoded.getEntries()
+                    .get(0).tags);
+            assertEquals(
+                0,
+                decoded.getEntries()
+                    .get(0).favoriteOrder);
+        } finally {
+            bytes.release();
+        }
+    }
+
+    @Test
     public void roundTripPreservesHeaderFieldOrderAndDerivedNet() {
         UUID terminalId = UUID.fromString("12345678-1234-5678-1234-567812345678");
         Entry consume = new Entry(

@@ -2,14 +2,18 @@ package com.miaokatze.gtswn.client.gui;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 import net.minecraft.client.gui.FontRenderer;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 
 import com.cleanroommc.modularui.api.UpOrDown;
 import com.cleanroommc.modularui.api.drawable.IDrawable;
+import com.cleanroommc.modularui.api.drawable.IKey;
 import com.cleanroommc.modularui.api.widget.IWidget;
 import com.cleanroommc.modularui.api.widget.Interactable;
+import com.cleanroommc.modularui.drawable.ItemDrawable;
 import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
 import com.cleanroommc.modularui.theme.WidgetThemeEntry;
 import com.cleanroommc.modularui.utils.Alignment;
@@ -18,149 +22,183 @@ import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.ListWidget;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache.Snapshot;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
+import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
-/** Native MUI2 scrolling viewport. Row actions share the framework's clip and hit transform. */
+/** Both display modes use the same native scrolling, clipping, entry identity and action checks. */
 class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
 
-    // ==================== 列几何常量（宿主列头绘制与命中共用，相对 listLeft） ====================
-
-    /** 机器名列 X 偏移 */
-    static final int COL_NAME_X = 4;
-
-    /** 状态列 X 偏移 */
-    static final int COL_STATE_X = 148;
-
-    /** 瞬时列 X 偏移 */
-    static final int COL_INST_X = 254;
-
-    /** 平均列 X 偏移 */
-    static final int COL_AVG_X = 316;
-
-    /** 位置列 X 偏移 */
-    static final int COL_POS_X = 378;
-
-    /** 传送按钮 X 偏移（列表右缘内、滚动条左侧） */
-    static final int TP_BTN_X = 568;
-    static final int LINK_X = 454;
-    static final int LINK_ATTACH_X = 494;
-    static final int LINK_REMOVE_X = 530;
-
-    /** 传送按钮宽度 */
-    static final int TP_BTN_W = 26;
-
-    /** 机器名列最大文本宽度（超出截断+省略号） */
-    static final int NAME_WIDTH = 100;
-
-    /** 位置列最大文本宽度（v1.7.2 面板加宽 +20px） */
-    static final int POS_WIDTH = 74;
-
-    /** 列头命中区右边界（相对 listLeft；传送列头不可排序；v1.7.2 加宽 +20px） */
-    static final int HEADER_MAX_X = 454;
-
     private final GuiDeviceInfoTerminal host;
-    private static final int slotHeight = 20;
     private List<Entry> displayed = Collections.emptyList();
+    private int layoutWidth = -1;
+    private boolean cards;
 
     GuiDeviceEntryList(GuiDeviceInfoTerminal host) {
         this.host = host;
         name("device.entries");
-        pos(8, 74).size(604, 180);
+        pos(10, 140).size(780, 264);
         crossAxisAlignment(Alignment.CrossAxis.START);
-        background(
-            (context, x, y, width, height, theme) -> GtswnGuiDrawing
-                .drawNineSlice(GtswnGuiTextures.LIST_PANEL, 4, (int) x, (int) y, (int) width, (int) height, 0));
+        background(GtswnMuiTheme.LIST_PANEL);
     }
 
-    /** Refresh only when the host publishes a new sorted snapshot; preserve the native scroll position. */
+    void invalidateLayout() {
+        layoutWidth = -1;
+        clampScroll();
+        scheduleResize();
+    }
+
     void clampScroll() {
         List<Entry> entries = host.sortedEntries();
-        if (displayed == entries) return;
+        int width = host.entryWidth();
+        boolean iconMode = host.iconMode();
+        if (displayed == entries && layoutWidth == width && cards == iconMode) return;
         displayed = entries;
+        layoutWidth = width;
+        cards = iconMode;
         removeAll();
+        int columns = cards ? Math.max(1, width / 246) : 1;
+        int cardWidth = Math.max(1, (width - (columns - 1) * 6) / columns);
         int index = 0;
+        ParentWidget<?> line = null;
         for (Entry entry : entries) {
-            final String rowName = "device.row." + index++;
-            DeviceRow row = new DeviceRow(entry).name(rowName)
-                .size(596, slotHeight)
+            int rowHeight = cards ? 148 : width < 520 ? 96 : width < 900 ? 70 : 50;
+            if (index % columns == 0) {
+                line = new ParentWidget<>().size(width, rowHeight + 6)
+                    .background(IDrawable.EMPTY);
+                child(line);
+            }
+            RecordRow row = new RecordRow(entry, cardWidth, rowHeight, cards).name("device.row." + index)
+                .pos(index % columns * (cardWidth + 6), 3)
+                .size(cardWidth, rowHeight)
                 .background(IDrawable.EMPTY)
                 .hoverBackground(IDrawable.EMPTY)
-                .onMousePressed(button -> rowAction(entry, button, false, false));
-            ParentWidget<?> controls = new ParentWidget<>().size(596, slotHeight)
-                .background(IDrawable.EMPTY);
-            controls.child(
-                new ButtonWidget<>().name(rowName + ".name")
-                    .pos(COL_NAME_X, 0)
-                    .size(NAME_WIDTH, slotHeight)
-                    .background(IDrawable.EMPTY)
-                    .hoverBackground(IDrawable.EMPTY)
-                    .tooltipBuilder(tooltip -> {
-                        tooltip.showUpTimer(0);
-                        for (String line : host.entryTooltip(entry)) tooltip.addLine(line);
-                    })
-                    .tooltipAutoUpdate(true)
-                    .onMousePressed(button -> rowAction(entry, button, true, false)));
-            controls.child(
-                new ButtonWidget<>().name(rowName + ".teleport")
-                    .pos(TP_BTN_X, 3)
-                    .size(TP_BTN_W, slotHeight - 6)
-                    .background(IDrawable.EMPTY)
-                    .hoverBackground(IDrawable.EMPTY)
-                    .tooltipBuilder(tooltip -> {
-                        tooltip.showUpTimer(0);
-                        tooltip.addLine(StatCollector.translateToLocal("gtswn.device.gui.tooltip.teleport_payment"));
-                    })
-                    .tooltipAutoUpdate(true)
-                    .onMousePressed(button -> rowAction(entry, button, false, true)));
-            controls.child(
-                new ButtonWidget<>().name(rowName + ".metadata")
-                    .pos(108, 0)
-                    .size(LINK_X - 108, slotHeight)
-                    .background(IDrawable.EMPTY)
-                    .hoverBackground(IDrawable.EMPTY)
-                    .tooltipBuilder(tooltip -> {
-                        tooltip.addLine(host.kindText(entry.machineKind) + " · " + host.tierText(entry.machineTier));
-                        tooltip.addLine(entry.dim + "(" + entry.x + "," + entry.y + "," + entry.z + ")");
-                    })
-                    .onMousePressed(button -> rowAction(entry, button, false, false)));
-            controls.child(
-                GtswnMuiWidgets
-                    .button(
-                        rowName + ".attach",
-                        () -> StatCollector.translateToLocal("gtswn.device.link.attach"),
-                        LINK_ATTACH_X,
-                        3,
-                        32,
-                        14,
-                        () -> host.linkAvailable(entry),
-                        () -> host.requestLink(entry, true))
-                    .tooltipBuilder(tooltip -> tooltip.addLine(host.linkTooltip(entry)))
-                    .tooltipAutoUpdate(true));
-            controls.child(
-                GtswnMuiWidgets
-                    .button(
-                        rowName + ".remove",
-                        () -> StatCollector.translateToLocal("gtswn.device.link.remove"),
-                        LINK_REMOVE_X,
-                        3,
-                        32,
-                        14,
-                        () -> host.linkAvailable(entry),
-                        () -> host.requestLink(entry, false))
-                    .tooltipBuilder(tooltip -> tooltip.addLine(host.linkTooltip(entry)))
-                    .tooltipAutoUpdate(true));
-            controls.child(
-                new ButtonWidget<>().name(rowName + ".link")
-                    .pos(LINK_X, 0)
-                    .size(38, slotHeight)
-                    .background(IDrawable.EMPTY)
-                    .hoverBackground(IDrawable.EMPTY)
-                    .tooltipBuilder(tooltip -> tooltip.addLine(host.linkTooltip(entry)))
-                    .tooltipAutoUpdate(true)
-                    .onMousePressed(button -> true));
-            row.child(controls);
-            child(row);
+                .tooltipBuilder(tooltip -> {
+                    tooltip.showUpTimer(0);
+                    for (String text : host.entryTooltip(entry)) tooltip.addLine(text);
+                    tooltip.addLine(host.kindText(entry.machineKind) + " / " + host.tierText(entry.machineTier));
+                    tooltip.addLine(entry.dim + " (" + entry.x + ", " + entry.y + ", " + entry.z + ")");
+                })
+                .tooltipAutoUpdate(true)
+                .onMousePressed(button -> rowAction(entry, button));
+            ItemStack controller = DeviceTerminalNames.controllerStack(entry);
+            if (controller != null) {
+                ItemDrawable icon = new ItemDrawable(controller);
+                IDrawable guarded = (context, x, y, w, h, theme) -> {
+                    if (row.current()) icon.draw(context, x, y, w, h, theme);
+                };
+                row.controls.child(
+                    guarded.asWidget()
+                        .pos(9, cards ? 9 : 10)
+                        .size(cards ? 34 : 24));
+            }
+            addActions(row, entry, cardWidth, rowHeight, cards);
+            line.child(row);
+            index++;
         }
+    }
+
+    private void addActions(RecordRow row, Entry entry, int width, int height, boolean card) {
+        int buttonY = card ? height - 26 : width < 520 ? height - 24 : width < 900 ? 27 : 8;
+        int teleportY = card ? buttonY : 6;
+        EntryActionButton travel = new EntryActionButton(
+            entry,
+            host::teleportAffordable,
+            () -> host.sendTeleport(entry.key)) {
+
+            @Override
+            public IDrawable getBackground() {
+                return (context, x, y, w, h, theme) -> {
+                    boolean hovered = isHovering() && host.teleportAffordable();
+                    int color = host.teleportColor();
+                    if (hovered) color = host.teleportHasAnchor() ? 0xFFB2F0D0 : 0xFFFFDA9E;
+                    host.fillRect((int) x, (int) y, (int) (x + w), (int) (y + h), color);
+                    host.fillRect(
+                        (int) x + 1,
+                        (int) y + 1,
+                        (int) (x + w) - 1,
+                        (int) (y + h) - 1,
+                        host.teleportHasAnchor() ? hovered ? 0xFF2D6A51 : 0xFF224B3C
+                            : host.teleportAffordable() ? hovered ? 0xFF785A33 : 0xFF58412A : 0xFF502E32);
+                };
+            }
+
+            @Override
+            public IDrawable getHoverBackground() {
+                return getBackground();
+            }
+        }.name(row.getName() + ".teleport")
+            .pos(width - 86, teleportY)
+            .size(78, 20)
+            .overlay(IKey.dynamic(() -> tr("gtswn.device.gui.teleport")))
+            .tooltipBuilder(t -> t.addLine(host.teleportHint()))
+            .tooltipAutoUpdate(true);
+        row.controls.child(travel);
+        int attachX = card ? 8 : width < 900 ? width - 188 : width - 204;
+        int removeX = attachX + 52;
+        row.controls.child(
+            new EntryActionButton(entry, () -> host.linkAvailable(entry), () -> host.requestLink(entry, true))
+                .name(row.getName() + ".attach")
+                .pos(attachX, buttonY)
+                .size(48, 20)
+                .overlay(IKey.lang("gtswn.device.link.attach"))
+                .tooltipBuilder(t -> t.addLine(host.linkTooltip(entry)))
+                .tooltipAutoUpdate(true));
+        row.controls.child(
+            new EntryActionButton(entry, () -> host.linkAvailable(entry), () -> host.requestLink(entry, false))
+                .name(row.getName() + ".remove")
+                .pos(removeX, buttonY)
+                .size(48, 20)
+                .overlay(IKey.lang("gtswn.device.link.remove"))
+                .tooltipBuilder(t -> t.addLine(host.linkTooltip(entry)))
+                .tooltipAutoUpdate(true));
+    }
+
+    private class EntryActionButton extends ButtonWidget<EntryActionButton> {
+
+        final Entry entry;
+        private final BooleanSupplier enabled;
+        private final Runnable action;
+
+        EntryActionButton(Entry entry, BooleanSupplier enabled, Runnable action) {
+            this.entry = entry;
+            this.enabled = enabled;
+            this.action = action;
+        }
+
+        @Override
+        public Result onMousePressed(int button) {
+            if (!host.isActive() || !host.isCurrentEntry(entry)) return Result.STOP;
+            if (button == 1 || Interactable.hasAltDown()
+                || Interactable.hasControlDown()
+                || Interactable.hasShiftDown()) {
+                rowAction(entry, button);
+                return Result.SUCCESS;
+            }
+            if (button == 0 && enabled.getAsBoolean()) action.run();
+            return Result.SUCCESS;
+        }
+
+        @Override
+        public IDrawable getBackground() {
+            return enabled.getAsBoolean() ? DeviceTerminalUi.NORMAL : DeviceTerminalUi.DISABLED;
+        }
+
+        @Override
+        public IDrawable getHoverBackground() {
+            return enabled.getAsBoolean() ? DeviceTerminalUi.HOVER : DeviceTerminalUi.DISABLED;
+        }
+    }
+
+    private boolean rowAction(Entry entry, int button) {
+        if (!host.isActive() || !host.isCurrentEntry(entry)) return true;
+        if (button == 1) host.openNameEditor(entry, 0, 0);
+        else if (button == 0) {
+            if (Interactable.hasAltDown()) host.toggleFavorite(entry);
+            else if (Interactable.hasControlDown()) host.sendUnbind(entry.key);
+            else if (Interactable.hasShiftDown()) host.cycleRecognition(entry.key);
+            else host.selectDesktopEntry(entry);
+        }
+        return true;
     }
 
     @Override
@@ -171,138 +209,180 @@ class GuiDeviceEntryList extends ListWidget<IWidget, GuiDeviceEntryList> {
         return complete;
     }
 
-    private final class DeviceRow extends ButtonWidget<DeviceRow> {
-
-        private final Entry entry;
-        private final Snapshot snapshot;
-        private final List<Entry> rows;
-
-        DeviceRow(Entry entry) {
-            this.entry = entry;
-            this.snapshot = host.displayedSnapshot();
-            this.rows = host.sortedEntries();
-        }
-
-        @Override
-        public void draw(ModularGuiContext context, WidgetThemeEntry<?> theme) {
-            if (rows != host.sortedEntries() || !host.displayCurrent(snapshot)) return;
-            GtswnMuiWidgets.drawLegacy(() -> drawSlot(entry, 0, 0, isHovering()));
-        }
-    }
-
-    private boolean rowAction(Entry entry, int button, boolean name, boolean teleport) {
-        if (!host.isActive() || !host.isCurrentEntry(entry)) return true;
-        if (name && button == 1) {
-            host.openNameEditor(entry, 0, 0);
-            return true;
-        }
-        if (button != 0) return true;
-        if (name && Interactable.hasAltDown()) host.openNameEditor(entry, 0, 0);
-        else if (Interactable.hasControlDown()) host.sendUnbind(entry.key);
-        else if (Interactable.hasShiftDown()) host.cycleRecognition(entry.key);
-        else if (teleport) host.sendTeleport(entry.key);
-        else host.selectDesktopEntry(entry);
-        return true;
-    }
-
     @Override
     public boolean onMouseScroll(UpOrDown direction, int amount) {
         host.requestPendingPages();
         return super.onMouseScroll(direction, amount);
     }
 
-    private void drawSlot(Entry entry, int x, int y, boolean inRow) {
-        FontRenderer font = host.font();
-        int textY = y + 6;
+    private final class RecordRow extends ButtonWidget<RecordRow> {
 
-        // 行 hover 高亮（贴图化新增视觉项，契约 §3 #13 / §6 ④）：鼠标在行矩形内先画 row_hover 底再画内容；
-        // 仅视觉，不改上方 inRow/inNameCol 命中与 tooltip 悬浮判定
-        if (inRow || host.desktopEntrySelected(entry)) {
-            GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.ROW_HOVER, 4, 0, y, 596, slotHeight, host.guiZLevel());
+        private final Entry entry;
+        private final Snapshot snapshot;
+        private final List<Entry> rows;
+        private final int width, height;
+        private final boolean card;
+        private final ParentWidget<?> controls = new ParentWidget<>().sizeRel(1f)
+            .background(IDrawable.EMPTY)
+            .hoverBackground(IDrawable.EMPTY);
+
+        RecordRow(Entry entry, int width, int height, boolean card) {
+            this.entry = entry;
+            this.width = width;
+            this.height = height;
+            this.card = card;
+            snapshot = host.displayedSnapshot();
+            rows = host.sortedEntries();
+            child(controls);
         }
 
-        // 机器名列：超宽截断+省略号；v1.7.2 全行文字加粗 §l（applyBold 与颜色码共存）
-        String machineName = DeviceTerminalNames.localName(entry);
-        if (!DeviceTerminalNames.hasOverride(entry)) machineName = applyBold(machineName);
-        font.drawString(
-            ellipsis(font, machineName, NAME_WIDTH - (entry.linkNodeType == 0 ? 0 : 11)),
-            x + COL_NAME_X,
-            textY,
-            GtswnGuiPalette.TEXT_BODY);
-        if (entry.linkNodeType != 0) drawLinkIcon(x + COL_NAME_X + NAME_WIDTH - 9, textY, entry.linkNodeType);
+        @Override
+        public void draw(ModularGuiContext context, WidgetThemeEntry<?> theme) {
+            if (!current()) return;
+            GtswnMuiWidgets.drawLegacy(() -> {
+                host.fillRect(0, 0, width, height, host.desktopEntrySelected(entry) ? 0xFFF0B04C : 0xFF536676);
+                host.fillRect(1, 1, width - 1, height - 1, isHovering() ? 0xFF2B3B49 : 0xFF1C2833);
+                if (card) drawCard();
+                else drawList();
+            });
+        }
 
-        font.drawString(
-            ellipsis(font, host.kindText(entry.machineKind), 36),
-            x + 108,
-            textY,
-            GtswnGuiPalette.TEXT_MUTED);
-        font.drawString(ellipsis(font, Integer.toString(entry.dim), 26), x + 194, textY, GtswnGuiPalette.TEXT_BODY);
-        font.drawString(
-            ellipsis(font, host.tierText(entry.machineTier), 26),
-            x + 224,
-            textY,
-            GtswnGuiPalette.TEXT_BODY);
+        boolean current() {
+            return rows == host.sortedEntries() && host.displayCurrent(snapshot);
+        }
 
-        // 状态列：包含忽略状态；lang 值自带颜色码。
-        font.drawString(
-            ellipsis(font, applyBold(host.stateText(entry.state)), 42 - 3),
-            x + COL_STATE_X,
-            textY,
-            GtswnGuiPalette.TEXT_BODY);
+        private void text(String text, int x, int y, int maxWidth, int color) {
+            host.font()
+                .drawString(ellipsis(host.font(), text, maxWidth), x, y, color);
+        }
 
-        // 既有间隔统计。
-        font.drawString(
-            ellipsis(font, applyBold(host.formatInstant(entry)), COL_AVG_X - COL_INST_X - 3),
-            x + COL_INST_X,
-            textY,
-            amountColor(entry, GuiDeviceInfoTerminal.instantValue(entry)));
-        font.drawString(
-            ellipsis(font, applyBold(host.formatAverage(entry)), COL_POS_X - COL_AVG_X - 3),
-            x + COL_AVG_X,
-            textY,
-            amountColor(entry, GuiDeviceInfoTerminal.averageValue(entry)));
-        font.drawString(ellipsis(font, host.linkText(entry), 36), x + LINK_X, textY, GtswnGuiPalette.TEXT_ACCENT);
+        private String name() {
+            return (entry.favoriteOrder > 0 ? "\u00a7e\u2605 \u00a7r" : "") + DeviceTerminalNames.localName(entry);
+        }
 
-        // 位置列：dim(x,y,z)
-        String posText = entry.x + "/" + entry.y + "/" + entry.z;
-        font.drawString(
-            ellipsis(font, applyBold(posText), Math.min(POS_WIDTH, TP_BTN_X - COL_POS_X - 3)),
-            x + COL_POS_X,
-            textY,
-            GtswnGuiPalette.TEXT_BODY);
+        private String metadata() {
+            return host.kindText(entry.machineKind) + " / "
+                + host.tierText(entry.machineTier)
+                + " / "
+                + entry.dim
+                + " ("
+                + entry.x
+                + ", "
+                + entry.y
+                + ", "
+                + entry.z
+                + ")"
+                + " / "
+                + tr("gtswn.device.link.column")
+                + " "
+                + host.linkText(entry);
+        }
 
-        // 实际支付由服务端报价确认窗展示。
-        int btnX = x + TP_BTN_X;
-        int btnY = y + 3;
-        int btnH = slotHeight - 6;
-        GtswnGuiDrawing.drawNineSlice(GtswnGuiTextures.CHIP_NORMAL, 4, btnX, btnY, TP_BTN_W, btnH, host.guiZLevel());
-        String tpText = "\u2726";
-        int tpW = font.getStringWidth(tpText);
-        font.drawString(tpText, btnX + (TP_BTN_W - tpW) / 2, btnY + 3, GtswnGuiPalette.STATE_ONLINE);
-    }
+        private void drawCard() {
+            text(name(), 52, 10, width - 60, GtswnGuiPalette.TEXT_BODY);
+            text(
+                host.stateText(entry.state) + " / " + host.linkText(entry),
+                52,
+                27,
+                width - 60,
+                GtswnGuiPalette.TEXT_BODY);
+            text(
+                tr("gtswn.device.gui.col.instant") + ": " + host.formatInstant(entry) + " EU/t",
+                10,
+                52,
+                width - 20,
+                amountColor(entry, GuiDeviceInfoTerminal.instantValue(entry)));
+            text(
+                tr("gtswn.device.gui.col.average") + ": " + host.formatAverage(entry) + " EU/t",
+                10,
+                67,
+                width - 20,
+                amountColor(entry, GuiDeviceInfoTerminal.averageValue(entry)));
+            text(metadata(), 10, 83, width - 20, GtswnGuiPalette.TEXT_MUTED);
+            text(
+                entry.tags.isEmpty() ? tr("gtswn.device.tags.empty") : "# " + entry.tags,
+                10,
+                100,
+                width - 20,
+                0xFFAECAD9);
+        }
 
-    private void drawLinkIcon(int x, int y, byte flags) {
-        int input = (flags & 1) != 0 ? 0xFF55D1ED : 0xFF56616A;
-        int output = (flags & 2) != 0 ? 0xFFF0B04C : 0xFF56616A;
-        host.fillRect(x, y + 1, x + 3, y + 5, input);
-        host.fillRect(x + 5, y + 3, x + 8, y + 7, output);
-        host.fillRect(x + 2, y + 3, x + 6, y + 5, 0xFFCCD3D8);
+        private void drawList() {
+            if (width >= 900) {
+                int nameWidth = width - 648;
+                text(name(), 44, 10, nameWidth, GtswnGuiPalette.TEXT_BODY);
+                int stateX = 50 + nameWidth;
+                text(host.stateText(entry.state), stateX, 10, 64, GtswnGuiPalette.TEXT_BODY);
+                text(
+                    tr("gtswn.device.gui.col.instant") + " " + host.formatInstant(entry),
+                    stateX + 68,
+                    10,
+                    106,
+                    amountColor(entry, GuiDeviceInfoTerminal.instantValue(entry)));
+                text(
+                    tr("gtswn.device.gui.col.average") + " " + host.formatAverage(entry),
+                    stateX + 184,
+                    10,
+                    106,
+                    amountColor(entry, GuiDeviceInfoTerminal.averageValue(entry)));
+                text(host.linkText(entry), width - 256, 10, 48, GtswnGuiPalette.TEXT_ACCENT);
+                text(
+                    metadata() + (entry.tags.isEmpty() ? "" : "  # " + entry.tags),
+                    44,
+                    32,
+                    width - 62,
+                    GtswnGuiPalette.TEXT_MUTED);
+            } else if (width >= 520) {
+                text(name(), 44, 9, width - 228, GtswnGuiPalette.TEXT_BODY);
+                text(host.stateText(entry.state), width - 174, 9, 80, GtswnGuiPalette.TEXT_BODY);
+                text(
+                    tr("gtswn.device.gui.col.instant") + " " + host.formatInstant(entry),
+                    44,
+                    29,
+                    (width - 264) / 2,
+                    amountColor(entry, GuiDeviceInfoTerminal.instantValue(entry)));
+                text(
+                    tr("gtswn.device.gui.col.average") + " " + host.formatAverage(entry),
+                    44 + (width - 264) / 2,
+                    29,
+                    (width - 264) / 2,
+                    amountColor(entry, GuiDeviceInfoTerminal.averageValue(entry)));
+                text(
+                    metadata() + (entry.tags.isEmpty() ? "" : "  # " + entry.tags),
+                    44,
+                    53,
+                    width - 62,
+                    GtswnGuiPalette.TEXT_MUTED);
+            } else {
+                text(name(), 44, 9, width - 140, GtswnGuiPalette.TEXT_BODY);
+                text(host.stateText(entry.state), 44, 25, width - 60, GtswnGuiPalette.TEXT_BODY);
+                text(
+                    tr("gtswn.device.gui.col.instant") + " " + host.formatInstant(entry) + " EU/t",
+                    12,
+                    43,
+                    width - 24,
+                    amountColor(entry, GuiDeviceInfoTerminal.instantValue(entry)));
+                text(
+                    tr("gtswn.device.gui.col.average") + " " + host.formatAverage(entry) + " EU/t",
+                    12,
+                    57,
+                    width - 24,
+                    amountColor(entry, GuiDeviceInfoTerminal.averageValue(entry)));
+                text(metadata(), 12, 78, width - 208, GtswnGuiPalette.TEXT_MUTED);
+            }
+        }
     }
 
     private static int amountColor(Entry entry, double value) {
         if (entry.state == 3) return GtswnGuiPalette.TEXT_MUTED;
-        return eutColor(value);
+        return value > 0 ? GtswnGuiPalette.STATE_ONLINE
+            : value < 0 ? GtswnGuiPalette.STATE_IDLE : GtswnGuiPalette.TEXT_BODY;
     }
 
-    private static int eutColor(double value) {
-        if (value > 0D) return GtswnGuiPalette.STATE_ONLINE;
-        if (value < 0D) return GtswnGuiPalette.STATE_IDLE;
-        return GtswnGuiPalette.TEXT_BODY;
+    private static String tr(String key) {
+        return StatCollector.translateToLocal(key);
     }
 
-    // ==================== 文本工具 ====================
-
-    /** Fits the actual formatted text and suffix, retaining complete formatting pairs and Unicode code points. */
     static String ellipsis(FontRenderer font, String text, int width) {
         if (text == null || text.isEmpty() || width <= 0) return "";
         if (font.getStringWidth(text) <= width) return text;

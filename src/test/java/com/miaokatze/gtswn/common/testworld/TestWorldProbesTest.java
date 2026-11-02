@@ -71,6 +71,26 @@ public class TestWorldProbesTest {
     }
 
     @Test
+    public void reusedCoordinateLookupPreservesEveryEnrolledKeyAndOriginalTraceFormat() {
+        List<String> events = new ArrayList<>();
+        TestWorldProbes.start((type, detail) -> events.add(type + ";" + detail), 17);
+        TestWorldProbes.addPosition(-80, 255, 79);
+        TestWorldProbes.addPosition(Integer.MIN_VALUE, -1, Integer.MAX_VALUE);
+        TestWorldProbes.at(17, -80, 255, 79, Type.DEVICE_FLOW, "channel=0;amount=10.0");
+        TestWorldProbes.at(17, 0, 255, 79, Type.DEVICE_FLOW, "unrelated");
+        TestWorldProbes.at(17, Integer.MIN_VALUE, -1, Integer.MAX_VALUE, Type.DEVICE_REGISTER, "");
+        TestWorldProbes.at(17, -80, 255, 79, Type.DEVICE_FLOW, "channel=1;amount=20.0");
+        long token = TestWorldProbes.queueToken(17, -80, 255, 79);
+        TestWorldProbes.queue(token, 17, -80, 255, 79, true);
+        assertEquals(4, events.size());
+        assertEquals("DEVICE_FLOW;dim=17;pos=-80:255:79;channel=0;amount=10.0", events.get(0));
+        assertEquals("DEVICE_REGISTER;dim=17;pos=-2147483648:-1:2147483647;", events.get(1));
+        assertEquals("DEVICE_FLOW;dim=17;pos=-80:255:79;channel=1;amount=20.0", events.get(2));
+        assertEquals("QUEUE_EXECUTE;queue=panel;dim=17;pos=-80:255:79", events.get(3));
+        assertEquals(2L, TestWorldProbes.count(Type.DEVICE_FLOW));
+    }
+
+    @Test
     public void queuedWorkCannotBeAttributedToAnotherScenarioOrDimension() {
         List<String> first = new ArrayList<>(), second = new ArrayList<>();
         TestWorldProbes.start((type, detail) -> first.add(type), 17);

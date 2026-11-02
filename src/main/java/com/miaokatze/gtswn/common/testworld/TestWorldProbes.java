@@ -3,12 +3,14 @@ package com.miaokatze.gtswn.common.testworld;
 import java.math.BigInteger;
 import java.util.Collections;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChunkCoordinates;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.quantum.QuantumNodeBridgeRelay;
@@ -74,9 +76,11 @@ public final class TestWorldProbes {
         final Sink sink;
         final int dimension;
         final long token;
-        final Set<String> positions = new HashSet<>();
+        final Map<ChunkCoordinates, String> positions = new HashMap<>();
+        /** Used only under LOCK; enrolled keys themselves are never mutated. */
+        final ChunkCoordinates lookup = new ChunkCoordinates();
         final Set<UUID> owners = new HashSet<>();
-        final EnumMap<Type, Long> counts = new EnumMap<>(Type.class);
+        final long[] counts = new long[Type.values().length];
 
         Session(Sink sink, int dimension, long token) {
             this.sink = sink;
@@ -115,7 +119,8 @@ public final class TestWorldProbes {
     public static void addPosition(int x, int y, int z) {
         if (!active) return;
         synchronized (LOCK) {
-            if (session != null) session.positions.add(position(x, y, z));
+            if (session != null) session.positions
+                .put(new ChunkCoordinates(x, y, z), "dim=" + session.dimension + ";pos=" + position(x, y, z));
         }
     }
 
@@ -131,7 +136,7 @@ public final class TestWorldProbes {
     public static long count(Type type) {
         if (!active) return 0L;
         synchronized (LOCK) {
-            return session == null ? 0L : session.counts.getOrDefault(type, 0L);
+            return session == null ? 0L : session.counts[type.ordinal()];
         }
     }
 
@@ -139,8 +144,7 @@ public final class TestWorldProbes {
     public static Map<Type, Long> counts() {
         synchronized (LOCK) {
             EnumMap<Type, Long> result = new EnumMap<>(Type.class);
-            for (Type type : Type.values())
-                result.put(type, session == null ? 0L : session.counts.getOrDefault(type, 0L));
+            for (Type type : Type.values()) result.put(type, session == null ? 0L : session.counts[type.ordinal()]);
             return Collections.unmodifiableMap(result);
         }
     }
@@ -167,9 +171,7 @@ public final class TestWorldProbes {
             publish(
                 scope,
                 Type.AE_CONNECTION_ATTEMPT,
-                "dim=" + tile.getWorldObj().provider.dimensionId
-                    + ";pos="
-                    + position(tile.xCoord, tile.yCoord, tile.zCoord)
+                location(scope, scope.dimension, tile.xCoord, tile.yCoord, tile.zCoord)
                     + ";stage=native_security_gate");
         }
     }
@@ -200,8 +202,9 @@ public final class TestWorldProbes {
         if (!active) return;
         synchronized (LOCK) {
             Session scope = session;
-            if (!accepts(scope, dimension, x, y, z)) return;
-            publish(scope, type, "dim=" + dimension + ";pos=" + position(x, y, z) + ";" + detail);
+            String location = location(scope, dimension, x, y, z);
+            if (location == null) return;
+            publish(scope, type, location + ";" + detail);
         }
     }
 
@@ -220,8 +223,21 @@ public final class TestWorldProbes {
         if (!active) return;
         Object tile = controller instanceof IMetaTileEntity ? ((IMetaTileEntity) controller).getBaseMetaTileEntity()
             : controller;
-        if (tile instanceof TileEntity)
-            at((TileEntity) tile, Type.DEVICE_FLOW, "channel=" + channel + ";amount=" + amount);
+        if (!(tile instanceof TileEntity)) return;
+        TileEntity endpoint = (TileEntity) tile;
+        World world = endpoint.getWorldObj();
+        if (world == null || world.isRemote || world.provider == null) return;
+        synchronized (LOCK) {
+            Session scope = session;
+            String location = location(
+                scope,
+                world.provider.dimensionId,
+                endpoint.xCoord,
+                endpoint.yCoord,
+                endpoint.zCoord);
+            if (location != null)
+                publish(scope, Type.DEVICE_FLOW, location + ";channel=" + channel + ";amount=" + amount);
+        }
     }
 
     /** Registry keys contain only dimension and block coordinates. Bad keys are ignored by observation. */
@@ -272,12 +288,18 @@ public final class TestWorldProbes {
             publish(
                 scope,
                 executed ? Type.QUEUE_EXECUTE : Type.QUEUE_ENQUEUE,
-                "queue=panel;dim=" + scope.dimension + ";pos=" + position(x, y, z));
+                "queue=panel;" + location(scope, dimension, x, y, z));
         }
     }
 
     private static boolean accepts(Session scope, int dimension, int x, int y, int z) {
-        return scope != null && scope.dimension == dimension && scope.positions.contains(position(x, y, z));
+        return location(scope, dimension, x, y, z) != null;
+    }
+
+    private static String location(Session scope, int dimension, int x, int y, int z) {
+        if (scope == null || scope.dimension != dimension) return null;
+        scope.lookup.set(x, y, z);
+        return scope.positions.get(scope.lookup);
     }
 
     private static String position(int x, int y, int z) {
@@ -285,7 +307,7 @@ public final class TestWorldProbes {
     }
 
     private static void publish(Session scope, Type type, String detail) {
-        scope.counts.put(type, scope.counts.getOrDefault(type, 0L) + 1L);
+        scope.counts[type.ordinal()]++;
         if (type == Type.AE_CONNECTION_ATTEMPT) nativeAeConnectionAttempts++;
         try {
             scope.sink.record(type.name(), detail);

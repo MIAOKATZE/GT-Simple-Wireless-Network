@@ -58,6 +58,51 @@ public class DeviceListFiltersTest {
         assertFalse(filters.matches(row, owner));
     }
 
+    @Test
+    public void selectedTagsMatchAnyLabelAndComposeWithOtherFilters() {
+        Entry old = row(null, "", "", DeviceLinkSummary.KNOWN);
+        Entry tagged = new Entry(
+            old.key,
+            old.name,
+            old.state,
+            old.powerType,
+            old.instIn,
+            old.instOut,
+            old.avgIn,
+            old.avgOut,
+            old.dim,
+            old.x,
+            old.y,
+            old.z,
+            old.recipeIn,
+            old.recipeOut,
+            old.metaTileId,
+            old.evidenceKind,
+            old.linkNodeType,
+            old.displayName,
+            old.nameColor,
+            old.nameBold,
+            old.capabilityMask,
+            old.recognitionMode,
+            old.linkSummary,
+            old.machineOwner,
+            old.machineKind,
+            old.machineTier,
+            "Power, Main",
+            1);
+        DeviceListFilters filters = new DeviceListFilters();
+        filters.tags.add("Steam");
+        assertFalse(filters.matches(tagged, null));
+        filters.tags.add("power");
+        assertTrue(filters.matches(tagged, null));
+        filters.dimension = 0;
+        assertFalse(filters.matches(tagged, null));
+        filters.dimension = null;
+        filters.query = "Main";
+        assertTrue(filters.matches(tagged, null));
+        assertFalse(filters.matches(old, null));
+    }
+
     private static Entry row(UUID owner, String input, String output, byte state) {
         DeviceLinkSummary summary = state == DeviceLinkSummary.KNOWN ? new DeviceLinkSummary(state, 6, 9, 2, 3)
             : DeviceLinkSummary.UNVERIFIED;

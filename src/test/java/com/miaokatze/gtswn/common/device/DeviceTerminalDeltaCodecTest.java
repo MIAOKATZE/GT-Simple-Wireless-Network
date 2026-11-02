@@ -32,6 +32,86 @@ public class DeviceTerminalDeltaCodecTest {
     }
 
     @Test
+    public void tagsAndFavoriteOrderSurviveFullAndDeltaDeliveries() {
+        Entry base = row(1, 2, 3, 4, 5, "Native");
+        Entry edited = new Entry(
+            base.key,
+            base.name,
+            base.state,
+            base.powerType,
+            base.instIn,
+            base.instOut,
+            base.avgIn,
+            base.avgOut,
+            base.dim,
+            base.x,
+            base.y,
+            base.z,
+            base.recipeIn,
+            base.recipeOut,
+            base.metaTileId,
+            base.evidenceKind,
+            base.linkNodeType,
+            base.displayName,
+            base.nameColor,
+            base.nameBold,
+            base.capabilityMask,
+            base.recognitionMode,
+            base.linkSummary,
+            base.machineOwner,
+            base.machineKind,
+            base.machineTier,
+            "Power, Main",
+            9876543210L);
+        Encoded full = DeviceTerminalDeltaCodec.encode(null, Arrays.asList(edited));
+        assertRows(Arrays.asList(edited), DeviceTerminalDeltaCodec.decode(null, false, full.bytes));
+        Encoded delta = DeviceTerminalDeltaCodec.encode(Arrays.asList(base), Arrays.asList(edited));
+        assertTrue(delta.delta);
+        assertRows(Arrays.asList(edited), DeviceTerminalDeltaCodec.decode(Arrays.asList(base), true, delta.bytes));
+    }
+
+    @Test
+    public void previousSchemaRowsHaveEmptyTagsAndNoFavorite() throws Exception {
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        java.io.DataOutputStream out = new java.io.DataOutputStream(bytes);
+        out.writeByte(2);
+        out.writeShort(1);
+        out.writeShort(2);
+        out.writeShort(6);
+        out.write("Native".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        out.writeShort(0);
+        out.writeShort(0);
+        out.writeByte(0);
+        out.writeByte(0);
+        for (int i = 0; i < 4; i++) out.writeLong(0);
+        out.writeShort(1);
+        out.writeShort(1);
+        out.writeInt(123);
+        out.writeByte(1);
+        out.writeByte(0);
+        out.writeByte(0);
+        out.writeByte(0);
+        out.writeByte(0);
+        for (int i = 0; i < 4; i++) out.writeInt(0);
+        out.writeByte(1);
+        out.writeByte(-1);
+        out.writeBoolean(false);
+        out.writeShort(1);
+        out.writeByte(15);
+        out.writeBoolean(false);
+        out.writeInt(0);
+        out.writeInt(1);
+        out.writeInt(64);
+        out.writeInt(2);
+        Entry decoded = DeviceTerminalDeltaCodec.decode(null, false, bytes.toByteArray())
+            .get(0);
+        assertEquals("0:1:64:2", decoded.key);
+        assertEquals("Native", decoded.name);
+        assertEquals("", decoded.tags);
+        assertEquals(0, decoded.favoriteOrder);
+    }
+
+    @Test
     public void deltaRoundTripRetainsStaticFieldsAndExactLargeValues() {
         Entry old = row(1, 2, 3, 4, 5, "baseline name");
         Entry updated = row(
@@ -289,6 +369,8 @@ public class DeviceTerminalDeltaCodecTest {
             assertEquals(a.displayName, b.displayName);
             assertEquals(a.nameColor, b.nameColor);
             assertEquals(a.nameBold, b.nameBold);
+            assertEquals(a.tags, b.tags);
+            assertEquals(a.favoriteOrder, b.favoriteOrder);
         }
     }
 }

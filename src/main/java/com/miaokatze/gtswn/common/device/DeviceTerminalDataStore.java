@@ -364,19 +364,44 @@ public class DeviceTerminalDataStore extends WorldSavedData {
 
     /** Alias belongs to this terminal binding; the original machine name continues to be sampled independently. */
     public boolean renameBinding(UUID terminalId, String key, String name, int color, boolean bold) {
+        TerminalData data = terminals.get(terminalId);
+        MachineRecord record = data == null ? null : data.records.get(key);
+        return editBinding(terminalId, key, name, color, bold, record == null ? "" : record.tags);
+    }
+
+    public boolean editBinding(UUID terminalId, String key, String name, int color, boolean bold, String tags) {
         String normalized = DeviceTerminalNameRules.normalize(name);
-        if (normalized == null || !DeviceTerminalNameRules.validColor(color)) return false;
+        String normalizedTags = DeviceTerminalTagRules.normalize(tags);
+        if (normalized == null || normalizedTags == null || !DeviceTerminalNameRules.validColor(color)) return false;
         TerminalData data = terminals.get(terminalId);
         if (data == null || !data.boundKeys.contains(key)) return false;
         MachineRecord record = data.records.get(key);
         if (record == null) return false;
         byte chosenColor = (byte) (normalized.isEmpty() ? DeviceTerminalNameRules.DEFAULT_COLOR : color);
         boolean chosenBold = !normalized.isEmpty() && bold;
-        if (normalized.equals(record.displayName) && record.nameColor == chosenColor && record.nameBold == chosenBold)
-            return true;
+        if (normalized.equals(record.displayName) && record.nameColor == chosenColor
+            && record.nameBold == chosenBold
+            && normalizedTags.equals(record.tags)) return true;
         record.displayName = normalized;
         record.nameColor = chosenColor;
         record.nameBold = chosenBold;
+        record.tags = normalizedTags;
+        data.version++;
+        markDirty();
+        return true;
+    }
+
+    /** A later favorite always precedes earlier favorites, independently of the selected column sort. */
+    public boolean setFavorite(UUID terminalId, String key, boolean favorite) {
+        TerminalData data = terminals.get(terminalId);
+        MachineRecord record = data == null ? null : data.records.get(key);
+        if (record == null || !data.boundKeys.contains(key)) return false;
+        if ((record.favoriteOrder > 0) == favorite) return true;
+        if (favorite) {
+            long latest = 0;
+            for (MachineRecord bound : data.records.values()) latest = Math.max(latest, bound.favoriteOrder);
+            record.favoriteOrder = Math.incrementExact(latest);
+        } else record.favoriteOrder = 0;
         data.version++;
         markDirty();
         return true;
@@ -641,6 +666,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
         public String displayName = "";
         public byte nameColor = DeviceTerminalNameRules.DEFAULT_COLOR;
         public boolean nameBold;
+        public String tags = "";
+        public long favoriteOrder;
 
         /** 机器维度 */
         public int dim;
@@ -778,6 +805,9 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             nameColor = (byte) (!displayName.isEmpty() && DeviceTerminalNameRules.validColor(color) ? color
                 : DeviceTerminalNameRules.DEFAULT_COLOR);
             nameBold = !displayName.isEmpty() && tag.getBoolean("nameBold");
+            String labels = DeviceTerminalTagRules.normalize(tag.getString("tags"));
+            tags = labels == null ? "" : labels;
+            favoriteOrder = Math.max(0, tag.getLong("favoriteOrder"));
             dim = tag.getInteger("dim");
             x = tag.getInteger("x");
             y = tag.getInteger("y");
@@ -813,6 +843,8 @@ public class DeviceTerminalDataStore extends WorldSavedData {
             tag.setString("displayName", displayName);
             tag.setByte("nameColor", nameColor);
             tag.setBoolean("nameBold", nameBold);
+            tag.setString("tags", tags);
+            tag.setLong("favoriteOrder", favoriteOrder);
             tag.setInteger("dim", dim);
             tag.setInteger("x", x);
             tag.setInteger("y", y);
