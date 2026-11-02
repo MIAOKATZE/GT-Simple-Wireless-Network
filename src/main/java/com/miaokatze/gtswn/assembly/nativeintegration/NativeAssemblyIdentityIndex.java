@@ -48,13 +48,14 @@ final class NativeAssemblyIdentityIndex {
                 present = true;
                 if (!claim.position.matches(session.controller()))
                     session.identityConflict("controller_identity_moved");
-            } else
-                if (!NativeAssemblyAdapter.isLive(owner.controller()) && claim.position.matches(session.controller())) {
+            } else if (claim.position.matches(session.controller())) {
+                if (!NativeAssemblyAdapter.isLive(owner.controller())) {
                     // A loaded replacement at the same saved controller identity and position is a normal reload.
                     it.remove();
                 } else {
                     conflict(owner, session, "duplicate_controller_identity");
                 }
+            }
         }
         if (!present) claims.add(new ControllerClaim(session));
     }
@@ -85,6 +86,8 @@ final class NativeAssemblyIdentityIndex {
                     session.identityConflict("member_identity_moved");
                 continue;
             }
+            // Saved UUIDs can be copied with a structure; only the same physical member has shared ownership.
+            if (oldMember != meta && !claim.position.matches(meta)) continue;
             boolean sameOwner = claim.controllerId.equals(session.controllerId())
                 && claim.controllerPosition.matches(session.controller());
             boolean oldOwnerLive = owner != null && NativeAssemblyAdapter.isLive(owner.controller());

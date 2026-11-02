@@ -36,6 +36,7 @@
     "mm.PendingBuildMixin"
   ],
   "client": [
+    "baubles.PacketSyncAllBaubleMixin",
     "journeymap.FactoryMiniMapOverlayMixin",
     "waila.FactoryTooltipOverlayMixin",
     "minecraft.TerminalWheelInputMixin",
