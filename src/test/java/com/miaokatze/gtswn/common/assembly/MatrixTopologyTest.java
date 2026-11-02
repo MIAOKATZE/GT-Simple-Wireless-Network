@@ -7,6 +7,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,6 +65,7 @@ import gregtech.api.metatileentity.MetaTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatchInput;
 import gregtech.api.metatileentity.implementations.MTEHatchInputBus;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
+import gregtech.api.util.GTRecipe.RecipeAssemblyLine;
 import gregtech.common.tileentities.machines.multi.MTEAssemblyLine;
 
 public class MatrixTopologyTest {
@@ -103,13 +105,149 @@ public class MatrixTopologyTest {
                 .set(duplicate.matrixPort(), ((MatrixAssemblyMember) member).orderedMemberId());
             second.mInputBusses.clear();
             first.mInputBusses.add((MTEHatchInputBus) duplicate);
-            assertFalse(
-                "A different live member reusing the UUID must remain blocked even after the old owner detached",
+            assertTrue(
+                "A copied UUID at another physical member must not block the independent structure",
                 (Boolean) verify.invoke(null, before));
         } finally {
             removed.invoke(null, before);
             removed.invoke(null, after);
         }
+    }
+
+    @Test
+    public void threeCopiedAssemblyLinesKeepTheirSavedUuidsAtIndependentWorldPositions() throws Exception {
+        Fixture fixture = new Fixture();
+        fixture.world.provider.dimensionId = 180;
+        initializeNativeAssemblyLine(fixture.unsafe);
+        String[] itemIds = { "6290cd28-f666-48dd-bdaa-bbe913a457c2", "38dfb18e-e61d-479f-b4c8-0b3cf96a43fc",
+            "012a74e2-535b-413a-9b6e-cf0d48ff9b7f", "051e7689-c02d-4c0a-81bc-83ab7ada08c6",
+            "8af4b738-fdaa-4c87-b369-36ea3199e70e", "25656092-f6d5-471f-b7c8-2709c025df8b",
+            "78cb1a80-baf6-452a-9886-2eea5853df3a", "c6a9696e-4632-4781-8673-11e5827139ca",
+            "337c7b34-0eed-4753-8a87-4d3a9b26b7ca", "ab19d526-93f5-4561-a4c1-7158c38fa214" };
+        String[] fluidIds = { "9e0f9d8d-23cf-416b-8762-aaf3358fdf9f", "2babfacc-8484-46c3-a506-eb19d2727e36",
+            "547028cf-74f9-4d6d-bf17-7609806ec9f6", "949e3fa3-7c19-4972-afc3-97f0f316663a" };
+        NBTTagCompound identity = savedNativeIdentity(UUID.fromString("686f3a20-1351-42c9-b770-37e81621fa2e"));
+        List<NativeAssemblySession> sessions = new ArrayList<>();
+        Method verify = identityIndexMethod("verify"), removed = identityIndexMethod("removed");
+        try {
+            // Exact controller/member positions and UUID relationships from the read-only dimension-180 evidence.
+            for (int line = 0; line < 3; line++) {
+                int z = 40 + line * 6;
+                MTEAssemblyLine controller = new MTEAssemblyLine("matrix_copied_line_" + line);
+                fixture.attach(controller, 219, 40, z);
+                for (int i = 0; i < itemIds.length; i++) {
+                    MatrixAssemblyMember member = fixture.add(false, 219 + i, 38, z - 1);
+                    String id = itemIds[i];
+                    if (i == 0 && line < 2) id = line == 0 ? "097ae118-4f79-46a6-851b-dd6b35279f71"
+                        : "0b2bd3af-bcaf-4ee1-b35e-31dcdc0914a1";
+                    if (i == 1 && line == 1) id = "d9c8a322-8910-4f41-ac1b-78679ac8ef0b";
+                    field(MatrixAssemblyPort.class, "memberId").set(member.matrixPort(), UUID.fromString(id));
+                    controller.mInputBusses.add((MTEHatchInputBus) member);
+                }
+                for (int i = 0; i < fluidIds.length; i++) {
+                    MatrixAssemblyMember member = fixture.add(true, 219 + i, 38, z);
+                    String id = i == 3 && line < 2 ? "4ea5fac0-c3de-4035-bafe-6f81d4e80b0b" : fluidIds[i];
+                    field(MatrixAssemblyPort.class, "memberId").set(member.matrixPort(), UUID.fromString(id));
+                    controller.mInputHatches.add((MTEHatchInput) member);
+                }
+                NativeAssemblySession session = new NativeAssemblySession(controller);
+                session.load(identity);
+                sessions.add(session);
+                OrderedAssemblyGroup.refreshTopology((MatrixAssemblyMember) controller.mInputBusses.get(0));
+                assertEquals(
+                    14,
+                    ((MatrixAssemblyMember) controller.mInputBusses.get(0)).matrixPort()
+                        .group()
+                        .physicalMembers()
+                        .size());
+                assertTrue("Independent copied line at z=" + z, (Boolean) verify.invoke(null, session));
+            }
+            for (NativeAssemblySession session : sessions) {
+                assertTrue((Boolean) verify.invoke(null, session));
+                NBTTagCompound after = new NBTTagCompound();
+                session.save(after);
+                assertEquals("Verification must not rewrite copied controller identity", identity, after);
+            }
+        } finally {
+            for (NativeAssemblySession session : sessions) removed.invoke(null, session);
+        }
+    }
+
+    @Test
+    public void samePositionReloadAndSeparateWorldCopiesRetainTheirSavedIdentity() throws Exception {
+        Fixture fixture = new Fixture();
+        initializeNativeAssemblyLine(fixture.unsafe);
+        MatrixAssemblyMember original = fixture.add(false, 0, 64, 0);
+        MTEAssemblyLine first = new MTEAssemblyLine("matrix_identity_before_reload");
+        fixture.attach(first, 20, 64, 20);
+        first.mInputBusses.add((MTEHatchInputBus) original);
+        NativeAssemblySession before = new NativeAssemblySession(first);
+        NBTTagCompound identity = new NBTTagCompound();
+        before.save(identity);
+        List<NativeAssemblySession> sessions = new ArrayList<>();
+        sessions.add(before);
+        Method verify = identityIndexMethod("verify"), removed = identityIndexMethod("removed");
+        try {
+            assertTrue((Boolean) verify.invoke(null, before));
+            for (Fixture destination : new Fixture[] { fixture, new Fixture() }) {
+                MatrixAssemblyMember reloaded = destination.add(false, 0, 64, 0);
+                field(MatrixAssemblyPort.class, "memberId").set(reloaded.matrixPort(), original.orderedMemberId());
+                MTEAssemblyLine controller = new MTEAssemblyLine("matrix_identity_reloaded");
+                destination.attach(controller, 20, 64, 20);
+                controller.mInputBusses.add((MTEHatchInputBus) reloaded);
+                NativeAssemblySession restored = new NativeAssemblySession(controller);
+                restored.load(identity);
+                sessions.add(restored);
+                assertTrue((Boolean) verify.invoke(null, restored));
+                NBTTagCompound after = new NBTTagCompound();
+                restored.save(after);
+                assertEquals(identity, after);
+                assertEquals(original.orderedMemberId(), reloaded.orderedMemberId());
+            }
+        } finally {
+            for (NativeAssemblySession session : sessions) removed.invoke(null, session);
+        }
+    }
+
+    @Test
+    public void duplicateUuidsWithinOnePhysicalGroupStillFailTheExistingTopologyGate() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        field(MatrixAssemblyPort.class, "memberId").set(
+            items.get(1)
+                .matrixPort(),
+            items.get(0)
+                .orderedMemberId());
+        Method check = OrderedAssemblyGroup.class.getDeclaredMethod("checkTopology");
+        check.setAccessible(true);
+        assertFalse((Boolean) check.invoke(group));
+        assertEquals(
+            "duplicate_identity",
+            group.saveLedger()
+                .getString("reason"));
+    }
+
+    private static Method identityIndexMethod(String name) throws Exception {
+        Class<?> index = Class.forName("com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyIdentityIndex");
+        Method method = index.getDeclaredMethod(name, NativeAssemblySession.class);
+        method.setAccessible(true);
+        return method;
+    }
+
+    private static NBTTagCompound savedNativeIdentity(UUID id) {
+        NBTTagCompound identity = new NBTTagCompound(), root = new NBTTagCompound();
+        identity.setInteger("schema", 1);
+        identity.setLong("uuidMost", id.getMostSignificantBits());
+        identity.setLong("uuidLeast", id.getLeastSignificantBits());
+        identity.setLong("runSequence", 20);
+        identity.setBoolean("recordedRunning", false);
+        identity.setString("lastNativeEvent", "LOCAL_FINISHED");
+        root.setTag("gtswnOrderedAssemblyController", identity);
+        return root;
     }
 
     private static void initializeNativeAssemblyLine(sun.misc.Unsafe unsafe) throws Exception {
@@ -564,6 +702,133 @@ public class MatrixTopologyTest {
             items.get(3)
                 .matrixPort()
                 .connectionMask());
+    }
+
+    @Test
+    public void synchronousAeCraftingRefreshDuringConnectionUpdatesKeepsEveryPhysicalMember() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        fixture.add(true, 0, 64, 1);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        graph.external(items.get(4));
+        for (MatrixAssemblyMember member : fixture.members) member.matrixPort()
+            .connectionMask(0);
+        int[] callbacks = { 0 };
+        ICraftingProviderHelper helper = (ICraftingProviderHelper) Proxy.newProxyInstance(
+            ICraftingProviderHelper.class.getClassLoader(),
+            new Class<?>[] { ICraftingProviderHelper.class },
+            (proxy, method, args) -> { throw new AssertionError("A bare group cannot advertise a pattern"); });
+        MatrixAssemblyMember first = items.get(0);
+        field(MatrixAssemblyPort.class, "proxy").set(first.matrixPort(), new AENetworkProxy(null, "test", null, true) {
+
+            @Override
+            public IGridNode getNode() {
+                return graph.nodes.get(first).node;
+            }
+
+            @Override
+            public boolean isActive() {
+                return true;
+            }
+
+            @Override
+            public void setValidSides(EnumSet<ForgeDirection> sides) {
+                callbacks[0]++;
+                first.matrixPort()
+                    .provideCrafting(helper);
+            }
+        });
+        Method update = OrderedAssemblyGroup.class.getDeclaredMethod("updateConnections");
+        update.setAccessible(true);
+        update.invoke(group);
+        assertEquals(1, callbacks[0]);
+        assertSame(
+            items.get(4),
+            group.itemMembers()
+                .get(0));
+        assertArrayEquals(new int[] { 4, 64, 0 }, group.diagnosticMemberPosition(false, 0));
+        assertEquals(
+            items.get(4)
+                .orderedMemberId()
+                .toString(),
+            group.saveLedger()
+                .getTagList("members", 10)
+                .getCompoundTagAt(0)
+                .getString("id"));
+        assertEquals(
+            fixture.members.size(),
+            group.physicalMembers()
+                .size());
+        for (MatrixAssemblyMember member : fixture.members) {
+            assertSame(
+                group,
+                member.matrixPort()
+                    .group());
+            assertEquals(
+                fixture.expectedMask(member),
+                member.matrixPort()
+                    .connectionMask());
+        }
+    }
+
+    @Test
+    public void connectionCallbacksCannotClearMembersAlreadyReboundToAReplacementGroup() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = fixture.items(false);
+        fixture.add(true, 0, 64, 1);
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup previous = items.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        graph.external(items.get(4));
+        for (MatrixAssemblyMember member : fixture.members) member.matrixPort()
+            .connectionMask(0);
+        MatrixAssemblyMember added = fixture.add(false, -1, 64, 0);
+        TileEntity addedTile = fixture.world.tiles.remove(key(-1, 64, 0));
+        boolean[] rebound = { false };
+        MatrixAssemblyMember first = items.get(0);
+        field(MatrixAssemblyPort.class, "proxy").set(first.matrixPort(), new AENetworkProxy(null, "test", null, true) {
+
+            @Override
+            public IGridNode getNode() {
+                return graph.nodes.get(first).node;
+            }
+
+            @Override
+            public boolean isActive() {
+                return true;
+            }
+
+            @Override
+            public void setValidSides(EnumSet<ForgeDirection> sides) {
+                if (rebound[0]) return;
+                rebound[0] = true;
+                fixture.world.tiles.put(key(-1, 64, 0), addedTile);
+                OrderedAssemblyGroup.refreshTopology(added);
+            }
+        });
+        Method update = OrderedAssemblyGroup.class.getDeclaredMethod("updateConnections");
+        update.setAccessible(true);
+        update.invoke(previous);
+        OrderedAssemblyGroup replacement = first.matrixPort()
+            .group();
+        assertTrue(rebound[0]);
+        assertNotSame(previous, replacement);
+        for (MatrixAssemblyMember member : fixture.members) {
+            assertSame(
+                replacement,
+                member.matrixPort()
+                    .group());
+            assertEquals(
+                fixture.expectedMask(member),
+                member.matrixPort()
+                    .connectionMask());
+        }
     }
 
     @Test
@@ -1087,6 +1352,170 @@ public class MatrixTopologyTest {
                 .master()
                 .matrixPort()
                 .clearMirror());
+    }
+
+    @Test
+    public void copiedNativeMirrorControllersKeepIndependentRunsUntilEachFinishes() throws Exception {
+        NativeMirrorRuns runs = new NativeMirrorRuns();
+        runs.start(0);
+        runs.start(1);
+        NBTTagList saved = runs.source.saveLedger()
+            .getTagList("sharedRuns", 10);
+        assertEquals("Copied controller UUIDs must not overwrite another physical run", 2, saved.tagCount());
+        assertNotEquals(
+            saved.getCompoundTagAt(0)
+                .getString("key"),
+            saved.getCompoundTagAt(1)
+                .getString("key"));
+        runs.groups.get(0)
+            .onNativeFinished(runs.sessions.get(0));
+        assertEquals(OrderedAssemblyGroup.Stage.RUNNING, runs.source.stage());
+        assertEquals(
+            1,
+            runs.source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .tagCount());
+        runs.groups.get(1)
+            .onNativeFinished(runs.sessions.get(1));
+        assertEquals(OrderedAssemblyGroup.Stage.LOCAL_FINISHED, runs.source.stage());
+        assertEquals(
+            0,
+            runs.source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .tagCount());
+    }
+
+    @Test
+    public void legacyNativeSharedRunsFinishOnlyForTheSavedControllerPosition() throws Exception {
+        NativeMirrorRuns runs = new NativeMirrorRuns();
+        runs.start(0);
+        NBTTagCompound ledger = runs.source.saveLedger();
+        NBTTagCompound legacy = ledger.getTagList("sharedRuns", 10)
+            .getCompoundTagAt(0);
+        String oldKey = "native:" + runs.sessions.get(0)
+            .controllerId();
+        legacy.setString("key", oldKey);
+        MatrixAssemblyMember master = runs.source.master();
+        for (MatrixAssemblyMember member : runs.source.physicalMembers()) member.matrixPort()
+            .bind(null);
+        field(MatrixAssemblyPort.class, "restoredLedger").set(master.matrixPort(), ledger);
+        OrderedAssemblyGroup.refreshTopology(master);
+        runs.source = master.matrixPort()
+            .group();
+        for (OrderedAssemblyGroup group : runs.groups) group.networkChanged();
+        assertEquals(OrderedAssemblyGroup.Stage.RUNNING, runs.source.stage());
+        assertEquals(
+            legacy,
+            runs.source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .getCompoundTagAt(0));
+        runs.groups.get(1)
+            .onNativeFinished(runs.sessions.get(1));
+        assertEquals(
+            "A copied UUID at another position cannot finish the legacy run",
+            1,
+            runs.source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .tagCount());
+        runs.start(1);
+        assertEquals(
+            2,
+            runs.source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .tagCount());
+        field(NativeAssemblySession.class, "runSequence").setLong(runs.sessions.get(1), 21);
+        runs.groups.get(1)
+            .onNativeFinished(runs.sessions.get(1));
+        assertEquals(
+            "A stale sequence cannot finish this physical controller's run",
+            2,
+            runs.source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .tagCount());
+        field(NativeAssemblySession.class, "runSequence").setLong(runs.sessions.get(1), 20);
+        runs.groups.get(0)
+            .onNativeFinished(runs.sessions.get(0));
+        assertEquals(OrderedAssemblyGroup.Stage.RUNNING, runs.source.stage());
+        NBTTagList remaining = runs.source.saveLedger()
+            .getTagList("sharedRuns", 10);
+        assertEquals(1, remaining.tagCount());
+        assertNotEquals(
+            oldKey,
+            remaining.getCompoundTagAt(0)
+                .getString("key"));
+        runs.groups.get(1)
+            .onNativeFinished(runs.sessions.get(1));
+        assertEquals(OrderedAssemblyGroup.Stage.LOCAL_FINISHED, runs.source.stage());
+        assertEquals(
+            0,
+            runs.source.saveLedger()
+                .getTagList("sharedRuns", 10)
+                .tagCount());
+    }
+
+    /**
+     * Exercise native callbacks with real physical mirrors, without bypassing the missing-hook permit in production.
+     */
+    private static final class NativeMirrorRuns {
+
+        OrderedAssemblyGroup source;
+        final List<OrderedAssemblyGroup> groups = new ArrayList<>();
+        final List<NativeAssemblySession> sessions = new ArrayList<>();
+        final RecipeAssemblyLine recipe;
+
+        NativeMirrorRuns() throws Exception {
+            Fixture fixture = new Fixture();
+            initializeNativeAssemblyLine(fixture.unsafe);
+            List<MatrixAssemblyMember> items = fixture.items(false);
+            fixture.add(true, 0, 64, 1);
+            OrderedAssemblyGroup.refreshTopology(items.get(0));
+            source = items.get(0)
+                .matrixPort()
+                .group();
+            NBTTagCompound address = source.master()
+                .matrixPort()
+                .copySource();
+            NBTTagCompound identity = savedNativeIdentity(UUID.fromString("686f3a20-1351-42c9-b770-37e81621fa2e"));
+            for (int offset : new int[] { 20, 40 }) {
+                MatrixAssemblyMember anchor = fixture.add(false, offset, 64, 0, true);
+                for (int i = 1; i < 5; i++) fixture.add(false, offset + i, 64, 0);
+                fixture.add(true, offset, 64, 1);
+                OrderedAssemblyGroup.refreshTopology(anchor);
+                assertTrue(
+                    anchor.matrixPort()
+                        .bindMirror(address));
+                OrderedAssemblyGroup group = anchor.matrixPort()
+                    .group();
+                MTEAssemblyLine controller = new MTEAssemblyLine("matrix_copied_native_mirror_" + offset);
+                fixture.attach(controller, offset, 64, 20);
+                for (MatrixAssemblyMember member : group.itemMembers())
+                    controller.mInputBusses.add((MTEHatchInputBus) member);
+                for (MatrixAssemblyMember member : group.fluidMembers())
+                    controller.mInputHatches.add((MTEHatchInput) member);
+                NativeAssemblySession session = new NativeAssemblySession(controller);
+                session.load(identity);
+                field(OrderedAssemblyGroup.class, "session").set(group, session);
+                groups.add(group);
+                sessions.add(session);
+            }
+            Class<?> fixtures = Class.forName("com.miaokatze.gtswn.common.assembly.pattern.AssemblyPatternFixtures");
+            invoke(fixtures, "initialize", new Class<?>[0]);
+            recipe = (RecipeAssemblyLine) invoke(
+                fixtures,
+                "recipe",
+                new Class<?>[] { ItemStack[].class, net.minecraftforge.fluids.FluidStack[].class, ItemStack.class },
+                new ItemStack[] { (ItemStack) invoke(fixtures, "input", new Class<?>[] { int.class }, 1) },
+                new net.minecraftforge.fluids.FluidStack[0],
+                invoke(fixtures, "output", new Class<?>[] { int.class }, 1));
+            field(OrderedAssemblyGroup.class, "batch").set(source, UUID.randomUUID());
+            field(OrderedAssemblyGroup.class, "patternSlot").setInt(source, 0);
+        }
+
+        void start(int index) {
+            OrderedAssemblyGroup group = groups.get(index);
+            assertSame(source.master(), group.diagnosticMaterialMember(group.master()));
+            group.onNativeConsumption(sessions.get(index), recipe, 1, new long[5], new long[1], true);
+        }
     }
 
     private static OrderedPatternLayout bufferLayout(int[] variants) throws Exception {

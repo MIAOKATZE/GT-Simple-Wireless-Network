@@ -66,7 +66,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private MatrixAssemblyMember master;
     private final List<MatrixAssemblyMember> items;
     private final List<MatrixAssemblyMember> fluids;
-    private final List<MatrixAssemblyMember> members;
+    private List<MatrixAssemblyMember> members;
     private final List<UUID> memberIds = new ArrayList<>();
     private final Set<RecipeAssemblyLine> observedAuthorizedRecipes = new HashSet<>();
     private int[][] memberPositions;
@@ -117,7 +117,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         this.master = master;
         this.items = ledgerOrder(items, ledger);
         this.fluids = ledgerOrder(fluids, ledger);
-        members = new ArrayList<>();
         memberDimension = master.getBaseMetaTileEntity()
             .getWorld().provider.dimensionId;
         rememberMembers();
@@ -419,9 +418,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private void rememberMembers() {
-        members.clear();
-        members.addAll(items);
-        members.addAll(fluids);
+        // Updating AE connection sides can synchronously rebuild crafting and reorder the ME intake here.
+        // Keep an in-progress traversal of the same physical members stable while publishing the new order.
+        List<MatrixAssemblyMember> nextMembers = new ArrayList<>(items);
+        nextMembers.addAll(fluids);
+        members = nextMembers;
         memberIds.clear();
         for (MatrixAssemblyMember member : members) memberIds.add(member.orderedMemberId());
         memberPositions = positions(members);
@@ -1299,7 +1300,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             return false;
         OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
         return (owner.stage == Stage.STAGED || owner.stage == Stage.RUNNING) && owner.sharedFailure.isEmpty()
-            && !owner.sharedRuns.containsKey(nativeRunKey(nativeSession));
+            && !owner.sharedRuns.containsKey(owner.nativeRunKey(nativeSession));
     }
 
     @Override
@@ -1342,7 +1343,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             stage = Stage.QUARANTINED;
             reason = "partial_consumption";
         } else {
-            owner.sharedRuns.put(nativeRunKey(nativeSession), nativeRun(nativeSession));
+            owner.sharedRuns.put(owner.nativeRunKey(nativeSession), nativeRun(nativeSession));
             owner.recipeKey = AssemblyRecipeKey.of(recipe)
                 .value();
             owner.stage = Stage.RUNNING;
@@ -1365,7 +1366,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (nativeSession != session) return;
         OrderedAssemblyGroup owner = runningOwner();
         if (owner == null) return;
-        owner.finishRun(nativeRunKey(nativeSession), nativeSession.runSequence(), "");
+        owner.finishRun(owner.nativeRunKey(nativeSession), nativeSession.runSequence(), "");
         if (owner != this) {
             stage = Stage.IDLE;
             reason = "";
@@ -1385,7 +1386,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             dirty();
             return;
         }
-        owner.finishRun(nativeRunKey(nativeSession), nativeSession.runSequence(), message);
+        owner.finishRun(owner.nativeRunKey(nativeSession), nativeSession.runSequence(), message);
         if (owner != this) {
             stage = Stage.IDLE;
             reason = "";
@@ -1400,8 +1401,19 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return nativeOwner;
     }
 
-    private static String nativeRunKey(NativeAssemblySession session) {
-        return "native:" + session.controllerId();
+    private String nativeRunKey(NativeAssemblySession session) {
+        String legacyKey = "native:" + session.controllerId();
+        String key = legacyKey + ":" + machineRunKey(session.controller());
+        if (sharedRuns.containsKey(key)) return key;
+        NBTTagCompound legacy = sharedRuns.get(legacyKey);
+        // Schema-1 runs already save the physical controller; keep their key until that exact run finishes.
+        if (legacy != null && legacy.getString("controller")
+            .equals(
+                session.controllerId()
+                    .toString())
+            && Arrays.equals(legacy.getIntArray("position"), machineRun(session.controller()).getIntArray("position")))
+            return legacyKey;
+        return key;
     }
 
     private static String machineRunKey(MTEMultiBlockBase controller) {
@@ -1758,6 +1770,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     private void updateConnections() {
         for (MatrixAssemblyMember member : members) {
+            OrderedAssemblyGroup owner = member.matrixPort()
+                .group();
+            if (owner != null && owner != this) continue;
             int mask = 0;
             if (verified && member.matrixPort()
                 .group() == this && isPresent(member)) {
