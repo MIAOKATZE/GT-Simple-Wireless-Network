@@ -6,12 +6,15 @@ import java.util.UUID;
 
 import net.minecraft.entity.item.EntityItem;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.InventoryCrafting;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChatComponentTranslation;
+import net.minecraft.util.StatCollector;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.FluidStack;
 
@@ -29,6 +32,7 @@ import appeng.api.util.DimensionalCoord;
 import appeng.me.GridAccessException;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
+import gregtech.api.enums.ItemList;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 
 /** Shared AE lifecycle and durable identity for the two physical member types. */
@@ -186,6 +190,42 @@ public final class MatrixAssemblyPort {
         OrderedAssemblyGroup.refreshTopology(member);
         if (member.matrixMirror()) return mirrorLink == null ? null : mirrorLink.save();
         return group != null && !group.isMirror() && group.editable() ? MatrixMirrorLink.copy(member, group) : null;
+    }
+
+    void copyToDataStick(EntityPlayer player) {
+        if (!(player instanceof EntityPlayerMP)) return;
+        ItemStack stick = player.inventory.getCurrentItem();
+        if (!ItemList.Tool_DataStick.isStackEqual(stick, false, true)) return;
+        NBTTagCompound data = copySource();
+        if (data == null) {
+            player.addChatMessage(new ChatComponentTranslation("gtswn.matrix.data_stick.copy_failed"));
+            return;
+        }
+        stick.setTagCompound(data);
+        int[] position = data.getIntArray("anchor");
+        stick.setStackDisplayName(
+            StatCollector.translateToLocalFormatted(
+                "gtswn.matrix.data_stick.name",
+                data.getInteger("dimension"),
+                position[0],
+                position[1],
+                position[2]));
+        player.addChatMessage(new ChatComponentTranslation("gtswn.matrix.data_stick.copied"));
+    }
+
+    boolean tryBindDataStick(EntityPlayer player) {
+        if (!member.matrixMirror()) return false;
+        ItemStack stick = player.inventory.getCurrentItem();
+        if (!ItemList.Tool_DataStick.isStackEqual(stick, false, true) || !stick.hasTagCompound()
+            || !MatrixMirrorLink.DATA_TYPE.equals(
+                stick.getTagCompound()
+                    .getString("type")))
+            return false;
+        if (player instanceof EntityPlayerMP) player.addChatMessage(
+            new ChatComponentTranslation(
+                bindMirror(stick.getTagCompound()) ? "gtswn.matrix.data_stick.linked"
+                    : "gtswn.matrix.data_stick.link_failed"));
+        return true;
     }
 
     public boolean bindMirror(NBTTagCompound data) {

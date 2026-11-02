@@ -441,8 +441,11 @@ public class ClientProxy extends CommonProxy {
         World receivedWorld = minecraft.theWorld;
         minecraft.func_152344_a(() -> {
             if (receivedWorld != null && receivedWorld == minecraft.theWorld) {
-                DeviceTerminalClientCache
-                    .handleSettings(message.teleportCost, message.canEdit, message.samplingSeconds);
+                DeviceTerminalClientCache.handleSettings(
+                    message.teleportCost,
+                    message.canEdit,
+                    message.samplingSeconds,
+                    message.teleportAnchors);
             }
         });
     }

@@ -267,6 +267,24 @@ public class TestWorldReportingLifecycleTest {
     }
 
     @Test
+    public void administratorStopDuringReleasePreservesTheCompletedBusinessOutcome() throws Exception {
+        journal = new TestWorldData("release-journal");
+        journal.operation = "RUNNING";
+        journal.activeRun = "completed-run";
+        replace(TestWorldManager.class, "data", journal);
+        replace(TestWorldManager.class, "phase", "RELEASING");
+        replace(TestWorldManager.class, "releasingStatus", "PASS");
+        replace(TestWorldManager.class, "releasingFailure", null);
+        replace(TestWorldManager.class, "releasingChunks", java.util.Collections.emptyList());
+        TestWorldManager.stop("stopped by administrator");
+        assertTrue(TestWorldManager.busy());
+        assertEquals("RELEASING", field(TestWorldManager.class, "phase").get(null));
+        assertEquals("PASS", field(TestWorldManager.class, "releasingStatus").get(null));
+        assertEquals("RUNNING", journal.operation);
+        assertEquals("completed-run", journal.activeRun);
+    }
+
+    @Test
     public void statusDoesNotRetryAndReportExplicitlyRetriesOffThread() throws Exception {
         File blocked = directory.newFile("blocked");
         TestWorldReport.WriteReceipt receipt = failedLiveReceipt(new File(blocked, "report.json"));

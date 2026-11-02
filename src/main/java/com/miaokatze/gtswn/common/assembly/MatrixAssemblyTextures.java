@@ -4,12 +4,14 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import gregtech.api.enums.Textures;
 import gregtech.api.interfaces.ITexture;
+import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.render.TextureFactory;
 
 /** Six world connection bits project onto the actual rendered face; sixteen finite edge sprites. */
 public final class MatrixAssemblyTextures {
 
     private static final ITexture[][] BRIDGES = new ITexture[4][16];
+    private static final ITexture[][] TRANSITIONS = new ITexture[4][4];
     private static final ITexture[] CENTERS = new ITexture[4];
     private static final ITexture[] COLORS = new ITexture[17];
 
@@ -22,6 +24,8 @@ public final class MatrixAssemblyTextures {
             for (int mask = 0; mask < 16; mask++) BRIDGES[style][mask] = TextureFactory.of(
                 Textures.BlockIcons
                     .custom("gtswn", "matrix/" + (style == 0 ? "" : styles[style] + "/") + "bridge_" + mask));
+            for (int edge = 0; edge < 4; edge++) TRANSITIONS[style][edge] = TextureFactory
+                .of(Textures.BlockIcons.custom("gtswn", "matrix/" + styles[style] + "/transition_" + (1 << edge)));
         }
         for (int i = 0; i < COLORS.length; i++)
             COLORS[i] = TextureFactory.of(Textures.BlockIcons.OVERLAY_ME_CRAFTING_INPUT_COLORS[i]);
@@ -33,14 +37,37 @@ public final class MatrixAssemblyTextures {
     static void init() {}
 
     public static ITexture[] front(MatrixAssemblyMember member, ITexture base) {
+        IGregTechTileEntity tile = member.getBaseMetaTileEntity();
         int mask = faceMask(
             member.matrixPort()
                 .connectionMask(),
-            member.getBaseMetaTileEntity()
-                .getFrontFacing());
+            tile.getFrontFacing());
         int style = (member.matrixMirror() ? 2 : 0) + (member.matrixFluid() ? 1 : 0);
-        return new ITexture[] { base, BRIDGES[style][mask], CENTERS[style], COLORS[member.getBaseMetaTileEntity()
-            .getColorization() + 1] };
+        int transitions = faceMask(transitionMask(member), tile.getFrontFacing());
+        ITexture[] layers = new ITexture[4 + Integer.bitCount(transitions)];
+        layers[0] = base;
+        layers[1] = BRIDGES[style][mask];
+        layers[2] = CENTERS[style];
+        layers[3] = COLORS[tile.getColorization() + 1];
+        int next = 4;
+        for (int edge = 0; edge < 4; edge++)
+            if ((transitions & (1 << edge)) != 0) layers[next++] = TRANSITIONS[style][edge];
+        return layers;
+    }
+
+    /** Client-side groups are not reconstructed; only verified, synchronized physical edges may blend. */
+    static int transitionMask(MatrixAssemblyMember member) {
+        IGregTechTileEntity tile = member.getBaseMetaTileEntity();
+        if (tile.getWorld() == null) return 0;
+        int connections = member.matrixPort()
+            .connectionMask();
+        int result = 0;
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) if ((connections & side.flag) != 0) {
+            IGregTechTileEntity neighbour = tile.getIGregTechTileEntityAtSide(side);
+            if (neighbour != null && neighbour.getMetaTileEntity() instanceof MatrixAssemblyMember other
+                && other.matrixMirror() != member.matrixMirror()) result |= side.flag;
+        }
+        return result;
     }
 
     public static int faceMask(int worldMask, ForgeDirection normal) {

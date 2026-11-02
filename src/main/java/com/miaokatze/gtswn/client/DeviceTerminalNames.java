@@ -50,4 +50,12 @@ public final class DeviceTerminalNames {
         IMetaTileEntity machine = GregTechAPI.METATILEENTITIES[id];
         return machine == null ? "" : machine.getMetaName();
     }
+
+    /** Registry prototype only: this never resolves a world tile or scans recipe maps. */
+    public static ItemStack controllerStack(Entry entry) {
+        int id = entry.metaTileId;
+        if (id < 0 || id >= GregTechAPI.METATILEENTITIES.length) return null;
+        IMetaTileEntity machine = GregTechAPI.METATILEENTITIES[id];
+        return machine == null ? null : machine.getStackForm(1L);
+    }
 }

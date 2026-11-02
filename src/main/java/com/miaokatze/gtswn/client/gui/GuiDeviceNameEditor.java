@@ -8,7 +8,6 @@ import net.minecraft.util.StatCollector;
 import org.lwjgl.input.Keyboard;
 
 import com.cleanroommc.modularui.api.IPanelHandler;
-import com.cleanroommc.modularui.api.drawable.IDrawable;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.value.StringValue;
 import com.cleanroommc.modularui.widgets.Dialog;
@@ -16,6 +15,7 @@ import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.miaokatze.gtswn.client.DeviceTerminalClientCache;
 import com.miaokatze.gtswn.client.DeviceTerminalNames;
 import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
+import com.miaokatze.gtswn.common.device.DeviceTerminalTagRules;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
 import com.miaokatze.gtswn.network.PacketDeviceTerminalVisualAction;
@@ -24,8 +24,8 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 /** A native modal panel; focus, clipboard, key repeat and input routing belong to MUI2. */
 final class GuiDeviceNameEditor {
 
-    private static final int WIDTH = 280;
-    private static final int HEIGHT = 196;
+    private static final int WIDTH = 340;
+    private static final int HEIGHT = 262;
     private static final int[] COLORS = { 0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xFFAA00,
         0xAAAAAA, 0x555555, 0x5555FF, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFFF55, 0xFFFFFF };
     private final GuiDeviceInfoTerminal host;
@@ -35,6 +35,7 @@ final class GuiDeviceNameEditor {
     private long authorizationEpoch;
     private String defaultPlainName = "";
     private TextFieldWidget name;
+    private TextFieldWidget tags;
     private int color;
     private boolean bold;
 
@@ -54,6 +55,8 @@ final class GuiDeviceNameEditor {
         String draft = DeviceTerminalNames.hasOverride(entry) ? entry.displayName : "";
         name.value(new StringValue(draft));
         name.setText(draft);
+        tags.value(new StringValue(entry.tags));
+        tags.setText(entry.tags);
         name.getContext()
             .focus(name);
     }
@@ -68,6 +71,7 @@ final class GuiDeviceNameEditor {
         terminal = null;
         defaultPlainName = "";
         if (name != null) name.setText("");
+        if (tags != null) tags.setText("");
     }
 
     void validateSelection() {
@@ -87,11 +91,6 @@ final class GuiDeviceNameEditor {
                     if (!host.entryCurrent(terminal, entry, authorizationEpoch)) return;
                     host.font()
                         .drawString(tr("title"), 12, 10, GtswnGuiPalette.TEXT_TITLE);
-                    for (int i = 0; i < COLORS.length; i++) {
-                        int px = 12 + i % 8 * 32, py = 56 + i / 8 * 23;
-                        host.fillRect(px - 2, py - 2, px + 24, py + 20, i == color ? 0xFFF0B04C : 0xFF3B454F);
-                        host.fillRect(px, py, px + 22, py + 18, 0xFF000000 | COLORS[i]);
-                    }
                     String normalized = DeviceTerminalNameRules.normalize(name.getText());
                     String preview = normalized == null ? tr("invalid")
                         : normalized.isEmpty() ? defaultPlainName
@@ -101,13 +100,16 @@ final class GuiDeviceNameEditor {
                             host.font()
                                 .trimStringToWidth(preview, WIDTH - 24),
                             12,
-                            131,
+                            188,
                             0xFFFFFF);
                     host.font()
                         .drawString(
-                            tr(normalized == null ? "invalid" : "hint"),
+                            tr(
+                                normalized == null || DeviceTerminalTagRules.normalize(tags.getText()) == null
+                                    ? "invalid"
+                                    : "hint"),
                             12,
-                            178,
+                            241,
                             normalized == null ? 0xFF6F6F : GtswnGuiPalette.TEXT_MUTED);
                 }));
         name = new TextFieldWidget() {
@@ -127,7 +129,8 @@ final class GuiDeviceNameEditor {
         }.name("device.rename.name")
             .pos(12, 30)
             .size(WIDTH - 24, 18)
-            .background(GtswnMuiTheme.LIST_PANEL)
+            .background(DeviceTerminalUi.INPUT)
+            .hoverBackground(DeviceTerminalUi.INPUT_HOVER)
             .value(new StringValue(""))
             .setMaxLength(DeviceTerminalNameRules.MAX_NAME_LENGTH)
             .autoUpdateOnChange(true)
@@ -136,33 +139,60 @@ final class GuiDeviceNameEditor {
         for (int i = 0; i < COLORS.length; i++) {
             final int selected = i;
             panel.child(
-                GtswnMuiWidgets
+                DeviceTerminalUi
                     .button(
                         "device.rename.color." + i,
                         "",
-                        12 + i % 8 * 32,
-                        56 + i / 8 * 23,
+                        12 + i % 8 * 40,
+                        60 + i / 8 * 23,
                         22,
                         18,
                         () -> color = selected)
-                    .background(IDrawable.EMPTY)
-                    .hoverBackground(IDrawable.EMPTY)
+                    .background(
+                        (context, x, y, w, h, theme) -> DeviceTerminalUi.drawBox(
+                            x,
+                            y,
+                            w,
+                            h,
+                            color == selected ? 0xFFF0B04C : 0xFF71889A,
+                            0xFF000000 | COLORS[selected]))
+                    .hoverBackground(
+                        (context, x, y, w, h, theme) -> DeviceTerminalUi
+                            .drawBox(x, y, w, h, 0xFFFFD58C, 0xFF000000 | COLORS[selected]))
                     .tooltip(tooltip -> tooltip.addLine(tr("color.hint"))));
         }
         panel.child(
-            GtswnMuiWidgets
+            DeviceTerminalUi
                 .button(
                     "device.rename.bold",
                     () -> tr(bold ? "style.bold" : "style.normal"),
                     12,
-                    105,
+                    110,
                     WIDTH - 24,
                     18,
                     () -> bold = !bold)
+                .background(
+                    (context, x, y, w, h, theme) -> (bold ? DeviceTerminalUi.SELECTED : DeviceTerminalUi.NORMAL)
+                        .draw(context, x, y, w, h, theme))
+                .hoverBackground(
+                    (context, x, y, w, h, theme) -> (bold ? DeviceTerminalUi.SELECTED_HOVER : DeviceTerminalUi.HOVER)
+                        .draw(context, x, y, w, h, theme))
                 .tooltip(tooltip -> tooltip.addLine(tr("style.hint"))));
-        panel.child(GtswnMuiWidgets.button("device.rename.save", tr("save"), 12, 151, 80, 18, () -> save(false)));
-        panel.child(GtswnMuiWidgets.button("device.rename.reset", tr("reset"), 100, 151, 80, 18, () -> save(true)));
-        panel.child(GtswnMuiWidgets.button("device.rename.cancel", tr("cancel"), 188, 151, 80, 18, this::close));
+        panel.child(
+            com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.tags.input")
+                .asWidget()
+                .pos(12, 138)
+                .size(WIDTH - 24, 14));
+        tags = GtswnMuiWidgets
+            .textField("device.rename.tags", "", 12, 154, WIDTH - 24, 20, DeviceTerminalTagRules.MAX_INPUT_LENGTH)
+            .background(DeviceTerminalUi.INPUT)
+            .hoverBackground(DeviceTerminalUi.INPUT_HOVER)
+            .hintText(StatCollector.translateToLocal("gtswn.device.tags.input_hint"))
+            .tooltip(t -> t.addLine(com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.tags.input_hint")));
+        panel.child(tags);
+        panel.child(DeviceTerminalUi.button("device.rename.save", tr("save"), 12, 210, 98, 20, () -> save(false)));
+        panel.child(DeviceTerminalUi.button("device.rename.reset", tr("reset"), 121, 210, 98, 20, () -> save(true)));
+        panel.child(DeviceTerminalUi.button("device.rename.cancel", tr("cancel"), 230, 210, 98, 20, this::close));
         return panel;
     }
 
@@ -173,14 +203,18 @@ final class GuiDeviceNameEditor {
             return;
         }
         String plain = reset ? "" : DeviceTerminalNameRules.normalize(name.getText());
-        if (plain == null) return;
+        String labels = DeviceTerminalTagRules.normalize(tags.getText());
+        if (plain == null || labels == null) return;
         GTSWNPacketHandler.NETWORK.sendToServer(
-            PacketDeviceTerminalVisualAction.rename(
+            PacketDeviceTerminalVisualAction.edit(
                 terminal,
                 entry.key,
+                entry.metaTileId,
                 plain,
                 reset ? DeviceTerminalNameRules.DEFAULT_COLOR : color,
-                !reset && bold));
+                !reset && bold,
+                labels));
+        host.refreshAfterEdit();
         close();
     }
 

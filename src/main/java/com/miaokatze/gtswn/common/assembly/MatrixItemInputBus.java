@@ -243,8 +243,13 @@ public final class MatrixItemInputBus extends MTEHatchInputBus implements Matrix
 
     @Override
     public boolean onRightclick(IGregTechTileEntity tile, EntityPlayer player) {
-        matrix.open(player);
+        if (!matrix.tryBindDataStick(player)) matrix.open(player);
         return true;
+    }
+
+    @Override
+    public void onLeftclick(IGregTechTileEntity tile, EntityPlayer player) {
+        matrix.copyToDataStick(player);
     }
 
     @Override

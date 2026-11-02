@@ -30,9 +30,10 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTeleportQuote;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalVisualState;
 
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
+import gregtech.api.metatileentity.implementations.MTEBasicMachine;
 import gregtech.api.util.GTUtility;
 
-/** Shared server quote, confirmation and payment transaction for every existing device-travel entry point. */
+/** Shared server validation and payment transaction for every device-travel entry point. */
 public final class DeviceTerminalTeleport {
 
     private static final Map<UUID, Long> LAST = new HashMap<>();
@@ -306,11 +307,9 @@ public final class DeviceTerminalTeleport {
         Long last = LAST.get(player.getUniqueID());
         if (last != null && now >= last && now - last < COOLDOWN_TICKS)
             return new Outcome(Status.COOLDOWN, (int) (COOLDOWN_TICKS - (now - last)));
-        double[] landing = safeLanding(target, ((IGregTechTileEntity) tile).getFrontFacing(), record, player);
+        double[] landing = safeLanding(target, landingFacing((IGregTechTileEntity) tile), record, player);
         if (landing == null) return outcome(Status.UNSAFE);
         Payment payment = payment(player);
-        if (confirmed == null || !payment.same(confirmed.payment))
-            return quote(player, terminalId, key, visual, sourceSlot, tile, now, payment, confirmed != null);
         if (payment.source == PaymentSource.EXPERIENCE && player.experienceLevel < payment.amount)
             return outcome(Status.NO_XP);
 
@@ -318,8 +317,7 @@ public final class DeviceTerminalTeleport {
         boolean experienceReserved = false;
         if (payment.source == PaymentSource.RESERVE || payment.source == PaymentSource.INVENTORY) {
             anchor = TerminalSupplyStore.reserveTeleportAnchor(player, payment.source == PaymentSource.RESERVE);
-            if (anchor == null)
-                return quote(player, terminalId, key, visual, sourceSlot, tile, now, payment(player), true);
+            if (anchor == null) return outcome(Status.ERROR);
         } else if (payment.source == PaymentSource.EXPERIENCE) {
             player.addExperienceLevel(-payment.amount);
             experienceReserved = true;
@@ -356,7 +354,18 @@ public final class DeviceTerminalTeleport {
         }
         if (!moved) return outcome(Status.ERROR);
         LAST.put(player.getUniqueID(), now);
+        DeviceTerminalSettings.get(player.worldObj)
+            .sync(player);
         return new Outcome(Status.SUCCESS, (int) COOLDOWN_TICKS);
+    }
+
+    static ForgeDirection landingFacing(IGregTechTileEntity controller) {
+        // Basic machines separate their main face from the base tile's output face after initialization.
+        if (controller.getMetaTileEntity() instanceof MTEBasicMachine) {
+            ForgeDirection main = ((MTEBasicMachine) controller.getMetaTileEntity()).mMainFacing;
+            if (main != null && main != ForgeDirection.UNKNOWN) return main;
+        }
+        return controller.getFrontFacing();
     }
 
     private static boolean arrived(EntityPlayerMP player, WorldServer target, double[] landing) {
@@ -382,7 +391,7 @@ public final class DeviceTerminalTeleport {
         else player.addChatMessage(new ChatComponentTranslation(key));
     }
 
-    // At most 45 front cells and 75 cells above the controller; no structure/world scan.
+    // Bounded front/upper-front cells only: hollow space behind a controller belongs to its multiblock.
     static double[] safeLanding(World world, ForgeDirection front, DeviceTerminalDataStore.MachineRecord record,
         EntityPlayerMP player) {
         double feetY = player.posY - player.yOffset;
@@ -416,6 +425,8 @@ public final class DeviceTerminalTeleport {
         for (int height = 1; height <= 3; height++) {
             for (int x = -2; x <= 2; x++) {
                 for (int z = -2; z <= 2; z++) {
+                    if (front != null && front != ForgeDirection.UNKNOWN
+                        && x * front.offsetX + height * front.offsetY + z * front.offsetZ <= 0) continue;
                     candidates.add(
                         new LandingCandidate(
                             record.x + x,
@@ -429,8 +440,8 @@ public final class DeviceTerminalTeleport {
             }
         }
         candidates.sort((left, right) -> {
-            int distanceOrder = Double.compare(left.distanceSquared, right.distanceSquared);
-            return distanceOrder != 0 ? distanceOrder : Boolean.compare(right.front, left.front);
+            int frontOrder = Boolean.compare(right.front, left.front);
+            return frontOrder != 0 ? frontOrder : Double.compare(left.distanceSquared, right.distanceSquared);
         });
         for (LandingCandidate candidate : candidates) {
             int x = candidate.x, y = candidate.y, z = candidate.z;
@@ -439,6 +450,12 @@ public final class DeviceTerminalTeleport {
                 || Math.abs((long) z) >= 29999984
                 || !loaded(world, x, z)) continue;
             double half = player.width / 2.0;
+            if (front != null && front != ForgeDirection.UNKNOWN) {
+                double outward = (x - record.x) * front.offsetX + (z - record.z) * front.offsetZ
+                    + (y - record.y) * front.offsetY;
+                double extent = front.offsetY == 0 ? half : front.offsetY < 0 ? player.height : 0;
+                if (outward - extent < 0.5) continue;
+            }
             AxisAlignedBB box = AxisAlignedBB
                 .getBoundingBox(x + 0.5 - half, y, z + 0.5 - half, x + 0.5 + half, y + player.height, z + 0.5 + half);
             boolean chunksLoaded = true;

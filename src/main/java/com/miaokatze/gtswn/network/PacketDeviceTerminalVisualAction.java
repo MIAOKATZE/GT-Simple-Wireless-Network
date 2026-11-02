@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
+import com.miaokatze.gtswn.common.device.DeviceTerminalTagRules;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -20,12 +21,17 @@ public final class PacketDeviceTerminalVisualAction implements IMessage {
     public static final byte ACTION_TOGGLE = 0;
     public static final byte ACTION_VISUAL_TELEPORT = 1;
     public static final byte ACTION_RENAME = 2;
+    public static final byte ACTION_EDIT = 4;
+    public static final byte ACTION_FAVORITE = 5;
     public static final UUID NEW_TERMINAL = new UUID(0, 0);
     UUID terminalId;
     byte action = -1;
     String key = "", name = "";
     int color = DeviceTerminalNameRules.DEFAULT_COLOR;
     boolean bold;
+    String tags = "";
+    int targetMetaTileId = -1;
+    boolean favorite;
 
     public PacketDeviceTerminalVisualAction() {}
 
@@ -51,14 +57,36 @@ public final class PacketDeviceTerminalVisualAction implements IMessage {
         return new PacketDeviceTerminalVisualAction(id, ACTION_RENAME, key, name, color, bold);
     }
 
+    public static PacketDeviceTerminalVisualAction edit(UUID id, String key, int metaTileId, String name, int color,
+        boolean bold, String tags) {
+        PacketDeviceTerminalVisualAction message = rename(id, key, name, color, bold);
+        message.action = ACTION_EDIT;
+        message.targetMetaTileId = metaTileId;
+        message.tags = tags;
+        if (!message.valid()) message.action = -1;
+        return message;
+    }
+
+    public static PacketDeviceTerminalVisualAction favorite(UUID id, String key, int metaTileId, boolean favorite) {
+        PacketDeviceTerminalVisualAction message = teleport(id, key);
+        message.action = ACTION_FAVORITE;
+        message.targetMetaTileId = metaTileId;
+        message.favorite = favorite;
+        if (!message.valid()) message.action = -1;
+        return message;
+    }
+
     boolean valid() {
-        if (terminalId == null || action < 0 || action > 2) return false;
+        if (terminalId == null || action < 0 || action > ACTION_FAVORITE || action == 3) return false;
         if (action == ACTION_TOGGLE) return key.isEmpty() && name.isEmpty();
         if (NEW_TERMINAL.equals(terminalId) || key.length() > 64
             || !PacketSyncDeviceTerminalData.KEY_PATTERN.matcher(key)
                 .matches())
             return false;
-        return action == ACTION_RENAME
+        if (action == ACTION_EDIT || action == ACTION_FAVORITE) {
+            if (targetMetaTileId < -1 || DeviceTerminalTagRules.normalize(tags) == null) return false;
+        }
+        return action == ACTION_RENAME || action == ACTION_EDIT
             ? DeviceTerminalNameRules.normalize(name) != null && DeviceTerminalNameRules.validColor(color)
             : name.isEmpty();
     }
@@ -73,6 +101,11 @@ public final class PacketDeviceTerminalVisualAction implements IMessage {
         ByteBufUtils.writeUTF8String(buffer, name);
         buffer.writeByte(color);
         buffer.writeBoolean(bold);
+        if (action == ACTION_EDIT || action == ACTION_FAVORITE) {
+            buffer.writeInt(targetMetaTileId);
+            ByteBufUtils.writeUTF8String(buffer, tags);
+            buffer.writeBoolean(favorite);
+        }
     }
 
     @Override
@@ -80,7 +113,7 @@ public final class PacketDeviceTerminalVisualAction implements IMessage {
         action = -1;
         terminalId = null;
         try {
-            if (buffer.readableBytes() < 21 || buffer.readableBytes() > 384) return;
+            if (buffer.readableBytes() < 21 || buffer.readableBytes() > 1024) return;
             terminalId = new UUID(buffer.readLong(), buffer.readLong());
             action = buffer.readByte();
             key = readBoundedUtf8(buffer, 64);
@@ -88,6 +121,13 @@ public final class PacketDeviceTerminalVisualAction implements IMessage {
             color = buffer.readUnsignedByte();
             int style = buffer.readUnsignedByte();
             bold = style == 1;
+            if (action == ACTION_EDIT || action == ACTION_FAVORITE) {
+                targetMetaTileId = buffer.readInt();
+                tags = readBoundedUtf8(buffer, DeviceTerminalTagRules.MAX_INPUT_LENGTH);
+                int selected = buffer.readUnsignedByte();
+                if (selected > 1) throw new IllegalArgumentException("Favorite state");
+                favorite = selected == 1;
+            }
             if (style > 1 || buffer.isReadable() || !valid()) {
                 action = -1;
                 terminalId = null;

@@ -66,10 +66,13 @@ public final class DeviceTerminalSettings extends WorldSavedData {
         boolean editable = canEdit(player);
         int seconds = Math.max(1, Config.deviceSampleIntervalSeconds);
         int cost = teleportCost();
-        String signature = cost + ":" + editable + ":" + seconds + ":" + player.dimension;
+        int anchors = com.miaokatze.gtswn.common.gui.TerminalSupplyStore
+            .count(player, com.miaokatze.gtswn.common.gui.TerminalSupplyStore.Kind.TELEPORT_ANCHOR);
+        String signature = cost + ":" + editable + ":" + seconds + ":" + player.dimension + ":" + anchors;
         if (signature.equals(SENT.get(player.getUniqueID()))) return;
         SENT.put(player.getUniqueID(), signature);
-        GTSWNPacketHandler.NETWORK.sendTo(new PacketSyncDeviceTerminalSettings(cost, editable, seconds), player);
+        GTSWNPacketHandler.NETWORK
+            .sendTo(new PacketSyncDeviceTerminalSettings(cost, editable, seconds, anchors), player);
     }
 
     public static void onLogout(UUID player) {

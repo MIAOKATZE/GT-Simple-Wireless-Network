@@ -528,7 +528,9 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                         record.linkSummary,
                         record.machineOwner,
                         record.machineKind,
-                        record.machineTier));
+                        record.machineTier,
+                        record.tags,
+                        record.favoriteOrder));
             }
             index++;
         }

@@ -15,12 +15,17 @@ import java.util.Set;
 import java.util.UUID;
 
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.entity.player.InventoryPlayer;
+import net.minecraft.init.Items;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChatComponentTranslation;
+import net.minecraft.util.IChatComponent;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProviderSurface;
 import net.minecraft.world.WorldServer;
@@ -44,6 +49,8 @@ import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IAEStack;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.util.ReadOnlyCollection;
+import gregtech.api.enums.ItemList;
+import gregtech.api.interfaces.IDataCopyable;
 import gregtech.api.interfaces.ITexture;
 import gregtech.api.interfaces.metatileentity.IMetaTileEntity;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
@@ -629,6 +636,118 @@ public class MatrixTopologyTest {
     }
 
     @Test
+    public void flashMemoryMouseHooksBindBothMemberTypesAndKeepTheExistingCopyFormat() throws Exception {
+        Field stack = field(ItemList.class, "mStack");
+        Field unset = field(ItemList.class, "mHasNotBeenSet");
+        Object previousStack = stack.get(ItemList.Tool_DataStick);
+        boolean previousUnset = unset.getBoolean(ItemList.Tool_DataStick);
+        Item tool = new Item();
+        sun.misc.Unsafe unsafe = (sun.misc.Unsafe) field(sun.misc.Unsafe.class, "theUnsafe").get(null);
+        Field feather = field(Items.class, "feather");
+        Object featherBase = unsafe.staticFieldBase(feather);
+        long featherOffset = unsafe.staticFieldOffset(feather);
+        Object previousFeather = feather.get(null);
+        // Native GT stack matching reads raw metadata through feather; plain JUnit has no vanilla bootstrap.
+        if (previousFeather == null) unsafe.putObjectVolatile(featherBase, featherOffset, tool);
+        ItemList.Tool_DataStick.set(new ItemStack(tool));
+        try {
+            for (boolean fluid : new boolean[] { false, true }) {
+                Fixture fixture = new Fixture();
+                MatrixAssemblyMember source = fixture.add(fluid, 0, 64, 0);
+                fixture.add(fluid, 1, 64, 0);
+                MatrixAssemblyMember mirror = fixture.add(fluid, 20, 64, 0, true);
+                fixture.add(fluid, 21, 64, 0);
+                FixturePlayer player = (FixturePlayer) fixture.unsafe.allocateInstance(FixturePlayer.class);
+                player.inventory = new InventoryPlayer(player);
+                player.messages = new ArrayList<>();
+                ItemStack flash = new ItemStack(tool);
+                NBTTagCompound originalTag = new NBTTagCompound();
+                originalTag.setString("untouched", "unbound");
+                flash.setTagCompound(originalTag);
+                player.inventory.mainInventory[0] = flash;
+
+                ((MetaTileEntity) mirror).onLeftclick(mirror.getBaseMetaTileEntity(), player);
+                assertEquals(originalTag, flash.getTagCompound());
+                assertEquals("gtswn.matrix.data_stick.copy_failed", player.lastMessageKey());
+                ((MetaTileEntity) source).onLeftclick(source.getBaseMetaTileEntity(), player);
+                NBTTagCompound address = (NBTTagCompound) flash.getTagCompound()
+                    .copy();
+                assertEquals(MatrixMirrorLink.DATA_TYPE, address.getString("type"));
+                assertEquals(1, address.getInteger("schema"));
+                assertTrue(flash.hasDisplayName());
+                assertEquals("gtswn.matrix.data_stick.copied", player.lastMessageKey());
+                assertTrue(((MetaTileEntity) mirror).onRightclick(mirror.getBaseMetaTileEntity(), player));
+                assertEquals("gtswn.matrix.data_stick.linked", player.lastMessageKey());
+                assertEquals(
+                    address,
+                    mirror.matrixPort()
+                        .mirrorLink()
+                        .save());
+
+                // A linked mirror copies the same source address, rather than its own physical coordinates.
+                ((MetaTileEntity) mirror).onLeftclick(mirror.getBaseMetaTileEntity(), player);
+                assertEquals(address, flash.getTagCompound());
+                flash.getTagCompound()
+                    .setInteger("dimension", 99);
+                assertTrue(((MetaTileEntity) mirror).onRightclick(mirror.getBaseMetaTileEntity(), player));
+                assertEquals("gtswn.matrix.data_stick.link_failed", player.lastMessageKey());
+                assertEquals(
+                    address,
+                    mirror.matrixPort()
+                        .mirrorLink()
+                        .save());
+                player.inventory.mainInventory[0] = new ItemStack(new Item());
+                assertFalse(
+                    mirror.matrixPort()
+                        .tryBindDataStick(player));
+
+                // Existing copy/paste tools and their schema-1 payload remain accepted without migration.
+                NBTTagCompound copied = ((IDataCopyable) source).getCopiedData(player);
+                assertEquals(1, copied.getInteger("schema"));
+                assertTrue(((IDataCopyable) mirror).pasteCopiedData(player, copied));
+                assertEquals(
+                    copied,
+                    mirror.matrixPort()
+                        .mirrorLink()
+                        .save());
+            }
+        } finally {
+            stack.set(ItemList.Tool_DataStick, previousStack);
+            unset.setBoolean(ItemList.Tool_DataStick, previousUnset);
+            unsafe.putObjectVolatile(featherBase, featherOffset, previousFeather);
+        }
+    }
+
+    @Test
+    public void mixedRoleTextureTransitionsFollowOnlyVerifiedPhysicalEdgesOnEveryFace() throws Exception {
+        Fixture fixture = new Fixture();
+        MatrixAssemblyMember item = fixture.add(false, 0, 64, 0);
+        MatrixAssemblyMember mirror = fixture.add(false, 1, 64, 0, true);
+        MatrixAssemblyMember fluid = fixture.add(true, 1, 64, 1);
+        assertEquals(0, MatrixAssemblyTextures.transitionMask(item));
+        OrderedAssemblyGroup.refreshTopology(item);
+        assertEquals(ForgeDirection.EAST.flag, MatrixAssemblyTextures.transitionMask(item));
+        assertEquals(
+            ForgeDirection.WEST.flag | ForgeDirection.SOUTH.flag,
+            MatrixAssemblyTextures.transitionMask(mirror));
+        assertEquals(ForgeDirection.NORTH.flag, MatrixAssemblyTextures.transitionMask(fluid));
+        Field facing = field(BaseMetaTileEntity.class, "mFacing");
+        for (MatrixAssemblyMember member : new MatrixAssemblyMember[] { item, mirror, fluid }) {
+            for (ForgeDirection front : ForgeDirection.VALID_DIRECTIONS) {
+                facing.set(member.getBaseMetaTileEntity(), front);
+                assertEquals(
+                    4 + Integer.bitCount(
+                        MatrixAssemblyTextures.faceMask(MatrixAssemblyTextures.transitionMask(member), front)),
+                    MatrixAssemblyTextures.front(member, null).length);
+            }
+        }
+        item.matrixPort()
+            .readConnectionMask(0);
+        assertEquals(0, MatrixAssemblyTextures.transitionMask(item));
+        assertEquals(4, MatrixAssemblyTextures.front(item, null).length);
+    }
+
+    @Test
     public void standaloneSourceFeedsARotatedMirrorWithoutCreatingLocalStockOrASecondProvider() throws Exception {
         Fixture fixture = new Fixture();
         List<MatrixAssemblyMember> original = fixture.items(false);
@@ -1046,6 +1165,24 @@ public class MatrixTopologyTest {
                     mask |= face.flag;
             }
             return mask;
+        }
+    }
+
+    private static final class FixturePlayer extends EntityPlayerMP {
+
+        private List<IChatComponent> messages;
+
+        private FixturePlayer() {
+            super(null, null, null, null);
+        }
+
+        @Override
+        public void addChatMessage(IChatComponent message) {
+            messages.add(message);
+        }
+
+        String lastMessageKey() {
+            return ((ChatComponentTranslation) messages.get(messages.size() - 1)).getKey();
         }
     }
 

@@ -6,6 +6,7 @@ an already accepted source-instance EULA and explicit paths to the tested jars.
 from pathlib import Path
 import argparse
 import ctypes
+from ctypes import wintypes
 import datetime
 import hashlib
 import json
@@ -34,6 +35,21 @@ def free_memory():
     if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)):
         raise OSError('GlobalMemoryStatusEx failed')
     return memory.available / 2**30
+
+
+def process_memory(proc):
+    class Counters(ctypes.Structure):
+        _fields_ = [('cb', wintypes.DWORD), ('faults', wintypes.DWORD)] + [
+            (name, ctypes.c_size_t) for name in ('peakRss', 'rss', 'peakPaged', 'paged',
+                                                'peakNonPaged', 'nonPaged', 'commit', 'peakCommit', 'private')]
+    counters = Counters()
+    counters.cb = ctypes.sizeof(counters)
+    query = ctypes.windll.psapi.GetProcessMemoryInfo
+    query.argtypes = [wintypes.HANDLE, ctypes.POINTER(Counters), wintypes.DWORD]
+    if not query(int(proc._handle), ctypes.byref(counters), counters.cb):
+        raise OSError('GetProcessMemoryInfo failed')
+    return {'rssBytes': counters.rss, 'peakRssBytes': counters.peakRss,
+            'privateBytes': counters.private, 'peakCommitBytes': counters.peakCommit}
 
 
 def prepare(args):
@@ -106,6 +122,7 @@ def run(args):
     record = {'status': 'STARTING', 'inputs': inputs, 'startedUtc': datetime.datetime.now(
         datetime.timezone.utc).isoformat(), 'sampler': 'Spark Java, 4ms, all non-sleeping threads',
         'sampleSecondsRequested': args.seconds, 'scenario': args.scenario,
+        'lifecycleSeconds': args.lifecycle_seconds, 'stableSaveSeconds': args.stable_save_seconds,
         'noDesktopInput': True, 'noRemoteUpload': True}
     argv = [str(args.java), '-Xms512M', '-Xmx' + str(args.heap_gib) + 'G', '-Dfml.readTimeout=180',
             '-Duser.language=en', '@java9args.txt', '-jar', 'lwjgl3ify-forgePatches.jar', 'nogui']
@@ -124,6 +141,7 @@ def run(args):
                 proc.stdin.write((command + '\n').encode('utf-8'))
                 proc.stdin.flush()
                 record.setdefault('commands', []).append({'elapsed': round(time.monotonic() - started, 3),
+                                                          'utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                                                           'command': command})
                 print('SENT', command, flush=True)
             started = last_status = time.monotonic()
@@ -131,6 +149,12 @@ def run(args):
             stopping = False
             stopping_since = None
             hold_until = None
+            complete_at = stable_save_at = lifecycle_save_at = None
+            marker_types = {'GTSWN_NATIVE_STRESS_READY': 'stable',
+                            'GTSWN_NATIVE_STRESS_COMPLETE': 'release',
+                            'GTSWN_NATIVE_STRESS_RELEASE run=': 'release_start',
+                            'GTSWN_NATIVE_STRESS_RELEASE_END': 'release_end',
+                            'Unloading dimension 19871': 'unload'}
             cursor = manual_sent = 0
             accumulated = ''
             while proc.poll() is None:
@@ -140,6 +164,19 @@ def run(args):
                     cursor += len(raw)
                 accumulated += raw.decode('utf-8', errors='replace')
                 now = time.monotonic()
+                memory = process_memory(proc)
+                memory['elapsed'] = round(now - started, 3)
+                memory['availableGiB'] = round(free_memory(), 3)
+                record.setdefault('memorySamples', []).append(memory)
+                for marker, phase in marker_types.items():
+                    if marker in accumulated and phase not in record.setdefault('phaseMarkers', {}):
+                        lines = [line for line in accumulated.splitlines() if marker in line]
+                        record['phaseMarkers'][phase] = {'observedElapsed': round(now - started, 3),
+                            'observedUtc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            'serverLine': lines[-1]}
+                        print('PHASE_OBSERVED', phase, lines[-1], flush=True)
+                        if phase == 'release':
+                            complete_at = now
                 manual = commands.read_text(encoding='utf-8-sig').splitlines()
                 for command in manual[manual_sent:]:
                     if command.strip():
@@ -150,12 +187,28 @@ def run(args):
                     record['status'] = 'BUILDING'
                     send('spark profiler cancel')
                     send('gtswn test run ' + args.scenario)
+                    if args.lifecycle_seconds:
+                        send('spark tickmonitor --threshold-tick 100')
                 if booted and not sample_start and 'GTSWN_NATIVE_STRESS_READY' in accumulated:
                     send('spark tps')
                     send('spark profiler start --thread * --ignore-sleeping --interval 4 --force-java-sampler')
                     sample_start = now
                     record.update(status='PROFILING', stableMarkerObserved=True)
-                if sample_start and not stop_sent and now - sample_start >= args.seconds:
+                if sample_start and args.stable_save_seconds and stable_save_at is None and now - sample_start >= args.stable_save_seconds:
+                    send('spark tps')
+                    send('save-all')
+                    stable_save_at = now
+                    record['stableSaveElapsed'] = round(now - started, 3)
+                if complete_at and args.lifecycle_seconds and lifecycle_save_at is None:
+                    send('spark tps')
+                    send('save-all')
+                    lifecycle_save_at = now
+                    record['lifecycleSaveElapsed'] = round(now - started, 3)
+                sample_finished = (complete_at is not None and now - complete_at >= args.lifecycle_seconds
+                                   and record.get('scenarioStatus') == 'PASS'
+                                   and 'unload' in record.get('phaseMarkers', {})
+                                   if args.lifecycle_seconds else sample_start and now - sample_start >= args.seconds)
+                if sample_start and not stop_sent and sample_finished:
                     save_offset = len(accumulated)
                     send('spark profiler stop --save-to-file')
                     send('spark tps')
@@ -191,7 +244,11 @@ def run(args):
                         record['scenarioFailure'] = result.get('failure')
                         record['results'] = [{key: item.get(key) for key in ('id', 'status', 'detail')}
                                              for item in result.get('results', [])]
-                        if record.get('profile') or not sample_start or result['status'] != 'PASS':
+                        if result['status'] != 'PASS' and sample_start and not stop_sent:
+                            save_offset = len(accumulated)
+                            send('spark profiler stop --save-to-file')
+                            stop_sent = now
+                        if record.get('profile') or not sample_start:
                             if result['status'] == 'PASS' and args.hold_after_pass_seconds and hold_until is None:
                                 hold_until = now + args.hold_after_pass_seconds
                                 record['status'] = 'HOLDING_FOR_CAPTURE'
@@ -220,6 +277,8 @@ def run(args):
                 write_json(receipt, record)
                 time.sleep(1)
             record['exitCode'] = proc.returncode
+            record['peakRssBytes'] = max(sample['peakRssBytes'] for sample in record['memorySamples'])
+            record['peakCommitBytes'] = max(sample['peakCommitBytes'] for sample in record['memorySamples'])
             record['status'] = 'PASS' if proc.returncode == 0 and record.get('scenarioStatus') == 'PASS' and record.get('profile') else 'FAILED'
     except Exception as error:
         record.update(status='ERROR', error=repr(error))
@@ -234,6 +293,8 @@ def run(args):
                 proc.terminate()
                 proc.wait(timeout=30)
                 record['forcedTermination'] = True
+        if proc is not None:
+            record['exitCode'] = proc.returncode
         record['finishedUtc'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         write_json(receipt, record)
     print(record['status'], flush=True)
@@ -253,6 +314,10 @@ if __name__ == '__main__':
     launch.add_argument('--heap-gib', type=int, default=4)
     launch.add_argument('--seconds', type=int, default=120)
     launch.add_argument('--deadline', type=int, default=2400)
+    launch.add_argument('--lifecycle-seconds', type=int, default=0,
+                        help='Profile through native completion/ticket release and this many post-completion seconds')
+    launch.add_argument('--stable-save-seconds', type=int, default=0,
+                        help='Issue a measured save-all this many seconds after READY, while tickets are held')
     launch.add_argument('--hold-after-pass-seconds', type=int, default=0,
                         help='Keep the completed server available for optional screenshots; profiling is already stopped')
     launch.add_argument('--scenario', default='factory.native_stress')

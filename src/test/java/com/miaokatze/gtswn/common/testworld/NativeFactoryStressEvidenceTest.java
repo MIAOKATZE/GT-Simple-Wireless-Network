@@ -9,10 +9,14 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import net.minecraft.world.ChunkCoordIntPair;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
 import net.minecraft.world.WorldProviderSurface;
@@ -27,6 +31,29 @@ import gregtech.api.metatileentity.implementations.MTEHatchEnergy;
 
 /** Regression for native GT source identities and short recipes missed between fourteen-tick status samples. */
 public class NativeFactoryStressEvidenceTest {
+
+    @Test
+    public void unattendedReleaseKeepsTheControllerAndSupplyChunksUntilEveryOuterChunkIsReleased() {
+        TestWorldFootprint footprint = new TestWorldFootprint(80);
+        List<ChunkCoordIntPair> chunks = new ArrayList<>();
+        for (int i = 0; i < footprint.chunkCount(); i++)
+            chunks.add(new ChunkCoordIntPair(footprint.chunkX(i), footprint.chunkZ(i)));
+        chunks.sort(Comparator.comparingInt(TestWorldManager::releasePriority));
+        assertEquals(100, chunks.size());
+        for (int i = 0; i < chunks.size(); i++) {
+            ChunkCoordIntPair chunk = chunks.get(i);
+            boolean central = chunk.chunkXPos >= -1 && chunk.chunkXPos <= 0
+                && chunk.chunkZPos >= -1
+                && chunk.chunkZPos <= 0;
+            assertEquals(i >= 96, central);
+        }
+        assertTrue(
+            chunks.subList(96, 100)
+                .contains(new ChunkCoordIntPair(-1, -1)));
+        assertTrue(
+            chunks.subList(96, 100)
+                .contains(new ChunkCoordIntPair(0, 0)));
+    }
 
     @Test
     public void nativeInputTileAndOutputMetaEntityResolveToTheSameRegisteredEndpoint() throws Exception {

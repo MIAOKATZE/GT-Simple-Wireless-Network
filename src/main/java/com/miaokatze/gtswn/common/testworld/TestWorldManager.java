@@ -2,6 +2,8 @@ package com.miaokatze.gtswn.common.testworld;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -73,6 +75,9 @@ public final class TestWorldManager {
     private static String phase = "IDLE";
     private static String reportPath = "";
     private static boolean registered;
+    private static List<ChunkCoordIntPair> releasingChunks;
+    private static int releaseIndex, releaseWait;
+    private static String releasingStatus, releasingFailure;
 
     private TestWorldManager() {}
 
@@ -533,11 +538,37 @@ public final class TestWorldManager {
 
     private static void complete(String status, String failure) {
         TestWorldProbes.stop();
-        releaseTickets();
         if ("BUILDING".equals(phase) && phasePerformance != null) {
             closedResetPerformance = phasePerformance;
             phasePerformance = null;
         }
+        // A whole unattended factory otherwise unloads in one tick. Native AE then tears down the
+        // central controller before its wireless leaves, repeatedly migrating the entire storage grid.
+        if (!"RELEASING".equals(phase) && world != null
+            && world.playerEntities.isEmpty()
+            && !TICKETS.isEmpty()
+            && report != null
+            && NativeFactoryStressScenario.ID.equals(report.selection)) {
+            List<ChunkCoordIntPair> chunks = new ArrayList<>();
+            for (ForgeChunkManager.Ticket ticket : TICKETS) chunks.addAll(ticket.getChunkList());
+            chunks.sort(Comparator.comparingInt(TestWorldManager::releasePriority));
+            releasingChunks = chunks;
+            releaseIndex = releaseWait = 0;
+            releasingStatus = status;
+            releasingFailure = failure;
+            phase = "RELEASING";
+            current = null;
+            selection = null;
+            report.event(null, report.elapsedTicks, "release_start", "chunks=" + chunks.size());
+            GTSimpleWirelessNetwork.LOG
+                .info("GTSWN_NATIVE_STRESS_RELEASE run={} chunks={} cadenceTicks=2", report.runId, chunks.size());
+            return;
+        }
+        completeNow(status, failure);
+    }
+
+    private static void completeNow(String status, String failure) {
+        releaseTickets();
         if (report != null) {
             report.status = status;
             report.failure = failure;
@@ -581,6 +612,8 @@ public final class TestWorldManager {
 
     private static void stop(String reason, boolean explicitAbandon) {
         acknowledgeFinalWrite();
+        // Business is already complete; an administrator stop cannot replace that result.
+        if ("RELEASING".equals(phase)) return;
         if ("REPORTING".equals(phase)) {
             // Only an explicit administrator stop may abandon a snapshot already lost across process restart.
             if (explicitAbandon && matchesCurrentJournal() && finalWrite.abandonRecovery()) {
@@ -627,6 +660,40 @@ public final class TestWorldManager {
     private static void releaseTickets() {
         for (ForgeChunkManager.Ticket ticket : TICKETS) ForgeChunkManager.releaseTicket(ticket);
         TICKETS.clear();
+        releasingChunks = null;
+    }
+
+    /** Keep all four central chunks (controller and supply) until the wireless leaves are gone. */
+    static int releasePriority(ChunkCoordIntPair chunk) {
+        int x = chunk.chunkXPos, z = chunk.chunkZPos;
+        if (x >= -1 && x <= 0 && z >= -1 && z <= 0) return Integer.MAX_VALUE;
+        return -Math.max(Math.abs(x), Math.abs(z));
+    }
+
+    private static void releaseTick() {
+        // If a player enters during cleanup, hand control back to normal player chunk loading.
+        if (!world.playerEntities.isEmpty() || releaseIndex >= releasingChunks.size()) {
+            report.event(null, report.elapsedTicks, "release_end", "chunks=" + releaseIndex);
+            GTSimpleWirelessNetwork.LOG
+                .info("GTSWN_NATIVE_STRESS_RELEASE_END run={} chunksRequested={}", report.runId, releaseIndex);
+            completeNow(releasingStatus, releasingFailure);
+            return;
+        }
+        if (releaseWait-- > 0) return;
+        ChunkCoordIntPair chunk = releasingChunks.get(releaseIndex++);
+        for (Iterator<ForgeChunkManager.Ticket> iterator = TICKETS.iterator(); iterator.hasNext();) {
+            ForgeChunkManager.Ticket ticket = iterator.next();
+            if (ticket.getChunkList()
+                .contains(chunk)) ForgeChunkManager.unforceChunk(ticket, chunk);
+            if (ticket.getChunkList()
+                .isEmpty()) {
+                ForgeChunkManager.releaseTicket(ticket);
+                iterator.remove();
+            }
+        }
+        // Use the normal provider queue: tile lifecycle callbacks and both native saves still run.
+        world.theChunkProviderServer.unloadChunksIfNotNearSpawn(chunk.chunkXPos, chunk.chunkZPos);
+        releaseWait = 1;
     }
 
     public static boolean built() {
@@ -736,6 +803,7 @@ public final class TestWorldManager {
     public static void shutdown() {
         if (!DebugTestGate.isEnabled()) return;
         stop("server stopping", false);
+        if ("RELEASING".equals(phase)) completeNow(releasingStatus, releasingFailure);
         releaseTickets();
         TestWorldProbes.stop();
         TestWorldReport.shutdownWriter();
@@ -786,6 +854,7 @@ public final class TestWorldManager {
         try {
             if ("BUILDING".equals(phase)) buildTick();
             else if ("RUNNING".equals(phase)) scenarioTick();
+            else if ("RELEASING".equals(phase)) releaseTick();
         } catch (Exception | LinkageError ex) {
             GTSimpleWirelessNetwork.LOG.error("[GTSWN-TEST] Operation failed", ex);
             if (current != null) {

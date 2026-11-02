@@ -9,6 +9,7 @@ import com.miaokatze.gtswn.common.device.DeviceLinkSummary;
 import com.miaokatze.gtswn.common.device.DevicePowerCapabilities;
 import com.miaokatze.gtswn.common.device.DeviceTerminalNameRules;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
+import com.miaokatze.gtswn.common.device.DeviceTerminalTagRules;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 
 import cpw.mods.fml.common.network.ByteBufUtils;
@@ -44,7 +45,7 @@ public class PacketSyncDeviceTerminalData implements IMessage {
     public static final int MAX_ENTRIES = 1024;
     /** v1.8.60 carries electric data only; reject older layouts before reading their entries. */
     private static final int WIRE_MAGIC = 0x47545358;
-    private static final int WIRE_SCHEMA = 3;
+    private static final int WIRE_SCHEMA = 4;
 
     /** name 字段长度上限（字符） */
     public static final int MAX_NAME_LEN = 64;
@@ -131,6 +132,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             ByteBufUtils.writeUTF8String(buf, entry.displayName);
             buf.writeByte(entry.nameColor);
             buf.writeBoolean(entry.nameBold);
+            ByteBufUtils.writeUTF8String(buf, entry.tags);
+            buf.writeLong(entry.favoriteOrder);
         }
     }
 
@@ -139,7 +142,9 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         terminalId = null;
         entries.clear();
         try {
-            if (buf.readableBytes() < 5 || buf.readInt() != WIRE_MAGIC || buf.readUnsignedByte() != WIRE_SCHEMA) return;
+            if (buf.readableBytes() < 5 || buf.readInt() != WIRE_MAGIC) return;
+            int schema = buf.readUnsignedByte();
+            if (schema != 3 && schema != WIRE_SCHEMA) return;
             terminalId = UUID.fromString(ByteBufUtils.readUTF8String(buf));
             version = buf.readLong();
             pageIndex = buf.readInt();
@@ -194,6 +199,10 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                     String displayName = ByteBufUtils.readUTF8String(buf);
                     byte nameColor = buf.readByte();
                     boolean nameBold = buf.readBoolean();
+                    String tags = schema >= 4 ? ByteBufUtils.readUTF8String(buf) : "";
+                    long favoriteOrder = schema >= 4 ? buf.readLong() : 0;
+                    if (DeviceTerminalTagRules.normalize(tags) == null || favoriteOrder < 0)
+                        throw new IllegalArgumentException("Invalid device presentation");
                     // Reject the whole page; skipping a row would misrepresent completeness.
                     if (key == null || !KEY_PATTERN.matcher(key)
                         .matches()) {
@@ -226,7 +235,9 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                             linkSummary,
                             machineOwner,
                             machineKind,
-                            machineTier));
+                            machineTier,
+                            tags,
+                            favoriteOrder));
                 } catch (Exception e) {
                     throw new IllegalArgumentException("Malformed device page", e);
                 }
@@ -337,6 +348,8 @@ public class PacketSyncDeviceTerminalData implements IMessage {
         public final String displayName;
         public final byte nameColor;
         public final boolean nameBold;
+        public final String tags;
+        public final long favoriteOrder;
         public final int metaTileId;
         public final byte capabilityMask;
         public final byte recognitionMode;
@@ -518,6 +531,42 @@ public class PacketSyncDeviceTerminalData implements IMessage {
             byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
             byte capabilityMask, byte recognitionMode, DeviceLinkSummary linkSummary, UUID machineOwner,
             byte machineKind, byte machineTier) {
+            this(
+                key,
+                name,
+                state,
+                powerType,
+                instIn,
+                instOut,
+                avgIn,
+                avgOut,
+                dim,
+                x,
+                y,
+                z,
+                recipeIn,
+                recipeOut,
+                metaTileId,
+                evidenceKind,
+                linkNodeType,
+                displayName,
+                nameColor,
+                nameBold,
+                capabilityMask,
+                recognitionMode,
+                linkSummary,
+                machineOwner,
+                machineKind,
+                machineTier,
+                "",
+                0);
+        }
+
+        public Entry(String key, String name, byte state, byte powerType, long instIn, long instOut, double avgIn,
+            double avgOut, int dim, int x, int y, int z, String recipeIn, String recipeOut, int metaTileId,
+            byte evidenceKind, byte linkNodeType, String displayName, byte nameColor, boolean nameBold,
+            byte capabilityMask, byte recognitionMode, DeviceLinkSummary linkSummary, UUID machineOwner,
+            byte machineKind, byte machineTier, String tags, long favoriteOrder) {
             if (machineKind < 0 || machineKind > 3 || machineTier < -1 || machineTier > 15)
                 throw new IllegalArgumentException("Invalid machine metadata");
             this.machineOwner = machineOwner;
@@ -533,6 +582,9 @@ public class PacketSyncDeviceTerminalData implements IMessage {
                 ? nameColor
                 : DeviceTerminalNameRules.DEFAULT_COLOR);
             this.nameBold = !this.displayName.isEmpty() && nameBold;
+            String normalizedTags = DeviceTerminalTagRules.normalize(tags);
+            this.tags = normalizedTags == null ? "" : normalizedTags;
+            this.favoriteOrder = Math.max(0, favoriteOrder);
             this.metaTileId = metaTileId;
             this.evidenceKind = ignored ? 0 : evidenceKind >= 0 && evidenceKind <= 3 ? evidenceKind : (byte) 3;
             this.linkNodeType = (byte) (linkNodeType & 3);

@@ -92,7 +92,8 @@ public final class DeviceTerminalVisualActionQueue {
 
     private static final class Rate {
 
-        final long[] actions = { Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE };
+        final long[] actions = { Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE, Long.MIN_VALUE,
+            Long.MIN_VALUE };
         long expires;
     }
 
@@ -238,6 +239,12 @@ public final class DeviceTerminalVisualActionQueue {
             return;
         }
         ItemStack held = source == null ? player.getHeldItem() : source.stack;
+        if (message.action == PacketDeviceTerminalVisualAction.ACTION_EDIT
+            || message.action == PacketDeviceTerminalVisualAction.ACTION_FAVORITE) {
+            int editSlot = com.miaokatze.gtswn.common.device.DeviceTerminalSource
+                .find(player, message.terminalId, false);
+            held = com.miaokatze.gtswn.common.device.DeviceTerminalSource.stack(player, editSlot);
+        }
         // The device list can be opened directly from a carried slot. Only visualization toggles
         // accept that carried identity; teleport/rename retain the existing held-terminal checks.
         boolean accessory = source != null && source.origin == SourceOrigin.BAUBLE;
@@ -343,8 +350,15 @@ public final class DeviceTerminalVisualActionQueue {
             DeviceTerminalDataStore store = DeviceTerminalDataStore.get(player.worldObj);
             DeviceTerminalDataStore.TerminalData data = store.getTerminal(actual);
             long before = data == null ? -1 : data.version;
-            if (store.renameBinding(actual, message.key, message.name, message.color, message.bold) && data != null
-                && data.version != before) DeviceTerminalRequestQueue.invalidate(player);
+            if (message.action == PacketDeviceTerminalVisualAction.ACTION_EDIT
+                || message.action == PacketDeviceTerminalVisualAction.ACTION_FAVORITE) {
+                DeviceTerminalDataStore.MachineRecord record = data == null ? null : data.records.get(message.key);
+                if (record == null || record.metaTileId != message.targetMetaTileId) return;
+                if (message.action == PacketDeviceTerminalVisualAction.ACTION_FAVORITE)
+                    store.setFavorite(actual, message.key, message.favorite);
+                else store.editBinding(actual, message.key, message.name, message.color, message.bold, message.tags);
+            } else store.renameBinding(actual, message.key, message.name, message.color, message.bold);
+            if (data != null && data.version != before) DeviceTerminalRequestQueue.invalidate(player);
         }
     }
 

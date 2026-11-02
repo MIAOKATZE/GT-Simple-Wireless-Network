@@ -45,6 +45,26 @@ public class PacketDeviceTerminalVisualActionTest {
     }
 
     @Test
+    public void editAndFavoriteCarryBoundedTagsAndExactControllerIdentity() {
+        PacketDeviceTerminalVisualAction edit = roundTrip(
+            PacketDeviceTerminalVisualAction.edit(ID, "0:1:2:3", 123, "Alias", 4, true, "Power, Main"));
+        assertTrue(edit.valid());
+        assertEquals(PacketDeviceTerminalVisualAction.ACTION_EDIT, edit.action);
+        assertEquals(123, edit.targetMetaTileId);
+        assertEquals("Power, Main", edit.tags);
+        PacketDeviceTerminalVisualAction favorite = roundTrip(
+            PacketDeviceTerminalVisualAction.favorite(ID, "0:1:2:3", 123, true));
+        assertTrue(favorite.valid());
+        assertTrue(favorite.favorite);
+        assertFalse(
+            PacketDeviceTerminalVisualAction.favorite(ID, "0:1:2:3", -2, true)
+                .valid());
+        assertFalse(
+            PacketDeviceTerminalVisualAction.edit(ID, "0:1:2:3", 123, "Alias", 4, true, "bad\n")
+                .valid());
+    }
+
+    @Test
     public void forgedDeclaredStringLengthIsRejectedBeforeAllocation() {
         ByteBuf buf = Unpooled.buffer();
         try {
