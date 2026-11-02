@@ -665,7 +665,11 @@ public final class TestWorldManager {
             + " tickets="
             + TICKETS.size()
             + footprintStatus(state)
-            + (current == null ? "" : " scenario=" + current.result.id + " tick=" + current.tick())
+            + (current == null ? ""
+                : " scenario=" + current.result.id
+                    + " tick="
+                    + current.tick()
+                    + (current.result.workload == null ? "" : " workloadPhase=" + current.result.workload.phase))
             + " run="
             + state.lastRun
             + " outcome="

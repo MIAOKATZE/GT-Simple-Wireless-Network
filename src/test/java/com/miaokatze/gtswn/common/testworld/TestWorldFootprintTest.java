@@ -87,12 +87,14 @@ public class TestWorldFootprintTest {
         assertFalse(TestWorldFootprint.containsFixture(32, -75, 80, 72));
         assertTrue(TestWorldFootprint.containsFixture(80, -80, 64, -80));
         assertTrue(TestWorldFootprint.containsFixture(80, 79, 127, 79));
+        assertTrue(TestWorldFootprint.containsFixture(80, 0, 168, 0));
+        assertTrue(TestWorldFootprint.containsFixture(80, 79, 255, 79));
         assertFalse(TestWorldFootprint.containsFixture(80, -81, 80, 0));
         assertFalse(TestWorldFootprint.containsFixture(80, 80, 80, 0));
         assertFalse(TestWorldFootprint.containsFixture(80, 0, 80, -81));
         assertFalse(TestWorldFootprint.containsFixture(80, 0, 80, 80));
         assertFalse(TestWorldFootprint.containsFixture(80, 0, 63, 0));
-        assertFalse(TestWorldFootprint.containsFixture(80, 0, 128, 0));
+        assertFalse(TestWorldFootprint.containsFixture(80, 0, 256, 0));
     }
 
     @Test
