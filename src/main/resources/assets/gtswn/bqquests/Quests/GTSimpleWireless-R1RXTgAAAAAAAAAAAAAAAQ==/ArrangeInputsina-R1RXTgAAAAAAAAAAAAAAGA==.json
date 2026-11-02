@@ -1,0 +1,42 @@
+{
+  "preRequisites:9": {
+    "0:10": {
+      "questIDHigh:4": 5139829067255644160,
+      "questIDLow:4": 1
+    }
+  },
+  "properties:10": {
+    "betterquesting:10": {
+      "autoClaim:1": 0,
+      "countAsQuest:1": 1,
+      "desc:8": "§3§lPurpose and crafting§r\nMatrix Grouped Item/Fluid Inputs (ME) supply native GT machines in position order. Ordinary members are crafted at §1LuV§r and optional mirrors at §1ZPM§r; both show LuV as the device tier. Check NEI for recipes. An ordinary ME cable is enough to start; a Quantum Node is optional.\n\n§3§lBuild an ordinary group§r\nPlace same-kind members in one continuous §1horizontal line§r, with all fronts facing the same way. Do not stack them vertically or add same-kind side branches. Limits are §116§r item and §14§r fluid members; at least one kind needs §12§r or more. A fluid-only line of 2–4 members works on its own. With both kinds, the other line may have just one member; keep the lines parallel and face-connected.\n\n§3§lOne ME entry sets the order§r\nConnect an ME cable or Quantum Node to the front of §1one§r ordinary member. Input positions run §1nearest to farthest from that entry§r; internal member connections are not external entries. §cMultiple external entries stop the whole group and its machine§r until only one remains. Keep the original entry while materials are buffered or processing is underway.\n\n§3§lOpen and check§r\nRight-click any member to check the group, entry and positions in the shared interface. Keep ME power, channels and relevant chunks available. Then choose the buffering or mirror branch as needed. Understand or try the layout, then tick this quest.",
+      "globalShare:1": 0,
+      "icon:10": {
+        "Count:3": 1,
+        "Damage:2": 14601,
+        "OreDict:8": "",
+        "id:8": "gregtech:gt.blockmachines"
+      },
+      "isMain:1": 0,
+      "isSilent:1": 0,
+      "lockedProgress:1": 0,
+      "name:8": "§d§lArrange Inputs in a Matrix",
+      "questLogic:8": "AND",
+      "repeatTime:3": -1,
+      "simultaneous:1": 0,
+      "snd_complete:8": "random.levelup",
+      "snd_update:8": "random.levelup",
+      "taskLogic:8": "AND",
+      "visibility:8": "NORMAL"
+    }
+  },
+  "questIDHigh:4": 5139829067255644160,
+  "questIDLow:4": 24,
+  "rewards:9": {},
+  "tasks:9": {
+    "0:10": {
+      "index:3": 0,
+      "taskID:8": "bq_standard:checkbox"
+    }
+  }
+}

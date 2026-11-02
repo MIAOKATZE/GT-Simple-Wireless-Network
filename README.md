@@ -15,14 +15,14 @@
 
 当前 2.1.0 ~ + 系列仅支持 GTNH 2.9.0 正式版；RC、beta 和 2.8.4 玩家请按下表选择历史版本。建议 GTIT、GTSWN、GTSR 三者一起更新。
 
-为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；设备均可在 LV 阶段制作。
+为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；无线与监控设备可在 LV 阶段制作，矩阵编组仓室为 LuV 等级。
 
-**Wireless EU transfer, energy and machine monitoring, and ME quantum access** for GTNH, brought together in Factory Mode and a customizable dashboard. All devices are craftable at LV tier.
+**Wireless EU transfer, energy and machine monitoring, and ME quantum access** for GTNH, brought together in Factory Mode and a customizable dashboard. Wireless and monitoring devices are craftable at LV tier; matrix inputs are LuV devices.
 
 > [!NOTE]
 > 非官方模组，讨论时请注意场合。/ Unofficial mod; please avoid discussing it in official GTNH forums.
 >
-> 📖 [完整文档 / Full Wiki](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/wiki)
+> 📖 [完整文档 / Full Wiki](https://miaokatze.com/guide/gtswn)
 
 ## 下载与依赖 / Downloads & Requirements
 
@@ -32,10 +32,15 @@ The table lists declared version ranges or known compatible versions. Download l
 
 | GTNH | GTSWN 版本范围 / Version range | 已发布下载 / Status |
 | --- | --- | --- |
-| 2.9.0 正式版 / final | 2.1.0 ~ + | 当前 2.1.0 待发布草稿 / Draft |
+| 2.9.0 正式版 / final | 2.1.0 ~ + | [v2.1.13](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.1.13) |
 | 2.9.0 RC-1 / RC-2 | 2.0.0 ~ 2.0.37 | [v2.0.37](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.0.37)；RC 最终版已发布，随附 Core 0.1.28 |
 | 2.9.0 beta-1 / beta-2 / beta-3 | 1.8.82 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) |
 | 2.8.4 | 0.2.0 | [v0.2.0](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v0.2.0) |
+
+本次 v2.1.13 修复 BQ 启动同步竞态：注入后只保存任务定义，单机保留共享任务进度，远程玩家由 BQ 原生登录同步接收完整任务与进度。
+
+This release removes pre-login quest broadcasts after injection. Definitions remain persistent, and remote players receive quests and progress through BetterQuesting's native login synchronization.
+
 
 当前源码为 v2.1.0，对应 GTNH 2.9.0 正式版；该版本目前为待发布草稿。表内下载版本以公开 Release 为准。
 
@@ -102,6 +107,13 @@ Machine chunks must stay loaded. Energy powers from buffer; Power collects gener
 `AllowCopyPasteTool` 默认关闭，开启后 GT 覆盖板工具、MM 等可复制节点配置。MM 复制保留绑定与设置，不克隆电量或库存；节点本体免单独材料，侧部件/升级照常计费。在激光仓新装/替换无线覆盖板每面消耗 **1 根激光真空管**，新建量子并入每台消耗 **1 个锚点**，已有有效并入不重复收费。可选无线 EU 补能失败不阻断复制，保留空池或目标原有缓存；批次消息汇总结果与耗材。
 
 `AllowCopyPasteTool` defaults off; enable it for GT cover tools/MM to copy node settings. MM copies bindings/settings, not stored energy or inventories. Node cores require no separate material; side parts/upgrades retain normal costs. A new/replacement wireless cover on a laser hatch costs **1 pipe per face**; new quantum incorporation costs **1 anchor per device**, with no repeat charge for an existing valid incorporation. Failed optional wireless EU refill does not stop copying; the target keeps an empty or existing buffer. Batch messages summarize results and materials.
+
+<table><tr><th>物品输入总线 / Item input</th><th>流体输入总线 / Fluid input</th></tr>
+<tr><td><img src="images/matrix-input-item.webp" alt="矩阵编组物品输入总线（ME）" width="280"></td><td><img src="images/matrix-input-fluid.webp" alt="矩阵编组流体输入总线（ME）" width="280"></td></tr>
+<tr><th>物品输入镜像 / Item mirror</th><th>流体输入镜像 / Fluid mirror</th></tr>
+<tr><td><img src="images/matrix-input-item_mirror.webp" alt="矩阵编组物品输入镜像（ME）" width="280"></td><td><img src="images/matrix-input-fluid_mirror.webp" alt="矩阵编组流体输入镜像（ME）" width="280"></td></tr></table>
+
+*离线源码模型图，显示独立、未染色状态。/ Offline source renders in isolated, unpainted state. [来源记录 / Provenance](images/matrix-input-renders.json)*
 
 ## ME 量子终端与节点 / ME Quantum Terminal & Node
 

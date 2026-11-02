@@ -1,0 +1,183 @@
+{
+  "schema": 1,
+  "mod": "gtswn",
+  "sourceVersion": "2.1.13",
+  "sourceRevision": "dce7b8318b8984f29d549b2c44c0855e92c02401",
+  "rendererRepository": "MIAOKATZE/MinecraftStructureRenderer",
+  "rendererRevision": "0aee7bcbc8755a57479ed48926c06f98333ad648",
+  "strategySha256": "1845cf3e4b8610c2ff9dc760da92f66afe5573aae38977f6315b115636a4fc9a",
+  "gt5uRevision": "bb00f3f1023e20d3cce84cf09abb442d22a3a5a5",
+  "gt5uVersion": "5.09.54.265",
+  "state": {
+    "connectionMask": 0,
+    "colorization": -1,
+    "transitions": 0
+  },
+  "imageKind": "offline-source-render",
+  "images": [
+    {
+      "id": "item",
+      "name": "矩阵编组物品输入总线（ME）",
+      "image": "images/matrix-input-item.webp",
+      "sha256": "d6dfed3ca98ad9906a71a5d523a66465a0e9e483abc7087cca495714c37cd5fc",
+      "media": {
+        "full": "68b730e173345154415e-full.webp",
+        "width": 733,
+        "height": 809,
+        "preview": "11e0ab583021e54f5a9f-preview.webp",
+        "card": "d164a0dedf63e273060f-card.webp",
+        "thumb": "35b0c9b725d017e3978f-thumb.webp",
+        "attribution": "GTSWN | Modernity-GTNH",
+        "resourcePacks": [
+          "Modernity-GTNH"
+        ]
+      },
+      "class": "MatrixItemInputBus",
+      "mirror": false,
+      "texturePlan": {
+        "tier": 6,
+        "style": "item",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/bridge_0",
+          "gtswn:matrix_input_center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      },
+      "sourceInputs": {
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixItemInputBus.java": "48fe2432da5ae3ea68c175ea18e604e84860670619e1c18533ccc8bdda0e0023",
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixAssemblyTextures.java": "8c9b5eb7b4d149f590245c601e41035cbacc31cef77d1490cf70100cc4e9e752"
+      }
+    },
+    {
+      "id": "fluid",
+      "name": "矩阵编组流体输入总线（ME）",
+      "image": "images/matrix-input-fluid.webp",
+      "sha256": "8292ab9632c1f33240effcf639c89fa0bfc8d7750afac60036f0290e209ba00f",
+      "media": {
+        "full": "7bcb37b4dc802e65bb78-full.webp",
+        "width": 733,
+        "height": 809,
+        "preview": "ac0697dbfe0ad526f45e-preview.webp",
+        "card": "2eaeeb703a9b02c2965f-card.webp",
+        "thumb": "f221b2894aee065be3f0-thumb.webp",
+        "attribution": "GTSWN | Modernity-GTNH",
+        "resourcePacks": [
+          "Modernity-GTNH"
+        ]
+      },
+      "class": "MatrixFluidInputHatch",
+      "mirror": false,
+      "texturePlan": {
+        "tier": 6,
+        "style": "fluid",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/fluid/bridge_0",
+          "gtswn:matrix/fluid/center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      },
+      "sourceInputs": {
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixFluidInputHatch.java": "5f67a60835dca1e10f51c5af9206e572178f590616c68e5acc409f07519f9a76",
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixAssemblyTextures.java": "8c9b5eb7b4d149f590245c601e41035cbacc31cef77d1490cf70100cc4e9e752"
+      }
+    },
+    {
+      "id": "item_mirror",
+      "name": "矩阵编组物品输入镜像（ME）",
+      "image": "images/matrix-input-item_mirror.webp",
+      "sha256": "98503ac9cb165c198257233ee321470f414b7fdf3b4e8a21d1929ece41fa0611",
+      "media": {
+        "full": "c34db850b737a5a6be2a-full.webp",
+        "width": 733,
+        "height": 809,
+        "preview": "8154c59f6ee6c1451140-preview.webp",
+        "card": "2c74cb6fe0809b18d7d1-card.webp",
+        "thumb": "915c53d949e1ed9ae4e6-thumb.webp",
+        "attribution": "GTSWN | Modernity-GTNH",
+        "resourcePacks": [
+          "Modernity-GTNH"
+        ]
+      },
+      "class": "MatrixItemInputBus",
+      "mirror": true,
+      "texturePlan": {
+        "tier": 6,
+        "style": "item_mirror",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/item_mirror/bridge_0",
+          "gtswn:matrix/item_mirror/center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      },
+      "sourceInputs": {
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixItemInputBus.java": "48fe2432da5ae3ea68c175ea18e604e84860670619e1c18533ccc8bdda0e0023",
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixAssemblyTextures.java": "8c9b5eb7b4d149f590245c601e41035cbacc31cef77d1490cf70100cc4e9e752"
+      }
+    },
+    {
+      "id": "fluid_mirror",
+      "name": "矩阵编组流体输入镜像（ME）",
+      "image": "images/matrix-input-fluid_mirror.webp",
+      "sha256": "43918b9ab91ea35cf63de9f8f6df17f36b2c54d1b2314f63ad92795e5ab91acd",
+      "media": {
+        "full": "db2bd95e38b6fdd7584b-full.webp",
+        "width": 733,
+        "height": 809,
+        "preview": "1f17df386031de8b965a-preview.webp",
+        "card": "194095b430422756a833-card.webp",
+        "thumb": "103630de14e43cfaf52c-thumb.webp",
+        "attribution": "GTSWN | Modernity-GTNH",
+        "resourcePacks": [
+          "Modernity-GTNH"
+        ]
+      },
+      "class": "MatrixFluidInputHatch",
+      "mirror": true,
+      "texturePlan": {
+        "tier": 6,
+        "style": "fluid_mirror",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/fluid_mirror/bridge_0",
+          "gtswn:matrix/fluid_mirror/center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      },
+      "sourceInputs": {
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixFluidInputHatch.java": "5f67a60835dca1e10f51c5af9206e572178f590616c68e5acc409f07519f9a76",
+        "GT-Simple-Wireless-Network\\src\\main\\java\\com\\miaokatze\\gtswn\\common\\assembly\\MatrixAssemblyTextures.java": "8c9b5eb7b4d149f590245c601e41035cbacc31cef77d1490cf70100cc4e9e752"
+      }
+    }
+  ]
+}

@@ -89,6 +89,22 @@
         {
           "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/OneSourceSeveral-R1RXTgAAAAAAAAAAAAAAFw==.json",
           "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/OneSourceSeveral-R1RXTgAAAAAAAAAAAAAAFw==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ArrangeInputsina-R1RXTgAAAAAAAAAAAAAAGA==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/ArrangeInputsina-R1RXTgAAAAAAAAAAAAAAGA==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/WholeBatchesOneP-R1RXTgAAAAAAAAAAAAAAGQ==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/WholeBatchesOneP-R1RXTgAAAAAAAAAAAAAAGQ==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/MirrorsShareReal-R1RXTgAAAAAAAAAAAAAAGg==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/MirrorsShareReal-R1RXTgAAAAAAAAAAAAAAGg==.json"
+        },
+        {
+          "entryFile": "assets/gtswn/bqquests/QuestLines/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/LettheNativeMach-R1RXTgAAAAAAAAAAAAAAGw==.json",
+          "questFile": "assets/gtswn/bqquests/Quests/GTSimpleWireless-R1RXTgAAAAAAAAAAAAAAAQ==/LettheNativeMach-R1RXTgAAAAAAAAAAAAAAGw==.json"
         }
       ],
       "idHigh": 5139829067255644160,
