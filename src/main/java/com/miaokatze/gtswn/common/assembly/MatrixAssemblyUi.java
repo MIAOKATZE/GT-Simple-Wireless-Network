@@ -148,7 +148,9 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 .coverChildren()
                 .child(slots)
                 .child(
-                    IKey.dynamic(() -> tr("gtswn.matrix.reason." + status.getStringValue()))
+                    IKey.dynamic(
+                        () -> EnumChatFormatting
+                            .getTextWithoutFormattingCodes(tr("gtswn.matrix.reason." + status.getStringValue())))
                         .asWidget()
                         .width(160)
                         .height(28)
@@ -525,7 +527,8 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
                 .append(tr(encoded.substring(start + 2, end)));
             cursor = end + 2;
         }
-        return translated.append(encoded, cursor, encoded.length())
-            .toString();
+        return EnumChatFormatting.getTextWithoutFormattingCodes(
+            translated.append(encoded, cursor, encoded.length())
+                .toString());
     }
 }

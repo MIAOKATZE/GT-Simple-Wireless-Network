@@ -102,15 +102,13 @@ final class GuiDeviceNameEditor {
                             12,
                             188,
                             0xFFFFFF);
+                    boolean invalid = normalized == null || DeviceTerminalTagRules.normalize(tags.getText()) == null;
                     host.font()
                         .drawString(
-                            tr(
-                                normalized == null || DeviceTerminalTagRules.normalize(tags.getText()) == null
-                                    ? "invalid"
-                                    : "hint"),
+                            tr(invalid ? "invalid" : "hint"),
                             12,
                             241,
-                            normalized == null ? 0xFF6F6F : GtswnGuiPalette.TEXT_MUTED);
+                            invalid ? 0xFFFFB0B0 : GtswnGuiPalette.TEXT_BODY);
                 }));
         name = new TextFieldWidget() {
 
@@ -131,6 +129,7 @@ final class GuiDeviceNameEditor {
             .size(WIDTH - 24, 18)
             .background(DeviceTerminalUi.INPUT)
             .hoverBackground(DeviceTerminalUi.INPUT_HOVER)
+            .setTextColor(GtswnGuiPalette.TEXT_BODY)
             .value(new StringValue(""))
             .setMaxLength(DeviceTerminalNameRules.MAX_NAME_LENGTH)
             .autoUpdateOnChange(true)
@@ -181,12 +180,15 @@ final class GuiDeviceNameEditor {
         panel.child(
             com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.tags.input")
                 .asWidget()
+                .color(GtswnGuiPalette.TEXT_BODY)
                 .pos(12, 138)
                 .size(WIDTH - 24, 14));
         tags = GtswnMuiWidgets
             .textField("device.rename.tags", "", 12, 154, WIDTH - 24, 20, DeviceTerminalTagRules.MAX_INPUT_LENGTH)
             .background(DeviceTerminalUi.INPUT)
             .hoverBackground(DeviceTerminalUi.INPUT_HOVER)
+            .setTextColor(GtswnGuiPalette.TEXT_BODY)
+            .hintColor(GtswnGuiPalette.TEXT_MUTED)
             .hintText(StatCollector.translateToLocal("gtswn.device.tags.input_hint"))
             .tooltip(t -> t.addLine(com.cleanroommc.modularui.api.drawable.IKey.lang("gtswn.device.tags.input_hint")));
         panel.child(tags);

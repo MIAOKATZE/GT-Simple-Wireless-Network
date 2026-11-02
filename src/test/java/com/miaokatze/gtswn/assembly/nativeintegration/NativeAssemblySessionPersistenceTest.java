@@ -32,6 +32,8 @@ public class NativeAssemblySessionPersistenceTest {
         input.setTag("gtswnOrderedAssemblyController", future);
         NativeAssemblySession session = new NativeAssemblySession(null);
         session.load(input);
+        assertEquals("unknown_controller_identity", session.patternAdvertisementReason());
+        assertFalse(session.readyForPatternAdvertisement());
         NBTTagCompound output = new NBTTagCompound();
         session.save(output);
         assertEquals(input, output);

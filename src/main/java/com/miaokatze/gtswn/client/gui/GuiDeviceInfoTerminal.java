@@ -12,6 +12,7 @@ import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StatCollector;
 
 import com.cleanroommc.modularui.api.IPanelHandler;
@@ -247,6 +248,8 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             .setMaxLength(64)
             .background(DeviceTerminalUi.INPUT)
             .hoverBackground(DeviceTerminalUi.INPUT_HOVER)
+            .setTextColor(GtswnGuiPalette.TEXT_BODY)
+            .hintColor(GtswnGuiPalette.TEXT_MUTED)
             .hintText(tr("gtswn.device.filter.search_hint"))
             .size(100, 20)
             .name("device.filter.search");
@@ -441,12 +444,14 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
                     .dynamic(
                         () -> GuiDeviceEntryList.ellipsis(
                             fontRendererObj,
-                            selected ? label + ": " + text.apply(getter.get()) + " \u25BE" : text.apply(value),
+                            EnumChatFormatting.getTextWithoutFormattingCodes(
+                                selected ? label + ": " + text.apply(getter.get()) + " \u25BE" : text.apply(value)),
                             Math.max(
                                 1,
                                 dropdown.getArea()
                                     .w() - 14)))
                     .asWidget()
+                    .color(GtswnGuiPalette.TEXT_BODY)
                     .height(20)
                     .widthRel(1f)
                     .padding(6, 3))
@@ -650,6 +655,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         panel.child(
             IKey.lang("gtswn.device.tags.title")
                 .asWidget()
+                .color(GtswnGuiPalette.TEXT_TITLE)
                 .pos(12, 10)
                 .size(width - 48, 16));
         panel.child(
@@ -660,6 +666,7 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
         panel.child(
             IKey.lang("gtswn.device.tags.filter_hint")
                 .asWidget()
+                .color(GtswnGuiPalette.TEXT_BODY)
                 .pos(12, 29)
                 .size(width - 24, 24));
         ListWidget<com.cleanroommc.modularui.api.widget.IWidget, ?> list = new ListWidget<>().pos(12, 56)

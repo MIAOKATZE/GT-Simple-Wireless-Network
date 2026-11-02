@@ -47,7 +47,9 @@ final class DeviceTerminalUi {
             .size(width, height)
             .background(NORMAL)
             .hoverBackground(HOVER)
-            .overlay(IKey.dynamic(label))
+            .overlay(
+                IKey.dynamic(label)
+                    .color(GtswnGuiPalette.TEXT_BODY))
             .onMousePressed(button -> {
                 if (button != 0) return false;
                 action.run();
