@@ -1,0 +1,105 @@
+{
+  "sourceRevision": "dce7b8318b8984f29d549b2c44c0855e92c02401",
+  "imageKind": "offline-source-render-contact-sheet",
+  "image": "matrix-inputs-overview.png",
+  "sha256": "324b95d67c0da4d37a868703dc18a0116970bbbdd034f346ae2648457350c5d4",
+  "width": 1440,
+  "height": 1320,
+  "order": [
+    "item",
+    "fluid",
+    "item_mirror",
+    "fluid_mirror"
+  ],
+  "sources": [
+    {
+      "id": "item",
+      "sourceImage": "render-c818912addc06b4b4429.webp",
+      "sha256": "be828d2399aa29a2a3184967bc04801f1846a228e398817532c19c425973748d",
+      "texturePlan": {
+        "tier": 6,
+        "style": "item",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/bridge_0",
+          "gtswn:matrix_input_center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      }
+    },
+    {
+      "id": "fluid",
+      "sourceImage": "render-b1206d0746bd8ec13e0a.webp",
+      "sha256": "c5f796a77be6ca36f558826199c18c1804f38e9145e8bfdd0a46d9280f8b08b9",
+      "texturePlan": {
+        "tier": 6,
+        "style": "fluid",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/fluid/bridge_0",
+          "gtswn:matrix/fluid/center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      }
+    },
+    {
+      "id": "item_mirror",
+      "sourceImage": "render-b184964e4ac72c225bd4.webp",
+      "sha256": "98f9b9f8a73e4f4869c4b63dad4d92f5bfbff6898ddeaa5a21ab18182be180b6",
+      "texturePlan": {
+        "tier": 6,
+        "style": "item_mirror",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/item_mirror/bridge_0",
+          "gtswn:matrix/item_mirror/center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      }
+    },
+    {
+      "id": "fluid_mirror",
+      "sourceImage": "render-c4c67193503f78cafef4.webp",
+      "sha256": "bb1bbbb82424f7c732a77dc159e989e92d10c15ff6e49ebdbc0032b47fd0840e",
+      "texturePlan": {
+        "tier": 6,
+        "style": "fluid_mirror",
+        "faces": {
+          "BOTTOM": "MACHINE_LuV_BOTTOM",
+          "TOP": "MACHINE_LuV_TOP",
+          "SIDE": "MACHINE_LuV_SIDE"
+        },
+        "optionalOverlays": [
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ],
+        "overlays": [
+          "gtswn:matrix/fluid_mirror/bridge_0",
+          "gtswn:matrix/fluid_mirror/center",
+          "gregtech:blocks/iconsets/OVERLAY_ME_CRAFTING_INPUT_COLOR_NONE"
+        ]
+      }
+    }
+  ],
+  "sourceRecord": "matrix-input-renders.json"
+}
