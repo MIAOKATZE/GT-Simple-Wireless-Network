@@ -2,9 +2,9 @@
   "sourceRevision": "dce7b8318b8984f29d549b2c44c0855e92c02401",
   "imageKind": "offline-source-render-contact-sheet",
   "image": "matrix-inputs-overview.png",
-  "sha256": "324b95d67c0da4d37a868703dc18a0116970bbbdd034f346ae2648457350c5d4",
-  "width": 1440,
-  "height": 1320,
+  "sha256": "def6cdbf7750116cf957ed1acbd9017bf8793c9945fd2b907a01c6494c83dc41",
+  "width": 1200,
+  "height": 1200,
   "order": [
     "item",
     "fluid",
@@ -101,5 +101,7 @@
       }
     }
   ],
-  "sourceRecord": "matrix-input-renders.json"
+  "sourceRecord": "matrix-input-renders.json",
+  "background": "#ffffff",
+  "annotations": false
 }
