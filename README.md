@@ -108,9 +108,7 @@ Machine chunks must stay loaded. Energy powers from buffer; Power collects gener
 
 `AllowCopyPasteTool` defaults off; enable it for GT cover tools/MM to copy node settings. MM copies bindings/settings, not stored energy or inventories. Node cores require no separate material; side parts/upgrades retain normal costs. A new/replacement wireless cover on a laser hatch costs **1 pipe per face**; new quantum incorporation costs **1 anchor per device**, with no repeat charge for an existing valid incorporation. Failed optional wireless EU refill does not stop copying; the target keeps an empty or existing buffer. Batch messages summarize results and materials.
 
-<p align="center"><img src="images/matrix-inputs-overview.png" alt="四种 LuV 矩阵编组输入与镜像 / Four LuV matrix inputs and mirrors" width="800"></p>
-
-*离线源码模型合图，依次为物品输入、流体输入、物品镜像与流体镜像，均为独立、未染色状态。/ Combined offline source renders: item input, fluid input, item mirror and fluid mirror, all isolated and unpainted. [来源记录 / Provenance](images/matrix-inputs-overview.json)*
+<p align="center"><img src="images/matrix-inputs-overview.png" alt="四种 LuV 矩阵编组输入与镜像 / Four LuV matrix inputs and mirrors" width="420"></p>
 
 ## ME 量子终端与节点 / ME Quantum Terminal & Node
 
