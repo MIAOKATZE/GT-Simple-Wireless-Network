@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lThe native machine sets the rules§r\nMatrix groups supply native GT machines that support these input interfaces. Each consumer still needs its own valid structure, recipe, power and output conditions. For an assembly line, each line needs §1a formed structure, recipe research/data authorization and item output protection§r. Mirrors bypass none of these checks.\n\n§3§lRun the ordinary group first§r\nConnect an ordinary group to a formed, ready consumer and install its processing pattern. Read the group reason and pattern preview; check the straight layout and fronts, unique external ME entry, power/channels/chunk loading, input order, complete batches and buffer limits. Request a small batch and confirm actual consumption and output. A standalone source group also needs §1at least one formed, ready consumer§r before offering patterns to ME.\n\n§3§lThen check the mirror§r\nOnce the ordinary group works, finish processing and empty its buffers before binding the destination as described in the mirror quest. If only the mirror fails, check same-dimension chunk loading, source address, matching layout/types/positions, empty destination inventories and pattern slots, and no external ME entry there. Then check the destination machine's own structure, research, power, enabled state and output space/protection.\n\n§3§lHandle existing work first§r\nNetwork pauses retain buffered materials. Check real stock and ongoing work before changing connections or bindings; stopping a native process does not restore consumed materials. Understand these checks or complete one small job, then tick this quest.",
+      "desc:8": "The matrix supplies materials in order; the machine processes them under its own conditions.\n\nThe machine must be formed, properly powered and have output space. Assembly lines also need the corresponding research and item output protection enabled.\n\nIf processing cannot start, read the reason shown in the compartment interface.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 0,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§d§lLet the Native Machine Work",
+      "name:8": "§d§lStart the Machine",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,

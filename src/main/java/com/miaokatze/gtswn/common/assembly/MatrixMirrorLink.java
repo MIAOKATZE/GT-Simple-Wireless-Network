@@ -11,6 +11,10 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
+import net.minecraftforge.common.util.ForgeDirection;
+
+import com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing;
+import com.gtnewhorizon.structurelib.alignment.enumerable.Flip;
 
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 
@@ -117,7 +121,7 @@ final class MatrixMirrorLink {
         return group;
     }
 
-    /** The copied member maps to the mirror; all other typed positions must match one horizontal rotation. */
+    /** The copied member maps to the mirror; every typed relative position must use the same rotation. */
     Map<MatrixAssemblyMember, MatrixAssemblyMember> mapping(OrderedAssemblyGroup source,
         OrderedAssemblyGroup destination, MatrixAssemblyMember mirror) {
         int[] from = data.getIntArray("anchor"), to = position(mirror);
@@ -136,6 +140,7 @@ final class MatrixMirrorLink {
 
     static Map<MatrixAssemblyMember, MatrixAssemblyMember> mapPositions(List<MatrixAssemblyMember> source,
         List<MatrixAssemblyMember> destination, int[] from, int[] to) {
+        // Preserve the exact priority and facing-independent interpretation of existing horizontal links.
         for (int rotation = 0; rotation < 4; rotation++) {
             Map<MatrixAssemblyMember, MatrixAssemblyMember> result = new IdentityHashMap<>();
             for (MatrixAssemblyMember member : source) {
@@ -151,6 +156,31 @@ final class MatrixMirrorLink {
                     if (target.matrixFluid() == member.matrixFluid() && candidate[0] == to[0] + dx
                         && candidate[1] == to[1] + pos[1] - from[1]
                         && candidate[2] == to[2] + dz) result.put(target, member);
+                }
+            }
+            if (result.size() == source.size() && result.size() == destination.size()) return result;
+        }
+        // New horizontal/vertical conversions rotate fronts along with positions. StructureLib already supplies
+        // the 24 proper orthogonal rotations; flips would change the copied layout's handedness.
+        for (ExtendedFacing rotation : ExtendedFacing.VALUES) {
+            if (rotation.getFlip() != Flip.NONE) continue;
+            Map<MatrixAssemblyMember, MatrixAssemblyMember> result = new IdentityHashMap<>();
+            for (MatrixAssemblyMember member : source) {
+                int[] pos = position(member), offset = new int[3], front = new int[3];
+                rotation.getWorldOffset(new int[] { pos[0] - from[0], pos[1] - from[1], pos[2] - from[2] }, offset);
+                ForgeDirection facing = member.getBaseMetaTileEntity()
+                    .getFrontFacing();
+                rotation.getWorldOffset(new int[] { facing.offsetX, facing.offsetY, facing.offsetZ }, front);
+                for (MatrixAssemblyMember target : destination) {
+                    int[] candidate = position(target);
+                    ForgeDirection targetFacing = target.getBaseMetaTileEntity()
+                        .getFrontFacing();
+                    if (target.matrixFluid() == member.matrixFluid() && candidate[0] == to[0] + offset[0]
+                        && candidate[1] == to[1] + offset[1]
+                        && candidate[2] == to[2] + offset[2]
+                        && targetFacing.offsetX == front[0]
+                        && targetFacing.offsetY == front[1]
+                        && targetFacing.offsetZ == front[2]) result.put(target, member);
                 }
             }
             if (result.size() == source.size() && result.size() == destination.size()) return result;

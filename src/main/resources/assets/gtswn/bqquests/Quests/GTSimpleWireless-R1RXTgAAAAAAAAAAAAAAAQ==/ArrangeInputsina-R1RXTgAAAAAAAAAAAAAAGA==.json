@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lPurpose and crafting§r\nMatrix Grouped Item/Fluid Inputs (ME) supply native GT machines in position order. Ordinary members are crafted at §1LuV§r and optional mirrors at §1ZPM§r; both show LuV as the device tier. Check NEI for recipes. An ordinary ME cable is enough to start; a Quantum Node is optional.\n\n§3§lBuild an ordinary group§r\nPlace same-kind members in one continuous §1horizontal line§r, with all fronts facing the same way. Do not stack them vertically or add same-kind side branches. Limits are §116§r item and §14§r fluid members; at least one kind needs §12§r or more. A fluid-only line of 2–4 members works on its own. With both kinds, the other line may have just one member; keep the lines parallel and face-connected.\n\n§3§lOne ME entry sets the order§r\nConnect an ME cable or Quantum Node to the front of §1one§r ordinary member. Input positions run §1nearest to farthest from that entry§r; internal member connections are not external entries. §cMultiple external entries stop the whole group and its machine§r until only one remains. Keep the original entry while materials are buffered or processing is underway.\n\n§3§lOpen and check§r\nRight-click any member to check the group, entry and positions in the shared interface. Keep ME power, channels and relevant chunks available. Then choose the buffering or mirror branch as needed. Understand or try the layout, then tick this quest.",
+      "desc:8": "Multiple matrix compartments act as one unit. Starting at the ME entry point, they receive items and fluids in pattern order.\n\nFor example, with a pattern of A/B/B/C, four item compartments receive A, B, B and C in order. The two B inputs stay separate.\n\nPlace compartments of the same type in a straight line, all facing the same way, horizontally or vertically. Use only one ME entry for the whole group.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 0,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§d§lArrange Inputs in a Matrix",
+      "name:8": "§d§lInput in Pattern Order",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,

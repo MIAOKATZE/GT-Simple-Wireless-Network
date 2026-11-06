@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lAn optional remote input§r\nMatrix Grouped Item/Fluid Input Mirrors (ME) let a remote machine use an ordinary source group. §1Mirrors share the source's real inventory§r, with no extra buffer or external ME connection. Ordinary groups work without mirrors. Keep source and destination loaded in the §1same dimension§r.\n\n§3§lMatch the layout§r\nMatch the source's member count, item/fluid types and relative positions. At the destination, replace §1one§r corresponding member with a same-kind mirror; all other members remain ordinary. Only one mirror is allowed per destination group. The complete layout may rotate horizontally. Keep destination inventories and pattern slots empty, with no external ME entry.\n\n§3§lBind with a native GT Data Stick§r\nWith the source buffer empty and all processing finished, left-click an ordinary source member with the Data Stick, then right-click the destination mirror. §1The copied member and mirror must match in position and item/fluid kind§r; any position can be used. For four item positions A/B/B/C, copying position 2 means placing the item mirror at destination position 2; the two B positions remain distinct. Check the success message and source address in the group interface.\n\n§3§lOne shared stock§r\nPatterns and incoming materials stay at the source. All consumers draw from that stock; mirrors neither copy materials nor add a separate processing inventory. Before rebinding, empty the source and finish all processing. Understand the mapping and binding steps, then tick this quest.",
+      "desc:8": "A mirror lets another machine share the source matrix's ordered input without copying materials.\n\nBuild the destination to match the source layout, replacing only one corresponding compartment with a mirror. After source processing has finished and its buffers are empty, left-click a source compartment with a GT Data Stick, then right-click the corresponding mirror to bind it.\n\nKeep both groups loaded in the same dimension. Do not connect the destination to ME.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 0,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§d§lMirrors Share Real Inventory",
+      "name:8": "§d§lMirrors Share Inputs",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,

@@ -39,6 +39,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import org.junit.Test;
 
+import com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
 import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout;
@@ -390,6 +391,173 @@ public class MatrixTopologyTest {
     }
 
     @Test
+    public void verticalSingleTypeColumnsKeepHorizontalFrontsAndVerifiedUpDownConnections() throws Exception {
+        for (boolean fluid : new boolean[] { false, true }) {
+            Fixture fixture = new Fixture();
+            int count = fluid ? 4 : 16;
+            for (int i = 0; i < count; i++) {
+                MatrixAssemblyMember member = fixture.add(fluid, 0, 64 + i, 0);
+                field(BaseMetaTileEntity.class, "mFacing").set(member.getBaseMetaTileEntity(), ForgeDirection.NORTH);
+            }
+            OrderedAssemblyGroup.refreshTopology(fixture.members.get(count - 1));
+            OrderedAssemblyGroup group = fixture.members.get(0)
+                .matrixPort()
+                .group();
+            assertNotNull(group);
+            assertTrue(group.editable());
+            assertNull(group.session());
+            assertFalse(group.accepting());
+            for (int i = 0; i < count; i++) {
+                MatrixAssemblyMember member = fixture.members.get(i);
+                assertSame(
+                    group,
+                    member.matrixPort()
+                        .group());
+                int mask = (i > 0 ? ForgeDirection.DOWN.flag : 0) | (i + 1 < count ? ForgeDirection.UP.flag : 0);
+                assertEquals(
+                    mask,
+                    member.matrixPort()
+                        .connectionMask());
+                EnumSet<ForgeDirection> sides = EnumSet.of(ForgeDirection.NORTH);
+                if (i > 0) sides.add(ForgeDirection.DOWN);
+                if (i + 1 < count) sides.add(ForgeDirection.UP);
+                assertEquals(sides, MatrixAssemblyPort.connectionSides(ForgeDirection.NORTH, mask));
+                assertEquals(
+                    (i > 0 ? 8 : 0) | (i + 1 < count ? 4 : 0),
+                    MatrixAssemblyTextures.faceMask(mask, ForgeDirection.NORTH));
+            }
+        }
+    }
+
+    @Test
+    public void verticalParallelTypedColumnsAllowFluidGapsAndOneMemberOfTheOtherType() throws Exception {
+        for (boolean besideX : new boolean[] { false, true }) for (int fluidCount = 1; fluidCount <= 4; fluidCount++) {
+            Fixture fixture = new Fixture();
+            for (int i = 0; i < 7; i++) fixture.add(false, 0, 64 + i, 0);
+            for (int i = 0; i < fluidCount; i++) fixture.add(true, besideX ? 1 : 0, 64 + i * 2, besideX ? 0 : 1);
+            OrderedAssemblyGroup.refreshTopology(fixture.members.get(3));
+            OrderedAssemblyGroup group = fixture.members.get(0)
+                .matrixPort()
+                .group();
+            assertNotNull(group);
+            assertTrue(group.editable());
+            assertEquals(
+                fluidCount,
+                group.fluidMembers()
+                    .size());
+            for (MatrixAssemblyMember member : fixture.members) assertEquals(
+                fixture.expectedMask(member),
+                member.matrixPort()
+                    .connectionMask());
+        }
+        Fixture fixture = new Fixture();
+        MatrixAssemblyMember item = fixture.add(false, 0, 64, 0);
+        fixture.add(true, 1, 64, 0);
+        fixture.add(true, 1, 65, 0);
+        OrderedAssemblyGroup.refreshTopology(item);
+        assertTrue(
+            item.matrixPort()
+                .group()
+                .editable());
+    }
+
+    @Test
+    public void verticalTopologyStillRejectsMixedAxesBranchesItemGapsAndDetachedColumns() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = new ArrayList<>(), fluids = new ArrayList<>();
+        items.add(fixture.add(false, 0, 64, 0));
+        items.add(fixture.add(false, 0, 65, 0));
+        fluids.add(fixture.add(true, 1, 64, 0));
+        fluids.add(fixture.add(true, 2, 64, 0));
+        assertEquals("fluid_column", OrderedAssemblyGroup.topologyFault(items, fluids));
+        fluids.clear();
+        items.add(fixture.add(false, 1, 65, 0));
+        assertEquals("item_column", OrderedAssemblyGroup.topologyFault(items, fluids));
+        items.remove(2);
+        items.set(1, fixture.add(false, 0, 66, 0));
+        assertEquals("item_column", OrderedAssemblyGroup.topologyFault(items, fluids));
+        items.set(1, fixture.add(false, 0, 65, 0));
+        fluids.add(fixture.add(true, 2, 64, 0));
+        fluids.add(fixture.add(true, 2, 65, 0));
+        assertEquals("disconnected_members", OrderedAssemblyGroup.topologyFault(items, fluids));
+    }
+
+    @Test
+    public void aVerticalGroupsUniqueMeEntryOrdersBothTypesAndMultipleEntriesRemainRejected() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> items = new ArrayList<>(), fluids = new ArrayList<>();
+        for (int i = 0; i < 5; i++) items.add(fixture.add(false, 0, 64 + i, 0));
+        for (int i = 0; i < 4; i++) fluids.add(fixture.add(true, 1, 64 + i, 0));
+        OrderedAssemblyGroup.refreshTopology(items.get(0));
+        OrderedAssemblyGroup group = items.get(0)
+            .matrixPort()
+            .group();
+        Graph graph = new Graph(fixture);
+        IGridConnection top = graph.external(items.get(4));
+        assertEquals(1, group.externalConnectionCount());
+        assertSame(
+            items.get(4),
+            group.itemMembers()
+                .get(0));
+        assertSame(
+            fluids.get(3),
+            group.fluidMembers()
+                .get(0));
+        IGridConnection bottom = graph.external(items.get(0));
+        assertEquals(2, group.externalConnectionCount());
+        assertEquals("multiple_external_connections", group.reason());
+        assertSame(
+            items.get(4),
+            group.itemMembers()
+                .get(0));
+        graph.remove(top);
+        assertEquals(1, group.externalConnectionCount());
+        assertSame(
+            items.get(0),
+            group.itemMembers()
+                .get(0));
+        assertSame(
+            fluids.get(0),
+            group.fluidMembers()
+                .get(0));
+        graph.remove(bottom);
+        assertEquals(0, group.externalConnectionCount());
+        assertEquals("no_external_connection", group.reason());
+    }
+
+    @Test
+    public void aVerticalNativeBindingUsesItsActualAlignmentAndStillChecksEveryMemberFront() throws Exception {
+        Fixture fixture = new Fixture();
+        ExtendedFacing alignment = ExtendedFacing.NORTH_CLOCKWISE_NONE;
+        for (int i = 0; i < 5; i++) {
+            MatrixAssemblyMember member = fixture.add(false, 0, 64 + i, 0);
+            field(BaseMetaTileEntity.class, "mFacing")
+                .set(member.getBaseMetaTileEntity(), alignment.getRelativeDownInWorld());
+        }
+        OrderedAssemblyGroup.refreshTopology(fixture.members.get(0));
+        OrderedAssemblyGroup group = fixture.members.get(0)
+            .matrixPort()
+            .group();
+        initializeNativeAssemblyLine(fixture.unsafe);
+        MTEAssemblyLine controller = new MTEAssemblyLine("matrix_vertical_alignment");
+        fixture.attach(controller, 20, 64, 20);
+        field(gregtech.api.metatileentity.implementations.MTEEnhancedMultiBlockBase.class, "mExtendedFacing")
+            .set(controller, alignment);
+        for (MatrixAssemblyMember member : fixture.members) controller.mInputBusses.add((MTEHatchInputBus) member);
+        field(OrderedAssemblyGroup.class, "session").set(group, new NativeAssemblySession(controller));
+        field(OrderedAssemblyGroup.class, "alignment").set(group, alignment);
+        Method check = OrderedAssemblyGroup.class.getDeclaredMethod("checkNativeBinding");
+        check.setAccessible(true);
+        assertTrue((Boolean) check.invoke(group));
+        field(BaseMetaTileEntity.class, "mFacing").set(
+            fixture.members.get(2)
+                .getBaseMetaTileEntity(),
+            ForgeDirection.NORTH);
+        assertFalse((Boolean) check.invoke(group));
+        assertEquals("member_facing", field(OrderedAssemblyGroup.class, "reason").get(group));
+    }
+
+    @Test
     public void topologyInvalidationAndRecoveryNotifyThePatternCatalogueOnlyOnTransitions() throws Exception {
         Fixture fixture = new Fixture();
         List<MatrixAssemblyMember> items = fixture.items(false);
@@ -445,11 +613,11 @@ public class MatrixTopologyTest {
     }
 
     @Test
-    public void verticalColumnsAndSideBranchesNeverFormAGroup() throws Exception {
+    public void verticalColumnsFormButSideBranchesNeverFormAGroup() throws Exception {
         Fixture vertical = new Fixture();
         for (int i = 0; i < 5; i++) vertical.add(false, 0, 64 + i, 0);
         OrderedAssemblyGroup.refreshTopology(vertical.members.get(0));
-        assertNull(
+        assertNotNull(
             vertical.members.get(0)
                 .matrixPort()
                 .group());
@@ -1236,6 +1404,64 @@ public class MatrixTopologyTest {
             source.itemMembers()
                 .get(0)
                 .matrixItem().stackSize);
+    }
+
+    @Test
+    public void mirrorHorizontalVerticalRotationKeepsTheCopiedMemberAndEveryTypedOffsetAndFront() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> sourceItems = fixture.items(false);
+        // Asymmetric typed offsets make the rotation unique even though the copied item is the middle member.
+        MatrixAssemblyMember firstFluid = fixture.add(true, 0, 64, 1);
+        MatrixAssemblyMember secondFluid = fixture.add(true, 3, 64, 1);
+        for (MatrixAssemblyMember member : fixture.members)
+            field(BaseMetaTileEntity.class, "mFacing").set(member.getBaseMetaTileEntity(), ForgeDirection.NORTH);
+        OrderedAssemblyGroup.refreshTopology(sourceItems.get(2));
+        OrderedAssemblyGroup source = sourceItems.get(0)
+            .matrixPort()
+            .group();
+        NBTTagCompound address = sourceItems.get(2)
+            .matrixPort()
+            .copySource();
+        assertEquals(1, address.getInteger("schema"));
+        List<MatrixAssemblyMember> targets = new ArrayList<>();
+        for (int i = 0; i < 5; i++) targets.add(fixture.add(false, 20, 68 + i, 20, i == 2));
+        MatrixAssemblyMember targetFirstFluid = fixture.add(true, 20, 68, 21);
+        MatrixAssemblyMember targetSecondFluid = fixture.add(true, 20, 71, 21);
+        targets.add(targetFirstFluid);
+        targets.add(targetSecondFluid);
+        for (MatrixAssemblyMember member : targets)
+            field(BaseMetaTileEntity.class, "mFacing").set(member.getBaseMetaTileEntity(), ForgeDirection.NORTH);
+        MatrixAssemblyMember anchor = targets.get(2);
+        OrderedAssemblyGroup.refreshTopology(anchor);
+        OrderedAssemblyGroup destination = anchor.matrixPort()
+            .group();
+        assertNotNull(destination);
+        MatrixMirrorLink link = new MatrixMirrorLink(address);
+        Map<MatrixAssemblyMember, MatrixAssemblyMember> mapping = link.mapping(source, destination, anchor);
+        assertNotNull(mapping);
+        for (int i = 0; i < 5; i++) assertSame(sourceItems.get(i), mapping.get(targets.get(i)));
+        assertSame(firstFluid, mapping.get(targetFirstFluid));
+        assertSame(secondFluid, mapping.get(targetSecondFluid));
+        Map<MatrixAssemblyMember, MatrixAssemblyMember> reverse = MatrixMirrorLink.mapPositions(
+            destination.physicalMembers(),
+            source.physicalMembers(),
+            new int[] { 20, 70, 20 },
+            new int[] { 2, 64, 0 });
+        assertNotNull(reverse);
+        for (Map.Entry<MatrixAssemblyMember, MatrixAssemblyMember> pair : mapping.entrySet())
+            assertSame(pair.getKey(), reverse.get(pair.getValue()));
+        assertTrue(
+            anchor.matrixPort()
+                .bindMirror(address));
+        assertEquals(
+            address,
+            anchor.matrixPort()
+                .mirrorLink()
+                .save());
+        field(BaseMetaTileEntity.class, "mFacing").set(targetFirstFluid.getBaseMetaTileEntity(), ForgeDirection.EAST);
+        assertNull(link.mapping(source, destination, anchor));
+        field(BaseMetaTileEntity.class, "mFacing").set(targetFirstFluid.getBaseMetaTileEntity(), ForgeDirection.NORTH);
+        assertNull(link.mapping(source, destination, targets.get(1)));
     }
 
     @Test

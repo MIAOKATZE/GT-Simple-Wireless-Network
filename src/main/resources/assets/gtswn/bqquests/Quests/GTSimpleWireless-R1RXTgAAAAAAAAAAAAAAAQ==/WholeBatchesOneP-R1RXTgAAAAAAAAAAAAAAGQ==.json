@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lShared processing patterns§r\nAn ordinary group shares §136§r ME processing-pattern slots. Encode inputs in native recipe order, then manage patterns through any member or an ME Interface Terminal. Several patterns may be installed, but the group has only §1one active pattern§r at a time.\n\n§3§lComplete batches only§r\nEach physical member buffers §1one resource type§r, up to §12,147,483,647§r items or liters. Deliveries must contain complete batches of the active pattern, with every input position holding the same whole number of batches. A conflicting resource or capacity overflow rejects the whole delivery.\n\n§3§lRepeated resources keep their positions§r\nFor one unit at each position §1A / B / B / C§r per batch, ten batches fill four members as §110A / 10B / 10B / 10C§r. The two B positions stay separate; they do not merge into one 20B position. Provide enough physical item and fluid positions for the pattern.\n\n§3§lWhen can another pattern run?§r\nDuring processing, the group can accept more complete batches of the §1same pattern§r. It can switch patterns only after §1all buffers are empty and all processing has finished§r. Finish existing work and handle leftovers before moving members or changing the ordering entry. Understand these rules, then tick this quest.",
+      "desc:8": "The whole group shares 36 processing pattern slots. Each compartment buffers one material at its own position and accepts complete batches.\n\nProcess one pattern at a time. Switch to another only after processing has finished and all remaining materials have been cleared.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -20,7 +20,7 @@
       "isMain:1": 0,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
-      "name:8": "§d§lWhole Batches, One Pattern",
+      "name:8": "§d§lPatterns and Buffers",
       "questLogic:8": "AND",
       "repeatTime:3": -1,
       "simultaneous:1": 0,

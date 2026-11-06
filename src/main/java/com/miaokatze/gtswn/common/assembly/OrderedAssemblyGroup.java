@@ -1011,8 +1011,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (session == null || !NativeAssemblyAdapter.isLive(session.controller())) return false;
         if (session.controller()
             .getExtendedFacing() != alignment) return reject("topology_changed");
-        ForgeDirection axis = NativeAssemblyGeometry.lengthAxis(alignment);
-        if (axis.offsetY != 0) return reject("item_column");
         if (!session.controller().mInputBusses.equals(items) || !session.controller().mInputHatches.equals(fluids))
             return reject("mixed_inputs");
         for (MatrixAssemblyMember member : members) {
@@ -1039,7 +1037,8 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (fluids.size() > 4) return "fluid_column";
         int[][] itemPositions = sortedPositions(items), fluidPositions = sortedPositions(fluids);
         int[][] longest = itemPositions.length >= 2 ? itemPositions : fluidPositions;
-        ForgeDirection axis = longest[0][0] != longest[1][0] ? ForgeDirection.EAST : ForgeDirection.SOUTH;
+        ForgeDirection axis = longest[0][0] != longest[1][0] ? ForgeDirection.EAST
+            : longest[0][1] != longest[1][1] ? ForgeDirection.UP : ForgeDirection.SOUTH;
         if (itemPositions.length != 0 && !NativeAssemblyGeometry.isOrderedColumn(itemPositions, axis, 1, true))
             return "item_column";
         if (fluidPositions.length != 0 && !NativeAssemblyGeometry.isOrderedColumn(fluidPositions, axis, 1, false))

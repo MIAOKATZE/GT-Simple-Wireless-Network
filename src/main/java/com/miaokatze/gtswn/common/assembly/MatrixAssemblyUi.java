@@ -63,22 +63,17 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
     static String[] description(boolean fluid, boolean mirror) {
         String type = fluid ? "fluid" : "item";
-        if (mirror) return new String[] { tr("gtswn.matrix.description.mirror"),
-            StatCollector.translateToLocalFormatted(
-                "gtswn.matrix.description.tier",
-                GTValues.TIER_COLORS[6] + GTValues.VN[6] + EnumChatFormatting.RESET),
-            "", tr("gtswn.matrix.description.mirror_storage"), tr("gtswn.matrix.description.column"),
-            tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.mirror_layout"), "",
-            tr("gtswn.matrix.description.mirror_binding"), tr("gtswn.matrix.description.mirror_gui"), "",
+        String tier = StatCollector.translateToLocalFormatted(
+            "gtswn.matrix.description.tier",
+            GTValues.TIER_COLORS[6] + GTValues.VN[6] + EnumChatFormatting.RESET);
+        if (mirror)
+            return new String[] { tr("gtswn.matrix.description.mirror"), tr("gtswn.matrix.description.mirror_storage"),
+                "", tr("gtswn.matrix.description.mirror_layout"), tr("gtswn.matrix.description.mirror_binding"),
+                tr("gtswn.matrix.description.mirror_requirements"), tier, "", DeviceTooltip.addedByLine() };
+        return new String[] { tr("gtswn.matrix.description." + type), tr("gtswn.matrix.description.general"), "",
+            tr("gtswn.matrix.description.column"), tr("gtswn.matrix.description.me"),
+            tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.gui"), tier, "",
             DeviceTooltip.addedByLine() };
-        return new String[] { tr("gtswn.matrix.description." + type),
-            StatCollector.translateToLocalFormatted(
-                "gtswn.matrix.description.tier",
-                GTValues.TIER_COLORS[6] + GTValues.VN[6] + EnumChatFormatting.RESET),
-            "", tr("gtswn.matrix.description.pattern"), tr("gtswn.matrix.description.storage." + type),
-            tr("gtswn.matrix.description.blocking"), tr("gtswn.matrix.description.column"),
-            tr("gtswn.matrix.description.fluids"), "", tr("gtswn.matrix.description.me"),
-            tr("gtswn.matrix.description.gui"), "", DeviceTooltip.addedByLine() };
     }
 
     private static String tr(String key) {
