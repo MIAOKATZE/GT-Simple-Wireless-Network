@@ -68,7 +68,7 @@ public class TerminalWheelGeometryTest {
     }
 
     @Test
-    public void radialGapsAndOuterButtonDividerNeverActivate() {
+    public void legacyRadialGapsStayEmptyAndOuterButtonsMeetAtClickableDivider() {
         for (int index = 0; index < 8; index++) {
             double angle = TerminalWheelGeometry.angle(index);
             double[] radii = { 0, TerminalWheelGeometry.inner(3) - 0.1,
@@ -77,8 +77,11 @@ public class TerminalWheelGeometryTest {
             for (double radius : radii) for (int zone = 0; zone < 4; zone++) assertFalse(
                 TerminalWheelGeometry.contains(index, zone, Math.cos(angle) * radius, Math.sin(angle) * radius));
             double radius = TerminalWheelGeometry.centerRadius(1);
-            assertFalse(TerminalWheelGeometry.contains(index, 1, Math.cos(angle) * radius, Math.sin(angle) * radius));
-            assertFalse(TerminalWheelGeometry.contains(index, 2, Math.cos(angle) * radius, Math.sin(angle) * radius));
+            int hits = 0;
+            for (int zone : new int[] { 1, 2 })
+                if (TerminalWheelGeometry.contains(index, zone, Math.cos(angle) * radius, Math.sin(angle) * radius))
+                    hits++;
+            assertEquals(1, hits);
             assertTrue(TerminalWheelGeometry.contains(index, 0, Math.cos(angle) * 94, Math.sin(angle) * 94));
         }
     }
