@@ -63,7 +63,11 @@ public final class TerminalWheelGeometry {
 
     /** The same angular and radial boundaries are used by drawing and all 32 MUI2 widgets. */
     public static boolean contains(int index, int zone, double x, double y) {
-        if (sector(x, y, inner(zone), outer(zone)) != index) return false;
+        return contains(index, zone, x, y, inner(zone), outer(zone));
+    }
+
+    public static boolean contains(int index, int zone, double x, double y, double innerRadius, double outerRadius) {
+        if (sector(x, y, innerRadius, outerRadius) != index) return false;
         double offset = Math.atan2(y, x) - angle(index);
         offset = Math.atan2(Math.sin(offset), Math.cos(offset));
         return (zone != OUTER_FIRST || offset <= -HALF_GAP) && (zone != OUTER_SECOND || offset >= HALF_GAP);
