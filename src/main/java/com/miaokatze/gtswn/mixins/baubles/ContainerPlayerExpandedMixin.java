@@ -9,9 +9,11 @@ import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import com.miaokatze.gtswn.common.baubles.TerminalBaubleLayout;
+import com.miaokatze.gtswn.common.baubles.TerminalBaubleSlotPolicy;
 
 import baubles.api.expanded.BaubleExpandedSlots;
 import baubles.common.BaublesConfig;
@@ -36,6 +38,20 @@ public abstract class ContainerPlayerExpandedMixin {
 
     @Unique
     private float gtswn$scroll;
+
+    @ModifyArg(
+        method = "<init>",
+        at = @At(
+            value = "INVOKE",
+            target = "Lbaubles/common/container/SlotBauble;<init>(Lnet/minecraft/inventory/IInventory;Ljava/lang/String;III)V"),
+        index = 2,
+        remap = false)
+    private int gtswn$inventoryIndex(int visibleOrdinal) {
+        return TerminalBaubleSlotPolicy.inventoryIndex(
+            visibleOrdinal,
+            BaubleExpandedSlots.getCurrentSlotAssignments(),
+            BaublesConfig.showUnusedSlots);
+    }
 
     @Inject(method = "<init>", at = @At("RETURN"), remap = false)
     private void gtswn$layoutTerminals(InventoryPlayer inventory, boolean local, EntityPlayer player, CallbackInfo ci) {

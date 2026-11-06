@@ -13,6 +13,7 @@ import io.netty.buffer.ByteBuf;
 public final class PacketTerminalBaubleState implements IMessage {
 
     public static final int OPEN_MONITOR = 0, OPEN_DEVICE = 1, EQUIPPED_HINT = 2, SESSION = 3;
+    public static final int OPEN_HUD_SETTINGS = 4;
     public int action = -1, selection, heldSlot = -1;
     public ItemStack stack;
 
@@ -38,9 +39,9 @@ public final class PacketTerminalBaubleState implements IMessage {
         try {
             if (buffer.readableBytes() < 3) return;
             int candidate = buffer.readUnsignedByte(), selected = buffer.readUnsignedByte(), held = buffer.readByte();
-            if (candidate > SESSION || selected >= 8 || held < -1 || held > 8) return;
+            if (candidate > OPEN_HUD_SETTINGS || selected >= 8 || held < -1 || held > 8) return;
             ItemStack received = ByteBufUtils.readItemStack(buffer);
-            if (candidate <= OPEN_DEVICE && received == null) return;
+            if ((candidate <= OPEN_DEVICE || candidate == OPEN_HUD_SETTINGS) && received == null) return;
             selection = selected;
             heldSlot = held;
             stack = received;

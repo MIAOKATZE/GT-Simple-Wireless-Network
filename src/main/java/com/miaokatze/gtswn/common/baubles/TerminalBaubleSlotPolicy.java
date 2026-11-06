@@ -15,6 +15,17 @@ public final class TerminalBaubleSlotPolicy {
         return null;
     }
 
+    /** Hidden unknown cells still occupy inventory indices, although they have no visible container slot. */
+    public static int inventoryIndex(int visibleOrdinal, String[] assignments, boolean showUnusedSlots) {
+        if (showUnusedSlots || visibleOrdinal < 0) return visibleOrdinal;
+        int visible = 0;
+        for (int index = 0; index < assignments.length; index++) {
+            if ("unknown".equals(assignments[index])) continue;
+            if (visible++ == visibleOrdinal) return index;
+        }
+        return visibleOrdinal;
+    }
+
     /** Preserve manual slot order and append only missing terminal capacity. */
     public static String[] withRequiredSlots(String[] assignments) {
         String[] required = { "gtswn_monitor", "gtswn_link", "gtswn_device", "gtswn_quantum" };

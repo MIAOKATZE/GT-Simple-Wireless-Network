@@ -1,6 +1,8 @@
 package com.miaokatze.gtswn.client;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import org.junit.Test;
 
@@ -37,6 +39,50 @@ public class TerminalWheelGeometryTest {
         for (int expected = 1; expected <= 8; expected++) {
             index = TerminalWheelGeometry.next(index);
             assertEquals(expected % 8, index);
+        }
+    }
+
+    @Test
+    public void allThirtyTwoButtonCentersHaveExactlyOneHit() {
+        for (int index = 0; index < 8; index++) for (int zone = 0; zone < 4; zone++) {
+            double angle = TerminalWheelGeometry.centerAngle(index, zone);
+            double radius = TerminalWheelGeometry.centerRadius(zone);
+            double x = Math.cos(angle) * radius, y = Math.sin(angle) * radius;
+            int hits = 0;
+            for (int candidate = 0; candidate < 8; candidate++) for (int region = 0; region < 4; region++)
+                if (TerminalWheelGeometry.contains(candidate, region, x, y)) {
+                    assertEquals(index, candidate);
+                    assertEquals(zone, region);
+                    hits++;
+                }
+            assertEquals(1, hits);
+        }
+    }
+
+    @Test
+    public void auxiliaryBandsAreEightPercentWiderWithinOriginalOutline() {
+        double thickness = 32 * 1.08 * 136 / 331;
+        assertEquals(thickness, TerminalWheelGeometry.outer(3) - TerminalWheelGeometry.inner(3), 0.000001);
+        assertEquals(thickness, TerminalWheelGeometry.outer(1) - TerminalWheelGeometry.inner(1), 0.000001);
+        assertEquals(136, TerminalWheelGeometry.outer(1), 0);
+    }
+
+    @Test
+    public void legacyRadialGapsStayEmptyAndOuterButtonsMeetAtClickableDivider() {
+        for (int index = 0; index < 8; index++) {
+            double angle = TerminalWheelGeometry.angle(index);
+            double[] radii = { 0, TerminalWheelGeometry.inner(3) - 0.1,
+                (TerminalWheelGeometry.outer(3) + TerminalWheelGeometry.inner(0)) / 2,
+                (TerminalWheelGeometry.outer(0) + TerminalWheelGeometry.inner(1)) / 2, 136.1 };
+            for (double radius : radii) for (int zone = 0; zone < 4; zone++) assertFalse(
+                TerminalWheelGeometry.contains(index, zone, Math.cos(angle) * radius, Math.sin(angle) * radius));
+            double radius = TerminalWheelGeometry.centerRadius(1);
+            int hits = 0;
+            for (int zone : new int[] { 1, 2 })
+                if (TerminalWheelGeometry.contains(index, zone, Math.cos(angle) * radius, Math.sin(angle) * radius))
+                    hits++;
+            assertEquals(1, hits);
+            assertTrue(TerminalWheelGeometry.contains(index, 0, Math.cos(angle) * 94, Math.sin(angle) * 94));
         }
     }
 

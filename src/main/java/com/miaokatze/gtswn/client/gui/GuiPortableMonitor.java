@@ -62,8 +62,13 @@ public final class GuiPortableMonitor extends GtswnMuiScreen {
     private String pendingRemoval;
 
     public GuiPortableMonitor(ItemStack stack) {
+        this(stack, false);
+    }
+
+    public GuiPortableMonitor(ItemStack stack, boolean settings) {
         super("portable_monitor", 640, 420);
         this.stack = stack;
+        this.settings = settings;
         getMainPanel().child(content);
         buildPanel();
     }

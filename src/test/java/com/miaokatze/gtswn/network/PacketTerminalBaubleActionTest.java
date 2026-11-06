@@ -51,11 +51,15 @@ public class PacketTerminalBaubleActionTest {
 
     @Test
     public void selectAndForcedTakeRoundTripEverySectorAndRejectMissingSector() {
-        for (int action : new int[] { PacketTerminalBaubleAction.SELECT, PacketTerminalBaubleAction.TAKE }) {
+        for (int action : new int[] { PacketTerminalBaubleAction.SELECT, PacketTerminalBaubleAction.TAKE,
+            PacketTerminalBaubleAction.WHEEL_OPEN, PacketTerminalBaubleAction.WHEEL_OUTER_FIRST,
+            PacketTerminalBaubleAction.WHEEL_OUTER_SECOND, PacketTerminalBaubleAction.WHEEL_INNER,
+            PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE, PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE }) {
             for (int sector = 0; sector < 8; sector++) {
                 ByteBuf bytes = Unpooled.buffer();
                 try {
                     new PacketTerminalBaubleAction(action, sector).toBytes(bytes);
+                    assertEquals(2, bytes.readableBytes());
                     PacketTerminalBaubleAction decoded = new PacketTerminalBaubleAction();
                     decoded.fromBytes(bytes);
                     assertEquals(action, decoded.action);
@@ -78,7 +82,7 @@ public class PacketTerminalBaubleActionTest {
                 }
             }
         }
-        assertFalse(PacketTerminalBaubleAction.isValid(4, 0));
+        assertFalse(PacketTerminalBaubleAction.isValid(10, 0));
         assertFalse(PacketTerminalBaubleAction.isValid(-1, 0));
     }
 }

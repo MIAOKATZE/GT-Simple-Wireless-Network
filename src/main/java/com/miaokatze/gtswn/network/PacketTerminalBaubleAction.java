@@ -10,6 +10,8 @@ import io.netty.buffer.ByteBuf;
 public final class PacketTerminalBaubleAction implements IMessage {
 
     public static final int EQUIP = 0, SELECT = 1, RETURN = 2, TAKE = 3;
+    public static final int WHEEL_OPEN = 4, WHEEL_OUTER_FIRST = 5, WHEEL_OUTER_SECOND = 6, WHEEL_INNER = 7;
+    public static final int WHEEL_BEGIN_CHARGE = 8, WHEEL_CANCEL_CHARGE = 9;
     public int action = -1, selection = -1;
 
     public PacketTerminalBaubleAction() {}
@@ -36,8 +38,8 @@ public final class PacketTerminalBaubleAction implements IMessage {
     }
 
     public static boolean isValid(int action, int selection) {
-        if (action < EQUIP || action > TAKE) return false;
-        if (action == SELECT || action == TAKE) return selection >= 0 && selection < TerminalBaubles.SIZE;
+        if (action < EQUIP || action > WHEEL_CANCEL_CHARGE) return false;
+        if (action != EQUIP && action != RETURN) return selection >= 0 && selection < TerminalBaubles.SIZE;
         return selection >= -1 && selection < TerminalBaubles.SIZE;
     }
 

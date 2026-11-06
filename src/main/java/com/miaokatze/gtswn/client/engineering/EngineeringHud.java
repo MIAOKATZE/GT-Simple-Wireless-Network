@@ -244,6 +244,16 @@ public final class EngineeringHud extends Gui {
         }
     }
 
+    /** An explicit wheel entry must keep an already visible node graph open. */
+    public static void showTerminalNodes(int slot) {
+        if (slot != 1 && (slot < 3 || slot > 7)) return;
+        Source source = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
+        if (!source.present()) return;
+        activateTerminal(slot);
+        showNodes = true;
+        FactoryDisplayPreferences.put(FactoryDisplayPreferences.nodes(slot), true);
+    }
+
     static void activateData(int slot) {
         Source source = EngineeringTerminalSources.resolve(Minecraft.getMinecraft().thePlayer, slot);
         if (!source.present()) return;

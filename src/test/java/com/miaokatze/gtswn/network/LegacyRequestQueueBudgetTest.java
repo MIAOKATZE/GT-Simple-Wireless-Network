@@ -41,6 +41,12 @@ public class LegacyRequestQueueBudgetTest {
             : (Collection<?>) field(PlayerRequestQueue.class, pending, "pending");
     }
 
+    private static Object firstPlayer(Class<?> queue) throws Exception {
+        Object first = pending(queue).iterator()
+            .next();
+        return first instanceof EntityPlayerMP ? first : field(first.getClass(), first, "player");
+    }
+
     private static void call(Class<?> owner, String name) throws Exception {
         Method method = owner.getDeclaredMethod(name);
         method.setAccessible(true);
@@ -83,10 +89,7 @@ public class LegacyRequestQueueBudgetTest {
             while (processed < players.size()) {
                 call(queue, "drain");
                 processed = Math.min(300, processed + budget);
-                if (processed < 300) assertSame(
-                    players.get(processed),
-                    pending(queue).iterator()
-                        .next());
+                if (processed < 300) assertSame(players.get(processed), firstPlayer(queue));
                 // A sender starts its next burst as soon as its previous request is consumed.
                 for (int repeat = 0; repeat < 1000; repeat++) enqueue(queue, players.get(0));
             }
@@ -107,10 +110,7 @@ public class LegacyRequestQueueBudgetTest {
             queue.getMethod("onLogout", PlayerEvent.PlayerLoggedOutEvent.class)
                 .invoke(ctor.newInstance(), new PlayerEvent.PlayerLoggedOutEvent(old));
             assertEquals(1, pending(queue).size());
-            assertSame(
-                replacement,
-                pending(queue).iterator()
-                    .next());
+            assertSame(replacement, firstPlayer(queue));
             call(queue, "clearServerState");
             assertTrue(pending(queue).isEmpty());
             enqueue(queue, replacement);

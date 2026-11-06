@@ -1,11 +1,13 @@
 package com.miaokatze.gtswn.client.gui;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.renderer.Tessellator;
 import net.minecraft.item.ItemStack;
+import net.minecraft.util.ResourceLocation;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
@@ -13,6 +15,7 @@ import org.lwjgl.opengl.GL11;
 import com.cleanroommc.modularui.api.drawable.IDrawable;
 import com.cleanroommc.modularui.api.layout.IViewportStack;
 import com.cleanroommc.modularui.api.widget.Interactable;
+import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.viewport.ModularGuiContext;
 import com.cleanroommc.modularui.theme.WidgetThemeEntry;
 import com.cleanroommc.modularui.widget.Widget;
@@ -21,20 +24,16 @@ import com.miaokatze.gtswn.client.TerminalKeyNames;
 import com.miaokatze.gtswn.client.TerminalWheelGeometry;
 import com.miaokatze.gtswn.client.TerminalWheelHold;
 import com.miaokatze.gtswn.client.TerminalWheelInput;
+import com.miaokatze.gtswn.client.TerminalWheelLayout;
 import com.miaokatze.gtswn.client.engineering.EngineeringModeController;
 import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
-import com.miaokatze.gtswn.common.quantum.QuantumNetworkColor;
 
-/** Eight real annular hit regions, with the same framework transform for painting and input. */
+/** Thirty-two real annular MUI2 regions sharing their drawing and transformed input geometry. */
 public final class GuiTerminalWheel extends GtswnMuiScreen {
 
-    private static final int WIDTH = 384;
-    private static final int HEIGHT = 365;
-    private static final int CENTER_X = WIDTH / 2;
-    private static final int CENTER_Y = 218;
-    private static final int INNER = 49;
-    private static final int OUTER = 136;
+    private TerminalWheelLayout layout = new TerminalWheelLayout(384, 365, false);
+    private final List<Widget<?>> engineeringControls = new ArrayList<>();
     private final ItemStack[] terminals;
     private final ItemStack[] placeholders = new ItemStack[8];
     private int selected;
@@ -44,27 +43,26 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     private final boolean engineering = EngineeringModeController.isActive();
 
     public GuiTerminalWheel() {
-        super("terminal_wheel", WIDTH, HEIGHT);
+        super(
+            new ModularPanel("terminal_wheel").sizeRel(1f)
+                .pos(0, 0)
+                .background(IDrawable.EMPTY));
         terminals = TerminalBaubles.terminals(mc.thePlayer);
         for (int i = 0; i < 8; i++) placeholders[i] = TerminalPresentation.placeholder(i);
         getMainPanel().background(IDrawable.EMPTY);
         getMainPanel().child(
-            GtswnMuiWidgets.canvas(
-                "wheel_backdrop",
-                0,
-                0,
-                WIDTH,
-                HEIGHT,
-                (context, mouseX, mouseY, partialTicks) -> drawBackdrop()));
-        for (int i = 0; i < 8; i++) {
+            GtswnMuiWidgets
+                .canvas("wheel_backdrop", 0, 0, 1, 1, (context, mouseX, mouseY, partialTicks) -> drawBackdrop())
+                .sizeRel(1f));
+        for (int i = 0; i < 8; i++) for (int zone = 0; zone < 4; zone++) {
             getMainPanel().child(
-                new Sector(i).name("terminal_sector_" + i)
+                new Sector(i, zone).name("terminal_sector_" + i + "_" + zone)
                     .pos(0, 0)
-                    .size(WIDTH, HEIGHT)
+                    .sizeRel(1f)
                     .background(IDrawable.EMPTY));
         }
         if (engineering) {
-            getMainPanel().child(
+            addEngineeringControl(
                 GtswnMuiWidgets.button(
                     "engineering_follow",
                     () -> GuiEngineeringTools.tr(EngineeringModeController.INSTANCE.following() ? "following" : "free"),
@@ -76,24 +74,40 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
                         closeWheel();
                         EngineeringModeController.INSTANCE.toggleFollowing();
                     }));
-            getMainPanel().child(
+            addEngineeringControl(
                 GtswnMuiWidgets.button("engineering_return", GuiEngineeringTools.tr("return"), 106, 56, 84, 20, () -> {
                     closeWheel();
                     EngineeringModeController.INSTANCE.returnToPlayer();
                 }));
-            getMainPanel().child(
+            addEngineeringControl(
                 GtswnMuiWidgets
                     .button("engineering_camera", GuiEngineeringTools.tr("dash.camera"), 196, 56, 84, 20, () -> {
                         closeWheel();
                         EngineeringModeController.INSTANCE.toggleCameraPanel();
                     }));
-            getMainPanel().child(
+            addEngineeringControl(
                 GtswnMuiWidgets
                     .button("engineering_exit", GuiEngineeringTools.tr("tools.exit"), 286, 56, 82, 20, () -> {
                         closeWheel();
                         EngineeringModeController.close();
                     }));
         }
+    }
+
+    private void addEngineeringControl(Widget<?> button) {
+        engineeringControls.add(button);
+        getMainPanel().child(button);
+    }
+
+    @Override
+    public void onResize(int width, int height) {
+        layout = new TerminalWheelLayout(width, height, engineering);
+        int buttonWidth = Math.min(84, Math.max(1, (width - 30) / 4));
+        int left = (width - buttonWidth * 4 - 18) / 2;
+        for (int i = 0; i < engineeringControls.size(); i++) engineeringControls.get(i)
+            .pos(left + i * (buttonWidth + 6), layout.controlsTop)
+            .size(buttonWidth, 20);
+        super.onResize(width, height);
     }
 
     @Override
@@ -118,6 +132,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
         applyHoldAction(hold.tick(TerminalBaubleController.bindingDown(TerminalBaubleController.keyCode())));
         ItemStack[] current = TerminalBaubles.terminals(mc.thePlayer);
         System.arraycopy(current, 0, terminals, 0, terminals.length);
+
     }
 
     @Override
@@ -171,8 +186,9 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
 
     private void applyHoldAction(int action) {
         if (action == TerminalWheelHold.TAKE) confirm(selected, true);
-        else if (action == TerminalWheelHold.CYCLE) selected = TerminalWheelGeometry.next(selected);
-        else if (action == TerminalWheelHold.CONFIRM) confirm(selected, false);
+        else if (action == TerminalWheelHold.CYCLE) {
+            selected = TerminalWheelGeometry.next(selected);
+        } else if (action == TerminalWheelHold.CONFIRM) confirm(selected, false);
     }
 
     private void confirm(int index, boolean take) {
@@ -180,7 +196,19 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
         closeWheel();
         if (take) TerminalBaubleController.take(index);
         else if (engineering) com.miaokatze.gtswn.client.engineering.EngineeringHud.activateTerminal(index);
-        else TerminalBaubleController.select(index);
+        else TerminalBaubleController.wheelAction(index, TerminalWheelGeometry.MAIN);
+    }
+
+    private void activate(int index, int zone) {
+        if (terminals[index] == null) return;
+        closeWheel();
+        if (zone == TerminalWheelGeometry.MAIN && engineering)
+            com.miaokatze.gtswn.client.engineering.EngineeringHud.activateTerminal(index);
+        else if (index >= 3 && zone == TerminalWheelGeometry.INNER) {
+            EngineeringModeController.open();
+            if (EngineeringModeController.isActive())
+                com.miaokatze.gtswn.client.engineering.EngineeringHud.showTerminalNodes(index);
+        } else TerminalBaubleController.wheelAction(index, zone);
     }
 
     private void closeWheel() {
@@ -189,7 +217,12 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     }
 
     private void drawBackdrop() {
-        Gui.drawRect(6, 10, WIDTH - 6, 46, 0xA8101010);
+        Gui.drawRect(
+            layout.helpLeft,
+            layout.helpTop,
+            layout.helpLeft + layout.helpWidth,
+            layout.helpTop + 36,
+            0xA8101010);
         String key = TerminalBaubleController.keyName();
         String inventory = TerminalKeyNames.name(mc.gameSettings.keyBindInventory.getKeyCode());
         helpLine(
@@ -197,7 +230,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
                 TerminalBaubleController.action(key, "cycle"),
                 TerminalBaubleController.action(key, "hold_confirm"),
                 TerminalBaubleController.action(TerminalKeyNames.name(-100), "select")),
-            17);
+            layout.helpTop + 7);
         helpLine(
             TerminalBaubleController.row(
                 TerminalBaubleController.action("Shift+" + key, "take"),
@@ -205,43 +238,49 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
                     TerminalKeyNames.name(Keyboard.KEY_SPACE) + "/" + TerminalKeyNames.name(Keyboard.KEY_RETURN),
                     "confirm"),
                 TerminalBaubleController.action(inventory + "/Esc", "exit")),
-            31);
-        annulus(0, Math.PI * 2, 0, INNER - 5, 0xF017202A);
-        annulus(0, Math.PI * 2, INNER - 7, INNER - 5, 0xFF92703D);
+            layout.helpTop + 21);
+        annulus(0, Math.PI * 2, 0, layout.centerDiscRadius(), 0xF017202A);
+        annulus(0, Math.PI * 2, layout.centerDiscRadius() - 2, layout.centerDiscRadius(), 0xFF92703D);
+        if (layout.centerDiscRadius() < 24) return;
         ItemStack stack = stack(selected);
-        drawName(stack.getDisplayName(), CENTER_X, CENTER_Y - 19, 85, GtswnMuiTheme.TEXT_TITLE);
-        center(
+        drawName(
+            stack.getDisplayName(),
+            layout.centerX,
+            layout.centerY - 19,
+            Math.max(20, (int) (layout.centerDiscRadius() * 1.65)),
+            GtswnMuiTheme.TEXT_TITLE);
+        if (layout.centerDiscRadius() >= 40 || terminals[selected] != null && hold.progress() <= 0) center(
             TerminalBaubleController.text("gtswn.terminal_wheel.slot", selected + 1),
-            CENTER_X,
-            CENTER_Y + 11,
+            layout.centerX,
+            layout.centerY + 11,
             GtswnMuiTheme.TEXT_MUTED);
-        if (engineering && terminals[selected] != null)
-            drawName(identity(terminals[selected], selected), CENTER_X, CENTER_Y + 24, 88, GtswnMuiTheme.TEXT_MUTED);
+        int statusY = layout.centerY + (layout.centerDiscRadius() >= 40 ? 25 : 11);
         if (terminals[selected] == null) center(
             TerminalBaubleController.text("gtswn.terminal_wheel.empty"),
-            CENTER_X,
-            CENTER_Y + 25,
+            layout.centerX,
+            statusY,
             GtswnMuiTheme.TEXT_MUTED);
         else if (hold.progress() > 0) {
+            float progress = hold.progress();
             annulus(
                 -Math.PI / 2,
-                -Math.PI / 2 + Math.PI * 2 * hold.progress(),
-                INNER - 10,
-                INNER - 7,
+                -Math.PI / 2 + Math.PI * 2 * progress,
+                layout.centerDiscRadius() - 5,
+                layout.centerDiscRadius() - 2,
                 GtswnMuiTheme.TEXT_ACCENT);
             center(
-                TerminalBaubleController.text("gtswn.terminal_wheel.hold_progress", Math.round(hold.progress() * 100)),
-                CENTER_X,
-                CENTER_Y + 25,
+                TerminalBaubleController.text("gtswn.terminal_wheel.hold_progress", Math.round(progress * 100)),
+                layout.centerX,
+                statusY,
                 GtswnMuiTheme.TEXT_ACCENT);
         }
     }
 
     private void helpLine(String text, int y) {
-        float scale = Math.min(1f, (WIDTH - 24f) / Math.max(1, fontRendererObj.getStringWidth(text)));
+        float scale = Math.min(1f, layout.helpTextWidth / Math.max(1, fontRendererObj.getStringWidth(text)));
         GL11.glPushMatrix();
         try {
-            GL11.glTranslatef(CENTER_X, y, 0);
+            GL11.glTranslatef(layout.centerX, y, 0);
             GL11.glScalef(scale, scale, 1);
             center(text, 0, 0, GtswnMuiTheme.TEXT_BODY);
         } finally {
@@ -287,8 +326,8 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
         for (int part = 0; part <= steps; part++) {
             double angle = start + (end - start) * part / steps;
             double cos = Math.cos(angle), sin = Math.sin(angle);
-            tess.addVertex(CENTER_X + cos * outer, CENTER_Y + sin * outer, 0);
-            tess.addVertex(CENTER_X + cos * inner, CENTER_Y + sin * inner, 0);
+            tess.addVertex(layout.centerX + cos * outer, layout.centerY + sin * outer, 0);
+            tess.addVertex(layout.centerX + cos * inner, layout.centerY + sin * inner, 0);
         }
         tess.draw();
         GL11.glEnable(GL11.GL_TEXTURE_2D);
@@ -296,23 +335,66 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     }
 
     private void drawIcon(ItemStack stack, int x, int y, boolean present) {
-        TerminalPresentation.drawIcon(mc, fontRendererObj, stack, x - 12, y - 12, present, 24);
+        int size = layout.mainIconSize;
+        TerminalPresentation.drawIcon(mc, fontRendererObj, stack, x - size / 2, y - size / 2, present, size);
+    }
+
+    private static String actionName(int index, int zone) {
+        String[][] actions = { { "monitor", "take", "hud", "settings" }, { "link", "energy", "dynamo", "reveal" },
+            { "device", "take", "scan", "visual" }, { "quantum", "take", "reveal", "nodes" } };
+        return actions[Math.min(index, 3)][zone];
+    }
+
+    private static String iconName(String action) {
+        if ("take".equals(action)) return "export";
+        if ("settings".equals(action)) return "settings";
+        if ("nodes".equals(action)) return "world";
+        if ("visual".equals(action)) return "box-select";
+        if ("energy".equals(action) || "dynamo".equals(action) || "scan".equals(action)) return action;
+        return "visible";
+    }
+
+    private static String trAction(String action, String suffix) {
+        return TerminalBaubleController.text("gtswn.terminal_wheel.action." + action + suffix);
     }
 
     private final class Sector extends Widget<Sector> implements Interactable {
 
         private final int index;
+        private final int zone;
+        private final String action;
+        private final ResourceLocation[] icons = new ResourceLocation[4];
 
-        private Sector(int index) {
+        private Sector(int index, int zone) {
             this.index = index;
+            this.zone = zone;
+            this.action = actionName(index, zone);
+            String[] states = { "normal", "hover", "active", "disabled" };
+            for (int i = 0; i < states.length; i++) icons[i] = new ResourceLocation(
+                "gtswn",
+                "textures/gui/terminal_wheel/" + iconName(action) + "_" + states[i] + ".png");
             tooltipDynamic(tooltip -> {
-                tooltip.add(stack(index).getDisplayName())
-                    .newLine();
-                tooltip.add(TerminalBaubleController.text("gtswn.terminal_wheel.slot", index + 1));
-                if (terminals[index] != null) tooltip.newLine()
-                    .add(identity(terminals[index], index));
+                tooltip.add(trAction(action, ""))
+                    .newLine()
+                    .add(trAction(action, ".desc"));
+                tooltip.newLine()
+                    .add(stack(index).getDisplayName());
+                tooltip.newLine()
+                    .add(TerminalBaubleController.text("gtswn.terminal_wheel.slot", index + 1));
                 if (terminals[index] == null) tooltip.newLine()
-                    .add(TerminalBaubleController.text("gtswn.terminal_wheel.empty"));
+                    .add(TerminalBaubleController.text("gtswn.terminal_wheel.missing"));
+                else {
+                    tooltip.newLine()
+                        .add(identity(terminals[index], index));
+                    if ("reveal".equals(action)) tooltip.newLine()
+                        .add(TerminalBaubleController.text("gtswn.terminal_wheel.reveal_conditions"));
+                    if ("scan".equals(action)) tooltip.newLine()
+                        .add(TerminalBaubleController.text("gtswn.terminal_wheel.scan_conditions"));
+                    if ("nodes".equals(action)) tooltip.newLine()
+                        .add(TerminalBaubleController.text("gtswn.terminal_wheel.nodes_conditions"));
+                    if (zone == TerminalWheelGeometry.MAIN && engineering) tooltip.newLine()
+                        .add(TerminalBaubleController.text("gtswn.terminal_wheel.engineering_source"));
+                }
             });
             tooltip().setAutoUpdate(true);
         }
@@ -321,14 +403,15 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
         public boolean isInside(IViewportStack viewport, int mouseX, int mouseY, boolean absolute) {
             int x = absolute ? viewport.unTransformX(mouseX, mouseY) : mouseX;
             int y = absolute ? viewport.unTransformY(mouseX, mouseY) : mouseY;
-            return TerminalWheelGeometry.sector(x - CENTER_X, y - CENTER_Y, INNER, OUTER) == index;
+            return layout.contains(index, zone, x, y);
         }
 
         @Override
         public Result onMousePressed(int button) {
             if (button != 0) return Result.STOP;
             selected = index;
-            confirm(index, false);
+            if (terminals[index] == null) return Result.STOP;
+            activate(index, zone);
             return Result.SUCCESS;
         }
 
@@ -337,22 +420,87 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
             GtswnMuiWidgets.drawLegacy(() -> {
                 boolean present = terminals[index] != null;
                 boolean active = selected == index || isHovering();
-                double angle = TerminalWheelGeometry.angle(index);
-                double start = angle - TerminalWheelGeometry.STEP / 2 + TerminalWheelGeometry.GAP;
-                double end = angle + TerminalWheelGeometry.STEP / 2 - TerminalWheelGeometry.GAP;
-                annulus(start, end, INNER, OUTER, active ? 0xF0473A29 : present ? 0xED202C37 : 0xB5151D26);
-                annulus(start, end, OUTER - 2, OUTER, active ? GtswnMuiTheme.TEXT_ACCENT : 0xFF56616C);
-                int x = CENTER_X + (int) Math.round(Math.cos(angle) * 99);
-                int y = CENTER_Y + (int) Math.round(Math.sin(angle) * 99);
-                drawIcon(stack(index), x, y - 10, present);
-                drawName(stack(index).getDisplayName(), x, y + 7, 76, present ? GtswnMuiTheme.TEXT_BODY : 0xFF697580);
-                if (engineering && present && index >= 3) GuiTerminalWheel.this.center(
-                    TerminalBaubleController
-                        .text("gtswn.color." + QuantumNetworkColor.name(QuantumNetworkColor.get(terminals[index]))),
-                    x,
-                    y + 29,
-                    GtswnMuiTheme.TEXT_ACCENT);
+                boolean hover = isHovering();
+                double angle = TerminalWheelGeometry.centerAngle(index, zone);
+                double start = TerminalWheelGeometry.start(index, zone);
+                double end = TerminalWheelGeometry.end(index, zone);
+                double inner = layout.inner(zone);
+                double outer = layout.outer(zone);
+                int fill = active ? 0xF0473A29 : present ? 0xED202C37 : 0xB5151D26;
+                int edge = active ? GtswnMuiTheme.TEXT_ACCENT : 0xFF56616C;
+                annulus(start, end, inner, outer, fill);
+                annulus(start, end, outer - 2, outer, edge);
+                double radius = layout.centerRadius(zone);
+                int x = layout.centerX + (int) Math.round(Math.cos(angle) * radius);
+                int y = layout.centerY + (int) Math.round(Math.sin(angle) * radius);
+                if (zone == TerminalWheelGeometry.MAIN) drawTerminal(present);
+                else drawActionIcon(x, y, !present ? 3 : hover ? 1 : active ? 2 : 0);
             });
+        }
+
+        private TerminalWheelLayout contentLayout;
+        private TerminalWheelLayout.Bounds contentBounds;
+        private String contentName;
+        private List<String> nameLines;
+        private int shownLines;
+
+        private void drawTerminal(boolean present) {
+            String name = stack(index).getDisplayName();
+            if (layout != contentLayout || !name.equals(contentName)) arrangeTerminal(name);
+            if (contentBounds == null) return;
+            int x = contentBounds.x + contentBounds.width / 2;
+            drawIcon(stack(index), x, contentBounds.y + layout.mainIconSize / 2, present);
+            int y = contentBounds.y + layout.mainIconSize + 3;
+            for (int i = 0; i < shownLines; i++) GuiTerminalWheel.this
+                .center(nameLines.get(i), x, y + i * 9, present ? GtswnMuiTheme.TEXT_BODY : 0xFF697580);
+        }
+
+        private void arrangeTerminal(String name) {
+            contentLayout = layout;
+            contentName = name;
+            contentBounds = null;
+            shownLines = 0;
+            // Try the complete name at native font size before limiting unusually long custom names.
+            for (int maxLines = Integer.MAX_VALUE; maxLines
+                >= 1; maxLines = maxLines == Integer.MAX_VALUE ? 3 : maxLines - 1) {
+                for (int width = 112; width >= 18; width -= 2) {
+                    List<String> lines = fontRendererObj.listFormattedStringToWidth(name, width);
+                    int count = Math.min(maxLines, lines.size());
+                    TerminalWheelLayout.Bounds bounds = layout.terminalContent(index, width, count * 9);
+                    if (bounds == null) continue;
+                    contentBounds = bounds;
+                    nameLines = lines;
+                    shownLines = count;
+                    return;
+                }
+            }
+            // Extremely small viewports still retain a real terminal icon and the full dynamic tooltip.
+            contentBounds = layout.content(index, layout.mainIconSize, layout.mainIconSize);
+        }
+
+        private void drawActionIcon(int x, int y, int state) {
+            GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
+            try {
+                mc.getTextureManager()
+                    .bindTexture(icons[state]);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+                GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+                GL11.glEnable(GL11.GL_TEXTURE_2D);
+                GL11.glDisable(GL11.GL_LIGHTING);
+                GL11.glDisable(GL11.GL_DEPTH_TEST);
+                GL11.glEnable(GL11.GL_BLEND);
+                GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+                GL11.glColor4f(1, 1, 1, 1);
+                Tessellator tess = Tessellator.instance;
+                tess.startDrawingQuads();
+                tess.addVertexWithUV(x - 6, y + 6, 0, 0, 1);
+                tess.addVertexWithUV(x + 6, y + 6, 0, 1, 1);
+                tess.addVertexWithUV(x + 6, y - 6, 0, 1, 0);
+                tess.addVertexWithUV(x - 6, y - 6, 0, 0, 0);
+                tess.draw();
+            } finally {
+                GL11.glPopAttrib();
+            }
         }
     }
 }
