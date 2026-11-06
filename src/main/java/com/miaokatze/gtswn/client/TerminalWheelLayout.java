@@ -26,12 +26,12 @@ public final class TerminalWheelLayout {
     public double inner(int zone) {
         if (zone == TerminalWheelGeometry.MAIN) return mainInner;
         if (zone == TerminalWheelGeometry.INNER) return Math.max(2, mainInner - 18);
-        return Math.max(2, radius - 14.2);
+        return mainOuter;
     }
 
     public double outer(int zone) {
         if (zone == TerminalWheelGeometry.MAIN) return mainOuter;
-        if (zone == TerminalWheelGeometry.INNER) return Math.max(3, mainInner - 4);
+        if (zone == TerminalWheelGeometry.INNER) return mainInner;
         return radius;
     }
 
