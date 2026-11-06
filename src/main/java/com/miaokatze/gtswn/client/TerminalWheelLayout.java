@@ -3,18 +3,22 @@ package com.miaokatze.gtswn.client;
 /** Pixel layout in the actual MUI viewport; text and icons are never scaled with the wheel. */
 public final class TerminalWheelLayout {
 
-    public final int width, height, centerX, centerY, radius, helpTop = 4, controlsTop = 38;
+    public final int width, height, centerX, centerY, radius, helpTop = 4, controlsTop = 42;
+    public final int helpWidth, helpLeft, helpTextWidth;
     public final int mainIconSize;
     private final double mainInner, mainOuter;
 
     public TerminalWheelLayout(int width, int height, boolean engineering) {
         this.width = width;
         this.height = height;
-        int top = engineering ? 64 : 38;
+        helpWidth = Math.min(372, Math.max(1, width - 12));
+        helpLeft = (width - helpWidth) / 2;
+        helpTextWidth = Math.min(360, Math.max(1, width - 24));
+        int top = engineering ? 64 : 42;
         radius = Math.max(1, Math.min(176, Math.min((width - 12) / 2, (height - 34 - top) / 2)));
         centerX = width / 2;
         centerY = top + radius;
-        mainIconSize = radius >= 120 ? 20 : 16;
+        mainIconSize = radius >= 170 ? 28 : radius >= 120 ? 24 : 16;
         mainOuter = Math.max(2, radius - 16);
         mainInner = Math.min(mainOuter - 4, Math.max(28, radius - 94));
     }
@@ -70,6 +74,30 @@ public final class TerminalWheelLayout {
         double nearestX = Math.max(left, Math.min(0, right));
         double nearestY = Math.max(top, Math.min(0, bottom));
         return Math.hypot(nearestX, nearestY) >= mainInner + 1;
+    }
+
+    /** Check the actual icon and text rectangles, without treating the empty card corners as content. */
+    public Bounds terminalContent(int index, int width, int textHeight) {
+        double angle = TerminalWheelGeometry.angle(index);
+        int height = mainIconSize + 3 + textHeight;
+        double preferred = (mainInner + mainOuter) / 2;
+        for (double distance = 0; distance <= mainOuter - mainInner; distance += 0.5)
+            for (int direction : new int[] { 1, -1 }) {
+                double radius = preferred + distance * direction;
+                int x = (int) Math.round(centerX + Math.cos(angle) * radius - width / 2.0);
+                int y = (int) Math.round(centerY + Math.sin(angle) * radius - height / 2.0);
+                for (int offset = 0; offset <= 12; offset += 2) for (int side : new int[] { 1, -1 }) {
+                    Bounds card = new Bounds(x + offset * side, y, width, height);
+                    if (terminalFits(index, card)) return card;
+                }
+            }
+        return null;
+    }
+
+    public boolean terminalFits(int index, Bounds card) {
+        Bounds icon = new Bounds(card.x + (card.width - mainIconSize) / 2, card.y, mainIconSize, mainIconSize);
+        Bounds text = new Bounds(card.x, card.y + mainIconSize + 3, card.width, card.height - mainIconSize - 3);
+        return fits(index, icon) && fits(index, text);
     }
 
     public static final class Bounds {

@@ -15,15 +15,17 @@ public class TerminalWheelLayoutTest {
         for (int[] viewport : VIEWPORTS) for (boolean engineering : new boolean[] { false, true }) {
             TerminalWheelLayout layout = new TerminalWheelLayout(viewport[0], viewport[1], engineering);
             assertEquals(4, layout.helpTop);
+            assertEquals(Math.min(372, viewport[0] - 12), layout.helpWidth);
+            assertEquals((viewport[0] - layout.helpWidth) / 2, layout.helpLeft);
             assertTrue(layout.centerX - layout.radius >= 6);
             assertTrue(layout.centerX + layout.radius <= viewport[0] - 6);
-            assertTrue(layout.centerY - layout.radius >= (engineering ? 64 : 38));
+            assertTrue(layout.centerY - layout.radius >= (engineering ? 64 : 42));
             assertTrue(layout.centerY + layout.radius <= viewport[1] - 34);
         }
         TerminalWheelLayout regular = new TerminalWheelLayout(507, 442, false);
         assertEquals(176, regular.radius);
-        assertEquals(214, regular.centerY);
-        assertEquals(20, regular.mainIconSize);
+        assertEquals(218, regular.centerY);
+        assertEquals(28, regular.mainIconSize);
     }
 
     @Test
@@ -52,12 +54,15 @@ public class TerminalWheelLayoutTest {
         for (int[] viewport : new int[][] { { 507, 442 }, { 640, 450 }, { 640, 360 } }) {
             TerminalWheelLayout layout = new TerminalWheelLayout(viewport[0], viewport[1], false);
             for (int index = 0; index < 8; index++) {
-                // A 13-character Chinese default name occupies two or three native-font lines.
-                int width = layout.radius >= 170 ? 64 : 46;
-                int height = layout.mainIconSize + 3 + (layout.radius >= 170 ? 18 : 27);
-                TerminalWheelLayout.Bounds bounds = layout.content(index, width, height);
+                TerminalWheelLayout.Bounds bounds = null;
+                // Find the complete 13-character default name at native font size, as the screen does.
+                for (int width = 112; width >= 18 && bounds == null; width -= 2) {
+                    int charactersPerLine = Math.max(1, width / 9);
+                    int lineCount = (13 + charactersPerLine - 1) / charactersPerLine;
+                    bounds = layout.terminalContent(index, width, lineCount * 9);
+                }
                 assertNotNull(bounds);
-                assertTrue(layout.fits(index, bounds));
+                assertTrue(layout.terminalFits(index, bounds));
             }
         }
     }

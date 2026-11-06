@@ -109,7 +109,7 @@ public class PacketRequestQuantumReveal implements IMessage {
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
         if (!QuantumTerminalAccess.validate(player, held)) return;
         if (request.wheelStack == null ? !PacketTerminalGesture.consumeReveal(player)
-            : !TerminalBaubles.consumeWheelCharge(player, request.wheelStack)) return;
+            : !TerminalBaubles.consumeWheelReceipt(player, request.wheelStack)) return;
         World world = player.worldObj;
         long now = world.getTotalWorldTime();
         long requestTick = net.minecraft.server.MinecraftServer.getServer()

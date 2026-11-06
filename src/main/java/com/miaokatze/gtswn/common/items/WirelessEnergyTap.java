@@ -167,7 +167,7 @@ public class WirelessEnergyTap extends Item
         return canTrigger(held, player.worldObj);
     }
 
-    /** Explicit accessory source after the server has consumed its wheel charge credential. */
+    /** Explicit accessory source after the server has consumed its wheel click receipt. */
     public boolean tryConsumeRevealCooldown(EntityPlayer player, ItemStack stack) {
         if (player == null || player.worldObj == null
             || player.worldObj.isRemote

@@ -241,7 +241,7 @@ public final class NodeRevealRequestQueue {
         }
         WirelessEnergyTap tap = (WirelessEnergyTap) held.getItem();
         if (wheelStack == null ? !PacketTerminalGesture.consumeReveal(player)
-            : !TerminalBaubles.consumeWheelCharge(player, wheelStack)) return;
+            : !TerminalBaubles.consumeWheelReceipt(player, wheelStack)) return;
         boolean cooldownPass = wheelStack == null ? tap.tryConsumeRevealCooldown(player)
             : tap.tryConsumeRevealCooldown(player, wheelStack);
         if (!cooldownPass) {

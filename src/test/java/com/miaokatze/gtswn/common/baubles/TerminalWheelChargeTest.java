@@ -46,21 +46,21 @@ public class TerminalWheelChargeTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<UUID, Object> charges() throws Exception {
-        Field field = TerminalBaubles.class.getDeclaredField("CHARGES");
+    private static Map<UUID, Object> receipts() throws Exception {
+        Field field = TerminalBaubles.class.getDeclaredField("WHEEL_RECEIPTS");
         field.setAccessible(true);
         return (Map<UUID, Object>) field.get(null);
     }
 
-    private static Object charge(Player player, ItemStack stack) throws Exception {
-        Class<?> type = Class.forName(TerminalBaubles.class.getName() + "$Charge");
-        Object charge = allocate(type);
+    private static Object receipt(Player player, ItemStack stack) throws Exception {
+        Class<?> type = Class.forName(TerminalBaubles.class.getName() + "$WheelReceipt");
+        Object receipt = allocate(type);
         for (String name : new String[] { "player", "stack" }) {
             Field field = type.getDeclaredField(name);
             field.setAccessible(true);
-            field.set(charge, name.equals("player") ? player : stack);
+            field.set(receipt, name.equals("player") ? player : stack);
         }
-        return charge;
+        return receipt;
     }
 
     @After
@@ -69,61 +69,87 @@ public class TerminalWheelChargeTest {
     }
 
     @Test
-    public void completionCannotCreateAChargeAndOldConnectionCannotConsumeAReplacementCharge() throws Exception {
+    public void missingReceiptAndOldConnectionCannotConsumeAReplacementReceipt() throws Exception {
         UUID id = UUID.randomUUID();
         Player old = player(id), replacement = player(id);
         ItemStack stack = new ItemStack(new WirelessEnergyTap());
-        assertFalse(TerminalBaubles.consumeWheelCharge(old, stack));
-        Object fresh = charge(replacement, stack);
-        charges().put(id, fresh);
-        assertFalse(TerminalBaubles.consumeWheelCharge(old, stack));
-        assertSame(fresh, charges().get(id));
+        assertFalse(TerminalBaubles.consumeWheelReceipt(old, stack));
+        Object fresh = receipt(replacement, stack);
+        receipts().put(id, fresh);
+        assertFalse(TerminalBaubles.consumeWheelReceipt(old, stack));
+        assertSame(fresh, receipts().get(id));
         new TerminalBaubles.Events().logout(new cpw.mods.fml.common.gameevent.PlayerEvent.PlayerLoggedOutEvent(old));
-        assertSame(fresh, charges().get(id));
+        assertSame(fresh, receipts().get(id));
     }
 
     @Test
     public void cancellationIsABarrierBeforeOtherQueuesDrainAndCannotBeReplacedByCompletion() throws Exception {
         Player actor = player(UUID.randomUUID());
         ItemStack stack = new ItemStack(new WirelessEnergyTap());
-        charges().put(actor.id, charge(actor, stack));
+        receipts().put(actor.id, receipt(actor, stack));
         TerminalBaubles.enqueue(actor, PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE, 1);
         TerminalBaubles.enqueue(actor, PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE, 1);
         TerminalBaubles.enqueue(actor, PacketTerminalBaubleAction.WHEEL_INNER, 1);
-        assertFalse(TerminalBaubles.consumeWheelCharge(actor, stack));
-        assertTrue(charges().isEmpty());
+        assertFalse(TerminalBaubles.consumeWheelReceipt(actor, stack));
+        assertTrue(receipts().isEmpty());
     }
 
     @Test
-    public void cancellationRemovesOnlyTheRequestingConnectionCharge() throws Exception {
+    public void cancellationRemovesOnlyTheRequestingConnectionReceipt() throws Exception {
         UUID id = UUID.randomUUID();
         Player old = player(id), replacement = player(id);
-        Object fresh = charge(replacement, new ItemStack(new WirelessEnergyTap()));
-        charges().put(id, fresh);
+        Object fresh = receipt(replacement, new ItemStack(new WirelessEnergyTap()));
+        receipts().put(id, fresh);
         TerminalBaubles.service(old, PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE, 1);
-        assertSame(fresh, charges().get(id));
+        assertSame(fresh, receipts().get(id));
         TerminalBaubles.service(replacement, PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE, 1);
-        assertTrue(charges().isEmpty());
+        assertTrue(receipts().isEmpty());
     }
 
     @Test
-    public void playerClearCannotDiscardAReplacementConnectionsCharge() throws Exception {
+    public void playerClearCannotDiscardAReplacementConnectionsReceipt() throws Exception {
         UUID id = UUID.randomUUID();
         Player old = player(id), replacement = player(id);
-        Object fresh = charge(replacement, new ItemStack(new WirelessEnergyTap()));
-        charges().put(id, fresh);
+        Object fresh = receipt(replacement, new ItemStack(new WirelessEnergyTap()));
+        receipts().put(id, fresh);
         TerminalBaubles.clear(old);
-        assertSame(fresh, charges().get(id));
+        assertSame(fresh, receipts().get(id));
         TerminalBaubles.clear(replacement);
-        assertTrue(charges().isEmpty());
+        assertTrue(receipts().isEmpty());
     }
 
     @Test
-    public void serverChargeRequiresTwentyTicksAndExpiresAfterSixtyIncludingClockRollback() {
-        assertFalse(TerminalBaubles.validWheelChargeAge(119, 100));
-        assertTrue(TerminalBaubles.validWheelChargeAge(120, 100));
-        assertTrue(TerminalBaubles.validWheelChargeAge(160, 100));
-        assertFalse(TerminalBaubles.validWheelChargeAge(161, 100));
-        assertFalse(TerminalBaubles.validWheelChargeAge(99, 100));
+    public void staleQueueStackCannotConsumeOrDiscardTheLatestClickReceipt() throws Exception {
+        Player actor = player(UUID.randomUUID());
+        ItemStack oldStack = new ItemStack(new WirelessEnergyTap()), freshStack = oldStack.copy();
+        Object fresh = receipt(actor, freshStack);
+        receipts().put(actor.id, fresh);
+        assertFalse(TerminalBaubles.consumeWheelReceipt(actor, oldStack));
+        assertSame(fresh, receipts().get(actor.id));
+    }
+
+    @Test
+    public void legacyBeginIsIgnoredWithoutAdmittingOrOverwritingAReceipt() throws Exception {
+        Player actor = player(UUID.randomUUID());
+        TerminalBaubles.enqueue(actor, PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE, 1);
+        TerminalBaubles.service(actor, PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE, 1);
+        assertTrue(receipts().isEmpty());
+        Field field = TerminalBaubles.class.getDeclaredField("PENDING");
+        field.setAccessible(true);
+        assertTrue(((Map<?, ?>) field.get(null)).isEmpty());
+        Object fresh = receipt(actor, new ItemStack(new WirelessEnergyTap()));
+        receipts().put(actor.id, fresh);
+        TerminalBaubles.service(actor, PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE, 1);
+        assertSame(fresh, receipts().get(actor.id));
+    }
+
+    @Test
+    public void clickReceiptIsImmediatelyValidAndExpiresAfterSixtyTicksIncludingClockRollback() {
+        assertTrue(TerminalBaubles.validWheelReceiptAge(100, 100));
+        assertTrue(TerminalBaubles.validWheelReceiptAge(101, 100));
+        assertTrue(TerminalBaubles.validWheelReceiptAge(120, 100));
+        assertTrue(TerminalBaubles.validWheelReceiptAge(160, 100));
+        assertFalse(TerminalBaubles.validWheelReceiptAge(161, 100));
+        assertFalse(TerminalBaubles.validWheelReceiptAge(99, 100));
     }
 }

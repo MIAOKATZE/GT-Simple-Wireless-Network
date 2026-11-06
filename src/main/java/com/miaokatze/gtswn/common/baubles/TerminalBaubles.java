@@ -43,7 +43,7 @@ public final class TerminalBaubles {
     public static final String[] TYPES = { "gtswn_monitor", "gtswn_link", "gtswn_device", "gtswn_quantum" };
     private static final Map<UUID, Request> PENDING = new ConcurrentHashMap<>();
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
-    private static final Map<UUID, Charge> CHARGES = new HashMap<>();
+    private static final Map<UUID, WheelReceipt> WHEEL_RECEIPTS = new HashMap<>();
     private static boolean initialized;
     private static boolean baublesAvailable;
 
@@ -109,7 +109,8 @@ public final class TerminalBaubles {
     }
 
     public static void enqueue(EntityPlayerMP player, int action, int selection) {
-        if (player == null || !PacketTerminalBaubleAction.isValid(action, selection)) return;
+        if (player == null || !PacketTerminalBaubleAction.isValid(action, selection)
+            || action == PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE) return;
         PENDING.compute(player.getUniqueID(), (id, previous) -> {
             boolean cancel = action == PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE;
             if (previous != null && previous.player == player && !cancel) return previous;
@@ -150,25 +151,26 @@ public final class TerminalBaubles {
     public static void clear() {
         PENDING.clear();
         SESSIONS.clear();
-        CHARGES.clear();
+        WHEEL_RECEIPTS.clear();
     }
 
     public static void clear(EntityPlayer player) {
         PENDING.remove(player.getUniqueID());
         SESSIONS.remove(player.getUniqueID());
-        clearCharge(player);
+        clearWheelReceipt(player);
     }
 
-    private static void clearCharge(EntityPlayer player) {
+    private static void clearWheelReceipt(EntityPlayer player) {
         UUID id = player.getUniqueID();
-        Charge charge = CHARGES.get(id);
-        if (charge != null && charge.player == player) CHARGES.remove(id, charge);
+        WheelReceipt receipt = WHEEL_RECEIPTS.get(id);
+        if (receipt != null && receipt.player == player) WHEEL_RECEIPTS.remove(id, receipt);
     }
 
     private static void handle(Request request) {
         EntityPlayerMP player = request.player;
+        if (request.action == PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE) return;
         if (request.action == PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE) {
-            clearCharge(player);
+            clearWheelReceipt(player);
             return;
         }
         if (player.isDead || player.playerNetServerHandler == null
@@ -248,7 +250,7 @@ public final class TerminalBaubles {
             && !(category == 3 && action == PacketTerminalBaubleAction.WHEEL_INNER);
     }
 
-    static int chargedAction(int category) {
+    static int immediateUtilityAction(int category) {
         return category == 1 ? PacketTerminalBaubleAction.WHEEL_INNER
             : category == 2 || category == 3 ? PacketTerminalBaubleAction.WHEEL_OUTER_SECOND : -1;
     }
@@ -257,11 +259,6 @@ public final class TerminalBaubles {
         ItemStack stack, int category, Session session, TerminalInventoryRules.Inventory<ItemStack> main,
         TerminalInventoryRules.Inventory<ItemStack> accessory) {
         if (category != Math.min(request.selection, 3)) return;
-        if (request.action == PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE) {
-            if (chargedAction(category) >= 0 && PlayerRequestQueue.isOnline(player))
-                CHARGES.putIfAbsent(player.getUniqueID(), new Charge(player, request.selection, slot, stack));
-            return;
-        }
         if (!wheelActionAllowed(category, request.action)) return;
         initialize(stack, player);
         int action = request.action;
@@ -285,10 +282,14 @@ public final class TerminalBaubles {
                 send(player, PacketTerminalBaubleState.OPEN_HUD_SETTINGS, request.selection, -1, stack);
             return;
         }
-        if (action == chargedAction(category)) {
-            if (category == 1) NodeRevealRequestQueue.enqueueWheel(player, stack);
-            else if (category == 3) PacketRequestQuantumReveal.enqueueWheel(player, stack);
-            else if (consumeWheelCharge(player, stack)) ItemDeviceInfoTerminal.startChargedScan(player, stack);
+        if (action == immediateUtilityAction(category)) {
+            if (!PlayerRequestQueue.isOnline(player)) return;
+            if (category == 2) ItemDeviceInfoTerminal.startChargedScan(player, stack);
+            else {
+                WHEEL_RECEIPTS.put(player.getUniqueID(), new WheelReceipt(player, request.selection, slot, stack));
+                if (category == 1) NodeRevealRequestQueue.enqueueWheel(player, stack);
+                else PacketRequestQuantumReveal.enqueueWheel(player, stack);
+            }
             return;
         }
         if (category == 2 && action == PacketTerminalBaubleAction.WHEEL_INNER) {
@@ -312,26 +313,25 @@ public final class TerminalBaubles {
             stack.setItemDamage(output ? 1 : 0);
         }
         SESSIONS.put(player.getUniqueID(), new Session(player, borrow));
-        CHARGES.remove(player.getUniqueID());
+        WHEEL_RECEIPTS.remove(player.getUniqueID());
         sync(player, baubles);
         send(player, PacketTerminalBaubleState.SESSION, request.selection, borrow.held, borrow.stack);
         if (action == PacketTerminalBaubleAction.WHEEL_OPEN) GTSWNGuiHandler.openTerminal(player, category == 3);
     }
 
     /** Consumed on the server thread by the original reveal queues, after their ordinary queue budget. */
-    public static boolean consumeWheelCharge(EntityPlayerMP player, ItemStack stack) {
-        Charge charge = CHARGES.get(player.getUniqueID());
-        if (charge == null || charge.player != player) return false;
-        CHARGES.remove(player.getUniqueID(), charge);
+    public static boolean consumeWheelReceipt(EntityPlayerMP player, ItemStack stack) {
+        WheelReceipt receipt = WHEEL_RECEIPTS.get(player.getUniqueID());
+        if (receipt == null || receipt.player != player || receipt.stack != stack) return false;
+        WHEEL_RECEIPTS.remove(player.getUniqueID(), receipt);
         Request pending = PENDING.get(player.getUniqueID());
         return !(pending != null && pending.player == player
-            && pending.action == PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE) && charge.stack == stack
-            && charge.valid()
-            && validWheelChargeAge(tickNow(), charge.started);
+            && pending.action == PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE) && receipt.valid()
+            && validWheelReceiptAge(tickNow(), receipt.started);
     }
 
-    static boolean validWheelChargeAge(long now, long started) {
-        return now >= started && now - started >= 20 && now - started <= 60;
+    static boolean validWheelReceiptAge(long now, long started) {
+        return now >= started && now - started <= 60;
     }
 
     private static long tickNow() {
@@ -339,7 +339,7 @@ public final class TerminalBaubles {
             .getTickCounter();
     }
 
-    private static final class Charge {
+    private static final class WheelReceipt {
 
         final EntityPlayerMP player;
         final ItemStack stack;
@@ -347,7 +347,7 @@ public final class TerminalBaubles {
         final int selection, slot, dimension;
         final long started;
 
-        Charge(EntityPlayerMP player, int selection, int slot, ItemStack stack) {
+        WheelReceipt(EntityPlayerMP player, int selection, int slot, ItemStack stack) {
             this.player = player;
             this.selection = selection;
             this.slot = slot;
@@ -435,8 +435,8 @@ public final class TerminalBaubles {
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
-            CHARGES.values()
-                .removeIf(charge -> !charge.valid() || tickNow() - charge.started > 60);
+            WHEEL_RECEIPTS.values()
+                .removeIf(receipt -> !receipt.valid() || tickNow() - receipt.started > 60);
             SESSIONS.entrySet()
                 .removeIf(entry -> {
                     Session session = entry.getValue();
@@ -453,7 +453,7 @@ public final class TerminalBaubles {
             UUID id = event.player.getUniqueID();
             PENDING.computeIfPresent(id, (key, request) -> request.player == event.player ? null : request);
             SESSIONS.computeIfPresent(id, (key, session) -> session.player == event.player ? null : session);
-            CHARGES.computeIfPresent(id, (key, charge) -> charge.player == event.player ? null : charge);
+            WHEEL_RECEIPTS.computeIfPresent(id, (key, receipt) -> receipt.player == event.player ? null : receipt);
         }
     }
 
