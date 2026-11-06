@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The matrix supplies materials in order; the machine processes them under its own conditions.\n\nThe machine must be formed, properly powered and have output space. Assembly lines also need the corresponding research and item output protection enabled.\n\nIf processing cannot start, read the reason shown in the compartment interface.",
+      "desc:8": "§3§lMatrix Supplies, Machine Processes§r\nThe matrix §1supplies materials in order§r; the machine processes them under its own conditions.\n\n§3§lRequirements to Start§r\nThe machine must be §1formed, properly powered and have output space§r. Assembly lines also need the §1corresponding research§r and §1item output protection§r enabled.\n\n§3§lIf Processing Cannot Start§r\nRead the §1reason§r shown in the compartment interface.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

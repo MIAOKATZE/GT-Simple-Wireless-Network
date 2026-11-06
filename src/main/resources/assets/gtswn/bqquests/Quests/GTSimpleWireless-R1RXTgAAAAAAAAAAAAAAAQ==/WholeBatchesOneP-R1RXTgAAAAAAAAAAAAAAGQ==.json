@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "The whole group shares 36 processing pattern slots. Each compartment buffers one material at its own position and accepts complete batches.\n\nProcess one pattern at a time. Switch to another only after processing has finished and all remaining materials have been cleared.",
+      "desc:8": "§3§lPatterns and Compartments§r\nThe whole group shares §136 processing pattern slots§r. Each compartment buffers one material at its own position and accepts §1complete batches§r.\n\n§3§lSwitching Patterns§r\nProcess §1one pattern§r at a time. Switch to another only after §1processing has finished and all remaining materials have been cleared§r.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

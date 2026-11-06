@@ -66,13 +66,17 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
         String tier = StatCollector.translateToLocalFormatted(
             "gtswn.matrix.description.tier",
             GTValues.TIER_COLORS[6] + GTValues.VN[6] + EnumChatFormatting.RESET);
-        if (mirror)
-            return new String[] { tr("gtswn.matrix.description.mirror"), tr("gtswn.matrix.description.mirror_storage"),
-                "", tr("gtswn.matrix.description.mirror_layout"), tr("gtswn.matrix.description.mirror_binding"),
-                tr("gtswn.matrix.description.mirror_requirements"), tier, "", DeviceTooltip.addedByLine() };
-        return new String[] { tr("gtswn.matrix.description." + type), tr("gtswn.matrix.description.general"), "",
+        String machineType = StatCollector.translateToLocalFormatted(
+            "gtswn.matrix.description.machine_type",
+            tr("gtswn.matrix." + type + (mirror ? ".mirror" : "") + ".name"));
+        if (mirror) return new String[] { machineType, tr("gtswn.matrix.description.mirror"), tier,
+            tr("gtswn.matrix.description.assembly_line"), "", tr("gtswn.matrix.description.mirror_storage"), "",
+            tr("gtswn.matrix.description.mirror_layout"), tr("gtswn.matrix.description.mirror_binding"),
+            tr("gtswn.matrix.description.mirror_requirements"), "", DeviceTooltip.addedByLine() };
+        return new String[] { machineType, tr("gtswn.matrix.description." + type), tier,
+            tr("gtswn.matrix.description.assembly_line"), "", tr("gtswn.matrix.description.general"), "",
             tr("gtswn.matrix.description.column"), tr("gtswn.matrix.description.me"),
-            tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.gui"), tier, "",
+            tr("gtswn.matrix.description.fluids"), tr("gtswn.matrix.description.gui"), "",
             DeviceTooltip.addedByLine() };
     }
 
