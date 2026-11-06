@@ -88,6 +88,20 @@ public class FactoryDisplayPreferencesTest {
     }
 
     @Test
+    public void wheelModeDefaultsToToggleAndSurvivesRestart() {
+        File file = new File(temporary.getRoot(), "wheel.cfg");
+        FactoryDisplayPreferences.Store store = new FactoryDisplayPreferences.Store(file);
+        assertEquals(0, store.number(Key.WHEEL_MAINTAIN), 0);
+        store.put(Key.WHEEL_MAINTAIN, 1);
+        store.save();
+        store = new FactoryDisplayPreferences.Store(file);
+        assertEquals(1, store.number(Key.WHEEL_MAINTAIN), 0);
+        store.put(Key.WHEEL_MAINTAIN, 0);
+        store.save();
+        assertEquals(0, new FactoryDisplayPreferences.Store(file).number(Key.WHEEL_MAINTAIN), 0);
+    }
+
+    @Test
     public void continuousCameraChangesCoalesceAndExplicitCloseCanFlushImmediately() {
         File file = new File(temporary.getRoot(), "display.cfg");
         FactoryDisplayPreferences.Store store = new FactoryDisplayPreferences.Store(file);

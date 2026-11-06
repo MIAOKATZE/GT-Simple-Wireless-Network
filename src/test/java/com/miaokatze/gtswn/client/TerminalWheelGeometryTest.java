@@ -28,8 +28,39 @@ public class TerminalWheelGeometryTest {
         for (int index = 0; index < 8; index++) {
             double border = TerminalWheelGeometry.angle(index) + TerminalWheelGeometry.STEP / 2;
             assertEquals(-1, at(border));
-            assertEquals(index, at(border - TerminalWheelGeometry.GAP * 2));
-            assertEquals((index + 1) % 8, at(border + TerminalWheelGeometry.GAP * 2));
+            assertEquals(index, at(border - TerminalWheelGeometry.gapAngle(100) * 2));
+            assertEquals((index + 1) % 8, at(border + TerminalWheelGeometry.gapAngle(100) * 2));
+        }
+    }
+
+    @Test
+    public void dividerWidthIsConstantAtInnerMiddleAndOuterRadii() {
+        for (int index = 0; index < 8; index++) for (int zone = 0; zone < 4; zone++) {
+            for (double radius : new double[] { TerminalWheelGeometry.inner(zone),
+                TerminalWheelGeometry.centerRadius(zone), TerminalWheelGeometry.outer(zone) }) {
+                double left = TerminalWheelGeometry.end(index, TerminalWheelGeometry.MAIN, radius);
+                double right = TerminalWheelGeometry.start((index + 1) % 8, TerminalWheelGeometry.MAIN, radius);
+                double distance = Math
+                    .hypot(radius * (Math.cos(left) - Math.cos(right)), radius * (Math.sin(left) - Math.sin(right)));
+                assertEquals(TerminalWheelGeometry.CONSTANT_GAP, distance, 1e-9);
+            }
+        }
+    }
+
+    @Test
+    public void radiusAwareDrawnEdgesMatchHitEdgesForEveryButton() {
+        double epsilon = 1e-6;
+        for (int index = 0; index < 8; index++) for (int zone = 0; zone < 4; zone++) {
+            for (double fraction : new double[] { 0.01, 0.5, 0.99 }) {
+                double radius = TerminalWheelGeometry.inner(zone)
+                    + fraction * (TerminalWheelGeometry.outer(zone) - TerminalWheelGeometry.inner(zone));
+                double start = TerminalWheelGeometry.start(index, zone, radius);
+                double end = TerminalWheelGeometry.end(index, zone, radius);
+                assertHit(index, zone, radius, start - epsilon, false);
+                assertHit(index, zone, radius, start + epsilon, true);
+                assertHit(index, zone, radius, end - epsilon, true);
+                assertHit(index, zone, radius, end + epsilon, false);
+            }
         }
     }
 
@@ -88,5 +119,11 @@ public class TerminalWheelGeometryTest {
 
     private static int at(double angle) {
         return TerminalWheelGeometry.sector(Math.cos(angle) * 100, Math.sin(angle) * 100, 49, 136);
+    }
+
+    private static void assertHit(int index, int zone, double radius, double angle, boolean expected) {
+        assertEquals(
+            expected,
+            TerminalWheelGeometry.contains(index, zone, Math.cos(angle) * radius, Math.sin(angle) * radius));
     }
 }

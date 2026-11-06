@@ -50,6 +50,45 @@ public class TerminalWheelLayoutTest {
     }
 
     @Test
+    public void resizedWheelUsesFourUnitDividersAcrossAllBandsAndMatchingHitEdges() {
+        double epsilon = 1e-6;
+        for (int[] viewport : VIEWPORTS) {
+            TerminalWheelLayout layout = new TerminalWheelLayout(viewport[0], viewport[1], false);
+            for (int index = 0; index < 8; index++) for (int zone = 0; zone < 4; zone++) {
+                for (double fraction : new double[] { 0.01, 0.5, 0.99 }) {
+                    double radius = layout.inner(zone) + fraction * (layout.outer(zone) - layout.inner(zone));
+                    double left = TerminalWheelGeometry.end(index, TerminalWheelGeometry.MAIN, radius);
+                    double right = TerminalWheelGeometry.start((index + 1) % 8, TerminalWheelGeometry.MAIN, radius);
+                    assertEquals(
+                        4,
+                        Math.hypot(
+                            radius * (Math.cos(left) - Math.cos(right)),
+                            radius * (Math.sin(left) - Math.sin(right))),
+                        1e-9);
+                    double start = TerminalWheelGeometry.start(index, zone, radius);
+                    double end = TerminalWheelGeometry.end(index, zone, radius);
+                    assertHit(layout, index, zone, radius, start - epsilon, false);
+                    assertHit(layout, index, zone, radius, start + epsilon, true);
+                    assertHit(layout, index, zone, radius, end - epsilon, true);
+                    assertHit(layout, index, zone, radius, end + epsilon, false);
+                }
+                assertEquals(
+                    TerminalWheelGeometry.start(index, TerminalWheelGeometry.MAIN, layout.inner(0)),
+                    TerminalWheelGeometry.start(index, TerminalWheelGeometry.INNER, layout.outer(3)),
+                    0);
+                assertEquals(
+                    TerminalWheelGeometry.end(index, TerminalWheelGeometry.MAIN, layout.outer(0)),
+                    TerminalWheelGeometry.end(index, TerminalWheelGeometry.OUTER_SECOND, layout.inner(2)),
+                    0);
+                assertEquals(
+                    TerminalWheelGeometry.end(index, TerminalWheelGeometry.OUTER_FIRST, radiusForOuter(layout)),
+                    TerminalWheelGeometry.start(index, TerminalWheelGeometry.OUTER_SECOND, radiusForOuter(layout)),
+                    0);
+            }
+        }
+    }
+
+    @Test
     public void nativeSizeIconAndWrappedDefaultNamesFitEntirelyInsideMainSector() {
         for (int[] viewport : new int[][] { { 507, 442 }, { 640, 450 }, { 640, 360 } }) {
             TerminalWheelLayout layout = new TerminalWheelLayout(viewport[0], viewport[1], false);
@@ -72,5 +111,20 @@ public class TerminalWheelLayoutTest {
         TerminalWheelLayout layout = new TerminalWheelLayout(320, 240, false);
         for (int index = 0; index < 8; index++)
             assertNotNull(layout.content(index, layout.mainIconSize, layout.mainIconSize));
+    }
+
+    private static double radiusForOuter(TerminalWheelLayout layout) {
+        return layout.centerRadius(TerminalWheelGeometry.OUTER_FIRST);
+    }
+
+    private static void assertHit(TerminalWheelLayout layout, int index, int zone, double radius, double angle,
+        boolean expected) {
+        assertEquals(
+            expected,
+            layout.contains(
+                index,
+                zone,
+                layout.centerX + Math.cos(angle) * radius,
+                layout.centerY + Math.sin(angle) * radius));
     }
 }

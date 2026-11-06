@@ -18,19 +18,20 @@ public class TerminalWheelHoldTest {
     }
 
     @Test
-    public void openingHoldConfirmsAtTenTicksWithoutACycle() {
+    public void openingHoldNeverConfirmsRegardlessOfDuration() {
         TerminalWheelHold hold = new TerminalWheelHold();
         for (int tick = 1; tick < TerminalWheelHold.CONFIRM_TICKS; tick++) {
             assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
             assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
         }
-        assertEquals(TerminalWheelHold.CONFIRM, hold.tick(true));
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
         for (int tick = 0; tick < 80; tick++) {
             assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
             assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
         }
         assertEquals(TerminalWheelHold.IGNORED, hold.release());
         assertEquals(TerminalWheelHold.IGNORED, hold.tick(false));
+        assertEquals(0, hold.progress(), 0);
     }
 
     @Test
@@ -76,5 +77,49 @@ public class TerminalWheelHoldTest {
         assertEquals(TerminalWheelHold.IGNORED, hold.release());
         assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
         assertEquals(TerminalWheelHold.CYCLE, hold.release());
+    }
+
+    @Test
+    public void maintainModeOnlyClosesOnReleaseAndDisablesEveryWheelKeyAction() {
+        TerminalWheelHold hold = new TerminalWheelHold(true);
+        for (int tick = 0; tick < 100; tick++) {
+            assertEquals(TerminalWheelHold.IGNORED, hold.press(true, true));
+            assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
+        }
+        assertEquals(0, hold.progress(), 0);
+        assertEquals(TerminalWheelHold.CLOSE, hold.release());
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(false));
+        assertEquals(TerminalWheelHold.IGNORED, hold.press(true, false));
+        assertEquals(TerminalWheelHold.CLOSE, hold.tick(false));
+    }
+
+    @Test
+    public void switchingToMaintainWithoutTheKeyDownWaitsForAFreshHold() {
+        TerminalWheelHold hold = new TerminalWheelHold();
+        hold.mode(true, false);
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(false));
+        assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
+        assertEquals(TerminalWheelHold.CLOSE, hold.tick(false));
+    }
+
+    @Test
+    public void switchingToMaintainWhileDownClosesOnRelease() {
+        TerminalWheelHold hold = new TerminalWheelHold();
+        hold.mode(true, true);
+        assertEquals(TerminalWheelHold.CLOSE, hold.release());
+    }
+
+    @Test
+    public void switchingToToggleFencesTheCurrentPressButNotTheNextOne() {
+        TerminalWheelHold hold = new TerminalWheelHold(true);
+        hold.mode(false, true);
+        for (int tick = 0; tick < 100; tick++) assertEquals(TerminalWheelHold.IGNORED, hold.tick(true));
+        assertEquals(TerminalWheelHold.IGNORED, hold.release());
+        assertEquals(TerminalWheelHold.IGNORED, hold.press(false, false));
+        assertEquals(TerminalWheelHold.CYCLE, hold.release());
+        hold.mode(false, false);
+        hold.press(false, false);
+        for (int tick = 1; tick < TerminalWheelHold.CONFIRM_TICKS; tick++) hold.tick(true);
+        assertEquals(TerminalWheelHold.CONFIRM, hold.tick(true));
     }
 }

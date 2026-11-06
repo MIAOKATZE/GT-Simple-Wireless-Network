@@ -1,21 +1,41 @@
 package com.miaokatze.gtswn.client;
 
-/** The opening tap only opens; later taps cycle on release. A ten-tick hold (0.5s) confirms without cycling. */
+/** Wheel-key actions, including the opening-press fence and hold-to-open mode. */
 public final class TerminalWheelHold {
 
     public static final int CONFIRM_TICKS = 10;
-    public static final int IGNORED = 0, CYCLE = 1, TAKE = 2, CONFIRM = 3;
+    public static final int IGNORED = 0, CYCLE = 1, TAKE = 2, CONFIRM = 3, CLOSE = 4;
+    private boolean maintain;
     private boolean opening = true;
     private boolean pressed = true;
     private boolean consumed;
     private int ticks;
+
+    public TerminalWheelHold() {}
+
+    public TerminalWheelHold(boolean maintain) {
+        this.maintain = maintain;
+    }
+
+    /** A change never closes the screen by itself; a fresh hold can arm a later release. */
+    public void mode(boolean maintain, boolean down) {
+        this.maintain = maintain;
+        opening = down;
+        pressed = down;
+        consumed = false;
+        ticks = 0;
+    }
+
+    public boolean maintain() {
+        return maintain;
+    }
 
     public int press(boolean leftShift, boolean rightShift) {
         if (pressed) return IGNORED;
         pressed = true;
         ticks = 0;
         consumed = false;
-        if (leftShift || rightShift) {
+        if (!maintain && (leftShift || rightShift)) {
             consumed = true;
             return TAKE;
         }
@@ -24,6 +44,10 @@ public final class TerminalWheelHold {
 
     public int release() {
         if (!pressed) return IGNORED;
+        if (maintain) {
+            pressed = false;
+            return CLOSE;
+        }
         boolean cycle = !consumed && ticks < CONFIRM_TICKS && !opening;
         opening = false;
         pressed = false;
@@ -34,7 +58,11 @@ public final class TerminalWheelHold {
 
     public int tick(boolean down) {
         if (!down) return release();
-        if (!pressed || consumed) return IGNORED;
+        if (maintain) {
+            pressed = true;
+            return IGNORED;
+        }
+        if (!pressed || consumed || opening) return IGNORED;
         if (++ticks < CONFIRM_TICKS) return IGNORED;
         consumed = true;
         return CONFIRM;
@@ -45,6 +73,6 @@ public final class TerminalWheelHold {
     }
 
     public float progress() {
-        return ticks / (float) CONFIRM_TICKS;
+        return Math.min(1f, ticks / (float) CONFIRM_TICKS);
     }
 }

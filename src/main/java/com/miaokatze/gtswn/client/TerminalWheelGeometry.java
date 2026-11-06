@@ -5,7 +5,11 @@ public final class TerminalWheelGeometry {
 
     public static final int SIZE = 8;
     public static final double STEP = Math.PI / 4;
+    /** Legacy angular gap; drawing and hit tests use {@link #CONSTANT_GAP} instead. */
+    @Deprecated
     public static final double GAP = 0.025;
+    /** Full perpendicular distance between adjacent sectors, in GUI units. */
+    public static final double CONSTANT_GAP = 4;
     public static final int MAIN = 0;
     public static final int OUTER_FIRST = 1;
     public static final int OUTER_SECOND = 2;
@@ -29,7 +33,8 @@ public final class TerminalWheelGeometry {
         double shifted = (angle + STEP / 2 + Math.PI * 2) % (Math.PI * 2);
         int index = (int) (shifted / STEP);
         double offset = shifted - index * STEP;
-        return offset < GAP || offset > STEP - GAP ? -1 : index;
+        double borderDistance = radius * Math.sin(Math.min(offset, STEP - offset));
+        return borderDistance + 1e-9 < CONSTANT_GAP / 2 ? -1 : index;
     }
 
     public static int next(int selected) {
@@ -45,11 +50,25 @@ public final class TerminalWheelGeometry {
     }
 
     public static double start(int index, int zone) {
-        return zone == OUTER_SECOND ? angle(index) : angle(index) - STEP / 2 + GAP;
+        return start(index, zone, centerRadius(zone));
     }
 
     public static double end(int index, int zone) {
-        return zone == OUTER_FIRST ? angle(index) : angle(index) + STEP / 2 - GAP;
+        return end(index, zone, centerRadius(zone));
+    }
+
+    /** Angular inset whose perpendicular distance from the sector divider is half the gap. */
+    public static double gapAngle(double radius) {
+        return Math.asin(Math.min(1, CONSTANT_GAP / (2 * radius)));
+    }
+
+    /** Use each vertex's actual radius so the inner and outer boundaries share straight sides. */
+    public static double start(int index, int zone, double radius) {
+        return zone == OUTER_SECOND ? angle(index) : angle(index) - STEP / 2 + gapAngle(radius);
+    }
+
+    public static double end(int index, int zone, double radius) {
+        return zone == OUTER_FIRST ? angle(index) : angle(index) + STEP / 2 - gapAngle(radius);
     }
 
     public static double centerAngle(int index, int zone) {

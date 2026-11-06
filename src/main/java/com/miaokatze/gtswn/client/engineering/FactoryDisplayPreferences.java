@@ -58,7 +58,8 @@ public final class FactoryDisplayPreferences {
         FOLLOWING(0),
         CAMERA_PANEL(0),
         DEVICE_VISUALIZATION(0),
-        FACTORY_THEME(0, 0, 3);
+        FACTORY_THEME(0, 0, 3),
+        WHEEL_MAINTAIN(0);
 
         final double initial, min, max;
 
@@ -128,6 +129,15 @@ public final class FactoryDisplayPreferences {
 
     public static DashboardTheme theme() {
         return DashboardTheme.values()[integer(Key.FACTORY_THEME)];
+    }
+
+    public static boolean wheelMaintain() {
+        return flag(Key.WHEEL_MAINTAIN);
+    }
+
+    public static void wheelMaintain(boolean maintain) {
+        put(Key.WHEEL_MAINTAIN, maintain);
+        save();
     }
 
     static void theme(DashboardTheme value) {
