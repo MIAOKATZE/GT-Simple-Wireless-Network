@@ -29,7 +29,7 @@
 
 | GTNH | GTSWN 版本范围 / Version range | 下载 / Download |
 | --- | --- | --- |
-| 2.9.0 正式版 / final | 2.1.0 ~ + | [v2.1.13](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.1.13) |
+| 2.9.0 正式版 / final | 2.1.0 ~ + | [v2.1.15](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.1.15) |
 | 2.9.0 RC-1 / RC-2 | 2.0.0 ~ 2.0.37 | [v2.0.37](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.0.37) |
 | 2.9.0 beta-1 / beta-2 / beta-3 | 1.8.82 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) |
 | 2.8.4 | 0.2.0 | [v0.2.0](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v0.2.0) |
@@ -41,7 +41,7 @@
 
 ## 饰品终端与轮盘 / Baubles Terminals & Wheel
 
-<p align="center"><img src="images/Terminal_Baubles_Wheel_Showcase.png" alt="终端饰品栏与八格轮盘 / Terminal Baubles slots and eight-sector wheel" width="640"><br><em>实机图；当前长按确认 0.5 秒 / In-game screenshot; current hold-to-confirm time: 0.5s</em></p>
+<p align="center"><img src="images/Terminal_Baubles_Wheel_Showcase.png" alt="八格终端轮盘与四键操作 / Eight-sector terminal wheel with four actions per sector" width="640"><br><em>按钮单击触发，悬停查看功能；C 长按确认 0.5 秒 / Click buttons immediately; hover for details; hold C for 0.5s to confirm</em></p>
 
 四类专属 Baubles 槽共 **8 格：监测 1 + 链路 1 + 设备 1 + 量子 5**。轮盘按饰品库存顺序仅识别前 **1/1/1/5** 个对应终端，多余同类不参与选择。保留物品染色与自定义名称，便于区分多个量子网络。
 
@@ -52,9 +52,19 @@ Four dedicated Baubles types provide **8 slots: 1 Monitor + 1 Link + 1 Device + 
 | C（手持终端 / holding a terminal）| 有有效借出凭据则归还原饰品槽，否则装备到空的专属槽 / Return a valid borrowed terminal to its origin; otherwise equip into an empty dedicated slot |
 | C（其他情况 / otherwise）| 首次短按只打开八格轮盘 / First tap only opens the eight-sector wheel |
 | 后续短按 C 松手 / Subsequent tap and release C | 轮切；长按 **0.5 秒**确认（含首次）/ Cycle; hold **0.5s** to confirm, including the opening hold |
-| 左键、Enter 或 Space / Left-click, Enter or Space | 确认当前选择；监测/设备打开信息 UI，链路/量子取到手中 / Confirm: Monitor/Device opens its info UI; Link/Quantum moves to hand |
+| 左键主按钮、Enter 或 Space / Main button, Enter or Space | 打开终端页面；链路/量子成功借到手中后打开 / Open terminal UI; Link/Quantum opens after being borrowed into hand |
+| 左键小按钮 / Click an auxiliary button | 立即执行对应功能，无需蓄力；悬停显示功能说明 / Run its action immediately without holding; hover for a tooltip |
 | 轮盘 Shift+C / Shift+C in wheel | 强制取到手中，包括监测/设备终端 / Force selected terminal into hand, including Monitor/Device |
 | E（背包键）或 Esc / Inventory key or Esc | 关闭轮盘；轮盘期间屏蔽游戏操作，关闭后须松开按键再操作 / Close; gameplay input is blocked in the wheel and must be released before resuming |
+
+每个扇区分为内层一键、中层终端主按钮、外层两键。/ Each sector has one inner button, a main terminal button and two outer buttons.
+
+| 终端 / Terminal | 主按钮 / Main | 外层第一键 / Outer first | 外层第二键 / Outer second | 内层键 / Inner |
+|---|---|---|---|---|
+| 监测 / Monitor | 监测页 / Monitor page | 取出 / Take | HUD 开关 / Toggle HUD | HUD 设置 / HUD settings |
+| 链路 / Link | 链路页 / Link page | 能源模式取出 / Take in Energy mode | 动力模式取出 / Take in Power mode | 节点显形 / Reveal nodes |
+| 设备 / Device | 设备列表 / Device list | 取出 / Take | 扫描 / Scan | 可视化 / Visualization |
+| 量子 / Quantum | 网络信息 / Network info | 取出 / Take | 节点显形 / Reveal nodes | 工程节点图 / Engineering node map |
 
 取手时原手持物品移到空背包格；无空位可安置时拒绝取出。借出凭据只认原热栏格中的同一物品，归还要求当前选中该格且原饰品槽为空，切走再切回仍可归还；移走、丢弃或替换后不能据此自动归还，每次仅保留一笔借出。
 
