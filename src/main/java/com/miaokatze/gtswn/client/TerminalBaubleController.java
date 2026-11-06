@@ -156,6 +156,8 @@ public final class TerminalBaubleController {
         if (mc.thePlayer == null || mc.theWorld == null) return;
         if (action == PacketTerminalBaubleState.OPEN_MONITOR && stack != null) {
             ClientGUI.open(new GuiPortableMonitor(stack));
+        } else if (action == PacketTerminalBaubleState.OPEN_HUD_SETTINGS && stack != null) {
+            ClientGUI.open(new GuiPortableMonitor(stack, true));
         } else if (action == PacketTerminalBaubleState.OPEN_DEVICE && stack != null) {
             ClientGUI.open(new GuiDeviceInfoTerminal(ItemDeviceInfoTerminal.readTerminalId(stack), stack));
         } else if (action == PacketTerminalBaubleState.EQUIPPED_HINT) {
@@ -174,6 +176,19 @@ public final class TerminalBaubleController {
 
     public static void take(int selection) {
         send(PacketTerminalBaubleAction.TAKE, selection);
+    }
+
+    public static void wheelAction(int selection, int zone) {
+        if (selection < 0 || selection >= 8 || zone < 0 || zone > 3) return;
+        send(PacketTerminalBaubleAction.WHEEL_OPEN + zone, selection);
+    }
+
+    public static void beginWheelCharge(int selection) {
+        send(PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE, selection);
+    }
+
+    public static void cancelWheelCharge(int selection) {
+        send(PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE, selection);
     }
 
     private static void send(int action, int selection) {

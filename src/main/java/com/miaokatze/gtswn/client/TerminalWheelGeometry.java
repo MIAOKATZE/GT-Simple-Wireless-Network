@@ -6,6 +6,16 @@ public final class TerminalWheelGeometry {
     public static final int SIZE = 8;
     public static final double STEP = Math.PI / 4;
     public static final double GAP = 0.025;
+    public static final int MAIN = 0;
+    public static final int OUTER_FIRST = 1;
+    public static final int OUTER_SECOND = 2;
+    public static final int INNER = 3;
+    public static final double OUTER_RADIUS = 136;
+    private static final double SCALE = OUTER_RADIUS / 331;
+    // The approved 32-unit auxiliary bands are 8% thicker, within the same outer contour.
+    private static final double[] INNER_RADII = { 166.56 * SCALE, 296.44 * SCALE, 296.44 * SCALE, 128 * SCALE };
+    private static final double[] OUTER_RADII = { 292.44 * SCALE, OUTER_RADIUS, OUTER_RADIUS, 162.56 * SCALE };
+    private static final double HALF_GAP = Math.toRadians(0.6);
 
     private TerminalWheelGeometry() {}
 
@@ -25,5 +35,37 @@ public final class TerminalWheelGeometry {
 
     public static int next(int selected) {
         return (selected + 1) % SIZE;
+    }
+
+    public static double inner(int zone) {
+        return INNER_RADII[zone];
+    }
+
+    public static double outer(int zone) {
+        return OUTER_RADII[zone];
+    }
+
+    public static double start(int index, int zone) {
+        return zone == OUTER_SECOND ? angle(index) + HALF_GAP : angle(index) - STEP / 2 + GAP;
+    }
+
+    public static double end(int index, int zone) {
+        return zone == OUTER_FIRST ? angle(index) - HALF_GAP : angle(index) + STEP / 2 - GAP;
+    }
+
+    public static double centerAngle(int index, int zone) {
+        return (start(index, zone) + end(index, zone)) / 2;
+    }
+
+    public static double centerRadius(int zone) {
+        return (inner(zone) + outer(zone)) / 2;
+    }
+
+    /** The same angular and radial boundaries are used by drawing and all 32 MUI2 widgets. */
+    public static boolean contains(int index, int zone, double x, double y) {
+        if (sector(x, y, inner(zone), outer(zone)) != index) return false;
+        double offset = Math.atan2(y, x) - angle(index);
+        offset = Math.atan2(Math.sin(offset), Math.cos(offset));
+        return (zone != OUTER_FIRST || offset <= -HALF_GAP) && (zone != OUTER_SECOND || offset >= HALF_GAP);
     }
 }

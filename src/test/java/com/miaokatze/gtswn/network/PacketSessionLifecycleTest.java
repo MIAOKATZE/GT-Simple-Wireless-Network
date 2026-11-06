@@ -60,7 +60,8 @@ public class PacketSessionLifecycleTest {
     }
 
     private static Object job(Class<?> owner, EntityPlayerMP player) throws Exception {
-        String nested = owner == PacketTerminalGesture.class ? "Request" : "Job";
+        String nested = owner == PacketTerminalGesture.class || owner == PacketRequestQuantumReveal.class ? "Request"
+            : "Job";
         Object job = allocate(Class.forName(owner.getName() + "$" + nested));
         Field field = job.getClass()
             .getDeclaredField("player");
@@ -80,8 +81,8 @@ public class PacketSessionLifecycleTest {
             Map<UUID, Object> pending = (Map<UUID, Object>) field(owner, null, "PENDING");
             clear.invoke(null);
             try {
-                Object oldJob = owner == PacketRequestQuantumReveal.class ? departing : job(owner, departing);
-                Object newJob = owner == PacketRequestQuantumReveal.class ? replacement : job(owner, replacement);
+                Object oldJob = job(owner, departing);
+                Object newJob = job(owner, replacement);
                 Object listener = Class.forName(owner.getName() + "$Drain")
                     .getDeclaredConstructor()
                     .newInstance();

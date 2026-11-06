@@ -11,14 +11,22 @@ import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.inventory.IInventory;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.util.ChatComponentTranslation;
+import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.gui.GTSWNGuiHandler;
 import com.miaokatze.gtswn.common.hud.MonitorBindings;
 import com.miaokatze.gtswn.common.items.ItemDeviceInfoTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.PortableWirelessNetworkMonitor;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
+import com.miaokatze.gtswn.network.DeviceTerminalVisualActionQueue;
 import com.miaokatze.gtswn.network.GTSWNPacketHandler;
+import com.miaokatze.gtswn.network.NodeRevealRequestQueue;
+import com.miaokatze.gtswn.network.PacketDeviceTerminalVisualAction;
+import com.miaokatze.gtswn.network.PacketRequestQuantumReveal;
 import com.miaokatze.gtswn.network.PacketTerminalBaubleAction;
 import com.miaokatze.gtswn.network.PacketTerminalBaubleState;
 
@@ -35,6 +43,7 @@ public final class TerminalBaubles {
     public static final String[] TYPES = { "gtswn_monitor", "gtswn_link", "gtswn_device", "gtswn_quantum" };
     private static final Map<UUID, Request> PENDING = new ConcurrentHashMap<>();
     private static final Map<UUID, Session> SESSIONS = new HashMap<>();
+    private static final Map<UUID, Charge> CHARGES = new HashMap<>();
     private static boolean initialized;
     private static boolean baublesAvailable;
 
@@ -100,8 +109,12 @@ public final class TerminalBaubles {
     }
 
     public static void enqueue(EntityPlayerMP player, int action, int selection) {
-        if (player != null && PacketTerminalBaubleAction.isValid(action, selection))
-            PENDING.putIfAbsent(player.getUniqueID(), new Request(player, action, selection));
+        if (player == null || !PacketTerminalBaubleAction.isValid(action, selection)) return;
+        PENDING.compute(player.getUniqueID(), (id, previous) -> {
+            boolean cancel = action == PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE;
+            if (previous != null && previous.player == player && !cancel) return previous;
+            return new Request(player, action, selection);
+        });
     }
 
     public static void onEquipped(ItemStack stack, EntityLivingBase entity) {
@@ -137,15 +150,27 @@ public final class TerminalBaubles {
     public static void clear() {
         PENDING.clear();
         SESSIONS.clear();
+        CHARGES.clear();
     }
 
     public static void clear(EntityPlayer player) {
         PENDING.remove(player.getUniqueID());
         SESSIONS.remove(player.getUniqueID());
+        clearCharge(player);
+    }
+
+    private static void clearCharge(EntityPlayer player) {
+        UUID id = player.getUniqueID();
+        Charge charge = CHARGES.get(id);
+        if (charge != null && charge.player == player) CHARGES.remove(id, charge);
     }
 
     private static void handle(Request request) {
         EntityPlayerMP player = request.player;
+        if (request.action == PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE) {
+            clearCharge(player);
+            return;
+        }
         if (player.isDead || player.playerNetServerHandler == null
             || player.openContainer != player.inventoryContainer
             || player.inventory.getItemStack() != null) return;
@@ -186,6 +211,10 @@ public final class TerminalBaubles {
         if (slot < 0) return;
         ItemStack stack = baubles.getStackInSlot(slot);
         int category = category(stack);
+        if (request.action >= PacketTerminalBaubleAction.WHEEL_OPEN) {
+            handleWheel(player, request, baubles, slot, stack, category, session, main, accessory);
+            return;
+        }
         initialize(stack, player);
         if (request.action == PacketTerminalBaubleAction.SELECT && (category == 0 || category == 2)) {
             sync(player, baubles);
@@ -209,6 +238,135 @@ public final class TerminalBaubles {
         SESSIONS.put(player.getUniqueID(), new Session(player, borrow));
         sync(player, baubles);
         send(player, PacketTerminalBaubleState.SESSION, request.selection, borrow.held, borrow.stack);
+    }
+
+    /** Fixed category actions; quantum's inner node-map entry stays on the client. */
+    static boolean wheelActionAllowed(int category, int action) {
+        return category >= 0 && category <= 3
+            && action >= PacketTerminalBaubleAction.WHEEL_OPEN
+            && action <= PacketTerminalBaubleAction.WHEEL_INNER
+            && !(category == 3 && action == PacketTerminalBaubleAction.WHEEL_INNER);
+    }
+
+    static int chargedAction(int category) {
+        return category == 1 ? PacketTerminalBaubleAction.WHEEL_INNER
+            : category == 2 || category == 3 ? PacketTerminalBaubleAction.WHEEL_OUTER_SECOND : -1;
+    }
+
+    private static void handleWheel(EntityPlayerMP player, Request request, IInventory baubles, int slot,
+        ItemStack stack, int category, Session session, TerminalInventoryRules.Inventory<ItemStack> main,
+        TerminalInventoryRules.Inventory<ItemStack> accessory) {
+        if (category != Math.min(request.selection, 3)) return;
+        if (request.action == PacketTerminalBaubleAction.WHEEL_BEGIN_CHARGE) {
+            if (chargedAction(category) >= 0 && PlayerRequestQueue.isOnline(player))
+                CHARGES.putIfAbsent(player.getUniqueID(), new Charge(player, request.selection, slot, stack));
+            return;
+        }
+        if (!wheelActionAllowed(category, request.action)) return;
+        initialize(stack, player);
+        int action = request.action;
+        if (action == PacketTerminalBaubleAction.WHEEL_OPEN && (category == 0 || category == 2)) {
+            syncChangedStack(player, stack);
+            send(
+                player,
+                category == 0 ? PacketTerminalBaubleState.OPEN_MONITOR : PacketTerminalBaubleState.OPEN_DEVICE,
+                request.selection,
+                -1,
+                stack);
+            return;
+        }
+        if (category == 0 && (action == PacketTerminalBaubleAction.WHEEL_OUTER_SECOND
+            || action == PacketTerminalBaubleAction.WHEEL_INNER)) {
+            PortableWirelessNetworkMonitor monitor = (PortableWirelessNetworkMonitor) stack.getItem();
+            if (!monitor.canUseBaubleHud(stack, player)) return;
+            if (action == PacketTerminalBaubleAction.WHEEL_OUTER_SECOND) monitor.toggleBaubleHud(stack, player);
+            syncChangedStack(player, stack);
+            if (action == PacketTerminalBaubleAction.WHEEL_INNER)
+                send(player, PacketTerminalBaubleState.OPEN_HUD_SETTINGS, request.selection, -1, stack);
+            return;
+        }
+        if (action == chargedAction(category)) {
+            if (category == 1) NodeRevealRequestQueue.enqueueWheel(player, stack);
+            else if (category == 3) PacketRequestQuantumReveal.enqueueWheel(player, stack);
+            else if (consumeWheelCharge(player, stack)) ItemDeviceInfoTerminal.startChargedScan(player, stack);
+            return;
+        }
+        if (category == 2 && action == PacketTerminalBaubleAction.WHEEL_INNER) {
+            DeviceTerminalVisualActionQueue
+                .enqueue(player, PacketDeviceTerminalVisualAction.toggle(ItemDeviceInfoTerminal.readTerminalId(stack)));
+            return;
+        }
+        // All remaining actions borrow the exact original stack. Mode changes happen only after take succeeds.
+        if (session != null && session.valid(player) || !Integration.canUnequip(stack, player)) return;
+        TerminalInventoryRules.Borrow<ItemStack> borrow = TerminalInventoryRules
+            .take(main, player.inventory.currentItem, accessory, slot);
+        if (borrow == null) {
+            player.addChatMessage(new ChatComponentTranslation("gtswn.baubles.inventory.full"));
+            return;
+        }
+        if (category == 1 && (action == PacketTerminalBaubleAction.WHEEL_OUTER_FIRST
+            || action == PacketTerminalBaubleAction.WHEEL_OUTER_SECOND)) {
+            if (stack.stackTagCompound == null) stack.stackTagCompound = new NBTTagCompound();
+            boolean output = action == PacketTerminalBaubleAction.WHEEL_OUTER_SECOND;
+            stack.stackTagCompound.setBoolean("OutputMode", output);
+            stack.setItemDamage(output ? 1 : 0);
+        }
+        SESSIONS.put(player.getUniqueID(), new Session(player, borrow));
+        CHARGES.remove(player.getUniqueID());
+        sync(player, baubles);
+        send(player, PacketTerminalBaubleState.SESSION, request.selection, borrow.held, borrow.stack);
+        if (action == PacketTerminalBaubleAction.WHEEL_OPEN) GTSWNGuiHandler.openTerminal(player, category == 3);
+    }
+
+    /** Consumed on the server thread by the original reveal queues, after their ordinary queue budget. */
+    public static boolean consumeWheelCharge(EntityPlayerMP player, ItemStack stack) {
+        Charge charge = CHARGES.get(player.getUniqueID());
+        if (charge == null || charge.player != player) return false;
+        CHARGES.remove(player.getUniqueID(), charge);
+        Request pending = PENDING.get(player.getUniqueID());
+        return !(pending != null && pending.player == player
+            && pending.action == PacketTerminalBaubleAction.WHEEL_CANCEL_CHARGE) && charge.stack == stack
+            && charge.valid()
+            && validWheelChargeAge(tickNow(), charge.started);
+    }
+
+    static boolean validWheelChargeAge(long now, long started) {
+        return now >= started && now - started >= 20 && now - started <= 60;
+    }
+
+    private static long tickNow() {
+        return MinecraftServer.getServer()
+            .getTickCounter();
+    }
+
+    private static final class Charge {
+
+        final EntityPlayerMP player;
+        final ItemStack stack;
+        final World world;
+        final int selection, slot, dimension;
+        final long started;
+
+        Charge(EntityPlayerMP player, int selection, int slot, ItemStack stack) {
+            this.player = player;
+            this.selection = selection;
+            this.slot = slot;
+            this.stack = stack;
+            world = player.worldObj;
+            dimension = player.dimension;
+            started = tickNow();
+        }
+
+        boolean valid() {
+            if (!PlayerRequestQueue.isOnline(player) || player.worldObj != world
+                || player.dimension != dimension
+                || player.openContainer != player.inventoryContainer
+                || player.inventory.getItemStack() != null) return false;
+            IInventory baubles = inventory(player);
+            return baubles != null && slot < baubles.getSizeInventory()
+                && baubles.getStackInSlot(slot) == stack
+                && selections(baubles)[selection] == slot;
+        }
     }
 
     private static void sync(EntityPlayerMP player, IInventory baubles) {
@@ -277,6 +435,8 @@ public final class TerminalBaubles {
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
+            CHARGES.values()
+                .removeIf(charge -> !charge.valid() || tickNow() - charge.started > 60);
             SESSIONS.entrySet()
                 .removeIf(entry -> {
                     Session session = entry.getValue();
@@ -290,8 +450,10 @@ public final class TerminalBaubles {
 
         @SubscribeEvent
         public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
-            PENDING.remove(event.player.getUniqueID());
-            SESSIONS.remove(event.player.getUniqueID());
+            UUID id = event.player.getUniqueID();
+            PENDING.computeIfPresent(id, (key, request) -> request.player == event.player ? null : request);
+            SESSIONS.computeIfPresent(id, (key, session) -> session.player == event.player ? null : session);
+            CHARGES.computeIfPresent(id, (key, charge) -> charge.player == event.player ? null : charge);
         }
     }
 

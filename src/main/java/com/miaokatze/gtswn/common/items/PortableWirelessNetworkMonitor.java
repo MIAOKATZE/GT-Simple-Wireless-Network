@@ -318,6 +318,21 @@ public class PortableWirelessNetworkMonitor extends Item
         MonitorBindings.ensureId(stack);
     }
 
+    /** Explicit wheel action; does not depend on the player's current sneak gesture. */
+    public boolean canUseBaubleHud(ItemStack stack, EntityPlayer player) {
+        if (stack == null || stack.getItem() != this || player == null || player.worldObj.isRemote) return false;
+        if (com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.hasProfileReference(stack))
+            return com.miaokatze.gtswn.common.monitoring.MonitoringProfiles.get(player.worldObj)
+                .canUsePortable(player.getUniqueID(), stack);
+        return isMonitorBound(stack) && player.getUniqueID()
+            .toString()
+            .equals(getOwnerUUID(stack));
+    }
+
+    public void toggleBaubleHud(ItemStack stack, EntityPlayer player) {
+        if (canUseBaubleHud(stack, player)) toggleHUDMode(stack, player);
+    }
+
     private void updateOwner(ItemStack aStack, EntityPlayer aPlayer) {
         com.miaokatze.gtswn.common.hud.MonitorBindings.clear(aStack);
         // 设置新拥有者（覆盖旧数据）

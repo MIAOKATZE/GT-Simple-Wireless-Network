@@ -26,6 +26,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
 import com.miaokatze.gtswn.mixins.baubles.PacketSyncAllBaubleMixin;
 import com.miaokatze.gtswn.network.PacketTerminalBaubleAction;
@@ -58,8 +59,10 @@ public class TerminalBaubleNativeInventoryTest {
         oldAssignments = new ArrayList<>(slotList("assignedSlots"));
         oldTypes = new ArrayList<>(slotList("registeredTypes"));
         slotList("registeredTypes").add("gtswn_link");
+        slotList("registeredTypes").add("gtswn_quantum");
         slotList("assignedSlots").clear();
-        for (int i = 0; i < 8; i++) slotList("assignedSlots").add(i == LINK_SLOT ? "gtswn_link" : "ring");
+        for (int i = 0; i < 8; i++)
+            slotList("assignedSlots").add(i == LINK_SLOT ? "gtswn_link" : i == 7 ? "gtswn_quantum" : "ring");
         Field available = TerminalBaubles.class.getDeclaredField("baublesAvailable");
         available.setAccessible(true);
         oldAvailable = available.getBoolean(null);
@@ -157,6 +160,76 @@ public class TerminalBaubleNativeInventoryTest {
         TerminalBaubles.service(player, PacketTerminalBaubleAction.RETURN, -1);
         assertNull(baubles.getStackInSlot(LINK_SLOT));
         assertSame(replacement, player.getHeldItem());
+    }
+
+    @Test
+    public void wheelEnergyAndPowerModesChangeOnlyAfterSuccessfulNativeBorrowAndReturnSameStack() {
+        for (int action : new int[] { PacketTerminalBaubleAction.WHEEL_OUTER_FIRST,
+            PacketTerminalBaubleAction.WHEEL_OUTER_SECOND }) {
+            boolean output = action == PacketTerminalBaubleAction.WHEEL_OUTER_SECOND;
+            ItemStack terminal = link(output ? 0 : 1);
+            baubles.setInventorySlotContents(LINK_SLOT, terminal);
+            for (int i = 0; i < 36; i++) player.inventory.setInventorySlotContents(i, new ItemStack(new Item()));
+            ItemStack oldHeld = player.getHeldItem();
+            TerminalBaubles.service(player, action, 1);
+            assertSame(terminal, baubles.getStackInSlot(LINK_SLOT));
+            assertSame(oldHeld, player.getHeldItem());
+            assertEquals(!output, WirelessEnergyTap.getOutputModeStatic(terminal));
+            assertEquals(output ? 0 : 1, terminal.getItemDamage());
+            player.inventory.setInventorySlotContents(9, null);
+            TerminalBaubles.service(player, action, 1);
+            assertSame(terminal, player.getHeldItem());
+            assertSame(oldHeld, player.inventory.getStackInSlot(9));
+            assertEquals(output, WirelessEnergyTap.getOutputModeStatic(terminal));
+            assertEquals(output ? 1 : 0, terminal.getItemDamage());
+            assertEquals("preserved", terminal.stackTagCompound.getString("unrelated"));
+            TerminalBaubles.service(player, PacketTerminalBaubleAction.RETURN, -1);
+            assertSame(terminal, baubles.getStackInSlot(LINK_SLOT));
+            assertNull(player.getHeldItem());
+            baubles.setInventorySlotContents(LINK_SLOT, null);
+        }
+    }
+
+    @Test
+    public void wheelActionsRejectMissingOrInvalidSelectionAndQuantumClientOnlyInnerAction() {
+        ItemStack terminal = link(0);
+        baubles.setInventorySlotContents(LINK_SLOT, terminal);
+        for (int selection : new int[] { -1, 0, 2, 8 })
+            TerminalBaubles.service(player, PacketTerminalBaubleAction.WHEEL_OUTER_SECOND, selection);
+        assertSame(terminal, baubles.getStackInSlot(LINK_SLOT));
+        assertFalse(WirelessEnergyTap.getOutputModeStatic(terminal));
+        assertNull(player.getHeldItem());
+        ItemStack quantum = new ItemStack(new ItemNetworkQuantumTerminal());
+        baubles.setInventorySlotContents(7, quantum);
+        TerminalBaubles.service(player, PacketTerminalBaubleAction.WHEEL_INNER, 3);
+        assertSame(quantum, baubles.getStackInSlot(7));
+        assertNull(quantum.stackTagCompound);
+        assertNull(player.getHeldItem());
+    }
+
+    @Test
+    public void wheelCannotOverwriteAnActiveBorrowOrIgnoreNativeUnequipVeto() {
+        ItemStack first = link(0), other = new ItemStack(new WirelessEnergyTap() {
+
+            @Override
+            public boolean canUnequip(ItemStack stack, net.minecraft.entity.EntityLivingBase entity) {
+                return false;
+            }
+        });
+        baubles.setInventorySlotContents(LINK_SLOT, first);
+        TerminalBaubles.service(player, PacketTerminalBaubleAction.WHEEL_OUTER_FIRST, 1);
+        baubles.setInventorySlotContents(LINK_SLOT, other);
+        TerminalBaubles.service(player, PacketTerminalBaubleAction.WHEEL_OUTER_SECOND, 1);
+        assertSame(first, player.getHeldItem());
+        assertSame(other, baubles.getStackInSlot(LINK_SLOT));
+        baubles.setInventorySlotContents(LINK_SLOT, null);
+        TerminalBaubles.service(player, PacketTerminalBaubleAction.RETURN, -1);
+        assertSame(first, baubles.getStackInSlot(LINK_SLOT));
+        baubles.setInventorySlotContents(LINK_SLOT, other);
+        TerminalBaubles.service(player, PacketTerminalBaubleAction.WHEEL_OUTER_SECOND, 1);
+        assertNull(player.getHeldItem());
+        assertSame(other, baubles.getStackInSlot(LINK_SLOT));
+        assertFalse(WirelessEnergyTap.getOutputModeStatic(other));
     }
 
     @Test

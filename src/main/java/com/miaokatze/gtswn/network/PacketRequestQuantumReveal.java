@@ -18,6 +18,7 @@ import net.minecraft.world.World;
 import net.minecraft.world.chunk.Chunk;
 import net.minecraftforge.common.DimensionManager;
 
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumIncorporationRegistry;
@@ -39,7 +40,24 @@ import io.netty.buffer.ByteBuf;
 /** Bounded nearby loaded-chunk scan, only on an explicit terminal request. */
 public class PacketRequestQuantumReveal implements IMessage {
 
-    private static final Map<UUID, EntityPlayerMP> PENDING = new ConcurrentHashMap<>();
+    private static final Map<UUID, Request> PENDING = new ConcurrentHashMap<>();
+
+    private static final class Request {
+
+        final EntityPlayerMP player;
+        final ItemStack wheelStack;
+
+        Request(EntityPlayerMP player, ItemStack wheelStack) {
+            this.player = player;
+            this.wheelStack = wheelStack;
+        }
+    }
+
+    /** Shares the existing per-player pending slot, authorization and reveal cooldown. */
+    public static void enqueueWheel(EntityPlayerMP player, ItemStack stack) {
+        if (player != null && stack != null && stack.getItem() instanceof ItemNetworkQuantumTerminal)
+            PENDING.putIfAbsent(player.getUniqueID(), new Request(player, stack));
+    }
 
     @Override
     public void fromBytes(ByteBuf buffer) {}
@@ -52,7 +70,7 @@ public class PacketRequestQuantumReveal implements IMessage {
         @Override
         public IMessage onMessage(PacketRequestQuantumReveal message, MessageContext context) {
             EntityPlayerMP player = context.getServerHandler().playerEntity;
-            if (player != null) PENDING.putIfAbsent(player.getUniqueID(), player);
+            if (player != null) PENDING.putIfAbsent(player.getUniqueID(), new Request(player, null));
             return null;
         }
     }
@@ -66,13 +84,13 @@ public class PacketRequestQuantumReveal implements IMessage {
 
         @SubscribeEvent
         public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
-            PENDING.forEach((id, player) -> { if (player == event.player) PENDING.remove(id, player); });
+            PENDING.forEach((id, request) -> { if (request.player == event.player) PENDING.remove(id, request); });
         }
 
         @SubscribeEvent
         public void tick(TickEvent.ServerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
-            for (Map.Entry<UUID, EntityPlayerMP> entry : PENDING.entrySet()) {
+            for (Map.Entry<UUID, Request> entry : PENDING.entrySet()) {
                 if (PENDING.remove(entry.getKey(), entry.getValue())) {
                     try {
                         handle(entry.getValue());
@@ -84,12 +102,14 @@ public class PacketRequestQuantumReveal implements IMessage {
         }
     }
 
-    private static void handle(EntityPlayerMP player) {
+    private static void handle(Request request) {
+        EntityPlayerMP player = request.player;
         if (!PlayerRequestQueue.isOnline(player)) return;
-        ItemStack held = player.getHeldItem();
+        ItemStack held = request.wheelStack == null ? player.getHeldItem() : request.wheelStack;
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
         if (!QuantumTerminalAccess.validate(player, held)) return;
-        if (!PacketTerminalGesture.consumeReveal(player)) return;
+        if (request.wheelStack == null ? !PacketTerminalGesture.consumeReveal(player)
+            : !TerminalBaubles.consumeWheelCharge(player, request.wheelStack)) return;
         World world = player.worldObj;
         long now = world.getTotalWorldTime();
         long requestTick = net.minecraft.server.MinecraftServer.getServer()

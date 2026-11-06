@@ -167,6 +167,18 @@ public class WirelessEnergyTap extends Item
         return canTrigger(held, player.worldObj);
     }
 
+    /** Explicit accessory source after the server has consumed its wheel charge credential. */
+    public boolean tryConsumeRevealCooldown(EntityPlayer player, ItemStack stack) {
+        if (player == null || player.worldObj == null
+            || player.worldObj.isRemote
+            || stack == null
+            || stack.getItem() != this
+            || stack.stackSize != 1) return false;
+        for (ItemStack accessory : com.miaokatze.gtswn.common.baubles.TerminalBaubles.terminals(player))
+            if (accessory == stack) return canTrigger(stack, player.worldObj);
+        return false;
+    }
+
     /**
      * 获取当前输出模式
      */

@@ -14,6 +14,7 @@ import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.baubles.TerminalBaubles;
 import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.WirelessNodeIndexCodec;
 import com.miaokatze.gtswn.common.covers.WirelessNodeRegistry;
@@ -102,7 +103,13 @@ public final class NodeRevealRequestQueue {
 
     /** Netty 线程入队：包 11 显形请求（只带玩家引用，世界访问留给主线程） */
     public static void enqueue(EntityPlayerMP player) {
-        PENDING.enqueue(player);
+        PENDING.enqueue(player, null);
+    }
+
+    /** Uses the same per-player coalescing and eight-request server tick budget as held reveals. */
+    public static void enqueueWheel(EntityPlayerMP player, ItemStack stack) {
+        if (player != null && stack != null && stack.getItem() instanceof WirelessEnergyTap)
+            PENDING.enqueue(player, stack);
     }
 
     /**
@@ -183,10 +190,21 @@ public final class NodeRevealRequestQueue {
         PENDING.drain();
     }
 
-    private static final class RevealQueue extends PlayerRequestQueue<EntityPlayerMP> {
+    private static final class RevealRequest {
 
-        void enqueue(EntityPlayerMP player) {
-            offer(player, player);
+        final EntityPlayerMP player;
+        final ItemStack wheelStack;
+
+        RevealRequest(EntityPlayerMP player, ItemStack wheelStack) {
+            this.player = player;
+            this.wheelStack = wheelStack;
+        }
+    }
+
+    private static final class RevealQueue extends PlayerRequestQueue<RevealRequest> {
+
+        void enqueue(EntityPlayerMP player, ItemStack stack) {
+            offer(player, new RevealRequest(player, stack));
         }
 
         void clear() {
@@ -194,8 +212,8 @@ public final class NodeRevealRequestQueue {
         }
 
         @Override
-        protected EntityPlayerMP playerOf(EntityPlayerMP player) {
-            return player;
+        protected EntityPlayerMP playerOf(RevealRequest request) {
+            return request.player;
         }
 
         void drain() {
@@ -203,10 +221,11 @@ public final class NodeRevealRequestQueue {
         }
 
         @Override
-        protected void process(EntityPlayerMP player) {
+        protected void process(RevealRequest request) {
+            EntityPlayerMP player = request.player;
             if (!isOnline(player) || !player.isEntityAlive()) return;
             try {
-                handle(player);
+                handle(player, request.wheelStack);
             } catch (Throwable t) {
                 GTSimpleWirelessNetwork.LOG.error("[NodeRevealRequestQueue] 显形请求处理异常（丢弃该条，继续后续）", t);
             }
@@ -214,19 +233,22 @@ public final class NodeRevealRequestQueue {
     }
 
     /** 主线程处理单条显形请求（校验 → 冷却 → 查询 → 过滤 → 回发） */
-    private static void handle(EntityPlayerMP player) {
-        ItemStack held = player.inventory.getCurrentItem();
+    private static void handle(EntityPlayerMP player, ItemStack wheelStack) {
+        ItemStack held = wheelStack == null ? player.inventory.getCurrentItem() : wheelStack;
         if (held == null || !(held.getItem() instanceof WirelessEnergyTap)) {
             // 发送者已不手持链路终端：静默丢弃
             return;
         }
         WirelessEnergyTap tap = (WirelessEnergyTap) held.getItem();
-        if (!PacketTerminalGesture.consumeReveal(player)) return;
-        boolean cooldownPass = tap.tryConsumeRevealCooldown(player);
+        if (wheelStack == null ? !PacketTerminalGesture.consumeReveal(player)
+            : !TerminalBaubles.consumeWheelCharge(player, wheelStack)) return;
+        boolean cooldownPass = wheelStack == null ? tap.tryConsumeRevealCooldown(player)
+            : tap.tryConsumeRevealCooldown(player, wheelStack);
         if (!cooldownPass) {
             // 4 tick 冷却中：静默丢弃（不回包）
             return;
         }
+        if (wheelStack != null) TerminalBaubles.syncChangedStack(player, wheelStack);
         // 首次按当前模式显形；同一世界的 15 秒窗口内再次扫描同时显形两类节点。
         byte wantedType = WirelessEnergyTap.getOutputModeStatic(held) ? WirelessNodeRegistry.TYPE_DYNAMO
             : WirelessNodeRegistry.TYPE_ENERGY;
