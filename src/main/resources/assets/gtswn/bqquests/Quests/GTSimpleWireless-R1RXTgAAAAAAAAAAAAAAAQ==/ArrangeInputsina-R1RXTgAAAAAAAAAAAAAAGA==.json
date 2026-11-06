@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lInput in Order as One Group§r\nMultiple matrix compartments act as §1one unit§r. Starting at the §1ME entry point§r, they receive items and fluids in §1pattern order§r.\n\n§3§lRepeated Materials Stay Separate§r\nFor example, with a pattern of §1A/B/B/C§r, four item compartments receive §1A, B, B and C§r in order. The two B inputs stay separate.\n\n§3§lPlacement and Connection§r\nPlace compartments of the same type in a §1straight line, all facing the same way§r, §1horizontally or vertically§r. Use only §1one ME entry§r for the whole group.",
+      "desc:8": "§3§lInput in Pattern Order as One Group§r\nMultiple matrix compartments act as §1one unit§r. Starting at the §1ME entry point§r, they receive items and fluids in §1pattern order§r. The first item slot in the pattern maps to the §1item compartment nearest the entry§r, with later compartments ordered by distance; fluids map to fluid compartments in their own slot order. For example, §1A/B/B/C§r goes into four separate item compartments; the two B inputs do not merge.\n\n§3§lPlacement and Entry§r\nPlace compartments of the same type in a §1straight line, all facing the same way§r, horizontally or vertically. Item and fluid compartments may connect side by side. Use only §1one ME entry§r for the whole group; its position determines input order.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

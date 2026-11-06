@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--classpath-file', type=Path, required=True)
     parser.add_argument('--java-home', type=Path, required=True)
     parser.add_argument('--work-dir', type=Path, required=True)
+    parser.add_argument('--core-source-root', type=Path, default=Path(__file__).resolve().parents[3] / 'MIAOKATZE-Core')
     args = parser.parse_args()
     root, work = args.source_root.resolve(), args.work_dir.resolve()
     cp = args.classpath_file.read_text().strip()
@@ -41,17 +42,18 @@ def main():
     source_dir = root / 'src/main/java/com/miaokatze/gtswn/crossmod/bq'
     sources = list(fixtures.glob('*.java')) + [source_dir / name for name in ('BqQuestInjector.java', 'BqCompat.java', 'BqStampFile.java')]
     sources.append(Path(__file__).with_name('BqProgressRecoveryRegression.java'))
+    sources.append(args.core_source_root / 'src/main/java/com/miaokatze/miaokatzecore/api/bq/QuestProgressRecovery.java')
     (work / 'source-sha256.txt').write_text('\n'.join(hashlib.sha256(p.read_bytes()).hexdigest() + ' ' + str(p) for p in sources) + '\n')
     (work / 'classpath-sha256.txt').write_text('\n'.join(hashlib.sha256(Path(p).read_bytes()).hexdigest() + ' ' + p for p in cp.split(os.pathsep) if Path(p).is_file()) + '\n')
     java = args.java_home / 'bin'
     compile_command = [str(java / 'javac'), '-encoding', 'UTF-8', '-proc:none', '-cp', cp, '-d', str(classes)] + list(map(str, sources))
-    result = subprocess.run(compile_command, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(compile_command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     (work / 'compile.log').write_text(result.stdout + result.stderr)
     if result.returncode:
         print(result.stdout + result.stderr)
         return result.returncode
     command = [str(java / 'java'), '-cp', os.pathsep.join((str(resources), str(classes), cp)), 'com.miaokatze.gtswn.crossmod.bq.BqProgressRecoveryRegression', str(work)]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    result = subprocess.run(command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
     (work / 'tests.log').write_text(result.stdout + result.stderr)
     print(result.stdout + result.stderr)
     return result.returncode

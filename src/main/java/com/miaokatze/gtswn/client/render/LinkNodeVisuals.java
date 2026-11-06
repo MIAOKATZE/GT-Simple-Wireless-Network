@@ -12,6 +12,7 @@ public final class LinkNodeVisuals {
     public static final List<Cell> CELLS = cells();
     private static final int[][] NORMALS = { { 0, -1, 0 }, { 0, 1, 0 }, { 0, 0, -1 }, { 0, 0, 1 }, { -1, 0, 0 },
         { 1, 0, 0 } };
+    private static final Raster RASTER_16 = new Raster(16), RASTER_32 = new Raster(32), RASTER_64 = new Raster(64);
 
     private LinkNodeVisuals() {}
 
@@ -143,12 +144,15 @@ public final class LinkNodeVisuals {
 
     /** Face-local coordinates; depth is always outside the original full block. */
     public static double[] point(int side, double u, double v, double depth) {
-        double[] n = normal(side);
-        double[] a = side < 2 ? new double[] { 1, 0, 0 }
-            : side < 4 ? new double[] { 1, 0, 0 } : new double[] { 0, 0, 1 };
-        double[] b = side < 2 ? new double[] { 0, 0, 1 } : new double[] { 0, 1, 0 };
-        return new double[] { .5 + n[0] * (.5 + depth) + a[0] * u + b[0] * v,
-            .5 + n[1] * (.5 + depth) + a[1] * u + b[1] * v, .5 + n[2] * (.5 + depth) + a[2] * u + b[2] * v };
+        return new double[] { pointCoordinate(side, 0, u, v, depth), pointCoordinate(side, 1, u, v, depth),
+            pointCoordinate(side, 2, u, v, depth) };
+    }
+
+    /** Same arithmetic and face basis as point(), without allocating temporary vectors per vertex. */
+    public static double pointCoordinate(int side, int axis, double u, double v, double depth) {
+        int a = axis == (side < 4 ? 0 : 2) ? 1 : 0;
+        int b = axis == (side < 2 ? 2 : 1) ? 1 : 0;
+        return .5 + NORMALS[side][axis] * (.5 + depth) + a * u + b * v;
     }
 
     public static double[] sampleColumn(Random random) {
@@ -189,29 +193,67 @@ public final class LinkNodeVisuals {
     public static int[] pixels(int size, double seconds, boolean energy, boolean emissive, int voltageRgb,
         int percent) {
         int[] pixels = new int[size * size];
-        for (int y = 0; y < size; y++) {
-            for (int x = 0; x < size; x++) {
-                double u = (x + .5) / size - .5, v = (y + .5) / size - .5;
-                for (Cell cell : CELLS) {
-                    double dx = Math.abs(u - cell.u), dy = Math.abs(v - cell.v);
-                    double distance = Math.max(dy, (Math.sqrt(3) * dx + dy) / 2);
-                    if (distance > CELL_RADIUS * .866) continue;
-                    boolean edge = distance > CELL_RADIUS * .866 - 1.1 / size;
-                    double light = brightness(cell, seconds, size == 32, energy);
-                    int alpha = emissive ? (int) (light * (edge ? 245 : 160)) : edge ? 125 : 38;
-                    int rgb = cellRgb(cell.ring, energy, size == 64 ? voltageRgb : -1, percent);
-                    int red = rgb >> 16 & 255, green = rgb >> 8 & 255, blue = rgb & 255;
-                    if (emissive) {
-                        red += (int) ((255 - red) * light * .65);
-                        green += (int) ((255 - green) * light * .65);
-                        blue += (int) ((255 - blue) * light * .65);
-                    }
-                    pixels[y * size + x] = alpha << 24 | red << 16 | green << 8 | blue;
-                    break;
+        writePixels(size, seconds, energy, voltageRgb, percent, emissive ? null : pixels, emissive ? pixels : null);
+        return pixels;
+    }
+
+    /** Fill existing texture buffers; only pixel ownership is cached, never colors or animation time. */
+    public static void writePixels(int size, double seconds, boolean energy, int voltageRgb, int percent, int[] base,
+        int[] glow) {
+        Raster raster = size == 64 ? RASTER_64 : size == 32 ? RASTER_32 : size == 16 ? RASTER_16 : new Raster(size);
+        if (base != null) java.util.Arrays.fill(base, 0);
+        if (glow != null) java.util.Arrays.fill(glow, 0);
+        for (int i = 0; i < CELLS.size(); i++) {
+            Cell cell = CELLS.get(i);
+            double light = brightness(cell, seconds, size == 32, energy);
+            int rgb = cellRgb(cell.ring, energy, size == 64 ? voltageRgb : -1, percent);
+            int red = rgb >> 16 & 255, green = rgb >> 8 & 255, blue = rgb & 255;
+            red += (int) ((255 - red) * light * .65);
+            green += (int) ((255 - green) * light * .65);
+            blue += (int) ((255 - blue) * light * .65);
+            int glowRgb = red << 16 | green << 8 | blue;
+            for (int edge = 0; edge < 2; edge++) {
+                int basePixel = (edge == 1 ? 125 : 38) << 24 | rgb;
+                int glowPixel = (int) (light * (edge == 1 ? 245 : 160)) << 24 | glowRgb;
+                for (int pixel : raster.pixels[i][edge]) {
+                    if (base != null) base[pixel] = basePixel;
+                    if (glow != null) glow[pixel] = glowPixel;
                 }
             }
         }
-        return pixels;
+    }
+
+    private static final class Raster {
+
+        private final int[][][] pixels = new int[CELLS.size()][2][];
+
+        private Raster(int size) {
+            int[] owners = new int[size * size];
+            java.util.Arrays.fill(owners, -1);
+            int[][] counts = new int[CELLS.size()][2];
+            for (int y = 0; y < size; y++) {
+                for (int x = 0; x < size; x++) {
+                    double u = (x + .5) / size - .5, v = (y + .5) / size - .5;
+                    for (int i = 0; i < CELLS.size(); i++) {
+                        Cell cell = CELLS.get(i);
+                        double dx = Math.abs(u - cell.u), dy = Math.abs(v - cell.v);
+                        double distance = Math.max(dy, (Math.sqrt(3) * dx + dy) / 2);
+                        if (distance > CELL_RADIUS * .866) continue;
+                        int edge = distance > CELL_RADIUS * .866 - 1.1 / size ? 1 : 0;
+                        owners[y * size + x] = i * 2 + edge;
+                        counts[i][edge]++;
+                        break;
+                    }
+                }
+            }
+            for (int i = 0; i < pixels.length; i++) {
+                for (int edge = 0; edge < 2; edge++) pixels[i][edge] = new int[counts[i][edge]];
+            }
+            for (int pixel = owners.length - 1; pixel >= 0; pixel--) {
+                int owner = owners[pixel];
+                if (owner >= 0) pixels[owner / 2][owner % 2][--counts[owner / 2][owner % 2]] = pixel;
+            }
+        }
     }
 
     private static List<Cell> cells() {
@@ -229,6 +271,8 @@ public final class LinkNodeVisuals {
 
         public final int q, r, ring;
         public final double u, v;
+        private final double[] surfaceU = new double[7], surfaceV = new double[7], wallU = new double[7],
+            wallV = new double[7];
 
         private Cell(int q, int r, int ring) {
             this.q = q;
@@ -236,6 +280,29 @@ public final class LinkNodeVisuals {
             this.ring = ring;
             u = CELL_RADIUS * 1.5 * q;
             v = CELL_RADIUS * Math.sqrt(3) * (r + q * .5);
+            for (int edge = 0; edge <= 6; edge++) {
+                double angle = edge * Math.PI / 3;
+                surfaceU[edge] = u + Math.cos(angle) * CELL_RADIUS;
+                surfaceV[edge] = v + Math.sin(angle) * CELL_RADIUS;
+                wallU[edge] = u + Math.cos(angle) * (CELL_RADIUS * .93);
+                wallV[edge] = v + Math.sin(angle) * (CELL_RADIUS * .93);
+            }
+        }
+
+        public double surfaceU(int edge) {
+            return surfaceU[edge];
+        }
+
+        public double surfaceV(int edge) {
+            return surfaceV[edge];
+        }
+
+        public double wallU(int edge) {
+            return wallU[edge];
+        }
+
+        public double wallV(int edge) {
+            return wallV[edge];
         }
     }
 }

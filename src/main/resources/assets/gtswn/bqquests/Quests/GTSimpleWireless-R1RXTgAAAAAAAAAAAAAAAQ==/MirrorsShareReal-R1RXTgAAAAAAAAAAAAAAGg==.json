@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lSharing the Same Input§r\nA mirror lets another machine share the source matrix's §1ordered input§r §1without copying materials§r.\n\n§3§lPlacement and Binding§r\nBuild the destination to match the source layout, replacing only §1one corresponding compartment§r with a mirror. After source §1processing has finished and its buffers are empty§r, §1left-click a source compartment§r with a GT Data Stick, then §1right-click the corresponding mirror§r to bind it.\n\n§3§lConnection Requirements§r\nKeep both groups §1loaded in the same dimension§r. §1Do not connect the destination to ME§r.",
+      "desc:8": "§3§lSharing the Same Input§r\nA mirror lets another machine use the source matrix's §1ordered input§r. There is always §1only one set of patterns and actual inventory, held by the source group§r. The destination stores no separate copy of the materials; multiple machines consume this shared inventory.\n\n§3§lPlacement and Binding§r\nBuild the destination to match the source layout, replacing only §1one corresponding compartment§r with a mirror. After source §1processing has finished and its buffers are empty§r, §1left-click a source compartment§r with a GT Data Stick, then §1right-click the corresponding mirror§r to bind it. Keep both groups §1loaded in the same dimension§r; §1do not connect the destination to ME§r. The mirror does not provide the destination machine with its required structure, research or power.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

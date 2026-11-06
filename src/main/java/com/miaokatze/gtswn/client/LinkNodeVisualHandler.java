@@ -32,6 +32,7 @@ import com.miaokatze.gtswn.common.covers.GTswnCoverWirelessBase;
 import com.miaokatze.gtswn.common.covers.GTswn_Cover_EnergyWireless;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.network.PacketLinkNodeInstalled;
+import com.miaokatze.miaokatzecore.client.fx.VoxelGeometry;
 
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -41,8 +42,14 @@ import gregtech.api.interfaces.tileentity.ICoverable;
 public final class LinkNodeVisualHandler {
 
     public static final LinkNodeVisualHandler INSTANCE = new LinkNodeVisualHandler();
+    // 18 * 37 cells * 24 vertices * 8 ints = 127872 ints, below Tessellator's 131072-int retention bound.
+    private static final int SOURCE_BATCH_LIMIT = 18;
     private final Set<TileEntity> hosts = Collections.newSetFromMap(new IdentityHashMap<>());
     private final List<Source> visible = new ArrayList<>();
+    private final List<Source> eligible = new ArrayList<>();
+    private final double[][] cellLight = new double[2][LinkNodeVisuals.CELLS.size()];
+    private final double[] cellDepth = new double[LinkNodeVisuals.CELLS.size()];
+    private static final float[] PARTICLE_SHADE = { 1, 1, 1, 1, 1, 1 };
     private final List<Particle> particles = new ArrayList<>();
     private final TextureSet[][] textures = new TextureSet[4][2];
     private final Map<Integer, TextureSet> voltageTextures = new HashMap<>();
@@ -185,6 +192,7 @@ public final class LinkNodeVisualHandler {
     private void clear() {
         hosts.clear();
         visible.clear();
+        eligible.clear();
         particles.clear();
         installations.clear();
         installationTargets.clear();
@@ -215,17 +223,27 @@ public final class LinkNodeVisualHandler {
         double seconds = (world.getTotalWorldTime() + event.partialTicks) / 20D;
         Frustrum frustum = new Frustrum();
         frustum.setPosition(x, y, z);
-        List<Source> eligible = new ArrayList<>();
+        eligible.clear();
         for (Source source : visible) {
             if (!source.valid() || !withinDistance(source.host, x, y, z)
                 || !front(source, camera)
                 || !inView(source, frustum)) continue;
+            source.prepareFrame(event.partialTicks);
             eligible.add(source);
         }
         if (eligible.isEmpty()) return;
         eligible.sort(
             java.util.Comparator.comparingDouble((Source source) -> source.host.getDistanceFrom(x, y, z))
                 .reversed());
+        if (high) {
+            for (int i = 0; i < LinkNodeVisuals.CELLS.size(); i++) {
+                Cell cell = LinkNodeVisuals.CELLS.get(i);
+                cellDepth[i] = Math
+                    .max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief));
+                cellLight[0][i] = LinkNodeVisuals.brightness(cell, seconds, false, true);
+                cellLight[1][i] = LinkNodeVisuals.brightness(cell, seconds, false, false);
+            }
+        }
         float oldX = OpenGlHelper.lastBrightnessX, oldY = OpenGlHelper.lastBrightnessY;
         GL11.glPushAttrib(GL11.GL_ALL_ATTRIB_BITS);
         GL11.glPushMatrix();
@@ -248,27 +266,33 @@ public final class LinkNodeVisualHandler {
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, pass == 0 ? GL11.GL_ONE_MINUS_SRC_ALPHA : GL11.GL_ONE);
                 Tessellator tess = Tessellator.instance;
                 TextureSet previousTexture = null;
+                int sourcesInBatch = 0;
                 for (Source source : eligible) {
                     TextureSet texture = texture(source, material);
-                    if (texture != previousTexture) {
+                    if (texture != previousTexture || high && sourcesInBatch == SOURCE_BATCH_LIMIT) {
                         if (previousTexture != null) tess.draw();
-                        mc.getTextureManager()
-                            .bindTexture(pass == 0 ? texture.baseLocation : texture.glowLocation);
+                        if (texture != previousTexture) {
+                            mc.getTextureManager()
+                                .bindTexture(pass == 0 ? texture.baseLocation : texture.glowLocation);
+                        }
                         tess.startDrawingQuads();
                         tess.setColorRGBA_F(1, 1, 1, pass == 0 ? Config.linkNodeOpacity : 1);
                         previousTexture = texture;
+                        sourcesInBatch = 0;
                     }
                     surface(source, high, pass == 0 ? Config.linkNodeOpacity : 1, event.partialTicks);
+                    sourcesInBatch++;
                 }
                 if (previousTexture != null) tess.draw();
             }
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            if (high) relief(seconds, eligible, event.partialTicks);
+            if (high) relief(eligible);
             if (Config.tapParticleDensity() > 0 && mc.gameSettings.particleSetting < 2) {
-                drawParticles(event.partialTicks, false, frustum);
+                prepareParticles(event.partialTicks, frustum, x, y, z);
+                drawParticles(false);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-                drawParticles(event.partialTicks, true, frustum);
+                drawParticles(true);
             }
         } finally {
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, oldX, oldY);
@@ -293,26 +317,22 @@ public final class LinkNodeVisualHandler {
         return texture;
     }
 
-    private static void surface(Source source, boolean high, float opacity, float partial) {
-        double elapsed = source.installElapsed(partial);
+    private void surface(Source source, boolean high, float opacity, float partial) {
+        double elapsed = source.frameElapsed;
         if (!high && elapsed >= LinkNodeInstallAnimation.DURATION_TICKS) {
             Tessellator.instance.setColorRGBA_F(1, 1, 1, opacity);
             quad(source, .001, -.5, -.5, .5, .5);
             return;
         }
-        for (Cell cell : LinkNodeVisuals.CELLS) {
-            float alpha = (float) LinkNodeInstallAnimation.alpha(cell.ring, elapsed);
+        for (int i = 0; i < LinkNodeVisuals.CELLS.size(); i++) {
+            Cell cell = LinkNodeVisuals.CELLS.get(i);
+            float alpha = (float) source.frameAlpha[cell.ring];
             if (alpha <= 0) continue;
             Tessellator.instance.setColorRGBA_F(1, 1, 1, opacity * alpha);
-            double depth = high
-                ? Math.max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief))
-                : .001;
+            double depth = high ? cellDepth[i] : .001;
             for (int edge = 0; edge < 6; edge++) {
-                double angle = edge * Math.PI / 3, next = (edge + 1) * Math.PI / 3;
-                double u = cell.u + Math.cos(angle) * LinkNodeVisuals.CELL_RADIUS;
-                double v = cell.v + Math.sin(angle) * LinkNodeVisuals.CELL_RADIUS;
-                double nu = cell.u + Math.cos(next) * LinkNodeVisuals.CELL_RADIUS;
-                double nv = cell.v + Math.sin(next) * LinkNodeVisuals.CELL_RADIUS;
+                double u = cell.surfaceU(edge), v = cell.surfaceV(edge);
+                double nu = cell.surfaceU(edge + 1), nv = cell.surfaceV(edge + 1);
                 vertex(source, cell.u, cell.v, depth, cell.u + .5, cell.v + .5);
                 vertex(source, u, v, depth, u + .5, v + .5);
                 vertex(source, nu, nv, depth, nu + .5, nv + .5);
@@ -322,10 +342,10 @@ public final class LinkNodeVisualHandler {
     }
 
     private boolean front(Source source, Entity camera) {
-        double[] n = LinkNodeVisuals.normal(source.side);
-        return (camera.posX - source.host.xCoord - .5) * n[0]
-            + (camera.posY + camera.getEyeHeight() - source.host.yCoord - .5) * n[1]
-            + (camera.posZ - source.host.zCoord - .5) * n[2] > .48;
+        ForgeDirection normal = ForgeDirection.getOrientation(source.side);
+        return (camera.posX - source.host.xCoord - .5) * normal.offsetX
+            + (camera.posY + camera.getEyeHeight() - source.host.yCoord - .5) * normal.offsetY
+            + (camera.posZ - source.host.zCoord - .5) * normal.offsetZ > .48;
     }
 
     private static boolean inView(Source source, Frustrum frustum) {
@@ -343,29 +363,32 @@ public final class LinkNodeVisualHandler {
         return host.getDistanceFrom(x, y, z) <= (double) Config.tapRenderDistance * Config.tapRenderDistance;
     }
 
-    private void relief(double seconds, List<Source> eligible, float partial) {
+    private void relief(List<Source> eligible) {
         Tessellator tess = Tessellator.instance;
         tess.startDrawingQuads();
+        int sourcesInBatch = 0;
         for (Source source : eligible) {
-            double elapsed = source.installElapsed(partial);
+            if (sourcesInBatch == SOURCE_BATCH_LIMIT) {
+                tess.draw();
+                tess.startDrawingQuads();
+                sourcesInBatch = 0;
+            }
+            sourcesInBatch++;
             int voltageRgb = source.voltageRgb();
-            for (Cell cell : LinkNodeVisuals.CELLS) {
-                double depth = Math
-                    .max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief));
-                double light = LinkNodeVisuals.brightness(cell, seconds, false, source.energy);
+            for (int i = 0; i < LinkNodeVisuals.CELLS.size(); i++) {
+                Cell cell = LinkNodeVisuals.CELLS.get(i);
+                double depth = cellDepth[i];
+                double light = cellLight[source.energy ? 0 : 1][i];
                 int rgb = LinkNodeVisuals.cellRgb(cell.ring, source.energy, voltageRgb, Config.tapVoltageColorPercent);
                 boolean tinted = LinkNodeVisuals.voltageCell(cell.ring, voltageRgb, Config.tapVoltageColorPercent);
                 tess.setColorRGBA_F(
                     tinted ? (rgb >> 16 & 255) / 255F : source.energy ? 1 : .87F,
                     tinted ? (rgb >> 8 & 255) / 255F : source.energy ? .7F : .3F,
                     tinted ? (rgb & 255) / 255F : source.energy ? .14F : 1,
-                    (float) (Config.linkNodeOpacity * (.25 + light * .6)
-                        * LinkNodeInstallAnimation.alpha(cell.ring, elapsed)));
+                    (float) (Config.linkNodeOpacity * (.25 + light * .6) * source.frameAlpha[cell.ring]));
                 for (int edge = 0; edge < 6; edge++) {
-                    double angle = edge * Math.PI / 3, next = (edge + 1) * Math.PI / 3;
-                    double radius = LinkNodeVisuals.CELL_RADIUS * .93;
-                    double u = cell.u + Math.cos(angle) * radius, v = cell.v + Math.sin(angle) * radius;
-                    double nu = cell.u + Math.cos(next) * radius, nv = cell.v + Math.sin(next) * radius;
+                    double u = cell.wallU(edge), v = cell.wallV(edge);
+                    double nu = cell.wallU(edge + 1), nv = cell.wallV(edge + 1);
                     vertex(source, u, v, .001, 0, 0);
                     vertex(source, nu, nv, .001, 0, 0);
                     vertex(source, nu, nv, depth, 0, 0);
@@ -384,22 +407,21 @@ public final class LinkNodeVisualHandler {
     }
 
     private static void vertex(Source source, double u, double v, double depth, double tu, double tv) {
-        double[] point = LinkNodeVisuals.point(source.side, u, v, depth);
         Tessellator.instance.addVertexWithUV(
-            source.host.xCoord + point[0],
-            source.host.yCoord + point[1],
-            source.host.zCoord + point[2],
+            source.host.xCoord + LinkNodeVisuals.pointCoordinate(source.side, 0, u, v, depth),
+            source.host.yCoord + LinkNodeVisuals.pointCoordinate(source.side, 1, u, v, depth),
+            source.host.zCoord + LinkNodeVisuals.pointCoordinate(source.side, 2, u, v, depth),
             tu,
             tv);
     }
 
-    private void drawParticles(float partial, boolean glow, Frustrum frustum) {
-        Tessellator tess = Tessellator.instance;
-        tess.startDrawingQuads();
+    private void prepareParticles(float partial, Frustrum frustum, double cameraX, double cameraY, double cameraZ) {
         for (Particle particle : particles) {
+            particle.render = false;
             if (!particle.source.valid() || !particle.source.particlesReady(partial)
                 || !inView(particle.source, frustum)) continue;
-            double progress = (particle.age + partial) / particle.life;
+            double age = particle.age + partial;
+            double progress = age / particle.life;
             double depth = LinkNodeVisuals.particleDepth(
                 Config.tapMaterial,
                 particle.u,
@@ -408,47 +430,48 @@ public final class LinkNodeVisualHandler {
                 Config.linkNodeRelief,
                 particle.source.energy,
                 progress);
-            double[] point = LinkNodeVisuals.point(particle.source.side, particle.u, particle.v, depth);
-            double radius = particle.radius * 1.5 * Config.tapParticleSizePercent / 100D * (glow ? 1.85 : 1);
-            Entity camera = Minecraft.getMinecraft().renderViewEntity;
-            double cameraX = camera.lastTickPosX + (camera.posX - camera.lastTickPosX) * partial;
-            double cameraY = camera.lastTickPosY + (camera.posY - camera.lastTickPosY) * partial;
-            double cameraZ = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * partial;
-            double dx = particle.source.host.xCoord + point[0] - cameraX;
-            double dy = particle.source.host.yCoord + point[1] - cameraY;
-            double dz = particle.source.host.zCoord + point[2] - cameraZ;
+            particle.x = particle.source.host.xCoord
+                + LinkNodeVisuals.pointCoordinate(particle.source.side, 0, particle.u, particle.v, depth);
+            particle.y = particle.source.host.yCoord
+                + LinkNodeVisuals.pointCoordinate(particle.source.side, 1, particle.u, particle.v, depth);
+            particle.z = particle.source.host.zCoord
+                + LinkNodeVisuals.pointCoordinate(particle.source.side, 2, particle.u, particle.v, depth);
+            double dx = particle.x - cameraX, dy = particle.y - cameraY, dz = particle.z - cameraZ;
             if (dx * dx + dy * dy + dz * dz > (double) Config.tapRenderDistance * Config.tapRenderDistance) continue;
-            double age = particle.age + partial;
-            boolean energy = particle.source.energy;
+            particle.render = true;
             int rgb = LinkNodeVisuals.particleVoltageRgb(
                 particle.u,
                 particle.v,
                 particle.source.voltageRgb(),
                 Config.tapVoltageColorPercent);
-            float alpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, glow);
-            tess.setColorRGBA_F(
-                rgb >= 0 ? (rgb >> 16 & 255) / 255F : energy ? 1 : .95F,
-                rgb >= 0 ? (rgb >> 8 & 255) / 255F : energy ? .78F : .35F,
-                rgb >= 0 ? (rgb & 255) / 255F : energy ? .25F : 1,
-                alpha);
-            cube(
-                particle.source.host.xCoord + point[0],
-                particle.source.host.yCoord + point[1],
-                particle.source.host.zCoord + point[2],
-                radius);
+            boolean energy = particle.source.energy;
+            particle.red = rgb >= 0 ? (rgb >> 16 & 255) / 255F : energy ? 1 : .95F;
+            particle.green = rgb >= 0 ? (rgb >> 8 & 255) / 255F : energy ? .78F : .35F;
+            particle.blue = rgb >= 0 ? (rgb & 255) / 255F : energy ? .25F : 1;
+            particle.bodyAlpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, false);
+            particle.glowAlpha = (float) LinkNodeVisuals.particleOpacity(age, particle.life, true);
+            particle.renderRadius = particle.radius * 1.5 * Config.tapParticleSizePercent / 100D;
         }
-        tess.draw();
     }
 
-    private static void cube(double x, double y, double z, double radius) {
-        int[][] faces = { { 0, 1, 3, 2 }, { 4, 6, 7, 5 }, { 0, 4, 5, 1 }, { 2, 3, 7, 6 }, { 0, 2, 6, 4 },
-            { 1, 5, 7, 3 } };
-        for (int[] face : faces) {
-            for (int corner : face) Tessellator.instance.addVertex(
-                x + ((corner & 1) == 0 ? -radius : radius),
-                y + ((corner & 4) == 0 ? -radius : radius),
-                z + ((corner & 2) == 0 ? -radius : radius));
+    private void drawParticles(boolean glow) {
+        Tessellator tess = Tessellator.instance;
+        tess.startDrawingQuads();
+        for (Particle particle : particles) {
+            if (!particle.render) continue;
+            VoxelGeometry.tessellatedCube(
+                tess,
+                particle.x,
+                particle.y,
+                particle.z,
+                particle.renderRadius * (glow ? 1.85 : 1),
+                particle.red,
+                particle.green,
+                particle.blue,
+                glow ? particle.glowAlpha : particle.bodyAlpha,
+                PARTICLE_SHADE);
         }
+        tess.draw();
     }
 
     private final class Source {
@@ -459,6 +482,15 @@ public final class LinkNodeVisualHandler {
         private final int machineRgb;
         private final Object installedCover;
         private final String installationKey;
+        private final double[] frameAlpha = new double[4];
+        private double frameElapsed;
+
+        private void prepareFrame(float partial) {
+            frameElapsed = installElapsed(partial);
+            for (int ring = 0; ring < frameAlpha.length; ring++) {
+                frameAlpha[ring] = LinkNodeInstallAnimation.alpha(ring, frameElapsed);
+            }
+        }
 
         private Source(TileEntity host, int side, boolean energy) {
             this.host = host;
@@ -496,6 +528,9 @@ public final class LinkNodeVisualHandler {
         private final double u, v, radius;
         private final int life;
         private int age;
+        private boolean render;
+        private double x, y, z, renderRadius;
+        private float red, green, blue, bodyAlpha, glowAlpha;
 
         private Particle(Source source) {
             this.source = source;
@@ -537,18 +572,14 @@ public final class LinkNodeVisualHandler {
             long next = (long) Math.floor(seconds * (size == 32 ? 3 : 10));
             if (next == frame) return;
             frame = next;
-            System.arraycopy(
-                LinkNodeVisuals.pixels(size, seconds, energy, false, voltageRgb, voltagePercent),
-                0,
+            LinkNodeVisuals.writePixels(
+                size,
+                seconds,
+                energy,
+                voltageRgb,
+                voltagePercent,
                 base.getTextureData(),
-                0,
-                size * size);
-            System.arraycopy(
-                LinkNodeVisuals.pixels(size, seconds, energy, true, voltageRgb, voltagePercent),
-                0,
-                glow.getTextureData(),
-                0,
-                size * size);
+                glow.getTextureData());
             base.updateDynamicTexture();
             glow.updateDynamicTexture();
         }

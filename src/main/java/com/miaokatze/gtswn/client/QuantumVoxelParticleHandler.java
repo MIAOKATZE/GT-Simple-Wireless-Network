@@ -195,6 +195,7 @@ public final class QuantumVoxelParticleHandler {
         double cameraZ = camera.lastTickPosZ + (camera.posZ - camera.lastTickPosZ) * event.partialTicks;
         Frustrum frustum = new Frustrum();
         frustum.setPosition(cameraX, cameraY, cameraZ);
+        prepareParticles(event.partialTicks, frustum, cameraX, cameraY, cameraZ);
         float lightX = OpenGlHelper.lastBrightnessX;
         float lightY = OpenGlHelper.lastBrightnessY;
         // Outpost's mesh strategy: one state scope for the entire frame, alpha body + additive glow.
@@ -212,9 +213,9 @@ public final class QuantumVoxelParticleHandler {
             GL11.glDepthMask(false);
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, 240F, 240F);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            batch(event.partialTicks, false, frustum, cameraX, cameraY, cameraZ);
+            batch(false);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-            batch(event.partialTicks, true, frustum, cameraX, cameraY, cameraZ);
+            batch(true);
         } finally {
             OpenGlHelper.setLightmapTextureCoords(OpenGlHelper.lightmapTexUnit, lightX, lightY);
             GL11.glPopMatrix();
@@ -240,11 +241,19 @@ public final class QuantumVoxelParticleHandler {
         return dx * dx + dy * dy + dz * dz <= (double) distance * distance;
     }
 
-    private void batch(float partialTicks, boolean glow, Frustrum frustum, double cameraX, double cameraY,
+    private void prepareParticles(float partialTicks, Frustrum frustum, double cameraX, double cameraY,
         double cameraZ) {
-        Tessellator tessellator = Tessellator.instance;
-        tessellator.startDrawingQuads();
         for (Particle particle : particles) {
+            particle.bodyVisible = false;
+            particle.glowVisible = false;
+            double x = particle.previousX + (particle.x - particle.previousX) * partialTicks;
+            double y = particle.previousY + (particle.y - particle.previousY) * partialTicks;
+            double z = particle.previousZ + (particle.z - particle.previousZ) * partialTicks;
+            if (!withinRenderDistance(x, y, z, cameraX, cameraY, cameraZ, Config.quantumRenderDistance)
+                || !particle.valid(currentWorld)) continue;
+            particle.renderX = x;
+            particle.renderY = y;
+            particle.renderZ = z;
             int rgb = QuantumNetworkColor.rgb(
                 particle.node ? ((TileEntityNetworkQuantumNode) particle.source).getColorIndex()
                     : QuantumIncorporationClientState.colorIndex(
@@ -252,32 +261,38 @@ public final class QuantumVoxelParticleHandler {
                         particle.source.xCoord,
                         particle.source.yCoord,
                         particle.source.zCoord));
-            float red = ((rgb >> 16) & 255) / 255F;
-            float green = ((rgb >> 8) & 255) / 255F;
-            float blue = (rgb & 255) / 255F;
+            particle.red = ((rgb >> 16) & 255) / 255F;
+            particle.green = ((rgb >> 8) & 255) / 255F;
+            particle.blue = (rgb & 255) / 255F;
             double progress = (particle.age + partialTicks) / particle.lifetime;
-            float alpha = (float) (Math.min(1, (particle.age + partialTicks + 1) / 3) * (1 - progress));
-            double radius = particle.radius * particleSizeMultiplier(Config.quantumParticleSizePercent)
-                * (glow ? 1.65D : 1D);
-            double x = particle.previousX + (particle.x - particle.previousX) * partialTicks;
-            double y = particle.previousY + (particle.y - particle.previousY) * partialTicks;
-            double z = particle.previousZ + (particle.z - particle.previousZ) * partialTicks;
-            if (!withinRenderDistance(x, y, z, cameraX, cameraY, cameraZ, Config.quantumRenderDistance)
-                || !particle.valid(currentWorld)
-                || !frustum.isBoundingBoxInFrustum(
-                    AxisAlignedBB
-                        .getBoundingBox(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius)))
-                continue;
+            particle.alpha = (float) (Math.min(1, (particle.age + partialTicks + 1) / 3) * (1 - progress));
+            particle.renderRadius = particle.radius * particleSizeMultiplier(Config.quantumParticleSizePercent);
+            double radius = particle.renderRadius;
+            particle.bodyVisible = frustum.isBoundingBoxInFrustum(
+                particle.renderBounds
+                    .setBounds(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius));
+            radius *= 1.65D;
+            particle.glowVisible = frustum.isBoundingBoxInFrustum(
+                particle.renderBounds
+                    .setBounds(x - radius, y - radius, z - radius, x + radius, y + radius, z + radius));
+        }
+    }
+
+    private void batch(boolean glow) {
+        Tessellator tessellator = Tessellator.instance;
+        tessellator.startDrawingQuads();
+        for (Particle particle : particles) {
+            if (glow ? !particle.glowVisible : !particle.bodyVisible) continue;
             com.miaokatze.miaokatzecore.client.fx.VoxelGeometry.tessellatedCube(
                 tessellator,
-                x,
-                y,
-                z,
-                radius,
-                red,
-                green,
-                blue,
-                alpha * (glow ? .14F : .65F),
+                particle.renderX,
+                particle.renderY,
+                particle.renderZ,
+                particle.renderRadius * (glow ? 1.65D : 1D),
+                particle.red,
+                particle.green,
+                particle.blue,
+                particle.alpha * (glow ? .14F : .65F),
                 FACE_SHADE);
         }
         tessellator.draw();
@@ -293,6 +308,10 @@ public final class QuantumVoxelParticleHandler {
         private final double vx, vy, vz, radius;
         private double previousX, previousY, previousZ, x, y, z;
         private int age;
+        private final AxisAlignedBB renderBounds = AxisAlignedBB.getBoundingBox(0, 0, 0, 0, 0, 0);
+        private boolean bodyVisible, glowVisible;
+        private double renderX, renderY, renderZ, renderRadius;
+        private float red, green, blue, alpha;
 
         private Particle(World world, TileEntity source, Direction direction, boolean node) {
             this.source = source;
