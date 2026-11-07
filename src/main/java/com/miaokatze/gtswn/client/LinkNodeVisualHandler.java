@@ -49,6 +49,10 @@ public final class LinkNodeVisualHandler {
     private final List<Source> eligible = new ArrayList<>();
     private final double[][] cellLight = new double[2][LinkNodeVisuals.CELLS.size()];
     private final double[] cellDepth = new double[LinkNodeVisuals.CELLS.size()];
+    private PackedBridge packed;
+    private boolean packedChecked, packedUnavailable;
+    private LinkNodeVisuals.Geometry geometry;
+    private double geometryDepth, geometryRelief;
     private static final float[] PARTICLE_SHADE = { 1, 1, 1, 1, 1, 1 };
     private final List<Particle> particles = new ArrayList<>();
     private final TextureSet[][] textures = new TextureSet[4][2];
@@ -190,6 +194,10 @@ public final class LinkNodeVisualHandler {
     }
 
     private void clear() {
+        if (packed != null) {
+            packed.close();
+            packed = null;
+        }
         hosts.clear();
         visible.clear();
         eligible.clear();
@@ -236,10 +244,14 @@ public final class LinkNodeVisualHandler {
             java.util.Comparator.comparingDouble((Source source) -> source.host.getDistanceFrom(x, y, z))
                 .reversed());
         if (high) {
+            if (geometry == null || geometryDepth != Config.linkNodeDepth || geometryRelief != Config.linkNodeRelief) {
+                geometry = new LinkNodeVisuals.Geometry(Config.linkNodeDepth, Config.linkNodeRelief);
+                geometryDepth = Config.linkNodeDepth;
+                geometryRelief = Config.linkNodeRelief;
+            }
             for (int i = 0; i < LinkNodeVisuals.CELLS.size(); i++) {
                 Cell cell = LinkNodeVisuals.CELLS.get(i);
-                cellDepth[i] = Math
-                    .max(.001, LinkNodeVisuals.surfaceDepth(cell, Config.linkNodeDepth, Config.linkNodeRelief));
+                cellDepth[i] = geometry.depth(i);
                 cellLight[0][i] = LinkNodeVisuals.brightness(cell, seconds, false, true);
                 cellLight[1][i] = LinkNodeVisuals.brightness(cell, seconds, false, false);
             }
@@ -264,6 +276,7 @@ public final class LinkNodeVisualHandler {
             for (int pass = 0; !legacy && pass < 2; pass++) {
                 GL11.glEnable(GL11.GL_TEXTURE_2D);
                 GL11.glBlendFunc(GL11.GL_SRC_ALPHA, pass == 0 ? GL11.GL_ONE_MINUS_SRC_ALPHA : GL11.GL_ONE);
+                if (high && packedSurface(mc, material, pass)) continue;
                 Tessellator tess = Tessellator.instance;
                 TextureSet previousTexture = null;
                 int sourcesInBatch = 0;
@@ -287,7 +300,7 @@ public final class LinkNodeVisualHandler {
             }
             GL11.glDisable(GL11.GL_TEXTURE_2D);
             GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-            if (high) relief(eligible);
+            if (high && !packedRelief()) relief(eligible);
             if (Config.tapParticleDensity() > 0 && mc.gameSettings.particleSetting < 2) {
                 prepareParticles(event.partialTicks, frustum, x, y, z);
                 drawParticles(false);
@@ -338,6 +351,188 @@ public final class LinkNodeVisualHandler {
                 vertex(source, nu, nv, depth, nu + .5, nv + .5);
                 vertex(source, cell.u, cell.v, depth, cell.u + .5, cell.v + .5);
             }
+        }
+    }
+
+    /** A declined begin leaves the entire pass to the original Tessellator path. */
+    private boolean packedSurface(Minecraft mc, String material, int pass) {
+        if (!preparePacked() || !packed.beginSurface(Tessellator.instance)) return false;
+        try {
+            TextureSet previousTexture = null;
+            int sourcesInBatch = 0;
+            float opacity = pass == 0 ? Config.linkNodeOpacity : 1;
+            for (Source source : eligible) {
+                TextureSet texture = texture(source, material);
+                if (texture != previousTexture || sourcesInBatch == SOURCE_BATCH_LIMIT) {
+                    packed.flush();
+                    if (texture != previousTexture) {
+                        mc.getTextureManager()
+                            .bindTexture(pass == 0 ? texture.baseLocation : texture.glowLocation);
+                    }
+                    previousTexture = texture;
+                    sourcesInBatch = 0;
+                }
+                for (int i = 0; i < LinkNodeVisuals.CELLS.size(); i++) {
+                    Cell cell = LinkNodeVisuals.CELLS.get(i);
+                    float alpha = (float) source.frameAlpha[cell.ring];
+                    if (alpha <= 0) continue;
+                    packed.color(1, 1, 1, opacity * alpha);
+                    double[] points = geometry.surface(source.side, i);
+                    // Angelica's 013/123 split gives precisely the original six fan triangles.
+                    // Keep corner six: its original sin(2*pi) rounding is observable in UVs.
+                    for (int edge = 0; edge < 6; edge += 2) {
+                        packedSurfaceVertex(source, cell, points, edge + 1);
+                        packedSurfaceVertex(source, cell, points, edge + 2);
+                        packedSurfaceVertex(source, cell, points, edge + 3);
+                        packedSurfaceVertex(source, cell, points, 0);
+                    }
+                }
+                sourcesInBatch++;
+            }
+            return true;
+        } finally {
+            packed.end();
+        }
+    }
+
+    private void packedSurfaceVertex(Source source, Cell cell, double[] points, int vertex) {
+        int offset = vertex * 3;
+        packed.vertex(
+            source.host.xCoord + points[offset],
+            source.host.yCoord + points[offset + 1],
+            source.host.zCoord + points[offset + 2],
+            cell.textureU(vertex),
+            cell.textureV(vertex));
+    }
+
+    private boolean packedRelief() {
+        if (!preparePacked() || !packed.beginRelief(Tessellator.instance)) return false;
+        try {
+            int sourcesInBatch = 0;
+            boolean first = true;
+            double previousX = 0, previousY = 0, previousZ = 0;
+            for (Source source : eligible) {
+                if (sourcesInBatch == SOURCE_BATCH_LIMIT) {
+                    packed.flush();
+                    sourcesInBatch = 0;
+                    first = true;
+                }
+                sourcesInBatch++;
+                int voltageRgb = source.voltageRgb();
+                for (int i = 0; i < LinkNodeVisuals.CELLS.size(); i++) {
+                    Cell cell = LinkNodeVisuals.CELLS.get(i);
+                    double light = cellLight[source.energy ? 0 : 1][i];
+                    int rgb = LinkNodeVisuals
+                        .cellRgb(cell.ring, source.energy, voltageRgb, Config.tapVoltageColorPercent);
+                    boolean tinted = LinkNodeVisuals.voltageCell(cell.ring, voltageRgb, Config.tapVoltageColorPercent);
+                    packed.color(
+                        tinted ? (rgb >> 16 & 255) / 255F : source.energy ? 1 : .87F,
+                        tinted ? (rgb >> 8 & 255) / 255F : source.energy ? .7F : .3F,
+                        tinted ? (rgb & 255) / 255F : source.energy ? .14F : 1,
+                        (float) (Config.linkNodeOpacity * (.25 + light * .6) * source.frameAlpha[cell.ring]));
+                    double[] points = geometry.wall(source.side, i);
+                    if (!first) packed.vertex(previousX, previousY, previousZ);
+                    // The first duplicate sets strip parity. Later pairs join cells only with degenerates.
+                    packedWallVertex(source, points, 0);
+                    for (int vertex = 0; vertex < 14; vertex++) packedWallVertex(source, points, vertex * 3);
+                    previousX = source.host.xCoord + points[39];
+                    previousY = source.host.yCoord + points[40];
+                    previousZ = source.host.zCoord + points[41];
+                    first = false;
+                }
+            }
+            return true;
+        } finally {
+            packed.end();
+        }
+    }
+
+    private void packedWallVertex(Source source, double[] points, int offset) {
+        packed.vertex(
+            source.host.xCoord + points[offset],
+            source.host.yCoord + points[offset + 1],
+            source.host.zCoord + points[offset + 2]);
+    }
+
+    private boolean preparePacked() {
+        if (packedUnavailable) return false;
+        if (packed != null) return true;
+        try {
+            if (!packedChecked) {
+                Class.forName(
+                    "com.miaokatze.miaokatzecore.client.render.PackedVertexStream",
+                    false,
+                    LinkNodeVisualHandler.class.getClassLoader());
+                packedChecked = true;
+            }
+            packed = new PackedBridge();
+            return true;
+        } catch (ClassNotFoundException | LinkageError unavailable) {
+            // The original public Core 0.2.6 predates this optional API. Keep its complete renderer.
+            packedChecked = true;
+            packedUnavailable = true;
+            return false;
+        }
+    }
+
+    /** Keep every optional Core type out of the handler's field and method descriptors. */
+    private static final class PackedBridge {
+
+        private final com.miaokatze.miaokatzecore.client.render.PackedVertexStream stream = new com.miaokatze.miaokatzecore.client.render.PackedVertexStream();
+
+        private boolean beginSurface(Tessellator tessellator) {
+            return stream
+                .begin(tessellator, com.miaokatze.miaokatzecore.client.render.PackedVertexStream.Layout.TEXTURED_QUADS);
+        }
+
+        private boolean beginRelief(Tessellator tessellator) {
+            return stream.begin(
+                tessellator,
+                com.miaokatze.miaokatzecore.client.render.PackedVertexStream.Layout.COLOR_TRIANGLE_STRIP);
+        }
+
+        private void color(float red, float green, float blue, float alpha) {
+            stream.color(red, green, blue, alpha);
+        }
+
+        private void vertex(double x, double y, double z, double u, double v) {
+            stream.vertex(x, y, z, u, v);
+        }
+
+        private void vertex(double x, double y, double z) {
+            stream.vertex(x, y, z);
+        }
+
+        private void flush() {
+            stream.flush();
+        }
+
+        private void end() {
+            stream.end();
+        }
+
+        private void close() {
+            stream.close();
+        }
+
+        public long acceptedPasses() {
+            return stream.acceptedPasses();
+        }
+
+        public long submittedBatches() {
+            return stream.submittedBatches();
+        }
+
+        public long submittedVertices() {
+            return stream.submittedVertices();
+        }
+
+        public long retainedBytes() {
+            return stream.retainedBytes();
+        }
+
+        public String lastRejection() {
+            return String.valueOf(stream.lastRejection());
         }
     }
 

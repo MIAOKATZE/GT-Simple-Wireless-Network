@@ -14,6 +14,10 @@ public final class HiddenGpuAgent implements ClassFileTransformer {
     private static final String DISPLAY = "org/lwjglx/opengl/Display", MOUSE = "org/lwjglx/input/Mouse";
     private static final Map<String, String> hashes = new HashMap<>();
     private static final AtomicLong swaps = new AtomicLong();
+    private static final AtomicLong swapStartNs = new AtomicLong();
+    private static final AtomicLong swapLastNs = new AtomicLong(-1);
+    private static final AtomicLong swapSumNs = new AtomicLong();
+    private static final AtomicLong swapMaxNs = new AtomicLong();
     private static Path evidence;
     private static volatile boolean displayPatched, mousePatched;
 
@@ -36,10 +40,15 @@ public final class HiddenGpuAgent implements ClassFileTransformer {
             // RFB may resolve the injected hook through another loader. Bootstrap
             // System properties hold the shared counter, avoiding split static state.
             System.getProperties().put("gtswn.hiddenSwapCounter", swaps);
+            System.getProperties().put("gtswn.hiddenSwapStartNs", swapStartNs);
+            System.getProperties().put("gtswn.hiddenSwapLastNs", swapLastNs);
+            System.getProperties().put("gtswn.hiddenSwapSumNs", swapSumNs);
+            System.getProperties().put("gtswn.hiddenSwapMaxNs", swapMaxNs);
             append("PREMAIN_AUDIT_OK " + hashes);
             instrumentation.addTransformer(new HiddenGpuAgent());
             Runtime.getRuntime().addShutdownHook(new Thread(() -> append("EXIT display=" + displayPatched
-                + " mouse=" + mousePatched + " realSwapCalls=" + swaps.get()), "hidden-gpu-evidence"));
+                + " mouse=" + mousePatched + " realSwapCalls=" + swaps.get()
+                + " swapSumNs=" + swapSumNs.get() + " swapMaxNs=" + swapMaxNs.get()), "hidden-gpu-evidence"));
         } catch (Throwable failure) { fail(failure); }
     }
 
@@ -95,7 +104,8 @@ public final class HiddenGpuAgent implements ClassFileTransformer {
                     method.instructions.insertBefore(call, replacement);
                     method.instructions.remove(call);
                 } else if (name.equals(DISPLAY) && call.name.equals("SDL_GL_SwapWindow") && call.desc.equals("(J)Z")) {
-                    // Keep the real native swap and its boolean result; count only after it returns.
+                    // Both hooks are no-arg/void: preserve the native long argument and boolean result.
+                    method.instructions.insertBefore(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "HiddenGpuAgent", "swapping", "()V", false));
                     method.instructions.insert(call, new MethodInsnNode(Opcodes.INVOKESTATIC, "HiddenGpuAgent", "swapped", "()V", false));
                     swapSites++;
                 }
@@ -119,18 +129,41 @@ public final class HiddenGpuAgent implements ClassFileTransformer {
         return output.toByteArray();
     }
 
+    public static void swapping() {
+        AtomicLong start = sharedCounter("gtswn.hiddenSwapStartNs");
+        // Check every required bootstrap counter before entering the real native call.
+        sharedCounter("gtswn.hiddenSwapCounter");
+        sharedCounter("gtswn.hiddenSwapLastNs");
+        sharedCounter("gtswn.hiddenSwapSumNs");
+        sharedCounter("gtswn.hiddenSwapMaxNs");
+        start.set(System.nanoTime());
+    }
+
     public static void swapped() {
-        Object counter = System.getProperties().get("gtswn.hiddenSwapCounter");
-        if (!(counter instanceof AtomicLong shared)) {
-            Runtime.getRuntime().halt(95);
-            return;
-        }
+        long ended = System.nanoTime();
+        AtomicLong shared = sharedCounter("gtswn.hiddenSwapCounter");
+        AtomicLong start = sharedCounter("gtswn.hiddenSwapStartNs");
+        AtomicLong last = sharedCounter("gtswn.hiddenSwapLastNs");
+        AtomicLong sum = sharedCounter("gtswn.hiddenSwapSumNs");
+        AtomicLong max = sharedCounter("gtswn.hiddenSwapMaxNs");
+        long elapsed = ended - start.get();
+        last.set(elapsed);
+        sum.addAndGet(elapsed);
+        long previousMax = max.get();
+        while (elapsed > previousMax && !max.compareAndSet(previousMax, elapsed)) previousMax = max.get();
         if (shared.incrementAndGet() == 1) {
             try {
                 Files.writeString(Path.of(System.getProperty("gtswn.hiddenEvidence")),
                     "FIRST_REAL_NATIVE_SWAP_RETURNED\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND);
             } catch (Throwable failure) { Runtime.getRuntime().halt(94); }
         }
+    }
+
+    private static AtomicLong sharedCounter(String name) {
+        Object counter = System.getProperties().get(name);
+        if (counter instanceof AtomicLong shared) return shared;
+        Runtime.getRuntime().halt(95);
+        throw new IllegalStateException("Missing bootstrap swap counter: " + name);
     }
     private static synchronized void append(String message) {
         try { if (evidence != null) Files.writeString(evidence, message + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND); }

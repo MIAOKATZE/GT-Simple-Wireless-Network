@@ -98,6 +98,9 @@ def summarize(directory):
                 [int(row[name]) for row in frame_rows], 1e6)
         mean_frame = entry["frameMetrics"]["frameIntervalMs"]["mean"]
         entry["observedClientFramesPerSecond"] = 1000 / mean_frame
+        if any("nativeSwapWallNs" in row for row in frame_rows):
+            entry["frameMetrics"]["nativeSwapWallMs"] = distribution(
+                [int(row.get("nativeSwapWallNs", -1)) for row in frame_rows], 1e6)
         for name in ("linkParticles", "quantumParticles", "linkRenderAllocatedBytes", "quantumRenderAllocatedBytes"):
             entry["frameMetrics"][name] = distribution([int(row[name]) for row in frame_rows])
         unique_client_ticks = {int(row["clientTick"]): row for row in frame_rows}

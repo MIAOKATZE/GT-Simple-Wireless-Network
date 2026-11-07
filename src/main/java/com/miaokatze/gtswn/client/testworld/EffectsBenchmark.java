@@ -6,6 +6,9 @@ import java.lang.management.ThreadMXBean;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
@@ -15,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicLong;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.culling.Frustrum;
@@ -100,6 +104,7 @@ public final class EffectsBenchmark {
     private long lastClientTickWall, lastClientTickCpu, clientTickIndex, linkAllocated, quantumAllocated;
     private int tickLinkParticles, tickQuantumParticles;
     private long clientTickStarted, clientTickCpu;
+    private long frameNativeSwapWallNs = -1;
 
     private EffectsBenchmark() {
         output = new File(mc.mcDataDir, "gtswn-effects-benchmark/" + label.replaceAll("[^a-zA-Z0-9_.-]", "_"));
@@ -236,6 +241,9 @@ public final class EffectsBenchmark {
         samplingBeforeRender = sampling && !finished;
         frameStarted = System.nanoTime();
         frameCpu = cpuTime();
+        Object nativeSwap = System.getProperties()
+            .get("gtswn.hiddenSwapLastNs");
+        frameNativeSwapWallNs = nativeSwap instanceof AtomicLong ? ((AtomicLong) nativeSwap).get() : -1;
         linkWall = quantumWall = linkCpu = quantumCpu = 0;
         if ((samplingBeforeRender || captureRequested) && fixedPrepared && mc.theWorld != null) {
             // Deterministic repeating 60-frame animation schedule; same draw workload in both variants.
@@ -246,6 +254,16 @@ public final class EffectsBenchmark {
     @SubscribeEvent
     public void effects(RenderWorldLastEvent event) {
         if (!wrappersInstalled || finished) return;
+        if (captureRequested) {
+            try {
+                invalidateCaptureTextureFrames();
+            } catch (Exception error) {
+                failure = error.toString();
+                GTSimpleWirelessNetwork.LOG.error("Cannot reset capture texture phase", error);
+                finish();
+                return;
+            }
+        }
         RenderWorldLastEvent sample = fixedPrepared && (sampling || captureRequested)
             ? new RenderWorldLastEvent(mc.renderGlobal, captureRequested ? .5F : (framesInWindow % 3) / 3F)
             : event;
@@ -334,7 +352,9 @@ public final class EffectsBenchmark {
                 + ","
                 + quantumAllocated
                 + ","
-                + difference(frameCpu, previousFrameCpu));
+                + difference(frameCpu, previousFrameCpu)
+                + ","
+                + frameNativeSwapWallNs);
         previousFrame = frameStarted;
         previousFrameCpu = frameCpu;
         framesInWindow++;
@@ -681,11 +701,57 @@ public final class EffectsBenchmark {
         map.put("visibleCoverSources", size(LinkNodeVisualHandler.INSTANCE, "visible"));
         map.put("linkParticles", size(LinkNodeVisualHandler.INSTANCE, "particles"));
         map.put("quantumParticles", size(QuantumVoxelParticleHandler.INSTANCE, "particles"));
+        map.put("packedPath", packedStatistics());
         map.put(
             "camera",
             new double[] { mc.thePlayer.posX, mc.thePlayer.posY, mc.thePlayer.posZ, mc.thePlayer.rotationYaw,
                 mc.thePlayer.rotationPitch });
         return map;
+    }
+
+    private static void invalidateCaptureTextureFrames() throws Exception {
+        for (Object[] material : (Object[][]) field(LinkNodeVisualHandler.INSTANCE, "textures")) {
+            for (Object texture : material) {
+                if (texture != null) setField(texture, "frame", Long.MIN_VALUE);
+            }
+        }
+        for (Object texture : ((Map<?, ?>) field(LinkNodeVisualHandler.INSTANCE, "voltageTextures")).values()) {
+            if (texture != null) setField(texture, "frame", Long.MIN_VALUE);
+        }
+    }
+
+    private static Map<String, Object> packedStatistics() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "legacy");
+        result.put("acceptedPasses", 0L);
+        result.put("submittedBatches", 0L);
+        result.put("submittedVertices", 0L);
+        result.put("retainedBytes", 0L);
+        result.put("lastRejection", "legacy");
+        try {
+            Object packed = field(LinkNodeVisualHandler.INSTANCE, "packed");
+            result.put("status", "no-accepted-passes");
+            result.put("lastRejection", "not-initialized");
+            if (packed == null) return result;
+            for (String name : new String[] { "acceptedPasses", "submittedBatches", "submittedVertices",
+                "retainedBytes" }) {
+                Method getter = packed.getClass()
+                    .getMethod(name);
+                getter.setAccessible(true);
+                result.put(name, ((Number) getter.invoke(packed)).longValue());
+            }
+            Method rejection = packed.getClass()
+                .getMethod("lastRejection");
+            rejection.setAccessible(true);
+            result.put("lastRejection", String.valueOf(rejection.invoke(packed)));
+            if (((Number) result.get("acceptedPasses")).longValue() > 0) result.put("status", "accepted");
+        } catch (NoSuchFieldException legacy) {
+            // The frozen production baseline has no packed stream field.
+        } catch (Exception error) {
+            result.put("status", "unavailable");
+            result.put("lastRejection", error.toString());
+        }
+        return result;
     }
 
     private void finish() {
@@ -695,7 +761,7 @@ public final class EffectsBenchmark {
         try {
             Files.write(
                 new File(output, "frames.csv").toPath(),
-                ("window,scene,frame,frameIntervalNs,renderWindowWallNs,renderWindowCpuNs,linkRenderWallNs,linkRenderCpuNs,quantumRenderWallNs,quantumRenderCpuNs,linkParticles,quantumParticles,effectTickWallNs,effectTickCpuNs,clientTickToRenderEndWallNs,clientTickToRenderEndCpuNs,clientTick,linkRenderAllocatedBytes,quantumRenderAllocatedBytes,mainThreadFrameCpuNs\n"
+                ("window,scene,frame,frameIntervalNs,renderWindowWallNs,renderWindowCpuNs,linkRenderWallNs,linkRenderCpuNs,quantumRenderWallNs,quantumRenderCpuNs,linkParticles,quantumParticles,effectTickWallNs,effectTickCpuNs,clientTickToRenderEndWallNs,clientTickToRenderEndCpuNs,clientTick,linkRenderAllocatedBytes,quantumRenderAllocatedBytes,mainThreadFrameCpuNs,nativeSwapWallNs\n"
                     + String.join("\n", frames)
                     + "\n").getBytes(StandardCharsets.UTF_8));
             Files.write(
@@ -719,11 +785,28 @@ public final class EffectsBenchmark {
             report.put("glVendor", GL11.glGetString(GL11.GL_VENDOR));
             report.put("glRenderer", GL11.glGetString(GL11.GL_RENDERER));
             report.put("glVersion", GL11.glGetString(GL11.GL_VERSION));
+            report.put("swapIntervalObservation", swapIntervalObservation());
             report.put("displayWidth", mc.displayWidth);
             report.put("displayHeight", mc.displayHeight);
             report.put("warmupSeconds", warmupNanos / 1000000000L);
             report.put("sampleSeconds", sampleNanos / 1000000000L);
             report.put("rounds", rounds);
+            report.put(
+                "nativeSwapWallNsScope",
+                "nativeSwapWallNs is read at RenderTick START from the bootstrap shared last completed actual SDL_GL_SwapWindow timer. It belongs to the previous frame's present between adjacent START events, not the current START-to-END render window. Missing observer data is -1; the first sample in each window has no preceding sampled START and should not be paired with frameIntervalNs. The native call, return value and frame pacing are unchanged.");
+            report.put(
+                "packedPathScope",
+                "Each window snapshots cumulative acceptedPasses/submittedBatches/submittedVertices, current retainedBytes and lastRejection before screenshot capture. Legacy baseline fields are absent and reported as legacy/0. A candidate with no accepted passes is explicitly no-accepted-passes; fallback results do not establish packed-path performance.");
+            String packedPathStatus = "legacy";
+            for (Map<String, Object> window : windows) {
+                Map<?, ?> packed = (Map<?, ?>) window.get("packedPath");
+                if (packed != null && "accepted".equals(packed.get("status"))) {
+                    packedPathStatus = "accepted";
+                    break;
+                }
+                if (packed != null && !"legacy".equals(packed.get("status"))) packedPathStatus = "no-accepted-passes";
+            }
+            report.put("packedPathStatus", packedPathStatus);
             report.put(
                 "controlSceneScope",
                 "empty means an empty view from the same observation position, yaw 180; heavy uses yaw 0. All measured windows keep the same chunks, physical fixtures and server load. This is not a physically empty world. Construction is completed while the player is far away, with three temporary authored chunk tickets; only one initial move into the completed scene occurs, then subsequent windows rotate without unloading tiles.");
@@ -771,6 +854,46 @@ public final class EffectsBenchmark {
             }
             mc.shutdown();
         }
+    }
+
+    /** Read-only, after sampling, on the context-owning client thread. Never changes swap or current context. */
+    private static Map<String, Object> swapIntervalObservation() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put(
+            "thread",
+            Thread.currentThread()
+                .getName());
+        try {
+            Class<?> video = Class.forName("org.lwjgl.sdl.SDLVideo");
+            Class<?> display = Class.forName("org.lwjglx.opengl.Display");
+            long context = ((Number) video.getMethod("SDL_GL_GetCurrentContext")
+                .invoke(null)).longValue();
+            long window = ((Number) video.getMethod("SDL_GL_GetCurrentWindow")
+                .invoke(null)).longValue();
+            result.put("currentContextPresent", context != 0);
+            result.put("currentWindowPresent", window != 0);
+            result.put(
+                "displayContextMatches",
+                context == ((Number) display.getMethod("getGlContext")
+                    .invoke(null)).longValue());
+            result.put(
+                "displayWindowMatches",
+                window == ((Number) display.getMethod("getWindow")
+                    .invoke(null)).longValue());
+            IntBuffer interval = ByteBuffer.allocateDirect(4)
+                .order(ByteOrder.nativeOrder())
+                .asIntBuffer();
+            interval.put(0, Integer.MIN_VALUE);
+            boolean success = Boolean.TRUE.equals(
+                video.getMethod("SDL_GL_GetSwapInterval", IntBuffer.class)
+                    .invoke(null, interval));
+            result.put("getterSucceeded", success);
+            result.put("interval", success ? Integer.valueOf(interval.get(0)) : null);
+        } catch (ReflectiveOperationException | LinkageError unavailable) {
+            result.put("getterSucceeded", false);
+            result.put("unavailable", unavailable.toString());
+        }
+        return result;
     }
 
     private static long difference(long end, long start) {

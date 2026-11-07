@@ -118,6 +118,51 @@ public final class LinkNodeVisuals {
         return depth * (1 - Math.abs(relief) * (relief >= 0 ? band : 1 - band));
     }
 
+    /** Finite face-local double geometry, shared by every source and both texture passes. */
+    public static final class Geometry {
+
+        private final double[][][] surfaces = new double[6][CELLS.size()][24];
+        private final double[][][] walls = new double[6][CELLS.size()][42];
+        private final double[] depths = new double[CELLS.size()];
+
+        public Geometry(double depth, double relief) {
+            for (int cellIndex = 0; cellIndex < CELLS.size(); cellIndex++) {
+                Cell cell = CELLS.get(cellIndex);
+                double top = depths[cellIndex] = Math.max(.001, surfaceDepth(cell, depth, relief));
+                for (int side = 0; side < 6; side++) {
+                    double[] surface = surfaces[side][cellIndex], wall = walls[side][cellIndex];
+                    for (int axis = 0; axis < 3; axis++) {
+                        surface[axis] = pointCoordinate(side, axis, cell.u, cell.v, top);
+                    }
+                    for (int edge = 0; edge <= 6; edge++) {
+                        for (int axis = 0; axis < 3; axis++) {
+                            surface[(edge + 1) * 3
+                                + axis] = pointCoordinate(side, axis, cell.surfaceU(edge), cell.surfaceV(edge), top);
+                            wall[edge * 6
+                                + axis] = pointCoordinate(side, axis, cell.wallU(edge), cell.wallV(edge), .001);
+                            wall[edge * 6 + 3
+                                + axis] = pointCoordinate(side, axis, cell.wallU(edge), cell.wallV(edge), top);
+                        }
+                    }
+                }
+            }
+        }
+
+        public double depth(int cell) {
+            return depths[cell];
+        }
+
+        /** Read-only xyz triples: center, followed by all seven separately evaluated hexagon corners. */
+        public double[] surface(int side, int cell) {
+            return surfaces[side][cell];
+        }
+
+        /** Read-only xyz triples: bottom/top pairs for corners zero through six. */
+        public double[] wall(int side, int cell) {
+            return walls[side][cell];
+        }
+    }
+
     /** A column terminates at its local model surface; the flat quality has no shell offset. */
     public static double particleDepth(String quality, double u, double v, double depth, double relief, boolean energy,
         double progress) {
@@ -273,6 +318,7 @@ public final class LinkNodeVisuals {
         public final double u, v;
         private final double[] surfaceU = new double[7], surfaceV = new double[7], wallU = new double[7],
             wallV = new double[7];
+        private final double[] textureU = new double[8], textureV = new double[8];
 
         private Cell(int q, int r, int ring) {
             this.q = q;
@@ -280,12 +326,16 @@ public final class LinkNodeVisuals {
             this.ring = ring;
             u = CELL_RADIUS * 1.5 * q;
             v = CELL_RADIUS * Math.sqrt(3) * (r + q * .5);
+            textureU[0] = u + .5;
+            textureV[0] = v + .5;
             for (int edge = 0; edge <= 6; edge++) {
                 double angle = edge * Math.PI / 3;
                 surfaceU[edge] = u + Math.cos(angle) * CELL_RADIUS;
                 surfaceV[edge] = v + Math.sin(angle) * CELL_RADIUS;
                 wallU[edge] = u + Math.cos(angle) * (CELL_RADIUS * .93);
                 wallV[edge] = v + Math.sin(angle) * (CELL_RADIUS * .93);
+                textureU[edge + 1] = surfaceU[edge] + .5;
+                textureV[edge + 1] = surfaceV[edge] + .5;
             }
         }
 
@@ -303,6 +353,14 @@ public final class LinkNodeVisuals {
 
         public double wallV(int edge) {
             return wallV[edge];
+        }
+
+        public double textureU(int vertex) {
+            return textureU[vertex];
+        }
+
+        public double textureV(int vertex) {
+            return textureV[vertex];
         }
     }
 }
