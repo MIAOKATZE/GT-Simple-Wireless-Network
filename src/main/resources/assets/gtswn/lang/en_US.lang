@@ -588,7 +588,13 @@ gtswn.reveal.quantum.all=Quantum reveal: %s target(s), all nearby quantum networ
 gtswn.reveal.quantum.unbound=Quantum reveal: bind a valid quantized ME Controller network first
 
 gtswn.gui.cover.current=Current (A)
-gtswn.gui.cover.current_hint=Minimum 0.1 A; other parameters are read-only.
+gtswn.gui.cover.current_hint=Minimum 0.1 A; energy values below are read-only.
+gtswn.gui.cover.input=Item / fluid input
+gtswn.gui.cover.input_allowed=Allowed
+gtswn.gui.cover.input_blocked=Blocked
+gtswn.gui.cover.input_hint=Shared switch for item and fluid input through the covered face; right-click with a screwdriver to toggle.
+gtswn.chat.cover.input_allowed=Covered-face item / fluid input: allowed
+gtswn.chat.cover.input_blocked=Covered-face item / fluid input: blocked
 gtswn.gui.cover.voltage=Voltage:
 gtswn.gui.cover.capacity=Buffer capacity:
 gtswn.gui.cover.stored=Stored energy:

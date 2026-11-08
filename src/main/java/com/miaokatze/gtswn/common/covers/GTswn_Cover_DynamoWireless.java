@@ -64,6 +64,7 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
 
     @Override
     protected void readDataFromNbt(NBTBase nbt) {
+        super.readDataFromNbt(nbt);
         if (nbt instanceof NBTTagCompound tag) {
             amperageConfigured = tag.hasKey("amperageDecimal");
             amperage = CoverMaths.restoredAmperage(tag.getDouble("amperageDecimal"));
@@ -84,11 +85,12 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
         amperageConfigured = byteData.readBoolean();
         amperage = CoverMaths.restoredAmperage(byteData.readDouble());
         tickBudget.restore(byteData.readDouble());
+        super.readDataFromPacket(byteData);
     }
 
     @Override
     protected NBTBase saveDataToNbt() {
-        NBTTagCompound tag = new NBTTagCompound();
+        NBTTagCompound tag = (NBTTagCompound) super.saveDataToNbt();
         if (amperageConfigured) tag.setDouble("amperageDecimal", amperage);
         tag.setDouble("fractionalEU", tickBudget.remainder());
         tag.setLong("storedEU", storedEU);
@@ -106,6 +108,7 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
         byteBuf.writeBoolean(amperageConfigured);
         byteBuf.writeDouble(amperage);
         byteBuf.writeDouble(tickBudget.remainder());
+        super.writeDataToByteBuf(byteBuf);
     }
 
     @Override
