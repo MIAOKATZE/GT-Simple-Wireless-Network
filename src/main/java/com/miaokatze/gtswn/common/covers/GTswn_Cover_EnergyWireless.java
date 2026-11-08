@@ -73,6 +73,7 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
 
     @Override
     protected void readDataFromNbt(NBTBase nbt) {
+        super.readDataFromNbt(nbt);
         if (nbt instanceof NBTTagCompound tag) {
             // storedEU / configured 已由基类字段持有，这里直接读写（NBT 顺序无关）
             if (tag.hasKey("voltage")) this.voltage = tag.getInteger("voltage");
@@ -96,11 +97,12 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
         configured = byteData.readBoolean();
         ticksSinceLastRefill = byteData.readLong();
         tickBudget.restore(byteData.readDouble());
+        super.readDataFromPacket(byteData);
     }
 
     @Override
     protected NBTBase saveDataToNbt() {
-        NBTTagCompound tag = new NBTTagCompound();
+        NBTTagCompound tag = (NBTTagCompound) super.saveDataToNbt();
         tag.setInteger("voltage", voltage);
         tag.setDouble("amperageDecimal", amperage);
         tag.setDouble("fractionalEU", tickBudget.remainder());
@@ -121,6 +123,7 @@ public class GTswn_Cover_EnergyWireless extends GTswnCoverWirelessBase {
         byteBuf.writeBoolean(configured);
         byteBuf.writeLong(ticksSinceLastRefill);
         byteBuf.writeDouble(tickBudget.remainder());
+        super.writeDataToByteBuf(byteBuf);
     }
 
     @Override

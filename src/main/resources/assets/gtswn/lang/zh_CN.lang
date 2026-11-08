@@ -588,7 +588,13 @@ gtswn.reveal.quantum.all=量子显形：显现 %s 个目标，揭示周围全部
 gtswn.reveal.quantum.unbound=量子显形：请先绑定有效的量子化 ME 控制器网络
 
 gtswn.gui.cover.current=电流 (A)
-gtswn.gui.cover.current_hint=最低 0.1 A，其余参数只读。
+gtswn.gui.cover.current_hint=最低 0.1 A，下方电能参数只读。
+gtswn.gui.cover.input=物品 / 流体输入
+gtswn.gui.cover.input_allowed=允许
+gtswn.gui.cover.input_blocked=禁止
+gtswn.gui.cover.input_hint=共用开关控制覆盖面物品和流体输入；螺丝刀右击也可切换。
+gtswn.chat.cover.input_allowed=覆盖面物品 / 流体输入：允许
+gtswn.chat.cover.input_blocked=覆盖面物品 / 流体输入：禁止
 gtswn.gui.cover.voltage=电压：
 gtswn.gui.cover.capacity=缓冲容量：
 gtswn.gui.cover.stored=已存能量：

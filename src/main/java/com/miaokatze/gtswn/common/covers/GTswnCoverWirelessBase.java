@@ -3,12 +3,17 @@ package com.miaokatze.gtswn.common.covers;
 
 import static gregtech.common.misc.WirelessNetworkManager.addEUToGlobalEnergyMap;
 
+import java.io.EOFException;
 import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTBase;
+import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.world.World;
+import net.minecraftforge.fluids.Fluid;
 
 import com.cleanroommc.modularui.api.drawable.IKey;
 import com.cleanroommc.modularui.drawable.ItemDrawable;
@@ -16,11 +21,14 @@ import com.cleanroommc.modularui.network.NetworkUtils;
 import com.cleanroommc.modularui.screen.ModularPanel;
 import com.cleanroommc.modularui.screen.UISettings;
 import com.cleanroommc.modularui.utils.Alignment;
+import com.cleanroommc.modularui.value.sync.BooleanSyncValue;
 import com.cleanroommc.modularui.value.sync.DoubleSyncValue;
 import com.cleanroommc.modularui.value.sync.LongSyncValue;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
+import com.cleanroommc.modularui.widgets.ToggleButton;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
+import com.google.common.io.ByteArrayDataInput;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
@@ -42,6 +50,7 @@ import gregtech.api.modularui2.CoverGuiData;
 import gregtech.api.util.GTUtility;
 import gregtech.common.covers.Cover;
 import gregtech.common.gui.modularui.cover.base.CoverBaseGui;
+import io.netty.buffer.ByteBuf;
 
 /**
  * 无线链路节点覆盖板抽象基类
@@ -55,9 +64,9 @@ import gregtech.common.gui.modularui.cover.base.CoverBaseGui;
  * </ul>
  * <p>
  * 子类需实现模式特定的 {@link #doCoverThings}、{@link #onCoverRightClick}、configure 以及
- * NBT / 包同步（readDataFromNbt / saveDataToNbt / readDataFromPacket / writeDataToByteBuf）逻辑。
+ * 模式特定的 NBT / 包同步逻辑；物品/流体输入开关的持久化和同步由基类处理。
  * <p>
- * 设计说明：NBT 与包同步逻辑未上提到基类，因为两个子类的字段集合差异较大
+ * 设计说明：电能字段的 NBT 与包同步逻辑保留在子类，因为两个子类的字段集合差异较大
  * （Dynamo: storedEU/configured/ticksSinceLastUpload；Energy:
  * voltage/amperage/capacity/storedEU/configured/ticksSinceLastRefill），
  * 强行上提会导致字段读写顺序耦合脆弱。公共字段 storedEU/configured 通过 protected 暴露给子类直接访问。
@@ -73,6 +82,9 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     /** 是否已配置 / Whether the cover has been configured */
     protected boolean configured = false;
 
+    /** One shared gate for covered-face item and fluid input, including existing worlds. */
+    private boolean allowInput = true;
+
     /** Installation events are transient and are never restored from NBT. */
     private transient boolean installationBroadcast;
 
@@ -85,8 +97,7 @@ public abstract class GTswnCoverWirelessBase extends Cover {
      * （CoverRegistry.java:114-127：工厂构造本覆盖板时 {@code coveredTile} 已绑定（Cover.java:69），
      * 随后 {@code readFromNbt} → {@code readDataFromNbt}，Cover.java:84）。
      * 因此每个 TE 反序列化（含每次区块加载）都会执行本构造器——这是旧世界恢复时唯一
-     * 不被子类覆写遮蔽的钩子点（两个子类覆写 {@code readDataFromNbt} 且不调 super，
-     * 基类 NBT 钩子是死代码）。
+     * 不依赖子类恢复其电能字段的钩子点。
      * <p>
      * 挂起而非就地注册：TE 读 NBT 窗口内 {@code worldObj} 尚未赋值
      * （GT5U {@code BaseTileEntity.markDirty} :559 注释与 {@code isServerSide()} :166-172 的
@@ -163,6 +174,84 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     @Override
     public boolean hasCoverGUI() {
         return true;
+    }
+
+    public final boolean isInputAllowed() {
+        return allowInput;
+    }
+
+    @Override
+    public final boolean letsItemsIn(int slot) {
+        return allowInput;
+    }
+
+    @Override
+    public final boolean letsFluidIn(Fluid fluid) {
+        return allowInput;
+    }
+
+    @Override
+    protected void readDataFromNbt(NBTBase nbt) {
+        allowInput = !(nbt instanceof NBTTagCompound tag) || !tag.hasKey("allowInput") || tag.getBoolean("allowInput");
+    }
+
+    @Override
+    protected NBTBase saveDataToNbt() {
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setBoolean("allowInput", allowInput);
+        return tag;
+    }
+
+    @Override
+    protected void readDataFromPacket(ByteArrayDataInput data) {
+        try {
+            allowInput = data.readBoolean();
+        } catch (IllegalStateException error) {
+            // Old cover packets end after their energy fields. Only a missing new tail is optional.
+            if (!(error.getCause() instanceof EOFException)) throw error;
+            allowInput = true;
+        }
+    }
+
+    @Override
+    protected void writeDataToByteBuf(ByteBuf buffer) {
+        buffer.writeBoolean(allowInput);
+    }
+
+    /** Recheck the live host and its native tool permission for every UI/tool mutation. */
+    private boolean canConfigureInput(EntityPlayer player) {
+        ICoverable tile = getTile();
+        if (player == null || tile == null
+            || tile.getWorld() == null
+            || tile.getWorld().isRemote
+            || player.worldObj != tile.getWorld()
+            || !player.isEntityAlive()
+            || !(tile instanceof TileEntity host)
+            || host.isInvalid()
+            || tile.getWorld()
+                .getTileEntity(tile.getXCoord(), tile.getYCoord(), tile.getZCoord()) != host
+            || tile.getCoverAtSide(getSide()) != this
+            || player.getDistanceSq(tile.getXCoord() + 0.5, tile.getYCoord() + 0.5, tile.getZCoord() + 0.5)
+                > gregtech.api.modularui2.MetaTileEntityGuiHandler.MAX_INTERACTION_DISTANCE)
+            return false;
+        return !(tile instanceof BaseMetaTileEntity machine) || !machine.privateAccess()
+            || player.getUniqueID()
+                .equals(machine.getOwnerUuid());
+    }
+
+    final void setInputAllowed(EntityPlayer player, boolean allowed) {
+        if (!canConfigureInput(player) || allowInput == allowed) return;
+        allowInput = allowed;
+        getTile().markDirty();
+    }
+
+    @Override
+    public final void onCoverScrewdriverClick(EntityPlayer player, float x, float y, float z) {
+        if (!canConfigureInput(player)) return;
+        setInputAllowed(player, !allowInput);
+        player.addChatMessage(
+            new ChatComponentTranslation(
+                allowInput ? "gtswn.chat.cover.input_allowed" : "gtswn.chat.cover.input_blocked"));
     }
 
     @Override
@@ -318,6 +407,35 @@ public abstract class GTswnCoverWirelessBase extends Cover {
                         .width(332)
                         .height(28)
                         .maxWidth(332));
+                BooleanSyncValue input = new BooleanSyncValue(
+                    cover::isInputAllowed,
+                    allowed -> {
+                        if (!syncManager.isClient()) cover.setInputAllowed(syncManager.getPlayer(), allowed);
+                    }).allowC2S();
+                syncManager.syncValue("allow_input", input);
+                column.child(
+                    Flow.row()
+                        .width(332)
+                        .height(20)
+                        .crossAxisAlignment(Alignment.CrossAxis.CENTER)
+                        .childPadding(8)
+                        .child(
+                            IKey.lang("gtswn.gui.cover.input")
+                                .color(GtswnMuiTheme.TEXT_LABEL)
+                                .asWidget()
+                                .size(210, 20)
+                                .alignment(Alignment.CenterLeft))
+                        .child(
+                            new ToggleButton().size(114, 20)
+                                .name("wireless_cover.allow_input")
+                                .value(input)
+                                .background(false, GtswnMuiTheme.BUTTON)
+                                .background(true, GtswnMuiTheme.TAB_ACTIVE)
+                                .hoverBackground(false, GtswnMuiTheme.BUTTON_HOVER)
+                                .hoverBackground(true, GtswnMuiTheme.BUTTON_HOVER)
+                                .overlay(false, IKey.lang("gtswn.gui.cover.input_blocked"))
+                                .overlay(true, IKey.lang("gtswn.gui.cover.input_allowed"))
+                                .tooltip(tooltip -> tooltip.addLine(IKey.lang("gtswn.gui.cover.input_hint")))));
                 addReadOnly(
                     syncManager,
                     column,
