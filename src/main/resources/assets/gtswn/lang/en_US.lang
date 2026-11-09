@@ -2059,3 +2059,8 @@ gtswn.terminal_wheel.reveal_conditions=Requires a valid network binding, access 
 gtswn.terminal_wheel.scan_conditions=The server validates scan range and results, then stores them in this device terminal.
 gtswn.terminal_wheel.nodes_conditions=Requires an accessible bound network; clicking again keeps the node graph open.
 gtswn.terminal_wheel.engineering_source=Engineering camera is active: the main button selects this terminal as the engineering data source.
+
+gtswn.device.gui.loading_pages=Loading %s/%s pages
+gtswn.device.gui.legacy_limit=Legacy connection: up to 1024 rows
+gtswn.profiles.recoverCharging=Restored portable monitors charge from the profile owner account. Revoking read access does not revoke charging by restored items.
+gtswn.device.gui.legacy_total=Terminal has %s rows; this legacy connection displays only the first %s. Upgrade both peers to view all; saved bindings are retained.

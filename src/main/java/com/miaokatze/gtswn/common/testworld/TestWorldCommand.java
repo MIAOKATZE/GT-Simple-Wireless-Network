@@ -43,6 +43,16 @@ public final class TestWorldCommand {
     public static void execute(ICommandSender sender, String[] args) {
         if (!DebugTestGate.isEnabled()) throw new CommandException(DebugTestGate.DISABLED_MESSAGE);
         String action = args.length < 2 ? "help" : args[1];
+        if ("paged".equals(action)) {
+            if (args.length != 4 || !(sender instanceof EntityPlayerMP))
+                throw new CommandException("/gtswn test paged renew|stale|complete|abort <runUUID>");
+            try {
+                DevicePagedClientScenario.control((EntityPlayerMP) sender, args[2], args[3]);
+            } catch (Exception failure) {
+                throw new CommandException("Paged client control failed: " + failure.getMessage());
+            }
+            return;
+        }
         if (args.length > ("run".equals(action) || "kit".equals(action) ? 3 : 2))
             throw new CommandException("/gtswn test help");
         try {

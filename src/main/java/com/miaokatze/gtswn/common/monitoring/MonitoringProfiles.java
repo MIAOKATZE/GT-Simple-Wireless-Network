@@ -351,6 +351,7 @@ public final class MonitoringProfiles extends WorldSavedData {
         ItemStack held = actor.getHeldItem();
         if (isPortable(profile)) {
             PortableProfileAdapter.restore(held, profile);
+            actor.addChatMessage(new net.minecraft.util.ChatComponentTranslation("gtswn.profiles.recoverCharging"));
             com.miaokatze.gtswn.common.hud.MonitorBindings.synchronize(actor);
             ItemDeviceInfoTerminal.syncHeldTerminalSlot(actor);
         } else if (isQuantum(profile)) {

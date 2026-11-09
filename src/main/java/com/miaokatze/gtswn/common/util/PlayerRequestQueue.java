@@ -88,8 +88,13 @@ public abstract class PlayerRequestQueue<P> {
 
     /** Main-thread identity check: a retained player reference does not prove the connection is still current. */
     public static boolean isOnline(EntityPlayerMP player) {
+        return isCurrentConnection(player, false);
+    }
+
+    /** Actions may explicitly retain their historical death policy, but never a closed/replaced connection. */
+    public static boolean isCurrentConnection(EntityPlayerMP player, boolean allowDead) {
         MinecraftServer server = MinecraftServer.getServer();
-        return player != null && !player.isDead
+        return player != null && (allowDead || !player.isDead)
             && player.playerNetServerHandler != null
             && player.playerNetServerHandler.netManager.isChannelOpen()
             && server != null

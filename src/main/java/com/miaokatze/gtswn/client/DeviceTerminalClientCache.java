@@ -109,6 +109,11 @@ public final class DeviceTerminalClientCache {
         return cached == null ? 0 : cached.pageTotal;
     }
 
+    public static int totalEntries(UUID terminalId) {
+        Cached cached = CACHE.get(terminalId);
+        return cached == null ? 0 : cached.deltaEntryTotal;
+    }
+
     public static boolean isFresh(UUID terminalId, long now) {
         Cached cached = CACHE.get(terminalId);
         return cached != null && cached.snapshot != null && now - cached.receivedAt < freshMillis;
@@ -118,7 +123,10 @@ public final class DeviceTerminalClientCache {
         Cached cached = CACHE.get(terminalId);
         if (terminalId != null && com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
             .clientSupports(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.DIT)) {
-            return compactRequestMetadata(terminalId);
+            com.miaokatze.gtswn.network.PacketRequestDeviceTerminalDelta request = compactRequestMetadata(terminalId);
+            if (com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+                .clientSupports(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.DIT_PAGED)) request.paged();
+            return request;
         }
         long version = cached == null ? -1L
             : cached.pendingPages == null ? cached.version : Math.max(cached.version, cached.pendingVersion);

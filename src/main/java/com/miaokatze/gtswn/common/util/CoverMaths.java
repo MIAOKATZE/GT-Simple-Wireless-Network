@@ -58,9 +58,7 @@ public final class CoverMaths {
         if (needed <= 0) return java.math.BigInteger.ZERO;
         if (!Double.isFinite(loss) || loss < 0) throw new IllegalArgumentException("Invalid downlink loss");
         java.math.BigDecimal amount = java.math.BigDecimal.valueOf(needed);
-        return amount.add(amount.multiply(java.math.BigDecimal.valueOf(loss)))
-            .setScale(0, java.math.RoundingMode.CEILING)
-            .toBigIntegerExact();
+        return DecimalEnergyAccounting.deduction(amount, java.math.BigDecimal.valueOf(loss));
     }
 
     public static long afterUplinkLoss(long stored, float loss) {

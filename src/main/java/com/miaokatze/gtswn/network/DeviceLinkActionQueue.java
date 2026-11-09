@@ -10,7 +10,6 @@ import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.common.DimensionManager;
@@ -333,11 +332,7 @@ public final class DeviceLinkActionQueue {
     }
 
     private static boolean online(EntityPlayerMP player) {
-        MinecraftServer server = MinecraftServer.getServer();
-        return player != null && player.playerNetServerHandler != null
-            && server != null
-            && server.getConfigurationManager()
-                .func_152612_a(player.getCommandSenderName()) == player;
+        return com.miaokatze.gtswn.common.util.PlayerRequestQueue.isCurrentConnection(player, true);
     }
 
     public static synchronized void onLogout(UUID player) {

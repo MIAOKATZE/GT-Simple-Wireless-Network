@@ -189,6 +189,53 @@ public final class TestUiKit {
                 "[GTSWN-UI] KIT_PREPARING slots=0:portable,1:device,2:quantum; originals persisted; waiting for naturally powered AE controller and actual binding"));
     }
 
+    /** Minimal run-owned fixture: one real DIT slot, no panel/AE/EU/block creation. */
+    public static ItemStack grantPaged(EntityPlayerMP player, String runId) {
+        DebugTestGate.requireEnabled();
+        if (!TestDimension.isTest(player.worldObj) || !player.canCommandSenderUseCommand(4, "gtswn"))
+            throw new IllegalStateException("Paged fixture requires the actual OP4 test actor");
+        if (hasBackup(player) || inUse()
+            || persistent(player).hasKey(OVERFLOW, 9)
+            || player.inventory.getItemStack() != null)
+            throw new IllegalStateException("Restore existing UI kits/cursor/recovery before paged fixture");
+        ItemStack terminal = GTSWNItemList.Device_Info_Terminal.get(1);
+        if (terminal == null) throw new IllegalStateException("Device item unavailable");
+        terminal.setTagCompound(new NBTTagCompound());
+        terminal.stackTagCompound.setBoolean(MARKER, true);
+        terminal.stackTagCompound.setString("GTSWN_PagedQA_Run", runId);
+        UUID terminalId = ItemDeviceInfoTerminal.getOrCreateTerminalId(terminal);
+        if (DeviceTerminalDataStore.get(player.worldObj)
+            .getTerminal(terminalId) != null) throw new IllegalStateException("Fixture terminal was not absent");
+        NBTTagCompound backup = new NBTTagCompound();
+        backup.setInteger("Selected", player.inventory.currentItem);
+        NBTTagList originals = new NBTTagList();
+        NBTTagCompound original = new NBTTagCompound();
+        original.setInteger("Slot", 0);
+        if (player.inventory.mainInventory[0] != null)
+            original.setTag("Stack", player.inventory.mainInventory[0].writeToNBT(new NBTTagCompound()));
+        originals.appendTag(original);
+        backup.setTag("Originals", originals);
+        backup.setBoolean("PagedOnly", true);
+        backup.setBoolean("UiScopePrepared", true);
+        backup.setBoolean("UiTerminalWasAbsent", true);
+        backup.setInteger("OriginDim", player.dimension);
+        backup.setString("UiTerminal", terminalId.toString());
+        backup.setDouble("ReturnX", player.posX);
+        backup.setDouble("ReturnY", player.posY);
+        backup.setDouble("ReturnZ", player.posZ);
+        backup.setFloat("ReturnYaw", player.rotationYaw);
+        backup.setFloat("ReturnPitch", player.rotationPitch);
+        persistent(player).setTag(BACKUP, backup);
+        save(player); // Durable original slot and exact absent key before the first inventory/data mutation.
+        backup.setBoolean("Granted", true);
+        player.closeScreen();
+        player.inventory.mainInventory[0] = terminal;
+        player.inventory.currentItem = 0;
+        synchronize(player);
+        save(player);
+        return terminal;
+    }
+
     public static void restore(EntityPlayerMP player) {
         if (!DebugTestGate.isEnabled()) return;
         NBTTagCompound persistent = persistent(player);
@@ -295,6 +342,23 @@ public final class TestUiKit {
         WorldServer origin = DimensionManager.getWorld(dimension);
         if (!TestDimension.isTest(origin))
             throw new IllegalStateException("UI scope origin is not the isolated test dimension");
+        if (backup.getBoolean("PagedOnly")) {
+            UUID terminal = UUID.fromString(backup.getString("UiTerminal"));
+            DeviceTerminalDataStore.get(origin)
+                .removeUiKitTerminal(player, origin, terminal);
+            com.miaokatze.gtswn.common.device.DeviceTerminalRequestQueue.invalidate(player);
+            if (DeviceTerminalDataStore.get(origin)
+                .getTerminal(terminal) != null)
+                throw new IllegalStateException("Paged exact terminal cleanup failed; backup retained");
+            if (player.dimension == dimension && player.playerNetServerHandler != null)
+                player.playerNetServerHandler.setPlayerLocation(
+                    backup.getDouble("ReturnX"),
+                    backup.getDouble("ReturnY"),
+                    backup.getDouble("ReturnZ"),
+                    backup.getFloat("ReturnYaw"),
+                    backup.getFloat("ReturnPitch"));
+            return;
+        }
         UUID owner = UUID.fromString(backup.getString("ScopeOwner"));
         UUID terminal = UUID.fromString(backup.getString("UiTerminal"));
         UUID leader = SpaceProjectManager.spaceTeams.get(owner);
@@ -509,6 +573,7 @@ public final class TestUiKit {
         EntityPlayerMP player = (EntityPlayerMP) event.player;
         if (!TestDimension.isTest(player.worldObj) || !hasBackup(player)) return;
         NBTTagCompound backup = persistent(player).getCompoundTag(BACKUP);
+        if (backup.getBoolean("PagedOnly")) return; // No native AE fixtures belong to this minimal kit.
         if (backup.getBoolean("UiFailed")) return;
         if (!backup.getBoolean("Granted") || !backup.getBoolean("UiScopePrepared")) {
             failKit(

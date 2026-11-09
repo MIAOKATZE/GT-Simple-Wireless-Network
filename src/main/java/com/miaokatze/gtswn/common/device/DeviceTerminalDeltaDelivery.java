@@ -20,7 +20,7 @@ public final class DeviceTerminalDeltaDelivery {
     private String source;
     private long epoch, baseVersion = -1, version = -1;
     private List<Entry> base, target;
-    private int nextPage;
+    private int nextPage, wireVersion = 1;
     private PacketSyncDeviceTerminalDelta pendingPacket;
     private long lastSent = Long.MIN_VALUE;
 
@@ -34,7 +34,8 @@ public final class DeviceTerminalDeltaDelivery {
         boolean reset = session == null || !session.equals(request.getSession())
             || !sourceRevision.equals(source)
             || request.getEpoch() != epoch
-            || liveVersion < version;
+            || liveVersion < version
+            || wireVersion != request.getWireVersion();
         if (!reset && request.getKnownVersion() != baseVersion) {
             // A claimed ACK cannot establish a baseline that this session did not completely send.
             if (target != null && nextPage == pageTotal() && request.getKnownVersion() == version) {
@@ -45,6 +46,7 @@ public final class DeviceTerminalDeltaDelivery {
         }
         if (reset) {
             session = request.getSession();
+            wireVersion = request.getWireVersion();
             source = sourceRevision;
             epoch = EPOCHS.incrementAndGet();
             base = null;
@@ -56,7 +58,8 @@ public final class DeviceTerminalDeltaDelivery {
         }
         if (target == null && (base == null || liveVersion != baseVersion)) {
             List<Entry> rows = capture.get();
-            if (rows.size() > 1024) throw new IllegalArgumentException("Too many device rows");
+            if (rows.size() > (wireVersion == 2 ? PacketSyncDeviceTerminalDelta.MAX_PAGED_ENTRIES : 1024))
+                throw new IllegalArgumentException("Too many device rows");
             target = Collections.unmodifiableList(new ArrayList<>(rows));
             version = liveVersion;
             nextPage = 0;
@@ -83,7 +86,8 @@ public final class DeviceTerminalDeltaDelivery {
         if (pendingPacket != null) return pendingPacket;
         int from = nextPage * 128;
         int to = Math.min(target.size(), from + 128);
-        DeviceTerminalDeltaCodec.Encoded encoded = DeviceTerminalDeltaCodec.encode(base, target.subList(from, to));
+        DeviceTerminalDeltaCodec.Encoded encoded = DeviceTerminalDeltaCodec
+            .encode(base != null && base.size() <= 1024 ? base : null, target.subList(from, to));
         pendingPacket = new PacketSyncDeviceTerminalDelta(
             terminal,
             session,
@@ -94,7 +98,8 @@ public final class DeviceTerminalDeltaDelivery {
             nextPage,
             pageTotal(),
             target.size(),
-            encoded.bytes);
+            encoded.bytes,
+            wireVersion);
         return pendingPacket;
     }
 
@@ -120,7 +125,8 @@ public final class DeviceTerminalDeltaDelivery {
             0,
             pageTotal(),
             base.size(),
-            new byte[0]);
+            new byte[0],
+            wireVersion);
     }
 
     public void keepAliveSent(long now) {
@@ -154,6 +160,7 @@ public final class DeviceTerminalDeltaDelivery {
             0,
             1,
             0,
-            new byte[0]);
+            new byte[0],
+            wireVersion);
     }
 }

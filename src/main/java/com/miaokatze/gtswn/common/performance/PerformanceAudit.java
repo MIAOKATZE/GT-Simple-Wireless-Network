@@ -88,11 +88,11 @@ public final class PerformanceAudit {
 
     // ==================== 网络包计数器（C→S） ====================
 
-    private static long packetTotal = 0L;
-    private static long packetTerminalRequest = 0L;
-    private static long packetWirelessEU = 0L;
-    private static long packetInfoPanelConfig = 0L;
-    private static long packetAETab = 0L;
+    private static final java.util.concurrent.atomic.AtomicLong packetTotal = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong packetTerminalRequest = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong packetWirelessEU = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong packetInfoPanelConfig = new java.util.concurrent.atomic.AtomicLong();
+    private static final java.util.concurrent.atomic.AtomicLong packetAETab = new java.util.concurrent.atomic.AtomicLong();
 
     // ==================== 命名切片采样（v1.6.23：按来源/按依赖 mod 记录延迟） ====================
 
@@ -420,25 +420,26 @@ public final class PerformanceAudit {
     }
 
     /**
-     * 网络包接收计数（仅 C→S 请求包，按 discriminator 分类，其余归入合计）。
+     * 网络包接收计数（仅 C→S 请求包，包含随后校验失败/合并/丢弃的请求，非执行数）。
+     * 原子增量保证Netty多线程不丢更新；各分类报告为独立瞬时读取，不宣称跨分类事务快照。
      *
      * @param discriminator 包 discriminator（0=无线EU请求 / 2=信息屏配置 / 3=AE标签状态 / 5=量子终端数据请求）
      */
     public static void recordPacketReceived(int discriminator) {
         if (!enabled) return;
-        packetTotal++;
+        packetTotal.incrementAndGet();
         switch (discriminator) {
             case 0:
-                packetWirelessEU++;
+                packetWirelessEU.incrementAndGet();
                 break;
             case 2:
-                packetInfoPanelConfig++;
+                packetInfoPanelConfig.incrementAndGet();
                 break;
             case 3:
-                packetAETab++;
+                packetAETab.incrementAndGet();
                 break;
             case 5:
-                packetTerminalRequest++;
+                packetTerminalRequest.incrementAndGet();
                 break;
             default:
                 break;
@@ -675,11 +676,11 @@ public final class PerformanceAudit {
             wirelessTick,
             wirelessDraw,
             wirelessUpload,
-            packetTotal,
-            packetTerminalRequest,
-            packetWirelessEU,
-            packetInfoPanelConfig,
-            packetAETab,
+            packetTotal.get(),
+            packetTerminalRequest.get(),
+            packetWirelessEU.get(),
+            packetInfoPanelConfig.get(),
+            packetAETab.get(),
             latencyLe20,
             latency20To50,
             latency50To100,
@@ -732,11 +733,11 @@ public final class PerformanceAudit {
         wirelessTick = 0L;
         wirelessDraw = 0L;
         wirelessUpload = 0L;
-        packetTotal = 0L;
-        packetTerminalRequest = 0L;
-        packetWirelessEU = 0L;
-        packetInfoPanelConfig = 0L;
-        packetAETab = 0L;
+        packetTotal.set(0L);
+        packetTerminalRequest.set(0L);
+        packetWirelessEU.set(0L);
+        packetInfoPanelConfig.set(0L);
+        packetAETab.set(0L);
         SLICES.clear();
         AE2_EVENTS.clear();
         latencyLe20 = 0L;

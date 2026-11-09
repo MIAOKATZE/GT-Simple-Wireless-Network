@@ -105,11 +105,11 @@ public class LaserHatchUtil {
     /**
      * 从玩家背包消耗 1 根激光真空管
      * <p>
-     * 按 item + damage 精确匹配（1.7.10 静态 ItemStack.isItemEqual 还会比较 NBT，故手动比较字段避免误判），
+     * 按 getItem() 委托解析后的 item + damage 精确匹配，忽略 NBT；与原生 isItemEqual 直接比较原字段的重映射语义不同，
      * 匹配槽位 stackSize--（减到 0 置 null）。不发聊天提示，提示由调用方处理。
      * <p>
      * Consume 1 Laser Vacuum Pipe from the player inventory. Matches by item + damage
-     * (the 1.7.10 static ItemStack.isItemEqual also compares NBT, so compare fields explicitly).
+     * NBT is ignored. getItem() resolves Forge delegates; native isItemEqual compares its stored item field.
      * No chat message here; the caller handles messaging.
      *
      * @param player 玩家

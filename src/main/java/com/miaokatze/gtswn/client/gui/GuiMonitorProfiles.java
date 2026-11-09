@@ -262,7 +262,7 @@ public final class GuiMonitorProfiles extends GuiScreen {
         drawString(fontRendererObj, fontRendererObj.trimStringToWidth(status, panelWidth), left, top + 205, 0xffdd88);
         drawString(
             fontRendererObj,
-            fontRendererObj.trimStringToWidth(tr(webConfirmation == null ? "hint" : "webSetup"), panelWidth),
+            fontRendererObj.trimStringToWidth(tr(webConfirmation == null ? "recoverCharging" : "webSetup"), panelWidth),
             left,
             top + 217,
             0xaaaaaa);
@@ -275,6 +275,8 @@ public final class GuiMonitorProfiles extends GuiScreen {
                 fontRendererObj.listFormattedStringToWidth(tr("recoverNativePairing"), Math.min(300, panelWidth - 12)));
             help.addAll(
                 fontRendererObj.listFormattedStringToWidth(tr("recoverNativeBinding"), Math.min(300, panelWidth - 12)));
+            help.addAll(
+                fontRendererObj.listFormattedStringToWidth(tr("recoverCharging"), Math.min(300, panelWidth - 12)));
             drawHoveringText(help, x, y, fontRendererObj);
         }
         if (x >= left && x < left + panelWidth && y >= top + 19 && y < top + 99) {

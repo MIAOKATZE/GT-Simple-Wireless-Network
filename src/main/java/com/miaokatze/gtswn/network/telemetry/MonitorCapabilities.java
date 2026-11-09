@@ -20,10 +20,12 @@ import cpw.mods.fml.relauncher.SideOnly;
 public final class MonitorCapabilities {
 
     public static final String PROBE = "gtswn:monitor-capabilities:1";
+    public static final String PAGED_PROBE = "gtswn:monitor-capabilities:3";
     public static final String IDENTITY_PROBE = "gtswn:monitor-capabilities:2";
     public static final int PORTABLE = 1, DIT = 2, ENGINEERING = 4, QUANTUM = 8, PANELS = 16, PROFILE = 32,
-        PROFILES = PROFILE, EU_SOURCE = 64, ALL = 127;
+        PROFILES = PROFILE, EU_SOURCE = 64, DIT_PAGED = 128, LEGACY_ALL = 127, ALL = 255;
     private static final Map<EntityPlayerMP, PacketMonitorCapabilities> PENDING = new ConcurrentHashMap<>();
+    private static final Map<EntityPlayerMP, PacketMonitorCapabilities> NEGOTIATED = new ConcurrentHashMap<>();
     private static final Map<EntityPlayerMP, Object> CONNECTIONS = new ConcurrentHashMap<>();
     private static volatile int enabled;
 
@@ -40,16 +42,34 @@ public final class MonitorCapabilities {
     }
 
     public static void enqueue(EntityPlayerMP player, long nonce, boolean identity) {
+        enqueue(player, nonce, identity, false);
+    }
+
+    public static void enqueue(EntityPlayerMP player, long nonce, boolean identity, boolean paged) {
         if (player != null && nonce > 0 && PENDING.size() < 1024) PENDING.compute(
             player,
-            (ignored, previous) -> previous != null && previous.nonce == nonce && previous.playerId != null ? previous
-                : new PacketMonitorCapabilities(nonce, 0, identity ? player.getUniqueID() : null));
+            (ignored, previous) -> mergeReply(
+                previous,
+                nonce,
+                paged ? ALL : LEGACY_ALL,
+                identity || paged ? player.getUniqueID() : null));
+    }
+
+    /** Same-nonce fallback cannot erase an authenticated actor or a feature already requested by that client. */
+    static PacketMonitorCapabilities mergeReply(PacketMonitorCapabilities previous, long nonce, int bits, UUID actor) {
+        if (previous != null && previous.nonce == nonce) {
+            bits |= previous.bits;
+            if (previous.playerId != null) actor = previous.playerId;
+        }
+        return new PacketMonitorCapabilities(nonce, bits, actor);
     }
 
     public static boolean serverSupports(EntityPlayerMP player, int feature) {
+        PacketMonitorCapabilities negotiated = player == null ? null : NEGOTIATED.get(player);
         return player != null && player.playerNetServerHandler != null
             && CONNECTIONS.get(player) == player.playerNetServerHandler.netManager
-            && (enabled & feature) == feature;
+            && negotiated != null
+            && (negotiated.bits & feature) == feature;
     }
 
     @SideOnly(Side.CLIENT)
@@ -80,9 +100,17 @@ public final class MonitorCapabilities {
             if (!PENDING.remove(entry.getKey(), entry.getValue())) continue;
             EntityPlayerMP player = entry.getKey();
             if (!connected(player)) continue;
-            CONNECTIONS.put(player, player.playerNetServerHandler.netManager);
-            PacketMonitorCapabilities response = entry.getValue();
-            response.bits = enabled;
+            Object connection = player.playerNetServerHandler.netManager;
+            PacketMonitorCapabilities previous = CONNECTIONS.get(player) == connection ? NEGOTIATED.get(player) : null;
+            PacketMonitorCapabilities requested = entry.getValue();
+            PacketMonitorCapabilities response = mergeReply(
+                previous,
+                requested.nonce,
+                requested.bits,
+                requested.playerId);
+            response.bits &= enabled;
+            CONNECTIONS.put(player, connection);
+            NEGOTIATED.put(player, response);
             TelemetryTransport.control(player, response);
         }
     }
@@ -97,6 +125,7 @@ public final class MonitorCapabilities {
     public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
         PENDING.remove(event.player);
         CONNECTIONS.remove(event.player);
+        NEGOTIATED.remove(event.player);
     }
 
     public static boolean connected(EntityPlayerMP player) {
@@ -107,6 +136,7 @@ public final class MonitorCapabilities {
     public static void clear() {
         PENDING.clear();
         CONNECTIONS.clear();
+        NEGOTIATED.clear();
     }
 
     @SideOnly(Side.CLIENT)
@@ -130,8 +160,8 @@ public final class MonitorCapabilities {
                 && connection == minecraft.getNetHandler()
                 && echo == nonce
                 && nonce > 0) {
-                bits = features & ALL;
-                if (actor != null) playerId = actor;
+                bits |= features & ALL;
+                if (playerId == null && actor != null) playerId = actor;
             }
         }
 
@@ -157,7 +187,8 @@ public final class MonitorCapabilities {
             }
             if (current == null || mc.thePlayer == null || bits != 0 || attempts >= 3) return;
             if (ticks++ % 40 == 0) {
-                String probe = attempts++ == 0 ? IDENTITY_PROBE : PROBE;
+                String probe = attempts == 0 ? PAGED_PROBE : attempts == 1 ? IDENTITY_PROBE : PROBE;
+                attempts++;
                 GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestWirelessEU(probe, nonce));
             }
         }

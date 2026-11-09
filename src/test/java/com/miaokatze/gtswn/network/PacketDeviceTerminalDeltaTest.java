@@ -35,7 +35,7 @@ public class PacketDeviceTerminalDeltaTest {
                 decoded.fromBytes(bytes.slice(0, length));
                 assertFalse(decoded.isValid());
             }
-            bytes.setByte(0, 2);
+            bytes.setByte(0, 3);
             decoded.fromBytes(bytes.duplicate());
             assertFalse(decoded.isValid());
             bytes.setByte(0, 1);

@@ -8,7 +8,6 @@ import java.util.UUID;
 
 import net.minecraft.entity.player.EntityPlayerMP;
 import net.minecraft.item.ItemStack;
-import net.minecraft.server.MinecraftServer;
 
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
 import com.miaokatze.gtswn.common.device.DeviceTerminalRecognitionMode;
@@ -143,11 +142,7 @@ public final class DeviceTerminalActionQueue {
     }
 
     private static boolean isOnline(EntityPlayerMP player) {
-        MinecraftServer server = MinecraftServer.getServer();
-        return player != null && player.playerNetServerHandler != null
-            && server != null
-            && server.getConfigurationManager()
-                .func_152612_a(player.getCommandSenderName()) == player;
+        return com.miaokatze.gtswn.common.util.PlayerRequestQueue.isCurrentConnection(player, true);
     }
 
     private static void apply(EntityPlayerMP player, Action action) {
