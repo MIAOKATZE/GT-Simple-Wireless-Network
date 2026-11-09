@@ -232,27 +232,24 @@ public class ClientProxy extends CommonProxy {
      */
     @Override
     public void handleSyncAEMonitorData(PacketSyncAEMonitorData msg) {
-        // 获取客户端世界（WorldClient，仅在客户端可访问）
-        final World world = Minecraft.getMinecraft().theWorld;
-        if (world == null) {
-            return;
-        }
+        inReceivedWorld(world -> {
+            TileEntity tile = world.getTileEntity(msg.getX(), msg.getY(), msg.getZ());
+            if (tile instanceof TileEntityNetworkInfoPanel) {
+                ((TileEntityNetworkInfoPanel) tile)
+                    .receiveAEMonitorData(msg.getChartSamples(), msg.getMonitorLatest(), msg.getMonitorAvg300s());
+            }
+        });
+    }
 
-        // 先在网络线程定位 TileEntity（避免主线程 world 快照不一致）
-        final TileEntity te = world.getTileEntity(msg.getX(), msg.getY(), msg.getZ());
-        if (!(te instanceof TileEntityNetworkInfoPanel)) {
-            return;
-        }
-
-        // 切到主线程再修改 TileEntity 字段
-        Minecraft.getMinecraft()
-            .func_152344_a(() -> {
-                TileEntityNetworkInfoPanel panel = (TileEntityNetworkInfoPanel) world
-                    .getTileEntity(msg.getX(), msg.getY(), msg.getZ());
-                if (panel != null) {
-                    panel.receiveAEMonitorData(msg.getChartSamples(), msg.getMonitorLatest(), msg.getMonitorAvg300s());
-                }
-            });
+    /** Network callbacks capture only the session; all world access happens on the client thread. */
+    private static void inReceivedWorld(java.util.function.Consumer<World> action) {
+        Minecraft minecraft = Minecraft.getMinecraft();
+        World receivedWorld = minecraft.theWorld;
+        Object receivedConnection = minecraft.getNetHandler();
+        minecraft.func_152344_a(() -> {
+            if (receivedWorld != null && receivedWorld == minecraft.theWorld
+                && receivedConnection == minecraft.getNetHandler()) action.accept(receivedWorld);
+        });
     }
 
     /**
@@ -271,8 +268,7 @@ public class ClientProxy extends CommonProxy {
             return;
         }
         // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
-        Minecraft.getMinecraft()
-            .func_152344_a(() -> GuiQuantumTerminal.receiveData(data));
+        inReceivedWorld(world -> GuiQuantumTerminal.receiveData(data));
     }
 
     /**
@@ -287,8 +283,7 @@ public class ClientProxy extends CommonProxy {
         if (data == null) {
             return;
         }
-        Minecraft.getMinecraft()
-            .func_152344_a(() -> GuiQuantumTerminal.receiveData(data));
+        inReceivedWorld(world -> GuiQuantumTerminal.receiveData(data));
     }
 
     /**
@@ -313,15 +308,8 @@ public class ClientProxy extends CommonProxy {
         final java.util.List<com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry> page = new java.util.ArrayList<>(
             msg.getEntries());
         // 1.7.10 API：func_152344_a 等价于 1.8+ 的 addScheduledTask，调度到客户端主线程
-        Minecraft minecraft = Minecraft.getMinecraft();
-        World receivedWorld = minecraft.theWorld;
-        Object receivedConnection = minecraft.getNetHandler();
-        minecraft.func_152344_a(() -> {
-            if (receivedWorld != null && receivedWorld == minecraft.theWorld
-                && receivedConnection == minecraft.getNetHandler()) {
-                DeviceTerminalClientCache.receivePage(terminalId, version, pageIndex, pageTotal, page);
-            }
-        });
+        inReceivedWorld(
+            world -> DeviceTerminalClientCache.receivePage(terminalId, version, pageIndex, pageTotal, page));
     }
 
     /**

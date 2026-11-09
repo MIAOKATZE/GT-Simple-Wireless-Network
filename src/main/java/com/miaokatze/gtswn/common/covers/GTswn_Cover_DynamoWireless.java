@@ -17,6 +17,7 @@ import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.LaserHatchUtil;
+import com.miaokatze.gtswn.common.util.SaturatingLong;
 import com.miaokatze.gtswn.config.Config;
 
 import gregtech.api.covers.CoverContext;
@@ -236,13 +237,7 @@ public class GTswn_Cover_DynamoWireless extends GTswnCoverWirelessBase {
      * 与 {@code MTEWirelessEnergyMonitor.safeAddStep}（SWN-BUG-04）同式。
      */
     private static long safeAdd(long value, long step) {
-        if (step > 0L && value > Long.MAX_VALUE - step) {
-            return Long.MAX_VALUE;
-        }
-        if (step < 0L && value < Long.MIN_VALUE - step) {
-            return Long.MIN_VALUE;
-        }
-        return value + step;
+        return SaturatingLong.add(value, step);
     }
 
     private long hostAmperage() {

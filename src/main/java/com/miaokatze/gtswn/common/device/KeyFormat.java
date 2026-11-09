@@ -17,9 +17,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * </ul>
  * 语义与原 parseKey 逐字一致：四段 {@code split(":")} + 逐段 parseInt，负维度 / 负坐标合法，
  * 段数不为 4 或任段非整数（含溢出）返回 null；null 入参返回 null（不缓存）。
- * <p>
- * 【后续可迁移】DeviceScanManager.parseKey（:438-452）与 ScreenStructure.parseKey（:335 附近）
- * 存在同实现副本，分属其他编辑切片本切片不动，待各切片稳定后统一收敛到本类。
  */
 public final class KeyFormat {
 

@@ -32,6 +32,7 @@ import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.EUDataSet;
 import com.miaokatze.gtswn.common.util.FormatUtil;
 import com.miaokatze.gtswn.common.util.GTTierUtil;
+import com.miaokatze.gtswn.common.util.SaturatingLong;
 
 import gregtech.api.enums.Textures;
 import gregtech.api.interfaces.ITexture;
@@ -1489,12 +1490,6 @@ public class MTEWirelessEnergyMonitor extends MTEMonitor implements IMetricsExpo
      * + 按钮饱和加法（SWN-BUG-04）：相加溢出时钳制到 long 边界，防止回绕。
      */
     private static long safeAddStep(long value, long step) {
-        if (step > 0L && value > Long.MAX_VALUE - step) {
-            return Long.MAX_VALUE;
-        }
-        if (step < 0L && value < Long.MIN_VALUE - step) {
-            return Long.MIN_VALUE;
-        }
-        return value + step;
+        return SaturatingLong.add(value, step);
     }
 }

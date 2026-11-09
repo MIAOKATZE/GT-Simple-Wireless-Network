@@ -69,6 +69,17 @@ public final class LinkNodeVisuals {
         return "old".equals(material) ? 2 : "oldplus".equals(material) ? 3 : "low".equals(material) ? 0 : 1;
     }
 
+    /** A bounded resource identity independent of world instances and texture allocation order. */
+    public static String texturePath(String material, boolean energy, int voltageRgb, int voltagePercent) {
+        return "dynamic/link_node/" + textureIndex(material)
+            + "/"
+            + (energy ? "energy" : "dynamo")
+            + "/"
+            + Integer.toHexString(voltageRgb)
+            + "/"
+            + voltageRings(voltagePercent);
+    }
+
     public static boolean pulseActive(double seconds, boolean low) {
         return phase(seconds, low ? 12 : 10) < (low ? 7 : 5);
     }

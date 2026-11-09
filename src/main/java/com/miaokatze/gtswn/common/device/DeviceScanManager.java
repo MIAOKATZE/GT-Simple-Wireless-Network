@@ -80,15 +80,27 @@ public final class DeviceScanManager {
     }
 
     public static void clear() {
+        synchronized (RESULT_LOCK) {
+            scanSession = new Object();
+            RESULTS.clear();
+        }
         for (ScanState state : STATES.values()) state.cancelled = true;
         STATES.clear();
         SCAN_ANCHORS.clear();
         FORCE_WINDOWS.clear();
-        RESULTS.clear();
     }
 
     /** 后台合并结果队列（后台线程生产，主线程排水消费） */
     private static final ConcurrentLinkedQueue<ScanResult> RESULTS = new ConcurrentLinkedQueue<>();
+    /** Closing a session and publishing a result share one lock: no late worker can refill a cleared queue. */
+    private static final Object RESULT_LOCK = new Object();
+    private static volatile Object scanSession = new Object();
+
+    private static void publishResult(ScanResult result) {
+        synchronized (RESULT_LOCK) {
+            if (result.state.session == scanSession && !result.state.cancelled) RESULTS.add(result);
+        }
+    }
 
     /** 后台单线程 executor（静态懒建，daemon：不阻塞 JVM 退出） */
     private static volatile ExecutorService scanExecutor;
@@ -264,7 +276,7 @@ public final class DeviceScanManager {
             final int capacity = Math.max(0, Config.deviceTerminalMaxMachines - boundCopy.size());
             executor().execute(() -> {
                 try {
-                    RESULTS.add(
+                    publishResult(
                         mergeScan(
                             state,
                             dimension,
@@ -277,7 +289,7 @@ public final class DeviceScanManager {
                 } catch (Throwable t) {
                     // Queue failure cleanup too; the worker cannot mutate the server-thread state maps.
                     GTSimpleWirelessNetwork.LOG.error("[设备终端] 后台扫描合并异常（结果丢弃）", t);
-                    RESULTS.add(new ScanResult(state, 0, 0, java.util.Collections.emptyList(), 0, 0, true));
+                    publishResult(new ScanResult(state, 0, 0, java.util.Collections.emptyList(), 0, 0, true));
                 }
             });
         } catch (Throwable t) {
@@ -383,7 +395,7 @@ public final class DeviceScanManager {
                 ownerFiltered++;
                 continue;
             }
-            int[] pos = parseKey(key);
+            int[] pos = KeyFormat.parse(key);
             if (pos == null || pos[0] != dimension) {
                 continue;
             }
@@ -625,23 +637,6 @@ public final class DeviceScanManager {
         return team;
     }
 
-    /** 解析机器键 {@code dim:x:y:z} → [dim,x,y,z]；格式坏返回 null（纯字符串运算，任意线程安全） */
-    private static int[] parseKey(String key) {
-        if (key == null) {
-            return null;
-        }
-        String[] parts = key.split(":");
-        if (parts.length != 4) {
-            return null;
-        }
-        try {
-            return new int[] { Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]),
-                Integer.parseInt(parts[3]) };
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
     /** 服务端本地化聊天 */
     private static void sendChat(EntityPlayerMP player, String key, Object... args) {
         if (player != null && player.playerNetServerHandler != null) {
@@ -656,6 +651,7 @@ public final class DeviceScanManager {
 
         /** 发起玩家（主线程引用；应用前排水复验在线） */
         final EntityPlayerMP player;
+        final Object session = scanSession;
 
         /** 目标终端实例 UUID */
         final UUID terminalId;
@@ -666,7 +662,7 @@ public final class DeviceScanManager {
         boolean running;
 
         /** 已取消（结果到达即丢弃） */
-        boolean cancelled;
+        volatile boolean cancelled;
 
         ScanState(EntityPlayerMP player, UUID terminalId) {
             this(player, terminalId, false);

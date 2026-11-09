@@ -23,6 +23,8 @@ import net.minecraft.world.chunk.IChunkProvider;
 import net.minecraft.world.storage.ISaveHandler;
 import net.minecraft.world.storage.MapStorage;
 
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
@@ -45,6 +47,65 @@ public class MonitorApiCompatibilityTest {
     @Rule
     public TemporaryFolder temporary = new TemporaryFolder();
 
+    private String threadName;
+
+    @Before
+    public void enterServerThread() {
+        threadName = Thread.currentThread()
+            .getName();
+        Thread.currentThread()
+            .setName("Server thread");
+    }
+
+    @After
+    public void restoreThreadName() {
+        Thread.currentThread()
+            .setName(threadName);
+    }
+
+    @Test
+    public void logicalClientCannotReadServerWorldReferenceOrLegacyArchive() throws Exception {
+        FixtureWorld world = world();
+        AEMonitorDataStore.get(world)
+            .getOrCreate(COORDINATE)
+            .addSample("old", 99, 100, 1000);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
+        Thread.currentThread()
+            .setName("Client thread");
+        assertFalse(
+            api.getAEMonitorSnapshot(world, "legacy:" + COORDINATE)
+                .isPresent());
+        assertFalse(
+            api.getAEMonitorHistory(world, COORDINATE, "old", 0)
+                .isPresent());
+    }
+
+    @Test
+    public void remoteWorldIsRejectedEvenOnServerNamedThread() throws Exception {
+        FixtureWorld world = world();
+        AEMonitorDataStore.get(world)
+            .getOrCreate(COORDINATE)
+            .addSample("old", 99, 100, 1000);
+        Field remote = World.class.getDeclaredField("isRemote");
+        remote.setAccessible(true);
+        remote.setBoolean(world, true);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
+        assertFalse(
+            api.getAEMonitorSnapshot(world, COORDINATE)
+                .isPresent());
+        assertFalse(
+            api.getAEMonitorHistory(world, COORDINATE, "old", 0)
+                .isPresent());
+    }
+
     @Test
     public void coordinateQueriesFollowCurrentSamplesInsteadOfShadowingLegacyArchive() throws Exception {
         FixtureWorld world = world();
@@ -57,7 +118,11 @@ public class MonitorApiCompatibilityTest {
         AEMonitorDataSet current = store.getOrCreate(CURRENT);
         current.addSample("item", 10, 200, 2000);
         store.setDirty(false);
-        IGtswnMonitorApi api = new GtswnMonitorApiImpl(() -> world);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
         assertEquals(
             BigInteger.TEN,
             api.getAEMonitorSnapshot(world, COORDINATE)
@@ -87,7 +152,11 @@ public class MonitorApiCompatibilityTest {
         AEMonitorDataStore.get(world)
             .getOrCreate(COORDINATE)
             .addSample("v2:item:previous", 99, 100, 1000);
-        IGtswnMonitorApi api = new GtswnMonitorApiImpl(() -> world);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
         assertFalse(
             api.getAEMonitorSnapshot(world, COORDINATE)
                 .isPresent());
@@ -107,7 +176,11 @@ public class MonitorApiCompatibilityTest {
             .addSample("old-item", 99, 100, 1000);
         store.getOrCreate(CURRENT)
             .addSample("v2:item:current", 10, 200, 2000);
-        IGtswnMonitorApi api = new GtswnMonitorApiImpl(() -> world);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
         assertFalse(
             api.getAEMonitorSnapshot(world, COORDINATE)
                 .get().currentAmounts.containsKey("old-item"));
@@ -133,7 +206,11 @@ public class MonitorApiCompatibilityTest {
             .addSample("old", 99, 100, 1000);
         store.getOrCreate(CURRENT)
             .addSample("item", 10, 200, 2000);
-        IGtswnMonitorApi api = new GtswnMonitorApiImpl(() -> world);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
         world.loaded = false;
         assertEquals(
             BigInteger.valueOf(99),
@@ -170,8 +247,12 @@ public class MonitorApiCompatibilityTest {
         world.panel = panel;
         assertNull(panel.getAEMonitorDataKeyReadOnly());
         assertFalse(
-            new GtswnMonitorApiImpl(() -> world).getAEMonitorSnapshot(world, COORDINATE)
-                .isPresent());
+            new GtswnMonitorApiImpl(
+                () -> world,
+                () -> !"Server thread".equals(
+                    Thread.currentThread()
+                        .getName())).getAEMonitorSnapshot(world, COORDINATE)
+                            .isPresent());
         assertNull(panel.getExistingPortableMonitorId());
         assertNull(MonitoringProfiles.getIfPresent(world));
         assertFalse(
@@ -257,7 +338,11 @@ public class MonitorApiCompatibilityTest {
     @Test
     public void publicEuReadsNeverEnrollUnknownPlayersAndStillResolveExistingTeams() throws Exception {
         FixtureWorld world = world();
-        IGtswnMonitorApi api = new GtswnMonitorApiImpl(() -> world);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
         UUID unknown = UUID.randomUUID(), member = UUID.randomUUID(), leader = UUID.randomUUID();
         Map<UUID, UUID> teams = SpaceProjectManager.spaceTeams;
         int before = teams.size();
@@ -303,7 +388,12 @@ public class MonitorApiCompatibilityTest {
         FixtureWorld world = world();
         UUID unknown = UUID.randomUUID();
         try {
-            assertTrue(new GtswnMonitorApiImpl(() -> world).activateNetworkDataset(unknown));
+            assertTrue(
+                new GtswnMonitorApiImpl(
+                    () -> world,
+                    () -> !"Server thread".equals(
+                        Thread.currentThread()
+                            .getName())).activateNetworkDataset(unknown));
             assertTrue(SpaceProjectManager.isInTeam(unknown));
             assertNotNull(
                 NetworkInfoDataStore.get(world)
@@ -317,7 +407,11 @@ public class MonitorApiCompatibilityTest {
     public void ownerHistoryArchiveRemainsReadableUntilNativeSamplesExistWithoutMergingTimelines() throws Exception {
         FixtureWorld world = world();
         UUID owner = UUID.randomUUID();
-        IGtswnMonitorApi api = new GtswnMonitorApiImpl(() -> world);
+        IGtswnMonitorApi api = new GtswnMonitorApiImpl(
+            () -> world,
+            () -> !"Server thread".equals(
+                Thread.currentThread()
+                    .getName()));
         NetworkInfoDataStore store = NetworkInfoDataStore.get(world);
         for (int i = 1; i <= 13; i++) {
             store.getOrCreate(owner.toString())
