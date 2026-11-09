@@ -350,11 +350,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             if ((request.delta == null || request.delta.getWireVersion() == 1)
                 && actualTotal > PacketSyncDeviceTerminalData.MAX_ENTRIES
                 && state.warnedTotal != actualTotal) {
-                player.addChatMessage(
-                    new net.minecraft.util.ChatComponentTranslation(
-                        "gtswn.device.gui.legacy_total",
-                        actualTotal,
-                        PacketSyncDeviceTerminalData.MAX_ENTRIES));
+                player.addChatMessage(legacyCapacityMessage(actualTotal));
                 state.warnedTotal = actualTotal;
             }
             String sourceRevision = profiles.sourceRevision(terminalId) + ":"
@@ -490,6 +486,15 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             });
         if (admission == TelemetryTransport.Admission.REJECTED && state.pendingPage == marker) state.pendingPage = null;
         return admission == TelemetryTransport.Admission.SENT;
+    }
+
+    /** Resolve on the server: legacy clients do not contain this newer language key. */
+    static net.minecraft.util.IChatComponent legacyCapacityMessage(int actualTotal) {
+        return new net.minecraft.util.ChatComponentText(
+            net.minecraft.util.StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.legacy_total",
+                actualTotal,
+                PacketSyncDeviceTerminalData.MAX_ENTRIES));
     }
 
     /** 有记录的有效条目数（绑定键遍历，零分配；boundKeys 与 records 理论对称，缺记录防御跳过） */
