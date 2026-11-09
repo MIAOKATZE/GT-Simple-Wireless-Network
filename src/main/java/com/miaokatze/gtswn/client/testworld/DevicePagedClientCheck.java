@@ -30,10 +30,12 @@ import cpw.mods.fml.common.FMLCommonHandler;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 import cpw.mods.fml.common.network.FMLEmbeddedChannel;
+import cpw.mods.fml.common.network.FMLIndexedMessageToMessageCodec;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.relauncher.Side;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelPipeline;
 
 /** Observes actual decoded Netty input and GUI/cache state. Never writes a product cache or GUI field. */
 public final class DevicePagedClientCheck {
@@ -100,28 +102,44 @@ public final class DevicePagedClientCheck {
                 .toString());
         run.channel = NetworkRegistry.INSTANCE.getChannel("gtswn", Side.CLIENT);
         if (run.channel == null) throw new IllegalStateException("Native gtswn client channel unavailable");
-        run.channel.pipeline()
-            .addBefore(
-                PacketSyncDeviceTerminalDelta.Handler.class.getName(),
-                HANDLER,
-                new ChannelInboundHandlerAdapter() {
+        run.result.put(
+            "pipelineBeforeObserver",
+            new ArrayList<>(
+                run.channel.pipeline()
+                    .names()));
+        String codec = attachDecodedObserver(run.channel.pipeline(), HANDLER, new ChannelInboundHandlerAdapter() {
 
-                    @Override
-                    public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
-                        if (message instanceof PacketSyncDeviceTerminalDelta) {
-                            PacketSyncDeviceTerminalDelta page = (PacketSyncDeviceTerminalDelta) message;
-                            UUID id = run.wireTerminal;
-                            if (id != null && id.equals(page.getTerminalId())
-                                && page.getKind() < PacketSyncDeviceTerminalDelta.KEEPALIVE)
-                                run.observed.offer(
-                                    new long[] { page.getEpoch(), page.getVersion(), page.getPageIndex(),
-                                        page.getPageTotal(), page.getEntryTotal(), page.getWireVersion() });
-                        }
-                        context.fireChannelRead(message); // Observe only: the unmodified production handler still
-                                                          // consumes it.
-                    }
-                });
+            @Override
+            public void channelRead(ChannelHandlerContext context, Object message) throws Exception {
+                if (message instanceof PacketSyncDeviceTerminalDelta) {
+                    PacketSyncDeviceTerminalDelta page = (PacketSyncDeviceTerminalDelta) message;
+                    UUID id = run.wireTerminal;
+                    if (id != null && id.equals(page.getTerminalId())
+                        && page.getKind() < PacketSyncDeviceTerminalDelta.KEEPALIVE)
+                        run.observed.offer(
+                            new long[] { page.getEpoch(), page.getVersion(), page.getPageIndex(), page.getPageTotal(),
+                                page.getEntryTotal(), page.getWireVersion() });
+                }
+                context.fireChannelRead(message); // Observe only: the unmodified production handler still
+                                                  // consumes it.
+            }
+        });
+        run.result.put("decoderContext", codec);
+        run.result.put(
+            "pipelineWithObserver",
+            new ArrayList<>(
+                run.channel.pipeline()
+                    .names()));
         mc.thePlayer.sendChatMessage("/gtswn test run device.paged_client");
+    }
+
+    /** The codec emits decoded IMessage objects; observe before any business wrapper consumes them. */
+    static String attachDecodedObserver(ChannelPipeline pipeline, String name, ChannelInboundHandlerAdapter observer) {
+        ChannelHandlerContext codec = pipeline.context(FMLIndexedMessageToMessageCodec.class);
+        if (codec == null)
+            throw new IllegalStateException("Native FML message decoder unavailable; pipeline=" + pipeline.names());
+        pipeline.addAfter(codec.name(), name, observer);
+        return codec.name();
     }
 
     public static void stop() {
