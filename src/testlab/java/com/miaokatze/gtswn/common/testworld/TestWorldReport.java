@@ -34,6 +34,10 @@ public final class TestWorldReport {
     public final int schemaVersion = 1;
     public final String runId;
     public final String modVersion = Tags.VERSION;
+    public final String moduleId = "gtswn";
+    public final Map<String, String> artifact = TestLabIdentity.ARTIFACT;
+    public final Map<String, String> testlabArtifact = TestLabIdentity.TESTLAB_ARTIFACT;
+    public final String transport = "server callbacks; device.paged_client separately observes real decoded Netty pages";
     public final int dimension;
     public final String selection;
     public final String coverage = "server automation; client rendering/input, manual UI and full server restart require separate verification";
@@ -68,6 +72,12 @@ public final class TestWorldReport {
     public static final class Result {
 
         public final String id;
+        public final String lane;
+        public final String requiredTransport;
+        public String cleanup = "NOT_STARTED";
+        public Boolean actorLevel2, actorLevel4;
+        public String actor = "not observed";
+        public String transport = "not observed";
         public String status = "NOT_RUN";
         public String detail = "not started";
         public long ticks;
@@ -81,6 +91,9 @@ public final class TestWorldReport {
 
         Result(String id) {
             this.id = id;
+            this.lane = "device.paged_client".equals(id) ? "client-server" : "server";
+            this.requiredTransport = "device.paged_client".equals(id) ? "actual client GUI and decoded Netty packets"
+                : "direct server callbacks; no client/Netty assertion";
         }
     }
 
@@ -262,6 +275,7 @@ public final class TestWorldReport {
 
     public static final class Trace {
 
+        public String runId;
         public final long tick;
         public final String scenario;
         public final String type;
@@ -277,6 +291,8 @@ public final class TestWorldReport {
 
     synchronized void event(Result result, long tick, String type, String detail) {
         Trace entry = new Trace(tick, result == null ? "runner" : result.id, type, detail);
+        entry.runId = runId;
+        TestLabEvents.publish(runId, entry.scenario, "check", type + ": " + detail, null, "scenario-owned");
         if (events.size() == EVENT_LIMIT) {
             events.removeFirst();
             droppedEvents++;
@@ -313,6 +329,11 @@ public final class TestWorldReport {
         for (Result result : results) {
             Result target = new Result(result.id);
             target.status = result.status;
+            target.cleanup = result.cleanup;
+            target.actorLevel2 = result.actorLevel2;
+            target.actorLevel4 = result.actorLevel4;
+            target.actor = result.actor;
+            target.transport = result.transport;
             target.detail = result.detail;
             target.ticks = result.ticks;
             target.callbackNanos = result.callbackNanos;
@@ -593,7 +614,14 @@ public final class TestWorldReport {
                             new GsonBuilder().create()
                                 .toJson(new TestWorldReport(runId, dimension, "recovered after restart")))
                             .getAsJsonObject();
+                        json.remove("artifact");
+                        json.remove("testlabArtifact");
+                        json.addProperty("originalArtifactIdentity", "unavailable; original checkpoint was lost");
                     }
+                    json.add(
+                        "recoveryArtifact",
+                        new GsonBuilder().create()
+                            .toJsonTree(TestLabIdentity.ARTIFACT));
                     json.addProperty("status", "INTERRUPTED");
                     json.addProperty("failure", "Server stopped before completion; no automatic test resumption");
                     json.addProperty("endedAtMs", System.currentTimeMillis());

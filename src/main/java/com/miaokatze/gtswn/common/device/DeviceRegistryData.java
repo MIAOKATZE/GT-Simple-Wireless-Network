@@ -11,8 +11,8 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
 import net.minecraftforge.common.util.Constants;
 
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
@@ -106,7 +106,7 @@ public class DeviceRegistryData extends WorldSavedData {
             && existing.instanceVerified;
         devices.put(key, replacement);
         markDirty();
-        if (DebugTestGate.probesActive()) TestWorldProbes.deviceKey(key, Type.DEVICE_REGISTER);
+        if (DebugTestGate.probesActive()) BusinessDiagnostics.deviceKey(key, Type.DEVICE_REGISTER);
         return isNew;
     }
 
@@ -114,7 +114,7 @@ public class DeviceRegistryData extends WorldSavedData {
     public void registerPlacement(String key, UUID owner, String localName, int metaTileId) {
         devices.put(key, new DeviceEntry(owner, localName, metaTileId));
         markDirty();
-        if (DebugTestGate.probesActive()) TestWorldProbes.deviceKey(key, Type.DEVICE_REGISTER);
+        if (DebugTestGate.probesActive()) BusinessDiagnostics.deviceKey(key, Type.DEVICE_REGISTER);
     }
 
     /** Binds a lazily assigned persisted native token; uninstrumented tiles fail closed. */
@@ -163,7 +163,7 @@ public class DeviceRegistryData extends WorldSavedData {
         boolean removed = devices.remove(key) != null;
         if (removed) {
             markDirty();
-            if (DebugTestGate.probesActive()) TestWorldProbes.deviceKey(key, Type.DEVICE_REMOVE);
+            if (DebugTestGate.probesActive()) BusinessDiagnostics.deviceKey(key, Type.DEVICE_REMOVE);
         }
         return removed;
     }

@@ -22,6 +22,8 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.performance.PerformanceAudit;
 import com.miaokatze.gtswn.common.quantum.AnchorKey;
 import com.miaokatze.gtswn.common.quantum.AnchorReachability;
@@ -38,8 +40,6 @@ import com.miaokatze.gtswn.common.quantum.QuantumNodePartMigration;
 import com.miaokatze.gtswn.common.quantum.QuantumNodePartRules;
 import com.miaokatze.gtswn.common.quantum.QuantumNodeTypes;
 import com.miaokatze.gtswn.common.quantum.QuantumOverloadCountdown;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
@@ -330,7 +330,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         this.anchorGeneration = generation;
         com.miaokatze.gtswn.common.quantum.QuantumSecurityScopeIndex.anchorChanged(this);
         if (DebugTestGate.probesActive())
-            TestWorldProbes.at(this, Type.QUANTUM_NODE_ANCHOR, "anchor=" + dim + ":" + x + ":" + y + ":" + z);
+            BusinessDiagnostics.at(this, Type.QUANTUM_NODE_ANCHOR, "anchor=" + dim + ":" + x + ":" + y + ":" + z);
         QuantumNetworkColorSync.track(this);
         colorTracked = worldObj != null && !worldObj.isRemote;
         // 标记 TE 数据已修改，确保锚点写入随区块保存落盘
@@ -1481,7 +1481,8 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private void failReconnect(OfflineReason reason) {
         this.offlineReason = reason;
         this.reconnectBackoff = Math.min(this.reconnectBackoff * 2, MAX_RECONNECT_BACKOFF_TICKS);
-        if (DebugTestGate.probesActive()) TestWorldProbes.at(this, Type.QUANTUM_NODE_REJECT, "reason=" + reason.name());
+        if (DebugTestGate.probesActive())
+            BusinessDiagnostics.at(this, Type.QUANTUM_NODE_REJECT, "reason=" + reason.name());
     }
 
     /** 尝试向锚点控制器建立桥接连接，失败时记录离线原因 */
@@ -1611,7 +1612,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             failReconnect(OfflineReason.NETWORK_NOT_READY);
         } finally {
             if (!connected) destroyBridgeConnection();
-            else if (DebugTestGate.probesActive()) TestWorldProbes.at(this, Type.QUANTUM_NODE_CONNECT, "");
+            else if (DebugTestGate.probesActive()) BusinessDiagnostics.at(this, Type.QUANTUM_NODE_CONNECT, "");
         }
     }
 
@@ -1655,7 +1656,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             }
             this.connection = null;
             if (DebugTestGate.probesActive())
-                TestWorldProbes.at(this, Type.QUANTUM_NODE_DISCONNECT, "connection=released");
+                BusinessDiagnostics.at(this, Type.QUANTUM_NODE_DISCONNECT, "connection=released");
         }
         if (anchorConnection != null) {
             if (QuantumConnectionMembership.contains(anchorConnection.a(), anchorConnection)

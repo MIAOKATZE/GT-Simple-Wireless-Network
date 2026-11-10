@@ -29,9 +29,9 @@ import com.cleanroommc.modularui.widgets.ToggleButton;
 import com.cleanroommc.modularui.widgets.layout.Flow;
 import com.cleanroommc.modularui.widgets.textfield.TextFieldWidget;
 import com.google.common.io.ByteArrayDataInput;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.gui.GtswnMuiTheme;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.CoverMaths;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
@@ -514,7 +514,7 @@ public abstract class GTswnCoverWirelessBase extends Cover {
                 long actualAdded = CoverMaths.afterUplinkLoss(this.storedEU, Config.uplinkLossEU);
                 if (actualAdded > 0) {
                     boolean committed = addEUToGlobalEnergyMap(owner, actualAdded);
-                    if (DebugTestGate.probesActive() && tileEntity instanceof TileEntity) TestWorldProbes.at(
+                    if (DebugTestGate.probesActive() && tileEntity instanceof TileEntity) BusinessDiagnostics.at(
                         (TileEntity) tileEntity,
                         Type.EU_UPLINK,
                         "source=removal;bufferEU=" + storedEU

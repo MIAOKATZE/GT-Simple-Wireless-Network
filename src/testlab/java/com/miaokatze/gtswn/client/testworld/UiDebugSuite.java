@@ -66,6 +66,8 @@ public final class UiDebugSuite {
     private World world;
     private GuiScreen target;
     private File directory;
+    private String runId;
+    private boolean completedIndexWritten;
     private String preset, originalLanguage, phase = "IDLE", action, actionValue;
     private String dataStatus, dataReason, dataResumePhase;
     private String terminalReason, restorationStatus, restorationDetail;
@@ -90,12 +92,44 @@ public final class UiDebugSuite {
             .bus()
             .register(INSTANCE);
         ClientCommandHandler.instance.registerCommand(new CommandUiDebug());
-        EffectsBenchmark.registerIfRequested();
+        ClientTestPermission.register();
+        // Explicit JVM benchmark activation is owned by the testlab bootstrap.
         DevicePagedClientCheck.register();
     }
 
     public boolean running() {
         return !"IDLE".equals(phase);
+    }
+
+    /** Read-only client-thread facts for the isolated host helper; layout capture is not a server PASS. */
+    public Map<String, Object> automationSnapshot() {
+        return UiDebugSnapshot.map(
+            "runId",
+            runId,
+            "phase",
+            phase,
+            "running",
+            running(),
+            "authorizationPending",
+            ClientTestPermission.pending(),
+            "actorLevel2",
+            ClientTestPermission.actorLevel2(),
+            "actorLevel4",
+            ClientTestPermission.actorLevel4(),
+            "reportDirectory",
+            directory == null ? null : directory.getAbsolutePath(),
+            "reportWritten",
+            completedIndexWritten,
+            "terminalReason",
+            terminalReason,
+            "restorationStatus",
+            restorationStatus,
+            "restorationDetail",
+            restorationDetail,
+            "caseCount",
+            results.size(),
+            "functionalStatus",
+            "MANUAL_SERVER_ASSERTION");
     }
 
     /** Public automation entry point; must be called on the normal Minecraft client thread. */
@@ -105,6 +139,7 @@ public final class UiDebugSuite {
 
     void start(String selection, boolean useMatrix, boolean withScreenshots, String explicitAction, String value) {
         DebugTestGate.requireEnabled();
+        ClientTestPermission.requireReceipt();
         if (running()) throw new IllegalStateException("UI run already active; use /gtswnui stop");
         mc = Minecraft.getMinecraft();
         requireDimension();
@@ -118,6 +153,8 @@ public final class UiDebugSuite {
                 "quantum",
                 "link",
                 "panel",
+                "panel-ae-chart",
+                "panel-ae-list",
                 "monitor",
                 "cover-input",
                 "cover-output")
@@ -161,6 +198,9 @@ public final class UiDebugSuite {
         dataWaitStartedNanos = 0;
         presetDataWaitNanos = 0;
         ticks = 0;
+        completedIndexWritten = false;
+        runId = UUID.randomUUID()
+            .toString();
         started = System.currentTimeMillis();
         directory = new File(
             mc.mcDataDir,
@@ -188,7 +228,7 @@ public final class UiDebugSuite {
         deadline = TIMEOUT;
         writeIndex(false, null);
         if (kitRequested) {
-            // Client never creates inventory stacks or container instances. OP4 server command owns the kit.
+            // Client never creates inventory stacks or container instances. OP2 server command owns the kit.
             mc.thePlayer.sendChatMessage("/gtswn test kit ui");
         }
         message(
@@ -229,7 +269,7 @@ public final class UiDebugSuite {
                         message("KIT_READY synchronized=true; server-issued temporary tools observed");
                         phase = "NEXT_PRESET";
                     } else if (ticks >= deadline) {
-                        record("NOT_RUN", "Server kit not received (OP4 required)");
+                        record("NOT_RUN", "Server kit not received (OP2 required)");
                         finish("KIT_TIMEOUT");
                     }
                     break;
@@ -431,6 +471,9 @@ public final class UiDebugSuite {
             current.performance.add("captureHandlerBeforeJsonWriteWallNanos", System.nanoTime() - handlerStarted);
             Map<String, Object> performance = current.performance.finish();
             snapshot.put("performance", performance);
+            snapshot.put("runId", runId);
+            snapshot.put("taskId", "ui." + preset + ":" + current.key);
+            snapshot.put("artifact", com.miaokatze.gtswn.common.testworld.TestLabIdentity.ARTIFACT);
             write(new File(directory, file + ".json"), snapshot);
             List<?> findings = (List<?>) snapshot.get("findings");
             long failures = findings.stream()
@@ -1254,6 +1297,7 @@ public final class UiDebugSuite {
 
     private void writeIndex(boolean completed, String reason) {
         if (directory == null) return;
+        completedIndexWritten = false;
         try {
             write(new File(directory, "results.json"), results);
             write(
@@ -1261,6 +1305,22 @@ public final class UiDebugSuite {
                 UiDebugSnapshot.map(
                     "schema",
                     1,
+                    "actorLevel2",
+                    ClientTestPermission.actorLevel2(),
+                    "actorLevel4",
+                    ClientTestPermission.actorLevel4(),
+                    "runId",
+                    runId,
+                    "taskId",
+                    "ui.batch",
+                    "lane",
+                    "client",
+                    "artifact",
+                    com.miaokatze.gtswn.common.testworld.TestLabIdentity.ARTIFACT,
+                    "serverRunId",
+                    null,
+                    "transport",
+                    "real GUI/input and framebuffer; server effects remain independently unverified",
                     "completed",
                     completed,
                     "phase",
@@ -1295,6 +1355,7 @@ public final class UiDebugSuite {
                     "Real GUI objects + actual rendered framebuffer; navigation dispatch is observed, server effects are not asserted. Custom drawing and native window-size variants require manual review.",
                     "restoration",
                     "Language/scale restored without saving settings; current-screen local navigation restored; explicit actions are retained; kit restoration is server-owned and acknowledged by removal of synchronized marked stacks."));
+            completedIndexWritten = completed;
         } catch (IOException failure) {
             GTSimpleWirelessNetwork.LOG.error("[GTSWN-UI] cannot write run index", failure);
         }

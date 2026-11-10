@@ -69,13 +69,13 @@ final class DeviceWorldScenario implements TestScenario {
             TestWorldFixtures.DEVICE_X,
             TestWorldFixtures.Y,
             TestWorldFixtures.DEVICE_Z);
-        terminalBefore = store.snapshotTestTerminal(ctx.world(), terminalId);
+        terminalBefore = TestFixtureAccess.snapshotTerminal(store, ctx.world(), terminalId);
         DeviceRegistryData.DeviceEntry old = registry.getEntry(key);
         registryBefore = old == null ? null
             : new DeviceRegistryData.DeviceEntry(old.owner, old.localName, old.metaTileId);
         scopeCaptured = true;
         // Clear only this dedicated synthetic terminal key for a repeatable first binding.
-        store.restoreTestTerminal(ctx.world(), terminalId, null);
+        TestFixtureAccess.restoreTerminal(store, ctx.world(), terminalId, null);
         registry.unregister(key);
         host = TestWorldFixtures.machine(
             ctx.world(),
@@ -143,8 +143,8 @@ final class DeviceWorldScenario implements TestScenario {
             ctx,
             TestWorldProbes.count(TestWorldProbes.Type.DEVICE_FLOW) > 0,
             "Production device flow hook observed naturally sampled consumption");
-        NBTTagCompound sampled = store.snapshotTestTerminal(ctx.world(), terminalId);
-        store.restoreTestTerminal(ctx.world(), terminalId, sampled);
+        NBTTagCompound sampled = TestFixtureAccess.snapshotTerminal(store, ctx.world(), terminalId);
+        TestFixtureAccess.restoreTerminal(store, ctx.world(), terminalId, sampled);
         DeviceTerminalDataStore.MachineRecord reloaded = store.getTerminal(terminalId).records.get(key);
         TestWorldFixtures.require(
             ctx,
@@ -169,7 +169,7 @@ final class DeviceWorldScenario implements TestScenario {
             player.inventory.clearInventory(null, -1);
         }
         if (scopeCaptured) {
-            store.restoreTestTerminal(ctx.world(), terminalId, terminalBefore);
+            TestFixtureAccess.restoreTerminal(store, ctx.world(), terminalId, terminalBefore);
             registry.unregister(key);
             if (registryBefore != null)
                 registry.register(key, registryBefore.owner, registryBefore.localName, registryBefore.metaTileId);

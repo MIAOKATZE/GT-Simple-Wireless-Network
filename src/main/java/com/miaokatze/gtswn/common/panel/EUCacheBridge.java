@@ -12,8 +12,8 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.Constants;
 
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.FormatUtil;
@@ -189,8 +189,8 @@ public final class EUCacheBridge {
                         .getTotalWorldTime() + INCREMENTAL_PUSH_WINDOW_TICKS;
                     core.markDirty();
                     core.broadcastEULiveData();
-                    if (DebugTestGate.probesActive())
-                        TestWorldProbes.at(core, Type.PANEL_EU_SAMPLE, "source=global_sample_poll;tick=" + newest.tick);
+                    if (DebugTestGate.probesActive()) BusinessDiagnostics
+                        .at(core, Type.PANEL_EU_SAMPLE, "source=global_sample_poll;tick=" + newest.tick);
                 }
             }
         }

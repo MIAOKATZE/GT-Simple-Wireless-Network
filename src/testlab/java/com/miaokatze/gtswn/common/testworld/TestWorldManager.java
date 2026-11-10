@@ -19,7 +19,6 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.ForgeChunkManager;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.entity.living.LivingSpawnEvent;
 import net.minecraftforge.event.world.WorldEvent;
 
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
@@ -29,7 +28,6 @@ import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
 import com.miaokatze.miaokatzecore.testkit.Deadline;
 
 import cpw.mods.fml.common.FMLCommonHandler;
-import cpw.mods.fml.common.eventhandler.Event;
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
@@ -74,6 +72,7 @@ public final class TestWorldManager {
     private static File boundReportTarget;
     private static String phase = "IDLE";
     private static String reportPath = "";
+    private static String publishedReceipt = "";
     private static boolean registered;
     private static List<ChunkCoordIntPair> releasingChunks;
     private static int releaseIndex, releaseWait;
@@ -99,6 +98,10 @@ public final class TestWorldManager {
             throw new IllegalArgumentException("Duplicate scenario " + scenario.id());
         new TestWorldFootprint(scenario.footprintRadius());
         SCENARIOS.put(scenario.id(), scenario);
+    }
+
+    static List<TestScenario> scenarios() {
+        return new ArrayList<>(SCENARIOS.values());
     }
 
     public static List<String> ids() {
@@ -189,6 +192,14 @@ public final class TestWorldManager {
             phase = "REPORTING";
             acknowledgeFinalWrite();
         }
+        if ("COMPLETE".equals(data.operation) && data.activeRun.isEmpty()
+            && data.lastRun.matches("[0-9a-f-]{36}")
+            && finalWrite == null) {
+            boundReportTarget = TestWorldReport
+                .normalizedTarget(new File(new File(saveDirectory, "gtswn-test-reports"), data.lastRun + ".json"));
+            finalWrite = TestWorldReport.recoverFinal(boundReportTarget, data.lastRun, data.lastOutcome);
+            data.lastReport = boundReportTarget.getAbsolutePath();
+        }
         reportPath = data.lastReport;
     }
 
@@ -274,9 +285,16 @@ public final class TestWorldManager {
         boundReportTarget = TestWorldReport.normalizedTarget(reportFile);
         reportPath = reportFile.getAbsolutePath();
         data.lastRun = report.runId;
+        data.lastSelection = requested;
+        data.lastCleanup = "PENDING";
+        data.lastActorLevel2 = data.lastActorLevel4 = null;
+        data.lastActor = "not observed";
+        data.lastTransport = "not observed";
         data.activeRun = report.runId;
         data.lastOutcome = "BUILDING";
         data.lastReport = reportPath;
+        publishedReceipt = "";
+        TestLabEvents.publish(report.runId, requested, "run.started", "selected=" + requested, null, "pending");
     }
 
     public static boolean busy() {
@@ -440,6 +458,11 @@ public final class TestWorldManager {
         }
         TestWorldReport.Result result = report.results.get(scenarioIndex);
         result.status = "RUNNING";
+        if (!"device.paged_client".equals(result.id)) {
+            result.actor = "synthetic server fixtures";
+            result.transport = "direct native server callbacks; no client/Netty claim";
+        }
+        TestLabEvents.publish(report.runId, result.id, "task.started", "native server callbacks", null, "pending");
         result.detail = "running";
         current = new TestContext(world, report.runId, report, result);
         current.beginPerformance();
@@ -502,10 +525,12 @@ public final class TestWorldManager {
     private static void finishScenario() {
         TestContext context = current;
         long cleanupStarted = System.nanoTime();
+        context.result.cleanup = "COMPLETED";
         try {
             selection.get(scenarioIndex)
                 .cleanup(context);
         } catch (Exception | LinkageError ex) {
+            context.result.cleanup = "FAILED";
             context.callbackFailure("cleanup", ex);
             context.event("cleanup_failure", exception(ex));
         } finally {
@@ -514,6 +539,21 @@ public final class TestWorldManager {
             TestWorldProbes.stop();
         }
         context.result.status = context.outcome;
+        if (data != null) {
+            if ("FAILED".equals(context.result.cleanup)) data.lastCleanup = "FAILED";
+            data.lastActorLevel2 = context.result.actorLevel2;
+            data.lastActorLevel4 = context.result.actorLevel4;
+            data.lastActor = context.result.actor;
+            data.lastTransport = context.result.transport;
+            data.markDirty();
+        }
+        TestLabEvents.publish(
+            context.runId(),
+            context.result.id,
+            "task.finished",
+            context.detail,
+            context.outcome,
+            "scenario cleanup=" + context.result.cleanup + "; fixtures retained");
         context.result.detail = context.detail;
         context.result.ticks = context.elapsed;
         closedPerformanceContext = context;
@@ -569,8 +609,23 @@ public final class TestWorldManager {
 
     private static void completeNow(String status, String failure) {
         releaseTickets();
+        if (data != null && !"FAILED".equals(data.lastCleanup)) data.lastCleanup = "COMPLETED";
         if (report != null) {
             report.status = status;
+            TestLabEvents.publish(
+                report.runId,
+                report.selection,
+                "cleanup.finished",
+                "chunk tickets released; authored fixtures retained",
+                status,
+                "released");
+            TestLabEvents.publish(
+                report.runId,
+                report.selection,
+                "STOPPED".equals(status) ? "run.cancelled" : "run.finished",
+                failure,
+                status,
+                "released");
             report.failure = failure;
             report.endedAtMs = System.currentTimeMillis();
             report.event(null, report.elapsedTicks, "complete", status + (failure == null ? "" : ": " + failure));
@@ -637,10 +692,13 @@ public final class TestWorldManager {
             current.fail(reason);
             TestContext context = current;
             long cleanupStarted = System.nanoTime();
+            context.result.cleanup = "COMPLETED";
             try {
                 selection.get(scenarioIndex)
                     .cleanup(context);
             } catch (Exception | LinkageError ex) {
+                context.result.cleanup = "FAILED";
+                if (data != null) data.lastCleanup = "FAILED";
                 context.callbackFailure("cleanup", ex);
                 context.event("cleanup_failure", exception(ex));
             } finally {
@@ -744,11 +802,60 @@ public final class TestWorldManager {
             + writeStatus();
     }
 
+    static Map<String, Object> snapshot() {
+        acknowledgeFinalWrite();
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("runId", report != null ? report.runId : data == null ? null : data.lastRun);
+        facts.put("state", phase);
+        facts.put("built", data != null && data.built);
+        facts.put("dimension", TestDimension.dimId());
+        facts.put("outcome", report != null ? report.status : data == null ? null : data.lastOutcome);
+        facts.put("reportPath", reportPath.isEmpty() ? null : reportPath);
+        facts.put(
+            "reportState",
+            finalWrite == null ? "NOT_TRACKED"
+                : finalWrite.state()
+                    .name());
+        facts.put("reportError", finalWrite == null ? null : finalWrite.error());
+        facts.put(
+            "reportWritten",
+            data != null && finalWrite != null
+                && finalWrite.matches(boundReportTarget, data.lastRun)
+                && !finalWrite.abandoned()
+                && finalWrite.state() == TestWorldReport.WriteReceipt.State.WRITTEN);
+        facts.put(
+            "cleanupPending",
+            current != null || !TICKETS.isEmpty()
+                || "RELEASING".equals(phase)
+                || TestUiKit.inUse()
+                || data != null && "FAILED".equals(data.lastCleanup));
+        facts.put("cleanupStatus", data == null ? "NOT_STARTED" : data.lastCleanup);
+        facts.put("taskId", current == null ? null : current.result.id);
+        facts.put("actor", current != null ? current.result.actor : data == null ? "not observed" : data.lastActor);
+        facts.put(
+            "actorLevel2",
+            current != null ? current.result.actorLevel2 : data == null ? null : data.lastActorLevel2);
+        facts.put(
+            "actorLevel4",
+            current != null ? current.result.actorLevel4 : data == null ? null : data.lastActorLevel4);
+        facts.put(
+            "transport",
+            current != null ? current.result.transport : data == null ? "not observed" : data.lastTransport);
+        facts.put("fixtureRetention", "preserved; reset/build required to remove authored fixtures");
+        facts.put("artifact", TestLabIdentity.ARTIFACT);
+        facts.put(
+            "artifactIdentityScope",
+            "currently loaded candidate; the original report binds its execution artifact separately");
+        return facts;
+    }
+
     public static String report() {
         TestWorldData state = journal();
         acknowledgeFinalWrite();
         String retry = "";
-        if (matchesCurrentJournal() && !finalWrite.abandoned()
+        if (data != null && finalWrite != null
+            && finalWrite.matches(boundReportTarget, data.lastRun)
+            && !finalWrite.abandoned()
             && finalWrite.state() == TestWorldReport.WriteReceipt.State.FAILED)
             retry = finalWrite.retry() ? " retry=queued asynchronously" : " retry=not queued";
         return "status=" + (report == null ? state.lastOutcome : report.status)
@@ -788,6 +895,16 @@ public final class TestWorldManager {
     private static void acknowledgeFinalWrite() {
         if (!matchesCurrentJournal()) return;
         if (finalWrite.state() == TestWorldReport.WriteReceipt.State.WRITTEN) {
+            if (!(finalWrite.runId + ":WRITTEN").equals(publishedReceipt)) {
+                TestLabEvents.publish(
+                    finalWrite.runId,
+                    "runner",
+                    "report.written",
+                    finalWrite.target.getAbsolutePath(),
+                    finalWrite.outcome,
+                    "released");
+                publishedReceipt = finalWrite.runId + ":WRITTEN";
+            }
             data.operation = "COMPLETE";
             data.activeRun = "";
             data.markDirty();
@@ -810,11 +927,6 @@ public final class TestWorldManager {
         acknowledgeFinalWrite();
         data = null;
         SCENARIOS.clear();
-    }
-
-    @SubscribeEvent
-    public void spawn(LivingSpawnEvent.CheckSpawn event) {
-        if (TestDimension.isTest(event.world)) event.setResult(Event.Result.DENY);
     }
 
     @SubscribeEvent

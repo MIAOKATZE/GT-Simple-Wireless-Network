@@ -21,9 +21,9 @@ import net.minecraft.world.WorldServer;
 import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 import com.miaokatze.gtswn.config.Config;
@@ -221,7 +221,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
         QuantumIncorporationVisualSync.changed(world, x, y, z);
         disconnectExternal(tile, null);
         maintain(world, entry);
-        if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_ADD, "");
+        if (DebugTestGate.probesActive()) BusinessDiagnostics.at(world, x, y, z, Type.INCORPORATION_ADD, "");
         return true;
     }
 
@@ -416,7 +416,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             y = QuantumControllerRegistry.unpackY(entry.position),
             z = QuantumControllerRegistry.unpackZ(entry.position);
         QuantumIncorporationVisualSync.changed(world, x, y, z);
-        if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REMOVE, "");
+        if (DebugTestGate.probesActive()) BusinessDiagnostics.at(world, x, y, z, Type.INCORPORATION_REMOVE, "");
         if (!world.blockExists(x, y, z)) return;
         TileEntity tile = world.getTileEntity(x, y, z);
         if (tile != null
@@ -507,7 +507,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
             entry.disconnect();
             entry.deferReconnect(isolationTick);
             if (DebugTestGate.probesActive())
-                TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
+                BusinessDiagnostics.at(world, x, y, z, Type.INCORPORATION_REJECT, "reason=NO_PERMISSION");
             return;
         }
         if (entry.local == node && entry.target == target && entry.hasLiveConnections()) {
@@ -543,11 +543,11 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                 .add(entry);
             invalidateStats();
             connected = true;
-            if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
+            if (DebugTestGate.probesActive()) BusinessDiagnostics.at(world, x, y, z, Type.INCORPORATION_CONNECT, "");
         } catch (appeng.api.exceptions.FailedConnection failure) {
             // Security failures remain isolated and offline with bounded exponential retry.
             entry.deferReconnect(isolationTick);
-            if (DebugTestGate.probesActive()) TestWorldProbes.at(
+            if (DebugTestGate.probesActive()) BusinessDiagnostics.at(
                 world,
                 x,
                 y,
@@ -926,7 +926,7 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
                 || containsConnection(target, billingConnection))) billingConnection.destroy();
             if (billingNode != null) billingNode.destroy();
             if (changed && DebugTestGate.probesActive())
-                TestWorldProbes.at(loadedTile, Type.INCORPORATION_DISCONNECT, "");
+                BusinessDiagnostics.at(loadedTile, Type.INCORPORATION_DISCONNECT, "");
             connection = null;
             billingConnection = null;
             billingNode = null;

@@ -46,6 +46,7 @@ public class BlockRegistrar {
         GameRegistry.registerTileEntity(TileEntityNetworkInfoPanelExtender.class, "gtswn.network_info_panel_extender");
         GameRegistry.registerTileEntity(TileEntityNetworkQuantumNode.class, "gtswn.network_quantum_node");
         if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
-            com.miaokatze.gtswn.common.testworld.StressSupplyTile.register();
+            com.miaokatze.gtswn.common.util.DebugTestGate.harness()
+                .registerBlocks();
     }
 }

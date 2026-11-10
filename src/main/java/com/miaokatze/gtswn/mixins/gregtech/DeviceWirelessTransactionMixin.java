@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import com.miaokatze.gtswn.common.device.DeviceFlowMonitor;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 
 import gregtech.common.misc.WirelessNetworkManager;
@@ -22,6 +22,7 @@ public abstract class DeviceWirelessTransactionMixin {
     private static void gtswn$committedControllerTransaction(UUID owner, BigInteger amount,
         CallbackInfoReturnable<Boolean> cir) {
         if (Boolean.TRUE.equals(cir.getReturnValue())) DeviceFlowMonitor.wirelessTransaction(amount, true);
-        if (DebugTestGate.probesActive()) TestWorldProbes.eu(owner, amount, Boolean.TRUE.equals(cir.getReturnValue()));
+        if (DebugTestGate.probesActive())
+            BusinessDiagnostics.eu(owner, amount, Boolean.TRUE.equals(cir.getReturnValue()));
     }
 }

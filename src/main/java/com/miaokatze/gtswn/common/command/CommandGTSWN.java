@@ -15,7 +15,6 @@ import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
-import com.miaokatze.gtswn.common.testworld.TestWorldCommand;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
 
@@ -59,7 +58,12 @@ public class CommandGTSWN extends CommandBase {
 
     @Override
     public int getRequiredPermissionLevel() {
-        return 4;
+        return 2;
+    }
+
+    @Override
+    public boolean canCommandSenderUseCommand(ICommandSender sender) {
+        return sender.canCommandSenderUseCommand(2, getCommandName());
     }
 
     @Override
@@ -79,8 +83,8 @@ public class CommandGTSWN extends CommandBase {
                 SUBCMD_SAFETY,
                 "test");
         }
-        if (args.length >= 2 && "test".equals(args[0]))
-            return DebugTestGate.isEnabled() ? TestWorldCommand.complete(args) : null;
+        if (args.length >= 2 && "test".equals(args[0])) return DebugTestGate.isEnabled() ? DebugTestGate.harness()
+            .complete(args) : null;
         if (args.length == 2 && SUBCMD_SAFETY.equals(args[0])) {
             return getListOfStringsMatchingLastWord(args, "on", "off");
         }
@@ -101,12 +105,15 @@ public class CommandGTSWN extends CommandBase {
         if (args.length < 1) {
             throw new WrongUsageException(getCommandUsage(sender));
         }
+        if (!sender.canCommandSenderUseCommand("test".equals(args[0]) ? 2 : 4, getCommandName()))
+            throw new net.minecraft.command.CommandException("commands.generic.permission");
         if ("test".equals(args[0])) {
             if (!DebugTestGate.isEnabled()) {
                 sender.addChatMessage(new ChatComponentText(DebugTestGate.DISABLED_MESSAGE));
                 return;
             }
-            TestWorldCommand.execute(sender, args);
+            DebugTestGate.harness()
+                .execute(sender, args);
         } else if (SUBCMD_TRANSFER.equals(args[0])) {
             processTransfer(sender, args);
         } else if (SUBCMD_JOIN.equals(args[0])) {

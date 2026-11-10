@@ -15,8 +15,8 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
 
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
@@ -94,7 +94,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
         cachedSnapshot = null;
         markDirty();
         if (DebugTestGate.probesActive())
-            TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_ADD, "nodeType=" + type);
+            BusinessDiagnostics.at(world, x, y, z, Type.WIRELESS_NODE_ADD, "nodeType=" + type);
     }
 
     /**
@@ -106,7 +106,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
             unindex(packed);
             cachedSnapshot = null;
             markDirty();
-            if (DebugTestGate.probesActive()) TestWorldProbes.at(world, x, y, z, Type.WIRELESS_NODE_REMOVE, "");
+            if (DebugTestGate.probesActive()) BusinessDiagnostics.at(world, x, y, z, Type.WIRELESS_NODE_REMOVE, "");
         }
     }
 
@@ -133,7 +133,7 @@ public class WirelessNodeRegistry extends WorldSavedData {
         if (changed) {
             cachedSnapshot = null;
             markDirty();
-            if (removed != null) for (long packed : removed) TestWorldProbes.at(
+            if (removed != null) for (long packed : removed) BusinessDiagnostics.at(
                 world,
                 WirelessNodeIndexCodec.unpackX(packed),
                 WirelessNodeIndexCodec.unpackY(packed),

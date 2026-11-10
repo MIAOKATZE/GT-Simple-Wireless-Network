@@ -147,7 +147,7 @@ final class NativeFactoryStressScenario implements TestScenario, StressSupplyTil
         for (int i = 0; i < count; i++) {
             UUID id = TestWorldFixtures.owner(ID + ":terminal:" + i);
             terminalIds.add(id);
-            store.restoreTestTerminal(ctx.world(), id, null);
+            TestFixtureAccess.restoreTerminal(store, ctx.world(), id, null);
             ItemStack item = GTSWNItemList.Device_Info_Terminal.get(1);
             NBTTagCompound data = new NBTTagCompound();
             data.setString(ItemDeviceInfoTerminal.NBT_UUID, id.toString());

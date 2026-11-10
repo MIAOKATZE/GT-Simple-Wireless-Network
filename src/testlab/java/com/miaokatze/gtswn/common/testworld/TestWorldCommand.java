@@ -18,7 +18,7 @@ import net.minecraftforge.common.DimensionManager;
 
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 
-/** Delegated from the existing OP4 /gtswn command. Console operations never need a player. */
+/** Delegated from the existing OP2 /gtswn command. Console operations never need a player. */
 public final class TestWorldCommand {
 
     private static final String RETURN_POINT = "gtswn.test.return";
@@ -42,7 +42,23 @@ public final class TestWorldCommand {
 
     public static void execute(ICommandSender sender, String[] args) {
         if (!DebugTestGate.isEnabled()) throw new CommandException(DebugTestGate.DISABLED_MESSAGE);
+        if (!sender.canCommandSenderUseCommand(2, "gtswn")) throw new CommandException("commands.generic.permission");
         String action = args.length < 2 ? "help" : args[1];
+        if ("client".equals(action)) {
+            if (args.length != 3 || !(sender instanceof EntityPlayerMP))
+                throw new CommandException("Client authorization requires an actual OP2 player");
+            try {
+                java.util.UUID.fromString(args[2]);
+            } catch (IllegalArgumentException invalid) {
+                throw new CommandException("Invalid client authorization request");
+            }
+            say(
+                sender,
+                "[GTSWN-TEST-AUTH] " + args[2]
+                    + " actorLevel2=true actorLevel4="
+                    + sender.canCommandSenderUseCommand(4, "gtswn"));
+            return;
+        }
         if ("paged".equals(action)) {
             if (args.length != 4 || !(sender instanceof EntityPlayerMP))
                 throw new CommandException("/gtswn test paged renew|stale|complete|abort <runUUID>");

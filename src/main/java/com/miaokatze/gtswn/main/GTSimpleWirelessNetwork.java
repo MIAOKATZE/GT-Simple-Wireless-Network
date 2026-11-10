@@ -31,7 +31,7 @@ import cpw.mods.fml.common.event.FMLServerStoppingEvent;
     // 参考 GigaGramFab.java 行 45 的 required-before:gregtech 模式
     // after:betterquesting 是纯排序约束（不要求 BQ 存在）：确保 BQ 的 serverStarting
     // default load（clear + config 重载）先行完成，GTSWN 的任务注入在其后幂等追加
-    dependencies = "required-after:miaokatzecore@[0.2.8,);required-before:gregtech;required-after:appliedenergistics2;after:betterquesting;after:Baubles;")
+    dependencies = "required-after:miaokatzecore@[0.2.9,);required-before:gregtech;required-after:appliedenergistics2;after:betterquesting;after:Baubles;")
 public class GTSimpleWirelessNetwork {
 
     // 模组唯一标识符 (Mod ID)
@@ -88,13 +88,15 @@ public class GTSimpleWirelessNetwork {
     @Mod.EventHandler
     public void serverStopping(FMLServerStoppingEvent event) {
         if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
-            com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
+            com.miaokatze.gtswn.common.util.DebugTestGate.harness()
+                .shutdown();
     }
 
     @Mod.EventHandler
     public void serverStopped(FMLServerStoppedEvent event) {
         if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
-            com.miaokatze.gtswn.common.testworld.TestWorldManager.shutdown();
+            com.miaokatze.gtswn.common.util.DebugTestGate.harness()
+                .shutdown();
         com.miaokatze.gtswn.common.monitoring.MonitoringRuntime.stop();
         AnimationQualityHints.clear();
         com.miaokatze.gtswn.network.PanelActionQueue.clear();

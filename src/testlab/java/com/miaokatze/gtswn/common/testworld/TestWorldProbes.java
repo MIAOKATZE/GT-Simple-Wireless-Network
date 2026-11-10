@@ -94,6 +94,7 @@ public final class TestWorldProbes {
     /** Called by the server-side test runner only, once per scenario. */
     public static void start(Sink sink, int dimension) {
         if (!DebugTestGate.isEnabled()) return;
+        TestLabBootstrap.installProbes();
         if (sink == null) throw new IllegalArgumentException("Missing test probe sink");
         synchronized (LOCK) {
             active = false;

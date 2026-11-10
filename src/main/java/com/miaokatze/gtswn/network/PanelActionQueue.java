@@ -9,7 +9,7 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
 import net.minecraftforge.fluids.FluidStack;
 
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkInfoPanel;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
@@ -148,13 +148,13 @@ public final class PanelActionQueue {
             this.y = y;
             this.z = z;
             this.probeToken = DebugTestGate.probesActive()
-                ? TestWorldProbes.queueToken(player == null ? null : player.worldObj, x, y, z)
+                ? BusinessDiagnostics.queueToken(player == null ? null : player.worldObj, x, y, z)
                 : 0L;
         }
 
         void trace(boolean executed) {
             if (!DebugTestGate.probesActive()) return;
-            TestWorldProbes.queue(probeToken, player == null ? null : player.worldObj, x, y, z, executed);
+            BusinessDiagnostics.queue(probeToken, player == null ? null : player.worldObj, x, y, z, executed);
         }
 
         /** 主线程复验通过后对目标信息屏应用操作（自包 2/3 Handler 逐字搬迁） */

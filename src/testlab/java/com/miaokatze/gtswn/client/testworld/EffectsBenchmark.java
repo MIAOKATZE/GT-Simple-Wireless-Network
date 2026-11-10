@@ -773,6 +773,10 @@ public final class EffectsBenchmark {
             report.put("status", failure == null ? "COMPLETED" : "FAILED");
             report.put("failure", failure);
             report.put("label", label);
+            report.put("runId", label);
+            report.put("taskId", "jvm.effects_benchmark");
+            report.put("lane", "jvm");
+            report.put("artifact", com.miaokatze.gtswn.common.testworld.TestLabIdentity.ARTIFACT);
             report.put("java", System.getProperty("java.version"));
             report.put(
                 "jvmArguments",

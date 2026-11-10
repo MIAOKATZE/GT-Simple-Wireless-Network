@@ -19,8 +19,8 @@ import net.minecraft.world.World;
 import net.minecraft.world.WorldSavedData;
 import net.minecraftforge.common.util.ForgeDirection;
 
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
-import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
+import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.PackedBlockPosition;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
@@ -391,7 +391,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             this.revision++;
             markDirty();
             QuantumTerminalSyncEpoch.bindingsChanged();
-            if (DebugTestGate.probesActive()) for (long packed : added) TestWorldProbes
+            if (DebugTestGate.probesActive()) for (long packed : added) BusinessDiagnostics
                 .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_ADD, "");
         }
         if (!canonicalAnchors.containsKey(generation)) {
@@ -621,7 +621,7 @@ public class QuantumControllerRegistry extends WorldSavedData {
             this.revision++;
             markDirty();
             QuantumTerminalSyncEpoch.bindingsChanged();
-            if (DebugTestGate.probesActive()) TestWorldProbes
+            if (DebugTestGate.probesActive()) BusinessDiagnostics
                 .at(world, unpackX(packed), unpackY(packed), unpackZ(packed), Type.QUANTUM_CONTROLLER_REMOVE, "");
         }
     }

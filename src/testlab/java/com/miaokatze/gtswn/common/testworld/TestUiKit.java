@@ -123,8 +123,8 @@ public final class TestUiKit {
 
     public static void grant(EntityPlayerMP player) {
         DebugTestGate.requireEnabled();
-        if (!TestDimension.isTest(player.worldObj) || !player.canCommandSenderUseCommand(4, "gtswn"))
-            throw new IllegalStateException("UI kit requires OP4 in the GTSWN test dimension");
+        if (!TestDimension.isTest(player.worldObj) || !player.canCommandSenderUseCommand(2, "gtswn"))
+            throw new IllegalStateException("UI kit requires OP2 in the GTSWN test dimension");
         if (TestWorldManager.busy())
             throw new IllegalStateException("Stop the active server test operation before preparing UI fixtures");
         if (hasBackup(player)) {
@@ -192,8 +192,8 @@ public final class TestUiKit {
     /** Minimal run-owned fixture: one real DIT slot, no panel/AE/EU/block creation. */
     public static ItemStack grantPaged(EntityPlayerMP player, String runId) {
         DebugTestGate.requireEnabled();
-        if (!TestDimension.isTest(player.worldObj) || !player.canCommandSenderUseCommand(4, "gtswn"))
-            throw new IllegalStateException("Paged fixture requires the actual OP4 test actor");
+        if (!TestDimension.isTest(player.worldObj) || !player.canCommandSenderUseCommand(2, "gtswn"))
+            throw new IllegalStateException("Paged fixture requires the actual OP2 test actor");
         if (hasBackup(player) || inUse()
             || persistent(player).hasKey(OVERFLOW, 9)
             || player.inventory.getItemStack() != null)
@@ -344,8 +344,7 @@ public final class TestUiKit {
             throw new IllegalStateException("UI scope origin is not the isolated test dimension");
         if (backup.getBoolean("PagedOnly")) {
             UUID terminal = UUID.fromString(backup.getString("UiTerminal"));
-            DeviceTerminalDataStore.get(origin)
-                .removeUiKitTerminal(player, origin, terminal);
+            TestFixtureAccess.removeUiKitTerminal(DeviceTerminalDataStore.get(origin), player, origin, terminal);
             com.miaokatze.gtswn.common.device.DeviceTerminalRequestQueue.invalidate(player);
             if (DeviceTerminalDataStore.get(origin)
                 .getTerminal(terminal) != null)
@@ -386,8 +385,7 @@ public final class TestUiKit {
                 if (!origin.setBlockToAir(x, 65, -1))
                     throw new IllegalStateException("Could not detach owned UI cover fixture; backup retained");
         }
-        DeviceTerminalDataStore.get(origin)
-            .removeUiKitTerminal(player, origin, terminal);
+        TestFixtureAccess.removeUiKitTerminal(DeviceTerminalDataStore.get(origin), player, origin, terminal);
         String deviceKey = DeviceRegistryData
             .makeKey(dimension, TestWorldFixtures.DEVICE_X, 65, TestWorldFixtures.DEVICE_Z);
         DeviceRegistryData registry = DeviceRegistryData.get(origin);

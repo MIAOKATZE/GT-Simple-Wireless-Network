@@ -45,7 +45,7 @@ final class DevicePagedClientScenario implements TestScenario {
     }
 
     public String description() {
-        return "Real online OP4 actor: 1025 run-owned rows over native GUI/Netty, renewed epoch and stale-page injection";
+        return "Real online OP2 actor: 1025 run-owned rows over native GUI/Netty, renewed epoch and stale-page injection";
     }
 
     public void start(TestContext ctx) {
@@ -55,13 +55,16 @@ final class DevicePagedClientScenario implements TestScenario {
             .getConfigurationManager().playerEntityList) {
             EntityPlayerMP player = (EntityPlayerMP) candidate;
             if (!(player instanceof FakePlayer) && player.worldObj == ctx.world()
-                && player.canCommandSenderUseCommand(4, "gtswn")) {
-                if (actor != null) throw new IllegalStateException("Exactly one actual OP4 test actor is required");
+                && player.canCommandSenderUseCommand(2, "gtswn")) {
+                if (actor != null) throw new IllegalStateException("Exactly one actual OP2 test actor is required");
                 actor = player;
             }
         }
         if (actor == null) throw new IllegalStateException("Actual client actor must enter the test dimension first");
         connection = actor.playerNetServerHandler;
+        ctx.result.actor = "actual online player authorized at OP2; fixed connection";
+        ctx.result.actorLevel2 = actor.canCommandSenderUseCommand(2, "gtswn");
+        ctx.result.actorLevel4 = actor.canCommandSenderUseCommand(4, "gtswn");
         ItemStack item = TestUiKit.grantPaged(actor, ctx.runId());
         terminal = ItemDeviceInfoTerminal.readTerminalId(item);
         DeviceTerminalDataStore store = DeviceTerminalDataStore.get(ctx.world());
@@ -115,6 +118,7 @@ final class DevicePagedClientScenario implements TestScenario {
             DeviceTerminalDeltaDelivery delivery = run.delivery();
             if (delivery.acknowledgedVersion() < 0)
                 throw new IllegalStateException("First complete snapshot has not reached server ACK");
+            run.context.result.transport = "real Netty delta request/page/server ACK observed; GUI verification is recorded separately by the client";
             run.firstEpoch = delivery.epoch();
             run.session = (UUID) field(delivery, "session");
             DeviceTerminalRequestQueue.invalidate(sender);

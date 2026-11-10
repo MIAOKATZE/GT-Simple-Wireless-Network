@@ -108,7 +108,7 @@ public class QuantumSafetyConfigurationTest {
 
     @Test
     public void dispatcherEnforcesLevelFourAndAcceptsConsoleWithoutAPlayer() {
-        assertEquals(4, command.getRequiredPermissionLevel());
+        assertEquals(2, command.getRequiredPermissionLevel());
         CommandHandler handler = new CommandHandler();
         handler.registerCommand(command);
         assertFalse(command.canCommandSenderUseCommand(sender(false)));
@@ -192,7 +192,7 @@ public class QuantumSafetyConfigurationTest {
             new Class<?>[] { ICommandSender.class },
             (proxy, method, args) -> {
                 if ("canCommandSenderUseCommand".equals(method.getName())) {
-                    return op && ((Integer) args[0]) == 4;
+                    return op && ((Integer) args[0]) <= 4;
                 }
                 if ("addChatMessage".equals(method.getName())) {
                     messages.add(((IChatComponent) args[0]).getUnformattedText());

@@ -363,4 +363,54 @@ public class TestWorldReportingLifecycleTest {
         assertTrue(status.contains(journal.lastReport));
         assertFalse(TestWorldManager.busy());
     }
+
+    @Test
+    public void structuredSnapshotRetainsWrittenReceiptAfterAcknowledgement() throws Exception {
+        TestWorldReport.startWriter();
+        TestWorldReport.WriteReceipt receipt = completed().writeFinal(new File(directory.getRoot(), "snapshot.json"));
+        TestWorldReport.shutdownWriter();
+        reporting(receipt);
+        acknowledge();
+        assertEquals("", journal.activeRun);
+        Map<String, Object> snapshot = TestWorldManager.snapshot();
+        assertEquals("completed-run", snapshot.get("runId"));
+        assertEquals("PASS", snapshot.get("outcome"));
+        assertEquals("IDLE", snapshot.get("state"));
+        assertEquals(Boolean.TRUE, snapshot.get("reportWritten"));
+        assertEquals(Boolean.FALSE, snapshot.get("cleanupPending"));
+        assertEquals(receipt.target.getAbsolutePath(), snapshot.get("reportPath"));
+    }
+
+    @Test
+    public void completedJournalRevalidatesOnlyTheCurrentSavesReportAfterRestart() throws Exception {
+        String runId = "33333333-3333-3333-3333-333333333333";
+        File save = directory.newFolder("completed-save");
+        TestWorldReport.startWriter();
+        completed(runId).writeFinal(target(save, runId));
+        TestWorldReport.shutdownWriter();
+        TestWorldData state = new TestWorldData("completed-journal");
+        state.operation = "COMPLETE";
+        state.lastRun = runId;
+        state.lastOutcome = "PASS";
+        state.lastReport = new File(directory.getRoot(), "untrusted-copy.json").getAbsolutePath();
+        TestWorldReport.startWriter();
+        bind(state, save);
+        TestWorldReport.shutdownWriter();
+        assertEquals(
+            Boolean.TRUE,
+            TestWorldManager.snapshot()
+                .get("reportWritten"));
+        assertEquals(
+            target(save, runId).getAbsolutePath(),
+            TestWorldManager.snapshot()
+                .get("reportPath"));
+        bind(state, directory.newFolder("other-save"));
+        TestWorldReport.shutdownWriter();
+        assertEquals(
+            Boolean.FALSE,
+            TestWorldManager.snapshot()
+                .get("reportWritten"));
+        assertEquals("PASS", state.lastOutcome);
+    }
+
 }

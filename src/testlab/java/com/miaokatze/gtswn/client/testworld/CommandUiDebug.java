@@ -18,6 +18,7 @@ public final class CommandUiDebug extends CommandBase {
 
     @Override
     public int getRequiredPermissionLevel() {
+        // EntityPlayerSP does not know the server OP level. Every action gets a server OP2 receipt.
         return 0;
     }
 
@@ -31,7 +32,7 @@ public final class CommandUiDebug extends CommandBase {
         String operation = args.length == 0 ? "help" : args[0];
         if (operation.equals("help") || operation.equals("list")) {
             for (String line : new String[] { getCommandUsage(sender),
-                "Opt-in, GTSWN test dimension only. No startup autorun. all/portable/device/settings/quantum request OP4 server /gtswn test kit ui, then restore. Originals are persisted server-side.",
+                "Opt-in, GTSWN test dimension only. No startup autorun. all/portable/device/settings/quantum request OP2 server /gtswn test kit ui, then restore. Originals are persisted server-side.",
                 "capture/inspect/current: invoke while a production GUI is active through automation, or arm command then open it within 20 seconds. capture includes PNG; inspect is JSON only.",
                 "quick: current language/scale + safe local tabs/pages. matrix: installed current/en_US/zh_CN languages x scales 1/2/3; resource/font reload cost is logged and settings restored.",
                 "Presets: portable=actual bound monitor, device=real terminal list, settings=real terminal settings, quantum=server-authorized ContainerTerminal. panel/monitor: native activation of dedicated kit fixtures near test spawn, within normal reach. current accepts an already open vanilla or MUI2 GUI.",
@@ -43,6 +44,11 @@ public final class CommandUiDebug extends CommandBase {
                 sender.addChatMessage(new ChatComponentText(line));
             return;
         }
+        ClientTestPermission.request(sender, args);
+    }
+
+    void processAuthorized(ICommandSender sender, String[] args) {
+        String operation = args.length == 0 ? "help" : args[0];
         if (operation.equals("paged")) {
             DevicePagedClientCheck.start();
             return;
@@ -92,6 +98,8 @@ public final class CommandUiDebug extends CommandBase {
             "cover-input",
             "cover-output",
             "panel",
+            "panel-ae-chart",
+            "panel-ae-list",
             "monitor");
         if (args.length == 3 && args[0].equals("batch"))
             return getListOfStringsMatchingLastWord(args, "quick", "matrix");

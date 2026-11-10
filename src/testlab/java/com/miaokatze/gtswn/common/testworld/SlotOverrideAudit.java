@@ -22,6 +22,11 @@ public final class SlotOverrideAudit {
         return merged;
     }
 
+    public static synchronized void observe(String[] before, String[] after) {
+        if (OBSERVATIONS.size() < 64) OBSERVATIONS.add(new Observation(before.clone(), after.clone()));
+        else dropped++;
+    }
+
     static synchronized List<Observation> snapshot() {
         return Collections.unmodifiableList(new ArrayList<>(OBSERVATIONS));
     }

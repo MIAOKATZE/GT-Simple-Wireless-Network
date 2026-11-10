@@ -54,6 +54,7 @@ public final class DevicePagedClientCheck {
     private volatile UUID wireTerminal;
     private String run, phase = "IDLE";
     private File directory;
+    private boolean reportWritten;
     private long firstEpoch, newEpoch, staleSeenAt = -1;
     private int ticks, stable, captureWait;
     private boolean opened, capturePending, captured;
@@ -67,8 +68,21 @@ public final class DevicePagedClientCheck {
             .register(INSTANCE);
     }
 
+    /** Read-only client-thread state; the host must also verify the matching server report and cleanup. */
+    public static Map<String, Object> automationSnapshot() {
+        Map<String, Object> facts = new LinkedHashMap<>(INSTANCE.result);
+        facts.put("runId", INSTANCE.run);
+        facts.put("phase", INSTANCE.phase);
+        facts.put("running", !"IDLE".equals(INSTANCE.phase));
+        facts.put("authorizationPending", ClientTestPermission.pending());
+        facts.put("reportDirectory", INSTANCE.directory == null ? null : INSTANCE.directory.getAbsolutePath());
+        facts.put("reportWritten", INSTANCE.reportWritten);
+        return facts;
+    }
+
     public static void start() {
         DebugTestGate.requireEnabled();
+        ClientTestPermission.requireReceipt();
         register();
         DevicePagedClientCheck run = INSTANCE;
         if (!"IDLE".equals(run.phase)) throw new IllegalStateException("Paged check already running");
@@ -79,7 +93,10 @@ public final class DevicePagedClientCheck {
         run.mc = mc;
         run.connection = mc.getNetHandler();
         run.world = mc.theWorld;
+        run.reportWritten = false;
         run.result.clear();
+        run.result.put("actorLevel2", ClientTestPermission.actorLevel2());
+        run.result.put("actorLevel4", ClientTestPermission.actorLevel4());
         run.events.clear();
         run.pages.clear();
         run.observed.clear();
@@ -169,6 +186,9 @@ public final class DevicePagedClientCheck {
                 directory = new File(mc.mcDataDir, "gtswn-ui-reports/paged-" + run);
                 Files.createDirectories(directory.toPath());
                 result.put("runId", run);
+                result.put("taskId", "device.paged_client");
+                result.put("lane", "client-server");
+                result.put("artifact", com.miaokatze.gtswn.common.testworld.TestLabIdentity.ARTIFACT);
                 result.put("terminalId", terminal.toString());
                 result.put("tailKey", mc.thePlayer.dimension + ":20001024:64:20000000");
                 mc.thePlayer.inventory.currentItem = 0;
@@ -330,7 +350,9 @@ public final class DevicePagedClientCheck {
                     .create()
                     .toJson(result)
                     .getBytes(StandardCharsets.UTF_8));
+            reportWritten = true;
         } catch (Exception failure) {
+            reportWritten = false;
             detail += "; report write failed=" + failure;
         }
         try {

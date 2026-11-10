@@ -561,7 +561,7 @@ final class NativeSecurityScenario implements TestScenario {
     private void removeIntroducedProviderKeys(TestContext ctx) {
         if (introducedProviderKeys.isEmpty()) return;
         QuantumNetworkSecurityRegistry providers = QuantumNetworkSecurityRegistry.providerRegistry(ctx.world());
-        for (long key : introducedProviderKeys) providers.forgetTestProvider(ctx.world(), key);
+        for (long key : introducedProviderKeys) TestFixtureAccess.forgetProvider(providers, ctx.world(), key);
         introducedProviderKeys.clear();
     }
 }

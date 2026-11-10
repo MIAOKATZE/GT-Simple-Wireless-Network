@@ -283,4 +283,25 @@ public class TestWorldReportWriteTest {
         assertTrue(missing.abandonRecovery());
         assertFalse(missing.retry());
     }
+
+    @Test
+    public void interruptedRecoveryNeverAssignsTheCurrentJarToLostOriginalExecution() throws Exception {
+        File target = new File(directory.getRoot(), "interrupted.json");
+        TestWorldReport.startWriter();
+        TestWorldReport.markInterrupted(target, "interrupted-run", 19871);
+        TestWorldReport.shutdownWriter();
+        JsonObject json = read(target);
+        assertEquals(
+            "INTERRUPTED",
+            json.get("status")
+                .getAsString());
+        assertFalse(json.has("artifact"));
+        assertFalse(json.has("testlabArtifact"));
+        assertTrue(
+            json.get("originalArtifactIdentity")
+                .getAsString()
+                .contains("unavailable"));
+        assertTrue(json.has("recoveryArtifact"));
+    }
+
 }

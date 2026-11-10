@@ -83,8 +83,8 @@ final class MonitoringPerformanceScenario implements TestScenario {
         terminalId = TestWorldFixtures.owner(id() + ":terminal");
         store = DeviceTerminalDataStore.get(ctx.world());
         registry = DeviceRegistryData.get(ctx.world());
-        terminalBefore = store.snapshotTestTerminal(ctx.world(), terminalId);
-        store.restoreTestTerminal(ctx.world(), terminalId, null);
+        terminalBefore = TestFixtureAccess.snapshotTerminal(store, ctx.world(), terminalId);
+        TestFixtureAccess.restoreTerminal(store, ctx.world(), terminalId, null);
         terminal = GTSWNItemList.Device_Info_Terminal.get(1);
         NBTTagCompound tag = new NBTTagCompound();
         tag.setString(ItemDeviceInfoTerminal.NBT_UUID, terminalId.toString());
@@ -231,7 +231,7 @@ final class MonitoringPerformanceScenario implements TestScenario {
         }
         DeviceTerminalDataStore.onPlayerLoggedOut(player.getUniqueID());
         player.inventory.clearInventory(null, -1);
-        store.restoreTestTerminal(ctx.world(), terminalId, terminalBefore);
+        TestFixtureAccess.restoreTerminal(store, ctx.world(), terminalId, terminalBefore);
         for (Map.Entry<String, DeviceRegistryData.DeviceEntry> entry : previousEntries.entrySet()) {
             registry.unregister(entry.getKey());
             DeviceRegistryData.DeviceEntry old = entry.getValue();
