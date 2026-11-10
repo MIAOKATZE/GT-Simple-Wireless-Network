@@ -91,6 +91,7 @@ public final class UiDebugSuite {
             .register(INSTANCE);
         ClientCommandHandler.instance.registerCommand(new CommandUiDebug());
         EffectsBenchmark.registerIfRequested();
+        DevicePagedClientCheck.register();
     }
 
     public boolean running() {

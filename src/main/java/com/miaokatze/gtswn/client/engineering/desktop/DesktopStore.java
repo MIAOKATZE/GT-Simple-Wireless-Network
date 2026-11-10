@@ -1,13 +1,8 @@
 package com.miaokatze.gtswn.client.engineering.desktop;
 
 import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -334,19 +329,10 @@ public final class DesktopStore {
         validateProfile(profile);
         Properties cached = profiles.get(profile);
         if (cached != null) return cached;
-        Properties p = new Properties();
-        if (directory != null) {
-            Path file = directory.resolve(profile + ".properties");
-            try {
-                if (Files.isRegularFile(file) && Files.size(file) <= MAX_FILE_BYTES) {
-                    try (InputStream input = Files.newInputStream(file)) {
-                        p.load(input);
-                    }
-                }
-            } catch (IOException | IllegalArgumentException ignored) {
-                p.clear();
-            }
-        }
+        Properties p = directory == null ? new Properties()
+            : com.miaokatze.gtswn.client.engineering.LocalPropertiesFile.read(
+                com.miaokatze.gtswn.client.engineering.LocalPropertiesFile.path(directory, profile),
+                MAX_FILE_BYTES);
         profiles.put(profile, p);
         return p;
     }
@@ -370,28 +356,13 @@ public final class DesktopStore {
         boolean success = true;
         for (String profile : requested) {
             if (!dirty.contains(profile)) continue;
-            Path temp = null;
-            try {
-                Files.createDirectories(directory);
-                temp = Files.createTempFile(directory, profile + "-", ".tmp");
-                try (OutputStream output = Files.newOutputStream(temp)) {
-                    profiles.get(profile)
-                        .store(output, "GTSWN desktop display preferences; no machine samples");
-                }
-                Path file = directory.resolve(profile + ".properties");
-                try {
-                    Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-                } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-                    Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING);
-                }
+            if (com.miaokatze.gtswn.client.engineering.LocalPropertiesFile.write(
+                com.miaokatze.gtswn.client.engineering.LocalPropertiesFile.path(directory, profile),
+                profiles.get(profile),
+                "GTSWN desktop display preferences; no machine samples",
+                MAX_FILE_BYTES)) {
                 dirty.remove(profile);
-            } catch (IOException ignored) {
-                success = false;
-            } finally {
-                if (temp != null) try {
-                    Files.deleteIfExists(temp);
-                } catch (IOException ignored) {}
-            }
+            } else success = false;
         }
         return success;
     }

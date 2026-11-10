@@ -32,19 +32,9 @@ public class RegistrationManager {
         registrars.add(registrar);
     }
 
-    /**
-     * 依次执行所有已添加的注册任务
-     * 增加了异常隔离机制，确保单个任务失败不会中断整体注册流程
-     */
+    /** Required registrations fail startup immediately; partial content must not be reported as ready. */
     public void registerAll() {
-        for (Runnable registrar : registrars) {
-            try {
-                registrar.run();
-            } catch (Throwable t) {
-                // 记录错误但继续执行后续任务，防止模组因局部问题完全崩溃
-                com.miaokatze.gtswn.main.GTSimpleWirelessNetwork.LOG.error("注册任务执行失败", t);
-            }
-        }
+        for (Runnable registrar : registrars) registrar.run();
     }
 
     /**

@@ -16,6 +16,7 @@ public final class PacketRequestDeviceTerminalDelta extends PacketRequestDeviceT
     private UUID terminalId, session;
     private long epoch, acknowledged = -1, pending = -1;
     private boolean valid;
+    private int wireVersion = 1;
 
     public PacketRequestDeviceTerminalDelta() {}
 
@@ -29,9 +30,18 @@ public final class PacketRequestDeviceTerminalDelta extends PacketRequestDeviceT
         valid = terminalId != null && session != null && epoch >= 0 && acknowledged >= -1 && pending >= -1;
     }
 
+    public PacketRequestDeviceTerminalDelta paged() {
+        wireVersion = 2;
+        return this;
+    }
+
+    public int getWireVersion() {
+        return wireVersion;
+    }
+
     @Override
     public void toBytes(ByteBuf out) {
-        out.writeByte(1);
+        out.writeByte(wireVersion);
         out.writeLong(terminalId.getMostSignificantBits());
         out.writeLong(terminalId.getLeastSignificantBits());
         out.writeLong(session.getMostSignificantBits());
@@ -45,7 +55,8 @@ public final class PacketRequestDeviceTerminalDelta extends PacketRequestDeviceT
     public void fromBytes(ByteBuf in) {
         valid = false;
         if (in.readableBytes() != WIRE_BYTES) return;
-        if (in.readUnsignedByte() != 1) return;
+        wireVersion = in.readUnsignedByte();
+        if (wireVersion != 1 && wireVersion != 2) return;
         terminalId = new UUID(in.readLong(), in.readLong());
         session = new UUID(in.readLong(), in.readLong());
         epoch = in.readLong();

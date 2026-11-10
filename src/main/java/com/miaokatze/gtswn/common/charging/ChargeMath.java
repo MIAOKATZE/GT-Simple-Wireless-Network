@@ -2,7 +2,6 @@ package com.miaokatze.gtswn.common.charging;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
-import java.math.RoundingMode;
 
 /** Decimal network accounting and the HUD's real-time quiet intervals. */
 public final class ChargeMath {
@@ -18,9 +17,8 @@ public final class ChargeMath {
         if (amount.signum() <= 0 || !Float.isFinite(loss) || loss < 0) {
             throw new IllegalArgumentException("Invalid energy or loss");
         }
-        return amount.multiply(BigDecimal.ONE.add(new BigDecimal(Float.toString(loss))))
-            .setScale(0, RoundingMode.CEILING)
-            .toBigIntegerExact();
+        return com.miaokatze.gtswn.common.util.DecimalEnergyAccounting
+            .deduction(amount, new BigDecimal(Float.toString(loss)));
     }
 
     public static int quietStatus(int ticks) {

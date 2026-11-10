@@ -5,9 +5,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.math.BigDecimal;
+import java.io.Reader;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
+import java.nio.file.Files;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -18,14 +18,18 @@ import java.util.stream.Collectors;
 
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
+import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.common.util.Constants;
+import net.minecraftforge.event.world.WorldEvent;
 
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.miaokatze.gtswn.Tags;
 import com.miaokatze.gtswn.main.GTSimpleWirelessNetwork;
+import com.miaokatze.miaokatzecore.api.bq.QuestDefinitionPreflight;
+import com.miaokatze.miaokatzecore.api.bq.QuestPackPreflight;
 import com.miaokatze.miaokatzecore.api.bq.QuestProgressRecovery;
 
 import betterquesting.api.questing.IQuest;
@@ -39,6 +43,8 @@ import betterquesting.questing.QuestLine;
 import betterquesting.questing.QuestLineDatabase;
 import betterquesting.questing.QuestLineEntry;
 import cpw.mods.fml.common.Loader;
+import cpw.mods.fml.common.eventhandler.EventPriority;
+import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 
 /**
  * BetterQuesting 运行时任务注入器（任务注入 PoC）。
@@ -71,7 +77,7 @@ import cpw.mods.fml.common.Loader;
  *      <li>进度回填：仅恢复本次重建的本包任务，先旧版 QuestProgress.json，后逐玩家
  *      QuestProgress 目录；已有任务的内存进度保持权威，不用磁盘旧值覆盖</li>
  *      <li>前排有序收尾（条款10）：MIAO 常量表 gtsr→gtswn→gtit 对库内存在线依序
- *      setOrderIndex(i) 覆盖为最终序，必须先于同步四连执行</li>
+ *      setOrderIndex(i) 覆盖为最终序，必须先于保存及原生登录同步执行</li>
  *      <li>标记定义需要保存；远程玩家由 BQ 原生登录同步接收定义与进度</li>
  *      </ol>
  */
@@ -99,7 +105,134 @@ public final class BqQuestInjector {
         0x47544954L // "GTIT"
     };
 
+    private static BqDefinitionJournal pendingCommit;
+    private static File pendingWorld;
+    private static boolean verifierRegistered;
+
     private BqQuestInjector() {}
+
+    /** Runs after BQ's synchronous NORMAL World Save handler and Future waits, then reads actual bytes. */
+    public static final class CommitVerifier {
+
+        @SubscribeEvent(priority = EventPriority.LOWEST)
+        public void saved(WorldEvent.Save event) {
+            if (!event.world.isRemote && event.world.provider.dimensionId == 0) verifyCommit();
+        }
+    }
+
+    private static void verifyCommit() {
+        if (pendingCommit == null || pendingWorld == null || !pendingWorld.equals(BQ_Settings.curWorldDir)) return;
+        try {
+            pendingCommit.acceptLiveChanges(liveDefinitions());
+            File database = new File(pendingWorld, "QuestDatabase.json");
+            if (!database.isFile()) return;
+            if (database.length() > 64L * 1024 * 1024) throw new java.io.IOException("Oversized BQ database");
+            try (Reader reader = Files.newBufferedReader(database.toPath(), StandardCharsets.UTF_8)) {
+                NBTTagCompound disk = NBTConverter.JSONtoNBT_Object(
+                    new JsonParser().parse(reader)
+                        .getAsJsonObject(),
+                    new NBTTagCompound(),
+                    true);
+                if (!pendingCommit.matches(snapshot(disk))) {
+                    GTSimpleWirelessNetwork.LOG
+                        .warn("[BQ] Definition commit PENDING: database bytes differ; retry on save/startup");
+                    return;
+                }
+            }
+            BqStampFile.write(new File(pendingWorld, STAMP_FILE_NAME), pendingCommit.version());
+            pendingCommit.committed();
+            GTSimpleWirelessNetwork.LOG
+                .info("[BQ] Verified definition commit; protected editor conflicts={}", pendingCommit.conflicts());
+            pendingCommit = null;
+            pendingWorld = null;
+        } catch (Exception failure) {
+            GTSimpleWirelessNetwork.LOG
+                .warn("[BQ] Definition commit PENDING; retain journal for restart repair", failure);
+        }
+    }
+
+    private static String questKey(UUID id) {
+        return "q:" + id;
+    }
+
+    private static String entryKey(UUID line, UUID quest) {
+        return "e:" + line + ":" + quest;
+    }
+
+    private static JsonObject definition(NBTTagCompound tag) {
+        NBTTagCompound copy = (NBTTagCompound) tag.copy();
+        copy.removeTag("questIDHigh");
+        copy.removeTag("questIDLow");
+        return NBTConverter.NBTtoJSON_Compound(copy, new JsonObject(), true);
+    }
+
+    private static JsonObject snapshot(NBTTagCompound database) {
+        JsonObject result = new JsonObject();
+        NBTTagList quests = database.getTagList("questDatabase", 10);
+        for (int i = 0; i < quests.tagCount(); i++) {
+            NBTTagCompound quest = quests.getCompoundTagAt(i);
+            UUID id = requireId(quest, "questID");
+            if (id.getMostSignificantBits() == MANAGED_QUEST_HIGH) result.add(questKey(id), definition(quest));
+        }
+        NBTTagList lines = database.getTagList("questLines", 10);
+        for (int i = 0; i < lines.tagCount(); i++) {
+            NBTTagCompound line = lines.getCompoundTagAt(i);
+            UUID lineId = requireId(line, "questLineID");
+            if (lineId.getMostSignificantBits() != MANAGED_QUEST_HIGH) continue;
+            NBTTagList entries = line.getTagList("quests", 10);
+            for (int j = 0; j < entries.tagCount(); j++) {
+                NBTTagCompound entry = entries.getCompoundTagAt(j);
+                UUID id = requireId(entry, "questID");
+                if (id.getMostSignificantBits() == MANAGED_QUEST_HIGH)
+                    result.add(entryKey(lineId, id), definition(entry));
+            }
+        }
+        return result;
+    }
+
+    private static JsonObject liveDefinitions() {
+        NBTTagCompound database = new NBTTagCompound();
+        database.setTag("questDatabase", QuestDatabase.INSTANCE.writeToNBT(new NBTTagList(), null));
+        database.setTag("questLines", QuestLineDatabase.INSTANCE.writeToNBT(new NBTTagList(), null));
+        return snapshot(database);
+    }
+
+    private static JsonObject desiredDefinitions(JsonArray lines, Map<String, NBTTagCompound> resources,
+        JsonObject current) {
+        JsonObject desired = new JsonObject();
+        for (Map.Entry<String, com.google.gson.JsonElement> entry : current.entrySet())
+            desired.add(entry.getKey(), JsonNull.INSTANCE);
+        for (int i = 0; i < lines.size(); i++) {
+            JsonObject spec = lines.get(i)
+                .getAsJsonObject();
+            UUID lineId = new UUID(
+                spec.get("idHigh")
+                    .getAsLong(),
+                spec.get("idLow")
+                    .getAsLong());
+            JsonArray entries = spec.getAsJsonArray("entries");
+            for (int j = 0; j < entries.size(); j++) {
+                JsonObject entry = entries.get(j)
+                    .getAsJsonObject();
+                NBTTagCompound tag = resources.get(
+                    entry.get("questFile")
+                        .getAsString());
+                UUID id = requireId(tag, "questID");
+                if (id.getMostSignificantBits() != MANAGED_QUEST_HIGH) continue;
+                QuestInstance detached = new QuestInstance();
+                detached.readFromNBT(tag);
+                desired.add(questKey(id), definition(detached.writeToNBT(new NBTTagCompound())));
+                if (lineId.getMostSignificantBits() == MANAGED_QUEST_HIGH) desired.add(
+                    entryKey(lineId, id),
+                    definition(
+                        new QuestLineEntry(
+                            resources.get(
+                                entry.get("entryFile")
+                                    .getAsString())).writeToNBT(new NBTTagCompound())));
+            }
+        }
+        return desired;
+    }
 
     /**
      * 任务注入入口（serverStarted，整波 ServerStarting 含 BQ default load 与任何
@@ -137,12 +270,19 @@ public final class BqQuestInjector {
             int prunedCount = 0;
             // 版本戳对账：版本变化（含老世界无戳）→ 刷新全部已存在任务的定义与挂线坐标
             boolean refresh = isDefinitionRefreshNeeded();
+            JsonObject current = liveDefinitions();
+            BqDefinitionJournal journal = BqDefinitionJournal.prepare(
+                new File(BQ_Settings.curWorldDir, "gtswn-definition-commit.json").toPath(),
+                Tags.VERSION,
+                refresh,
+                current,
+                desiredDefinitions(lines, resources, current));
             Set<UUID> recreatedOwnedQuests = new HashSet<>();
             for (int i = 0; i < lines.size(); i++) {
                 int[] r = loadQuestLine(
                     lines.get(i)
                         .getAsJsonObject(),
-                    refresh,
+                    journal,
                     resources,
                     pruneCandidates,
                     recreatedOwnedQuests);
@@ -155,7 +295,8 @@ public final class BqQuestInjector {
                 boolean referenced = QuestLineDatabase.INSTANCE.values()
                     .stream()
                     .anyMatch(line -> line.get(id) != null);
-                if (!referenced) QuestDatabase.INSTANCE.remove(id);
+                if (!referenced && (journal == null || journal.shouldApply(questKey(id))))
+                    QuestDatabase.INSTANCE.remove(id);
             }
             QuestProgressRecovery.Summary recovery = QuestProgressRecovery
                 .restore(BQ_Settings.curWorldDir, recreatedOwnedQuests);
@@ -163,10 +304,18 @@ public final class BqQuestInjector {
             // 前排有序收尾（规范 §6 条款10）：覆盖装载阶段的初排序为 MIAO 前排最终序；
             // 登录前确定顺序，远程玩家通过 BQ 原生登录同步接收 order 列表。
             int frontRowCount = applyFrontRowOrder();
-            if (refresh) {
-                writeStamp(Tags.VERSION);
+            if (journal != null) {
+                journal.expect(liveDefinitions());
+                pendingCommit = journal;
+                pendingWorld = BQ_Settings.curWorldDir;
+                if (!verifierRegistered) {
+                    MinecraftForge.EVENT_BUS.register(new CommitVerifier());
+                    verifierRegistered = true;
+                }
+                GTSimpleWirelessNetwork.LOG
+                    .info("[BQ] Definition commit PENDING; protected editor conflicts={}", journal.conflicts());
             }
-            // 同步四连（与 QuestCommandDefaults.load 尾部同款）
+            // 保持原生登录同步；定义保存仍由 BQ World Save 生命周期执行。
             // 启动时不排队广播：迟到的全书定义包会清空单机共享任务库的进度。
             // 本机直接共享数据库，远程玩家由 BQ 原生登录同步接收定义与进度。
             SaveLoadHandler.INSTANCE.markDirty();
@@ -189,88 +338,7 @@ public final class BqQuestInjector {
 
     /** Preflight custom packs as well as the bundled pack; an explicitly empty entries list is valid. */
     static Map<String, NBTTagCompound> prepareResources(JsonArray lines, Function<String, NBTTagCompound> reader) {
-        Map<String, NBTTagCompound> resources = new HashMap<>();
-        Set<UUID> lineIds = new HashSet<>();
-        Map<UUID, String> questFiles = new HashMap<>();
-        for (JsonElement element : lines) {
-            JsonObject line = element.getAsJsonObject();
-            UUID lineId = new UUID(requireLong(line, "idHigh"), requireLong(line, "idLow"));
-            Math.toIntExact(requireLong(line, "orderIndex"));
-            if (!lineIds.add(lineId)) throw new IllegalStateException("Duplicate BQ quest line: " + lineId);
-            NBTTagCompound lineTag = requireResource(
-                resources,
-                reader,
-                line.get("lineFile")
-                    .getAsString());
-            if (!lineId.equals(requireId(lineTag, "questLineID"))) {
-                throw new IllegalStateException("BQ quest line identity disagrees with manifest: " + lineId);
-            }
-            Set<UUID> entriesSeen = new HashSet<>();
-            JsonArray entries = line.getAsJsonArray("entries");
-            if (entries == null) throw new IllegalStateException("Missing BQ entries array: " + lineId);
-            for (JsonElement entryElement : entries) {
-                JsonObject entry = entryElement.getAsJsonObject();
-                String questFile = entry.get("questFile")
-                    .getAsString();
-                NBTTagCompound quest = requireResource(resources, reader, questFile);
-                UUID questId = requireId(quest, "questID");
-                String priorFile = questFiles.putIfAbsent(questId, questFile);
-                if ((priorFile != null && !priorFile.equals(questFile)) || !entriesSeen.add(questId)) {
-                    throw new IllegalStateException("Conflicting BQ quest definition/entry: " + questId);
-                }
-                NBTTagCompound entryTag = requireResource(
-                    resources,
-                    reader,
-                    entry.get("entryFile")
-                        .getAsString());
-                if (!questId.equals(requireId(entryTag, "questID"))) {
-                    throw new IllegalStateException("BQ quest entry identity disagrees with definition: " + questId);
-                }
-            }
-        }
-        // JSON/NBT and UUID validity do not imply that a registered BQ task/reward parser
-        // accepts the definition. For example, Standard's completion reward throws on a
-        // malformed target UUID, after readFromNBT has already replaced a live quest's
-        // properties and tasks. Exercise native deserialization on detached instances for
-        // the entire pack before the first live write. This is not plugin-side-effect rollback.
-        for (String questFile : new HashSet<>(questFiles.values())) {
-            try {
-                NBTTagCompound definition = resources.get(questFile);
-                validatePrerequisites(definition);
-                new QuestInstance().readFromNBT((NBTTagCompound) definition.copy());
-            } catch (RuntimeException e) {
-                throw new IllegalStateException("Invalid BQ quest definition: " + questFile, e);
-            }
-        }
-        return resources;
-    }
-
-    private static void validatePrerequisites(NBTTagCompound quest) {
-        if (!quest.hasKey("preRequisites")) return;
-        // Native BQ supports legacy integer arrays, but silently drops malformed UUID-list
-        // entries. Losing a prerequisite is not a safe interpretation of a damaged quest pack.
-        if (quest.hasKey("preRequisites", Constants.NBT.TAG_INT_ARRAY)) return;
-        if (!quest.hasKey("preRequisites", Constants.NBT.TAG_LIST)) {
-            throw new IllegalStateException("Invalid BQ prerequisite list");
-        }
-        NBTTagList prerequisites = (NBTTagList) quest.getTag("preRequisites");
-        if (prerequisites.tagCount() > 0 && prerequisites.func_150303_d() != Constants.NBT.TAG_COMPOUND) {
-            throw new IllegalStateException("Invalid BQ prerequisite entry type");
-        }
-        for (int i = 0; i < prerequisites.tagCount(); i++) {
-            requireId(prerequisites.getCompoundTagAt(i), "questID");
-        }
-    }
-
-    private static long requireLong(JsonObject object, String key) {
-        JsonElement value = object.get(key);
-        if (value == null || !value.isJsonPrimitive()
-            || !value.getAsJsonPrimitive()
-                .isNumber()) {
-            throw new IllegalStateException("Missing/non-numeric BQ identity or order: " + key);
-        }
-        // Gson getAsLong silently truncates fractional and overflowing values.
-        return new BigDecimal(value.getAsString()).longValueExact();
+        return QuestPackPreflight.prepareResources(lines, reader);
     }
 
     private static UUID requireId(NBTTagCompound tag, String prefix) {
@@ -282,25 +350,14 @@ public final class BqQuestInjector {
         return new UUID(tag.getLong(prefix + "High"), tag.getLong(prefix + "Low"));
     }
 
-    private static NBTTagCompound requireResource(Map<String, NBTTagCompound> resources,
-        Function<String, NBTTagCompound> reader, String path) {
-        NBTTagCompound tag = resources.get(path);
-        if (tag == null) {
-            tag = reader.apply(path);
-            if (tag == null) throw new IllegalStateException("Incomplete BQ quest pack: " + path);
-            resources.put(path, tag);
-        }
-        return tag;
-    }
-
     /**
      * Load a preflighted line. Only owned lines/quests can be refreshed or pruned; defer global
      * deletion until all declared lines are loaded, then preserve every surviving line reference.
      *
      * @return created quests, refreshed quests, detached entries, created lines, skipped quests
      */
-    private static int[] loadQuestLine(JsonObject lineSpec, boolean refresh, Map<String, NBTTagCompound> resources,
-        Set<UUID> pruneCandidates, Set<UUID> progressTargets) {
+    private static int[] loadQuestLine(JsonObject lineSpec, BqDefinitionJournal journal,
+        Map<String, NBTTagCompound> resources, Set<UUID> pruneCandidates, Set<UUID> progressTargets) {
         UUID lineId = new UUID(
             lineSpec.get("idHigh")
                 .getAsLong(),
@@ -348,18 +405,20 @@ public final class BqQuestInjector {
                 quest.readFromNBT(questTag);
                 QuestDatabase.INSTANCE.put(questId, quest);
                 created++;
-            } else if (refresh && questId.getMostSignificantBits() == MANAGED_QUEST_HIGH) {
-                // 版本升级：重读定义（名称/描述/前置/奖励/任务），玩家进度保留
-                refreshDefinition(existing, questTag);
-                refreshed++;
-            } else {
-                // 已存在且无需刷新：幂等跳过（用于对账日志判读库是否被第三方整库重载）
-                skipped++;
-            }
+            } else if (journal != null && journal.shouldApply(questKey(questId))
+                && questId.getMostSignificantBits() == MANAGED_QUEST_HIGH) {
+                    // 版本升级：重读定义（名称/描述/前置/奖励/任务），玩家进度保留
+                    refreshDefinition(existing, questTag);
+                    refreshed++;
+                } else {
+                    // 已存在且无需刷新：幂等跳过（用于对账日志判读库是否被第三方整库重载）
+                    skipped++;
+                }
             // 任务必须挂线（/bq_admin purge_hidden_quests 会清未挂线任务）：未挂才 put；
             // 已挂线且刷新中则替换条目以同步编辑器坐标
-            if (line.get(questId) == null
-                || (refresh && managedLine && questId.getMostSignificantBits() == MANAGED_QUEST_HIGH)) {
+            if (line.get(questId) == null || (journal != null && journal.shouldApply(entryKey(lineId, questId))
+                && managedLine
+                && questId.getMostSignificantBits() == MANAGED_QUEST_HIGH)) {
                 NBTTagCompound entryTag = resources.get(
                     entry.get("entryFile")
                         .getAsString());
@@ -371,7 +430,10 @@ public final class BqQuestInjector {
         int pruned = 0;
         List<UUID> stale = line.orderedEntries()
             .map(Map.Entry::getKey)
-            .filter(id -> managedLine && id.getMostSignificantBits() == MANAGED_QUEST_HIGH && !expected.contains(id))
+            .filter(
+                id -> managedLine && id.getMostSignificantBits() == MANAGED_QUEST_HIGH
+                    && !expected.contains(id)
+                    && (journal == null || journal.shouldApply(entryKey(lineId, id))))
             .collect(Collectors.toList());
         for (UUID id : stale) {
             line.remove(id);
@@ -433,16 +495,8 @@ public final class BqQuestInjector {
     }
 
     /**
-     * 写入世界侧版本戳。失败仅告警不阻断：下次启动会多刷一次定义（幂等无害）。
+     * 完成戳由 CommitVerifier 在真实数据库落盘校验后发布；写入失败保留 PENDING。
      */
-    private static void writeStamp(String version) {
-        File f = new File(BQ_Settings.curWorldDir, STAMP_FILE_NAME);
-        try {
-            BqStampFile.write(f, version);
-        } catch (Exception e) {
-            GTSimpleWirelessNetwork.LOG.warn("[BQ] 版本戳写入失败（下次启动可能重复刷新一次定义）", e);
-        }
-    }
 
     /**
      * 前排有序规则收尾（BQ任务整合规范 §6 条款10）：按 {@link #FRONT_ROW_HIGH_PREFIXES}
@@ -478,26 +532,6 @@ public final class BqQuestInjector {
         return null;
     }
 
-    private static void validateResourceIds(JsonElement element) {
-        if (element.isJsonArray()) {
-            for (JsonElement child : element.getAsJsonArray()) validateResourceIds(child);
-        } else if (element.isJsonObject()) {
-            JsonObject object = element.getAsJsonObject();
-            for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
-                String key = entry.getKey();
-                for (String id : new String[] { "questIDHigh", "questIDLow", "questLineIDHigh", "questLineIDLow" }) {
-                    if (key.equals(id) || key.startsWith(id + ":")) {
-                        // Reject alternate type tags too: JSONtoNBT strips suffixes and could
-                        // otherwise let a second same-name tag overwrite the checked UUID half.
-                        if (!key.equals(id + ":4")) throw new IllegalStateException("Invalid BQ UUID tag: " + key);
-                        requireLong(object, key);
-                    }
-                }
-                validateResourceIds(entry.getValue());
-            }
-        }
-    }
-
     /**
      * 从 classloader 资源读 JSON 并转为 NBTTagCompound。
      * <p>
@@ -512,7 +546,7 @@ public final class BqQuestInjector {
         if (json == null) {
             return null;
         }
-        validateResourceIds(json);
+        QuestDefinitionPreflight.validateJsonIds(json);
         return NBTConverter.JSONtoNBT_Object(json, new NBTTagCompound(), true);
     }
 

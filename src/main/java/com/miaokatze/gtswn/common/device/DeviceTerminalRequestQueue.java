@@ -108,6 +108,7 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
         Object pendingPage;
         long lastSent = Long.MIN_VALUE;
         int entryTotal;
+        int warnedTotal = -1;
         int pageTotal;
 
         // One bounded immutable delivery per terminal; live sampling cannot restart its continuation.
@@ -292,6 +293,8 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             if (server == null || server.getConfigurationManager()
                 .func_152612_a(player.getCommandSenderName()) != player) return;
             if (request.delta != null && !MonitorCapabilities.serverSupports(player, MonitorCapabilities.DIT)) return;
+            if (request.delta != null && request.delta.getWireVersion() == 2
+                && !MonitorCapabilities.serverSupports(player, MonitorCapabilities.DIT_PAGED)) return;
             ItemStack stack = findTerminalStack(player, request.terminalId);
             if (stack == null) {
                 PlayerState denied = SENT.get(player.getUniqueID());
@@ -343,6 +346,13 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             DeviceTerminalDataStore.ensureActiveTerminal(player.getUniqueID(), terminalId);
             // 版本跳过（D5 防轮询压力）：该版本整批已发完 → 零发包返回
             store.refreshRecognitionDefaults(terminalId);
+            int actualTotal = countLiveEntries(data);
+            if ((request.delta == null || request.delta.getWireVersion() == 1)
+                && actualTotal > PacketSyncDeviceTerminalData.MAX_ENTRIES
+                && state.warnedTotal != actualTotal) {
+                player.addChatMessage(legacyCapacityMessage(actualTotal));
+                state.warnedTotal = actualTotal;
+            }
             String sourceRevision = profiles.sourceRevision(terminalId) + ":"
                 + profiles.authorizationRevision(terminalId);
             // The transport owns one frozen page until actual send; do not prepare a different ACK baseline meanwhile.
@@ -370,7 +380,8 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
                     () -> collectEntries(
                         data,
                         0,
-                        Math.min(countLiveEntries(data), PacketSyncDeviceTerminalData.MAX_ENTRIES)));
+                        request.delta.getWireVersion() == 2 ? countLiveEntries(data)
+                            : Math.min(countLiveEntries(data), PacketSyncDeviceTerminalData.MAX_ENTRIES)));
                 for (int burst = 0; burst < PAGES_PER_BURST && state.delta.hasPage(); burst++) {
                     PacketSyncDeviceTerminalDelta packet = state.delta.next();
                     DeviceTerminalDeltaDelivery delivery = state.delta;
@@ -475,6 +486,15 @@ public final class DeviceTerminalRequestQueue extends PlayerRequestQueue<DeviceT
             });
         if (admission == TelemetryTransport.Admission.REJECTED && state.pendingPage == marker) state.pendingPage = null;
         return admission == TelemetryTransport.Admission.SENT;
+    }
+
+    /** Resolve on the server: legacy clients do not contain this newer language key. */
+    static net.minecraft.util.IChatComponent legacyCapacityMessage(int actualTotal) {
+        return new net.minecraft.util.ChatComponentText(
+            net.minecraft.util.StatCollector.translateToLocalFormatted(
+                "gtswn.device.gui.legacy_total",
+                actualTotal,
+                PacketSyncDeviceTerminalData.MAX_ENTRIES));
     }
 
     /** 有记录的有效条目数（绑定键遍历，零分配；boundKeys 与 records 理论对称，缺记录防御跳过） */

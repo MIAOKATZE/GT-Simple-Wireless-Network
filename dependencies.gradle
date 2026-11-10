@@ -97,10 +97,12 @@ dependencies {
     // BetterQuesting: compileOnly — 任务注入软集成（BQ 缺席时静默降级，零新增运行时依赖）
     // 全部 BQ 类型引用收敛于 crossmod/bq/BqQuestInjector；preInit 探测见 crossmod/bq/BqCompat
     compileOnly("com.github.GTNewHorizons:BetterQuesting:3.8.92-GTNH:dev") { transitive = false }
+    // Native UUID serialization projection is exercised by BqDefinitionJournalTest only.
+    testImplementation("com.github.GTNewHorizons:BetterQuesting:3.8.92-GTNH:dev") { transitive = false }
 }
 
 // Shared library API; immutable candidate versions may be supplied for isolated integration builds.
 dependencies {
-    def coreVersion = project.findProperty("miaokatzeCoreVersion") ?: "0.2.6"
+    def coreVersion = project.findProperty("miaokatzeCoreVersion") ?: "0.2.8"
     api("com.miaokatze.miaokatzecore:miaokatzecore:${coreVersion}:dev") { transitive = false }
 }

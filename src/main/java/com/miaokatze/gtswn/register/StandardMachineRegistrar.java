@@ -11,6 +11,8 @@ import com.miaokatze.gtswn.common.assembly.MatrixFluidInputHatch;
 import com.miaokatze.gtswn.common.assembly.MatrixItemInputBus;
 import com.miaokatze.gtswn.common.machine.MTEWirelessEnergyMonitor;
 
+import gregtech.api.GregTechAPI;
+
 /**
  * 标准机器注册器
  * 继承自 MachineRegistrar，负责具体定义并注册模组内的标准单方块机器。
@@ -23,6 +25,14 @@ public class StandardMachineRegistrar extends MachineRegistrar {
      */
     @Override
     protected void setupRegistrations() {
+        // Validate the whole fixed ID set before any constructor mutates GT's global registry.
+        for (MetaTileEntityID entry : MetaTileEntityID.values()) {
+            if (entry.ID < 0 || entry.ID >= GregTechAPI.METATILEENTITIES.length
+                || GregTechAPI.METATILEENTITIES[entry.ID] != null) {
+                throw new IllegalStateException(
+                    "GTSWN MetaTileEntity ID unavailable: " + entry.ID + " (" + entry + ")");
+            }
+        }
         // 注册 LV 等级无线能量监视器 (Tier 1)
         registerMachine(
             () -> new MTEWirelessEnergyMonitor(

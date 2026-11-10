@@ -246,11 +246,13 @@ public enum GTSWNItemList implements IItemContainer {
     }
 
     /**
-     * 获取充能后的物品堆栈（目前未实现逻辑）
+     * 获取充能后的副本（沿用 GT 原生电力物品合同）
      */
     public ItemStack getWithCharge(long aAmount, int aEnergy, Object... aReplacements) {
         ItemStack rStack = get(1, aReplacements);
-        return null;
+        if (gregtech.api.util.GTUtility.isStackInvalid(rStack)) return null;
+        gregtech.api.util.GTModHandler.chargeElectricItem(rStack, aEnergy, Integer.MAX_VALUE, true, false);
+        return gregtech.api.util.GTUtility.copyAmount(aAmount, rStack);
     }
 
     /**
@@ -271,6 +273,7 @@ public enum GTSWNItemList implements IItemContainer {
      */
     @Override
     public IItemContainer registerOre(Object... aOreNames) {
+        for (Object oreName : aOreNames) gregtech.api.util.GTOreDictUnificator.registerOre(oreName, get(1));
         return this;
     }
 
@@ -278,6 +281,7 @@ public enum GTSWNItemList implements IItemContainer {
      * 将该物品的通配符版本注册到矿物词典
      */
     public IItemContainer registerWildcardAsOre(Object... aOreNames) {
+        for (Object oreName : aOreNames) gregtech.api.util.GTOreDictUnificator.registerOre(oreName, getWildcard(1));
         return this;
     }
 }

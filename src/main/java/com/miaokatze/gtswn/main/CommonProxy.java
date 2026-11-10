@@ -132,12 +132,8 @@ public class CommonProxy {
         // 定义机器注册任务
         Runnable registerRunnable = () -> {
             GTSimpleWirelessNetwork.LOG.info("[1/3] 开始执行机器注册流程...");
-            try {
-                MachineLoader.initMachines();
-                GTSimpleWirelessNetwork.LOG.info("[1/3] 机器注册流程执行完毕。");
-            } catch (Throwable t) {
-                GTSimpleWirelessNetwork.LOG.error("[1/3] 机器注册过程中发生严重错误，请检查日志", t);
-            }
+            MachineLoader.initMachines();
+            GTSimpleWirelessNetwork.LOG.info("[1/3] 机器注册流程执行完毕。");
         };
 
         // 将机器注册任务加入 GregTechAPI.sAfterGTPreload 队列

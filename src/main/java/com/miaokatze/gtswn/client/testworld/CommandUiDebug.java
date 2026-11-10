@@ -43,7 +43,12 @@ public final class CommandUiDebug extends CommandBase {
                 sender.addChatMessage(new ChatComponentText(line));
             return;
         }
+        if (operation.equals("paged")) {
+            DevicePagedClientCheck.start();
+            return;
+        }
         if (operation.equals("stop")) {
+            DevicePagedClientCheck.stop();
             UiDebugSuite.INSTANCE.stop();
             return;
         }
@@ -67,6 +72,7 @@ public final class CommandUiDebug extends CommandBase {
         if (args.length == 1) return getListOfStringsMatchingLastWord(
             args,
             "help",
+            "paged",
             "list",
             "capture",
             "inspect",

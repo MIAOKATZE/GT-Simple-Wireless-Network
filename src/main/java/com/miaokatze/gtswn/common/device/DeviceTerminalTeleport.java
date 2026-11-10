@@ -168,36 +168,8 @@ public final class DeviceTerminalTeleport {
         }
     }
 
-    private static Outcome quote(EntityPlayerMP player, UUID terminalId, String key, boolean visual, int slot,
-        TileEntity target, long now, Payment payment, boolean changed) {
-        Quote existing = QUOTES.get(player.getUniqueID());
-        if (existing != null && existing.terminalId.equals(terminalId)
-            && existing.key.equals(key)
-            && existing.visual == visual
-            && existing.slot == slot
-            && existing.target == target
-            && existing.machine == ((IGregTechTileEntity) target).getMetaTileEntity()
-            && existing.payment.same(payment)
-            && existing.matches(player, now)) {
-            GTSWNPacketHandler.NETWORK.sendTo(
-                new PacketSyncDeviceTeleportQuote(
-                    existing.token,
-                    terminalId,
-                    key,
-                    payment.source,
-                    payment.amount,
-                    changed),
-                player);
-            return outcome(Status.CONFIRMATION_REQUIRED);
-        }
-        Quote quote = new Quote(player, terminalId, key, visual, slot, target, now, payment);
-        QUOTES.put(player.getUniqueID(), quote);
-        GTSWNPacketHandler.NETWORK.sendTo(
-            new PacketSyncDeviceTeleportQuote(quote.token, terminalId, key, payment.source, payment.amount, changed),
-            player);
-        return outcome(Status.CONFIRMATION_REQUIRED);
-    }
-
+    // Reserved confirmation ABI/discriminators remain readable. The active travel path settles directly;
+    // there is deliberately no production quote issuer until a confirmation product flow is introduced.
     /** The token is consumed before revalidation, so replayed confirmations can never settle twice. */
     public static void confirm(EntityPlayerMP player, long token, boolean accepted) {
         Quote quote = QUOTES.get(player.getUniqueID());

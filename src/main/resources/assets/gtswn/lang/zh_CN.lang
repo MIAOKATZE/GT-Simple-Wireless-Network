@@ -2059,3 +2059,8 @@ gtswn.terminal_wheel.reveal_conditions=需要有效网络绑定和访问权限�
 gtswn.terminal_wheel.scan_conditions=扫描结果与范围由服务器校验；结果存入此设备终端。
 gtswn.terminal_wheel.nodes_conditions=需要有效绑定并可访问的网络；再次点击保持节点图开启。
 gtswn.terminal_wheel.engineering_source=当前已在工程视角：主体按钮选择此终端作为工程数据源。
+
+gtswn.device.gui.loading_pages=加载 %s/%s 页
+gtswn.device.gui.legacy_limit=旧版连接最多显示1024条
+gtswn.profiles.recoverCharging=便携终端恢复后绑定档案所有者账户充电；撤销读取权限不会撤销已恢复实物的充电能力。
+gtswn.device.gui.legacy_total=终端共 %s 条；旧版连接仅能显示前 %s 条。请升级客户端/服务端以查看全部，存档保留完整。

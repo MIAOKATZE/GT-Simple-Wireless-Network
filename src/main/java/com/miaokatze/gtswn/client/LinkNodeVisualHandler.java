@@ -755,12 +755,17 @@ public final class LinkNodeVisualHandler {
             int size = this.size;
             base = new DynamicTexture(size, size);
             glow = new DynamicTexture(size, size);
-            baseLocation = Minecraft.getMinecraft()
+            String path = LinkNodeVisuals.texturePath(material, energy, voltageRgb, voltagePercent);
+            baseLocation = new ResourceLocation("gtswn", path + "/base");
+            glowLocation = new ResourceLocation("gtswn", path + "/glow");
+            // TextureManager.deleteTexture only deletes GL storage in 1.7.10. Reuse finite keys
+            // so its object map replaces the previous world's pixels instead of retaining every generation.
+            Minecraft.getMinecraft()
                 .getTextureManager()
-                .getDynamicTextureLocation("link_node_base", base);
-            glowLocation = Minecraft.getMinecraft()
+                .loadTexture(baseLocation, base);
+            Minecraft.getMinecraft()
                 .getTextureManager()
-                .getDynamicTextureLocation("link_node_glow", glow);
+                .loadTexture(glowLocation, glow);
         }
 
         private void update(double seconds) {
@@ -780,12 +785,8 @@ public final class LinkNodeVisualHandler {
         }
 
         private void delete() {
-            Minecraft.getMinecraft()
-                .getTextureManager()
-                .deleteTexture(baseLocation);
-            Minecraft.getMinecraft()
-                .getTextureManager()
-                .deleteTexture(glowLocation);
+            base.deleteGlTexture();
+            glow.deleteGlTexture();
         }
     }
 }

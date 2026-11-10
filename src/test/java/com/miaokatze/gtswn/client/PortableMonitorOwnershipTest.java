@@ -114,8 +114,10 @@ public class PortableMonitorOwnershipTest {
                     .toString());
             assertFalse(PortableMonitorClientCache.canMutate(terminal)); // Matching OwnerName grants nothing.
             terminal.stackTagCompound.setString(PortableWirelessNetworkMonitor.NBT_OWNER_UUID, offlineId.toString());
-            MonitorCapabilities.receive(42, MonitorCapabilities.ALL); // A late v1 reply cannot erase known identity.
+            MonitorCapabilities.receive(42, MonitorCapabilities.LEGACY_ALL); // Late fallback cannot erase
+                                                                             // identity/features.
             assertTrue(PortableMonitorClientCache.canMutate(terminal));
+            assertEquals(MonitorCapabilities.ALL, bits.getInt(null));
 
             sendQueue.set(player, allocate(NetHandlerPlayClient.class));
             assertFalse(PortableMonitorClientCache.canMutate(terminal)); // A new connection never borrows the old
@@ -161,6 +163,40 @@ public class PortableMonitorOwnershipTest {
         } finally {
             pending.clear();
             pending.putAll(previous);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void sameNonceProbePermutationsKeepStrongestIdentityAndCapacityButNewNonceResets() throws Exception {
+        Field field = MonitorCapabilities.class.getDeclaredField("PENDING");
+        field.setAccessible(true);
+        Map<EntityPlayerMP, PacketMonitorCapabilities> pending = (Map<EntityPlayerMP, PacketMonitorCapabilities>) field
+            .get(null);
+        Map<EntityPlayerMP, PacketMonitorCapabilities> saved = new HashMap<>(pending);
+        try {
+            for (int[] order : new int[][] { { 1, 2, 3 }, { 3, 2, 1 }, { 2, 1, 3 }, { 2, 3, 1 }, { 1, 3, 2 },
+                { 3, 1, 2 } }) {
+                pending.clear();
+                ServerPlayer player = (ServerPlayer) allocate(ServerPlayer.class);
+                player.id = UUID.randomUUID();
+                boolean identity = false, paged = false;
+                for (int probe : order) {
+                    MonitorCapabilities.enqueue(player, 42, probe >= 2, probe == 3);
+                    identity |= probe >= 2;
+                    paged |= probe == 3;
+                    assertEquals(identity ? player.id : null, pending.get(player).playerId);
+                    assertEquals(
+                        paged ? MonitorCapabilities.ALL : MonitorCapabilities.LEGACY_ALL,
+                        pending.get(player).bits);
+                }
+                MonitorCapabilities.enqueue(player, 43);
+                assertNull(pending.get(player).playerId);
+                assertEquals(MonitorCapabilities.LEGACY_ALL, pending.get(player).bits);
+            }
+        } finally {
+            pending.clear();
+            pending.putAll(saved);
         }
     }
 }

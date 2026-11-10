@@ -1010,6 +1010,13 @@ public class GuiDeviceInfoTerminal extends GtswnMuiScreen {
             "gtswn.device.gui.visible_count",
             sortedEntries.size(),
             displayedSnapshot == null ? 0 : displayedSnapshot.entries.size());
+        if (DeviceTerminalClientCache.hasMorePending(anchor)) count += " " + StatCollector.translateToLocalFormatted(
+            "gtswn.device.gui.loading_pages",
+            DeviceTerminalClientCache.receivedPages(anchor),
+            DeviceTerminalClientCache.totalPages(anchor));
+        else if (!com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
+            .clientSupports(com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.DIT_PAGED))
+            count += " " + tr("gtswn.device.gui.legacy_limit");
         fontRendererObj.drawString(
             GuiDeviceEntryList.ellipsis(fontRendererObj, count, xSize - 202),
             12,

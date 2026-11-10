@@ -81,10 +81,11 @@ public class PacketRequestWirelessEU implements IMessage {
                 return null;
             }
 
+            boolean paged = com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PAGED_PROBE.equals(uuidStr);
             boolean identity = com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.IDENTITY_PROBE.equals(uuidStr);
-            if (identity || com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PROBE.equals(uuidStr)) {
+            if (paged || identity || com.miaokatze.gtswn.network.telemetry.MonitorCapabilities.PROBE.equals(uuidStr)) {
                 com.miaokatze.gtswn.network.telemetry.MonitorCapabilities
-                    .enqueue(ctx.getServerHandler().playerEntity, message.requestToken, identity);
+                    .enqueue(ctx.getServerHandler().playerEntity, message.requestToken, identity || paged, paged);
                 return null;
             }
 

@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 import net.minecraft.server.MinecraftServer;
@@ -37,13 +38,19 @@ import cpw.mods.fml.common.FMLCommonHandler;
 class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
     private final Supplier<World> overworld;
+    private final BooleanSupplier logicalClient;
 
     GtswnMonitorApiImpl() {
         this(GtswnMonitorApiImpl::serverOverworld);
     }
 
     GtswnMonitorApiImpl(Supplier<World> overworld) {
+        this(overworld, GtswnMonitorApiImpl::isLogicalClient);
+    }
+
+    GtswnMonitorApiImpl(Supplier<World> overworld, BooleanSupplier logicalClient) {
         this.overworld = overworld;
+        this.logicalClient = logicalClient;
     }
 
     /** 窗口编号合法上限（0-7 共 8 级窗口，常量单源在 WindowChain） */
@@ -113,6 +120,7 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
     @Override
     public Optional<AEMonitorSnapshot> getAEMonitorSnapshot(World panelWorld, String panelKey) {
+        if (logicalClient.getAsBoolean() || panelWorld == null || panelWorld.isRemote) return Optional.empty();
         AEMonitorDataSet dataSet = aeDataSet(panelWorld, panelKey);
         if (dataSet == null) return Optional.empty();
 
@@ -136,6 +144,7 @@ class GtswnMonitorApiImpl implements IGtswnMonitorApi, IGtswnMonitorControlApi {
 
     @Override
     public Optional<HistoryWindow> getAEMonitorHistory(World panelWorld, String panelKey, String subKey, int windowId) {
+        if (logicalClient.getAsBoolean() || panelWorld == null || panelWorld.isRemote) return Optional.empty();
         if (subKey == null || subKey.isEmpty() || !isValidWindow(windowId)) return Optional.empty();
         AEMonitorDataSet dataSet = aeDataSet(panelWorld, panelKey);
         if (panelWorld != null && KeyFormat.parse(panelKey) != null && AEMonitorIdentity.isLegacy(subKey)) {

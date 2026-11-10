@@ -22,6 +22,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes;
 import com.miaokatze.gtswn.common.testworld.TestWorldProbes.Type;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
+import com.miaokatze.gtswn.common.util.PackedBlockPosition;
 import com.miaokatze.gtswn.common.util.SavedDataUtil;
 
 import appeng.api.networking.IGridHost;
@@ -120,22 +121,22 @@ public class QuantumControllerRegistry extends WorldSavedData {
 
     /** 打包方块坐标为 long */
     public static long pack(int x, int y, int z) {
-        return ((long) (x & 0x3FFFFFF) << 38) | ((long) (y & 0xFFF) << 26) | ((long) (z & 0x3FFFFFF));
+        return PackedBlockPosition.pack(x, y, z);
     }
 
     /** 解包 X（算术右移自动补符号） */
     public static int unpackX(long packed) {
-        return (int) (packed >> 38);
+        return PackedBlockPosition.unpackX(packed);
     }
 
     /** 解包 Y（先左移 26 位把符号位顶到最高位，再算术右移 52 位） */
     public static int unpackY(long packed) {
-        return (int) ((packed << 26) >> 52);
+        return PackedBlockPosition.unpackY(packed);
     }
 
     /** 解包 Z（先左移 38 位把符号位顶到最高位，再算术右移 38 位） */
     public static int unpackZ(long packed) {
-        return (int) ((packed << 38) >> 38);
+        return PackedBlockPosition.unpackZ(packed);
     }
 
     // ==================== 入册 / 出册 / 查询 ====================

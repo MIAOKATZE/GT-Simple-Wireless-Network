@@ -14,7 +14,9 @@ public final class PacketSyncDeviceTerminalDelta implements IMessage {
 
     public static final int FULL = 0, DELTA = 1, KEEPALIVE = 2, REVOKED = 3;
     public static final int MAX_PAGE_BYTES = 256 * 1024;
-    public static final int HEADER_BYTES = 66;
+    public static final int HEADER_BYTES = 66, PAGED_HEADER_BYTES = 70;
+    public static final int MAX_PAGED_ENTRIES = 65536, MAX_PAGED_PAGES = 512;
+    private int wireVersion = 1;
     private UUID terminalId, session;
     private long epoch, baseVersion, version;
     private int kind, pageIndex, pageTotal, entryTotal;
@@ -24,6 +26,12 @@ public final class PacketSyncDeviceTerminalDelta implements IMessage {
 
     public PacketSyncDeviceTerminalDelta(UUID terminalId, UUID session, long epoch, long baseVersion, long version,
         int kind, int pageIndex, int pageTotal, int entryTotal, byte[] payload) {
+        this(terminalId, session, epoch, baseVersion, version, kind, pageIndex, pageTotal, entryTotal, payload, 1);
+    }
+
+    public PacketSyncDeviceTerminalDelta(UUID terminalId, UUID session, long epoch, long baseVersion, long version,
+        int kind, int pageIndex, int pageTotal, int entryTotal, byte[] payload, int wireVersion) {
+        this.wireVersion = wireVersion;
         this.terminalId = terminalId;
         this.session = session;
         this.epoch = epoch;
@@ -38,16 +46,17 @@ public final class PacketSyncDeviceTerminalDelta implements IMessage {
     }
 
     private boolean valid() {
-        return terminalId != null && session != null
+        return (wireVersion == 1 || wireVersion == 2) && terminalId != null
+            && session != null
             && epoch > 0
             && baseVersion >= -1
             && version >= 0
             && kind >= FULL
             && kind <= REVOKED
             && pageTotal >= 1
-            && pageTotal <= 8
+            && pageTotal <= (wireVersion == 2 ? MAX_PAGED_PAGES : 8)
             && entryTotal >= 0
-            && entryTotal <= 1024
+            && entryTotal <= (wireVersion == 2 ? MAX_PAGED_ENTRIES : 1024)
             && pageIndex >= 0
             && pageIndex < pageTotal
             && pageTotal == Math.max(1, (entryTotal + 127) / 128)
@@ -61,7 +70,7 @@ public final class PacketSyncDeviceTerminalDelta implements IMessage {
 
     @Override
     public void toBytes(ByteBuf out) {
-        out.writeByte(1);
+        out.writeByte(wireVersion);
         out.writeByte(kind);
         out.writeLong(terminalId.getMostSignificantBits());
         out.writeLong(terminalId.getLeastSignificantBits());
@@ -70,9 +79,15 @@ public final class PacketSyncDeviceTerminalDelta implements IMessage {
         out.writeLong(epoch);
         out.writeLong(baseVersion);
         out.writeLong(version);
-        out.writeByte(pageIndex);
-        out.writeByte(pageTotal);
-        out.writeShort(entryTotal);
+        if (wireVersion == 2) {
+            out.writeShort(pageIndex);
+            out.writeShort(pageTotal);
+            out.writeInt(entryTotal);
+        } else {
+            out.writeByte(pageIndex);
+            out.writeByte(pageTotal);
+            out.writeShort(entryTotal);
+        }
         out.writeInt(payload.length);
         out.writeBytes(payload);
     }
@@ -82,16 +97,19 @@ public final class PacketSyncDeviceTerminalDelta implements IMessage {
         terminalId = null;
         payload = new byte[0];
         try {
-            if (in.readableBytes() < HEADER_BYTES || in.readUnsignedByte() != 1) return;
+            if (in.readableBytes() < HEADER_BYTES) return;
+            wireVersion = in.readUnsignedByte();
+            if (wireVersion != 1 && wireVersion != 2 || wireVersion == 2 && in.readableBytes() < PAGED_HEADER_BYTES - 1)
+                return;
             kind = in.readUnsignedByte();
             UUID terminal = new UUID(in.readLong(), in.readLong());
             session = new UUID(in.readLong(), in.readLong());
             epoch = in.readLong();
             baseVersion = in.readLong();
             version = in.readLong();
-            pageIndex = in.readUnsignedByte();
-            pageTotal = in.readUnsignedByte();
-            entryTotal = in.readUnsignedShort();
+            pageIndex = wireVersion == 2 ? in.readUnsignedShort() : in.readUnsignedByte();
+            pageTotal = wireVersion == 2 ? in.readUnsignedShort() : in.readUnsignedByte();
+            entryTotal = wireVersion == 2 ? in.readInt() : in.readUnsignedShort();
             int length = in.readInt();
             if (length < 0 || length > MAX_PAGE_BYTES || length != in.readableBytes()) return;
             payload = new byte[length];
@@ -105,7 +123,11 @@ public final class PacketSyncDeviceTerminalDelta implements IMessage {
     }
 
     public int encodedBytes() {
-        return HEADER_BYTES + payload.length;
+        return (wireVersion == 2 ? PAGED_HEADER_BYTES : HEADER_BYTES) + payload.length;
+    }
+
+    public int getWireVersion() {
+        return wireVersion;
     }
 
     public UUID getTerminalId() {

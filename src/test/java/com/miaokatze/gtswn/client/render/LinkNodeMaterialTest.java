@@ -15,6 +15,19 @@ import org.junit.Test;
 public class LinkNodeMaterialTest {
 
     @Test
+    public void textureIdentityReusesEquivalentMaterialsAndQuantizedColorSettings() {
+        assertEquals(
+            LinkNodeVisuals.texturePath("medium", true, 0xABCDEF, 51),
+            LinkNodeVisuals.texturePath("high", true, 0xABCDEF, 75));
+        assertTrue(
+            !LinkNodeVisuals.texturePath("old", true, -1, 75)
+                .equals(LinkNodeVisuals.texturePath("oldplus", true, -1, 75)));
+        assertTrue(
+            !LinkNodeVisuals.texturePath("high", true, 0xABCDEF, 75)
+                .equals(LinkNodeVisuals.texturePath("high", false, 0xABCDEF, 75)));
+    }
+
+    @Test
     public void materialCachesAndResolutionsKeepLegacyAndHoneycombDistinct() {
         assertEquals(16, LinkNodeVisuals.resolution("old"));
         assertEquals(16, LinkNodeVisuals.resolution("oldplus"));
