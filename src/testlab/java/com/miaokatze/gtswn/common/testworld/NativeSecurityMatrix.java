@@ -518,7 +518,7 @@ final class NativeSecurityMatrix {
         private final double energy;
 
         Snapshot(NBTTagCompound state, double energy) {
-            this.state = state;
+            this.state = (NBTTagCompound) state.copy();
             this.energy = energy;
         }
 

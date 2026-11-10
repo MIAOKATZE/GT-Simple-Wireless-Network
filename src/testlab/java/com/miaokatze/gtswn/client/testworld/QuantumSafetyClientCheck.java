@@ -275,11 +275,29 @@ public final class QuantumSafetyClientCheck {
                     return;
                 boolean slot = original.hasKey("Stack", 10) ? current != null && original.getCompoundTag("Stack")
                     .equals(current.writeToNBT(new NBTTagCompound())) : current == null;
+                double feetY = mc.thePlayer.boundingBox.minY;
+                boolean selected = mc.thePlayer.inventory.currentItem == original.getInteger("Selected");
                 boolean position = mc.thePlayer.dimension == original.getInteger("Dimension")
                     && Math.abs(mc.thePlayer.posX - original.getDouble("X")) < .05
-                    && Math.abs(mc.thePlayer.posY - original.getDouble("Y")) < .05
+                    && Math.abs(feetY - original.getDouble("Y")) < .05
                     && Math.abs(mc.thePlayer.posZ - original.getDouble("Z")) < .05;
-                if (!slot || !position || mc.thePlayer.inventory.currentItem != original.getInteger("Selected")) return;
+                Map<String, Object> restoration = new LinkedHashMap<>();
+                restoration.put("expectedFeetY", original.getDouble("Y"));
+                restoration.put("actualFeetY", feetY);
+                restoration.put("actualEyeY", mc.thePlayer.posY);
+                restoration.put("actualYOffset", mc.thePlayer.yOffset);
+                restoration.put("expectedDimension", original.getInteger("Dimension"));
+                restoration.put("actualDimension", mc.thePlayer.dimension);
+                restoration.put("expectedX", original.getDouble("X"));
+                restoration.put("actualX", mc.thePlayer.posX);
+                restoration.put("expectedZ", original.getDouble("Z"));
+                restoration.put("actualZ", mc.thePlayer.posZ);
+                restoration.put("exactSlotNbtMatches", slot);
+                restoration.put("expectedSelected", original.getInteger("Selected"));
+                restoration.put("actualSelected", mc.thePlayer.inventory.currentItem);
+                restoration.put("positionMatches", position);
+                result.put("restorationObservation", restoration);
+                if (!slot || !position || !selected) return;
                 result.put("slotRestoredFromServer", true);
                 result.put("positionRestoredFromServer", true);
                 require(

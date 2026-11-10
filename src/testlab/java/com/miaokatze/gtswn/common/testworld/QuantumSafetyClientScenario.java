@@ -477,16 +477,19 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     && !QuantumTerminalAccess.canManage(actor, terminal),
                 "Native revocation denies both BUILD and SECURITY while safety remains ON");
             requireLiveContext();
-            terminalAtRevoke = businessTerminalNbt();
+            terminalAtRevoke = businessTerminalNbt(terminal);
             controllersAtRevoke = new NBTTagCompound();
             QuantumControllerRegistry.get(ctx.world())
                 .writeToNBT(controllersAtRevoke);
+            controllersAtRevoke = (NBTTagCompound) controllersAtRevoke.copy();
             securityAtRevoke = new NBTTagCompound();
             QuantumNetworkSecurityRegistry.get(ctx.world())
                 .writeToNBT(securityAtRevoke);
+            securityAtRevoke = (NBTTagCompound) securityAtRevoke.copy();
             providersAtRevoke = new NBTTagCompound();
             QuantumNetworkSecurityRegistry.providerRegistry(ctx.world())
                 .writeToNBT(providersAtRevoke);
+            providersAtRevoke = (NBTTagCompound) providersAtRevoke.copy();
             stage = 7;
             writeFixtureReceipt("revoked");
             ctx.event(
@@ -580,7 +583,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             policy() && !security().hasPermission(actor, SecurityPermissions.SECURITY),
             "Rejected stale intent preserves policy ON and actor revocation");
         require(
-            terminalAtRevoke.equals(businessTerminalNbt()) && controllersAtRevoke.equals(controllersNow)
+            terminalAtRevoke.equals(businessTerminalNbt(terminal)) && controllersAtRevoke.equals(controllersNow)
                 && securityAtRevoke.equals(securityNow)
                 && providersAtRevoke.equals(providersNow),
             "Terminal and persistent controller/security/provider resource snapshots unchanged after rejection");
@@ -593,8 +596,9 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             "Native station key and grid resource identity unchanged");
     }
 
-    private NBTTagCompound businessTerminalNbt() {
-        NBTTagCompound snapshot = terminal.writeToNBT(new NBTTagCompound());
+    static NBTTagCompound businessTerminalNbt(ItemStack terminal) {
+        NBTTagCompound snapshot = (NBTTagCompound) terminal.writeToNBT(new NBTTagCompound())
+            .copy();
         snapshot.getCompoundTag("tag")
             .removeTag(PHASE); // Test-only handshake state is not a business resource.
         return snapshot;
