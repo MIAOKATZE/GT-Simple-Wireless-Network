@@ -13,7 +13,7 @@ import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
 /** One-use OP2 receipt over the existing server command/chat connection, before any client test action. */
-final class ClientTestPermission {
+public final class ClientTestPermission {
 
     private static final ClientTestPermission INSTANCE = new ClientTestPermission();
     private static boolean registered;
