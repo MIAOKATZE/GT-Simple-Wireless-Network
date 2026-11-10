@@ -119,7 +119,8 @@ public final class TestLabBootstrap implements DebugTestGate.Harness, LabModule 
     public List<LabCase> cases() {
         List<LabCase> result = new ArrayList<>();
         for (TestScenario scenario : TestWorldManager.scenarios()) {
-            boolean client = "device.paged_client".equals(scenario.id());
+            boolean client = "device.paged_client".equals(scenario.id())
+                || "quantum.safety_client".equals(scenario.id());
             result.add(
                 new LabCase(
                     scenario.id(),

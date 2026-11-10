@@ -91,8 +91,9 @@ public final class TestWorldReport {
 
         Result(String id) {
             this.id = id;
-            this.lane = "device.paged_client".equals(id) ? "client-server" : "server";
-            this.requiredTransport = "device.paged_client".equals(id) ? "actual client GUI and decoded Netty packets"
+            boolean clientServer = "device.paged_client".equals(id) || "quantum.safety_client".equals(id);
+            this.lane = clientServer ? "client-server" : "server";
+            this.requiredTransport = clientServer ? "actual client GUI and decoded Netty packets"
                 : "direct server callbacks; no client/Netty assertion";
         }
     }

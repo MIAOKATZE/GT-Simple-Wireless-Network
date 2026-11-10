@@ -1,6 +1,8 @@
 package com.miaokatze.gtswn.common.testworld;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
@@ -30,8 +32,15 @@ public class TestLabCatalogTest {
             scenarios.clear();
             ScenarioRegistry.register();
             List<LabCase> cases = new TestLabBootstrap().cases();
-            assertEquals(30, scenarios.size());
-            assertEquals(42, cases.size());
+            assertEquals(31, scenarios.size());
+            assertEquals(43, cases.size());
+            LabCase safetyClient = cases.stream()
+                .filter(entry -> "quantum.safety_client".equals(entry.id()))
+                .findFirst()
+                .get();
+            assertEquals("client-server", safetyClient.lane());
+            assertTrue(safetyClient.requiresRealActor());
+            assertFalse(safetyClient.defaultSuite());
             assertEquals(
                 19,
                 cases.stream()

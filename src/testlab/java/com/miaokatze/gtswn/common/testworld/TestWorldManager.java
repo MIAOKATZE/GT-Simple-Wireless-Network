@@ -458,7 +458,7 @@ public final class TestWorldManager {
         }
         TestWorldReport.Result result = report.results.get(scenarioIndex);
         result.status = "RUNNING";
-        if (!"device.paged_client".equals(result.id)) {
+        if (!"device.paged_client".equals(result.id) && !"quantum.safety_client".equals(result.id)) {
             result.actor = "synthetic server fixtures";
             result.transport = "direct native server callbacks; no client/Netty claim";
         }

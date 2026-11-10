@@ -16,6 +16,7 @@ public final class ScenarioRegistry {
         TestWorldManager.register(new DeviceWorldScenario());
         TestWorldManager.register(new DevicePagedDeliveryScenario());
         TestWorldManager.register(new DevicePagedClientScenario());
+        TestWorldManager.register(new QuantumSafetyClientScenario());
         TestWorldManager.register(new PortableMonitorScenario());
         TestWorldManager.register(new MonitorChargingScenario());
         TestWorldManager.register(new WirelessTapScenario());

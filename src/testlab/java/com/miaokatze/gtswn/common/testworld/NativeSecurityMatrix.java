@@ -1,5 +1,9 @@
 package com.miaokatze.gtswn.common.testworld;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.List;
+
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
@@ -21,6 +25,7 @@ import com.miaokatze.gtswn.register.BlockRegistrar;
 import appeng.api.AEApi;
 import appeng.api.config.Actionable;
 import appeng.api.config.SecurityPermissions;
+import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.energy.IEnergyGrid;
@@ -46,6 +51,8 @@ final class NativeSecurityMatrix {
     private TileEntity foreignController, foreignStation;
     private boolean nodePlaced, foreignControllerPlaced, foreignStationPlaced;
     private NBTTagCompound linkedBinding;
+    private final List<IGridConnection> offEdges = new ArrayList<>();
+    private String lastModeEnforcementObservation;
     private int phase;
     private long phaseTick;
 
@@ -72,7 +79,10 @@ final class NativeSecurityMatrix {
     }
 
     void tick(TestContext ctx) {
-        require(ctx, Config.quantumSafetyEnabled, "Global master remains ON; disabling it is not security PASS");
+        if (!Config.quantumSafetyEnabled) {
+            require(ctx, false, "Global master disabled during native matrix; this cannot be security PASS");
+            return;
+        }
         power(foreignController);
         if (ctx.tick() - phaseTick > 300) {
             ctx.fail("Native security matrix timed out at phase=" + phase);
@@ -247,6 +257,7 @@ final class NativeSecurityMatrix {
                 if (!node.isLinked() || node.getNativeOwnerID() != actorId(outsider)) return;
                 require(ctx, !safety(ctx), "Unprivileged bridge is admitted only while local OFF");
                 linkedBinding = binding(node);
+                captureOffEdges(ctx);
                 deny(
                     ctx,
                     "outsider enabling safety",
@@ -258,14 +269,33 @@ final class NativeSecurityMatrix {
                     ctx,
                     QuantumTerminalAccess.setNetworkSafety(owner, terminal, true),
                     "Native owner restores local ON");
+                observeModeEnforcement(ctx);
+                require(ctx, !oldOffEdgeStillAttached(), "ON removes old OFF edges from both native endpoint lists");
+                long responseBucket = ctx.world()
+                    .getTotalWorldTime() / 100L;
+                QuantumNetworkData onOwner = QuantumNetworkData.assemble(owner, terminal);
+                require(
+                    ctx,
+                    onOwner != null && onOwner.online && !onOwner.managementOnly,
+                    "Owner assembles full data after ON invalidated the previous cache");
                 require(
                     ctx,
                     QuantumNetworkData.assemble(outsider, outsider.getHeldItem()) == null,
-                    "Local ON rejects outsider despite the warm OFF response cache");
+                    "Local ON rejects outsider after the owner full response in the same callback");
+                require(
+                    ctx,
+                    ctx.world()
+                        .getTotalWorldTime() / 100L == responseBucket,
+                    "Owner and refused outsider observations share the same natural response bucket");
+                ctx.event("native_data_bucket", "bucket=" + responseBucket + "; ownerFull=true; outsiderDenied=true");
                 next(ctx, 7);
                 return;
             case 7:
-                if (node.isLinked()) return;
+                observeModeEnforcement(ctx);
+                require(ctx, !oldOffEdgeStillAttached(), "Old OFF edges cannot survive or reattach while ON");
+                require(ctx, !node.isLinked(), "Unauthorized actor cannot retain or recreate a bridge while ON");
+                // Edge teardown is synchronous; the reason follows the node's natural maintenance window.
+                if (node.getOfflineReason() != TileEntityNetworkQuantumNode.OfflineReason.NO_PERMISSION) return;
                 require(
                     ctx,
                     node.getOfflineReason() == TileEntityNetworkQuantumNode.OfflineReason.NO_PERMISSION,
@@ -287,6 +317,62 @@ final class NativeSecurityMatrix {
                 return;
             default:
                 throw new IllegalStateException("Unknown native security matrix phase");
+        }
+    }
+
+    private void captureOffEdges(TestContext ctx) {
+        offEdges.clear();
+        try {
+            for (String name : new String[] { "connection", "anchorConnection" }) {
+                Field field = TileEntityNetworkQuantumNode.class.getDeclaredField(name);
+                field.setAccessible(true);
+                IGridConnection edge = (IGridConnection) field.get(node);
+                if (edge != null && !offEdges.contains(edge)) offEdges.add(edge);
+            }
+        } catch (ReflectiveOperationException failure) {
+            throw new IllegalStateException("Cannot inspect the owned fixture's native OFF edges", failure);
+        }
+        require(ctx, !offEdges.isEmpty() && oldOffEdgeStillAttached(), "Capture real live OFF edges before ON");
+    }
+
+    private boolean oldOffEdgeStillAttached() {
+        for (IGridConnection edge : offEdges) {
+            if (edge.a()
+                .getConnections()
+                .contains(edge)
+                || edge.b()
+                    .getConnections()
+                    .contains(edge))
+                return true;
+        }
+        return false;
+    }
+
+    private void observeModeEnforcement(TestContext ctx) {
+        StringBuilder facts = new StringBuilder("linked=").append(node.isLinked())
+            .append(";reason=")
+            .append(node.getOfflineReason());
+        for (int index = 0; index < offEdges.size(); index++) {
+            IGridConnection edge = offEdges.get(index);
+            facts.append(";edge")
+                .append(index)
+                .append(".a=")
+                .append(
+                    edge.a()
+                        .getConnections()
+                        .contains(edge))
+                .append(";edge")
+                .append(index)
+                .append(".b=")
+                .append(
+                    edge.b()
+                        .getConnections()
+                        .contains(edge));
+        }
+        String observation = facts.toString();
+        if (!observation.equals(lastModeEnforcementObservation)) {
+            ctx.event("native_mode_enforcement", observation);
+            lastModeEnforcementObservation = observation;
         }
     }
 
@@ -375,7 +461,7 @@ final class NativeSecurityMatrix {
                 && data.essentiaBytesTotal == 0
                 && data.networkSafetyRequestToken == 0
                 && !data.canChangeNetworkSafety,
-            "Management-only assembly leaks no cached metrics, entries or shared actor token");
+            "Management-only assembly publishes no metrics, entries or shared actor token");
     }
 
     private void deny(TestContext ctx, String label, Runnable action) {

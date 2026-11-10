@@ -3,9 +3,6 @@ package com.miaokatze.gtswn.common.testworld;
 import java.util.HashSet;
 import java.util.Set;
 
-import net.minecraft.entity.player.InventoryPlayer;
-import net.minecraft.inventory.Container;
-import net.minecraft.inventory.Slot;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraft.tileentity.TileEntity;
@@ -22,7 +19,6 @@ import com.miaokatze.gtswn.config.Config;
 import appeng.api.AEApi;
 import appeng.api.config.Actionable;
 import appeng.api.config.SecurityPermissions;
-import appeng.api.implementations.items.IBiometricCard;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.pathing.ControllerState;
@@ -32,8 +28,6 @@ import appeng.api.networking.security.ISecurityProvider;
 import appeng.api.networking.security.PlayerSource;
 import appeng.api.storage.ITerminalHost;
 import appeng.api.storage.data.IAEItemStack;
-import appeng.container.slot.SlotOutput;
-import appeng.container.slot.SlotRestrictedInput;
 import appeng.me.GridAccessException;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.me.helpers.IGridProxyable;
@@ -399,17 +393,7 @@ final class NativeSecurityScenario implements TestScenario {
     }
 
     ItemStack card(FakePlayer actor, SecurityPermissions permission) {
-        ItemStack result = AEApi.instance()
-            .definitions()
-            .items()
-            .biometricCard()
-            .maybeStack(1)
-            .get();
-        IBiometricCard item = (IBiometricCard) result.getItem();
-        item.setProfile(result, actor.getGameProfile());
-        for (SecurityPermissions existing : SecurityPermissions.values()) item.removePermission(result, existing);
-        item.addPermission(result, permission);
-        return result;
+        return NativeSecurityStationSupport.card(actor, permission);
     }
 
     IAEItemStack insertCard(ItemStack card) {
@@ -432,61 +416,15 @@ final class NativeSecurityScenario implements TestScenario {
                 new PlayerSource(owner, (IActionHost) station));
     }
 
-    /** Exercise AE's public input/output slots, which invoke INetworkEncodable and GTSWN enrollment naturally. */
     private ItemStack encode(TestContext ctx, ItemStack input) {
         return encodeAt(ctx, input, station, owner);
     }
 
     ItemStack encodeAt(TestContext ctx, ItemStack input, TileEntity encoderStation, FakePlayer encoderOwner) {
-        long key = ((ISecurityProvider) encoderStation).getSecurityKey();
-        QuantumNetworkSecurityRegistry providers = QuantumNetworkSecurityRegistry.providerRegistry(ctx.world());
-        if (!providers.isProviderEnrolled(key)) introducedProviderKeys.add(key);
-        Container container = nativeSecurityContainer(encoderStation, encoderOwner);
-        Slot encoder = null, output = null;
-        try {
-            for (Object entry : container.inventorySlots) {
-                Slot slot = (Slot) entry;
-                if (slot instanceof SlotRestrictedInput && ((SlotRestrictedInput) slot).getItemType()
-                    == SlotRestrictedInput.PlacableItemType.ENCODABLE_ITEM) encoder = slot;
-                if (slot instanceof SlotOutput) output = slot;
-            }
-            require(
-                ctx,
-                encoder != null && output != null,
-                "Native security container exposes encoder input/output slots");
-            require(ctx, encoder.isItemValid(input), "Native encoder accepts GTSWN INetworkEncodable terminal");
-            encoder.putStack(input.copy());
-            ItemStack encoded = output.getStack();
-            require(
-                ctx,
-                encoded != null && !encoder.getHasStack(),
-                "Native container moves terminal from encoder input to output");
-            require(
-                ctx,
-                Long.toString(key)
-                    .equals(((ItemNetworkQuantumTerminal) encoded.getItem()).getEncryptionKey(encoded)),
-                "Native encoder writes actual station key");
-            ItemStack result = encoded.copy();
-            output.putStack(null);
-            encoderOwner.inventory.setInventorySlotContents(0, result);
-            ctx.event("pairing", "Native ContainerSecurity encoded fixture terminal");
-            return result;
-        } finally {
-            if (encoder != null) encoder.putStack(null);
-            if (output != null) output.putStack(null);
-            container.onContainerClosed(encoderOwner);
-        }
-    }
-
-    /** Resolve the real native container without javac loading AE's optional powered-tile interfaces. */
-    private Container nativeSecurityContainer(TileEntity encoderStation, FakePlayer encoderOwner) {
-        try {
-            return (Container) Class.forName("appeng.container.implementations.ContainerSecurity")
-                .getConstructor(InventoryPlayer.class, ITerminalHost.class)
-                .newInstance(encoderOwner.inventory, (ITerminalHost) encoderStation);
-        } catch (ReflectiveOperationException exception) {
-            throw new IllegalStateException("Required native AE security container is unavailable", exception);
-        }
+        ItemStack result = NativeSecurityStationSupport
+            .encodeAt(ctx, input, encoderStation, encoderOwner, introducedProviderKeys::add);
+        encoderOwner.inventory.setInventorySlotContents(0, result);
+        return result;
     }
 
     private boolean controllerActive() {
