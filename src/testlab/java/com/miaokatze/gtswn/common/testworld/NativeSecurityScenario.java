@@ -54,6 +54,7 @@ final class NativeSecurityScenario implements TestScenario {
     private FakePlayer owner, member, outsider;
     private TileEntity controller, station;
     private ItemStack terminal, memberCard;
+    private NativeSecurityMatrix matrix;
     private boolean controllerPlaced, stationPlaced;
     private int stage;
     private long stageTick, encodedKey;
@@ -70,13 +71,13 @@ final class NativeSecurityScenario implements TestScenario {
     @Override
     public String description() {
         return mode == Mode.PERMISSIONS
-            ? "Native AE station/card/encoder: owner, SECURITY-only member, outsider and card revocation"
+            ? "Native AE cards: non-OP roles, BUILD/SECURITY separation, live bridge revocation, NBT, foreign key and data isolation"
             : "Native AE security station NBT reload, removal, changed key and terminal re-pairing";
     }
 
     @Override
     public int timeoutTicks() {
-        return 1200;
+        return mode == Mode.PERMISSIONS ? 3600 : 1200;
     }
 
     @Override
@@ -88,6 +89,7 @@ final class NativeSecurityScenario implements TestScenario {
         station = null;
         terminal = null;
         memberCard = null;
+        matrix = null;
         controllerPlaced = false;
         stationPlaced = false;
         stage = 0;
@@ -102,6 +104,7 @@ final class NativeSecurityScenario implements TestScenario {
         owner = TestActors.player(ctx.world(), "owner");
         member = TestActors.player(ctx.world(), "member");
         outsider = TestActors.player(ctx.world(), "outsider");
+        NativeSecurityMatrix.assertOrdinaryActors(ctx, "initial", owner, member, outsider);
         owner.setPosition(X + .5, Y, Z + 2.5);
         member.setPosition(X + .5, Y, Z + 2.5);
         outsider.setPosition(X + .5, Y, Z + 2.5);
@@ -162,6 +165,10 @@ final class NativeSecurityScenario implements TestScenario {
     @Override
     public void tick(TestContext ctx) {
         power();
+        if (matrix != null) {
+            matrix.tick(ctx);
+            return;
+        }
         if (ctx.tick() - stageTick > 300) {
             ctx.fail("Native AE transition timed out at stage=" + stage + ", stationReady=" + ready());
             return;
@@ -303,7 +310,8 @@ final class NativeSecurityScenario implements TestScenario {
                 ctx,
                 QuantumTerminalAccess.setNetworkSafety(owner, terminal, true),
                 "Native owner can re-enable safety");
-            ctx.pass("Real native card/encoder permissions, local OFF/ON and revocation passed");
+            matrix = new NativeSecurityMatrix(this, owner, member, outsider, controller, station, terminal);
+            matrix.start(ctx);
         } else if (stage == 3) {
             if (!ready()) return;
             assertProtected(ctx);
@@ -387,9 +395,10 @@ final class NativeSecurityScenario implements TestScenario {
             ctx,
             QuantumTerminalAccess.canChangeNetworkSafety(owner, unpaired),
             "Owner retains native safety-switch recovery authority");
+        NativeSecurityMatrix.assertManagementOnly(ctx, owner, unpaired);
     }
 
-    private ItemStack card(FakePlayer actor, SecurityPermissions permission) {
+    ItemStack card(FakePlayer actor, SecurityPermissions permission) {
         ItemStack result = AEApi.instance()
             .definitions()
             .items()
@@ -403,7 +412,7 @@ final class NativeSecurityScenario implements TestScenario {
         return result;
     }
 
-    private IAEItemStack insertCard(ItemStack card) {
+    IAEItemStack insertCard(ItemStack card) {
         return ((ITerminalHost) station).getItemInventory()
             .injectItems(
                 AEApi.instance()
@@ -413,12 +422,26 @@ final class NativeSecurityScenario implements TestScenario {
                 new PlayerSource(owner, (IActionHost) station));
     }
 
+    IAEItemStack extractCard(ItemStack card) {
+        return ((ITerminalHost) station).getItemInventory()
+            .extractItems(
+                AEApi.instance()
+                    .storage()
+                    .createItemStack(card.copy()),
+                Actionable.MODULATE,
+                new PlayerSource(owner, (IActionHost) station));
+    }
+
     /** Exercise AE's public input/output slots, which invoke INetworkEncodable and GTSWN enrollment naturally. */
     private ItemStack encode(TestContext ctx, ItemStack input) {
-        long key = ((ISecurityProvider) station).getSecurityKey();
+        return encodeAt(ctx, input, station, owner);
+    }
+
+    ItemStack encodeAt(TestContext ctx, ItemStack input, TileEntity encoderStation, FakePlayer encoderOwner) {
+        long key = ((ISecurityProvider) encoderStation).getSecurityKey();
         QuantumNetworkSecurityRegistry providers = QuantumNetworkSecurityRegistry.providerRegistry(ctx.world());
         if (!providers.isProviderEnrolled(key)) introducedProviderKeys.add(key);
-        Container container = nativeSecurityContainer();
+        Container container = nativeSecurityContainer(encoderStation, encoderOwner);
         Slot encoder = null, output = null;
         try {
             for (Object entry : container.inventorySlots) {
@@ -445,22 +468,22 @@ final class NativeSecurityScenario implements TestScenario {
                 "Native encoder writes actual station key");
             ItemStack result = encoded.copy();
             output.putStack(null);
-            owner.inventory.setInventorySlotContents(0, result);
+            encoderOwner.inventory.setInventorySlotContents(0, result);
             ctx.event("pairing", "Native ContainerSecurity encoded fixture terminal");
             return result;
         } finally {
             if (encoder != null) encoder.putStack(null);
             if (output != null) output.putStack(null);
-            container.onContainerClosed(owner);
+            container.onContainerClosed(encoderOwner);
         }
     }
 
     /** Resolve the real native container without javac loading AE's optional powered-tile interfaces. */
-    private Container nativeSecurityContainer() {
+    private Container nativeSecurityContainer(TileEntity encoderStation, FakePlayer encoderOwner) {
         try {
             return (Container) Class.forName("appeng.container.implementations.ContainerSecurity")
                 .getConstructor(InventoryPlayer.class, ITerminalHost.class)
-                .newInstance(owner.inventory, (ITerminalHost) station);
+                .newInstance(encoderOwner.inventory, (ITerminalHost) encoderStation);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Required native AE security container is unavailable", exception);
         }
@@ -522,7 +545,11 @@ final class NativeSecurityScenario implements TestScenario {
         TestWorldFixtures.requireTestWorld(ctx.world());
         try {
             try {
-                if (stationPlaced) removeStation(ctx);
+                try {
+                    if (matrix != null) matrix.cleanup(ctx);
+                } finally {
+                    if (stationPlaced) removeStation(ctx);
+                }
             } finally {
                 if (controllerPlaced) {
                     QuantumControllerRegistry.get(ctx.world())
@@ -543,6 +570,7 @@ final class NativeSecurityScenario implements TestScenario {
             station = null;
             terminal = null;
             memberCard = null;
+            matrix = null;
             controllerPlaced = false;
             stationPlaced = false;
         }
