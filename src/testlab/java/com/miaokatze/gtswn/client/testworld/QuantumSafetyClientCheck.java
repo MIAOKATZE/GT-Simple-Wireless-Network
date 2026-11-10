@@ -67,6 +67,7 @@ public final class QuantumSafetyClientCheck {
     private boolean reportWritten, capturePending, captured;
     private boolean airInputHeld, originalSneakKey, originalMovementSneak, originalEntitySneak;
     private float originalYaw, originalPitch;
+    private boolean revocationReceipt, rejectionReceipt, staleIntentSent;
 
     /** Called on the real client thread by the host after the OP2 console issued this exact business run. */
     public static void start(String runId) {
@@ -100,6 +101,7 @@ public final class QuantumSafetyClientCheck {
         test.ticks = test.stable = test.received = test.waitAfter = test.sentRequests = test.sentIntents = test.captureWait = 0;
         test.reportWritten = test.capturePending = test.captured = false;
         test.airInputHeld = false;
+        test.revocationReceipt = test.rejectionReceipt = test.staleIntentSent = false;
         test.directory = new File(mc.mcDataDir, "gtswn-ui-reports/quantum-safety-" + runId);
         test.result.put("runId", runId);
         test.result.put("taskId", "quantum.safety_client");
@@ -166,6 +168,36 @@ public final class QuantumSafetyClientCheck {
         snapshot.put("reportWritten", INSTANCE.reportWritten);
         snapshot.put("reportDirectory", INSTANCE.directory == null ? null : INSTANCE.directory.getAbsolutePath());
         return snapshot;
+    }
+
+    /** Host-validated immutable native receipt; this only coordinates the fixture phase. */
+    public static void acceptFixtureReceipt(String businessUUID, String actorUUID, String fixturePhase) {
+        QuantumSafetyClientCheck test = INSTANCE;
+        UUID.fromString(businessUUID);
+        UUID.fromString(actorUUID);
+        require(
+            !"IDLE".equals(test.phase) && businessUUID.equals(test.run)
+                && test.mc.thePlayer != null
+                && actorUUID.equals(
+                    test.mc.thePlayer.getUniqueID()
+                        .toString())
+                && test.mc.getNetHandler() == test.connection,
+            "Fixture receipt must match the actual current run/actor/connection");
+        if ("revoked".equals(fixturePhase)) {
+            require(
+                test.revocationReceipt || "WAIT_REVOKE".equals(test.phase),
+                "Revocation receipt must follow the actual GUI sequence and polling stop");
+            test.revocationReceipt = true;
+        } else if ("rejected".equals(fixturePhase)) {
+            require(
+                test.revocationReceipt && test.staleIntentSent,
+                "Rejection receipt cannot precede the real stale intent");
+            test.rejectionReceipt = true;
+        } else throw new IllegalStateException("Unknown native fixture receipt phase: " + fixturePhase);
+        test.observe(
+            "fixture_receipt",
+            "Host delivered immutable native coordination receipt phase=" + fixturePhase
+                + "; independent real packet/ACL/context/resource assertions remain required");
     }
 
     @SubscribeEvent
@@ -331,12 +363,10 @@ public final class QuantumSafetyClientCheck {
             } else if ("STOP_POLLING".equals(phase)) {
                 if (++stable >= 10) phase = "WAIT_REVOKE";
             } else if ("WAIT_REVOKE".equals(phase)) {
-                if (!"revoked".equals(
-                    held.getTagCompound()
-                        .getString(QuantumSafetyClientScenario.PHASE)))
-                    return;
+                if (!revocationReceipt) return;
                 waitAfter = received;
                 GTSWNPacketHandler.NETWORK.sendToServer(new PacketSetQuantumNetworkSafety(0, retained, false));
+                staleIntentSent = true;
                 phase = "WAIT_REJECT";
                 observe(
                     "stale_intent",
@@ -362,14 +392,12 @@ public final class QuantumSafetyClientCheck {
                 observe(
                     "client_complete",
                     "Both actual Lite7 denial snapshots clear token/capability/identity and every metric encoded by Lite7; full data isolation is covered by the backend assemble matrix");
-            } else if ("WAIT_SERVER_REJECT".equals(phase) && "rejected".equals(
-                held.getTagCompound()
-                    .getString(QuantumSafetyClientScenario.PHASE))) {
-                        phase = "WAIT_RESTORE";
-                        observe(
-                            "server_rejected",
-                            "Server independently verified unchanged policy/resources after stale intent; host console may complete/restore");
-                    }
+            } else if ("WAIT_SERVER_REJECT".equals(phase) && rejectionReceipt) {
+                phase = "WAIT_RESTORE";
+                observe(
+                    "server_rejected",
+                    "Server independently verified unchanged policy/resources after stale intent; host console may complete/restore");
+            }
         } catch (Exception | LinkageError failure) {
             finish("FAIL", failure.toString());
         }
@@ -479,6 +507,16 @@ public final class QuantumSafetyClientCheck {
 
     private void finish(String status, String detail) {
         restoreAirInput();
+        result.put("revocationReceipt", revocationReceipt);
+        result.put("rejectionReceipt", rejectionReceipt);
+        result.put("staleIntentSent", staleIntentSent);
+        if (mc != null && mc.thePlayer != null) {
+            ItemStack item = mc.thePlayer.inventory.mainInventory[0];
+            result.put(
+                "terminalPhaseAtFinish",
+                item != null && item.hasTagCompound() ? item.getTagCompound()
+                    .getString(QuantumSafetyClientScenario.PHASE) : null);
+        }
         result.put("status", status);
         result.put("detail", detail);
         result.put("ticks", ticks);

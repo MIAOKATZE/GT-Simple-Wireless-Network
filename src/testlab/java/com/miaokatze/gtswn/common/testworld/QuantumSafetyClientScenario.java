@@ -1,9 +1,16 @@
 package com.miaokatze.gtswn.common.testworld;
 
+import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -23,6 +30,7 @@ import net.minecraftforge.common.DimensionManager;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.google.gson.GsonBuilder;
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.gui.ContainerTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
@@ -298,7 +306,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
 
     public void tick(TestContext ctx) throws Exception {
         ordinary();
-        require(
+        guard(
             QuantumTerminalRequestQueue.isOnline(actor) && actor.playerNetServerHandler == connection
                 && actor.worldObj == ctx.world(),
             "Actor connection/world remains fixed");
@@ -371,10 +379,10 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     + actor.getUniqueID()
                     + " slot=0 policy=OFF");
         }
-        require(
+        guard(
             actor.inventory.currentItem == 0 && actor.getHeldItem() == terminal,
             "Actual server slot and stack identity unchanged");
-        require(
+        guard(
             key.equals(
                 terminal.getTagCompound()
                     .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY))
@@ -469,8 +477,6 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     && !QuantumTerminalAccess.canManage(actor, terminal),
                 "Native revocation denies both BUILD and SECURITY while safety remains ON");
             requireLiveContext();
-            terminal.getTagCompound()
-                .setString(PHASE, "revoked");
             terminalAtRevoke = businessTerminalNbt();
             controllersAtRevoke = new NBTTagCompound();
             QuantumControllerRegistry.get(ctx.world())
@@ -482,7 +488,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             QuantumNetworkSecurityRegistry.providerRegistry(ctx.world())
                 .writeToNBT(providersAtRevoke);
             stage = 7;
-            sync();
+            writeFixtureReceipt("revoked");
             ctx.event(
                 "revoked",
                 "Actual native security cache denies actor; retained server context valid; awaiting real stale C2S29");
@@ -490,9 +496,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
         if (stage == 7 && staleObserved && ctx.tick() - staleArrived >= 20) {
             unchanged();
             stage = 8;
-            terminal.getTagCompound()
-                .setString(PHASE, "rejected");
-            sync();
+            writeFixtureReceipt("rejected");
             ctx.event(
                 "stale_rejected",
                 "Stale real C2S29 left policy ON and persistent controller/security resources unchanged");
@@ -597,7 +601,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     }
 
     private void ordinary() {
-        require(
+        guard(
             actor != null && !actor.canCommandSenderUseCommand(2, "gtswn")
                 && !actor.canCommandSenderUseCommand(4, "gtswn"),
             "Actual business actor remains OP2=false OP4=false");
@@ -609,6 +613,84 @@ public final class QuantumSafetyClientScenario implements TestScenario {
 
     private void require(boolean value, String detail) {
         TestWorldFixtures.require(context, value, detail);
+    }
+
+    private void guard(boolean value, String detail) {
+        if (!value) TestWorldFixtures.require(context, false, detail);
+    }
+
+    /** Coordination only. Native ACL, context, transport and unchanged resources are checked independently. */
+    private void writeFixtureReceipt(String phase) throws Exception {
+        Map<String, Object> receipt = new LinkedHashMap<>();
+        receipt.put("schema", 1);
+        receipt.put("runId", context.runId());
+        receipt.put(
+            "actorUuid",
+            actor.getUniqueID()
+                .toString());
+        receipt.put("phase", phase);
+        receipt.put("serverTick", context.tick());
+        receipt.put("stage", stage);
+        receipt.put("policy", policy());
+        receipt.put("nativeSecurity", security().hasPermission(actor, SecurityPermissions.SECURITY));
+        receipt.put("artifact", TestLabIdentity.ARTIFACT);
+        Path directory = new File(
+            MinecraftServer.getServer()
+                .worldServerForDimension(0)
+                .getSaveHandler()
+                .getWorldDirectory(),
+            "gtswn-test-reports").toPath();
+        Files.createDirectories(directory);
+        Path target = directory.resolve(context.runId() + ".fixture-" + phase + ".json");
+        if (Files.exists(target))
+            throw new IllegalStateException("Immutable fixture receipt already exists: " + target);
+        Path temporary = directory.resolve(context.runId() + ".fixture-" + phase + ".tmp-" + UUID.randomUUID());
+        Files.write(
+            temporary,
+            new GsonBuilder().setPrettyPrinting()
+                .create()
+                .toJson(receipt)
+                .getBytes(StandardCharsets.UTF_8),
+            StandardOpenOption.CREATE_NEW,
+            StandardOpenOption.WRITE);
+        Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
+        context.event(
+            "fixture_receipt",
+            "run=" + context.runId() + " actor=" + actor.getUniqueID() + " phase=" + phase + " path=" + target);
+    }
+
+    private void recordTerminalState(TestContext ctx) {
+        String nativeSecurity = "unavailable", actualPolicy = "unavailable";
+        try {
+            if (controller != null && station != null && !controller.isInvalid() && !station.isInvalid()) {
+                actualPolicy = Boolean.toString(policy());
+                nativeSecurity = Boolean.toString(security().hasPermission(actor, SecurityPermissions.SECURITY));
+            }
+        } catch (RuntimeException unavailable) {
+            nativeSecurity = "unavailable:" + unavailable.getClass()
+                .getSimpleName();
+        }
+        ctx.event(
+            "terminal_fixture_state",
+            "run=" + ctx.runId()
+                + " actor="
+                + (actor == null ? "none" : actor.getUniqueID())
+                + " stage="
+                + stage
+                + " terminalPhase="
+                + (terminal == null || !terminal.hasTagCompound() ? "none"
+                    : terminal.getTagCompound()
+                        .getString(PHASE))
+                + " requests="
+                + requests
+                + " intents="
+                + intents
+                + " policy="
+                + actualPolicy
+                + " nativeSecurity="
+                + nativeSecurity
+                + " preDrainWitness="
+                + (witnessedStale != null));
     }
 
     private ISecurityGrid security() {
@@ -675,6 +757,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     }
 
     public void cleanup(TestContext ctx) {
+        recordTerminalState(ctx);
         try {
             if (listenerRegistered) {
                 FMLCommonHandler.instance()
