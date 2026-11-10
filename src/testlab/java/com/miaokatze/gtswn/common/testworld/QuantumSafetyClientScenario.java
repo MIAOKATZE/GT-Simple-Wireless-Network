@@ -24,7 +24,9 @@ import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.ForgeDirection;
 
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
+import com.miaokatze.gtswn.common.gui.ContainerTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.items.TerminalAirInteraction;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkSecurityRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
@@ -84,7 +86,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     private int requests, intents;
     private long stationKey, introducedKey, retainedToken, contextDeadline, staleArrived, witnessedTick;
     private boolean introducedProvider, controllerPlaced, stationPlaced, backupWritten, granted, staleObserved,
-        listenerRegistered;
+        listenerRegistered, airWitness, guiWitness;
 
     public String id() {
         return "quantum.safety_client";
@@ -117,6 +119,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
         pendingStale = witnessedStale = null;
         witnessedTick = -1;
         introducedProvider = controllerPlaced = stationPlaced = backupWritten = granted = staleObserved = false;
+        airWitness = guiWitness = false;
         observed.clear();
         context = ctx;
         DebugTestGate.requireEnabled();
@@ -139,13 +142,15 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             !actor.playerNetServerHandler.netManager.isLocalChannel()
                 && actor.playerNetServerHandler.netManager.getSocketAddress() instanceof InetSocketAddress,
             "Actual actor uses a real TCP socket, not an integrated local channel");
-        ctx.result.actor = "actual online non-OP actor; fixed TCP connection; SECURITY-only native card";
+        ctx.result.actor = "actual online non-OP actor UUID=" + actor.getUniqueID()
+            + "; fixed TCP connection; SECURITY-only native card";
         ctx.result.actorLevel2 = false;
         ctx.result.actorLevel4 = false;
         original = new NBTTagCompound();
         original.setString("Run", ctx.runId());
         original.setInteger("Selected", actor.inventory.currentItem);
         original.setInteger("Dimension", actor.dimension);
+        original.setBoolean("Sneaking", actor.isSneaking());
         original.setDouble("X", actor.posX);
         original.setDouble("Y", actor.posY);
         original.setDouble("Z", actor.posZ);
@@ -375,6 +380,21 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY))
                 && identity.equals(QuantumTerminalAccess.networkSafetyIdentity(ctx.world(), X, Y, Z)),
             "Native key and controller identity unchanged");
+        if (stage == 2 && !airWitness
+            && actor.isSneaking()
+            && actor.rotationPitch < -80
+            && TerminalAirInteraction.isAir(actor)) {
+            airWitness = true;
+            terminal.getTagCompound()
+                .setString(PHASE, "air_ready");
+            sync();
+            ctx.event(
+                "native_air_ready",
+                "run=" + ctx.runId()
+                    + " actor="
+                    + actor.getUniqueID()
+                    + " real server sneaking=true; production air guard=true");
+        }
         Wire wire;
         while ((wire = observed.poll()) != null) {
             if (wire.discriminator == 5) {
@@ -382,6 +402,23 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     stage < 6 || staleObserved,
                     "No polling request can clear the retained context before stale C2S29");
                 requests++;
+                if (!guiWitness) {
+                    require(
+                        airWitness && actor.isSneaking()
+                            && actor.openContainer instanceof ContainerTerminal
+                            && ((ContainerTerminal) actor.openContainer).quantum,
+                        "First real C2S5 follows server-witnessed sneak-air use and a real quantum container");
+                    guiWitness = true;
+                    terminal.getTagCompound()
+                        .setString(PHASE, "gui_ready");
+                    sync();
+                    ctx.event(
+                        "native_gui_request",
+                        "run=" + ctx.runId()
+                            + " actor="
+                            + actor.getUniqueID()
+                            + " native quantum container and actual decoded request5 observed");
+                }
                 continue;
             }
             intents++;
@@ -494,11 +531,20 @@ public final class QuantumSafetyClientScenario implements TestScenario {
         } else if ("complete".equals(action) && run.stage == 8) {
             run.unchanged();
             run.require(
-                run.requests > 0 && run.intents == 4 && run.staleObserved && run.witnessedStale != null,
+                run.requests > 0 && run.intents == 4
+                    && run.staleObserved
+                    && run.witnessedStale != null
+                    && run.guiWitness,
                 "Actual server decoder received native requests and all four safety intents with native ACL pre-drain witness");
             run.context.result.transport = "real actor TCP -> native FML decoded C2S5/29 -> untouched production handler -> server ticks; independent client observed Lite7 denial";
             run.context.pass(
                 "Actual non-OP actor GUI ON/OFF/ON and stale same-context intent rejected after native card revocation; require client report PASS");
+            run.context.event(
+                "real_actor_complete",
+                "run=" + run.context.runId()
+                    + " actor="
+                    + run.actor.getUniqueID()
+                    + " actorLevel2=false actorLevel4=false");
         } else throw new IllegalStateException(
             "Invalid safety fixture control transition: " + action + " stage=" + run.stage);
     }
@@ -664,13 +710,25 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             try {
                 if (owner != null) owner.inventory.clearInventory(null, -1);
                 if (backupWritten) {
-                    actor.closeScreen();
                     ItemStack current = actor.inventory.mainInventory[0];
                     require(!granted || current == terminal, "Only the exact reserved fixture stack is removed");
                     actor.inventory.mainInventory[0] = original.hasKey("Stack", 10)
                         ? ItemStack.loadItemStackFromNBT(original.getCompoundTag("Stack"))
                         : null;
                     actor.inventory.currentItem = original.getInteger("Selected");
+                    if (!QuantumTerminalRequestQueue.isOnline(actor)) {
+                        save(actor);
+                        ctx.event(
+                            "offline_recovery_required",
+                            "run=" + ctx.runId()
+                                + " actor="
+                                + actor.getUniqueID()
+                                + " exact slot/selected restored; durable original return backup retained; no offline dimension transfer attempted");
+                        throw new IllegalStateException(
+                            "Actor disconnected: original slot restored, persistent return-position backup retained for offline recovery");
+                    }
+                    actor.closeScreen();
+                    actor.setSneaking(original.getBoolean("Sneaking"));
                     actor.playerNetServerHandler.sendPacket(new S09PacketHeldItemChange(actor.inventory.currentItem));
                     int dimension = original.getInteger("Dimension");
                     if (DimensionManager.getWorld(dimension) == null) DimensionManager.initDimension(dimension);
@@ -695,6 +753,15 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                         original.hasKey("Stack", 10) ? restored != null && original.getCompoundTag("Stack")
                             .equals(restored.writeToNBT(new NBTTagCompound())) : restored == null,
                         "Exact original slot restored and durable backup retired");
+                    ctx.event(
+                        "real_actor_restored",
+                        "run=" + ctx.runId()
+                            + " actor="
+                            + actor.getUniqueID()
+                            + " exact slot/selected/position restored; actorLevel2="
+                            + actor.canCommandSenderUseCommand(2, "gtswn")
+                            + " actorLevel4="
+                            + actor.canCommandSenderUseCommand(4, "gtswn"));
                 }
                 ctx.check(
                     ctx.world()

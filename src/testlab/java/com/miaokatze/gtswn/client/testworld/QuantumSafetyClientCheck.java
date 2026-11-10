@@ -12,9 +12,12 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.settings.KeyBinding;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.network.play.client.C03PacketPlayer;
 import net.minecraft.network.play.client.C09PacketHeldItemChange;
+import net.minecraft.network.play.client.C0BPacketEntityAction;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ScreenShotHelper;
 
@@ -62,6 +65,8 @@ public final class QuantumSafetyClientCheck {
     private NBTTagCompound original;
     private int ticks, stable, received, waitAfter, sentRequests, sentIntents, captureWait;
     private boolean reportWritten, capturePending, captured;
+    private boolean airInputHeld, originalSneakKey, originalMovementSneak, originalEntitySneak;
+    private float originalYaw, originalPitch;
 
     /** Called on the real client thread by the host after the OP2 console issued this exact business run. */
     public static void start(String runId) {
@@ -94,6 +99,7 @@ public final class QuantumSafetyClientCheck {
         test.latestWire = test.retained = null;
         test.ticks = test.stable = test.received = test.waitAfter = test.sentRequests = test.sentIntents = test.captureWait = 0;
         test.reportWritten = test.capturePending = test.captured = false;
+        test.airInputHeld = false;
         test.directory = new File(mc.mcDataDir, "gtswn-ui-reports/quantum-safety-" + runId);
         test.result.put("runId", runId);
         test.result.put("taskId", "quantum.safety_client");
@@ -209,15 +215,23 @@ public final class QuantumSafetyClientCheck {
                 require(run.equals(original.getString("Run")), "Original-state receipt belongs to this exact run");
                 mc.thePlayer.inventory.currentItem = 0;
                 mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(0));
-                boolean sneak = mc.thePlayer.isSneaking();
-                mc.thePlayer.setSneaking(false);
-                try {
-                    mc.playerController.sendUseItem(mc.thePlayer, mc.theWorld, held);
-                } finally {
-                    mc.thePlayer.setSneaking(sneak);
-                }
-                phase = "INITIAL_OFF";
-                observe("fixture", "Production sendUseItem opened server-issued terminal; no actor test command used");
+                originalSneakKey = mc.gameSettings.keyBindSneak.getIsKeyPressed();
+                originalMovementSneak = mc.thePlayer.movementInput.sneak;
+                originalEntitySneak = mc.thePlayer.isSneaking();
+                originalYaw = mc.thePlayer.rotationYaw;
+                originalPitch = mc.thePlayer.rotationPitch;
+                airInputHeld = true;
+                KeyBinding.setKeyBindState(mc.gameSettings.keyBindSneak.getKeyCode(), true);
+                mc.thePlayer.movementInput.sneak = true;
+                mc.thePlayer.setSneaking(true);
+                mc.thePlayer.rotationPitch = -90;
+                mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, 1));
+                mc.thePlayer.sendQueue
+                    .addToSendQueue(new C03PacketPlayer.C05PacketPlayerLook(originalYaw, -90, mc.thePlayer.onGround));
+                phase = "WAIT_AIR_RECEIPT";
+                observe(
+                    "fixture",
+                    "Actual C0B START_SNEAKING and look-at-air packets dispatched; awaiting server state receipt before production use");
                 return;
             }
             if ("WAIT_RESTORE".equals(phase)) {
@@ -253,6 +267,34 @@ public final class QuantumSafetyClientCheck {
                             .getString(QuantumSafetyClientScenario.RUN))
                     && mc.thePlayer.inventory.currentItem == 0,
                 "Run-issued slot/terminal changed");
+            if ("WAIT_AIR_RECEIPT".equals(phase)) {
+                if (!"air_ready".equals(
+                    held.getTagCompound()
+                        .getString(QuantumSafetyClientScenario.PHASE)))
+                    return;
+                mc.playerController.sendUseItem(mc.thePlayer, mc.theWorld, held);
+                phase = "WAIT_GUI";
+                observe(
+                    "use_item_dispatched",
+                    "Server witnessed actual sneak and air ray; production sendUseItem dispatched once, GUI opening not yet asserted");
+                return;
+            }
+            if ("WAIT_GUI".equals(phase)) {
+                if (!"gui_ready".equals(
+                    held.getTagCompound()
+                        .getString(QuantumSafetyClientScenario.PHASE))
+                    || sentRequests == 0
+                    || !authorized(false)) return;
+                restoreAirInput();
+                result.put("nativeGuiOpened", true);
+                result.put("serverSneakAndAirWitness", true);
+                result.put("serverGuiDataRequestWitness", true);
+                phase = "INITIAL_OFF";
+                observe(
+                    "native_gui_opened",
+                    "Actual Quantum GUI, native C2S5 and applied Lite7 observed after server container/sneak witness; temporary input restored");
+                return;
+            }
             if ("INITIAL_OFF".equals(phase) || "WAIT_ON".equals(phase)
                 || "WAIT_OFF".equals(phase)
                 || "WAIT_ON_AGAIN".equals(phase)) {
@@ -416,7 +458,27 @@ public final class QuantumSafetyClientCheck {
         events.add(event);
     }
 
+    private void restoreAirInput() {
+        if (!airInputHeld) return;
+        KeyBinding.setKeyBindState(mc.gameSettings.keyBindSneak.getKeyCode(), originalSneakKey);
+        if (mc.thePlayer != null) {
+            mc.thePlayer.movementInput.sneak = originalMovementSneak;
+            mc.thePlayer.setSneaking(originalEntitySneak);
+            mc.thePlayer.rotationYaw = originalYaw;
+            mc.thePlayer.rotationPitch = originalPitch;
+            if (mc.getNetHandler() == connection) {
+                mc.thePlayer.sendQueue
+                    .addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, originalEntitySneak ? 1 : 2));
+                mc.thePlayer.sendQueue.addToSendQueue(
+                    new C03PacketPlayer.C05PacketPlayerLook(originalYaw, originalPitch, mc.thePlayer.onGround));
+            }
+        }
+        airInputHeld = false;
+        result.put("temporaryAirInputRestored", true);
+    }
+
     private void finish(String status, String detail) {
+        restoreAirInput();
         result.put("status", status);
         result.put("detail", detail);
         result.put("ticks", ticks);
