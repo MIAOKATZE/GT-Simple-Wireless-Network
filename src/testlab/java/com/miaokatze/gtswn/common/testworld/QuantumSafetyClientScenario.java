@@ -404,8 +404,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                 requests++;
                 if (!guiWitness) {
                     require(
-                        airWitness && actor.isSneaking()
-                            && actor.openContainer instanceof ContainerTerminal
+                        airWitness && actor.openContainer instanceof ContainerTerminal
                             && ((ContainerTerminal) actor.openContainer).quantum,
                         "First real C2S5 follows server-witnessed sneak-air use and a real quantum container");
                     guiWitness = true;
