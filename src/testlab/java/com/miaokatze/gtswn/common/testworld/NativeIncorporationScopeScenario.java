@@ -39,7 +39,7 @@ import cpw.mods.fml.common.gameevent.PlayerEvent;
 import cpw.mods.fml.common.gameevent.TickEvent;
 
 /** Native Handler -> normal server Drain with exact synthetic session; explicitly not TCP evidence. */
-final class NativeIncorporationScopeScenario implements TestScenario {
+public final class NativeIncorporationScopeScenario implements TestScenario {
 
     private static final int X = 8, Y = TestWorldFixtures.Y, Z = 20, DX = 14, BZ = 24;
     private RecordingActor owner, member, outsider, acting;
