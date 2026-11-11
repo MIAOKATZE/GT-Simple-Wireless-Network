@@ -283,7 +283,9 @@ public class ItemNetworkQuantumTerminal extends Item
         if (te instanceof TileController) {
             boolean management = player.isSneaking() && QuantumControllerRegistry.get(world)
                 .isQuantized(x, y, z);
-            if (!(management ? QuantumTerminalAccess.canRecoverController(player, stack, world, x, y, z)
+            if (!(management
+                ? QuantumTerminalAccess.canManageAnchor(player, stack, world, x, y, z)
+                    || QuantumTerminalAccess.canRecoverController(player, stack, world, x, y, z)
                 : QuantumTerminalAccess.canAccessAnchor(player, stack, world, x, y, z)
                     || QuantumTerminalAccess.canRepairPairingAtAnchor(player, stack, world, x, y, z))) {
                 if (management) sendMessage(player, QuantumTerminalAccess.recoveryDenialKey(world, x, y, z));
@@ -327,7 +329,8 @@ public class ItemNetworkQuantumTerminal extends Item
                 // 未量子化时 Shift 无取消语义：放行（等效空手点击，可正常打开控制器）
                 return false;
             }
-            if (!QuantumTerminalAccess.canRecoverController(player, stack, world, x, y, z)) {
+            if (!(QuantumTerminalAccess.canManageAnchor(player, stack, world, x, y, z)
+                || QuantumTerminalAccess.canRecoverController(player, stack, world, x, y, z))) {
                 sendMessage(player, QuantumTerminalAccess.recoveryDenialKey(world, x, y, z));
                 return true;
             }

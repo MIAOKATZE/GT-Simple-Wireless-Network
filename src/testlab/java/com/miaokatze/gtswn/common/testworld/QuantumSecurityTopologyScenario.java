@@ -45,12 +45,12 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
 
     private static final int X = 8, Y = TestWorldFixtures.Y, Z = 8, REMOTE_STATION_X = X + 3;
     private final Set<Long> introducedKeys = new HashSet<>();
-    private NativeSecurityStationSupport.RecordingActor owner, member;
+    private NativeSecurityStationSupport.RecordingActor owner, member, outsider;
     private TileEntity controller, station;
     private ItemStack ownerTerminal, handoff, currentCard;
     private int stage;
     private long stageTick, originalKey;
-    private boolean started;
+    private boolean started, openCancellationRestored;
 
     @Override
     public String id() {
@@ -81,12 +81,15 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
         }
         introducedKeys.clear();
         stage = 0;
+        openCancellationRestored = false;
         stageTick = ctx.tick();
         owner = NativeSecurityStationSupport.actor(ctx, "owner");
         member = NativeSecurityStationSupport.actor(ctx, "member");
-        NativeSecurityMatrix.assertOrdinaryActors(ctx, "topology initial", owner, member);
+        outsider = NativeSecurityStationSupport.actor(ctx, "outsider");
+        NativeSecurityMatrix.assertOrdinaryActors(ctx, "topology initial", owner, member, outsider);
         owner.setPosition(X + .5, Y, Z + 2.5);
         member.setPosition(X + .5, Y, Z + 2.5);
+        outsider.setPosition(X + .5, Y, Z + 2.5);
         for (int x = X; x <= REMOTE_STATION_X; x++) {
             require(
                 ctx,
@@ -250,8 +253,8 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
                     "Actual owner resumes quantum control through the guarded supported gesture");
                 require(
                     ctx,
-                    QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, true),
-                    "Supported network remains explicitly safety ON");
+                    QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, false),
+                    "Native owner selects local OFF for the existing cancellation compatibility control");
                 currentCard = NativeSecurityStationSupport.card(member, SecurityPermissions.BUILD);
                 require(
                     ctx,
@@ -266,6 +269,7 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
                     ctx,
                     ((ISecurityProvider) station).getSecurityKey() != originalKey,
                     "Replacement station has its own native key");
+                if (!openCancellationCompatibility(ctx)) return;
                 rejectBoundAndFresh(ctx, "BUILD_ONLY_CANNOT_ISSUE_NEW_PAIRING");
                 replaceCard(ctx, SecurityPermissions.SECURITY);
                 next(ctx, 6);
@@ -388,6 +392,60 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
         } finally {
             actor.setSneaking(false);
         }
+    }
+
+    private boolean openCancellationCompatibility(TestContext ctx) {
+        NativeSecurityMatrix.assertOrdinaryActors(ctx, "OFF/ON cancellation compatibility", outsider);
+        ISecurityGrid security = grid(station).getCache(ISecurityGrid.class);
+        require(
+            ctx,
+            !security.hasPermission(outsider, SecurityPermissions.BUILD)
+                && !security.hasPermission(outsider, SecurityPermissions.SECURITY),
+            "Cancellation compatibility actor has no native BUILD or SECURITY card");
+        if (!openCancellationRestored) {
+            ItemStack offControl = ownerTerminal.copy();
+            require(
+                ctx,
+                !QuantumTerminalAccess.isNetworkSafetyEnabled(ctx.world(), X, Y, Z)
+                    && QuantumTerminalAccess.canManageAnchor(outsider, offControl, ctx.world(), X, Y, Z)
+                    && !QuantumTerminalAccess.canRecoverController(outsider, offControl, ctx.world(), X, Y, Z),
+                "Local OFF retains the old bearer cancellation path without granting native recovery authority");
+            click(ctx, outsider, offControl, true);
+            require(
+                ctx,
+                !QuantumControllerRegistry.get(ctx.world())
+                    .isQuantized(X, Y, Z) && !ItemNetworkQuantumTerminal.isBound(offControl),
+                "Actual OFF Shift callback still cancels quantization for the non-owner no-card actor");
+            click(ctx, owner, ownerTerminal);
+            require(
+                ctx,
+                QuantumControllerRegistry.get(ctx.world())
+                    .isQuantized(X, Y, Z) && QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, true),
+                "Owner resumes the supported topology and restores safety ON");
+            openCancellationRestored = true;
+            // Observe native availability on a later END tick before claiming an ON authority denial.
+            return false;
+        }
+        ItemStack onControl = ownerTerminal.copy();
+        require(
+            ctx,
+            !QuantumTerminalAccess.canManageAnchor(outsider, onControl, ctx.world(), X, Y, Z)
+                && !QuantumTerminalAccess.canRecoverController(outsider, onControl, ctx.world(), X, Y, Z),
+            "The same ON actor fails both ordinary and keyless recovery authority");
+        NBTTagCompound before = (NBTTagCompound) onControl.writeToNBT(new NBTTagCompound())
+            .copy();
+        outsider.clearMessages();
+        click(ctx, outsider, onControl, true);
+        require(
+            ctx,
+            QuantumControllerRegistry.get(ctx.world())
+                .isQuantized(X, Y, Z) && before.equals(onControl.writeToNBT(new NBTTagCompound()))
+                && hasChat(outsider, "gtswn.chat.quantum.manage_permission_required"),
+            "Actual ON Shift callback rejects the same no-card actor without changing the held binding");
+        ctx.event(
+            "open_cancel_compatibility",
+            "localOFF=no-card non-owner callback accepted; localON=same actor callback denied; native recovery predicate stayed false");
+        return true;
     }
 
     private void assertUnsafeQuantizationRejected(TestContext ctx) {
@@ -640,6 +698,7 @@ final class QuantumSecurityTopologyScenario implements TestScenario {
         } finally {
             if (owner != null) owner.inventory.clearInventory(null, -1);
             if (member != null) member.inventory.clearInventory(null, -1);
+            if (outsider != null) outsider.inventory.clearInventory(null, -1);
             QuantumNetworkSecurityRegistry providers = QuantumNetworkSecurityRegistry.providerRegistry(ctx.world());
             for (long key : introducedKeys) TestFixtureAccess.forgetProvider(providers, ctx.world(), key);
             introducedKeys.clear();
