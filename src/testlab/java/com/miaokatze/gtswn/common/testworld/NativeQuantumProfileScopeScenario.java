@@ -11,6 +11,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.util.StatCollector;
 
 import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.device.DeviceTerminalDataStore;
@@ -419,6 +420,7 @@ final class NativeQuantumProfileScopeScenario implements TestScenario {
         member.clearMessages();
         ((ItemNetworkQuantumTerminal) memberTerminal.getItem())
             .onItemUseFirst(memberTerminal, member, ctx.world(), X, Y, Z, 1, .5f, .5f, .5f);
+        for (String message : member.messages()) ctx.event("profile-controller-message", message);
         require(
             ctx,
             hasMessage(member, "gtswn.chat.quantum.profile_readonly")
@@ -465,7 +467,8 @@ final class NativeQuantumProfileScopeScenario implements TestScenario {
     }
 
     private static boolean hasMessage(NativeSecurityStationSupport.RecordingActor actor, String key) {
-        for (String message : actor.messages()) if (message.contains(key)) return true;
+        String localized = StatCollector.translateToLocalFormatted(key);
+        for (String message : actor.messages()) if (message.contains(key) || message.contains(localized)) return true;
         return false;
     }
 
