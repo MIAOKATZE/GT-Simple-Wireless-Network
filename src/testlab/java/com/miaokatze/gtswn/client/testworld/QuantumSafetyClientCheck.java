@@ -20,6 +20,7 @@ import net.minecraft.network.play.client.C09PacketHeldItemChange;
 import net.minecraft.network.play.client.C0BPacketEntityAction;
 import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.ScreenShotHelper;
+import net.minecraft.util.Vec3;
 
 import com.google.gson.GsonBuilder;
 import com.miaokatze.gtswn.client.gui.GuiQuantumTerminal;
@@ -68,6 +69,8 @@ public final class QuantumSafetyClientCheck {
     private boolean airInputHeld, originalSneakKey, originalMovementSneak, originalEntitySneak;
     private float originalYaw, originalPitch;
     private boolean revocationReceipt, rejectionReceipt, staleIntentSent;
+    private boolean buildRevokedReceipt, securityReadyReceipt, buildPrefaceComplete;
+    private boolean allGrantsGui, allGrantsNodeDispatched;
 
     /** Called on the real client thread by the host after the OP2 console issued this exact business run. */
     public static void start(String runId) {
@@ -102,6 +105,8 @@ public final class QuantumSafetyClientCheck {
         test.reportWritten = test.capturePending = test.captured = false;
         test.airInputHeld = false;
         test.revocationReceipt = test.rejectionReceipt = test.staleIntentSent = false;
+        test.buildRevokedReceipt = test.securityReadyReceipt = test.buildPrefaceComplete = false;
+        test.allGrantsGui = test.allGrantsNodeDispatched = false;
         test.directory = new File(mc.mcDataDir, "gtswn-ui-reports/quantum-safety-" + runId);
         test.result.put("runId", runId);
         test.result.put("taskId", "quantum.safety_client");
@@ -183,7 +188,17 @@ public final class QuantumSafetyClientCheck {
                         .toString())
                 && test.mc.getNetHandler() == test.connection,
             "Fixture receipt must match the actual current run/actor/connection");
-        if ("revoked".equals(fixturePhase)) {
+        if ("build-revoked".equals(fixturePhase)) {
+            require(
+                "WAIT_BUILD_REVOKE".equals(test.phase),
+                "BUILD revocation follows actual teammate binding/node/full-read evidence");
+            test.buildRevokedReceipt = true;
+        } else if ("security-ready".equals(fixturePhase)) {
+            require(
+                test.buildRevokedReceipt && "WAIT_SECURITY_READY".equals(test.phase),
+                "SECURITY preparation cannot precede actual revoked BUILD denial");
+            test.securityReadyReceipt = true;
+        } else if ("revoked".equals(fixturePhase)) {
             require(
                 test.revocationReceipt || "WAIT_REVOKE".equals(test.phase),
                 "Revocation receipt must follow the actual GUI sequence and polling stop");
@@ -247,23 +262,14 @@ public final class QuantumSafetyClientCheck {
                 require(run.equals(original.getString("Run")), "Original-state receipt belongs to this exact run");
                 mc.thePlayer.inventory.currentItem = 0;
                 mc.thePlayer.sendQueue.addToSendQueue(new C09PacketHeldItemChange(0));
-                originalSneakKey = mc.gameSettings.keyBindSneak.getIsKeyPressed();
-                originalMovementSneak = mc.thePlayer.movementInput.sneak;
-                originalEntitySneak = mc.thePlayer.isSneaking();
-                originalYaw = mc.thePlayer.rotationYaw;
-                originalPitch = mc.thePlayer.rotationPitch;
-                airInputHeld = true;
-                KeyBinding.setKeyBindState(mc.gameSettings.keyBindSneak.getKeyCode(), true);
-                mc.thePlayer.movementInput.sneak = true;
-                mc.thePlayer.setSneaking(true);
-                mc.thePlayer.rotationPitch = -90;
-                mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, 1));
-                mc.thePlayer.sendQueue
-                    .addToSendQueue(new C03PacketPlayer.C05PacketPlayerLook(originalYaw, -90, mc.thePlayer.onGround));
-                phase = "WAIT_AIR_RECEIPT";
+                require(
+                    !ItemNetworkQuantumTerminal.isBound(held),
+                    "BUILD teammate must actually bind the native-encoded unbound terminal");
+                clickBlock(8, 65, 12, 3, Vec3.createVectorHelper(8.5, 65.5, 13));
+                phase = "WAIT_BUILD_BIND";
                 observe(
-                    "fixture",
-                    "Actual C0B START_SNEAKING and look-at-air packets dispatched; awaiting server state receipt before production use");
+                    "teammate_bind_dispatched",
+                    "Native controller C08 dispatched; fixture does not bind actor terminal");
                 return;
             }
             if ("WAIT_RESTORE".equals(phase)) {
@@ -317,6 +323,85 @@ public final class QuantumSafetyClientCheck {
                             .getString(QuantumSafetyClientScenario.RUN))
                     && mc.thePlayer.inventory.currentItem == 0,
                 "Run-issued slot/terminal changed");
+            if ("WAIT_BUILD_BIND".equals(phase)) {
+                if (!ItemNetworkQuantumTerminal.isBound(held) || !"build_bound".equals(
+                    held.getTagCompound()
+                        .getString(QuantumSafetyClientScenario.PHASE)))
+                    return;
+                result.put("buildOnlyNativeBinding", true);
+                clickBlock(10, 64, 14, 1, Vec3.createVectorHelper(10.5, 65, 14.5));
+                phase = "WAIT_BUILD_LINK";
+                observe(
+                    "teammate_node_dispatched",
+                    "Native support-face C08 dispatched for node 10:65:14; fixture never places node");
+                return;
+            }
+            if ("WAIT_BUILD_LINK".equals(phase)) {
+                if (!"build_linked".equals(
+                    held.getTagCompound()
+                        .getString(QuantumSafetyClientScenario.PHASE))
+                    || mc.theWorld.getTileEntity(10, 65, 14) == null) return;
+                result.put("buildOnlyNativeNodeLinked", true);
+                beginAirInput();
+                return;
+            }
+            if ("BUILD_READ".equals(phase)) {
+                if (!authorizedBuild()) {
+                    stable = 0;
+                    return;
+                }
+                if (++stable < 12) return;
+                result.put("buildOnlyFullData", true);
+                result.put("buildOnlyToggleDenied", true);
+                result.put("buildOnlyChannels", latestWire.totalChannels);
+                result.put("buildOnlyNodeCount", latestWire.quantumNodeCount);
+                mc.thePlayer.closeScreen();
+                stable = 0;
+                phase = "STOP_BUILD_POLLING";
+                return;
+            }
+            if ("STOP_BUILD_POLLING".equals(phase)) {
+                if (++stable >= 10) phase = "WAIT_BUILD_REVOKE";
+                return;
+            }
+            if ("WAIT_BUILD_REVOKE".equals(phase)) {
+                if (!buildRevokedReceipt) return;
+                waitAfter = received;
+                GTSWNPacketHandler.NETWORK.sendToServer(new PacketRequestQuantumTerminalData());
+                phase = "WAIT_BUILD_DENIED";
+                return;
+            }
+            if ("WAIT_BUILD_DENIED".equals(phase)) {
+                if (received <= waitAfter || !denied()) return;
+                require(latest() == latestWire, "Revoked BUILD response must be applied by the actual client handler");
+                result.put("buildOnlyRevokedReadDenied", true);
+                phase = "WAIT_SECURITY_READY";
+                return;
+            }
+            if ("WAIT_SECURITY_READY".equals(phase)) {
+                if (!securityReadyReceipt) return;
+                allGrantsGui = true;
+                beginAirInput();
+                return;
+            }
+            if ("ALL_GRANTS_READ".equals(phase)) {
+                if (!authorizedBusiness(true)) {
+                    stable = 0;
+                    return;
+                }
+                if (++stable < 12) return;
+                result.put("allNativeGrantsFullData", true);
+                mc.thePlayer.closeScreen();
+                clickBlock(10, 64, 16, 1, Vec3.createVectorHelper(10.5, 65, 16.5));
+                allGrantsNodeDispatched = true;
+                allGrantsGui = false;
+                buildPrefaceComplete = true;
+                beginAirInput();
+                observe(
+                    "all_grants_node_dispatched",
+                    "After real full-grants GUI/5/Lite, actual C08 targets second node10:65:16; await native proof and SECURITY-only transition");
+                return;
+            }
             if ("WAIT_AIR_RECEIPT".equals(phase)) {
                 if (!"air_ready".equals(
                     held.getTagCompound()
@@ -334,12 +419,21 @@ public final class QuantumSafetyClientCheck {
                     held.getTagCompound()
                         .getString(QuantumSafetyClientScenario.PHASE))
                     || sentRequests == 0
-                    || !authorized(false)) return;
+                    || !(allGrantsGui ? authorizedBusiness(true)
+                        : buildPrefaceComplete ? authorized(false) : authorizedBuild()))
+                    return;
                 restoreAirInput();
                 result.put("nativeGuiOpened", true);
                 result.put("serverSneakAndAirWitness", true);
                 result.put("serverGuiDataRequestWitness", true);
-                phase = "INITIAL_OFF";
+                if (allGrantsNodeDispatched && buildPrefaceComplete) {
+                    require(
+                        mc.theWorld.getTileEntity(10, 65, 16) != null,
+                        "Actual all-grants C08 node must synchronize to client before management chain");
+                    result.put("allNativeGrantsNodeLinked", true);
+                }
+                phase = allGrantsGui ? "ALL_GRANTS_READ" : buildPrefaceComplete ? "INITIAL_OFF" : "BUILD_READ";
+                stable = 0;
                 observe(
                     "native_gui_opened",
                     "Actual Quantum GUI, native C2S5 and applied Lite7 observed after server container/sneak witness; temporary input restored");
@@ -419,6 +513,84 @@ public final class QuantumSafetyClientCheck {
         } catch (Exception | LinkageError failure) {
             finish("FAIL", failure.toString());
         }
+    }
+
+    private void beginAirInput() {
+        originalSneakKey = mc.gameSettings.keyBindSneak.getIsKeyPressed();
+        originalMovementSneak = mc.thePlayer.movementInput.sneak;
+        originalEntitySneak = mc.thePlayer.isSneaking();
+        originalYaw = mc.thePlayer.rotationYaw;
+        originalPitch = mc.thePlayer.rotationPitch;
+        airInputHeld = true;
+        KeyBinding.setKeyBindState(mc.gameSettings.keyBindSneak.getKeyCode(), true);
+        mc.thePlayer.movementInput.sneak = true;
+        mc.thePlayer.setSneaking(true);
+        mc.thePlayer.rotationPitch = -90;
+        mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, 1));
+        mc.thePlayer.sendQueue
+            .addToSendQueue(new C03PacketPlayer.C05PacketPlayerLook(originalYaw, -90, mc.thePlayer.onGround));
+        phase = "WAIT_AIR_RECEIPT";
+        observe(
+            "air_input",
+            "Actual sneak/look packets dispatched; awaiting real server air guard before production use");
+    }
+
+    private void clickBlock(int x, int y, int z, int side, Vec3 hit) {
+        boolean sneak = mc.thePlayer.movementInput.sneak;
+        boolean key = mc.gameSettings.keyBindSneak.getIsKeyPressed();
+        float yaw = mc.thePlayer.rotationYaw, pitch = mc.thePlayer.rotationPitch;
+        double dx = hit.xCoord - mc.thePlayer.posX, dz = hit.zCoord - mc.thePlayer.posZ;
+        float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float targetPitch = (float) -Math
+            .toDegrees(Math.atan2(hit.yCoord - mc.thePlayer.posY, Math.sqrt(dx * dx + dz * dz)));
+        require(
+            mc.thePlayer.getDistanceSq(hit.xCoord, hit.yCoord, hit.zCoord) <= 20.25,
+            "Actual C08 target remains within native 4.5-block reach");
+        KeyBinding.setKeyBindState(mc.gameSettings.keyBindSneak.getKeyCode(), false);
+        mc.thePlayer.movementInput.sneak = false;
+        mc.thePlayer.setSneaking(false);
+        mc.thePlayer.rotationYaw = targetYaw;
+        mc.thePlayer.rotationPitch = targetPitch;
+        mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, 2));
+        mc.thePlayer.sendQueue
+            .addToSendQueue(new C03PacketPlayer.C05PacketPlayerLook(targetYaw, targetPitch, mc.thePlayer.onGround));
+        try {
+            mc.playerController
+                .onPlayerRightClick(mc.thePlayer, mc.theWorld, mc.thePlayer.getHeldItem(), x, y, z, side, hit);
+        } finally {
+            KeyBinding.setKeyBindState(mc.gameSettings.keyBindSneak.getKeyCode(), key);
+            mc.thePlayer.movementInput.sneak = sneak;
+            mc.thePlayer.setSneaking(sneak);
+            mc.thePlayer.rotationYaw = yaw;
+            mc.thePlayer.rotationPitch = pitch;
+            mc.thePlayer.sendQueue.addToSendQueue(new C0BPacketEntityAction(mc.thePlayer, sneak ? 1 : 2));
+            mc.thePlayer.sendQueue
+                .addToSendQueue(new C03PacketPlayer.C05PacketPlayerLook(yaw, pitch, mc.thePlayer.onGround));
+        }
+    }
+
+    private boolean authorizedBuild() throws Exception {
+        return authorizedBusiness(false);
+    }
+
+    private boolean authorizedBusiness(boolean management) throws Exception {
+        if (!UiModularSnapshot.supports(mc.currentScreen)
+            || !(UiModularSnapshot.wrappedScreen(mc.currentScreen) instanceof GuiQuantumTerminal)) return false;
+        QuantumNetworkData data = latest();
+        return data != null && data == latestWire
+            && data.online
+            && data.networkSafetyEnabled
+            && !data.managementOnly
+            && data.anchorDim == mc.thePlayer.dimension
+            && data.anchorX == 8
+            && data.anchorY == 65
+            && data.anchorZ == 12
+            && !data.networkSafetyIdentity.isEmpty()
+            && data.totalChannels > 0
+            && data.quantumNodeCount > 0
+            && data.canChangeNetworkSafety == management
+            && (management ? data.networkSafetyRequestToken != 0 : data.networkSafetyRequestToken == 0)
+            && TerminalGuiFactory.canToggleSafety(data) == management;
     }
 
     private boolean authorized(boolean enabled) throws Exception {

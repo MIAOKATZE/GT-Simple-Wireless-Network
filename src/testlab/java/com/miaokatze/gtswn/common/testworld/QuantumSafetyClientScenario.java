@@ -19,6 +19,7 @@ import net.minecraft.command.ICommandSender;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.entity.player.EntityPlayerMP;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.play.server.S09PacketHeldItemChange;
@@ -35,10 +36,14 @@ import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.gui.ContainerTerminal;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
 import com.miaokatze.gtswn.common.items.TerminalAirInteraction;
+import com.miaokatze.gtswn.common.monitoring.MonitoringProfiles;
+import com.miaokatze.gtswn.common.quantum.QuantumConnectionMembership;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
+import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkSecurityRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalAccess;
 import com.miaokatze.gtswn.common.quantum.QuantumTerminalRequestQueue;
+import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.PlayerRequestQueue;
 import com.miaokatze.gtswn.config.Config;
@@ -48,6 +53,8 @@ import com.miaokatze.gtswn.network.PacketSetQuantumNetworkSafety;
 import appeng.api.AEApi;
 import appeng.api.config.Actionable;
 import appeng.api.config.SecurityPermissions;
+import appeng.api.implementations.items.IBiometricCard;
+import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
 import appeng.api.networking.pathing.ControllerState;
@@ -77,6 +84,8 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     public static final String RUN = "GTSWN_QuantumSafety_Run", PHASE = "GTSWN_QuantumSafety_Phase";
     private static final String BACKUP = "GTSWN_QuantumSafety_Backup_v1", OBSERVER = "gtswn-safety-server-observer";
     private static final int X = 8, Y = TestWorldFixtures.Y, Z = 12;
+    private static final int NODE_X = 10, NODE_Y = 65, NODE_Z = 14;
+    private static final int ALL_NODE_Z = 16;
     private static QuantumSafetyClientScenario active;
     private final ArrayBlockingQueue<Wire> observed = new ArrayBlockingQueue<>(256);
     private TestContext context;
@@ -85,6 +94,11 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     private Object connection, grid;
     private TileEntity controller, station;
     private ItemStack terminal, card;
+    private ItemStack ownerTerminal;
+    private TileEntityNetworkQuantumNode buildNode;
+    private TileEntityNetworkQuantumNode allGrantsNode;
+    private boolean allGrantsReadRequest, allGrantsPositive;
+    private boolean buildFixtureReserved, buildPositive, buildDeniedRequest;
     private FMLEmbeddedChannel channel;
     private NBTTagCompound original, terminalAtRevoke, controllersAtRevoke, securityAtRevoke, providersAtRevoke;
     private String identity, key;
@@ -109,7 +123,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     }
 
     public String description() {
-        return "Real non-OP TCP actor: native safety GUI OFF/ON/OFF/ON, native card revocation and stale C2S intent rejection";
+        return "Real non-OP BUILD teammate: encoded terminal, C08 binding/node/native link, full GUI data and revocation; then SECURITY toggle/stale-intent chain";
     }
 
     public void start(TestContext ctx) {
@@ -118,6 +132,11 @@ public final class QuantumSafetyClientScenario implements TestScenario {
         owner = null;
         controller = station = null;
         terminal = card = null;
+        ownerTerminal = null;
+        buildNode = null;
+        allGrantsNode = null;
+        allGrantsReadRequest = allGrantsPositive = false;
+        buildFixtureReserved = buildPositive = buildDeniedRequest = false;
         channel = null;
         original = terminalAtRevoke = controllersAtRevoke = securityAtRevoke = providersAtRevoke = null;
         connection = grid = null;
@@ -151,7 +170,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                 && actor.playerNetServerHandler.netManager.getSocketAddress() instanceof InetSocketAddress,
             "Actual actor uses a real TCP socket, not an integrated local channel");
         ctx.result.actor = "actual online non-OP actor UUID=" + actor.getUniqueID()
-            + "; fixed TCP connection; SECURITY-only native card";
+            + "; fixed TCP connection; BUILD-only teammate then SECURITY-only manager";
         ctx.result.actorLevel2 = false;
         ctx.result.actorLevel4 = false;
         original = new NBTTagCompound();
@@ -323,7 +342,11 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                         .getPlayerID() == ownerId,
                 "Native placement assigned controller and station ownership to fixture owner");
             require(security().hasPermission(owner, SecurityPermissions.SECURITY), "Real station owner has SECURITY");
-            card = NativeSecurityStationSupport.card(actor, SecurityPermissions.SECURITY);
+            require(
+                !owner.getUniqueID()
+                    .equals(actor.getUniqueID()),
+                "Actual BUILD teammate is a different native station/controller owner");
+            card = NativeSecurityStationSupport.card(actor, SecurityPermissions.BUILD);
             IAEItemStack remainder = ((ITerminalHost) station).getItemInventory()
                 .injectItems(
                     AEApi.instance()
@@ -331,13 +354,16 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                         .createItemStack(card.copy()),
                     Actionable.MODULATE,
                     new PlayerSource(owner, (IActionHost) station));
-            require(remainder == null, "Real actor SECURITY-only card inserted natively");
-            terminal = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
-            owner.inventory.mainInventory[0] = terminal;
+            require(remainder == null, "Real actor BUILD-only card inserted natively");
+            ownerTerminal = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
+            owner.inventory.mainInventory[0] = ownerTerminal;
             owner.setSneaking(false);
-            ((ItemNetworkQuantumTerminal) terminal.getItem())
-                .onItemUseFirst(terminal, owner, ctx.world(), X, Y, Z, 1, .5f, .5f, .5f);
-            require(ItemNetworkQuantumTerminal.isBound(terminal), "Production controller click bound fixture terminal");
+            ((ItemNetworkQuantumTerminal) ownerTerminal.getItem())
+                .onItemUseFirst(ownerTerminal, owner, ctx.world(), X, Y, Z, 1, .5f, .5f, .5f);
+            require(
+                ItemNetworkQuantumTerminal.isBound(ownerTerminal),
+                "Owner production click quantized the fixture controller");
+            terminal = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
             terminal = NativeSecurityStationSupport.encodeAt(ctx, terminal, station, owner, value -> {
                 introducedProvider = true;
                 introducedKey = value;
@@ -348,19 +374,38 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             identity = QuantumTerminalAccess.networkSafetyIdentity(ctx.world(), X, Y, Z);
             grid = ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN)
                 .getGrid();
+            require(
+                !ItemNetworkQuantumTerminal.isBound(terminal) && !MonitoringProfiles.hasProfileReference(terminal),
+                "Actor receives a real encoded terminal with no anchor or managed Profile");
+            require(
+                QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, true),
+                "Native owner enables safety before teammate use");
+            require(
+                ctx.world()
+                    .isAirBlock(NODE_X, NODE_Y, NODE_Z)
+                    && ctx.world()
+                        .isAirBlock(NODE_X, NODE_Y - 1, NODE_Z),
+                "Exact teammate node/support positions are initially empty");
+            require(
+                ctx.world()
+                    .isAirBlock(NODE_X, NODE_Y, ALL_NODE_Z)
+                    && ctx.world()
+                        .isAirBlock(NODE_X, NODE_Y - 1, ALL_NODE_Z),
+                "Exact all-grants node/support positions are initially empty");
+            buildFixtureReserved = true;
+            TestWorldFixtures.place(ctx.world(), NODE_X, NODE_Y - 1, NODE_Z, Blocks.stone, 0);
+            TestWorldFixtures.place(ctx.world(), NODE_X, NODE_Y - 1, ALL_NODE_Z, Blocks.stone, 0);
             stage = 1;
             return;
         }
         if (stage == 1) {
-            if (!ready() || !security().hasPermission(actor, SecurityPermissions.SECURITY)) return;
-            require(
-                !security().hasPermission(actor, SecurityPermissions.BUILD),
-                "Actual actor has SECURITY but no BUILD");
-            require(!policy(), "Initial local safety is OFF");
+            if (!ready() || !security().hasPermission(actor, SecurityPermissions.BUILD)) return;
+            require(onlyNativePermission(SecurityPermissions.BUILD), "Actual teammate has BUILD but no SECURITY");
+            require(policy(), "Teammate ordinary-use preface starts with safety ON");
             terminal.getTagCompound()
                 .setString(RUN, ctx.runId());
             terminal.getTagCompound()
-                .setString(PHASE, "ready");
+                .setString(PHASE, "build_bind");
             terminal.getTagCompound()
                 .setBoolean("GTSWN_QuantumSafety_ActorLevel2", false);
             terminal.getTagCompound()
@@ -371,13 +416,13 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             granted = true;
             actor.inventory.currentItem = 0;
             sync();
-            stage = 2;
+            stage = -10;
             ctx.event(
                 "fixture_ready",
                 "Run=" + ctx.runId()
-                    + " real non-OP SECURITY-only actor="
+                    + " real non-OP BUILD-only teammate="
                     + actor.getUniqueID()
-                    + " slot=0 policy=OFF");
+                    + " slot=0 policy=ON; BUILD-only; encoded unbound terminal");
         }
         guard(
             actor.inventory.currentItem == 0 && actor.getHeldItem() == terminal,
@@ -388,7 +433,159 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY))
                 && identity.equals(QuantumTerminalAccess.networkSafetyIdentity(ctx.world(), X, Y, Z)),
             "Native key and controller identity unchanged");
-        if (stage == 2 && !airWitness
+        if (stage == -10 && ItemNetworkQuantumTerminal.isBound(terminal)) {
+            int[] bound = ItemNetworkQuantumTerminal.getAnchor(terminal);
+            require(
+                Arrays.equals(bound, new int[] { ctx.world().provider.dimensionId, X, Y, Z })
+                    && !terminal.getTagCompound()
+                        .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION)
+                        .isEmpty(),
+                "Actual client controller C08 bound the encoded teammate terminal to the live generation");
+            require(
+                QuantumTerminalAccess.validate(actor, terminal) && !QuantumTerminalAccess.canManage(actor, terminal),
+                "Bound BUILD-only teammate can use but cannot manage");
+            terminal.getTagCompound()
+                .setString(PHASE, "build_bound");
+            sync();
+            stage = -9;
+            ctx.event(
+                "teammate_bound",
+                "Actual ordinary client C08 bound the previously unbound native-encoded terminal; native owner differs from actor");
+        }
+        if (stage == -9) {
+            TileEntity candidate = ctx.world()
+                .getTileEntity(NODE_X, NODE_Y, NODE_Z);
+            if (candidate instanceof TileEntityNetworkQuantumNode) buildNode = (TileEntityNetworkQuantumNode) candidate;
+            if (buildNode != null && buildNode.isLinked()) {
+                IGridConnection connection = (IGridConnection) field(buildNode, "connection");
+                require(
+                    buildNode.getNativeOwnerID() == AEApi.instance()
+                        .registries()
+                        .players()
+                        .getID(actor) && buildNode.getNativeOwnerID() != ((ISecurityProvider) station).getOwner(),
+                    "Actual C08-created node carries teammate native actor, distinct from owner");
+                require(
+                    buildNode.getAnchorDim() == ctx.world().provider.dimensionId && buildNode.getAnchorX() == X
+                        && buildNode.getAnchorY() == Y
+                        && buildNode.getAnchorZ() == Z
+                        && buildNode.getAnchorGeneration()
+                            .equals(
+                                terminal.getTagCompound()
+                                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION)),
+                    "Client-placed node has the exact live anchor/generation");
+                require(
+                    connection != null && QuantumConnectionMembership.contains(connection.a(), connection)
+                        && QuantumConnectionMembership.contains(connection.b(), connection)
+                        && connection.a()
+                            .getGrid()
+                            == connection.b()
+                                .getGrid()
+                        && connection.a()
+                            .getGrid()
+                            == ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN)
+                                .getGrid(),
+                    "Natural real AE bridge exists in both endpoint lists on the controller grid");
+                grid = ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN)
+                    .getGrid();
+                buildPositive = true;
+                stage = -8;
+                terminal.getTagCompound()
+                    .setString(PHASE, "build_linked");
+                sync();
+                ctx.event(
+                    "teammate_node_linked",
+                    "Actual C08 node placement and natural native AE two-ended link passed; no fixture node placement or handler call");
+            }
+        }
+        if (stage == -7 && !security().hasPermission(actor, SecurityPermissions.BUILD)) {
+            require(
+                policy() && !security().hasPermission(actor, SecurityPermissions.SECURITY)
+                    && !QuantumTerminalAccess.validate(actor, terminal),
+                "Removing the real BUILD card denies teammate ordinary access with the same valid stack/key");
+            if (buildNode.isLinked()) return;
+            stage = -6;
+            writeFixtureReceipt("build-revoked");
+        }
+        if (stage == -5 && allNativePermissions()) {
+            require(policy(), "All-native-grants teammate must operate with safety ON");
+            airWitness = guiWitness = false;
+            stage = -4;
+            terminal.getTagCompound()
+                .setString(PHASE, "ready");
+            sync();
+            writeFixtureReceipt("security-ready");
+        }
+        if (stage == -4 && allGrantsReadRequest) {
+            TileEntity candidate = ctx.world()
+                .getTileEntity(NODE_X, NODE_Y, ALL_NODE_Z);
+            if (candidate instanceof TileEntityNetworkQuantumNode)
+                allGrantsNode = (TileEntityNetworkQuantumNode) candidate;
+            if (allGrantsNode != null && allGrantsNode.isLinked()) {
+                IGridConnection edge = (IGridConnection) field(allGrantsNode, "connection");
+                require(
+                    allNativePermissions() && policy() && !MonitoringProfiles.hasProfileReference(terminal),
+                    "All-native-grants C08 operation retains ON policy and no managed Profile");
+                require(
+                    allGrantsNode.getNativeOwnerID() == AEApi.instance()
+                        .registries()
+                        .players()
+                        .getID(actor) && allGrantsNode.getNativeOwnerID() != ((ISecurityProvider) station).getOwner(),
+                    "Second real C08 node carries nonowner full-grants teammate actor");
+                require(
+                    allGrantsNode.getAnchorDim() == ctx.world().provider.dimensionId && allGrantsNode.getAnchorX() == X
+                        && allGrantsNode.getAnchorY() == Y
+                        && allGrantsNode.getAnchorZ() == Z
+                        && allGrantsNode.getAnchorGeneration()
+                            .equals(
+                                terminal.getTagCompound()
+                                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION)),
+                    "All-grants actual node has exact valid anchor/generation");
+                require(
+                    edge != null && QuantumConnectionMembership.contains(edge.a(), edge)
+                        && QuantumConnectionMembership.contains(edge.b(), edge)
+                        && edge.a()
+                            .getGrid()
+                            == edge.b()
+                                .getGrid()
+                        && edge.a()
+                            .getGrid()
+                            == ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN)
+                                .getGrid(),
+                    "All-grants second actual node naturally joins both native endpoint lists on controller grid");
+                allGrantsPositive = true;
+                recordAccessFacts(ctx, "all-grants-success");
+                ctx.event(
+                    "all_grants_native_business",
+                    "Full native grants actual TCP data request and second C08/native bridge passed; clickingActor="
+                        + actor.getUniqueID()
+                        + "; nodePlacer="
+                        + allGrantsNode.getPlacerUUID());
+                extractActorCard();
+                card = NativeSecurityStationSupport.card(actor, SecurityPermissions.SECURITY);
+                require(
+                    ((ITerminalHost) station).getItemInventory()
+                        .injectItems(
+                            AEApi.instance()
+                                .storage()
+                                .createItemStack(card.copy()),
+                            Actionable.MODULATE,
+                            new PlayerSource(owner, (IActionHost) station))
+                        == null,
+                    "Owner restores SECURITY-only card after actual all-grants operation");
+                stage = -2;
+            }
+        }
+        if (stage == -2 && onlyNativePermission(SecurityPermissions.SECURITY)) {
+            require(
+                QuantumTerminalAccess.setNetworkSafety(owner, ownerTerminal, false),
+                "Owner prepares SECURITY-only OFF chain after full-grants proof");
+            airWitness = guiWitness = false;
+            stage = 2;
+            terminal.getTagCompound()
+                .setString(PHASE, "ready");
+            sync();
+        }
+        if ((stage == 2 || stage == -8 || stage == -4) && !airWitness
             && actor.isSneaking()
             && actor.rotationPitch < -80
             && TerminalAirInteraction.isAir(actor)) {
@@ -410,6 +607,37 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     stage < 6 || staleObserved,
                     "No polling request can clear the retained context before stale C2S29");
                 requests++;
+                if (stage == -8) {
+                    QuantumNetworkData full = QuantumNetworkData.assemble(actor, terminal);
+                    require(
+                        buildPositive && full != null
+                            && full.online
+                            && !full.managementOnly
+                            && full.totalChannels > 0
+                            && full.quantumNodeCount > 0
+                            && !QuantumTerminalAccess.canChangeNetworkSafety(actor, terminal),
+                        "Real teammate request has full online business data and no safety-toggle authority");
+                }
+                if (stage == -4) {
+                    QuantumNetworkData full = QuantumNetworkData.assemble(actor, terminal);
+                    require(
+                        allNativePermissions() && full != null
+                            && full.online
+                            && !full.managementOnly
+                            && full.totalChannels > 0
+                            && full.quantumNodeCount > 0
+                            && policy(),
+                        "Actual all-native-grants request resolves full business data on live protected grid");
+                    allGrantsReadRequest = true;
+                }
+                if (stage == -6) {
+                    require(
+                        !QuantumTerminalAccess.validate(actor, terminal)
+                            && !QuantumTerminalAccess.canManage(actor, terminal)
+                            && policy(),
+                        "Actual post-BUILD-revocation request is denied while original network safety stays ON");
+                    buildDeniedRequest = true;
+                }
                 if (!guiWitness) {
                     require(
                         airWitness && actor.openContainer instanceof ContainerTerminal
@@ -520,7 +748,29 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             return;
         }
         run.ordinary();
-        if ("revoke".equals(action) && run.stage == 5) {
+        if ("revoke-build".equals(action) && run.stage == -8) {
+            run.require(
+                run.buildPositive && run.guiWitness,
+                "BUILD revocation follows actual client binding, placement, linking and native GUI read");
+            run.extractActorCard();
+            run.stage = -7;
+        } else if ("prepare-security".equals(action) && run.stage == -6) {
+            run.require(run.buildDeniedRequest, "Management setup follows the actual denied same-stack BUILD request");
+            run.card = NativeSecurityStationSupport.card(run.actor, SecurityPermissions.SECURITY);
+            for (SecurityPermissions permission : SecurityPermissions.values())
+                ((IBiometricCard) run.card.getItem()).addPermission(run.card, permission);
+            run.require(
+                ((ITerminalHost) run.station).getItemInventory()
+                    .injectItems(
+                        AEApi.instance()
+                            .storage()
+                            .createItemStack(run.card.copy()),
+                        Actionable.MODULATE,
+                        new PlayerSource(run.owner, (IActionHost) run.station))
+                    == null,
+                "Owner inserts real all-native-permissions card after teammate rejection");
+            run.stage = -5;
+        } else if ("revoke".equals(action) && run.stage == 5) {
             run.require(run.policy(), "Revoke begins with real local safety ON");
             run.requireLiveContext();
             IAEItemStack extracted = ((ITerminalHost) run.station).getItemInventory()
@@ -540,11 +790,14 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                 run.requests > 0 && run.intents == 4
                     && run.staleObserved
                     && run.witnessedStale != null
-                    && run.guiWitness,
+                    && run.guiWitness
+                    && run.buildPositive
+                    && run.buildDeniedRequest
+                    && run.allGrantsPositive,
                 "Actual server decoder received native requests and all four safety intents with native ACL pre-drain witness");
             run.context.result.transport = "real actor TCP -> native FML decoded C2S5/29 -> untouched production handler -> server ticks; independent client observed Lite7 denial";
             run.context.pass(
-                "Actual non-OP actor GUI ON/OFF/ON and stale same-context intent rejected after native card revocation; require client report PASS");
+                "Actual BUILD-only teammate C08 bind/node/native link and full data passed, revoked same-key read denied; SECURITY GUI/stale-intent chain passed; require client report PASS");
             run.context.event(
                 "real_actor_complete",
                 "run=" + run.context.runId()
@@ -553,6 +806,29 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                     + " actorLevel2=false actorLevel4=false");
         } else throw new IllegalStateException(
             "Invalid safety fixture control transition: " + action + " stage=" + run.stage);
+    }
+
+    private void extractActorCard() {
+        IAEItemStack removed = ((ITerminalHost) station).getItemInventory()
+            .extractItems(
+                AEApi.instance()
+                    .storage()
+                    .createItemStack(card),
+                Actionable.MODULATE,
+                new PlayerSource(owner, (IActionHost) station));
+        require(removed != null && removed.getStackSize() == 1, "Owner extracts exact real actor biometric card");
+    }
+
+    private boolean allNativePermissions() {
+        for (SecurityPermissions permission : SecurityPermissions.values())
+            if (!security().hasPermission(actor, permission)) return false;
+        return true;
+    }
+
+    private boolean onlyNativePermission(SecurityPermissions allowed) {
+        for (SecurityPermissions permission : SecurityPermissions.values())
+            if (security().hasPermission(actor, permission) != (permission == allowed)) return false;
+        return true;
     }
 
     private void requireLiveContext() throws Exception {
@@ -637,6 +913,8 @@ public final class QuantumSafetyClientScenario implements TestScenario {
         receipt.put("stage", stage);
         receipt.put("policy", policy());
         receipt.put("nativeSecurity", security().hasPermission(actor, SecurityPermissions.SECURITY));
+        receipt.put("nativeBuild", security().hasPermission(actor, SecurityPermissions.BUILD));
+        receipt.put("nativeAll", allNativePermissions());
         receipt.put("artifact", TestLabIdentity.ARTIFACT);
         Path directory = new File(
             MinecraftServer.getServer()
@@ -664,6 +942,7 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     }
 
     private void recordTerminalState(TestContext ctx) {
+        recordAccessFacts(ctx, "terminal");
         String nativeSecurity = "unavailable", actualPolicy = "unavailable";
         try {
             if (controller != null && station != null && !controller.isInvalid() && !station.isInvalid()) {
@@ -695,6 +974,74 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                 + nativeSecurity
                 + " preDrainWitness="
                 + (witnessedStale != null));
+    }
+
+    private void recordAccessFacts(TestContext ctx, String point) {
+        if (actor == null || terminal == null) return;
+        Map<String, Object> facts = new LinkedHashMap<>();
+        facts.put("point", point);
+        facts.put(
+            "clickingActor",
+            actor.getUniqueID()
+                .toString());
+        facts.put("profileReferencePresent", MonitoringProfiles.hasProfileReference(terminal));
+        try {
+            facts.put("worldCanMineNode1", actor.worldObj.canMineBlock(actor, NODE_X, NODE_Y, NODE_Z));
+            facts.put("actorCanEditNode1", actor.canPlayerEdit(NODE_X, NODE_Y, NODE_Z, 1, terminal));
+            facts.put("worldCanMineNode2", actor.worldObj.canMineBlock(actor, NODE_X, NODE_Y, ALL_NODE_Z));
+            facts.put("actorCanEditNode2", actor.canPlayerEdit(NODE_X, NODE_Y, ALL_NODE_Z, 1, terminal));
+        } catch (RuntimeException unavailable) {
+            facts.put(
+                "worldEditFactsUnavailable",
+                unavailable.getClass()
+                    .getSimpleName());
+        }
+        try {
+            facts.put(
+                "nativeActorId",
+                AEApi.instance()
+                    .registries()
+                    .players()
+                    .getID(actor));
+            facts.put("nativeStationOwnerId", station == null ? null : ((ISecurityProvider) station).getOwner());
+            facts.put(
+                "keyMatchesNativeStation",
+                station != null && terminal.hasTagCompound()
+                    && Long.toString(((ISecurityProvider) station).getSecurityKey())
+                        .equals(
+                            terminal.getTagCompound()
+                                .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY)));
+            facts.put(
+                "controllerAndStationSameGrid",
+                controller != null && station != null
+                    && ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN)
+                        .getGrid()
+                        == ((IGridHost) station).getGridNode(ForgeDirection.UNKNOWN)
+                            .getGrid());
+            Map<String, Boolean> permissions = new LinkedHashMap<>();
+            for (SecurityPermissions permission : SecurityPermissions.values())
+                permissions.put(permission.name(), security().hasPermission(actor, permission));
+            facts.put("nativePermissions", permissions);
+        } catch (RuntimeException unavailable) {
+            facts.put(
+                "nativeFactsUnavailable",
+                unavailable.getClass()
+                    .getSimpleName());
+        }
+        for (TileEntityNetworkQuantumNode node : new TileEntityNetworkQuantumNode[] { buildNode, allGrantsNode })
+            if (node != null) {
+                String prefix = node == buildNode ? "buildNode" : "allGrantsNode";
+                facts.put(prefix + "NativeActor", node.getNativeOwnerID());
+                facts.put(prefix + "Placer", node.getPlacerUUID());
+                facts.put(
+                    prefix + "Reason",
+                    node.getOfflineReason()
+                        .name());
+            }
+        ctx.event(
+            "testlab_access_facts",
+            new GsonBuilder().create()
+                .toJson(facts));
     }
 
     private ISecurityGrid security() {
@@ -772,6 +1119,16 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             if (channel != null && channel.pipeline()
                 .get(OBSERVER) != null) channel.pipeline()
                     .remove(OBSERVER);
+            if (buildFixtureReserved) {
+                ctx.world()
+                    .setBlockToAir(NODE_X, NODE_Y, ALL_NODE_Z);
+                ctx.world()
+                    .setBlockToAir(NODE_X, NODE_Y - 1, ALL_NODE_Z);
+                ctx.world()
+                    .setBlockToAir(NODE_X, NODE_Y, NODE_Z);
+                ctx.world()
+                    .setBlockToAir(NODE_X, NODE_Y - 1, NODE_Z);
+            }
             if (stationPlaced) {
                 TileEntity tile = ctx.world()
                     .getTileEntity(X + 1, Y, Z);

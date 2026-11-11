@@ -46,9 +46,11 @@ public final class TestWorldCommand {
         String action = args.length < 2 ? "help" : args[1];
         if ("quantum-safety".equals(action)) {
             if (args.length != 4 || sender instanceof EntityPlayer) throw new CommandException(
-                "Server console only: /gtswn test quantum-safety revoke|complete|abort <businessRunId>");
-            if (!("revoke".equals(args[2]) || "complete".equals(args[2]) || "abort".equals(args[2])))
-                throw new CommandException("Unknown quantum-safety control action");
+                "Server console only: /gtswn test quantum-safety revoke-build|prepare-security|revoke|complete|abort <businessRunId>");
+            if (!("revoke-build".equals(args[2]) || "prepare-security".equals(args[2])
+                || "revoke".equals(args[2])
+                || "complete".equals(args[2])
+                || "abort".equals(args[2]))) throw new CommandException("Unknown quantum-safety control action");
             try {
                 QuantumSafetyClientScenario.control(sender, args[2], args[3]);
             } catch (Exception failure) {

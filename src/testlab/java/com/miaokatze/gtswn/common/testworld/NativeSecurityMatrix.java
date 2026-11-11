@@ -4,7 +4,9 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
+import net.minecraft.block.Block;
 import net.minecraft.entity.player.EntityPlayer;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.nbt.NBTTagList;
@@ -12,7 +14,9 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.common.util.ForgeDirection;
 
+import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.monitoring.MonitoringProfiles;
 import com.miaokatze.gtswn.common.quantum.QuantumControllerRegistry;
 import com.miaokatze.gtswn.common.quantum.QuantumMigrationJournal;
 import com.miaokatze.gtswn.common.quantum.QuantumNetworkData;
@@ -25,6 +29,7 @@ import com.miaokatze.gtswn.register.BlockRegistrar;
 import appeng.api.AEApi;
 import appeng.api.config.Actionable;
 import appeng.api.config.SecurityPermissions;
+import appeng.api.implementations.items.IBiometricCard;
 import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
@@ -42,6 +47,7 @@ import appeng.tile.AEBaseTile;
 final class NativeSecurityMatrix {
 
     private static final int NODE_X = 6, Y = TestWorldFixtures.Y, NODE_Z = 8, FOREIGN_X = 16, FOREIGN_Z = 16;
+    private static final int REJECT_X = 5, REJECT_Z = 8;
     private final NativeSecurityScenario fixture;
     private final FakePlayer owner, member, outsider;
     private final TileEntity controller, station;
@@ -49,7 +55,7 @@ final class NativeSecurityMatrix {
     private ItemStack buildCard, memberTerminal;
     private TileEntityNetworkQuantumNode node;
     private TileEntity foreignController, foreignStation;
-    private boolean nodePlaced, foreignControllerPlaced, foreignStationPlaced;
+    private boolean nodePlaced, foreignControllerPlaced, foreignStationPlaced, rejectionFloorPlaced;
     private NBTTagCompound linkedBinding;
     private final List<IGridConnection> offEdges = new ArrayList<>();
     private String lastModeEnforcementObservation;
@@ -73,8 +79,7 @@ final class NativeSecurityMatrix {
         assertOrdinaryActors(ctx, "BUILD card provisioning", owner, member, outsider);
         buildCard = fixture.card(member, SecurityPermissions.BUILD);
         require(ctx, fixture.insertCard(buildCard) == null, "Owner inserts actual BUILD-only member card");
-        memberTerminal = terminal.copy();
-        member.inventory.setInventorySlotContents(0, memberTerminal);
+        pairMemberTerminal(ctx);
         next(ctx, 0);
     }
 
@@ -92,6 +97,7 @@ final class NativeSecurityMatrix {
             case 0:
                 if (!ready(controller, station) || !security().hasPermission(member, SecurityPermissions.BUILD)
                     || security().hasPermission(member, SecurityPermissions.SECURITY)) return;
+                ordinaryMemberBinding(ctx);
                 require(ctx, QuantumTerminalAccess.validate(member, memberTerminal), "Actual BUILD card permits use");
                 require(ctx, !QuantumTerminalAccess.canManage(member, memberTerminal), "BUILD alone cannot manage");
                 require(
@@ -99,6 +105,20 @@ final class NativeSecurityMatrix {
                     !QuantumTerminalAccess.canChangeNetworkSafety(member, memberTerminal),
                     "BUILD alone cannot control either local mode");
                 require(ctx, QuantumNetworkData.assemble(owner, terminal) != null, "Warm actual owner data cache");
+                require(
+                    ctx,
+                    ctx.world()
+                        .isAirBlock(REJECT_X, Y, REJECT_Z)
+                        && ctx.world()
+                            .isAirBlock(REJECT_X, Y - 1, REJECT_Z),
+                    "Rejection node and support positions start empty");
+                rejectionFloorPlaced = true;
+                TestWorldFixtures.place(ctx.world(), REJECT_X, Y - 1, REJECT_Z, Blocks.stone, 0);
+                ItemStack noKey = memberTerminal.copy();
+                noKey.getTagCompound()
+                    .removeTag(QuantumTerminalAccess.NBT_ENCRYPTION_KEY);
+                rejectedInteractions(ctx, "BUILD member without security pairing", member, noKey);
+                rejectedInteractions(ctx, "outsider with valid paired terminal but no card", outsider, terminal.copy());
                 deny(
                     ctx,
                     "BUILD-only OFF intent",
@@ -220,6 +240,7 @@ final class NativeSecurityMatrix {
                     gridNode(foreignController).getGrid() != gridNode(controller).getGrid(),
                     "Foreign native station remains on an independent real grid");
                 ItemStack foreign = fixture.encodeAt(ctx, terminal, foreignStation, outsider);
+                rejectedInteractions(ctx, "BUILD member with foreign-grid key", member, foreign.copy());
                 require(
                     ctx,
                     ((ISecurityProvider) foreignStation).getOwner() == actorId(outsider),
@@ -310,13 +331,160 @@ final class NativeSecurityMatrix {
             case 8:
                 if (!node.isLinked()) return;
                 requireMemberBridge(ctx);
+                IAEItemStack removedBuild = fixture.extractCard(buildCard);
+                require(
+                    ctx,
+                    removedBuild != null && removedBuild.getStackSize() == 1,
+                    "Owner removes BUILD-only card after its complete regression chain");
+                ItemStack allGrants = fixture.card(member, SecurityPermissions.BUILD);
+                IBiometricCard biometric = (IBiometricCard) allGrants.getItem();
+                for (SecurityPermissions permission : SecurityPermissions.values())
+                    biometric.addPermission(allGrants, permission);
+                require(
+                    ctx,
+                    fixture.insertCard(allGrants) == null,
+                    "Owner inserts actual all-permissions teammate card");
+                next(ctx, 9);
+                return;
+            case 9:
+                if (!ready(controller, station)) return;
+                for (SecurityPermissions permission : SecurityPermissions.values())
+                    if (!security().hasPermission(member, permission)) return;
+                assertOrdinaryActors(ctx, "all-native-grants", owner, member, outsider);
+                for (SecurityPermissions permission : SecurityPermissions.values())
+                    ctx.event("all_native_grants", "actor=" + actorId(member) + "; " + permission.name() + "=true");
+                pairMemberTerminal(ctx);
+                ordinaryMemberBinding(ctx);
+                require(
+                    ctx,
+                    QuantumTerminalAccess.canManage(member, memberTerminal)
+                        && QuantumTerminalAccess.canChangeNetworkSafety(member, memberTerminal),
+                    "Non-owner all-permissions teammate has native management authority as well as ordinary access");
                 require(ctx, safety(ctx), "Final local safety remains ON");
                 assertOrdinaryActors(ctx, "completed", owner, member, outsider);
                 ctx.pass(
-                    "Native non-OP BUILD/SECURITY matrix, denial side effects, cached data isolation, live revocation/regrant, node NBT, foreign key and OFF-to-ON edge enforcement passed");
+                    "Native non-OP BUILD-only/all-grants teammate binding and full data, denial side effects, cached data isolation, live revocation/regrant, node NBT, foreign key and OFF-to-ON edge enforcement passed");
                 return;
             default:
                 throw new IllegalStateException("Unknown native security matrix phase");
+        }
+    }
+
+    private void pairMemberTerminal(TestContext ctx) {
+        // Pair an otherwise fresh terminal through AE; do not inherit an already-bound controller anchor.
+        memberTerminal = fixture.encodeAt(ctx, GTSWNItemList.ME_Network_Quantum_Terminal.get(1), station, owner);
+        owner.inventory.setInventorySlotContents(0, terminal);
+        QuantumTerminalAccess.synchronize(owner, memberTerminal);
+        member.inventory.setInventorySlotContents(0, memberTerminal);
+    }
+
+    private void ordinaryMemberBinding(TestContext ctx) {
+        require(
+            ctx,
+            !MonitoringProfiles.hasProfileReference(memberTerminal),
+            "Positive teammate fixture is not Profile-managed");
+        require(
+            ctx,
+            !ItemNetworkQuantumTerminal.isBound(memberTerminal),
+            "Member receives encoded terminal without a controller anchor");
+        require(
+            ctx,
+            ((ISecurityProvider) station).getOwner() == actorId(owner) && actorId(owner) != actorId(member),
+            "Native station owner A is distinct from ordinary BUILD teammate B");
+        String describedOwner = memberTerminal.getTagCompound()
+            .getString(QuantumTerminalAccess.NBT_OWNER_UUID);
+        require(
+            ctx,
+            owner.getUniqueID()
+                .toString()
+                .equals(describedOwner),
+            "Handed-off terminal initially describes A, not B");
+        require(
+            ctx,
+            Long.toString(((ISecurityProvider) station).getSecurityKey())
+                .equals(((ItemNetworkQuantumTerminal) memberTerminal.getItem()).getEncryptionKey(memberTerminal)),
+            "Member terminal was actually encoded by this native security station");
+        require(
+            ctx,
+            ctx.world()
+                .canMineBlock(member, 8, Y, 8),
+            "Ordinary member passes independent world edit protection");
+        member.setSneaking(false);
+        ((ItemNetworkQuantumTerminal) memberTerminal.getItem())
+            .onItemUseFirst(memberTerminal, member, ctx.world(), 8, Y, 8, 1, .5f, .5f, .5f);
+        int[] anchor = ItemNetworkQuantumTerminal.getAnchor(memberTerminal);
+        require(
+            ctx,
+            anchor != null && anchor[0] == ctx.world().provider.dimensionId
+                && anchor[1] == 8
+                && anchor[2] == Y
+                && anchor[3] == 8,
+            "Non-OP BUILD teammate actually binds protected controller through production item interaction");
+        require(
+            ctx,
+            ((ISecurityProvider) station).getOwner() == actorId(owner)
+                && gridNode(controller).getPlayerID() == actorId(owner),
+            "Teammate binding does not transfer native network ownership");
+        QuantumNetworkData full = QuantumNetworkData.assemble(member, memberTerminal);
+        require(
+            ctx,
+            full != null && full.online
+                && !full.managementOnly
+                && full.networkSafetyEnabled
+                && (full.channelsInfinite || full.totalChannels > 0),
+            "Ordinary BUILD teammate receives real full network data while safety ON");
+        ctx.event(
+            "ordinary_member_access",
+            "nativeOwner=" + actorId(owner)
+                + "; actor="
+                + actorId(member)
+                + "; itemOwnerBefore="
+                + describedOwner
+                + "; actualControllerBind=true; fullResponse=true; BUILD=true; SECURITY="
+                + security().hasPermission(member, SecurityPermissions.SECURITY)
+                + "; OP2=false; OP4=false; topology=direct-adjacent-native-station");
+    }
+
+    private void rejectedInteractions(TestContext ctx, String label, FakePlayer actor, ItemStack held) {
+        ItemStack previous = actor.inventory.mainInventory[0];
+        ItemStack unbound = held.copy();
+        unbound.getTagCompound()
+            .removeTag(ItemNetworkQuantumTerminal.NBT_BOUND);
+        actor.inventory.setInventorySlotContents(0, unbound);
+        actor.setSneaking(false);
+        try {
+            require(
+                ctx,
+                !QuantumTerminalAccess.canAccessAnchor(actor, unbound, ctx.world(), 8, Y, 8),
+                label + " is denied by clicked-network authority");
+            deny(
+                ctx,
+                label + " controller interaction",
+                () -> ((ItemNetworkQuantumTerminal) unbound.getItem())
+                    .onItemUseFirst(unbound, actor, ctx.world(), 8, Y, 8, 1, .5f, .5f, .5f));
+            require(ctx, !ItemNetworkQuantumTerminal.isBound(unbound), label + " creates no unauthorized binding");
+            actor.inventory.setInventorySlotContents(0, held);
+            require(
+                ctx,
+                QuantumNetworkData.assemble(actor, held) == null,
+                label + " receives no full or management response");
+            require(
+                ctx,
+                ctx.world()
+                    .isAirBlock(REJECT_X, Y, REJECT_Z),
+                "Denied node target is empty before actual item interaction");
+            deny(
+                ctx,
+                label + " node interaction",
+                () -> ((ItemNetworkQuantumTerminal) held.getItem())
+                    .onItemUseFirst(held, actor, ctx.world(), REJECT_X, Y - 1, REJECT_Z, 1, .5f, .5f, .5f));
+            require(
+                ctx,
+                ctx.world()
+                    .isAirBlock(REJECT_X, Y, REJECT_Z),
+                label + " creates no unauthorized node");
+        } finally {
+            actor.inventory.setInventorySlotContents(0, previous);
         }
     }
 
@@ -489,6 +657,9 @@ final class NativeSecurityMatrix {
                 .currentSequence());
         data.setBoolean("safety", safety(ctx));
         data.setTag("terminal", terminal.writeToNBT(new NBTTagCompound()));
+        captureBlock(ctx, data, "controllerBlock", 8, Y, 8);
+        captureBlock(ctx, data, "rejectedNodeBlock", REJECT_X, Y, REJECT_Z);
+        captureBlock(ctx, data, "rejectedGroundBlock", REJECT_X, Y - 1, REJECT_Z);
         if (node != null) {
             data.setTag("nodeBinding", binding(node));
             data.setBoolean("nodeLinked", node.isLinked());
@@ -510,6 +681,27 @@ final class NativeSecurityMatrix {
         }
         data.setTag("inventories", inventories);
         return new Snapshot(data, energy(controller).getStoredPower());
+    }
+
+    private static void captureBlock(TestContext ctx, NBTTagCompound into, String name, int x, int y, int z) {
+        NBTTagCompound block = new NBTTagCompound();
+        block.setInteger(
+            "id",
+            Block.getIdFromBlock(
+                ctx.world()
+                    .getBlock(x, y, z)));
+        block.setInteger(
+            "meta",
+            ctx.world()
+                .getBlockMetadata(x, y, z));
+        TileEntity tile = ctx.world()
+            .getTileEntity(x, y, z);
+        if (tile != null) {
+            NBTTagCompound state = new NBTTagCompound();
+            tile.writeToNBT(state);
+            block.setTag("tile", state);
+        }
+        into.setTag(name, block);
     }
 
     private static final class Snapshot {
@@ -600,7 +792,15 @@ final class NativeSecurityMatrix {
             try {
                 if (foreignStationPlaced) remove(ctx, FOREIGN_X + 1, FOREIGN_Z);
             } finally {
-                if (foreignControllerPlaced) remove(ctx, FOREIGN_X, FOREIGN_Z);
+                try {
+                    if (foreignControllerPlaced) remove(ctx, FOREIGN_X, FOREIGN_Z);
+                } finally {
+                    if (rejectionFloorPlaced) {
+                        remove(ctx, REJECT_X, REJECT_Z);
+                        ctx.world()
+                            .setBlockToAir(REJECT_X, Y - 1, REJECT_Z);
+                    }
+                }
             }
         }
     }
