@@ -33,15 +33,17 @@ import appeng.me.pathfinding.PathingCalculation;
  *
  * <p>
  * 零包私有访问：handler 用擦除签名（Map/Object/Function），不引用 ControllerFace 类型。
- * 一个 handler 默认命中构造器内两处调用点（字节码签名一致）。应用与否由
- * {@code GtswnMixinPlugin} 按共享探针门控；应用失败（目标变动）即启动崩溃，无静默错配。
+ * AE2 是必需依赖；本 Mixin 不由可选模组探针开关。当前 .1095 的普通及创造控制器各有一处调用。
+ * 注入器要求总数恰好为二；两个分支的具体归属另由依赖字节码合同检查。
  * </p>
  */
 @Mixin(value = PathingCalculation.class, remap = false)
 public abstract class PathingCalculationMixin {
 
     @Redirect(
-        method = "<init>",
+        method = "<init>(Lappeng/api/networking/IGrid;)V",
+        require = 2,
+        allow = 2,
         at = @At(
             value = "INVOKE",
             target = "Ljava/util/Map;computeIfAbsent(Ljava/lang/Object;Ljava/util/function/Function;)Ljava/lang/Object;",

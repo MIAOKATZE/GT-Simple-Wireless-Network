@@ -64,7 +64,8 @@ public class GtswnMixinPluginTest {
                     .getDeclaredMethod(
                         "gtswn$transferablePart",
                         appeng.api.parts.IPartHost.class,
-                        net.minecraftforge.common.util.ForgeDirection.class)
+                        net.minecraftforge.common.util.ForgeDirection.class,
+                        com.llamalad7.mixinextras.injector.wrapoperation.Operation.class)
                     .getModifiers()));
         final int[] targets = { 0 }, getPartCalls = { 0 };
         try (InputStream input = getClass().getClassLoader()

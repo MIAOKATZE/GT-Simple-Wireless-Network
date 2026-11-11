@@ -16,7 +16,10 @@ public final class AEPartCopy {
     private AEPartCopy() {}
 
     public static IPart transferablePart(IPartHost host, ForgeDirection side) {
-        IPart part = host.getPart(side);
+        return filterTransferablePart(host.getPart(side), side);
+    }
+
+    public static IPart filterTransferablePart(IPart part, ForgeDirection side) {
         return side == ForgeDirection.UNKNOWN && part instanceof QuantumNodeCablePart ? null : part;
     }
 }

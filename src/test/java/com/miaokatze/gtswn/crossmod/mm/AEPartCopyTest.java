@@ -5,6 +5,7 @@ package com.miaokatze.gtswn.crossmod.mm;
 
 import static org.junit.Assert.*;
 
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -13,7 +14,10 @@ import net.minecraftforge.common.util.ForgeDirection;
 
 import org.junit.Test;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.miaokatze.gtswn.common.tile.TileEntityNetworkQuantumNode;
+import com.miaokatze.gtswn.mixins.mm.AEAnalysisResultMixin;
+import com.miaokatze.gtswn.mixins.mm.MMUtilsMixin;
 
 import appeng.api.implementations.parts.IPartCable;
 import appeng.api.parts.IPart;
@@ -21,6 +25,32 @@ import appeng.api.parts.IPartHost;
 import appeng.api.parts.PartItemStack;
 
 public class AEPartCopyTest {
+
+    @Test
+    public void wrappersFilterTheChainedResultWithoutFetchingTheNativePartAgain() throws Exception {
+        IPart virtual = new TileEntityNetworkQuantumNode().getCablePart();
+        AtomicReference<ForgeDirection> nativeRead = new AtomicReference<>();
+        IPartHost host = host(null, nativeRead);
+        Method[] wrappers = {
+            AEAnalysisResultMixin.class
+                .getDeclaredMethod("gtswn$transferablePart", IPartHost.class, ForgeDirection.class, Operation.class),
+            MMUtilsMixin.class
+                .getDeclaredMethod("gtswn$transferableCable", IPartHost.class, ForgeDirection.class, Operation.class) };
+        for (Method wrapper : wrappers) {
+            wrapper.setAccessible(true);
+            for (ForgeDirection side : ForgeDirection.values()) {
+                AtomicInteger calls = new AtomicInteger();
+                Operation<IPart> next = args -> {
+                    calls.incrementAndGet();
+                    assertArrayEquals(new Object[] { host, side }, args);
+                    return virtual;
+                };
+                assertSame(side == ForgeDirection.UNKNOWN ? null : virtual, wrapper.invoke(null, host, side, next));
+                assertEquals(1, calls.get());
+                assertNull("No direct lookup outside the wrapping chain", nativeRead.get());
+            }
+        }
+    }
 
     @Test
     public void quantumCableIsExcludedBeforeItsAbsentItemCanBeRead() {
