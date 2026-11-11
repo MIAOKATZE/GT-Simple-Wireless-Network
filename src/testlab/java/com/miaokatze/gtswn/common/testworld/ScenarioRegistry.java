@@ -26,6 +26,13 @@ public final class ScenarioRegistry {
         TestWorldManager.register(new QuantumWorldScenario(QuantumWorldScenario.Mode.SAFETY));
         TestWorldManager.register(new NativeSecurityScenario(NativeSecurityScenario.Mode.PERMISSIONS));
         TestWorldManager.register(new NativeSecurityScenario(NativeSecurityScenario.Mode.RECOVERY));
+        TestWorldManager.register(new QuantumSecurityTopologyScenario());
+        TestWorldManager.register(new QuantumSecurityHistoryScenario(QuantumSecurityHistoryScenario.Mode.MIGRATION));
+        TestWorldManager
+            .register(new QuantumSecurityHistoryScenario(QuantumSecurityHistoryScenario.Mode.IDENTITY_RELOAD));
+        TestWorldManager.register(new NativeHistoricalNodeScenario());
+        TestWorldManager.register(new NativeIncorporationScopeScenario());
+        TestWorldManager.register(new NativeQuantumProfileScopeScenario());
         TestWorldManager.register(new QuantumAnchorLifecycleScenario());
         TestWorldManager.register(new ManualClientScenario());
         TestWorldManager.register(new QuantumStressScenario());
