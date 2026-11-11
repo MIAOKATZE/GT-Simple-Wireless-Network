@@ -98,6 +98,9 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     private TileEntityNetworkQuantumNode buildNode;
     private TileEntityNetworkQuantumNode allGrantsNode;
     private boolean allGrantsReadRequest, allGrantsPositive;
+    private boolean allGrantsPendingRecorded;
+    private long lastAllGrantsSample;
+    private Map<String, Object> lastAllGrantsFullFacts;
     private boolean buildFixtureReserved, buildPositive, buildDeniedRequest;
     private FMLEmbeddedChannel channel;
     private NBTTagCompound original, terminalAtRevoke, controllersAtRevoke, securityAtRevoke, providersAtRevoke;
@@ -136,6 +139,9 @@ public final class QuantumSafetyClientScenario implements TestScenario {
         buildNode = null;
         allGrantsNode = null;
         allGrantsReadRequest = allGrantsPositive = false;
+        allGrantsPendingRecorded = false;
+        lastAllGrantsSample = -20;
+        lastAllGrantsFullFacts = null;
         buildFixtureReserved = buildPositive = buildDeniedRequest = false;
         channel = null;
         original = terminalAtRevoke = controllersAtRevoke = securityAtRevoke = providersAtRevoke = null;
@@ -507,7 +513,22 @@ public final class QuantumSafetyClientScenario implements TestScenario {
             writeFixtureReceipt("build-revoked");
         }
         if (stage == -5 && allNativePermissions()) {
-            require(policy(), "All-native-grants teammate must operate with safety ON");
+            guard(policy(), "All-native-grants teammate must operate with safety ON");
+            if (ctx.tick() - lastAllGrantsSample < 20) return;
+            lastAllGrantsSample = ctx.tick();
+            QuantumNetworkData full = QuantumNetworkData.assemble(actor, terminal);
+            Map<String, Object> facts = allGrantsFullFacts(ctx, full, "natural-readiness");
+            boolean ready = Boolean.TRUE.equals(facts.get("bridgeReady"))
+                && Boolean.TRUE.equals(facts.get("fullBusinessReady"));
+            if (!allGrantsPendingRecorded || ready) {
+                ctx.event(
+                    ready ? "all_grants_ready" : "all_grants_pending",
+                    new GsonBuilder().serializeNulls()
+                        .create()
+                        .toJson(facts));
+                allGrantsPendingRecorded = true;
+            }
+            if (!ready) return;
             airWitness = guiWitness = false;
             stage = -4;
             terminal.getTagCompound()
@@ -620,6 +641,11 @@ public final class QuantumSafetyClientScenario implements TestScenario {
                 }
                 if (stage == -4) {
                     QuantumNetworkData full = QuantumNetworkData.assemble(actor, terminal);
+                    ctx.event(
+                        "all_grants_actual_request_full",
+                        new GsonBuilder().serializeNulls()
+                            .create()
+                            .toJson(allGrantsFullFacts(ctx, full, "actual-c2s5")));
                     require(
                         allNativePermissions() && full != null
                             && full.online
@@ -825,6 +851,57 @@ public final class QuantumSafetyClientScenario implements TestScenario {
         return true;
     }
 
+    /** Only observes normal AE maintenance and ordinary cached assembly; never drives either lifecycle. */
+    private Map<String, Object> allGrantsFullFacts(TestContext ctx, QuantumNetworkData full, String point)
+        throws Exception {
+        Map<String, Object> facts = new LinkedHashMap<>();
+        boolean linked = buildNode != null && buildNode.isLinked();
+        IGridConnection edge = buildNode == null ? null : (IGridConnection) field(buildNode, "connection");
+        boolean memberA = edge != null && QuantumConnectionMembership.contains(edge.a(), edge);
+        boolean memberB = edge != null && QuantumConnectionMembership.contains(edge.b(), edge);
+        boolean sameGrid = memberA && memberB
+            && edge.a()
+                .getGrid()
+                == edge.b()
+                    .getGrid()
+            && edge.a()
+                .getGrid()
+                == ((IGridHost) controller).getGridNode(ForgeDirection.UNKNOWN)
+                    .getGrid();
+        boolean fullReady = allNativePermissions() && full != null
+            && full.online
+            && !full.managementOnly
+            && full.totalChannels > 0
+            && full.quantumNodeCount > 0
+            && policy();
+        facts.put("point", point);
+        facts.put("serverTick", ctx.tick());
+        facts.put(
+            "worldTick",
+            ctx.world()
+                .getTotalWorldTime());
+        facts.put("nativeAll", allNativePermissions());
+        facts.put("policy", policy());
+        facts.put("fullPresent", full != null);
+        facts.put("online", full == null ? null : full.online);
+        facts.put("managementOnly", full == null ? null : full.managementOnly);
+        facts.put("totalChannels", full == null ? null : full.totalChannels);
+        facts.put("quantumNodeCount", full == null ? null : full.quantumNodeCount);
+        facts.put("nodeLinked", linked);
+        facts.put(
+            "nodeReason",
+            buildNode == null ? "absent"
+                : buildNode.getOfflineReason()
+                    .name());
+        facts.put("nativeMemberA", memberA);
+        facts.put("nativeMemberB", memberB);
+        facts.put("sameControllerGrid", sameGrid);
+        facts.put("bridgeReady", linked && memberA && memberB && sameGrid);
+        facts.put("fullBusinessReady", fullReady);
+        lastAllGrantsFullFacts = facts;
+        return facts;
+    }
+
     private boolean onlyNativePermission(SecurityPermissions allowed) {
         for (SecurityPermissions permission : SecurityPermissions.values())
             if (security().hasPermission(actor, permission) != (permission == allowed)) return false;
@@ -942,6 +1019,15 @@ public final class QuantumSafetyClientScenario implements TestScenario {
     }
 
     private void recordTerminalState(TestContext ctx) {
+        if (lastAllGrantsFullFacts != null) {
+            Map<String, Object> facts = new LinkedHashMap<>(lastAllGrantsFullFacts);
+            facts.put("terminalServerTick", ctx.tick());
+            ctx.event(
+                "all_grants_terminal_last_full",
+                new GsonBuilder().serializeNulls()
+                    .create()
+                    .toJson(facts));
+        }
         recordAccessFacts(ctx, "terminal");
         String nativeSecurity = "unavailable", actualPolicy = "unavailable";
         try {
