@@ -47,7 +47,8 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
     private FakePlayer owner, member;
     private TileEntity source, sourceStation, target, targetStation;
     private TileEntityNetworkQuantumNode node;
-    private ItemStack terminal, memberCard;
+    private ItemStack terminal, memberCard, targetBuildCard, copiedTerminal, unpairedTerminal, foreignTerminal;
+    private NBTTagCompound offlineTerminalNbt;
     private boolean sourcePlaced, sourceStationPlaced, targetPlaced, targetStationPlaced, nodeReserved;
     private int stage;
     private long stageTick, sourceKey;
@@ -66,7 +67,7 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
     @Override
     public String description() {
         return mode == Mode.MIGRATION
-            ? "All-permissions non-OP teammate: committed migration, old source-key denial and native target re-pairing"
+            ? "Native-authorized migration pairing: atomic foreign/no-SEC/no-provider rejection and held/offline/copy recovery"
             : "All-permissions non-OP teammate: same-process controller/station NBT recreation, changed-key denial and recovery";
     }
 
@@ -89,6 +90,8 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
         node = null;
         owner = member = null;
         terminal = memberCard = null;
+        targetBuildCard = copiedTerminal = unpairedTerminal = foreignTerminal = null;
+        offlineTerminalNbt = null;
         generation = safetyIdentity = null;
         sourceGridBeforeMigration = null;
         introducedProviderKeys.clear();
@@ -176,6 +179,7 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             owner.inventory.setInventorySlotContents(0, terminal);
             click(ctx, owner, terminal, SOURCE_X, Y, Z);
             requireAnchor(ctx, SOURCE_X);
+            unpairedTerminal = terminal.copy();
             terminal = encode(ctx, sourceStation);
             require(
                 ctx,
@@ -198,18 +202,23 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             if (mode == Mode.MIGRATION) {
                 sourceGridBeforeMigration = grid(source);
                 require(ctx, grid(source) != grid(target), "Source and destination are genuinely distinct AE grids");
+                ItemStack paired = terminal;
+                foreignTerminal = encode(ctx, targetStation);
+                terminal = foreignTerminal;
+                member.inventory.setInventorySlotContents(0, terminal);
+                denyMigration(ctx, "Foreign native key cannot initiate protected source migration");
+                terminal = paired;
+                member.inventory.setInventorySlotContents(0, terminal);
                 require(
                     ctx,
-                    QuantumNetworkMigration.migrate(member, terminal, ctx.world(), TARGET_X, Y, Z),
-                    "All-permissions teammate commits production migration transaction");
+                    NativeSecurityStationSupport.extractCard(ctx, targetStation, owner, memberCard) != null,
+                    "Owner revokes actual target all-permissions card before no-SEC preflight");
+                targetBuildCard = NativeSecurityStationSupport.card(member, SecurityPermissions.BUILD);
                 require(
                     ctx,
-                    !QuantumControllerRegistry.get(ctx.world())
-                        .isQuantized(SOURCE_X, Y, Z) && QuantumControllerRegistry.get(ctx.world())
-                            .isQuantized(TARGET_X, Y, Z),
-                    "Migration actually retires source and registers destination");
-                requireAnchor(ctx, TARGET_X);
-                next(ctx, 2);
+                    NativeSecurityStationSupport.insertCard(ctx, targetStation, owner, targetBuildCard) == null,
+                    "Owner gives destination BUILD without native SECURITY");
+                next(ctx, 10);
             } else {
                 TileEntity previous = source;
                 source = TestWorldFixtures.reload(ctx.world(), source);
@@ -227,6 +236,57 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             }
             return;
         }
+        if (stage == 10) {
+            if (!ready() || !allGrants(source)) return;
+            ISecurityGrid security = grid(target).getCache(ISecurityGrid.class);
+            if (!security.hasPermission(member, SecurityPermissions.BUILD)
+                || security.hasPermission(member, SecurityPermissions.SECURITY)) return;
+            denyMigration(ctx, "Target BUILD without native SECURITY cannot authorize automatic encoding");
+            removeStation(ctx, TARGET_X + 1);
+            targetStation = null;
+            next(ctx, 11);
+            return;
+        }
+        if (stage == 11) {
+            if (ctx.tick() - stageTick < 25
+                || !ItemNetworkQuantumTerminal.isControllerActive((appeng.tile.networking.TileController) target))
+                return;
+            denyMigration(ctx, "Protected migration with no destination provider is rejected before commit");
+            targetStation = place(ctx, TARGET_X + 1, true);
+            next(ctx, 12);
+            return;
+        }
+        if (stage == 12) {
+            if (!ready()) return;
+            require(
+                ctx,
+                NativeSecurityStationSupport.insertCard(ctx, targetStation, owner, memberCard) == null,
+                "Owner provisions replacement destination with all native permissions");
+            next(ctx, 13);
+            return;
+        }
+        if (stage == 13) {
+            if (!ready() || !allGrants(source) || !allGrants(target)) return;
+            copiedTerminal = terminal.copy();
+            offlineTerminalNbt = (NBTTagCompound) terminal.writeToNBT(new NBTTagCompound())
+                .copy();
+            long targetKey = ((ISecurityProvider) targetStation).getSecurityKey();
+            if (!QuantumNetworkSecurityRegistry.providerRegistry(ctx.world())
+                .isProviderEnrolled(targetKey)) introducedProviderKeys.add(targetKey);
+            require(
+                ctx,
+                QuantumNetworkMigration.migrate(member, terminal, ctx.world(), TARGET_X, Y, Z),
+                "All-permissions teammate commits production migration with trusted destination encoding");
+            require(
+                ctx,
+                !QuantumControllerRegistry.get(ctx.world())
+                    .isQuantized(SOURCE_X, Y, Z) && QuantumControllerRegistry.get(ctx.world())
+                        .isQuantized(TARGET_X, Y, Z),
+                "Migration actually retires source and registers destination");
+            requireAnchor(ctx, TARGET_X);
+            next(ctx, 2);
+            return;
+        }
         if (stage == 2) {
             if (!ready() || !allGrants(source) || !allGrants(target)) return;
             requireAnchor(ctx, TARGET_X);
@@ -241,30 +301,50 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
                 "Destination has its own separate real security-provider grid");
             require(
                 ctx,
-                encodedGrid() == grid(source) && encodedGrid() != grid(target),
-                "Untouched terminal native key still resolves source provider rather than current anchor grid");
+                encodedGrid() == grid(target) && encodedGrid() != grid(source),
+                "Committed migration automatically pairs held terminal to actual destination provider grid");
             require(
                 ctx,
-                Long.toString(sourceKey)
+                Long.toString(((ISecurityProvider) targetStation).getSecurityKey())
                     .equals(key()),
-                "Migration retains actual source native key");
-            denyNode(ctx, "Migrated anchor with source native key");
-            ctx.event(
-                "REPRODUCED_DENIAL_AFTER_MIGRATION",
-                "seamlessUsability=false; rePairRequired=true; " + evidence(ctx));
-            terminal = encode(ctx, targetStation);
+                "Trusted journal writes actual destination native key without a manual station visit");
+            ItemStack held = terminal;
+            requireFull(ctx, "Held terminal immediately after protected migration");
+            ItemStack offline = ItemStack.loadItemStackFromNBT(offlineTerminalNbt);
+            require(ctx, offline != null, "Real registered terminal restores from serialized item NBT in same process");
+            for (ItemStack copy : new ItemStack[] { copiedTerminal, offline }) {
+                require(
+                    ctx,
+                    Long.toString(sourceKey)
+                        .equals(((ItemNetworkQuantumTerminal) copy.getItem()).getEncryptionKey(copy)),
+                    "Dormant copy still has original native source key before lazy validation");
+                terminal = copy;
+                member.inventory.setInventorySlotContents(0, terminal);
+                requireFull(ctx, "Dormant/copy terminal replays trusted pairing on ordinary validation");
+                requireAnchor(ctx, TARGET_X);
+                require(
+                    ctx,
+                    encodedGrid() == grid(target),
+                    "Lazy terminal replay resolves actual target provider grid");
+            }
+            for (ItemStack rejected : new ItemStack[] { foreignTerminal, unpairedTerminal }) {
+                terminal = rejected;
+                member.inventory.setInventorySlotContents(0, terminal);
+                denyNode(ctx, "Foreign or originally unpaired terminal is not paired by journal replay");
+            }
+            terminal = held;
             member.inventory.setInventorySlotContents(0, terminal);
+            ctx.event(
+                "TRUSTED_PAIRING_MIGRATION",
+                "seamlessUsability=true; rePairRequired=false; held/copy/same-process-item-NBT=true; " + evidence(ctx));
             next(ctx, 3);
             return;
         }
         if (stage == 3) {
             if (!ready() || !allGrants(target)) return;
-            require(
-                ctx,
-                encodedGrid() == grid(target),
-                "Native destination encoder repairs key/current-anchor grid match");
+            require(ctx, encodedGrid() == grid(target), "Trusted migration retains key/current-anchor grid match");
             requireAnchor(ctx, TARGET_X);
-            requireFull(ctx, "After destination native re-pairing");
+            requireFull(ctx, "After automatic destination pairing");
             placeNode(ctx);
             next(ctx, 7);
             return;
@@ -319,9 +399,16 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             assertOwners(ctx);
             denyNode(ctx, "All native grants with old key after station replacement");
             ctx.event("REPRODUCED_DENIAL_AFTER_KEY_CHANGE", evidence(ctx));
-            terminal = encode(ctx, sourceStation);
-            member.inventory.setInventorySlotContents(0, terminal);
-            requireFull(ctx, "After replacement native re-pairing");
+            long replacementKey = ((ISecurityProvider) sourceStation).getSecurityKey();
+            if (!QuantumNetworkSecurityRegistry.providerRegistry(ctx.world())
+                .isProviderEnrolled(replacementKey)) introducedProviderKeys.add(replacementKey);
+            click(ctx, member, terminal, SOURCE_X, Y, Z);
+            require(
+                ctx,
+                Long.toString(replacementKey)
+                    .equals(key()) && encodedGrid() == grid(source),
+                "Explicit current-controller rebind by real native SECURITY teammate repairs legacy key");
+            requireFull(ctx, "After explicit native-authorized controller rebind");
             placeNode(ctx);
             next(ctx, 7);
             return;
@@ -343,7 +430,7 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             NativeSecurityMatrix.assertOrdinaryActors(ctx, "history-complete", owner, member);
             ctx.pass(
                 mode == Mode.MIGRATION
-                    ? "Reproduced all-grants old-key denial after committed migration; native destination re-pairing restores full data and natural node connection; seamless migration NOT established"
+                    ? "Protected migration rejects foreign/no-SEC/no-provider atomically, automatically pairs held/offline/copy terminals and naturally connects production-placed teammate node"
                     : "Same-process native owner/key/controller identity NBT recovery, changed-key denial and native re-pairing restore full data and natural node connection");
         }
     }
@@ -396,10 +483,16 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
     }
 
     private IGrid encodedGrid() {
+        long serial;
+        try {
+            serial = Long.parseLong(key());
+        } catch (NumberFormatException invalid) {
+            return null;
+        }
         ILocatable location = AEApi.instance()
             .registries()
             .locatable()
-            .getLocatableBy(Long.parseLong(key()));
+            .getLocatableBy(serial);
         if (!(location instanceof ISecurityProvider) || !(location instanceof TileEntity)
             || ((ISecurityProvider) location).getSecurityKey() != location.getLocatableSerial()) return null;
         return grid((TileEntity) location);
@@ -457,13 +550,13 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             ctx.world()
                 .isAirBlock(NODE_X, Y, NODE_Z),
             label + " produces no unauthorized node");
-        String denied = StatCollector.translateToLocalFormatted("gtswn.chat.quantum.no_permission");
+        String denied = StatCollector.translateToLocalFormatted("gtswn.chat.quantum.pairing_mismatch");
         require(
             ctx,
             recording.messages()
                 .stream()
                 .anyMatch(message -> message.contains(denied)),
-            label + " emits actual production no-permission chat");
+            label + " emits actual production native-pairing-mismatch chat");
         ctx.event(
             "native_denied_chat",
             recording.messages()
@@ -475,8 +568,29 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
                 + " leaves typed inventory/persistent resources, policy, registries and same-callback AE power unchanged");
     }
 
+    private void denyMigration(TestContext ctx, String label) {
+        QuantumTerminalAccess.synchronize(member, terminal);
+        NBTTagCompound before = denialSnapshot(ctx);
+        require(ctx, !QuantumNetworkMigration.migrate(member, terminal, ctx.world(), TARGET_X, Y, Z), label);
+        require(
+            ctx,
+            QuantumControllerRegistry.get(ctx.world())
+                .isQuantized(SOURCE_X, Y, Z)
+                && !QuantumControllerRegistry.get(ctx.world())
+                    .isQuantized(TARGET_X, Y, Z),
+            label + " keeps source registered and target uncommitted");
+        require(
+            ctx,
+            before.equals(denialSnapshot(ctx)),
+            label + " preserves binding, registries/journal, actor resources and same-callback native power");
+        ctx.event("migration_preflight_denied", label + "; " + evidence(ctx));
+    }
+
     private NBTTagCompound denialSnapshot(TestContext ctx) {
         NBTTagCompound state = new NBTTagCompound(), registry = new NBTTagCompound();
+        TileEntity anchor = mode == Mode.MIGRATION ? target : source;
+        state.setBoolean("safety", QuantumTerminalAccess.isNetworkSafetyEnabled(ctx.world(), anchor.xCoord, Y, Z));
+        state.setBoolean("sourceSafety", QuantumTerminalAccess.isNetworkSafetyEnabled(ctx.world(), SOURCE_X, Y, Z));
         QuantumControllerRegistry.get(ctx.world())
             .writeToNBT(registry);
         state.setTag("controllers", registry);
@@ -501,8 +615,12 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             .writeToNBT(policy);
         state.setTag("policy", policy);
         state.setTag("terminal", terminal.writeToNBT(new NBTTagCompound()));
-        TileEntity anchor = mode == Mode.MIGRATION ? target : source;
-        state.setBoolean("safety", QuantumTerminalAccess.isNetworkSafetyEnabled(ctx.world(), anchor.xCoord, Y, Z));
+        for (TileEntity fixture : new TileEntity[] { source, sourceStation, target, targetStation })
+            if (fixture != null) {
+                NBTTagCompound saved = new NBTTagCompound();
+                fixture.writeToNBT(saved);
+                state.setTag("fixture" + fixture.xCoord, saved);
+            }
         for (TileEntity controller : new TileEntity[] { source, target }) if (controller != null) {
             try {
                 state.setDouble(
@@ -624,6 +742,8 @@ final class QuantumSecurityHistoryScenario implements TestScenario {
             if (member != null) member.inventory.clearInventory(null, -1);
             owner = member = null;
             terminal = memberCard = null;
+            targetBuildCard = copiedTerminal = unpairedTerminal = foreignTerminal = null;
+            offlineTerminalNbt = null;
             source = sourceStation = target = targetStation = null;
             node = null;
             sourceGridBeforeMigration = null;

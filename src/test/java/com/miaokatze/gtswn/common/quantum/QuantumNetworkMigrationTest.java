@@ -62,6 +62,140 @@ public class QuantumNetworkMigrationTest {
     }
 
     @Test
+    public void trustedNativePairingFollowsEveryHopAfterJournalNbtReload() {
+        QuantumMigrationJournal journal = journal();
+        journal.appendClusterMigration(7, members(A), B, "network-generation", "101", "202");
+        journal.appendClusterMigration(8, members(B), C, "network-generation", "202", "303");
+        NBTTagCompound saved = new NBTTagCompound();
+        journal.writeToNBT(saved);
+        QuantumMigrationJournal restored = journal();
+        restored.readFromNBT(saved);
+        QuantumMigrationJournal.Resolution resolution = restored.resolve(A, 0, "network-generation", "101");
+        assertEquals(C, resolution.anchor);
+        assertEquals("network-generation", resolution.generation);
+        assertEquals("303", resolution.encryptionKey);
+        assertEquals(2L, resolution.sequence);
+        assertEquals(
+            "303",
+            restored.resolve(C, resolution.sequence, resolution.generation, resolution.encryptionKey).encryptionKey);
+        restored.appendClusterMigration(9, members(C), A, "network-generation", "303", "404");
+        assertEquals("404", restored.resolve(C, 2, "network-generation", "303").encryptionKey);
+        assertEquals("404", restored.resolve(A, 0, "network-generation", "101").encryptionKey);
+        assertEquals(A, restored.resolve(A, 0, "network-generation", "101").anchor);
+    }
+
+    @Test
+    public void journalNeverPairsEmptyForeignStaleGenerationOrUnrelatedTerminal() {
+        QuantumMigrationJournal journal = journal();
+        journal.appendClusterMigration(7, members(A), B, "network-generation", "101", "202");
+        journal.appendClusterMigration(8, members(B), C, "network-generation", "202", "303");
+        for (String wrongKey : new String[] { "", "999", "malformed", "202" }) {
+            QuantumMigrationJournal.Resolution resolution = journal.resolve(A, 0, "network-generation", wrongKey);
+            assertEquals(C, resolution.anchor);
+            assertEquals(wrongKey, resolution.encryptionKey);
+        }
+        for (String wrongGeneration : new String[] { "", "rebuilt-generation" }) {
+            QuantumMigrationJournal.Resolution resolution = journal.resolve(A, 0, wrongGeneration, "101");
+            assertEquals(C, resolution.anchor); // Legacy coordinate recovery remains independent of key authority.
+            assertEquals("101", resolution.encryptionKey);
+        }
+        assertEquals("101", journal.resolve(C, 0, "network-generation", "101").encryptionKey);
+        assertEquals("101", journal.resolve(A, journal.currentSequence(), "network-generation", "101").encryptionKey);
+    }
+
+    @Test
+    public void oldOrIncompleteJournalRecordsMoveBindingsWithoutInventingCredentials() {
+        QuantumMigrationJournal journal = journal();
+        journal.appendClusterMigration(7, members(A), B, "network-generation");
+        assertEquals("202", journal.resolve(A, 0, "network-generation", "202").encryptionKey);
+        assertEquals("", journal.resolve(A, 0, "network-generation", "").encryptionKey);
+        NBTTagCompound saved = new NBTTagCompound();
+        journal.writeToNBT(saved);
+        NBTTagCompound event = saved.getTagList("events", 10)
+            .getCompoundTagAt(0);
+        event.setString("pairingGeneration", "network-generation");
+        event.setString("fromKey", "101");
+        // A partial/unrecognized credential record is not an authorization to erase or create a native key.
+        QuantumMigrationJournal restored = journal();
+        restored.readFromNBT(saved);
+        QuantumMigrationJournal.Resolution resolution = restored.resolve(A, 0, "network-generation", "101");
+        assertEquals(B, resolution.anchor);
+        assertEquals("101", resolution.encryptionKey);
+        assertEquals("", restored.resolve(A, 0, "network-generation", "").encryptionKey);
+    }
+
+    @Test
+    public void invalidNativePairingCannotAppendAnEventOrAdvanceTheJournal() {
+        QuantumMigrationJournal journal = journal();
+        for (String[] fields : new String[][] { { "", "101", "202" }, { "g", "", "202" }, { "g", "101", "invalid" } }) {
+            try {
+                journal.appendClusterMigration(7, members(A), B, fields[0], fields[1], fields[2]);
+                fail("Invalid credential intent must fail before commit");
+            } catch (IllegalArgumentException expected) {
+                assertEquals(0L, journal.currentSequence());
+                assertEquals(A, journal.resolve(A, 0, "g", "101").anchor);
+            }
+        }
+    }
+
+    @Test
+    public void heldOfflineAndCopiedTerminalsReplayNativeKeysWithoutChangingOtherNbt() {
+        EncodingTerminal item = new EncodingTerminal();
+        ItemStack held = terminal(item, A);
+        held.getTagCompound()
+            .setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, "network-generation");
+        held.getTagCompound()
+            .setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, "101");
+        held.getTagCompound()
+            .setString("customName", "preserved");
+        ItemStack copied = held.copy();
+        NBTTagCompound storedItem = held.writeToNBT(new NBTTagCompound());
+        // This unit fixture has an unregistered Item; reconstruct its serialized payload without item-ID claims.
+        ItemStack offline = new ItemStack(held.getItem());
+        offline.setTagCompound(
+            (NBTTagCompound) storedItem.getCompoundTag("tag")
+                .copy());
+        QuantumMigrationJournal journal = journal();
+        journal.appendClusterMigration(7, members(A), B, "network-generation", "101", "202");
+        journal.appendClusterMigration(8, members(B), C, "network-generation", "202", "303");
+        for (ItemStack stack : new ItemStack[] { held, copied, offline }) {
+            assertTrue(QuantumTerminalAccess.applyPendingMigrations(stack, journal));
+            assertArrayEquals(new int[] { 9, 99, 80, 4 }, ItemNetworkQuantumTerminal.getAnchor(stack));
+            assertEquals(
+                "303",
+                stack.getTagCompound()
+                    .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY));
+            assertEquals(
+                "preserved",
+                stack.getTagCompound()
+                    .getString("customName"));
+            assertEquals(
+                "network-generation",
+                stack.getTagCompound()
+                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+            assertFalse(QuantumTerminalAccess.applyPendingMigrations(stack, journal));
+        }
+        assertEquals(3, item.encodings);
+        for (String originalKey : new String[] { "", "999" }) {
+            ItemStack rejected = terminal(item, A);
+            rejected.getTagCompound()
+                .setString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, "network-generation");
+            if (!originalKey.isEmpty()) rejected.getTagCompound()
+                .setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, originalKey);
+            assertTrue(QuantumTerminalAccess.applyPendingMigrations(rejected, journal));
+            assertArrayEquals(new int[] { 9, 99, 80, 4 }, ItemNetworkQuantumTerminal.getAnchor(rejected));
+            assertEquals(
+                originalKey,
+                rejected.getTagCompound()
+                    .getString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY));
+            if (originalKey.isEmpty()) assertFalse(
+                rejected.getTagCompound()
+                    .hasKey(QuantumTerminalAccess.NBT_ENCRYPTION_KEY));
+        }
+        assertEquals(3, item.encodings);
+    }
+
+    @Test
     public void newBindingAtReusedControllerCoordinatesIgnoresHistoricalMoves() throws Exception {
         FixtureWorld world = world();
         QuantumMigrationJournal journal = QuantumMigrationJournal.get(world);
@@ -268,6 +402,19 @@ public class QuantumNetworkMigrationTest {
         storage.setAccessible(true);
         storage.set(world, new MapStorage(null));
         return world;
+    }
+
+    /** Unit-only encoder records INetworkEncodable dispatch; the test-dimension case uses the real AE registry. */
+    private static final class EncodingTerminal extends ItemNetworkQuantumTerminal {
+
+        int encodings;
+
+        @Override
+        public void setEncryptionKey(ItemStack stack, String key, String name) {
+            encodings++;
+            stack.getTagCompound()
+                .setString(QuantumTerminalAccess.NBT_ENCRYPTION_KEY, key);
+        }
     }
 
     private static final class Node extends TileEntityNetworkQuantumNode {

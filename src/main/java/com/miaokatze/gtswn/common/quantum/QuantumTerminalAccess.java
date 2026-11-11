@@ -21,6 +21,7 @@ import com.miaokatze.gtswn.config.Config;
 import appeng.api.AEApi;
 import appeng.api.config.SecurityPermissions;
 import appeng.api.features.ILocatable;
+import appeng.api.features.INetworkEncodable;
 import appeng.api.networking.IGrid;
 import appeng.api.networking.IGridHost;
 import appeng.api.networking.IGridNode;
@@ -183,6 +184,113 @@ public final class QuantumTerminalAccess {
         if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
             return false;
         return permits(player, stack, world, x, y, z, true);
+    }
+
+    /**
+     * Explicit cancellation can recover a broken pairing, but only on the real current controller and native authority.
+     */
+    public static boolean canRecoverController(EntityPlayer player, ItemStack stack, World world, int x, int y, int z) {
+        if (!isTerminal(stack) || player == null || world == null || world.isRemote) return false;
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
+            return false;
+        if (networkSafetyIdentity(world, x, y, z).isEmpty()) return false;
+        return permitsSafetyManagement(player, world, x, y, z);
+    }
+
+    /** Management of another entry never inherits the local/global safety-OFF bearer shortcut. */
+    public static boolean canManageNativeAnchor(EntityPlayer player, ItemStack stack, World world, int x, int y,
+        int z) {
+        if (!isTerminal(stack) || player == null || world == null || world.isRemote) return false;
+        synchronize(player, stack);
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true))
+            return false;
+        int[] bound = ItemNetworkQuantumTerminal.getAnchor(stack);
+        if (bound == null || bound[0] != world.provider.dimensionId || !currentBinding(stack, world, bound))
+            return false;
+        QuantumControllerRegistry.CanonicalAnchor target = QuantumControllerRegistry.get(world)
+            .resolveAnchor(
+                QuantumControllerRegistry.pack(x, y, z),
+                stack.getTagCompound()
+                    .getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION));
+        return target != null && target.position == QuantumControllerRegistry.pack(bound[1], bound[2], bound[3])
+            && permitsNative(player, stack, gridAt(world, x, y, z), true);
+    }
+
+    /**
+     * A native target owner/SEC manager may explicitly pair; BUILD and descriptive item ownership cannot issue keys.
+     */
+    public static String trustedPairingKey(EntityPlayer player, World world, Set<Long> futureMembers) {
+        if (player == null || world == null || world.isRemote) return null;
+        QuantumSecurityPreflight.Inspection plan = QuantumSecurityPreflight.inspect(world, futureMembers);
+        if (!plan.safe || plan.provider == null || !(plan.provider.getMachine() instanceof ILocatable)) return null;
+        ISecurityProvider provider = (ISecurityProvider) plan.provider.getMachine();
+        ILocatable location = (ILocatable) plan.provider.getMachine();
+        ISecurityGrid security = plan.grid.getCache(ISecurityGrid.class);
+        int actor = AEApi.instance()
+            .registries()
+            .players()
+            .getID(player);
+        if (actor < 0 || security == null
+            || !security.isAvailable()
+            || !security.hasPermission(player, SecurityPermissions.BUILD)
+            || !provider.isSecurityEnabled()
+            || !permitsSafetyProvider(provider, actor)
+            || location.getLocatableSerial() != provider.getSecurityKey()) return null;
+        String key = Long.toString(provider.getSecurityKey());
+        return encodedLocation(key) == location ? key : null;
+    }
+
+    public static boolean isPairedToNativeGrid(ItemStack stack, World world, int x, int y, int z) {
+        if (!isTerminal(stack) || world == null || world.isRemote || stack.getTagCompound() == null) return false;
+        IGrid grid = gridAt(world, x, y, z);
+        return grid != null && encodedGrid(
+            stack.getTagCompound()
+                .getString(NBT_ENCRYPTION_KEY))
+            == grid;
+    }
+
+    public static boolean canRepairPairingAtAnchor(EntityPlayer player, ItemStack stack, World world, int x, int y,
+        int z) {
+        return repairPairingKey(player, stack, world, x, y, z) != null;
+    }
+
+    private static String repairPairingKey(EntityPlayer player, ItemStack stack, World world, int x, int y, int z) {
+        if (!isTerminal(stack) || player == null
+            || world == null
+            || world.isRemote
+            || !com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, stack, true)
+            || networkSafetyIdentity(world, x, y, z).isEmpty()) return null;
+        return trustedPairingKey(player, world, members(world, x, y, z));
+    }
+
+    /** Caller must have completed its explicit gesture, Profile, reach and world-edit checks. */
+    public static boolean repairPairingAtAnchor(EntityPlayer player, ItemStack stack, World world, int x, int y,
+        int z) {
+        String key = repairPairingKey(player, stack, world, x, y, z);
+        if (key == null) return false;
+        ((INetworkEncodable) stack.getItem()).setEncryptionKey(stack, key, null);
+        player.inventory.markDirty();
+        return true;
+    }
+
+    /** Diagnosis only; callers have already rejected the action through their own authority predicate. */
+    public static String nativeDenialKey(ItemStack stack, World world, int x, int y, int z) {
+        IGrid grid = gridAt(world, x, y, z);
+        if (grid == null) return "gtswn.chat.quantum.security_unavailable";
+        if (!isPairedToNativeGrid(stack, world, x, y, z)) return "gtswn.chat.quantum.pairing_mismatch";
+        ISecurityGrid security = grid.getCache(ISecurityGrid.class);
+        return security == null || !security.isAvailable() || security.getOwner() < 0
+            ? "gtswn.chat.quantum.security_unavailable"
+            : "gtswn.chat.quantum.no_permission";
+    }
+
+    /** A keyless recovery refusal concerns the current provider, never the held pairing. */
+    public static String recoveryDenialKey(World world, int x, int y, int z) {
+        IGrid grid = gridAt(world, x, y, z);
+        ISecurityGrid security = grid == null ? null : grid.getCache(ISecurityGrid.class);
+        return security == null || !security.isAvailable() || security.getOwner() < 0
+            ? "gtswn.chat.quantum.security_unavailable"
+            : "gtswn.chat.quantum.manage_permission_required";
     }
 
     public static boolean isSecurityRequired(World world, int x, int y, int z) {
@@ -374,15 +482,19 @@ public final class QuantumTerminalAccess {
             tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Y),
             tag.getInteger(ItemNetworkQuantumTerminal.NBT_ANCHOR_Z));
         String generation = tag.getString(ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION);
+        String previousKey = tag.getString(NBT_ENCRYPTION_KEY);
         QuantumMigrationJournal.Resolution resolved = journal
-            .resolve(original, tag.getLong(NBT_MIGRATION_CURSOR), generation);
-        boolean bindingChanged = !original.equals(resolved.anchor) || !generation.equals(resolved.generation);
+            .resolve(original, tag.getLong(NBT_MIGRATION_CURSOR), generation, previousKey);
+        boolean bindingChanged = !original.equals(resolved.anchor) || !generation.equals(resolved.generation)
+            || !previousKey.equals(resolved.encryptionKey);
         setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_DIM, resolved.anchor.getDimension());
         setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_X, resolved.anchor.getX());
         setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_Y, resolved.anchor.getY());
         setInteger(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_Z, resolved.anchor.getZ());
         tag.setLong(NBT_MIGRATION_CURSOR, resolved.sequence);
         setString(tag, ItemNetworkQuantumTerminal.NBT_ANCHOR_GENERATION, resolved.generation);
+        if (!previousKey.equals(resolved.encryptionKey))
+            ((INetworkEncodable) stack.getItem()).setEncryptionKey(stack, resolved.encryptionKey, null);
         WorldServer world = DimensionManager.getWorld(resolved.anchor.getDimension());
         if (world != null) setString(tag, "QT_BoundName", world.provider.getDimensionName());
         return 1 | (bindingChanged ? 2 : 0);

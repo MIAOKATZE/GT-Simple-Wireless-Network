@@ -2064,3 +2064,16 @@ gtswn.device.gui.loading_pages=加载 %s/%s 页
 gtswn.device.gui.legacy_limit=旧版连接最多显示1024条
 gtswn.profiles.recoverCharging=便携终端恢复后绑定档案所有者账户充电；撤销读取权限不会撤销已恢复实物的充电能力。
 gtswn.device.gui.legacy_total=终端共 %s 条；旧版连接仅能显示前 %s 条。请升级客户端/服务端以查看全部，存档保留完整。
+
+# Quantum security access and recovery diagnostics
+gtswn.chat.quantum.node_actor_no_permission=§c[量子节点] 节点连接身份未获当前网络授权。请检查原放置者的 BUILD 权限及安全终端连接。
+gtswn.chat.quantum.security_topology_unsafe=§c[量子终端] 无法确认量子化后仍与唯一安全终端连通，操作未执行。请先调整安全终端连接。
+gtswn.chat.quantum.pairing_mismatch=§c[量子终端] 配对与当前网络不匹配。请在目标安全终端重新编码，或由具备 BUILD 和 SECURITY 权限的管理者右击控制器修复绑定。
+gtswn.chat.quantum.security_unavailable=§c[量子终端] 当前网络的安全终端未连接或尚未就绪。请检查连接；旧异常网络可由原生拥有者潜行右击控制器恢复。
+gtswn.chat.quantum.world_edit_denied=§c[量子终端] 目标位置不允许当前玩家编辑，操作未执行。
+gtswn.chat.quantum.incorporation_manage_required=§c[量子终端] 仅创建者，或持有效同网终端的网络拥有者/SECURITY 管理者可解除该并入记录。
+gtswn.chat.quantum.migration_pairing_required=§c[量子终端] 迁移前无法完成目标安全配对，迁移未提交。请检查目标安全终端连接、现有配对及操作者的 BUILD/SECURITY 权限。
+gtswn.chat.quantum.profile_unavailable=§c[量子终端] 档案引用无效或档案不存在，请检查关联档案。
+gtswn.chat.quantum.profile_not_shared=§c[量子终端] 此档案未向你分享读取权限，请联系档案拥有者。
+gtswn.chat.quantum.profile_readonly=§c[量子终端] 此档案只读，不能修改网络或并入设备。请由档案拥有者操作，或正式转移档案所有权。
+gtswn.chat.quantum.profile_source_unavailable=§c[量子终端] 档案固定来源已变化或不可用。请检查来源权限；需要改绑时，由档案拥有者解除关联后重新导入。

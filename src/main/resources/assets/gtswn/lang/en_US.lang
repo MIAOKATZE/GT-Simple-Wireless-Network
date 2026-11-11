@@ -2064,3 +2064,16 @@ gtswn.device.gui.loading_pages=Loading %s/%s pages
 gtswn.device.gui.legacy_limit=Legacy connection: up to 1024 rows
 gtswn.profiles.recoverCharging=Restored portable monitors charge from the profile owner account. Revoking read access does not revoke charging by restored items.
 gtswn.device.gui.legacy_total=Terminal has %s rows; this legacy connection displays only the first %s. Upgrade both peers to view all; saved bindings are retained.
+
+# Quantum security access and recovery diagnostics
+gtswn.chat.quantum.node_actor_no_permission=§c[Quantum Node] The node connection identity is not authorized. Check its original placer's BUILD permission and the security-station connection.
+gtswn.chat.quantum.security_topology_unsafe=§c[Quantum Terminal] The security station may be disconnected by quantization. Nothing was changed. Adjust its connection before retrying.
+gtswn.chat.quantum.pairing_mismatch=§c[Quantum Terminal] Pairing does not match this network. Encode at its security station, or have a manager with BUILD and SECURITY right-click the controller to repair the binding.
+gtswn.chat.quantum.security_unavailable=§c[Quantum Terminal] This network's security station is disconnected or not ready. Check the connection; the native owner can sneak-right-click the controller to recover an existing broken network.
+gtswn.chat.quantum.world_edit_denied=§c[Quantum Terminal] You cannot edit the target position. Nothing was changed.
+gtswn.chat.quantum.incorporation_manage_required=§c[Quantum Terminal] Only its creator, or this network's native owner/SECURITY manager holding a valid paired terminal, may remove this incorporation.
+gtswn.chat.quantum.migration_pairing_required=§c[Quantum Terminal] Destination security pairing could not be validated. Migration was not committed. Check the station connection, existing pairing and the operator's BUILD/SECURITY permissions.
+gtswn.chat.quantum.profile_unavailable=§c[Quantum Terminal] The profile reference is invalid or the profile is unavailable.
+gtswn.chat.quantum.profile_not_shared=§c[Quantum Terminal] This profile has not been shared with you. Contact its owner.
+gtswn.chat.quantum.profile_readonly=§c[Quantum Terminal] This profile is read-only. Its owner must make network changes or transfer profile ownership to you.
+gtswn.chat.quantum.profile_source_unavailable=§c[Quantum Terminal] The profile's fixed source changed or is unavailable. Check native access; its owner must release the old association before rebinding and importing.

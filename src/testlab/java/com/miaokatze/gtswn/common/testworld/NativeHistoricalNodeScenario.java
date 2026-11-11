@@ -178,15 +178,20 @@ final class NativeHistoricalNodeScenario implements TestScenario {
                 require(
                     ctx,
                     !itemMessages.toString()
-                        .contains("gtswn.chat.quantum.no_permission"),
+                        .contains("gtswn.chat.quantum.node_actor_no_permission")
+                        && !itemMessages.toString()
+                            .contains("gtswn.chat.quantum.no_permission"),
                     "Authorized B item callback emits no actor-permission denial");
                 observeStatusWithEmptyHand(ctx);
                 require(
                     ctx,
                     member.messages()
                         .toString()
-                        .contains("gtswn.chat.quantum.no_permission"),
-                    "Actual block status callback reports old node NO_PERMISSION even though B currently has full authority");
+                        .contains("gtswn.chat.quantum.node_actor_no_permission")
+                        && !member.messages()
+                            .toString()
+                            .contains("gtswn.chat.quantum.no_permission"),
+                    "Actual block status identifies the old node actor, without claiming authorized viewer B lacks permission");
                 require(
                     ctx,
                     before.equals(snapshot(member, memberTerminal, oldNode))

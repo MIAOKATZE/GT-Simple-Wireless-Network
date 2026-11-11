@@ -18,6 +18,7 @@ import net.minecraftforge.common.util.ForgeDirection;
 import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics;
 import com.miaokatze.gtswn.common.diagnostics.BusinessDiagnostics.Type;
 import com.miaokatze.gtswn.common.items.ItemNetworkQuantumTerminal;
+import com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.common.util.QuantumTerminalSecurityHints;
 import com.miaokatze.gtswn.config.Config;
@@ -71,12 +72,22 @@ public final class QuantumNetworkMigration {
             return false;
         QuantumNetworkColorRegistry.get(targetWorld)
             .recolor(plan.targetMembers, color);
-        journal.appendClusterMigration(
+        AnchorKey destination = new AnchorKey(targetWorld.provider.dimensionId, x, y, z);
+        if (plan.fromKey == null)
+            journal.appendClusterMigration(plan.source[0], bindingMembers, destination, sourceAnchor.generation);
+        else journal.appendClusterMigration(
             plan.source[0],
             bindingMembers,
-            new AnchorKey(targetWorld.provider.dimensionId, x, y, z),
-            sourceAnchor.generation);
+            destination,
+            sourceAnchor.generation,
+            plan.fromKey,
+            plan.toKey);
         QuantumNetworkSecurityRegistry.transfer(plan.sourceWorld, plan.sourceMembers, targetWorld, plan.targetMembers);
+        // Replay while the initiating item still carries its original anchor/cursor; writeAnchor advances the cursor.
+        QuantumTerminalAccess.applyPendingMigrations(terminal, journal);
+        // An explicit OFF-to-ON move may encode only this held item; its unpaired copies receive no mapping.
+        if (plan.fromKey == null && plan.toKey != null)
+            ((ItemNetworkQuantumTerminal) terminal.getItem()).setEncryptionKey(terminal, plan.toKey, "");
         ItemNetworkQuantumTerminal.writeAnchor(terminal, targetWorld, x, y, z);
         player.inventory.markDirty();
         for (long member : plan.sourceMembers) {
@@ -157,8 +168,20 @@ public final class QuantumNetworkMigration {
             || terminal == null
             || !(terminal.getItem() instanceof ItemNetworkQuantumTerminal)) return null;
         // Synchronize before the source snapshot, then require the native owner or SECURITY permission.
-        if (!QuantumTerminalAccess.canManage(player, terminal))
+        if (!QuantumTerminalAccess.canManage(player, terminal)) {
+            if (!QuantumProfileAdapter.profilePermits(player, terminal, true))
+                return fail(player, QuantumProfileAdapter.profileDenialKey(player, terminal, true));
+            int[] deniedAnchor = ItemNetworkQuantumTerminal.getAnchor(terminal);
+            if (deniedAnchor != null) {
+                World deniedWorld = DimensionManager.getWorld(deniedAnchor[0]);
+                if (deniedWorld != null && deniedWorld.blockExists(deniedAnchor[1], deniedAnchor[2], deniedAnchor[3])) {
+                    String denial = QuantumTerminalAccess
+                        .nativeDenialKey(terminal, deniedWorld, deniedAnchor[1], deniedAnchor[2], deniedAnchor[3]);
+                    if (!"gtswn.chat.quantum.no_permission".equals(denial)) return fail(player, denial);
+                }
+            }
             return fail(player, "gtswn.chat.quantum.manage_permission_required");
+        }
         int[] source = ItemNetworkQuantumTerminal.getAnchor(terminal);
         if (source == null) return fail(player, "gtswn.chat.quantum.need_bind");
         WorldServer sourceWorld = DimensionManager.getWorld(source[0]);
@@ -203,10 +226,33 @@ public final class QuantumNetworkMigration {
             return fail(player, "gtswn.chat.quantum.manage_permission_required");
         // Every actual source grid is authorized above; SECURITY grants do not also require BUILD.
         // The separate physical destination still requires its native BUILD permission.
-        if (!mayEdit(player, terminal, sourceWorld, sourceMembers, false)
-            || !mayEdit(player, terminal, targetWorld, targetMembers, true))
-            return fail(player, "gtswn.chat.quantum.no_permission");
-        return new Plan(sourceWorld, source, sourceMembers, targetMembers);
+        String editDenial = editDenial(player, terminal, sourceWorld, sourceMembers, false);
+        if (editDenial == null) editDenial = editDenial(player, terminal, targetWorld, targetMembers, true);
+        if (editDenial != null) return fail(player, editDenial);
+        String fromKey = null, toKey = null;
+        boolean protectedSource = Config.quantumSafetyEnabled
+            && QuantumTerminalAccess.isNetworkSafetyEnabled(sourceWorld, source[1], source[2], source[3]);
+        boolean protectedDestination = protectedSource
+            || Config.quantumSafetyEnabled && QuantumTerminalAccess.isNetworkSafetyEnabled(targetWorld, x, y, z);
+        if (protectedDestination) {
+            boolean alreadyPairedDestination = !protectedSource
+                && QuantumTerminalAccess.isPairedToNativeGrid(terminal, targetWorld, x, y, z)
+                && QuantumTerminalAccess.canAccessAnchor(player, terminal, targetWorld, x, y, z)
+                && QuantumSecurityPreflight.preservesNativeSecurity(targetWorld, targetMembers);
+            if (!alreadyPairedDestination) {
+                toKey = QuantumTerminalAccess.trustedPairingKey(player, targetWorld, targetMembers);
+                if (toKey == null) return fail(player, "gtswn.chat.quantum.migration_pairing_required");
+                boolean trustedSource = QuantumTerminalAccess
+                    .isPairedToNativeGrid(terminal, sourceWorld, source[1], source[2], source[3])
+                    && QuantumTerminalAccess.canChangeNetworkSafety(player, terminal);
+                if (trustedSource)
+                    fromKey = ((ItemNetworkQuantumTerminal) terminal.getItem()).getEncryptionKey(terminal);
+                else if (protectedSource) return fail(player, "gtswn.chat.quantum.migration_pairing_required");
+            }
+        }
+        if (QuantumMigrationJournal.get(targetWorld)
+            .currentSequence() == Long.MAX_VALUE) return fail(player, "gtswn.chat.quantum.migration_target_invalid");
+        return new Plan(sourceWorld, source, sourceMembers, targetMembers, fromKey, toKey);
     }
 
     /** OFF retains the existing short circuit; ON authorizes each actual source grid once before mutation. */
@@ -233,26 +279,27 @@ public final class QuantumNetworkMigration {
         return true;
     }
 
-    private static boolean mayEdit(EntityPlayerMP player, ItemStack terminal, World world, Set<Long> members,
+    private static String editDenial(EntityPlayerMP player, ItemStack terminal, World world, Set<Long> members,
         boolean enforceSecurity) {
-        if (!player.capabilities.allowEdit) return false;
+        if (!player.capabilities.allowEdit) return "gtswn.chat.quantum.world_edit_denied";
         for (long member : members) {
             int x = QuantumControllerRegistry.unpackX(member), y = QuantumControllerRegistry.unpackY(member),
                 z = QuantumControllerRegistry.unpackZ(member);
-            if (!world.canMineBlock(player, x, y, z)) return false;
+            if (!world.canMineBlock(player, x, y, z)) return "gtswn.chat.quantum.world_edit_denied";
             if (!world.blockExists(x, y, z)) continue;
-            if (!player.canPlayerEdit(x, y, z, 1, terminal)) return false;
+            if (!player.canPlayerEdit(x, y, z, 1, terminal)) return "gtswn.chat.quantum.world_edit_denied";
             TileEntity tile = world.getTileEntity(x, y, z);
-            if (!(tile instanceof IGridHost)) return false;
+            if (!(tile instanceof IGridHost)) return "gtswn.chat.quantum.security_unavailable";
             IGridNode node = ((IGridHost) tile).getGridNode(ForgeDirection.UNKNOWN);
-            if (node == null || node.getGrid() == null) return false;
+            if (node == null || node.getGrid() == null) return "gtswn.chat.quantum.security_unavailable";
             ISecurityGrid security = node.getGrid()
                 .getCache(ISecurityGrid.class);
             if (enforceSecurity && !QuantumConnectionSecurity.bypassesNetworkSafety(terminal, node)
                 && security != null
-                && !security.hasPermission(player, SecurityPermissions.BUILD)) return false;
+                && !security.hasPermission(player, SecurityPermissions.BUILD))
+                return "gtswn.chat.quantum.no_permission";
         }
-        return true;
+        return null;
     }
 
     private static Plan fail(EntityPlayerMP player, String key) {
@@ -265,12 +312,16 @@ public final class QuantumNetworkMigration {
         final WorldServer sourceWorld;
         final int[] source;
         final Set<Long> sourceMembers, targetMembers;
+        final String fromKey, toKey;
 
-        Plan(WorldServer sourceWorld, int[] source, Set<Long> sourceMembers, Set<Long> targetMembers) {
+        Plan(WorldServer sourceWorld, int[] source, Set<Long> sourceMembers, Set<Long> targetMembers, String fromKey,
+            String toKey) {
             this.sourceWorld = sourceWorld;
             this.source = source;
             this.sourceMembers = sourceMembers;
             this.targetMembers = targetMembers;
+            this.fromKey = fromKey;
+            this.toKey = toKey;
         }
     }
 }

@@ -257,13 +257,40 @@ public class QuantumIncorporationRegistry extends WorldSavedData {
     }
 
     public boolean remove(World world, int x, int y, int z, EntityPlayer player) {
+        if (!canRemoveEntry(world, x, y, z, player)) return false;
         Entry entry = entries.get(QuantumControllerRegistry.pack(x, y, z));
-        if (entry == null || (!player.capabilities.isCreativeMode && !entry.owner.equals(
-            player.getUniqueID()
-                .toString())))
-            return false;
         forget(world, entry, true);
         return true;
+    }
+
+    /** Shared removal decision; this query never removes the registration or transfers its ownership. */
+    public boolean canRemoveEntry(World world, int x, int y, int z, EntityPlayer player) {
+        Entry entry = entries.get(QuantumControllerRegistry.pack(x, y, z));
+        return player != null && entry != null
+            && (player.capabilities.isCreativeMode || entry.owner.equals(
+                player.getUniqueID()
+                    .toString())
+                || canManageEntry(world, x, y, z, player));
+    }
+
+    /** Native managers operate on this entry's live anchor; removal never refunds supplies or changes its creator. */
+    public boolean canManageEntry(World world, int x, int y, int z, EntityPlayer player) {
+        if (world == null || world.isRemote || player == null || !world.blockExists(x, y, z)) return false;
+        Entry entry = entries.get(QuantumControllerRegistry.pack(x, y, z));
+        TileEntity tile = world.getTileEntity(x, y, z);
+        if (entry == null || tile == null || !entry.owns(tile)) return false;
+        WorldServer anchorWorld = DimensionManager.getWorld(entry.dim);
+        if (anchorWorld == null) return false;
+        QuantumControllerRegistry.CanonicalAnchor anchor = QuantumControllerRegistry.get(anchorWorld)
+            .resolveAnchor(QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az), entry.anchorGeneration);
+        if (anchor == null) return false;
+        return QuantumTerminalAccess.canManageNativeAnchor(
+            player,
+            player.getHeldItem(),
+            anchorWorld,
+            QuantumControllerRegistry.unpackX(anchor.position),
+            QuantumControllerRegistry.unpackY(anchor.position),
+            QuantumControllerRegistry.unpackZ(anchor.position));
     }
 
     /** Called after a real tile removal, including tools that bypass player break events. */

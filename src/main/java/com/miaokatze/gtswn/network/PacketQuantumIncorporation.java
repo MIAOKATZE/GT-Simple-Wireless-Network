@@ -117,9 +117,10 @@ public class PacketQuantumIncorporation implements IMessage {
         World world = player.worldObj;
         ItemStack held = player.getHeldItem();
         if (held == null || !(held.getItem() instanceof ItemNetworkQuantumTerminal)) return;
-        if (!QuantumTerminalAccess.validate(player, held)
-            || !com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, held, true)) {
-            tell(player, "gtswn.chat.quantum.no_permission");
+        if (!com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profilePermits(player, held, true)) {
+            tell(
+                player,
+                com.miaokatze.gtswn.common.monitoring.QuantumProfileAdapter.profileDenialKey(player, held, true));
             return;
         }
         if (!world.blockExists(message.x, message.y, message.z)
@@ -130,7 +131,7 @@ public class PacketQuantumIncorporation implements IMessage {
         if (hit == null || hit.blockX != message.x || hit.blockY != message.y || hit.blockZ != message.z) return;
         if (!world.canMineBlock(player, message.x, message.y, message.z)
             || !player.canPlayerEdit(message.x, message.y, message.z, hit.sideHit, held)) {
-            tell(player, "gtswn.chat.quantum.no_permission");
+            tell(player, "gtswn.chat.quantum.world_edit_denied");
             return;
         }
         QuantumIncorporationRegistry registry = QuantumIncorporationRegistry.get(world);
@@ -138,16 +139,41 @@ public class PacketQuantumIncorporation implements IMessage {
         if (QuantumIncorporationRegistry.isIncorporated(world, message.x, message.y, message.z)) {
             QuantumIncorporationRegistry.Entry entry = registry.find(world, message.x, message.y, message.z);
             World anchorWorld = entry == null ? null : DimensionManager.getWorld(entry.dim);
-            if (entry == null
-                || !QuantumTerminalAccess.canAccessAnchor(player, held, anchorWorld, entry.ax, entry.ay, entry.az)) {
-                tell(player, "gtswn.chat.quantum.no_permission");
+            if (entry == null || anchorWorld == null
+                || QuantumControllerRegistry.get(anchorWorld)
+                    .resolveAnchor(QuantumControllerRegistry.pack(entry.ax, entry.ay, entry.az), entry.anchorGeneration)
+                    == null) {
+                tell(player, "gtswn.chat.quantum.incorporation_offline");
+                return;
+            }
+            if (!(QuantumTerminalAccess.validate(player, held)
+                && QuantumTerminalAccess.canAccessAnchor(player, held, anchorWorld, entry.ax, entry.ay, entry.az))
+                && !registry.canManageEntry(world, message.x, message.y, message.z, player)) {
+                tell(player, QuantumTerminalAccess.nativeDenialKey(held, anchorWorld, entry.ax, entry.ay, entry.az));
+                return;
+            }
+            if (!registry.canRemoveEntry(world, message.x, message.y, message.z, player)) {
+                tell(
+                    player,
+                    registry.find(world, message.x, message.y, message.z) == entry
+                        ? "gtswn.chat.quantum.incorporation_manage_required"
+                        : "gtswn.chat.quantum.incorporation_offline");
                 return;
             }
             boolean wasOpen = QuantumTerminalSecurityHints.isOpen(anchorWorld, entry.ax, entry.ay, entry.az);
             if (registry.remove(world, message.x, message.y, message.z, player)) {
                 tell(player, "gtswn.chat.quantum.incorporation_removed");
                 QuantumTerminalSecurityHints.show(player, wasOpen);
-            } else tell(player, "gtswn.chat.quantum.no_permission");
+            } else tell(player, "gtswn.chat.quantum.incorporation_offline");
+            return;
+        }
+        if (!QuantumTerminalAccess.validate(player, held)) {
+            int[] anchor = ItemNetworkQuantumTerminal.getAnchor(held);
+            tell(
+                player,
+                anchor == null ? "gtswn.chat.quantum.no_permission"
+                    : QuantumTerminalAccess
+                        .nativeDenialKey(held, DimensionManager.getWorld(anchor[0]), anchor[1], anchor[2], anchor[3]));
             return;
         }
         if (!ItemNetworkQuantumTerminal.isBound(held)) {
@@ -172,10 +198,16 @@ public class PacketQuantumIncorporation implements IMessage {
         }
         TileEntity controller = anchor.getTileEntity(ax, ay, az);
         TileEntity tile = world.getTileEntity(message.x, message.y, message.z);
-        if (!(controller instanceof TileController) || !anchor.canMineBlock(player, ax, ay, az)
-            || !canBuild((IGridHost) tile, player, held)
-            || (QuantumTerminalAccess.isSecurityRequired(anchor, ax, ay, az)
-                && !canBuild((IGridHost) controller, player, held))) {
+        if (!(controller instanceof TileController)) {
+            tell(player, "gtswn.chat.quantum.incorporation_offline");
+            return;
+        }
+        if (!anchor.canMineBlock(player, ax, ay, az)) {
+            tell(player, "gtswn.chat.quantum.world_edit_denied");
+            return;
+        }
+        if (!canBuild((IGridHost) tile, player, held) || (QuantumTerminalAccess.isSecurityRequired(anchor, ax, ay, az)
+            && !canBuild((IGridHost) controller, player, held))) {
             tell(player, "gtswn.chat.quantum.no_permission");
             return;
         }

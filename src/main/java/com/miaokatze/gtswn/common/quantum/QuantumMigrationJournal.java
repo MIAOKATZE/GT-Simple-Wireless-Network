@@ -51,6 +51,23 @@ public final class QuantumMigrationJournal extends WorldSavedData {
         return append(dimension, bindingCoordinates, target, "", targetGeneration);
     }
 
+    /** Only a committed, native-authorized migration may supply this credential transition. */
+    public long appendClusterMigration(int dimension, Set<Long> bindingCoordinates, AnchorKey target,
+        String targetGeneration, String fromKey, String toKey) {
+        if (targetGeneration == null || targetGeneration.isEmpty() || !nativeKey(fromKey) || !nativeKey(toKey))
+            throw new IllegalArgumentException("Invalid native migration pairing");
+        return append(
+            dimension,
+            bindingCoordinates,
+            target,
+            "",
+            targetGeneration,
+            Collections.emptySet(),
+            targetGeneration,
+            fromKey,
+            toKey);
+    }
+
     public long append(int dimension, Set<Long> members, AnchorKey target, String sourceGeneration,
         String targetGeneration) {
         return append(dimension, members, target, sourceGeneration, targetGeneration, Collections.emptySet());
@@ -58,13 +75,28 @@ public final class QuantumMigrationJournal extends WorldSavedData {
 
     public long append(int dimension, Set<Long> members, AnchorKey target, String sourceGeneration,
         String targetGeneration, Set<Long> legacyMembers) {
+        return append(dimension, members, target, sourceGeneration, targetGeneration, legacyMembers, "", "", "");
+    }
+
+    private long append(int dimension, Set<Long> members, AnchorKey target, String sourceGeneration,
+        String targetGeneration, Set<Long> legacyMembers, String pairingGeneration, String fromKey, String toKey) {
         if (members.isEmpty() || sequence == Long.MAX_VALUE) throw new IllegalStateException("Invalid migration");
         long[] positions = new long[members.size()];
         int i = 0;
         for (long member : members) positions[i++] = member;
         Set<Long> eligible = new HashSet<>(legacyMembers);
         eligible.retainAll(members);
-        Event event = new Event(++sequence, dimension, positions, target, sourceGeneration, targetGeneration, eligible);
+        Event event = new Event(
+            ++sequence,
+            dimension,
+            positions,
+            target,
+            sourceGeneration,
+            targetGeneration,
+            eligible,
+            pairingGeneration,
+            fromKey,
+            toKey);
         index(event);
         markDirty();
         QuantumTerminalSyncEpoch.changed();
@@ -77,8 +109,15 @@ public final class QuantumMigrationJournal extends WorldSavedData {
     }
 
     public Resolution resolve(AnchorKey anchor, long cursor, String expectedGeneration) {
+        return resolve(anchor, cursor, expectedGeneration, "");
+    }
+
+    /** Credential replay is stricter than legacy coordinate redirection and cannot pair an unpaired item. */
+    public Resolution resolve(AnchorKey anchor, long cursor, String expectedGeneration, String encryptionKey) {
         AnchorKey result = anchor;
         String generation = expectedGeneration == null ? "" : expectedGeneration;
+        String key = encryptionKey == null ? "" : encryptionKey;
+        boolean credentialChainMatches = true;
         long applied = cursor;
         while (applied < sequence) {
             NavigableMap<Long, Event> indexed = sources.get(result);
@@ -89,11 +128,16 @@ public final class QuantumMigrationJournal extends WorldSavedData {
             if (event.sourceGeneration.isEmpty() || event.sourceGeneration.equals(generation)
                 || event.legacyMembers
                     .contains(QuantumControllerRegistry.pack(result.getX(), result.getY(), result.getZ()))) {
+                if (!event.pairingGeneration.isEmpty()) {
+                    credentialChainMatches &= event.pairingGeneration.equals(generation) && nativeKey(key)
+                        && key.equals(event.fromKey);
+                    if (credentialChainMatches) key = event.toKey;
+                }
                 result = event.target;
                 if (!event.targetGeneration.isEmpty()) generation = event.targetGeneration;
             }
         }
-        return new Resolution(result, Math.max(cursor, sequence), generation);
+        return new Resolution(result, Math.max(cursor, sequence), generation, key);
     }
 
     private void index(Event event) {
@@ -137,7 +181,10 @@ public final class QuantumMigrationJournal extends WorldSavedData {
                     new AnchorKey(n.getInteger("targetDim"), n.getInteger("x"), n.getInteger("y"), n.getInteger("z")),
                     n.getString("sourceGeneration"),
                     n.getString("targetGeneration"),
-                    legacyMembers));
+                    legacyMembers,
+                    n.getString("pairingGeneration"),
+                    n.getString("fromKey"),
+                    n.getString("toKey")));
         }
     }
 
@@ -162,6 +209,11 @@ public final class QuantumMigrationJournal extends WorldSavedData {
             n.setInteger("z", event.target.getZ());
             n.setString("sourceGeneration", event.sourceGeneration);
             n.setString("targetGeneration", event.targetGeneration);
+            if (!event.pairingGeneration.isEmpty()) {
+                n.setString("pairingGeneration", event.pairingGeneration);
+                n.setString("fromKey", event.fromKey);
+                n.setString("toKey", event.toKey);
+            }
             int[] legacy = new int[event.legacyMembers.size() * 3];
             int legacyIndex = 0;
             for (long position : event.legacyMembers) {
@@ -180,11 +232,23 @@ public final class QuantumMigrationJournal extends WorldSavedData {
         public final AnchorKey anchor;
         public final long sequence;
         public final String generation;
+        public final String encryptionKey;
 
-        private Resolution(AnchorKey anchor, long sequence, String generation) {
+        private Resolution(AnchorKey anchor, long sequence, String generation, String encryptionKey) {
             this.anchor = anchor;
             this.sequence = sequence;
             this.generation = generation;
+            this.encryptionKey = encryptionKey;
+        }
+    }
+
+    private static boolean nativeKey(String key) {
+        if (key == null || key.isEmpty()) return false;
+        try {
+            Long.parseLong(key);
+            return true;
+        } catch (NumberFormatException ignored) {
+            return false;
         }
     }
 
@@ -196,9 +260,10 @@ public final class QuantumMigrationJournal extends WorldSavedData {
         final AnchorKey target;
         final String sourceGeneration, targetGeneration;
         final Set<Long> legacyMembers;
+        final String pairingGeneration, fromKey, toKey;
 
         Event(long sequence, int dimension, long[] members, AnchorKey target, String sourceGeneration,
-            String targetGeneration, Set<Long> legacyMembers) {
+            String targetGeneration, Set<Long> legacyMembers, String pairingGeneration, String fromKey, String toKey) {
             this.sequence = sequence;
             this.dimension = dimension;
             this.members = members;
@@ -206,6 +271,12 @@ public final class QuantumMigrationJournal extends WorldSavedData {
             this.sourceGeneration = sourceGeneration == null ? "" : sourceGeneration;
             this.targetGeneration = targetGeneration == null ? "" : targetGeneration;
             this.legacyMembers = legacyMembers;
+            boolean paired = pairingGeneration != null && !pairingGeneration.isEmpty()
+                && nativeKey(fromKey)
+                && nativeKey(toKey);
+            this.pairingGeneration = paired ? pairingGeneration : "";
+            this.fromKey = paired ? fromKey : "";
+            this.toKey = paired ? toKey : "";
         }
     }
 }

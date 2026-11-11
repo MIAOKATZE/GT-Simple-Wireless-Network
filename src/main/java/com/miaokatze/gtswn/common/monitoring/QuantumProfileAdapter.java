@@ -80,6 +80,31 @@ public final class QuantumProfileAdapter {
             && (!modify || profiles.canModify(actor.getUniqueID(), id));
     }
 
+    /**
+     * Explains an already denied profile check. This is diagnostic only: it never grants access,
+     * repeats native permission checks, initializes profile storage, or changes profile state.
+     */
+    public static String profileDenialKey(EntityPlayer actor, ItemStack stack, boolean modify) {
+        if (!MonitoringProfiles.hasProfileReference(stack)) return "gtswn.chat.quantum.no_permission";
+        if (actor == null || actor.worldObj == null || actor.worldObj.isRemote)
+            return "gtswn.chat.quantum.profile_unavailable";
+        UUID id = MonitoringProfiles.readProfileReference(stack);
+        MonitoringProfiles profiles = MonitoringProfiles.getIfPresent(actor.worldObj);
+        MonitorProfile profile = profiles == null || id == null ? null : profiles.profileForTerminal(id);
+        if (profile == null || !profile.mayRead(actor.getUniqueID()))
+            return profileDenialKey(actor.getUniqueID(), profile, false, modify);
+        return profileDenialKey(actor.getUniqueID(), profile, matches(stack, profile), modify);
+    }
+
+    static String profileDenialKey(UUID actor, MonitorProfile profile, boolean sourceMatches, boolean modify) {
+        if (actor == null || profile == null) return "gtswn.chat.quantum.profile_unavailable";
+        if (!profile.mayRead(actor)) return "gtswn.chat.quantum.profile_not_shared";
+        if (!sourceMatches) return "gtswn.chat.quantum.profile_source_unavailable";
+        if (modify && !profile.mayModify(actor)) return "gtswn.chat.quantum.profile_readonly";
+        // With a matching reference and ACL, the earlier denial was the current native source check.
+        return "gtswn.chat.quantum.profile_source_unavailable";
+    }
+
     private static boolean authorized(EntityPlayerMP actor, ItemStack stack) {
         return supports(stack) && ItemNetworkQuantumTerminal.getAnchor(stack) != null
             && QuantumTerminalAccess.validate(actor, stack)

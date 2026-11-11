@@ -19,15 +19,75 @@ public class QuantumProfileAdapterTest {
     public void managedMetadataNeverFallsBackToLegacyWithoutActorAuthority() {
         net.minecraft.item.ItemStack stack = new net.minecraft.item.ItemStack(new net.minecraft.item.Item());
         assertTrue(QuantumProfileAdapter.profilePermits(null, stack, false));
+        assertEquals("gtswn.chat.quantum.no_permission", QuantumProfileAdapter.profileDenialKey(null, stack, false));
         stack.stackTagCompound = new net.minecraft.nbt.NBTTagCompound();
         stack.stackTagCompound.setString(MonitoringProfiles.NBT_PROFILE, "malformed");
         assertFalse(QuantumProfileAdapter.profilePermits(null, stack, false));
         assertFalse(QuantumProfileAdapter.profilePermits(null, stack, true));
+        assertEquals(
+            "gtswn.chat.quantum.profile_unavailable",
+            QuantumProfileAdapter.profileDenialKey(null, stack, true));
         stack.stackTagCompound.setString(
             MonitoringProfiles.NBT_PROFILE,
             java.util.UUID.randomUUID()
                 .toString());
         assertFalse(QuantumProfileAdapter.profilePermits(null, stack, false));
+    }
+
+    @Test
+    public void deniedProfileDiagnosticsDistinguishMetadataAclAndFixedSourceWithoutChangingAuthority() {
+        java.util.UUID owner = java.util.UUID.randomUUID(), reader = java.util.UUID.randomUUID();
+        MonitorProfile profile = new MonitorProfile(
+            java.util.UUID.randomUUID(),
+            owner,
+            null,
+            java.util.Collections.emptyMap());
+        assertEquals(
+            "gtswn.chat.quantum.profile_unavailable",
+            QuantumProfileAdapter.profileDenialKey(reader, null, true, true));
+        assertEquals(
+            "gtswn.chat.quantum.profile_not_shared",
+            QuantumProfileAdapter.profileDenialKey(reader, profile, false, true));
+        profile.share(reader);
+        long revision = profile.revision();
+        MonitorProfile.Status status = profile.status();
+        assertEquals(
+            "gtswn.chat.quantum.profile_readonly",
+            QuantumProfileAdapter.profileDenialKey(reader, profile, true, true));
+        assertEquals(
+            "gtswn.chat.quantum.profile_source_unavailable",
+            QuantumProfileAdapter.profileDenialKey(reader, profile, false, true));
+        assertEquals(
+            "gtswn.chat.quantum.profile_source_unavailable",
+            QuantumProfileAdapter.profileDenialKey(owner, profile, true, true));
+        assertEquals(owner, profile.owner());
+        assertEquals(java.util.Collections.singleton(reader), profile.readers());
+        assertEquals(revision, profile.revision());
+        assertEquals(status, profile.status());
+        assertTrue(profile.mayRead(reader));
+        assertFalse(profile.mayModify(reader));
+    }
+
+    @Test
+    public void ownershipTransferDoesNotRetainThePreviousReadonlyDiagnosticOrOldOwnerAccess() {
+        java.util.UUID owner = java.util.UUID.randomUUID(), reader = java.util.UUID.randomUUID();
+        MonitorProfile profile = new MonitorProfile(
+            java.util.UUID.randomUUID(),
+            owner,
+            null,
+            java.util.Collections.emptyMap());
+        profile.share(reader);
+        assertEquals(
+            "gtswn.chat.quantum.profile_readonly",
+            QuantumProfileAdapter.profileDenialKey(reader, profile, true, true));
+        profile.transfer(reader);
+        assertTrue(profile.mayModify(reader));
+        assertEquals(
+            "gtswn.chat.quantum.profile_source_unavailable",
+            QuantumProfileAdapter.profileDenialKey(reader, profile, true, true));
+        assertEquals(
+            "gtswn.chat.quantum.profile_not_shared",
+            QuantumProfileAdapter.profileDenialKey(owner, profile, true, true));
     }
 
     /** Real native ISecurityProvider API fixture, with no EntityPlayer or terminal credential. */

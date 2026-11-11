@@ -600,7 +600,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
      * <p>
      * 键位映射（尽量复用已有键）：
      * NONE → gtswn.chat.quantum.node_online（新增）；
-     * NO_PERMISSION → gtswn.chat.quantum.no_permission（已有）；
+     * NO_PERMISSION → gtswn.chat.quantum.node_actor_no_permission（节点连接身份，不是查看者）；
      * ANCHOR_NOT_QUANTIZED → gtswn.chat.quantum.node_offline_not_quantized（v1.6.1 新增，lang 由任务 B 补）；
      * 其余（无锚点/锚点不可达/网络未就绪）→ gtswn.chat.quantum.node_offline（已有）。
      * <p>
@@ -611,7 +611,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
             case NONE:
                 return "gtswn.chat.quantum.node_online";
             case NO_PERMISSION:
-                return "gtswn.chat.quantum.no_permission";
+                return "gtswn.chat.quantum.node_actor_no_permission";
             case ANCHOR_NOT_QUANTIZED:
                 return "gtswn.chat.quantum.node_offline_not_quantized";
             case NO_ANCHOR:

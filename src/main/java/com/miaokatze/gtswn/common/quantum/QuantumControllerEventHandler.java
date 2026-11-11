@@ -620,16 +620,36 @@ public class QuantumControllerEventHandler {
         if (!(te instanceof TileController)) {
             return;
         }
+        collectConnectionSides(world, x, y, z, null, allowed);
+        setValidSidesIfChanged(te, allowed);
+    }
+
+    /** The same physical whitelist, evaluated before a prospective controller registration changes any native edge. */
+    public static EnumSet<ForgeDirection> connectionSidesAfterQuantization(World world, int x, int y, int z,
+        Set<Long> futureMembers) {
+        EnumSet<ForgeDirection> allowed = EnumSet.noneOf(ForgeDirection.class);
+        collectConnectionSides(world, x, y, z, futureMembers, allowed);
+        return allowed;
+    }
+
+    private static void collectConnectionSides(World world, int x, int y, int z, Set<Long> futureMembers,
+        EnumSet<ForgeDirection> allowed) {
         allowed.clear();
         QuantumControllerRegistry registry = null;
         for (ForgeDirection d : ForgeDirection.VALID_DIRECTIONS) {
             if (!world.blockExists(x + d.offsetX, y + d.offsetY, z + d.offsetZ)) continue;
             TileEntity neighbor = world.getTileEntity(x + d.offsetX, y + d.offsetY, z + d.offsetZ);
             if (neighbor instanceof TileController) {
-                if (registry == null) registry = QuantumControllerRegistry.get(world);
-                if (registry.sameGeneration(
-                    QuantumControllerRegistry.pack(x, y, z),
-                    QuantumControllerRegistry.pack(x + d.offsetX, y + d.offsetY, z + d.offsetZ))) allowed.add(d);
+                if (futureMembers != null) {
+                    if (futureMembers.contains(QuantumControllerRegistry.pack(x, y, z)) && futureMembers
+                        .contains(QuantumControllerRegistry.pack(x + d.offsetX, y + d.offsetY, z + d.offsetZ)))
+                        allowed.add(d);
+                } else {
+                    if (registry == null) registry = QuantumControllerRegistry.get(world);
+                    if (registry.sameGeneration(
+                        QuantumControllerRegistry.pack(x, y, z),
+                        QuantumControllerRegistry.pack(x + d.offsetX, y + d.offsetY, z + d.offsetZ))) allowed.add(d);
+                }
             } else if (neighbor instanceof TileEnergyAcceptor) {
                 allowed.add(d);
             } else if (neighbor instanceof TileEnergyCell || neighbor instanceof TileCreativeEnergyCell) {
@@ -648,7 +668,6 @@ public class QuantumControllerEventHandler {
                 }
             }
         }
-        setValidSidesIfChanged(te, allowed);
     }
 
     /**

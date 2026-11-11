@@ -253,7 +253,7 @@ final class NativeQuantumProfileScopeScenario implements TestScenario {
                 next(ctx, 2);
                 return;
             case 2:
-                if (!hasMessage(member, "gtswn.chat.quantum.no_permission")) return;
+                if (!hasMessage(member, "gtswn.chat.quantum.profile_readonly")) return;
                 require(
                     ctx,
                     allPermissions() && QuantumTerminalAccess.validate(member, memberTerminal)
@@ -269,7 +269,7 @@ final class NativeQuantumProfileScopeScenario implements TestScenario {
                     "Read-only B did not incorporate the target");
                 ctx.event(
                     "mechanism-reproduced",
-                    "PROFILE_OWNER_ONLY: native AE all permissions=true, paired same-grid=true, profile read=true, modify=false, production incorporation=no_permission");
+                    "PROFILE_OWNER_ONLY: native AE all permissions=true, paired same-grid=true, profile read=true, modify=false, production incorporation=profile_readonly");
                 closeSession();
                 profiles.rename(owner.getUniqueID(), profile.id, "A-owned-profile");
                 rememberProfileState();
@@ -304,6 +304,11 @@ final class NativeQuantumProfileScopeScenario implements TestScenario {
                 closeSession();
                 profiles.transfer(owner.getUniqueID(), profile.id, member.getUniqueID());
                 rememberProfileState();
+                require(
+                    ctx,
+                    !QuantumTerminalAccess.validate(owner, terminal) && "gtswn.chat.quantum.profile_not_shared"
+                        .equals(QuantumProfileAdapter.profileDenialKey(owner, terminal, false)),
+                    "Public transfer clears A's former profile ownership/read ACL instead of retaining a misleading readonly grant");
                 require(
                     ctx,
                     profile.owner()
@@ -411,6 +416,14 @@ final class NativeQuantumProfileScopeScenario implements TestScenario {
             !QuantumTerminalAccess.setNetworkSafety(member, memberTerminal, false)
                 && QuantumTerminalAccess.isNetworkSafetyEnabled(ctx.world(), X, Y, Z),
             "Read-only profile independently blocks B's safety change despite real native SECURITY");
+        member.clearMessages();
+        ((ItemNetworkQuantumTerminal) memberTerminal.getItem())
+            .onItemUseFirst(memberTerminal, member, ctx.world(), X, Y, Z, 1, .5f, .5f, .5f);
+        require(
+            ctx,
+            hasMessage(member, "gtswn.chat.quantum.profile_readonly")
+                && !hasMessage(member, "gtswn.chat.quantum.no_permission"),
+            "Production controller click identifies B's read-only profile rather than reporting missing network permission");
     }
 
     private void requireRead(TestContext ctx, NativeSecurityStationSupport.RecordingActor actor, ItemStack held) {

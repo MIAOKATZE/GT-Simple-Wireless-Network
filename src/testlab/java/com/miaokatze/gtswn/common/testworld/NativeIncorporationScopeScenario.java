@@ -29,6 +29,7 @@ import appeng.api.AEApi;
 import appeng.api.config.SecurityPermissions;
 import appeng.api.networking.security.ISecurityGrid;
 import appeng.api.networking.security.ISecurityProvider;
+import appeng.api.storage.data.IAEItemStack;
 import appeng.me.GridAccessException;
 import appeng.me.helpers.IGridProxyable;
 import appeng.tile.AEBaseTile;
@@ -45,6 +46,7 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
     private RecordingActor owner, member, outsider, acting;
     private TileEntity controller, station, deviceA, deviceB;
     private ItemStack ownerTerminal;
+    private ItemStack memberCard;
     private final List<int[]> positions = new ArrayList<>();
     private final List<Long> introduced = new ArrayList<>();
     private NativePacketCallbackSession session;
@@ -69,7 +71,7 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
     }
 
     public String description() {
-        return "Native all-permission nonowner incorporation removal scope, A/B own-entry positives and C ACL negatives; synthetic Handler/Drain, no TCP";
+        return "Native all-grants/SECURITY incorporation managers, BUILD-only/no-card denials and A/B creator compatibility; synthetic Handler/Drain, no TCP";
     }
 
     public void start(TestContext ctx) {
@@ -81,7 +83,7 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
         beforeDrain = null;
         session = null;
         controller = station = deviceA = deviceB = null;
-        ownerTerminal = null;
+        ownerTerminal = memberCard = null;
         owner = member = outsider = acting = null;
         aIdentity = bIdentity = null;
         TestWorldFixtures.requireTestWorld(ctx.world());
@@ -105,7 +107,7 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
         NativeSecurityMatrix.assertOrdinaryActors(ctx, "incorporation operation scope", owner, member, outsider);
         for (RecordingActor actor : actors()) {
             require(ctx, !actor.capabilities.isCreativeMode, "Scope actor has no creative ownership bypass");
-            TerminalSupplyStore.set(actor, TerminalSupplyStore.Kind.ANCHOR, 2);
+            TerminalSupplyStore.set(actor, TerminalSupplyStore.Kind.ANCHOR, actor == owner ? 3 : 2);
         }
         controller = place(
             ctx,
@@ -164,11 +166,10 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
                 if (!NativeSecurityStationSupport.ready(controller, station)
                     || NativeSecurityStationSupport.node(deviceA) == null
                     || NativeSecurityStationSupport.node(deviceB) == null) return;
+                memberCard = NativeSecurityStationSupport.allPermissionsCard(member);
                 require(
                     ctx,
-                    NativeSecurityStationSupport
-                        .insertCard(ctx, station, owner, NativeSecurityStationSupport.allPermissionsCard(member))
-                        == null,
+                    NativeSecurityStationSupport.insertCard(ctx, station, owner, memberCard) == null,
                     "A grants B all real native permissions");
                 ownerTerminal = GTSWNItemList.ME_Network_Quantum_Terminal.get(1);
                 owner.inventory.mainInventory[0] = ownerTerminal;
@@ -207,41 +208,35 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
                         .equals(
                             owner.getUniqueID()
                                 .toString())
-                        && TerminalSupplyStore.count(owner, TerminalSupplyStore.Kind.ANCHOR) == 1,
+                        && TerminalSupplyStore.count(owner, TerminalSupplyStore.Kind.ANCHOR) == 2,
                     "A real packet adds its incorporation and consumes exactly one actual anchor supply");
                 aIdentity = entry(ctx, Z).identity();
                 closeSession();
                 stage = 3;
             }
             if (stage == 3 && entry(ctx, Z).isConnected()) {
+                replaceMemberCard(ctx, NativeSecurityStationSupport.card(member, SecurityPermissions.BUILD));
+                stage = 30;
+            }
+            if (stage == 30 && onlyNativePermission(SecurityPermissions.BUILD)) {
                 enqueue(ctx, member, Z, true, true, 2);
-                stage = 4;
+                stage = 31;
                 return;
             }
-            if (stage == 4 && finished(ctx)) {
-                assertUnchanged(ctx, "B all-native-grants nonowner removal");
+            if (stage == 31 && finished(ctx)) {
+                assertUnchanged(ctx, "B BUILD-only nonowner removal");
                 require(
                     ctx,
                     entry(ctx, Z) != null && aIdentity.equals(entry(ctx, Z).identity())
                         && member.messages()
                             .toString()
-                            .contains("gtswn.chat.quantum.no_permission"),
-                    "Real packet denies B at the incorporation owner scope while native B access is true");
-                ctx.event(
-                    "REPRODUCED_OWNER_SCOPE_DENIAL",
-                    "clickingActor=" + member.getUniqueID()
-                        + "; nativeActor="
-                        + actorId(member)
-                        + "; nativeStationOwner="
-                        + ((ISecurityProvider) station).getOwner()
-                        + "; allNativePermissions=true; entry.owner="
-                        + entry(ctx, Z).owner()
-                        + "; entry.identity="
-                        + aIdentity
-                        + "; chat="
-                        + member.messages()
-                        + "; this is an additional UUID ownership restriction, not an all-AE operational success");
+                            .contains("gtswn.chat.quantum.incorporation_manage_required"),
+                    "BUILD-only noncreator cannot bypass the native management/creator scope");
                 closeSession();
+                replaceMemberCard(ctx, NativeSecurityStationSupport.allPermissionsCard(member));
+                stage = 32;
+            }
+            if (stage == 32 && allNativePermissions()) {
                 enqueue(ctx, outsider, Z, true, true, 3);
                 stage = 5;
                 return;
@@ -255,11 +250,59 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
                         .contains("gtswn.chat.quantum.no_permission"),
                     "C no-card actual packet fails native access before entry ownership");
                 closeSession();
-                enqueue(ctx, owner, Z, true, false, 4);
+                enqueue(ctx, member, Z, true, false, 8);
+                stage = 4;
+                return;
+            }
+            if (stage == 4 && finished(ctx)) {
+                require(
+                    ctx,
+                    entry(ctx, Z) == null && deviceA == ctx.world()
+                        .getTileEntity(DX, Y, Z)
+                        && member.messages()
+                            .toString()
+                            .contains("gtswn.chat.quantum.incorporation_removed"),
+                    "B all-native-grants current network manager actually removes A entry through Handler/Drain");
+                require(
+                    ctx,
+                    TerminalSupplyStore.count(owner, TerminalSupplyStore.Kind.ANCHOR) == 2
+                        && TerminalSupplyStore.count(member, TerminalSupplyStore.Kind.ANCHOR) == 2,
+                    "Manager removal refunds or transfers none of A consumed material to B");
+                ctx.event(
+                    "NATIVE_MANAGER_REMOVE",
+                    "actor=" + member.getUniqueID()
+                        + "; nativeActor="
+                        + actorId(member)
+                        + "; nativeStationOwner="
+                        + ((ISecurityProvider) station).getOwner()
+                        + "; originalEntryOwner="
+                        + owner.getUniqueID()
+                        + "; originalIdentity="
+                        + aIdentity
+                        + "; no refund or ownership transfer");
+                closeSession();
+                enqueue(ctx, owner, Z, false, false, 7);
                 stage = 6;
                 return;
             }
             if (stage == 6 && finished(ctx)) {
+                require(
+                    ctx,
+                    entry(ctx, Z) != null && entry(ctx, Z).owner()
+                        .equals(
+                            owner.getUniqueID()
+                                .toString())
+                        && TerminalSupplyStore.count(owner, TerminalSupplyStore.Kind.ANCHOR) == 1,
+                    "A creates another own entry with the second explicitly budgeted anchor");
+                closeSession();
+                stage = 60;
+            }
+            if (stage == 60 && entry(ctx, Z).isConnected()) {
+                enqueue(ctx, owner, Z, true, false, 4);
+                stage = 61;
+                return;
+            }
+            if (stage == 61 && finished(ctx)) {
                 require(
                     ctx,
                     entry(ctx, Z) == null && deviceA == ctx.world()
@@ -269,6 +312,53 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
                             .contains("gtswn.chat.quantum.incorporation_removed"),
                     "A actual packet removes its own entry and preserves the real device");
                 closeSession();
+                enqueue(ctx, owner, Z, false, false, 7);
+                stage = 62;
+                return;
+            }
+            if (stage == 62 && finished(ctx)) {
+                require(
+                    ctx,
+                    entry(ctx, Z) != null && entry(ctx, Z).owner()
+                        .equals(
+                            owner.getUniqueID()
+                                .toString())
+                        && TerminalSupplyStore.count(owner, TerminalSupplyStore.Kind.ANCHOR) == 0,
+                    "A third owned entry consumes the last explicitly fixture-budgeted anchor");
+                closeSession();
+                replaceMemberCard(ctx, NativeSecurityStationSupport.card(member, SecurityPermissions.SECURITY));
+                stage = 63;
+            }
+            if (stage == 63 && onlyNativePermission(SecurityPermissions.SECURITY) && entry(ctx, Z).isConnected()) {
+                require(
+                    ctx,
+                    !QuantumTerminalAccess.validate(member, member.getHeldItem())
+                        && QuantumIncorporationRegistry.get(ctx.world())
+                            .canManageEntry(ctx.world(), DX, Y, Z, member),
+                    "SECURITY-only noncreator has actual native removal management without ordinary BUILD access");
+                enqueue(ctx, member, Z, true, false, 9);
+                stage = 64;
+                return;
+            }
+            if (stage == 64 && finished(ctx)) {
+                require(
+                    ctx,
+                    entry(ctx, Z) == null && deviceA == ctx.world()
+                        .getTileEntity(DX, Y, Z)
+                        && member.messages()
+                            .toString()
+                            .contains("gtswn.chat.quantum.incorporation_removed"),
+                    "SECURITY-only noncreator actual packet removes A entry without a BUILD bypass");
+                require(
+                    ctx,
+                    TerminalSupplyStore.count(owner, TerminalSupplyStore.Kind.ANCHOR) == 0
+                        && TerminalSupplyStore.count(member, TerminalSupplyStore.Kind.ANCHOR) == 2,
+                    "SECURITY manager removal neither refunds A anchors nor credits B");
+                closeSession();
+                replaceMemberCard(ctx, NativeSecurityStationSupport.allPermissionsCard(member));
+                stage = 65;
+            }
+            if (stage == 65 && allNativePermissions()) {
                 enqueue(ctx, member, BZ, false, false, 5);
                 stage = 7;
                 return;
@@ -302,7 +392,7 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
                     "B actual packet removes its own entry while preserving the device");
                 closeSession();
                 ctx.pass(
-                    "REPRODUCED_OWNER_SCOPE_DENIAL: B all native grants cannot remove A entry; A/B own-entry native packet positives and C ACL negatives passed; synthetic callback evidence only");
+                    "Native all-grants and SECURITY-only managers remove A entries; BUILD-only/no-card denials and A/B creator positives preserve supplies/devices; synthetic callbacks only");
             }
         } finally {
             NativeSecurityStationSupport.power(controller);
@@ -368,7 +458,7 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
     @SubscribeEvent(priority = EventPriority.LOW)
     public void captureIntroducedIdentity(TickEvent.ServerTickEvent event) {
         if (event.phase != TickEvent.Phase.END || !queued || beforeDrain == null) return;
-        int z = operation == 1 ? Z : operation == 5 ? BZ : Integer.MIN_VALUE;
+        int z = operation == 1 || operation == 7 ? Z : operation == 5 ? BZ : Integer.MIN_VALUE;
         if (z == Integer.MIN_VALUE) return;
         QuantumIncorporationRegistry.Entry entry = entry(context, z);
         TileEntity expected = z == Z ? deviceA : deviceB;
@@ -484,6 +574,31 @@ public final class NativeIncorporationScopeScenario implements TestScenario {
         return NativeSecurityStationSupport.node(controller)
             .getGrid()
             .getCache(ISecurityGrid.class);
+    }
+
+    private boolean allNativePermissions() {
+        for (SecurityPermissions permission : SecurityPermissions.values())
+            if (!security().hasPermission(member, permission)) return false;
+        return true;
+    }
+
+    private boolean onlyNativePermission(SecurityPermissions allowed) {
+        for (SecurityPermissions permission : SecurityPermissions.values())
+            if (security().hasPermission(member, permission) != (permission == allowed)) return false;
+        return true;
+    }
+
+    private void replaceMemberCard(TestContext ctx, ItemStack replacement) {
+        IAEItemStack removed = NativeSecurityStationSupport.extractCard(ctx, station, owner, memberCard);
+        require(
+            ctx,
+            removed != null && removed.getStackSize() == 1,
+            "Owner extracts the exact previous native member card");
+        memberCard = replacement;
+        require(
+            ctx,
+            NativeSecurityStationSupport.insertCard(ctx, station, owner, memberCard) == null,
+            "Owner inserts the next exact native member-role card");
     }
 
     private QuantumIncorporationRegistry.Entry entry(TestContext ctx, int z) {
