@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.common.testworld;
 
 /** A bounded state machine driven by real server END ticks. Never block or sleep in these callbacks. */

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.client.engineering;
 
 /** One clamped offset shared by input and drawing. Units may be pixels or rows. */

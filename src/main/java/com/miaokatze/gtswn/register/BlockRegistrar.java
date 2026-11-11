@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.register;
 
 import static com.miaokatze.gtswn.common.api.enums.GTSWNItemList.ME_Network_Quantum_Node;

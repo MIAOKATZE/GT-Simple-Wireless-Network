@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.common.testworld;
 
 import static appeng.util.item.AEFluidStackType.FLUID_STACK_TYPE;

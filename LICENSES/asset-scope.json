@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "project": "GT-Simple-Wireless-Network",
+  "modId": "gtswn",
+  "effectiveFrom": "v2.1.23",
+  "canonicalSource": "https://github.com/MIAOKATZE/GT-Simple-Wireless-Network",
+  "rightsHolder": "MIAOKATZE; other applicable rights holders retain their existing notices",
+  "defaultLicense": "AGPL-3.0-only",
+  "codeAdditionalTerms": "AGPL-ADDITIONAL-TERMS.md",
+  "ruleOrder": "last matching rule wins; paths are relative to src/main/resources or the JAR root; ** also matches zero directories",
+  "rules": [
+    {
+      "pattern": "assets/gtswn/textures/**",
+      "license": "CC-BY-NC-ND-4.0",
+      "kind": "independent project artwork"
+    },
+    {
+      "pattern": "assets/baubles/textures/**",
+      "license": "CC-BY-NC-ND-4.0",
+      "kind": "project compatibility artwork; namespace does not identify another author"
+    }
+  ],
+  "notes": [],
+  "existingGrants": "No valid existing grant is revoked or narrowed. Existing third-party terms and statutory rights remain applicable."
+}

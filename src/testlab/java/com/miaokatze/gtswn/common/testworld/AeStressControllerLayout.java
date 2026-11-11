@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.common.testworld;
 
 /** Verified connected 7-cube geometry: 196 controllers, 772 exposed faces; no optimality claim. */

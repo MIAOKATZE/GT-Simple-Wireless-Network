@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.client.engineering.desktop;
 
 /** Pointer capture uses the press geometry, so panning/zooming cannot accumulate rounding drift. */

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.common.panel;
 
 /** Short observation lease. World replacement and clock rollback cannot keep an old lease alive. */

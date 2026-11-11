@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.common.testworld;
 
 /** Chunk-aligned bounds for authored test fixtures and the full-height reset scan. */

@@ -47,3 +47,6 @@ val testlabSourceDirty = providers.exec { commandLine("git", "status", "--porcel
 tasks.withType<Jar>().configureEach {
     manifest.attributes("Miaokatze-Source-Commit" to testlabSourceCommit.get(), "Miaokatze-Source-Dirty" to testlabSourceDirty.get())
 }
+
+// Package and verify the project-specific code and independent-asset licenses.
+apply(from = "gradle/licensing.gradle.kts")

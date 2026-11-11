@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.common.quantum;
 
 import static com.miaokatze.gtswn.common.quantum.QuantumControllerPlacementTest.*;
@@ -421,6 +424,8 @@ public class QuantumControllerSuspensionTest {
         PauseActor actor = (PauseActor) allocate(PauseActor.class);
         actor.worldObj = world;
         actor.inventory = new InventoryPlayer(actor);
+        // Unsafe allocation bypasses EntityPlayer field initializers.
+        actor.capabilities = new net.minecraft.entity.player.PlayerCapabilities();
         actor.messages = new ArrayList<>();
         ItemNetworkQuantumTerminal item = new ItemNetworkQuantumTerminal();
         actor.held = new ItemStack(item);

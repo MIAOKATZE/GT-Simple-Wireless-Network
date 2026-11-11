@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.client.engineering.desktop;
 
 /** Visual forms over an existing data source; a form never adds telemetry or a capacity. */

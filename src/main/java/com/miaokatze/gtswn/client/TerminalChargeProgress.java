@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Additional terms: see AGPL-ADDITIONAL-TERMS.md in the project root.
+
 package com.miaokatze.gtswn.client;
 
 /** 无游戏依赖的蓄力时序，首次tick建立服务端意图，随后保持20 tick。 */
