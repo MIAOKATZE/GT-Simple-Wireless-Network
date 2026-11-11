@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lInput in Pattern Order as One Group§r\nMultiple matrix compartments act as §1one unit§r. Starting at the §1ME entry point§r, they receive items and fluids in §1pattern order§r. The first item slot in the pattern maps to the §1item compartment nearest the entry§r, with later compartments ordered by distance; fluids map to fluid compartments in their own slot order. For example, §1A/B/B/C§r goes into four separate item compartments; the two B inputs do not merge.\n\n§3§lPlacement and Entry§r\nPlace compartments of the same type in a §1straight line, all facing the same way§r, horizontally or vertically. Item and fluid compartments may connect side by side. Use only §1one ME entry§r for the whole group; its position determines input order.",
+      "desc:8": "Line up matrix item buses facing the same way and give the group one ME entry. Distance from it sets slot order. A/B/B/C needs four buses, even though two contain B. Start with one known pattern over normal cable.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -17,7 +17,7 @@
         "OreDict:8": "",
         "id:8": "gregtech:gt.blockmachines"
       },
-      "isMain:1": 0,
+      "isMain:1": 1,
       "isSilent:1": 0,
       "lockedProgress:1": 0,
       "name:8": "§d§lInput in Pattern Order",
@@ -32,11 +32,38 @@
   },
   "questIDHigh:4": 5139829067255644160,
   "questIDLow:4": 24,
-  "rewards:9": {},
-  "tasks:9": {
+  "rewards:9": {
     "0:10": {
       "index:3": 0,
-      "taskID:8": "bq_standard:checkbox"
+      "rewardID:8": "bq_standard:item",
+      "rewards:9": {
+        "0:10": {
+          "Count:3": 4,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:QuantumIncorporationAnchor_GTswn"
+        }
+      }
+    }
+  },
+  "tasks:9": {
+    "0:10": {
+      "autoConsume:1": 0,
+      "consume:1": 0,
+      "groupDetect:1": 0,
+      "ignoreNBT:1": 1,
+      "index:3": 0,
+      "partialMatch:1": 1,
+      "requireOnlyOneItem:1": 0,
+      "requiredItems:9": {
+        "0:10": {
+          "Count:3": 1,
+          "Damage:2": 14601,
+          "OreDict:8": "",
+          "id:8": "gregtech:gt.blockmachines"
+        }
+      },
+      "taskID:8": "bq_standard:retrieval"
     }
   }
 }

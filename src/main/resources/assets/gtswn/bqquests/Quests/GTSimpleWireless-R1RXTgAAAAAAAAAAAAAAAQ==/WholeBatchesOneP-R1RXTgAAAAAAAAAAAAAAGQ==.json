@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lPatterns and Complete Batches§r\nThe whole group shares §136 processing pattern slots§r. Each compartment buffers only one material at its own position. Inputs must arrive as §1complete batches§r of the pattern; repeated materials still occupy separate compartments.\n\n§3§lBuffering and Switching§r\nThe group handles §1one pattern§r at a time and can continue receiving complete batches of that pattern during processing. It switches to another pattern only after §1current processing has finished and all remaining materials have been cleared§r. The buffer is not an extra output; consumed materials do not reappear.",
+      "desc:8": "Add a fluid hatch beside the item group for mixed recipes. Fluid slots have their own order. The group shares 36 patterns and buffers whole batches; switching recipes requires the old job and its stock to clear.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -32,11 +32,38 @@
   },
   "questIDHigh:4": 5139829067255644160,
   "questIDLow:4": 25,
-  "rewards:9": {},
-  "tasks:9": {
+  "rewards:9": {
     "0:10": {
       "index:3": 0,
-      "taskID:8": "bq_standard:checkbox"
+      "rewardID:8": "bq_standard:item",
+      "rewards:9": {
+        "0:10": {
+          "Count:3": 4,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:QuantumIncorporationAnchor_GTswn"
+        }
+      }
+    }
+  },
+  "tasks:9": {
+    "0:10": {
+      "autoConsume:1": 0,
+      "consume:1": 0,
+      "groupDetect:1": 0,
+      "ignoreNBT:1": 1,
+      "index:3": 0,
+      "partialMatch:1": 1,
+      "requireOnlyOneItem:1": 0,
+      "requiredItems:9": {
+        "0:10": {
+          "Count:3": 1,
+          "Damage:2": 14602,
+          "OreDict:8": "",
+          "id:8": "gregtech:gt.blockmachines"
+        }
+      },
+      "taskID:8": "bq_standard:retrieval"
     }
   }
 }

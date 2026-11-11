@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lMeet the four terminal types§r\nThe Portable Monitor views the wireless grid and bound panels. The Device Info Terminal manages machines. The Link Terminal installs wireless EU covers, and the Quantum Terminal manages ME quantum networks. Learn how to access them here, then prepare the items you need through their crafting branches.\n\n§3§lEquip and open§r\nWith Baubles-Expanded installed, dedicated slots provide §11§r monitor, §11§r link, §11§r device and §15§r quantum positions. Press default §1C§r while holding a terminal to equip its matching slot. With no terminal held, C opens the wheel; grey positions are empty. The wheel lists equipped terminals.\n\n§3§lSelect and use§r\nThe opening tap only opens the wheel. Later short C presses cycle on release. Hold C for §10.5 seconds§r to confirm, or click a sector or press Enter/Space; Esc or the inventory key closes it. Normal monitor/device selection opens its page while leaving the item equipped. A link/quantum terminal is borrowed into the selected hotbar slot. A new Shift+C press inside the wheel takes the selected item into your hand.\n\n§3§lReturn and continue§r\nAfter using a borrowed terminal, keep its original item and hotbar slot and press C to attempt return to its original equipped slot. If you moved it, use quick equip to place it in a matching slot. Taking an item is refused if the currently held item cannot be accommodated. Tick after understanding, then choose Factory Mode or the dashboard branch.",
+      "desc:8": "Try the wheel with any terminal. With expanded accessory slots, press C while holding it to equip, then open the wheel empty-handed. Monitor entries open views; link and quantum terminals are borrowed into the hotbar.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -35,8 +35,40 @@
   "rewards:9": {},
   "tasks:9": {
     "0:10": {
+      "autoConsume:1": 0,
+      "consume:1": 0,
+      "groupDetect:1": 0,
+      "ignoreNBT:1": 1,
       "index:3": 0,
-      "taskID:8": "bq_standard:checkbox"
+      "partialMatch:1": 1,
+      "requireOnlyOneItem:1": 1,
+      "requiredItems:9": {
+        "0:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:PortableWirelessNetworkMonitor_GTswn"
+        },
+        "1:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:gtswn.deviceInfoTerminal"
+        },
+        "2:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:wirelessEnergyTap"
+        },
+        "3:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:MENetworkQuantumTerminal_GTswn"
+        }
+      },
+      "taskID:8": "bq_standard:retrieval"
     }
   }
 }

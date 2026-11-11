@@ -103,7 +103,7 @@ dependencies {
 
 // Shared library API; immutable candidate versions may be supplied for isolated integration builds.
 dependencies {
-    def coreVersion = project.findProperty("miaokatzeCoreVersion") ?: "0.2.9"
+    def coreVersion = project.findProperty("miaokatzeCoreVersion") ?: "0.2.11"
     api("com.miaokatze.miaokatzecore:miaokatzecore:${coreVersion}:dev") { transitive = false }
     // Original JVM contracts also exercise the optional driver and world policy.
     testRuntimeOnly("com.miaokatze.miaokatzecore:miaokatzecore:${coreVersion}:testlab-dev") { transitive = false }

@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lPurpose and layout§r\nPlace extender panels beside compatible main or extender panels to form a continuous rectangular display. The structure finds adjacent compatible screen blocks and selects the largest filled rectangle containing the main panel. Keep the intended display area continuous and filled.\n\n§3§lQuest and reward§r\nThis quest requires crafting §12§r extender panels and awards §28 additional extender panels§r. The crafting target is not a consumption task; the reward supplies extra items rather than returning materials.",
+      "desc:8": "Place extenders edge to edge around the main panel. The display uses the largest filled rectangle containing it; an unfinished corner can leave a row out.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -38,7 +38,7 @@
       "rewardID:8": "bq_standard:item",
       "rewards:9": {
         "0:10": {
-          "Count:3": 8,
+          "Count:3": 2,
           "Damage:2": 0,
           "OreDict:8": "",
           "id:8": "gtswn:NetworkInfoPanelExtender_GTswn"

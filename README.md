@@ -8,14 +8,14 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 final" src="https://img.shields.io/badge/GTNH-2.9.0-orange.svg"></a>
-  <img alt="GTSWN 2.1.18" src="https://img.shields.io/badge/GTSWN-2.1.18-green.svg">
+  <img alt="GTSWN 2.1.25" src="https://img.shields.io/badge/GTSWN-2.1.25-green.svg">
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
 | 前置 / Requirement | 版本 / Version |
 | --- | --- |
 | GTNH | 2.9.0 |
-| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.6+ |
+| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.11+ |
 
 为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；无线与监控设备可在 LV 阶段制作，矩阵编组仓室为 LuV 等级。
 
@@ -30,7 +30,7 @@
 
 | GTNH | GTSWN 版本范围 / Version range | 下载 / Download |
 | --- | --- | --- |
-| 2.9.0 正式版 / final | 2.1.0 ~ + | [v2.1.15](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.1.15) |
+| 2.9.0 正式版 / final | 2.1.x | [已发布版本 / Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases) |
 | 2.9.0 RC-1 / RC-2 | 2.0.0 ~ 2.0.37 | [v2.0.37](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.0.37) |
 | 2.9.0 beta-1 / beta-2 / beta-3 | 1.8.82 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) |
 | 2.8.4 | 0.2.0 | [v0.2.0](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v0.2.0) |
@@ -106,6 +106,12 @@ Machine chunks must stay loaded. Energy powers from buffer; Power collects gener
 `AllowCopyPasteTool` defaults off; enable it for GT cover tools/MM to copy node settings. MM copies bindings/settings, not stored energy or inventories. Node cores require no separate material; side parts/upgrades retain normal costs. A new/replacement wireless cover on a laser hatch costs **1 pipe per face**; new quantum incorporation costs **1 anchor per device**, with no repeat charge for an existing valid incorporation. Failed optional wireless EU refill does not stop copying; the target keeps an empty or existing buffer. Batch messages summarize results and materials.
 
 <p align="center"><img src="images/matrix-inputs-overview.png" alt="四种 LuV 矩阵编组输入与镜像 / Four LuV matrix inputs and mirrors" width="420"></p>
+
+**矩阵编组输入 / Matrix grouped inputs.** 装配线按已安装样板的输入位置收料；两个相同的输入仍占两个仓室。比如两格各 64 根同种导线可以交料，合成一格 128 根则会在写入前拒绝。[Neo ECO AE 7.3.8 快速规划反馈](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/issues/124)尚未确认兼容；遇到此问题请关闭快速规划，用保留分槽的投料路径重新下单。矩阵已有的退回按钮退回**整组实际未耗材料**，满网保留余量，不会取消 AE CPU 等待。
+
+Matrix inputs follow the installed pattern's slot order. Two identical stacks still occupy separate members; a single merged delivery is refused before anything is staged. If Neo ECO rapid planning rejects such a pattern, disable it and resubmit via a slot-preserving path. The existing refund action returns the **whole group's unconsumed stock**, retains rejected leftovers and does not cancel the CPU job.
+
+设备与矩阵仓室的长提示默认展开。悬停时按 **C** 可按物品类型收纳或展开；简述、关键参数与来源保留，矩阵仍显示仓型、容量和等级。 / Long device and matrix tooltips start expanded. Press **C** while hovering to toggle that item type; the compact view keeps its summary, key figures and source mod.
 
 ## ME 量子终端与节点 / ME Quantum Terminal & Node
 

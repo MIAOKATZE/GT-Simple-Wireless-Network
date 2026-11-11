@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lOpen the dashboard§r\nDefault §1F10§r opens the dashboard from normal view. Factory Mode can open the same desktop and returns to its workbench when it closes. Explore the layout first, then prepare the data sources you need.\n\n§3§lPrepare terminals for the content§r\nFor wireless stored EU, net change and history, bring a bound Portable Monitor. For AE items/fluids, configure a physical info panel and bind it to the Portable Monitor. For machine states and device-side flow, use a Device Info Terminal with bound machines. Follow the portable-monitor, panel and machine-ledger quests for crafting and binding.\n\n§3§lChoose cards and sources§r\nCards cover grids, history, resources, machines, regions and alerts, plus clocks, session, team, player and world information. After placing a machine card, choose its terminal and machine. Resource cards use entries from bound panels. A unique available panel may be selected automatically; choose by content when several are available. Once readings are ready, arrange the layout to suit you.\n\n§3§lInterpret the display§r\nStored EU, EU/t flow and stock quantities use their own units. Wireless net change describes storage changes; rings without a real capacity indicate direction. Local clocks use computer time, game clocks use the world day cycle, session time resets on reconnect, and team cards show information synchronized for you. Tick after understanding sources, then continue to editing.",
+      "desc:8": "Open the dashboard with F10. Device terminals supply machines; portable monitors supply EU and bound screens. Place and size a card, choose its source and save with Ctrl+S. A shared layout transfers no access rights.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -35,8 +35,28 @@
   "rewards:9": {},
   "tasks:9": {
     "0:10": {
+      "autoConsume:1": 0,
+      "consume:1": 0,
+      "groupDetect:1": 0,
+      "ignoreNBT:1": 1,
       "index:3": 0,
-      "taskID:8": "bq_standard:checkbox"
+      "partialMatch:1": 1,
+      "requireOnlyOneItem:1": 1,
+      "requiredItems:9": {
+        "0:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:PortableWirelessNetworkMonitor_GTswn"
+        },
+        "1:10": {
+          "Count:3": 1,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:gtswn.deviceInfoTerminal"
+        }
+      },
+      "taskID:8": "bq_standard:retrieval"
     }
   }
 }

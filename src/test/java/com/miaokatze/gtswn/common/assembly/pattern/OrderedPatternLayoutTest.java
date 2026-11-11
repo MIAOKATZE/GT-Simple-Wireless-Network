@@ -298,6 +298,48 @@ public class OrderedPatternLayoutTest {
     }
 
     @Test
+    public void duplicateFullStacksKeepTheirOwnMembersAndMergedDeliveryRemainsUntouched() throws Exception {
+        IAEItemStack wire = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(64));
+        OrderedPatternLayout layout = OrderedPatternLayout.decode(
+            AssemblyPatternFixtures.standard(
+                new IAEItemStack[] { wire, wire.copy() },
+                AssemblyPatternFixtures.item(AssemblyPatternFixtures.output(1))));
+        OrderedPatternLayout.Payload accepted = layout.validateTable(AssemblyPatternFixtures.table(wire, wire.copy()));
+        assertEquals(
+            2,
+            accepted.items()
+                .size());
+        assertEquals(
+            0,
+            accepted.items()
+                .get(0)
+                .kindOrdinal());
+        assertEquals(
+            1,
+            accepted.items()
+                .get(1)
+                .kindOrdinal());
+        assertEquals(
+            64,
+            accepted.items()
+                .get(0)
+                .amount());
+        assertEquals(
+            64,
+            accepted.items()
+                .get(1)
+                .amount());
+        IAEItemStack merged = wire.copy();
+        merged.setStackSize(128);
+        MEInventoryCrafting table = AssemblyPatternFixtures.table(merged);
+        assertRejected(PatternValidationException.Reason.TABLE_SHAPE, () -> layout.validateTable(table));
+        assertEquals(
+            128,
+            table.getAEStackInSlot(0)
+                .getStackSize());
+    }
+
+    @Test
     public void longAmountsAreRejectedBeforeConversionCanClampThem() throws Exception {
         IAEItemStack large = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(1));
         large.setStackSize(1L << 32);

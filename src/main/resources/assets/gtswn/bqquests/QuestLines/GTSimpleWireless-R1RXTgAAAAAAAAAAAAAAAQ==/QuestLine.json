@@ -3,7 +3,7 @@
     "betterquesting:10": {
       "bg_image:8": "",
       "bg_size:3": 256,
-      "desc:8": "§3§lPurpose§r\nUse the Link Terminal for wireless EU, portable/device terminals and panels for monitoring, and the Quantum Terminal for ME connections. Factory Mode and the dashboard bring existing data together.\n\n§3§lReading route§r\nThis chapter contains §126§r quests. The overview introduces the wheel and monitoring profiles as separate branches. The wheel leads to Factory Mode, regional audits and dashboard editing/sharing; profiles lead to multiplayer sharing and continuous sampling. The matrix branch starts directly from the overview with ordinary ME cable input, then splits into whole-batch buffering and optional inventory-sharing mirrors; the mirror tutorial leads to machine startup and troubleshooting. Quantum nodes are optional for matrix groups. Learn the monitor, device, panel and quantum item branches as needed, and configure sources before trying their views.\n\n§3§lCommon entrances§r\nDefaults are C for the wheel, H for the Portable Monitor viewer, F12 for Factory Mode and F10 for the dashboard; follow your bindings. Tick manual tutorials after understanding them, and complete crafting/item checks as stated. Keep relevant chunks loaded and supply AE power and channels. Lost-item recovery requires prior profile import.",
+      "desc:8": "Wireless EU, ME connections and monitoring are separate branches. Choose a terminal and bind a source. Matrices accept ordinary ME cable; factory views become useful once there is real data to display.",
       "icon:10": {
         "Count:3": 1,
         "Damage:2": 0,

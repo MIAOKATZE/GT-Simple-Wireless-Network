@@ -10,7 +10,10 @@ import static org.junit.Assert.assertTrue;
 import java.io.InputStreamReader;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
@@ -19,6 +22,7 @@ import net.minecraft.util.StringTranslate;
 import org.junit.Test;
 
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
+import com.miaokatze.gtswn.common.util.DeviceTooltipOrder;
 
 public class MatrixTooltipTest {
 
@@ -77,6 +81,14 @@ public class MatrixTooltipTest {
                         assertEquals("", lines[5]);
                         assertTrue(lines[6].contains("\u00a7b"));
                         assertEquals(DeviceTooltip.addedByLine(), lines[lines.length - 1]);
+                        List<String> compact = new ArrayList<>(Arrays.asList(lines));
+                        assertTrue(
+                            DeviceTooltipOrder
+                                .matrixPage(compact, Arrays.asList(lines), DeviceTooltip.addedByLine(), false));
+                        assertEquals(
+                            Arrays
+                                .asList(lines[0], lines[1], lines[2], lines[3], lines[4], DeviceTooltip.addedByLine()),
+                            compact);
                     }
             }
         } finally {

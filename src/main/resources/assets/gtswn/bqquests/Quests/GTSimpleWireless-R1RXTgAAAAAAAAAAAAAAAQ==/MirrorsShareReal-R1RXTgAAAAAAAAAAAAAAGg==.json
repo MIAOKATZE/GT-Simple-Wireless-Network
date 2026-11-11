@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lSharing the Same Input§r\nA mirror lets another machine use the source matrix's §1ordered input§r. There is always §1only one set of patterns and actual inventory, held by the source group§r. The destination stores no separate copy of the materials; multiple machines consume this shared inventory.\n\n§3§lPlacement and Binding§r\nBuild the destination to match the source layout, replacing only §1one corresponding compartment§r with a mirror. After source §1processing has finished and its buffers are empty§r, §1left-click a source compartment§r with a GT Data Stick, then §1right-click the corresponding mirror§r to bind it. Keep both groups §1loaded in the same dimension§r; §1do not connect the destination to ME§r. The mirror does not provide the destination machine with its required structure, research or power.",
+      "desc:8": "Copy the source arrangement at the second machine and substitute one matching mirror. Once the source is idle and empty, left-click it with a GT data stick and right-click the mirror. Load both groups in the same dimension; cable only the source. Stock is shared, not copied.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -32,11 +32,44 @@
   },
   "questIDHigh:4": 5139829067255644160,
   "questIDLow:4": 26,
-  "rewards:9": {},
-  "tasks:9": {
+  "rewards:9": {
     "0:10": {
       "index:3": 0,
-      "taskID:8": "bq_standard:checkbox"
+      "rewardID:8": "bq_standard:item",
+      "rewards:9": {
+        "0:10": {
+          "Count:3": 4,
+          "Damage:2": 0,
+          "OreDict:8": "",
+          "id:8": "gtswn:QuantumIncorporationAnchor_GTswn"
+        }
+      }
+    }
+  },
+  "tasks:9": {
+    "0:10": {
+      "autoConsume:1": 0,
+      "consume:1": 0,
+      "groupDetect:1": 0,
+      "ignoreNBT:1": 1,
+      "index:3": 0,
+      "partialMatch:1": 1,
+      "requireOnlyOneItem:1": 1,
+      "requiredItems:9": {
+        "0:10": {
+          "Count:3": 1,
+          "Damage:2": 14603,
+          "OreDict:8": "",
+          "id:8": "gregtech:gt.blockmachines"
+        },
+        "1:10": {
+          "Count:3": 1,
+          "Damage:2": 14604,
+          "OreDict:8": "",
+          "id:8": "gregtech:gt.blockmachines"
+        }
+      },
+      "taskID:8": "bq_standard:retrieval"
     }
   }
 }

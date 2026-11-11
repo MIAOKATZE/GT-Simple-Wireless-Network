@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lPurpose and operation§r\nThe Wireless Energy Monitor reads wireless grid energy and power changes. It accepts and outputs no EU, stores no EU internally, and needs no power supply. Data updates every §1100 ticks (5 seconds)§r over a §1300-second§r history window.\n\n§3§lPreparation and quest§r\nThe crafting-table recipe requires §14§r LV Sensors, §12§r Steel Plates, §11§r LV Machine Hull and §12§r Steel Screws. This quest detects §11§r monitor and §2does not consume it§r.\n\n§3§lChunk loading§r\nKeep the monitor chunk loaded. If the gap between updates exceeds §1200 ticks (10 seconds)§r, the monitor clears trend samples and delays redstone checks by §1600 ticks (30 seconds)§r. Shorter gaps retain the samples. This handles unloading or gaps without updates, rather than loss of power.",
+      "desc:8": "Read the wireless reserve and its rate of change. Switch a consumer on and off to see the difference between stored EU and a live deficit.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,
@@ -38,10 +38,10 @@
       "rewardID:8": "bq_standard:item",
       "rewards:9": {
         "0:10": {
-          "Count:3": 2,
-          "Damage:2": 32690,
+          "Count:3": 8,
+          "Damage:2": 0,
           "OreDict:8": "",
-          "id:8": "gregtech:gt.metaitem.01"
+          "id:8": "minecraft:redstone"
         }
       }
     }

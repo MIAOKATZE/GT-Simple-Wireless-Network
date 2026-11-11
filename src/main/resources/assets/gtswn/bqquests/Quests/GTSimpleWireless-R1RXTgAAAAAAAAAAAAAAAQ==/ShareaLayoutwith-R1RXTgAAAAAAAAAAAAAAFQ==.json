@@ -9,7 +9,7 @@
     "betterquesting:10": {
       "autoClaim:1": 0,
       "countAsQuest:1": 1,
-      "desc:8": "§3§lStart from a preset§r\nBuilt-in overview, business and Clocks & information presets arrange a group of cards quickly. Choose overwrite or append: overwrite replaces the current layout, while append previews the whole group. Move it to a valid location and left-click to confirm, or cancel with right-click or Esc.\n\n§3§lMake it your own§r\nAfter applying a preset, check machine, panel and resource sources, adjust cards, fields and theme, then save. Leave room before appending, and follow preview feedback for count, boundary or collision problems. Use editor undo to step back when needed.\n\n§3§lExport for a friend§r\nCopy the current layout code from preset sharing. The recipient pastes and validates it, then chooses overwrite or append and selects machines, panels and resources through their own authorized terminals. §2Layout sharing does not transfer operational bindings or access permissions§r. Use profile sharing when several players need the same data.\n\n§3§lComplete§r\nTick after understanding overwrite, append and sharing. If you have a layout, save it, export and validate a code, and confirm that recipients must select their own sources.",
+      "desc:8": "Export a layout code. Teammates can replace or append after previewing. The code carries layout and style, not access rights or your machine bindings.",
       "globalShare:1": 0,
       "icon:10": {
         "Count:3": 1,

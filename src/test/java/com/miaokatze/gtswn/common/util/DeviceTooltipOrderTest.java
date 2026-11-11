@@ -4,6 +4,8 @@
 package com.miaokatze.gtswn.common.util;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,6 +14,44 @@ import java.util.List;
 import org.junit.Test;
 
 public class DeviceTooltipOrderTest {
+
+    @Test
+    public void compactDeviceKeepsStatusAndNativeLinesSummaryParameterAndSource() {
+        List<String> lines = new ArrayList<>(
+            Arrays.asList(
+                "Device",
+                "State",
+                "Owner",
+                "",
+                "Description",
+                "Monitor",
+                "Long explanation",
+                "32 EU/t",
+                "",
+                "Controls",
+                "Right-click",
+                "",
+                "Brand",
+                "NBT: 2 tags"));
+        DeviceTooltipOrder.normalize(lines, "State", "Description", "Controls", "Brand");
+        DeviceTooltipOrder.collapse(lines, "Description", "Controls", "Brand", Arrays.asList("32 EU/t"));
+        assertEquals(
+            Arrays.asList("Device", "State", "Owner", "NBT: 2 tags", "", "Description", "Monitor", "32 EU/t", "Brand"),
+            lines);
+    }
+
+    @Test
+    public void matrixCollapseChangesOnlyItsOwnCompleteDescription() {
+        List<String> own = Arrays.asList("Machine", "Brief", "Capacity", "Tier", "", "Placement", "", "Brand");
+        List<String> lines = new ArrayList<>(own);
+        lines.add(0, "Item");
+        lines.add("Native voltage");
+        assertTrue(DeviceTooltipOrder.matrixPage(lines, own, "Brand", true));
+        assertTrue(lines.contains("Placement"));
+        assertTrue(DeviceTooltipOrder.matrixPage(lines, own, "Brand", false));
+        assertEquals(Arrays.asList("Item", "Machine", "Brief", "Capacity", "Tier", "Brand", "Native voltage"), lines);
+        assertFalse(DeviceTooltipOrder.matrixPage(lines, own, "Brand", false));
+    }
 
     @Test
     public void machineCoverColorAndAdvancedDetailsStayInStateWithBrandLast() {
