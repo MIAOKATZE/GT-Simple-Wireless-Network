@@ -32,7 +32,7 @@ public final class DeviceTooltip {
     }
 
     public static void add(List<String> lines, String... keys) {
-        for (String key : keys) lines.add(StatCollector.translateToLocal(key));
+        for (String key : keys) java.util.Collections.addAll(lines, gregtech.api.util.GTSplit.splitLocalized(key));
     }
 
     public static void finish(List<String> lines) {

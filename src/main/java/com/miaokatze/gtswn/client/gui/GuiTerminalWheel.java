@@ -445,10 +445,11 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     private final class ModeSwitch extends Widget<ModeSwitch> implements Interactable {
 
         private ModeSwitch() {
-            tooltipDynamic(
-                tooltip -> tooltip.add(modeName())
-                    .newLine()
-                    .add(TerminalBaubleController.text("gtswn.terminal_wheel.mode.tooltip")));
+            tooltipDynamic(tooltip -> {
+                tooltip.addLine(modeName());
+                for (String line : gregtech.api.util.GTSplit
+                    .split(TerminalBaubleController.text("gtswn.terminal_wheel.mode.tooltip"))) tooltip.addLine(line);
+            });
             tooltip().setAutoUpdate(true);
         }
 

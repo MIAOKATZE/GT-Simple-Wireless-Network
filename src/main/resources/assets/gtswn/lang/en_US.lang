@@ -377,7 +377,7 @@ item.gtswn.deviceInfoTerminal.tooltip.l1=§eRight-click air§7: §fOpen the devi
 item.gtswn.deviceInfoTerminal.tooltip.l2=§eRight-click a working machine with visualization off§7: §fBind it to the terminal§r
 item.gtswn.deviceInfoTerminal.tooltip.l3=§eHold Alt+right-click for 1s§7: §bImmediately scan team machines in this dimension; aiming at blocks is allowed§r
 item.gtswn.deviceInfoTerminal.tooltip.visual=§eShift+Alt+right-click§7 toggles visualization; when enabled, §eright-click a bound machine or marker§7 to travel, otherwise open the list§r
-item.gtswn.deviceInfoTerminal.tooltip.scan.details=§eShift+right-click a machine / Shift+click a row§7 toggles tracking / ignored; Shift+right-click air opens settings§r
+item.gtswn.deviceInfoTerminal.tooltip.scan.details=§eShift+right-click a machine or Shift+click its row§7 to toggle tracking. §r\n§eShift+right-click in air§7 to open settings. §r
 item.gtswn.deviceInfoTerminal.tooltip.scan.repeat=§7Repeated charging keeps the active scan; scan again within 15s after completion with the same terminal to include ignored devices as grey zero readings§r
 item.gtswn.deviceInfoTerminal.tooltip.l4=§eCtrl+click§7 an entry: §fRemote unbind§7 - Travel uses §aNetwork Teleport Anchors§7 before XP
 
@@ -544,7 +544,7 @@ gtswn.tooltip.quantum_terminal.security_unbound=§7Not paired with an AE Securit
 gtswn.chat.quantum.open_network_hint=This quantum AE network has safety OFF. Anyone can recolor or migrate it, or cancel its quantization. The owner or a player with SECURITY permission can enable safety in the quantum terminal UI. Pairing alone does not enable it.
 gtswn.chat.quantum.manage_permission_required=You must be the network owner or have the 'Security' permission.
 gtswn.tooltip.quantum_terminal.security_bound=§aPaired with an AE Security Terminal
-gtswn.tooltip.quantum_terminal.security_usage=§7Safety defaults to OFF. Owner or SECURITY may enable it in the terminal UI; when ON, matching AE pairing is required, and recoloring, migration or canceling quantization also requires owner or SECURITY
+gtswn.tooltip.quantum_terminal.security_usage=§7Network security is off by default. The owner or a player with SECURITY can enable it.\n§7When on, a matching AE security pairing is required.\n§7Recoloring, migration and removing quantization also require ownership or SECURITY.
 gtswn.tooltip.quantum_terminal.usage.release=§dAlt+right-click a block you incorporated: Release it (creative bypasses ownership)§r
 
 gtswn.gui.quantum.color=Network color
@@ -968,7 +968,7 @@ gtswn.terminal_wheel.mode.toggle_short=Toggle
 gtswn.terminal_wheel.mode.maintain_short=Hold
 gtswn.terminal_wheel.mode.hold=Hold LMB 1s: mode
 gtswn.terminal_wheel.mode.progress=Change %s%%
-gtswn.terminal_wheel.mode.tooltip=Hold the left mouse button in the center for 1 second to change mode; leaving, releasing or losing focus cancels. Toggle mode keeps later taps to cycle, holds to confirm and Ctrl/Shift+wheel key to take. Hold mode opens only while the wheel key is held and closes on release; click a sector or press Enter/Space to confirm.
+gtswn.terminal_wheel.mode.tooltip=Hold left-click in the center for 1 second to switch modes. Moving away, releasing or losing focus cancels.\nToggle mode: tap to cycle, hold to confirm; Ctrl/Shift + wheel key retrieves.\nHold mode: hold the wheel key to open, release to close. Click a sector or press Enter/Space to confirm.
 gtswn.terminal_action.maintain_open=Hold to open; release to close
 gtswn.terminal_action.cycle=Tap and release to cycle
 gtswn.terminal_action.hold_confirm=Hold 0.5s to confirm

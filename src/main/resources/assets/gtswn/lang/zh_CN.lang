@@ -377,7 +377,7 @@ item.gtswn.deviceInfoTerminal.tooltip.l1=§e右击空气§7: §f打开设备监�
 item.gtswn.deviceInfoTerminal.tooltip.l2=§e可视化关闭时右击可工作机器§7：§f绑定到终端监控§r
 item.gtswn.deviceInfoTerminal.tooltip.l3=§eAlt+长按右键 1 秒§7：§b立即扫描本维度团队机器，可瞄准方块§r
 item.gtswn.deviceInfoTerminal.tooltip.visual=§eShift+Alt+右击§7切换可视化；开启时§e右击绑定机器或标记§7传送，否则打开列表§r
-item.gtswn.deviceInfoTerminal.tooltip.scan.details=§eShift+右击机器 / Shift+点击列表设备§7切换跟踪 / 忽略；Shift+右击空地打开设置§r
+item.gtswn.deviceInfoTerminal.tooltip.scan.details=§eShift+右击机器 / Shift+点击列表设备§7：切换跟踪与忽略。§r\n§eShift+右击空地§7：打开设置。§r
 item.gtswn.deviceInfoTerminal.tooltip.scan.repeat=§7重复蓄力不会取消扫描；完成后 15 秒内同终端再次扫描可纳入忽略项（灰色零值）§r
 item.gtswn.deviceInfoTerminal.tooltip.l4=§eCtrl+点击§7条目：§f远程解绑§7 · 传送优先消耗§a网络传送锚点§7，无锚点时消耗经验
 
@@ -544,7 +544,7 @@ gtswn.tooltip.quantum_terminal.security_unbound=§7未与 AE 安全终端配对
 gtswn.chat.quantum.open_network_hint=当前量子化AE网络安全为OFF，任何人都可以调色、迁移或取消量子化。拥有者或持有“安全”权限的玩家可在量子终端界面开启；安全配对本身不会自动开启。
 gtswn.chat.quantum.manage_permission_required=必须是网络拥有者或者持有‘安全’权限
 gtswn.tooltip.quantum_terminal.security_bound=§a已与 AE 安全终端配对
-gtswn.tooltip.quantum_terminal.security_usage=§7网络安全默认OFF；拥有者或持有“安全”权限的玩家可在终端界面开启；ON时须使用对应AE安全配对，调色、迁移与取消量子化另须拥有者或“安全”权限
+gtswn.tooltip.quantum_terminal.security_usage=§7网络安全默认关闭；拥有者或有“安全”权限的玩家可在终端开启。\n§7开启后需要对应的 AE 安全配对。\n§7调色、迁移、取消量子化另需拥有者身份或“安全”权限。
 gtswn.tooltip.quantum_terminal.usage.release=§dAlt+右击自己已并入的方块：解除量子并入（创造模式不限拥有者）§r
 
 gtswn.gui.quantum.color=网络颜色
@@ -968,7 +968,7 @@ gtswn.terminal_wheel.mode.toggle_short=切换
 gtswn.terminal_wheel.mode.maintain_short=维持
 gtswn.terminal_wheel.mode.hold=左键长按1秒切换模式
 gtswn.terminal_wheel.mode.progress=切换 %s%%
-gtswn.terminal_wheel.mode.tooltip=在中心连续按住鼠标左键1秒切换操作模式；移开、松手或失焦取消。切换模式保留后续短按轮切、长按确认和Ctrl/Shift+轮盘键取出；维持模式仅按住轮盘键打开，松手关闭，可点击扇区或按Enter/Space确认。
+gtswn.terminal_wheel.mode.tooltip=中心按住鼠标左键 1 秒切换模式；移开、松手或失焦都会取消。\n轮切模式：短按轮切，长按确认；Ctrl / Shift + 轮盘键取出。\n维持模式：按住轮盘键打开，松手关闭；点击扇区或按 Enter / 空格确认。
 gtswn.terminal_action.maintain_open=按住打开，松手关闭
 gtswn.terminal_action.cycle=短按松手切换
 gtswn.terminal_action.hold_confirm=长按0.5秒确认

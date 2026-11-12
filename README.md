@@ -8,14 +8,14 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 final" src="https://img.shields.io/badge/GTNH-2.9.0-orange.svg"></a>
-  <img alt="GTSWN 2.1.26" src="https://img.shields.io/badge/GTSWN-2.1.26-green.svg">
+  <img alt="GTSWN 2.1.27" src="https://img.shields.io/badge/GTSWN-2.1.27-green.svg">
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
 | 前置 / Requirement | 版本 / Version |
 | --- | --- |
 | GTNH | 2.9.0 |
-| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.12+ |
+| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.14+ |
 
 为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；无线与监控设备可在 LV 阶段制作，矩阵编组仓室为 LuV 等级。
 
@@ -111,7 +111,7 @@ Machine chunks must stay loaded. Energy powers from buffer; Power collects gener
 
 Matrix inputs follow the installed pattern's slot order. Two identical stacks still occupy separate members; a single merged delivery is refused before anything is staged. If Neo ECO rapid planning rejects such a pattern, disable it and resubmit via a slot-preserving path. The existing refund action returns the **whole group's unconsumed stock**, retains rejected leftovers and does not cancel the CPU job.
 
-设备与矩阵仓室的长提示默认展开。悬停时按 **X** 可按物品类型收纳或展开；简述、关键参数与来源保留，矩阵仍显示仓型、容量和等级。整组退回按钮首次悬停时会短暂点亮“整组余料”；终端轮盘仍使用 C。 / Long device and matrix tooltips start expanded. Press **X** while hovering to toggle that item type; the compact view keeps its summary, key figures and source mod.
+设备与矩阵仓室的长提示默认展开。悬停时按当前绑定键（默认 **V**）可按物品类型收纳或展开；简述、关键参数与来源保留，矩阵仍显示仓型、容量和等级。整组退回按钮首次悬停时会短暂点亮“整组余料”；终端轮盘仍使用 C。 / Long device and matrix tooltips start expanded. Press the configured key (**V** by default) while hovering to toggle that item type; the compact view keeps its summary, key figures and source mod.
 
 ## ME 量子终端与节点 / ME Quantum Terminal & Node
 
