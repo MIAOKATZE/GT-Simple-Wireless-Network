@@ -1803,6 +1803,7 @@ gtswn.matrix.description.protection=§7Assembly lines still require §eformation
 gtswn.matrix.description.gui=§eRight-click§7 to configure processing patterns; the whole group shares §b36§7 slots.
 gtswn.matrix.description.me=§7Use only §eone ME entry§7 for the whole group.
 gtswn.matrix.dismantle_blocked=Refund unconsumed materials, remove patterns and finish the current native run before dismantling.
+gtswn.matrix.refund.scope=Returns leftovers from the entire group
 gtswn.matrix.refund=Return actual unconsumed materials. Offline/full ME retains leftovers. Does not cancel AE CPU jobs.
 gtswn.matrix.overview=Bus overview / ordered mapping
 gtswn.matrix.fixed_blocking=§6One pattern type:§7 identical whole batches may accumulate. Other patterns wait until buffers drain and processing finishes.

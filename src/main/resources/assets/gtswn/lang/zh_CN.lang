@@ -1803,6 +1803,7 @@ gtswn.matrix.description.protection=§7装配线仍须§e成型、研究授权§
 gtswn.matrix.description.gui=§e右键§7配置加工样板，全组共享§b36§7槽。
 gtswn.matrix.description.me=§7整组只接§e一个ME入口§7。
 gtswn.matrix.dismantle_blocked=请先退回未耗材料并取出样板，待本轮加工结束后再拆改。
+gtswn.matrix.refund.scope=退回范围：整组余料
 gtswn.matrix.refund=退回实际未耗材料；离线或满网时保留余量。不会取消 AE CPU 的等待任务。
 gtswn.matrix.overview=总线总览 / 有序映射
 gtswn.matrix.fixed_blocking=§6单样板锁定：§7同样板可整包累积；其他样板等待余料清空与当前加工结束。

@@ -25,6 +25,7 @@ import com.cleanroommc.modularui.widgets.slot.ModularSlot;
 import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout;
 import com.miaokatze.gtswn.common.assembly.pattern.PatternValidationException;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
+import com.miaokatze.miaokatzecore.api.tooltip.IntroductoryControlTooltip;
 
 import gregtech.api.enums.GTValues;
 import gregtech.api.metatileentity.implementations.MTEHatch;
@@ -210,7 +211,11 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
             new ButtonWidget<>().size(18)
                 .overlay(GTGuiTextures.OVERLAY_BUTTON_EXPORT)
                 .syncHandler(refund)
-                .addTooltipLine(tr("gtswn.matrix.refund")))
+                .tooltip(
+                    new IntroductoryControlTooltip(
+                        "gtswn.matrix.refund",
+                        () -> tr("gtswn.matrix.refund.scope"),
+                        () -> tr("gtswn.matrix.refund"))))
             .child(
                 new ButtonWidget<>().size(18)
                     .overlay(GTGuiTextures.OVERLAY_BUTTON_PLUS_LARGE)
