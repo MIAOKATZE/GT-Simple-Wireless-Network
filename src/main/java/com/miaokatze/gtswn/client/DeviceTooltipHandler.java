@@ -38,6 +38,17 @@ public class DeviceTooltipHandler {
             && GregTechAPI.METATILEENTITIES[id] instanceof MatrixAssemblyMember) {
             List<String> own = Arrays.asList(GregTechAPI.METATILEENTITIES[id].getDescription());
             if (!DeviceTooltipOrder.matrixPage(event.toolTip, own, footer, TooltipPages.expanded(stack))) return;
+            if (!TooltipPages.expanded(stack)) {
+                int at = event.toolTip.indexOf(footer);
+                for (String key : Arrays.asList(
+                    "gtswn.matrix.description.fluids",
+                    "gtswn.matrix.description.me",
+                    "gtswn.matrix.description.mirror_binding",
+                    "gtswn.matrix.description.mirror_requirements")) {
+                    String rule = tr(key);
+                    if (own.contains(rule)) event.toolTip.add(at++, rule);
+                }
+            }
         } else {
             String state = tr("gtswn.tooltip.section.state"), description = tr("gtswn.tooltip.section.description"),
                 controls = tr("gtswn.tooltip.section.controls");
@@ -52,6 +63,8 @@ public class DeviceTooltipHandler {
                     tr("gtswn.desc.wireless_monitor.line2"),
                     tr("gtswn.desc.wireless_monitor.line6"),
                     tr("gtswn.tooltip.tap.laser_pipe_cost"),
+                    tr("gtswn.tooltip.quantum_terminal.power_requirement"),
+                    tr("gtswn.tooltip.quantum_terminal.usage.anchor"),
                     StatCollector.translateToLocalFormatted(
                         "gtswn.tooltip.quantum_node.power",
                         Config.quantumNodeIdlePowerUsage),

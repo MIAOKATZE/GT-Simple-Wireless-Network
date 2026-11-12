@@ -40,8 +40,16 @@ public final class DeviceTooltipOrder {
         int first = lines.indexOf(description) + 1;
         List<String> details = lines.subList(Math.min(first + 1, lines.indexOf(controls)), lines.indexOf(controls));
         details.removeIf(line -> !parameters.contains(line));
-        lines.subList(lines.indexOf(controls), lines.indexOf(footer))
+        int actions = lines.indexOf(controls), end = lines.indexOf(footer);
+        String firstAction = null;
+        for (int i = actions + 1; i < end; i++) if (!lines.get(i)
+            .isEmpty()) {
+                firstAction = lines.get(i);
+                break;
+            }
+        lines.subList(actions, end)
             .clear();
+        if (firstAction != null) lines.add(actions, firstAction);
     }
 
     public static void normalize(List<String> lines, String state, String description, String controls, String footer) {

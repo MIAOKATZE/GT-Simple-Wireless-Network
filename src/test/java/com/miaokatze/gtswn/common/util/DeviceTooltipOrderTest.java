@@ -36,7 +36,17 @@ public class DeviceTooltipOrderTest {
         DeviceTooltipOrder.normalize(lines, "State", "Description", "Controls", "Brand");
         DeviceTooltipOrder.collapse(lines, "Description", "Controls", "Brand", Arrays.asList("32 EU/t"));
         assertEquals(
-            Arrays.asList("Device", "State", "Owner", "NBT: 2 tags", "", "Description", "Monitor", "32 EU/t", "Brand"),
+            Arrays.asList(
+                "Device",
+                "State",
+                "Owner",
+                "NBT: 2 tags",
+                "",
+                "Description",
+                "Monitor",
+                "32 EU/t",
+                "Right-click",
+                "Brand"),
             lines);
     }
 
