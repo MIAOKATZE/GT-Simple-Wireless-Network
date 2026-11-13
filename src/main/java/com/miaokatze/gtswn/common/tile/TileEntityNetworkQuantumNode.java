@@ -212,6 +212,10 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
     private final PartConnectionRetry[] partConnectionRetries = new PartConnectionRetry[6];
     private int partConnectionCursor;
 
+    private final AdjacentConnectionRetry[] adjacentConnectionRetries = new AdjacentConnectionRetry[6];
+    private long lastAdjacentMaintenanceTick = -1L;
+    private int adjacentConnectionCursor;
+
     private static final String NBT_RECOVERED_PART_DROPS = "recoveredPartDrops";
 
     // ==================== 桥接运行时状态（不持久化） ====================
@@ -1017,6 +1021,143 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         new GridConnection(core, part, ForgeDirection.UNKNOWN);
     }
 
+    /**
+     * Native discovery can be denied while the saved anchor/security network is still loading. Neither
+     * endpoint is required to emit another block update after becoming ready. Retry only these six
+     * physical faces, independently of the remote bridge's retry window; never refresh an entire grid.
+     */
+    private void repairAdjacentConnections() {
+        long now = worldObj.getTotalWorldTime();
+        if (lastAdjacentMaintenanceTick >= 0 && now >= lastAdjacentMaintenanceTick
+            && now - lastAdjacentMaintenanceTick < MAINTENANCE_INTERVAL_TICKS) return;
+        lastAdjacentMaintenanceTick = now;
+        IGridNode core = getCoreGridNode();
+        if (core == null || core.getWorld() != worldObj
+            || !core.getGridBlock()
+                .isWorldAccessible())
+            return;
+        int first = adjacentConnectionCursor;
+        adjacentConnectionCursor = (first + 1) % 6;
+        for (int offset = 0; offset < 6; offset++) {
+            ForgeDirection side = ForgeDirection.VALID_DIRECTIONS[(first + offset) % 6];
+            int x = xCoord + side.offsetX, y = yCoord + side.offsetY, z = zCoord + side.offsetZ;
+            TileEntity neighbor = worldObj.blockExists(x, y, z) ? worldObj.getTileEntity(x, y, z) : null;
+            if (!(neighbor instanceof IGridHost) || neighbor instanceof TileEntityNetworkQuantumNode
+                || neighbor.isInvalid()
+                || neighbor.getWorldObj() != worldObj) {
+                removeStaleAdjacentConnections(core, side, null);
+                adjacentConnectionRetries[side.ordinal()] = null;
+                continue;
+            }
+            AdjacentConnectionRetry retry = adjacentConnectionRetries[side.ordinal()];
+            if (retry == null || retry.tile != neighbor || retry.core != core) {
+                retry = new AdjacentConnectionRetry(neighbor, core);
+                adjacentConnectionRetries[side.ordinal()] = retry;
+            }
+            if (now < retry.nextAttempt) continue;
+            IGridNode peer = ((IGridHost) neighbor).getGridNode(side.getOpposite());
+            // A host surviving an integrated-server restart must not lend a node from the old World.
+            if (peer == null || peer == core || peer.getWorld() != worldObj) {
+                removeStaleAdjacentConnections(core, side, null);
+                retry.failed(now);
+                continue;
+            }
+            if (retry.node != peer) {
+                retry.node = peer;
+                retry.backoff = (int) MAINTENANCE_INTERVAL_TICKS;
+            }
+            // Match GridNode.canConnect on both ends. In particular, a side part/facade may occupy
+            // this face, and a colored cable may reject this node even though both are IGridHosts.
+            if (!core.getGridBlock()
+                .getConnectableSides()
+                .contains(side)
+                || !peer.getGridBlock()
+                    .getConnectableSides()
+                    .contains(side.getOpposite())
+                || !core.getGridBlock()
+                    .getGridColor()
+                    .matches(
+                        peer.getGridBlock()
+                            .getGridColor())) {
+                removeStaleAdjacentConnections(core, side, null);
+                retry.failed(now);
+                continue;
+            }
+            if (removeStaleAdjacentConnections(core, side, peer) != null) {
+                retry.connected(now);
+                continue;
+            }
+            if (!hasConnectionBudget()) continue;
+            if (!isNativeConnectionAuthorized(core, peer)) {
+                retry.failed(now);
+                continue;
+            }
+            // Authorization may query lazy native hosts. Recheck the loaded tile before mutation.
+            if (!worldObj.blockExists(x, y, z) || worldObj.getTileEntity(x, y, z) != neighbor
+                || neighbor.isInvalid()
+                || peer.getWorld() != worldObj) {
+                retry.failed(now);
+                continue;
+            }
+            if (!reserveConnectionAttempt()) continue;
+            try {
+                connectAdjacentNodes(core, peer, side);
+                retry.connected(now);
+            } catch (FailedConnection e) {
+                // Calling the constructor directly preserves native security without enqueuing
+                // FindConnections' destructive MachineSecurityBreak for a transient refusal.
+                retry.failed(now);
+            }
+        }
+    }
+
+    protected void connectAdjacentNodes(IGridNode core, IGridNode peer, ForgeDirection side) throws FailedConnection {
+        new GridConnection(core, peer, side);
+    }
+
+    private static IGridConnection removeStaleAdjacentConnections(IGridNode core, ForgeDirection side, IGridNode peer) {
+        List<IGridConnection> stale = null;
+        IGridConnection existing = null;
+        for (IGridConnection edge : core.getConnections()) {
+            if (edge.getDirection(core) != side) continue;
+            boolean current = peer != null && edge.getOtherSide(core) == peer
+                && QuantumConnectionMembership.contains(peer, edge);
+            if (current) existing = edge;
+            if (!current) {
+                if (stale == null) stale = new ArrayList<>();
+                stale.add(edge);
+            }
+        }
+        if (stale != null) for (IGridConnection edge : stale) {
+            if (QuantumConnectionMembership.contains(core, edge)) edge.destroy();
+        }
+        return existing;
+    }
+
+    private static final class AdjacentConnectionRetry {
+
+        final TileEntity tile;
+        final IGridNode core;
+        IGridNode node;
+        long nextAttempt;
+        int backoff = (int) MAINTENANCE_INTERVAL_TICKS;
+
+        AdjacentConnectionRetry(TileEntity tile, IGridNode core) {
+            this.tile = tile;
+            this.core = core;
+        }
+
+        void failed(long now) {
+            nextAttempt = now + backoff;
+            backoff = Math.min(MAX_RECONNECT_BACKOFF_TICKS, backoff * 2);
+        }
+
+        void connected(long now) {
+            nextAttempt = now + MAINTENANCE_INTERVAL_TICKS;
+            backoff = (int) MAINTENANCE_INTERVAL_TICKS;
+        }
+    }
+
     private static final class PartConnectionRetry {
 
         final IPart part;
@@ -1170,6 +1311,7 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         if (!partsReady || !proxyWasReady) this.partContainer.updateConnections();
         // 原位接管已入世的容器需要把现有侧部件接入新的中心代理。
         rewirePartConnections();
+        repairAdjacentConnections();
         // v1.6.4 任务4：每 tick 比对在线状态（不受下方 20t 维护窗口限制），
         // 变化即 markBlockForUpdate 推送 S35，材质切换延迟 ≤1t
         boolean linkedNow = isLinked();
@@ -1531,12 +1673,12 @@ public class TileEntityNetworkQuantumNode extends TileEntity implements IGridPro
         // 与 AnchorReachability 内部及 QuantumControllerEventHandler.applyConnectionFilter 同一写法）
         AENetworkProxy anchorProxy = ((IGridProxyable) reach.anchorTE).getProxy();
         IGridNode anchorNode = anchorProxy.getNode();
-        if (anchorNode == null) {
+        if (anchorNode == null || anchorNode.getWorld() != anchorWorld || anchorNode.getMachine() != reach.anchorTE) {
             failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
         }
         IGridNode myNode = getProxy().getNode();
-        if (myNode == null) {
+        if (myNode == null || myNode.getWorld() != worldObj || myNode.getMachine() != this) {
             // 本节点 proxy 未 ready 时 getNode() 返回 null；首轮维护在 onReady 之后执行，此处仅防御
             failReconnect(OfflineReason.NETWORK_NOT_READY);
             return;
