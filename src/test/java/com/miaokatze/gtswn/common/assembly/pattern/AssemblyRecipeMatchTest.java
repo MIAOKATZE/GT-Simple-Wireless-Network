@@ -169,7 +169,7 @@ public class AssemblyRecipeMatchTest {
         IAEItemStack transportedWire = CondensedPatternDeliveryTest.item(3, 384);
         IAEItemStack transportedRod = CondensedPatternDeliveryTest.item(1, 3);
         OrderedPatternLayout.Payload payload = declared
-            .validateTable(AssemblyPatternFixtures.table(transportedWire, transportedRod));
+            .validateDelivery(AssemblyPatternFixtures.table(transportedWire, transportedRod), () -> true);
         RecipeAssemblyLine recipe = AssemblyPatternFixtures.recipe(
             new ItemStack[] { rod.getItemStack(), wire.getItemStack(), wire.getItemStack() },
             new FluidStack[0],

@@ -45,7 +45,7 @@ public class CondensedPatternDeliveryTest {
         OrderedPatternLayout declared = layout(item(3, 128));
         IAEItemStack cargo = item(3, 128);
         MEInventoryCrafting table = AssemblyPatternFixtures.table(cargo);
-        OrderedPatternLayout.Payload delivered = declared.validateTable(table);
+        OrderedPatternLayout.Payload delivered = declared.validateDelivery(table, () -> true);
         assertEquals(1, delivered.copies());
         assertEquals(
             1,
@@ -76,7 +76,7 @@ public class CondensedPatternDeliveryTest {
         IAEItemStack wire = item(3, 128);
         IAEStack<?> water = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(394));
         MEInventoryCrafting table = AssemblyPatternFixtures.table(water, item(4, 2), wire, item(2, 2), item(1, 1));
-        OrderedPatternLayout.Payload delivered = declared.validateTable(table);
+        OrderedPatternLayout.Payload delivered = declared.validateDelivery(table, () -> true);
         assertEquals(1, delivered.copies());
         assertEquals(
             5,
@@ -152,7 +152,7 @@ public class CondensedPatternDeliveryTest {
         IAEItemStack wire = item(3, 384);
         IAEStack<?> water = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(300));
         MEInventoryCrafting table = AssemblyPatternFixtures.table(wire, water, item(1, 3));
-        OrderedPatternLayout.Payload delivered = declared.validateTable(table);
+        OrderedPatternLayout.Payload delivered = declared.validateDelivery(table, () -> true);
         assertEquals(3, delivered.copies());
         assertArrayEquals(new long[] { 3, 192, 192 }, itemAmounts(delivered));
         assertEquals(
@@ -181,13 +181,17 @@ public class CondensedPatternDeliveryTest {
         IAEItemStack shortWire = item(3, 127);
         MEInventoryCrafting shortTable = AssemblyPatternFixtures
             .table(item(1, 1), shortWire, AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(100)));
-        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> declared.validateTable(shortTable));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_AMOUNT,
+            () -> declared.validateDelivery(shortTable, () -> true));
         assertSame(shortWire, shortTable.getAEStackInSlot(1));
         assertEquals(127, shortWire.getStackSize());
         IAEItemStack wire = item(3, 256);
         IAEStack<?> water = AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(100));
         MEInventoryCrafting mixed = AssemblyPatternFixtures.table(item(1, 2), wire, water);
-        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> declared.validateTable(mixed));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_AMOUNT,
+            () -> declared.validateDelivery(mixed, () -> true));
         assertEquals(256, wire.getStackSize());
         assertEquals(100, water.getStackSize());
     }
@@ -196,11 +200,17 @@ public class CondensedPatternDeliveryTest {
     public void extraResourcesMissingResourcesAndChangedMetaAreRejected() throws Exception {
         OrderedPatternLayout declared = layout(item(1, 1), item(3, 64), item(3, 64));
         MEInventoryCrafting extra = AssemblyPatternFixtures.table(item(1, 1), item(3, 128), item(5, 1));
-        assertRejected(PatternValidationException.Reason.TABLE_RESOURCE, () -> declared.validateTable(extra));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_RESOURCE,
+            () -> declared.validateDelivery(extra, () -> true));
         MEInventoryCrafting missing = AssemblyPatternFixtures.table(item(3, 128));
-        assertRejected(PatternValidationException.Reason.TABLE_RESOURCE, () -> declared.validateTable(missing));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_RESOURCE,
+            () -> declared.validateDelivery(missing, () -> true));
         MEInventoryCrafting differentMeta = AssemblyPatternFixtures.table(item(1, 1), item(4, 128));
-        assertRejected(PatternValidationException.Reason.TABLE_RESOURCE, () -> declared.validateTable(differentMeta));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_RESOURCE,
+            () -> declared.validateDelivery(differentMeta, () -> true));
         assertEquals(
             128,
             differentMeta.getAEStackInSlot(1)
@@ -224,7 +234,7 @@ public class CondensedPatternDeliveryTest {
         IAEItemStack cargo = part.copy()
             .setStackSize(128);
         MEInventoryCrafting table = AssemblyPatternFixtures.table(cargo);
-        OrderedPatternLayout.Payload accepted = declared.validateTable(table);
+        OrderedPatternLayout.Payload accepted = declared.validateDelivery(table, () -> true);
         accepted.items()
             .get(0)
             .itemStack()
@@ -245,7 +255,9 @@ public class CondensedPatternDeliveryTest {
         wrong.getTagCompound()
             .setString("grade", "other");
         MEInventoryCrafting wrongTable = AssemblyPatternFixtures.table(AssemblyPatternFixtures.item(wrong));
-        assertRejected(PatternValidationException.Reason.TABLE_RESOURCE, () -> declared.validateTable(wrongTable));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_RESOURCE,
+            () -> declared.validateDelivery(wrongTable, () -> true));
         assertEquals(
             original,
             details.getPattern()
@@ -267,7 +279,7 @@ public class CondensedPatternDeliveryTest {
         // The two named wires stay distinct; only the other repeated resource condenses. Reordering exercises
         // the same transport restoration path as ECO without treating the wire names as interchangeable.
         MEInventoryCrafting table = AssemblyPatternFixtures.table(item(4, 2), rightCargo, leftCargo);
-        OrderedPatternLayout.Payload accepted = declared.validateTable(table);
+        OrderedPatternLayout.Payload accepted = declared.validateDelivery(table, () -> true);
         assertEquals(1, accepted.copies());
         assertArrayEquals(new long[] { 64, 64, 1, 1 }, itemAmounts(accepted));
         assertEquals(
@@ -330,11 +342,15 @@ public class CondensedPatternDeliveryTest {
         tagged.tag = new NBTTagCompound();
         tagged.tag.setString("grade", "not_ordinary");
         MEInventoryCrafting special = AssemblyPatternFixtures.table(item(1, 2), AssemblyPatternFixtures.fluid(tagged));
-        assertRejected(PatternValidationException.Reason.SPECIAL_FLUID_TAG, () -> declared.validateTable(special));
+        assertRejected(
+            PatternValidationException.Reason.SPECIAL_FLUID_TAG,
+            () -> declared.validateDelivery(special, () -> true));
         IAEItemStack huge = item(1, 1).setStackSize((long) Integer.MAX_VALUE + 1);
         MEInventoryCrafting overflow = AssemblyPatternFixtures
             .table(huge, AssemblyPatternFixtures.fluid(FluidRegistryTestBootstrap.water(100)));
-        assertRejected(PatternValidationException.Reason.AMOUNT_OVERFLOW, () -> declared.validateTable(overflow));
+        assertRejected(
+            PatternValidationException.Reason.AMOUNT_OVERFLOW,
+            () -> declared.validateDelivery(overflow, () -> true));
         assertEquals((long) Integer.MAX_VALUE + 1, huge.getStackSize());
         assertSame(huge, overflow.getAEStackInSlot(0));
     }
@@ -344,7 +360,9 @@ public class CondensedPatternDeliveryTest {
         OrderedPatternLayout declared = layout(item(1, 2), item(1, 3));
         IAEItemStack first = item(1, 3), second = item(1, 2);
         MEInventoryCrafting positional = AssemblyPatternFixtures.table(first, second);
-        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> declared.validateTable(positional));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_AMOUNT,
+            () -> declared.validateDelivery(positional, () -> true));
         assertSame(first, positional.getAEStackInSlot(0));
         assertSame(second, positional.getAEStackInSlot(1));
         assertEquals(3, first.getStackSize());
