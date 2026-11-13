@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BooleanSupplier;
 
 import net.minecraft.inventory.InventoryCrafting;
 import net.minecraft.item.ItemStack;
@@ -247,8 +248,12 @@ public final class OrderedPatternLayout {
         return new Payload(this, compact, 1);
     }
 
-    /** Preserve positional CPU tables, or restore a validated condensed transport from this pattern's raw positions. */
+    /** Preserve positional CPU tables; only the verified fast-planned NeoECO push may restore condensed inputs. */
     public Payload validateTable(InventoryCrafting table) {
+        return validateDelivery(table, NeoEcoCondensedDelivery::active);
+    }
+
+    Payload validateDelivery(InventoryCrafting table, BooleanSupplier condensedDelivery) {
         if (table == null || table.getClass() != MEInventoryCrafting.class) throw rejected(UNKNOWN_TABLE, -1);
         MEInventoryCrafting generic = (MEInventoryCrafting) table;
         try {
@@ -256,6 +261,7 @@ public final class OrderedPatternLayout {
         } catch (PatternValidationException positional) {
             if (positional.reason() != TABLE_SHAPE && positional.reason() != TABLE_RESOURCE
                 && positional.reason() != TABLE_AMOUNT) throw positional;
+            if (!condensedDelivery.getAsBoolean()) throw positional;
             return validateCondensedTable(generic, positional);
         }
     }

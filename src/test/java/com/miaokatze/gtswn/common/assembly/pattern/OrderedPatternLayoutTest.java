@@ -169,7 +169,9 @@ public class OrderedPatternLayoutTest {
                 .amount());
         actual[2].setStackSize(45);
         MEInventoryCrafting inconsistent = AssemblyPatternFixtures.table(actual);
-        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> layout.validateTable(inconsistent));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_AMOUNT,
+            () -> layout.validateDelivery(inconsistent, () -> false));
         assertEquals(32, actual[0].getStackSize());
         assertEquals(1600, actual[3].getStackSize());
     }
@@ -258,7 +260,7 @@ public class OrderedPatternLayoutTest {
         NBTTagCompound delivered = (NBTTagCompound) table.getStackInSlot(0)
             .getTagCompound()
             .copy();
-        layout.validateTable(table)
+        layout.validateDelivery(table, () -> false)
             .items()
             .get(0)
             .itemStack()
@@ -274,7 +276,9 @@ public class OrderedPatternLayoutTest {
                 .getTagCompound());
         assertSame(first, table.getAEStackInSlot(0));
         first.setStackSize(3);
-        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> layout.validateTable(table));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_AMOUNT,
+            () -> layout.validateDelivery(table, () -> false));
         assertEquals(3L, first.getStackSize());
         assertEquals(
             before,
@@ -292,7 +296,7 @@ public class OrderedPatternLayoutTest {
                 AssemblyPatternFixtures.item(AssemblyPatternFixtures.output(1))));
         MEInventoryCrafting condensed = AssemblyPatternFixtures
             .table(AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(5)));
-        OrderedPatternLayout.Payload accepted = layout.validateTable(condensed);
+        OrderedPatternLayout.Payload accepted = layout.validateDelivery(condensed, () -> true);
         assertEquals(1, accepted.copies());
         assertEquals(
             2,
@@ -315,7 +319,9 @@ public class OrderedPatternLayoutTest {
                 .get(1)
                 .tableIndex());
         MEInventoryCrafting reversed = AssemblyPatternFixtures.table(second, first);
-        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> layout.validateTable(reversed));
+        assertRejected(
+            PatternValidationException.Reason.TABLE_AMOUNT,
+            () -> layout.validateDelivery(reversed, () -> false));
     }
 
     @Test
@@ -353,7 +359,7 @@ public class OrderedPatternLayoutTest {
         IAEItemStack merged = wire.copy();
         merged.setStackSize(128);
         MEInventoryCrafting table = AssemblyPatternFixtures.table(merged);
-        OrderedPatternLayout.Payload restored = layout.validateTable(table);
+        OrderedPatternLayout.Payload restored = layout.validateDelivery(table, () -> true);
         assertEquals(1, restored.copies());
         assertEquals(
             2,
