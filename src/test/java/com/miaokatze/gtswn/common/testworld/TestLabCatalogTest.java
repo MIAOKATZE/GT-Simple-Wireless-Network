@@ -35,8 +35,8 @@ public class TestLabCatalogTest {
             scenarios.clear();
             ScenarioRegistry.register();
             List<LabCase> cases = new TestLabBootstrap().cases();
-            assertEquals(37, scenarios.size());
-            assertEquals(49, cases.size());
+            assertEquals(39, scenarios.size());
+            assertEquals(51, cases.size());
             LabCase safetyClient = cases.stream()
                 .filter(entry -> "quantum.safety_client".equals(entry.id()))
                 .findFirst()
@@ -46,8 +46,8 @@ public class TestLabCatalogTest {
             assertFalse(safetyClient.defaultSuite());
             for (String explicit : new String[] { "quantum.native_security_topology",
                 "quantum.native_security_migration", "quantum.native_security_identity_reload",
-                "quantum.native_historical_actor", "quantum.native_incorporation_scope",
-                "quantum.native_profile_scope" }) {
+                "quantum.native_historical_actor", "quantum.native_incorporation_scope", "quantum.native_profile_scope",
+                "quantum.native_reload_prepare", "quantum.native_reload_verify" }) {
                 LabCase item = cases.stream()
                     .filter(entry -> explicit.equals(entry.id()))
                     .findFirst()

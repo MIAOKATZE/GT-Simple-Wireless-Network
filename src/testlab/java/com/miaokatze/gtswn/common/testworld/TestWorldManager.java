@@ -391,6 +391,18 @@ public final class TestWorldManager {
             loadIndex++;
             return; // At most one synchronous chunk load per server tick.
         }
+        if (selection != null && selection.get(scenarioIndex)
+            .preserveFixturesBeforeRun()) {
+            report.event(
+                null,
+                report.elapsedTicks,
+                "restart_fixture",
+                "Loaded existing authored chunks; reset/build skipped");
+            closedResetPerformance = phasePerformance;
+            phasePerformance = null;
+            startScenario();
+            return;
+        }
         Deadline deadline = Deadline.afterNanos(RESET_SCAN_BUDGET_NANOS);
         int visited = 0;
         while (resetCursor < resetFootprint.blockCount() && visited < RESET_SCAN_MAX_CHECKS) {

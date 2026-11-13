@@ -26,6 +26,11 @@ public interface TestScenario {
         return true;
     }
 
+    /** Explicit restart verification only: load the existing authored fixture without clearing any block. */
+    default boolean preserveFixturesBeforeRun() {
+        return false;
+    }
+
     void start(TestContext context) throws Exception;
 
     void tick(TestContext context) throws Exception;

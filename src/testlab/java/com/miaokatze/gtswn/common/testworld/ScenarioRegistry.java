@@ -37,6 +37,8 @@ public final class ScenarioRegistry {
         TestWorldManager.register(new NativeIncorporationScopeScenario());
         TestWorldManager.register(new NativeQuantumProfileScopeScenario());
         TestWorldManager.register(new QuantumAnchorLifecycleScenario());
+        TestWorldManager.register(new QuantumNativeReloadScenario(false));
+        TestWorldManager.register(new QuantumNativeReloadScenario(true));
         TestWorldManager.register(new ManualClientScenario());
         TestWorldManager.register(new QuantumStressScenario());
         TestWorldManager.register(new AeStorageStressScenario(false));
