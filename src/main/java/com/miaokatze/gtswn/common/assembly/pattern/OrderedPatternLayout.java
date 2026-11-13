@@ -247,10 +247,20 @@ public final class OrderedPatternLayout {
         return new Payload(this, compact, 1);
     }
 
-    /** Fixed CPU paths submit either raw positions (no cache) or non-null positions (normal cache). */
+    /** Preserve positional CPU tables, or restore a validated condensed transport from this pattern's raw positions. */
     public Payload validateTable(InventoryCrafting table) {
         if (table == null || table.getClass() != MEInventoryCrafting.class) throw rejected(UNKNOWN_TABLE, -1);
         MEInventoryCrafting generic = (MEInventoryCrafting) table;
+        try {
+            return validateOrderedTable(generic);
+        } catch (PatternValidationException positional) {
+            if (positional.reason() != TABLE_SHAPE && positional.reason() != TABLE_RESOURCE
+                && positional.reason() != TABLE_AMOUNT) throw positional;
+            return validateCondensedTable(generic, positional);
+        }
+    }
+
+    private Payload validateOrderedTable(MEInventoryCrafting table) {
         int nonEmpty = items.size() + fluids.size();
         boolean compact = table.getSizeInventory() == nonEmpty;
         if (!compact && table.getSizeInventory() != rawInputs.size()) throw rejected(TABLE_SHAPE, -1);
@@ -259,9 +269,8 @@ public final class OrderedPatternLayout {
         for (Input declared : rawInputs) {
             if (compact && declared.kind() == Kind.EMPTY) continue;
             int index = compact ? declared.transportIndex : declared.rawIndex;
-            IAEStack<?> stack = generic.getAEStackInSlot(index);
-            if (stack == null && generic.getStackInSlot(index) != null)
-                throw rejected(TABLE_RESOURCE, declared.rawIndex);
+            IAEStack<?> stack = table.getAEStackInSlot(index);
+            if (stack == null && table.getStackInSlot(index) != null) throw rejected(TABLE_RESOURCE, declared.rawIndex);
             Input actual = resource(stack, declared.rawIndex);
             if (!sameResource(declared, actual)) throw rejected(TABLE_RESOURCE, declared.rawIndex);
             if (declared.kind() != Kind.EMPTY) {
@@ -273,6 +282,71 @@ public final class OrderedPatternLayout {
             }
         }
         return new Payload(this, delivered, copies);
+    }
+
+    private Payload validateCondensedTable(MEInventoryCrafting table, PatternValidationException positional) {
+        int size = table.getSizeInventory();
+        if (size == 0 || size > items.size() + fluids.size()) throw positional;
+        List<Input> transport = new ArrayList<>(size);
+        for (int i = 0; i < size; i++) {
+            IAEStack<?> stack = table.getAEStackInSlot(i);
+            if (stack == null) {
+                if (table.getStackInSlot(i) != null) throw rejected(TABLE_RESOURCE, i);
+                throw positional;
+            }
+            Input actual = resource(stack, i);
+            // A condensed transport has one entry per exact resource. Do not reinterpret a malformed positional
+            // table (for example two duplicate inputs with swapped unequal amounts) merely because its sum fits.
+            for (Input previous : transport) if (sameResource(previous, actual)) throw positional;
+            transport.add(actual.at(-1, -1, i, -1));
+        }
+
+        long[] declaredTotals = new long[size];
+        try {
+            for (Input declared : rawInputs) if (declared.kind() != Kind.EMPTY) {
+                int index = resourceIndex(transport, declared);
+                if (index < 0) throw rejected(TABLE_RESOURCE, declared.rawIndex);
+                declaredTotals[index] = Math.addExact(declaredTotals[index], declared.amount());
+            }
+            long copies = 0;
+            for (int i = 0; i < size; i++) {
+                long expected = declaredTotals[i], actual = transport.get(i)
+                    .amount();
+                if (expected == 0) throw rejected(TABLE_RESOURCE, i);
+                if (actual % expected != 0) throw rejected(TABLE_AMOUNT, i);
+                long ratio = actual / expected;
+                if (ratio == 0 || copies != 0 && ratio != copies) throw rejected(TABLE_AMOUNT, i);
+                copies = ratio;
+            }
+
+            List<Input> delivered = new ArrayList<>(items.size() + fluids.size());
+            for (Input declared : rawInputs) if (declared.kind() != Kind.EMPTY) {
+                long amount = Math.multiplyExact(declared.amount(), copies);
+                checkedAmount(amount, declared.rawIndex);
+                ItemStack item = declared.itemStack();
+                FluidStack fluid = declared.fluidStack();
+                if (item != null) item.stackSize = (int) amount;
+                else fluid.amount = (int) amount;
+                // Several original positions can truthfully refer to the same condensed source table slot.
+                int tableIndex = transport.get(resourceIndex(transport, declared)).tableIndex;
+                delivered.add(
+                    new Input(
+                        declared.rawIndex,
+                        declared.transportIndex,
+                        tableIndex,
+                        declared.kindOrdinal,
+                        item,
+                        fluid));
+            }
+            return new Payload(this, delivered, copies);
+        } catch (ArithmeticException overflow) {
+            throw rejected(AMOUNT_OVERFLOW, -1);
+        }
+    }
+
+    private static int resourceIndex(List<Input> inputs, Input wanted) {
+        for (int i = 0; i < inputs.size(); i++) if (sameResource(inputs.get(i), wanted)) return i;
+        return -1;
     }
 
     boolean owns(Payload payload) {
