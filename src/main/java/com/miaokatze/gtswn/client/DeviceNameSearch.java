@@ -3,73 +3,63 @@
 
 package com.miaokatze.gtswn.client;
 
-import java.util.LinkedHashMap;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.Locale;
-import java.util.Map;
 
-import me.majiajie.tinypinyin.Pinyin;
+import net.minecraft.util.EnumChatFormatting;
 
-/** Local name aliases only; never reads machines, polls a terminal or changes displayed names. */
+import org.apache.logging.log4j.LogManager;
+
+/** The input widgets supply text; optional NEC-Rework owns pinyin matching and its settings. */
 public final class DeviceNameSearch {
 
-    private static final int CACHE_LIMIT = 4096;
-    private static final Map<String, String[]> CACHE = new LinkedHashMap<String, String[]>(128, .75f, true) {
-
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<String, String[]> eldest) {
-            return size() > CACHE_LIMIT;
-        }
-    };
+    private static MethodHandle contains = findNech();
 
     private DeviceNameSearch() {}
 
+    private static MethodHandle findNech() {
+        try {
+            Class<?> api = Class.forName("com.asdflj.nech.API");
+            return MethodHandles.publicLookup()
+                .findVirtual(api, "contains", MethodType.methodType(boolean.class, String.class, String.class))
+                .bindTo(
+                    api.getField("INSTANCE")
+                        .get(null));
+        } catch (ClassNotFoundException absent) {
+            return null;
+        } catch (ReflectiveOperationException | LinkageError incompatible) {
+            warn(incompatible);
+            return null;
+        }
+    }
+
     public static boolean matches(String query, String... names) {
-        String needle = plain(query).trim();
+        String needle = query == null ? ""
+            : query.trim()
+                .toLowerCase(Locale.ROOT);
         if (needle.isEmpty()) return true;
         for (String name : names) {
-            String value = plain(name);
-            if (value.contains(needle)) return true;
-            String[] aliases = aliases(value);
-            if (aliases[0].contains(needle) || aliases[1].contains(needle)) return true;
+            if (name == null || name.isEmpty()) continue;
+            String text = EnumChatFormatting.getTextWithoutFormattingCodes(name)
+                .toLowerCase(Locale.ROOT);
+            if (text.contains(needle)) return true;
+            if (contains != null) {
+                try {
+                    if ((boolean) contains.invokeExact(text, needle)) return true;
+                } catch (Throwable failure) {
+                    if (failure instanceof Error && !(failure instanceof LinkageError)) throw (Error) failure;
+                    contains = null;
+                    warn(failure);
+                }
+            }
         }
         return false;
     }
 
-    private static String plain(String text) {
-        if (text == null) return "";
-        StringBuilder result = new StringBuilder(text.length());
-        for (int i = 0; i < text.length(); i++) {
-            char c = text.charAt(i);
-            if (c == '\u00a7' && i + 1 < text.length()) i++;
-            else result.append(c);
-        }
-        return result.toString()
-            .toLowerCase(Locale.ROOT);
-    }
-
-    private static String[] aliases(String name) {
-        synchronized (CACHE) {
-            String[] cached = CACHE.get(name);
-            if (cached != null) return cached;
-        }
-        StringBuilder full = new StringBuilder(), initials = new StringBuilder();
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            if (Pinyin.isChinese(c)) {
-                String syllable = Pinyin.toPinyin(c)
-                    .toLowerCase(Locale.ROOT);
-                full.append(syllable);
-                initials.append(syllable.charAt(0));
-            } else {
-                full.append(c);
-                initials.append(c);
-            }
-        }
-        String[] result = { full.toString(), initials.toString() };
-        // Do not retain arbitrary large names from remote/custom metadata.
-        if (name.length() <= 512) synchronized (CACHE) {
-            CACHE.put(name, result);
-        }
-        return result;
+    private static void warn(Throwable cause) {
+        LogManager.getLogger("gtswn")
+            .warn("NEC-Rework name search unavailable; using literal search", cause);
     }
 }

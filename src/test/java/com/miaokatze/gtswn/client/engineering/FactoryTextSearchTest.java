@@ -13,16 +13,16 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 public class FactoryTextSearchTest {
 
     @Test
-    public void deviceNameSpellingComposesWithExistingCoordinatesAndSourceTerms() {
+    public void literalDeviceNameComposesWithExistingCoordinatesAndSourceTerms() {
         Entry entry = new Entry("0:12:64:-7", "大型搅拌机", (byte) 1, (byte) 0, 0, 0, 0, 0, 0, 12, 64, -7, "", "");
         FactoryTextSearch search = new FactoryTextSearch();
-        for (String value : new String[] { "jiaobanji 12/64/-7 chest", "JBJ running", "搅拌机 chest" }) {
+        for (String value : new String[] { "搅拌机 12/64/-7 chest", "搅拌机 running", "搅拌机 chest" }) {
             search.value = value;
             assertTrue(value, search.matchesDevice(entry, "Chest terminal", true));
         }
         search.value = "jbj 12/64/-8";
         assertFalse(search.matchesDevice(entry, "Chest terminal", true));
-        search.value = "djj";
+        search.value = "jbj";
         assertFalse(search.matchesDevice(entry, "Chest terminal", true));
     }
 
