@@ -319,7 +319,8 @@ public final class TerminalBaubles {
         WHEEL_RECEIPTS.remove(player.getUniqueID());
         sync(player, baubles);
         send(player, PacketTerminalBaubleState.SESSION, request.selection, borrow.held, borrow.stack);
-        if (action == PacketTerminalBaubleAction.WHEEL_OPEN) GTSWNGuiHandler.openTerminal(player, category == 3);
+        if (category == 3 && action == PacketTerminalBaubleAction.WHEEL_OUTER_FIRST)
+            GTSWNGuiHandler.openTerminal(player, true);
     }
 
     /** Consumed on the server thread by the original reveal queues, after their ordinary queue budget. */

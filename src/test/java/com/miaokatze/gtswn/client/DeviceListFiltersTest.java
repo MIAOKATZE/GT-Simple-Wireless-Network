@@ -16,6 +16,41 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 public class DeviceListFiltersTest {
 
     @Test
+    public void chineseMachineNamesAndAliasesSupportSpellingWithoutBypassingOtherFilters() {
+        Entry entry = new Entry(
+            "0:1:2:3",
+            "大型搅拌机",
+            (byte) 1,
+            (byte) 0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            1,
+            2,
+            3,
+            "",
+            "",
+            -1,
+            (byte) 0,
+            (byte) 0,
+            "主线设备",
+            (byte) 6,
+            true);
+        DeviceListFilters filters = new DeviceListFilters();
+        for (String query : new String[] { "大型搅拌机", "jiaobanji", "JBJ", "zhuxianshebei", "ZXSB" }) {
+            filters.query = query;
+            assertTrue(query, filters.matches(entry, null));
+        }
+        filters.dimension = -1;
+        assertFalse(filters.matches(entry, null));
+        filters.dimension = null;
+        filters.query = "djj";
+        assertFalse(filters.matches(entry, null));
+    }
+
+    @Test
     public void allCachedFiltersComposeWithoutLosingUnknownOrOtherOwners() {
         UUID owner = UUID.randomUUID();
         Entry row = row(owner, "ore", "dust", DeviceLinkSummary.KNOWN);

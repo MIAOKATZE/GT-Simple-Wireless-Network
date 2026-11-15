@@ -117,6 +117,43 @@ public class FactoryDesktopInputTest {
     }
 
     @Test
+    public void terminalPlacementBeforeFirstCanvasWaitsForLayoutAndCommitsTheBoundDevice() throws Exception {
+        prepare(false, false);
+        set("canvas", null);
+        set("area", null);
+        set("initialView", true);
+        set("scene", null);
+        DeviceBinding binding = new DeviceBinding(UUID.randomUUID(), "0:12:64:7", 0, 12, 64, 7, -1);
+        WidgetSpec pending = new WidgetSpec("from-terminal", WidgetKind.DEVICE, 0, 0, 3, 3).boundDevice(binding);
+        Method begin = FactoryDesktop.class.getDeclaredMethod("beginSinglePlacement", WidgetSpec.class);
+        begin.setAccessible(true);
+        assertEquals(true, begin.invoke(null, pending));
+        assertNull(get("canvas"));
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+        set("area", new Rect(0, 0, 1400, 1000));
+        rebuild();
+        assertNotNull(get("canvas"));
+        scene.pointerMove(1000, 700);
+        assertTrue(((DesktopPresetPlacement) get("placement")).valid(layout));
+        scene.pointerDown(1000, 700, 0);
+        scene.pointerUp(1000, 700, 0);
+        assertNull(get("placement"));
+        assertEquals(
+            2,
+            layout.widgets()
+                .size());
+        assertSame(
+            binding,
+            layout.widgets()
+                .get(1).device);
+        assertTrue(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
     public void cardNotationChangesOnFirstClickAndPersistsOnlyAtTheExplicitSaveCheckpoint() throws Exception {
         for (boolean editing : new boolean[] { false, true }) {
             prepare(editing, false, WidgetKind.WIRELESS);
