@@ -21,6 +21,7 @@ import net.minecraft.util.StatCollector;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 
+import com.cleanroommc.modularui.screen.ModularScreen;
 import com.miaokatze.gtswn.client.DevicePowerFilter;
 import com.miaokatze.gtswn.client.engineering.DashboardIcons.Icon;
 import com.miaokatze.gtswn.client.engineering.WorkbenchLayout.Rect;
@@ -48,6 +49,7 @@ import com.miaokatze.gtswn.client.engineering.desktop.WidgetNumberFormat;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetPresentation;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetResources;
 import com.miaokatze.gtswn.client.engineering.desktop.WidgetSpec;
+import com.miaokatze.gtswn.client.gui.GuiDeviceInfoTerminal;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 import com.miaokatze.miaokatzecore.api.ui.CanvasTransform;
 import com.miaokatze.miaokatzecore.api.ui.component.UiEvent;
@@ -92,7 +94,7 @@ final class FactoryDesktop {
     private static boolean shareOpen;
     private static DesktopPreset pendingPreset;
     private static DesktopLayout pendingImport;
-    private static DesktopPresetPlacement placement;
+    private static DesktopPresetPlacement placement, terminalPlacement;
     private static String presetDraft = "";
     private static boolean importingPreset;
     private static DesktopViewport view;
@@ -346,12 +348,31 @@ final class FactoryDesktop {
     static boolean mount(UUID source, Entry entry) {
         DeviceBinding binding = DesktopDeviceSources.binding(source, entry);
         if (binding == null) return false;
-        if (!EngineeringModeController.dashboardHostVisible()) EngineeringModeController.open();
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.theWorld == null || mc.thePlayer == null
+            || mc.thePlayer.isDead
+            || mc.thePlayer.getHealth() <= 0
+            || mc.gameSettings.hideGUI) return false;
+        if (ModularScreen.getCurrent() instanceof GuiDeviceInfoTerminal) {
+            mc.displayGuiScreen(null);
+        } else if (mc.currentScreen != null && !(mc.currentScreen instanceof FactoryDashboardScreen)) return false;
+        if (!EngineeringModeController.dashboardHostVisible()) EngineeringModeController.openDashboard();
         if (!EngineeringModeController.dashboardHostVisible()) return false;
-        ensure();
-        if (!beginSinglePlacement(newWidget(WidgetKind.DEVICE).boundDevice(binding))) return false;
+        // Finish host focus/preference transitions before creating the new interaction they cancel.
         WorkbenchHud.openDashboard();
-        return true;
+        ensure();
+        prepareMountedPlacement();
+        boolean started = beginSinglePlacement(newWidget(WidgetKind.DEVICE).boundDevice(binding));
+        terminalPlacement = placement;
+        return started;
+    }
+
+    private static void prepareMountedPlacement() {
+        blur();
+        if (scene != null) scene.close();
+        scene = null;
+        area = canvas = null;
+        dirty = true;
     }
 
     static boolean mountResource(ResourceBinding binding) {
@@ -423,12 +444,12 @@ final class FactoryDesktop {
     }
 
     static boolean mouse(int x, int y, int button, boolean pressed, int wheel) {
-        if (scene == null) return false;
-        if (pressed && button >= 0 && history != null) history.endGroup();
         if (placement != null && button == 1) {
             if (pressed) blur();
             return true;
         }
+        if (scene == null) return false;
+        if (pressed && button >= 0 && history != null) history.endGroup();
         if (pendingExit != null && scene.find("save-modal") == null && scene.captured() == null) build();
         if (pressed && button >= 0 && !canvas.contains(x, y)) canvasFocus = false;
         if (wheel != 0 && scene.captured() != null) return true;
@@ -781,6 +802,7 @@ final class FactoryDesktop {
                 if (!added.isEmpty()) {
                     boolean single = placement.single();
                     placement = null;
+                    terminalPlacement = null;
                     selected = added.get(0).id;
                     selection.only(selected);
                     DesktopAutoBind.initializeAvailable(layout);
@@ -851,14 +873,41 @@ final class FactoryDesktop {
     private static void cancelPlacement() {
         if (placement == null) return;
         placement = null;
+        terminalPlacement = null;
         notice = "";
         dirty = true;
     }
 
     private static void pointPlacement(double x, double y) {
         // A terminal may start placement before the dashboard has rendered its first canvas.
-        if (placement != null && view != null && canvas != null)
-            placement.point(view.toLocalX(x, canvas.x), view.toLocalY(y, canvas.y));
+        if (placement == null || view == null || canvas == null) return;
+        boolean terminal = placement == terminalPlacement;
+        if (terminal) {
+            x = Math.max(canvas.x, Math.min(canvas.x + canvas.w, x));
+            y = Math.max(canvas.y, Math.min(canvas.y + canvas.h, y));
+        }
+        placement.point(view.toLocalX(x, canvas.x), view.toLocalY(y, canvas.y));
+        if (!terminal) return;
+        WidgetSpec widget = placement.widgets()
+            .get(0);
+        int column = visiblePlacementCell(
+            widget.column,
+            view.toLocalX(canvas.x, canvas.x),
+            view.toLocalX(canvas.x + canvas.w, canvas.x),
+            widget.width());
+        int row = visiblePlacementCell(
+            widget.row,
+            view.toLocalY(canvas.y, canvas.y),
+            view.toLocalY(canvas.y + canvas.h, canvas.y),
+            widget.height());
+        placement.point((double) column * DesktopLayout.CELL, (double) row * DesktopLayout.CELL);
+    }
+
+    private static int visiblePlacementCell(int cell, double min, double max, int size) {
+        int first = (int) Math.ceil((min - DesktopCardGeometry.GAP / 2.0) / DesktopLayout.CELL);
+        int last = (int) Math.floor((max - size + DesktopCardGeometry.GAP / 2.0) / DesktopLayout.CELL);
+        // An oversized card stays anchored near the pointer instead of jumping a card-width away.
+        return first <= last ? Math.max(first, Math.min(last, cell)) : cell;
     }
 
     private static DesktopDrag.Edge edge(Rect r, double x, double y) {
@@ -869,16 +918,7 @@ final class FactoryDesktop {
         ensure();
         font = f;
         FactoryDashboard.theme(layout.theme());
-        mouseX = mx;
-        mouseY = my;
-        screenWidth = width;
-        screenHeight = height;
-        boolean resized = area == null || area.x != r.x || area.y != r.y || area.w != r.w || area.h != r.h;
-        if (resized) blur();
-        advanceGesture(mx, my);
-        if (!selection.active()) syncSelection();
-        area = r;
-        if (scene == null || (dirty || resized) && scene.captured() == null) build();
+        prepareFrame(r, mx, my, width, height);
         zoomLabel.text(Math.round(view.scale * 100) + "%");
         if (placement != null) pointPlacement(mx, my);
         statusLabel.text(
@@ -929,6 +969,20 @@ final class FactoryDesktop {
         } finally {
             renderer.end();
         }
+    }
+
+    /** Layout is separate from GL painting so the first host frame establishes, rather than loses, focus. */
+    private static void prepareFrame(Rect r, int mx, int my, int width, int height) {
+        mouseX = mx;
+        mouseY = my;
+        screenWidth = width;
+        screenHeight = height;
+        boolean resized = area == null || area.x != r.x || area.y != r.y || area.w != r.w || area.h != r.h;
+        if (resized && area != null) blur();
+        advanceGesture(mx, my);
+        if (!selection.active()) syncSelection();
+        area = r;
+        if (scene == null || (dirty || resized) && scene.captured() == null) build();
     }
 
     private static void build() {

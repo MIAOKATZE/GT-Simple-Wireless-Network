@@ -12,6 +12,7 @@ import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.FontRenderer;
 import net.minecraft.client.gui.Gui;
+import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.StatCollector;
 
 import org.lwjgl.opengl.GL11;
@@ -259,7 +260,11 @@ public final class FactoryDashboard extends Gui {
     }
 
     public static boolean mount(java.util.UUID source, Entry entry) {
-        return FactoryDesktop.mount(source, entry);
+        if (FactoryDesktop.mount(source, entry)) return true;
+        Minecraft mc = Minecraft.getMinecraft();
+        if (mc.thePlayer != null)
+            mc.thePlayer.addChatMessage(new ChatComponentTranslation("gtswn.factory.desktop.mount.failed"));
+        return false;
     }
 
     static void paintWidget(FontRenderer f, WidgetSpec widget, Rect r, int mx, int my, CanvasTransform widgetToScreen) {

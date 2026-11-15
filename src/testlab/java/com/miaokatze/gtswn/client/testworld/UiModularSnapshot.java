@@ -75,7 +75,9 @@ final class UiModularSnapshot {
     /** Resolves an explicit path to an observed center, without performing an input action. */
     static Map<String, Object> actionTarget(Minecraft mc, GuiScreen screen, String path) {
         if (path == null || !supports(screen)) return null;
-        Map<String, Object> snapshot = capture(mc, screen);
+        // Only this exact target's transform/clip ancestry is needed here. Input dispatch separately
+        // checks the complete native hover chain, so large unrelated lists cannot truncate the target.
+        Map<String, Object> snapshot = new Probe(mc, screen, path).capture();
         if (Boolean.TRUE.equals(snapshot.get("truncated"))) return null;
         Object observations = snapshot.get("findings");
         if (!(observations instanceof List<?>)) return null;
@@ -138,6 +140,7 @@ final class UiModularSnapshot {
 
         private final Minecraft mc;
         private final GuiScreen wrapper;
+        private final String targetPath;
         private final List<Map<String, Object>> widgets = new ArrayList<>();
         private final List<Map<String, Object>> findings = new ArrayList<>();
         private final List<String> limitations = new ArrayList<>();
@@ -146,8 +149,13 @@ final class UiModularSnapshot {
         private Area screenArea;
 
         private Probe(Minecraft mc, GuiScreen wrapper) {
+            this(mc, wrapper, null);
+        }
+
+        private Probe(Minecraft mc, GuiScreen wrapper, String targetPath) {
             this.mc = mc;
             this.wrapper = wrapper;
+            this.targetPath = targetPath;
         }
 
         private Map<String, Object> capture() {
@@ -294,6 +302,7 @@ final class UiModularSnapshot {
 
         private void visit(IWidget widget, String path, String parent, Area parentRect, Area clip,
             GuiViewportStack stack, int depth, boolean animating) {
+            if (targetPath != null && !targetPath.equals(path) && !targetPath.startsWith(path + "/")) return;
             if (widgets.size() >= MAX_WIDGETS) {
                 truncate("WIDGET_LIMIT", path);
                 return;
