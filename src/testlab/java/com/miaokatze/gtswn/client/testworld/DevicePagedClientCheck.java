@@ -62,6 +62,8 @@ public final class DevicePagedClientCheck {
     private int ticks, stable, captureWait;
     private boolean opened, capturePending, captured;
     private FMLEmbeddedChannel channel;
+    private DeviceMountButtonClientCheck mountCheck;
+    private boolean mountChecked;
 
     static void register() {
         if (registered || !DebugTestGate.isEnabled()) return;
@@ -111,6 +113,8 @@ public final class DevicePagedClientCheck {
         run.ticks = run.stable = run.captureWait = 0;
         run.opened = run.capturePending = run.captured = false;
         run.directory = null;
+        run.mountCheck = null;
+        run.mountChecked = false;
         run.phase = "WAIT_FIXTURE";
         run.result.put("status", "RUNNING");
         run.result.put(
@@ -177,6 +181,13 @@ public final class DevicePagedClientCheck {
             if (mc.thePlayer == null || mc.theWorld != world || mc.getNetHandler() != connection)
                 throw new IllegalStateException("Actor world/connection changed");
             if (ticks > 1800) throw new IllegalStateException("Paged client timeout in " + phase);
+            if (mountCheck != null) {
+                if (!mountCheck.tick()) return;
+                result.put("mountButton", mountCheck.result());
+                mountCheck.close();
+                mountCheck = null;
+                stable = 0;
+            }
             if ("WAIT_FIXTURE".equals(phase)) {
                 ItemStack held = mc.thePlayer.inventory.mainInventory[0];
                 if (held == null || !(held.getItem() instanceof ItemDeviceInfoTerminal)
@@ -232,6 +243,12 @@ public final class DevicePagedClientCheck {
                     return;
                 }
                 if (++stable < 35) return; // Permit the GUI's normal 20-tick poll to ACK the complete snapshot.
+                if (!mountChecked && "FIRST_SNAPSHOT".equals(phase)
+                    && Boolean.getBoolean("gtswn.testlab.mountButton")) {
+                    mountChecked = true;
+                    mountCheck = new DeviceMountButtonClientCheck(mc, terminal, run, directory);
+                    return;
+                }
                 if (pages.size() != 9)
                     throw new IllegalStateException("Not all 9 pages were observed at native client decoder");
                 result.put(
@@ -311,6 +328,17 @@ public final class DevicePagedClientCheck {
 
     @SubscribeEvent
     public void render(TickEvent.RenderTickEvent event) {
+        if (event.phase == TickEvent.Phase.END && mountCheck != null) {
+            try {
+                mountCheck.render();
+            } catch (Exception failure) {
+                try {
+                    mountCheck.fail(failure);
+                } catch (Exception recoveryFailure) {
+                    finish("FAIL", failure + "; role recovery request failed: " + recoveryFailure);
+                }
+            }
+        }
         if (event.phase != TickEvent.Phase.END || !capturePending || !"CAPTURE".equals(phase)) return;
         try {
             ScreenShotHelper
@@ -339,6 +367,11 @@ public final class DevicePagedClientCheck {
     }
 
     private void finish(String status, String detail) {
+        if (mountCheck != null) {
+            result.put("mountButton", mountCheck.result());
+            mountCheck.close();
+            mountCheck = null;
+        }
         result.put("status", status);
         result.put("detail", detail);
         result.put("ticks", ticks);

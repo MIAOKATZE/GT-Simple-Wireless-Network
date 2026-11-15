@@ -92,6 +92,7 @@ public class FactoryDesktopInputTest {
         set("pendingPreset", null);
         set("pendingImport", null);
         set("placement", null);
+        set("terminalPlacement", null);
         set("presetDraft", "");
         set("importingPreset", false);
         set("initialView", false);
@@ -119,10 +120,13 @@ public class FactoryDesktopInputTest {
     @Test
     public void terminalPlacementBeforeFirstCanvasWaitsForLayoutAndCommitsTheBoundDevice() throws Exception {
         prepare(false, false);
-        set("canvas", null);
-        set("area", null);
+        // A prior dashboard can leave a stale area/tree behind. Mount clears both before the new ghost.
+        Method mountFrame = FactoryDesktop.class.getDeclaredMethod("prepareMountedPlacement");
+        mountFrame.setAccessible(true);
+        mountFrame.invoke(null);
         set("initialView", true);
-        set("scene", null);
+        assertNull(get("scene"));
+        assertNull(get("area"));
         DeviceBinding binding = new DeviceBinding(UUID.randomUUID(), "0:12:64:7", 0, 12, 64, 7, -1);
         WidgetSpec pending = new WidgetSpec("from-terminal", WidgetKind.DEVICE, 0, 0, 3, 3).boundDevice(binding);
         Method begin = FactoryDesktop.class.getDeclaredMethod("beginSinglePlacement", WidgetSpec.class);
@@ -134,8 +138,12 @@ public class FactoryDesktopInputTest {
             layout.widgets()
                 .size());
         assertFalse(FactoryDesktop.hasUnsavedChanges());
-        set("area", new Rect(0, 0, 1400, 1000));
-        rebuild();
+        // The terminal's trailing button release cannot place into its old dashboard tree.
+        assertFalse(FactoryDesktop.mouse(1000, 700, 0, false, 0));
+        frame(new Rect(0, 0, 1400, 1000));
+        assertNotNull(get("placement"));
+        frame(new Rect(0, 0, 1400, 1000));
+        assertNotNull(get("placement"));
         assertNotNull(get("canvas"));
         scene.pointerMove(1000, 700);
         assertTrue(((DesktopPresetPlacement) get("placement")).valid(layout));
@@ -151,6 +159,132 @@ public class FactoryDesktopInputTest {
             layout.widgets()
                 .get(1).device);
         assertTrue(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
+    public void mountedPlacementCanCancelBeforeItsFirstFrameWithoutChangingTheDraft() throws Exception {
+        for (boolean rightClick : new boolean[] { false, true }) {
+            prepare(true, false);
+            assertTrue(layout.move("card", -8, 0));
+            Method mountFrame = FactoryDesktop.class.getDeclaredMethod("prepareMountedPlacement");
+            mountFrame.setAccessible(true);
+            mountFrame.invoke(null);
+            Method begin = FactoryDesktop.class.getDeclaredMethod("beginSinglePlacement", WidgetSpec.class);
+            begin.setAccessible(true);
+            begin.invoke(null, new WidgetSpec("from-terminal", WidgetKind.DEVICE, 0, 0, 3, 3));
+            if (rightClick) assertTrue(FactoryDesktop.mouse(1000, 700, 1, true, 0));
+            else assertTrue(FactoryDesktop.escape());
+            assertNull(get("placement"));
+            assertEquals(
+                1,
+                layout.widgets()
+                    .size());
+            assertEquals(-8, layout.find("card").column);
+            assertTrue(FactoryDesktop.hasUnsavedChanges());
+        }
+    }
+
+    @Test
+    public void anActualResizeAfterTheFirstMountFrameStillCancelsAndReleasesCapture() throws Exception {
+        prepare(false, false);
+        Method mountFrame = FactoryDesktop.class.getDeclaredMethod("prepareMountedPlacement");
+        mountFrame.setAccessible(true);
+        mountFrame.invoke(null);
+        Method begin = FactoryDesktop.class.getDeclaredMethod("beginSinglePlacement", WidgetSpec.class);
+        begin.setAccessible(true);
+        begin.invoke(null, new WidgetSpec("from-terminal", WidgetKind.DEVICE, 0, 0, 3, 3));
+        frame(new Rect(0, 0, 1400, 1000));
+        assertTrue(scene.pointerDown(1000, 700, 0));
+        assertNotNull(scene.captured());
+        frame(new Rect(0, 0, 1200, 900));
+        assertNull(get("placement"));
+        assertNull(scene.captured());
+        scene.pointerUp(1000, 700, 0);
+        assertEquals(
+            1,
+            layout.widgets()
+                .size());
+        assertFalse(FactoryDesktop.hasUnsavedChanges());
+    }
+
+    @Test
+    public void terminalGhostFitsVisibleEdgesAndTheConfirmedCardUsesThatExactGridPosition() throws Exception {
+        for (double scale : new double[] { .37, 1, 4 }) {
+            prepare(false, false);
+            assertTrue(layout.move("card", -100, -100));
+            DesktopViewport view = (DesktopViewport) get("view");
+            view.scale = scale;
+            view.panX = -75.5;
+            view.panY = 242.25;
+            Method begin = FactoryDesktop.class.getDeclaredMethod("beginSinglePlacement", WidgetSpec.class);
+            begin.setAccessible(true);
+            DeviceBinding binding = new DeviceBinding(UUID.randomUUID(), "edge", 0, 1, 2, 3, 4);
+            begin.invoke(null, new WidgetSpec("edge", WidgetKind.DEVICE, 0, 0, 3, 3).boundDevice(binding));
+            set("terminalPlacement", get("placement"));
+            frame(new Rect(0, 0, 1400, 1000));
+            Rect canvas = (Rect) get("canvas");
+            DesktopPresetPlacement pending = (DesktopPresetPlacement) get("placement");
+            for (int x : new int[] { canvas.x - 200, canvas.x, canvas.x + canvas.w - 1, canvas.x + canvas.w + 200 }) {
+                for (int y : new int[] { canvas.y - 200, canvas.y, canvas.y + canvas.h - 1,
+                    canvas.y + canvas.h + 200 }) {
+                    point(x, y);
+                    Rect bounds = DesktopCardGeometry.bounds(
+                        pending.widgets()
+                            .get(0),
+                        view.transform(canvas.x, canvas.y));
+                    assertTrue(bounds.x >= canvas.x);
+                    assertTrue(bounds.y >= canvas.y);
+                    assertTrue(bounds.x + bounds.w <= canvas.x + canvas.w);
+                    assertTrue(bounds.y + bounds.h <= canvas.y + canvas.h);
+                }
+            }
+            // A release just outside the canvas is rejected even when it remains within click slop.
+            scene.pointerDown(canvas.x + 1, canvas.y + 1, 0);
+            scene.pointerUp(canvas.x - 1, canvas.y + 1, 0);
+            assertSame(pending, get("placement"));
+            assertEquals(
+                1,
+                layout.widgets()
+                    .size());
+            int x = canvas.x + canvas.w - 1, y = canvas.y + canvas.h - 1;
+            point(x, y);
+            WidgetSpec ghost = pending.widgets()
+                .get(0);
+            scene.pointerDown(x, y, 0);
+            scene.pointerUp(x, y, 0);
+            assertNull(get("placement"));
+            WidgetSpec placed = layout.widgets()
+                .get(1);
+            assertEquals(ghost.column, placed.column);
+            assertEquals(ghost.row, placed.row);
+            assertSame(binding, placed.device);
+        }
+    }
+
+    @Test
+    public void oversizedTerminalGhostStaysNearPointerAndOtherSingleChoicesKeepTheirOriginalAnchor() throws Exception {
+        prepare(false, false);
+        DesktopViewport view = (DesktopViewport) get("view");
+        view.scale = 4;
+        Method begin = FactoryDesktop.class.getDeclaredMethod("beginSinglePlacement", WidgetSpec.class);
+        begin.setAccessible(true);
+        begin.invoke(null, new WidgetSpec("large", WidgetKind.DEVICE, 0, 0, 32, 32));
+        set("terminalPlacement", get("placement"));
+        frame(new Rect(0, 0, 1400, 1000));
+        Rect canvas = (Rect) get("canvas");
+        int x = canvas.x + canvas.w - 1, y = canvas.y + canvas.h - 1;
+        point(x, y);
+        WidgetSpec ghost = ((DesktopPresetPlacement) get("placement")).widgets()
+            .get(0);
+        assertEquals((int) Math.floor(view.toLocalX(x, canvas.x) / DesktopLayout.CELL), ghost.column);
+        assertEquals((int) Math.floor(view.toLocalY(y, canvas.y) / DesktopLayout.CELL), ghost.row);
+        FactoryDesktop.blur();
+        begin.invoke(null, new WidgetSpec("library-choice", WidgetKind.DEVICE, 0, 0, 3, 3));
+        point(x, y);
+        ghost = ((DesktopPresetPlacement) get("placement")).widgets()
+            .get(0);
+        assertEquals((int) Math.floor(view.toLocalX(x, canvas.x) / DesktopLayout.CELL), ghost.column);
+        assertEquals((int) Math.floor(view.toLocalY(y, canvas.y) / DesktopLayout.CELL), ghost.row);
     }
 
     @Test
@@ -1426,6 +1560,20 @@ public class FactoryDesktopInputTest {
         build.setAccessible(true);
         build.invoke(null);
         scene = (UiScene) get("scene");
+    }
+
+    private void frame(Rect area) throws Exception {
+        Method frame = FactoryDesktop.class
+            .getDeclaredMethod("prepareFrame", Rect.class, int.class, int.class, int.class, int.class);
+        frame.setAccessible(true);
+        frame.invoke(null, area, 1000, 700, area.w, area.h);
+        scene = (UiScene) get("scene");
+    }
+
+    private void point(int x, int y) throws Exception {
+        Method point = FactoryDesktop.class.getDeclaredMethod("pointPlacement", double.class, double.class);
+        point.setAccessible(true);
+        point.invoke(null, (double) x, (double) y);
     }
 
     private void activate(String id) {
