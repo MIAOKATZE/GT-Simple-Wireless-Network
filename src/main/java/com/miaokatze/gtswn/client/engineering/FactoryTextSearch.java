@@ -5,6 +5,8 @@ package com.miaokatze.gtswn.client.engineering;
 
 import java.util.Locale;
 
+import com.miaokatze.gtswn.client.DeviceNameSearch;
+import com.miaokatze.gtswn.client.DeviceTerminalNames;
 import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 
 /** Local, bounded text filter. Never changes server sampling or authorization. */
@@ -21,7 +23,7 @@ final class FactoryTextSearch {
     }
 
     boolean matchesDevice(Entry entry, String source, boolean fresh) {
-        return matches(
+        String text = normalize(
             entry.name + " "
                 + entry.displayName
                 + " "
@@ -38,6 +40,14 @@ final class FactoryTextSearch {
                 + source
                 + " "
                 + FactoryMachineFilter.status(entry, fresh));
+        for (String term : normalize(value).trim()
+            .split("\\s+"))
+            if (!text.contains(term) && !DeviceNameSearch.matches(
+                term,
+                DeviceTerminalNames.plainName(entry),
+                DeviceTerminalNames.defaultName(entry),
+                entry.name)) return false;
+        return true;
     }
 
     private static String normalize(String value) {

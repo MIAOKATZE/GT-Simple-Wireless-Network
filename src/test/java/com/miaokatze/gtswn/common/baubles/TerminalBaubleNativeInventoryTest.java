@@ -194,6 +194,28 @@ public class TerminalBaubleNativeInventoryTest {
     }
 
     @Test
+    public void wheelMainBorrowsLinkAndQuantumWithoutOpeningGuiOrChangingNbt() {
+        for (ItemStack terminal : new ItemStack[] { link(1), new ItemStack(new ItemNetworkQuantumTerminal()) }) {
+            int category = TerminalBaubles.category(terminal);
+            int slot = category == 1 ? LINK_SLOT : 7;
+            if (terminal.stackTagCompound == null) terminal.stackTagCompound = new NBTTagCompound();
+            terminal.stackTagCompound.setString("unrelated", "preserved");
+            ItemStack expected = terminal.copy();
+            baubles.setInventorySlotContents(slot, terminal);
+            Container originalContainer = player.openContainer;
+            TerminalBaubles.service(player, PacketTerminalBaubleAction.WHEEL_OPEN, category);
+            assertSame(terminal, player.getHeldItem());
+            assertNull(baubles.getStackInSlot(slot));
+            assertSame(originalContainer, player.openContainer);
+            assertTrue(ItemStack.areItemStacksEqual(expected, terminal));
+            TerminalBaubles.service(player, PacketTerminalBaubleAction.RETURN, -1);
+            assertSame(terminal, baubles.getStackInSlot(slot));
+            assertNull(player.getHeldItem());
+            baubles.setInventorySlotContents(slot, null);
+        }
+    }
+
+    @Test
     public void wheelActionsRejectMissingOrInvalidSelectionAndQuantumClientOnlyInnerAction() {
         ItemStack terminal = link(0);
         baubles.setInventorySlotContents(LINK_SLOT, terminal);

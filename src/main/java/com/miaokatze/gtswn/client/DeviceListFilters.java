@@ -44,7 +44,13 @@ public final class DeviceListFilters {
                 + "\n"
                 + (entry.machineOwner == null ? "" : entry.machineOwner.toString());
             if (!searchable.toLowerCase(Locale.ROOT)
-                .contains(needle)) return false;
+                .contains(needle)
+                && !DeviceNameSearch.matches(
+                    needle,
+                    DeviceTerminalNames.plainName(entry),
+                    DeviceTerminalNames.defaultName(entry),
+                    entry.name))
+                return false;
         }
         if (!tags.isEmpty()) {
             boolean selected = false;

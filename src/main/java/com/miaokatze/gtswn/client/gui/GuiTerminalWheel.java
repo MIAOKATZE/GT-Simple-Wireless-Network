@@ -214,23 +214,29 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     }
 
     private void confirm(int index, boolean take) {
+        if (!take) {
+            activate(index, TerminalWheelGeometry.MAIN);
+            return;
+        }
         if (terminals[index] == null) return;
         closeWheel();
-        if (take) TerminalBaubleController.take(index);
-        else if (engineering) com.miaokatze.gtswn.client.engineering.EngineeringHud.activateTerminal(index);
-        else TerminalBaubleController.wheelAction(index, TerminalWheelGeometry.MAIN);
+        TerminalBaubleController.take(index);
     }
 
     private void activate(int index, int zone) {
         if (terminals[index] == null) return;
         closeWheel();
-        if (zone == TerminalWheelGeometry.MAIN && engineering)
+        if (zone == TerminalWheelGeometry.MAIN && usesEngineeringSource(index))
             com.miaokatze.gtswn.client.engineering.EngineeringHud.activateTerminal(index);
         else if (index >= 3 && zone == TerminalWheelGeometry.INNER) {
             EngineeringModeController.open();
             if (EngineeringModeController.isActive())
                 com.miaokatze.gtswn.client.engineering.EngineeringHud.showTerminalNodes(index);
         } else TerminalBaubleController.wheelAction(index, zone);
+    }
+
+    private boolean usesEngineeringSource(int index) {
+        return engineering && (index == 0 || index == 2);
     }
 
     private void closeWheel() {
@@ -405,14 +411,14 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
     }
 
     private static String actionName(int index, int zone) {
-        String[][] actions = { { "monitor", "take", "hud", "settings" }, { "link", "energy", "dynamo", "reveal" },
-            { "device", "take", "scan", "visual" }, { "quantum", "take", "reveal", "nodes" } };
+        String[][] actions = { { "monitor", "take", "hud", "settings" }, { "take", "energy", "dynamo", "reveal" },
+            { "device", "take", "scan", "visual" }, { "take", "quantum", "reveal", "nodes" } };
         return actions[Math.min(index, 3)][zone];
     }
 
     private static String iconName(String action) {
         if ("take".equals(action)) return "export";
-        if ("settings".equals(action)) return "settings";
+        if ("settings".equals(action) || "quantum".equals(action)) return "settings";
         if ("nodes".equals(action)) return "world";
         if ("visual".equals(action)) return "box-select";
         if ("energy".equals(action) || "dynamo".equals(action) || "scan".equals(action)) return action;
@@ -515,7 +521,7 @@ public final class GuiTerminalWheel extends GtswnMuiScreen {
                         .add(TerminalBaubleController.text("gtswn.terminal_wheel.scan_conditions"));
                     if ("nodes".equals(action)) tooltip.newLine()
                         .add(TerminalBaubleController.text("gtswn.terminal_wheel.nodes_conditions"));
-                    if (zone == TerminalWheelGeometry.MAIN && engineering) tooltip.newLine()
+                    if (zone == TerminalWheelGeometry.MAIN && usesEngineeringSource(index)) tooltip.newLine()
                         .add(TerminalBaubleController.text("gtswn.terminal_wheel.engineering_source"));
                 }
             });

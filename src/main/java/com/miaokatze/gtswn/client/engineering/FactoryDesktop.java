@@ -856,7 +856,9 @@ final class FactoryDesktop {
     }
 
     private static void pointPlacement(double x, double y) {
-        if (placement != null) placement.point(view.toLocalX(x, canvas.x), view.toLocalY(y, canvas.y));
+        // A terminal may start placement before the dashboard has rendered its first canvas.
+        if (placement != null && view != null && canvas != null)
+            placement.point(view.toLocalX(x, canvas.x), view.toLocalY(y, canvas.y));
     }
 
     private static DesktopDrag.Edge edge(Rect r, double x, double y) {
