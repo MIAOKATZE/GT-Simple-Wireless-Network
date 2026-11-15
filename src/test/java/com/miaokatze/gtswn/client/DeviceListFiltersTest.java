@@ -16,7 +16,7 @@ import com.miaokatze.gtswn.network.PacketSyncDeviceTerminalData.Entry;
 public class DeviceListFiltersTest {
 
     @Test
-    public void chineseMachineNamesAndAliasesSupportSpellingWithoutBypassingOtherFilters() {
+    public void machineNamesAndAliasesMatchLiterallyWithoutNech() {
         Entry entry = new Entry(
             "0:1:2:3",
             "大型搅拌机",
@@ -39,14 +39,14 @@ public class DeviceListFiltersTest {
             (byte) 6,
             true);
         DeviceListFilters filters = new DeviceListFilters();
-        for (String query : new String[] { "大型搅拌机", "jiaobanji", "JBJ", "zhuxianshebei", "ZXSB" }) {
+        for (String query : new String[] { "大型搅拌机", "主线设备" }) {
             filters.query = query;
             assertTrue(query, filters.matches(entry, null));
         }
         filters.dimension = -1;
         assertFalse(filters.matches(entry, null));
         filters.dimension = null;
-        filters.query = "djj";
+        filters.query = "jbj";
         assertFalse(filters.matches(entry, null));
     }
 
