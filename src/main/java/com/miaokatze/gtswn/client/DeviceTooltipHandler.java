@@ -58,11 +58,14 @@ public class DeviceTooltipHandler {
 
     static String authoredId(ItemStack stack) {
         if (stack == null || stack.getItem() == null) return null;
+        // Switching modes also changes the icon metadata. NBT, not the registration meta, selects the tap page.
+        if (stack.getItem() instanceof WirelessEnergyTap) {
+            String tap = GTSWNItemList.Wireless_Energy_Tap.name();
+            return WirelessEnergyTap.getOutputModeStatic(stack) ? tap + ":output" : tap;
+        }
         for (GTSWNItemList entry : GTSWNItemList.values()) {
             if (entry.hasBeenSet() && entry.getItem() == stack.getItem() && entry.getMeta() == stack.getItemDamage()) {
-                return entry == GTSWNItemList.Wireless_Energy_Tap && WirelessEnergyTap.getOutputModeStatic(stack)
-                    ? entry.name() + ":output"
-                    : entry.name();
+                return entry.name();
             }
         }
         return null;
