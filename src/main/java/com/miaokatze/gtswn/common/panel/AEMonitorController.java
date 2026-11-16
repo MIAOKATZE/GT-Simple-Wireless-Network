@@ -81,13 +81,7 @@ public final class AEMonitorController {
     }
 
     private static final AESharedSampling SHARED_SAMPLING = new AESharedSampling();
-    private static final long INTEREST_SCAN_INTERVAL_TICKS = 20L;
-    private final AEMonitorInterest interest = new AEMonitorInterest();
-    private final AEMonitorInterest jobInterest = new AEMonitorInterest();
     private Object samplingWorld;
-    private Object interestScanWorld;
-    private long interestScanTick = Long.MIN_VALUE;
-    private long interestObservedTick = Long.MIN_VALUE;
     private long lastObservedTick = Long.MIN_VALUE;
     private Object identityWorld;
     private SourceKey sourceKey;
@@ -212,53 +206,28 @@ public final class AEMonitorController {
         }
     }
 
-    /** Shared EU/AE observation check, including physical 64-block screens and bounded departure grace. */
+    /**
+     * A ticking server screen supplies EU/AE sampling demand even with no viewers or open GUI.
+     * Loaded tile ticks and loaded-only portable/profile lookups establish availability; this check
+     * never searches for players or loads chunks. Native connection/account checks remain separate.
+     */
     public boolean hasSamplingInterest() {
-        if (core.getWorldObj() == null || core.getWorldObj().isRemote) return false;
-        World world = core.getWorldObj();
-        long tick = world.getTotalWorldTime();
-        boolean reset = interestScanWorld != world || tick < interestObservedTick;
-        interestObservedTick = tick;
-        // Independent, aligned periods also recheck on the default 100-tick sample boundary.
-        // EU and AE share this check; an unobserved panel's initial -1 sample tick never drives it.
-        if (reset || tick / INTEREST_SCAN_INTERVAL_TICKS > interestScanTick / INTEREST_SCAN_INTERVAL_TICKS) {
-            interestScanWorld = world;
-            interestScanTick = tick;
-            long interestStart = PerformanceAudit.startSlice();
-            try {
-                if (hasNearbyReceiver()) interest.renew(world, tick);
-            } finally {
-                PerformanceAudit.endSlice("gtswn.monitor.aeInterest", interestStart);
-            }
-        }
-        // Both leases must observe world/clock changes even while the other one remains active.
-        boolean observerActive = interest.active(world, tick);
-        boolean jobActive = jobInterest.active(world, tick);
-        return observerActive || jobActive;
+        return core.getWorldObj() != null && !core.getWorldObj().isRemote && !core.isInvalid();
     }
 
-    /** Align active panels to the same native period; a newly observed panel still gets an immediate sample. */
+    /** Align loaded panels to the same native period; a newly loaded panel gets an immediate sample. */
     static boolean sampleDue(long previous, long tick, int interval) {
         long period = Math.max(1, interval);
         return previous < 0 || tick < previous || tick / period > previous / period;
     }
 
-    /** Only call after server-side possession/binding/ACL validation of a portable request. */
-    public void renewPortableInterest() {
-        if (core.getWorldObj() != null && !core.getWorldObj().isRemote) interest.renew(
-            core.getWorldObj(),
-            core.getWorldObj()
-                .getTotalWorldTime());
-    }
+    /** Compatibility hook: loaded screens now sample independently of portable observations. */
+    @Deprecated
+    public void renewPortableInterest() {}
 
-    /** Explicit jobs renew independently; online observers leaving never cancel an active job. */
-    public void renewMonitoringJobInterest(long ticks) {
-        if (core.getWorldObj() != null && !core.getWorldObj().isRemote) jobInterest.renew(
-            core.getWorldObj(),
-            core.getWorldObj()
-                .getTotalWorldTime(),
-            ticks);
-    }
+    /** Compatibility hook: an explicit job cannot extend sampling after the screen stops ticking. */
+    @Deprecated
+    public void renewMonitoringJobInterest(long ticks) {}
 
     /**
      * 服务端将当前 AE 走势图样本与实时监控最新值推送给周围客户端（原 sendAEMonitorDataToClients）。

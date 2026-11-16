@@ -8,18 +8,22 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 final" src="https://img.shields.io/badge/GTNH-2.9.0-orange.svg"></a>
-  <img alt="GTSWN 2.1.28" src="https://img.shields.io/badge/GTSWN-2.1.28-green.svg">
+  <img alt="GTSWN 2.1.35" src="https://img.shields.io/badge/GTSWN-2.1.35-green.svg">
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
 | 前置 / Requirement | 版本 / Version |
 | --- | --- |
 | GTNH | 2.9.0 |
-| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.14+ |
+| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.19+ |
 
 为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；无线与监控设备可在 LV 阶段制作，矩阵编组仓室为 LuV 等级。
 
 **Wireless EU transfer, energy and machine monitoring, and ME quantum access** for GTNH, brought together in Factory Mode and a customizable dashboard. Wireless and monitoring devices are craftable at LV tier; matrix inputs are LuV devices.
+
+物品、终端与机器说明支持 [Alt+V] 切换档位。链路终端按当前能源／动力模式显示说明，终端绑定、电池和 HUD 状态取自实际物品。
+
+Press [Alt+V] to change item and machine tooltip detail. The link terminal follows its current mode; bindings, battery and HUD state reflect the held item.
 
 > [!NOTE]
 > 非官方模组，讨论时请注意场合。/ Unofficial mod; please avoid discussing it in official GTNH forums.
@@ -219,6 +223,10 @@ Single-block monitor updates every **5s**, controls redstone by grid energy/stat
 主屏+自动附着的拓展屏组成连续填充矩形，显示无线电网走势；同玩家 UUID 的 EU 屏共享历史。八个窗口 **5m / 1h / 8h / 24h / 7d / 1M / 3M / 1Y**。可调背景、线色/宽、平滑度、字号，支持常规/科学/公制计数（默认科学）。EU 储量/变化率可设平直/上升/下降分区色，并同步便携查看与 HUD 简图。
 
 Main panel + auto-attaching extenders form a filled rectangle. EU panels share history by player UUID, with eight windows: **5m / 1h / 8h / 24h / 7d / 1M / 3M / 1Y**. Configure background, lines, smoothing and text; Normal/Scientific/Metric formats (Scientific default). Flat/rising/falling EU energy/rate colors carry into portable views and HUD mini charts.
+
+原屏区块加载且数据源可用时持续采样，无需玩家靠近、观看或打开界面。AE 仍需启用监测、有效绑定与通电网络；便携查看和拓展屏读取原屏数据，不额外采样，也不会加载区块。
+
+Panels keep sampling while their chunks are loaded and sources are available, without nearby players, viewing or an open GUI. AE still requires monitoring enabled, valid bindings and a powered grid. Portable views and extenders use the original panel's data without extra sampling or chunk loading.
 
 <p align="center"><img src="images/Network Info Panel_CN.png" alt="信息屏中文 / Panel CN" width="300"> <img src="images/Network Info Panel_EN.png" alt="信息屏英文 / Panel EN" width="300"><br><img src="images/Network Info Panel_L_CN.png" alt="大屏中文 / Large panel CN" width="300"> <img src="images/Network Info Panel_L_EN.png" alt="大屏英文 / Large panel EN" width="300"><br><em>信息屏与矩形拓展 / Info panels and rectangular extension</em></p>
 

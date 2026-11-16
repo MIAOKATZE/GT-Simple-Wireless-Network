@@ -1,0 +1,2046 @@
+{
+  "mod": "GTSWN",
+  "items": [
+    {
+      "id": "TestCoin",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§b可重复使用的电网测试道具，直接改变使用者的无线电网电量。§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "操作",
+              "电量变化（EU）"
+            ],
+            "rows": [
+              [
+                "[right:右击]",
+                "＋1,000,000"
+              ],
+              [
+                "[key-right:Shift+右击]",
+                "－1,000,000；余额不足则拒绝"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b测试使用者电网：§e[right:右击]§7增加 §f1,000,000 EU§7。§r"
+          },
+          {
+            "type": "line",
+            "text": "§e[key-right:Shift+右击]§7扣除相同电量；余额不足则拒绝。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Portable_Wireless_Network_Monitor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "随身查看§b无线电网§r与信息屏；安装电池后可为电力装备充电。"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "终端状态",
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "未绑定",
+                "[right:右击]空气",
+                "绑定自己的电网"
+              ],
+              [
+                "绑定自己",
+                "[right:右击]空气",
+                "轮换 HUD 显示"
+              ],
+              [
+                "绑定自己",
+                "[key-right:Shift+右击]空气",
+                "查看与设置"
+              ],
+              [
+                "绑定自己",
+                "[right:右击]信息屏",
+                "添加此屏"
+              ],
+              [
+                "随身携带",
+                "[key:H]（默认）",
+                "打开查看器"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "HUD：关闭／常规／科学计数。"
+          },
+          {
+            "type": "warning",
+            "text": "普通终端改绑会清空屏幕绑定并关闭 HUD；共享档案按授权读取。"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b随身查看电网与信息屏；安装电池可为随身物品充电。§r"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "§7首次[right:右击]空气绑定；随后切换 HUD；[key-right:Shift+右击]自己的终端打开界面。§r"
+          },
+          {
+            "type": "line",
+            "text": "§e普通终端改绑会清空屏幕绑定并关闭 HUD。§r"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "随身查看§b无线电网§r与信息屏；安装电池后可为电力装备充电。"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "终端状态",
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "未绑定",
+                "[right:右击]空气",
+                "绑定自己的电网"
+              ],
+              [
+                "绑定自己",
+                "[right:右击]空气",
+                "轮换 HUD 显示"
+              ],
+              [
+                "绑定自己",
+                "[key-right:Shift+右击]空气",
+                "查看与设置"
+              ],
+              [
+                "绑定自己",
+                "[right:右击]信息屏",
+                "添加此屏"
+              ],
+              [
+                "随身携带",
+                "[key:H]（默认）",
+                "打开查看器"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "持未绑定或他人的普通终端，[key-right:Shift+右击]空气可改绑给自己。"
+          },
+          {
+            "type": "warning",
+            "text": "普通终端改绑会清空屏幕绑定并关闭 HUD；共享档案按授权读取。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "监测参数",
+              "规则"
+            ],
+            "rows": [
+              [
+                "电网变化率",
+                "电网电量净变化 ÷ 经过的游戏刻数，单位 EU/t"
+              ],
+              [
+                "采样间隔",
+                "默认 2.5 秒；可配置"
+              ],
+              [
+                "均值窗口",
+                "最多 300 秒；初期按已有样本计算"
+              ],
+              [
+                "长期静默",
+                "连续 300 秒电量不变"
+              ],
+              [
+                "重新连接",
+                "采样历史重置"
+              ]
+            ]
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "电池操作",
+              "结果"
+            ],
+            "rows": [
+              [
+                "终端 + 兼容可充电电池（无序合成）",
+                "安装／更换电池，继承新电池电量"
+              ],
+              [
+                "带电池终端 + GT 撬棍（无序合成）",
+                "拆卸电池"
+              ],
+              [
+                "更换或拆卸后",
+                "返还旧电池并保留缓存余电；背包满时掉落"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "放在背包或专属饰品栏，每 §b10 秒§r尝试补满电池；电网须足够支付整笔及下行损耗。"
+          },
+          {
+            "type": "line",
+            "text": "随身装备按电池电压充电，每件上限 §b1 A§r。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "借出的终端留在原快捷格，再按 [key:C] 可放回空闲原槽。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Wireless_Energy_Tap",
+      "tiers": {
+        "quick": [
+          {
+            "type": "line",
+            "text": "能源模式：§b机器拥有者的无线电网 → 机器§r。"
+          },
+          {
+            "type": "line",
+            "text": "[right:右击]机器装拆节点；[key-right:Shift+右击]切换方向。"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "common": [
+          {
+            "type": "line",
+            "text": "能源模式：§b机器拥有者的无线电网 → 机器§r。"
+          },
+          {
+            "type": "line",
+            "text": "默认每 §e30 秒§r补满缓存；电网须一次付清缺额及 §e15%§r 损耗。"
+          },
+          {
+            "type": "line",
+            "text": "电压取自安装时的机器，安培由节点设定。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "[right:右击]机器",
+                "安装节点；已有链路则拆除"
+              ],
+              [
+                "[key-right:Shift+右击]",
+                "切换能源／动力模式"
+              ],
+              [
+                "[key-right:Alt+右击]空气",
+                "打开链路界面与真空管库存"
+              ],
+              [
+                "空手 [key-right:Shift+右击]节点",
+                "调节安培与物品、流体输入"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "激光仓每次连接消耗 §61 根激光真空管§r。"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "能源模式：§b机器拥有者的无线电网 → 机器§r。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "供电参数",
+              "规则"
+            ],
+            "rows": [
+              [
+                "供电速率（EU/t）",
+                "安装电压 × 设定安培"
+              ],
+              [
+                "缓存容量（EU）",
+                "供电速率 × 缓存时长（默认 800 tick）"
+              ],
+              [
+                "补充周期",
+                "安装时尝试补满，此后默认每 30 秒"
+              ],
+              [
+                "扣电量（EU）",
+                "缺额 ×（1 + 下行损耗），向上取整；默认损耗 15%"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "余额不足不部分取电；拆除时按上行损耗退回剩余缓存。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "[right:右击]机器",
+                "安装节点；已有链路则拆除"
+              ],
+              [
+                "[key-right:Shift+右击]",
+                "切换能源／动力模式"
+              ],
+              [
+                "[key-right:Alt+右击]空气",
+                "打开链路界面与真空管库存"
+              ],
+              [
+                "空手 [key-right:Shift+右击]节点",
+                "调节安培与物品、流体输入"
+              ],
+              [
+                "空手 [right:右击]节点",
+                "查看缓存与下次电网交互时间"
+              ],
+              [
+                "螺丝刀 [right:右击]节点",
+                "切换物品、流体输入"
+              ],
+              [
+                "对空长按 [key-right:Alt+Shift+右击] 1 秒",
+                "显形 64 格内同模式节点 15 秒；期间再次蓄力显示两类"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "激光仓每次连接消耗 §61 根激光真空管§r。"
+          },
+          {
+            "type": "line",
+            "text": "两种节点的设定电流最低 §b0.1 A§r。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "轮盘可按能源／动力模式取出；留在原快捷格时再按 [key:C] 归还。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Wireless_Energy_Tap:output",
+      "tiers": {
+        "quick": [
+          {
+            "type": "line",
+            "text": "动力模式：§d机器 → 机器拥有者的无线电网§r。"
+          },
+          {
+            "type": "line",
+            "text": "[right:右击]机器装拆节点；[key-right:Shift+右击]切换方向。"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "common": [
+          {
+            "type": "line",
+            "text": "动力模式：§d机器 → 机器拥有者的无线电网§r。"
+          },
+          {
+            "type": "line",
+            "text": "默认每 §e30 秒§r上传缓存，无上行损耗。"
+          },
+          {
+            "type": "line",
+            "text": "节点所在面不再向电缆输出 EU。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "[right:右击]机器",
+                "安装节点；已有链路则拆除"
+              ],
+              [
+                "[key-right:Shift+右击]",
+                "切换能源／动力模式"
+              ],
+              [
+                "[key-right:Alt+右击]空气",
+                "打开链路界面与真空管库存"
+              ],
+              [
+                "空手 [key-right:Shift+右击]节点",
+                "调节安培与物品、流体输入"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "激光仓每次连接消耗 §61 根激光真空管§r。"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "动力模式：§d机器 → 机器拥有者的无线电网§r。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "回传参数",
+              "规则"
+            ],
+            "rows": [
+              [
+                "取电速率（EU/t）",
+                "输出电压 × 实际安培，受设定值与机器输出能力限制"
+              ],
+              [
+                "取电下限",
+                "保留机器最低储能"
+              ],
+              [
+                "回传周期",
+                "默认每 30 秒"
+              ],
+              [
+                "到账量（EU）",
+                "缓存 ×（1 − 上行损耗），向下取整；默认无损"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "节点面不再向电缆供电；拆除时按上行损耗结算余电。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "[right:右击]机器",
+                "安装节点；已有链路则拆除"
+              ],
+              [
+                "[key-right:Shift+右击]",
+                "切换能源／动力模式"
+              ],
+              [
+                "[key-right:Alt+右击]空气",
+                "打开链路界面与真空管库存"
+              ],
+              [
+                "空手 [key-right:Shift+右击]节点",
+                "调节安培与物品、流体输入"
+              ],
+              [
+                "空手 [right:右击]节点",
+                "查看缓存与下次电网交互时间"
+              ],
+              [
+                "螺丝刀 [right:右击]节点",
+                "切换物品、流体输入"
+              ],
+              [
+                "对空长按 [key-right:Alt+Shift+右击] 1 秒",
+                "显形 64 格内同模式节点 15 秒；期间再次蓄力显示两类"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "激光仓每次连接消耗 §61 根激光真空管§r。"
+          },
+          {
+            "type": "line",
+            "text": "两种节点的设定电流最低 §b0.1 A§r。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "轮盘可按能源／动力模式取出；留在原快捷格时再按 [key:C] 归还。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Device_Info_Terminal",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "查看支持的 §bGT 机器§r：运行状态、EU 输入／输出、配方和位置。"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "目标",
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "空气",
+                "[right:右击]",
+                "打开列表"
+              ],
+              [
+                "GT 机器",
+                "[right:右击]",
+                "可视化关闭时绑定"
+              ],
+              [
+                "空地",
+                "[key-right:Shift+右击]",
+                "打开设置"
+              ],
+              [
+                "世界中",
+                "长按[key-right:Alt+右击] 1 秒",
+                "扫描本维度团队机器"
+              ],
+              [
+                "世界中",
+                "[key-right:Shift+Alt+右击]",
+                "开关可视化"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "携带终端放置支持的机器可自动绑定。可视化开启后，在背包内也能显示标记。"
+          },
+          {
+            "type": "line",
+            "text": "朝已绑定机器或标记[right:右击]请求传送；目标区块须加载。"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b随身查看 GT 机器的运行状态与 EU 流量§r"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:右击]空气打开列表；可视化关闭时 [right:右击]机器绑定。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7[key-right:Alt+右击]持续 §e1 秒§7，扫描本维度团队机器。§r"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "查看支持的 §bGT 机器§r：运行状态、EU 输入／输出、配方和位置。"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "目标",
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "空气",
+                "[right:右击]",
+                "打开列表"
+              ],
+              [
+                "GT 机器",
+                "[right:右击]",
+                "可视化关闭时绑定"
+              ],
+              [
+                "空地",
+                "[key-right:Shift+右击]",
+                "打开设置"
+              ],
+              [
+                "世界中",
+                "长按[key-right:Alt+右击] 1 秒",
+                "扫描本维度团队机器"
+              ],
+              [
+                "世界中",
+                "[key-right:Shift+Alt+右击]",
+                "开关可视化"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "扫描结束后 §b15 秒§r内再次蓄力，可纳入已忽略设备。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "列表操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "[key-left:Shift+左击]设备",
+                "切换跟踪与忽略"
+              ],
+              [
+                "[key-left:Ctrl+左击]设备",
+                "远程解绑"
+              ],
+              [
+                "[key-left:Alt+左击]设备",
+                "置顶收藏"
+              ],
+              [
+                "[right:右击]设备",
+                "修改名称、颜色、粗体与标签"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "在世界中对机器[key-right:Shift+右击]也可切换跟踪／忽略。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "§b可视化§r：背包中即可显示标记与能量热图。瞄准已绑定目标[right:右击]请求传送，否则打开列表。"
+          },
+          {
+            "type": "line",
+            "text": "§6传送费用§r：预装锚点 → 主背包锚点 → 经验等级。目标须已加载且有安全落点。"
+          },
+          {
+            "type": "line",
+            "text": "绑定与跟踪偏好按终端保存。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "借出的终端留在原快捷格，再按 [key:C] 可放回空闲原槽。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ME_Network_Quantum_Terminal",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "量子化 §bME 控制器§r，无线连接量子节点或并入兼容设备。"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "先接能源元件，再量子化；ME 网络仍须持续供电。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "目标",
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "运行中的控制器",
+                "[right:右击]",
+                "量子化整组并绑定；已量子化则改绑"
+              ],
+              [
+                "普通方块",
+                "[right:右击]",
+                "在所选面外放置节点"
+              ],
+              [
+                "AE 方块／GT ME 仓室",
+                "[key-right:Alt+右击]",
+                "并入或解除"
+              ],
+              [
+                "空气",
+                "[key-right:Shift+右击]",
+                "查看频道、预装锚点、调色"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "每次并入消耗 §61 个量子并入锚点§r。"
+          },
+          {
+            "type": "line",
+            "text": "每个有效并入方块默认耗电 §b50 AE/t§r，不另占频道。"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b量子化 ME 控制器，连接量子节点及并入设备§r"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "warning",
+            "text": "§e量子化前接入能源元件，保持 ME 网络供电。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:右击]运行中的控制器绑定；[key-right:Shift+右击]空气打开终端。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7每次并入消耗 §e1 个锚点§7。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7每个有效并入方块默认耗电 §e50 AE/t§7。§r"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "量子化 §bME 控制器§r，无线连接量子节点或并入兼容设备。"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "先接能源元件，并保持 ME 网络供电。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "目标",
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "运行中的控制器",
+                "[right:右击]",
+                "量子化整组并绑定；已量子化则改绑"
+              ],
+              [
+                "普通方块",
+                "[right:右击]",
+                "在所选面外放置节点"
+              ],
+              [
+                "AE 方块／GT ME 仓室",
+                "[key-right:Alt+右击]",
+                "并入或解除"
+              ],
+              [
+                "空气",
+                "[key-right:Shift+右击]",
+                "查看频道、预装锚点、调色"
+              ]
+            ]
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "目标",
+              "操作",
+              "进阶操作"
+            ],
+            "rows": [
+              [
+                "量子化控制器",
+                "[key-right:Shift+右击]",
+                "取消量子化并清除绑定"
+              ],
+              [
+                "未量子化控制器",
+                "长按[key-right:Alt+右击] 15 秒",
+                "迁移已绑定网络"
+              ],
+              [
+                "AE 宿主¹",
+                "[right:右击]",
+                "原位转为节点，保留侧部件"
+              ],
+              [
+                "量子节点",
+                "[key-right:Shift+右击]",
+                "撤去核心，侧部件留在原位"
+              ],
+              [
+                "空气",
+                "长按[key-right:Alt+Shift+右击] 1 秒",
+                "显示附近本网络成员 15 秒"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "¹ 须有侧部件、无中央线缆；线缆部件不能单独并入。"
+          },
+          {
+            "type": "line",
+            "text": "仅显示本维度 §b64 格§r内已加载成员；期间再次蓄力按网络颜色显示全部。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "§6并入§r：先用共享预装锚点，再取主背包。成功扣 1 个，解除不返还。"
+          },
+          {
+            "type": "line",
+            "text": "有效并入方块默认每个 §b50 AE/t§r，不另占频道。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "网络安全",
+              "管理条件"
+            ],
+            "rows": [
+              [
+                "关闭（默认）",
+                "不要求 AE 安全配对；仍受世界编辑限制"
+              ],
+              [
+                "开启",
+                "同网配对；普通操作需建造权限"
+              ],
+              [
+                "开启：调色／迁移／取消量子化",
+                "同网配对，且为拥有者或具备安全权限"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "解除并入还须满足创建者、创造模式或对应网络管理员条件，并通过访问检查。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "手持 [key:C] 收入轮盘（需空闲专属饰品栏）；未持终端时按同键打开。"
+          },
+          {
+            "type": "line",
+            "text": "借出的终端留在原快捷格，再按 [key:C] 可放回空闲原槽。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Quantum_Incorporation_Anchor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§b供量子终端将兼容设备并入 ME 网络§r"
+          },
+          {
+            "type": "line",
+            "text": "§7锚点本身不绑定网络；每次成功并入消耗 §e1 个§7。§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "目标",
+              "持量子终端操作"
+            ],
+            "rows": [
+              [
+                "兼容完整 AE 方块 / GT ME 仓室",
+                "[key-right:Alt+右击]并入；不支持线缆部件"
+              ],
+              [
+                "空气",
+                "[key-right:Shift+右击]打开共享库存预装锚点"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§7消耗优先取本人共享预装库存，再取主背包。解除并入不消耗，也不返还锚点。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7每个有效并入方块默认额外耗 §e50 AE/t§7，不额外占频道；功耗由服务器配置。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b量子终端并入设备的消耗品§r"
+          },
+          {
+            "type": "line",
+            "text": "§7每次成功并入耗 §e1 个§7；解除不返还。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7放入主背包，或经量子终端预装到本人共享库存。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Network_Teleport_Anchor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§b支付设备信息终端的传送费用§r"
+          },
+          {
+            "type": "line",
+            "text": "§7每次成功传送消耗 §e1 个§7；预装储备由本人各终端共享。§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "扣费顺序",
+              "来源"
+            ],
+            "rows": [
+              [
+                "§e1§r",
+                "本人共享的预装锚点"
+              ],
+              [
+                "§e2§r",
+                "主背包中的锚点"
+              ],
+              [
+                "§e3§r",
+                "没有锚点时，扣除终端设置的经验等级"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§7持设备信息终端 [key-right:Shift+右击]空地，进入设置的供料页预装；也可直接放在主背包。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7传送失败返还预留费用；目标未加载或没有安全落点时不能传送。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b设备信息终端每次成功传送消耗 §e1 个§r"
+          },
+          {
+            "type": "line",
+            "text": "§7优先于经验等级扣费；可放主背包或预装至本人共享库存。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GTswn_Cover_Energy_Wireless",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§b电网 → 机器§r：从机器拥有者的无线电网取电，持续供给 EU。"
+          },
+          {
+            "type": "line",
+            "text": "供电速率为电压 × 安培；电压由安装时的机器决定，安培可调至 §e0.1 A§r 以上。"
+          },
+          {
+            "type": "line",
+            "text": "默认每 §e30 秒§r 补满缓存，下行额外扣电 §e15%§r；周期与损耗由服务器配置。"
+          },
+          {
+            "type": "warning",
+            "text": "电网余额须够一次补满及其损耗；不足时不会部分取电，缓存耗尽后停止供电。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "能源模式链路终端 [right:右击] 机器",
+                "安装；机器已有链路时拆除"
+              ],
+              [
+                "空手 [right:右击] 覆盖板",
+                "查看参数与剩余电量"
+              ],
+              [
+                "空手 [key-right:Shift+右击] 覆盖板",
+                "调整安培与物品、流体输入开关"
+              ],
+              [
+                "螺丝刀 [right:右击] 覆盖板",
+                "切换该面的物品、流体输入"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "拆除时将剩余缓存退回机器拥有者的电网，按上行损耗结算。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b电网 → 机器§r：使用机器拥有者的无线电网供电。"
+          },
+          {
+            "type": "line",
+            "text": "用能源模式链路终端安装；空手 [key-right:Shift+右击] 覆盖板调整安培。"
+          },
+          {
+            "type": "warning",
+            "text": "余额须够补满缓存及损耗；默认下行额外扣电 §e15%§r。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GTswn_Cover_Dynamo_Wireless",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§d机器 → 电网§r：收集机器输出的 EU，存入机器拥有者的无线电网。"
+          },
+          {
+            "type": "line",
+            "text": "按机器输出电压取电，可设置安培上限；实际电流不超过机器输出能力，并保留机器最低储能。"
+          },
+          {
+            "type": "line",
+            "text": "默认每 §e30 秒§r 上传一次，默认§a无上行损耗§r；周期与损耗由服务器配置。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "动力模式链路终端 [right:右击] 机器",
+                "安装；机器已有链路时拆除"
+              ],
+              [
+                "空手 [right:右击] 覆盖板",
+                "查看缓存与下次上传时间"
+              ],
+              [
+                "空手 [key-right:Shift+右击] 覆盖板",
+                "调整安培与物品、流体输入开关"
+              ],
+              [
+                "螺丝刀 [right:右击] 覆盖板",
+                "切换该面的物品、流体输入"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "覆盖板所在面不再向电缆输出 EU；拆除时按上行损耗结算剩余缓存。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§d机器 → 电网§r：将机器输出存入机器拥有者的无线电网。"
+          },
+          {
+            "type": "line",
+            "text": "用动力模式链路终端安装；空手 [key-right:Shift+右击] 覆盖板调整安培上限。"
+          },
+          {
+            "type": "line",
+            "text": "默认每 §e30 秒§r 上传一次；覆盖板所在面停止向电缆输出 EU。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Network_Info_Panel",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "记录§b无线电量§r或 §bME 物品、流体库存§r的变化。"
+          },
+          {
+            "type": "line",
+            "text": "主屏区块加载即持续采样，无需玩家在场。"
+          },
+          {
+            "type": "line",
+            "text": "无线电量取自放置者；ME 库存需接入在线网络。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "对主屏 [right:右击]"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "手持",
+              "操作"
+            ],
+            "rows": [
+              [
+                "空手",
+                "打开设置"
+              ],
+              [
+                "物品／流体容器",
+                "在 ME 页选中或移除目标"
+              ],
+              [
+                "已绑定自己的便携终端",
+                "添加远程屏幕（最多 16 块）"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "记录§b无线电量§r或 §bME 库存§r的变化。"
+          },
+          {
+            "type": "line",
+            "text": "主屏区块加载即采样；监测库存需 ME 在线。"
+          },
+          {
+            "type": "line",
+            "text": "空手 [right:右击] 打开设置。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Network_Info_Panel_Extender",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "扩大网络信息屏的显示面积；由主屏统一显示和设置。"
+          },
+          {
+            "type": "line",
+            "text": "沿主屏所在平面相邻放置，保持同朝向并填满矩形；放在屏幕部件旁会继承其朝向。"
+          },
+          {
+            "type": "warning",
+            "text": "组合屏只使用包含主屏的最大完整矩形；缺角或多出的部分不会加入显示。"
+          },
+          {
+            "type": "line",
+            "text": "一块主屏配合扩展屏使用；扩展屏不能代替主屏，也不能独立监测。"
+          },
+          {
+            "type": "line",
+            "text": "空手 [right:右击] 主屏配置整个组合屏幕。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "扩大网络信息屏；与主屏同平面、同朝向，填满矩形。"
+          },
+          {
+            "type": "line",
+            "text": "需要主屏；空手 [right:右击] 主屏统一设置。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ME_Network_Quantum_Node",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§b将相邻 AE 设备桥接至量子化 ME 网络，支持跨维度§r"
+          },
+          {
+            "type": "line",
+            "text": "§7物品未绑定网络，请用已绑定的量子终端放置。§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "参数",
+              "默认值 / 条件"
+            ],
+            "rows": [
+              [
+                "单条桥接连接容量",
+                "§e32 频道§r"
+              ],
+              [
+                "节点额外占用频道",
+                "§a0§r"
+              ],
+              [
+                "闲置功耗",
+                "§e10 AE/t§7，服务器可配置§r"
+              ],
+              [
+                "保持连接",
+                "节点与控制器锚点区块均须加载"
+              ]
+            ]
+          },
+          {
+            "type": "warning",
+            "text": "§e节点不会主动加载锚点区块；锚点不可用时节点离线。§r"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "工具",
+              "操作",
+              "结果"
+            ],
+            "rows": [
+              [
+                "已绑定量子终端",
+                "[right:右击]方块",
+                "在点击面外放置节点"
+              ],
+              [
+                "空手",
+                "[right:右击]核心",
+                "查看连接状态或离线原因"
+              ],
+              [
+                "量子终端",
+                "[key-right:Shift+右击]节点",
+                "只撤去核心，侧部件及其库存原位保留"
+              ],
+              [
+                "扳手",
+                "[key-right:Shift+右击]节点",
+                "拆除并回收侧部件及库存"
+              ],
+              [
+                "挖掘工具",
+                "挖掘节点",
+                "拆除并回收侧部件及库存"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§7节点核心在上述拆除方式中均不掉落。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b跨维度桥接量子化 ME 网络，每条连接最多 §e32 频道§r"
+          },
+          {
+            "type": "line",
+            "text": "§7用已绑定量子终端放置；默认耗 §e10 AE/t§7，节点和锚点区块均需加载。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7量子终端 [key-right:Shift+右击]只撤核心，侧部件留在原位。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Wireless_Energy_Monitor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§b监测机器拥有者电网的电量与净变化率，并按阈值输出红石信号。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:右击]已放置的监视器打开界面，选择测量锚点、计数法、红石模式与阈值。§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "监测参数",
+              "规则"
+            ],
+            "rows": [
+              [
+                "采样间隔",
+                "5 秒"
+              ],
+              [
+                "均值窗口",
+                "最多 300 秒；初期按已有样本计算"
+              ],
+              [
+                "可选红石锚点",
+                "电网电量／平均净变化率／实时净变化率"
+              ],
+              [
+                "红石强度",
+                "满足当前模式条件时输出 15，否则输出 0"
+              ]
+            ]
+          },
+          {
+            "type": "warning",
+            "text": "§e建议常态加载区块。卸载间隔超过 10 秒后，重新采样并延迟红石更新 30 秒。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§b监测电网电量与净变化率，按阈值输出红石信号。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:右击]已放置机器打开设置；建议常态加载区块。§r"
+          },
+          {
+            "type": "line",
+            "text": "§e卸载超过 10 秒后，延迟更新红石 30 秒。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "监测机器拥有者电网，以§b电量、平均或实时净变化率§r控制红石。"
+          },
+          {
+            "type": "line",
+            "text": "变化率单位 EU/t，可取负值。x 为所选读数，输出强度为 15 或 0。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "红石模式",
+              "开始输出",
+              "停止输出"
+            ],
+            "rows": [
+              [
+                "关闭",
+                "—",
+                "始终关闭"
+              ],
+              [
+                "高电平",
+                "x > P1",
+                "x ≤ P1"
+              ],
+              [
+                "低电平",
+                "x < P1",
+                "x ≥ P1"
+              ],
+              [
+                "高电平滞后",
+                "x > P1",
+                "x < P2"
+              ],
+              [
+                "低电平滞后",
+                "x < P2",
+                "x > P1"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "滞后模式在两阈值间保持原状态。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "每 §b5 秒§r更新变化率，平均窗口最长 300 秒；有两个样本即可计算。"
+          },
+          {
+            "type": "line",
+            "text": "每 §b0.1 秒§r检查红石。采样间隔超过 10 秒且数据源可用时，重新采样并延迟更新 30 秒。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Item_Input_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "将 §dLuV§r 矩阵仓室编为一组，按 ME 加工样板顺序供料。"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "编组参数",
+              "规格"
+            ],
+            "rows": [
+              [
+                "单仓缓存（单种物品）",
+                "§b2,147,483,647 个"
+              ],
+              [
+                "仓室上限",
+                "§b16§r 个物品仓、§b4§r 个流体仓"
+              ],
+              [
+                "样板槽",
+                "全组共享 §b36§r 槽"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "同类仓室同向成直列，至少一列有 2 个。物品列连续，流体列平行，整组须面相连。"
+          },
+          {
+            "type": "line",
+            "text": "只接 §e1 个 ME 入口§r。物品和流体分别从接入端排序，重复材料槽不合并。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "[right:右击]任一成员管理样板，也可用 ME 接口终端。"
+          },
+          {
+            "type": "line",
+            "text": "有余料或在途加工时保留原入口；清空且加工结束后才能换样板。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7按 ME 加工样板顺序，为机器逐仓供料。§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7单仓：§b2,147,483,647§7 个物品（单种）§r"
+          },
+          {
+            "type": "line",
+            "text": "§7至少一条同类直列达到 §b2§7 个；整组只接 §e1 个 ME 入口§7。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7物品最多 §b16§7 仓、流体最多 §b4§7 仓；全组共享 §b36§7 样板槽。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Item_Input_Mirror_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "第二台机器直接使用§b源矩阵的样板和库存§r，无独立材料缓存。"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "line",
+            "text": "§dLuV§r · 目标照源的物品／流体排列搭建，只换 1 个同类镜像仓，可整体旋转。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "GT 闪存操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "[left:左击]源仓室",
+                "记录地址"
+              ],
+              [
+                "[right:右击]对应镜像",
+                "绑定源仓室"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "绑定前两组须空闲无余料，目标取出本地样板。"
+          },
+          {
+            "type": "line",
+            "text": "目标不接 ME；两组须同维度并保持加载。源组成员被替换时停工。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7让另一台机器按源矩阵顺序直接消耗源库存。§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7手持 GT 闪存：§e[left:左击]§7源仓室，再§e[right:右击]§7对应镜像绑定。§r"
+          },
+          {
+            "type": "warning",
+            "text": "§e目标不接 ME；两组须同维度并保持加载。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Fluid_Input_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "将 §dLuV§r 矩阵仓室编为一组，按 ME 加工样板顺序供料。"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "编组参数",
+              "规格"
+            ],
+            "rows": [
+              [
+                "单仓缓存（单种流体）",
+                "§b2,147,483,647 L"
+              ],
+              [
+                "仓室上限",
+                "§b16§r 个物品仓、§b4§r 个流体仓"
+              ],
+              [
+                "样板槽",
+                "全组共享 §b36§r 槽"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "同类仓室同向成直列，至少一列有 2 个。物品列连续，流体列平行，整组须面相连。"
+          },
+          {
+            "type": "line",
+            "text": "只接 §e1 个 ME 入口§r。物品和流体分别从接入端排序，重复材料槽不合并。"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "[right:右击]任一成员管理样板，也可用 ME 接口终端。"
+          },
+          {
+            "type": "line",
+            "text": "有余料或在途加工时保留原入口；清空且加工结束后才能换样板。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7按 ME 加工样板顺序，为机器逐仓供料。§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7单仓：§b2,147,483,647§7 L（单种）§r"
+          },
+          {
+            "type": "line",
+            "text": "§7至少一条同类直列达到 §b2§7 个；整组只接 §e1 个 ME 入口§7。§r"
+          },
+          {
+            "type": "line",
+            "text": "§7物品最多 §b16§7 仓、流体最多 §b4§7 仓；全组共享 §b36§7 样板槽。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Fluid_Input_Mirror_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "第二台机器直接使用§b源矩阵的样板和库存§r，无独立材料缓存。"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "line",
+            "text": "§dLuV§r · 目标照源的物品／流体排列搭建，只换 1 个同类镜像仓，可整体旋转。"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "GT 闪存操作",
+              "行为"
+            ],
+            "rows": [
+              [
+                "[left:左击]源仓室",
+                "记录地址"
+              ],
+              [
+                "[right:右击]对应镜像",
+                "绑定源仓室"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "绑定前两组须空闲无余料，目标取出本地样板。"
+          },
+          {
+            "type": "line",
+            "text": "目标不接 ME；两组须同维度并保持加载。源组成员被替换时停工。"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7让另一台机器按源矩阵顺序直接消耗源库存。§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[特别适用于装配线]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7手持 GT 闪存：§e[left:左击]§7源仓室，再§e[right:右击]§7对应镜像绑定。§r"
+          },
+          {
+            "type": "warning",
+            "text": "§e目标不接 ME；两组须同维度并保持加载。§r"
+          },
+          {
+            "type": "line",
+            "text": "§f添加模组： §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -179,8 +179,8 @@ gtswn.chat.cover.next_refill=§7 Next refill in:
 gtswn.chat.cover.next_upload=§7 Next upload in: 
 
 # Network Info Panel
-item.gtswn.networkInfoPanel.tooltip.l1=§7Physical screen for wireless EU trends, AE trends and AE inventory§r
-item.gtswn.networkInfoPanel.tooltip.l2=§7The placer becomes its owner; screen settings and data are saved in the world§r
+item.gtswn.networkInfoPanel.tooltip.l1=§7Wireless EU / AE trends and AE inventory§r
+item.gtswn.networkInfoPanel.tooltip.l2=§7Placing binds you; settings and data stay in the world§r
 tile.NetworkInfoPanel_GTswn.name=Network Info Panel
 tile.NetworkInfoPanelExtender_GTswn.name=Network Info Extender Panel
 tile.NetworkQuantumNode_GTswn.name=ME Network Quantum Node
@@ -853,11 +853,11 @@ gtswn.tooltip.quantum_anchor.count=§7Consumable count: §f%d§r
 gtswn.tooltip.quantum_anchor.description=§7Consumed when the quantum terminal incorporates a device; the anchor has no network binding§r
 gtswn.tooltip.quantum_anchor.usage.terminal=§eHold a quantum terminal and Alt+right-click a full AE block or GT ME hatch§7: Incorporate / release§r
 gtswn.tooltip.quantum_anchor.usage.preload=§eQuantum terminal: Shift+right-click air§7 to preload shared anchor stock; carrying anchors in inventory also works§r
-gtswn.tooltip.panel.item_state=§7Item state: §fReady to place; screen settings are not stored in the item§r
-gtswn.tooltip.panel.loaded=§7Keep the original screen and target network chunks loaded for monitoring§r
-gtswn.tooltip.panel.usage.gui=§eEmpty-hand right-click the main screen§7: Configure EU Trend / AE Trend / AE Inventory§r
-gtswn.tooltip.panel.usage.ae=§eOn an AE tab, right-click the main screen with an item or fluid container§7: Set / remove a monitored target§r
-gtswn.tooltip.panel.usage.remote=§eRight-click the main screen with a bound portable monitor§7: Bind remote viewing (up to 16 screens)§r
+gtswn.tooltip.panel.item_state=§7Ready to place; item carries no screen settings§r
+gtswn.tooltip.panel.loaded=§7Keeps sampling with loaded chunks and a valid source§r\n§7No nearby player or open GUI required§r
+gtswn.tooltip.panel.usage.gui=§eEmpty hand + [RMB] on main screen§7: Settings§r
+gtswn.tooltip.panel.usage.ae=§eAE tab: [RMB] main screen with an item/fluid§r\n§7Set or remove a monitored target§r
+gtswn.tooltip.panel.usage.remote=§e[RMB] main screen with a bound portable monitor§r\n§7Bind remote viewing (up to 16 screens)§r
 gtswn.tooltip.extender.description=§7Extends a main screen into a flat, filled rectangle with matching orientation§r
 gtswn.tooltip.extender.structure=§7The main screen controls display and settings; extenders do not monitor a grid independently§r
 gtswn.tooltip.extender.usage.place=§ePlace beside a main screen or extender§7: Inherit its orientation; fill a rectangle to extend the display§r
@@ -2079,3 +2079,5 @@ gtswn.chat.quantum.profile_unavailable=§c[Quantum Terminal] The profile referen
 gtswn.chat.quantum.profile_not_shared=§c[Quantum Terminal] This profile has not been shared with you. Contact its owner.
 gtswn.chat.quantum.profile_readonly=§c[Quantum Terminal] This profile is read-only. Its owner must make network changes or transfer profile ownership to you.
 gtswn.chat.quantum.profile_source_unavailable=§c[Quantum Terminal] The profile's fixed source changed or is unavailable. Check native access; its owner must release the old association before rebinding and importing.
+
+gtswn.tooltip.authored_locale=en_US

@@ -284,7 +284,6 @@ public final class PortableMonitorRequestQueue {
                             ? request.historyCursors.get(binding.panelId)
                             : null;
                         if (detail || !pins.isEmpty()) {
-                            panel.renewPortableInterest();
                             fill(
                                 data,
                                 panel,

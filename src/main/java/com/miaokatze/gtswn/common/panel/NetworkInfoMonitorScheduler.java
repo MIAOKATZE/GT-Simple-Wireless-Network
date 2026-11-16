@@ -24,8 +24,7 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * 设计目标：
  * <ul>
  * <li>服务器校时：基于 {@link TickEvent.ServerTickEvent}，每 100t（5s）统一采样一次</li>
- * <li>请求驱动：信息屏 updateEntity 每次执行时更新 dataSet.lastRequestTick，
- * 调度器仅对 5 分钟（6000t）内有请求的 dataSet 采样</li>
+ * <li>加载驱动：信息屏约每 101t 续 120t 短租约，无须玩家观看；公共 API 旧请求租约另为 6000t</li>
  * <li>多屏共享：同一 ownerUUID 只采样一次，所有信息屏从同一 {@link NetworkInfoDataSet} 读取</li>
  * <li>跨维度一致：统一使用 overworld (dimension 0) 的 {@link NetworkInfoDataStore}</li>
  * </ul>
@@ -35,9 +34,8 @@ import cpw.mods.fml.common.gameevent.TickEvent;
  * {@code FMLCommonHandler.instance().bus().register(new NetworkInfoMonitorScheduler())}
  *
  * <p>
- * 超时机制：chunk unload 时不主动 unregister，5 分钟内无请求的 dataSet 自然超时停止采样。
- * dataSet 本身保留（由 FIFO 自动溢出，不主动清理），玩家重新加载 chunk 后首 tick 即写入
- * lastRequestTick，恢复采样。
+ * 超时机制：chunk unload 后屏停止续租；若无其他屏/API/档案需求，120t 内自然停止采样。
+ * dataSet 本身保留（由 FIFO 自动溢出，不主动清理），区块重新加载后首 tick 即续租恢复采样。
  *
  * <p>
  * 线程安全：采样逻辑在 ServerTickEvent END phase 执行（主线程），无需额外同步。
@@ -97,7 +95,7 @@ public class NetworkInfoMonitorScheduler {
      * 服务器 tick 事件处理（END phase 执行，避免与方块 updateEntity 冲突）。
      * <p>
      * END phase 确保所有方块的 updateEntity 已完成，调度器读取的数据是最新的。
-     * 信息屏 updateEntity 在 END phase 之前执行，已更新 lastRequestTick，
+     * 信息屏 updateEntity 在 END phase 之前执行，已续租采样需求，
      * 调度器据此判断哪些 dataSet 活跃。
      *
      * @param event 服务器 tick 事件
@@ -129,10 +127,10 @@ public class NetworkInfoMonitorScheduler {
     /**
      * 采样所有活跃 dataSet（每 100t 执行一次）。
      * <p>
-     * 遍历 {@link NetworkInfoDataStore#getActiveEntries} 返回的活跃条目（5 分钟内有请求的），
+     * 遍历 {@link NetworkInfoDataStore#getActiveEntries} 返回的活跃条目（短租约或旧 API 租约未到期），
      * 从 WirelessNetworkManager 读取 EU 总量，写入 overworld 的 NetworkInfoDataStore。
      * <p>
-     * 不再维护引用计数，活跃判定完全依赖信息屏 updateEntity 主动更新的 lastRequestTick。
+     * 不维护引用计数，活跃判定依赖已加载屏、便携/档案及显式 API 续租。
      *
      * @param overworld overworld 世界实例（dimension 0），保证跨维度一致
      * @param tick      当前世界 tick
@@ -141,7 +139,7 @@ public class NetworkInfoMonitorScheduler {
         NetworkInfoDataStore store = NetworkInfoDataStore.get(overworld);
         long timeMs = System.currentTimeMillis();
 
-        // 遍历活跃 dataSet（5 分钟内有请求的）
+        // 遍历当前仍有采样需求的 dataSet
         // getActiveEntries 返回快照 List，避免 ConcurrentModificationException
         for (Map.Entry<String, NetworkInfoDataSet> entry : activeEntriesForSampling(store, tick, clockRewound)) {
             try {

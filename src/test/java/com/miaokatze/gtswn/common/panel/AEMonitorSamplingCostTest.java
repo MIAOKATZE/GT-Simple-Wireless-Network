@@ -51,18 +51,19 @@ public class AEMonitorSamplingCostTest {
     }
 
     @Test
-    public void unobservedFirstSampleDoesNotTurnIntoAnEveryTickPlayerScan() throws Exception {
+    public void unobservedLoadedScreenSamplesAtTheConfiguredPeriodWithoutInterestScans() throws Exception {
         Fixture fixture = new Fixture(false);
         withSamplingEnabled(() -> {
             for (int tick = 0; tick < 1000; tick++) fixture.tick(tick);
-            assertEquals(-1L, fixture.controller.getLastAESampleTick());
-            assertEquals(0, fixture.query.connectionChecks);
-            assertEquals(50, fixture.players.scans);
+            assertEquals(900L, fixture.controller.getLastAESampleTick());
+            assertEquals(10, fixture.query.connectionChecks);
+            // Offline pushes can still inspect receivers; sampling eligibility never does.
+            assertEquals(0, fixture.players.scans);
         });
     }
 
     @Test
-    public void alignedChecksKeepTheDefaultSamplingPeriodAndDepartureGraceAtEveryStartupPhase() throws Exception {
+    public void playerDepartureDoesNotStopTheAlignedSamplingPeriodAtAnyStartupPhase() throws Exception {
         withSamplingEnabled(() -> {
             for (int start = 0; start < 100; start++) {
                 Fixture fixture = new Fixture(true);
@@ -74,28 +75,73 @@ public class AEMonitorSamplingCostTest {
                 for (int tick = 201; tick <= 300; tick++) fixture.tick(tick);
                 assertEquals(300L, fixture.controller.getLastAESampleTick());
                 fixture.world.tick = 301;
-                assertFalse(fixture.controller.hasSamplingInterest());
+                assertTrue(fixture.controller.hasSamplingInterest());
                 for (int tick = 301; tick <= 400; tick++) fixture.tick(tick);
-                assertEquals(300L, fixture.controller.getLastAESampleTick());
+                assertEquals(400L, fixture.controller.getLastAESampleTick());
             }
         });
     }
 
     @Test
-    public void arrivalIsSeenWithinOneInterestPeriodEvenBeforeAnySampleExists() throws Exception {
+    public void playerArrivalDoesNotAddAnExtraSamplingRound() throws Exception {
         Fixture fixture = new Fixture(false);
         withSamplingEnabled(() -> {
             fixture.tick(7);
             fixture.players.add(player());
             for (int tick = 8; tick <= 20; tick++) fixture.tick(tick);
-            assertTrue(fixture.controller.getLastAESampleTick() >= 8L);
-            assertTrue(fixture.controller.getLastAESampleTick() <= 20L);
-            assertEquals(2, fixture.players.scans);
+            assertEquals(7L, fixture.controller.getLastAESampleTick());
+            assertEquals(1, fixture.query.connectionChecks);
+            assertEquals(0, fixture.players.scans);
         });
     }
 
     @Test
-    public void portableAndJobLeasesRenewIndependentlyOfPhysicalChecks() throws Exception {
+    public void twoUnobservedScreensKeepSeparateHistoriesWithOneNativeReadPerPeriod() throws Exception {
+        Fixture fixture = new Fixture(false);
+        fixture.query.connected = true;
+        ItemStack target = stack("a");
+        field(AEMonitorController.class, "chartItem").set(fixture.controller, target);
+        field(AEMonitorController.class, "mismatchCount").setInt(fixture.controller, 1);
+        FixturePanel second = new FixturePanel();
+        second.dataKey = "ae-cost-second-screen";
+        second.setWorldObj(fixture.world);
+        AEMonitorController other = new AEMonitorController(
+            second,
+            fixture.query,
+            new PanelConfigStore(() -> {}),
+            () -> {});
+        field(AEMonitorController.class, "chartItem").set(other, target.copy());
+        field(AEMonitorController.class, "mismatchCount").setInt(other, 1);
+        withSamplingEnabled(() -> {
+            for (int tick = 100; tick <= 300; tick++) {
+                fixture.tick(tick);
+                other.tickSampling(tick);
+            }
+            assertEquals(3, fixture.query.itemReads);
+            String key = AEMonitorController.aeKey(target);
+            AEMonitorDataStore histories = AEMonitorDataStore.get(fixture.world);
+            for (String dataKey : new String[] { "ae-cost-fixture", "ae-cost-second-screen" }) {
+                AEMonitorDataSet data = histories.getIfPresent(dataKey);
+                assertNotNull(data);
+                assertEquals(
+                    3,
+                    data.query(key, WindowChain.WINDOW_5_MIN)
+                        .size());
+                assertEquals(300L, data.newest(key).tick);
+                assertEquals(10L, data.newest(key).amount);
+            }
+            // The no-receiver filter runs only at the six pushes, not on every tile tick.
+            assertEquals(6, fixture.players.scans);
+            Config.aeChartEnabled = false;
+            fixture.tick(400);
+            other.tickSampling(400);
+            assertEquals(3, fixture.query.itemReads);
+            assertEquals(300L, fixture.controller.getLastAESampleTick());
+        });
+    }
+
+    @Test
+    public void portableAndJobCompatibilityHooksDoNotGateOrExtendScreenSampling() throws Exception {
         Fixture fixture = new Fixture(false);
         fixture.world.tick = 100;
         fixture.controller.renewPortableInterest();
@@ -109,13 +155,19 @@ public class AEMonitorSamplingCostTest {
         fixture.world.tick = 500;
         assertTrue(fixture.controller.hasSamplingInterest());
         fixture.world.tick = 501;
-        assertFalse(fixture.controller.hasSamplingInterest());
+        assertTrue(fixture.controller.hasSamplingInterest());
         fixture.controller.renewPortableInterest();
         assertTrue(fixture.controller.hasSamplingInterest());
+        fixture.core.invalidate();
+        assertFalse(fixture.controller.hasSamplingInterest());
+        fixture.controller.renewPortableInterest();
+        fixture.controller.renewMonitoringJobInterest(400);
+        assertFalse(fixture.controller.hasSamplingInterest());
     }
 
     @Test
-    public void rollbackBetweenChecksAndWorldReplacementImmediatelyRecheckPhysicalObservers() throws Exception {
+    public void rollbackAndWorldReplacementKeepUnobservedScreensEligibleButRejectClientAndMissingWorld()
+        throws Exception {
         Fixture fixture = new Fixture(true);
         fixture.world.tick = 100;
         fixture.controller.renewMonitoringJobInterest(500);
@@ -124,17 +176,21 @@ public class AEMonitorSamplingCostTest {
         assertTrue(fixture.controller.hasSamplingInterest());
         fixture.players.clear();
         fixture.world.tick = 105;
-        assertFalse(fixture.controller.hasSamplingInterest());
-        assertEquals(2, fixture.players.scans);
+        assertTrue(fixture.controller.hasSamplingInterest());
+        assertEquals(0, fixture.players.scans);
         Fixture replacement = new Fixture(false);
         replacement.world.tick = 106;
         fixture.core.setWorldObj(replacement.world);
-        assertFalse(fixture.controller.hasSamplingInterest());
-        assertEquals(1, replacement.players.scans);
+        assertTrue(fixture.controller.hasSamplingInterest());
+        assertEquals(0, replacement.players.scans);
         replacement.players.add(player());
         replacement.world.tick = 104;
         assertTrue(fixture.controller.hasSamplingInterest());
-        assertEquals(2, replacement.players.scans);
+        assertEquals(0, replacement.players.scans);
+        replacement.world.isRemote = true;
+        assertFalse(fixture.controller.hasSamplingInterest());
+        fixture.core.setWorldObj(null);
+        assertFalse(fixture.controller.hasSamplingInterest());
     }
 
     @Test
@@ -213,13 +269,13 @@ public class AEMonitorSamplingCostTest {
                 field(AEMonitorController.class, "mismatchCount").setInt(fixture.controller, 1);
                 PerformanceAudit.setEnabled(true);
                 fixture.tick(100);
-                assertEquals(1L, slices.get("gtswn.monitor.aeInterest")[0]);
+                assertFalse(slices.containsKey("gtswn.monitor.aeInterest"));
                 assertEquals(1L, slices.get("gtswn.monitor.aeSample")[0]);
                 assertEquals(1L, slices.get("gtswn.monitor.aeProjection")[0]);
                 PerformanceAudit.setEnabled(false);
                 assertEquals(0L, PerformanceAudit.startSlice());
                 fixture.tick(200);
-                assertEquals(3, slices.size());
+                assertEquals(2, slices.size());
                 for (long[] stage : slices.values()) assertEquals(1L, stage[0]);
             });
         } finally {
@@ -313,9 +369,11 @@ public class AEMonitorSamplingCostTest {
 
     static final class FixturePanel extends TileEntityNetworkInfoPanel {
 
+        String dataKey = "ae-cost-fixture";
+
         @Override
         public String getAEMonitorDataKey() {
-            return "ae-cost-fixture";
+            return dataKey;
         }
     }
 

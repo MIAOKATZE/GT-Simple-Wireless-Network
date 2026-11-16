@@ -3,24 +3,25 @@
 
 package com.miaokatze.gtswn.client;
 
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.event.entity.player.ItemTooltipEvent;
 
-import com.miaokatze.gtswn.common.assembly.MatrixAssemblyMember;
+import com.miaokatze.gtswn.common.api.enums.GTSWNItemList;
+import com.miaokatze.gtswn.common.items.WirelessEnergyTap;
+import com.miaokatze.gtswn.common.util.AuthoredTooltips;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.DeviceTooltipOrder;
-import com.miaokatze.gtswn.config.Config;
-import com.miaokatze.miaokatzecore.api.tooltip.TooltipPages;
+import com.miaokatze.miaokatzecore.api.tooltip.component.NativeTooltipPage;
 
 import cpw.mods.fml.common.eventhandler.EventPriority;
 import cpw.mods.fml.common.eventhandler.SubscribeEvent;
 import cpw.mods.fml.relauncher.Side;
 import cpw.mods.fml.relauncher.SideOnly;
-import gregtech.api.GregTechAPI;
 import gregtech.common.blocks.ItemMachines;
 
 /** Runs after native ItemStack and GT tooltips have appended their state and advanced details. */
@@ -29,50 +30,42 @@ public class DeviceTooltipHandler {
 
     @SubscribeEvent(priority = EventPriority.LOWEST)
     public void onTooltip(ItemTooltipEvent event) {
-        String footer = DeviceTooltip.addedByLine();
-        if (!event.toolTip.contains(footer)) return;
         ItemStack stack = event.itemStack;
-        int id = stack.getItemDamage();
-        if (stack.getItem() instanceof ItemMachines && id >= 0
-            && id < GregTechAPI.METATILEENTITIES.length
-            && GregTechAPI.METATILEENTITIES[id] instanceof MatrixAssemblyMember) {
-            List<String> own = Arrays.asList(GregTechAPI.METATILEENTITIES[id].getDescription());
-            if (!DeviceTooltipOrder.matrixPage(event.toolTip, own, footer, TooltipPages.expanded(stack))) return;
-            if (!TooltipPages.expanded(stack)) {
-                int at = event.toolTip.indexOf(footer);
-                for (String key : Arrays.asList(
-                    "gtswn.matrix.description.fluids",
-                    "gtswn.matrix.description.me",
-                    "gtswn.matrix.description.mirror_binding",
-                    "gtswn.matrix.description.mirror_requirements")) {
-                    String rule = tr(key);
-                    if (own.contains(rule)) event.toolTip.add(at++, rule);
-                }
-            }
-        } else {
-            String state = tr("gtswn.tooltip.section.state"), description = tr("gtswn.tooltip.section.description"),
-                controls = tr("gtswn.tooltip.section.controls");
-            if (!DeviceTooltipOrder.hasSections(event.toolTip, state, description, controls, footer)) return;
-            DeviceTooltipOrder.normalize(event.toolTip, state, description, controls, footer);
-            if (!TooltipPages.expanded(stack)) DeviceTooltipOrder.collapse(
-                event.toolTip,
-                description,
-                controls,
-                footer,
-                Arrays.asList(
-                    tr("gtswn.desc.wireless_monitor.line2"),
-                    tr("gtswn.desc.wireless_monitor.line6"),
-                    tr("gtswn.tooltip.tap.laser_pipe_cost"),
-                    tr("gtswn.tooltip.quantum_terminal.power_requirement"),
-                    tr("gtswn.tooltip.quantum_terminal.usage.anchor"),
-                    StatCollector.translateToLocalFormatted(
-                        "gtswn.tooltip.quantum_node.power",
-                        Config.quantumNodeIdlePowerUsage),
-                    StatCollector.translateToLocalFormatted(
-                        "gtswn.tooltip.quantum_incorporation.power",
-                        Config.quantumIncorporationIdlePowerUsage)));
+        String id = authoredId(stack);
+        if (id == null) return;
+        if (stack.getItem() instanceof ItemMachines) {
+            NativeTooltipPage page = AuthoredTooltips.page(stack, id, Collections.emptyList());
+            // Core matches the exact owned GT description and preserves its native structure page.
+            if (page != null) page.apply(stack, event.toolTip);
+            return;
         }
-        TooltipPages.hint(stack, event.toolTip.subList(0, event.toolTip.indexOf(footer)), false);
+        String state = tr("gtswn.tooltip.section.state"), description = tr("gtswn.tooltip.section.description"),
+            controls = tr("gtswn.tooltip.section.controls"), footer = DeviceTooltip.addedByLine();
+        if (!DeviceTooltipOrder.hasSections(event.toolTip, state, description, controls, footer)) return;
+        List<String> liveState = new ArrayList<>(
+            event.toolTip.subList(event.toolTip.indexOf(state) + 1, event.toolTip.indexOf(description)));
+        NativeTooltipPage page = AuthoredTooltips.page(stack, id, liveState);
+        if (page == null) return;
+        // Remove only our complete section range. Baubles, charge and other mods' lines remain intact.
+        List<String> candidate = new ArrayList<>(event.toolTip);
+        candidate.subList(candidate.indexOf(state), candidate.indexOf(footer) + 1)
+            .clear();
+        if (page.appendTo(stack, candidate)) {
+            event.toolTip.clear();
+            event.toolTip.addAll(candidate);
+        }
+    }
+
+    static String authoredId(ItemStack stack) {
+        if (stack == null || stack.getItem() == null) return null;
+        for (GTSWNItemList entry : GTSWNItemList.values()) {
+            if (entry.hasBeenSet() && entry.getItem() == stack.getItem() && entry.getMeta() == stack.getItemDamage()) {
+                return entry == GTSWNItemList.Wireless_Energy_Tap && WirelessEnergyTap.getOutputModeStatic(stack)
+                    ? entry.name() + ":output"
+                    : entry.name();
+            }
+        }
+        return null;
     }
 
     private static String tr(String key) {

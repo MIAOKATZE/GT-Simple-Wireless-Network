@@ -125,11 +125,11 @@ public class NetworkInfoDataStore extends AbstractDataSetStore<NetworkInfoDataSe
     }
 
     /**
-     * 获取当前活跃的 dataSet 条目（5 分钟内有请求的）。
+     * 获取当前活跃的 dataSet 条目（已加载屏/便携/档案短租约或旧 API 租约未到期）。
      * <p>
      * 返回快照 List 避免 ConcurrentModificationException，供调度器遍历活跃数据集采样。
-     * 调度器不再维护引用计数，改为依赖信息屏 updateEntity 主动更新 lastRequestTick，
-     * 5 分钟（6000t）内无请求的 dataSet 视为不活跃，跳过采样。
+     * 调度器不维护引用计数；屏约每 101t 续 120t 租约，旧 API 的 lastRequestTick
+     * 保留 6000t 兼容语义。两种需求均过期才跳过采样。
      *
      * @param currentTick 当前 overworld tick
      * @return 活跃条目列表（快照，修改不影响内部映射）

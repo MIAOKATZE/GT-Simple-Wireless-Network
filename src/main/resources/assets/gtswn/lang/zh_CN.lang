@@ -179,8 +179,8 @@ gtswn.chat.cover.next_refill=§7 距下次补能:
 gtswn.chat.cover.next_upload=§7 距下次上传: 
 
 # Network Info Panel
-item.gtswn.networkInfoPanel.tooltip.l1=§7实体显示屏：显示无线 EU 走势、AE 走势与 AE 库存§r
-item.gtswn.networkInfoPanel.tooltip.l2=§7放置者成为拥有者；屏幕设置与数据保存在世界中§r
+item.gtswn.networkInfoPanel.tooltip.l1=§7显示无线 EU / AE 走势与 AE 库存§r
+item.gtswn.networkInfoPanel.tooltip.l2=§7放置即绑定本人；设置与数据存于世界§r
 tile.NetworkInfoPanel_GTswn.name=网络信息屏
 tile.NetworkInfoPanelExtender_GTswn.name=网络信息拓展屏
 tile.NetworkQuantumNode_GTswn.name=ME网络量子节点
@@ -853,11 +853,11 @@ gtswn.tooltip.quantum_anchor.count=§7消耗品数量：§f%d§r
 gtswn.tooltip.quantum_anchor.description=§7量子终端并入设备时使用；锚点自身没有网络绑定§r
 gtswn.tooltip.quantum_anchor.usage.terminal=§e持量子终端 Alt+右击完整 AE 方块或 GT ME 仓室§7：并入 / 解除§r
 gtswn.tooltip.quantum_anchor.usage.preload=§e量子终端 Shift+右击空气§7：打开共享库存并预装锚点；也可直接放在背包§r
-gtswn.tooltip.panel.item_state=§7物品状态：§f待放置；物品不保存屏幕配置§r
-gtswn.tooltip.panel.loaded=§7监测依赖原屏幕与目标网络所在区块保持加载§r
-gtswn.tooltip.panel.usage.gui=§e空手右击主屏§7：打开设置，选择 EU 走势 / AE 走势 / AE 库存§r
-gtswn.tooltip.panel.usage.ae=§eAE 页面持物品或流体容器右击主屏§7：设置或取消监测目标§r
-gtswn.tooltip.panel.usage.remote=§e持已绑定的便携终端右击主屏§7：绑定远程查看（最多 16 屏）§r
+gtswn.tooltip.panel.item_state=§7待放置；物品不保存屏幕配置§r
+gtswn.tooltip.panel.loaded=§7区块加载且数据源可用时持续采样§r\n§7无需靠近或打开界面§r
+gtswn.tooltip.panel.usage.gui=§e空手 [右击] 主屏§7：打开设置§r
+gtswn.tooltip.panel.usage.ae=§eAE 页持物品或流体容器 [右击] 主屏§r\n§7设置或取消监测目标§r
+gtswn.tooltip.panel.usage.remote=§e持已绑定便携终端 [右击] 主屏§r\n§7绑定远程查看，最多 16 屏§r
 gtswn.tooltip.extender.description=§7信息屏的扩展部件，与主屏组成同朝向的平面矩形显示屏§r
 gtswn.tooltip.extender.structure=§7由主屏统一显示与保存设置；扩展屏不独立监测电网§r
 gtswn.tooltip.extender.usage.place=§e放置在主屏或扩展屏旁§7：继承相邻屏幕朝向；填满矩形即可扩展§r
@@ -2079,3 +2079,5 @@ gtswn.chat.quantum.profile_unavailable=§c[量子终端] 档案引用无效或�
 gtswn.chat.quantum.profile_not_shared=§c[量子终端] 此档案未向你分享读取权限，请联系档案拥有者。
 gtswn.chat.quantum.profile_readonly=§c[量子终端] 此档案只读，不能修改网络或并入设备。请由档案拥有者操作，或正式转移档案所有权。
 gtswn.chat.quantum.profile_source_unavailable=§c[量子终端] 档案固定来源已变化或不可用。请检查来源权限；需要改绑时，由档案拥有者解除关联后重新导入。
+
+gtswn.tooltip.authored_locale=zh_CN

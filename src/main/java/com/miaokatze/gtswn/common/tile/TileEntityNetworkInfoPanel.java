@@ -202,7 +202,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
      * Current loaded overworld clock, queried only inside the existing 100-tick polling gate.
      * Never reuse a former server's world or initialize an unloaded dimension.
      * <p>
-     * 调度器使用 overworld tick 作为采样基准，panel 必须用同一基准更新 lastRequestTick。
+     * 调度器使用 overworld tick 作为采样基准，panel 必须用同一基准续租 EU 采样需求。
      *
      * @return overworld tick；服务器或世界不可用时 -1（与改造前直查失败语义一致）
      */
@@ -235,7 +235,7 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
 
             // ===== EU 缓存域（E4 迁入 EUCacheBridge）：请求 tick 更新 → 冷启动刷新 → 新数据轮询，三段顺序不变 =====
             // G2：整段 100t 门控——tickServer 内三段均无每 tick 必要逻辑
-            // （调度器活跃判定窗口 6000t，lastRequestTick 每 100t 推进远在其内；冷启动刷新一次性；
+            // （实际轮询间隔 101t，由 120t 短租约覆盖；冷启动刷新一次性；
             // newest() 轮询仅影响显示时效），markBlockForUpdate 链路完整保留、至多延迟 100t；
             // 冷启动/重载后首 tick 即触发（倒计数 0 起步），无冷启动空窗
             if (euPollCountdown <= 0) {
@@ -353,17 +353,19 @@ public class TileEntityNetworkInfoPanel extends TileEntity implements IGridProxy
         return owner != null && owner.equals(ownerUUID) && getAEMonitorSourceIdentity() != null;
     }
 
-    /** Server-side shared observation lease for EU/AE; physical screens do not require an open GUI. */
+    /** Server-side screen sampling eligibility; no player proximity, viewing or GUI requirement. */
     public boolean hasMonitoringInterest() {
         return controller.hasSamplingInterest();
     }
 
-    /** The caller must validate possession, binding and ACL before renewing portable observation. */
+    /** Compatibility hook; portable viewing no longer controls loaded-screen sampling. */
+    @Deprecated
     public void renewPortableInterest() {
         controller.renewPortableInterest();
     }
 
-    /** Loaded-only, bounded job renewal after the service validates owner, source generation and quota. */
+    /** Compatibility hook; jobs no longer control loaded-screen sampling. */
+    @Deprecated
     public void renewMonitoringJobInterest(long ticks) {
         controller.renewMonitoringJobInterest(ticks);
     }

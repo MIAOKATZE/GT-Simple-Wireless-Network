@@ -233,13 +233,8 @@ public final class PortableProfileAdapter {
                 .renewObservation(root.getTotalWorldTime(), job ? 40 : 100);
             GtswnApi.getControlApi()
                 .requestNetworkSample(account);
-        } else if (source.kind == SourceKey.Kind.AE) {
-            TileEntityNetworkInfoPanel panel = panel(locator);
-            if (panel != null) {
-                if (job) panel.renewMonitoringJobInterest(40);
-                else panel.renewPortableInterest();
-            }
         }
+        // AE panels already sample while loaded; reading profiles does not start another sampler.
     }
 
     public static int cardCount(String locator, SourceKey source) {

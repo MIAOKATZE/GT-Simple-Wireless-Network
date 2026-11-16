@@ -1,0 +1,2046 @@
+{
+  "mod": "GTSWN",
+  "items": [
+    {
+      "id": "TestCoin",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§bReusable test tool for your wireless EU balance.§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Action",
+              "Balance change (EU)"
+            ],
+            "rows": [
+              [
+                "[right:RMB]",
+                "+1,000,000"
+              ],
+              [
+                "[key-right:Shift+RMB]",
+                "−1,000,000; requires sufficient balance"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bTest your wireless grid: §e[right:RMB]§7 adds §f1,000,000 EU§7.§r"
+          },
+          {
+            "type": "line",
+            "text": "§e[key-right:Shift+RMB]§7 removes the same amount if available.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Portable_Wireless_Network_Monitor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "Monitor your §bwireless grid§r and screens. Fit a battery to charge electric gear."
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Terminal state",
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Unbound",
+                "[right:RMB] air",
+                "Bind to your grid"
+              ],
+              [
+                "Bound to you",
+                "[right:RMB] air",
+                "Cycle HUD display"
+              ],
+              [
+                "Bound to you",
+                "[key-right:Shift+RMB] air",
+                "Open monitor settings"
+              ],
+              [
+                "Bound to you",
+                "[right:RMB] screen",
+                "Add screen"
+              ],
+              [
+                "Carried",
+                "[key:H] (default)",
+                "Open viewer"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "HUD: off / standard / scientific."
+          },
+          {
+            "type": "warning",
+            "text": "Rebinding clears a regular terminal's screen list and disables its HUD. Shared profiles require access."
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bView grid and screen readings. Fit a battery to charge carried equipment.§r"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:RMB] air to bind, then to cycle HUD. On your bound terminal, [key-right:Shift+RMB] air opens settings.§r"
+          },
+          {
+            "type": "line",
+            "text": "§eRebinding clears a regular terminal's screen list and disables its HUD.§r"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "Monitor your §bwireless grid§r and screens. Fit a battery to charge electric gear."
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Terminal state",
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Unbound",
+                "[right:RMB] air",
+                "Bind to your grid"
+              ],
+              [
+                "Bound to you",
+                "[right:RMB] air",
+                "Cycle HUD display"
+              ],
+              [
+                "Bound to you",
+                "[key-right:Shift+RMB] air",
+                "Open monitor settings"
+              ],
+              [
+                "Bound to you",
+                "[right:RMB] screen",
+                "Add screen"
+              ],
+              [
+                "Carried",
+                "[key:H] (default)",
+                "Open viewer"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Hold an unbound regular terminal or another player's terminal and [key-right:Shift+RMB] air to bind it to yourself."
+          },
+          {
+            "type": "warning",
+            "text": "Rebinding clears a regular terminal's screen list and disables its HUD. Shared profiles require access."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Measurement",
+              "Rule"
+            ],
+            "rows": [
+              [
+                "Net grid rate",
+                "Change in stored EU ÷ elapsed ticks (EU/t)"
+              ],
+              [
+                "Sample interval",
+                "2.5 seconds by default; configurable"
+              ],
+              [
+                "Average window",
+                "Up to 300 seconds; uses available samples"
+              ],
+              [
+                "Long-term idle",
+                "No balance change for 300 consecutive seconds"
+              ],
+              [
+                "On reconnect",
+                "Sample history resets"
+              ]
+            ]
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Battery operation",
+              "Result"
+            ],
+            "rows": [
+              [
+                "Terminal + compatible rechargeable battery (shapeless)",
+                "Fit or replace the battery at its current charge"
+              ],
+              [
+                "Battery-equipped terminal + GT crowbar (shapeless)",
+                "Remove battery"
+              ],
+              [
+                "After replacement or removal",
+                "Returns old battery with remaining charge; drops if inventory is full"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "In inventory or its accessory slot, attempts to refill every §b10 s§r. The grid must cover the full cost and downlink loss."
+          },
+          {
+            "type": "line",
+            "text": "Charges each carried item at battery voltage, up to §b1 A§r per item."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "Keep the borrowed terminal in its hotbar slot. Press [key:C] to return it to its free original slot."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Wireless_Energy_Tap",
+      "tiers": {
+        "quick": [
+          {
+            "type": "line",
+            "text": "Energy mode: §bmachine owner's grid → machine§r."
+          },
+          {
+            "type": "line",
+            "text": "[right:RMB] machine to fit/remove a node; [key-right:Shift+RMB] to switch direction."
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "common": [
+          {
+            "type": "line",
+            "text": "Energy mode: §bmachine owner's grid → machine§r."
+          },
+          {
+            "type": "line",
+            "text": "Refills every §e30 s§r by default. The grid must cover the deficit plus §e15%§r loss in full."
+          },
+          {
+            "type": "line",
+            "text": "Voltage is set by the machine at installation; current is set on the node."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "[right:RMB] machine",
+                "Fit a node; remove an existing link"
+              ],
+              [
+                "[key-right:Shift+RMB]",
+                "Switch energy/dynamo mode"
+              ],
+              [
+                "[key-right:Alt+RMB] air",
+                "Open link settings and tube storage"
+              ],
+              [
+                "Empty hand: [key-right:Shift+RMB] node",
+                "Set current and item/fluid input"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Each laser hatch connection costs §61 Laser Vacuum Tube§r."
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "Energy mode: §bmachine owner's grid → machine§r."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Supply parameter",
+              "Rule"
+            ],
+            "rows": [
+              [
+                "Supply rate (EU/t)",
+                "Installed voltage × set current"
+              ],
+              [
+                "Buffer capacity (EU)",
+                "Supply rate × buffer time (800 ticks by default)"
+              ],
+              [
+                "Refill interval",
+                "On installation, then every 30 s by default"
+              ],
+              [
+                "Debit (EU)",
+                "Deficit × (1 + downlink loss), rounded up; default loss 15%"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "No partial withdrawal. Removing the node returns remaining EU after uplink loss."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "[right:RMB] machine",
+                "Fit a node; remove an existing link"
+              ],
+              [
+                "[key-right:Shift+RMB]",
+                "Switch energy/dynamo mode"
+              ],
+              [
+                "[key-right:Alt+RMB] air",
+                "Open link settings and tube storage"
+              ],
+              [
+                "Empty hand: [key-right:Shift+RMB] node",
+                "Set current and item/fluid input"
+              ],
+              [
+                "Empty hand: [right:RMB] node",
+                "View buffer and next grid transfer"
+              ],
+              [
+                "Screwdriver: [right:RMB] node",
+                "Toggle item/fluid input"
+              ],
+              [
+                "Hold [key-right:Alt+Shift+RMB] in air for 1 s",
+                "Reveal this mode within 64 blocks for 15 s; charge again to show both"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Each laser hatch connection costs §61 Laser Vacuum Tube§r."
+          },
+          {
+            "type": "line",
+            "text": "Minimum current for either node is §b0.1 A§r."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "Draw either mode from the wheel. Press [key:C] in the same hotbar slot to return it."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Wireless_Energy_Tap:output",
+      "tiers": {
+        "quick": [
+          {
+            "type": "line",
+            "text": "Dynamo mode: §dmachine → machine owner's grid§r."
+          },
+          {
+            "type": "line",
+            "text": "[right:RMB] machine to fit/remove a node; [key-right:Shift+RMB] to switch direction."
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "common": [
+          {
+            "type": "line",
+            "text": "Dynamo mode: §dmachine → machine owner's grid§r."
+          },
+          {
+            "type": "line",
+            "text": "Uploads the buffer every §e30 s§r by default, without uplink loss."
+          },
+          {
+            "type": "line",
+            "text": "The covered face no longer supplies EU to cables."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "[right:RMB] machine",
+                "Fit a node; remove an existing link"
+              ],
+              [
+                "[key-right:Shift+RMB]",
+                "Switch energy/dynamo mode"
+              ],
+              [
+                "[key-right:Alt+RMB] air",
+                "Open link settings and tube storage"
+              ],
+              [
+                "Empty hand: [key-right:Shift+RMB] node",
+                "Set current and item/fluid input"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Each laser hatch connection costs §61 Laser Vacuum Tube§r."
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "Dynamo mode: §dmachine → machine owner's grid§r."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Uplink parameter",
+              "Rule"
+            ],
+            "rows": [
+              [
+                "Draw rate (EU/t)",
+                "Output voltage × actual current, capped by the set current and machine output"
+              ],
+              [
+                "Minimum reserve",
+                "Preserves the machine's minimum energy reserve"
+              ],
+              [
+                "Upload interval",
+                "Every 30 s by default"
+              ],
+              [
+                "Credit (EU)",
+                "Buffer × (1 − uplink loss), rounded down; no loss by default"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "The covered face stops powering cables. Removing it returns remaining EU after uplink loss."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "[right:RMB] machine",
+                "Fit a node; remove an existing link"
+              ],
+              [
+                "[key-right:Shift+RMB]",
+                "Switch energy/dynamo mode"
+              ],
+              [
+                "[key-right:Alt+RMB] air",
+                "Open link settings and tube storage"
+              ],
+              [
+                "Empty hand: [key-right:Shift+RMB] node",
+                "Set current and item/fluid input"
+              ],
+              [
+                "Empty hand: [right:RMB] node",
+                "View buffer and next grid transfer"
+              ],
+              [
+                "Screwdriver: [right:RMB] node",
+                "Toggle item/fluid input"
+              ],
+              [
+                "Hold [key-right:Alt+Shift+RMB] in air for 1 s",
+                "Reveal this mode within 64 blocks for 15 s; charge again to show both"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Each laser hatch connection costs §61 Laser Vacuum Tube§r."
+          },
+          {
+            "type": "line",
+            "text": "Minimum current for either node is §b0.1 A§r."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "Draw either mode from the wheel. Press [key:C] in the same hotbar slot to return it."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Device_Info_Terminal",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "View supported §bGT machines§r: status, EU input/output, recipe and location."
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Target",
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Air",
+                "[right:RMB]",
+                "Open list"
+              ],
+              [
+                "GT machine",
+                "[right:RMB]",
+                "Bind while overlay is off"
+              ],
+              [
+                "Empty space",
+                "[key-right:Shift+RMB]",
+                "Open settings"
+              ],
+              [
+                "In world",
+                "Hold [key-right:Alt+RMB] for 1 s",
+                "Scan this dimension for team machines"
+              ],
+              [
+                "In world",
+                "[key-right:Shift+Alt+RMB]",
+                "Toggle overlay"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Carry the terminal while placing a supported machine to bind it. The overlay works from inventory."
+          },
+          {
+            "type": "line",
+            "text": "Aim at a bound machine or marker and [right:RMB] to request teleport. Its chunk must be loaded."
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bView GT machine status and EU flow remotely.§r"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:RMB] air opens the list. With overlay off, [right:RMB] a machine to bind it.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Hold [key-right:Alt+RMB] for §e1 s§7 to scan this dimension for team machines.§r"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "View supported §bGT machines§r: status, EU input/output, recipe and location."
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Target",
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Air",
+                "[right:RMB]",
+                "Open list"
+              ],
+              [
+                "GT machine",
+                "[right:RMB]",
+                "Bind while overlay is off"
+              ],
+              [
+                "Empty space",
+                "[key-right:Shift+RMB]",
+                "Open settings"
+              ],
+              [
+                "In world",
+                "Hold [key-right:Alt+RMB] for 1 s",
+                "Scan this dimension for team machines"
+              ],
+              [
+                "In world",
+                "[key-right:Shift+Alt+RMB]",
+                "Toggle overlay"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Charge again within §b15 s§r of a scan to include ignored devices."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "List action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "[key-left:Shift+LMB] device",
+                "Toggle tracking / ignore"
+              ],
+              [
+                "[key-left:Ctrl+LMB] device",
+                "Unbind remotely"
+              ],
+              [
+                "[key-left:Alt+LMB] device",
+                "Pin as favorite"
+              ],
+              [
+                "[right:RMB] device",
+                "Edit name, color, bold text and tags"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "[key-right:Shift+RMB] a machine in the world to toggle tracking / ignore."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "§bOverlay§r: marks and energy heatmaps work from inventory. Aim at a bound target and [right:RMB] to request teleport; otherwise open list."
+          },
+          {
+            "type": "line",
+            "text": "§6Teleport cost§r: preloaded anchor → inventory anchor → XP levels. Requires a loaded target and safe landing."
+          },
+          {
+            "type": "line",
+            "text": "Bindings and tracking preferences are stored per terminal."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "Keep the borrowed terminal in its hotbar slot. Press [key:C] to return it to its free original slot."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ME_Network_Quantum_Terminal",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "Quantize an §bME Controller§r to link quantum nodes or incorporate compatible devices."
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "Connect an Energy Cell before quantizing. The ME network still requires power."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Target",
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Online controller",
+                "[right:RMB]",
+                "Quantize and bind the cluster; rebind if already quantum"
+              ],
+              [
+                "Ordinary block",
+                "[right:RMB]",
+                "Place a node against the selected face"
+              ],
+              [
+                "AE block / GT ME hatch or bus",
+                "[key-right:Alt+RMB]",
+                "Incorporate or release"
+              ],
+              [
+                "Air",
+                "[key-right:Shift+RMB]",
+                "View channels, preload anchors, set color"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Each incorporation costs §61 Quantum Incorporation Anchor§r."
+          },
+          {
+            "type": "line",
+            "text": "Each active incorporated block uses §b50 AE/t§r by default and no extra channel."
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bQuantize an ME Controller to link nodes and incorporated devices.§r"
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "warning",
+            "text": "§eConnect an Energy Cell before quantizing and keep the ME network powered.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:RMB] an online controller to bind; [key-right:Shift+RMB] air to open the terminal.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Each incorporation costs §e1 anchor§7.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Each active incorporated block uses §e50 AE/t§7 by default.§r"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "Quantize an §bME Controller§r to link quantum nodes or incorporate compatible devices."
+          },
+          {
+            "type": "dynamic",
+            "binding": "live-state"
+          },
+          {
+            "type": "line",
+            "text": "Connect an Energy Cell first and keep the ME network powered."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Target",
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Online controller",
+                "[right:RMB]",
+                "Quantize and bind the cluster; rebind if already quantum"
+              ],
+              [
+                "Ordinary block",
+                "[right:RMB]",
+                "Place a node against the selected face"
+              ],
+              [
+                "AE block / GT ME hatch or bus",
+                "[key-right:Alt+RMB]",
+                "Incorporate or release"
+              ],
+              [
+                "Air",
+                "[key-right:Shift+RMB]",
+                "View channels, preload anchors, set color"
+              ]
+            ]
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Target",
+              "Action",
+              "Advanced action"
+            ],
+            "rows": [
+              [
+                "Quantum controller",
+                "[key-right:Shift+RMB]",
+                "Revert quantization and clear binding"
+              ],
+              [
+                "Unquantized controller",
+                "Hold [key-right:Alt+RMB] for 15 s",
+                "Migrate the bound network"
+              ],
+              [
+                "AE host¹",
+                "[right:RMB]",
+                "Convert in place, keeping mounted parts"
+              ],
+              [
+                "Quantum node",
+                "[key-right:Shift+RMB]",
+                "Remove core; mounted parts stay in place"
+              ],
+              [
+                "Air",
+                "Hold [key-right:Alt+Shift+RMB] for 1 s",
+                "Reveal nearby network members for 15 s"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "¹ Requires mounted parts and no center cable. Cable parts cannot be incorporated individually."
+          },
+          {
+            "type": "line",
+            "text": "Shows loaded members within §b64 blocks§r in this dimension. Charge again to reveal all networks in their own colors."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "§6Incorporation§r: uses one anchor from shared preload first, then main inventory. Releasing does not refund it."
+          },
+          {
+            "type": "line",
+            "text": "Each active incorporated block uses §b50 AE/t§r by default and no extra channel."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Network security",
+              "Requirements"
+            ],
+            "rows": [
+              [
+                "Off (default)",
+                "No AE security pairing required; world edit permissions still apply"
+              ],
+              [
+                "On",
+                "Pair to the same grid; normal actions require Build access"
+              ],
+              [
+                "On: recolor / migrate / revert",
+                "Pair to the same grid; owner or Security permission required"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Release also requires creator, creative or network administrator rights and a successful access check."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "Hold and press [key:C] to stow in a free terminal slot. Without a terminal in hand, the same key opens the wheel."
+          },
+          {
+            "type": "line",
+            "text": "Keep the borrowed terminal in its hotbar slot. Press [key:C] to return it to its free original slot."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Quantum_Incorporation_Anchor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§bUsed by a Quantum Terminal to incorporate devices into an ME network.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Not bound to a network. Each successful incorporation costs §e1 anchor§7.§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Target",
+              "With Quantum Terminal"
+            ],
+            "rows": [
+              [
+                "Compatible AE block / GT ME hatch or bus",
+                "[key-right:Alt+RMB] to incorporate; cable parts are not supported"
+              ],
+              [
+                "Air",
+                "[key-right:Shift+RMB] to open shared anchor storage"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§7Uses your shared preload first, then main inventory. Release neither consumes nor refunds an anchor.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Each active block uses §e50 AE/t§7 by default and no extra channel; power use is configurable.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bConsumable for the Quantum Terminal.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Each successful incorporation costs §e1§7; release does not refund it.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Keep in main inventory or preload in your shared supply via the terminal.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Network_Teleport_Anchor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§bPays the Device Information Terminal's teleport cost.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Each successful teleport uses §e1 anchor§7. Your terminals share the preloaded supply.§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Payment order",
+              "Source"
+            ],
+            "rows": [
+              [
+                "§e1§r",
+                "Your shared preload"
+              ],
+              [
+                "§e2§r",
+                "Main inventory"
+              ],
+              [
+                "§e3§r",
+                "Without anchors, pay the configured XP levels"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§7Hold the Device Information Terminal and [key-right:Shift+RMB] empty space to preload under Supplies, or carry anchors in main inventory.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Failed teleports refund the reserved cost. The target must be loaded and have a safe landing spot.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bEach successful terminal teleport consumes §e1 anchor§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Used before XP levels. Carry in main inventory or preload in your shared supply.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GTswn_Cover_Energy_Wireless",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§bGrid → machine§r: continuously supplies EU from the machine owner's wireless grid."
+          },
+          {
+            "type": "line",
+            "text": "Supply rate = voltage × current. Installation sets voltage; adjustable current starts at §e0.1 A§r."
+          },
+          {
+            "type": "line",
+            "text": "By default, refills every §e30 s§r with a §e15%§r surcharge. Interval and loss are configurable."
+          },
+          {
+            "type": "warning",
+            "text": "The grid must cover the whole refill and loss. No partial draw; power stops when the buffer runs dry."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Energy-mode terminal: [right:RMB] machine",
+                "Fit a link; remove existing link"
+              ],
+              [
+                "Empty hand: [right:RMB] cover",
+                "View parameters and remaining EU"
+              ],
+              [
+                "Empty hand: [key-right:Shift+RMB] cover",
+                "Set current and item/fluid input"
+              ],
+              [
+                "Screwdriver: [right:RMB] cover",
+                "Toggle item/fluid input on this face"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Removal returns remaining EU to the owner's grid after uplink loss."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bGrid → machine§r: draws from the machine owner's wireless grid."
+          },
+          {
+            "type": "line",
+            "text": "Fit with an energy-mode terminal. Empty-hand [key-right:Shift+RMB] cover to set current."
+          },
+          {
+            "type": "warning",
+            "text": "Must cover full refill and loss; default downlink surcharge §e15%§r."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "GTswn_Cover_Dynamo_Wireless",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§dMachine → grid§r: sends machine output to its owner's wireless grid."
+          },
+          {
+            "type": "line",
+            "text": "Draws at output voltage up to both the set current and native output limit; preserves minimum reserve."
+          },
+          {
+            "type": "line",
+            "text": "Uploads every §e30 s§r with §ano uplink loss§r by default. Both are configurable."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "Dynamo-mode terminal: [right:RMB] machine",
+                "Fit a link; remove existing link"
+              ],
+              [
+                "Empty hand: [right:RMB] cover",
+                "View buffer and next upload time"
+              ],
+              [
+                "Empty hand: [key-right:Shift+RMB] cover",
+                "Set current and item/fluid input"
+              ],
+              [
+                "Screwdriver: [right:RMB] cover",
+                "Toggle item/fluid input on this face"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "This face stops supplying EU to cables. Removal settles remaining EU after uplink loss."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§dMachine → grid§r: sends output to the machine owner's grid."
+          },
+          {
+            "type": "line",
+            "text": "Fit with a dynamo-mode terminal. Empty-hand [key-right:Shift+RMB] cover to set the current limit."
+          },
+          {
+            "type": "line",
+            "text": "Uploads every §e30 s§r by default; this face stops supplying EU to cables."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Network_Info_Panel",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "Records §bwireless EU§r or §bME item/fluid stocks§r over time."
+          },
+          {
+            "type": "line",
+            "text": "Keeps sampling while its chunk is loaded, even with no players nearby."
+          },
+          {
+            "type": "line",
+            "text": "Reads the placer's grid; inventory monitoring needs an online ME network."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "[right:RMB] the main screen"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Held",
+              "Action"
+            ],
+            "rows": [
+              [
+                "Empty hand",
+                "Open settings"
+              ],
+              [
+                "Item / filled container",
+                "Select or remove target on an ME tab"
+              ],
+              [
+                "Your bound portable monitor",
+                "Add remote screen (up to 16)"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "Records changes in §bwireless EU§r or §bME stocks§r."
+          },
+          {
+            "type": "line",
+            "text": "Samples while loaded; inventory monitoring needs ME power."
+          },
+          {
+            "type": "line",
+            "text": "Empty-hand [right:RMB] to open settings."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Network_Info_Panel_Extender",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "Extends a Network Info Panel. The main panel controls the display and settings."
+          },
+          {
+            "type": "line",
+            "text": "Place adjacent, coplanar and facing the same way to fill a rectangle. Placing next to a panel inherits its orientation."
+          },
+          {
+            "type": "warning",
+            "text": "Only the largest complete rectangle containing the main screen is used. Protrusions and incomplete corners do not extend it."
+          },
+          {
+            "type": "line",
+            "text": "Requires one main panel. Extenders cannot monitor independently."
+          },
+          {
+            "type": "line",
+            "text": "Empty-hand [right:RMB] the main panel to configure the display."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "Enlarge a Network Info Panel with a coplanar, aligned rectangle."
+          },
+          {
+            "type": "line",
+            "text": "Requires a main panel; empty-hand [right:RMB] it to configure."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ME_Network_Quantum_Node",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§bBridge adjacent AE devices to a quantum ME network across dimensions.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Nodes are unbound as items. Place with a bound Quantum Terminal.§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Parameter",
+              "Default / condition"
+            ],
+            "rows": [
+              [
+                "Bridge capacity",
+                "§e32 channels§r"
+              ],
+              [
+                "Extra channels used by node",
+                "§a0§r"
+              ],
+              [
+                "Idle draw",
+                "§e10 AE/t§7, configurable§r"
+              ],
+              [
+                "Stay connected",
+                "Load both node and controller anchor chunks"
+              ]
+            ]
+          },
+          {
+            "type": "warning",
+            "text": "§eThe node does not load the anchor chunk. An unavailable anchor takes the node offline.§r"
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Tool",
+              "Action",
+              "Result"
+            ],
+            "rows": [
+              [
+                "Bound Quantum Terminal",
+                "[right:RMB] block",
+                "Place a node against the clicked face"
+              ],
+              [
+                "Empty hand",
+                "[right:RMB] core",
+                "View connection status or offline reason"
+              ],
+              [
+                "Quantum Terminal",
+                "[key-right:Shift+RMB] node",
+                "Remove only the core; parts and their contents stay in place"
+              ],
+              [
+                "Wrench",
+                "[key-right:Shift+RMB] node",
+                "Remove and recover parts and contents"
+              ],
+              [
+                "Mining tool",
+                "Mine node",
+                "Remove and recover parts and contents"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "§7None of these removal methods drop the node core.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bBridge a quantum ME network across dimensions; up to §e32 channels§r per link."
+          },
+          {
+            "type": "line",
+            "text": "§7Place with a bound terminal. Default draw §e10 AE/t§7; load node and anchor chunks.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Quantum Terminal [key-right:Shift+RMB] removes only the core, keeping mounted parts in place.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Wireless_Energy_Monitor",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "§bMonitor the machine owner's wireless EU balance and net rate; drive redstone by threshold.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:RMB] the monitor to choose reading, notation, redstone mode and thresholds.§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Measurement",
+              "Rule"
+            ],
+            "rows": [
+              [
+                "Sample interval",
+                "5 seconds"
+              ],
+              [
+                "Average window",
+                "Up to 300 seconds; uses available samples"
+              ],
+              [
+                "Redstone inputs",
+                "Grid balance / average net rate / instantaneous net rate"
+              ],
+              [
+                "Signal strength",
+                "15 when mode condition is met; otherwise 0"
+              ]
+            ]
+          },
+          {
+            "type": "warning",
+            "text": "§eKeep chunk loaded. After a gap over 10 s, sampling restarts and redstone updates resume after 30 s.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§bDrive redstone from wireless EU balance or net rate.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7[right:RMB] placed monitor to configure; keep its chunk loaded.§r"
+          },
+          {
+            "type": "line",
+            "text": "§eAn unload longer than 10 s delays redstone updates for 30 s.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "detail": [
+          {
+            "type": "line",
+            "text": "Drive redstone from the machine owner's §bbalance, average rate or current net rate§r."
+          },
+          {
+            "type": "line",
+            "text": "Rate is signed EU/t. x is the selected reading; signal strength is 15 or 0."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Redstone mode",
+              "Turn on",
+              "Turn off"
+            ],
+            "rows": [
+              [
+                "Disabled",
+                "—",
+                "Always off"
+              ],
+              [
+                "High",
+                "x > P1",
+                "x ≤ P1"
+              ],
+              [
+                "Low",
+                "x < P1",
+                "x ≥ P1"
+              ],
+              [
+                "High hysteresis",
+                "x > P1",
+                "x < P2"
+              ],
+              [
+                "Low hysteresis",
+                "x < P2",
+                "x > P1"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Between hysteresis thresholds, retain the previous state."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "Rates update every §b5 s§r. Two samples suffice; averages span up to 300 s."
+          },
+          {
+            "type": "line",
+            "text": "Checks redstone every §b0.1 s§r. With a valid source, a gap over 10 s restarts sampling and delays updates for 30 s."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Item_Input_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "Group §dLuV§r matrix ports to feed ME processing patterns in slot order."
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Group parameter",
+              "Capacity"
+            ],
+            "rows": [
+              [
+                "Per bus (one item type)",
+                "§b2,147,483,647 items"
+              ],
+              [
+                "Group limits",
+                "§b16§r item buses and §b4§r fluid hatches"
+              ],
+              [
+                "Pattern slots",
+                "§b36§r shared per group"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Line up ports of each type facing the same way. One row needs at least two. Item buses are contiguous; fluid rows run parallel. The group must be face-connected."
+          },
+          {
+            "type": "line",
+            "text": "Use §eone ME entrance§r. Item and fluid slots each count from the entrance; repeated ingredients keep separate slots."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "[right:RMB] any member to manage patterns, or use an ME Interface Terminal."
+          },
+          {
+            "type": "line",
+            "text": "Keep the entrance while stock or jobs remain. Empty and finish jobs before changing patterns."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7Supplies ports in ME processing pattern order.§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Per bus: §b2,147,483,647§7 items of one type.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7At least one straight row of §b2§7 identical port types. Use §eone ME entrance§7.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Up to §b16§7 buses and §b4§7 hatches; §b36§7 shared pattern slots.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Item_Input_Mirror_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "A second machine uses the §bsource matrix's patterns and stock§r directly, without a separate buffer."
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "line",
+            "text": "§dLuV§r · Copy the source's port layout and replace one matching port with a mirror. The whole group can rotate."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "GT Data Stick action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "[left:LMB] source port",
+                "Record address"
+              ],
+              [
+                "[right:RMB] matching mirror",
+                "Bind source port"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Both groups must be idle and empty. Remove local patterns from the destination."
+          },
+          {
+            "type": "line",
+            "text": "Do not connect the destination to ME. Load both groups in the same dimension. Replacing a source member stops operation."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7Lets another machine consume the source stock in matrix order.§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7GT Data Stick: §e[left:LMB]§7 source port, then §e[right:RMB]§7 matching mirror to bind.§r"
+          },
+          {
+            "type": "warning",
+            "text": "§eNo ME connection at destination. Load both groups in the same dimension.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Fluid_Input_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "Group §dLuV§r matrix ports to feed ME processing patterns in slot order."
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "table",
+            "columns": [
+              "Group parameter",
+              "Capacity"
+            ],
+            "rows": [
+              [
+                "Per hatch (one fluid)",
+                "§b2,147,483,647 L"
+              ],
+              [
+                "Group limits",
+                "§b16§r item buses and §b4§r fluid hatches"
+              ],
+              [
+                "Pattern slots",
+                "§b36§r shared per group"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Line up ports of each type facing the same way. One row needs at least two. Item buses are contiguous; fluid rows run parallel. The group must be face-connected."
+          },
+          {
+            "type": "line",
+            "text": "Use §eone ME entrance§r. Item and fluid slots each count from the entrance; repeated ingredients keep separate slots."
+          },
+          {
+            "type": "divider"
+          },
+          {
+            "type": "line",
+            "text": "[right:RMB] any member to manage patterns, or use an ME Interface Terminal."
+          },
+          {
+            "type": "line",
+            "text": "Keep the entrance while stock or jobs remain. Empty and finish jobs before changing patterns."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7Supplies ports in ME processing pattern order.§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Per hatch: §b2,147,483,647§7 L of one fluid.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7At least one straight row of §b2§7 identical port types. Use §eone ME entrance§7.§r"
+          },
+          {
+            "type": "line",
+            "text": "§7Up to §b16§7 buses and §b4§7 hatches; §b36§7 shared pattern slots.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    },
+    {
+      "id": "Matrix_Grouped_Fluid_Input_Mirror_ME",
+      "tiers": {
+        "common": [
+          {
+            "type": "line",
+            "text": "A second machine uses the §bsource matrix's patterns and stock§r directly, without a separate buffer."
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "line",
+            "text": "§dLuV§r · Copy the source's port layout and replace one matching port with a mirror. The whole group can rotate."
+          },
+          {
+            "type": "table",
+            "columns": [
+              "GT Data Stick action",
+              "Effect"
+            ],
+            "rows": [
+              [
+                "[left:LMB] source port",
+                "Record address"
+              ],
+              [
+                "[right:RMB] matching mirror",
+                "Bind source port"
+              ]
+            ]
+          },
+          {
+            "type": "line",
+            "text": "Both groups must be idle and empty. Remove local patterns from the destination."
+          },
+          {
+            "type": "line",
+            "text": "Do not connect the destination to ME. Load both groups in the same dimension. Replacing a source member stops operation."
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ],
+        "quick": [
+          {
+            "type": "line",
+            "text": "§7Lets another machine consume the source stock in matrix order.§r"
+          },
+          {
+            "type": "line",
+            "text": "§6§l[Especially useful for Assembly Lines]§r"
+          },
+          {
+            "type": "line",
+            "text": "§7GT Data Stick: §e[left:LMB]§7 source port, then §e[right:RMB]§7 matching mirror to bind.§r"
+          },
+          {
+            "type": "warning",
+            "text": "§eNo ME connection at destination. Load both groups in the same dimension.§r"
+          },
+          {
+            "type": "line",
+            "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
+            "role": "credit"
+          }
+        ]
+      }
+    }
+  ]
+}

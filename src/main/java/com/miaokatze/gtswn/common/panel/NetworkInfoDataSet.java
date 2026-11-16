@@ -18,7 +18,7 @@ import com.miaokatze.gtswn.common.util.EUDataSet;
  * <ul>
  * <li>EU/t 斜率测量历史（{@link EUDataSet}，v1.5.16 从 TileEntity 迁入）</li>
  * <li>数据集级采样锁（多屏共享去重，与 AE 侧 per-key 锁语义不同）</li>
- * <li>lastRequestTick 活跃判定（调度器）与 lastSampleTimeMs 跨会话活跃度</li>
+ * <li>屏/便携/档案短租约、旧 API lastRequestTick 活跃判定及 lastSampleTimeMs 跨会话活跃度</li>
  * </ul>
  * 多屏共享：同一玩家的所有信息屏共享同一份数据集（key=ownerUUID 字符串）。
  * 窗口常量（WINDOW_5_MIN..WINDOW_1_YEAR）继承自 {@link WindowChain}，
@@ -32,10 +32,8 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
     // Pending clock-epoch boundary: retain history, but never derive a rate across a rollback.
     private boolean sampleClockReset;
 
-    // 信息屏最近一次请求 tick（overworld tick），用于调度器判断是否活跃。
-    // 不持久化：重启后为 -1，未实际请求的数据集不会自动活跃，
-    // 但 panel updateEntity 在 ServerTickEvent END phase 之前执行，
-    // chunk 加载后首 tick 即写入 lastRequestTick，无采样空窗。
+    // 旧公共 API 最近一次请求 tick（overworld tick），保留 6000t 兼容租约。
+    // 不持久化；已加载信息屏改用下方短租约，重载首 tick 即续租。
     private long lastRequestTick = -1L;
 
     /** Short server observation demand; independent of the public API's legacy 6000-tick lease. */
@@ -133,7 +131,7 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
     }
 
     /**
-     * 信息屏 updateEntity 时调用，更新最近请求 tick（逻辑请求，非网络包）。
+     * 旧公共 API 更新最近请求 tick（逻辑请求，非网络包）。
      * <p>
      * 调度器通过 {@link #isRequestActive} 判断该 dataSet 是否在 5 分钟内有请求，
      * 仅对活跃 dataSet 采样。lastRequestTick 不持久化，重启后等待真实请求。
@@ -167,12 +165,12 @@ public class NetworkInfoDataSet extends WindowChain<NetworkInfoSample> {
     }
 
     /**
-     * 调度器判断该 dataSet 是否活跃（5 分钟 = 6000t 内有请求）。
+     * 调度器判断短租约或旧公共 API 租约（6000t）是否仍活跃。
      * <p>
-     * 5 分钟超时仅停止采样，dataSet 保留（由 FIFO 自动溢出，不主动清理）。
+     * 全部需求到期仅停止采样，dataSet 保留（由 FIFO 自动溢出，不主动清理）。
      *
      * @param currentTick 当前 overworld tick
-     * @return true 表示 6000t 内有请求，需要继续采样
+     * @return true 表示仍有未到期的采样需求
      */
     public boolean isRequestActive(long currentTick) {
         // Expired/future requests cannot revive on a later clock adjustment without a real observation.

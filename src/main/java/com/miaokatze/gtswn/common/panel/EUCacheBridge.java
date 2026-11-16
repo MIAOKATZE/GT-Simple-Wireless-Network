@@ -140,8 +140,9 @@ public final class EUCacheBridge {
      */
     public void tickServer(long overworldTick) {
         // ===== 更新请求 tick（调度器据此判断是否活跃采样） =====
-        // A loaded tile is not permanent observation. Preserve the existing polling cadence and
-        // cover its 101-tick interval with a short lease only while a real observer/job is interested.
+        // Every loaded, ticking screen renews demand, independently of players and GUI state.
+        // Cover the existing 101-tick polling interval; unloading stops renewals, leaving at most
+        // 120 ticks of grace unless another screen or an explicit EU API/profile demand renews it.
         if (core.getOwnerUUID() != null && overworldTick >= 0L && core.hasMonitoringInterest()) {
             NetworkInfoDataSet dataSet = getOwnerDataSet();
             if (dataSet != null) dataSet.renewObservation(overworldTick, 120L);
