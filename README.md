@@ -8,20 +8,20 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 final" src="https://img.shields.io/badge/GTNH-2.9.0-orange.svg"></a>
-  <img alt="GTSWN 2.1.36" src="https://img.shields.io/badge/GTSWN-2.1.36-green.svg">
+  <img alt="GTSWN 2.1.37" src="https://img.shields.io/badge/GTSWN-2.1.37-green.svg">
   <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
 </p>
 
 | 前置 / Requirement | 版本 / Version |
 | --- | --- |
 | GTNH | 2.9.0 |
-| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.19+ |
+| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.20+ |
 
 为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；无线与监控设备可在 LV 阶段制作，矩阵编组仓室为 LuV 等级。
 
 **Wireless EU transfer, energy and machine monitoring, and ME quantum access** for GTNH, brought together in Factory Mode and a customizable dashboard. Wireless and monitoring devices are craftable at LV tier; matrix inputs are LuV devices.
 
-物品、终端与机器说明支持 [Alt+V] 切换档位。链路终端按当前能源／动力模式显示说明，终端绑定、电池和 HUD 状态取自实际物品。
+物品、终端与机器说明支持 [Alt+V] 切换档位。链路终端按当前能源／动力模式显示说明，终端绑定、电池和 HUD 状态取自实际物品。具体物品与流体显示图标及方括号，对空气操作保持普通目标文字。
 
 Press [Alt+V] to change item and machine tooltip detail. The link terminal follows its current mode; bindings, battery and HUD state reflect the held item.
 
