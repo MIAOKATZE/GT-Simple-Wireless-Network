@@ -66,7 +66,7 @@ public class CraftingRecipes {
                 .metadata(SCANNING, new Scanning(60 * 20, TierEU.RECIPE_LuV))
                 .itemInputs(
                     (fluid ? ItemList.Hatch_Input_LuV : ItemList.Hatch_Input_Bus_LuV).get(1),
-                    GTOreDictUnificator.get(OrePrefixes.circuit, Materials.LuV, 8),
+                    new Object[] { OrePrefixes.circuit.get(Materials.LuV), 8 },
                     AEApi.instance()
                         .definitions()
                         .blocks()
