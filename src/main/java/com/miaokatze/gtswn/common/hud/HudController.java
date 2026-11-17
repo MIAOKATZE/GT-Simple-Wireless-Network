@@ -92,6 +92,11 @@ public final class HudController {
         return session.sameConnection(connection) && synchronizeSession(null, null, null);
     }
 
+    /** Always-on client ticks expire hidden transfer history even when the HUD is not rendering. */
+    public void tickSession() {
+        state.tickInventoryRestore();
+    }
+
     /**
      * 每渲染帧驱动（原 onRenderOverlay ①-④ 段逐字搬迁，tick 口径不变：
      * 背包扫描 20t、数据集更新按配置（默认 50t）、gap 检测 10s 真实时间）。
@@ -192,6 +197,8 @@ public final class HudController {
      */
     public void applyHudToggle(int newMode, String ownerUUID) {
         session.invalidateRequest();
+        // An explicit toggle is authoritative, unlike a temporarily empty respawn inventory.
+        state.inventoryRestoreTicks = 0;
         state.selectMonitor(state.monitorStack, ownerUUID, newMode);
         state.lastInventoryCheckTick = Long.MIN_VALUE / 2;
         state.lastUpdateTick = Long.MIN_VALUE / 2;

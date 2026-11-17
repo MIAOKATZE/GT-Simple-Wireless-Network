@@ -32,6 +32,7 @@ public final class HudSessionLifecycle {
         if (displaySession.update(mc.theWorld, mc.thePlayer, connection)) clearDisplays();
         if (controller.synchronizeSession(mc.theWorld, mc.thePlayer, connection))
             PortableMonitorClientCache.resetForHudSession();
+        controller.tickSession();
     }
 
     @SubscribeEvent

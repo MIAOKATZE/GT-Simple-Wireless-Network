@@ -21,6 +21,9 @@ import com.miaokatze.gtswn.config.Config;
  */
 final class HudState {
 
+    /** Client ticks, independent of destination-world time and render rate. Pending history is never displayable. */
+    static final int INVENTORY_RESTORE_TICKS = 200;
+
     /** HUD 全局开关状态（默认关闭） */
     boolean hudEnabled = false;
 
@@ -75,6 +78,7 @@ final class HudState {
 
     /** Only used while revalidating inventory after a world/player change on the same connection. */
     String historyOwnerUUID;
+    int inventoryRestoreTicks;
 
     /**
      * 清空所有缓存数据（用于玩家失去监视器、HUD 关闭等场景）。
@@ -101,6 +105,7 @@ final class HudState {
         this.historyOwnerUUID = null;
         this.historySourceToken = null;
         this.historySourceTick = -1L;
+        this.inventoryRestoreTicks = 0;
     }
 
     /**
@@ -112,6 +117,7 @@ final class HudState {
         String historyOwner = cachedOwnerUUID != null ? cachedOwnerUUID : historyOwnerUUID;
         String nativeSource = historySourceToken;
         long nativeTick = historySourceTick;
+        int restoreTicks = inventoryRestoreTicks;
         if (preserveHistory) this.dataSet = new EUDataSet(EUDataSet.hudCapacityFor(samplingInterval));
         clearCache();
         if (preserveHistory) {
@@ -119,7 +125,15 @@ final class HudState {
             this.historyOwnerUUID = historyOwner;
             this.historySourceToken = nativeSource;
             this.historySourceTick = nativeTick;
+            // Respawn creates a fresh empty client inventory before the server's inventory packets arrive.
+            // Repeated world/player handoff callbacks must not keep extending this bounded wait.
+            if (historyOwner != null && !history.isEmpty())
+                this.inventoryRestoreTicks = restoreTicks > 0 ? restoreTicks : INVENTORY_RESTORE_TICKS;
         }
+    }
+
+    void tickInventoryRestore() {
+        if (inventoryRestoreTicks > 0 && --inventoryRestoreTicks == 0) clearCache();
     }
 
     /** Applied only after the live request-token/connection/possession checks in HudController. */
@@ -141,6 +155,9 @@ final class HudState {
 
     void selectMonitor(ItemStack stack, String owner, int mode) {
         if (owner == null || owner.isEmpty() || mode <= 0) {
+            // A missing stack during a same-connection handoff is not yet evidence that possession was lost.
+            // Display eligibility and receipt state were already revoked by resetForSession.
+            if (stack == null && owner == null && inventoryRestoreTicks > 0) return;
             clearCache();
             return;
         }
@@ -151,6 +168,7 @@ final class HudState {
         displayMode = mode;
         hudEnabled = parsedOwnerUuid != null;
         historyOwnerUUID = null;
+        inventoryRestoreTicks = 0;
     }
 
     /**

@@ -6,6 +6,7 @@ package com.miaokatze.gtswn.common.hud;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
@@ -16,6 +17,9 @@ import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 
 import org.junit.Test;
+
+import com.miaokatze.gtswn.common.monitoring.WirelessEUPayload;
+import com.miaokatze.gtswn.common.util.EUDataSet;
 
 public class HudLifecycleTest {
 
@@ -92,11 +96,93 @@ public class HudLifecycleTest {
                     : UUID.randomUUID()
                         .toString(),
                 absent ? 0 : 1);
+            if (absent) {
+                assertFalse(state.hudEnabled);
+                assertEquals(2, state.dataSet.size());
+                for (int tick = 0; tick < HudState.INVENTORY_RESTORE_TICKS; tick++) controller.tickSession();
+            }
             assertEquals(0, state.dataSet.size());
             assertNull(state.syncedEuStr);
             assertEquals("", state.cachedEUTText);
             assertEquals("", state.cachedRealtimeEUTText);
             assertEquals(!absent, state.hudEnabled);
+        }
+    }
+
+    @Test
+    public void dimensionInventoryCanArriveAfterEmptyScansWithoutRestartingTheNativeAverage() throws Exception {
+        HudController controller = new HudController();
+        Object oldWorld = new Object(), connection = new Object();
+        controller.synchronizeSession(oldWorld, new Object(), connection);
+        HudState state = state(controller);
+        seed(state);
+        state.dataSet.clear();
+        String source = WirelessEUPayload.PREFIX + UUID.randomUUID() + ":" + UUID.randomUUID() + ":";
+        assertTrue(state.acceptMeasurement(WirelessEUPayload.parse(source + "100000:800"), 100000));
+        assertTrue(state.acceptMeasurement(WirelessEUPayload.parse(source + "100050:900"), 100050));
+        EUDataSet history = state.dataSet;
+        assertEquals(2.0, history.calculateEUT(), 0);
+        assertTrue(controller.unloadWorld(oldWorld));
+        controller.synchronizeSession(new Object(), new Object(), connection);
+        // Vanilla setDimensionAndSpawnPlayer constructs an empty inventory; S30/S2F and Baubles follow later.
+        for (int tick = 0; tick < 40; tick++) {
+            state.selectMonitor(null, null, 0);
+            controller.tickSession();
+            assertSame(history, state.dataSet);
+            assertFalse(state.hudEnabled);
+            assertNull(state.monitorStack);
+            assertNull(state.cachedOwnerUUID);
+            assertNull(state.syncedEuStr);
+            assertEquals("", state.cachedEUTText);
+            assertNull(controller.wirelessReading());
+        }
+        state.selectMonitor(new ItemStack(new Item()), OWNER, 1);
+        assertTrue(state.hudEnabled);
+        assertTrue(state.acceptMeasurement(WirelessEUPayload.parse(source + "100100:1000"), 5));
+        assertSame(history, state.dataSet);
+        assertEquals(3, history.size());
+        assertEquals(2.0, history.calculateEUT(), 0);
+        for (int tick = 0; tick < HudState.INVENTORY_RESTORE_TICKS; tick++) controller.tickSession();
+        assertEquals(3, history.size());
+    }
+
+    @Test
+    public void hiddenInventoryWaitCannotBeExtendedByMoreHandoffsAndNormalRemovalStillClears() throws Exception {
+        HudController controller = new HudController();
+        Object connection = new Object();
+        controller.synchronizeSession(new Object(), new Object(), connection);
+        HudState state = state(controller);
+        seed(state);
+        controller.synchronizeSession(new Object(), new Object(), connection);
+        for (int tick = 0; tick < HudState.INVENTORY_RESTORE_TICKS; tick++) {
+            controller.synchronizeSession(new Object(), new Object(), connection);
+            state.selectMonitor(null, null, 0);
+            controller.tickSession();
+        }
+        assertCleared(state);
+        state.selectMonitor(new ItemStack(new Item()), OWNER, 1);
+        assertTrue(state.dataSet.isEmpty());
+        seed(state);
+        state.selectMonitor(null, null, 0);
+        assertCleared(state);
+    }
+
+    @Test
+    public void transferWaitIsDiscardedOnConnectionChangeDisconnectAndExplicitHudOff() throws Exception {
+        for (int boundary = 0; boundary < 4; boundary++) {
+            HudController controller = new HudController();
+            Object connection = new Object();
+            controller.synchronizeSession(new Object(), new Object(), connection);
+            HudState state = state(controller);
+            seed(state);
+            controller.synchronizeSession(new Object(), new Object(), connection);
+            state.selectMonitor(null, null, 0);
+            if (boundary == 0) controller.synchronizeSession(new Object(), new Object(), new Object());
+            else if (boundary == 1) assertTrue(controller.disconnect(connection));
+            else if (boundary == 2) controller.applyHudToggle(0, null);
+            else state.selectMonitor(new ItemStack(new Item()), OWNER, 0);
+            assertCleared(state);
+            assertEquals(0, state.inventoryRestoreTicks);
         }
     }
 
