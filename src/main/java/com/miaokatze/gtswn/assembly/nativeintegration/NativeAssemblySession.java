@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTBase;
@@ -17,7 +19,6 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidStack;
 
-import gregtech.api.metatileentity.implementations.MTEHatchDataAccess;
 import gregtech.api.metatileentity.implementations.MTEHatchInput;
 import gregtech.api.metatileentity.implementations.MTEHatchInputBus;
 import gregtech.api.util.AssemblyLineUtils;
@@ -215,19 +216,28 @@ public final class NativeAssemblySession {
         }
     }
 
-    private boolean currentlyAuthorized(RecipeAssemblyLine recipe) {
+    /** The research sources used for both matrix advertisement and native execution. */
+    public List<RecipeAssemblyLine> authorizedRecipes() {
+        return authorizedRecipeStream().collect(Collectors.toList());
+    }
+
+    private Stream<RecipeAssemblyLine> authorizedRecipeStream() {
         ItemStack stick = controller.getStackInSlot(1);
-        if (AssemblyLineUtils.isItemDataStick(stick)) {
-            for (RecipeAssemblyLine authorized : AssemblyLineUtils.findALRecipeFromDataStick(stick)) {
-                if (authorized == recipe) return true;
-            }
-        }
-        for (MTEHatchDataAccess hatch : controller.mDataAccessHatches) {
-            if (!NativeAssemblyAdapter.isLive(hatch)) return false;
-            for (RecipeAssemblyLine authorized : hatch.getAssemblyLineRecipes()) {
-                if (authorized == recipe) return true;
-            }
-        }
+        Stream<RecipeAssemblyLine> controllerRecipes = AssemblyLineUtils.isItemDataStick(stick)
+            ? AssemblyLineUtils.findALRecipeFromDataStick(stick)
+                .stream()
+            : Stream.empty();
+        return Stream.concat(
+            controllerRecipes,
+            controller.mDataAccessHatches.stream()
+                .filter(hatch -> hatch != null && NativeAssemblyAdapter.isLive(hatch))
+                .flatMap(
+                    hatch -> hatch.getAssemblyLineRecipes()
+                        .stream()));
+    }
+
+    private boolean currentlyAuthorized(RecipeAssemblyLine recipe) {
+        if (authorizedRecipeStream().anyMatch(authorized -> authorized == recipe)) return true;
         return reject("recipe_no_longer_authorized");
     }
 
