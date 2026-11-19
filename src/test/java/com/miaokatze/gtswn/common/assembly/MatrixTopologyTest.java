@@ -66,6 +66,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.BaseMetaTileEntity;
 import gregtech.api.metatileentity.CommonMetaTileEntity;
 import gregtech.api.metatileentity.MetaTileEntity;
+import gregtech.api.metatileentity.implementations.MTEHatchDataAccess;
 import gregtech.api.metatileentity.implementations.MTEHatchInput;
 import gregtech.api.metatileentity.implementations.MTEHatchInputBus;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
@@ -73,6 +74,122 @@ import gregtech.api.util.GTRecipe.RecipeAssemblyLine;
 import gregtech.common.tileentities.machines.multi.MTEAssemblyLine;
 
 public class MatrixTopologyTest {
+
+    @Test
+    public void liveResearchRemainsAuthorizedAfterAStaleHatch() throws Exception {
+        Fixture fixture = new Fixture();
+        initializeNativeAssemblyLine(fixture.unsafe);
+        MTEAssemblyLine controller = new MTEAssemblyLine("matrix_research_authorization");
+        fixture.attach(controller, 20, 64, 20);
+        RecipeAssemblyLine researched = (RecipeAssemblyLine) fixture.unsafe.allocateInstance(RecipeAssemblyLine.class);
+        FixtureDataHatch stale = new FixtureDataHatch(Collections.emptyList());
+        FixtureDataHatch live = new FixtureDataHatch(Collections.singletonList(researched));
+        fixture.attach(live, 19, 64, 20);
+        controller.mDataAccessHatches.add(stale);
+        controller.mDataAccessHatches.add(live);
+
+        NativeAssemblySession session = new NativeAssemblySession(controller);
+        Method currentlyAuthorized = NativeAssemblySession.class
+            .getDeclaredMethod("currentlyAuthorized", RecipeAssemblyLine.class);
+        currentlyAuthorized.setAccessible(true);
+        assertEquals(Collections.singletonList(researched), session.authorizedRecipes());
+        assertTrue((Boolean) currentlyAuthorized.invoke(session, researched));
+
+        controller.mDataAccessHatches.remove(live);
+        assertTrue(
+            session.authorizedRecipes()
+                .isEmpty());
+        assertFalse((Boolean) currentlyAuthorized.invoke(session, researched));
+    }
+
+    @Test
+    public void restoredMatrixOnlyAcceptsAnEmptyAndAlignedControllerReplacementAtTheSavedPosition() throws Exception {
+        Fixture fixture = new Fixture();
+        initializeNativeAssemblyLine(fixture.unsafe);
+        List<MatrixAssemblyMember> members = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(members.get(0));
+        OrderedAssemblyGroup original = members.get(0)
+            .matrixPort()
+            .group();
+        MatrixAssemblyMember master = original.master();
+        UUID savedController = UUID.randomUUID();
+        NBTTagCompound saved = original.saveLedger();
+        saved.setString("controller", savedController.toString());
+        saved.setIntArray("controllerPosition", new int[] { 0, 20, 64, 20 });
+        for (MatrixAssemblyMember member : members) member.matrixPort()
+            .bind(null);
+        field(MatrixAssemblyPort.class, "restoredLedger").set(master.matrixPort(), saved);
+        OrderedAssemblyGroup.refreshTopology(master);
+        OrderedAssemblyGroup restored = master.matrixPort()
+            .group();
+
+        MTEAssemblyLine replacement = new MTEAssemblyLine("matrix_replacement");
+        fixture.attach(replacement, 20, 64, 20);
+        replacement.setExtendedFacing(ExtendedFacing.of(ForgeDirection.NORTH));
+        replacement.mMachine = true;
+        for (MatrixAssemblyMember member : members) replacement.mInputBusses.add((MTEHatchInputBus) member);
+        NativeAssemblySession session = new NativeAssemblySession(replacement);
+        assertNotEquals(savedController, session.controllerId());
+        OrderedAssemblyGroup.controllerChecked(master, replacement, true);
+
+        BaseMetaTileEntity first = (BaseMetaTileEntity) members.get(0)
+            .getBaseMetaTileEntity();
+        ForgeDirection down = replacement.getExtendedFacing()
+            .getRelativeDownInWorld();
+        for (MatrixAssemblyMember member : members)
+            ((BaseMetaTileEntity) member.getBaseMetaTileEntity()).setFrontFacing(down);
+        first.setFrontFacing(down.getOpposite());
+        OrderedAssemblyGroup.structureChecked(master, session, true);
+        assertNull(restored.session());
+        assertEquals(
+            savedController.toString(),
+            restored.saveLedger()
+                .getString("controller"));
+
+        first.setFrontFacing(down);
+        ItemStack pending = new ItemStack(new Item(), 1);
+        master.matrixSetItem(pending);
+        OrderedAssemblyGroup.structureChecked(master, session, true);
+        assertNull(restored.session());
+        assertEquals(
+            savedController.toString(),
+            restored.saveLedger()
+                .getString("controller"));
+        assertTrue(ItemStack.areItemStacksEqual(pending, master.matrixItem()));
+
+        master.matrixSetItem(null);
+        MTEHatchInputBus last = replacement.mInputBusses.set(members.size() - 1, (MTEHatchInputBus) members.get(0));
+        OrderedAssemblyGroup.structureChecked(master, session, true);
+        assertNull(restored.session());
+        assertEquals(
+            savedController.toString(),
+            restored.saveLedger()
+                .getString("controller"));
+        replacement.mInputBusses.set(members.size() - 1, last);
+
+        OrderedAssemblyGroup.structureChecked(master, session, true);
+        assertSame(session, restored.session());
+        assertEquals(
+            session.controllerId()
+                .toString(),
+            restored.saveLedger()
+                .getString("controller"));
+    }
+
+    private static final class FixtureDataHatch extends MTEHatchDataAccess {
+
+        private final List<RecipeAssemblyLine> recipes;
+
+        private FixtureDataHatch(List<RecipeAssemblyLine> recipes) {
+            super("matrix_data_hatch", 4, new String[0], new ITexture[0][][]);
+            this.recipes = recipes;
+        }
+
+        @Override
+        public List<RecipeAssemblyLine> getAssemblyLineRecipes() {
+            return recipes;
+        }
+    }
 
     @Test
     public void detachedLiveControllerClaimsDoNotBlockANewOwnerButRealSharedInputsRemainRejected() throws Exception {

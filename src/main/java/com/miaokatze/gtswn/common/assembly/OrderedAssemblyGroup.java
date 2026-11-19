@@ -45,9 +45,7 @@ import appeng.me.GridAccessException;
 import appeng.util.item.AEFluidStack;
 import appeng.util.item.AEItemStack;
 import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
-import gregtech.api.metatileentity.implementations.MTEHatchDataAccess;
 import gregtech.api.metatileentity.implementations.MTEMultiBlockBase;
-import gregtech.api.util.AssemblyLineUtils;
 import gregtech.api.util.GTRecipe.RecipeAssemblyLine;
 import gregtech.common.tileentities.machines.multi.MTEAssemblyLine;
 
@@ -358,8 +356,8 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             nextFluids.add(member);
         }
         if (nextItems.size() != items.size() || nextFluids.size() != fluids.size()
-            || !items.containsAll(nextItems)
-            || !fluids.containsAll(nextFluids)) {
+            || !nextItems.containsAll(items)
+            || !nextFluids.containsAll(fluids)) {
             if (session == next) revokeNativeBinding();
             reject("mixed_inputs");
             return;
@@ -368,25 +366,31 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             reject("controller_conflict");
             return;
         }
+        IGregTechTileEntity tile = next.controller()
+            .getBaseMetaTileEntity();
         boolean pending = stage != Stage.IDLE || !allEmpty();
-        if (controllerId != null && (!controllerId.equals(next.controllerId()) || !sameControllerPosition(
-            next.controller()
-                .getBaseMetaTileEntity()))
+        boolean replacingSavedController = controllerId != null && !controllerId.equals(next.controllerId());
+        if (controllerId != null
+            && (!sameControllerPosition(tile) || replacingSavedController && !canReplaceSavedController(next))
             || pending && controllerId == null) {
             revokeNativeBinding();
             reject("controller_conflict");
             return;
         }
+        var facing = next.controller()
+            .getExtendedFacing();
+        // Keep the saved identity until the replacement's real matrix layout has been verified.
+        if (replacingSavedController && (!checkTopology() || !checkNativeLayout(facing))) {
+            revokeNativeBinding();
+            return;
+        }
         session = next;
         controllerId = next.controllerId();
-        IGregTechTileEntity tile = next.controller()
-            .getBaseMetaTileEntity();
         controllerDimension = tile.getWorld().provider.dimensionId;
         controllerX = tile.getXCoord();
         controllerY = tile.getYCoord();
         controllerZ = tile.getZCoord();
-        alignment = next.controller()
-            .getExtendedFacing();
+        alignment = facing;
         // Only references from this exact, fully registered group are reordered. Native recipe matching and
         // consumption then use the same ME-origin positions as the physical intake and diagnostics.
         orderNativeInputs();
@@ -405,6 +409,16 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             sharedRuns.put(nativeRunKey(next), nativeRun(next));
         if (nativeBound && (stage == Stage.IDLE || stage == Stage.STAGED || stage == Stage.RUNNING)) reason = "";
         dirty();
+    }
+
+    private boolean canReplaceSavedController(NativeAssemblySession next) {
+        if (!editable() || batch != null
+            || !NativeAssemblyAdapter.isLive(next.controller())
+            || session != null && session != next && NativeAssemblyAdapter.isLive(session.controller())) return false;
+        for (MTEMultiBlockBase claim : controllerClaims) {
+            if (claim != next.controller() && claim.mMachine && NativeAssemblyAdapter.isLive(claim)) return false;
+        }
+        return true;
     }
 
     private void revokeNativeBinding() {
@@ -1016,16 +1030,20 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             .getExtendedFacing() != alignment) return reject("topology_changed");
         if (!session.controller().mInputBusses.equals(items) || !session.controller().mInputHatches.equals(fluids))
             return reject("mixed_inputs");
+        return checkNativeLayout(alignment);
+    }
+
+    private boolean checkNativeLayout(com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing facing) {
         for (MatrixAssemblyMember member : members) {
             if (member.matrixPort()
                 .group() != this) return reject("controller_conflict");
             if (member.getBaseMetaTileEntity()
-                .getFrontFacing() != alignment.getRelativeDownInWorld()) return reject("member_facing");
+                .getFrontFacing() != facing.getRelativeDownInWorld()) return reject("member_facing");
         }
         int[][] physicalItems = sortedPositions(items), physicalFluids = sortedPositions(fluids);
-        if (!items.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(physicalItems, alignment, 1, true))
+        if (!items.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(physicalItems, facing, 1, true))
             return reject("item_column");
-        if (!fluids.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(physicalFluids, alignment, 1, false))
+        if (!fluids.isEmpty() && !NativeAssemblyGeometry.isOrderedColumn(physicalFluids, facing, 1, false))
             return reject("fluid_column");
         return true;
     }
@@ -1127,16 +1145,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private List<RecipeAssemblyLine> authorizedRecipes() {
-        List<RecipeAssemblyLine> result = new ArrayList<>();
-        if (session == null || !nativeBound) return result;
-        MTEAssemblyLine controller = session.controller();
-        ItemStack stick = controller.getStackInSlot(1);
-        if (AssemblyLineUtils.isItemDataStick(stick)) result.addAll(AssemblyLineUtils.findALRecipeFromDataStick(stick));
-        for (MTEHatchDataAccess hatch : controller.mDataAccessHatches) {
-            if (com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter.isLive(hatch))
-                result.addAll(hatch.getAssemblyLineRecipes());
-        }
-        return result;
+        return session == null || !nativeBound ? java.util.Collections.emptyList() : session.authorizedRecipes();
     }
 
     /** Only formed, currently authorized recipes are advertised; busy media retain their catalogue entries. */
