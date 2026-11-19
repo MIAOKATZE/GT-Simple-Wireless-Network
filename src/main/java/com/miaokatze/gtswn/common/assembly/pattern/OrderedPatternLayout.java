@@ -250,7 +250,13 @@ public final class OrderedPatternLayout {
 
     /** Preserve positional CPU tables; only the verified fast-planned NeoECO push may restore condensed inputs. */
     public Payload validateTable(InventoryCrafting table) {
-        return validateDelivery(table, NeoEcoCondensedDelivery::active);
+        try {
+            return validateDelivery(table, NeoEcoCondensedDelivery::active);
+        } catch (PatternValidationException rejection) {
+            if (rejection.reason() == TABLE_SHAPE || rejection.reason() == TABLE_RESOURCE
+                || rejection.reason() == TABLE_AMOUNT) MatrixDeliveryDiagnostics.log(this, table, rejection);
+            throw rejection;
+        }
     }
 
     Payload validateDelivery(InventoryCrafting table, BooleanSupplier condensedDelivery) {
