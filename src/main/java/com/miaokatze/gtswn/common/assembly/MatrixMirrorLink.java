@@ -124,7 +124,7 @@ final class MatrixMirrorLink {
         return group;
     }
 
-    /** The copied member maps to the mirror; every typed relative position must use the same rotation. */
+    /** The copied member maps to the mirror; every typed relative position uses the same transform. */
     Map<MatrixAssemblyMember, MatrixAssemblyMember> mapping(OrderedAssemblyGroup source,
         OrderedAssemblyGroup destination, MatrixAssemblyMember mirror) {
         int[] from = data.getIntArray("anchor"), to = position(mirror);
@@ -163,17 +163,28 @@ final class MatrixMirrorLink {
             }
             if (result.size() == source.size() && result.size() == destination.size()) return result;
         }
-        // New horizontal/vertical conversions rotate fronts along with positions. StructureLib already supplies
-        // the 24 proper orthogonal rotations; flips would change the copied layout's handedness.
-        for (ExtendedFacing rotation : ExtendedFacing.VALUES) {
-            if (rotation.getFlip() != Flip.NONE) continue;
+        // Keep old proper rotations ahead of reflections so existing links never choose a new correspondence.
+        Map<MatrixAssemblyMember, MatrixAssemblyMember> rotated = mapOrientedPositions(
+            source,
+            destination,
+            from,
+            to,
+            Flip.NONE);
+        // One local-axis flip combined with all 24 rotations covers every reflected orientation once.
+        return rotated != null ? rotated : mapOrientedPositions(source, destination, from, to, Flip.HORIZONTAL);
+    }
+
+    private static Map<MatrixAssemblyMember, MatrixAssemblyMember> mapOrientedPositions(
+        List<MatrixAssemblyMember> source, List<MatrixAssemblyMember> destination, int[] from, int[] to, Flip flip) {
+        for (ExtendedFacing transform : ExtendedFacing.VALUES) {
+            if (transform.getFlip() != flip) continue;
             Map<MatrixAssemblyMember, MatrixAssemblyMember> result = new IdentityHashMap<>();
             for (MatrixAssemblyMember member : source) {
                 int[] pos = position(member), offset = new int[3], front = new int[3];
-                rotation.getWorldOffset(new int[] { pos[0] - from[0], pos[1] - from[1], pos[2] - from[2] }, offset);
+                transform.getWorldOffset(new int[] { pos[0] - from[0], pos[1] - from[1], pos[2] - from[2] }, offset);
                 ForgeDirection facing = member.getBaseMetaTileEntity()
                     .getFrontFacing();
-                rotation.getWorldOffset(new int[] { facing.offsetX, facing.offsetY, facing.offsetZ }, front);
+                transform.getWorldOffset(new int[] { facing.offsetX, facing.offsetY, facing.offsetZ }, front);
                 for (MatrixAssemblyMember target : destination) {
                     int[] candidate = position(target);
                     ForgeDirection targetFacing = target.getBaseMetaTileEntity()

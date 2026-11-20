@@ -9,6 +9,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -1582,6 +1583,77 @@ public class MatrixTopologyTest {
         assertNull(link.mapping(source, destination, anchor));
         field(BaseMetaTileEntity.class, "mFacing").set(targetFirstFluid.getBaseMetaTileEntity(), ForgeDirection.NORTH);
         assertNull(link.mapping(source, destination, targets.get(1)));
+    }
+
+    @Test
+    public void reflectedSideBySideGroupsKeepTypedSourcePositionsAndMeOrder() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> sourceItems = fixture.items(false);
+        MatrixAssemblyMember sourceFluid0 = fixture.add(true, 0, 64, -1);
+        MatrixAssemblyMember sourceFluid1 = fixture.add(true, 1, 64, -1);
+        new Graph(fixture).external(sourceItems.get(4));
+
+        List<MatrixAssemblyMember> targetItems = new ArrayList<>();
+        for (int i = 0; i < 5; i++) targetItems.add(fixture.add(false, i, 64, 2, i == 2));
+        MatrixAssemblyMember targetFluid0 = fixture.add(true, 0, 64, 3);
+        MatrixAssemblyMember targetFluid1 = fixture.add(true, 1, 64, 3);
+        for (MatrixAssemblyMember member : fixture.members)
+            field(BaseMetaTileEntity.class, "mFacing").set(member.getBaseMetaTileEntity(), ForgeDirection.UP);
+        // The gap may contain non-input structure used by both lines. It is not a matrix member.
+        for (int i = 0; i < 5; i++) fixture.world.tiles.put(key(i, 64, 1), new TileEntity());
+
+        MatrixAssemblyMember anchor = targetItems.get(2);
+        OrderedAssemblyGroup.refreshTopology(sourceItems.get(0));
+        OrderedAssemblyGroup.refreshTopology(anchor);
+        OrderedAssemblyGroup source = sourceItems.get(0)
+            .matrixPort()
+            .group();
+        OrderedAssemblyGroup destination = anchor.matrixPort()
+            .group();
+        assertNotNull(source);
+        assertNotNull(destination);
+        assertNotSame(source, destination);
+        assertEquals(
+            7,
+            source.physicalMembers()
+                .size());
+        assertEquals(
+            7,
+            destination.physicalMembers()
+                .size());
+
+        IDataCopyable sourceData = (IDataCopyable) sourceItems.get(2);
+        IDataCopyable targetData = (IDataCopyable) anchor;
+        NBTTagCompound address = sourceData.getCopiedData(null);
+        assertNotNull(address);
+        assertEquals(1, address.getInteger("schema"));
+
+        field(BaseMetaTileEntity.class, "mFacing").set(targetFluid0.getBaseMetaTileEntity(), ForgeDirection.DOWN);
+        assertFalse(targetData.pasteCopiedData(null, address));
+        assertNull(
+            anchor.matrixPort()
+                .mirrorLink());
+        field(BaseMetaTileEntity.class, "mFacing").set(targetFluid0.getBaseMetaTileEntity(), ForgeDirection.UP);
+        assertTrue(
+            "The fluid column is on the reflected side, not a rotated arrangement",
+            targetData.pasteCopiedData(null, address));
+        assertEquals(
+            address,
+            anchor.matrixPort()
+                .mirrorLink()
+                .save());
+
+        for (int i = 0; i < 5; i++)
+            assertSame(sourceItems.get(i), destination.diagnosticMaterialMember(targetItems.get(i)));
+        assertSame(sourceFluid0, destination.diagnosticMaterialMember(targetFluid0));
+        assertSame(sourceFluid1, destination.diagnosticMaterialMember(targetFluid1));
+        assertEquals(
+            Arrays.asList(targetItems.get(4), targetItems.get(3), anchor, targetItems.get(1), targetItems.get(0)),
+            destination.itemMembers());
+        assertEquals(Arrays.asList(targetFluid1, targetFluid0), destination.fluidMembers());
+        assertTrue(
+            anchor.matrixPort()
+                .clearMirror());
     }
 
     @Test
