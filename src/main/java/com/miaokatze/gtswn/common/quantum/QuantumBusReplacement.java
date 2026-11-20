@@ -30,6 +30,10 @@ public final class QuantumBusReplacement {
         if (container.isEmpty() || container.getPart(ForgeDirection.UNKNOWN) != null) {
             return false;
         }
+        // An adopted part must also be accepted when the client rebuilds the node's first update.
+        for (ForgeDirection side : ForgeDirection.VALID_DIRECTIONS) {
+            if (QuantumNodePartRules.conflicts(container.getPart(side))) return false;
+        }
         // Check the rollback capability before detaching anything.
         TileCableBusAccessor restorer = (TileCableBusAccessor) (Object) original;
         boolean committed = false;
