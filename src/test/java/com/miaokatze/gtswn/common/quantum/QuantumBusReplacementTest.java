@@ -24,11 +24,13 @@ import com.miaokatze.gtswn.mixins.ae2.TileCableBusAccessor;
 import appeng.api.implementations.parts.IPartCable;
 import appeng.api.networking.IGridConnection;
 import appeng.api.networking.IGridNode;
+import appeng.api.parts.BusSupport;
 import appeng.api.parts.IPart;
 import appeng.api.parts.IPartHost;
 import appeng.api.parts.PartItemStack;
 import appeng.me.helpers.AENetworkProxy;
 import appeng.parts.CableBusContainer;
+import appeng.parts.networking.PartQuartzFiber;
 import appeng.tile.networking.TileCableBus;
 import appeng.util.ReadOnlyCollection;
 import io.netty.buffer.ByteBuf;
@@ -110,6 +112,7 @@ public class QuantumBusReplacementTest {
         boolean failRebind;
         final IPart part = (IPart) Proxy
             .newProxyInstance(IPart.class.getClassLoader(), new Class<?>[] { IPart.class }, (proxy, method, args) -> {
+                if ("canBePlacedOn".equals(method.getName())) return args[0] == BusSupport.CABLE;
                 if (method.getName()
                     .equals("setPartHostInfo")) {
                     if (failRebind) {
@@ -295,6 +298,44 @@ public class QuantumBusReplacementTest {
         assertFalse(QuantumBusReplacement.replace(bus, node, forbidden));
         assertSame(container, bus.getCableBus());
         assertTrue(node.isEmpty());
+    }
+
+    @Test
+    public void rejectsQuartzFiberBeforeTakingOwnershipEvenWithACompatibleNeighbour() {
+        for (boolean mixed : new boolean[] { false, true }) {
+            Bus bus = new Bus();
+            Parts container = new Parts(bus);
+            bus.container = container;
+            PartState neighbour = new PartState();
+            if (mixed) {
+                container.put(ForgeDirection.DOWN, neighbour.part);
+                neighbour.part.setPartHostInfo(ForgeDirection.DOWN, container, bus);
+            }
+            IPart fiber = new PartQuartzFiber(new ItemStack(new Item()));
+            container.put(ForgeDirection.EAST, fiber);
+            TileEntityNetworkQuantumNode node = new TileEntityNetworkQuantumNode();
+            assertFalse(QuantumBusReplacement.replace(bus, node, new QuantumBusReplacement.Placement() {
+
+                public boolean install() {
+                    fail("A conflicting host must never reach installation");
+                    return false;
+                }
+
+                public void restore() {
+                    fail("Rejection requires no rollback");
+                }
+            }));
+            assertSame(container, bus.getCableBus());
+            assertSame(bus, container.getTile());
+            assertSame(fiber, bus.getPart(ForgeDirection.EAST));
+            assertTrue(node.isEmpty());
+            if (mixed) {
+                assertSame(neighbour.part, bus.getPart(ForgeDirection.DOWN));
+                assertSame(bus, neighbour.tile);
+                assertEquals("encoded-pattern-with-NBT", neighbour.inventory.getString("pattern"));
+                assertEquals(0, neighbour.destructiveCalls.get());
+            }
+        }
     }
 
     @Test
