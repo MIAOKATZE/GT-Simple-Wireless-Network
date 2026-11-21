@@ -27,8 +27,9 @@ public abstract class DeviceControllerTickMixin {
             value = "INVOKE",
             target = "Lgregtech/api/interfaces/metatileentity/IMetaTileEntity;onPostTick(Lgregtech/api/interfaces/tileentity/IGregTechTileEntity;J)V"),
         require = 0)
-    private void gtswn$observeController(IMetaTileEntity controller, IGregTechTileEntity tile, long tick) {
-        gtswn$dispatchObservedTick(controller, tile, tick);
+    private void gtswn$monitoringWrapperOnly$TotalTimeIncludesGregTechMachineTick(IMetaTileEntity controller,
+        IGregTechTileEntity tile, long tick) {
+        gtswn$monitoringWrapperOnly$SeeSelfTimeForMonitoringCost(controller, tile, tick);
     }
 
     @Group(name = "gtswn$controllerPostTick", min = 1, max = 1)
@@ -38,12 +39,14 @@ public abstract class DeviceControllerTickMixin {
             value = "INVOKE",
             target = "Lgregtech/api/metatileentity/MetaTileEntity;onPostTick(Lgregtech/api/interfaces/tileentity/IGregTechTileEntity;J)V"),
         require = 0)
-    private void gtswn$observeLegacyController(MetaTileEntity controller, IGregTechTileEntity tile, long tick) {
-        gtswn$dispatchObservedTick(controller, tile, tick);
+    private void gtswn$legacyMonitoringWrapperOnly$TotalTimeIncludesGregTechMachineTick(MetaTileEntity controller,
+        IGregTechTileEntity tile, long tick) {
+        gtswn$monitoringWrapperOnly$SeeSelfTimeForMonitoringCost(controller, tile, tick);
     }
 
     @Unique
-    private void gtswn$dispatchObservedTick(IMetaTileEntity controller, IGregTechTileEntity tile, long tick) {
+    private void gtswn$monitoringWrapperOnly$SeeSelfTimeForMonitoringCost(IMetaTileEntity controller,
+        IGregTechTileEntity tile, long tick) {
         if (!tile.isServerSide()) {
             controller.onPostTick(tile, tick);
             return;
