@@ -245,12 +245,6 @@ Panels keep sampling while their chunks are loaded and sources are available, wi
 
 Bind supported GT working machines for status (Running/Idle/Stopped), actual EU in/out, instant/average EU/t, location and recipes; sorting, four number formats, tracking/ignored, names, heat view and XP travel.
 
-**Spark 性能排查 / Spark profiling**
-
-Spark 中 `BaseMetaTileEntity` 下的 `gtswn$dispatchObservedTick` 包含 GT 机器自身的 `onPostTick`，包括其物品传输和其他子调用。定位实际耗时时，请展开子调用，或在 Spark 的 Flat 视图按 Self Time 排序。
-
-In Spark, `gtswn$dispatchObservedTick` under `BaseMetaTileEntity` includes the GregTech machine’s own `onPostTick`, including item transfers and other child calls. Expand the call tree to locate the work, or sort by Self Time in Flat View.
-
 <p align="center"><img src="images/Device_Info_Terminal.png" alt="设备终端 / Device terminal" width="140"> <img src="images/Device_Info_Terminal_UI.png" alt="设备列表 / Device list" width="460"></p>
 
 | 手势 / Gesture | 行为 / Behavior |
