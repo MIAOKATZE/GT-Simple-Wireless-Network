@@ -90,6 +90,7 @@ public class GTSimpleWirelessNetwork {
 
     @Mod.EventHandler
     public void serverStopping(FMLServerStoppingEvent event) {
+        com.miaokatze.gtswn.common.monitoring.ae.AEGridIdentityData.beginShutdown();
         if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
             com.miaokatze.gtswn.common.util.DebugTestGate.harness()
                 .shutdown();
@@ -100,6 +101,7 @@ public class GTSimpleWirelessNetwork {
         if (com.miaokatze.gtswn.common.util.DebugTestGate.isEnabled())
             com.miaokatze.gtswn.common.util.DebugTestGate.harness()
                 .shutdown();
+        com.miaokatze.gtswn.common.monitoring.ae.AEGridIdentityData.endSession();
         com.miaokatze.gtswn.common.monitoring.MonitoringRuntime.stop();
         AnimationQualityHints.clear();
         com.miaokatze.gtswn.network.PanelActionQueue.clear();

@@ -3,11 +3,13 @@
 
 package com.miaokatze.gtswn.common.command;
 
+import java.io.IOException;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.UUID;
 
 import net.minecraft.command.CommandBase;
+import net.minecraft.command.CommandException;
 import net.minecraft.command.ICommandSender;
 import net.minecraft.command.PlayerNotFoundException;
 import net.minecraft.command.WrongUsageException;
@@ -17,6 +19,7 @@ import net.minecraft.util.ChatComponentText;
 import net.minecraft.util.StatCollector;
 import net.minecraft.world.World;
 
+import com.miaokatze.gtswn.common.monitoring.ae.AEGridIdentityData;
 import com.miaokatze.gtswn.common.panel.NetworkInfoDataStore;
 import com.miaokatze.gtswn.common.util.DebugTestGate;
 import com.miaokatze.gtswn.config.Config;
@@ -41,6 +44,7 @@ public class CommandGTSWN extends CommandBase {
     private static final String SUBCMD_JOIN = "global_energy_join";
     private static final String SUBCMD_CLEANUP_INFO = "cleanup_info_data";
     private static final String SUBCMD_SAFETY = "safety";
+    private static final String SUBCMD_EXPORT_IDENTITIES = "export_ae_identity_legacy";
 
     @Override
     public String getCommandName() {
@@ -56,7 +60,7 @@ public class CommandGTSWN extends CommandBase {
             + " <memberUUID> <leaderUUID>"
             + " | /gtswn "
             + SUBCMD_CLEANUP_INFO
-            + " <all|player> | /gtswn safety <on|off> | /gtswn test help";
+            + " <all|player> | /gtswn safety <on|off> | /gtswn export_ae_identity_legacy | /gtswn test help";
     }
 
     @Override
@@ -77,13 +81,15 @@ public class CommandGTSWN extends CommandBase {
                 SUBCMD_TRANSFER,
                 SUBCMD_JOIN,
                 SUBCMD_CLEANUP_INFO,
-                SUBCMD_SAFETY);
+                SUBCMD_SAFETY,
+                SUBCMD_EXPORT_IDENTITIES);
             return getListOfStringsMatchingLastWord(
                 args,
                 SUBCMD_TRANSFER,
                 SUBCMD_JOIN,
                 SUBCMD_CLEANUP_INFO,
                 SUBCMD_SAFETY,
+                SUBCMD_EXPORT_IDENTITIES,
                 "test");
         }
         if (args.length >= 2 && "test".equals(args[0])) return DebugTestGate.isEnabled() ? DebugTestGate.harness()
@@ -125,6 +131,17 @@ public class CommandGTSWN extends CommandBase {
             processCleanupInfoData(sender, args);
         } else if (SUBCMD_SAFETY.equals(args[0])) {
             processSafety(sender, args);
+        } else if (SUBCMD_EXPORT_IDENTITIES.equals(args[0])) {
+            if (args.length != 1) throw new WrongUsageException("/gtswn " + SUBCMD_EXPORT_IDENTITIES);
+            try {
+                AEGridIdentityData.requestLegacyExport(
+                    MinecraftServer.getServer()
+                        .worldServerForDimension(0));
+                sender
+                    .addChatMessage(new ChatComponentText("AE identity format 1 export scheduled for clean shutdown."));
+            } catch (IOException failure) {
+                throw new CommandException(failure.getMessage());
+            }
         } else {
             throw new WrongUsageException(getCommandUsage(sender));
         }

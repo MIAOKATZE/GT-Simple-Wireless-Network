@@ -21,6 +21,7 @@
     "minecraft.QuantumIncorporationIdentityMixin",
     "minecraft.MonitorDeviceIdentityMixin",
     "minecraft.QuantumChunkLifecycleMixin",
+    "minecraft.WorldServerAEIdentitySaveMixin",
     "gregtech.DeviceControllerTickMixin",
     "gregtech.DeviceEnergyMutationMixin",
     "gregtech.DeviceWirelessTransactionMixin",

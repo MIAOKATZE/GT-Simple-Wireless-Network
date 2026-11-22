@@ -64,7 +64,9 @@ public final class MonitorIdentityGridCache implements IMonitorIdentityCache {
 
     @Override
     public UUID monitoringIdentity() {
-        return server && observedGeneration == safetyGeneration ? state.current(booting()) : null;
+        return server && observedGeneration == safetyGeneration && (persistence == null || persistence.isAvailable())
+            ? state.current(booting())
+            : null;
     }
 
     @Override
@@ -74,7 +76,7 @@ public final class MonitorIdentityGridCache implements IMonitorIdentityCache {
         REMOVALS.clear();
         observeGeneration();
         restorePending();
-        if (server) {
+        if (server && (persistence == null || persistence.isAvailable())) {
             state.update(booting());
             commitIdentity();
         }
