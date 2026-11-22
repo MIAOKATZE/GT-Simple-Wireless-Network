@@ -11,6 +11,7 @@ import java.util.UUID;
 
 import net.minecraft.entity.Entity;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.world.World;
 import net.minecraft.world.WorldProvider;
@@ -193,6 +194,35 @@ public class AEGridIdentityPersistenceTest {
         assertEquals(fresh, restored.restore(0, new NBTTagCompound(), null).id);
         assertTrue(restored.restore(0, tagged(previous), null).retired);
         assertNull(new AEGridIdentityData("no-backup").restore(12, new NBTTagCompound(), null).id);
+    }
+
+    @Test
+    public void queuedSaveKeepsItsOwnMappingsAndRetirementTagsAfterLaterCommits() {
+        AEGridIdentityData data = new AEGridIdentityData(AEGridIdentityData.DATA_NAME);
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        UUID third = UUID.randomUUID();
+        assertTrue(data.commit(12, new GridIdentityState.Origin(first)));
+        assertTrue(data.commit(12, new GridIdentityState.Origin(second)));
+
+        NBTTagCompound queued = save(data);
+        NBTTagCompound expected = (NBTTagCompound) queued.copy();
+        NBTTagCompound repeated = save(data);
+        for (String key : new String[] { "storages", "retired" }) {
+            NBTTagList queuedRecords = queued.getTagList(key, 10);
+            NBTTagList repeatedRecords = repeated.getTagList(key, 10);
+            assertEquals(1, queuedRecords.tagCount());
+            assertNotSame(queuedRecords, repeatedRecords);
+            assertNotSame(queuedRecords.getCompoundTagAt(0), repeatedRecords.getCompoundTagAt(0));
+        }
+
+        assertTrue(data.commit(12, new GridIdentityState.Origin(third)));
+        assertEquals(expected, queued);
+        AEGridIdentityData restored = new AEGridIdentityData(AEGridIdentityData.DATA_NAME);
+        restored.readFromNBT(queued);
+        assertEquals(second, restored.restore(12, new NBTTagCompound(), null).id);
+        assertTrue(restored.restore(99, tagged(first), null).retired);
+        assertEquals(third, roundTrip(data).restore(12, new NBTTagCompound(), null).id);
     }
 
     private static NBTTagCompound tagged(UUID identity) {

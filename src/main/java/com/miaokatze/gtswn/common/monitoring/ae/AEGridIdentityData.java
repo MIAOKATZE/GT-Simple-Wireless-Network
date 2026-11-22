@@ -103,6 +103,8 @@ public final class AEGridIdentityData extends WorldSavedData {
 
     @Override
     public void writeToNBT(NBTTagCompound tag) {
+        // The optional SafeWriteNBT mixin lets Hodgepodge hand this tree to its IO thread as-is.
+        // Keep every mutable tag local to this save, even when the underlying identities are unchanged.
         tag.setInteger("format", 1);
         NBTTagList records = new NBTTagList();
         for (Map.Entry<Long, UUID> entry : storages.entrySet()) {
