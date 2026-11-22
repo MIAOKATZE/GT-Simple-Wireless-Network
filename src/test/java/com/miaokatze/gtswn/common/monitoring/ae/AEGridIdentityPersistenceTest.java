@@ -197,6 +197,34 @@ public class AEGridIdentityPersistenceTest {
     }
 
     @Test
+    public void repeatedCommitKeepsRetirementBindingAndRejectsAnotherLiveOriginWithTheSameId() throws Exception {
+        AEGridIdentityData data = new AEGridIdentityData(AEGridIdentityData.DATA_NAME);
+        UUID id = UUID.randomUUID();
+        GridIdentityState.Origin registered = new GridIdentityState.Origin(id);
+        registered.liveGrids = 1;
+        assertTrue(data.commit(12, registered));
+        Field retirement = GridIdentityState.Origin.class.getDeclaredField("retirement");
+        retirement.setAccessible(true);
+        Object listener = retirement.get(registered);
+        assertNotNull(listener);
+
+        data.setDirty(false);
+        for (int i = 0; i < 20; i++) {
+            assertTrue(data.commit(12, registered));
+            assertSame(listener, retirement.get(registered));
+        }
+        assertFalse(data.isDirty());
+
+        GridIdentityState.Origin conflicting = new GridIdentityState.Origin(id);
+        conflicting.liveGrids = 1;
+        assertFalse(data.commit(12, conflicting));
+        assertTrue(registered.retired);
+        assertTrue(conflicting.retired);
+        assertFalse(data.commit(12, conflicting));
+        assertTrue(roundTrip(data).restore(12, new NBTTagCompound(), null).retired);
+    }
+
+    @Test
     public void queuedSaveKeepsItsOwnMappingsAndRetirementTagsAfterLaterCommits() {
         AEGridIdentityData data = new AEGridIdentityData(AEGridIdentityData.DATA_NAME);
         UUID first = UUID.randomUUID();

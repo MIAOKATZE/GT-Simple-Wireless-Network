@@ -13,6 +13,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
@@ -41,6 +42,7 @@ public final class AEGridIdentityData extends WorldSavedData {
     private final Map<Long, UUID> storages = new LinkedHashMap<>();
     private final Set<UUID> retired = new LinkedHashSet<>();
     private final Map<UUID, GridIdentityState.Origin> origins = new LinkedHashMap<>();
+    private final Consumer<UUID> retirementListener = this::retire;
     private final Map<Long, UUID> changedStorages = new LinkedHashMap<>();
     private final Set<UUID> newRetirements = new LinkedHashSet<>();
     private AEGridIdentityJournal journal;
@@ -238,12 +240,14 @@ public final class AEGridIdentityData extends WorldSavedData {
 
     private GridIdentityState.Origin bind(GridIdentityState.Origin origin) {
         GridIdentityState.Origin existing = origins.get(origin.id);
-        if (existing != null && existing != origin && existing.liveGrids > 0 && origin.liveGrids > 0) {
-            retire(origin.id); // Conflicting live provenance is a boundary, never a guessed reunion.
-            origin.retire();
+        if (existing != origin) {
+            if (existing != null && existing.liveGrids > 0 && origin.liveGrids > 0) {
+                retire(origin.id); // Conflicting live provenance is a boundary, never a guessed reunion.
+                origin.retire();
+            }
+            origins.put(origin.id, origin);
         }
-        origins.put(origin.id, origin);
-        origin.persistRetirement(this::retire);
+        origin.persistRetirement(retirementListener);
         if (retired.contains(origin.id)) origin.retire();
         return origin;
     }
