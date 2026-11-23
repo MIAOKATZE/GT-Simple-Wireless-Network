@@ -362,12 +362,12 @@ public final class MatrixItemInputBus extends MTEHatchInputBus implements Matrix
 
     @Override
     public int rows() {
-        return 4;
+        return MatrixPatternInventory.ROWS;
     }
 
     @Override
     public int rowSize() {
-        return 9;
+        return MatrixPatternInventory.COLUMNS;
     }
 
     @Override

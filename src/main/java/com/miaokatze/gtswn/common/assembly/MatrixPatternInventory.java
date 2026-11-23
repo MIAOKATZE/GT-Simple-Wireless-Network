@@ -11,10 +11,12 @@ import com.cleanroommc.modularui.utils.item.ItemStackHandler;
 
 import appeng.api.implementations.ICraftingPatternItem;
 
-/** The standard 4x9 pattern bank, separate from the single native input slot. */
+/** The shared 40x9 pattern bank, separate from the single native input slot. */
 public final class MatrixPatternInventory extends ItemStackHandler {
 
-    public static final int SIZE = 36;
+    public static final int COLUMNS = 9;
+    public static final int ROWS = 40;
+    public static final int SIZE = COLUMNS * ROWS;
     private final MatrixAssemblyPort port;
     private boolean loading;
 

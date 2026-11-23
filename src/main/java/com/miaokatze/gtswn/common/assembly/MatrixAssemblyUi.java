@@ -17,6 +17,7 @@ import com.cleanroommc.modularui.value.sync.InteractionSyncHandler;
 import com.cleanroommc.modularui.value.sync.PanelSyncManager;
 import com.cleanroommc.modularui.value.sync.StringSyncValue;
 import com.cleanroommc.modularui.widget.ParentWidget;
+import com.cleanroommc.modularui.widget.scroll.VerticalScrollData;
 import com.cleanroommc.modularui.widgets.ButtonWidget;
 import com.cleanroommc.modularui.widgets.ListWidget;
 import com.cleanroommc.modularui.widgets.layout.Flow;
@@ -143,9 +144,14 @@ public final class MatrixAssemblyUi extends MTEHatchBaseGui<MTEHatch> {
 
     @Override
     protected ParentWidget<?> createContentSection(ModularPanel panel, PanelSyncManager sync) {
-        sync.registerSlotGroup("matrix_patterns", 9);
-        Grid slots = new Grid().coverChildren()
-            .gridOfWidthHeight(9, 4, (x, y, index) -> createPatternSlot(index));
+        sync.registerSlotGroup("matrix_patterns", MatrixPatternInventory.COLUMNS);
+        // Keep four visible rows and the existing window size; the bar uses the right-hand margin.
+        Grid slots = new Grid().size(MatrixPatternInventory.COLUMNS * SLOT_SIZE + 4, 4 * SLOT_SIZE)
+            .scrollable(new VerticalScrollData(false, 4))
+            .gridOfWidthHeight(
+                MatrixPatternInventory.COLUMNS,
+                MatrixPatternInventory.ROWS,
+                (x, y, index) -> createPatternSlot(index));
         return super.createContentSection(panel, sync).child(
             Flow.column()
                 .coverChildren()

@@ -17,6 +17,7 @@ import net.minecraft.inventory.IInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 import net.minecraft.profiler.Profiler;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.World;
@@ -25,6 +26,11 @@ import net.minecraft.world.WorldSettings;
 import net.minecraft.world.storage.ISaveHandler;
 
 import org.junit.Test;
+
+import com.cleanroommc.modularui.value.sync.ModularSyncManager;
+import com.cleanroommc.modularui.value.sync.PanelSyncManager;
+import com.cleanroommc.modularui.widget.ParentWidget;
+import com.cleanroommc.modularui.widgets.layout.Grid;
 
 import appeng.api.implementations.ICraftingPatternItem;
 import appeng.api.networking.crafting.ICraftingPatternDetails;
@@ -39,15 +45,15 @@ public class MatrixPatternInventoryAdapterTest {
     private final Item patternItem = new PatternItem();
 
     @Test
-    public void bothMemberTypesExposeTheNativeFourByNineTerminalContract() throws Exception {
+    public void bothMemberTypesExposeAllFortyRowsToTheNativeTerminal() throws Exception {
         for (Class<?> type : new Class<?>[] { MatrixItemInputBus.class, MatrixFluidInputHatch.class }) {
             IInterfaceViewable member = (IInterfaceViewable) allocate(type);
             MatrixAssemblyPort port = new MatrixAssemblyPort((MatrixAssemblyMember) member);
             set(type, member, "matrix", port);
             set(type, member, "interfacePatterns", new MatrixPatternInventoryAdapter(port));
-            assertEquals(4, member.rows());
+            assertEquals(40, member.rows());
             assertEquals(9, member.rowSize());
-            assertEquals(36, member.numSlots());
+            assertEquals(360, member.numSlots());
             assertFalse(member.allowsPatternOptimization());
             assertFalse(member.isCraftingPatternProvider());
             assertSame(member.getPatterns(), member.getPatterns());
@@ -66,40 +72,128 @@ public class MatrixPatternInventoryAdapterTest {
     public void aCachedViewFollowsTheCurrentMasterWithoutExposingMutablePatternStacks() throws Exception {
         Fixture fixture = new Fixture();
         MatrixPatternInventoryAdapter view = new MatrixPatternInventoryAdapter(fixture.members.get(4).port);
-        view.setInventorySlotContents(35, pattern("first"));
-        assertEquals(36, view.getSizeInventory());
+        view.setInventorySlotContents(359, pattern("first"));
+        assertEquals(360, view.getSizeInventory());
         assertNotNull(
             fixture.members.get(0).port.patterns()
-                .getStackInSlot(35));
+                .getStackInSlot(359));
         assertNull(
             fixture.members.get(4).port.patterns()
-                .getStackInSlot(35));
-        ItemStack detached = view.getStackInSlot(35);
+                .getStackInSlot(359));
+        ItemStack detached = view.getStackInSlot(359);
         detached.stackSize = 9;
         detached.getTagCompound()
             .setString("label", "changed");
-        assertEquals(1, view.getStackInSlot(35).stackSize);
+        assertEquals(1, view.getStackInSlot(359).stackSize);
         assertEquals(
             "first",
-            view.getStackInSlot(35)
+            view.getStackInSlot(359)
                 .getTagCompound()
                 .getString("label"));
 
         set(OrderedAssemblyGroup.class, fixture.group, "master", fixture.members.get(1).meta);
         fixture.members.get(1).port.patterns()
-            .setStackInSlot(35, pattern("next"));
+            .setStackInSlot(359, pattern("next"));
         assertEquals(
             "next",
-            view.getStackInSlot(35)
+            view.getStackInSlot(359)
                 .getTagCompound()
                 .getString("label"));
-        view.setInventorySlotContents(35, null);
+        view.setInventorySlotContents(359, null);
         assertNull(
             fixture.members.get(1).port.patterns()
-                .getStackInSlot(35));
+                .getStackInSlot(359));
         assertNotNull(
             fixture.members.get(0).port.patterns()
-                .getStackInSlot(35));
+                .getStackInSlot(359));
+    }
+
+    @Test
+    public void expandedBankRoundTripsAllSlotsAndKeepsLegacySlotCoordinates() throws Exception {
+        java.lang.reflect.Method register = Item.itemRegistry.getClass()
+            .getDeclaredMethod("addObjectRaw", int.class, String.class, Object.class);
+        register.setAccessible(true);
+        register.invoke(Item.itemRegistry, 31237, "gtswn_matrix_test:expanded_pattern", patternItem);
+        MatrixPatternInventory before = new Fixture().members.get(0).port.patterns();
+        for (int i = 0; i < 360; i++) before.setStackInSlot(i, pattern("slot-" + i));
+        NBTTagList saved = before.save();
+        assertEquals(360, saved.tagCount());
+        assertEquals(
+            359,
+            saved.getCompoundTagAt(359)
+                .getInteger("slot"));
+        MatrixPatternInventory restored = new Fixture().members.get(0).port.patterns();
+        restored.load(saved);
+        for (int i = 0; i < 360; i++)
+            assertTrue(ItemStack.areItemStacksEqual(before.getStackInSlot(i), restored.getStackInSlot(i)));
+
+        NBTTagList legacy = new NBTTagList();
+        for (int i = 0; i < 36; i++) legacy.appendTag(
+            saved.getCompoundTagAt(i)
+                .copy());
+        restored.load(legacy);
+        for (int i = 0; i < 36; i++)
+            assertTrue(ItemStack.areItemStacksEqual(before.getStackInSlot(i), restored.getStackInSlot(i)));
+        for (int i = 36; i < 360; i++) assertNull(restored.getStackInSlot(i));
+    }
+
+    @Test
+    public void productionPatternGridScrollsAllSlotsInsideFourVisibleRows() throws Exception {
+        Fixture fixture = new Fixture();
+        MatrixAssemblyUi ui = new MatrixAssemblyUi(fixture.members.get(0).meta);
+        PanelSyncManager sync = new PanelSyncManager((ModularSyncManager) allocate(ModularSyncManager.class), false);
+        ParentWidget<?> content = ui.createContentSection(null, sync);
+        Grid grid = (Grid) content.getChildren()
+            .get(0)
+            .getChildren()
+            .get(0);
+        assertEquals(
+            360,
+            grid.getChildren()
+                .size());
+        // Resolve fixed slot sizes without a client renderer or game window.
+        grid.getArea()
+            .setSize(166, 72);
+        for (com.cleanroommc.modularui.api.widget.IWidget child : grid.getChildren()) {
+            child.getArea()
+                .setSize(18, 18);
+            child.resizer()
+                .setSizeResized(true, true);
+        }
+        assertTrue(grid.layoutWidgets());
+        assertNull(
+            grid.getScrollArea()
+                .getScrollX());
+        assertEquals(
+            720,
+            grid.getScrollArea()
+                .getScrollY()
+                .getScrollSize());
+        assertTrue(
+            grid.getScrollArea()
+                .getScrollY()
+                .isScrollBarActive(grid.getScrollArea()));
+        assertEquals(
+            162,
+            grid.getChildren()
+                .get(359)
+                .getArea().rx + 18);
+        assertEquals(
+            702,
+            grid.getChildren()
+                .get(359)
+                .getArea().ry);
+        assertTrue(
+            grid.getScrollArea()
+                .getScrollY()
+                .scrollTo(grid.getScrollArea(), Integer.MAX_VALUE));
+        assertEquals(648, grid.getScrollY());
+        assertEquals(
+            54,
+            grid.getChildren()
+                .get(359)
+                .getArea().ry - grid.getScrollY());
+        assertEquals(228, ui.getBasePanelHeight());
     }
 
     @Test
