@@ -169,9 +169,7 @@ public class OrderedPatternLayoutTest {
                 .amount());
         actual[2].setStackSize(45);
         MEInventoryCrafting inconsistent = AssemblyPatternFixtures.table(actual);
-        assertRejected(
-            PatternValidationException.Reason.TABLE_AMOUNT,
-            () -> layout.validateDelivery(inconsistent, () -> false));
+        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> layout.validateTable(inconsistent));
         assertEquals(32, actual[0].getStackSize());
         assertEquals(1600, actual[3].getStackSize());
     }
@@ -260,7 +258,7 @@ public class OrderedPatternLayoutTest {
         NBTTagCompound delivered = (NBTTagCompound) table.getStackInSlot(0)
             .getTagCompound()
             .copy();
-        layout.validateDelivery(table, () -> false)
+        layout.validateTable(table)
             .items()
             .get(0)
             .itemStack()
@@ -276,9 +274,7 @@ public class OrderedPatternLayoutTest {
                 .getTagCompound());
         assertSame(first, table.getAEStackInSlot(0));
         first.setStackSize(3);
-        assertRejected(
-            PatternValidationException.Reason.TABLE_AMOUNT,
-            () -> layout.validateDelivery(table, () -> false));
+        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> layout.validateTable(table));
         assertEquals(3L, first.getStackSize());
         assertEquals(
             before,
@@ -287,7 +283,7 @@ public class OrderedPatternLayoutTest {
     }
 
     @Test
-    public void condensedDeliveryRestoresPositionsButMalformedPositionalAmountsRemainRejected() throws Exception {
+    public void mergedAndReversedDeliveriesAreRejected() throws Exception {
         IAEItemStack first = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(2));
         IAEItemStack second = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(3));
         OrderedPatternLayout layout = OrderedPatternLayout.decode(
@@ -296,36 +292,17 @@ public class OrderedPatternLayoutTest {
                 AssemblyPatternFixtures.item(AssemblyPatternFixtures.output(1))));
         MEInventoryCrafting condensed = AssemblyPatternFixtures
             .table(AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(5)));
-        OrderedPatternLayout.Payload accepted = layout.validateDelivery(condensed, () -> true);
-        assertEquals(1, accepted.copies());
+        assertRejected(PatternValidationException.Reason.TABLE_SHAPE, () -> layout.validateTable(condensed));
         assertEquals(
-            2,
-            accepted.items()
-                .get(0)
-                .amount());
-        assertEquals(
-            3,
-            accepted.items()
-                .get(1)
-                .amount());
-        assertEquals(
-            0,
-            accepted.items()
-                .get(0)
-                .tableIndex());
-        assertEquals(
-            0,
-            accepted.items()
-                .get(1)
-                .tableIndex());
+            5,
+            condensed.getAEStackInSlot(0)
+                .getStackSize());
         MEInventoryCrafting reversed = AssemblyPatternFixtures.table(second, first);
-        assertRejected(
-            PatternValidationException.Reason.TABLE_AMOUNT,
-            () -> layout.validateDelivery(reversed, () -> false));
+        assertRejected(PatternValidationException.Reason.TABLE_AMOUNT, () -> layout.validateTable(reversed));
     }
 
     @Test
-    public void duplicateFullStacksKeepTheirOwnMembersAcrossMergedDelivery() throws Exception {
+    public void duplicateFullStacksKeepTheirOwnMembers() throws Exception {
         IAEItemStack wire = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(64));
         OrderedPatternLayout layout = OrderedPatternLayout.decode(
             AssemblyPatternFixtures.standard(
@@ -359,32 +336,7 @@ public class OrderedPatternLayoutTest {
         IAEItemStack merged = wire.copy();
         merged.setStackSize(128);
         MEInventoryCrafting table = AssemblyPatternFixtures.table(merged);
-        OrderedPatternLayout.Payload restored = layout.validateDelivery(table, () -> true);
-        assertEquals(1, restored.copies());
-        assertEquals(
-            2,
-            restored.items()
-                .size());
-        assertEquals(
-            64,
-            restored.items()
-                .get(0)
-                .amount());
-        assertEquals(
-            64,
-            restored.items()
-                .get(1)
-                .amount());
-        assertEquals(
-            0,
-            restored.items()
-                .get(0)
-                .tableIndex());
-        assertEquals(
-            0,
-            restored.items()
-                .get(1)
-                .tableIndex());
+        assertRejected(PatternValidationException.Reason.TABLE_SHAPE, () -> layout.validateTable(table));
         assertEquals(
             128,
             table.getAEStackInSlot(0)

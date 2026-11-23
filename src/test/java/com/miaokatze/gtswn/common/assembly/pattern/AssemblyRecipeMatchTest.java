@@ -162,14 +162,19 @@ public class AssemblyRecipeMatchTest {
     }
 
     @Test
-    public void condensedThreeCopyCargoBindsThenNativeConsumptionTakesOneCopyAtATime() throws Exception {
-        IAEItemStack rod = CondensedPatternDeliveryTest.item(1, 1);
-        IAEItemStack wire = CondensedPatternDeliveryTest.item(3, 64);
-        OrderedPatternLayout declared = CondensedPatternDeliveryTest.layout(rod, wire, wire.copy());
-        IAEItemStack transportedWire = CondensedPatternDeliveryTest.item(3, 384);
-        IAEItemStack transportedRod = CondensedPatternDeliveryTest.item(1, 3);
+    public void positionedThreeCopyCargoBindsThenNativeConsumptionTakesOneCopyAtATime() throws Exception {
+        IAEItemStack rod = AssemblyPatternFixtures.item(AssemblyPatternFixtures.input(1));
+        IAEItemStack wire = AssemblyPatternFixtures.item(new ItemStack(AssemblyPatternFixtures.ingredient, 64, 3));
+        OrderedPatternLayout declared = OrderedPatternLayout.decode(
+            AssemblyPatternFixtures.standard(
+                new IAEItemStack[] { rod, wire, wire.copy() },
+                AssemblyPatternFixtures.item(AssemblyPatternFixtures.output(1))));
+        IAEItemStack transportedWire = wire.copy()
+            .setStackSize(192);
+        IAEItemStack transportedRod = rod.copy()
+            .setStackSize(3);
         OrderedPatternLayout.Payload payload = declared
-            .validateDelivery(AssemblyPatternFixtures.table(transportedWire, transportedRod), () -> true);
+            .validateTable(AssemblyPatternFixtures.table(transportedRod, transportedWire, transportedWire.copy()));
         RecipeAssemblyLine recipe = AssemblyPatternFixtures.recipe(
             new ItemStack[] { rod.getItemStack(), wire.getItemStack(), wire.getItemStack() },
             new FluidStack[0],
@@ -201,7 +206,7 @@ public class AssemblyRecipeMatchTest {
                 buses.get(2)
                     .getFirstStack().stackSize);
         }
-        assertEquals(384, transportedWire.getStackSize());
+        assertEquals(192, transportedWire.getStackSize());
         assertEquals(3, transportedRod.getStackSize());
     }
 

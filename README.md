@@ -113,9 +113,9 @@ Machine chunks must stay loaded. Energy powers from buffer; Power collects gener
 
 <p align="center"><img src="images/matrix-inputs-overview.png" alt="四种 LuV 矩阵编组输入与镜像 / Four LuV matrix inputs and mirrors" width="420"></p>
 
-**矩阵编组输入 / Matrix grouped inputs.** 装配线按已安装样板的输入位置收料；两个相同的输入仍占两个仓室。比如两格各 64 根同种导线可以交料，合成一格 128 根则会在写入前拒绝。[Neo ECO AE 7.3.8 快速规划反馈](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/issues/124)尚未确认兼容；遇到此问题请关闭快速规划，用保留分槽的投料路径重新下单。矩阵已有的退回按钮退回**整组实际未耗材料**，满网保留余量，不会取消 AE CPU 等待。
+**矩阵编组输入 / Matrix grouped inputs.** 装配线按已安装样板的输入位置收料；两个相同的输入仍占两个仓室。比如两格各 64 根同种导线可以交料，合成一格 128 根则会在写入前拒绝。NeoECO 快速规划需要使用包含 GTSWN 按槽交料修补的 NeoECO 版本。旧版可关闭快速规划，并用保留分槽的路径重新下单。矩阵已有的退回按钮退回**整组实际未耗材料**，满网保留余量，不会取消 AE CPU 等待。
 
-Matrix inputs follow the installed pattern's slot order. Two identical stacks still occupy separate members; a single merged delivery is refused before anything is staged. If Neo ECO rapid planning rejects such a pattern, disable it and resubmit via a slot-preserving path. The existing refund action returns the **whole group's unconsumed stock**, retains rejected leftovers and does not cancel the CPU job.
+Matrix inputs follow the installed pattern's slot order. Two identical stacks still occupy separate members; a single merged delivery is refused before anything is staged. NeoECO fast planning requires an ECO build with the GTSWN slot-preserving delivery fix. With an older ECO build, disable fast planning and resubmit via a slot-preserving path. The existing refund action returns the **whole group's unconsumed stock**, retains rejected leftovers and does not cancel the CPU job.
 
 设备与矩阵仓室的长提示默认展开。悬停时按当前绑定键（默认 **V**）可按物品类型收纳或展开；简述、关键参数与来源保留，矩阵仍显示仓型、容量和等级。整组退回按钮首次悬停时会短暂点亮“整组余料”；终端轮盘仍使用 C。 / Long device and matrix tooltips start expanded. Press the configured key (**V** by default) while hovering to toggle that item type; the compact view keeps its summary, key figures and source mod.
 

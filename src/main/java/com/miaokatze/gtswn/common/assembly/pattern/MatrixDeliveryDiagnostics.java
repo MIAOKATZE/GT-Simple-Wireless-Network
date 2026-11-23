@@ -23,8 +23,6 @@ import appeng.api.storage.data.IAEItemStack;
 import appeng.api.storage.data.IAEStack;
 import appeng.util.inv.MEInventoryCrafting;
 import cpw.mods.fml.common.FMLCommonHandler;
-import cpw.mods.fml.common.Loader;
-import cpw.mods.fml.common.ModContainer;
 
 /** Read-only rejection details for diagnosing the provider that built the delivery table. */
 final class MatrixDeliveryDiagnostics {
@@ -61,17 +59,11 @@ final class MatrixDeliveryDiagnostics {
             if (!Recent.take(key)) return;
 
             StackTraceElement[] trace = rejection.getStackTrace();
-            ModContainer neoEco = Loader.instance()
-                .getIndexedModList()
-                .get("neoecoae");
-            boolean verifiedFastDelivery = Loader.isModLoaded("neoecoae") && NeoEcoCondensedDelivery.matches(trace);
             GTSimpleWirelessNetwork.LOG.warn(
-                "[Matrix delivery] {} side={} neoeco={} fastDelivery={} pattern={} details={} table={} raw={} nonEmpty={} actual={} expectedSlots={} actualSlots={} callers={}",
+                "[Matrix delivery] {} side={} pattern={} details={} table={} raw={} nonEmpty={} actual={} expectedSlots={} actualSlots={} callers={}",
                 rejection.getMessage(),
                 FMLCommonHandler.instance()
                     .getSide(),
-                neoEco == null ? "absent" : neoEco.getVersion(),
-                verifiedFastDelivery,
                 encoding,
                 layout.details()
                     .getClass()

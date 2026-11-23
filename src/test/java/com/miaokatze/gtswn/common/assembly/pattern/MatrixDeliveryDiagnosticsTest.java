@@ -63,9 +63,7 @@ public class MatrixDeliveryDiagnosticsTest {
 
         IAEStack<?> combined = item(input(96));
         MEInventoryCrafting delivery = table(combined, liquid);
-        assertRejected(
-            PatternValidationException.Reason.TABLE_SHAPE,
-            () -> layout.validateDelivery(delivery, () -> false));
+        assertRejected(PatternValidationException.Reason.TABLE_SHAPE, () -> layout.validateTable(delivery));
         assertEquals(
             Arrays.asList(
                 "0=item/gtswn_assembly_test:ingredient@0#- x64",

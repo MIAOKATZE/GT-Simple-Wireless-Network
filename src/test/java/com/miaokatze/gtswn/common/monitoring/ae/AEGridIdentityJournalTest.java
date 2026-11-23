@@ -13,6 +13,7 @@ import java.util.UUID;
 
 import net.minecraft.nbt.CompressedStreamTools;
 import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
 
 import org.junit.Rule;
 import org.junit.Test;
@@ -36,6 +37,13 @@ public class AEGridIdentityJournalTest {
         UUID original = identity(previous, 0);
         NBTTagCompound body = new NBTTagCompound(), root = new NBTTagCompound();
         previous.writeToNBT(body);
+        NBTTagList historical = new NBTTagList();
+        for (int i = 0; i <= 2048; i++) {
+            NBTTagCompound record = new NBTTagCompound();
+            record.setString("identity", new UUID(0, i % 2048).toString());
+            historical.appendTag(record);
+        }
+        body.setTag("retired", historical); // Older data can contain duplicate tombstones.
         root.setTag("data", body);
         try (var stream = Files.newOutputStream(legacy)) {
             CompressedStreamTools.writeCompressed(root, stream);
@@ -61,11 +69,20 @@ public class AEGridIdentityJournalTest {
         assertFalse(recovered.commit(5501, new GridIdentityState.Origin(intermediate)));
         try (var stream = Files.newInputStream(recovered.exportLegacy())) {
             AEGridIdentityData downgrade = new AEGridIdentityData(AEGridIdentityData.DATA_NAME);
-            downgrade.readFromNBT(
-                CompressedStreamTools.readCompressed(stream)
-                    .getCompoundTag("data"));
+            NBTTagCompound exported = CompressedStreamTools.readCompressed(stream)
+                .getCompoundTag("data");
+            assertEquals(
+                2050,
+                exported.getTagList("retired", 10)
+                    .tagCount());
+            downgrade.readFromNBT(exported);
             assertEquals(latest, identity(downgrade, 0));
             assertFalse(downgrade.commit(5501, new GridIdentityState.Origin(intermediate)));
+            for (int i = 0; i < 2048; i++) {
+                UUID retired = new UUID(0, i);
+                assertFalse(recovered.commit(5502, new GridIdentityState.Origin(retired)));
+                assertFalse(downgrade.commit(5502, new GridIdentityState.Origin(retired)));
+            }
         }
         recovered.closeJournal(true);
     }

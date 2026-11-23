@@ -40,7 +40,7 @@ public final class AEGridIdentityData extends WorldSavedData {
     private static boolean finalBatchWritten;
     private static boolean finalSaveCompleted;
     private final Map<Long, UUID> storages = new LinkedHashMap<>();
-    private final Set<UUID> retired = new LinkedHashSet<>();
+    private final Set<UUID> retired = new RetiredGridIdentities();
     private final Map<UUID, GridIdentityState.Origin> origins = new LinkedHashMap<>();
     private final Consumer<UUID> retirementListener = this::retire;
     private final Map<Long, UUID> changedStorages = new LinkedHashMap<>();
