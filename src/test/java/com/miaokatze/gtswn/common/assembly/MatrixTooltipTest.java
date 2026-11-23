@@ -17,14 +17,62 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import net.minecraft.util.EnumChatFormatting;
 import net.minecraft.util.StringTranslate;
 
 import org.junit.Test;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.miaokatze.gtswn.common.util.DeviceTooltip;
 import com.miaokatze.gtswn.common.util.DeviceTooltipOrder;
 
 public class MatrixTooltipTest {
+
+    @Test
+    public void authoredCommonTablesReportTheRealPatternBankCapacityInBothLanguages() throws Exception {
+        for (String locale : new String[] { "zh_CN", "en_US" }) {
+            try (InputStreamReader reader = new InputStreamReader(
+                getClass().getResourceAsStream("/assets/gtswn/tooltip/authored_" + locale + ".json"),
+                StandardCharsets.UTF_8)) {
+                JsonObject catalog = new JsonParser().parse(reader)
+                    .getAsJsonObject();
+                int checked = 0;
+                for (JsonElement value : catalog.getAsJsonArray("items")) {
+                    JsonObject item = value.getAsJsonObject();
+                    String id = item.get("id")
+                        .getAsString();
+                    if (!id.equals("Matrix_Grouped_Item_Input_ME") && !id.equals("Matrix_Grouped_Fluid_Input_ME"))
+                        continue;
+                    for (JsonElement part : item.getAsJsonObject("tiers")
+                        .getAsJsonArray("common")) {
+                        JsonObject block = part.getAsJsonObject();
+                        if (!"table".equals(
+                            block.get("type")
+                                .getAsString()))
+                            continue;
+                        for (JsonElement row : block.getAsJsonArray("rows")) {
+                            String label = row.getAsJsonArray()
+                                .get(0)
+                                .getAsString();
+                            if (!label.equals(locale.equals("zh_CN") ? "样板槽" : "Pattern slots")) continue;
+                            String capacity = EnumChatFormatting.getTextWithoutFormattingCodes(
+                                row.getAsJsonArray()
+                                    .get(1)
+                                    .getAsString());
+                            assertEquals(
+                                locale + " " + id,
+                                String.valueOf(MatrixPatternInventory.SIZE),
+                                capacity.replaceAll("\\D", ""));
+                            checked++;
+                        }
+                    }
+                }
+                assertEquals("Both ordinary matrix types must expose a common-tier capacity row", 2, checked);
+            }
+        }
+    }
 
     @Test
     @SuppressWarnings("unchecked")

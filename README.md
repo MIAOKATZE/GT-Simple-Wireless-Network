@@ -8,14 +8,13 @@
   <img alt="Minecraft 1.7.10" src="https://img.shields.io/badge/Minecraft-1.7.10-blue.svg">
   <img alt="Forge 10.13.4.1614" src="https://img.shields.io/badge/Forge-10.13.4.1614-blue.svg">
   <a href="https://github.com/GTNewHorizons/GT-New-Horizons-Modpack"><img alt="GTNH 2.9.0 final" src="https://img.shields.io/badge/GTNH-2.9.0-orange.svg"></a>
-  <img alt="GTSWN 2.1.37" src="https://img.shields.io/badge/GTSWN-2.1.37-green.svg">
-  <a href="https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network"></a>
+  <img alt="GTSWN latest release" src="https://img.shields.io/github/v/release/MIAOKATZE/GT-Simple-Wireless-Network?label=GTSWN&amp;color=green">
 </p>
 
 | 前置 / Requirement | 版本 / Version |
 | --- | --- |
 | GTNH | 2.9.0 |
-| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.25+ |
+| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | [见对应版本的 Release / See the corresponding release](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases) |
 
 请在客户端和服务端手动安装随本体发布的 Core 普通 JAR。
 
@@ -36,7 +35,7 @@ Press [Alt+V] to change item and machine tooltip detail. The link terminal follo
 
 | GTNH | GTSWN 版本范围 / Version range | 下载 / Download |
 | --- | --- | --- |
-| 2.9.0 正式版 / final | 2.1.x | [已发布版本 / Releases](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases) |
+| 2.9.0 正式版 / final | 2.1.x | [最新发布版 / Latest release](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/latest) |
 | 2.9.0 RC-1 / RC-2 | 2.0.0 ~ 2.0.37 | [v2.0.37](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v2.0.37) |
 | 2.9.0 beta-1 / beta-2 / beta-3 | 1.8.82 | [v1.8.82](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v1.8.82) |
 | 2.8.4 | 0.2.0 | [v0.2.0](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases/tag/v0.2.0) |
