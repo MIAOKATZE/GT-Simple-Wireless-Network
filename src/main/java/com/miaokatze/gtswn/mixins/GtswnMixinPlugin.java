@@ -23,6 +23,10 @@ public class GtswnMixinPlugin implements IMixinConfigPlugin {
 
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+        if (mixinClassName.equals("com.miaokatze.gtswn.mixins.hodgepodge.AEGridIdentitySafeWriteMixin")) {
+            return getClass().getClassLoader()
+                .getResource("com/mitchej123/hodgepodge/mixins/interfaces/SafeWriteNBT.class") != null;
+        }
         if (mixinClassName.startsWith("com.miaokatze.gtswn.mixins.baubles.")
             || mixinClassName.startsWith("com.miaokatze.gtswn.mixins.journeymap.")
             || mixinClassName.startsWith("com.miaokatze.gtswn.mixins.waila.")) {

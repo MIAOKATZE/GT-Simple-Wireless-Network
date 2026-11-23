@@ -22,7 +22,7 @@ final class GridIdentityState {
         }
 
         void persistRetirement(Consumer<UUID> listener) {
-            retirement = listener;
+            if (retirement != listener) retirement = listener;
             if (retired && id != null) listener.accept(id);
         }
 
