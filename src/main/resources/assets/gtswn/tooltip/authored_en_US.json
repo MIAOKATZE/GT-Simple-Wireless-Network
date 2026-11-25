@@ -1774,7 +1774,11 @@
           },
           {
             "type": "line",
-            "text": "Keep the entrance while stock or jobs remain. Empty and finish jobs before changing patterns."
+            "text": "Keep the entrance while stock remains. Drain every item and fluid buffer before switching patterns."
+          },
+          {
+            "type": "line",
+            "text": "No formed machine or research stick needed; extract materials from any side."
           },
           {
             "type": "line",
@@ -1805,6 +1809,10 @@
           },
           {
             "type": "line",
+            "text": "No machine or research stick needed; drain all item and fluid buffers to switch patterns."
+          },
+          {
+            "type": "line",
             "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
             "role": "credit"
           }
@@ -1817,7 +1825,7 @@
         "common": [
           {
             "type": "line",
-            "text": "A second machine uses the §bsource matrix's patterns and stock§r directly, without a separate buffer."
+            "text": "Access the §bsource matrix's ordered stock§r from another location, without a separate buffer."
           },
           {
             "type": "line",
@@ -1854,6 +1862,10 @@
           },
           {
             "type": "line",
+            "text": "Shares the source pattern lock; drain all source item and fluid buffers to switch."
+          },
+          {
+            "type": "line",
             "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
             "role": "credit"
           }
@@ -1861,7 +1873,7 @@
         "quick": [
           {
             "type": "line",
-            "text": "§7Lets another machine consume the source stock in matrix order.§r"
+            "text": "§7Extract source stock in matrix order from another location.§r"
           },
           {
             "type": "line",
@@ -1874,6 +1886,10 @@
           {
             "type": "warning",
             "text": "§eNo ME connection at destination. Load both groups in the same dimension.§r"
+          },
+          {
+            "type": "line",
+            "text": "Shares the source pattern lock; drain all source item and fluid buffers to switch."
           },
           {
             "type": "line",
@@ -1933,7 +1949,11 @@
           },
           {
             "type": "line",
-            "text": "Keep the entrance while stock or jobs remain. Empty and finish jobs before changing patterns."
+            "text": "Keep the entrance while stock remains. Drain every item and fluid buffer before switching patterns."
+          },
+          {
+            "type": "line",
+            "text": "No formed machine or research stick needed; extract materials from any side."
           },
           {
             "type": "line",
@@ -1964,6 +1984,10 @@
           },
           {
             "type": "line",
+            "text": "No machine or research stick needed; drain all item and fluid buffers to switch patterns."
+          },
+          {
+            "type": "line",
             "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
             "role": "credit"
           }
@@ -1976,7 +2000,7 @@
         "common": [
           {
             "type": "line",
-            "text": "A second machine uses the §bsource matrix's patterns and stock§r directly, without a separate buffer."
+            "text": "Access the §bsource matrix's ordered stock§r from another location, without a separate buffer."
           },
           {
             "type": "line",
@@ -2013,6 +2037,10 @@
           },
           {
             "type": "line",
+            "text": "Shares the source pattern lock; drain all source item and fluid buffers to switch."
+          },
+          {
+            "type": "line",
             "text": "§fAdded by: §bGT§a-§6Simple§c-§9Wireless§d-§bNetwork§r",
             "role": "credit"
           }
@@ -2020,7 +2048,7 @@
         "quick": [
           {
             "type": "line",
-            "text": "§7Lets another machine consume the source stock in matrix order.§r"
+            "text": "§7Extract source stock in matrix order from another location.§r"
           },
           {
             "type": "line",
@@ -2033,6 +2061,10 @@
           {
             "type": "warning",
             "text": "§eNo ME connection at destination. Load both groups in the same dimension.§r"
+          },
+          {
+            "type": "line",
+            "text": "Shares the source pattern lock; drain all source item and fluid buffers to switch."
           },
           {
             "type": "line",

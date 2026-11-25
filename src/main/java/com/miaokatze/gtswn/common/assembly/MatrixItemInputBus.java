@@ -168,8 +168,19 @@ public final class MatrixItemInputBus extends MTEHatchInputBus implements Matrix
 
     @Override
     public void setInventorySlotContents(int slot, ItemStack stack) {
-        if (slot == 0 && matrix.permitsInputAccess()) matrix.inputMember()
-            .matrixSetItem(stack);
+        if (slot != 0 || !matrix.permitsInputAccess()) return;
+        ItemStack stored = getFirstStack();
+        // Inventory consumers may write back a reduced remainder, but cannot insert a new material package.
+        if (stored != null && (stack == null || stack.stackSize >= 0 && stack.stackSize <= stored.stackSize
+            && stored.isItemEqual(stack)
+            && ItemStack.areItemStackTagsEqual(stored, stack))) {
+            matrix.inputMember()
+                .matrixSetItem(stack);
+            matrix.inputMember()
+                .matrixPort()
+                .changed();
+            matrix.changed();
+        }
     }
 
     @Override
@@ -199,12 +210,12 @@ public final class MatrixItemInputBus extends MTEHatchInputBus implements Matrix
 
     @Override
     public boolean allowPullStack(IGregTechTileEntity tile, int slot, ForgeDirection side, ItemStack stack) {
-        return false;
+        return slot == 0 && matrix.permitsInputAccess();
     }
 
     @Override
     public int[] getAccessibleSlotsFromSide(int side) {
-        return new int[0];
+        return matrix.permitsInputAccess() ? new int[] { 0 } : new int[0];
     }
 
     @Override

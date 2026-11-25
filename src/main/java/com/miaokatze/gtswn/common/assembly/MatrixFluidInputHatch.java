@@ -18,7 +18,9 @@ import net.minecraft.tileentity.TileEntity;
 import net.minecraft.util.ChatComponentTranslation;
 import net.minecraft.util.StatCollector;
 import net.minecraftforge.common.util.ForgeDirection;
+import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidStack;
+import net.minecraftforge.fluids.FluidTankInfo;
 
 import com.cleanroommc.modularui.factory.PosGuiData;
 import com.cleanroommc.modularui.screen.ModularPanel;
@@ -47,7 +49,7 @@ import gregtech.api.interfaces.tileentity.IGregTechTileEntity;
 import gregtech.api.metatileentity.implementations.MTEHatchInput;
 import io.netty.buffer.ByteBuf;
 
-/** One physical native fluid input, with container and pipe IO sealed. */
+/** One physical ordered fluid store; AE delivers whole packages and downstream consumers may drain. */
 @IMetaTileEntity.SkipGenerateDescription
 public final class MatrixFluidInputHatch extends MTEHatchInput implements MatrixAssemblyMember, IGridProxyable,
     ICraftingProvider, IPowerChannelState, IInterfaceViewable, IDataCopyable {
@@ -173,8 +175,16 @@ public final class MatrixFluidInputHatch extends MTEHatchInput implements Matrix
 
     @Override
     public FluidStack setFillableStack(FluidStack fluid) {
-        if (matrix.permitsInputAccess()) matrix.inputMember()
-            .matrixSetFluid(fluid);
+        FluidStack stored = getFillableStack();
+        if (stored != null
+            && (fluid == null || fluid.amount >= 0 && fluid.amount <= stored.amount && stored.isFluidEqual(fluid))) {
+            matrix.inputMember()
+                .matrixSetFluid(fluid);
+            matrix.inputMember()
+                .matrixPort()
+                .changed();
+            matrix.changed();
+        }
         return getFillableStack();
     }
 
@@ -209,15 +219,42 @@ public final class MatrixFluidInputHatch extends MTEHatchInput implements Matrix
 
     @Override
     public FluidStack drain(ForgeDirection side, int amount, boolean doDrain) {
-        return side == ForgeDirection.UNKNOWN ? drain(amount, doDrain) : null;
+        return side == null ? null : drain(amount, doDrain);
     }
 
     @Override
     public FluidStack drain(ForgeDirection side, FluidStack fluid, boolean doDrain) {
         FluidStack stored = getFillableStack();
-        if (side != ForgeDirection.UNKNOWN || fluid == null || stored == null || !stored.isFluidEqual(fluid))
-            return null;
+        if (side == null || fluid == null || stored == null || !stored.isFluidEqual(fluid)) return null;
         return drain(fluid.amount, doDrain);
+    }
+
+    @Override
+    public boolean isLiquidInput(ForgeDirection side) {
+        return false;
+    }
+
+    @Override
+    public boolean isLiquidOutput(ForgeDirection side) {
+        return side != null;
+    }
+
+    @Override
+    public boolean canFill(ForgeDirection side, Fluid fluid) {
+        return false;
+    }
+
+    @Override
+    public boolean canDrain(ForgeDirection side, Fluid fluid) {
+        FluidStack stored = getFillableStack();
+        return side != null && stored != null && stored.amount > 0 && (fluid == null || stored.getFluid() == fluid);
+    }
+
+    @Override
+    public FluidTankInfo[] getTankInfo(ForgeDirection side) {
+        if (side == null || !matrix.permitsInputAccess()) return new FluidTankInfo[0];
+        FluidStack stored = getFillableStack();
+        return new FluidTankInfo[] { new FluidTankInfo(stored == null ? null : stored.copy(), getCapacity()) };
     }
 
     @Override

@@ -132,7 +132,7 @@ final class OrderedAssemblyScenario implements TestScenario {
 
     @Override
     public String description() {
-        return "Sixteen real AE CPU requests cached by ordered position, reversed ME entry, and native pause/recovery";
+        return "Independent no-research intake, reversed ME order, and sixteen real AE CPU deliveries/native runs";
     }
 
     @Override
@@ -340,26 +340,22 @@ final class OrderedAssemblyScenario implements TestScenario {
                 seededTotals = materialTotals();
                 firstRun = session.runSequence();
                 blockedSamples = 0;
-                transition(ctx, 16, "Verify no pattern publication while AL is unformed and has no research");
+                transition(
+                    ctx,
+                    16,
+                    "Verify independent publication and real CPU intake without a formed AL or research");
                 break;
             case 16:
-                observeBlockedCatalogue(ctx);
-                if (ctx.tick() - stageTick < 40) return;
+                if (ctx.tick() - stageTick < 40 || !published(ctx)) return;
                 require(
                     ctx,
-                    !controller.mMachine && !group.accepting() && !session.beginCheck(),
-                    "An unformed native AL neither advertises nor accepts its configured processing pattern");
-                logBlockedCatalogue(ctx, "unformed");
-                block(ctx, 2, 0, 1, GregTechAPI.sBlockCasings2, 9);
-                checkStructure(ctx);
-                clearOutput();
-                require(
-                    ctx,
-                    controller.mMachine && controller.getStackInSlot(1) == null,
-                    "Restoring the actual casing forms the AL while its research slot stays empty");
-                session.requestRecipeCheck();
-                blockedSamples = 0;
-                transition(ctx, 14, "Verify the formed AL still withholds patterns without research authorization");
+                    !controller.mMachine && controller.getStackInSlot(1) == null
+                        && group.accepting()
+                        && !session.beginCheck(),
+                    "Unformed AL without research does not block storage publication or intake; native work remains denied");
+                logPublication(ctx, "unformed-no-research-independent-provider");
+                extraConnection(ctx, true);
+                transition(ctx, 18, "Verify storage still enforces its own unique ME entry");
                 break;
             case 2:
                 if (!planning.isDone()) return;
@@ -378,42 +374,13 @@ final class OrderedAssemblyScenario implements TestScenario {
                 firstLink = link.getCraftingID();
                 transition(ctx, 3, "Wait for all sixteen real CPU deliveries to accumulate behind output protection");
                 break;
-            case 14:
-                observeBlockedCatalogue(ctx);
-                if (ctx.tick() - stageTick < 40) return;
-                require(
-                    ctx,
-                    controller.mMachine && controller.getStackInSlot(1) == null
-                        && "no_authorized_recipe".equals(group.previewReason(layout)),
-                    "Absent current research keeps the formed AL's processing pattern out of the recipe catalogue");
-                logBlockedCatalogue(ctx, "formed-no-research");
-                fillOutput();
-                controller.setInventorySlotContents(1, stick.copy());
-                session.requestRecipeCheck();
-                transition(ctx, 15, "Wait for actual research authorization to publish the processing pattern");
-                break;
-            case 15:
-                if (ctx.tick() - stageTick < 20) return;
-                if ((ctx.tick() - stageTick) % 20 == 0)
-                    ctx.event("pattern_publication_diagnostics", publicationDiagnostics());
-                if (!published(ctx)) {
-                    if (ctx.tick() - stageTick > 200) throw new IllegalStateException(
-                        "Native crafting cache/ME craftable flag did not publish after research authorization");
-                    return;
-                }
-                require(
-                    ctx,
-                    controller.mMachine && controller.getStackInSlot(1) != null
-                        && !cpu.isBusy()
-                        && cpu.getUsedStorage() == 0,
-                    "Formation and current research publish the pattern before the first CPU job is submitted");
-                logPublication(ctx, "formed-researched-before-job");
-                extraConnection(ctx, true);
-                transition(ctx, 18, "Verify multiple real external ME connections stop the empty group");
-                break;
             case 3:
                 if (group.stage() != OrderedAssemblyGroup.Stage.STAGED || !allCopiesStaged()) return;
                 stagedStock = stock();
+                require(
+                    ctx,
+                    !controller.mMachine && controller.getStackInSlot(1) == null,
+                    "All sixteen real CPU packages arrived before machine formation and without research");
                 assertStaged(ctx);
                 assertLockedInterface(ctx);
                 require(ctx, published(ctx), "Staged native work retains its native ME craftable output flag");
@@ -438,6 +405,16 @@ final class OrderedAssemblyScenario implements TestScenario {
                     before.equals(tableSnapshot(retry)) && stagedStock.equals(stock()),
                     "Whole-package rejection preserves the caller table and all sixteen physical owner quantities");
                 ctx.event("cpu_delivery", "batch=1; stock=" + stagedStock + "; ledger=" + group.saveLedger());
+                block(ctx, 2, 0, 1, GregTechAPI.sBlockCasings2, 9);
+                checkStructure(ctx);
+                require(ctx, controller.mMachine, "Restoring the real casing forms the downstream AL");
+                require(
+                    ctx,
+                    controller.mInputBusses.equals(consumerGroup.itemMembers())
+                        && controller.mInputHatches.equals(consumerGroup.fluidMembers()),
+                    "After actual formation the native input lists follow the reversed ME-origin allocation");
+                controllerTile.enableWorking();
+                controller.setInventorySlotContents(1, stick.copy());
                 session.requestRecipeCheck();
                 transition(ctx, 4, "Observe native output protection without consuming staged materials");
                 break;
@@ -460,8 +437,8 @@ final class OrderedAssemblyScenario implements TestScenario {
                     group.stage() == OrderedAssemblyGroup.Stage.STAGED && controller.mMaxProgresstime == 0
                         && stagedStock.equals(stock())
                         && session.runSequence() == firstRun
-                        && !published(ctx),
-                    "Removing current research withdraws the pattern, prevents start and preserves real materials");
+                        && published(ctx),
+                    "Missing research prevents native start and preserves materials while storage keeps advertising");
                 ctx.event("research_removed", nativeState() + "; stock=" + stock());
                 fillOutput();
                 controller.setInventorySlotContents(1, stick.copy());
@@ -534,7 +511,10 @@ final class OrderedAssemblyScenario implements TestScenario {
                         + "; actualStored="
                         + itemAmount(recipe.mOutput));
                 if (!group.accepting()) return;
-                outputDeclarationCounterexample(ctx);
+                require(
+                    ctx,
+                    group.editable(),
+                    "The drained group unlocks independently of downstream completion history");
                 for (ItemStack input : recipe.mInputs) require(
                     ctx,
                     itemAmount(input) == 0,
@@ -548,7 +528,7 @@ final class OrderedAssemblyScenario implements TestScenario {
                 assertRemainingPositions();
                 ctx.pass(
                     "Eight-position standalone supply through a middle-position mirror, exact binding, multi-entry pause "
-                        + "and recovery, sixteen native runs with research gates, shared batch lock and exact real CPU return passed");
+                        + "and recovery, independent unformed/no-research intake, sixteen native runs with research gates and exact real CPU return passed");
                 break;
             case 18:
                 if (group.externalConnectionCount() != 2 || ctx.tick() - stageTick < 40) return;
@@ -574,18 +554,21 @@ final class OrderedAssemblyScenario implements TestScenario {
                 pausedProgress = controller.mProgresstime;
                 pausedSequence = session.runSequence();
                 pausedStock = stock();
-                transition(ctx, 21, "Observe forty natural ticks with in-flight processing paused by multiple entries");
+                transition(
+                    ctx,
+                    21,
+                    "Observe forty natural ticks: disconnected storage blocks new consumption but does not pause an ongoing run");
                 break;
             case 21:
                 if (ctx.tick() - stageTick < 40) return;
                 require(
                     ctx,
                     group.externalConnectionCount() == 2 && !consumerGroup.permitsMachineWork()
-                        && controller.mProgresstime == pausedProgress
+                        && controller.mProgresstime > pausedProgress
                         && session.runSequence() == pausedSequence
                         && pausedStock.equals(stock())
                         && controller.mMaxProgresstime > 0,
-                    "Multiple external ME attachments pause actual native progress and retain all cached materials");
+                    "Multiple entries pause storage access while already-started native progress continues and cached stock stays unchanged");
                 ctx.event("inflight_multiple_connections", nativeState() + "; stock=" + stock());
                 extraConnection(ctx, false);
                 transition(ctx, 22, "Restore the original unique ME entry and resume the same native run");
@@ -1001,10 +984,13 @@ final class OrderedAssemblyScenario implements TestScenario {
             count++;
             if (displayed) visible++;
             correct &= byId.get(id) == tracker && displayed == (member == group.master())
-                && (Integer) terminalField(tracker, "rows") == 4
-                && (Integer) terminalField(tracker, "rowSize") == 9
-                && (Integer) terminalField(tracker, "numSlots") == 36
-                && inventory.tagCount() == 36
+                && (Integer) terminalField(tracker, "rows")
+                    == com.miaokatze.gtswn.common.assembly.MatrixPatternInventory.ROWS
+                && (Integer) terminalField(tracker, "rowSize")
+                    == com.miaokatze.gtswn.common.assembly.MatrixPatternInventory.COLUMNS
+                && (Integer) terminalField(tracker, "numSlots")
+                    == com.miaokatze.gtswn.common.assembly.MatrixPatternInventory.SIZE
+                && inventory.tagCount() == com.miaokatze.gtswn.common.assembly.MatrixPatternInventory.SIZE
                 && !view.allowsPatternOptimization()
                 && Arrays.asList(view.getSupportedStackTypes())
                     .contains(ITEM_STACK_TYPE)
@@ -1027,7 +1013,7 @@ final class OrderedAssemblyScenario implements TestScenario {
                     + displayed
                     + "; online="
                     + terminalField(tracker, "online")
-                    + "; rows=4; rowSize=9; slots="
+                    + "; rows=40; rowSize=9; slots="
                     + terminalField(tracker, "numSlots")
                     + "; invNbt="
                     + inventory);
@@ -1035,7 +1021,7 @@ final class OrderedAssemblyScenario implements TestScenario {
         require(
             ctx,
             count == INPUTS + FLUIDS && visible == 1 && masterTracker != null && correct,
-            "Native tracked maps expose only the standalone source, one default-visible master and its hidden 4x9 members");
+            "Native tracked maps expose only the standalone source, one default-visible master and its hidden 40x9 members");
         ctx.event(
             "interface_update_packet",
             "origin=constructor.updateList; class=" + packet.getClass()
@@ -1075,7 +1061,8 @@ final class OrderedAssemblyScenario implements TestScenario {
         NBTTagList inventory = (NBTTagList) terminalField(masterTracker, "invNbt");
         require(
             ctx,
-            owner.inventory.getItemStack() == null && inventory.tagCount() == 36
+            owner.inventory.getItemStack() == null
+                && inventory.tagCount() == com.miaokatze.gtswn.common.assembly.MatrixPatternInventory.SIZE
                 && ItemStack.areItemStacksEqual(pattern, ItemStack.loadItemStackFromNBT(inventory.getCompoundTagAt(0)))
                 && terminalCommands() > commands
                 && (Boolean) terminalField(interfaceContainer, "isDirty"),
@@ -1205,8 +1192,6 @@ final class OrderedAssemblyScenario implements TestScenario {
         ((ICraftingProvider) master()).provideCrafting(helper);
         Method authorized = OrderedAssemblyGroup.class.getDeclaredMethod("authorizedRecipes");
         authorized.setAccessible(true);
-        Method consumers = OrderedAssemblyGroup.class.getDeclaredMethod("readyConsumers");
-        consumers.setAccessible(true);
         return nativeState() + "; preview="
             + group.previewReason(layout)
             + "; readyForAdvertisement="
@@ -1215,8 +1200,6 @@ final class OrderedAssemblyScenario implements TestScenario {
             + terminalField(consumerGroup, "nativeBound")
             + "; authorizedRecipes="
             + ((List<?>) authorized.invoke(consumerGroup)).size()
-            + "; readyConsumers="
-            + ((List<?>) consumers.invoke(group)).size()
             + "; groupOptions="
             + groupOptions
             + "; portOptions="
@@ -1242,51 +1225,6 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + (pending == null ? 0 : pending.getStackSize());
         }
         return totals;
-    }
-
-    private void observeBlockedCatalogue(TestContext ctx) throws Exception {
-        boolean empty = true;
-        for (MatrixAssemblyMember member : group.itemMembers()) empty &= member.matrixItem() == null;
-        for (MatrixAssemblyMember member : group.fluidMembers()) empty &= member.matrixFluidStack() == null;
-        if (cpu.isBusy() || cpu.getUsedStorage() != 0
-            || group.stage() != OrderedAssemblyGroup.Stage.IDLE
-            || !empty
-            || controller.mMaxProgresstime != 0
-            || session.runSequence() != firstRun
-            || !Arrays.equals(seededTotals, materialTotals())
-            || published(ctx))
-            throw new IllegalStateException(
-                "Blocked catalogue changed CPU, publication, physical stock, material totals or native sequence: "
-                    + nativeState()
-                    + "; stock="
-                    + stock()
-                    + "; totals="
-                    + Arrays.toString(materialTotals()));
-        blockedSamples++;
-    }
-
-    private void logBlockedCatalogue(TestContext ctx, String phase) throws Exception {
-        require(
-            ctx,
-            blockedSamples >= 40,
-            "At least forty natural ticks withhold the recipe and leave the CPU idle without physical intake or consumption");
-        logPublication(ctx, phase);
-        ctx.event(
-            "catalogue_blocked",
-            "phase=" + phase
-                + "; samples="
-                + blockedSamples
-                + "; busy="
-                + cpu.isBusy()
-                + "; cpuUsedStorage="
-                + cpu.getUsedStorage()
-                + "; nativeConsumed=0; physicalSlotsAndTank=empty; totalMEPlusCPU="
-                + Arrays.toString(materialTotals())
-                + "; cpuInventory="
-                + ((CraftingCPUCluster) cpu).getInventory()
-                    .writeInventory()
-                + "; state="
-                + nativeState());
     }
 
     private void duplicateRawPositions(TestContext ctx) {
@@ -1319,68 +1257,6 @@ final class OrderedAssemblyScenario implements TestScenario {
             "parser_fixture",
             "Repeated raw input specimen is a decoder-only counterexample; "
                 + "it is not advertised as a native recipe or counted as production coverage");
-    }
-
-    private void outputDeclarationCounterexample(TestContext ctx) {
-        ItemStack otherOutput = null;
-        for (RecipeAssemblyLine existing : RecipeAssemblyLine.sAssemblylineRecipes) {
-            if (existing.mOutput != null && (!existing.mOutput.isItemEqual(recipe.mOutput)
-                || !ItemStack.areItemStackTagsEqual(existing.mOutput, recipe.mOutput))) {
-                otherOutput = existing.mOutput.copy();
-                break;
-            }
-        }
-        require(
-            ctx,
-            otherOutput != null && group.accepting(),
-            "The output-binding refusal is tested against an otherwise available real medium");
-        ItemStack wrong = encode(recipe.mInputs, recipe.mFluidInputs, otherOutput, true);
-        OrderedPatternLayout wrongLayout = OrderedPatternLayout.decode(wrong, ctx.world());
-        require(ctx, owner.inventory.getItemStack() == null, "The terminal counterexample starts with an empty cursor");
-        owner.inventory.setItemStack(wrong.copy());
-        interfaceContainer.doAction(owner, InventoryAction.PICKUP_OR_SET_DOWN, 1, masterTrackerId);
-        require(
-            ctx,
-            owner.inventory.getItemStack() == null && ItemStack.areItemStacksEqual(
-                wrong,
-                master().matrixPort()
-                    .patterns()
-                    .getStackInSlot(1)),
-            "The declared-output counterexample uses native interface-terminal insertion");
-        MEInventoryCrafting delivery = table(wrongLayout);
-        String tableBefore = tableSnapshot(delivery);
-        String stockBefore = stock();
-        require(
-            ctx,
-            !master().matrixPort()
-                .pushPattern(wrongLayout.details(), delivery),
-            "Identical declared inputs cannot authorize a different declared output");
-        require(
-            ctx,
-            tableBefore.equals(tableSnapshot(delivery)) && stockBefore.equals(stock())
-                && group.stage() == OrderedAssemblyGroup.Stage.IDLE,
-            "Output-binding refusal changes neither the caller table nor any real member stock");
-        ctx.event(
-            "declared_output_refusal",
-            "same inputs; selected=" + stack(recipe.mOutput)
-                + "; declaredOtherExistingOutput="
-                + stack(otherOutput)
-                + "; reason="
-                + group.reason()
-                + "; table="
-                + tableBefore
-                + "; stock="
-                + stockBefore
-                + "; scope=declared-output binding, not two actual same-input native recipe candidates");
-        interfaceContainer.doAction(owner, InventoryAction.PICKUP_OR_SET_DOWN, 1, masterTrackerId);
-        require(
-            ctx,
-            master().matrixPort()
-                .patterns()
-                .getStackInSlot(1) == null && ItemStack.areItemStacksEqual(wrong, owner.inventory.getItemStack()),
-            "Native terminal extraction returns the owned counterexample pattern exactly once");
-        owner.inventory.setInventorySlotContents(2, owner.inventory.getItemStack());
-        owner.inventory.setItemStack(null);
     }
 
     private static ItemStack encode(ItemStack[] items, FluidStack[] fluids, ItemStack out, boolean gap) {
@@ -1654,17 +1530,15 @@ final class OrderedAssemblyScenario implements TestScenario {
         require(
             ctx,
             Arrays.equals(group.diagnosticMemberPosition(false, 0), sourcePosition(INPUTS - 1, 2, 1))
-                && Arrays.equals(group.diagnosticMemberPosition(false, INPUTS - 1), sourcePosition(0, 2, 1))
-                && controller.mInputBusses.equals(consumerGroup.itemMembers())
-                && controller.mInputHatches.equals(consumerGroup.fluidMembers()),
-            "Reverse-end ME entry determines physical intake, diagnostics and actual native input ordering");
+                && Arrays.equals(group.diagnosticMemberPosition(false, INPUTS - 1), sourcePosition(0, 2, 1)),
+            "Before formation the reversed ME entry determines the independent source allocation and diagnostics");
     }
 
     private void assertRunning(TestContext ctx, long sequence) {
         require(
             ctx,
-            session.runSequence() == sequence && group.stage() == OrderedAssemblyGroup.Stage.RUNNING,
-            "A unique native consumption sequence changes the batch to RUNNING");
+            session.runSequence() == sequence && group.stage() == OrderedAssemblyGroup.Stage.STAGED,
+            "Native consumption leaves the remaining storage batch staged independently of machine progress");
         assertRemainingPositions();
         require(
             ctx,

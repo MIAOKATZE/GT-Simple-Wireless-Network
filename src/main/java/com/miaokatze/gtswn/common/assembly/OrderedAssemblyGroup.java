@@ -69,7 +69,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private final List<MatrixAssemblyMember> fluids;
     private List<MatrixAssemblyMember> members;
     private final List<UUID> memberIds = new ArrayList<>();
-    private final Set<RecipeAssemblyLine> observedAuthorizedRecipes = new HashSet<>();
     private int[][] memberPositions;
     private final int memberDimension;
     private UUID controllerId;
@@ -97,6 +96,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private long networkCheckedTick = Long.MIN_VALUE;
     private boolean networkDirty = true;
     private NBTTagCompound quarantinedLedger;
+    private boolean recoverableLedger;
     private int[] diagnosticItemTable = new int[0];
     private int[] diagnosticFluidTable = new int[0];
     private long[] diagnosticItemConsumed = new long[0];
@@ -108,6 +108,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private final Map<String, NBTTagCompound> sharedRuns = new HashMap<>();
     private String sharedFailure = "";
     private OrderedAssemblyGroup nativeOwner;
+    private UUID nativeBatch;
     private final Set<OrderedAssemblyGroup> mirrorConsumers = java.util.Collections
         .newSetFromMap(new IdentityHashMap<>());
     private long mirrorCheckedTick = Long.MIN_VALUE;
@@ -133,13 +134,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         group = caller.matrixPort()
             .group();
         if (group == null || group.master() != caller) return;
-        Set<RecipeAssemblyLine> authorized = new HashSet<>(group.intakeAuthorizedRecipes());
-        if (!group.observedAuthorizedRecipes.equals(authorized)) {
-            group.observedAuthorizedRecipes.clear();
-            group.observedAuthorizedRecipes.addAll(authorized);
-            caller.matrixPort()
-                .changed();
-        }
+
     }
 
     public static void refreshTopology(MatrixAssemblyMember caller) {
@@ -282,156 +277,49 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private void refreshController() {
+        // Controller attachment is optional diagnostic information, never a storage permit.
         controllerClaims.removeIf(controller -> !NativeAssemblyAdapter.isLive(controller));
-        MTEMultiBlockBase formed = null;
-        for (MTEMultiBlockBase claim : controllerClaims) if (claim.mMachine) {
-            if (formed != null && formed != claim) {
-                controllerConflict = true;
-                reject("controller_conflict");
-                return;
-            }
-            formed = claim;
-        }
+        inputController = controllerClaims.size() == 1 ? controllerClaims.iterator()
+            .next() : null;
         controllerConflict = false;
-        MTEMultiBlockBase next = formed;
-        if (next == null && inputController != null && controllerClaims.contains(inputController))
-            next = inputController;
-        if (next == null && controllerClaims.size() == 1) next = controllerClaims.iterator()
-            .next();
-        if (next == null) {
-            inputController = null;
-            return;
-        }
-        boolean pending = stage != Stage.IDLE || !allEmpty();
-        IGregTechTileEntity tile = next.getBaseMetaTileEntity();
-        if (pending && (inputController != null && inputController != next
-            || machinePosition != null && !sameMachinePosition(tile))) {
-            controllerConflict = true;
-            reject("controller_conflict");
-            return;
-        }
-        if (!pending && (controllerId != null || session != null)
-            && (!(next instanceof MTEAssemblyLine) || controllerId != null && !sameControllerPosition(tile)
-                || session != null && session.controller() != next)) {
-            controllerId = null;
-            session = null;
-            nativeBound = false;
-            alignment = null;
-        }
-        inputController = next;
-        if ("controller_conflict".equals(reason)) reason = "";
-        if (machinePosition == null || !sameMachinePosition(tile))
+        if (inputController != null) {
+            IGregTechTileEntity tile = inputController.getBaseMetaTileEntity();
             machinePosition = new int[] { tile.getWorld().provider.dimensionId, tile.getXCoord(), tile.getYCoord(),
                 tile.getZCoord(), tile.getMetaTileID() };
-    }
-
-    private boolean sameMachinePosition(IGregTechTileEntity tile) {
-        return machinePosition[0] == tile.getWorld().provider.dimensionId && machinePosition[1] == tile.getXCoord()
-            && machinePosition[2] == tile.getYCoord()
-            && machinePosition[3] == tile.getZCoord()
-            && machinePosition[4] == tile.getMetaTileID();
+        } else machinePosition = null;
     }
 
     private void bindNative(NativeAssemblySession next) {
         if (!verified) {
-            if (session == next) revokeNativeBinding();
-            return;
-        }
-        List<MatrixAssemblyMember> nextItems = new ArrayList<>();
-        List<MatrixAssemblyMember> nextFluids = new ArrayList<>();
-        for (Object input : next.controller().mInputBusses) {
-            if (!(input instanceof MatrixAssemblyMember member) || member.matrixFluid()) {
-                revokeNativeBinding();
-                reject("mixed_inputs");
-                return;
-            }
-            nextItems.add(member);
-        }
-        for (Object input : next.controller().mInputHatches) {
-            if (!(input instanceof MatrixAssemblyMember member) || !member.matrixFluid()) {
-                revokeNativeBinding();
-                reject("mixed_inputs");
-                return;
-            }
-            nextFluids.add(member);
-        }
-        if (nextItems.size() != items.size() || nextFluids.size() != fluids.size()
-            || !nextItems.containsAll(items)
-            || !nextFluids.containsAll(fluids)) {
-            if (session == next) revokeNativeBinding();
-            reject("mixed_inputs");
-            return;
-        }
-        if (session != null && session != next && nativeBound && NativeAssemblyAdapter.isLive(session.controller())) {
-            reject("controller_conflict");
-            return;
-        }
-        IGregTechTileEntity tile = next.controller()
-            .getBaseMetaTileEntity();
-        boolean pending = stage != Stage.IDLE || !allEmpty();
-        boolean replacingSavedController = controllerId != null && !controllerId.equals(next.controllerId());
-        if (controllerId != null
-            && (!sameControllerPosition(tile) || replacingSavedController && !canReplaceSavedController(next))
-            || pending && controllerId == null) {
-            revokeNativeBinding();
-            reject("controller_conflict");
-            return;
-        }
-        var facing = next.controller()
-            .getExtendedFacing();
-        // Keep the saved identity until the replacement's real matrix layout has been verified.
-        if (replacingSavedController && (!checkTopology() || !checkNativeLayout(facing))) {
             revokeNativeBinding();
             return;
         }
-        session = next;
-        controllerId = next.controllerId();
-        controllerDimension = tile.getWorld().provider.dimensionId;
-        controllerX = tile.getXCoord();
-        controllerY = tile.getYCoord();
-        controllerZ = tile.getZCoord();
-        alignment = facing;
-        // Only references from this exact, fully registered group are reordered. Native recipe matching and
-        // consumption then use the same ME-origin positions as the physical intake and diagnostics.
-        orderNativeInputs();
-        if (checkNativeBinding()) nativeBound = true;
-        else revokeNativeBinding();
-        boolean ownsRunningSession = isMirror() || sharedRuns.containsKey(nativeRunKey(next))
-            || stage == Stage.RUNNING && sharedRuns.isEmpty() && !genericInput;
-        if (nativeBound && stage == Stage.RUNNING
-            && ownsRunningSession
-            && (next.controller().mMaxProgresstime == 0 || nativeSequence != next.runSequence()
-                || !"RUNNING".equals(next.lastNativeEvent()))) {
-            stage = Stage.NATIVE_ABORTED;
-            reason = "restart_native_state_missing";
+        // This optional binding only arranges this controller's inputs. It cannot reject the storage group.
+        String previousReason = reason;
+        nativeBound = false;
+        if (nativeLayoutMatches(next)) {
+            session = next;
+            nativeBound = true;
+            alignment = next.controller()
+                .getExtendedFacing();
         }
-        if (nativeBound && stage == Stage.RUNNING && !isMirror() && sharedRuns.isEmpty() && !genericInput)
-            sharedRuns.put(nativeRunKey(next), nativeRun(next));
-        if (nativeBound && (stage == Stage.IDLE || stage == Stage.STAGED || stage == Stage.RUNNING)) reason = "";
-        dirty();
-    }
-
-    private boolean canReplaceSavedController(NativeAssemblySession next) {
-        if (!editable() || batch != null
-            || !NativeAssemblyAdapter.isLive(next.controller())
-            || session != null && session != next && NativeAssemblyAdapter.isLive(session.controller())) return false;
-        for (MTEMultiBlockBase claim : controllerClaims) {
-            if (claim != next.controller() && claim.mMachine && NativeAssemblyAdapter.isLive(claim)) return false;
-        }
-        return true;
+        reason = previousReason;
     }
 
     private void revokeNativeBinding() {
-        if (!nativeBound) return;
         nativeBound = false;
-        if (isPresent(master)) master.matrixPort()
-            .changed();
     }
 
-    private boolean sameControllerPosition(IGregTechTileEntity next) {
-        return controllerDimension == next.getWorld().provider.dimensionId && controllerX == next.getXCoord()
-            && controllerY == next.getYCoord()
-            && controllerZ == next.getZCoord();
+    private boolean nativeLayoutMatches(NativeAssemblySession next) {
+        MTEAssemblyLine controller = next.controller();
+        if (controller == null || !NativeAssemblyAdapter.isLive(controller)
+            || controller.mInputBusses.size() != items.size()
+            || !controller.mInputBusses.containsAll(items)
+            || controller.mInputHatches.size() != fluids.size()
+            || !controller.mInputHatches.containsAll(fluids)) return false;
+        if (!checkNativeLayout(controller.getExtendedFacing())) return false;
+        orderNativeInputs(controller);
+        return true;
     }
 
     private void rememberMembers() {
@@ -502,7 +390,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     boolean canChangeMirror() {
-        if (!verified || stage != Stage.IDLE || !allEmpty() || !sharedRuns.isEmpty()) return false;
+        if (!verified || stage != Stage.IDLE || !allEmpty()) return false;
         for (MatrixAssemblyMember member : members) if (hasPatterns(member)) return false;
         MatrixMirrorLink link = master.matrixPort()
             .mirrorLink();
@@ -729,7 +617,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     private void orderNativeInputs() {
         if (session == null) return;
-        MTEAssemblyLine controller = session.controller();
+        orderNativeInputs(session.controller());
+    }
+
+    private void orderNativeInputs(MTEAssemblyLine controller) {
         if (controller.mInputBusses.size() != items.size() || !controller.mInputBusses.containsAll(items)
             || controller.mInputHatches.size() != fluids.size()
             || !controller.mInputHatches.containsAll(fluids)) return;
@@ -741,35 +632,25 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             controller.mInputHatches.add((gregtech.api.metatileentity.implementations.MTEHatchInput) member);
     }
 
-    private boolean assemblyLineMode() {
-        return inputController instanceof MTEAssemblyLine || session != null || controllerId != null;
-    }
-
     void networkChanged() {
         networkDirty = true;
         mirrorCheckedTick = Long.MIN_VALUE;
     }
 
-    /** A missing/ambiguous connection pauses existing native progress as well as future intake and consumption. */
+    /** Storage access is independent of every downstream machine and its research/progress. */
     public boolean permitsMachineWork() {
-        if (!verified || refunding
+        if (!verified || !checkTopology()
+            || refunding
             || stage == Stage.QUARANTINED
             || stage == Stage.REFUNDING
             || stage == Stage.NATIVE_ABORTED) return false;
-        refreshController();
-        if (controllerConflict || inputController == null
-            || !inputController.mMachine
-            || !inputController.mInputBusses.containsAll(items)
-            || !inputController.mInputHatches.containsAll(fluids)) return false;
-        if (isMirror()) return refreshMirror() && mirrorSource.supplyReady();
-        refreshNetwork();
-        return networkReason.isEmpty();
+        return isMirror() ? refreshMirror() && mirrorSource.supplyReady() : supplyReady();
     }
 
     boolean permitsOrdinaryInput() {
-        if (!permitsMachineWork() || assemblyLineMode()) return false;
+        if (!permitsMachineWork()) return false;
         OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
-        return (owner.stage == Stage.STAGED || owner.stage == Stage.RUNNING) && owner.sharedFailure.isEmpty();
+        return owner.stage == Stage.STAGED && owner.sharedFailure.isEmpty();
     }
 
     private boolean supplyReady() {
@@ -780,50 +661,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             || stage == Stage.NATIVE_ABORTED) return false;
         refreshNetwork();
         return networkReason.isEmpty();
-    }
-
-    private boolean consumerReady() {
-        if (!permitsMachineWork()) return false;
-        return !assemblyLineMode() || nativeConsumerReason().isEmpty();
-    }
-
-    private String nativeConsumerReason() {
-        if (session == null) return "structure_incomplete";
-        String permit = session.patternAdvertisementReason();
-        if (!permit.isEmpty()) return permit;
-        if (!nativeBound) return "structure_incomplete";
-        if (!checkNativeBinding()) return reason;
-        return session.controller()
-            .getBaseMetaTileEntity()
-            .isAllowedToWork() ? "" : "native_disabled";
-    }
-
-    private List<OrderedAssemblyGroup> readyConsumers() {
-        List<OrderedAssemblyGroup> result = new ArrayList<>();
-        if (consumerReady()) result.add(this);
-        mirrorConsumers.removeIf(
-            consumer -> !isPresent(consumer.master) || consumer.master.matrixPort()
-                .group() != consumer);
-        for (OrderedAssemblyGroup consumer : mirrorConsumers)
-            if (consumer.refreshMirror() && consumer.mirrorSource == this && consumer.consumerReady())
-                result.add(consumer);
-        return result;
-    }
-
-    private List<RecipeAssemblyLine> intakeAuthorizedRecipes() {
-        List<RecipeAssemblyLine> result = new ArrayList<>();
-        if (isMirror()) return authorizedRecipes();
-        for (OrderedAssemblyGroup consumer : readyConsumers()) result.addAll(consumer.authorizedRecipes());
-        return result;
-    }
-
-    private AssemblyRecipeMatch intakeMatch(OrderedPatternLayout layout, OrderedPatternLayout.Payload payload) {
-        List<RecipeAssemblyLine> recipes = new ArrayList<>();
-        for (OrderedAssemblyGroup consumer : readyConsumers()) {
-            if (!consumer.assemblyLineMode()) return null;
-            recipes.addAll(consumer.authorizedRecipes());
-        }
-        return AssemblyRecipeMatch.bind(layout, payload, recipes);
     }
 
     public List<MatrixAssemblyMember> itemMembers() {
@@ -840,39 +677,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     public String reason() {
         if (!verified) return reason;
-        if (isMirror()) {
-            if (!refreshMirror()) return mirrorReason;
-        } else {
-            refreshNetwork();
-            if (!networkReason.isEmpty()) return networkReason;
-        }
-        refreshController();
-        if (controllerConflict) return "controller_conflict";
-        if (!isMirror() && (inputController == null || !inputController.mMachine) && !readyConsumers().isEmpty())
-            return reason;
-        if (session != null) {
-            String nativeReason = nativeConsumerReason();
-            if (!nativeReason.isEmpty()) return nativeReason;
-        }
-        if (isMirror()) {
-            String sourceReason = mirrorSource.reason();
-            if (!sourceReason.isEmpty()) return sourceReason;
-        }
-        if (inputController == null || !inputController.mMachine) {
-            if (!isMirror()) {
-                for (OrderedAssemblyGroup consumer : mirrorConsumers) {
-                    if (consumer.refreshMirror() && consumer.mirrorSource == this && consumer.session != null) {
-                        String nativeReason = consumer.nativeConsumerReason();
-                        if (!nativeReason.isEmpty()) return nativeReason;
-                    }
-                }
-            }
-            return "structure_incomplete";
-        }
-        if (!inputController.mInputBusses.containsAll(items) || !inputController.mInputHatches.containsAll(fluids))
-            return "mixed_inputs";
-        if (assemblyLineMode() && session == null) return "structure_incomplete";
-        return reason;
+        if (isMirror()) return refreshMirror() ? mirrorSource.reason() : mirrorReason;
+        refreshNetwork();
+        return networkReason.isEmpty() ? reason : networkReason;
     }
 
     public String recipeKey() {
@@ -938,23 +745,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             : new int[] { machine.mProgresstime, machine.mMaxProgresstime };
     }
 
-    /** Preview uses the current native authorization set without changing the group's rejection or lifecycle state. */
+    /** A preview validates only the physical allocation, never a downstream recipe or research permit. */
     public String previewReason(OrderedPatternLayout layout) {
         if (isMirror()) return refreshMirror() ? mirrorSource.previewReason(layout) : mirrorReason;
-        // Bare ordinary groups retain a configuration preview before any real consumer is attached.
-        if (!assemblyLineMode() && mirrorConsumers.isEmpty()) return capacityReason(layout);
-        if (readyConsumers().isEmpty()) {
-            String unavailable = reason();
-            return unavailable.isEmpty() ? "structure_incomplete" : unavailable;
-        }
-        try {
-            intakeMatch(layout, layout.declaredPayload());
-            return capacityReason(layout);
-        } catch (PatternValidationException rejected) {
-            return rejected.reason()
-                .name()
-                .toLowerCase(java.util.Locale.ROOT);
-        }
+        return capacityReason(layout);
     }
 
     private void recordConsumptionDiagnostics(long[] itemConsumed, long[] fluidConsumed) {
@@ -964,15 +758,17 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public boolean editable() {
-        return !isMirror() && verified && stage == Stage.IDLE && !refunding && allEmpty() && sharedRuns.isEmpty();
+        refreshBatch();
+        return !isMirror() && verified && checkTopology() && stage == Stage.IDLE && !refunding && allEmpty();
     }
 
     public boolean accepting() {
+        refreshBatch();
         if (isMirror()) return false;
         if (!sharedFailure.isEmpty()) return false;
         if (stage != Stage.IDLE && stage != Stage.STAGED && stage != Stage.RUNNING && stage != Stage.LOCAL_FINISHED)
             return false;
-        if (!supplyReady() || readyConsumers().isEmpty()) return false;
+        if (!supplyReady()) return false;
         if (stage == Stage.IDLE && !allEmpty()) return reject("untracked_materials");
         return true;
     }
@@ -1023,14 +819,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return true;
     }
 
-    /** Native order and facing remain a separate permit; a configurable topology alone grants no native access. */
+    /** Native order/facing constrain only this consumer, never the independent storage provider. */
     private boolean checkNativeBinding() {
-        if (session == null || !NativeAssemblyAdapter.isLive(session.controller())) return false;
-        if (session.controller()
-            .getExtendedFacing() != alignment) return reject("topology_changed");
-        if (!session.controller().mInputBusses.equals(items) || !session.controller().mInputHatches.equals(fluids))
-            return reject("mixed_inputs");
-        return checkNativeLayout(alignment);
+        return session != null && nativeLayoutMatches(session);
     }
 
     private boolean checkNativeLayout(com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing facing) {
@@ -1148,9 +939,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return session == null || !nativeBound ? java.util.Collections.emptyList() : session.authorizedRecipes();
     }
 
-    /** Only formed, currently authorized recipes are advertised; busy media retain their catalogue entries. */
+    /** Independent storage advertises valid installed layouts, including while the current pattern is busy. */
     public void provideCrafting(ICraftingProviderHelper helper) {
-        if (isMirror() || !supplyReady() || readyConsumers().isEmpty()) return;
+        if (isMirror() || !supplyReady()) return;
         for (int i = 0; i < MatrixPatternInventory.SIZE; i++) {
             ItemStack pattern = master().matrixPort()
                 .patterns()
@@ -1161,7 +952,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     pattern,
                     master().getBaseMetaTileEntity()
                         .getWorld());
-                intakeMatch(layout, layout.declaredPayload());
                 if (capacityReason(layout).isEmpty())
                     helper.addCraftingOption((ICraftingProvider) master(), layout.details());
             } catch (PatternValidationException ignored) {
@@ -1214,7 +1004,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (!accepting()) return false;
         long intakeEpoch = epoch;
         OrderedPatternLayout.Payload payload;
-        AssemblyRecipeMatch match = null;
         try {
             if (stage != Stage.IDLE && (patternSlot < 0 || !ItemStack.areItemStacksEqual(
                 master.matrixPort()
@@ -1222,7 +1011,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     .getStackInSlot(patternSlot),
                 layout.pattern()))) return reject("different_pattern");
             payload = layout.validateTable(table);
-            match = intakeMatch(layout, payload);
             String capacityReason = capacityReason(layout);
             if (!capacityReason.isEmpty()) return reject(capacityReason);
         } catch (PatternValidationException ex) {
@@ -1259,18 +1047,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             fluidCopies.add(next);
         }
         if (!accepting() || intakeEpoch != epoch) return false;
-        try {
-            if (match != null) {
-                AssemblyRecipeMatch current = intakeMatch(layout, payload);
-                if (current == null || !match.key()
-                    .equals(current.key())) return reject("no_authorized_recipe");
-            }
-        } catch (PatternValidationException ex) {
-            return reject(
-                ex.reason()
-                    .name()
-                    .toLowerCase(java.util.Locale.ROOT));
-        }
         UUID nextBatch = batch == null ? UUID.randomUUID() : batch;
         if (stage == Stage.IDLE) recordAcceptedDiagnostics(payload);
         for (int i = 0; i < itemCopies.size(); i++) items.get(i)
@@ -1278,19 +1054,14 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         for (int i = 0; i < fluidCopies.size(); i++) fluids.get(i)
             .matrixSetFluid(fluidCopies.get(i));
         batch = nextBatch;
-        genericInput = match == null;
-        recipeKey = match == null ? ""
-            : match.key()
-                .value();
+        genericInput = true;
+        recipeKey = "";
         patternSlot = slot;
-        if (stage != Stage.RUNNING) stage = Stage.STAGED;
+        stage = Stage.STAGED;
         reason = "";
         try {
             dirty();
-            for (OrderedAssemblyGroup consumer : readyConsumers()) {
-                if (consumer.session != null) consumer.session.requestRecipeCheck();
-                else consumer.inputController.scheduleRecipeCheckImmediate();
-            }
+            requestConsumerChecks();
         } catch (RuntimeException ex) {
             stage = Stage.QUARANTINED;
             reason = "notification_failed";
@@ -1300,27 +1071,36 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         return true;
     }
 
+    private void requestConsumerChecks() {
+        refreshController();
+        for (MTEMultiBlockBase controller : controllerClaims)
+            if (controller.mMachine) controller.scheduleRecipeCheckImmediate();
+        mirrorConsumers.removeIf(
+            consumer -> !isPresent(consumer.master) || consumer.master.matrixPort()
+                .group() != consumer);
+        for (OrderedAssemblyGroup consumer : mirrorConsumers) {
+            if (consumer.refreshMirror() && consumer.mirrorSource == this) {
+                consumer.refreshController();
+                for (MTEMultiBlockBase controller : consumer.controllerClaims)
+                    if (controller.mMachine) controller.scheduleRecipeCheckImmediate();
+            }
+        }
+    }
+
     @Override
     public boolean validateNativeState(NativeAssemblySession nativeSession) {
-        if (!(nativeSession == session && nativeBound
-            && verified
-            && permitsMachineWork()
-            && checkNativeBinding()
-            && session.controller()
-                .protectsExcessItem()))
-            return false;
+        if (!permitsMachineWork()) return false;
+        String previousReason = reason;
+        boolean layout = nativeLayoutMatches(nativeSession);
+        reason = previousReason;
         OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
-        return (owner.stage == Stage.STAGED || owner.stage == Stage.RUNNING) && owner.sharedFailure.isEmpty()
-            && !owner.sharedRuns.containsKey(owner.nativeRunKey(nativeSession));
+        return layout && owner.stage == Stage.STAGED && owner.sharedFailure.isEmpty();
     }
 
     @Override
     public boolean acceptsNativeCandidate(NativeAssemblySession nativeSession, RecipeAssemblyLine recipe) {
         if (!validateNativeState(nativeSession)) return false;
         OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
-        if (!owner.recipeKey.isEmpty()) return owner.recipeKey.equals(
-            AssemblyRecipeKey.of(recipe)
-                .value());
         try {
             OrderedPatternLayout layout = OrderedPatternLayout.decode(
                 owner.master.matrixPort()
@@ -1328,9 +1108,13 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                     .getStackInSlot(owner.patternSlot),
                 owner.master.getBaseMetaTileEntity()
                     .getWorld());
-            return AssemblyRecipeMatch.bind(layout, authorizedRecipes())
+            if (!AssemblyRecipeMatch.bind(layout, nativeSession.authorizedRecipes())
                 .key()
-                .equals(AssemblyRecipeKey.of(recipe));
+                .equals(AssemblyRecipeKey.of(recipe))) return false;
+            // Only the immediate synchronous consumption callback may affect this exact batch.
+            nativeOwner = owner;
+            nativeBatch = owner.batch;
+            return true;
         } catch (PatternValidationException rejected) {
             return false;
         }
@@ -1339,217 +1123,58 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     @Override
     public void onNativeConsumption(NativeAssemblySession nativeSession, RecipeAssemblyLine recipe, int parallel,
         long[] itemConsumed, long[] fluidConsumed, boolean complete) {
-        if (nativeSession != session) return;
-        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
-        if (owner == null) throw new IllegalStateException("Matrix source vanished during native consumption");
-        nativeOwner = owner;
+        OrderedAssemblyGroup owner = nativeOwner;
+        if (owner == null || nativeBatch == null || !nativeBatch.equals(owner.batch)) return;
+        nativeOwner = null;
+        nativeBatch = null;
         owner.recordConsumptionDiagnostics(itemConsumed, fluidConsumed);
-        if (!complete || parallel != 1
-            || !owner.recipeKey.isEmpty() && !owner.recipeKey.equals(
-                AssemblyRecipeKey.of(recipe)
-                    .value())) {
+        if (!complete || parallel != 1) {
             owner.sharedFailure = "partial_consumption";
             owner.stage = Stage.QUARANTINED;
             owner.reason = "partial_consumption";
-            stage = Stage.QUARANTINED;
-            reason = "partial_consumption";
-        } else {
-            owner.sharedRuns.put(owner.nativeRunKey(nativeSession), nativeRun(nativeSession));
-            owner.recipeKey = AssemblyRecipeKey.of(recipe)
-                .value();
-            owner.stage = Stage.RUNNING;
-            owner.reason = "";
-            stage = Stage.RUNNING;
-            nativeSequence = nativeSession.runSequence();
-            reason = "";
-            if (owner != this) {
-                batch = owner.batch;
-                patternSlot = owner.patternSlot;
-                recipeKey = owner.recipeKey;
-            }
         }
+        // Do not settle here: GT may still inspect real inputs before its synchronous consume sequence returns.
         owner.dirty();
-        dirty();
     }
 
     @Override
     public void onNativeFinished(NativeAssemblySession nativeSession) {
-        if (nativeSession != session) return;
-        OrderedAssemblyGroup owner = runningOwner();
-        if (owner == null) return;
-        owner.finishRun(owner.nativeRunKey(nativeSession), nativeSession.runSequence(), "");
-        if (owner != this) {
-            stage = Stage.IDLE;
-            reason = "";
-            dirty();
-        }
-        nativeOwner = null;
+        // Materials already left storage. Completion must not touch a later batch.
     }
 
     @Override
     public void onNativeStopped(NativeAssemblySession nativeSession, String message) {
-        if (nativeSession != session) return;
-        OrderedAssemblyGroup owner = runningOwner();
-        if (owner == null) return;
-        if (owner == this && stage == Stage.RUNNING && sharedRuns.isEmpty()) {
-            stage = Stage.NATIVE_ABORTED;
-            reason = message;
-            dirty();
-            return;
-        }
-        owner.finishRun(owner.nativeRunKey(nativeSession), nativeSession.runSequence(), message);
-        if (owner != this) {
+        // A downstream stop cannot change the identity or ownership of stock still in storage.
+    }
+
+    public void ordinaryStarted(MTEMultiBlockBase controller) {}
+
+    public void ordinaryFinished(MTEMultiBlockBase controller, String failure) {}
+
+    /** Refresh before intake/edit as native consumers may decrement real objects without a setter callback. */
+    private void refreshBatch() {
+        if (isMirror() || !verified || refunding || !checkTopology()) return;
+        if ((stage == Stage.STAGED || stage == Stage.RUNNING || stage == Stage.LOCAL_FINISHED)
+            && sharedFailure.isEmpty()
+            && allEmpty()) {
             stage = Stage.IDLE;
+            batch = null;
+            recipeKey = "";
+            patternSlot = -1;
+            genericInput = false;
+            sharedRuns.clear();
             reason = "";
-            dirty();
-        }
-        nativeOwner = null;
-    }
-
-    private OrderedAssemblyGroup runningOwner() {
-        if (!isMirror()) return this;
-        if (refreshMirror()) return mirrorSource;
-        return nativeOwner;
-    }
-
-    private String nativeRunKey(NativeAssemblySession session) {
-        String legacyKey = "native:" + session.controllerId();
-        String key = legacyKey + ":" + machineRunKey(session.controller());
-        if (sharedRuns.containsKey(key)) return key;
-        NBTTagCompound legacy = sharedRuns.get(legacyKey);
-        // Schema-1 runs already save the physical controller; keep their key until that exact run finishes.
-        if (legacy != null && legacy.getString("controller")
-            .equals(
-                session.controllerId()
-                    .toString())
-            && Arrays.equals(legacy.getIntArray("position"), machineRun(session.controller()).getIntArray("position")))
-            return legacyKey;
-        return key;
-    }
-
-    private static String machineRunKey(MTEMultiBlockBase controller) {
-        IGregTechTileEntity tile = controller.getBaseMetaTileEntity();
-        return "machine:" + tile.getWorld().provider.dimensionId
-            + ":"
-            + tile.getXCoord()
-            + ":"
-            + tile.getYCoord()
-            + ":"
-            + tile.getZCoord();
-    }
-
-    private static NBTTagCompound machineRun(MTEMultiBlockBase controller) {
-        IGregTechTileEntity tile = controller.getBaseMetaTileEntity();
-        NBTTagCompound tag = new NBTTagCompound();
-        tag.setIntArray(
-            "position",
-            new int[] { tile.getWorld().provider.dimensionId, tile.getXCoord(), tile.getYCoord(), tile.getZCoord(),
-                tile.getMetaTileID() });
-        return tag;
-    }
-
-    private static NBTTagCompound nativeRun(NativeAssemblySession session) {
-        NBTTagCompound tag = machineRun(session.controller());
-        tag.setString(
-            "controller",
-            session.controllerId()
-                .toString());
-        tag.setLong("sequence", session.runSequence());
-        return tag;
-    }
-
-    private void finishRun(String key, long sequence, String failure) {
-        NBTTagCompound run = sharedRuns.get(key);
-        if (run == null || run.getLong("sequence") != sequence) return;
-        sharedRuns.remove(key);
-        if (!failure.isEmpty()) sharedFailure = failure;
-        settleRuns();
-        dirty();
-    }
-
-    private void settleRuns() {
-        if (!sharedRuns.isEmpty()) {
-            stage = Stage.RUNNING;
-            return;
-        }
-        if (stage == Stage.QUARANTINED) return;
-        stage = !sharedFailure.isEmpty() ? Stage.NATIVE_ABORTED : allEmpty() ? Stage.LOCAL_FINISHED : Stage.STAGED;
-        reason = !sharedFailure.isEmpty() ? sharedFailure : stage == Stage.LOCAL_FINISHED ? "local_output_only" : "";
-    }
-
-    /** Generic GT machines retain their actual recipe/parallel behavior; only the shared batch lifetime is observed. */
-    public void ordinaryStarted(MTEMultiBlockBase controller) {
-        if (assemblyLineMode() || !permitsMachineWork()) return;
-        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
-        if (controller.mMaxProgresstime <= 0) return;
-        nativeOwner = owner;
-        owner.sharedRuns.put(machineRunKey(controller), machineRun(controller));
-        owner.stage = Stage.RUNNING;
-        owner.dirty();
-    }
-
-    public void ordinaryFinished(MTEMultiBlockBase controller, String failure) {
-        if (controller instanceof MTEAssemblyLine) return;
-        OrderedAssemblyGroup owner = isMirror() ? refreshMirror() ? mirrorSource : nativeOwner : this;
-        if (owner != null) owner.finishRun(machineRunKey(controller), 0, failure);
-    }
-
-    private void reconcileRuns() {
-        net.minecraft.world.World world = master.getBaseMetaTileEntity()
-            .getWorld();
-        boolean changed = false;
-        for (Map.Entry<String, NBTTagCompound> entry : new ArrayList<>(sharedRuns.entrySet())) {
-            NBTTagCompound run = entry.getValue();
-            int[] pos = run.getIntArray("position");
-            if (!world.blockExists(pos[1], pos[2], pos[3])) continue;
-            TileEntity tile = world.getTileEntity(pos[1], pos[2], pos[3]);
-            MTEMultiBlockBase controller = tile instanceof IGregTechTileEntity gt && gt.getMetaTileID() == pos[4]
-                && gt.getMetaTileEntity() instanceof MTEMultiBlockBase machine ? machine : null;
-            String failure = "";
-            if (controller == null) failure = "controller_removed";
-            else if (run.hasKey("controller")) {
-                NativeAssemblySession nativeSession = controller instanceof MTEAssemblyLine line
-                    ? NativeAssemblyAdapter.session(line)
-                    : null;
-                if (nativeSession == null || !nativeSession.controllerId()
-                    .toString()
-                    .equals(run.getString("controller")) || nativeSession.runSequence() != run.getLong("sequence"))
-                    failure = "restart_native_state_missing";
-                else if (nativeSession.nativeRunning() && "RUNNING".equals(nativeSession.lastNativeEvent())) continue;
-                else if (!"LOCAL_FINISHED".equals(nativeSession.lastNativeEvent()))
-                    failure = "restart_native_state_missing";
-            } else if (controller.mMaxProgresstime > 0) continue;
-            else failure = "restart_native_state_missing";
-            sharedRuns.remove(entry.getKey());
-            if (!failure.isEmpty()) sharedFailure = failure;
-            changed = true;
-        }
-        if (changed) {
-            settleRuns();
+            epoch++;
             dirty();
         }
     }
 
     public void tick() {
         if (!verified) return;
-        if (isMirror()) {
-            refreshMirror();
-            return;
-        }
-        refreshNetwork();
-        if (!sharedRuns.isEmpty()) reconcileRuns();
-        if (!sharedRuns.isEmpty()) return;
-        if (allEmpty() && (genericInput && stage == Stage.STAGED
-            && inputController != null
-            && inputController.mMaxProgresstime == 0
-            || stage == Stage.LOCAL_FINISHED && (session == null || session.controller().mMaxProgresstime == 0))) {
-            stage = Stage.IDLE;
-            batch = null;
-            recipeKey = "";
-            patternSlot = -1;
-            genericInput = false;
-            reason = "";
-            dirty();
+        if (isMirror()) refreshMirror();
+        else {
+            refreshBatch();
+            refreshNetwork();
         }
     }
 
@@ -1559,8 +1184,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             if (refreshMirror()) mirrorSource.refund();
             return;
         }
-        if (!sharedRuns.isEmpty()) return;
-        if (!verified || stage == Stage.RUNNING || stage == Stage.LOCAL_FINISHED || !checkTopology()) return;
+        if (!verified || !checkTopology() || quarantinedLedger != null && !recoverableLedger) return;
         if (stage == Stage.IDLE && allEmpty()) return;
         refreshNetwork();
         if (externalConnections != 1 || !master.matrixPort()
@@ -1597,6 +1221,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             reason = allEmpty() ? "refund_cpu_still_waiting" : "refund_network_full";
             if (allEmpty()) {
                 quarantinedLedger = null;
+                recoverableLedger = false;
                 stage = Stage.IDLE;
                 batch = null;
                 recipeKey = "";
@@ -1615,6 +1240,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     public NBTTagCompound saveLedger() {
         if (quarantinedLedger != null) return (NBTTagCompound) quarantinedLedger.copy();
         NBTTagCompound tag = new NBTTagCompound();
+        tag.setInteger("distributionSchema", 2);
         if (controllerId != null) {
             tag.setIntArray(
                 "controllerPosition",
@@ -1666,6 +1292,13 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private void restore(NBTTagCompound tag) {
         if (tag == null) return;
         try {
+            if (tag.hasKey("distributionSchema")
+                && (!tag.hasKey("distributionSchema", 3) || tag.getInteger("distributionSchema") != 2))
+                throw new IllegalArgumentException("unknown_schema");
+            boolean legacy = !tag.hasKey("distributionSchema");
+            quarantinedLedger = null;
+            recoverableLedger = false;
+            sharedRuns.clear();
             if (tag.hasKey("controller") || tag.hasKey("controllerPosition")) {
                 int[] position = tag.getIntArray("controllerPosition");
                 if (position.length != 4 || position[0] != memberDimension)
@@ -1694,7 +1327,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             nativeSequence = tag.getLong("nativeSequence");
             genericInput = tag.getBoolean("genericInput");
             sharedFailure = tag.getString("sharedFailure");
+            if (tag.hasKey("sharedRuns") && !tag.hasKey("sharedRuns", 9))
+                throw new IllegalArgumentException("invalid_saved_data");
             NBTTagList runs = tag.getTagList("sharedRuns", 10);
+            if (runs.tagCount() > 0 && runs.func_150303_d() != 10)
+                throw new IllegalArgumentException("invalid_saved_data");
             for (int i = 0; i < runs.tagCount(); i++) {
                 NBTTagCompound run = runs.getCompoundTagAt(i);
                 if (run.getIntArray("position").length != 5 || run.getIntArray("position")[0] != memberDimension
@@ -1724,21 +1361,31 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 || stage == Stage.NATIVE_ABORTED)
                 && (batch == null || patternSlot < 0
                     || patternSlot >= MatrixPatternInventory.SIZE
-                    || !genericInput && !isMirror() && !recipeKey.matches("v1:[0-9a-f]{64}")))
+                    || legacy && !genericInput && !isMirror() && !recipeKey.matches("v1:[0-9a-f]{64}")))
                 throw new IllegalArgumentException("invalid_saved_data");
-            if (genericInput && !tag.hasKey("sharedRuns")
+            if (legacy && genericInput
+                && !tag.hasKey("sharedRuns")
                 && (machinePosition == null || controllerId != null
                     || stage == Stage.RUNNING && sharedRuns.isEmpty()
                     || stage == Stage.LOCAL_FINISHED && !tag.hasKey("sharedRuns")
                     || stage == Stage.NATIVE_ABORTED))
                 throw new IllegalArgumentException("invalid_saved_data");
-            if (stage == Stage.RUNNING && session != null
-                && (session.controller().mMaxProgresstime == 0 || nativeSequence != session.runSequence()
-                    || !"RUNNING".equals(session.lastNativeEvent()))) {
-                stage = Stage.NATIVE_ABORTED;
-                reason = "restart_native_state_missing";
+            // Known legacy running records describe downstream work, not ownership of remaining stock.
+            // Preserve abnormal/partial states and their original recovery evidence.
+            if (stage == Stage.QUARANTINED || stage == Stage.NATIVE_ABORTED || !sharedFailure.isEmpty()) {
+                quarantinedLedger = (NBTTagCompound) tag.copy();
+                recoverableLedger = true;
+                if (!sharedFailure.isEmpty()) stage = Stage.QUARANTINED;
+            } else {
+                sharedRuns.clear();
+                controllerId = null;
+                machinePosition = null;
+                recipeKey = "";
+                if (stage != Stage.REFUNDING) reason = "";
+                if (stage == Stage.RUNNING || stage == Stage.LOCAL_FINISHED) stage = Stage.STAGED;
             }
         } catch (IllegalArgumentException ex) {
+            recoverableLedger = false;
             quarantinedLedger = (NBTTagCompound) tag.copy();
             if (patternSlot < 0 || patternSlot >= MatrixPatternInventory.SIZE) patternSlot = -1;
             stage = Stage.QUARANTINED;

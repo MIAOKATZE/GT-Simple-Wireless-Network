@@ -205,6 +205,7 @@ public class MatrixPatternInventoryAdapterTest {
         assertNull(view.getStackInSlot(0));
         assertTrue(view.isItemValidForSlot(0, pattern("stored")));
         view.setInventorySlotContents(0, pattern("stored"));
+        fixture.members.get(0).meta.matrixSetItem(new ItemStack(new Item(), 1));
         set(OrderedAssemblyGroup.class, fixture.group, "stage", OrderedAssemblyGroup.Stage.STAGED);
         assertEquals(0, view.getSizeInventory());
         assertFalse(view.isItemValidForSlot(0, pattern("replacement")));
@@ -214,6 +215,7 @@ public class MatrixPatternInventoryAdapterTest {
         assertNull(view.getStackInSlotOnClosing(0));
         assertNotNull(view.getStackInSlot(0));
         assertNull(view.getStackInSlot(1));
+        fixture.members.get(0).meta.matrixSetItem(null);
         set(OrderedAssemblyGroup.class, fixture.group, "stage", OrderedAssemblyGroup.Stage.IDLE);
         assertNotNull(view.decrStackSize(0, 1));
         assertNull(view.getStackInSlot(0));
@@ -233,6 +235,7 @@ public class MatrixPatternInventoryAdapterTest {
         ContainerInterfaceTerminal terminal = terminal(view);
         InventoryAction[] actions = { InventoryAction.PICKUP_OR_SET_DOWN, InventoryAction.SHIFT_CLICK,
             InventoryAction.MOVE_REGION, InventoryAction.MULTIPLY_PATTERN, InventoryAction.DIVIDE_PATTERN };
+        fixture.members.get(0).meta.matrixSetItem(new ItemStack(new Item(), 1));
         for (OrderedAssemblyGroup.Stage stage : OrderedAssemblyGroup.Stage.values()) {
             if (stage == OrderedAssemblyGroup.Stage.IDLE) continue;
             set(OrderedAssemblyGroup.class, fixture.group, "stage", stage);
@@ -326,6 +329,19 @@ public class MatrixPatternInventoryAdapterTest {
             group = (OrderedAssemblyGroup) allocate(OrderedAssemblyGroup.class);
             set(OrderedAssemblyGroup.class, group, "master", members.get(0).meta);
             set(OrderedAssemblyGroup.class, group, "members", liveMembers);
+            set(OrderedAssemblyGroup.class, group, "items", liveMembers);
+            set(OrderedAssemblyGroup.class, group, "fluids", new ArrayList<>());
+            List<java.util.UUID> ids = new ArrayList<>();
+            int[][] positions = new int[liveMembers.size()][3];
+            for (int i = 0; i < liveMembers.size(); i++) {
+                ids.add(
+                    liveMembers.get(i)
+                        .orderedMemberId());
+                positions[i] = new int[] { i, 0, 0 };
+            }
+            set(OrderedAssemblyGroup.class, group, "memberIds", ids);
+            set(OrderedAssemblyGroup.class, group, "memberPositions", positions);
+            set(World.class, world, "provider", new net.minecraft.world.WorldProviderSurface());
             set(OrderedAssemblyGroup.class, group, "sharedRuns", new HashMap<>());
             set(OrderedAssemblyGroup.class, group, "sharedFailure", "");
             set(OrderedAssemblyGroup.class, group, "stage", OrderedAssemblyGroup.Stage.IDLE);
