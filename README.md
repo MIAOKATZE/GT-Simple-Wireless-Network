@@ -14,9 +14,11 @@
 | 前置 / Requirement | 版本 / Version |
 | --- | --- |
 | GTNH | 2.9.0 |
-| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | [见对应版本的 Release / See the corresponding release](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases) |
+| [MIAOKATZE Core](https://github.com/MIAOKATZE/MIAOKATZE-Core) | 0.2.31+；[下载随附普通包 / Download the bundled ordinary JAR](https://github.com/MIAOKATZE/GT-Simple-Wireless-Network/releases) |
 
-请在客户端和服务端手动安装随本体发布的 Core 普通 JAR。
+请在客户端和服务端手动安装或更新随本体发布的 Core 0.2.31 或更新版本普通 JAR。
+
+Install or update the bundled ordinary Core 0.2.31+ JAR on both client and server.
 
 为 GTNH 提供 **无线 EU 传输、能源与设备监控、ME 量子接入**，通过工厂模式与自定义仪表盘集中查看；无线与监控设备可在 LV 阶段制作，矩阵编组仓室为 LuV 等级。
 

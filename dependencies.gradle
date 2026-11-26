@@ -104,7 +104,8 @@ dependencies {
     testImplementation("com.github.GTNewHorizons:BetterQuesting:3.8.94-GTNH:dev") { transitive = false }
 }
 
-// Shared library API; immutable candidate versions may be supplied for isolated integration builds.
+// Published 0.2.29 remains an old-API compile regression, not the runtime minimum (0.2.31).
+// Use explicit local 0.2.31 dev artifacts for current integration; this does not publish Maven coordinates.
 dependencies {
     def coreVersion = project.findProperty("miaokatzeCoreVersion") ?: "0.2.29"
     def coreDevJar = project.findProperty("miaokatzeCoreDevJar")
