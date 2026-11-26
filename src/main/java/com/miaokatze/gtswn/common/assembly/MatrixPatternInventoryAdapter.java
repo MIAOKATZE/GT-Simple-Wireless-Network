@@ -67,12 +67,13 @@ final class MatrixPatternInventoryAdapter implements IInventory {
 
     @Override
     public String getInventoryName() {
-        return ((IMetaTileEntity) port.member()).getLocalName();
+        return port.displayName();
     }
 
     @Override
     public boolean hasCustomInventoryName() {
-        return false;
+        return port.member()
+            .hasCustomName();
     }
 
     @Override

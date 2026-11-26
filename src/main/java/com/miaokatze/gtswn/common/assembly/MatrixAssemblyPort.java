@@ -54,6 +54,7 @@ public final class MatrixAssemblyPort {
     private NBTTagCompound restoredLedger;
     private boolean dropped;
     private MatrixMirrorLink mirrorLink;
+    private String customName;
 
     public MatrixAssemblyPort(MatrixAssemblyMember member) {
         this.member = member;
@@ -61,6 +62,24 @@ public final class MatrixAssemblyPort {
 
     public MatrixAssemblyMember member() {
         return member;
+    }
+
+    public String customName() {
+        return customName;
+    }
+
+    public void customName(String name) {
+        // Names belong to physical members, independently of their shared pattern bank or batch lock.
+        if (preservedRoot != null) return;
+        String next = name == null || name.isEmpty() ? null : name;
+        if (java.util.Objects.equals(customName, next)) return;
+        customName = next;
+        if (member.getBaseMetaTileEntity() != null) member.getBaseMetaTileEntity()
+            .markDirty();
+    }
+
+    public String displayName() {
+        return customName == null ? ((IMetaTileEntity) member).getLocalName() : customName;
     }
 
     public UUID memberId() {
@@ -375,6 +394,7 @@ public final class MatrixAssemblyPort {
 
     public void load(NBTTagCompound root) {
         preservedRoot = (NBTTagCompound) root.copy();
+        customName = null;
         restoredLedger = null;
         mirrorLink = null;
         fault = "";
@@ -407,6 +427,11 @@ public final class MatrixAssemblyPort {
                 }
                 if (data.hasKey("fault") && !data.hasKey("fault", 8)) throw new IllegalArgumentException("fault_type");
                 fault = data.getString("fault");
+                if (data.hasKey("customName")) {
+                    if (!data.hasKey("customName", 8)) throw new IllegalArgumentException("custom_name_type");
+                    String name = data.getString("customName");
+                    customName = name.isEmpty() ? null : name;
+                }
                 if (data.hasKey("mirror")) {
                     if (!member.matrixMirror()) throw new IllegalArgumentException("wrong_member_role");
                     mirrorLink = new MatrixMirrorLink(requireCompound(data, "mirror"));
@@ -437,6 +462,7 @@ public final class MatrixAssemblyPort {
         data.setInteger("schema", 1);
         data.setString("member", memberId.toString());
         data.setString("fault", fault);
+        if (customName != null) data.setString("customName", customName);
         data.setTag("patterns", patterns.save());
         if (mirrorLink != null) data.setTag("mirror", mirrorLink.save());
         ItemStack item = member.matrixItem();

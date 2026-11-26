@@ -478,7 +478,7 @@ public final class MatrixFluidInputHatch extends MTEHatchInput implements Matrix
 
     @Override
     public String getName() {
-        return getLocalName();
+        return matrix.displayName();
     }
 
     @Override
