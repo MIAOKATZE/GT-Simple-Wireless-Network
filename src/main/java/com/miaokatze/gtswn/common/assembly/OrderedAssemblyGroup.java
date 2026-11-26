@@ -28,7 +28,6 @@ import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyAdapter;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyBinding;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblyGeometry;
 import com.miaokatze.gtswn.assembly.nativeintegration.NativeAssemblySession;
-import com.miaokatze.gtswn.common.assembly.pattern.AssemblyRecipeKey;
 import com.miaokatze.gtswn.common.assembly.pattern.AssemblyRecipeMatch;
 import com.miaokatze.gtswn.common.assembly.pattern.OrderedPatternLayout;
 import com.miaokatze.gtswn.common.assembly.pattern.PatternValidationException;
@@ -80,6 +79,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private UUID batch;
     private String recipeKey = "";
     private int patternSlot = -1;
+    // Immutable pattern definitions only, never stock/amount snapshots. Existing schema-2 records
+    // rebuild this transient cache from their locked pattern slot after reload.
+    private OrderedPatternLayout acceptedLayout;
+    private UUID acceptedLayoutBatch;
+    private ItemStack acceptedPattern;
     private String reason = "unverified";
     private boolean refunding;
     private long nativeSequence;
@@ -113,6 +117,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         .newSetFromMap(new IdentityHashMap<>());
     private long mirrorCheckedTick = Long.MIN_VALUE;
     private long mirrorSourceEpoch;
+    private long topologyCheckedTick = Long.MIN_VALUE;
+    private boolean topologyCheckResult;
+    private final java.util.concurrent.atomic.AtomicLong topologyRevision = new java.util.concurrent.atomic.AtomicLong();
+    private long topologyCheckedRevision = Long.MIN_VALUE;
 
     private OrderedAssemblyGroup(List<MatrixAssemblyMember> items, List<MatrixAssemblyMember> fluids,
         MatrixAssemblyMember master, NBTTagCompound ledger) {
@@ -138,6 +146,11 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public static void refreshTopology(MatrixAssemblyMember caller) {
+        if (caller.matrixPort()
+            .group() != null)
+            caller.matrixPort()
+                .group()
+                .topologyChanged();
         IGregTechTileEntity origin = caller.getBaseMetaTileEntity();
         if (origin == null || origin.getWorld() == null || origin.isClientSide() || !isPresent(caller)) return;
         List<MatrixAssemblyMember> found = new ArrayList<>();
@@ -156,6 +169,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
                 .group();
             if (group != null) previous.add(group);
         }
+        for (OrderedAssemblyGroup group : previous) group.topologyChanged();
         List<MatrixAssemblyMember> items = new ArrayList<>();
         List<MatrixAssemblyMember> fluids = new ArrayList<>();
         for (MatrixAssemblyMember member : found) (member.matrixFluid() ? fluids : items).add(member);
@@ -323,6 +337,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private void rememberMembers() {
+        topologyChanged();
         // Updating AE connection sides can synchronously rebuild crafting and reorder the ME intake here.
         // Keep an in-progress traversal of the same physical members stable while publishing the new order.
         List<MatrixAssemblyMember> nextMembers = new ArrayList<>(items);
@@ -403,6 +418,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     void mirrorChanged() {
+        topologyChanged();
         mirrorSource = null;
         mirrorMembers = null;
         epoch++;
@@ -413,6 +429,25 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     void memberChanged() {
         mirrorCheckedTick = Long.MIN_VALUE;
+    }
+
+    /** Geometry/identity changes invalidate read certificates; ordinary stock decrements do not. */
+    void topologyChanged() {
+        topologyRevision.incrementAndGet();
+        topologyCheckedTick = Long.MIN_VALUE;
+        mirrorCheckedTick = Long.MIN_VALUE;
+    }
+
+    /** Public writes and native consumption recheck every physical member, even within the same tick. */
+    boolean prepareMutationAccess() {
+        topologyChanged();
+        if (!verified || !checkTopology()) return false;
+        if (isMirror()) {
+            if (!refreshMirror()) return false;
+            mirrorSource.topologyChanged();
+            if (!mirrorSource.verified || !mirrorSource.checkTopology()) return false;
+        }
+        return permitsMachineWork();
     }
 
     public int[] mirrorSourcePosition() {
@@ -624,6 +659,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (controller.mInputBusses.size() != items.size() || !controller.mInputBusses.containsAll(items)
             || controller.mInputHatches.size() != fluids.size()
             || !controller.mInputHatches.containsAll(fluids)) return;
+        boolean ordered = true;
+        for (int i = 0; i < items.size(); i++) ordered &= controller.mInputBusses.get(i) == items.get(i);
+        for (int i = 0; i < fluids.size(); i++) ordered &= controller.mInputHatches.get(i) == fluids.get(i);
+        if (ordered) return;
         controller.mInputBusses.clear();
         for (MatrixAssemblyMember member : items)
             controller.mInputBusses.add((gregtech.api.metatileentity.implementations.MTEHatchInputBus) member);
@@ -633,6 +672,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     void networkChanged() {
+        topologyChanged();
         networkDirty = true;
         mirrorCheckedTick = Long.MIN_VALUE;
     }
@@ -774,6 +814,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     public void invalidate(String message) {
+        topologyChanged();
         boolean wasVerified = verified;
         verified = false;
         reason = message;
@@ -793,6 +834,24 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private boolean checkTopology() {
+        if (master.getBaseMetaTileEntity() == null || master.getBaseMetaTileEntity()
+            .getWorld() == null) return false;
+        long tick = master.getBaseMetaTileEntity()
+            .getWorld()
+            .getTotalWorldTime();
+        long revision = topologyRevision.get();
+        if (topologyCheckedTick == tick && topologyCheckedRevision == revision) return topologyCheckResult;
+        boolean valid = checkTopologyNow();
+        // A GT notification during validation must not be overwritten by a newly cached result.
+        if (topologyRevision.get() != revision) return false;
+        topologyCheckedTick = tick;
+        topologyCheckedRevision = revision;
+        topologyCheckResult = valid;
+        return valid;
+    }
+
+    /** Full bounded geometry/neighbour check, shared by stable reads in this world tick. */
+    private boolean checkTopologyNow() {
         String topologyFault = topologyFault(items, fluids);
         if (!topologyFault.isEmpty()) return reject(topologyFault);
         Set<UUID> ids = new HashSet<>();
@@ -872,7 +931,7 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             && member.getBaseMetaTileEntity() == gt ? member : null;
     }
 
-    private static boolean isPresent(MatrixAssemblyMember member) {
+    static boolean isPresent(MatrixAssemblyMember member) {
         IGregTechTileEntity tile = member.getBaseMetaTileEntity();
         return tile != null && tile.getWorld() != null
             && tile.getWorld()
@@ -933,10 +992,6 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     private boolean reject(String message) {
         reason = message;
         return false;
-    }
-
-    private List<RecipeAssemblyLine> authorizedRecipes() {
-        return session == null || !nativeBound ? java.util.Collections.emptyList() : session.authorizedRecipes();
     }
 
     /** Independent storage advertises valid installed layouts, including while the current pattern is busy. */
@@ -1046,8 +1101,14 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             }
             fluidCopies.add(next);
         }
-        if (!accepting() || intakeEpoch != epoch) return false;
+        if (!prepareMutationAccess() || !accepting() || intakeEpoch != epoch) return false;
         UUID nextBatch = batch == null ? UUID.randomUUID() : batch;
+        if (acceptedLayout == null || !nextBatch.equals(acceptedLayoutBatch)) {
+            acceptedLayout = layout;
+            acceptedLayoutBatch = nextBatch;
+            acceptedPattern = layout.pattern()
+                .copy();
+        }
         if (stage == Stage.IDLE) recordAcceptedDiagnostics(payload);
         for (int i = 0; i < itemCopies.size(); i++) items.get(i)
             .matrixSetItem(itemCopies.get(i));
@@ -1102,22 +1163,47 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
         if (!validateNativeState(nativeSession)) return false;
         OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
         try {
-            OrderedPatternLayout layout = OrderedPatternLayout.decode(
-                owner.master.matrixPort()
-                    .patterns()
-                    .getStackInSlot(owner.patternSlot),
-                owner.master.getBaseMetaTileEntity()
-                    .getWorld());
-            if (!AssemblyRecipeMatch.bind(layout, nativeSession.authorizedRecipes())
-                .key()
-                .equals(AssemblyRecipeKey.of(recipe))) return false;
+            // GT already selected this candidate from its own research sources. The independent
+            // provider checks only its accepted pattern, not the research catalogue or uniqueness.
+            if (!AssemblyRecipeMatch.matchesCandidate(owner.acceptedLayout(), recipe)) return false;
             // Only the immediate synchronous consumption callback may affect this exact batch.
             nativeOwner = owner;
             nativeBatch = owner.batch;
             return true;
-        } catch (PatternValidationException rejected) {
+        } catch (PatternValidationException | IllegalStateException rejected) {
             return false;
         }
+    }
+
+    private OrderedPatternLayout acceptedLayout() {
+        if (acceptedLayout == null || !java.util.Objects.equals(batch, acceptedLayoutBatch)) {
+            if (batch == null || patternSlot < 0 || patternSlot >= MatrixPatternInventory.SIZE)
+                throw new IllegalStateException("Missing accepted matrix pattern identity");
+            ItemStack pattern = master.matrixPort()
+                .patterns()
+                .getStackInSlot(patternSlot);
+            acceptedLayout = OrderedPatternLayout.decode(
+                pattern,
+                master.getBaseMetaTileEntity()
+                    .getWorld());
+            acceptedLayoutBatch = batch;
+            acceptedPattern = pattern.copy();
+        }
+        return acceptedLayout;
+    }
+
+    @Override
+    public boolean validateNativeConsumption(NativeAssemblySession nativeSession) {
+        if (!prepareMutationAccess() || !validateNativeState(nativeSession)) return false;
+        OrderedAssemblyGroup owner = isMirror() ? mirrorSource : this;
+        return nativeOwner == owner && nativeBatch != null
+            && nativeBatch.equals(owner.batch)
+            && owner.acceptedLayout != null
+            && ItemStack.areItemStacksEqual(
+                owner.acceptedPattern,
+                owner.master.matrixPort()
+                    .patterns()
+                    .getStackInSlot(owner.patternSlot));
     }
 
     @Override
@@ -1159,6 +1245,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
             && allEmpty()) {
             stage = Stage.IDLE;
             batch = null;
+            acceptedLayout = null;
+            acceptedLayoutBatch = null;
+            acceptedPattern = null;
             recipeKey = "";
             patternSlot = -1;
             genericInput = false;
@@ -1180,6 +1269,9 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
 
     /** Transfer only actual unconsumed contents. AE CPU jobs are not cancelled by this action. */
     public void refund() {
+        // Recovery/refund has its own quarantine policy; refresh topology without applying the
+        // normal supply gate, which deliberately rejects these recoverable states.
+        topologyChanged();
         if (isMirror()) {
             if (refreshMirror()) mirrorSource.refund();
             return;
@@ -1290,6 +1382,10 @@ public final class OrderedAssemblyGroup implements NativeAssemblyBinding {
     }
 
     private void restore(NBTTagCompound tag) {
+        acceptedLayout = null;
+        acceptedLayoutBatch = null;
+        acceptedPattern = null;
+        topologyChanged();
         if (tag == null) return;
         try {
             if (tag.hasKey("distributionSchema")

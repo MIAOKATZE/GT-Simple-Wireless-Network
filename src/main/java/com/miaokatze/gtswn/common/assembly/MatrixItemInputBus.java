@@ -168,7 +168,7 @@ public final class MatrixItemInputBus extends MTEHatchInputBus implements Matrix
 
     @Override
     public void setInventorySlotContents(int slot, ItemStack stack) {
-        if (slot != 0 || !matrix.permitsInputAccess()) return;
+        if (slot != 0 || !matrix.permitsMutationAccess()) return;
         ItemStack stored = getFirstStack();
         // Inventory consumers may write back a reduced remainder, but cannot insert a new material package.
         if (stored != null && (stack == null || stack.stackSize >= 0 && stack.stackSize <= stored.stackSize
@@ -185,7 +185,7 @@ public final class MatrixItemInputBus extends MTEHatchInputBus implements Matrix
 
     @Override
     public ItemStack decrStackSize(int slot, int amount) {
-        if (slot != 0 || amount <= 0) return null;
+        if (slot != 0 || amount <= 0 || !matrix.permitsMutationAccess()) return null;
         ItemStack stored = getFirstStack();
         if (stored == null) return null;
         ItemStack removed = stored.splitStack(Math.min(amount, stored.stackSize));
@@ -437,6 +437,12 @@ public final class MatrixItemInputBus extends MTEHatchInputBus implements Matrix
     public void onFacingChange() {
         super.onFacingChange();
         matrix.facingChanged();
+    }
+
+    @Override
+    public void onMachineBlockUpdate() {
+        super.onMachineBlockUpdate();
+        matrix.topologyChanged();
     }
 
     @Override

@@ -60,6 +60,44 @@ public class AssemblyRecipeMatchTest {
     }
 
     @Test
+    public void currentCandidateUsesThePatternWithoutResearchUniqueness() throws Exception {
+        OrderedPatternLayout accepted = layout(2, 1);
+        RecipeAssemblyLine first = recipe(2, 1), second = recipe(2, 1), wrong = recipe(2, 2);
+        second.mDuration++;
+        assertTrue(AssemblyRecipeMatch.matchesCandidate(accepted, first));
+        assertTrue(AssemblyRecipeMatch.matchesCandidate(accepted, second));
+        assertFalse(AssemblyRecipeMatch.matchesCandidate(accepted, wrong));
+        wrong.mOutput = new ItemStack(AssemblyPatternFixtures.anotherProduct, 1);
+        assertFalse(AssemblyRecipeMatch.matchesCandidate(accepted, wrong));
+    }
+
+    @Test
+    public void nativeCandidatePathDoesNotEnumerateResearchOrBindTheWholeCatalogue() throws Exception {
+        for (String name : new String[] { "com/miaokatze/gtswn/assembly/nativeintegration/NativeAssemblySession",
+            "com/miaokatze/gtswn/common/assembly/OrderedAssemblyGroup" }) {
+            org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+            try (java.io.InputStream in = getClass().getClassLoader()
+                .getResourceAsStream(name + ".class")) {
+                assertNotNull(in);
+                new org.objectweb.asm.ClassReader(in).accept(node, 0);
+            }
+            String target = name.endsWith("NativeAssemblySession") ? "matchCandidate" : "acceptsNativeCandidate";
+            for (org.objectweb.asm.tree.MethodNode method : node.methods) if (method.name.equals(target)) {
+                for (org.objectweb.asm.tree.AbstractInsnNode instruction = method.instructions.getFirst(); instruction
+                    != null; instruction = instruction.getNext()) {
+                    if (instruction instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+                        assertFalse(
+                            call.name.equals("currentlyAuthorized") || call.name.equals("authorizedRecipes")
+                                || call.name.equals("authorizedRecipeStream")
+                                || call.name.equals("bind")
+                                || call.name.equals("decode"));
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
     public void identicalInputsCannotSelectAnEarlierDifferentOutputOrOutputCount() throws Exception {
         OrderedPatternLayout layout = layout(2, 4);
         RecipeAssemblyLine wrongProduct = recipe(2, 4), wrongCount = recipe(2, 1), wanted = recipe(2, 4);

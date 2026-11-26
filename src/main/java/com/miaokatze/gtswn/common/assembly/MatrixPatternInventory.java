@@ -41,17 +41,20 @@ public final class MatrixPatternInventory extends ItemStackHandler {
 
     @Override
     public ItemStack insertItem(int slot, ItemStack stack, boolean simulate) {
+        if (!simulate) port.topologyChanged();
         if (!isItemValid(slot, stack)) return stack;
         return super.insertItem(slot, stack, simulate);
     }
 
     @Override
     public ItemStack extractItem(int slot, int amount, boolean simulate) {
+        if (!simulate) port.topologyChanged();
         return editable() ? super.extractItem(slot, amount, simulate) : null;
     }
 
     @Override
     public void setStackInSlot(int slot, ItemStack stack) {
+        if (!loading) port.topologyChanged();
         if (!loading && (!editable() || stack != null && !(stack.getItem() instanceof ICraftingPatternItem))) return;
         super.setStackInSlot(slot, stack);
     }

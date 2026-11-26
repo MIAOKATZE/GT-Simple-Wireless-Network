@@ -202,7 +202,6 @@ public final class NativeAssemblySession {
         if (!usesOrderedMembers()) return RecipeAssemblyLine.getItemConsumptionAmountArray(buses, recipe);
         candidate = null;
         if (buses != controller.mInputBusses || !validateInputTable()
-            || !currentlyAuthorized(recipe)
             || !checkingBinding.acceptsNativeCandidate(this, recipe)) return null;
         NativeAssemblySession previous = NativeAssemblyAdapter.enter(this);
         try {
@@ -216,7 +215,7 @@ public final class NativeAssemblySession {
         }
     }
 
-    /** The research sources used for both matrix advertisement and native execution. */
+    /** Diagnostic catalogue only. Storage and native candidate admission never enumerate research here. */
     public List<RecipeAssemblyLine> authorizedRecipes() {
         return authorizedRecipeStream().collect(Collectors.toList());
     }
@@ -234,11 +233,6 @@ public final class NativeAssemblySession {
                 .flatMap(
                     hatch -> hatch.getAssemblyLineRecipes()
                         .stream()));
-    }
-
-    private boolean currentlyAuthorized(RecipeAssemblyLine recipe) {
-        if (authorizedRecipeStream().anyMatch(authorized -> authorized == recipe)) return true;
-        return reject("recipe_no_longer_authorized");
     }
 
     private boolean enoughForOneCopy(RecipeAssemblyLine recipe, int[] requirements) {
@@ -297,7 +291,9 @@ public final class NativeAssemblySession {
         NativeAssemblySession previous = NativeAssemblyAdapter.enter(this);
         try {
             if (usesOrderedMembers()) {
-                if (candidate == null || parallel != 1 || checkingBinding == null) {
+                if (candidate == null || parallel != 1
+                    || checkingBinding == null
+                    || !checkingBinding.validateNativeConsumption(this)) {
                     controller.stopMachine(ShutDownReasonRegistry.CRITICAL_NONE);
                     throw new IllegalStateException("Ordered assembly native consumption without its unique gate");
                 }

@@ -12,6 +12,11 @@ public interface NativeAssemblyBinding {
 
     boolean acceptsNativeCandidate(NativeAssemblySession session, RecipeAssemblyLine recipe);
 
+    /** Fresh physical/batch validation immediately before GT mutates real inventories. */
+    default boolean validateNativeConsumption(NativeAssemblySession session) {
+        return validateNativeState(session);
+    }
+
     /** complete means that both native consumption calls returned and their real deltas match. */
     void onNativeConsumption(NativeAssemblySession session, RecipeAssemblyLine recipe, int parallel,
         long[] itemConsumed, long[] fluidConsumed, boolean complete);
