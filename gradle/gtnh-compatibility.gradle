@@ -1,0 +1,78 @@
+// Modern compilation stays on 2.9.2. Each compatibility task resolves its own old runtime graph.
+def gtnhGraphs = [
+    '2.9.0': ['GT5-Unofficial':'5.09.54.265', 'Applied-Energistics-2-Unofficial':'rv3-beta-1095-GTNH',
+        'GTNHLib':'0.11.54', 'ModularUI2':'2.3.94-1.7.10', 'NotEnoughItems':'2.8.171-GTNH',
+        'Baubles-Expanded':'2.2.27-GTNH', 'lwjgl3ify':'3.0.42', 'Hodgepodge':'2.7.221',
+        'MatterManipulator':'0.1.75-GTNH', 'waila':'1.19.34', 'BetterQuesting':'3.8.92-GTNH'],
+    '2.9.1': ['GT5-Unofficial':'5.09.54.275', 'Applied-Energistics-2-Unofficial':'rv3-beta-1104-GTNH',
+        'GTNHLib':'0.11.58', 'ModularUI2':'2.3.96-1.7.10', 'NotEnoughItems':'2.8.175-GTNH',
+        'Baubles-Expanded':'2.2.28-GTNH', 'lwjgl3ify':'3.1.0', 'Hodgepodge':'2.7.226',
+        'MatterManipulator':'0.1.77-GTNH', 'waila':'1.19.36', 'BetterQuesting':'3.8.94-GTNH'],
+    '2.9.2': ['GT5-Unofficial':'5.09.54.277', 'Applied-Energistics-2-Unofficial':'rv3-beta-1104-GTNH',
+        'GTNHLib':'0.11.58', 'ModularUI2':'2.3.97-1.7.10', 'NotEnoughItems':'2.8.176-GTNH',
+        'Baubles-Expanded':'2.2.29-GTNH', 'lwjgl3ify':'3.1.0', 'Hodgepodge':'2.7.227',
+        'MatterManipulator':'0.1.77-GTNH', 'waila':'1.19.36', 'BetterQuesting':'3.8.94-GTNH']
+]
+def pinGraph = { configuration, graph ->
+    configuration.resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == 'com.github.GTNewHorizons' && graph.containsKey(details.requested.name)) {
+            details.useVersion(graph[details.requested.name])
+            details.because('One isolated, fixed GTNH release graph')
+        }
+    }
+}
+configurations.configureEach { pinGraph(it, gtnhGraphs['2.9.2']) }
+def contractAsm = configurations.create('gtnhContractAsm') {
+    canBeConsumed = false
+    canBeResolved = true
+}
+dependencies.add(contractAsm.name, 'org.ow2.asm:asm-tree:9.9')
+
+gtnhGraphs.each { version, graph ->
+    def suffix = version.replace('.', '')
+    def runtime = configurations.create("gtnh${suffix}TestRuntime") {
+        canBeConsumed = false
+        canBeResolved = true
+        extendsFrom(configurations.testRuntimeClasspath)
+        attributes {
+            attribute(Usage.USAGE_ATTRIBUTE, objects.named(Usage, Usage.JAVA_RUNTIME))
+        }
+    }
+    // Compile-only integrations are explicit members of each isolated graph, never inherited from production.
+    ['waila', 'Hodgepodge'].each { name ->
+        dependencies.add(runtime.name, "com.github.GTNewHorizons:${name}:${graph[name]}:dev") { transitive = false }
+    }
+    pinGraph(runtime, graph)
+    def linkage = tasks.register("gtnhLinkage${suffix}", JavaExec) {
+        group = 'verification'
+        description = "Check production API members and Mixin selectors against isolated GTNH ${version} bytes."
+        dependsOn(tasks.testClasses)
+        // Minecraft bundles older ASM; put the modern offline reader first.
+        classpath = contractAsm + sourceSets.test.runtimeClasspath
+        mainClass = 'com.miaokatze.gtswn.mixins.PlatformLinkageContracts'
+        runtime.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+            def selected = artifact.moduleVersion.id
+            if (selected.group == 'com.github.GTNewHorizons' && graph.containsKey(selected.name)
+                && selected.version != graph[selected.name]) {
+                throw new GradleException("Mixed ${version} contract graph: ${selected}; expected ${graph[selected.name]}")
+            }
+        }
+        args(version, sourceSets.main.output.classesDirs.asPath, runtime.asPath)
+    }
+    tasks.register("gtnhCompatibility${suffix}", Test) {
+        group = 'verification'
+        description = "Run modern compiled GTSWN contracts against isolated GTNH ${version} dependencies."
+        dependsOn(tasks.testClasses, linkage)
+        testClassesDirs = sourceSets.test.output.classesDirs
+        classpath = sourceSets.test.runtimeClasspath.minus(configurations.testRuntimeClasspath).plus(runtime)
+        systemProperty 'gtswn.compat.gtVersion', graph['GT5-Unofficial']
+        setIncludes(['**/NativeAssemblyBytecodeContractTest.class', '**/GtnhDependencyBytecodeContractTest.class',
+            '**/ControllerFaceSitesTest.class', '**/GtswnMixinPluginTest.class', '**/common/covers/*Test.class',
+            '**/WirelessCoverMaterialsTest.class', '**/MatrixRenamingTest.class'])
+    }
+}
+tasks.register('gtnhCompatibility') {
+    group = 'verification'
+    description = 'Run the same compiled compatibility contracts on all three isolated GTNH release graphs.'
+    dependsOn('gtnhCompatibility290', 'gtnhCompatibility291', 'gtnhCompatibility292')
+}

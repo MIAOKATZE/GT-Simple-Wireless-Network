@@ -172,9 +172,9 @@ public class NativeAssemblyBytecodeContractTest {
             .getResource(path);
         assertNotNull("Real GT5U class on the test classpath", resource);
         assertTrue(
-            "This contract is for the pinned .265 dependency: " + resource,
+            "This contract is for the selected fixed GT5U dependency: " + resource,
             resource.toString()
-                .contains(".265"));
+                .contains(System.getProperty("gtswn.compat.gtVersion", "5.09.54.277")));
         MethodCalls calls = new MethodCalls();
         try (InputStream input = resource.openStream()) {
             new ClassReader(input).accept(new ClassVisitor(Opcodes.ASM9) {
