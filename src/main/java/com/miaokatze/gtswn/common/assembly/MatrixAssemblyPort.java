@@ -200,8 +200,21 @@ public final class MatrixAssemblyPort {
     }
 
     boolean permitsInputAccess() {
-        return group != null && (NativeAssemblyAdapter.permitsNativeAccess(member) ? group.permitsMachineWork()
-            : group.permitsOrdinaryInput());
+        // The group certificate covers the bounded component; the addressed physical member is
+        // still checked on every read. Never cache real ItemStack/FluidStack contents or amounts.
+        return group != null && OrderedAssemblyGroup.isPresent(member)
+            && !quarantined()
+            && (NativeAssemblyAdapter.permitsNativeAccess(member) ? group.permitsMachineWork()
+                : group.permitsOrdinaryInput());
+    }
+
+    boolean permitsMutationAccess() {
+        return group != null && group.prepareMutationAccess() && permitsInputAccess();
+    }
+
+    /** GT block notifications invalidate same-tick read certificates without pretending stock changed. */
+    public void topologyChanged() {
+        if (group != null) group.topologyChanged();
     }
 
     MatrixAssemblyMember inputMember() {

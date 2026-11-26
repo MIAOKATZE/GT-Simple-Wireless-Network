@@ -94,7 +94,171 @@ public class MatrixTopologyTest {
     }
 
     @Test
-    public void liveResearchRemainsAuthorizedAfterAStaleHatch() throws Exception {
+    public void stableInventoryReadsShareTopologyAndKeepRealAmountsLive() throws Exception {
+        for (int count : new int[] { 5, 16 }) {
+            Fixture fixture = new Fixture();
+            List<MatrixAssemblyMember> members = new ArrayList<>();
+            for (int i = 0; i < count; i++) members.add(fixture.add(false, i, 64, 0));
+            OrderedAssemblyGroup.refreshTopology(members.get(0));
+            OrderedAssemblyGroup group = members.get(0)
+                .matrixPort()
+                .group();
+            new Graph(fixture).external(members.get(0));
+            field(OrderedAssemblyGroup.class, "stage").set(group, OrderedAssemblyGroup.Stage.STAGED);
+            for (MatrixAssemblyMember member : members) member.matrixSetItem(new ItemStack(new Item(), 10));
+            assertTrue(group.permitsMachineWork());
+            group.topologyChanged();
+            fixture.world.tileReads = 0;
+            for (MatrixAssemblyMember member : members)
+                assertEquals(10, ((MatrixItemInputBus) member).getFirstStack().stackSize);
+            int reads = fixture.world.tileReads;
+            assertTrue(
+                "Stable full-row reads must not repeat a component scan per slot: " + reads,
+                reads <= count * 10 + 10);
+            System.out.println("MATRIX_READ members=" + count + " worldTileLookups=" + reads);
+            members.get(0)
+                .matrixNativeItems()[0].stackSize = 7;
+            assertEquals(7, ((MatrixItemInputBus) members.get(0)).getFirstStack().stackSize);
+            assertEquals(reads + 2, fixture.world.tileReads);
+        }
+    }
+
+    @Test
+    public void sameTickTopologyEventsRevokeReadCertificatesAndWritesCheckFreshMembers() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> members = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(members.get(0));
+        OrderedAssemblyGroup group = members.get(0)
+            .matrixPort()
+            .group();
+        new Graph(fixture).external(members.get(0));
+        field(OrderedAssemblyGroup.class, "stage").set(group, OrderedAssemblyGroup.Stage.STAGED);
+        members.get(0)
+            .matrixSetItem(new ItemStack(new Item(), 10));
+        MatrixItemInputBus bus = (MatrixItemInputBus) members.get(0);
+        assertNotNull(bus.getFirstStack());
+        TileEntity removed = fixture.world.tiles.remove(key(1, 64, 0));
+        // Even an external replacement which omitted the normal GT notification cannot debit stock.
+        assertNull(bus.decrStackSize(0, 1));
+        assertEquals(
+            10,
+            members.get(0)
+                .matrixItem().stackSize);
+        fixture.world.tiles.put(key(1, 64, 0), removed);
+        bus.onMachineBlockUpdate();
+        assertNotNull(bus.getFirstStack());
+        fixture.world.unloaded.add(key(1, 64, 0));
+        bus.onMachineBlockUpdate();
+        assertNull(bus.getFirstStack());
+        fixture.world.unloaded.clear();
+        bus.onMachineBlockUpdate();
+        assertNotNull(bus.getFirstStack());
+        group.networkChanged();
+        assertEquals(10, bus.getFirstStack().stackSize);
+    }
+
+    @Test
+    public void acceptedPatternCacheIsTransientAndInvalidReloadDoesNotDiscardStock() throws Exception {
+        Fixture fixture = new Fixture();
+        List<MatrixAssemblyMember> members = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(members.get(0));
+        OrderedAssemblyGroup group = members.get(0)
+            .matrixPort()
+            .group();
+        new Graph(fixture).external(members.get(0));
+        OrderedPatternLayout accepted = layout(5, new int[0]);
+        group.master()
+            .matrixPort()
+            .patterns()
+            .setStackInSlot(0, accepted.pattern());
+        assertTrue(deliver(group, accepted, 1));
+        assertSame(accepted, field(OrderedAssemblyGroup.class, "acceptedLayout").get(group));
+        Method acceptedLayout = OrderedAssemblyGroup.class.getDeclaredMethod("acceptedLayout");
+        acceptedLayout.setAccessible(true);
+        assertSame(accepted, acceptedLayout.invoke(group));
+        assertSame(accepted, acceptedLayout.invoke(group));
+        NBTTagCompound saved = group.saveLedger();
+        Method restore = OrderedAssemblyGroup.class.getDeclaredMethod("restore", NBTTagCompound.class);
+        restore.setAccessible(true);
+        restore.invoke(group, saved);
+        assertNull(field(OrderedAssemblyGroup.class, "acceptedLayout").get(group));
+        ItemStack storedPattern = group.master()
+            .matrixPort()
+            .patterns()
+            .getStackInSlot(0);
+        storedPattern.getTagCompound()
+            .setBoolean("InvalidPattern", true);
+        // The detached helper fixture is not an initialized AE codec. Explicit corruption tests
+        // our cold-cache refusal without claiming to bootstrap the complete AE runtime.
+        try {
+            acceptedLayout.invoke(group);
+            fail("A corrupt restored pattern must not create a usable cache");
+        } catch (java.lang.reflect.InvocationTargetException rejected) {
+            assertTrue(
+                rejected.getCause() instanceof com.miaokatze.gtswn.common.assembly.pattern.PatternValidationException);
+        }
+        assertNull(field(OrderedAssemblyGroup.class, "acceptedLayout").get(group));
+        assertEquals(
+            Integer.MAX_VALUE,
+            members.get(0)
+                .matrixNativeItems()[0].stackSize);
+        storedPattern.getTagCompound()
+            .removeTag("InvalidPattern");
+        assertEquals(saved, group.saveLedger());
+        assertEquals(2, saved.getInteger("distributionSchema"));
+    }
+
+    @Test
+    public void nativeConsumptionRechecksCurrentBatchPatternAndPhysicalMembers() throws Exception {
+        Fixture fixture = new Fixture();
+        initializeNativeAssemblyLine(fixture.unsafe);
+        List<MatrixAssemblyMember> members = fixture.items(false);
+        OrderedAssemblyGroup.refreshTopology(members.get(0));
+        OrderedAssemblyGroup group = members.get(0)
+            .matrixPort()
+            .group();
+        new Graph(fixture).external(members.get(0));
+        OrderedPatternLayout accepted = layout(5, new int[0]);
+        group.master()
+            .matrixPort()
+            .patterns()
+            .setStackInSlot(0, accepted.pattern());
+        assertTrue(deliver(group, accepted, 1));
+        MTEAssemblyLine controller = new MTEAssemblyLine("matrix_consumption_boundary");
+        fixture.attach(controller, 40, 64, 20);
+        controller.setExtendedFacing(ExtendedFacing.of(ForgeDirection.NORTH));
+        for (MatrixAssemblyMember member : members) {
+            ((BaseMetaTileEntity) member.getBaseMetaTileEntity()).setFrontFacing(ForgeDirection.DOWN);
+            controller.mInputBusses.add((MTEHatchInputBus) member);
+        }
+        NativeAssemblySession session = new NativeAssemblySession(controller);
+        Object batch = field(OrderedAssemblyGroup.class, "batch").get(group);
+        field(OrderedAssemblyGroup.class, "nativeOwner").set(group, group);
+        field(OrderedAssemblyGroup.class, "nativeBatch").set(group, batch);
+        assertTrue(group.validateNativeConsumption(session));
+        field(OrderedAssemblyGroup.class, "nativeBatch").set(group, UUID.randomUUID());
+        assertFalse(group.validateNativeConsumption(session));
+        field(OrderedAssemblyGroup.class, "nativeBatch").set(group, batch);
+        ItemStack pattern = group.master()
+            .matrixPort()
+            .patterns()
+            .getStackInSlot(0);
+        pattern.getTagCompound()
+            .setBoolean("test_pattern_changed", true);
+        assertFalse(group.validateNativeConsumption(session));
+        pattern.getTagCompound()
+            .removeTag("test_pattern_changed");
+        assertTrue(group.validateNativeConsumption(session));
+        fixture.world.tiles.remove(key(1, 64, 0));
+        assertFalse(group.validateNativeConsumption(session));
+        assertEquals(
+            Integer.MAX_VALUE,
+            members.get(0)
+                .matrixNativeItems()[0].stackSize);
+    }
+
+    @Test
+    public void diagnosticResearchCatalogueIgnoresAStaleHatch() throws Exception {
         Fixture fixture = new Fixture();
         initializeNativeAssemblyLine(fixture.unsafe);
         MTEAssemblyLine controller = new MTEAssemblyLine("matrix_research_authorization");
@@ -107,17 +271,12 @@ public class MatrixTopologyTest {
         controller.mDataAccessHatches.add(live);
 
         NativeAssemblySession session = new NativeAssemblySession(controller);
-        Method currentlyAuthorized = NativeAssemblySession.class
-            .getDeclaredMethod("currentlyAuthorized", RecipeAssemblyLine.class);
-        currentlyAuthorized.setAccessible(true);
         assertEquals(Collections.singletonList(researched), session.authorizedRecipes());
-        assertTrue((Boolean) currentlyAuthorized.invoke(session, researched));
 
         controller.mDataAccessHatches.remove(live);
         assertTrue(
             session.authorizedRecipes()
                 .isEmpty());
-        assertFalse((Boolean) currentlyAuthorized.invoke(session, researched));
     }
 
     @Test
@@ -2154,6 +2313,7 @@ public class MatrixTopologyTest {
 
         Map<String, TileEntity> tiles;
         Set<String> unloaded;
+        int tileReads;
 
         private FixtureWorld() {
             super(null, (ISaveHandler) null, "fixture", 0, (WorldSettings) null, (Profiler) null);
@@ -2171,6 +2331,7 @@ public class MatrixTopologyTest {
 
         @Override
         public TileEntity getTileEntity(int x, int y, int z) {
+            tileReads++;
             assertTrue("Topology must not load a missing chunk", blockExists(x, y, z));
             return tiles.get(key(x, y, z));
         }

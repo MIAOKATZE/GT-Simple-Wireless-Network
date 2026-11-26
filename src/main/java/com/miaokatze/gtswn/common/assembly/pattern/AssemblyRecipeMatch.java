@@ -70,6 +70,17 @@ public final class AssemblyRecipeMatch {
         return recipe;
     }
 
+    /** Compare only GT's current candidate with the accepted pattern; research belongs to the consumer. */
+    public static boolean matchesCandidate(OrderedPatternLayout layout, RecipeAssemblyLine candidate) {
+        if (layout == null || layout.outputs()
+            .size() != 1
+            || layout.outputs()
+                .get(0)
+                .kind() != OrderedPatternLayout.Kind.ITEM)
+            return false;
+        return compare(layout, layout.declaredPayload(), candidate) == Comparison.EXACT;
+    }
+
     public AssemblyRecipeKey key() {
         return key;
     }

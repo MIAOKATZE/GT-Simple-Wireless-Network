@@ -175,6 +175,7 @@ public final class MatrixFluidInputHatch extends MTEHatchInput implements Matrix
 
     @Override
     public FluidStack setFillableStack(FluidStack fluid) {
+        if (!matrix.permitsMutationAccess()) return getFillableStack();
         FluidStack stored = getFillableStack();
         if (stored != null
             && (fluid == null || fluid.amount >= 0 && fluid.amount <= stored.amount && stored.isFluidEqual(fluid))) {
@@ -201,6 +202,7 @@ public final class MatrixFluidInputHatch extends MTEHatchInput implements Matrix
     @Override
     public FluidStack drain(int amount, boolean doDrain) {
         if (amount <= 0) return null;
+        if (doDrain && !matrix.permitsMutationAccess()) return null;
         FluidStack stored = getFillableStack();
         if (stored == null) return null;
         FluidStack removed = stored.copy();
@@ -527,6 +529,12 @@ public final class MatrixFluidInputHatch extends MTEHatchInput implements Matrix
     public void onFacingChange() {
         super.onFacingChange();
         matrix.facingChanged();
+    }
+
+    @Override
+    public void onMachineBlockUpdate() {
+        super.onMachineBlockUpdate();
+        matrix.topologyChanged();
     }
 
     @Override
