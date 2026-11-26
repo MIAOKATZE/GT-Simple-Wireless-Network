@@ -296,7 +296,10 @@ public abstract class GTswnCoverWirelessBase extends Cover {
 
     protected abstract long getRemainingTicks();
 
-    /** MUI1 requires a non-null window while its tab protocol completes; editing lives in MUI2. */
+    /**
+     * GT .265/.275/.277 still call this MUI1 entry from cover tabs. Its non-null placeholder completes
+     * the native window sync protocol; the queued handoff opens the actual MUI2 editor afterwards.
+     */
     @Override
     protected com.gtnewhorizons.modularui.api.screen.ModularWindow createWindow(
         gregtech.api.gui.modularui.CoverUIBuildContext context) {
@@ -307,6 +310,7 @@ public abstract class GTswnCoverWirelessBase extends Cover {
     @Override
     public com.gtnewhorizons.modularui.common.internal.wrapper.ModularUIContainer createCoverContainer(
         EntityPlayer player) {
+        // Preserve the native container installation; opening MUI2 here would be overwritten by MUI1.
         com.gtnewhorizons.modularui.common.internal.wrapper.ModularUIContainer container = super.createCoverContainer(
             player);
         if (container != null) com.miaokatze.gtswn.common.gui.CoverUiRedirectQueue.enqueue(player, this, container);
@@ -315,6 +319,7 @@ public abstract class GTswnCoverWirelessBase extends Cover {
 
     @Override
     public com.gtnewhorizons.modularui.api.screen.ModularWindow createCoverWindow(EntityPlayer player) {
+        // The tab path retains the host container, so that exact container guards its deferred handoff.
         com.gtnewhorizons.modularui.api.screen.ModularWindow window = super.createCoverWindow(player);
         com.miaokatze.gtswn.common.gui.CoverUiRedirectQueue.enqueue(player, this, player.openContainer);
         return window;

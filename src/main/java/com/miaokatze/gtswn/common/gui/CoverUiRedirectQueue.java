@@ -21,7 +21,10 @@ import gregtech.api.interfaces.tileentity.ICoverable;
 import gregtech.api.modularui2.CoverUIFactory;
 import gregtech.api.modularui2.MetaTileEntityGuiHandler;
 
-/** Defers the legacy cover-tab handoff until MUI1 has finished installing its synced window. */
+/**
+ * Defers the legacy cover-tab handoff until MUI1 has finished installing its synced window/container.
+ * This is a GUI lifecycle bridge; wireless accounts, payment and cover persistence stay with the cover.
+ */
 public final class CoverUiRedirectQueue {
 
     private static final Map<UUID, Request> PENDING = new ConcurrentHashMap<>();
@@ -51,19 +54,26 @@ public final class CoverUiRedirectQueue {
     }
 
     public static void enqueue(EntityPlayer player, GTswnCoverWirelessBase cover, Container expectedContainer) {
+        // One pending request per player: a newer tab selection replaces the previous destination.
         if (player instanceof EntityPlayerMP serverPlayer && !player.worldObj.isRemote)
             PENDING.put(player.getUniqueID(), new Request(serverPlayer, cover, expectedContainer));
     }
 
     @SubscribeEvent
     public void onServerTick(TickEvent.ServerTickEvent event) {
+        // END runs after the synchronous MUI1 open path; an immediate MUI2 open would lose its container.
         if (event.phase != TickEvent.Phase.END || PENDING.isEmpty()) return;
         for (Map.Entry<UUID, Request> entry : PENDING.entrySet()) {
             Request request = entry.getValue();
+            // Consume once before validation/opening. A replaced request is left for its own turn;
+            // invalidated requests are cancelled rather than retried after the player/context changes.
             if (!PENDING.remove(entry.getKey(), request)) continue;
             EntityPlayerMP player = request.player;
             GTswnCoverWirelessBase cover = request.cover;
             ICoverable tile = cover.getTile();
+            // Require the original container and live host/side identity in the same world and range.
+            // Closing/changing GUI, disconnecting, removing/replacing the host or cover, or leaving range
+            // cancels the handoff without opening a stale editor.
             if (player.playerNetServerHandler == null || !player.isEntityAlive()
                 || player.openContainer != request.expectedContainer
                 || !cover.isValid()
