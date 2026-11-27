@@ -116,6 +116,12 @@ final class OrderedAssemblyScenario implements TestScenario {
     private EmbeddedChannel actorChannel;
     private long[] seededTotals;
     private int blockedSamples;
+    private static final boolean MATRIX_REPORTS = Boolean.getBoolean("gtswn.testlab.matrixReports");
+    private static final boolean EXPECT_FIXED = Boolean.getBoolean("gtswn.testlab.matrixFixed");
+    private gregtech.api.metatileentity.implementations.MTEHatchDataAccess staleData, liveData;
+    private java.util.UUID replacedController;
+    private long probeOutput, probeSequence;
+
     private String firstLink;
     private int stage, batch, maxProgress;
     private long stageTick, firstRun;
@@ -266,7 +272,8 @@ final class OrderedAssemblyScenario implements TestScenario {
         selectRecipe(ctx);
         verifyHeavyDutyPattern(ctx);
         duplicateRawPositions(ctx);
-        installRemoteSource(ctx);
+        if (MATRIX_REPORTS) consumerGroup = group;
+        else installRemoteSource(ctx);
         patternAnchor = group.master();
         controller.setInventorySlotContents(1, null);
         fillOutput();
@@ -408,6 +415,12 @@ final class OrderedAssemblyScenario implements TestScenario {
                         && cpu.getUsedStorage() == 0,
                     "Formation and current research publish the pattern before the first CPU job is submitted");
                 logPublication(ctx, "formed-researched-before-job");
+                if (MATRIX_REPORTS) {
+                    setUpReportResearch(ctx);
+                    transition(ctx, 101, "Publish same recipe through a live real data hatch with a stale earlier entry");
+                    break;
+                }
+
                 extraConnection(ctx, true);
                 transition(ctx, 18, "Verify multiple real external ME connections stop the empty group");
                 break;
@@ -598,6 +611,79 @@ final class OrderedAssemblyScenario implements TestScenario {
                     "The original unique ME entry restores the same remote consumer");
                 transition(ctx, 7, "Observe all sixteen original native runs and exact per-position consumption");
                 break;
+            case 101:
+                if (ctx.tick() - stageTick >= 240) throw new IllegalStateException("The data-hatch recipe was not advertised to AE");
+                if (ctx.tick() - stageTick < 30 || !published(ctx)) return;
+                require(ctx, controller.getStackInSlot(1) == null && controller.mDataAccessHatches.contains(staleData)
+                    && liveData.getAssemblyLineRecipes().contains(recipe), "Only the real data hatch authorizes this recipe");
+                beginProbeOrder(ctx);
+                transition(ctx, 102, "Submit a real native AE CPU job using the advertised recipe");
+                break;
+            case 102:
+                if (!planning.isDone()) return;
+                submitProbeOrder(ctx);
+                transition(ctx, 103, "Wait for the real delivery to stage behind output protection");
+                break;
+            case 103:
+                if (ctx.tick() - stageTick >= 220) throw new IllegalStateException("The AE CPU never delivered the researched recipe");
+                if (group.stage() != OrderedAssemblyGroup.Stage.STAGED) return;
+                clearOutput();
+                outputTile.enableWorking();
+                session.requestRecipeCheck();
+                transition(ctx, EXPECT_FIXED ? 105 : 104, "Release output protection with the stale hatch still first");
+                break;
+            case 104:
+                if (ctx.tick() - stageTick < 85) return;
+                require(ctx, controller.mDataAccessHatches.get(0) == staleData && itemAmount(recipe.mOutput) == probeOutput
+                    && session.runSequence() == probeSequence && group.stage() == OrderedAssemblyGroup.Stage.STAGED,
+                    "RED research: published recipe retains staged resources and cannot start");
+                ctx.event("matrix_research_red", "published=" + published(ctx) + "; stock=" + stock());
+                controller.mDataAccessHatches.remove(staleData);
+                session.requestRecipeCheck();
+                transition(ctx, 105, "Remove only the stale entry and prove the same order can finish");
+                break;
+            case 105:
+                if (ctx.tick() - stageTick >= recipe.mDuration + 220) throw new IllegalStateException("Research trial did not return its actual output to AE");
+                if (!probeOrderComplete()) return;
+                if (EXPECT_FIXED) require(ctx, controller.mDataAccessHatches.get(0) == staleData,
+                    "GREEN research: the same recipe completed while the stale first entry remained");
+                ctx.event("matrix_research_result", "fixed=" + EXPECT_FIXED + "; actual=" + (itemAmount(recipe.mOutput) - probeOutput)
+                    + "; cycles=" + (session.runSequence() - probeSequence));
+                replaceProbeController(ctx);
+                transition(ctx, 106, "Observe the matrix's restored saved identity on the newly formed ordinary AL");
+                break;
+            case 106:
+                if (ctx.tick() - stageTick < 60) return;
+                boolean advertised = published(ctx);
+                ctx.event("matrix_rebind_result", "fixed=" + EXPECT_FIXED + "; previous=" + replacedController
+                    + "; current=" + session.controllerId() + "; persisted=" + group.saveLedger().getString("controller")
+                    + "; formed=" + controller.mMachine + "; advertised=" + advertised + "; reason=" + group.reason());
+                require(ctx, controller.mMachine && group.editable(), "Same-position replacement is formed and matrix is empty");
+                if (!EXPECT_FIXED) {
+                    require(ctx, !advertised && group.session() == null
+                        && replacedController.toString().equals(group.saveLedger().getString("controller")),
+                        "RED rebind: stale UUID blocks the fresh ordinary controller and AE catalogue");
+                    ctx.pass("Observed both expected baseline failures and recovered the research control by removing stale entry");
+                    break;
+                }
+                require(ctx, advertised && group.session() == session
+                    && session.controllerId().toString().equals(group.saveLedger().getString("controller")),
+                    "GREEN rebind: fresh ordinary controller adopts the empty group and republishes to real AE");
+                beginProbeOrder(ctx);
+                transition(ctx, 107, "Place a real order on the recovered catalogue");
+                break;
+            case 107:
+                if (!planning.isDone()) return;
+                submitProbeOrder(ctx);
+                transition(ctx, 108, "Wait for real production after same-position rebinding");
+                break;
+            case 108:
+                if (ctx.tick() - stageTick >= recipe.mDuration + 220) throw new IllegalStateException("Rebound controller did not return output to AE");
+                if (!probeOrderComplete()) return;
+                ctx.event("matrix_rebind_produced", "actual=" + (itemAmount(recipe.mOutput) - probeOutput)
+                    + "; cycles=" + (session.runSequence() - probeSequence));
+                ctx.pass("Research and safe empty same-position rebind pass through actual ordinary AL and AE");
+                break;
             default:
                 throw new IllegalStateException("Unknown ordered assembly probe stage " + stage);
         }
@@ -731,7 +817,7 @@ final class OrderedAssemblyScenario implements TestScenario {
 
     private int[] sourcePosition(int a, int b, int c) {
         int[] pos = position(a, b, c);
-        pos[1] += 6;
+        if (!MATRIX_REPORTS) pos[1] += 6;
         return pos;
     }
 
@@ -1471,7 +1557,7 @@ final class OrderedAssemblyScenario implements TestScenario {
                 .iface()
                 .maybeStack(1)
                 .get());
-        ae(
+        if (!MATRIX_REPORTS) ae(
             ctx,
             ax,
             outputY,
@@ -1595,6 +1681,77 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + stack(
                     drive.getInternalInventory()
                         .getStackInSlot(1)));
+    }
+
+    private void setUpReportResearch(TestContext ctx) throws Exception {
+        BaseMetaTileEntity tile = TestWorldFixtures.machine(ctx.world(), X - 2, Y, Z - 3,
+            ItemList.Hatch_DataAccess_EV.get(1), owner.getUniqueID());
+        liveData = (gregtech.api.metatileentity.implementations.MTEHatchDataAccess) tile.getMetaTileEntity();
+        liveData.setInventorySlotContents(0, stick.copy());
+        // A real GT hatch and base remain valid as objects, but this base is detached from the world.
+        BaseMetaTileEntity detached = new BaseMetaTileEntity();
+        detached.setWorldObj(ctx.world());
+        detached.xCoord = tile.xCoord;
+        detached.yCoord = tile.yCoord;
+        detached.zCoord = tile.zCoord - 1;
+        staleData = (gregtech.api.metatileentity.implementations.MTEHatchDataAccess) liveData.newMetaEntity(detached);
+        staleData.setBaseMetaTileEntity(detached);
+        controller.setInventorySlotContents(1, null);
+        controller.mDataAccessHatches.add(0, staleData);
+        controller.mDataAccessHatches.add(liveData);
+        require(ctx, staleData.isValid() && !NativeAssemblyAdapter.isLive(staleData)
+            && NativeAssemblyAdapter.isLive(liveData), "Stale entry survives GT's isValid filter but fails GTSWN's physical identity check");
+        session.requestRecipeCheck();
+    }
+
+    private void beginProbeOrder(TestContext ctx) throws Exception {
+        probeOutput = itemAmount(recipe.mOutput);
+        probeSequence = session.runSequence();
+        planning = proxy.getCrafting().beginCraftingJob(ctx.world(), proxy.getGrid(), source, AEItemStack.create(recipe.mOutput), null);
+    }
+
+    private void submitProbeOrder(TestContext ctx) throws Exception {
+        ICraftingJob probe = planning.get();
+        require(ctx, !probe.isSimulation(), "Live AE cells satisfy the selected probe recipe");
+        link = proxy.getCrafting().submitJob(probe, null, cpu, false, source);
+        require(ctx, link != null, "Real native CPU submitted the selected probe recipe");
+    }
+
+    private boolean probeOrderComplete() throws Exception {
+        return itemAmount(recipe.mOutput) - probeOutput == recipe.mOutput.stackSize
+            && session.runSequence() == probeSequence + 1 && group.editable() && !cpu.isBusy();
+    }
+
+    private void replaceProbeController(TestContext ctx) throws Exception {
+        require(ctx, group.editable(), "Replacement test begins with an empty idle matrix and no in-flight work");
+        NBTTagCompound saved = group.saveLedger();
+        replacedController = session.controllerId();
+        require(ctx, replacedController.toString().equals(saved.getString("controller")), "Ledger stores the old ordinary AL UUID");
+        var masterPort = group.master().matrixPort();
+        List<MatrixAssemblyMember> members = new ArrayList<>(group.itemMembers());
+        members.addAll(group.fluidMembers());
+        ForgeDirection front = controllerTile.getFrontFacing();
+        ctx.world().setBlockToAir(X, Y, Z);
+        controllerTile = TestWorldFixtures.machine(ctx.world(), X, Y, Z, ItemList.Machine_Multi_Assemblyline.get(1),
+            owner.getUniqueID());
+        controllerTile.setFrontFacing(front);
+        controller = (MTEAssemblyLine) controllerTile.getMetaTileEntity();
+        controller.setVoidingMode(VoidingMode.VOID_NONE);
+        session = NativeAssemblyAdapter.session(controller);
+        require(ctx, session != null && !replacedController.equals(session.controllerId()), "Physical replacement has a fresh UUID");
+        for (MatrixAssemblyMember member : members) member.matrixPort().bind(null);
+        java.lang.reflect.Field ledger = masterPort.getClass().getDeclaredField("restoredLedger");
+        ledger.setAccessible(true);
+        ledger.set(masterPort, saved);
+        OrderedAssemblyGroup.refreshTopology(patternAnchor);
+        group = patternAnchor.matrixPort().group();
+        consumerGroup = group;
+        require(ctx, group != null && group.session() == null && group.editable(),
+            "Reload fixture restored the empty group's persisted ledger before the controller scan");
+        controller.setInventorySlotContents(1, stick.copy());
+        controllerTile.enableWorking();
+        checkStructure(ctx);
+        session.requestRecipeCheck();
     }
 
     private void beginJob(TestContext ctx) throws Exception {
