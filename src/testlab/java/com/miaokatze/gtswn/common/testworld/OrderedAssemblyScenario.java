@@ -116,6 +116,14 @@ final class OrderedAssemblyScenario implements TestScenario {
     private EmbeddedChannel actorChannel;
     private long[] seededTotals;
     private int blockedSamples;
+    private TileEntity ecoHost;
+    private ICraftingCPU nativeControlCpu;
+    private int issueTrial;
+    private long issueStartOutput;
+    private long issueStartSequence;
+    private static final boolean ISSUE_139 = Boolean.getBoolean("gtswn.testlab.issue139");
+    private static final String[] ISSUE_MODES = { "native-before-eco", "eco-fast-three", "eco-fast-one", "eco-vanilla" };
+
     private String firstLink;
     private int stage, batch, maxProgress;
     private long stageTick, firstRun;
@@ -408,6 +416,14 @@ final class OrderedAssemblyScenario implements TestScenario {
                         && cpu.getUsedStorage() == 0,
                     "Formation and current research publish the pattern before the first CPU job is submitted");
                 logPublication(ctx, "formed-researched-before-job");
+                if (ISSUE_139) {
+                    nativeControlCpu = cpu;
+                    issueTrial = 0;
+                    outputTile.enableWorking();
+                    startIssueTrial(ctx);
+                    break;
+                }
+
                 extraConnection(ctx, true);
                 transition(ctx, 18, "Verify multiple real external ME connections stop the empty group");
                 break;
@@ -597,6 +613,82 @@ final class OrderedAssemblyScenario implements TestScenario {
                     consumerGroup.permitsMachineWork(),
                     "The original unique ME entry restores the same remote consumer");
                 transition(ctx, 7, "Observe all sixteen original native runs and exact per-position consumption");
+                break;
+            case 101:
+                if (!planning.isDone()) {
+                    require(ctx, ctx.tick() - stageTick < 500, "Issue 139 planner remained pending");
+                    return;
+                }
+                ICraftingJob issueJob = planning.get();
+                boolean ecoPlan = issueJob.getClass().getName().contains("NativeECOCraftingJob");
+                ctx.event("issue139_plan", ISSUE_MODES[issueTrial] + "; class=" + issueJob.getClass().getName()
+                    + "; simulation=" + issueJob.isSimulation() + "; bytes=" + issueJob.getByteTotal());
+                require(ctx, ecoPlan == ISSUE_MODES[issueTrial].startsWith("eco-fast"), "Job planner agrees with the requested planning mode");
+                require(ctx, !issueJob.isSimulation(), "The real ME cells satisfy the issue 139 order");
+                cpu = issueTrial == 0 ? nativeControlCpu : findIssueEcoCpu();
+                if (cpu == null) {
+                    require(ctx, ctx.tick() - stageTick < 320, "No fresh ready ECO CPU was available for submission");
+                    return;
+                }
+                ctx.event("issue139_cpu_at_submit", ISSUE_MODES[issueTrial] + "; cpu=" + cpu.getClass().getName()
+                    + "; active=" + ((CraftingCPUCluster) cpu).isActive() + "; busy=" + cpu.isBusy()
+                    + "; storage=" + cpu.getAvailableStorage() + "; bytes=" + issueJob.getByteTotal());
+                link = proxy.getCrafting().submitJob(issueJob, null, cpu, false, source);
+                require(ctx, link != null, "Real AE2/ECO CPU accepts the issue 139 order");
+                ctx.event("issue139_submitted", ISSUE_MODES[issueTrial] + "; cpu=" + cpu.getClass().getName()
+                    + "; id=" + link.getCraftingID());
+                transition(ctx, 102, "Wait for stock and natural native assembly completion");
+                break;
+            case 102:
+                int copies = "eco-fast-three".equals(ISSUE_MODES[issueTrial]) ? 3 : 1;
+                long produced = itemAmount(recipe.mOutput) - issueStartOutput;
+                long completed = session.runSequence() - issueStartSequence;
+                if (produced != (long) copies * recipe.mOutput.stackSize || completed != copies || !group.accepting()) {
+                    if (ctx.tick() - stageTick >= (long) copies * recipe.mDuration + 350) {
+                        ctx.event("issue139_result", ISSUE_MODES[issueTrial] + "; output=" + produced
+                            + "; cycles=" + completed + "; reason=" + group.reason() + "; " + nativeState()
+                            + "; stock=" + stock());
+                        throw new IllegalStateException("Issue 139 order did not complete in " + ISSUE_MODES[issueTrial]);
+                    }
+                    return;
+                }
+                ctx.event("issue139_result", ISSUE_MODES[issueTrial] + "; output=" + produced
+                    + "; cycles=" + completed + "; reason=" + group.reason() + "; "
+                    + nativeState() + "; stock=" + stock());
+                if (++issueTrial == ISSUE_MODES.length) {
+                    ctx.pass("Native and NeoECO planning modes delivered the same real matrix recipe");
+                } else if (issueTrial == 1) {
+                    buildIssueEco(ctx);
+                    transition(ctx, 103, "Wait for real NeoECO computation multiblock and CPU publication");
+                } else {
+                    transition(ctx, 104, "Allow ECO job settlement before starting the next control");
+                }
+                break;
+            case 104:
+                if (ctx.tick() - stageTick < 45) return;
+                startIssueTrial(ctx);
+                break;
+            case 103:
+                Object cluster = ecoHost.getClass().getMethod("getCluster").invoke(ecoHost);
+                if (cluster == null || !(Boolean) cluster.getClass().getMethod("isActive").invoke(cluster)
+                    || findIssueEcoCpu() == null) {
+                    if (ctx.tick() - stageTick >= 360) {
+                        appeng.api.networking.IGridNode node = cluster == null ? null :
+                            (appeng.api.networking.IGridNode) cluster.getClass().getMethod("getNode").invoke(cluster);
+                        ctx.event("issue139_host_blocked", "cluster=" + cluster + "; active="
+                            + (cluster == null ? "none" : cluster.getClass().getMethod("isActive").invoke(cluster))
+                            + "; storage=" + (cluster == null ? "none" : cluster.getClass().getMethod("getTotalStorage").invoke(cluster))
+                            + "; node=" + node + "; nodeActive=" + (node != null && node.isActive())
+                            + "; sameGrid=" + (node != null && node.getGrid() == proxy.getGrid())
+                            + "; connections=" + (node == null ? -1 : node.getConnections().size())
+                            + "; cpus=" + proxy.getCrafting().getCpus());
+                        throw new IllegalStateException("Real NeoECO computation host failed to form or publish a CPU");
+                    }
+                    return;
+                }
+                ctx.event("issue139_host", "class=" + ecoHost.getClass().getName() + "; storage="
+                    + cluster.getClass().getMethod("getTotalStorage").invoke(cluster) + "; cpu=" + findIssueEcoCpu().getClass().getName());
+                startIssueTrial(ctx);
                 break;
             default:
                 throw new IllegalStateException("Unknown ordered assembly probe stage " + stage);
@@ -1595,6 +1687,75 @@ final class OrderedAssemblyScenario implements TestScenario {
                 + stack(
                     drive.getInternalInventory()
                         .getStackInSlot(1)));
+    }
+
+    private ICraftingCPU findIssueEcoCpu() throws Exception {
+        if (ecoHost == null) return null;
+        Object cluster = ecoHost.getClass().getMethod("getCluster").invoke(ecoHost);
+        if (cluster == null) return null;
+        java.lang.reflect.Method placeholderMethod = cluster.getClass().getMethod("getFakeCPU");
+        Object placeholder = placeholderMethod.invoke(cluster);
+        ICraftingCPU candidate = (ICraftingCPU) cluster.getClass().getMethod("nativeCPU", placeholderMethod.getReturnType())
+            .invoke(cluster, placeholder);
+        if (!proxy.getCrafting().getCpus().contains(candidate) || !((CraftingCPUCluster) candidate).isActive()
+            || candidate.isBusy() || candidate.getAvailableStorage() <= 0) return null;
+        return candidate;
+    }
+
+    private void buildIssueEco(TestContext ctx) throws Exception {
+        Object registered = Block.blockRegistry.getObject("neoecoae:computation_system_l4");
+        require(ctx, registered instanceof Block && registered != Blocks.air, "Verified NeoECO runtime mod is installed");
+        Block computer = (Block) registered;
+        int x = aeController.xCoord, y = aeController.yCoord + 8, z = aeController.zCoord;
+        TestWorldFixtures.place(ctx.world(), x, y, z, computer, 2);
+        ecoHost = ctx.world().getTileEntity(x, y, z);
+        require(ctx, ecoHost != null, "Actual NeoECO controller tile exists");
+        ecoHost.getClass().getMethod("claimOwner", net.minecraft.entity.player.EntityPlayer.class).invoke(ecoHost, owner);
+        com.gtnewhorizon.structurelib.alignment.constructable.IMultiblockInfoContainer<TileEntity> builder =
+            com.gtnewhorizon.structurelib.alignment.constructable.IMultiblockInfoContainer.get(ecoHost.getClass());
+        require(ctx, builder != null, "NeoECO registered its real StructureLib construction path");
+        builder.construct(new ItemStack(Blocks.stone, 1), false, ecoHost,
+            com.gtnewhorizon.structurelib.alignment.enumerable.ExtendedFacing.DEFAULT);
+        net.minecraft.item.Item cell = (net.minecraft.item.Item) net.minecraft.item.Item.itemRegistry
+            .getObject("neoecoae:eco_computation_cell_l4");
+        require(ctx, cell != null, "NeoECO computation cell exists");
+        Class<?> driveType = Class.forName("cn.dancingsnow.neoecoae.blocks.entity.computation.ECOComputationDriveBlockEntity");
+        int drives = 0;
+        for (int dx = -4; dx <= 4; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -3; dz <= 3; dz++) {
+            TileEntity tile = ctx.world().getTileEntity(x + dx, y + dy, z + dz);
+            if (driveType.isInstance(tile)) {
+                tile.getClass().getMethod("setCellStack", ItemStack.class).invoke(tile, new ItemStack(cell, 1));
+                drives++;
+            }
+        }
+        require(ctx, drives > 0, "NeoECO structure owns real computation storage drives");
+        Block cableBlock = AEApi.instance().definitions().blocks().multiPart().maybeBlock().get();
+        for (int cableY = aeController.yCoord; cableY <= y; cableY++) {
+            require(ctx, ctx.world().isAirBlock(x, cableY, z - 1), "NeoECO ME connection route is clear");
+            TestWorldFixtures.place(ctx.world(), x, cableY, z - 1, cableBlock, 0);
+            IPartHost cableHost = (IPartHost) ctx.world().getTileEntity(x, cableY, z - 1);
+            require(ctx, cableHost.addPart(AEApi.instance().definitions().parts().cableGlass()
+                .stack(AEColor.Transparent, 1), ForgeDirection.UNKNOWN, owner) == ForgeDirection.UNKNOWN,
+                "A real channel-neutral glass cable bridges the computation host to the fixture network");
+        }
+        ctx.event("issue139_fixture", "drives=" + drives + "; location=" + x + "," + y + "," + z
+            + "; stock ECO=" + ecoHost.getClass().getProtectionDomain().getCodeSource());
+    }
+
+    private void startIssueTrial(TestContext ctx) throws Exception {
+        boolean fast = ISSUE_MODES[issueTrial].startsWith("eco-fast");
+        if (ecoHost != null) ecoHost.getClass().getMethod("setFastPlannerEnabled", boolean.class).invoke(ecoHost, fast);
+        cpu = issueTrial != 0 ? findIssueEcoCpu() : nativeControlCpu;
+        require(ctx, cpu != null, "The requested physical CPU is visible on the fixture network");
+        int copies = "eco-fast-three".equals(ISSUE_MODES[issueTrial]) ? 3 : 1;
+        issueStartOutput = itemAmount(recipe.mOutput);
+        issueStartSequence = session.runSequence();
+        ICraftingGrid crafting = proxy.getCrafting();
+        planning = crafting.beginCraftingJob(ctx.world(), proxy.getGrid(), source, AEItemStack.create(recipe.mOutput)
+            .setStackSize((long) recipe.mOutput.stackSize * copies), null);
+        ctx.event("issue139_trial", ISSUE_MODES[issueTrial] + "; copies=" + copies + "; raw=" + layout.rawInputs().size()
+            + "; nonEmpty=" + (layout.items().size() + layout.fluids().size()) + "; stage=" + group.stage());
+        transition(ctx, 101, "Wait for real craft planning " + ISSUE_MODES[issueTrial]);
     }
 
     private void beginJob(TestContext ctx) throws Exception {
